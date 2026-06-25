@@ -39,6 +39,20 @@ pub enum SourceLang {
     /// is structurally empty (no items / no boundaries), validating
     /// only that the dispatch and SourceLang lane are wired.
     Shell,
+    /// WebAssembly text (WAT) as a **source** language — the LIFT half
+    /// of first-class bidirectional native WASM (PMAT-954, the inverse
+    /// of the `Target::Wasm` emit half PMAT-951). `xpile-wasm-frontend`
+    /// produces it: a **lossy DECOMPILATION** of the WAT scalar/control
+    /// subset back to meta-HIR (stack→expression-tree reconstruction).
+    /// Honestly asymmetric — emit is clean, lift is lossy: high-level
+    /// types collapse to the canonical scalar (`i64`→`I64`, `f64`→`F64`,
+    /// `f32`→`F32`, `i32`→`Bool`), and structured control-flow recovery
+    /// (`if`/`block`/`loop`) is refused at this first cut (deferred to
+    /// PMAT-952). The lift's correctness is pinned by an executed
+    /// round-trip **fixed-point** witness: `emit(lift(emit(M))) ==
+    /// emit(M)` (the lift is a right-inverse of emit on its WAT image).
+    /// See `project-bidirectional-wasm`.
+    Wasm,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

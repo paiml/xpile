@@ -77,6 +77,12 @@ pub fn default_session() -> TranspileSession {
     // `.zsh` / `.mk` files; real lowering replaces the stub at v0.2.0
     // when the bashrs source folding lands.
     s.register_frontend(Arc::new(bashrs_frontend::BashrsFrontend));
+    // PMAT-954: the WASM LIFT half — `xpile-wasm-frontend` lifts the WAT
+    // scalar/control subset (the `xpile-wasm-codegen` image) back to
+    // meta-HIR via stack→expression-tree reconstruction. Registered so a
+    // `.wat` file dispatches to the lift (lossy decompilation; the inverse
+    // of the `Target::Wasm` emit half). Bidirectional native WASM.
+    s.register_frontend(Arc::new(xpile_wasm_frontend::WasmFrontend::new()));
 
     // Code lane: backends
     s.register_backend(Arc::new(xpile_rust_codegen::RustBackend));
@@ -126,8 +132,9 @@ mod tests {
         let s = default_session();
         let names: Vec<&str> = s.frontends.iter().map(|f| f.name()).collect();
         // PMAT-037: `bashrs` joins the v0.1.0 frontend roster as
-        // scaffold per the bashrs merger Layer A plan.
-        for expected in &["python", "c", "ruchy", "bashrs"] {
+        // scaffold per the bashrs merger Layer A plan. PMAT-954: `wasm`
+        // joins as the WAT LIFT half of bidirectional native WASM.
+        for expected in &["python", "c", "ruchy", "bashrs", "wasm"] {
             assert!(names.contains(expected), "missing frontend: {}", expected);
         }
     }

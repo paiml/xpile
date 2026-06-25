@@ -534,6 +534,18 @@ fn shim_part_for(entry: &FfiEntry, modules: &[Module]) -> Result<ShimPart, Vec<S
              is a proof obligation, not a runtime shim",
             entry.symbol
         )]),
+        // Recognized boundary whose binding mechanism is not yet emitted. A
+        // transpiled WASM function isn't a flat C symbol — it lives inside a
+        // module that must be instantiated by a wasm runtime, and its exports
+        // are reached through typed-func marshalling, not a direct call. Names
+        // the real mechanism + roadmap slice so the gap is actionable (mirrors
+        // the Cuda host-launch arm).
+        SourceLang::Wasm => Err(vec![format!(
+            "{}: WASM boundary → needs a wasm-runtime host shim (wasmtime/wasmi \
+             module instantiation + typed-func marshalling), not a direct call — \
+             roadmap (bidirectional WASM, runtime stratum PMAT-952)",
+            entry.symbol
+        )]),
     }
 }
 

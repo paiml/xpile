@@ -24,6 +24,7 @@ depyler-frontend = { workspace = true }
 decy-frontend    = { workspace = true }
 ruchy-frontend   = { workspace = true }
 bashrs-frontend  = { workspace = true }
+xpile-wasm-frontend = { workspace = true }
 
 # Code lane: backend stubs (registered by default_session)
 xpile-ruchy-codegen = { workspace = true }

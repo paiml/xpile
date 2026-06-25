@@ -1,0 +1,20 @@
+[package]
+name = "xpile-wasm-frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "WebAssembly text (WAT) frontend for xpile — lifts the WAT scalar/control subset (the image of xpile-wasm-codegen) back to meta-HIR via stack→expression-tree reconstruction. The LIFT half of first-class bidirectional native WASM (PMAT-954); lossy decompilation, pinned by a round-trip fixed-point witness."
+
+[dependencies]
+xpile-frontend = { workspace = true }
+xpile-meta-hir = { workspace = true }
+
+[dev-dependencies]
+# The emit half — the round-trip fixed-point witness checks that
+# `emit(lift(emit(M))) == emit(M)` (the lift is a right-inverse of emit
+# on its WAT image). Dev-only: the frontend itself has no codegen dep.
+xpile-wasm-codegen = { workspace = true }
+xpile-backend = { workspace = true }

@@ -2,6 +2,24 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-954
+  github_issue: null
+  item_type: task
+  title: 'PMAT-954: [bidirectional-WASM] the LIFT half — first cut. Adds SourceLang::Wasm + crates/xpile-wasm-frontend, lifting the WAT scalar/control subset (the EXACT image of xpile-wasm-codegen PMAT-951) back to canonical meta-HIR via stack→expression-tree reconstruction. Recovers the (module …) skeleton (incl. the `;; source module:` name comment), each user (func …) signature (param/result/local → Param/return Type/locals), and a STRAIGHT-LINE body by simulating the WASM operand stack: local.get→Ident, local.set→Let(first write of a declared local)/Assign, i64/f64/i32.const→LitInt/LitFloat/LitBool, the i64/f64/i32 arith+compare instruction table→BinOp/FloatOp, call $__wasm_floordiv_i64/$__wasm_floormod_i64→BinOp::FloorDiv/Mod, call $f→intra-module Expr::Call (arity from the parsed signature); the residual stack value is the trailing return. HONESTLY LOSSY: type identity collapses to the canonical scalar (i64→I64, i32→Bool, f64→F64, f32→F32), and structured control-flow recovery (if/block/loop/br/return/drop/i32.eqz/i64.div_s) is REFUSED with a hard FrontendError::Lower (never a wrong lift) — deferred to PMAT-952. The synthetic $__wasm_* floor helpers are skipped, not parsed. Pinned by an EXECUTED round-trip FIXED-POINT witness: emit(lift(emit(M)))==emit(M) over 7 scalar fixtures (identity/add/let/floordiv/comparison-bool/float/intra-module-call).'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-23..07-02 open). Completes the ⭐ bidirectional-WASM user GOAL (project-bidirectional-wasm) by shipping the LIFT direction the EMIT half (PMAT-951) was the inverse of. Carves the tractable straight-line foundation out of the bundled PMAT-952 (whose remaining scope is now structured control-flow recovery + the WasmDiffExecEngine runtime witness)."
+  - "FRONTEND: crates/xpile-wasm-frontend — WasmFrontend (Frontend impl; name()=\"wasm\", extensions()=[\"wat\"]). lift_wat(name, src) tokenizes WAT (`(`/`)` standalone, `;;` line comments stripped), splits top-level (func …)/(export …) forms, runs a Pass-1 arity scan (name→param count over every func incl. helpers) then a Pass-2 body lift over each USER func (skips $__wasm_* helpers, whose bodies carry control flow). Registered in xpile-core default_session so a `.wat` file dispatches to the lift. shim_part_for (ffi-manifest, the no-wildcard exhaustive SourceLang match) grew a SourceLang::Wasm arm (honest 'needs a wasm-runtime host shim' gap, mirroring the Cuda host-launch arm)."
+  - "LOSSY POSTURE (honest asymmetry): the lift does NOT claim lift(emit(M))==M — it claims the RIGHT-INVERSE-on-image property emit(lift(emit(M)))==emit(M). Type collapse (i64→I64 so a CLong is indistinguishable; i32→Bool so a CUInt/bool flag are indistinguishable) and control-flow refusal are the documented losses. No new contract authored — a lossy decompilation carries no strong correctness contract (citation-honesty, per the decy ABI-token recipe); the executed fixed-point IS the verification artifact. A future C-WASM-LIFT-ROUNDTRIP right-inverse contract is queued, not claimed."
+  - "REGRESSION GUARDS: 10 tests in xpile-wasm-frontend — 7 round-trip fixed-point fixtures (roundtrip_identity/add/with_let/floordiv/comparison_returns_bool/float_arith/intra_module_call, each asserting emit(M)==emit(lift(emit(M))) byte-for-byte + structural checks on the lifted module), refuses_control_flow (a while-loop module's (block …)/(loop …)/br_if is REFUSED with a PMAT-952-naming diagnostic, never mis-reconstructed), frontend_trait_surface, frontend_parse_and_lower_recovers_module_name (the `;; source module:` comment round-trips, NOT the file stem). xpile-core default_session frontend roster test extended with \"wasm\"."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test for xpile-wasm-frontend (10) + xpile-meta-hir + xpile-ffi-manifest + xpile-core. Bidirectional-WASM LIFT first-cut slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-951
   github_issue: null
   item_type: task
@@ -32,6 +50,7 @@ roadmap:
   acceptance_criteria:
   - "The honest-asymmetry other half of bidirectional WASM (per project-bidirectional-wasm): EMIT (PMAT-951) is clean; LIFT is lossy decompilation. 'Bidirectional' means both paths exist, not a lossless round-trip."
   - "Adds a new wasm-runtime dependency (wasmi preferred — pure-Rust, light, cargo-deny-clean; wasmtime acceptable). Gate the executed two-emitter DiffExec test on wasm_runtime_available() so free CI stays green; capture the real Run≥1 witness locally."
+  - "SCOPE NARROWED (PMAT-954): part (a) — the SourceLang::Wasm + xpile-wasm-frontend LIFT — landed its STRAIGHT-LINE foundation in PMAT-954 (lift_wat, stack→expr reconstruction, round-trip fixed-point witness). PMAT-952's remaining scope is now (a') structured control-flow RECOVERY (reconstructing if/while from (block …)/(loop …)/br_if + the i32.eqz/i64.div_s helper bodies, which PMAT-954 honestly REFUSES) and (b) the WasmDiffExecEngine runtime witness."
   phases: []
   subtasks: []
   estimated_effort: null

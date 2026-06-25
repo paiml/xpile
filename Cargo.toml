@@ -19,6 +19,7 @@ members = [
     "crates/decy-frontend",
     "crates/ruchy-frontend",
     "crates/bashrs-frontend",                 # added 2026-05-17 (PMAT-037 / XPILE-BASHRS-MERGER-001)
+    "crates/xpile-wasm-frontend",             # added 2026-06-25 (PMAT-954 WASM LIFT half)
     # ── code-lane backends ────────────────────────────────────────
     "crates/xpile-rust-codegen",
     "crates/xpile-ruchy-codegen",             # added 2026-05-15
@@ -94,6 +95,7 @@ depyler-frontend = { version = "0.1.12", path = "crates/depyler-frontend" }
 decy-frontend    = { version = "0.1.12", path = "crates/decy-frontend" }
 ruchy-frontend   = { version = "0.1.12", path = "crates/ruchy-frontend" }
 bashrs-frontend  = { version = "0.1.12", path = "crates/bashrs-frontend" }
+xpile-wasm-frontend = { version = "0.1.12", path = "crates/xpile-wasm-frontend" }
 
 # Code lane: backends
 xpile-rust-codegen  = { version = "0.1.12", path = "crates/xpile-rust-codegen" }
