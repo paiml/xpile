@@ -266,5 +266,15 @@ lean_lib «XpileContractsPilot» where
     -- the §29 cross-vendor wgpu DiffExec witness (the runtime half RUNS the
     -- emitted WGSL on a real Vulkan/Metal/DX12 adapter). NEW contract, so the
     -- pilot grows 23 → 24; the entire substrate stays machine-checked.
-    `CompileRustToWgsl              -- C-COMPILE-RUST-TO-WGSL      (PMAT-950)
+    `CompileRustToWgsl,             -- C-COMPILE-RUST-TO-WGSL      (PMAT-950)
+    -- PMAT-951 (native WASM emit): the NEW WASM compile contract joins the pilot
+    -- at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY proof (same
+    -- shape as CompileRustToWgsl / the str/list/set structural Diamonds): an
+    -- emitted WAT function is determined by its structural signature (name,
+    -- ordered param value-types, result value-type). This is the proof-lane half
+    -- of native WASM emission (the EMIT direction of bidirectional WASM); the
+    -- runtime-stratum two-emitter wasm-runtime DiffExec witness is deferred to
+    -- PMAT-952. NEW contract, so the pilot grows 24 → 25; the substrate stays
+    -- machine-checked.
+    `XlateRustToWasm                -- C-COMPILE-RUST-TO-WASM      (PMAT-951)
   ]

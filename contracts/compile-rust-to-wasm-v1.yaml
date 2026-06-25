@@ -1,0 +1,191 @@
+metadata:
+  id: C-COMPILE-RUST-TO-WASM
+  version: "1.0.0"
+  created: "2026-06-25"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Compile-time contract: how a meta-HIR scalar/control function lowers
+    through xpile-wasm-codegen to WebAssembly Text format (WAT) text —
+    natively, NOT via the Ruchy `WasmEmitter` hop (the spec §73/§484
+    delegated-only stance, now superseded).
+
+    Layer 5 of the xpile contract taxonomy (compile-time / IR), the WASM
+    sibling of `C-COMPILE-RUST-TO-WGSL` and `C-COMPILE-RUST-TO-PTX-MMA`.
+    This is the EMIT half of first-class bidirectional native WASM
+    (PMAT-951): the tractable high→low direction (funcs / locals / if /
+    loops / i64 / f64 / calls → WASM). The lossy WASM→meta-HIR lift
+    (`SourceLang::Wasm`) is deferred to v0.2.0+ (PMAT-952+).
+
+    Asserts properties of the *emitted WAT text* and (for the executed
+    witness) of its *executed numeric output* when assembled and run in a
+    wasm runtime. The emitter REFUSES every construct outside the
+    scalar/control subset (str / list / dict / set / struct / tuple /
+    bigint / pointer / print / closures) with a hard error rather than
+    emitting wrong code — a Lean-style honest refusal.
+
+    Semantic posture replicated from the Rust/PTX lanes: i64 arithmetic
+    carries the `C-PY-INT-ARITH` overflow posture, and FloorDiv/Mod apply
+    the Python floor correction (WASM `i64.div_s` truncates toward zero;
+    Python `//` floors toward −∞) via emitted helper functions.
+  xpile:
+    layer: compile
+  references:
+    - "WebAssembly Core Specification 2.0 — W3C"
+    - "WebAssembly Text Format (WAT) — the `(module (func …))` S-expression syntax"
+    - "WABT — wat2wasm / wasm-interp / spectest-interp (executed witness toolchain)"
+    - contracts/compile-rust-to-wgsl-v1.yaml
+    - contracts/compile-rust-to-ptx-mma-v1.yaml
+    - contracts/xpile-backend-trait-v1.yaml
+    - docs/specifications/sub/backend-trait.md
+  depends_on:
+    - C-XPILE-BACKEND-TRAIT
+
+compile_targets:
+  - target: wasm
+    hardware: null
+    via:
+      - xpile-wasm-codegen
+    backend_crate: xpile-wasm-codegen
+    # PMAT-951 (2026-06-25): the EMIT half ships. xpile-wasm-codegen lowers
+    # the meta-HIR scalar/control subset directly to WAT text (no runtime
+    # dependency). The emitted WAT is a genuine, validatable WebAssembly
+    # module — the PMAT-951 slice ran it through WABT (wat2wasm assembles
+    # it; spectest-interp executes every exported fn) and confirmed 10/10
+    # executed semantic results match the CPython reference (incl. the
+    # floor-division corrections -7//2 == -4, 7//-2 == -4, the while-loop
+    # sum, the if-expr max, short-circuit bool logic, and f64 arithmetic).
+    # The two-emitter `WasmDiffExecEngine` §29 DiffExec quorum (running two
+    # categorically-independent WAT emitters in a wasm runtime and diffing
+    # them) is deferred to PMAT-952 — this slice records the single-emitter
+    # citation.
+    quorum_policy:
+      kind: Single
+    via_roles:
+      - emitter: xpile-wasm-codegen
+        role: general
+        crate: xpile-wasm-codegen
+
+equations:
+  wasm_emission_structure_extensionality_diamond:
+    # Tier-defining Diamond equation (depth-1). Machine-checked by the
+    # lake-build pilot — see contracts/lean/XlateRustToWasm.lean. An
+    # emitted WAT function is determined by its structural signature
+    # (name, ordered param value-types, result value-type), mirroring the
+    # str/list/float/set/wgsl structural Diamonds.
+    lean_theorem: "XpileContracts.CCompileRustToWasm.wasm_emission_structure_extensionality_diamond"
+    lean_file: "contracts/lean/XlateRustToWasm.lean"
+    formula: |
+      ∀ a b : WasmFunc.
+        a.name = b.name → a.params = b.params → a.result = b.result →
+        a = b
+      (an emitted WAT function is determined by its structural signature)
+    domain: |
+      Any emitted WAT function as xpile-wasm-codegen produces it, modelled
+      by its `$name`, the ordered list of param WASM value-types, and the
+      result WASM value-type.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-COMPILE-RUST-TO-WASM (registers it at depth-1)"
+      - "structure extensionality over the emitted function's signature (sorry-free, core-only)"
+      - "execution-semantics agreement (the wasm-runtime DiffExec witness) is the runtime-stratum tier, deferred to PMAT-952"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+    postconditions:
+      - "WASM-emitting code carries citation C-COMPILE-RUST-TO-WASM"
+
+  scalar_emission_is_well_formed_wat:
+    formula: |
+      lower(scalar_control_fn, BackendConfig{target: Wasm})
+        produces wat_text containing a `(module …)` with a `(func $name …)`
+        declaration and a matching `(export "name" (func $name))`
+    domain: |
+      A meta-HIR function over the scalar/control subset (i64/i32/f64/f32/
+      bool locals; Let/Assign/If/While/Break/Continue/Return; BinOp/
+      FloatBinOp/UnOp/comparisons/IfExpr/direct Call) lowered to a WAT
+      module.
+    invariants:
+      - "emitted WAT opens a `(module` form"
+      - "every function emits a `(func $name …)` declaration and an export"
+      - "params/result use only i64/i32/f64/f32 value types"
+      - "Bool lowers to i32 (0/1); I64/CLong to i64; F64 to f64; F32 to f32"
+      - "FloorDiv/Mod route through the Python floor-correction helpers"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "every value type in the function is in the scalar subset"
+    postconditions:
+      - "emitted WAT assembles to a valid WASM module (wat2wasm / wasm-validate)"
+      - "WASM-emitting code carries citation C-COMPILE-RUST-TO-WASM"
+
+  out_of_subset_is_refused:
+    formula: |
+      lower(fn_using(str|list|dict|set|struct|tuple|bigint|ptr|print|closure),
+            BackendConfig{target: Wasm})
+        == Err(BackendError::Lower("unsupported construct — …"))
+    domain: |
+      Any function touching a type or construct outside the scalar/control
+      subset.
+    invariants:
+      - "a refused construct yields a hard BackendError, never wrong WAT"
+      - "the refusal names the offending construct (honest diagnostic)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+    postconditions:
+      - "no WAT text is emitted for an out-of-subset function"
+
+proof_obligations:
+  - type: postcondition
+    property: emitted WAT is a well-formed WebAssembly module
+    formal: "wat2wasm(emitted_wat) succeeds"
+    applies_to: scalar_emission_is_well_formed_wat
+
+  - type: postcondition
+    property: out-of-subset constructs are refused, never miscompiled
+    formal: "lower(out_of_subset) == Err(_)"
+    applies_to: out_of_subset_is_refused
+
+  - type: frame
+    property: lower() does not mutate the input meta-HIR module
+    formal: "modifies() == ∅"
+    applies_to: all
+
+  - type: precondition
+    property: backend citation is recorded
+    formal: "Artifact.citations contains C-COMPILE-RUST-TO-WASM"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-COMPILE-WASM-001
+    rule: |
+      Emitted WAT MUST be a well-formed WebAssembly module — a `(module …)`
+      with a `(func $name …)` and a matching export, assembling cleanly via
+      wat2wasm.
+    prediction: |
+      `wat2wasm(emitted)` succeeds for every scalar/control function.
+    test: |
+      cargo test -p xpile-wasm-codegen --lib
+    if_fails: |
+      The emitter regressed to ill-formed WAT (stack-type mismatch, missing
+      local declaration, unbalanced block/loop). Likely cause: a new BinOp
+      or control arm emitting the wrong value-type instruction.
+    ship_blocking: true
+    counter_example_classes:
+      - stack_type_mismatch
+      - missing_local_decl
+      - unbalanced_block_loop
+
+  - id: FALSIFY-COMPILE-WASM-002
+    rule: |
+      A construct outside the scalar/control subset MUST be refused with a
+      hard error, NEVER emitted as wrong WAT.
+    prediction: |
+      `lower` returns `Err(BackendError::Lower(...))` naming the construct.
+    test: |
+      cargo test -p xpile-wasm-codegen --lib
+    if_fails: |
+      The emitter silently emitted (wrong) code for str/list/dict/struct/
+      etc. — a correctness violation worse than a refusal.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_miscompile_of_aggregate
+      - unsupported_type_emitted

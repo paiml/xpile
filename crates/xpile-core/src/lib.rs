@@ -83,6 +83,9 @@ pub fn default_session() -> TranspileSession {
     s.register_backend(Arc::new(xpile_ruchy_codegen::RuchyBackend));
     s.register_backend(Arc::new(xpile_ptx_codegen::PtxBackend::new()));
     s.register_backend(Arc::new(xpile_wgsl_codegen::WgslBackend::new()));
+    // PMAT-951: native WASM emit — peer to the GPU codegens. WAT text
+    // emitter over the meta-HIR scalar/control subset.
+    s.register_backend(Arc::new(xpile_wasm_codegen::WasmBackend::new()));
     s.register_backend(Arc::new(xpile_lean_codegen::LeanBackend));
     // PMAT-037 / XPILE-BASHRS-MERGER-001: pairs with bashrs-frontend
     // above. `--target shell` now resolves to a real Backend impl

@@ -229,6 +229,14 @@ const EXPECTED_PILOT: &[&str] = &[
     // cross-vendor wgpu DiffExec witness. NEW contract, so the pilot grows
     // 23 → 24; the entire `contracts/lean/` substrate stays machine-checked.
     "CompileRustToWgsl",
+    // PMAT-951 (native WASM emit): the NEW WASM compile contract joins the pilot
+    // at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY proof (an
+    // emitted WAT function is determined by its structural signature: name /
+    // ordered param value-types / result value-type), the proof-lane half of
+    // native WASM emission (the EMIT direction of first-class bidirectional
+    // WASM). NEW contract, so the pilot grows 24 → 25; the entire
+    // `contracts/lean/` substrate stays machine-checked.
+    "XlateRustToWasm",
 ];
 
 #[test]
