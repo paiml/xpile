@@ -89,6 +89,11 @@ pub fn default_session() -> TranspileSession {
     s.register_backend(Arc::new(xpile_ruchy_codegen::RuchyBackend));
     s.register_backend(Arc::new(xpile_ptx_codegen::PtxBackend::new()));
     s.register_backend(Arc::new(xpile_wgsl_codegen::WgslBackend::new()));
+    // PMAT-960: SPIR-V emit — the native Vulkan IR lane. REUSES the WGSL
+    // emission and compiles it WGSL→naga→spv; `Target::Spirv` is now a real
+    // Backend, not a "future" stub. The §29 cross-emitter witness RUNS the
+    // emitted SPIR-V on a real Vulkan adapter (graceful-skip on free CI).
+    s.register_backend(Arc::new(xpile_spirv_codegen::SpirvBackend::new()));
     // PMAT-951: native WASM emit — peer to the GPU codegens. WAT text
     // emitter over the meta-HIR scalar/control subset.
     s.register_backend(Arc::new(xpile_wasm_codegen::WasmBackend::new()));

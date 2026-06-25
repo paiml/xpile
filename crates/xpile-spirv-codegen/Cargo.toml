@@ -1,0 +1,31 @@
+[package]
+name = "xpile-spirv-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "SPIR-V backend — lowers Rust meta-HIR to SPIR-V by REUSING the xpile-wgsl-codegen WGSL emission and compiling it WGSL→naga→spv; runs the emitted SPIR-V on a real Vulkan adapter (wgpu) for the §29 DiffExec witness. PMAT-960."
+
+[dependencies]
+xpile-backend = { workspace = true }
+xpile-contracts = { workspace = true }
+xpile-meta-hir = { workspace = true }
+# REUSE the proven WGSL emitters (PMAT-950): the SPIR-V lane does NOT
+# hand-write shaders — it reuses xpile-wgsl-codegen's general/specialist
+# WGSL and compiles it to SPIR-V via naga.
+xpile-wgsl-codegen = { workspace = true }
+# WGSL→SPIR-V compiler: naga parses the reused WGSL (`wgsl-in`), validates
+# it, and emits SPIR-V binary words (`spv-out`). NOT a hand-rolled SPIR-V
+# assembler. naga 29.0.3 is already in the lockfile (pulled by wgpu).
+naga = { workspace = true }
+# §29 SPIR-V execution witness (PMAT-960): wgpu RUNS the emitted SPIR-V on
+# a real Vulkan adapter. The extra `spirv` feature (additive over the
+# workspace wgpu features) is what enables `ShaderSource::SpirV` — the
+# native-IR upload path that distinguishes this witness from the WGSL one.
+# pollster blocks the async API from the sync DiffExecEngine; bytemuck
+# casts the f32 fixture/result buffers.
+wgpu = { workspace = true, features = ["spirv"] }
+pollster = { workspace = true }
+bytemuck = { workspace = true }

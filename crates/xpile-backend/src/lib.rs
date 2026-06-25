@@ -22,7 +22,11 @@ pub enum Target {
     Ptx,
     /// WebGPU Shading Language. Implemented by `xpile-wgsl-codegen`.
     Wgsl,
-    /// SPIR-V text or binary. Implemented by `xpile-spirv-codegen` (future).
+    /// SPIR-V — the native Vulkan IR. Implemented by `xpile-spirv-codegen`
+    /// (PMAT-960). REUSES the WGSL emission and compiles it WGSL→naga→spv
+    /// (NOT a hand-written SPIR-V assembler); the §29 cross-emitter witness
+    /// RUNS the emitted SPIR-V on a real wgpu Vulkan adapter. The native-IR
+    /// sibling of `Target::Wgsl`.
     Spirv,
     /// WebAssembly Text format (WAT). Implemented by `xpile-wasm-codegen`.
     /// The EMIT half of first-class bidirectional native WASM (PMAT-951) —

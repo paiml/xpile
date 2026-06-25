@@ -52,15 +52,17 @@ strategic_goals:
       status: broadened-2026-06-25
       detail: >-
         Rust/Ruchy/Lean/Shell/PTX/WGSL + NEW native Wasm (Target::Wasm, PMAT-951)
-        + forjar.yaml (Target::ForjarYaml, PMAT-953). Every backend ships WITH a
-        contract + Lean Diamond, never bare codegen.
+        + forjar.yaml (Target::ForjarYaml, PMAT-953) + SPIR-V native Vulkan IR
+        (Target::Spirv, PMAT-960 — REUSES the WGSL emission via WGSL→naga→spv).
+        Every backend ships WITH a contract + Lean Diamond, never bare codegen.
     - id: C
       name: Execution witnesses (close the §4 in-vacuum / Run=1 gap)
       status: delivered-2026-06-25
       detail: >-
         §29 DiffExec — categorically-independent emitters run on real hardware,
         cross-checked. DELIVERED: CUDA/RTX-4090 (PMAT-949), wgpu/WGSL cross-vendor
-        Vulkan (PMAT-950), Wasm via WABT (PMAT-951). cuda-oxide = 3rd independent
+        Vulkan (PMAT-950), Wasm via WABT (PMAT-951), SPIR-V native Vulkan IR on
+        RTX-4090 (PMAT-960, reuses the wgpu infra). cuda-oxide = 3rd independent
         pure-Rust PTX emitter (PMAT-480, reframed watched->first-class; needs a
         nightly + rust-src + rustc-dev lane).
     - id: D
@@ -98,6 +100,24 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-960
+  github_issue: null
+  item_type: task
+  title: 'PMAT-960: [Pillar-B/Pillar-C] light up Target::Spirv — the native Vulkan IR backend, by REUSING the WGSL→naga→wgpu infra (PMAT-950). Target::Spirv was a "future" stub; it is now a REAL Backend (crates/xpile-spirv-codegen, registered in xpile-core default_session). EMISSION PATH chosen for lowest risk + maximal reuse: meta-HIR → the EXISTING xpile-wgsl-codegen WGSL (general `2.0*x+1.0` / specialist `fma`) → naga `wgsl-in` parse+validate → naga `spv-out` → SPIR-V binary words. NO hand-written SPIR-V assembler — naga''s spv backend is the emitter (naga 29.0.3 was already in the lockfile via wgpu, so this is a feature-set pin `["wgsl-in","spv-out"]`, not a new advisory surface). Artifact.primary is a stable text summary (magic/version/word-count/inline source WGSL); the offline validate_spirv gate checks the SPIR-V magic 0x07230203 + 5-word header + non-zero id-bound. §29 EXECUTION WITNESS (Pillar C): SpirvDiffExecEngine (the SPIR-V sibling of WgpuWgslDiffExecEngine) compiles both emitters'' reused WGSL to SPIR-V and runs the SPIR-V BINARIES directly (wgpu::ShaderSource::SpirV — the native-IR upload path, distinct from the WGSL lane''s source upload) on a real wgpu VULKAN adapter, diffing the read-back floats. Gated on vulkan_adapter_available() (graceful-skip on free CI → NotRun, stays green). C-COMPILE-RUST-TO-SPIRV is Single→DiffExec like the WGSL/WASM/CUDA lanes.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "PILLAR B (multi-target backend matrix): Target::Spirv is now implemented, not a stub — the native Vulkan IR lane joins Rust/Ruchy/PTX/WGSL/WASM/forjar/shell/Lean. xpile-spirv-codegen::SpirvBackend impls Backend, registered in xpile-core default_session peer to WgslBackend; the CLI `--target spirv` (already routed in parse_target) now resolves to a real Backend. The Target::Spirv doc-comment in xpile-backend updated 'future' → implemented (PMAT-960, the native-IR sibling of Target::Wgsl)."
+  - "REUSE OVER NEW EMISSION (the slice's design): the SPIR-V lane does NOT hand-write shaders or a SPIR-V assembler — it reuses xpile-wgsl-codegen's general/specialist WGSL verbatim and compiles WGSL→naga(`wgsl-in`)→naga(`spv-out`)→SPIR-V words via wgsl_to_spirv_words(). naga 29.0.3 was already in the lockfile (transitive via wgpu), so the new dep is a feature-set pin only — `cargo deny check advisories` stays CLEAN. The wgpu `spirv` feature (additive over the workspace features) enables ShaderSource::SpirV for the witness upload."
+  - "PILLAR C (execution witness, Run≥1): SpirvDiffExecEngine runs two categorically-independent SPIR-V modules (general explicit mul+add vs specialist OpExtInst Fma, both from reused WGSL) on a real wgpu Vulkan adapter and numerically diffs the executed outputs over the bit-identical FIXTURE_INPUT (shared with the WGSL/CUDA witnesses). LOCAL Run≥1 WITNESS CAPTURED on the RTX 4090 (Vulkan): 'PMAT-960: EXECUTED Vulkan SPIR-V witness PASSED — general vs specialist agree (max_abs_diff=0)' → a real DiffExecResult::Match. The native-Vulkan-IR sibling of the WGSL wgpu witness (PMAT-950). Gated test crates/xpile-spirv-codegen/tests/gpu_witness.rs skips cleanly (NotRun) with no adapter so free CI stays green."
+  - "CONTRACT + LEAN (the 5-touchpoint recipe): authored contracts/compile-rust-to-spirv-v1.yaml (C-COMPILE-RUST-TO-SPIRV, quorum_policy.kind: DiffExec, two via_roles, depends_on C-XPILE-BACKEND-TRAIT + C-COMPILE-RUST-TO-WGSL) + contracts/lean/CompileRustToSpirv.lean (depth-1 SpirvModule STRUCTURE EXTENSIONALITY Diamond — magic/version/idBound/entryPoints — core-only, no Mathlib/sorry/axiom, warningAsError). Wired into lakefile.lean roots + lean_pilot_roots.rs EXPECTED_PILOT + PROVABILITY-INVENTORY.md; pilot 26 → 27, the entire contracts/lean/ substrate stays machine-checked. pv lint: 27 contracts, 0 errors/0 warnings."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (27 contracts, 0 err/0 warn), cargo-deny advisories CLEAN, cargo test (xpile-spirv-codegen lib 11/11 + gpu_witness 1/1 + xpile lean_pilot_roots 3/3), lake build green (27 modules). Pillar-B+C SPIR-V slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-958
   github_issue: null
   item_type: task

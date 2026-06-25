@@ -25,6 +25,7 @@ members = [
     "crates/xpile-ruchy-codegen",             # added 2026-05-15
     "crates/xpile-ptx-codegen",               # added 2026-05-15
     "crates/xpile-wgsl-codegen",              # added 2026-05-15
+    "crates/xpile-spirv-codegen",             # added 2026-06-25 (PMAT-960 SPIR-V via WGSL→naga→spv)
     "crates/xpile-wasm-codegen",              # added 2026-06-25 (PMAT-951 native WASM emit)
     "crates/xpile-forjar-codegen",            # added 2026-06-25 (PMAT-953 forjar.yaml backend-only)
     "crates/xpile-lean-codegen",              # added 2026-05-15
@@ -66,6 +67,14 @@ wgpu = { version = "29", default-features = false, features = ["wgsl", "vulkan",
 pollster = "0.4"
 bytemuck = "1"
 
+# SPIR-V lane (PMAT-960): naga is the WGSL→SPIR-V compiler — parse the
+# (reused) `xpile-wgsl-codegen` WGSL via `wgsl-in`, validate, then emit
+# SPIR-V binary words via the `spv-out` backend. naga 29.0.3 is ALREADY in
+# the lockfile (pulled transitively by wgpu), so this is a feature-set
+# pin, not a new crate / new advisory surface. We do NOT hand-write a
+# SPIR-V assembler — naga's `spv` backend is the emitter.
+naga = { version = "29", default-features = false, features = ["wgsl-in", "spv-out"] }
+
 # External: aprender's provable-contracts framework (`aprender-contracts`
 # on crates.io). Pinned to a fixed minor — bump when adopting new pv
 # features. Resolves on CI and crates.io without any sibling checkout.
@@ -102,6 +111,7 @@ xpile-rust-codegen  = { version = "0.1.12", path = "crates/xpile-rust-codegen" }
 xpile-ruchy-codegen = { version = "0.1.12", path = "crates/xpile-ruchy-codegen" }
 xpile-ptx-codegen   = { version = "0.1.12", path = "crates/xpile-ptx-codegen" }
 xpile-wgsl-codegen  = { version = "0.1.12", path = "crates/xpile-wgsl-codegen" }
+xpile-spirv-codegen = { version = "0.1.12", path = "crates/xpile-spirv-codegen" }
 xpile-wasm-codegen  = { version = "0.1.12", path = "crates/xpile-wasm-codegen" }
 xpile-forjar-codegen = { version = "0.1.12", path = "crates/xpile-forjar-codegen" }
 xpile-lean-codegen  = { version = "0.1.12", path = "crates/xpile-lean-codegen" }

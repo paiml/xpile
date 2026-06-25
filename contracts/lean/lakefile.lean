@@ -287,5 +287,18 @@ lean_lib «XpileContractsPilot» where
     -- resources, NOT merge/federate); apply-convergence is forjar's own tier
     -- (idempotent-apply), handed off at the YAML boundary. NEW contract, so the
     -- pilot grows 25 → 26; the substrate stays machine-checked.
-    `XlateShellToForjar             -- C-COMPILE-SHELL-TO-FORJAR   (PMAT-953)
+    `XlateShellToForjar,            -- C-COMPILE-SHELL-TO-FORJAR   (PMAT-953)
+    -- PMAT-960 (SPIR-V backend): the NEW SPIR-V compile contract joins the
+    -- pilot at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY
+    -- proof (same shape as CompileRustToWgsl / the str/list/set structural
+    -- Diamonds): an emitted SPIR-V module is determined by its structural
+    -- signature (magic, version, idBound, ordered entryPoints). This is the
+    -- proof-lane half of the native Vulkan IR lane — xpile-spirv-codegen
+    -- REUSES the WGSL emission and compiles it WGSL→naga(`wgsl-in`)→
+    -- naga(`spv-out`)→SPIR-V (NOT a hand-written assembler); the runtime
+    -- half RUNS the emitted SPIR-V on a real wgpu Vulkan adapter and
+    -- numerically diffs two categorically-independent emitters (the SPIR-V
+    -- sibling of the §29 WGSL wgpu witness, PMAT-950). NEW contract, so the
+    -- pilot grows 26 → 27; the entire substrate stays machine-checked.
+    `CompileRustToSpirv             -- C-COMPILE-RUST-TO-SPIRV     (PMAT-960)
   ]

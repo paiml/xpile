@@ -17,7 +17,9 @@
 //! XlatePyBoolToRustBool/PMAT-935 + XlatePyListToVec/PMAT-936 +
 //! FfiCpythonExt/PMAT-937 + CompileRustToPtxMma/PMAT-938 +
 //! PyIntArith/PMAT-948 = 23 — the CAPSTONE that makes the ENTIRE
-//! `contracts/lean/` substrate machine-checked), and asserts
+//! `contracts/lean/` substrate machine-checked; then the post-capstone NEW
+//! compile contracts CompileRustToWgsl/950 + XlateRustToWasm/951 +
+//! XlateShellToForjar/953 + CompileRustToSpirv/960 = 27), and asserts
 //! the `PROVABILITY-INVENTORY.md` PILOT count stays in lockstep. It does
 //! NOT re-prove anything — only that the bookkeeping the Lean job relies on
 //! can't drift behind the Rust gate's back.
@@ -247,6 +249,16 @@ const EXPECTED_PILOT: &[&str] = &[
     // NEW contract, so the pilot grows 25 → 26; the entire `contracts/lean/`
     // substrate stays machine-checked.
     "XlateShellToForjar",
+    // PMAT-960 (SPIR-V backend): the NEW SPIR-V compile contract joins the pilot
+    // at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY proof (an
+    // emitted SPIR-V module is determined by its structural signature: magic /
+    // version / idBound / ordered entryPoints), the proof-lane half of the native
+    // Vulkan IR lane (xpile-spirv-codegen REUSES the WGSL emission and compiles it
+    // WGSL→naga→spv; the §29 witness RUNS the emitted SPIR-V on a real wgpu Vulkan
+    // adapter — the SPIR-V sibling of the WGSL wgpu witness). NEW contract, so the
+    // pilot grows 26 → 27; the entire `contracts/lean/` substrate stays
+    // machine-checked.
+    "CompileRustToSpirv",
 ];
 
 #[test]

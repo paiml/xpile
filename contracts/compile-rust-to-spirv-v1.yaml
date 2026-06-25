@@ -1,0 +1,204 @@
+metadata:
+  id: C-COMPILE-RUST-TO-SPIRV
+  version: "1.0.0"
+  created: "2026-06-25"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Compile-time contract: how a Rust compute kernel lowers through
+    xpile-spirv-codegen to SPIR-V — the native Vulkan IR — and how the §29
+    Multi-Emitter Oracle Quorum runs the emitted SPIR-V on a real wgpu
+    Vulkan adapter to attest cross-emitter numeric agreement.
+
+    Layer 5 of the xpile contract taxonomy (compile-time / IR), the SPIR-V
+    sibling of `C-COMPILE-RUST-TO-WGSL`. The SPIR-V lane deliberately REUSES
+    the proven WGSL emission rather than hand-writing a SPIR-V assembler:
+    the (WGSL lane's) general `2.0*x + 1.0` and specialist `fma` compute
+    shaders are compiled WGSL → naga (`wgsl-in` parse + validate) → naga
+    (`spv-out`) → SPIR-V binary words. Where the WGSL contract attests a
+    PORTABLE compute abstraction, this contract attests the NATIVE Vulkan IR
+    those same kernels lower to — the witness uploads the SPIR-V binary
+    directly (`wgpu::ShaderSource::SpirV`), a genuinely distinct execution
+    path from WGSL source upload.
+
+    Asserts properties of the *emitted SPIR-V words* and of their *executed
+    output*, not just the Rust source or the meta-HIR. Falsification runs
+    the emitted SPIR-V modules on the GPU and compares the read-back float
+    vectors — if two categorically-independent emitters disagree, the
+    contract fails regardless of whether each module validated.
+  xpile:
+    layer: compile
+  references:
+    - "SPIR-V Specification — Khronos (the Vulkan intermediate language)"
+    - "naga 29 — `wgsl-in` front-end + `spv-out` back-end (WGSL→SPIR-V)"
+    - "wgpu 29 — `ShaderSource::SpirV` direct SPIR-V module upload (Vulkan)"
+    - contracts/compile-rust-to-wgsl-v1.yaml
+    - contracts/xpile-backend-trait-v1.yaml
+    - docs/specifications/sub/backend-trait.md
+  depends_on:
+    - C-XPILE-BACKEND-TRAIT
+    - C-COMPILE-RUST-TO-WGSL
+
+compile_targets:
+  - target: spirv
+    hardware:
+      # SPIR-V is the Vulkan IR; the executed witness binds to the wgpu
+      # VULKAN backend specifically (Metal/DX12 do not consume SPIR-V
+      # natively). The DiffExec engine (gated on Vulkan-adapter presence)
+      # runs the emitted SPIR-V on whatever Vulkan adapter is available.
+      backends:
+        - vulkan
+      spirv_version: [1, 3]
+    via:
+      - naga
+      - wgpu
+    backend_crate: xpile-spirv-codegen
+    # PMAT-960 (2026-06-25): the EXECUTED Vulkan SPIR-V DiffExec witness
+    # EXISTS. `SpirvDiffExecEngine` (crates/xpile-spirv-codegen/src/
+    # spirv_diffexec.rs) compiles two categorically independent WGSL
+    # emitters (general `2.0*x + 1.0`, specialist `fma`) to SPIR-V via naga
+    # and runs the SPIR-V binaries on a real wgpu Vulkan adapter, numerically
+    # comparing the executed outputs under this `quorum_policy.kind:
+    # DiffExec`. On an RTX 4090 (Vulkan) the §29 quorum records a real
+    # `DiffExecResult::Match` (max_abs_diff = 0 over the fixture vector)
+    # instead of `NotRun{no-engine}` — the load-bearing Run>=1 native-IR
+    # execution that gives the SPIR-V lane its own on-hardware witness,
+    # reusing the WGSL lane's wgpu infra (PMAT-950). The witness is gated on
+    # Vulkan-adapter presence (graceful-skip on free CI); naga/wgpu remain
+    # the production compiler + execution backend.
+    quorum_policy:
+      kind: DiffExec
+      tolerance: 1.0e-3
+    via_roles:
+      - emitter: spirv-saxpy-general
+        role: general
+        crate: xpile-spirv-codegen
+      - emitter: spirv-saxpy-specialist-fma
+        role: specialist
+        crate: xpile-spirv-codegen
+
+equations:
+  spirv_emission_structure_extensionality_diamond:
+    # Tier-defining Diamond equation (depth-1). Machine-checked by the
+    # lake-build pilot — see contracts/lean/CompileRustToSpirv.lean. An
+    # emitted SPIR-V module is determined by its structural signature
+    # (magic word, version, id-bound, ordered entry-point names), mirroring
+    # the WGSL kernel / str / list / float / set structural Diamonds.
+    lean_theorem: "XpileContracts.CCompileRustToSpirv.spirv_emission_structure_extensionality_diamond"
+    lean_file: "contracts/lean/CompileRustToSpirv.lean"
+    formula: |
+      ∀ a b : SpirvModule.
+        a.magic = b.magic → a.version = b.version →
+        a.idBound = b.idBound → a.entryPoints = b.entryPoints → a = b
+      (an emitted SPIR-V module is determined by its structural signature)
+    domain: |
+      Any emitted SPIR-V module as xpile-spirv-codegen produces it (via the
+      reused WGSL → naga → spv path), modelled by its magic word, version
+      word, declared id-bound, and the ordered entry-point names.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-COMPILE-RUST-TO-SPIRV (registers it at depth-1)"
+      - "structure extensionality over the emitted module's signature (sorry-free, core-only)"
+      - "execution-semantics agreement (the 2*x+1 DiffExec witness) is the runtime-stratum tier, deferred"
+    preconditions:
+      - "BackendConfig.target == Target::Spirv"
+    postconditions:
+      - "SPIR-V-emitting code carries citation C-COMPILE-RUST-TO-SPIRV"
+
+  spirv_emission_is_well_formed_binary:
+    formula: |
+      compile(reused_wgsl) via naga produces SPIR-V words whose first word
+        is the SPIR-V magic (0x07230203) and whose id-bound (word 3) is > 0
+    domain: |
+      A WGSL compute shader (reused from the WGSL lane) compiled to SPIR-V
+      binary words via naga's `wgsl-in` front-end + `spv-out` back-end.
+    invariants:
+      - "emitted SPIR-V begins with the SPIR-V magic number 0x07230203"
+      - "emitted SPIR-V has a complete 5-word header (magic/version/gen/bound/schema)"
+      - "emitted SPIR-V declares a non-zero id-bound (a non-empty module)"
+    preconditions:
+      - "BackendConfig.target == Target::Spirv"
+      - "BackendConfig.hardware is None or Some(HwProfile::Spirv { .. })"
+    postconditions:
+      - "emitted SPIR-V passes the offline `validate_spirv` well-formedness gate"
+      - "SPIR-V-emitting code carries citation C-COMPILE-RUST-TO-SPIRV"
+
+  diffexec_native_vulkan_ir_agreement:
+    formula: |
+      run(general_spirv, X) ≈ run(specialist_spirv, X)  ∀ X ∈ fixtures
+        within tolerance 1e-3, on a real wgpu Vulkan adapter
+    domain: |
+      Two categorically-independent SPIR-V modules computing identical
+      semantics (general `2.0*x + 1.0` compiled to an explicit mul+add;
+      specialist `fma(2.0, x, 1.0)` compiled to an `OpExtInst Fma`), both
+      uploaded as SPIR-V binaries and dispatched on the host's wgpu Vulkan
+      adapter over the fixed fixture input vector.
+    invariants:
+      - "executed outputs of general and specialist agree within tolerance"
+      - "a divergence beyond tolerance FALSIFIES the contract (CI fails)"
+      - "absence of a Vulkan adapter records NotRun (benign), never a fake Match"
+    preconditions:
+      - "spirv_emission_is_well_formed_binary holds for both emitters"
+      - "a wgpu Vulkan adapter is present (else the engine is not installed)"
+    postconditions:
+      - "QuorumStatus::Multi with DiffExecResult::Match on a Vulkan host"
+
+proof_obligations:
+  - type: postcondition
+    property: emitted SPIR-V is a well-formed binary module
+    formal: "validate_spirv(emitted_spirv) == Ok(())"
+    applies_to: spirv_emission_is_well_formed_binary
+
+  - type: postcondition
+    property: executed emitters agree within tolerance
+    formal: "max_abs_diff(run(general, X), run(specialist, X)) < 1e-3 ∀ X ∈ fixtures"
+    applies_to: diffexec_native_vulkan_ir_agreement
+
+  - type: frame
+    property: lower() does not mutate the input meta-HIR module
+    formal: "modifies() == ∅"
+    applies_to: all
+
+  - type: precondition
+    property: backend citation is recorded
+    formal: "Artifact.citations contains C-COMPILE-RUST-TO-SPIRV"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-COMPILE-SPIRV-001
+    rule: |
+      Emitted SPIR-V MUST be a well-formed binary module (first word is the
+      SPIR-V magic 0x07230203, a complete 5-word header, a non-zero id-bound).
+    prediction: |
+      `validate_spirv(emitted)` returns `Ok(())` for both emitters (the
+      reused general and specialist WGSL each compile to real SPIR-V).
+    test: |
+      cargo test -p xpile-spirv-codegen --lib
+    if_fails: |
+      The WGSL→naga→spv compile regressed (naga rejected the reused WGSL, or
+      emitted a malformed binary). Likely cause: a naga API/version change or
+      a reused-WGSL drift from the WGSL lane's harness contract.
+    ship_blocking: true
+    counter_example_classes:
+      - empty_module
+      - missing_spirv_magic
+
+  - id: FALSIFY-COMPILE-SPIRV-002
+    rule: |
+      The two categorically-independent SPIR-V modules MUST agree within
+      tolerance when executed on a real wgpu Vulkan adapter.
+    prediction: |
+      On a Vulkan host the §29 quorum records DiffExecResult::Match with
+      max_abs_diff <= 1e-3; on a host with no Vulkan adapter it records the
+      benign NotRun (never a fake Match).
+    test: |
+      cargo test -p xpile-spirv-codegen --test gpu_witness
+    if_fails: |
+      The general (`2.0*x + 1.0`) and specialist (`fma`) SPIR-V paths
+      diverged on the GPU — a real cross-emitter contradiction the §29
+      quorum is designed to catch, or the engine masqueraded an unrun lane
+      as a Match.
+    ship_blocking: true
+    counter_example_classes:
+      - executed_divergence
+      - notrun_masquerading_as_match
