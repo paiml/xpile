@@ -170,6 +170,32 @@ const EXPECTED_PILOT: &[&str] = &[
     //     `FfiCallStructuredSilver`. Layer-4 contract now machine-checked.
     //     Pilot 20 → 21; KNOWN-INCOMPLETE 3 → 2.
     "FfiCpythonExt",
+    // PMAT-938 (backlog slice): discharged the `CompileRustToPtxMma` head — the
+    // DEEPEST module (20 stacked Diamond categories, depth-3..20), and the
+    // inventory's "38 errors" was almost ONE cascading root fault. FIVE sound
+    // classes, no new termination territory:
+    // (a) the PMAT-914/915/916/928/936/937 NAME-SHADOWING — `def BoundedSmem.val
+    //     (b) := b.val` resolved `b.val` to itself (non-terminating self-call) →
+    //     `:240 fail to show termination`, and because it sits under 20 Diamonds
+    //     the broken `.val` poisoned EVERY downstream `.val`/`.property`/
+    //     `Subtype.ext`/derived-`DecidableEq` (the bulk of the 38); fix =
+    //     positional `.1` projection in the body + an explicit `DecidableEq
+    //     BoundedSmem` instance (`unfold` + `infer_instance`).
+    // (b) two `omega` heads on NAMESPACED `Nat.min`/`Nat.max` (opaque to omega
+    //     v4.15.0) — +/max·min distributivity & max/min monotonicity → core
+    //     `Nat.add_{max,min}_add_{left,right}` + `Nat.{max_le,le_min,le_max_*,
+    //     min_le_*,le_trans}`.
+    // (c) Mathlib-only absorption `Nat.max_min_self`/`Nat.min_max_self` →
+    //     `Nat.le_antisymm` over core lattice primitives.
+    // (d) Mathlib-name gaps — `Nat.eq_or_ne` → `omega`; `pow_zero`/`pow_succ`/
+    //     `pow_add`/`one_pow` → `Nat.`-namespaced; `Nat.one_le_pow` →
+    //     `Nat.pow_le_pow_left` + `Nat.one_pow`.
+    // (e) a LATENT STATEMENT bug — the `mod is *` homomorphism clause wrote
+    //     `a%2 * b%2 % 2` (parses `((a%2)*b)%2`); reparenthesized to the genuine
+    //     ring-hom `((a%2)*(b%2))%2` that `Nat.mul_mod` proves. Layer-5 Rust→PTX
+    //     GPU-compile contract now machine-checked. Pilot 21 → 22;
+    //     KNOWN-INCOMPLETE 2 → 1 (only PyIntArith 45 remains).
+    "CompileRustToPtxMma",
 ];
 
 #[test]
