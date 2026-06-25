@@ -15078,6 +15078,57 @@ fn main() {
     assert_rustc_runs("fstr_space_sign", &rust, driver);
 }
 
+/// PMAT-945 (correctness-hunt): the `:c` char-format spec on an INTEGER field —
+/// `f"{65:c}"` == "A", `f"{0x1F600:c}"` == "😀", `f"{8364:c}"` == "€" — was a
+/// clean reject. Python's `int.__format__` code `c` is exactly `chr(n)`, so the
+/// spec routes to the existing `Expr::Chr` lowering (`char::from_u32(n as u32)`)
+/// — NO new IR node. A bool delegates to int; `chr(0)` is NUL; the shared
+/// `format(n, "c")` builtin gets it too. Cross-checked vs python3.
+#[test]
+fn fstr_char_format() {
+    let rust = xpile_transpile_to_rust("fstr_char_format.py");
+    assert!(
+        // every `:c` field reuses the chr lowering (no bespoke format! string).
+        rust.contains("char::from_u32") && !rust.contains("format!(\"{:c}\""),
+        "`:c` must reuse the chr() lowering (char::from_u32), not a `{{:c}}` format!:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cc(65), "A");
+    assert_eq!(cc(97), "a");
+    assert_eq!(cc(90), "Z");
+    assert_eq!(cc_lit(), "A");
+    assert_eq!(cc_hex(), "\u{1F600}");   // 😀
+    assert_eq!(cc_euro(), "\u{20AC}");   // €
+    assert_eq!(cc(0x4E2D), "\u{4E2D}");  // 中
+    assert_eq!(cc_fmt(66), "B");         // the shared format() builtin path
+    assert_eq!(cc_bool(true), "\u{1}");  // chr(1)
+    assert_eq!(cc_bool(false), "\u{0}"); // chr(0)
+    assert_eq!(cc_zero(), "\u{0}");      // NUL
+    assert_eq!(cc_multi(72, 73), "go HI!");
+}
+"#;
+    assert_rustc_runs("fstr_char_format", &rust, driver);
+}
+
+/// PMAT-945 (correctness-hunt): a `:c` char-format spec is INT-ONLY in Python — a
+/// FLOAT `:c` raises ValueError. xpile only routes `:c` to chr for an I64 value,
+/// so a float `:c` must stay a clean reject (never a silent miscompile). vs python3.
+#[test]
+fn fstr_char_format_float_rejected() {
+    let py = fixture("fstr_char_format_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a `:c` spec on a float must be refused (Python raises ValueError), not miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported format spec `:c`") && stderr.contains("F64"),
+        "the rejection should name the unsupported `:c` spec on the F64 value:\n{stderr}"
+    );
+}
+
 /// PMAT-801 (HUNT-V19 STR-IDX-OOB): a string index out of range panicked with
 /// Rust's raw "index out of bounds" message, not the tagged `xpile: IndexError:`,
 /// so under the allowlist except a typed `except IndexError` couldn't catch it

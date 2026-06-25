@@ -15270,6 +15270,25 @@ fn apply_nonempty_format_spec(
     } else {
         (value, ty)
     };
+    // PMAT-945 (correctness-hunt): the `:c` char-format spec converts an INTEGER
+    // to the single character at that Unicode code point — `f"{65:c}"` -> "A",
+    // `f"{97:c}"` -> "a", `f"{0x1F600:c}"` -> "😀", `f"{8364:c}"` -> "€". This is
+    // exactly Python's `chr(n)` (CPython's `int.__format__` for code `c`
+    // delegates to chr), so reuse the existing `Expr::Chr` lowering
+    // (`char::from_u32(n as u32).expect(..).to_string()`) — NO new IR node, every
+    // codegen / meta-hir / ruchy / Lean lane already handles `Chr`. A bool reaches
+    // here as i64 (the PMAT-831 coercion above), so `f"{True:c}"` -> "\x01"
+    // matches `chr(1)`. `:c` is an INT-ONLY spec in Python (a float or str `:c` is
+    // a ValueError), so only fire for `I64` and let other types fall through to
+    // the existing reject — mirroring Python's own error. SCOPE: a BARE `:c` only;
+    // a width/align-combined `:c` (`f"{65:>5c}"`) stays a documented reject
+    // (follow-up), the same scoping discipline as the width-combined `:e` reject
+    // in PMAT-941. Surfaced by a python3-vs-rustc differential format-spec sweep.
+    if spec == "c" && ty == Type::I64 {
+        return Ok(Expr::Chr {
+            value: Box::new(value),
+        });
+    }
     // PMAT-942 (correctness-hunt): the SPACE sign flag ` ` — Python `f"{5: d}"` ->
     // " 5", `f"{-5: d}"` -> "-5", `f"{3.14: .2f}"` -> " 3.14", and width/zero-pad
     // combos `f"{5: 05d}"` -> " 0005", `f"{42: 6.1f}"` -> "  42.0". Python's ` `
@@ -15598,8 +15617,8 @@ fn apply_nonempty_format_spec(
         }),
         None => Err(FrontendError::Lower(format!(
             "unsupported format spec `:{spec}` (for a {ty:?} value) — supported: \
-             `.Nf` (float), `.N%` (float percent), `0Nd`/`Nd` (int), `>N`/`<N`/`^N` (align), \
-             `+`/`-` (sign) at v0.2.0"
+             `.Nf` (float), `.N%` (float percent), `0Nd`/`Nd` (int), `c` (int char), \
+             `>N`/`<N`/`^N` (align), `+`/`-` (sign) at v0.2.0"
         ))),
     }
 }
