@@ -1,16 +1,33 @@
-//! POSIX shell backend for xpile — Layer A scaffold.
+//! POSIX shell backend for xpile (see
+//! `docs/specifications/sub/bashrs-merger.md`).
 //!
-//! This is the v0.1.0 scaffold for the bashrs merger (see
-//! `docs/specifications/sub/bashrs-merger.md`). It implements the
-//! [`Backend`] trait so `Target::Shell` has a registered emitter,
-//! but the real ShellIR + quoting machinery + ShellCheck-compatible
-//! verifier is deferred to v0.2.0 (Layer A weeks 1-6).
+//! Implements the [`Backend`] trait so `Target::Shell` has a
+//! registered emitter, and renders **real POSIX shell** for the
+//! supported meta-HIR `Stmt` set. [`BashrsBackend::lower`] walks each
+//! function body and emits, via the shared [`render_stmt_lines`]
+//! walker: `Stmt::Cmd` → `program arg…`; `Stmt::Pipeline` →
+//! `stage1 | stage2 | …`; `Stmt::ShellAssign` → `NAME=value`; and
+//! `Stmt::ShellLoop` → a multi-line `header; do … done` block whose
+//! body is rendered recursively through the same walker.
 //!
-//! At v0.1.0 `lower` emits a placeholder POSIX-shell comment
-//! identifying the module name + the `C-BASHRS-POSIX-IDEMPOTENCE`
-//! Layer-1 contract citation (using the same `# xpile-contract: ...`
-//! comment idiom that `xpile-rust-codegen` uses for its citations,
-//! but with `#` instead of `//` — sh's comment syntax).
+//! Args render via [`render_arg`] (`Expr::LitStr` / `QuotedString`
+//! honouring its `QuotingStrategy` / `ShellVar` / `ShellSpecial` /
+//! `CommandSubstitution`). Every emit carries a `#!/bin/sh` shebang
+//! and a `# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE` citation line
+//! (the same `# xpile-contract: ...` idiom `xpile-rust-codegen` uses,
+//! with `#` for sh's comment syntax).
+//!
+//! A `# (no commands …)` comment is emitted **only** for genuinely
+//! empty input — a module that produces zero renderable statements —
+//! so `xpile transpile empty.sh --target shell` still yields a
+//! well-formed POSIX file. It is a diagnostic for the empty case, not
+//! a stand-in for real emission.
+//!
+//! Still future work (out of scope here): a ShellCheck-compatible
+//! verifier, and the structured `Expr::ParamExpansion` /
+//! shell control-flow *parsing* tracked in the bashrs-frontend's
+//! v0.2.0 fold (param-expansion forms currently survive as verbatim
+//! `Expr::LitStr`).
 
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
@@ -201,17 +218,20 @@ impl Backend for BashrsBackend {
     }
 
     fn lower(&self, module: &Module, _config: &BackendConfig) -> Result<Artifact, BackendError> {
-        // PMAT-039: real Layer B emit for `Stmt::Cmd`. bashrs-frontend
-        // wraps each shell script in a synthetic `main` function whose
-        // body is a `Vec<Stmt::Cmd>`. The backend walks that body and
-        // emits one shell-line per Cmd.
+        // PMAT-039/041/042/047/048/974: real Layer B emit.
+        // bashrs-frontend wraps each shell script in a synthetic `main`
+        // function whose body is a `Vec<Stmt>`; depyler-frontend
+        // produces user-named functions. The backend walks every
+        // function body and renders each emittable statement (`Cmd` /
+        // `Pipeline` / `ShellAssign` / `ShellLoop`, with their args:
+        // literals, quoted strings, `$VAR`, `$@`/`$1`/…, `$(…)`)
+        // through the shared `render_stmt_lines` walker.
         //
-        // What's deliberately NOT here yet:
-        //   * Pipelines (`cmd1 | cmd2`) — XPILE-BASHRS-MERGER-002.
-        //   * Variables / quoting / substitution — Layer B Expr-side
-        //     variants per `sub/bashrs-merger.md`.
-        //   * ShellCheck-clean output — comes with the v0.2.0 bashrs
-        //     source fold (the corpus + verifier).
+        // Still future work (not here): a ShellCheck-compatible
+        // verifier (the v0.2.0 bashrs source fold's corpus + verifier),
+        // and the structured `Expr::ParamExpansion` variant —
+        // param-expansion forms currently render as verbatim
+        // `Expr::LitStr`.
         let mut primary = String::new();
         writeln!(primary, "#!/bin/sh")
             .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
@@ -293,11 +313,11 @@ impl Backend for BashrsBackend {
             }
         }
         if emitted_commands == 0 {
-            // Empty input (no Stmt::Cmd produced). Mirror the v0.1.0
-            // scaffold posture so `xpile transpile empty.sh --target
-            // shell` still produces a well-formed POSIX file. Keeps
-            // the test that exercises the structurally-empty Shell
-            // module green.
+            // Genuinely empty input — the module produced zero
+            // renderable statements. Emit a diagnostic comment so
+            // `xpile transpile empty.sh --target shell` still produces
+            // a well-formed POSIX file (this comment appears ONLY for
+            // empty input; non-empty input renders real shell above).
             writeln!(
                 primary,
                 "# (no commands — empty script or parse produced 0 Stmt::Cmd)"
@@ -975,10 +995,9 @@ mod tests {
         // that would regress any one variant's rendering without
         // tripping the narrow per-variant tests.
         //
-        // We don't include Stmt::ShellLoop here — the v0.1.0
-        // emission carries a body placeholder rather than fully
-        // rendering nested statements, so it has its own narrow
-        // test (`render_shell_loop_for_kind`).
+        // We don't include Stmt::ShellLoop here — full loop-body
+        // rendering (PMAT-974) has its own dedicated tests
+        // (`render_shell_loop_*` and `lower_module_with_loop_emits_full_body`).
         use xpile_meta_hir::{
             Block, Expr, Function, Item, QuotingStrategy, SourceLang, Stmt, Type,
         };
@@ -1072,6 +1091,58 @@ mod tests {
         assert!(
             art.primary.contains("\ncat foo | grep bar | wc -l\n"),
             "expected three-stage pipeline emit; got:\n{}",
+            art.primary
+        );
+    }
+
+    #[test]
+    fn lower_nonempty_emits_real_shell_not_placeholder_comment() {
+        // PMAT-992 honesty guard: for NON-empty input, `lower` must
+        // emit real POSIX statements — never the empty-input
+        // `# (no commands …)` diagnostic, and never any "placeholder"
+        // / "deferred to v0.2.0" stand-in. Pins the property the old
+        // module doc-comment lied about (it claimed `lower` emitted a
+        // placeholder comment).
+        use xpile_meta_hir::{Block, Expr, Function, Item, Stmt, Type};
+        let module = Module {
+            name: "real".into(),
+            source_lang: xpile_meta_hir::SourceLang::Shell,
+            items: vec![Item::Function(Function {
+                name: "main".into(),
+                params: vec![],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: vec![Stmt::ShellAssign {
+                        name: "NAME".into(),
+                        value: Expr::LitStr("world".into()),
+                    }],
+                    trailing_return: Expr::LitInt(0),
+                },
+            })],
+            ffi_boundaries: vec![],
+        };
+        let cfg = BackendConfig {
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = BashrsBackend.lower(&module, &cfg).expect("lower");
+        // Real statement emitted.
+        assert!(
+            art.primary.contains("\nNAME=world\n"),
+            "expected real `NAME=world` statement; got:\n{}",
+            art.primary
+        );
+        // No empty-input diagnostic for non-empty input.
+        assert!(
+            !art.primary.contains("(no commands"),
+            "non-empty input must not emit the empty diagnostic; got:\n{}",
+            art.primary
+        );
+        // No "placeholder" stand-in anywhere in the emit.
+        assert!(
+            !art.primary.to_lowercase().contains("placeholder"),
+            "emit must not contain a placeholder; got:\n{}",
             art.primary
         );
     }
