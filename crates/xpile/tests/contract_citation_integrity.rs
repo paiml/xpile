@@ -21,8 +21,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use depyler_frontend::PythonFrontend;
+use xpile_frontend::Frontend;
+use xpile_meta_hir::{Function, Item, Module};
 
 /// All `id:` values declared in `contracts/*.yaml` (both the `C-*` governing
 /// contracts and their `QA-*` siblings).
@@ -307,5 +311,127 @@ fn every_emitted_hybrid_shim_citation_resolves() {
         cited.contains("C-FFI-CPYTHON-EXT"),
         "PMAT-907: expected the emitted hybrid shims to cite `C-FFI-CPYTHON-EXT` \
          (hybrid_sum's Python→C boundary). Cited: {cited:?}"
+    );
+}
+
+/// Every `Function` reachable in the codegen surface of a Module: the
+/// top-level `Item::Function`s plus the instance/static methods inside an
+/// `Item::Struct`. This is EXACTLY the set of functions `emit_contract_citations`
+/// runs over in `xpile-rust-codegen` (struct definitions and consts/enums carry
+/// no per-function citation line), so the derived gate below cannot over-expect a
+/// citation the codegen never emits.
+fn reachable_functions(module: &Module) -> Vec<&Function> {
+    let mut fns = Vec::new();
+    for item in &module.items {
+        match item {
+            Item::Function(f) => fns.push(f),
+            Item::Struct { methods, .. } => fns.extend(methods.iter()),
+            Item::Const { .. } | Item::Enum { .. } => {}
+        }
+    }
+    fns
+}
+
+/// PMAT-955 (Pillar-A contract-citation-integrity capstone): the DERIVED
+/// citation-completeness gate.
+///
+/// The `every_emitted_citation_resolves_to_an_on_disk_contract` gate above pins
+/// expected citations with a HAND-CURATED `EXPECTED` list. That catches a witness
+/// fixture dropping a known citation, but it is drift-prone in the OTHER
+/// direction: when a NEW type family is wired into `Function::applicable_contracts()`
+/// (the str/list/dict/float/set/class/tuple/Optional/bool arc), nothing forces a
+/// matching `EXPECTED` entry, so a newly-applicable-but-uncited construct can ship
+/// silently — the exact capability-vs-contract drift (audit-design.md §6) PMAT-955
+/// exists to close.
+///
+/// This gate removes the hand list from the loop entirely. For each `.py` fixture
+/// it parses the source through the REAL `PythonFrontend`, asks each reachable
+/// `Function` for its `applicable_contracts()` (the SAME call codegen cites from),
+/// unions them into the fixture's EXPECTED set, transpiles the fixture, and FAILS
+/// if any derived id is absent from the emitted `// xpile-contract:` lines. The
+/// expected set is COMPUTED from the meta-HIR, so it can never drift behind a new
+/// `applicable_contracts()` arm: wire a family in and forget to emit its citation,
+/// and this gate goes RED for every fixture exercising it.
+#[test]
+fn every_applicable_contract_is_actually_cited() {
+    let bin = env!("CARGO_BIN_EXE_xpile");
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+
+    let mut checked = 0usize;
+    // Fixtures whose derived expected-set is non-empty (so we know the gate has
+    // teeth — at least one fixture drives a real applicable contract).
+    let mut with_expectations = 0usize;
+    let mut missing: Vec<String> = Vec::new();
+
+    for entry in fs::read_dir(&fixtures).expect("tests/fixtures dir readable") {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|s| s.to_str()) != Some("py") {
+            continue;
+        }
+        let src = fs::read_to_string(&path).unwrap();
+        // Derive the expected citation set from the live frontend. A fixture the
+        // Python frontend cannot lower (deliberate-reject corpus, multi-construct
+        // probes) is skipped — the binary would not emit Rust for it either, so it
+        // is out of scope for an EMITTED-citation gate.
+        let Ok(module) = PythonFrontend.parse_and_lower(Path::new(&path), &src) else {
+            continue;
+        };
+        let mut expected: HashSet<&'static str> = HashSet::new();
+        for f in reachable_functions(&module) {
+            for id in f.applicable_contracts() {
+                expected.insert(id);
+            }
+        }
+        if expected.is_empty() {
+            continue;
+        }
+
+        // Transpile through the binary and collect the EMITTED citations.
+        let out = Command::new(bin)
+            .args(["transpile", path.to_str().unwrap()])
+            .output()
+            .expect("xpile binary runs");
+        if !out.status.success() {
+            // Frontend lowered but the default (Rust) backend declined (a capability
+            // gap, not an integrity gap). Skip — no emitted code to cite against.
+            continue;
+        }
+        let rust = String::from_utf8_lossy(&out.stdout);
+        let emitted: HashSet<String> = rust
+            .lines()
+            .filter_map(|l| l.trim_start().strip_prefix("// xpile-contract:"))
+            .map(|r| r.trim().to_string())
+            .collect();
+
+        let fname = path.file_name().unwrap().to_string_lossy().to_string();
+        checked += 1;
+        with_expectations += 1;
+        for id in &expected {
+            if !emitted.contains(*id) {
+                missing.push(format!(
+                    "{fname}: `applicable_contracts()` derives `{id}` from the parsed \
+                     meta-HIR, but the emitted Rust carries NO `// xpile-contract: {id}` \
+                     line (emitted = {emitted:?})"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        with_expectations > 20,
+        "PMAT-955: expected a broad corpus of contract-bearing fixtures to drive the \
+         derived gate, only {with_expectations} had a non-empty applicable-contract set \
+         (parsing or codegen regressed?)"
+    );
+    assert!(
+        missing.is_empty(),
+        "PMAT-955: a construct with an applicable contract shipped UNCITED — \
+         `Function::applicable_contracts()` and the emitted `// xpile-contract:` lines \
+         diverged. This is the capability-vs-contract drift the citation-integrity gate \
+         closes; either emit the citation in xpile-rust-codegen or (if the contract no \
+         longer applies) drop it from applicable_contracts(). Offenders ({} across \
+         {checked} fixtures):\n{}",
+        missing.len(),
+        missing.join("\n")
     );
 }
