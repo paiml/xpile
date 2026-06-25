@@ -14,7 +14,7 @@ use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, Param, Radix, SetOp, SetPredOp, Stmt, StrMethodOp, Type, UnOp,
+    NumBuiltinOp, Param, Radix, SetOp, SetPredOp, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 // PMAT-789 (HUNT-V18 EXC-001): the typed-`except` discriminator is now an
@@ -87,9 +87,25 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
         module.source_lang, module.name
     )?;
     writeln!(out)?;
+    // PMAT-967: C sources lower with C arithmetic semantics (fixed-width
+    // `i32`/`i64`/`u32`/`u64`, two's-complement wrapping overflow; IEEE `f64`/
+    // `f32` on the float widths) via an isolated emit path — the exact twin of
+    // the Rust backend's `is_c` branch, surface-shifted to Ruchy's `fun ... ->`
+    // header. WITHOUT this, a `SourceLang::C` module routed through the
+    // Python/Ruchy `emit_function` and silently emitted checked-`i64`/BigInt
+    // arithmetic for a `int add(int, int)` — a mis-emit (wrong wrap width AND
+    // panic-on-overflow instead of C wraparound). Governed by `C-C-INT-ARITH`
+    // (integer widths) / `C-C-FLOAT-ARITH` (float widths), same as Rust.
+    let is_c = matches!(module.source_lang, SourceLang::C);
     for item in &module.items {
         match item {
-            Item::Function(f) => emit_function(&mut out, f)?,
+            Item::Function(f) => {
+                if is_c {
+                    emit_c_function(&mut out, f)?;
+                } else {
+                    emit_function(&mut out, f)?;
+                }
+            }
             // PMAT-502bj: module-level constant → `const NAME: TY = VALUE;`.
             Item::Const { name, ty, value } => {
                 write!(out, "const {name}: ")?;
@@ -3733,6 +3749,430 @@ impl Backend for RuchyBackend {
     }
 }
 
+// ---------------------------------------------------------------------------
+// PMAT-967: C-arithmetic emit path (the Ruchy twin of the Rust backend's C
+// path). A `SourceLang::C` module lowers each `int`/`long`/`unsigned`/`double`/
+// `float` function at its UNIFORM scalar width with C semantics: two's-
+// complement wrapping for the integer widths (the deterministic UB-free
+// discharge `C-C-INT-ARITH` commits to; DEFINED wraparound for the unsigned
+// widths) and plain IEEE infix for the float widths (`C-C-FLOAT-ARITH`). The
+// emitted bodies (`wrapping_add`, `i32` literal suffixes, `as u32` shift casts)
+// are valid Ruchy because Ruchy compiles through Rust; only the function header
+// shifts from Rust's `pub fn` to Ruchy's `fun`.
+// ---------------------------------------------------------------------------
+
+/// The uniform scalar width a C function rides. Mirrors the Rust backend's
+/// `CWidth`: `rust_ty`/`lit_suffix` are the Ruchy (= Rust) type name and literal
+/// suffix; `is_float` selects plain-IEEE infix over the integer `wrapping_*`.
+#[derive(Clone, Copy)]
+struct CWidth {
+    rust_ty: &'static str,
+    lit_suffix: &'static str,
+    is_float: bool,
+}
+
+const C_WIDTH_I32: CWidth = CWidth {
+    rust_ty: "i32",
+    lit_suffix: "i32",
+    is_float: false,
+};
+const C_WIDTH_I64: CWidth = CWidth {
+    rust_ty: "i64",
+    lit_suffix: "i64",
+    is_float: false,
+};
+const C_WIDTH_F64: CWidth = CWidth {
+    rust_ty: "f64",
+    lit_suffix: "f64",
+    is_float: true,
+};
+const C_WIDTH_F32: CWidth = CWidth {
+    rust_ty: "f32",
+    lit_suffix: "f32",
+    is_float: true,
+};
+// PMAT-918/921: the unsigned C widths ride `u32`/`u64`; here wrapping is the
+// DEFINED C semantics for unsigned overflow (not the UB-conservative discharge
+// the signed widths use).
+const C_WIDTH_U32: CWidth = CWidth {
+    rust_ty: "u32",
+    lit_suffix: "u32",
+    is_float: false,
+};
+const C_WIDTH_U64: CWidth = CWidth {
+    rust_ty: "u64",
+    lit_suffix: "u64",
+    is_float: false,
+};
+
+/// "Widest wins" width pick (mirror of the Rust backend): any `f64` → `f64`;
+/// else any `f32` → `f32`; else any `CULong` → `u64`; else any `CUInt` → `u32`;
+/// else any `CLong` → `i64`; else `i32`.
+fn c_function_width(f: &Function) -> CWidth {
+    let any_f64 = matches!(f.return_type, Type::F64)
+        || f.params.iter().any(|p| matches!(p.ty, Type::F64))
+        || c_stmts_have_ty(&f.body.stmts, &Type::F64);
+    if any_f64 {
+        return C_WIDTH_F64;
+    }
+    let any_f32 = matches!(f.return_type, Type::F32)
+        || f.params.iter().any(|p| matches!(p.ty, Type::F32))
+        || c_stmts_have_ty(&f.body.stmts, &Type::F32);
+    if any_f32 {
+        return C_WIDTH_F32;
+    }
+    let any_culong = matches!(f.return_type, Type::CULong)
+        || f.params.iter().any(|p| matches!(p.ty, Type::CULong))
+        || c_stmts_have_ty(&f.body.stmts, &Type::CULong);
+    if any_culong {
+        return C_WIDTH_U64;
+    }
+    let any_cuint = matches!(f.return_type, Type::CUInt)
+        || f.params.iter().any(|p| matches!(p.ty, Type::CUInt))
+        || c_stmts_have_ty(&f.body.stmts, &Type::CUInt);
+    if any_cuint {
+        return C_WIDTH_U32;
+    }
+    let any_clong = matches!(f.return_type, Type::CLong)
+        || f.params.iter().any(|p| matches!(p.ty, Type::CLong))
+        || c_stmts_have_ty(&f.body.stmts, &Type::CLong);
+    if any_clong {
+        C_WIDTH_I64
+    } else {
+        C_WIDTH_I32
+    }
+}
+
+/// Does any `let` (recursing into `while`/`if` bodies) declare a local of type
+/// `want`? Drives the "widest wins" width pick (mirror of the Rust backend).
+fn c_stmts_have_ty(stmts: &[Stmt], want: &Type) -> bool {
+    stmts.iter().any(|s| match s {
+        Stmt::Let { ty, .. } => ty == want,
+        Stmt::While { body, .. } => c_stmts_have_ty(body, want),
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => c_stmts_have_ty(then_body, want) || c_stmts_have_ty(else_body, want),
+        _ => false,
+    })
+}
+
+fn emit_c_function(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError> {
+    // A pointer / bare `char` param or return is meaningless on this DATA-
+    // BEARING scalar-width path (pointers are an FFI-BOUNDARY concern). REFUSE
+    // rather than silently render a `*mut c_int` as the function's integer width
+    // — exactly the Rust backend's honest refusal.
+    let has_ptr = matches!(f.return_type, Type::Ptr { .. } | Type::CChar)
+        || f.params
+            .iter()
+            .any(|p| matches!(p.ty, Type::Ptr { .. } | Type::CChar));
+    if has_ptr {
+        return Err(RuchyCodegenError::Unsupported(format!(
+            "C function `{}` has a pointer / `char` param or return — the C→Ruchy \
+             arithmetic emit path lowers only scalar-width bodies (decy has no \
+             pointer ops); a pointer boundary is an FFI-manifest shim concern",
+            f.name
+        )));
+    }
+    let w = c_function_width(f);
+    if w.is_float {
+        // A C `double`/`float` function obeys IEEE arithmetic, governed by
+        // `C-C-FLOAT-ARITH` (the float sibling of `C-C-INT-ARITH`).
+        let c_name = if w.rust_ty == "f32" {
+            "float"
+        } else {
+            "double"
+        };
+        writeln!(
+            out,
+            "// xpile-arith: C {c_name} -> IEEE {} (governed by C-C-FLOAT-ARITH)",
+            w.rust_ty
+        )?;
+        writeln!(out, "// xpile-contract: C-C-FLOAT-ARITH")?;
+    } else {
+        // C int/long/unsigned arithmetic is governed by `C-C-INT-ARITH`.
+        writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
+    }
+    // Ruchy: `fun name(params) -> ret { body }` (no `pub`), the only surface
+    // difference from the Rust backend's `pub fn`.
+    write!(out, "fun {}(", f.name)?;
+    for (i, p) in f.params.iter().enumerate() {
+        if i > 0 {
+            write!(out, ", ")?;
+        }
+        write!(out, "{}: {}", p.name, w.rust_ty)?;
+    }
+    writeln!(out, ") -> {} {{", w.rust_ty)?;
+    for stmt in &f.body.stmts {
+        emit_c_stmt(out, stmt, "    ", w)?;
+    }
+    write!(out, "    ")?;
+    emit_c_expr(out, &f.body.trailing_return, w)?;
+    writeln!(out)?;
+    writeln!(out, "}}")?;
+    Ok(())
+}
+
+fn emit_c_stmt(
+    out: &mut String,
+    stmt: &Stmt,
+    indent: &str,
+    w: CWidth,
+) -> Result<(), RuchyCodegenError> {
+    match stmt {
+        Stmt::Let {
+            name,
+            value,
+            mutable,
+            ..
+        } => {
+            let kw = if *mutable { "let mut" } else { "let" };
+            write!(out, "{indent}{kw} {name}: {} = ", w.rust_ty)?;
+            emit_c_expr(out, value, w)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        Stmt::Assign { name, value } => {
+            write!(out, "{indent}{name} = ")?;
+            emit_c_expr(out, value, w)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        // C early `return <expr>;` (guard clause).
+        Stmt::Return(e) => {
+            write!(out, "{indent}return ")?;
+            emit_c_expr(out, e, w)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        Stmt::While { cond, body } => {
+            write!(out, "{indent}while ")?;
+            emit_c_expr(out, cond, w)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in body {
+                emit_c_stmt(out, s, &inner, w)?;
+            }
+            writeln!(out, "{indent}}}")?;
+            Ok(())
+        }
+        // C `if (c) { … } else { … }` → Ruchy if/else statement (the `else`
+        // block omitted when empty).
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            write!(out, "{indent}if ")?;
+            emit_c_expr(out, cond, w)?;
+            writeln!(out, " {{")?;
+            let inner = format!("{indent}    ");
+            for s in then_body {
+                emit_c_stmt(out, s, &inner, w)?;
+            }
+            if else_body.is_empty() {
+                writeln!(out, "{indent}}}")?;
+            } else {
+                writeln!(out, "{indent}}} else {{")?;
+                for s in else_body {
+                    emit_c_stmt(out, s, &inner, w)?;
+                }
+                writeln!(out, "{indent}}}")?;
+            }
+            Ok(())
+        }
+        other => Err(RuchyCodegenError::Unsupported(format!(
+            "C backend supports `int x = e;`, `x = e;`, `if (c) {{ … }} else {{ … }}`, and `while (c) {{ … }}`, got {other:?}"
+        ))),
+    }
+}
+
+fn emit_c_expr(out: &mut String, e: &Expr, w: CWidth) -> Result<(), RuchyCodegenError> {
+    match e {
+        // The literal suffix tracks the function width so the body is
+        // internally type-consistent. An int literal in a float-width function
+        // emits as `<v>f64`/`<v>f32`.
+        Expr::LitInt(v) => write!(out, "{v}{}", w.lit_suffix)?,
+        Expr::LitFloat(v) => {
+            let suffix = if w.is_float { w.lit_suffix } else { "f64" };
+            write!(out, "{v}{suffix}")?
+        }
+        Expr::Ident(name) => write!(out, "{name}")?,
+        Expr::BinOp { op, lhs, rhs } => emit_c_binop(out, *op, lhs, rhs, w)?,
+        Expr::UnOp { op, operand } => match op {
+            // C unary minus on an integer is wrapping (INT_MIN negation is UB
+            // in C; `wrapping_neg` is the sound deterministic discharge). On a
+            // float it is plain IEEE negation `-(x)`.
+            UnOp::Neg if w.is_float => {
+                write!(out, "-(")?;
+                emit_c_expr(out, operand, w)?;
+                write!(out, ")")?;
+            }
+            UnOp::Neg => {
+                write!(out, "(")?;
+                emit_c_expr(out, operand, w)?;
+                write!(out, ").wrapping_neg()")?;
+            }
+            UnOp::Not => {
+                write!(out, "!(")?;
+                emit_c_expr(out, operand, w)?;
+                write!(out, ")")?;
+            }
+            UnOp::BitNot => {
+                write!(out, "!(")?;
+                emit_c_expr(out, operand, w)?;
+                write!(out, ")")?;
+            }
+        },
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            write!(out, "if ")?;
+            emit_c_expr(out, cond, w)?;
+            write!(out, " {{ ")?;
+            emit_c_expr(out, then_expr, w)?;
+            write!(out, " }} else {{ ")?;
+            emit_c_expr(out, else_expr, w)?;
+            write!(out, " }}")?;
+        }
+        Expr::Call { callee, args } => {
+            write!(out, "{callee}(")?;
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 {
+                    write!(out, ", ")?;
+                }
+                emit_c_expr(out, a, w)?;
+            }
+            write!(out, ")")?;
+        }
+        other => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "C backend slice 1 does not lower {other:?} — supported: int literals, \
+                 identifiers, calls, + - *, comparisons, && ||, unary - !, and the ternary"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn emit_c_binop(
+    out: &mut String,
+    op: BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    w: CWidth,
+) -> Result<(), RuchyCodegenError> {
+    // Arithmetic: wrapping (C signed overflow is UB → deterministic two's-
+    // complement; unsigned wrap is DEFINED). Comparisons / logicals: plain
+    // infix producing a `bool`. The `wrapping_*` methods are width-agnostic in
+    // syntax (they wrap at the operand's width).
+    let wrapping = |out: &mut String, method: &str| -> Result<(), RuchyCodegenError> {
+        write!(out, "(")?;
+        emit_c_expr(out, lhs, w)?;
+        write!(out, ").{method}(")?;
+        emit_c_expr(out, rhs, w)?;
+        write!(out, ")")?;
+        Ok(())
+    };
+    let infix = |out: &mut String, sym: &str| -> Result<(), RuchyCodegenError> {
+        emit_c_expr(out, lhs, w)?;
+        write!(out, " {sym} ")?;
+        emit_c_expr(out, rhs, w)?;
+        Ok(())
+    };
+    // A FULLY-parenthesized infix `(lhs OP rhs)` for the C bitwise operators —
+    // the parens pin the C-intended grouping against Rust's different native
+    // bitwise/comparison precedence.
+    let paren_infix = |out: &mut String,
+                       lhs: &Expr,
+                       sym: &str,
+                       rhs: &Expr,
+                       w: CWidth|
+     -> Result<(), RuchyCodegenError> {
+        write!(out, "(")?;
+        emit_c_expr(out, lhs, w)?;
+        write!(out, " {sym} ")?;
+        emit_c_expr(out, rhs, w)?;
+        write!(out, ")")?;
+        Ok(())
+    };
+    // A C shift `(lhs).wrapping_shl((rhs) as u32)` — `wrapping_shl`/
+    // `wrapping_shr` mask the shift distance to the operand bit width, so the
+    // result is TOTAL and UB-free. The std signature takes the shift amount as
+    // `u32`, hence the `as u32` cast.
+    let wrapping_shift = |out: &mut String,
+                          lhs: &Expr,
+                          method: &str,
+                          rhs: &Expr,
+                          w: CWidth|
+     -> Result<(), RuchyCodegenError> {
+        write!(out, "(")?;
+        emit_c_expr(out, lhs, w)?;
+        write!(out, ").{method}((")?;
+        emit_c_expr(out, rhs, w)?;
+        write!(out, ") as u32)")?;
+        Ok(())
+    };
+    match op {
+        // On a float width, C arithmetic is plain IEEE infix (`+ - * / %`) —
+        // f64/f32 have no `wrapping_*` and never wrap.
+        BinOp::Add if w.is_float => infix(out, "+")?,
+        BinOp::Sub if w.is_float => infix(out, "-")?,
+        BinOp::Mul if w.is_float => infix(out, "*")?,
+        BinOp::FloorDiv if w.is_float => infix(out, "/")?,
+        BinOp::Mod if w.is_float => infix(out, "%")?,
+        BinOp::Add => wrapping(out, "wrapping_add")?,
+        BinOp::Sub => wrapping(out, "wrapping_sub")?,
+        BinOp::Mul => wrapping(out, "wrapping_mul")?,
+        // C `/` truncates toward zero (Rust integer `/` does too);
+        // `wrapping_div`/`wrapping_rem` add the INT_MIN/-1 UB guard. The
+        // frontend carries C truncating div/rem as FloorDiv/Mod (shared IR
+        // variants), NOT Python floor.
+        BinOp::FloorDiv => wrapping(out, "wrapping_div")?,
+        BinOp::Mod => wrapping(out, "wrapping_rem")?,
+        BinOp::Eq => infix(out, "==")?,
+        BinOp::NotEq => infix(out, "!=")?,
+        BinOp::Lt => infix(out, "<")?,
+        BinOp::LtEq => infix(out, "<=")?,
+        BinOp::Gt => infix(out, ">")?,
+        BinOp::GtEq => infix(out, ">=")?,
+        BinOp::And => infix(out, "&&")?,
+        BinOp::Or => infix(out, "||")?,
+        // C bitwise `& | ^` are integer-only — invalid on a float operand (a C
+        // type error). Refuse on the float widths rather than mis-emit.
+        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor if w.is_float => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "C bitwise operator BinOp::{op:?} is not valid on the float width \
+                 `{}` (bitwise ops require an integer operand in C)",
+                w.rust_ty
+            )));
+        }
+        BinOp::BitAnd => paren_infix(out, lhs, "&", rhs, w)?,
+        BinOp::BitOr => paren_infix(out, lhs, "|", rhs, w)?,
+        BinOp::BitXor => paren_infix(out, lhs, "^", rhs, w)?,
+        // C shift `<< >>` → `wrapping_shl`/`wrapping_shr` (total, UB-free).
+        BinOp::Shl | BinOp::Shr if w.is_float => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "C shift operator BinOp::{op:?} is not valid on the float width \
+                 `{}` (shift requires an integer operand in C)",
+                w.rust_ty
+            )));
+        }
+        BinOp::Shl => wrapping_shift(out, lhs, "wrapping_shl", rhs, w)?,
+        BinOp::Shr => wrapping_shift(out, lhs, "wrapping_shr", rhs, w)?,
+        other => {
+            return Err(RuchyCodegenError::Unsupported(format!(
+                "C backend slice 1 does not lower BinOp::{other:?} — power is \
+                 deferred to a later decy slice"
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3828,5 +4268,219 @@ mod tests {
         // PMAT-538: floor correction, not div_euclid (wrong for a neg divisor).
         assert!(ruchy.contains("checked_div") && ruchy.contains("__q - 1"));
         assert!(!ruchy.contains("div_euclid"));
+    }
+
+    // -- PMAT-967: C-arithmetic Ruchy emit path (parity with the Rust backend) --
+
+    fn c_module(name: &str, items: Vec<Item>) -> Module {
+        Module {
+            name: name.into(),
+            source_lang: SourceLang::C,
+            items,
+            ffi_boundaries: Vec::new(),
+        }
+    }
+
+    /// `int <name>(int a, int b) { return a OP b; }` — the canonical C scalar
+    /// fixture decy produces, parameterised on the binary operator.
+    fn c_int_binop_fn(name: &str, op: BinOp) -> Function {
+        Function {
+            name: name.into(),
+            params: vec![
+                Param {
+                    name: "a".into(),
+                    ty: Type::I64,
+                    mutable: false,
+                },
+                Param {
+                    name: "b".into(),
+                    ty: Type::I64,
+                    mutable: false,
+                },
+            ],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::BinOp {
+                    op,
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn c_int_add_emits_wrapping_i32_not_checked_i64() {
+        // BEFORE PMAT-967 this routed through `emit_function` and emitted the
+        // Python `checked_add` / i64 path — a mis-emit for C's wrapping i32.
+        let m = c_module(
+            "fixture",
+            vec![Item::Function(c_int_binop_fn("add", BinOp::Add))],
+        );
+        let ruchy = emit_module(&m).expect("emit ok");
+        // C arithmetic: two's-complement wrapping at the i32 width, NOT the
+        // panic-on-overflow checked path the Python/Ruchy default uses.
+        assert!(
+            ruchy.contains("(a).wrapping_add(b)"),
+            "expected wrapping_add: got\n{ruchy}"
+        );
+        assert!(
+            !ruchy.contains("checked_add"),
+            "C path must NOT emit the checked (panic) path: got\n{ruchy}"
+        );
+        // Width: the i32 function signature, not i64.
+        assert!(
+            ruchy.contains("fun add(a: i32, b: i32) -> i32"),
+            "expected i32-width `fun` header: got\n{ruchy}"
+        );
+        // Ruchy header, not Rust's `pub fn`.
+        assert!(!ruchy.contains("pub fn"));
+        // Cites the C integer-arithmetic contract.
+        assert!(
+            ruchy.contains("// xpile-contract: C-C-INT-ARITH"),
+            "expected C-C-INT-ARITH citation: got\n{ruchy}"
+        );
+    }
+
+    #[test]
+    fn c_int_sub_mul_div_mod_are_wrapping() {
+        for (op, method) in [
+            (BinOp::Sub, "wrapping_sub"),
+            (BinOp::Mul, "wrapping_mul"),
+            (BinOp::FloorDiv, "wrapping_div"),
+            (BinOp::Mod, "wrapping_rem"),
+        ] {
+            let m = c_module("fixture", vec![Item::Function(c_int_binop_fn("op", op))]);
+            let ruchy = emit_module(&m).expect("emit ok");
+            assert!(
+                ruchy.contains(&format!("(a).{method}(b)")),
+                "expected {method} for {op:?}: got\n{ruchy}"
+            );
+        }
+    }
+
+    #[test]
+    fn c_long_function_rides_i64_wrapping() {
+        let mut f = c_int_binop_fn("addl", BinOp::Add);
+        f.params[0].ty = Type::CLong;
+        f.params[1].ty = Type::CLong;
+        f.return_type = Type::CLong;
+        let ruchy = emit_module(&c_module("fixture", vec![Item::Function(f)])).expect("emit ok");
+        assert!(
+            ruchy.contains("fun addl(a: i64, b: i64) -> i64"),
+            "expected i64-width header: got\n{ruchy}"
+        );
+        assert!(ruchy.contains("(a).wrapping_add(b)"));
+    }
+
+    #[test]
+    fn c_unsigned_function_rides_u32_wrapping() {
+        let mut f = c_int_binop_fn("addu", BinOp::Add);
+        f.params[0].ty = Type::CUInt;
+        f.params[1].ty = Type::CUInt;
+        f.return_type = Type::CUInt;
+        let ruchy = emit_module(&c_module("fixture", vec![Item::Function(f)])).expect("emit ok");
+        assert!(
+            ruchy.contains("fun addu(a: u32, b: u32) -> u32"),
+            "expected u32-width header: got\n{ruchy}"
+        );
+        assert!(ruchy.contains("(a).wrapping_add(b)"));
+    }
+
+    #[test]
+    fn c_double_function_uses_ieee_infix_and_float_contract() {
+        let mut f = c_int_binop_fn("addd", BinOp::Add);
+        f.params[0].ty = Type::F64;
+        f.params[1].ty = Type::F64;
+        f.return_type = Type::F64;
+        let ruchy = emit_module(&c_module("fixture", vec![Item::Function(f)])).expect("emit ok");
+        // IEEE infix `+`, NOT a wrapping method (f64 has no `wrapping_*`).
+        assert!(
+            ruchy.contains("fun addd(a: f64, b: f64) -> f64"),
+            "expected f64-width header: got\n{ruchy}"
+        );
+        assert!(ruchy.contains("a + b"));
+        assert!(!ruchy.contains("wrapping"));
+        assert!(
+            ruchy.contains("// xpile-contract: C-C-FLOAT-ARITH"),
+            "double fn cites the IEEE float contract: got\n{ruchy}"
+        );
+    }
+
+    #[test]
+    fn c_bitwise_and_shift_lower() {
+        let m = c_module(
+            "fixture",
+            vec![
+                Item::Function(c_int_binop_fn("band", BinOp::BitAnd)),
+                Item::Function(c_int_binop_fn("shl", BinOp::Shl)),
+            ],
+        );
+        let ruchy = emit_module(&m).expect("emit ok");
+        // Bitwise: fully-parenthesised infix to pin C grouping.
+        assert!(ruchy.contains("(a & b)"), "expected (a & b): got\n{ruchy}");
+        // Shift: wrapping_shl with the `as u32` distance cast.
+        assert!(
+            ruchy.contains("(a).wrapping_shl((b) as u32)"),
+            "expected wrapping_shl((..) as u32): got\n{ruchy}"
+        );
+    }
+
+    #[test]
+    fn c_if_while_body_lowers() {
+        // `int clamp(int a) { if (a < 0) { return 0; } return a; }`
+        let f = Function {
+            name: "clamp".into(),
+            params: vec![Param {
+                name: "a".into(),
+                ty: Type::I64,
+                mutable: false,
+            }],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![Stmt::If {
+                    cond: Expr::BinOp {
+                        op: BinOp::Lt,
+                        lhs: Box::new(Expr::Ident("a".into())),
+                        rhs: Box::new(Expr::LitInt(0)),
+                    },
+                    then_body: vec![Stmt::Return(Expr::LitInt(0))],
+                    else_body: vec![],
+                }],
+                trailing_return: Expr::Ident("a".into()),
+            },
+        };
+        let ruchy = emit_module(&c_module("fixture", vec![Item::Function(f)])).expect("emit ok");
+        // The int literal carries the i32 width suffix (`0i32`), keeping the body
+        // internally type-consistent — same as the Rust backend's C path.
+        assert!(ruchy.contains("if a < 0i32 {"), "got\n{ruchy}");
+        assert!(ruchy.contains("return 0i32;"), "got\n{ruchy}");
+    }
+
+    #[test]
+    fn c_pointer_function_is_refused_not_misemitted() {
+        let f = Function {
+            name: "deref".into(),
+            params: vec![Param {
+                name: "p".into(),
+                ty: Type::Ptr {
+                    mutable: false,
+                    pointee: Box::new(Type::I64),
+                },
+                mutable: false,
+            }],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::LitInt(0),
+            },
+        };
+        let err = emit_module(&c_module("fixture", vec![Item::Function(f)]))
+            .expect_err("a pointer C function must be refused, not mis-emitted");
+        assert!(
+            matches!(err, RuchyCodegenError::Unsupported(_)),
+            "expected honest Unsupported refusal, got {err:?}"
+        );
     }
 }
