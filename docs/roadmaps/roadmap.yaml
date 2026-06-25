@@ -2,6 +2,26 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/xpile
 roadmap:
+- id: PMAT-950
+  github_issue: null
+  item_type: task
+  title: 'PMAT-950: [§29 GPU] FIRST real EXECUTED *cross-vendor* GPU DiffExec witness for the WGSL lane — close the long-marked "on-hardware Vulkan DiffExec" caveat (PMAT-490) and author the C-COMPILE-RUST-TO-WGSL contract. Sibling of PMAT-949 (the NVIDIA-only nvcc witness): ships WgpuWgslDiffExecEngine (a real DiffExecEngine) that RUNS two categorically-independent WGSL emitters (general `2.0*x+1.0`, specialist `fma`) computing out[i]=2*in[i]+1 on a real wgpu adapter, and numerically compares the executed outputs under QuorumPolicy::DiffExec. Because wgpu abstracts Vulkan/Metal/DX12, this is a cross-vendor executed witness, not a single-toolchain one. On an RTX 4090 (Vulkan) the §29 quorum now records a real DiffExecResult::Match (max_abs_diff=0) instead of NotRun{no-engine}.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-23..07-02 open). NEW DIRECTION (user decision 2026-06-25): wgpu is FIRST-CLASS/schedulable. Until this slice the WGSL §29 lane was scaffold-only (ScaffoldWgslEmitter comment placeholder; DiffExecResult always NotRun) — the crates/xpile-wgsl-codegen/src/lib.rs PMAT-482 comment marked the executed Vulkan DiffExec as the unbuilt PMAT-490 slice."
+  - "ENGINE: crates/xpile-wgsl-codegen/src/wgpu_diffexec.rs ships WgpuWgslDiffExecEngine implementing xpile_backend::DiffExecEngine. execute_and_compare acquires a wgpu adapter+device over a cross-vendor backend set (Vulkan|Metal|DX12), uploads the fixed fixture [0,1,2,-3,4.5,10,-0.5,100] to a storage buffer, dispatches each emitter's WGSL compute shader, copies the result back, and returns DiffExecResult::Match{max_abs_diff}/Divergent within tolerance 1e-3. WGSL validation errors are captured via a wgpu error scope and surfaced as Err → hard BackendError (never masquerades as NotRun). Fixture kept bit-identical to the CUDA witness so the two lanes attest the same numeric truth on different stacks."
+  - "EMITTERS: two REAL naga-validatable WGSL emitters in xpile-wgsl-codegen (wgsl-saxpy-general: explicit `2.0*x+1.0`; wgsl-saxpy-specialist-fma: `fma(2.0,x,1.0)`) — categorically independent implementations of identical semantics over a @compute @workgroup_size(64) entry named `main` with storage bindings 0=in/1=out. Both satisfy the offline validate_wgsl gate. WgslBackend::new_wgpu_diffexec_witness() wires both + the engine under QuorumPolicy::DiffExec, installing the engine ONLY when wgpu_adapter_available()."
+  - "CONTRACT: contracts/compile-rust-to-wgsl-v1.yaml (C-COMPILE-RUST-TO-WGSL) authored — the WGSL Layer-5 sibling of C-COMPILE-RUST-TO-PTX-MMA, closing the lib.rs '(to author)' TODO. Both emitters cite it (citation-honesty). pv lint contracts/ passes (24 contracts, 0 errors)."
+  - "GRACEFUL SKIP: crates/xpile-wgsl-codegen/tests/gpu_witness.rs gates the executed test on wgpu_adapter_available() — mirrors the cc/python3/nvcc differential-gate posture. No adapter (free CI): engine not installed, backend records benign NotRun{no-engine}, test asserts the Multi-NotRun shape and exits OK → CI stays green. GPU box: runs both shaders on the adapter, asserts a real DiffExecResult::Match with both emitter names reported."
+  - "EXECUTED WITNESS CAPTURED: on this host (RTX 4090, wgpu 29, Vulkan backend) the witness PASSED — both shaders produced 2*in+1 over the fixture, agreeing bit-for-bit (max_abs_diff=0). This is the load-bearing Run≥1 (Run=2) executed DiffExecResult::Match the WGSL §29 lane waited for; it complements PMAT-949 by being cross-vendor rather than NVIDIA-only."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories (wgpu tree clean), `cargo test -p xpile-wgsl-codegen` (unit + gpu_witness). CI compiles wgpu and SKIPS the GPU test (no adapter) and stays green; the real executed witness is produced locally."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-949
   github_issue: null
   item_type: task

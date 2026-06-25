@@ -257,5 +257,14 @@ lean_lib «XpileContractsPilot» where
     -- plus universality (c) via `Int.natAbs`/`Nat.dvd_gcd`. No `sorry`, no
     -- `axiom`, no `import Mathlib`. KNOWN-INCOMPLETE 1 → 0 — the ENTIRE
     -- substrate is now machine-checked.
-    `PyIntArith                     -- C-PY-INT-ARITH              (PMAT-948 CAPSTONE)
+    `PyIntArith,                    -- C-PY-INT-ARITH              (PMAT-948 CAPSTONE)
+    -- PMAT-950 (backlog slice): the NEW WGSL compile contract joins the pilot
+    -- at depth-1 — a core-only, import-free STRUCTURE EXTENSIONALITY proof (same
+    -- shape as PyFloatArith / the str/list/set/tuple structural Diamonds): an
+    -- emitted WGSL compute kernel is determined by its structural signature
+    -- (entry, workgroup_size, ordered bindings). This is the proof-lane half of
+    -- the §29 cross-vendor wgpu DiffExec witness (the runtime half RUNS the
+    -- emitted WGSL on a real Vulkan/Metal/DX12 adapter). NEW contract, so the
+    -- pilot grows 23 → 24; the entire substrate stays machine-checked.
+    `CompileRustToWgsl              -- C-COMPILE-RUST-TO-WGSL      (PMAT-950)
   ]

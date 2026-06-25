@@ -9,6 +9,24 @@ meta-HIR and the trait surfaces.
 
 ### Added
 
+- **PMAT-950 (§29 GPU) — FIRST real *executed* cross-vendor GPU DiffExec
+  witness (WGSL lane).** Sibling of PMAT-949 (the NVIDIA-only `nvcc`
+  witness). `crates/xpile-wgsl-codegen/src/wgpu_diffexec.rs` ships
+  `WgpuWgslDiffExecEngine`, a genuine `xpile_backend::DiffExecEngine` that
+  **runs** two *categorically independent* WGSL compute emitters
+  (`wgsl-saxpy-general` = `2.0*x + 1.0`; `wgsl-saxpy-specialist-fma` =
+  `fma(2.0, x, 1.0)`) on a **real wgpu adapter** over a fixed fixture, and
+  numerically compares the read-back outputs under
+  `QuorumPolicy::DiffExec`. Because wgpu abstracts Vulkan/Metal/DX12, this
+  is a *cross-vendor* executed witness rather than a single-toolchain one.
+  `WgslBackend::new_wgpu_diffexec_witness()` installs the engine only when
+  `wgpu_adapter_available()` (graceful-skip on free CI — no adapter →
+  benign `NotRun { no-engine }`, CI stays green). A new Layer-5 contract
+  `contracts/compile-rust-to-wgsl-v1.yaml` (`C-COMPILE-RUST-TO-WGSL`) is
+  authored and cited by both emitters, closing the lib.rs "(to author)"
+  TODO and the long-marked "on-hardware Vulkan DiffExec" caveat
+  (PMAT-490). **Executed witness captured** on an RTX 4090 (Vulkan): a
+  real `DiffExecResult::Match` with `max_abs_diff = 0` over the fixture.
 - **PMAT-949 (§29 GPU) — FIRST real *executed* GPU DiffExec witness.**
   `crates/xpile-ptx-codegen/src/cuda_diffexec.rs` ships
   `NvccCudaDiffExecEngine`, a genuine `xpile_backend::DiffExecEngine`:

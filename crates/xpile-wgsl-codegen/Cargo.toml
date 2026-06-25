@@ -6,8 +6,16 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "WGSL backend stub — lowers Rust meta-HIR to WebGPU Shading Language. Phase 6."
+description = "WGSL backend — lowers Rust meta-HIR to WebGPU Shading Language; runs emitted WGSL on a real wgpu adapter for the §29 DiffExec witness. Phase 6."
 
 [dependencies]
 xpile-backend = { workspace = true }
+xpile-contracts = { workspace = true }
 xpile-meta-hir = { workspace = true }
+# GPU execution lane (PMAT-950): the executed half of the WGSL §29
+# DiffExec quorum. wgpu RUNS emitted WGSL on a real Vulkan/Metal/DX12
+# adapter; pollster blocks on its async API from the sync DiffExecEngine
+# trait; bytemuck casts the f32 fixture/result buffers.
+wgpu = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }
