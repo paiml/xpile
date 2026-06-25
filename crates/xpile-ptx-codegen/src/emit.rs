@@ -214,6 +214,19 @@ struct Emitter {
     locals: Vec<(String, String)>,
     /// Emitted instruction lines for the compute region.
     body: String,
+    /// PMAT-980: `(list-param-name, cvta-to-global base register)` for each
+    /// `list[scalar]` parameter the *array* kernel takes. An `Expr::Index`
+    /// over such a name lowers to `ld.global` at `base + idx*elem_size`. Empty
+    /// for the (default) scalar element-wise kernel.
+    list_params: Vec<(String, String)>,
+    /// PMAT-980: the next `%rd<n>` addressing register the array kernel may
+    /// allocate for in-body `Index` offset arithmetic. The prologue reserves
+    /// the low `%rd` range; the body draws from here upward so the two never
+    /// collide.
+    next_rd: u32,
+    /// PMAT-980: the name bound to the per-thread index (`%r1`) in an array
+    /// kernel — the only legal `Index` subscript. `None` for the scalar kernel.
+    thread_index_name: Option<String>,
 }
 
 impl Emitter {
@@ -227,7 +240,19 @@ impl Emitter {
             next_label: 3,
             locals: Vec::new(),
             body: String::new(),
+            list_params: Vec::new(),
+            next_rd: 0,
+            thread_index_name: None,
         }
+    }
+
+    /// PMAT-980: allocate a fresh `%rd<n>` addressing register for in-body
+    /// `Index` offset arithmetic (the array-kernel path seeds `next_rd` past
+    /// the prologue's reserved low range).
+    fn fresh_rd(&mut self) -> String {
+        let r = format!("%rd{}", self.next_rd);
+        self.next_rd += 1;
+        r
     }
 
     /// Allocate a fresh value register of the element class.
@@ -392,12 +417,75 @@ impl Emitter {
             // they need transcendental approximations or a float→int width
             // change (mixed width), neither of which is a single PTX op.
             Expr::NumBuiltin { op, args, .. } => self.emit_num_builtin(*op, args),
+            // PMAT-980: a read-only indexed load `xs[i]` from a `list[scalar]`
+            // parameter — the canonical GPU element-wise array shape (the PTX
+            // analog of PMAT-966's WASM `*.load` and PMAT-970's WGSL array read).
+            // `xs` must be a `list[scalar]` param (cvta'd to global in the
+            // prologue) and the subscript must be the per-thread index name.
+            Expr::Index { collection, index } => self.emit_index_load(collection, index),
             other => Err(refuse(&format!(
                 "expression {other:?} (outside the PTX scalar element-wise subset — \
-                 only param/let refs, literals, unary neg, + - * / arithmetic, and the \
-                 abs/min/max/sqrt scalar builtins are emitted)"
+                 only param/let refs, literals, unary neg, + - * / arithmetic, the \
+                 abs/min/max/sqrt scalar builtins, and a read-only `xs[i]` over a \
+                 `list[scalar]` param are emitted)"
             ))),
         }
+    }
+
+    /// PMAT-980: lower `collection[index]` to an `ld.global.<ty>` of one
+    /// element. The collection must name a `list[scalar]` parameter and the
+    /// index must be the per-thread index identifier — the only subscript the
+    /// array element-wise kernel defines (a literal / computed subscript has
+    /// no thread mapping and is refused, never wrong PTX). The loaded element
+    /// lands in a fresh element-class register, so an indexed load composes
+    /// with all the existing scalar arithmetic / control flow.
+    fn emit_index_load(&mut self, collection: &Expr, index: &Expr) -> Result<String, BackendError> {
+        let list_name = match collection {
+            Expr::Ident(n) => n,
+            other => {
+                return Err(refuse(&format!(
+                    "indexed read over {other:?} (the PTX array subset indexes a `list[scalar]` \
+                     *parameter* by name — `xs[i]`, not an arbitrary expression)"
+                )))
+            }
+        };
+        let base = self
+            .list_params
+            .iter()
+            .find(|(n, _)| n == list_name)
+            .map(|(_, r)| r.clone())
+            .ok_or_else(|| {
+                refuse(&format!(
+                    "indexed read `{list_name}[..]` over a non-list name (only a `list[scalar]` \
+                     parameter is indexable in the PTX array element-wise subset)"
+                ))
+            })?;
+        // The only legal subscript is the per-thread index name (`xs[i]` where
+        // `i` is the thread index). A literal / arithmetic / other-name index
+        // has no thread mapping in the element-wise kernel and is refused.
+        match (index, &self.thread_index_name) {
+            (Expr::Ident(idx), Some(ti)) if idx == ti => {}
+            (other, _) => {
+                return Err(refuse(&format!(
+                    "indexed read `{list_name}[{other:?}]` with a non-thread-index subscript \
+                     (the element-wise array kernel only defines `xs[i]` at the per-thread \
+                     index; a literal / computed subscript is out of subset)"
+                )))
+            }
+        }
+        // `off = thread_idx (i32, %r1) * elem_bytes` (sign-extended to 64-bit),
+        // `addr = base + off`, `ld.global.<ty>` into a fresh element register.
+        let bytes = self.scalar.bytes();
+        let off = self.fresh_rd();
+        let addr = self.fresh_rd();
+        self.line(&format!("mul.wide.s32 \t{off}, %r1, {bytes};"));
+        self.line(&format!("add.s64 \t{addr}, {base}, {off};"));
+        let dst = self.fresh();
+        self.line(&format!(
+            "ld.global.{} \t{dst}, [{addr}];",
+            self.scalar.ldst_ty()
+        ));
+        Ok(dst)
     }
 
     /// PMAT-972: lower a [`NumBuiltinOp`] that has a single-instruction PTX
@@ -606,12 +694,133 @@ impl Emitter {
     }
 }
 
+/// PMAT-980: the element scalar class of a `list[scalar]` type, if `ty` is a
+/// list of a supported scalar (the array kernel's input shape). `None` for a
+/// non-list (the scalar element-wise kernel's input shape) — so a mixed
+/// list/scalar parameter list routes to neither path and is refused.
+fn list_elem_scalar(ty: &Type) -> Option<Result<PtxScalar, BackendError>> {
+    match ty {
+        Type::List(elem) => Some(map_scalar(elem)),
+        _ => None,
+    }
+}
+
+/// PMAT-980: find the single per-thread index identifier the body uses as a
+/// subscript. Every `Expr::Index { index, .. }` must use the SAME bare
+/// identifier (the thread index `i` in `xs[i]`, `ys[i]`, …) — a literal /
+/// computed / inconsistent subscript is refused (no thread mapping). Returns
+/// `Ok(None)` when the body indexes nothing.
+fn discover_thread_index_name(f: &Function) -> Result<Option<String>, BackendError> {
+    let mut found: Option<String> = None;
+    let visit = |e: &Expr, found: &mut Option<String>| -> Result<(), BackendError> {
+        if let Expr::Index { index, .. } = e {
+            match index.as_ref() {
+                Expr::Ident(name) => match found {
+                    Some(prev) if prev != name => {
+                        return Err(refuse(&format!(
+                            "the array element-wise kernel indexes by two different subscripts \
+                             (`{prev}` and `{name}`); all `xs[i]` reads must share ONE per-thread \
+                             index"
+                        )))
+                    }
+                    Some(_) => {}
+                    None => *found = Some(name.clone()),
+                },
+                other => {
+                    return Err(refuse(&format!(
+                        "indexed read with a non-identifier subscript {other:?} (the array \
+                         element-wise kernel only defines `xs[i]` at the per-thread index)"
+                    )))
+                }
+            }
+        }
+        Ok(())
+    };
+    // Walk the trailing return + every statement's expressions.
+    walk_exprs(&f.body.trailing_return, &mut |e| visit(e, &mut found))?;
+    for s in &f.body.stmts {
+        walk_stmt_exprs(s, &mut |e| visit(e, &mut found))?;
+    }
+    Ok(found)
+}
+
+/// PMAT-980: pre-order walk over every sub-expression of `e`, calling `f`.
+fn walk_exprs(
+    e: &Expr,
+    f: &mut dyn FnMut(&Expr) -> Result<(), BackendError>,
+) -> Result<(), BackendError> {
+    f(e)?;
+    match e {
+        Expr::UnOp { operand, .. } => walk_exprs(operand, f)?,
+        Expr::FloatBinOp { lhs, rhs, .. } | Expr::BinOp { lhs, rhs, .. } => {
+            walk_exprs(lhs, f)?;
+            walk_exprs(rhs, f)?;
+        }
+        Expr::Index { collection, index } => {
+            walk_exprs(collection, f)?;
+            walk_exprs(index, f)?;
+        }
+        Expr::NumBuiltin { args, .. } => {
+            for a in args {
+                walk_exprs(a, f)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// PMAT-980: walk every expression reachable from a statement (recursing into
+/// `if`/`while` bodies).
+fn walk_stmt_exprs(
+    s: &Stmt,
+    f: &mut dyn FnMut(&Expr) -> Result<(), BackendError>,
+) -> Result<(), BackendError> {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => walk_exprs(value, f)?,
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            walk_exprs(cond, f)?;
+            for st in then_body {
+                walk_stmt_exprs(st, f)?;
+            }
+            for st in else_body {
+                walk_stmt_exprs(st, f)?;
+            }
+        }
+        Stmt::While { cond, body } => {
+            walk_exprs(cond, f)?;
+            for st in body {
+                walk_stmt_exprs(st, f)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Lower a meta-HIR [`Function`] of the element-wise kernel shape to a
 /// complete PTX module string targeting `compute_capability` (e.g. `sm_89`).
 ///
 /// `compute_capability` is threaded verbatim into the `.target` directive —
 /// **derived from [`xpile_backend::HwProfile::Ptx`], never hard-coded**.
+///
+/// PMAT-980: a kernel whose parameters are `list[scalar]` arrays routes to the
+/// array element-wise path ([`emit_array_kernel`]), where each list rides a
+/// `.u64` global base pointer and `xs[i]` (at the per-thread index) lowers to
+/// an `ld.global`. A kernel of bare scalar params keeps the original implicit
+/// element-wise lowering below.
 pub fn emit_kernel(f: &Function, compute_capability: &str) -> Result<String, BackendError> {
+    // Route by parameter shape. ALL-list → the explicit array kernel;
+    // ALL-scalar → the implicit scalar kernel. A mix is refused (the two
+    // calling conventions don't compose into one element-wise kernel).
+    let any_list = f.params.iter().any(|p| matches!(p.ty, Type::List(_)));
+    if any_list {
+        return emit_array_kernel(f, compute_capability);
+    }
     // Signature must be the scalar element-wise shape: one or more scalar
     // params, all the same scalar class as the (scalar) return.
     if f.params.is_empty() {
@@ -744,6 +953,167 @@ pub fn emit_kernel(f: &Function, compute_capability: &str) -> Result<String, Bac
         writeln!(out, "\tadd.s64 \t%rd{addr}, %rd{glob}, %rd1;").expect("write");
         writeln!(out, "\tst.global.{ldst} \t[%rd{addr}], {result_reg};").expect("write");
     }
+    writeln!(out).expect("write");
+    writeln!(out, "$L__BB0_2:").expect("write");
+    writeln!(out, "\tret;").expect("write");
+    writeln!(out, "}}").expect("write");
+    Ok(out)
+}
+
+/// PMAT-980 — the ARRAY element-wise kernel: every parameter is a
+/// `list[scalar]` (an input array), the body reads `xs[i]` at the per-thread
+/// index, and the result is stored to `out[i]`. The PTX analog of PMAT-966's
+/// WASM `list[scalar]`-param-indexed-by-`xs[i]` and PMAT-970's WGSL array read.
+///
+/// Where [`emit_kernel`]'s scalar path loads each scalar param's element
+/// IMPLICITLY in the prologue (the param *is* `in_k[i]`), this path keeps the
+/// list as a `.u64` global base pointer and emits an `ld.global` per EXPLICIT
+/// `xs[i]` in the body — so a kernel can read the same array more than once, or
+/// not at all, and the indexed read composes with all the scalar arithmetic /
+/// control flow / abs-min-max-sqrt builtins the scalar path already lowers.
+///
+/// Refused (hard [`BackendError`], never wrong PTX): a `list` of a non-scalar
+/// element (`list[bool]`/`list[str]`/nested list — no natural `ld.global`
+/// width), a list-element class differing from the return class, a subscript
+/// other than the single per-thread index, and (still) a list literal / list
+/// return / append / index-assignment.
+fn emit_array_kernel(f: &Function, compute_capability: &str) -> Result<String, BackendError> {
+    if f.params.is_empty() {
+        return Err(refuse(&format!(
+            "array kernel `{}` has no parameters (it emits at least one `list[scalar]` input)",
+            f.name
+        )));
+    }
+    // The return is a bare scalar (the per-element result); every param is a
+    // `list` of THAT scalar class (a uniform-width element-wise kernel).
+    let out_scalar = map_scalar(&f.return_type)?;
+    for p in &f.params {
+        match list_elem_scalar(&p.ty) {
+            Some(res) => {
+                let s = res?;
+                if s != out_scalar {
+                    return Err(refuse(&format!(
+                        "array kernel `{}` parameter `{}` is `list[{s:?}]` but the return scalar \
+                         class is {out_scalar:?}; the element-wise array subset keeps ONE scalar \
+                         class across all inputs and the output",
+                        f.name, p.name
+                    )));
+                }
+            }
+            None => {
+                return Err(refuse(&format!(
+                    "array kernel `{}` mixes a non-list parameter `{}` ({:?}) with list \
+                     parameters; the array element-wise subset takes ALL `list[scalar]` inputs",
+                    f.name, p.name, p.ty
+                )))
+            }
+        }
+    }
+    let scalar = out_scalar;
+    let n_params = f.params.len();
+
+    // The single per-thread index name `xs[i]` reads through (`%r1`). A kernel
+    // that indexes nothing still emits a valid (constant-per-thread) store.
+    let thread_index_name = discover_thread_index_name(f)?;
+
+    let mut em = Emitter::new(scalar);
+    em.thread_index_name = thread_index_name;
+    // Each list param's GLOBAL base pointer lives in a persistent `%rd` base
+    // register, filled by the prologue below. The prologue uses `%rd0..` for
+    // those bases; the body's `Index` offset arithmetic draws from `next_rd`
+    // (seeded past them) so the two never collide.
+    let mut base_regs = Vec::with_capacity(n_params);
+    for (k, p) in f.params.iter().enumerate() {
+        let base = format!("%rd{}", k);
+        em.list_params.push((p.name.clone(), base.clone()));
+        base_regs.push(base);
+        let _ = k;
+    }
+    // Output base pointer + the shared store-offset register sit right after the
+    // input bases; the body's transient `%rd`s start after THOSE.
+    let out_base = format!("%rd{}", n_params);
+    let store_off = format!("%rd{}", n_params + 1);
+    let store_addr = format!("%rd{}", n_params + 2);
+    em.next_rd = (n_params + 3) as u32;
+
+    // Body: statements then the trailing return expression (the per-element f).
+    for stmt in &f.body.stmts {
+        em.emit_stmt(stmt)?;
+    }
+    let result_reg = em.emit_expr(&f.body.trailing_return)?;
+
+    // ── assemble the full module ──────────────────────────────────────
+    let bytes = scalar.bytes();
+    let ldst = scalar.ldst_ty();
+    let reg_class = scalar.reg_class();
+    let reg_prefix = scalar.reg_prefix();
+    let val_count = em.next_val.max(2);
+    let pred_count = em.next_pred;
+    // The body may have allocated transient `%rd`s up to `next_rd`; size the
+    // `%rd` file to cover them (PTX wants the `<N>` upper bound).
+    let rd_count = em.next_rd.max((n_params + 3) as u32) + 1;
+
+    let mut out = String::new();
+    writeln!(out, "//").expect("write");
+    writeln!(
+        out,
+        "// Generated by xpile-ptx-codegen (hand-emitted, ARRAY element-wise subset, PMAT-980)"
+    )
+    .expect("write");
+    writeln!(out, "// source kernel: {}", f.name).expect("write");
+    writeln!(out, "//").expect("write");
+    writeln!(out, ".version {}", ptx_version_for(compute_capability)).expect("write");
+    writeln!(out, ".target {compute_capability}").expect("write");
+    writeln!(out, ".address_size 64").expect("write");
+    writeln!(out).expect("write");
+    writeln!(out, ".visible .entry {KERNEL_NAME}(").expect("write");
+    // n_params input array pointers, then the output pointer, then the count.
+    for k in 0..n_params {
+        writeln!(out, "\t.param .u64 {KERNEL_NAME}_param_{k},").expect("write");
+    }
+    writeln!(out, "\t.param .u64 {KERNEL_NAME}_param_{n_params},").expect("write");
+    writeln!(out, "\t.param .u32 {KERNEL_NAME}_param_{}", n_params + 1).expect("write");
+    writeln!(out, ")").expect("write");
+    writeln!(out, "{{").expect("write");
+    writeln!(out, "\t.reg .pred \t%p<{pred_count}>;").expect("write");
+    writeln!(out, "\t.reg .b32 \t%r<6>;").expect("write");
+    writeln!(out, "\t.reg {reg_class} \t{reg_prefix}<{val_count}>;").expect("write");
+    writeln!(out, "\t.reg .b64 \t%rd<{rd_count}>;").expect("write");
+    writeln!(out).expect("write");
+    // Prologue: thread index + bounds guard (count is the LAST param).
+    let count_param = n_params + 1;
+    writeln!(
+        out,
+        "\tld.param.u32 \t%r2, [{KERNEL_NAME}_param_{count_param}];"
+    )
+    .expect("write");
+    writeln!(out, "\tmov.u32 \t%r3, %ctaid.x;").expect("write");
+    writeln!(out, "\tmov.u32 \t%r4, %ntid.x;").expect("write");
+    writeln!(out, "\tmov.u32 \t%r5, %tid.x;").expect("write");
+    writeln!(out, "\tmad.lo.s32 \t%r1, %r3, %r4, %r5;").expect("write");
+    writeln!(out, "\tsetp.ge.s32 \t%p1, %r1, %r2;").expect("write");
+    writeln!(out, "\t@%p1 bra \t$L__BB0_2;").expect("write");
+    writeln!(out).expect("write");
+    // Load each input array's GLOBAL base pointer into its persistent register
+    // (NO element load here — the body's `xs[i]` does the per-element loads).
+    for (k, base) in base_regs.iter().enumerate() {
+        writeln!(out, "\tld.param.u64 \t{base}, [{KERNEL_NAME}_param_{k}];").expect("write");
+        writeln!(out, "\tcvta.to.global.u64 \t{base}, {base};").expect("write");
+    }
+    writeln!(out).expect("write");
+    // Compute region (the lowered statements + return, incl. `xs[i]` loads).
+    out.push_str(&em.body);
+    // Store the result element to the output array (param index n_params) at the
+    // per-thread index: `out[i] = result`.
+    writeln!(
+        out,
+        "\tld.param.u64 \t{out_base}, [{KERNEL_NAME}_param_{n_params}];"
+    )
+    .expect("write");
+    writeln!(out, "\tcvta.to.global.u64 \t{out_base}, {out_base};").expect("write");
+    writeln!(out, "\tmul.wide.s32 \t{store_off}, %r1, {bytes};").expect("write");
+    writeln!(out, "\tadd.s64 \t{store_addr}, {out_base}, {store_off};").expect("write");
+    writeln!(out, "\tst.global.{ldst} \t[{store_addr}], {result_reg};").expect("write");
     writeln!(out).expect("write");
     writeln!(out, "$L__BB0_2:").expect("write");
     writeln!(out, "\tret;").expect("write");
@@ -1303,5 +1673,191 @@ mod tests {
         };
         let err = emit_kernel(&f, "sm_89").unwrap_err();
         assert!(format!("{err}").contains("at least one scalar input"));
+    }
+
+    // ─── PMAT-980: the ARRAY element-wise kernel (`list[scalar]` param + `xs[i]`) ───
+
+    fn lp(name: &str, elem: Type) -> Param {
+        p(name, Type::List(Box::new(elem)))
+    }
+
+    fn index(coll: &str, idx: &str) -> Expr {
+        Expr::Index {
+            collection: Box::new(Expr::Ident(coll.into())),
+            index: Box::new(Expr::Ident(idx.into())),
+        }
+    }
+
+    /// `def k(xs: list[f64]) -> f64: return xs[i] + 1.0` — the canonical GPU
+    /// element-wise array kernel: a `list[scalar]` param read by `xs[i]` at the
+    /// per-thread index, +1.
+    fn array_add_one_f64() -> Function {
+        kernel_returning(
+            "addone",
+            vec![lp("xs", Type::F64)],
+            Type::F64,
+            Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: Box::new(index("xs", "i")),
+                rhs: Box::new(Expr::LitFloat(1.0)),
+            },
+        )
+    }
+
+    #[test]
+    fn emits_array_kernel_index_load_and_store() {
+        let ptx = emit_kernel(&array_add_one_f64(), "sm_89").unwrap();
+        // Routed to the array path (its banner), NOT the scalar one.
+        assert!(ptx.contains("ARRAY element-wise subset"));
+        // One input array pointer (param_0), the output (param_1), the count
+        // (param_2).
+        assert!(ptx.contains("xpile_kernel_param_0"));
+        assert!(ptx.contains("xpile_kernel_param_1"));
+        assert!(ptx.contains("xpile_kernel_param_2"));
+        // The `xs[i]` read is a real indexed global load: thread-index stride +
+        // add onto the global base + ld.global.
+        assert!(ptx.contains("mul.wide.s32"));
+        assert!(ptx.contains("ld.global.f64"));
+        // The `+ 1.0`.
+        assert!(ptx.contains("add.rn.f64"));
+        // The `out[i] = ...` store.
+        assert!(ptx.contains("st.global.f64"));
+        // The element class is NOT loaded in the prologue: the only ld.global
+        // for the input happens in the body (one input read).
+        assert_eq!(ptx.matches("ld.global.f64").count(), 1);
+    }
+
+    /// `def k(xs: list[f64], ys: list[f64]) -> f64: return xs[i] + ys[i]` — a
+    /// two-array element-wise add (the array twin of the multi-param scalar
+    /// kernel), two indexed loads.
+    #[test]
+    fn emits_two_array_kernel() {
+        let f = kernel_returning(
+            "addarr",
+            vec![lp("xs", Type::F64), lp("ys", Type::F64)],
+            Type::F64,
+            Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: Box::new(index("xs", "i")),
+                rhs: Box::new(index("ys", "i")),
+            },
+        );
+        let ptx = emit_kernel(&f, "sm_89").unwrap();
+        assert!(ptx.contains("xpile_kernel_param_0")); // xs
+        assert!(ptx.contains("xpile_kernel_param_1")); // ys
+        assert!(ptx.contains("xpile_kernel_param_2")); // out
+        assert!(ptx.contains("xpile_kernel_param_3")); // count
+                                                       // Two indexed input loads, one output store.
+        assert_eq!(ptx.matches("ld.global.f64").count(), 2);
+        assert_eq!(ptx.matches("st.global.f64").count(), 1);
+    }
+
+    /// An i64 array kernel uses `.s64` loads/stores and the i64 register class.
+    #[test]
+    fn emits_i64_array_kernel() {
+        let f = kernel_returning(
+            "addi",
+            vec![lp("xs", Type::I64)],
+            Type::I64,
+            Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(index("xs", "i")),
+                rhs: Box::new(Expr::LitInt(7)),
+            },
+        );
+        let ptx = emit_kernel(&f, "sm_89").unwrap();
+        assert!(ptx.contains("ld.global.s64"));
+        assert!(ptx.contains("add.s64"));
+        assert!(ptx.contains("st.global.s64"));
+    }
+
+    /// The array path composes with the existing PMAT-972 builtins:
+    /// `relu(xs[i]) = max(xs[i], 0.0)`.
+    #[test]
+    fn array_kernel_composes_with_builtins() {
+        let f = kernel_returning(
+            "relu",
+            vec![lp("xs", Type::F64)],
+            Type::F64,
+            Expr::NumBuiltin {
+                op: NumBuiltinOp::Max,
+                args: vec![index("xs", "i"), Expr::LitFloat(0.0)],
+                of_float: true,
+            },
+        );
+        let ptx = emit_kernel(&f, "sm_89").unwrap();
+        assert!(ptx.contains("ld.global.f64"));
+        assert!(ptx.contains("max.f64"));
+        assert!(ptx.contains("st.global.f64"));
+    }
+
+    #[test]
+    fn refuses_list_of_non_scalar_element() {
+        let f = kernel_returning(
+            "bad",
+            vec![lp("xs", Type::Str)],
+            Type::F64,
+            index("xs", "i"),
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("str/list/dict"));
+    }
+
+    #[test]
+    fn refuses_list_element_class_mismatch() {
+        // list[i64] but f64 return — mixed width.
+        let f = kernel_returning(
+            "bad",
+            vec![lp("xs", Type::I64)],
+            Type::F64,
+            index("xs", "i"),
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("scalar class"));
+    }
+
+    #[test]
+    fn refuses_mixed_list_and_scalar_params() {
+        let f = kernel_returning(
+            "bad",
+            vec![lp("xs", Type::F64), p("k", Type::F64)],
+            Type::F64,
+            index("xs", "i"),
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("non-list parameter"));
+    }
+
+    #[test]
+    fn refuses_non_thread_index_subscript() {
+        // xs[0] — a literal subscript has no per-thread mapping.
+        let f = kernel_returning(
+            "bad",
+            vec![lp("xs", Type::F64)],
+            Type::F64,
+            Expr::Index {
+                collection: Box::new(Expr::Ident("xs".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("non-identifier subscript"));
+    }
+
+    #[test]
+    fn refuses_two_distinct_index_names() {
+        // xs[i] + xs[j] — two subscripts, no single thread index.
+        let f = kernel_returning(
+            "bad",
+            vec![lp("xs", Type::F64)],
+            Type::F64,
+            Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: Box::new(index("xs", "i")),
+                rhs: Box::new(index("xs", "j")),
+            },
+        );
+        let err = emit_kernel(&f, "sm_89").unwrap_err();
+        assert!(format!("{err}").contains("two different subscripts"));
     }
 }

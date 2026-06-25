@@ -428,6 +428,120 @@ fn ptxas_assembles_control_flow_and_multi_param_kernels() {
     }
 }
 
+// ─── PMAT-980: the ARRAY element-wise kernel (`list[scalar]` param) ─────
+
+fn lp(name: &str, elem: Type) -> Param {
+    Param {
+        name: name.into(),
+        ty: Type::List(Box::new(elem)),
+        mutable: false,
+    }
+}
+
+fn index(coll: &str, idx: &str) -> Expr {
+    Expr::Index {
+        collection: ident(coll),
+        index: ident(idx),
+    }
+}
+
+/// `def xpile_kernel(xs: list[f64]) -> f64: return xs[i] + 1.0` — the canonical
+/// GPU element-wise array kernel (`list[scalar]` param read by `xs[i]` at the
+/// per-thread index).
+fn array_add_one_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![lp("xs", Type::F64)],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: Box::new(index("xs", "i")),
+                rhs: Box::new(Expr::LitFloat(1.0)),
+            },
+        },
+    }
+}
+
+/// `def xpile_kernel(xs, ys: list[f64]) -> f64: return xs[i] + ys[i]` — the
+/// two-array element-wise add (two indexed `ld.global`s, one `st.global`).
+fn array_add_two_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![lp("xs", Type::F64), lp("ys", Type::F64)],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: Box::new(index("xs", "i")),
+                rhs: Box::new(index("ys", "i")),
+            },
+        },
+    }
+}
+
+/// `def xpile_kernel(xs: list[f64]) -> f64: return max(xs[i], 0.0)` — relu over
+/// an array (the array path composing with the PMAT-972 `max` builtin).
+fn array_relu_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![lp("xs", Type::F64)],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::NumBuiltin {
+                op: xpile_meta_hir::NumBuiltinOp::Max,
+                args: vec![index("xs", "i"), Expr::LitFloat(0.0)],
+                of_float: true,
+            },
+        },
+    }
+}
+
+#[test]
+fn ptxas_assembles_array_element_wise_kernels() {
+    let sm = local_compute_capability();
+    let cases: &[(&str, Function)] = &[
+        ("array xs[i] + 1.0", array_add_one_fn()),
+        ("array xs[i] + ys[i]", array_add_two_fn()),
+        ("array relu max(xs[i], 0)", array_relu_fn()),
+    ];
+    for (label, f) in cases {
+        let ptx =
+            emit_kernel(f, &sm).unwrap_or_else(|e| panic!("PMAT-980 emit failed for {label}: {e}"));
+        // The array path emits a real indexed global load + store, not the
+        // implicit-scalar prologue load.
+        assert!(
+            ptx.contains("ld.global") && ptx.contains("st.global"),
+            "PMAT-980 {label}: array kernel must load + store global:\n{ptx}"
+        );
+        assert_eq!(
+            validate_ptx(&ptx, &sm),
+            Ok(()),
+            "PMAT-980 {label}: emitted PTX must pass the structural gate:\n{ptx}"
+        );
+        if !ptxas_available() {
+            eprintln!(
+                "PMAT-980: skipping ptxas assemble for `{label}` — ptxas not present. \
+                 The structural gate passed; a CUDA box assembles this clean."
+            );
+            continue;
+        }
+        match ptxas_assemble(&ptx, &sm) {
+            Ok(()) => eprintln!(
+                "PMAT-980: ptxas ASSEMBLED `{label}` clean for {sm} — the `list[scalar]` \
+                 param + `xs[i]` array element-wise PTX is well-formed for the NVIDIA \
+                 assembler (the PTX analog of PMAT-966's wat2wasm array witness)."
+            ),
+            Err(stderr) => {
+                panic!("PMAT-980: ptxas REJECTED `{label}` for {sm}:\n{stderr}\n--- PTX ---\n{ptx}")
+            }
+        }
+    }
+}
+
 /// The local GPU's compute capability via `nvidia-smi` (`sm_<maj><min>`),
 /// falling back to the contract floor `sm_80` when unavailable.
 fn local_compute_capability() -> String {
