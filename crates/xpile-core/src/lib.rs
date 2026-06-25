@@ -91,6 +91,11 @@ pub fn default_session() -> TranspileSession {
     // above. `--target shell` now resolves to a real Backend impl
     // (scaffold emit at v0.1.0; ShellIR + quoting machinery at v0.2.0).
     s.register_backend(Arc::new(bashrs_backend::BashrsBackend));
+    // PMAT-953: forjar.yaml IaC backend (BACKEND-ONLY, not merge/federate).
+    // `--target forjar` lowers a SHELL-origin command sequence to forjar
+    // `type: file` / `type: task` resources; refuses non-shell modules and
+    // shell conditionals/idempotence guards. Peer to the bashrs shell lane.
+    s.register_backend(Arc::new(xpile_forjar_codegen::ForjarBackend::new()));
 
     // Proof lane
     s.register_contract_frontend(Arc::new(latex_contract_frontend::LatexContractFrontend));

@@ -1,0 +1,23 @@
+[package]
+name = "xpile-forjar-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "forjar.yaml IaC backend — lowers a SHELL-origin meta-HIR Module (Stmt::Cmd / Stmt::Pipeline command sequence) to forjar `type: file` / `type: task` resource text. BACKEND-ONLY (NOT merge/federate, PMAT-953): peer to bashrs-backend's shell lane, no runtime forjar dependency. Refuses non-shell modules and shell conditionals/idempotence guards (never wrong YAML)."
+
+[dependencies]
+xpile-backend = { workspace = true }
+xpile-contracts = { workspace = true }
+xpile-meta-hir = { workspace = true }
+
+[dev-dependencies]
+# Structural golden validation only — round-trip the emitted forjar.yaml
+# back through a YAML parser and assert the resource shape. The forjar
+# crate's own `parse_config` / `validate_config` golden validation is
+# evaluated separately (PMAT-953): the shipping crate takes NO runtime
+# forjar dependency (backend-only — avoid the federation coupling).
+serde_yaml = { workspace = true }
+serde = { workspace = true }

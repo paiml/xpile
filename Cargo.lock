@@ -1780,6 +1780,7 @@ dependencies = [
  "xpile-contract-frontend",
  "xpile-contracts",
  "xpile-ffi-manifest",
+ "xpile-forjar-codegen",
  "xpile-frontend",
  "xpile-latex-contract-backend",
  "xpile-lean-codegen",
@@ -1798,6 +1799,17 @@ name = "xpile-ffi-manifest"
 version = "0.1.601"
 dependencies = [
  "serde",
+ "xpile-meta-hir",
+]
+
+[[package]]
+name = "xpile-forjar-codegen"
+version = "0.1.601"
+dependencies = [
+ "serde",
+ "serde_yaml",
+ "xpile-backend",
+ "xpile-contracts",
  "xpile-meta-hir",
 ]
 

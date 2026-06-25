@@ -25,6 +25,7 @@ members = [
     "crates/xpile-ptx-codegen",               # added 2026-05-15
     "crates/xpile-wgsl-codegen",              # added 2026-05-15
     "crates/xpile-wasm-codegen",              # added 2026-06-25 (PMAT-951 native WASM emit)
+    "crates/xpile-forjar-codegen",            # added 2026-06-25 (PMAT-953 forjar.yaml backend-only)
     "crates/xpile-lean-codegen",              # added 2026-05-15
     "crates/bashrs-backend",                  # added 2026-05-17 (PMAT-037 / XPILE-BASHRS-MERGER-001)
     # ── proof-lane trait abstractions ─────────────────────────────
@@ -100,6 +101,7 @@ xpile-ruchy-codegen = { version = "0.1.12", path = "crates/xpile-ruchy-codegen" 
 xpile-ptx-codegen   = { version = "0.1.12", path = "crates/xpile-ptx-codegen" }
 xpile-wgsl-codegen  = { version = "0.1.12", path = "crates/xpile-wgsl-codegen" }
 xpile-wasm-codegen  = { version = "0.1.12", path = "crates/xpile-wasm-codegen" }
+xpile-forjar-codegen = { version = "0.1.12", path = "crates/xpile-forjar-codegen" }
 xpile-lean-codegen  = { version = "0.1.12", path = "crates/xpile-lean-codegen" }
 bashrs-backend      = { version = "0.1.12", path = "crates/bashrs-backend" }
 

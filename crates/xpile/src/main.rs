@@ -652,9 +652,13 @@ fn parse_target(s: &str) -> Result<Target> {
         // PMAT-037 / XPILE-BASHRS-MERGER-001: shell target accepted
         // via the bashrs-backend scaffold.
         "shell" | "sh" | "bash" => Target::Shell,
+        // PMAT-953: forjar.yaml IaC manifest (BACKEND-ONLY). Lowers a
+        // SHELL-origin command sequence to forjar `type: file`/`type: task`
+        // resources via xpile-forjar-codegen.
+        "forjar" | "forjar-yaml" => Target::ForjarYaml,
         other => {
             bail!(
-                "unknown target `{other}`; choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell"
+                "unknown target `{other}`; choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar"
             )
         }
     })

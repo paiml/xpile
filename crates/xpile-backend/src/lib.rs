@@ -38,6 +38,17 @@ pub enum Target {
     /// at v0.2.0 once the bashrs source folding lands). PMAT-037 /
     /// XPILE-BASHRS-MERGER-001. See `sub/bashrs-merger.md` Layer A.
     Shell,
+    /// forjar.yaml IaC manifest text. Implemented by
+    /// `xpile-forjar-codegen` (PMAT-953). The BACKEND-ONLY forjar
+    /// integration (NOT merge/federate) — a declarative ops/deployment
+    /// output lane, peer to bashrs-backend's shell lane. Lowers a
+    /// SHELL-origin meta-HIR `Module` (the `Stmt::Cmd` / `Stmt::Pipeline`
+    /// command sequence) to forjar `type: file` / `type: task` resources.
+    /// REFUSES non-shell modules and any shell idempotence guard /
+    /// conditional (the meta-HIR shell lane has no `Stmt::ShellIf`), so
+    /// only unconditional resources emit — forjar re-adds convergence at
+    /// apply time. See `project-forjar-output-backend`.
+    ForjarYaml,
 }
 
 /// Lowering profile — the two-mHIR asymmetric decision for Rust↔Ruchy.
