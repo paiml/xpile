@@ -14,8 +14,22 @@
 //! (RTX 4090 / sm_89) the emitted PTX is assembled for real.
 
 use xpile_backend::{Backend, BackendConfig, HwProfile, Profile, Target};
-use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Type};
+use xpile_meta_hir::{
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, Type,
+};
 use xpile_ptx_codegen::{emit_kernel, ptxas_assemble, ptxas_available, validate_ptx, PtxBackend};
+
+fn fp(name: &str) -> Param {
+    Param {
+        name: name.into(),
+        ty: Type::F64,
+        mutable: false,
+    }
+}
+
+fn ident(n: &str) -> Box<Expr> {
+    Box::new(Expr::Ident(n.into()))
+}
 
 /// `def xpile_kernel(x: f64) -> f64: return (x + x) + 1.0` — the saxpy-like
 /// element-wise kernel.
@@ -122,6 +136,183 @@ fn ptxas_rejects_a_corrupted_kernel() {
         ptxas_assemble(&broken, &sm).is_err(),
         "ptxas must reject a corrupted kernel (a typo'd opcode) — proves the assemble step has teeth"
     );
+}
+
+// ─── PMAT-962: control-flow + multi-param kernels assemble clean ─────
+
+/// `def xpile_kernel(a, b) -> f64: return a + b` — a multi-input kernel.
+fn add_ab_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("a"), fp("b")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::FloatBinOp {
+                op: FloatOp::Add,
+                lhs: ident("a"),
+                rhs: ident("b"),
+            },
+        },
+    }
+}
+
+/// `def xpile_kernel(x) -> f64: r = 0.0; if x > 0.0: r = x else: r = -x;
+/// return r` — abs() via an if/else with a comparison.
+fn abs_if_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("x")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: vec![
+                Stmt::Let {
+                    name: "r".into(),
+                    ty: Type::F64,
+                    value: Expr::LitFloat(0.0),
+                    mutable: true,
+                },
+                Stmt::If {
+                    cond: Expr::BinOp {
+                        op: BinOp::Gt,
+                        lhs: ident("x"),
+                        rhs: Box::new(Expr::LitFloat(0.0)),
+                    },
+                    then_body: vec![Stmt::Assign {
+                        name: "r".into(),
+                        value: Expr::Ident("x".into()),
+                    }],
+                    else_body: vec![Stmt::Assign {
+                        name: "r".into(),
+                        value: Expr::UnOp {
+                            op: xpile_meta_hir::UnOp::Neg,
+                            operand: ident("x"),
+                        },
+                    }],
+                },
+            ],
+            trailing_return: Expr::Ident("r".into()),
+        },
+    }
+}
+
+/// `def xpile_kernel(x) -> f64: acc = x; while acc > 1.0: acc = acc - 1.0;
+/// return acc` — a counting-down while loop with a guard + back-edge.
+fn while_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("x")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: vec![
+                Stmt::Let {
+                    name: "acc".into(),
+                    ty: Type::F64,
+                    value: Expr::Ident("x".into()),
+                    mutable: true,
+                },
+                Stmt::While {
+                    cond: Expr::BinOp {
+                        op: BinOp::Gt,
+                        lhs: ident("acc"),
+                        rhs: Box::new(Expr::LitFloat(1.0)),
+                    },
+                    body: vec![Stmt::Assign {
+                        name: "acc".into(),
+                        value: Expr::FloatBinOp {
+                            op: FloatOp::Sub,
+                            lhs: ident("acc"),
+                            rhs: Box::new(Expr::LitFloat(1.0)),
+                        },
+                    }],
+                },
+            ],
+            trailing_return: Expr::Ident("acc".into()),
+        },
+    }
+}
+
+/// `def xpile_kernel(x) -> f64: r = 0.0;
+/// if (x > 0.0) and (x < 10.0): r = x else: r = 0.0; return r` — an `and`-composed
+/// condition (two `setp` + `and.pred`).
+fn and_cond_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![fp("x")],
+        return_type: Type::F64,
+        body: Block {
+            stmts: vec![
+                Stmt::Let {
+                    name: "r".into(),
+                    ty: Type::F64,
+                    value: Expr::LitFloat(0.0),
+                    mutable: true,
+                },
+                Stmt::If {
+                    cond: Expr::BinOp {
+                        op: BinOp::And,
+                        lhs: Box::new(Expr::BinOp {
+                            op: BinOp::Gt,
+                            lhs: ident("x"),
+                            rhs: Box::new(Expr::LitFloat(0.0)),
+                        }),
+                        rhs: Box::new(Expr::BinOp {
+                            op: BinOp::Lt,
+                            lhs: ident("x"),
+                            rhs: Box::new(Expr::LitFloat(10.0)),
+                        }),
+                    },
+                    then_body: vec![Stmt::Assign {
+                        name: "r".into(),
+                        value: Expr::Ident("x".into()),
+                    }],
+                    else_body: vec![Stmt::Assign {
+                        name: "r".into(),
+                        value: Expr::LitFloat(0.0),
+                    }],
+                },
+            ],
+            trailing_return: Expr::Ident("r".into()),
+        },
+    }
+}
+
+#[test]
+fn ptxas_assembles_control_flow_and_multi_param_kernels() {
+    let sm = local_compute_capability();
+    // Each new PMAT-962 construct must pass the pure-text structural gate, and —
+    // when ptxas is present — assemble clean for the real NVIDIA assembler.
+    let cases: &[(&str, Function)] = &[
+        ("multi-param add(a,b)", add_ab_fn()),
+        ("if/else abs", abs_if_fn()),
+        ("while countdown", while_fn()),
+        ("and-composed condition", and_cond_fn()),
+    ];
+    for (label, f) in cases {
+        let ptx =
+            emit_kernel(f, &sm).unwrap_or_else(|e| panic!("PMAT-962 emit failed for {label}: {e}"));
+        assert_eq!(
+            validate_ptx(&ptx, &sm),
+            Ok(()),
+            "PMAT-962 {label}: emitted PTX must pass the structural gate:\n{ptx}"
+        );
+        if !ptxas_available() {
+            eprintln!(
+                "PMAT-962: skipping ptxas assemble for `{label}` — ptxas not present. \
+                 The structural gate passed; a CUDA box assembles this clean."
+            );
+            continue;
+        }
+        match ptxas_assemble(&ptx, &sm) {
+            Ok(()) => eprintln!(
+                "PMAT-962: ptxas ASSEMBLED `{label}` clean for {sm} — control-flow / \
+                 multi-param PTX is well-formed for the NVIDIA assembler."
+            ),
+            Err(stderr) => {
+                panic!("PMAT-962: ptxas REJECTED `{label}` for {sm}:\n{stderr}\n--- PTX ---\n{ptx}")
+            }
+        }
+    }
 }
 
 /// The local GPU's compute capability via `nvidia-smi` (`sm_<maj><min>`),

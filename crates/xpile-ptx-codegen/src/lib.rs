@@ -32,7 +32,7 @@ use xpile_backend::{
     QuorumPolicy, Target, TargetEmitter,
 };
 use xpile_contracts::ContractId;
-use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Module, Param, Type};
+use xpile_meta_hir::{BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type};
 
 mod cuda_diffexec;
 mod emit;
@@ -113,6 +113,37 @@ impl PtxBackend {
             Target::Ptx,
             Box::new(XpileSaxpyPtxEmitter),
             Box::new(CudaSaxpyGeneralEmitter),
+            QuorumPolicy::DiffExec { tolerance: 1.0e-3 },
+        );
+        if cuda_toolchain_available() {
+            inner = inner.with_diff_exec_engine(std::sync::Arc::new(PtxDiffExecEngine::new()));
+        }
+        Self { inner }
+    }
+
+    /// PMAT-962 — the anti-correlation §29 PTX witness for a NEW construct:
+    /// **control flow** (`if`/`else` + comparison), not just straight-line
+    /// arithmetic.
+    ///
+    /// The same categorical-independence design as
+    /// [`PtxBackend::new_ptx_diffexec_witness`] but over the relu kernel
+    /// `out[i] = (in[i] > 0) ? in[i] : 0`:
+    ///   - general: [`XpileReluPtxEmitter`] — xpile's OWN hand-emitted PTX, with
+    ///     a real `setp.gt.f64` + `@!%p bra` branch + a shared result register
+    ///     (the phi-via-register idiom).
+    ///   - specialist: [`CudaReluGeneralEmitter`] — nvcc-compiled CUDA-C using a
+    ///     C `?:` ternary.
+    ///
+    /// Two codegen toolchains with NO shared frontend that must agree on the
+    /// branchy kernel — exercising the PMAT-962 control-flow lowering end-to-end
+    /// on real silicon. Relu over [`FIXTURE_INPUT`] is exactly representable so
+    /// the executed outputs agree bit-for-bit. Graceful-skip off-GPU (no engine
+    /// installed → benign `NotRun`, free CI green).
+    pub fn new_ptx_if_diffexec_witness() -> Self {
+        let mut inner = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(XpileReluPtxEmitter),
+            Box::new(CudaReluGeneralEmitter),
             QuorumPolicy::DiffExec { tolerance: 1.0e-3 },
         );
         if cuda_toolchain_available() {
@@ -294,6 +325,114 @@ impl TargetEmitter for XpileSaxpyPtxEmitter {
             })),
             Err(e) => Some(Err(e)),
         }
+    }
+}
+
+/// PMAT-962 — the control-flow anti-correlation witness's *general* emitter:
+/// xpile's OWN hand-emitted PTX for the relu kernel `out[i] = (in[i] > 0) ?
+/// in[i] : 0` — exercising the new `if`/`else` + `setp.gt.f64` + `@!%p bra`
+/// lowering, the categorical PTX twin of the nvcc CUDA-C `?:` peer.
+struct XpileReluPtxEmitter;
+
+/// Build the relu kernel `out[i] = (x > 0) ? x : 0` as meta-HIR — an `if`/`else`
+/// over a comparison into a shared local, the shape the PMAT-962 control-flow
+/// lowering compiles to `setp`/`@!%p bra`/labels.
+fn relu_kernel_fn() -> Function {
+    Function {
+        name: "xpile_kernel".into(),
+        params: vec![Param {
+            name: "x".into(),
+            ty: Type::F64,
+            mutable: false,
+        }],
+        return_type: Type::F64,
+        body: Block {
+            stmts: vec![
+                Stmt::Let {
+                    name: "r".into(),
+                    ty: Type::F64,
+                    value: Expr::LitFloat(0.0),
+                    mutable: true,
+                },
+                Stmt::If {
+                    cond: Expr::BinOp {
+                        op: BinOp::Gt,
+                        lhs: Box::new(Expr::Ident("x".into())),
+                        rhs: Box::new(Expr::LitFloat(0.0)),
+                    },
+                    then_body: vec![Stmt::Assign {
+                        name: "r".into(),
+                        value: Expr::Ident("x".into()),
+                    }],
+                    else_body: vec![Stmt::Assign {
+                        name: "r".into(),
+                        value: Expr::LitFloat(0.0),
+                    }],
+                },
+            ],
+            trailing_return: Expr::Ident("r".into()),
+        },
+    }
+}
+
+impl TargetEmitter for XpileReluPtxEmitter {
+    fn name(&self) -> &str {
+        "xpile-ptx-hand-emitted-if"
+    }
+
+    fn try_emit(
+        &self,
+        _module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>> {
+        let compute_capability = match &config.hardware {
+            Some(HwProfile::Ptx { compute_capability }) => compute_capability,
+            _ => return Some(Err(BackendError::MissingHardware(Target::Ptx))),
+        };
+        match emit::emit_kernel(&relu_kernel_fn(), compute_capability) {
+            Ok(primary) => Some(Ok(EmittedText {
+                primary,
+                citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
+            })),
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+/// PMAT-962 — the control-flow witness's *specialist* emitter: a complete
+/// nvcc-compilable CUDA-C `xpile_kernel` computing the SAME relu semantics
+/// (`out[i] = in[i] > 0 ? in[i] : 0`) via a C `?:` ternary — a categorically
+/// independent codegen path from xpile's hand-emitted branch PTX.
+struct CudaReluGeneralEmitter;
+
+impl TargetEmitter for CudaReluGeneralEmitter {
+    fn name(&self) -> &str {
+        "cuda-relu-general"
+    }
+
+    fn try_emit(
+        &self,
+        _module: &Module,
+        config: &BackendConfig,
+    ) -> Option<Result<EmittedText, BackendError>> {
+        match &config.hardware {
+            Some(HwProfile::Ptx { .. }) => {}
+            _ => return Some(Err(BackendError::MissingHardware(Target::Ptx))),
+        }
+        Some(Ok(EmittedText {
+            primary: "\
+__global__ void xpile_kernel(const float* in, float* out, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        // specialist path: a C ternary (independent of xpile's branch PTX)
+        float x = in[i];
+        out[i] = x > 0.0f ? x : 0.0f;
+    }
+}
+"
+            .to_string(),
+            citations: vec![ContractId::new("C-COMPILE-RUST-TO-PTX-MMA")],
+        }))
     }
 }
 

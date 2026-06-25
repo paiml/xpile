@@ -163,3 +163,103 @@ fn ptx_anti_correlation_executes_on_gpu_and_matches() {
         other => panic!("expected an executed Multi Match on a GPU box, got {other:?}"),
     }
 }
+
+/// PMAT-962 — the anti-correlation witness over a NEW construct: **control
+/// flow**. The relu kernel `out[i] = (in[i] > 0) ? in[i] : 0` is emitted as
+/// xpile's OWN hand-emitted PTX (a real `setp.gt.f64` + `@!%p bra` branch +
+/// shared result register) and, independently, as nvcc-compiled CUDA-C (a C
+/// `?:` ternary). The two categorically-independent toolchains must agree on
+/// the GPU — proving the PMAT-962 `if`/`else` lowering is correct on real
+/// silicon, not just ptxas-well-formed.
+///
+/// Same graceful-skip posture: no nvcc/nvidia-smi → benign `NotRun`, CI green.
+#[test]
+fn ptx_if_anti_correlation_executes_on_gpu_and_matches() {
+    if !cuda_toolchain_available() {
+        eprintln!(
+            "PMAT-962: skipping if-bearing anti-correlation PTX witness — \
+             nvcc/nvidia-smi not present. A CUDA box runs xpile's hand-emitted \
+             branch PTX (Driver API) vs nvcc-compiled CUDA-C `?:` and produces a \
+             real Match; free CI records NotRun and stays green."
+        );
+        let backend = PtxBackend::new_ptx_if_diffexec_witness();
+        let artifact: Artifact = backend
+            .lower(&kernel_module(), &ptx_config("sm_80"))
+            .expect("if-witness backend lowers");
+        match artifact.quorum_status {
+            QuorumStatus::Multi {
+                emitters,
+                diff_exec: Some(DiffExecResult::NotRun { .. }),
+            } => {
+                assert_eq!(emitters.len(), 2, "both real emitters should fire");
+                assert!(
+                    emitters.iter().any(|e| e == "xpile-ptx-hand-emitted-if"),
+                    "the hand-emitted branch PTX (general) emitter must be reported, got {emitters:?}"
+                );
+                assert!(
+                    emitters.iter().any(|e| e == "cuda-relu-general"),
+                    "the nvcc CUDA-C relu (specialist) emitter must be reported, got {emitters:?}"
+                );
+            }
+            other => panic!("expected Multi NotRun (no GPU), got {other:?}"),
+        }
+        return;
+    }
+
+    let sm = local_compute_capability();
+    eprintln!("PMAT-962: running if-bearing anti-correlation PTX witness on {sm}");
+
+    let backend = PtxBackend::new_ptx_if_diffexec_witness();
+    let artifact: Artifact = backend
+        .lower(&kernel_module(), &ptx_config(&sm))
+        .expect("if-witness backend lowers + runs both toolchains on GPU");
+
+    // The primary emission carries xpile's OWN hand-emitted branch PTX.
+    assert!(
+        artifact.primary.contains(".visible .entry xpile_kernel"),
+        "primary should be xpile's hand-emitted PTX, got:\n{}",
+        artifact.primary
+    );
+    assert!(
+        artifact.primary.contains("setp.gt.f64"),
+        "primary should carry the if-condition `setp.gt.f64`, got:\n{}",
+        artifact.primary
+    );
+
+    match artifact.quorum_status {
+        QuorumStatus::Multi {
+            emitters,
+            diff_exec: Some(DiffExecResult::Match { max_abs_diff }),
+        } => {
+            assert_eq!(emitters.len(), 2, "both codegen paths ran");
+            assert!(
+                emitters.iter().any(|e| e == "xpile-ptx-hand-emitted-if"),
+                "xpile hand-emitted branch PTX path must be reported, got {emitters:?}"
+            );
+            assert!(
+                emitters.iter().any(|e| e == "cuda-relu-general"),
+                "nvcc CUDA-C relu path must be reported, got {emitters:?}"
+            );
+            // relu over the fixture is exactly representable; the hand-emitted
+            // branch PTX and the nvcc `?:` agree bit-for-bit on the RTX 4090.
+            assert!(
+                max_abs_diff <= 1.0e-3,
+                "executed branchy outputs diverged across toolchains: max_abs_diff={max_abs_diff}"
+            );
+            eprintln!(
+                "PMAT-962: IF-BEARING ANTI-CORRELATION PTX witness PASSED on {sm} — \
+                 xpile's hand-emitted branch PTX (setp.gt.f64 + @!%p bra, Driver API) \
+                 vs nvcc-compiled CUDA-C `?:` agree (max_abs_diff={max_abs_diff}). The \
+                 PMAT-962 control-flow lowering is correct on real silicon."
+            );
+        }
+        QuorumStatus::Multi {
+            diff_exec: Some(DiffExecResult::Divergent { max_abs_diff, .. }),
+            ..
+        } => panic!(
+            "branchy toolchains DIVERGED (control-flow lowering falsified): xpile PTX \
+             vs nvcc CUDA-C max_abs_diff={max_abs_diff}"
+        ),
+        other => panic!("expected an executed Multi Match on a GPU box, got {other:?}"),
+    }
+}
