@@ -8,7 +8,7 @@ github_repo: paiml/xpile
 # design sessions. The slice entries under `roadmap:` are the means; THIS is
 # the end. Do not let the ledger's idiom-coverage proxy eclipse these.
 strategic_goals:
-  updated: '2026-06-25 (PMAT-985 refresh: pillar statuses advanced through PMAT-949..984)'
+  updated: '2026-06-25 (PMAT-987: adversarial re-verification of the PMAT-949..984 witness batch — sound, no defect)'
   north_star: >-
     Provable polyglot transpilation: every construct, in every source AND target
     language, carried by a machine-checked contract. This — not idiom coverage —
@@ -188,6 +188,24 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-987
+  github_issue: null
+  item_type: task
+  title: 'PMAT-987: [verify/§29] Independent adversarial RE-VERIFICATION of the PMAT-949..984 GPU/WASM/SPIR-V/WGSL witness batch (the EV-rank-1 discipline per forward_ev_ranking + memory feedback-ultracode-adversarial-verify). Spawn read-only skeptic passes that try to REFUTE the batch''s three load-bearing claims — (a) "real emit, not a hardcoded shader/PTX", (b) "executes on hardware, never silently skips", (c) "no silent codegen drops" — AND independently re-run the witnesses rather than trusting the prior runs OR the skeptics. Re-executed every PTX witness on the local RTX 4090 (sm_89): gpu_witness (PMAT-949 general-vs-specialist CUDA-C), anti_correlation_witness (PMAT-961 xpile-hand-emitted-PTX-vs-nvcc-CUDA-C + PMAT-962 if-branch), array_anti_correlation_witness (PMAT-980 xs[i] ld.global), array_compose_witness (PMAT-984 clamp) — each a real DiffExecResult::Match, max_abs_diff=0 on silicon. cargo test --workspace exit 0; advisory lake build exit 0 (zero sorry/axiom). Records the result + the refutation of the skeptics'' OWN over-claims in audit-design.md §7.4 (Popperian falsifier status). NO code defect found — the batch is SOUND; ship the record, do NOT fake a gap. Docs-only (audit-design.md + roadmap.yaml).'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "EV-RANK-1 DISCIPLINE (forward_ev_ranking rank 1 = adversarial-verify): the ~5-8-slice skeptic pass over the banked PMAT-949..984 witness batch, executed AND its findings independently checked — the verifier is itself verified (do not trust agent self-reports, per memory feedback-ultracode-adversarial-verify)."
+  - "GROUND TRUTH re-established by RE-EXECUTION, not assertion: all four PTX witness binaries re-run on the local RTX 4090 sm_89 → real DiffExecResult::Match, max_abs_diff=0 on each (saxpy, if-branch, xs[i] array, clamp composition); cargo test --workspace exit 0; lake build exit 0 (zero sorry/axiom across the elaborating tree)."
+  - "SKEPTIC OVER-CLAIMS REFUTED: (1) gpu_witness 'two independent toolchains' is honestly scoped in-file (PMAT-949 = two CUDA-C emitters; PMAT-961 explicitly upgrades to the categorically-independent xpile-PTX-vs-nvcc pair); (2) the f64(xpile)/f32(nvcc) 'type mismatch' is the DELIBERATE dual-precision design — each side self-consistent, the fixture + the witnessed ops (2x+1/relu/clamp) exactly representable in both binary32 and binary64, so the cross-precision compare is genuinely max_abs_diff=0; (3) the 'bit-for-bit comment vs <=1e-3 assertion contradiction' is a CORRECT comment (states WHY agreement is exact: representability) paired with deliberately conservative slack. WASM/WGSL/SPIR-V witnesses confirmed to drive xpile's real emit_module/emit_wgsl_module (not hardcoded) and diff against COMPUTED CPython references."
+  - "RECORDED in the adversarial record: a new audit-design.md §7.4 falsifier-status bullet documents the independent re-verification + the refuted over-claims; conclusion = no falsifier from the batch entered the falsified range. NO code change — ship nothing rather than fake a gap (the verify found the batch sound)."
+  - "DONE: docs-only (audit-design.md + roadmap.yaml); cargo fmt --all -- --check clean (no .rs touched); pv lint contracts/ 0 errors; YAML re-parses (python3 yaml.safe_load); quorum/attestation roadmap-scan tests stay green. Sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Discharges the forward_ev_ranking rank-1 adversarial-verify discipline for the banked PMAT-949..984 batch. Method: 3 read-only skeptic agents (PTX / WASM-WGSL-SPIRV / correctness) each tasked to REFUTE, + first-party RE-EXECUTION of the PTX witnesses on real sm_89 silicon + full cargo test --workspace + lake build. Outcome: batch SOUND, the skeptics'' own counter-claims themselves refuted; no defect to fix. The honest output of a clean verify is the recorded confirmation, not a manufactured fix.'
 - id: PMAT-986
   github_issue: null
   item_type: epic
