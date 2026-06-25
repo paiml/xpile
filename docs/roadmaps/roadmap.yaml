@@ -100,6 +100,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-965
+  github_issue: null
+  item_type: task
+  title: 'PMAT-965: [correctness-hunt] the GENERAL-float format spec `:g` / `:G` and `:.Ng` / `:.NG` over a float — `f"{1234.5:g}"` == "1234.5", `f"{123456789:g}"` == "1.23457e+08", `f"{3.14159:.3g}"` == "3.14", `f"{1000000.0:g}"` == "1e+06" — were a clean REJECT ("unsupported format spec `:g`"). `:g` is the C `%g` rule AND Python''s DEFAULT float presentation type, so it is one of the most common still-unsupported specs. Algorithm (validated byte-identical to CPython over 513,024 (value × precision) cases + a 216-probe full-pipeline parity sweep): with precision P (default 6, clamped to ≥1), let X be the decimal exponent of the value rounded to P significant digits — use FIXED notation with P-1-X decimals when -4 ≤ X < P, else SCIENTIFIC with P-1 decimals — then STRIP trailing zeros (and a trailing `.`). Scientific output carries Python''s `e±NN` exponent (sign always present, magnitude zero-padded to ≥2 digits); inf/nan (upper INF/NAN) pass through, signed. Rust''s `format!` has NO `%g`, so the spec routes to the new `FloatGeneralStr` meta-HIR node, whose Rust/Ruchy codegen PORTS the algorithm at runtime (read X from a `{:.P-1e}` post-rounding render, branch fixed/sci, render, strip, fix the exponent). An int with a `g`/`G` presentation is coerced to float by the existing PMAT-693 last-char-in-`eEfFgG%` test (`f"{5:g}"` == "5"). Companion to PMAT-941 FloatSciStr / PMAT-940 FloatGroupedStr; width-combined `:12g` and the `#g` alt flag stay documented rejects (follow-ups). Lean lane refuses (like FloatSciStr). Citation-honest: cites the EXISTING C-PY-FLOAT-ARITH + C-XLATE-PY-STR-TO-RUST-STRING contracts (no new contract minted). Surfaced + confirmed-still-open by a fresh python3-vs-rustc differential format-spec sweep.'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "FRONTEND (depyler-frontend apply_nonempty_format_spec): a float (or PMAT-693-coerced int) with a `g`/`G`-suffixed spec routes to the new `Expr::FloatGeneralStr { value, precision, upper }` — bare `g`/`G` defaults to precision 6, `:.Ng` parses the digit run (clamped to ≥1 in codegen). Inserted AFTER the `:e`/`:E` FloatSciStr branch and BEFORE the PMAT-807 align/width float-repr fallthrough, so a plain `g` no longer falls to the `translate_format_spec` reject. The three type/walk arms (collect/escape/type-infer) treat FloatGeneralStr → Str, recursing into value."
+  - "META-HIR + CODEGEN: new `Expr::FloatGeneralStr` variant + 3 recursion arms (expr_has_int_arith / escape_expr / collect_idents). xpile-rust-codegen + xpile-ruchy-codegen emit the C `%g` port: inf/nan early (signed, upper INF/NAN), else read X from `format!(\"{:.P-1e}\", __x)`, fixed when `(-4..P).contains(&X)` with `P-1-X` decimals else sci with `P-1`, `trim_end_matches('0').trim_end_matches('.')`, and rebuild a scientific exponent in Python''s `e±NN` form. xpile-lean-codegen REFUSES (LeanCodegenError::Unsupported, mirroring FloatSciStr — the str-domain Lean refusal discipline)."
+  - "DIFFERENTIAL WITNESS (real correctness oracle): crates/xpile/tests/fixtures/fstr_general.py transpiles to Rust that COMPILES and whose 32 assertions all VALUE-MATCH python3 (gen/gen_upper/gen_p3/gen_p1/gen_int/labeled — incl. the fixed/sci boundary 100000→\"100000\" vs 1e6→\"1e+06\", trailing-zero strip 123.0→\"123\", 0.0001/0.00001 boundary, signed inf/-inf/INF, nan/NAN, int-coercion 5→\"5\"). transpile_e2e::fstr_general green via assert_rustc_runs; e2e count 674→675."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (27 contracts, 0 err/0 warn), cargo-deny advisories CLEAN (no new deps), cargo test (xpile-meta-hir + xpile-rust-codegen + xpile-ruchy-codegen + xpile-lean-codegen + depyler-frontend lib + transpile_e2e 675/675). No new contract → no Lean/lakefile/PROVABILITY touch. Remaining fstr-spec reject-elim queue: bare `:,` over the default float repr, `:08,` grouping-with-width, width-combined `:12.2e`/`:12g`, sign-forcing `:+e`. correctness-first, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-964
   github_issue: null
   item_type: task

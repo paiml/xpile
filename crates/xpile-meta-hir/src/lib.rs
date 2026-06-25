@@ -563,9 +563,10 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         }
         // PMAT-940: grouped float field — recurse into the value expr.
         // PMAT-941: scientific float field — recurse into the value expr.
-        Expr::FloatGroupedStr { value, .. } | Expr::FloatSciStr { value, .. } => {
-            expr_has_int_arith(value)
-        }
+        // PMAT-965: general float field — recurse into the value expr.
+        Expr::FloatGroupedStr { value, .. }
+        | Expr::FloatSciStr { value, .. }
+        | Expr::FloatGeneralStr { value, .. } => expr_has_int_arith(value),
         // PMAT-942: space-sign numeric field — recurse into the value expr.
         Expr::SpaceSignStr { value, .. } => expr_has_int_arith(value),
         Expr::IntFromStrRadix { value, .. } => expr_has_int_arith(value),
@@ -2084,6 +2085,28 @@ pub enum Expr {
         precision: u32,
         upper: bool,
     },
+    /// PMAT-965 (correctness-hunt): a GENERAL-float field — Python's `:g` / `:G`
+    /// presentation type. `f"{1234.5:g}"` → `"1234.5"`, `f"{123456789:g}"` →
+    /// `"1.23457e+08"`, `f"{3.14159:.3g}"` → `"3.14"`, `f"{1000000.0:g}"` →
+    /// `"1e+06"`. `:g` is the C-`printf` `%g` rule (also Python's DEFAULT float
+    /// presentation): with precision `P` (default 6, clamped to ≥1), let `X` be
+    /// the decimal exponent of the value rounded to `P` significant digits; use
+    /// FIXED notation with `P-1-X` decimals when `-4 ≤ X < P`, else SCIENTIFIC
+    /// with `P-1` decimals — then STRIP trailing zeros (and a trailing `.`).
+    /// Scientific output carries Python's `e±NN` exponent (sign always present,
+    /// magnitude zero-padded to ≥2 digits); `inf`/`nan` (upper `INF`/`NAN`) pass
+    /// through. Rust's `format!` has no `%g`, so codegen ports the algorithm:
+    /// read `X` from a `{:.P-1e}` render, branch, render, strip, fix the
+    /// exponent. `upper` selects the `G` presentation (uppercases the result).
+    /// Validated byte-identical to CPython over 513k (value × precision) cases.
+    /// The general-float companion to [`Expr::FloatSciStr`] / [`Expr::FloatGroupedStr`];
+    /// width-combined `:12g` and the `#g` alt flag stay deferred rejects. Lean
+    /// refuses (like [`Expr::FloatSciStr`]).
+    FloatGeneralStr {
+        value: Box<Expr>,
+        precision: u32,
+        upper: bool,
+    },
     /// PMAT-942 (correctness-hunt): the SPACE sign flag ` ` on a numeric field —
     /// Python `f"{5: d}"` → `" 5"`, `f"{-5: d}"` → `"-5"`, `f"{3.14: .2f}"` →
     /// `" 3.14"`, and width/zero-pad combos `f"{5: 05d}"` → `" 0005"`. Python's
@@ -3300,6 +3323,7 @@ fn escape_expr(e: &mut Expr) {
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
         | Expr::FloatSciStr { value, .. }
+        | Expr::FloatGeneralStr { value, .. }
         | Expr::SpaceSignStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
@@ -3836,6 +3860,7 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         | Expr::IntGroupedStr { value, .. }
         | Expr::FloatGroupedStr { value, .. }
         | Expr::FloatSciStr { value, .. }
+        | Expr::FloatGeneralStr { value, .. }
         | Expr::SpaceSignStr { value, .. }
         | Expr::IntFromStrRadix { value, .. }
         | Expr::FormatSpec { value, .. }
