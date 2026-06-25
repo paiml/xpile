@@ -30,6 +30,7 @@ xpile-wasm-frontend = { workspace = true }
 xpile-ruchy-codegen = { workspace = true }
 xpile-ptx-codegen   = { workspace = true }
 xpile-wgsl-codegen  = { workspace = true }
+xpile-spirv-codegen = { workspace = true }
 xpile-wasm-codegen  = { workspace = true }
 xpile-forjar-codegen = { workspace = true }
 xpile-lean-codegen  = { workspace = true }

@@ -274,6 +274,8 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
+ "serde",
+ "termcolor",
  "unicode-width",
 ]
 
@@ -387,6 +389,12 @@ name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
+name = "fixedbitset"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "foldhash"
@@ -713,6 +721,7 @@ dependencies = [
  "log",
  "num-traits",
  "once_cell",
+ "petgraph",
  "rustc-hash",
  "spirv",
  "thiserror 2.0.18",
@@ -859,6 +868,17 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "petgraph"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
+dependencies = [
+ "fixedbitset",
+ "hashbrown 0.15.5",
+ "indexmap",
+]
 
 [[package]]
 name = "phf"
@@ -1251,6 +1271,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1435,6 +1464,7 @@ dependencies = [
  "document-features",
  "hashbrown 0.16.1",
  "log",
+ "naga",
  "portable-atomic",
  "profiling",
  "raw-window-handle",
@@ -1560,6 +1590,15 @@ dependencies = [
  "bytemuck",
  "log",
  "raw-window-handle",
+]
+
+[[package]]
+name = "winapi-util"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
+dependencies = [
+ "windows-sys",
 ]
 
 [[package]]
@@ -1790,6 +1829,7 @@ dependencies = [
  "xpile-ptx-codegen",
  "xpile-ruchy-codegen",
  "xpile-rust-codegen",
+ "xpile-spirv-codegen",
  "xpile-wasm-codegen",
  "xpile-wasm-frontend",
  "xpile-wgsl-codegen",
@@ -1906,6 +1946,20 @@ dependencies = [
  "thiserror 1.0.69",
  "xpile-backend",
  "xpile-meta-hir",
+]
+
+[[package]]
+name = "xpile-spirv-codegen"
+version = "0.1.601"
+dependencies = [
+ "bytemuck",
+ "naga",
+ "pollster",
+ "wgpu",
+ "xpile-backend",
+ "xpile-contracts",
+ "xpile-meta-hir",
+ "xpile-wgsl-codegen",
 ]
 
 [[package]]
