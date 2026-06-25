@@ -1860,6 +1860,26 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 )?;
             }
         }
+        // PMAT-939 (correctness-hunt): thousands-grouping `f"{n:,}"` / `f"{n:_}"`.
+        // Rust's `format!` has no grouping flag, so emit the digit-grouping loop:
+        // take the magnitude's decimal digits (`__m = n.unsigned_abs()` keeps
+        // `i64::MIN` safe), walk them left-to-right inserting the separator before
+        // every position whose distance from the end is a positive multiple of 3,
+        // then prepend the sign. Matches Python `format(n, ",")` / `format(n, "_")`.
+        Expr::IntGroupedStr { value, sep } => {
+            out.push_str("{ let __n = (");
+            emit_expr(out, value, mode)?;
+            out.push_str(
+                "); let __m = __n.unsigned_abs(); let __sign = if __n < 0 { \"-\" } else { \"\" }; \
+                 let __ds = __m.to_string(); let __bytes = __ds.as_bytes(); let __len = __bytes.len(); \
+                 let mut __g = String::new(); for (__i, __ch) in __bytes.iter().enumerate() { ",
+            );
+            write!(
+                out,
+                "if __i > 0 && (__len - __i) % 3 == 0 {{ __g.push('{sep}'); }} "
+            )?;
+            out.push_str("__g.push(*__ch as char); } format!(\"{}{}\", __sign, __g) }");
+        }
         // PMAT-502da: `int(s, base)` → parse via `i64::from_str_radix`
         // (a parse failure / out-of-range digit panics ≈ Python ValueError).
         // PMAT-655: Python `int(s, base)` accepts a base-matching radix PREFIX

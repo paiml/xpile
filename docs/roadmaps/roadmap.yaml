@@ -11446,6 +11446,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-939
+  github_issue: null
+  item_type: task
+  title: 'PMAT-939: [correctness-hunt] f-string THOUSANDS-GROUPING spec `:,` / `:_` — `f"{1000000:,}"` -> "1,000,000", `f"{1000000:_}"` -> "1_000_000" were a clean reject ("unsupported format spec `:,`"); Rust `format!` has NO grouping flag, so route to a NEW `Expr::IntGroupedStr` carrying the separator + a runtime digit-grouping loop (group magnitude decimal digits by 3 from the right, sign first for negatives, `unsigned_abs` keeps `i64::MIN` safe, bool coerced to int)'
+  status: done
+  priority: high
+  created: 2026-06-25T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (PMAT-900..938 all merged, sprint window 2026-06-23..07-02 still open). Pivots OFF the hard Lean tail (only PyIntArith 45 remains there, a genuine termination-measure problem) to prompt path c — the python3-vs-rustc differential correctness-hunt. A batch differential sweep (round, zfill, pow-neg, divmod, title/swapcase, true-div, percent-fstring, float-repr, negative-index, chained-compare, float-mod, str-repeat) found xpile already MATCHES CPython on all of those (mature corpus); the surviving gaps were f-string format specs that cleanly REJECT at lower-time (`:,` grouping, `:e`/`:g` scientific) and the dict-print repr. Picked the thousands-GROUPING spec (`,` and `_`) — the cleanest, most-common, sound unit, directly mirroring the PMAT-923 `#`-alt-form-radix slice (same f-string spec subsystem, same `unsupported format spec` gate)."
+  - "ROOT CAUSE: `apply_nonempty_format_spec` (depyler-frontend) routed every supported spec either to a native Rust `FormatSpec` string or to a special-cased IR node (percent `Concat`, radix `IntRadixStr`). Python's `,`/`_` grouping has NO native Rust `format!` equivalent (Rust dropped the `format!` grouping flag pre-1.0), so it fell through to the catch-all reject. Grouping needs a runtime loop (insert a separator every 3 digits from the right over the magnitude's decimal string), which no existing IR node expressed."
+  - "FIX: (1) new `Expr::IntGroupedStr { value: Box<Expr>, sep: char }` in xpile-meta-hir (sep is `,` or `_`); (2) frontend constructs it for a BARE `:,`/`:_` over an i64 (a bool reaches the int path already coerced, so `f\"{True:,}\"` -> \"1\"), placed in the `ty == Type::I64` block before the radix match; (3) rust-codegen + ruchy-codegen emit the magnitude digit-grouping loop `{ let __n=(..); let __m=__n.unsigned_abs(); let __sign= if __n<0 {\"-\"} else {\"\"}; ... for (__i,__ch) in digits { if __i>0 && (__len-__i)%3==0 { __g.push(sep) } __g.push(*__ch as char) } format!(\"{}{}\", __sign, __g) }` — `unsigned_abs` is i64::MIN-safe, matching Python `format(n, \",\")`/`format(n, \"_\")`; (4) Lean lane refuses with a pointer (like `IntRadixStr`); (5) meta-hir/frontend/lean traversal arms (escape_expr, collect_idents_expr, collect_idents, infer_type x2, the `f(value)` walker) recurse into `value`. SCOPE is a bare separator only — grouping combined with width (`:08,`) or float presentation (`:,.2f`) STAYS a documented reject, a follow-up exactly as PMAT-613 scoped bare radix before the width forms."
+  - "REGRESSION GUARDS: e2e test `fstr_grouping` in transpile_e2e.rs (asserts the magnitude-grouping loop is emitted for both `,` and `_`, then rustc-runs the binary against hand-checked CPython values incl. negatives, zero, sub-1000, and a labeled field); oracle fixture `fstring_grouping.py` (the differential oracle compiles+runs it and asserts byte-identical CPython-vs-rustc stdout — `oracle_differential_python_vs_rust` PASS); fixture `fstr_grouping.py`. Manually cross-checked the transpiled binary vs python3 on 14 cases (grouped commas, underscores, negatives, bool, sub-group, labeled) — all byte-identical; the width-combined `:08,` form still rejects as intended."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors, 0 warnings), cargo-deny advisories, `cargo test -p xpile --test transpile_e2e fstr_grouping`, `cargo test -p xpile --test oracle_differential`, codegen+frontend crate tests. Backlog correctness slice, sprint 2026-06-25."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-131
   github_issue: null
   item_type: task
