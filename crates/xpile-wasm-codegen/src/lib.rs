@@ -38,14 +38,21 @@
 //!   `i32.load8_u` of the `i`-th byte — the per-byte code point, the same
 //!   bounds-guard shape (`i < 0 || i >= byte_count → unreachable`) the list
 //!   index path uses, then zero-extended to the `i64` Python-int domain.
-//!   Every STRING-RETURNING string op is **refused** (a hard
-//!   `BackendError::Lower` naming "needs heap allocator (PMAT-986 slice
-//!   2)") — `s[i]` used AS a 1-char string (`Expr::StrCharAt` outside an
-//!   `ord`), `chr(n)` (`Expr::Chr`), string concat `a + b`
-//!   (`Expr::Concat`), slicing, `str(x)`/`repr(x)`, and the f-string /
-//!   number-format families — because materialising a result string needs
-//!   the bump allocator the next slice ships. String equality, string
-//!   methods, `dict`, `set`, and `struct` are likewise honestly refused.
+//!   As of **PMAT-993 (slice 2)** string-RETURNING ops are unblocked by a
+//!   linear-memory **bump allocator** (`(global $__heap_ptr (mut i32))` past
+//!   the static `(data)` region plus `$__alloc(n)`, 8-byte-aligned, bump-only
+//!   with no free; see `HEAP_BASE`/`heap_helpers`). The slice-2 string ops:
+//!   **string concatenation `a + b`** (`Expr::Concat`) does `alloc(8 + Σ
+//!   len(opᵢ))`, writes the count header, `memory.copy`s each operand's bytes,
+//!   and returns the new base-pointer (left-nested `(a+b)+c` flattens to ONE
+//!   alloc with N copies); and **`chr(n)`** (`Expr::Chr`) does `alloc(9)`, a
+//!   count-1 header, then an `i32.store8` of `n & 0xFF` (ASCII-bounded, the
+//!   `ord` mirror). A function RETURNING a `str` now works (the result is the
+//!   new string's `i32` heap pointer). Still **refused** honestly (a hard
+//!   `BackendError`): `s[i]` as a 1-char string (`Expr::StrCharAt` outside
+//!   `ord`, slice 3), a string LITERAL operand (`"..." + s`, needs static
+//!   `(data)` segments — a follow-up), slicing, `str(x)`/`repr(x)`, f-strings,
+//!   string equality / comparison / methods, and `dict` / `set` / `struct`.
 //! - The FIRST aggregate (PMAT-966 + PMAT-968): a `list[int]`/`list[float]`
 //!   **parameter** lowers to an `i32` base-pointer into WASM **linear
 //!   memory**. As of PMAT-968 the pointed-at region is a length-prefixed
@@ -130,6 +137,75 @@ const LIST_ELEMS_OFFSET: i32 = 8;
 /// with `__wasm` to avoid colliding with a user local — meta-HIR identifiers
 /// from the supported frontends never start `__wasm`.
 const IDX_SCRATCH: &str = "__wasm_idx";
+
+/// PMAT-993: per-function scratch `i32` locals for string construction. The
+/// destination base-pointer (`$__wasm_str_dst`) and the first operand's byte
+/// length (`$__wasm_str_la`, the write offset of the second operand) of a
+/// `Concat`. Like [`IDX_SCRATCH`], declared from the emitted body so they
+/// appear exactly when a string-RETURNING op uses them.
+const STR_DST_SCRATCH: &str = "__wasm_str_dst";
+const STR_LA_SCRATCH: &str = "__wasm_str_la";
+
+/// PMAT-993 (slice 2): the base linear-memory address of the bump heap.
+///
+/// String / list params (the static inputs a host preloads via `(data …)`)
+/// live at low addresses; the bump heap — where string-RETURNING ops
+/// (`a + b`, `chr(n)`) materialise their results — starts above that static
+/// region at this fixed, honestly-documented offset. 1024 bytes reserves
+/// room for the static inputs in the witness/host layout; the emitter does
+/// NOT know how much static data a host preloads, so this is a CONVENTION
+/// (the host keeps its `(data …)` inputs below `__HEAP_BASE`). One 64-KiB
+/// memory page (declared in `emit_module`) holds both regions.
+const HEAP_BASE: i32 = 1024;
+
+/// PMAT-993: name of the mutable global holding the bump pointer (the next
+/// free heap address). Initialised to [`HEAP_BASE`]; advanced 8-byte-aligned
+/// by `$__alloc`.
+const HEAP_PTR_GLOBAL: &str = "__heap_ptr";
+
+/// PMAT-993 (slice 2): the linear-memory bump allocator, in WAT.
+///
+/// A bump-only heap — NO free (documented; slice 2's deliverable is the
+/// enabling primitive, not a general allocator). `$__alloc(n)` returns the
+/// current bump pointer and advances it by `align8(n)` so every allocation
+/// (string headers, `i64`/`f64` payloads) stays 8-byte aligned. The heap
+/// lives above the static `(data …)` region (see [`HEAP_BASE`]) in the same
+/// single memory page; a host/witness preloads its inputs below `HEAP_BASE`
+/// and reads constructed strings back from the returned pointer.
+///
+/// This intentionally does NOT call `memory.grow`: the module pre-sizes one
+/// page (64 KiB), which bounds slice-2 string construction honestly. A heap
+/// that outgrows the page traps (an out-of-memory analogue) rather than
+/// silently corrupting — growth is a clean follow-up.
+///
+/// Emitted once per module (gated on [`module_needs_heap`]); the bump pointer
+/// is initialised to [`HEAP_BASE`].
+fn heap_helpers() -> String {
+    format!(
+        "\
+  ;; PMAT-993 bump heap: $__heap_ptr is the next free address (8-aligned),
+  ;; initialised past the static (data) inputs at __HEAP_BASE = {HEAP_BASE}.
+  (global ${HEAP_PTR_GLOBAL} (mut i32) (i32.const {HEAP_BASE}))
+  ;; __alloc(n) = current bump pointer; advance it by align8(n). Bump-only
+  ;; (no free). Returns the allocation's base address.
+  (func $__alloc (param $n i32) (result i32)
+    (local $base i32)
+    global.get ${HEAP_PTR_GLOBAL}
+    local.set $base
+    ;; __heap_ptr = base + ((n + 7) & ~7)   (round the size up to 8 bytes)
+    local.get $base
+    local.get $n
+    i32.const 7
+    i32.add
+    i32.const -8
+    i32.and
+    i32.add
+    global.set ${HEAP_PTR_GLOBAL}
+    local.get $base
+  )
+"
+    )
+}
 
 /// Python floor-division and floor-modulo helper functions, in WAT.
 ///
@@ -429,7 +505,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // Declare one page (64 KiB) of memory once, up front, and export it as
     // `mem` so a host/witness can populate it (count + elements) before the
     // call.
-    if module_uses_list_param(module) {
+    // PMAT-993 (slice 2): a module needs the bump heap when ANY function
+    // performs a string-RETURNING op (`a + b`, `chr(n)`) — those materialise
+    // a new length-prefixed string in linear memory. Such a module needs the
+    // `(memory …)` even with no list/str PARAMETER (e.g. a `chr(n)`-only fn).
+    let needs_heap = module_needs_heap(module);
+    if module_uses_list_param(module) || needs_heap {
         writeln!(
             out,
             "  ;; PMAT-968/986: list AND str params are an i32 base-pointer to \
@@ -437,7 +518,21 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
              base+8) in this linear memory"
         )
         .expect("write");
+        if needs_heap {
+            writeln!(
+                out,
+                "  ;; PMAT-993: string-RETURNING ops (a + b, chr(n)) bump-allocate \
+                 their result here too (heap above the static inputs at __HEAP_BASE)"
+            )
+            .expect("write");
+        }
         writeln!(out, "  (memory (export \"mem\") 1)").expect("write");
+    }
+    // PMAT-993: emit the bump allocator (a mutable `$__heap_ptr` global +
+    // `$__alloc`) once, when the module materialises any new string. Gated on
+    // `needs_heap` so a scalar/list/read-only-str module carries no allocator.
+    if needs_heap {
+        out.push_str(&heap_helpers());
     }
     // Emit the Python floor-division / floor-modulo helpers once. WASM
     // `i64.div_s` truncates toward zero and `i64.rem_s` is the truncating
@@ -486,6 +581,70 @@ fn module_uses_list_param(module: &Module) -> bool {
             .any(|p| matches!(p.ty, Type::List(_) | Type::Str)),
         _ => false,
     })
+}
+
+/// PMAT-993: `true` when any function in `module` MATERIALISES a new string
+/// in linear memory — a string-RETURNING op (`Expr::Concat` string `+`,
+/// `Expr::Chr`) or a `str` RETURN type — so the module needs the bump heap
+/// (`$__heap_ptr` + `$__alloc`). A purely read-only string / scalar / list
+/// module returns `false` and carries no allocator (the slice-1 posture).
+fn module_needs_heap(module: &Module) -> bool {
+    module.items.iter().any(|item| match item {
+        Item::Function(f) => matches!(f.return_type, Type::Str) || block_has_heap_op(&f.body),
+        _ => false,
+    })
+}
+
+/// `true` if `block` contains a string-materialising expression anywhere.
+fn block_has_heap_op(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_heap_op) || expr_has_heap_op(&block.trailing_return)
+}
+
+fn stmt_has_heap_op(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_heap_op(value),
+        Stmt::Return(e) => expr_has_heap_op(e),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_heap_op(cond)
+                || then_body.iter().any(stmt_has_heap_op)
+                || else_body.iter().any(stmt_has_heap_op)
+        }
+        Stmt::While { cond, body } => expr_has_heap_op(cond) || body.iter().any(stmt_has_heap_op),
+        Stmt::IndexAssign { value, .. } => expr_has_heap_op(value),
+        Stmt::Break | Stmt::Continue => false,
+        _ => false,
+    }
+}
+
+/// `true` if `e` (or any sub-expression) materialises a new string —
+/// `Expr::Concat` (string `+`) or `Expr::Chr`. `Expr::StrCharAt` outside an
+/// `ord` is also string-valued, but slice 2 still refuses it (a 1-char-string
+/// slice is the follow-up), so it does NOT pull in the heap on its own.
+fn expr_has_heap_op(e: &Expr) -> bool {
+    match e {
+        Expr::Concat { .. } | Expr::Chr { .. } => true,
+        Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
+            expr_has_heap_op(lhs) || expr_has_heap_op(rhs)
+        }
+        Expr::UnOp { operand, .. } => expr_has_heap_op(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => expr_has_heap_op(cond) || expr_has_heap_op(then_expr) || expr_has_heap_op(else_expr),
+        Expr::Call { args, .. } => args.iter().any(expr_has_heap_op),
+        Expr::Index { collection, index } => {
+            expr_has_heap_op(collection) || expr_has_heap_op(index)
+        }
+        Expr::Len(c) => expr_has_heap_op(c),
+        Expr::Ord { value } => expr_has_heap_op(value),
+        Expr::StrCharAt { string, index } => expr_has_heap_op(string) || expr_has_heap_op(index),
+        _ => false,
+    }
 }
 
 /// WAT scalar value type — the lowered shape of a supported meta-HIR
@@ -612,18 +771,22 @@ fn unsupported(what: &str) -> BackendError {
     ))
 }
 
-/// PMAT-986: the honest refusal for a STRING-RETURNING op. Slice 1 ships
-/// read-only string access (str param + `len(s)` + `ord(s[i])` byte read);
-/// any op that must MATERIALISE a result string in linear memory (concat,
-/// slicing, `s[i]` as a 1-char string, `chr(n)`, `str(x)`, f-strings, …)
-/// needs the bump allocator that PMAT-986 slice 2 ships. Refuse with a hard
-/// `BackendError::Lower` naming that follow-up so the boundary is explicit.
+/// PMAT-986/993: the honest refusal for a string-RETURNING op that is NOT
+/// yet wired even though the heap allocator now exists (PMAT-993 slice 2). The
+/// allocator unblocked concat (`a + b`) and `chr(n)`; the REMAINING
+/// string-materialising ops (`s[i]` as a 1-char string, slicing, `str(x)`,
+/// f-strings, a string LITERAL operand needing a static `(data)` segment) are
+/// a follow-up (slice 3) and refused with a hard `BackendError::Lower` so the
+/// boundary stays explicit. (Retains the "heap allocator (PMAT-986 slice 2)"
+/// phrasing the slice-1 boundary tests assert; the allocator HAS landed —
+/// these specific ops just need more than it.)
 fn needs_heap_allocator(what: &str) -> BackendError {
     BackendError::Lower(format!(
-        "xpile-wasm-codegen: {what} produces a NEW string — this needs the \
-         linear-memory bump heap allocator (PMAT-986 slice 2). Slice 1 ships \
-         read-only string access only (str param + len(s) + ord(s[i]) byte \
-         read); string-returning ops are refused until the allocator lands."
+        "xpile-wasm-codegen: {what} produces a NEW string. The heap allocator \
+         (PMAT-986 slice 2) is shipped and powers concat (`a + b`) + chr(n); \
+         this op needs more than the bare allocator (a static (data) segment \
+         or 1-char-slice materialisation) and is a follow-up (slice 3), \
+         refused honestly rather than miscompiled."
     ))
 }
 
@@ -690,17 +853,20 @@ impl Scope {
 
 /// Emit one `(func …)` for `f`.
 fn emit_function(f: &Function) -> Result<String, BackendError> {
-    // PMAT-986: a `str` RETURN is a string-returning op — it must
-    // materialise a result string in linear memory, which needs the bump
-    // allocator the NEXT slice ships. Refuse it honestly here (before the
-    // generic `map_type` refusal) so the message names the slice-2 work.
-    if matches!(f.return_type, Type::Str) {
-        return Err(needs_heap_allocator("returning a `str`"));
-    }
+    // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
+    // base-pointer of the newly-materialised length-prefixed string in linear
+    // memory (the bump heap this slice ships). The trailing return must be a
+    // string-VALUED expression (a `Concat`/`Chr`/str-param ident), validated
+    // by `emit_str_expr`. Slice 1 refused this; slice 2's allocator unblocks
+    // it. A str-returning function is the headline deliverable of this slice.
+    let ret_is_str = matches!(f.return_type, Type::Str);
     let ret_is_unit = matches!(f.return_type, Type::Unit);
     let ret = if ret_is_unit {
         // A void function: no result type. Use i32 as a placeholder that
         // is never read (ret_is_unit gates emission of any result).
+        WatTy::I32
+    } else if ret_is_str {
+        // A str result rides an i32 base-pointer (the heap-allocated string).
         WatTy::I32
     } else {
         map_type(&f.return_type)?
@@ -751,6 +917,10 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
             indent(&mut body, 2);
             body.push_str("drop\n");
         }
+    } else if ret_is_str {
+        // PMAT-993: a str return — the trailing expr must be string-VALUED
+        // (a heap pointer); emit it via the dedicated string lowering.
+        emit_str_expr(&f.body.trailing_return, &scope, &mut body, 2)?;
     } else {
         emit_expr(&f.body.trailing_return, &scope, &mut body, 2)?;
     }
@@ -778,6 +948,17 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
     // exactly when needed — no spurious local for index-free functions.
     if body.contains(&format!("${IDX_SCRATCH}")) {
         writeln!(out, "    (local ${IDX_SCRATCH} i64)").expect("write");
+    }
+    // PMAT-993: declare the string-construction scratch `i32` locals iff a
+    // `Concat`/`Chr` actually used them (same body-driven detection as the
+    // index scratch). `$__wasm_str_dst` holds the destination base-pointer;
+    // `$__wasm_str_la` holds the first operand's byte length (the write
+    // offset for the second operand's bytes).
+    if body.contains(&format!("${STR_DST_SCRATCH}")) {
+        writeln!(out, "    (local ${STR_DST_SCRATCH} i32)").expect("write");
+    }
+    if body.contains(&format!("${STR_LA_SCRATCH}")) {
+        writeln!(out, "    (local ${STR_LA_SCRATCH} i32)").expect("write");
     }
 
     out.push_str(&body);
@@ -1075,19 +1256,32 @@ fn emit_expr(
         // returns an int (a code point), so it needs no result string. Any
         // other `ord` operand (e.g. `ord(chr(n))`) is refused.
         Expr::Ord { value } => emit_ord(value, scope, out, depth),
-        // PMAT-986: `s[i]` used AS a 1-char string (a `StrCharAt` that is NOT
-        // the operand of an `ord`) is string-returning — refuse with the
-        // slice-2 allocator note. Lowering `ord(s[i])` consumes the inner
-        // `StrCharAt` directly in `emit_ord`, so a `StrCharAt` reaching here
-        // is genuinely a string-valued use.
+        // PMAT-986/993: `s[i]` used AS a 1-char string (a `StrCharAt` that is
+        // NOT the operand of an `ord`) is string-returning. Slice 2 ships the
+        // allocator but bounds the string-RETURNING set to `Concat` + `Chr`;
+        // `s[i]` as a 1-char string (a slice) is a clean follow-up — refuse it
+        // honestly. Lowering `ord(s[i])` consumes the inner `StrCharAt`
+        // directly in `emit_ord`, so a `StrCharAt` reaching here is a
+        // string-valued use.
         Expr::StrCharAt { .. } => Err(needs_heap_allocator(
-            "indexing a string `s[i]` as a 1-char string (use `ord(s[i])` for \
-             the byte code, which slice 1 supports)",
+            "indexing a string `s[i]` as a 1-char string (slice 3) — use \
+             `ord(s[i])` for the byte code (slice 1), or `chr(ord(s[i]))` to \
+             rebuild a 1-char string via the slice-2 allocator",
         )),
-        // PMAT-986: `chr(n)` materialises a new 1-char string.
-        Expr::Chr { .. } => Err(needs_heap_allocator("`chr(n)`")),
-        // PMAT-986: string concat `a + b` materialises a new string.
-        Expr::Concat { .. } => Err(needs_heap_allocator("string concatenation `a + b`")),
+        // PMAT-993: `chr(n)` and string concat `a + b` MATERIALISE a new
+        // length-prefixed string in the bump heap and leave its i32
+        // base-pointer on the stack — the slice-2 string-RETURNING ops. The
+        // result is an i32 (the str pointer); a use of it in a non-string
+        // (scalar-arithmetic) position is an honest type mismatch at the typed
+        // site.
+        Expr::Chr { value } => {
+            emit_chr(value, scope, out, depth)?;
+            Ok(WatTy::I32)
+        }
+        Expr::Concat { lhs, rhs } => {
+            emit_concat(lhs, rhs, scope, out, depth)?;
+            Ok(WatTy::I32)
+        }
         Expr::Unit => Err(unsupported(
             "unit value `()` in a value position (WASM has no unit operand)",
         )),
@@ -1452,6 +1646,243 @@ fn emit_str_byte_addr(
     Ok(())
 }
 
+/// PMAT-993: emit a string-VALUED expression, leaving its `i32` base-pointer
+/// (into the length-prefixed linear-memory region) on the WASM stack.
+///
+/// The string-valued forms in the slice-2 subset are: a `str` PARAMETER
+/// (`Expr::Ident` of a str param — already a base-pointer), a `Concat` (string
+/// `+`, materialised in the heap), and a `Chr` (a new 1-char string). Any
+/// other expression in a string position is refused.
+///
+/// Used by a `str`-returning function's trailing return and (transitively, via
+/// `concat_operands`) by nested concat. Both a str param and a heap string
+/// share the SAME length-prefixed ABI (i32 byte-count header at base+0, UTF-8
+/// bytes at base+8), so this uniform base-pointer is enough for `len` and
+/// byte-copy.
+fn emit_str_expr(
+    e: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    match e {
+        Expr::Ident(name) if scope.is_str_param(name) => {
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            Ok(())
+        }
+        Expr::Ident(name) => Err(unsupported(&format!(
+            "string-position use of `{name}` which is not a `str` parameter — \
+             the WASM string subset has no str locals (only str params + \
+             heap-constructed Concat/Chr results)"
+        ))),
+        Expr::Concat { lhs, rhs } => {
+            emit_concat(lhs, rhs, scope, out, depth)?;
+            Ok(())
+        }
+        Expr::Chr { value } => {
+            emit_chr(value, scope, out, depth)?;
+            Ok(())
+        }
+        // PMAT-993: a string LITERAL operand (`"Hi " + name`) needs its bytes
+        // emitted into a fixed static `(data …)` segment below HEAP_BASE and a
+        // pointer to it — a clean follow-up (static string-literal data
+        // segments). Slice 2 concatenates str PARAMS + `chr` results. Refuse
+        // it honestly rather than silently dropping the literal.
+        Expr::LitStr(_) => Err(needs_heap_allocator(
+            "a string LITERAL in a concat/return (`\"...\" + s`) — slice 2 \
+             concatenates str params and chr() results; static string-literal \
+             (data) segments are a follow-up",
+        )),
+        other => Err(unsupported(&format!(
+            "expression {} in a string position — the WASM string subset \
+             returns a `str` param, a `Concat` (a + b), or a `Chr` (chr(n)) \
+             only; slicing / str() / f-strings are refused",
+            expr_kind(other)
+        ))),
+    }
+}
+
+/// PMAT-993: push the `i32` BYTE LENGTH of a string-valued expression onto the
+/// stack — the i32 count header at its `base+0`. The expression's base-pointer
+/// is evaluated by `emit_str_expr`; this appends the header `i32.load`.
+fn emit_str_len_i32(
+    e: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    emit_str_expr(e, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "i32.load").expect("write");
+    Ok(())
+}
+
+/// PMAT-993: lower string concatenation `a + b` (`Expr::Concat`) — the
+/// headline string-RETURNING op of slice 2.
+///
+/// Flattens a left-nested `Concat` tree (`((a + b) + c)`, the frontend's
+/// left-assoc shape) into its leaf operands and joins them in ONE pass:
+///   1. total = Σ len(opᵢ)   (each header i32.load);
+///   2. dst = __alloc(8 + total);
+///   3. store the i32 count header `total` at dst+0;
+///   4. for each operand, `memory.copy` its `len` UTF-8 bytes from
+///      `opᵢ + 8` to `dst + 8 + running_offset`, advancing the offset;
+///   5. leave `dst` (the new string's base-pointer) on the stack.
+///
+/// Single-pass (no nested heap allocation) so the per-function scratch locals
+/// never alias. Each leaf operand must itself be string-valued
+/// (`emit_str_expr`): a str param, or a `Chr`. A non-str operand is refused.
+fn emit_concat(
+    lhs: &Expr,
+    rhs: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // Flatten the (left-nested) concat tree into its ordered leaf operands.
+    let mut operands: Vec<&Expr> = Vec::new();
+    flatten_concat(lhs, &mut operands);
+    flatten_concat(rhs, &mut operands);
+
+    // total_bytes = Σ len(opᵢ): push each operand's i32 byte length and add.
+    emit_str_len_i32(operands[0], scope, out, depth)?;
+    for op in &operands[1..] {
+        emit_str_len_i32(op, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.add").expect("write");
+    }
+    // dst = __alloc(8 + total_bytes): add the header size, call the allocator,
+    // and stash the base-pointer.
+    indent(out, depth);
+    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__alloc").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.set ${STR_DST_SCRATCH}").expect("write");
+
+    // store the count header (total_bytes) at dst+0. Recompute the total from
+    // the operand lengths (cheap header loads) so it lands in the header slot.
+    indent(out, depth);
+    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    emit_str_len_i32(operands[0], scope, out, depth)?;
+    for op in &operands[1..] {
+        emit_str_len_i32(op, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.add").expect("write");
+    }
+    indent(out, depth);
+    writeln!(out, "i32.store").expect("write");
+
+    // Copy each operand's bytes to dst+8+offset, tracking the running offset
+    // in $__wasm_str_la (reused as the cumulative write offset). Start at 0.
+    indent(out, depth);
+    writeln!(out, "i32.const 0").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.set ${STR_LA_SCRATCH}").expect("write");
+    for op in &operands {
+        // memory.copy(dest = dst+8+offset, src = op+8, n = len(op))
+        // dest:
+        indent(out, depth);
+        writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.add").expect("write");
+        indent(out, depth);
+        writeln!(out, "local.get ${STR_LA_SCRATCH}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.add").expect("write");
+        // src = op_base + 8:
+        emit_str_expr(op, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.add").expect("write");
+        // n = len(op):
+        emit_str_len_i32(op, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "memory.copy").expect("write");
+        // offset += len(op):
+        indent(out, depth);
+        writeln!(out, "local.get ${STR_LA_SCRATCH}").expect("write");
+        emit_str_len_i32(op, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.add").expect("write");
+        indent(out, depth);
+        writeln!(out, "local.set ${STR_LA_SCRATCH}").expect("write");
+    }
+    // result = dst (the new string's base-pointer).
+    indent(out, depth);
+    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    Ok(())
+}
+
+/// Flatten a left-nested `Expr::Concat` into its ordered leaf operands. A
+/// `Concat` node recurses; any other expression is a leaf (validated as
+/// string-valued later by `emit_str_expr`).
+fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    if let Expr::Concat { lhs, rhs } = e {
+        flatten_concat(lhs, out);
+        flatten_concat(rhs, out);
+    } else {
+        out.push(e);
+    }
+}
+
+/// PMAT-993: lower `chr(n)` (`Expr::Chr`) — materialise a new 1-byte string
+/// holding the byte `n & 0xFF` and leave its `i32` base-pointer on the stack.
+///
+/// ASCII-bounded (slice 2's honest restriction, the slice-1 `ord` mirror): a
+/// code point ≥ 128 needs multi-byte UTF-8 encoding, deferred with the rest of
+/// the string runtime; this writes the low byte, exact for `0 ≤ n < 128`. The
+/// result is a length-prefixed string (count header = 1 at base+0, the byte at
+/// base+8), so it composes with `Concat` and a `str` return uniformly.
+fn emit_chr(
+    value: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // dst = __alloc(8 + 1) = a 1-byte string region.
+    indent(out, depth);
+    writeln!(out, "i32.const {}", LIST_ELEMS_OFFSET + 1).expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__alloc").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.set ${STR_DST_SCRATCH}").expect("write");
+    // header: count = 1 at dst+0.
+    indent(out, depth);
+    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const 1").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store").expect("write");
+    // byte: (n & 0xFF) at dst+8 via i32.store8. The code point `n` is an i64
+    // Python int; narrow to i32 and mask the low byte.
+    indent(out, depth);
+    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "i32.wrap_i64").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const 255").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.and").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store8").expect("write");
+    // result = dst.
+    indent(out, depth);
+    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    Ok(())
+}
+
 /// Render an `f64` as a WAT float literal token.
 fn wat_float_literal(v: f64) -> String {
     if v.is_nan() {
@@ -1544,20 +1975,30 @@ fn emit_binop(
     // PMAT-986: a `str` param lowers to an `i32` base-pointer, which would be
     // INDISTINGUISHABLE from a bool `i32` in the opcode table below — so a
     // naive `a == b`/`a < b` over two str params would silently compare
-    // BASE-POINTERS (wrong code), and `a + b` would do pointer arithmetic.
-    // Refuse any binop whose operand is a str param: string equality,
-    // comparison, and concat all need real content logic (equality/compare
-    // is a future slice; concat needs the heap allocator). An honest refusal,
-    // never a silent miscompile.
+    // BASE-POINTERS (wrong code). Refuse any binop whose operand is a str
+    // param: string equality / comparison / methods all need real
+    // string-content logic (a future slice), refused honestly rather than
+    // comparing base-pointers.
     if binop_operand_is_str_param(lhs, scope) || binop_operand_is_str_param(rhs, scope) {
+        // PMAT-993: string concat `a + b` is the frontend's `Expr::Concat`,
+        // lowered through the heap path (`emit_concat`). A *`BinOp::Add`* over
+        // str base-pointers is genuine (meaningless) pointer arithmetic, NOT
+        // string concat — point the caller at `Concat`, don't silently do it.
         if matches!(op, BinOp::Add) {
-            return Err(needs_heap_allocator("string concatenation `a + b`"));
+            return Err(unsupported(
+                "BinOp::Add over `str` base-pointers — this is pointer \
+                 arithmetic, not string concatenation. String `+` lowers as \
+                 `Expr::Concat`, which the WASM lane supports via the heap \
+                 allocator (PMAT-993); a raw `BinOp::Add` over str pointers is \
+                 refused",
+            ));
         }
         return Err(unsupported(&format!(
             "binary op {op:?} over `str` operand(s) — string equality / \
-             comparison / methods are not in the WASM slice-1 subset (only \
-             read-only `len(s)` + `ord(s[i])`); they need real string-content \
-             logic, refused honestly rather than comparing base-pointers"
+             comparison / methods are not in the WASM string subset (only \
+             read-only `len(s)` + `ord(s[i])` + heap `Concat`/`chr`); they \
+             need real string-content logic, refused honestly rather than \
+             comparing base-pointers"
         )));
     }
 

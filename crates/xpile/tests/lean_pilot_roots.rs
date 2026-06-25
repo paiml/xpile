@@ -259,6 +259,17 @@ const EXPECTED_PILOT: &[&str] = &[
     // pilot grows 26 → 27; the entire `contracts/lean/` substrate stays
     // machine-checked.
     "CompileRustToSpirv",
+    // PMAT-993 (WASM bump heap, PMAT-986 slice 2): the NEW WASM-heap contract
+    // joins the pilot at depth-1 — a core-only, import-free STRUCTURE
+    // EXTENSIONALITY proof (a bump-heap allocation is determined by its
+    // structural (base, size) signature) plus an `align8` idempotence lemma,
+    // the proof-lane half of string CONSTRUCTION on the WASM emit lane (concat
+    // `a + b` / `chr(n)` / a `str` return materialise a length-prefixed string
+    // via `$__alloc`; the WABT witness reads the constructed string back and
+    // value-matches CPython). A strict extension of C-COMPILE-RUST-TO-WASM.
+    // NEW contract, so the pilot grows 27 → 28; the entire `contracts/lean/`
+    // substrate stays machine-checked.
+    "WasmHeap",
 ];
 
 #[test]

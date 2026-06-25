@@ -300,5 +300,17 @@ lean_lib «XpileContractsPilot» where
     -- numerically diffs two categorically-independent emitters (the SPIR-V
     -- sibling of the §29 WGSL wgpu witness, PMAT-950). NEW contract, so the
     -- pilot grows 26 → 27; the entire substrate stays machine-checked.
-    `CompileRustToSpirv             -- C-COMPILE-RUST-TO-SPIRV     (PMAT-960)
+    `CompileRustToSpirv,            -- C-COMPILE-RUST-TO-SPIRV     (PMAT-960)
+    -- PMAT-993 (WASM bump heap, PMAT-986 slice 2): the NEW WASM-heap contract
+    -- joins the pilot at depth-1 — a core-only, import-free STRUCTURE
+    -- EXTENSIONALITY proof (same shape as XlateRustToWasm / the str/list/set
+    -- structural Diamonds): a bump-heap allocation is determined by its
+    -- structural (base, size) signature, plus an `align8` idempotence lemma
+    -- (the bump pointer advances 8-aligned). This is the proof-lane half of
+    -- string CONSTRUCTION on the WASM emit lane — concat `a + b` / `chr(n)` /
+    -- a `str` return materialise a length-prefixed string via `$__alloc`; the
+    -- WABT witness READS the constructed string back and value-matches CPython.
+    -- A strict extension of C-COMPILE-RUST-TO-WASM. NEW contract, so the pilot
+    -- grows 27 → 28; the entire substrate stays machine-checked.
+    `WasmHeap                       -- C-WASM-HEAP                 (PMAT-993)
   ]
