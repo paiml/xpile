@@ -33,6 +33,7 @@
 //! green), the same graceful-skip discipline as the `nvcc` / WABT witnesses.
 
 use std::process::Command;
+use std::sync::OnceLock;
 
 /// The kernel name the §29 harness looks up (`cuModuleGetFunction`).
 pub const KERNEL_NAME: &str = "xpile_kernel";
@@ -69,30 +70,25 @@ pub unsafe extern "ptx-kernel" fn xpile_kernel(inp: *const f64, out: *mut f64, n
 /// The rustc target triple for NVIDIA PTX (LLVM NVPTX back-end).
 pub const NVPTX_TARGET: &str = "nvptx64-nvidia-cuda";
 
-/// `true` when nightly `rustc` AND its `nvptx64-nvidia-cuda` target are present
-/// — i.e. the box can compile a Rust kernel to PTX. A cheap probe: `rustc
-/// +nightly` resolves and lists the target. (The heavier "can it actually emit
-/// PTX?" question is answered by [`emit_rustc_nvptx_ptx`], whose `Err` the
-/// witness treats as a graceful skip.)
-pub fn rustc_nvptx_available() -> bool {
-    let Ok(out) = Command::new("rustc")
-        .args(["+nightly", "--print", "target-list"])
-        .output()
-    else {
-        return false;
-    };
-    if !out.status.success() {
-        return false;
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .any(|t| t.trim() == NVPTX_TARGET)
+/// Cached one-shot probe: compile [`RUSTC_NVPTX_KERNEL_SRC`] to PTX ONCE per
+/// process. Both [`rustc_nvptx_available`] and [`emit_rustc_nvptx_ptx`] read it.
+///
+/// The probe is a REAL compile — not the cheaper "does `rustc +nightly --print
+/// target-list` list the target?" check, which is a false-positive: the
+/// `nvptx64-nvidia-cuda` target is ALWAYS listed (it is a known triple), yet its
+/// `rust-std` may be ABSENT (e.g. on CI without `rustup target add
+/// nvptx64-nvidia-cuda`), in which case the compile fails `can't find crate for
+/// core`. So "available" MUST mean "the toolchain actually produced PTX here",
+/// or the gated tests panic on CI instead of skipping.
+fn probe() -> &'static Result<String, String> {
+    static CACHE: OnceLock<Result<String, String>> = OnceLock::new();
+    CACHE.get_or_init(compile_rustc_nvptx_ptx)
 }
 
-/// Compile [`RUSTC_NVPTX_KERNEL_SRC`] to PTX via nightly `rustc`'s NVPTX
-/// back-end and return the PTX text. `Err(reason)` if the toolchain/target is
-/// missing or the compile fails (the witness turns that into a clean skip).
-pub fn emit_rustc_nvptx_ptx() -> Result<String, String> {
+/// The actual `rustc +nightly --target nvptx64-nvidia-cuda` compile of
+/// [`RUSTC_NVPTX_KERNEL_SRC`] → PTX text. `Err(reason)` if nightly / the target
+/// `rust-std` is missing or the compile fails.
+fn compile_rustc_nvptx_ptx() -> Result<String, String> {
     let dir = std::env::temp_dir().join(format!("xpile-rustc-nvptx-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| format!("create work dir: {e}"))?;
     let src = dir.join("kernel.rs");
@@ -126,6 +122,21 @@ pub fn emit_rustc_nvptx_ptx() -> Result<String, String> {
         ));
     }
     Ok(text)
+}
+
+/// `true` when nightly `rustc`'s `nvptx64-nvidia-cuda` target can ACTUALLY
+/// compile a Rust kernel to PTX on this box (a cached real compile — never just
+/// "the target is listed", which is always true even with the `rust-std`
+/// absent). Absent → the gated witnesses cleanly skip.
+pub fn rustc_nvptx_available() -> bool {
+    probe().is_ok()
+}
+
+/// The rustc-nvptx PTX (from the cached [`probe`]). `Err(reason)` if the
+/// toolchain / target `rust-std` is missing or the compile failed (the witness
+/// turns that into a clean skip).
+pub fn emit_rustc_nvptx_ptx() -> Result<String, String> {
+    probe().clone()
 }
 
 #[cfg(test)]
