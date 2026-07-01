@@ -445,6 +445,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'The SECOND ultracode differential sweep (composition + list_driver categories) was cleaner than the first: 173 programs, 4 reported, 4 confirmed, 0 false positives — all one class (list negative-index normalization). The list lane was OLDER (PMAT-966/968) but the negative-index gap survived because the frontend folded read-literals, masking it; runtime + store negatives were never exercised. Fix is a shared-emit runtime normalization. Reinforces [[feedback-ultracode-adversarial-verify]]: even mature lanes have gaps that only DIFFERENTIAL EXECUTION at scale surfaces; the composition sweep (values flowing construct-to-construct, e.g. len()-derived indices) reached the runtime-negative case single-construct tests missed.'
+- id: PMAT-1002
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1002: [wasm/correctness] float division by zero must trap (ZeroDivisionError) — found by the THIRD ultracode differential sweep (float/loop/computed-key/mixed). The 3rd sweep (190 programs, 3 reported, 3 CONFIRMED, 0 false positives) found one clean class: Python raises ZeroDivisionError on `x / 0.0`, but the WASM lane lowered float `/` to a BARE `f64.div` with no divisor guard, silently returning the IEEE value (1.0/0.0 → +inf, 0.0/0.0 → NaN, -1.0/0.0 → -inf). (Integer //0 already traps correctly — WASM i64.div_s by zero is a trap — so ONLY float diverged.) Fix: guard the divisor against 0.0 before f64.div and TRAP (`unreachable`) on zero — the ZeroDivisionError analogue, matching the lane fail-loud discipline. `-0.0 == 0.0` in IEEE so both signed zeros are caught. The dividend stays on the stack while the divisor is stashed in an f64 scratch ($__wasm_fdiv_d), checked, then re-pushed.'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "FIX: crates/xpile-wasm-codegen/src/lib.rs emit_float_binop special-cases FloatOp::Div: local.set $__wasm_fdiv_d (pop divisor, dividend stays); local.get + f64.const 0.0 + f64.eq + if unreachable end; local.get + f64.div. New FDIV_SCRATCH f64 local + body-driven decl gating."
+  - "WITNESS (Run>=1, EXECUTED): tests/float_divzero_witness.rs — a CONSTRUCT test (float / emits the f64.eq+unreachable guard + the f64 scratch decl) + a WABT-executed test: 1.0/0.0, 0.0/0.0, -1.0/0.0 all TRAP (== CPython ZeroDivisionError), and 7.0/2.0=3.5, -6.0/2.0=-3.0, 9.0/4.0=2.25 divide correctly. Re-verified via the production CLI."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-wasm-codegen (52 lib + float_divzero witness + prior, incl real_program_witness float ops unregressed). No contract-equation change (correctness refinement; documented in code + witness). Touched crates/xpile-wasm-codegen/ + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'THIRD ultracode differential sweep — 190 programs, 3 reported, 3 confirmed, 0 false positives, one class: float / 0.0 returned IEEE inf/nan instead of CPython ZeroDivisionError. The three WASM sweeps together found FIVE real correctness divergences across FOUR classes (concat-chr miscompile PMAT-998, s[i]-concat PMAT-1000, list negative-index PMAT-1001, float div-by-zero PMAT-1002) — all silent-wrong-or-wrong-fail masked by happy-path witnesses, all executed-verified fixes. The sweeps are CONVERGING (sweep 1: 3 classes; sweep 2: 1 class; sweep 3: 1 class), suggesting the zero-arg-runnable WASM subset is nearing well-hardened. Reinforces [[feedback-ultracode-adversarial-verify]].'
 - id: PMAT-985
   github_issue: null
   item_type: task
