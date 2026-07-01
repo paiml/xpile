@@ -17143,3 +17143,45 @@ fn main() {
 "#;
     assert_rustc_runs("titlecase_digraphs", &rust, driver);
 }
+
+/// PMAT-1013 (sweep #7): MUTATION-DURING-ITERATION (`for x in xs:
+/// xs.append(99)`) is CLEAN-REFUSED — Python iterates the LIVE list (the
+/// appended element is itself visited), which value semantics cannot
+/// express: the old emit was E0502 invalid Rust, and a snapshot-iterating
+/// emit would compile but silently diverge. Mirrors the PMAT-884
+/// alias-then-mutate posture. The suggested workaround (`for x in xs[:]`,
+/// iterate a copy) transpiles and matches CPython — verified differentially.
+#[test]
+fn iter_mutation_is_rejected_not_miscompiled() {
+    let py = fixture("iter_mutation_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "mutating the iterated list inside its own for loop must be REFUSED \
+         (non-zero exit), not emitted as an E0502 borrow conflict"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("mutates list `xs` inside a `for` loop that iterates it")
+            && stderr.contains("LIVE list")
+            && stderr.contains("xs[:]"),
+        "the rejection should name the pattern, the live-list reason, and the \
+         iterate-a-copy workaround:\n{stderr}"
+    );
+}
+
+/// PMAT-1013 companion: the ALLOWED shapes stay accepted — mutating a
+/// DIFFERENT list inside the loop, mutating the list AFTER the loop, and the
+/// PMAT-816 element-in-place lane (`for row in grid: row.append(0)`).
+#[test]
+fn iter_mutation_allowed_shapes() {
+    let rust = xpile_transpile_to_rust("iter_mutation_allowed.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(map_double(vec![1, 2, 3]), 5, "different-list mutation allowed");
+    assert_eq!(append_after(vec![1, 2]), 3, "post-loop mutation allowed");
+    assert_eq!(grow_rows(), 2, "PMAT-816 element iter_mut lane allowed");
+}
+"#;
+    assert_rustc_runs("iter_mutation_allowed", &rust, driver);
+}

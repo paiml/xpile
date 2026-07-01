@@ -644,16 +644,19 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1013: [rust/semantics] MUTATION-DURING-ITERATION (append to a list inside its own for-loop) → E0502 invalid Rust; should be a CLEAN REFUSAL. Found by sweep #7 (PMAT-1011). `for x in xs: xs.append(99)` — Python iterates the LIVE list (the appended element IS visited; can loop forever), a semantics xpile''s value model fundamentally cannot express: the emit `for x in xs.iter().cloned()` + `xs.push(99)` is an immutable/mutable borrow conflict (E0502). Even a compiling emit (iterate a snapshot) would SILENTLY diverge from Python''s live-list semantics. Fix: frontend detection — receiver name mutated (append/insert/remove/pop/clear/extend/[i]=/del) anywhere in the body of a for-loop iterating that same name → FrontendError naming the pattern and the live-list reason (cf. the alias_arg_mutate_reject.py precedent PMAT-884). Care: nested loops (mutation of the OUTER iterated name inside an inner loop is the same bug), shadowing, and mutation of a DIFFERENT list stays allowed.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-01T00:00:00Z
   acceptance_criteria:
-  - "`for x in xs: xs.append(99)` (and remove/pop/insert/[i]=/del variants, incl. via a nested loop body) → clear FrontendError naming mutation-during-iteration + the live-list semantics reason — no E0502 on emitted code. Mutating a DIFFERENT list inside the loop stays accepted (regression witness). Fixture + e2e reject witness, PMAT-884-style."
+  - "DONE — clean refusal: body_mutates_iterated_list (lowered-HIR walker: ListAppend/Extend/Insert/RemoveValue/ListMutate/IndexAssign/list-DelItem stmts + xs.pop() in Let/Assign value position; recurses through nested if/while/for bodies) + a guard before Stmt::ForEach construction gated on the iterable being a plain LIST-typed name. Verified: append/remove/[0]=/nested-inner-loop-mutating-outer all refuse with a message naming the pattern, the LIVE-list reason, and the iterate-a-copy workaround. The workaround itself VERIFIED end-to-end: `for x in xs[:]: xs.append(x*10)` transpiles + MATCHes CPython (16)."
+  - "ALLOWED shapes regression-locked: mutating a DIFFERENT list in the body, mutating the iterated list AFTER the loop, and the PMAT-816 element-in-place lane (`for row in grid: row.append(0)` — mutates the ELEMENT via iter_mut, not the spine) all still transpile + match. e2e iter_mutation_is_rejected_not_miscompiled + iter_mutation_allowed_shapes."
+  - "SCOPE (honest): dict/set iteration-mutation is untouched (Python itself raises RuntimeError there; still E0502-fail-loud in xpile — a separate, lower-value slice). Rebinding the NAME (`for x in xs: xs = []` — legal live Python over the original iterator) also untouched (E0506 fail-loud)."
+  - "DONE: gate green — fmt; check --workspace; clippy -D warnings; pv lint (0/0); deny advisories; xpile e2e 686 (684+2). Touched crates/depyler-frontend/ + crates/xpile/tests/ + docs/roadmaps/roadmap.yaml."
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Same family as PMAT-884 (alias-then-mutate clean-reject) and PMAT-1008 (aliasing): Python reference semantics the value model cannot express — the honest move is a clean refusal, not a plausible-but-divergent emit. Fail-loud today (E0502), so medium priority. Filed by PMAT-1011 sweep #7.'
+  notes: 'Same family as PMAT-884 (alias-then-mutate clean-reject) and PMAT-1008 (aliasing): Python reference semantics the value model cannot express — the honest move is a clean refusal, not a plausible-but-divergent emit. The refusal message carries a VERIFIED actionable workaround (iterate a copy `xs[:]`), turning a wall into a detour. Filed + closed by PMAT-1011 sweep #7.'
 - id: PMAT-1014
   github_issue: null
   item_type: task
