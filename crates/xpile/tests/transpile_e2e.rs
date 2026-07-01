@@ -17498,3 +17498,45 @@ fn alias_class_analysis_rejects() {
         "the PMAT-884 guard fires through the class-marked param:\n{stderr}"
     );
 }
+
+/// PMAT-1022: self.FIELD container mutators — append statements (MethodCall
+/// push), pop expression-position (field-read clone unwrapped), both &mut
+/// self via the extended detector; return-self chains clone (was E0308);
+/// scalar-returning methods do NOT flag as aliasing (return-type gate — the
+/// type-blind flag falsely refused `first = xs[0]`-class idioms).
+#[test]
+fn self_field_mutators() {
+    let rust = xpile_transpile_to_rust("self_field_mutators.py");
+    assert!(
+        rust.contains("pub fn add(&mut self") && rust.contains("pub fn take(&mut self"),
+        "field mutators promote &mut self:\n{rust}"
+    );
+    assert!(
+        rust.contains("((self).items).push("),
+        "append lowers to a real field push:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // CPython: [1,2]+5+6 → take 6 → size 3 → 306.
+    assert_eq!(run(), 306, "append + pop mutate the REAL field");
+    assert_eq!(chain(), 3, "return-self chains via clone");
+}
+"#;
+    assert_rustc_runs("self_field_mutators", &rust, driver);
+}
+
+/// PMAT-1022 rejects: method-returns-field + caller mutation (was SILENT
+/// 2≠3) refuses via the return-type-gated result~receiver edge; a struct's
+/// list field into a mutating helper (was SILENT) refuses via the
+/// FieldAccess-arg PMAT-884 extension.
+#[test]
+fn self_field_alias_is_rejected() {
+    let py = fixture("self_field_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(!out.status.success(), "returns-field alias must refuse");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("aliases `b` and `xs`") || stderr.contains("element of"),
+        "names the alias pair:\n{stderr}"
+    );
+}

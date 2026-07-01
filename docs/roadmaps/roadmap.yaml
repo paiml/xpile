@@ -672,7 +672,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1022: [rust/capability] self.FIELD container mutators + launder precision. Sweep #9 confirmed: (a) `self.items.append(x)` as a STATEMENT is refused with the subprocess-recognizer message (factually wrong diagnostic — the statement-call lowering has no Attribute-of-self receiver arm); (b) expression-position `self.items.pop()` does NOT promote the method to &mut self (the mutation detector only sees `self.f = …` field assigns) — silent stale-field divergence; (c) a method RETURNING its list field emits a clone and the launder rule does not treat method-returns-field as aliasing (silent); (d) passing `obj.field` to a param-mutating helper bypasses the PMAT-884 guard (silent); (e) a method returning `self` emits `&self -> Point { self }` E0308 (returns-self laundering unmodeled); (f) returns_param is per-FUNCTION so the refusal can name the WRONG argument (f(a, b) returning only b refuses naming a) — make it per-param indices and name correctly.'
-  status: planned
+  status: done
   priority: high
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
@@ -681,7 +681,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'The self.field-container surface is the natural next OOP capability (counters-with-lists is idiomatic Python). (c)/(d) interact with PMAT-1020''s class analysis (field-aliasing edges). Filed by PMAT-1019 (sweep #9).'
+  notes: 'DONE 2026-07-02: (a) `self.<field>.append(x)` statements lower via a generic MethodCall{push} on the FieldAccess (precise refusals for the other field mutators — locals-roundtrip workaround named); (b) expression-position `self.items.pop()` unwraps the field-read clone so the pop mutates the REAL field; BOTH drive &mut self via the extended AST detector (field-mutator receivers + Return/Assign/AugAssign value-position scanning) AND the class-loop marking now consults the AST set (the HIR body_assigns_self check only sees FieldAssign). (c) method-returns-field/self: `Class#method` FnSigs flag returns_param (with `self` in the check list + an Attribute arm in expr_is_param) and rhs_sources draws result~receiver edges for flagged method NAMES — with the CRITICAL refinement found in-slice: the flag is GATED ON A CONTAINER/STRUCT RETURN TYPE (both fn and method sigs) because the type-blind version falsely refused `a = p.take()` (scalar returns are copies) AND — worse — the PMAT-1020 type-blind subscript edge falsely refused the COMMON `first = xs[0]` scalar idiom (a REGRESSION that had merged in #1634; caught by this slice''s own witnesses). The subscript edge moved from the class pass to a TYPED per-site disposition in apply_alias_dispositions (element_read_base + the three-way rule, keyed on the BINDING type). (e) `return self` clone-wraps (read-only chaining works; mutation refuses via the new edges). (d) the PMAT-884 arg guard matches FieldAccess args (`grow(b.items)` was a silent clone-drop). RESIDUALS: per-param returns_param precision (f — over-refusal + wrong-name message only); double-hop element chains (b = a[0]; c = b) partially covered. The self.field-container surface is the natural next OOP capability (counters-with-lists is idiomatic Python). (c)/(d) interact with PMAT-1020''s class analysis (field-aliasing edges). Filed by PMAT-1019 (sweep #9).'
 - id: PMAT-1017
   github_issue: null
   item_type: task

@@ -769,7 +769,16 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
     fn mutating_method(e: &ast::Expr, target: &str) -> bool {
         if let ast::Expr::Call(c) = e {
             if let ast::Expr::Attribute(a) = c.func.as_ref() {
-                if matches!(a.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == target) {
+                // PMAT-1022: `self.items.append(x)` — a mutator on a FIELD of
+                // the target mutates the target object too (drives &mut self).
+                let base_is_target = match a.value.as_ref() {
+                    ast::Expr::Name(n) => n.id.as_str() == target,
+                    ast::Expr::Attribute(inner) => {
+                        matches!(inner.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == target)
+                    }
+                    _ => false,
+                };
+                if base_is_target {
                     return matches!(
                         a.attr.as_str(),
                         "append"
@@ -789,10 +798,38 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
         }
         false
     }
+    // PMAT-1022: expression-position mutators (`return self.items.pop()`,
+    // `x = self.items.pop()`) — scan value expressions recursively.
+    fn expr_has_mutator(e: &ast::Expr, target: &str) -> bool {
+        if mutating_method(e, target) {
+            return true;
+        }
+        match e {
+            ast::Expr::Call(c) => c.args.iter().any(|a| expr_has_mutator(a, target)),
+            ast::Expr::BinOp(b) => {
+                expr_has_mutator(&b.left, target) || expr_has_mutator(&b.right, target)
+            }
+            ast::Expr::UnaryOp(u) => expr_has_mutator(&u.operand, target),
+            ast::Expr::Compare(c) => {
+                expr_has_mutator(&c.left, target)
+                    || c.comparators.iter().any(|x| expr_has_mutator(x, target))
+            }
+            ast::Expr::IfExp(t) => {
+                expr_has_mutator(&t.body, target) || expr_has_mutator(&t.orelse, target)
+            }
+            _ => false,
+        }
+    }
     stmts.iter().any(|s| match s {
-        ast::Stmt::Assign(a) => a.targets.iter().any(|t| base_is(t, target)),
-        ast::Stmt::AugAssign(a) => base_is(&a.target, target),
-        ast::Stmt::Expr(e) => mutating_method(&e.value, target),
+        ast::Stmt::Assign(a) => {
+            a.targets.iter().any(|t| base_is(t, target)) || expr_has_mutator(&a.value, target)
+        }
+        ast::Stmt::AugAssign(a) => base_is(&a.target, target) || expr_has_mutator(&a.value, target),
+        ast::Stmt::Return(r) => r
+            .value
+            .as_deref()
+            .is_some_and(|v| expr_has_mutator(v, target)),
+        ast::Stmt::Expr(e) => expr_has_mutator(&e.value, target),
         ast::Stmt::If(i) => {
             for_target_mutated_ast(&i.body, target) || for_target_mutated_ast(&i.orelse, target)
         }
@@ -1014,6 +1051,9 @@ fn may_return_param(stmts: &[ast::Stmt], params: &[String]) -> bool {
             ast::Expr::Subscript(s) if !matches!(s.slice.as_ref(), ast::Expr::Slice(_)) => {
                 expr_is_param(&s.value, params)
             }
+            // PMAT-1022: `return self.items` (a method returning its FIELD) —
+            // the caller's binding aliases the receiver's interior.
+            ast::Expr::Attribute(a) => expr_is_param(&a.value, params),
             _ => false,
         }
     }
@@ -1187,26 +1227,6 @@ fn alias_class_analysis(
     ) {
         match e {
             ast::Expr::Name(n) => out.push(n.id.to_string()),
-            ast::Expr::Subscript(s) => {
-                if !matches!(s.slice.as_ref(), ast::Expr::Slice(_)) {
-                    // walk to the chain base (a[i][j] → a)
-                    let mut cur = s.value.as_ref();
-                    loop {
-                        match cur {
-                            ast::Expr::Subscript(inner)
-                                if !matches!(inner.slice.as_ref(), ast::Expr::Slice(_)) =>
-                            {
-                                cur = inner.value.as_ref()
-                            }
-                            ast::Expr::Name(n) => {
-                                out.push(n.id.to_string());
-                                break;
-                            }
-                            _ => break,
-                        }
-                    }
-                }
-            }
             ast::Expr::IfExp(t) => {
                 rhs_sources(&t.body, signatures, structs, out);
                 rhs_sources(&t.orelse, signatures, structs, out);
@@ -1224,6 +1244,18 @@ fn alias_class_analysis(
                         for kw in &c.keywords {
                             rhs_sources(&kw.value, signatures, structs, out);
                         }
+                    }
+                } else if let ast::Expr::Attribute(attr) = c.func.as_ref() {
+                    // PMAT-1022: `d = b.get_items()` — a METHOD returning its
+                    // field/self aliases the receiver. Type-blind by method
+                    // NAME across all classes (a collision only over-taints,
+                    // benign unless the class is object-mutated).
+                    let m = attr.attr.as_str();
+                    let method_launders = signatures.iter().any(|(k, s)| {
+                        s.returns_param && k.rsplit_once('#').is_some_and(|(_, mm)| mm == m)
+                    });
+                    if method_launders {
+                        rhs_sources(attr.value.as_ref(), signatures, structs, out);
                     }
                 }
             }
@@ -2066,7 +2098,14 @@ impl Frontend for PythonFrontend {
                     (v.arg.to_string(), elem)
                 });
                 // PMAT-1018: flag param-returning fns (alias launderers).
-                let returns_param = may_return_param(&f.body, &params);
+                // PMAT-1022 refinement: only when the RETURN TYPE is a
+                // container/struct — `def head(xs) -> int: return xs[0]`
+                // returns a COPIED scalar (no aliasing); the type-blind flag
+                // falsely refused the common scalar-interior-read idiom.
+                let returns_param = matches!(
+                    ret,
+                    Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_)
+                ) && may_return_param(&f.body, &params);
                 sig_map.insert(
                     f.name.to_string(),
                     FnSig {
@@ -2154,7 +2193,21 @@ impl Frontend for PythonFrontend {
                             },
                         );
                     }
-                    let returns_param = may_return_param(&m.body, &params);
+                    // PMAT-1022: for INSTANCE methods also treat `self` as a
+                    // "param" — `return self` / `return self.items` alias the
+                    // receiver; the caller's binding must run the alias
+                    // disposition (rhs_sources adds result~receiver edges).
+                    let mut check_params = params.clone();
+                    if !is_sm && !is_cm {
+                        check_params.push("self".to_string());
+                    }
+                    // PMAT-1022 refinement: scalar-returning methods
+                    // (`take(self) -> int: return self.count`) never alias —
+                    // gate on a container/struct return type.
+                    let returns_param = matches!(
+                        ret,
+                        Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_)
+                    ) && may_return_param(&m.body, &check_params);
                     sig_map.insert(
                         key,
                         FnSig {
@@ -2362,10 +2415,26 @@ fn check_expr_for_alias_mutate(
                 if !param_mut.get(i).copied().unwrap_or(false) {
                     continue;
                 }
-                let Expr::Clone(inner) = arg else { continue };
-                let Expr::Ident(name) = inner.as_ref() else {
-                    continue;
+                // PMAT-1022 (d): a struct FIELD passed to a mutating helper
+                // (`grow(b.items)`) clones the field, so the helper's mutation
+                // lands on a detached copy — SILENT (sweep-9). Refuse like the
+                // plain-name case, naming obj.field.
+                let name: String = match arg {
+                    Expr::Clone(inner) => match inner.as_ref() {
+                        Expr::Ident(n) => n.clone(),
+                        Expr::FieldAccess { obj, field } => match obj.as_ref() {
+                            Expr::Ident(o) => format!("{o}.{field}"),
+                            _ => continue,
+                        },
+                        _ => continue,
+                    },
+                    Expr::FieldAccess { obj, field } => match obj.as_ref() {
+                        Expr::Ident(o) => format!("{o}.{field}"),
+                        _ => continue,
+                    },
+                    _ => continue,
                 };
+                let name = &name;
                 return Err(FrontendError::Lower(format!(
                     "object reference semantics not yet supported — `{callee}` mutates its \
  parameter #{} in place, but `{name}` is passed by value and used elsewhere \
@@ -3227,6 +3296,12 @@ fn lower_class_def(
     let frozen = class_is_frozen(&c);
     let order = class_has_order(&c);
     let self_ty = Type::Struct(name.clone());
+    // PMAT-1022: the AST-level mutating set (incl. field-container mutators
+    // `self.items.append(...)` / expression-position `self.items.pop()` and
+    // the transitive fixpoint) — the HIR-level body_assigns_self check below
+    // only sees FieldAssign, so field-mutator methods would keep `&self`
+    // (rustc E0596 through the new SideEffectCall/pop lowerings).
+    let class_mut_set = class_mutating_methods(&c);
     let mut methods: Vec<Function> = Vec::new();
     for stmt in c.body {
         if let ast::Stmt::FunctionDef(mut m) = stmt {
@@ -3358,7 +3433,44 @@ fn lower_class_def(
             // - methods of a FROZEN dataclass (Python raises
             //   FrozenInstanceError at runtime — mirroring PMAT-1473's
             //   field-assign reject, a frozen struct stays immutable).
-            if body_assigns_self(&method.body.stmts) {
+            // PMAT-1022: a method RETURNING `self` emitted `&self -> Point
+            // { self }` (rustc E0308 — a reference where an owned value is
+            // expected). Clone at the return: read-only chaining
+            // (`q = p.me()`) is observably Python-equal, and a mutation
+            // through the binding refuses via the result~receiver alias
+            // edges the class analysis now draws for self-returning methods.
+            {
+                fn wrap_self_returns(stmts: &mut [Stmt]) {
+                    for s in stmts {
+                        match s {
+                            Stmt::Return(e) => {
+                                if matches!(e, Expr::Ident(n) if n == "self") {
+                                    *e = Expr::Clone(Box::new(e.clone()));
+                                }
+                            }
+                            Stmt::If {
+                                then_body,
+                                else_body,
+                                ..
+                            } => {
+                                wrap_self_returns(then_body);
+                                wrap_self_returns(else_body);
+                            }
+                            Stmt::While { body, .. }
+                            | Stmt::ForEach { body, .. }
+                            | Stmt::ForEachPair { body, .. }
+                            | Stmt::ForEachZip3 { body, .. } => wrap_self_returns(body),
+                            _ => {}
+                        }
+                    }
+                }
+                wrap_self_returns(&mut method.body.stmts);
+                if matches!(&method.body.trailing_return, Expr::Ident(n) if n == "self") {
+                    method.body.trailing_return =
+                        Expr::Clone(Box::new(method.body.trailing_return.clone()));
+                }
+            }
+            if body_assigns_self(&method.body.stmts) || class_mut_set.contains(&method.name) {
                 if method.name == "__init__" {
                     // PMAT-1016B: a STRAIGHT-LINE explicit `__init__` (every
                     // statement `self.<field> = <expr>`, every declared field
@@ -4714,6 +4826,79 @@ fn try_lower_side_effect_call(
     match call.func.as_ref() {
         // `<obj>.<method>(...)` on a struct-typed receiver with that method.
         ast::Expr::Attribute(attr) => {
+            // PMAT-1022: `self.<field>.append(x)` — a builtin mutator on a
+            // list FIELD in statement position. The old fall-through hit the
+            // subprocess recognizer with a factually wrong message. Lower
+            // `append` to a generic MethodCall{push} on the FieldAccess
+            // (valid with the &mut self the extended detector now forces);
+            // the other field mutators refuse with a precise message.
+            if let ast::Expr::Attribute(inner) = attr.value.as_ref() {
+                if matches!(inner.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "self") {
+                    let field = inner.attr.to_string();
+                    let self_struct = match ctx.name_types.get("self") {
+                        Some(Type::Struct(s)) => s.clone(),
+                        _ => return None,
+                    };
+                    let field_ty = ctx
+                        .structs
+                        .get(&self_struct)
+                        .and_then(|fs| fs.iter().find(|(f, _)| *f == field))
+                        .map(|(_, t)| t.clone())?;
+                    let mutator = attr.attr.as_str();
+                    if !matches!(
+                        mutator,
+                        "append"
+                            | "extend"
+                            | "insert"
+                            | "remove"
+                            | "sort"
+                            | "reverse"
+                            | "clear"
+                            | "pop"
+                            | "add"
+                            | "update"
+                            | "discard"
+                    ) {
+                        return None;
+                    }
+                    if mutator == "append" && matches!(field_ty, Type::List(_)) {
+                        if call.args.len() != 1 || !call.keywords.is_empty() {
+                            return Some(Err(FrontendError::Lower(format!(
+                                "function `{}` calls `self.{field}.append(...)` with {} arg(s) — exactly 1 positional value",
+                                ctx.fn_name,
+                                call.args.len()
+                            ))));
+                        }
+                        let elem_ty = match &field_ty {
+                            Type::List(e) => (**e).clone(),
+                            _ => unreachable!("matched List above"),
+                        };
+                        let arg = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
+                            Ok(a) => a,
+                            Err(e) => return Some(Err(e)),
+                        };
+                        let arg = if matches!(elem_ty, Type::F64) {
+                            to_f64_operand(ctx, arg)
+                        } else {
+                            arg
+                        };
+                        return Some(Ok(Stmt::SideEffectCall {
+                            call: Expr::MethodCall {
+                                obj: Box::new(Expr::FieldAccess {
+                                    obj: Box::new(Expr::Ident("self".to_string())),
+                                    field,
+                                }),
+                                method: "push".to_string(),
+                                args: vec![arg],
+                            },
+                        }));
+                    }
+                    return Some(Err(FrontendError::Lower(format!(
+                        "function `{}` calls `self.{field}.{mutator}(...)` — field-container mutators other than `append` are not yet lowered (PMAT-1022 first cut); assign the field to a local, mutate, and store back",
+                        ctx.fn_name
+                    ))));
+                }
+            }
             let ast::Expr::Name(obj) = attr.value.as_ref() else {
                 return None;
             };
@@ -8190,6 +8375,24 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
 /// aliases moved (E0382), annotated `[row, row]`/`[…] * n` silently
 /// cloned, annotated launder bindings silently detached. One helper, two
 /// call sites — the guards cannot drift apart again.
+/// PMAT-1022: the base Ident of an ELEMENT-READ value (`b = a[0]`,
+/// `r = m[i]`, `v = d[k]`) — the shapes whose LOWERED form reads an element
+/// out of a named container. Only meaningful when the BINDING type is a
+/// container/struct (a scalar element is copied — no aliasing).
+fn element_read_base(value: &Expr) -> Option<&str> {
+    match value {
+        Expr::Index { collection, .. } => match collection.as_ref() {
+            Expr::Ident(n) => Some(n),
+            _ => None,
+        },
+        Expr::DictGet { dict, .. } => match dict.as_ref() {
+            Expr::Ident(n) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn apply_alias_dispositions(
     ctx: &LoweringCtx,
     name: &str,
@@ -8332,6 +8535,34 @@ fn apply_alias_dispositions(
                         "function `{}` builds `{name}` by repeating a mutable inner container (`[…] * n`) and then writes through it (e.g. `{name}[i][j] = …`) — Python replicates ONE shared inner object (the write is visible in every replica), which xpile's per-replica clone cannot express. Build independent rows instead (e.g. `[[0] * w for _ in range(h)]`-style, or append fresh literals in a loop)",
  ctx.fn_name
                     )));
+            }
+        }
+    }
+    // PMAT-1022: a container-typed ELEMENT READ (`r = m[0]`, `v = d[k]`) —
+    // Python shares the element object; the lowered read clones it, so a
+    // mutation through either name silently diverges. Same three-way rule as
+    // the name alias, keyed on the (typed!) BINDING: a scalar element is a
+    // copy in Python too and passes through untouched (the type-blind class
+    // edge falsely refused `first = xs[0]` — removed in favor of this).
+    if matches!(
+        ty,
+        Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_)
+    ) {
+        if let Some(base) = element_read_base(&value) {
+            let base_live = ctx.read_counts.get(base).copied().unwrap_or(0) > 1
+                || ctx.obj_mutated.contains(base);
+            let name_mutated = ctx.obj_mutated.contains(name);
+            let base_mutated = ctx.obj_mutated.contains(base);
+            let dst_read = ctx.read_counts.get(name).copied().unwrap_or(0) > 0;
+            if (name_mutated && base_live) || (base_mutated && dst_read) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` binds `{name}` from an element of `{base}` and mutates the \
+                     shared object while both stay observable — Python shares the element (a \
+                     mutation through either name is seen by both), which xpile's value \
+                     semantics cannot express. Copy explicitly (`{name} = {base}[…][:]`) where \
+                     an independent value is intended, or keep a single name",
+                    ctx.fn_name
+                )));
             }
         }
     }
@@ -13009,6 +13240,24 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // 0 args → remove last; 1 int arg → remove at that index.
                 if attr.attr.as_str() == "pop" {
                     let recv = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
+                    // PMAT-1022: `self.items.pop()` — the field READ lowers
+                    // with a defensive clone, so the pop removed from a COPY
+                    // and the field silently kept its length. Unwrap the
+                    // clone on a self-field receiver: with the &mut self the
+                    // extended detector forces, popping the real field is
+                    // valid Rust and Python-correct.
+                    let recv = match recv {
+                        Expr::Clone(inner)
+                            if matches!(
+                                inner.as_ref(),
+                                Expr::FieldAccess { obj, .. }
+                                    if matches!(obj.as_ref(), Expr::Ident(n) if n == "self")
+                            ) =>
+                        {
+                            *inner
+                        }
+                        other => other,
+                    };
                     let recv_ty = infer_type_in_ctx(ctx, &recv);
                     if matches!(recv_ty, Type::List(_))
                         && call.keywords.is_empty()
