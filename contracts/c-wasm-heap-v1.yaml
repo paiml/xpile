@@ -176,6 +176,7 @@ equations:
       - "a string is materialised via $__alloc (the bump heap), never on the call stack"
       - "the result is a length-prefixed region (i32 count @ base+0, bytes @ base+8)"
       - "concat copies operand bytes via memory.copy; left-nested concat allocs ONCE"
+      - "PMAT-998: a concat holds its DESTINATION pointer in a DEDICATED local ($__wasm_concat_dst) distinct from the operand scratch ($__wasm_str_dst), so an operand that is ITSELF a string-returning op (chr(n) / s[i]) does not CLOBBER the destination — `chr(65)+chr(66)` builds `AB`, never the last-operand collapse `B` (found by the PMAT-998 adversarial CPython-differential sweep)"
       - "chr(n) writes the byte n & 0xFF (ASCII-bounded, the ord mirror)"
       - "s[i] as a string allocs(9), a count-1 header, a bounds-checked load8_u/store8 of byte i (PMAT-994)"
       - "a str return lowers to an i32 result (the heap base-pointer)"
@@ -242,6 +243,7 @@ equations:
       - "a DUPLICATE literal key/elem COLLAPSES: a dict keeps the LAST value, a set dedups, and the live count is the DISTINCT count — the literal is built via update-or-insert (`$__wasm_dict_set`), matching CPython {1:10,1:20}=={1:20} (len 1) and {5,5,6} (len 2), NOT a blind sequential write that keeps both"
       - "a str key is compared by CONTENT ($__wasm_str_eq over the literal (data) table), never a base-pointer compare"
       - "len(d)/len(s) reads the i32 count @ base+0 — the same header the list/str len path reads"
+      - "KNOWN LIMIT (PMAT-998, honest fail-loud — NOT a silent miscompile): a dict/set literal allocates a FIXED capacity (literal_count + DICT_GROWTH_SLACK=16); growing it past that via `d[k]=v`/`s.add(e)` (e.g. a loop, or many straight-line inserts) TRAPS (`unreachable`) rather than silently corrupting — the bump heap does no realloc. CPython grows unbounded, so a set/dict grown past its slack DIVERGES (a trap where CPython succeeds). Real capacity GROWTH (bump-realloc + copy + pointer update) is a filed follow-up; the current posture is the lane's fail-loud discipline (like the list-OOB / alloc-past-page traps), documented so it is not an undocumented surprise."
       - "a non-int/str key type, a non-int value, comprehensions + iteration are REFUSED honestly"
     preconditions:
       - "BackendConfig.target == Target::Wasm"
