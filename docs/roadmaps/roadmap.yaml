@@ -626,6 +626,62 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'The loop-var-leak idiom is COMMON Python. Key lesson: PROBE the existing machinery before writing new — the fix was a 1-expression generalization (Name-lookup → probe-lower) of an existing pre-pass, not new hoisting logic. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1019
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1019: [rust/correctness] Sweep #9 (272 programs on the HOURS-old v0.1.603 surfaces, 40 confirmed / 5 refuted — the campaign''s biggest haul) + the first response wave. The sweep DEMONSTRATED the guards are syntactic point-checks over a DATAFLOW property: (FIXED THIS SLICE, one root cause each) (1) ANNOTATION-BLINDNESS — every alias/launder/shared-row guard lived only in lower_assign; `b: list[int] = a` bypassed the entire suite (~10 findings: annotated read-only aliases E0382, annotated [row,row]/[…]*n SILENTLY cloned, annotated launder bindings SILENTLY detached). Fix: the suite extracted into apply_alias_dispositions, called by BOTH lower_assign and lower_ann_assign — cannot drift apart again. (2) TERNARY returns_param blind spot — `return xs if flag else [0]` laundered silently while the statement-if form refused (4 findings incl. recursion-shaped); may_return_param now scans IfExp arms. (3) NESTED launder chains — `ident(ident(c))` hid the ident behind a call expr (2 silent findings); the call-site test now recurses through args that are calls to returns_param fns.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "All bypass shapes verified equal to the bare-assign path: annotated read-only alias → clone MATCH 3/3 (was E0382); annotated mutation-alias / [row,row] / [[0,0]]*2 / launder / struct-alias → the SAME refusals as bare form (were silent or E0382); ternary + nested-chain launders → refusals naming the callee (were silent); fresh-construct and benign annotated shapes unregressed. e2e annassign_alias_guards + ternary_launder_is_rejected; 699 e2e green."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The sweep-9 lesson is structural: point-checks at one lowering site CANNOT cover a dataflow property — every new binding form (AnnAssign, if-arm, loop reassign, ctor arg, subscript read) reopens the hole. The remaining findings cluster into PMAT-1020 (alias-CLASS analysis — the systemic fix), PMAT-1021 (Unicode isnumeric/isalpha ranges), PMAT-1022 (self.field mutator promotion + statement calls). See [[feedback-ultracode-adversarial-verify]].'
+- id: PMAT-1020
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1020: [rust/semantics/CORE] Function-local TRANSITIVE alias-CLASS analysis — the systemic fix sweep #9 proved necessary. CONFIRMED SILENT escapes the point-checks cannot cover: (a) transitive name chains `b = a; c = b; c.append(4)` — per-hop dispositions do not compose (a→b CLONE + b→c MOVE severs the Python sharing; rust 3 vs cpython 4); (b) intra-function param-alias laundering `def grow(xs): ys = xs; ys.append(9)` — the mutation attributes to the local, the param never marks mut, the PMAT-884 caller guard under-fires (rust 2/1 vs 2/2); (c) SUBSCRIPT-READ aliases `b = a[0]` / `r = m[0]` — Python shares the row, xpile silently clones the element (multiple findings incl. fn-returning-xs[0]); (d) if-arm and loop-body reassignment aliases bypass the disposition entirely (E0382 fail-loud); (e) ctor capture `c = Holder(d)` then `d.append` (E0382); (f) single-mention `[row]` embeds + distinct-row cross-visibility ([x,y] then m[0][0]=5 read x — the row NAME stays live and shares in Python). DESIGN: an AST-level pre-pass building alias EDGES from every binding form (name=name anywhere incl. branches/loops, name=name[i] element reads (coarse: alias name~base), ctor/call captures of container args, launder results) → union-find into CLASSES; then (1) mutation anywhere in a class + ≥2 observable members → refuse; (2) a param in a mutated class → param.mutable = true (fixes (b) and feeds PMAT-884); (3) read-only classes → clone freely. This IS option (2) of the PMAT-1008 strategic menu, function-local and conservative — NOT the Rc<RefCell> runtime model (which remains the user''s call for cross-function sharing).'
+  status: planned
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "All six confirmed escape shapes either MATCH CPython or refuse cleanly — zero silent divergence: chain b=a;c=b;mutate → refuse; grow-with-local-alias → param marked mut → caller guard fires; b=a[0]+mutate+read-a[0] → refuse (coarse name~base aliasing); if-arm/loop aliases → disposition applies (clone read-only, refuse mutated); Holder(d)+d.append → refuse or clone-correct; [row]-embed + nested write + row re-read → refuse. Benign shapes (slice-copy b=a[:], fresh constructs, read-only everything) unregressed. Full differential re-verification of the sweep-9 corpus."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The point-check era is over — sweep #9 confirmed 6 distinct binding forms leak. The union-find pass is ~150 lines next to the existing walkers (collect_obj_mutated/collect_nested_mutated feed the class-level mutation bit). Conservative coarse edges (name~base for element reads) over-refuse cross-element writes but kill ALL the silent paths. Filed by PMAT-1019 (sweep #9).'
+- id: PMAT-1021
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1021: [rust/correctness] Unicode isnumeric/isalpha via the PMAT-1005 generated-ranges recipe. Sweep #9 confirmed: (a) isnumeric lowers to Rust char::is_numeric (general category N*) but CPython tests Numeric_Type∈{Decimal,Digit,Numeric} — Han numeral ideographs 一/三/五/百/万/億 (category Lo, Numeric_Type=Numeric) return False in xpile, True in CPython; (b) isalpha lowers to char::is_alphabetic (derived Alphabetic = L* + Nl + Other_Alphabetic) but CPython isalpha is category L* ONLY — Nl numerals (Ⅻ, ⅰ, 〸) and Other_Alphabetic marks (ा) over-accept. Fix: generate PY_ISNUMERIC_RANGES and PY_ISALPHA_RANGES from CPython ground truth exactly like PY_ISDIGIT_RANGES (raw-string consts, bidi-safe, no dep); update the str_predicates distinction witnesses. Also sweep-9-noted residuals: isalnum over-/under-reports (² known), isdecimal unimplemented.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "isnumeric: 一三五百万億/٣/½/Ⅻ/① all == CPython; isalpha: Ⅻ/ⅰ/〸/ा reject, é/α/中 accept == CPython; isdigit≠isnumeric≠isalpha distinctions all hold; generated the same way as PY_ISDIGIT_RANGES with provenance comments. Differential witnesses for accept+reject sides of each."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Same proven recipe as PMAT-1005 (one python3 generation script, raw-string const, inline matches!). Filed by PMAT-1019 (sweep #9).'
+- id: PMAT-1022
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1022: [rust/capability] self.FIELD container mutators + launder precision. Sweep #9 confirmed: (a) `self.items.append(x)` as a STATEMENT is refused with the subprocess-recognizer message (factually wrong diagnostic — the statement-call lowering has no Attribute-of-self receiver arm); (b) expression-position `self.items.pop()` does NOT promote the method to &mut self (the mutation detector only sees `self.f = …` field assigns) — silent stale-field divergence; (c) a method RETURNING its list field emits a clone and the launder rule does not treat method-returns-field as aliasing (silent); (d) passing `obj.field` to a param-mutating helper bypasses the PMAT-884 guard (silent); (e) a method returning `self` emits `&self -> Point { self }` E0308 (returns-self laundering unmodeled); (f) returns_param is per-FUNCTION so the refusal can name the WRONG argument (f(a, b) returning only b refuses naming a) — make it per-param indices and name correctly.'
+  status: planned
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "(a)+(b): self.<field>.<mutator>() works in statement AND expression position, promotes &mut self (extend class_mutating_methods + the statement-call recognizer to Attribute-of-self receivers), value-verified vs CPython; (c)+(d)+(e): method-returns-field / obj.field-to-mutating-helper / returns-self either work correctly or refuse cleanly — no silent path; (f): per-param returns_param indices, refusal names the actual laundering argument. Differential witnesses per shape."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The self.field-container surface is the natural next OOP capability (counters-with-lists is idiomatic Python). (c)/(d) interact with PMAT-1020''s class analysis (field-aliasing edges). Filed by PMAT-1019 (sweep #9).'
 - id: PMAT-1017
   github_issue: null
   item_type: task

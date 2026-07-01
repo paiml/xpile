@@ -17432,3 +17432,38 @@ fn container_alias_and_shared_row_rejects() {
         "repeat reject names the shape:\n{stderr}"
     );
 }
+
+/// PMAT-1019 (sweep #9): the alias/launder/shared-row guard suite is shared
+/// by BOTH binding forms — annotated `b: list[int] = a` ran NO guards (~10
+/// findings, one root cause). The annotated read-only alias now clones and
+/// runs (was E0382); the reject fixtures cover the refusal side.
+#[test]
+fn annassign_alias_guards() {
+    let rust = xpile_transpile_to_rust("annassign_alias_guards.py");
+    assert!(
+        rust.contains("(a).clone()"),
+        "annotated read-only alias binds a clone:\n{rust}"
+    );
+    let driver = r#"
+fn main() { assert_eq!(annotated_read_only_alias(), 7, "3 + 3 + 1"); }
+"#;
+    assert_rustc_runs("annassign_alias_guards", &rust, driver);
+}
+
+/// PMAT-1019 (sweep #9): ternary returns launder — `return xs if flag else
+/// [0]` is param-returning (the statement-if form was already caught; the
+/// IfExp form silently cloned). Nested chains ident(ident(c)) refuse too.
+#[test]
+fn ternary_launder_is_rejected() {
+    let py = fixture("ternary_launder_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "ternary param-return must launder-refuse"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("may RETURN its parameter") && stderr.contains("keep"),
+        "names the laundering callee:\n{stderr}"
+    );
+}

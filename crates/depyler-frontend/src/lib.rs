@@ -998,11 +998,20 @@ fn count_mutating_method_receivers(
 /// bodies. Conservative: ANY param-returning return marks the fn (no
 /// per-param precision at first cut).
 fn may_return_param(stmts: &[ast::Stmt], params: &[String]) -> bool {
+    // PMAT-1019 (sweep #9): a TERNARY return (`return c if x else Point(0)`)
+    // aliases through its arms — the statement-if form was caught, the
+    // conditional-expression form silently cloned (4 confirmed findings).
+    fn expr_is_param(e: &ast::Expr, params: &[String]) -> bool {
+        match e {
+            ast::Expr::Name(n) => params.iter().any(|p| p == n.id.as_str()),
+            ast::Expr::IfExp(t) => {
+                expr_is_param(&t.body, params) || expr_is_param(&t.orelse, params)
+            }
+            _ => false,
+        }
+    }
     stmts.iter().any(|s| match s {
-        ast::Stmt::Return(r) => matches!(
-        r.value.as_deref(),
-        Some(ast::Expr::Name(n)) if params.iter().any(|p| p == n.id.as_str())
-               ),
+        ast::Stmt::Return(r) => r.value.as_deref().is_some_and(|v| expr_is_param(v, params)),
         ast::Stmt::If(i) => {
             may_return_param(&i.body, params) || may_return_param(&i.orelse, params)
         }
@@ -7863,155 +7872,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         Ok(Stmt::Assign { name, value })
     } else {
         let mutable = ctx.mutable.contains(&name);
-        // PMAT-1016C: STRUCT alias `c2 = c` — Python shares the object (a
-        // mutation through either name is seen by both), which value
-        // semantics cannot express. Three-way disposition, function-wide
-        // conservative (ctx.mutable = assigned/field-assigned/receiver-of-
-        // mutating-method; ctx.read_counts includes this RHS read):
-        //   1. NEITHER name ever mutated → CLONE (observably identical to
-        //      aliasing — nothing diverges; fixes the read-only-alias E0382).
-        //   2. Source never read beyond this RHS → plain MOVE (the alias
-        //      takes over; Python-equal).
-        //   3. Mutation + both names live → REFUSE (the move was rustc
-        //      E0382 fail-loud; a clone would be a SILENT divergence —
-        //      the PMAT-884/1008 posture).
-        // PMAT-1018: a call to a PARAM-RETURNING fn binding a struct result
-        // LAUNDERS an alias — `d = ident(c)` makes d alias c in Python, but
-        // the PMAT-588 clone at the call made d a COPY, so a later mutation
-        // through one name was invisible through the other: the SILENT
-        // sweep-#8 diverge (rust 30 vs cpython 31). Apply the PMAT-1016C
-        // three-way test to (each struct-ident arg, the binding): safe when
-        // neither object is mutated, or when the arg is never re-read
-        // (moved); refused when a mutation makes the laundering observable.
-        if let (
-            Expr::Call { callee, args },
-            Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_),
-        ) = (&value, &ty)
-        {
-            if ctx.signatures.get(callee).is_some_and(|s| s.returns_param) {
-                for arg in args {
-                    let src = match arg {
-                        Expr::Ident(n) => Some(n),
-                        Expr::Clone(inner) => match inner.as_ref() {
-                            Expr::Ident(n) => Some(n),
-                            _ => None,
-                        },
-                        _ => None,
-                    };
-                    let Some(src) = src else { continue };
-                    if !matches!(
-                        ctx.name_types.get(src),
-                        Some(Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_))
-                    ) {
-                        continue;
-                    }
-                    let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
-                    let src_mutated = ctx.obj_mutated.contains(src);
-                    let name_mutated = ctx.obj_mutated.contains(&name);
-                    let dst_read = ctx.read_counts.get(&name).copied().unwrap_or(0) > 0;
-                    // Observable laundering: some object mutation AND the source
-                    // re-read AND the binding observable (read OR itself mutated —
-                    // a subscript write is not a "read").
-                    if (src_mutated || name_mutated) && src_reread && (dst_read || name_mutated) {
-                        return Err(FrontendError::Lower(format!(
-                            "function `{}` binds `{name}` from `{callee}({src}, …)` — `{callee}` may RETURN its parameter, so in Python `{name}` and `{src}` would be the SAME object, but xpile's pass-by-value makes `{name}` a copy and a mutation through one name is silently invisible through the other. Use the original name directly, or make `{callee}` construct a new instance",
- ctx.fn_name
-                        )));
-                    }
-                }
-            }
-        }
-        // PMAT-1008-interim: the SHARED-INNER-ROW silent miscompiles. Python
-        // `grid = [row, row]` stores the SAME inner list twice and
-        // `m = [[0, 0]] * 2` replicates ONE shared inner list — a later
-        // NESTED write (`grid[0][0] = 5`) is visible through every slot
-        // (CPython 10), but xpile's value semantics clone per element/rep
-        // (rust 5): confirmed silent DIVERGEs (PMAT-1007 cases b/c). Refuse
-        // the construction when the bound name is nested-mutated; read-only
-        // grids (the common init-then-read shape) stay accepted, and depth-1
-        // slot replacement (`grid[0] = x`) is value-faithful and unaffected.
-        if ctx.nested_mutated.contains(&name) {
-            let container_ident = |e: &Expr| -> Option<String> {
-                // The list-literal lowering CLONES named elements
-                // (`(row).clone()`), so unwrap Expr::Clone first.
-                let inner = match e {
-                    Expr::Clone(inner) => inner.as_ref(),
-                    other => other,
-                };
-                if let Expr::Ident(n) = inner {
-                    if matches!(
-                        ctx.name_types.get(n),
-                        Some(Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Struct(_))
-                    ) {
-                        return Some(n.clone());
-                    }
-                }
-                None
-            };
-            if let Expr::ListLit(elems) = &value {
-                let idents: Vec<String> = elems.iter().filter_map(container_ident).collect();
-                let has_dup = idents
-                    .iter()
-                    .any(|n| idents.iter().filter(|m| *m == n).count() >= 2);
-                if has_dup {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` builds `{name}` as a list holding the same inner container more than once and then writes through it (e.g. `{name}[i][j] = …`) — Python SHARES the inner object across slots (the write is visible through every slot), which xpile's per-element clone cannot express. Use independent inner lists (e.g. a fresh literal per slot)",
- ctx.fn_name
-                    )));
-                }
-            }
-            if let Expr::Repeat { of_str: false, .. } = &value {
-                if matches!(
-                                   &ty,
-                Type::List(elem) if matches!(
-                elem.as_ref(),
-                Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Struct(_)
-                                   )
-                               )
-                {
-                    return Err(FrontendError::Lower(format!(
-                        "function `{}` builds `{name}` by repeating a mutable inner container (`[…] * n`) and then writes through it (e.g. `{name}[i][j] = …`) — Python replicates ONE shared inner object (the write is visible in every replica), which xpile's per-replica clone cannot express. Build independent rows instead (e.g. `[[0] * w for _ in range(h)]`-style, or append fresh literals in a loop)",
- ctx.fn_name
-                    )));
-                }
-            }
-        }
-        let value = if let (
-            Expr::Ident(src),
-            Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_),
-        ) = (&value, &ty)
-        {
-            let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
-            // PMAT-1017 (sweep #8 refinements): (a) OBJECT mutation only — a
-            // name REBINDING (`c = Counter(99)`) detaches the name in Python,
-            // so a rebound source is clone-safe (was wrongly refused via
-            // ctx.mutable, which counts rebindings); (b) a DEAD alias — never
-            // read AND never mutated — is harmless whatever else happens.
-            // PMAT-1008-interim: "dead" MUST include never-MUTATED — a
-            // subscript WRITE (`b[0] = 99`) is not a read, so a mutated-but-
-            // never-read alias slipped the old `!dst_read` shortcut into the
-            // clone path and the write landed on the copy (SILENT diverge,
-            // caught while extending this rule to containers).
-            let dst_read = ctx.read_counts.get(&name).copied().unwrap_or(0) > 0;
-            let src_mutated = ctx.obj_mutated.contains(src);
-            let name_mutated = ctx.obj_mutated.contains(&name);
-            if !name_mutated && (!src_mutated || !dst_read) {
-                Expr::Clone(Box::new(value))
-            } else if src_reread {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` aliases `{src}` as `{name}` and mutates one of them \
- while both stay observable — Python shares the object (mutations through \
- either name are seen by both), which xpile's value semantics cannot \
- express (a move fails to compile; a clone silently drops the sharing). \
- Mutate before aliasing, or keep a single name",
-                    ctx.fn_name
-                )));
-            } else {
-                value
-            }
-        } else {
-            value
-        };
+        let value = apply_alias_dispositions(ctx, &name, value, &ty)?;
         ctx.bound.insert(name.clone());
         ctx.name_types.insert(name.clone(), ty.clone());
         Ok(Stmt::Let {
@@ -8021,6 +7882,197 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             mutable,
         })
     }
+}
+
+/// PMAT-1019 (sweep #9): the alias/launder/shared-row guard suite, shared
+/// by BOTH binding forms — plain `b = a` (lower_assign) AND annotated
+/// `b: T = a` (lower_ann_assign). Sweep #9 found EVERY guard was
+/// annotation-blind (the suite lived only in lower_assign): annotated
+/// aliases moved (E0382), annotated `[row, row]`/`[…] * n` silently
+/// cloned, annotated launder bindings silently detached. One helper, two
+/// call sites — the guards cannot drift apart again.
+fn apply_alias_dispositions(
+    ctx: &LoweringCtx,
+    name: &str,
+    value: Expr,
+    ty: &Type,
+) -> Result<Expr, FrontendError> {
+    // PMAT-1016C: STRUCT alias `c2 = c` — Python shares the object (a
+    // mutation through either name is seen by both), which value
+    // semantics cannot express. Three-way disposition, function-wide
+    // conservative (ctx.mutable = assigned/field-assigned/receiver-of-
+    // mutating-method; ctx.read_counts includes this RHS read):
+    //   1. NEITHER name ever mutated → CLONE (observably identical to
+    //      aliasing — nothing diverges; fixes the read-only-alias E0382).
+    //   2. Source never read beyond this RHS → plain MOVE (the alias
+    //      takes over; Python-equal).
+    //   3. Mutation + both names live → REFUSE (the move was rustc
+    //      E0382 fail-loud; a clone would be a SILENT divergence —
+    //      the PMAT-884/1008 posture).
+    // PMAT-1018: a call to a PARAM-RETURNING fn binding a struct result
+    // LAUNDERS an alias — `d = ident(c)` makes d alias c in Python, but
+    // the PMAT-588 clone at the call made d a COPY, so a later mutation
+    // through one name was invisible through the other: the SILENT
+    // sweep-#8 diverge (rust 30 vs cpython 31). Apply the PMAT-1016C
+    // three-way test to (each struct-ident arg, the binding): safe when
+    // neither object is mutated, or when the arg is never re-read
+    // (moved); refused when a mutation makes the laundering observable.
+    if let (
+        Expr::Call { callee, args },
+        Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_),
+    ) = (&value, &ty)
+    {
+        if ctx.signatures.get(callee).is_some_and(|s| s.returns_param) {
+            // PMAT-1019 (sweep #9): nested launder chains —
+            // `ident(ident(c))` hides `c` behind a call expression, so
+            // recurse through args that are themselves calls to
+            // param-returning fns and collect every reachable ident.
+            fn collect_launder_srcs<'a>(
+                ctx: &LoweringCtx,
+                args: &'a [Expr],
+                out: &mut Vec<&'a String>,
+            ) {
+                for arg in args {
+                    match arg {
+                        Expr::Ident(n) => out.push(n),
+                        Expr::Clone(inner) => {
+                            if let Expr::Ident(n) = inner.as_ref() {
+                                out.push(n);
+                            }
+                        }
+                        Expr::Call {
+                            callee: inner_callee,
+                            args: inner_args,
+                        } => {
+                            if ctx
+                                .signatures
+                                .get(inner_callee)
+                                .is_some_and(|s| s.returns_param)
+                            {
+                                collect_launder_srcs(ctx, inner_args, out);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let mut srcs: Vec<&String> = Vec::new();
+            collect_launder_srcs(ctx, args, &mut srcs);
+            for src in srcs {
+                if !matches!(
+                    ctx.name_types.get(src),
+                    Some(Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_))
+                ) {
+                    continue;
+                }
+                let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
+                let src_mutated = ctx.obj_mutated.contains(src);
+                let name_mutated = ctx.obj_mutated.contains(name);
+                let dst_read = ctx.read_counts.get(name).copied().unwrap_or(0) > 0;
+                // Observable laundering: some object mutation AND the source
+                // re-read AND the binding observable (read OR itself mutated —
+                // a subscript write is not a "read").
+                if (src_mutated || name_mutated) && src_reread && (dst_read || name_mutated) {
+                    return Err(FrontendError::Lower(format!(
+                            "function `{}` binds `{name}` from `{callee}({src}, …)` — `{callee}` may RETURN its parameter, so in Python `{name}` and `{src}` would be the SAME object, but xpile's pass-by-value makes `{name}` a copy and a mutation through one name is silently invisible through the other. Use the original name directly, or make `{callee}` construct a new instance",
+ ctx.fn_name
+                        )));
+                }
+            }
+        }
+    }
+    // PMAT-1008-interim: the SHARED-INNER-ROW silent miscompiles. Python
+    // `grid = [row, row]` stores the SAME inner list twice and
+    // `m = [[0, 0]] * 2` replicates ONE shared inner list — a later
+    // NESTED write (`grid[0][0] = 5`) is visible through every slot
+    // (CPython 10), but xpile's value semantics clone per element/rep
+    // (rust 5): confirmed silent DIVERGEs (PMAT-1007 cases b/c). Refuse
+    // the construction when the bound name is nested-mutated; read-only
+    // grids (the common init-then-read shape) stay accepted, and depth-1
+    // slot replacement (`grid[0] = x`) is value-faithful and unaffected.
+    if ctx.nested_mutated.contains(name) {
+        let container_ident = |e: &Expr| -> Option<String> {
+            // The list-literal lowering CLONES named elements
+            // (`(row).clone()`), so unwrap Expr::Clone first.
+            let inner = match e {
+                Expr::Clone(inner) => inner.as_ref(),
+                other => other,
+            };
+            if let Expr::Ident(n) = inner {
+                if matches!(
+                    ctx.name_types.get(n),
+                    Some(Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Struct(_))
+                ) {
+                    return Some(n.clone());
+                }
+            }
+            None
+        };
+        if let Expr::ListLit(elems) = &value {
+            let idents: Vec<String> = elems.iter().filter_map(container_ident).collect();
+            let has_dup = idents
+                .iter()
+                .any(|n| idents.iter().filter(|m| *m == n).count() >= 2);
+            if has_dup {
+                return Err(FrontendError::Lower(format!(
+                        "function `{}` builds `{name}` as a list holding the same inner container more than once and then writes through it (e.g. `{name}[i][j] = …`) — Python SHARES the inner object across slots (the write is visible through every slot), which xpile's per-element clone cannot express. Use independent inner lists (e.g. a fresh literal per slot)",
+ ctx.fn_name
+                    )));
+            }
+        }
+        if let Expr::Repeat { of_str: false, .. } = &value {
+            if matches!(
+                               &ty,
+            Type::List(elem) if matches!(
+            elem.as_ref(),
+            Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Struct(_)
+                               )
+                           )
+            {
+                return Err(FrontendError::Lower(format!(
+                        "function `{}` builds `{name}` by repeating a mutable inner container (`[…] * n`) and then writes through it (e.g. `{name}[i][j] = …`) — Python replicates ONE shared inner object (the write is visible in every replica), which xpile's per-replica clone cannot express. Build independent rows instead (e.g. `[[0] * w for _ in range(h)]`-style, or append fresh literals in a loop)",
+ ctx.fn_name
+                    )));
+            }
+        }
+    }
+    let value = if let (
+        Expr::Ident(src),
+        Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_),
+    ) = (&value, &ty)
+    {
+        let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
+        // PMAT-1017 (sweep #8 refinements): (a) OBJECT mutation only — a
+        // name REBINDING (`c = Counter(99)`) detaches the name in Python,
+        // so a rebound source is clone-safe (was wrongly refused via
+        // ctx.mutable, which counts rebindings); (b) a DEAD alias — never
+        // read AND never mutated — is harmless whatever else happens.
+        // PMAT-1008-interim: "dead" MUST include never-MUTATED — a
+        // subscript WRITE (`b[0] = 99`) is not a read, so a mutated-but-
+        // never-read alias slipped the old `!dst_read` shortcut into the
+        // clone path and the write landed on the copy (SILENT diverge,
+        // caught while extending this rule to containers).
+        let dst_read = ctx.read_counts.get(name).copied().unwrap_or(0) > 0;
+        let src_mutated = ctx.obj_mutated.contains(src);
+        let name_mutated = ctx.obj_mutated.contains(name);
+        if !name_mutated && (!src_mutated || !dst_read) {
+            Expr::Clone(Box::new(value))
+        } else if src_reread {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` aliases `{src}` as `{name}` and mutates one of them \
+ while both stay observable — Python shares the object (mutations through \
+ either name are seen by both), which xpile's value semantics cannot \
+ express (a move fails to compile; a clone silently drops the sharing). \
+ Mutate before aliasing, or keep a single name",
+                ctx.fn_name
+            )));
+        } else {
+            value
+        }
+    } else {
+        value
+    };
+    Ok(value)
 }
 
 /// PMAT-645/646: starred unpacking `n…, *star, m… = xs` (star at ANY position)
@@ -10887,6 +10939,12 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
     // DictLit would otherwise infer the wrong K/V). For non-empty
     // values we trust the annotation and let backend compilation catch
     // any genuine mismatch — the v0.2.0 inference is intentionally thin.
+    // PMAT-1019 (sweep #9): run the SAME alias/launder/shared-row guard
+    // suite the plain-assignment path runs — annotated bindings bypassed
+    // every guard (annotated aliases moved → E0382; annotated
+    // `[row, row]` / `[…] * n` silently cloned; annotated launder
+    // bindings silently detached).
+    let value = apply_alias_dispositions(ctx, &name, value, &declared_ty)?;
     let mutable = ctx.mutable.contains(&name);
     ctx.bound.insert(name.clone());
     ctx.name_types.insert(name.clone(), declared_ty.clone());
