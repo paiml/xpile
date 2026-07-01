@@ -2206,9 +2206,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // uppercase EXPANSION and lowercase the rest (`ß`→"SS"→"Ss",
                 // `ﬂ`→"FL"→"Fl"; a 1-char uppercase is unchanged). The tail uses
                 // whole-string `to_lowercase()` (honours the Greek final-sigma rule).
+                // PMAT-1014 (sweep #7): the uppercase-expansion derivation is WRONG
+                // for the four Latin DIGRAPH triples with a distinct Lt form —
+                // Ǆǅǆ / Ǉǈǉ / Ǌǋǌ / Ǳǲǳ titlecase to the MIDDLE form (any of the
+                // three → ǅ/ǈ/ǋ/ǲ), while to_uppercase gives the all-caps first
+                // form (ǳ→Ǳ, not Python's ǲ). A const range-match intercepts them
+                // BEFORE the expansion. (The Greek iota-subscript Lt family needs
+                // full SpecialCasing titlecase — still divergent, out of scope.)
                 out.push_str("{ let __cs = &(");
                 emit_expr(out, recv, mode)?;
-                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => { let __ue: String = __f.to_uppercase().collect(); let mut __uec = __ue.chars(); let __lead = match __uec.next() { Some(__h) => __h.to_string() + &__uec.as_str().to_lowercase(), None => String::new() }; __lead + &(__ch.as_str().to_lowercase()) }, None => String::new() } }");
+                out.push_str("); let mut __ch = __cs.chars(); match __ch.next() { Some(__f) => { let __lead = match __f { '\\u{01C4}'..='\\u{01C6}' => String::from('\\u{01C5}'), '\\u{01C7}'..='\\u{01C9}' => String::from('\\u{01C8}'), '\\u{01CA}'..='\\u{01CC}' => String::from('\\u{01CB}'), '\\u{01F1}'..='\\u{01F3}' => String::from('\\u{01F2}'), _ => { let __ue: String = __f.to_uppercase().collect(); let mut __uec = __ue.chars(); match __uec.next() { Some(__h) => __h.to_string() + &__uec.as_str().to_lowercase(), None => String::new() } } }; __lead + &(__ch.as_str().to_lowercase()) }, None => String::new() } }");
             } else if matches!(op, StrMethodOp::Title) {
                 // PMAT-502aj: `.title()` → titlecase the first alpha of each word,
                 // lower the rest; any non-alpha is a word boundary (matches
@@ -2217,9 +2224,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // so a titlecase-expanding scalar matches Python (`"ﬂy".title()` →
                 // "Fly", not "FLy"). (The per-char tail lowercase still loses the
                 // Greek medial-vs-final sigma context — a deferred follow-up.)
+                // PMAT-1014: word-start Latin digraphs map to their Lt form (see
+                // capitalize) — `"ǳa".title()` is "ǲa", not to_uppercase's "Ǳa".
                 out.push_str("{ let mut __tr = String::new(); let mut __pa = false; for __c in (");
                 emit_expr(out, recv, mode)?;
-                out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { let __ue: String = __c.to_uppercase().collect(); let mut __uec = __ue.chars(); if let Some(__h) = __uec.next() { __tr.push(__h); __tr.push_str(&__uec.as_str().to_lowercase()); } } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
+                out.push_str(").chars() { if __c.is_alphabetic() { if __pa { __tr.extend(__c.to_lowercase()); } else { match __c { '\\u{01C4}'..='\\u{01C6}' => __tr.push('\\u{01C5}'), '\\u{01C7}'..='\\u{01C9}' => __tr.push('\\u{01C8}'), '\\u{01CA}'..='\\u{01CC}' => __tr.push('\\u{01CB}'), '\\u{01F1}'..='\\u{01F3}' => __tr.push('\\u{01F2}'), _ => { let __ue: String = __c.to_uppercase().collect(); let mut __uec = __ue.chars(); if let Some(__h) = __uec.next() { __tr.push(__h); __tr.push_str(&__uec.as_str().to_lowercase()); } } } } __pa = true; } else { __tr.push(__c); __pa = false; } } __tr }");
             } else if matches!(op, StrMethodOp::RJust | StrMethodOp::LJust) {
                 let is_r = matches!(op, StrMethodOp::RJust);
                 if args.len() == 2 {

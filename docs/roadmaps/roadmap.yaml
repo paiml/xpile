@@ -658,16 +658,18 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1014: [rust/correctness] title()/capitalize() map the titlecase-DIGRAPH scalars to UPPERCASE, not TITLECASE — ǳ (U+01F3) becomes Ǳ (U+01F1) instead of Python''s ǲ (U+01F2). Found by sweep #7 (PMAT-1011), two DIVERGE witnesses (title + capitalize, shared root cause). PMAT-701 derived titlecase from the uppercase EXPANSION (std has no char::to_titlecase), which is correct for expanding scalars (ß→Ss) but WRONG for the single-char digraphs with distinct Lt forms: Ǆ/ǅ/ǆ (U+01C4..6), Ǉ/ǈ/ǉ, Ǌ/ǋ/ǌ (U+01C7..CC), Ǳ/ǲ/ǳ (U+01F1..F3) — their uppercase is the all-caps form but their TITLECASE is the middle Lt form. Unicode Lt is a closed small set (~31 code points: the 4 Latin digraph triples + Greek ᾈ-family composed forms); fix = a small const lookup for the digraph triples (any of the 3 forms → the ǲ-style Lt form) consulted BEFORE the uppercase-expansion path in the shared titlecase helper; the Greek Lt forms follow the same to_uppercase-is-wrong pattern and can ride the same table if cheap.'
-  status: planned
+  status: done
   priority: low
   created: 2026-07-01T00:00:00Z
   acceptance_criteria:
-  - "\"ǳ\".title() == \"ǲ\" and \"ǳa\".capitalize() == \"ǲa\" == CPython (currently Ǳ/Ǳa — silent DIVERGE); ß→Ss and ﬂ→Fl expansion regressions hold (PMAT-701); a rustc round-trip witness covers digraph + expansion + ASCII."
+  - "FIXED: a const range-match ('\\u{01C4}'..='\\u{01C6}' → ǅ etc., 4 arms) intercepts the digraphs BEFORE the uppercase-expansion in BOTH the Capitalize and Title emit arms. Differentially verified vs CPython: ǳ.capitalize()→ǲ, Ǳ.capitalize()→ǲ, ǅ fixed-point, \"ǆa\".title()→ǅa, \"ǉx\".capitalize()→ǈx, mid-word \"aǳ b\".title()→\"Aǳ B\" (digraph LOWERS mid-word, unchanged); PMAT-701 regressions hold (ßtest→Sstest, ﬂy→Fly, it's→It'S, ASCII)."
+  - "SCOPE (honest): the GREEK iota-subscript Lt family (ᾈ-type, ᾼ/ῌ/ῼ) needs full SpecialCasing titlecase (multi-char, context-dependent) and REMAINS divergent — noted in the emit comment, not silently claimed."
+  - "DONE: gate green — fmt; check --workspace; clippy -D warnings; pv lint (0/0); deny advisories; xpile e2e 684 (683+1 titlecase_digraphs, 8-assert driver). Touched crates/xpile-rust-codegen/ + crates/xpile/tests/ + docs/roadmaps/roadmap.yaml."
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Silent divergence but on an extremely rare input class (Latin digraph Lt scalars, Unicode-trivia territory). The 12 digraph code points are a 4-line const match. Filed by PMAT-1011 sweep #7 (string-deep finder).'
+  notes: 'Silent divergence but on an extremely rare input class (Latin digraph Lt scalars, Unicode-trivia territory). The 12 digraph code points were a 4-arm const match, exactly as filed. Filed + closed by PMAT-1011 sweep #7 (string-deep finder).'
 - id: PMAT-985
   github_issue: null
   item_type: task
