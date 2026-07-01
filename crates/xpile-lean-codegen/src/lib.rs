@@ -297,7 +297,10 @@ fn emit_function_with_while_helpers(
             // PMAT-460: list.append() inside a while loop — same
             // monadic-encoding gap as ForEach. Deferred. PMAT-502ap/aq/ar:
             // in-place list mutators (.sort/.reverse/.clear) + .extend + .insert.
-            Stmt::ListAppend { .. }
+            // PMAT-1016A: a statement-position side-effect call (mutating
+            // method / void fn) — same monadic-encoding gap.
+            Stmt::SideEffectCall { .. }
+            | Stmt::ListAppend { .. }
             | Stmt::SetAdd { .. }
             | Stmt::SetRemove { .. }
             | Stmt::ListMutate { .. }
@@ -1126,6 +1129,15 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::ForEachZip3 { .. } => Err(LeanCodegenError::Unsupported(
             "`for a, b, c in zip(x, y, z)` (Stmt::ForEachZip3) is not supported in \
              the Lean lane — use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
+        // PMAT-1016A: a statement-position side-effect call — a mutating
+        // user-class method (`c.bump()`) or a void fn call. Lean is pure;
+        // same state-monad gap as ListAppend.
+        Stmt::SideEffectCall { .. } => Err(LeanCodegenError::Unsupported(
+            "a statement-position side-effect call (Stmt::SideEffectCall — mutating method or \
+             void function call) requires state-monad encoding in Lean — \
+             use `--target rust` or `--target ruchy`"
                 .into(),
         )),
         // PMAT-460 (v0.2.0 Track 1.B): list.append() mutation. Lean

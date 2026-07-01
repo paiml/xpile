@@ -335,6 +335,7 @@ impl LoweringCtx {
         struct_properties: Rc<HashMap<String, Vec<String>>>,
         frozen_structs: Rc<HashSet<String>>,
         enums: Rc<HashMap<String, Vec<(String, i64)>>>,
+        mutating_methods: Rc<HashSet<String>>,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -369,7 +370,7 @@ impl LoweringCtx {
                 .cloned()
                 .collect()
         };
-        let mutable = compute_mutable_names(params, body);
+        let mutable = compute_mutable_names(params, body, &mutating_methods);
         let read_counts = count_name_reads(body);
         Self {
             fn_name: fn_name.to_string(),
@@ -406,8 +407,17 @@ impl LoweringCtx {
 ///
 /// `mutable(name) = total_count(name) > 1`, after also counting the
 /// param binding as 1 for any param.
-fn compute_mutable_names(params: &[Param], body: &[ast::Stmt]) -> HashSet<String> {
+fn compute_mutable_names(
+    params: &[Param],
+    body: &[ast::Stmt],
+    mutating_methods: &HashSet<String>,
+) -> HashSet<String> {
     let mut counts: HashMap<String, usize> = walk_counts(body, /*in_loop=*/ false);
+    // PMAT-1016A: the receiver of a MUTATING user-class method call
+    // (`c.bump()`) must bind `let mut c` (and a param receiver lifts to
+    // `mut c: Counter`, which also feeds the PMAT-884 alias-mutate guard).
+    // `mutating_methods` is the module-level AST-derived name set.
+    count_mutating_method_receivers(body, mutating_methods, &mut counts);
     for p in &params.iter().map(|p| p.name.clone()).collect::<Vec<_>>() {
         *counts.entry(p.clone()).or_insert(0) += 1;
     }
@@ -772,6 +782,109 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
         ast::Stmt::For(f) => for_target_mutated_ast(&f.body, target),
         _ => false,
     })
+}
+
+/// PMAT-1016A: the names of a class's SELF-MUTATING methods, AST-level —
+/// a method that assigns `self.field` (directly, via `for_target_mutated_ast`)
+/// OR (fixpoint) calls another mutating method on `self`
+/// (`def double_bump(self): self.bump()` is itself mutating — without the
+/// closure it would lower `&self` and the inner `self.bump()` call would be
+/// rustc E0596 invalid emit). `__init__` is excluded (slice B).
+fn class_mutating_methods(c: &ast::StmtClassDef) -> HashSet<String> {
+    fn calls_self_method_in(stmts: &[ast::Stmt], set: &HashSet<String>) -> bool {
+        fn expr_calls(e: &ast::Expr, set: &HashSet<String>) -> bool {
+            if let ast::Expr::Call(call) = e {
+                if let ast::Expr::Attribute(a) = call.func.as_ref() {
+                    if matches!(a.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "self")
+                        && set.contains(a.attr.as_str())
+                    {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        stmts.iter().any(|s| match s {
+            ast::Stmt::Expr(e) => expr_calls(&e.value, set),
+            ast::Stmt::If(i) => {
+                calls_self_method_in(&i.body, set) || calls_self_method_in(&i.orelse, set)
+            }
+            ast::Stmt::While(w) => calls_self_method_in(&w.body, set),
+            ast::Stmt::For(f) => calls_self_method_in(&f.body, set),
+            _ => false,
+        })
+    }
+    let methods: Vec<&ast::StmtFunctionDef> = c
+        .body
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::FunctionDef(f) if f.name.as_str() != "__init__" => Some(f),
+            _ => None,
+        })
+        .collect();
+    let mut set: HashSet<String> = methods
+        .iter()
+        .filter(|f| for_target_mutated_ast(&f.body, "self"))
+        .map(|f| f.name.to_string())
+        .collect();
+    loop {
+        let mut added = false;
+        for f in &methods {
+            if !set.contains(f.name.as_str()) && calls_self_method_in(&f.body, &set) {
+                set.insert(f.name.to_string());
+                added = true;
+            }
+        }
+        if !added {
+            break;
+        }
+    }
+    set
+}
+
+/// PMAT-1016A: bump the count of every `<name>.<method>(...)`
+/// statement-position receiver where `<method>` is a known self-mutating
+/// user-class method — forcing the receiver binding `mut` (+2 regardless of
+/// loop context). Recurses into nested if/while/for bodies.
+fn count_mutating_method_receivers(
+    stmts: &[ast::Stmt],
+    mutating: &HashSet<String>,
+    counts: &mut HashMap<String, usize>,
+) {
+    fn stmt_receiver<'a>(e: &'a ast::Expr, mutating: &HashSet<String>) -> Option<&'a str> {
+        if let ast::Expr::Call(c) = e {
+            if let ast::Expr::Attribute(a) = c.func.as_ref() {
+                if let ast::Expr::Name(n) = a.value.as_ref() {
+                    if mutating.contains(a.attr.as_str()) {
+                        return Some(n.id.as_str());
+                    }
+                }
+            }
+        }
+        None
+    }
+    if mutating.is_empty() {
+        return;
+    }
+    for s in stmts {
+        match s {
+            ast::Stmt::Expr(e) => {
+                if let Some(r) = stmt_receiver(&e.value, mutating) {
+                    *counts.entry(r.to_string()).or_insert(0) += 2;
+                }
+            }
+            ast::Stmt::If(i) => {
+                count_mutating_method_receivers(&i.body, mutating, counts);
+                count_mutating_method_receivers(&i.orelse, mutating, counts);
+            }
+            ast::Stmt::While(w) => count_mutating_method_receivers(&w.body, mutating, counts),
+            ast::Stmt::For(f) => {
+                count_mutating_method_receivers(&f.body, mutating, counts);
+                count_mutating_method_receivers(&f.orelse, mutating, counts);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
@@ -1472,6 +1585,7 @@ impl Frontend for PythonFrontend {
         // a `frozen_instance.field = v` can be rejected (Python raises
         // `FrozenInstanceError`) instead of compiling + silently mutating.
         let mut frozen_set: HashSet<String> = HashSet::new();
+        let mut mutating_method_set: HashSet<String> = HashSet::new();
         // PMAT-513: per-enum `(variant, discriminant)` list, so member access
         // `C.NAME` / `C.NAME.value` in function bodies type/lower correctly.
         let mut enum_map: HashMap<String, Vec<(String, i64)>> = HashMap::new();
@@ -1501,6 +1615,10 @@ impl Frontend for PythonFrontend {
                     struct_method_map.insert(name.clone(), method_returns);
                     struct_default_map.insert(name.clone(), field_defaults);
                     struct_property_map.insert(name, props);
+                    // PMAT-1016A: record the class's self-MUTATING method
+                    // names (direct `self.f = …` + the transitive fixpoint) so
+                    // the mutability pre-walk binds `c.bump()` receivers `mut`.
+                    mutating_method_set.extend(class_mutating_methods(c));
                 }
             }
         }
@@ -1510,6 +1628,7 @@ impl Frontend for PythonFrontend {
         let struct_properties = Rc::new(struct_property_map);
         let frozen_structs = Rc::new(frozen_set);
         let enums = Rc::new(enum_map);
+        let mutating_methods = Rc::new(mutating_method_set);
 
         // PMAT-896: detect cross-language FFI boundaries (relative sibling
         // imports) BEFORE the loop consumes `suite`. Borrow now, move below.
@@ -1537,6 +1656,7 @@ impl Frontend for PythonFrontend {
                 struct_properties.clone(),
                 frozen_structs.clone(),
                 enums.clone(),
+                mutating_methods.clone(),
             )?;
             items.push(item);
         }
@@ -1845,6 +1965,12 @@ fn walk_stmt_exprs(
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::LetTuple { value, .. } => {
             f(value)
         }
+        // PMAT-1016A: a statement-position side-effect call hosts the flagged
+        // call DIRECTLY (`mutate_it((c).clone());`) — without this arm the
+        // PMAT-884 alias-mutate guard never visits it and the clone-drops-
+        // mutation miscompile ships SILENTLY (caught by the slice-A
+        // adversarial differential: rust 0 vs cpython 1).
+        Stmt::SideEffectCall { call } => f(call),
         Stmt::ListAppend { elem, .. }
         | Stmt::SetAdd { elem, .. }
         | Stmt::ListExtend { other: elem, .. }
@@ -1981,6 +2107,7 @@ fn lower_top_level_stmt(
     struct_properties: Rc<HashMap<String, Vec<String>>>,
     frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
+    mutating_methods: Rc<HashSet<String>>,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -2000,6 +2127,7 @@ fn lower_top_level_stmt(
             enums,
             None,
             None,
+            mutating_methods,
         )
         .map(Item::Function),
         // PMAT-513: a `class C(Enum):` → an `Item::Enum` (handled before the
@@ -2017,6 +2145,7 @@ fn lower_top_level_stmt(
             struct_properties,
             frozen_structs,
             enums,
+            mutating_methods,
         ),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
@@ -2315,6 +2444,7 @@ fn lower_class_def(
     struct_properties: Rc<HashMap<String, Vec<String>>>,
     frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
+    mutating_methods: Rc<HashSet<String>>,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
     // PMAT-592/648: record `@dataclass(frozen=True)`/`(order=True)` before
@@ -2346,6 +2476,7 @@ fn lower_class_def(
                     enums.clone(),
                     None,
                     None,
+                    mutating_methods.clone(),
                 )?;
                 methods.push(method);
                 continue;
@@ -2369,6 +2500,7 @@ fn lower_class_def(
                     enums.clone(),
                     Some(self_ty.clone()),
                     None,
+                    mutating_methods.clone(),
                 )?;
                 if body_assigns_self(&method.body.stmts) {
                     return Err(FrontendError::Lower(format!(
@@ -2410,6 +2542,7 @@ fn lower_class_def(
                     enums.clone(),
                     None,
                     Some(name.clone()),
+                    mutating_methods.clone(),
                 )?;
                 methods.push(method);
                 continue;
@@ -2426,7 +2559,7 @@ fn lower_class_def(
                     m.name
                 )));
             }
-            let method = lower_function_def(
+            let mut method = lower_function_def(
                 m,
                 signatures.clone(),
                 consts.clone(),
@@ -2438,15 +2571,35 @@ fn lower_class_def(
                 enums.clone(),
                 Some(self_ty.clone()),
                 None,
+                mutating_methods.clone(),
             )?;
-            // First cut: read-only methods. A `self.field = v` (FieldAssign on
-            // `self`) would need a `&mut self` receiver + caller mutability —
-            // deferred. Reject so we never emit code that fails to compile.
+            // PMAT-1016A: a SELF-MUTATING method (`self.field = v` /
+            // `self.field += v` anywhere in the body) now lowers with a
+            // `&mut self` receiver — mark the receiver Param `mutable` (the
+            // rust-codegen `emit_param` then emits `&mut self`, and the
+            // caller-side mutability pre-walk forces `let mut` on receivers
+            // of registered mutating methods). Two shapes still refuse:
+            // - `__init__` (constructor desugar is slice B, PMAT-1016B);
+            // - methods of a FROZEN dataclass (Python raises
+            //   FrozenInstanceError at runtime — mirroring PMAT-1473's
+            //   field-assign reject, a frozen struct stays immutable).
             if body_assigns_self(&method.body.stmts) {
-                return Err(FrontendError::Lower(format!(
-                    "class `{name}` method `{}` assigns to `self` (mutating method) — v0.2.0 first cut supports read-only `&self` methods only",
-                    method.name
-                )));
+                if method.name == "__init__" {
+                    return Err(FrontendError::Lower(format!(
+                        "class `{name}` defines an explicit `__init__` — not yet lowered (PMAT-1016B); use `@dataclass` field declarations (implicit constructor) for now",
+                    )));
+                }
+                if frozen {
+                    return Err(FrontendError::Lower(format!(
+                        "class `{name}` method `{}` assigns to `self` but the dataclass is FROZEN — Python raises FrozenInstanceError; remove `frozen=True` or the mutation",
+                        method.name
+                    )));
+                }
+                if let Some(recv) = method.params.first_mut() {
+                    if recv.name == "self" {
+                        recv.mutable = true;
+                    }
+                }
             }
             methods.push(method);
         }
@@ -2758,6 +2911,10 @@ fn lower_function_def(
     // PMAT-506h: when lowering a `@classmethod` body, the enclosing class name
     // (so `cls(...)` / `cls.method(...)` resolve to it). `None` otherwise.
     cls_name: Option<String>,
+    // PMAT-1016A: module-level set of self-MUTATING user-class method names
+    // (AST-derived incl. the transitive fixpoint) — receivers of these calls
+    // bind `mut` in the mutability pre-walk.
+    mutating_methods: Rc<HashSet<String>>,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -2906,6 +3063,7 @@ fn lower_function_def(
         struct_properties,
         frozen_structs,
         enums,
+        mutating_methods,
     );
     ctx.cls_name = cls_name;
 
@@ -3684,7 +3842,18 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         }
         ast::Stmt::Expr(e) => match try_lower_list_method_call(ctx, &e) {
             Some(result) => result.map(|s| vec![s]),
-            None => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
+            // PMAT-1016A: a statement-position call on a USER-CLASS receiver
+            // (`c.bump()` — the mutating-method surface this slice unlocks) or
+            // a KNOWN user function (`helper(x)` — a `-> None` call whose
+            // value Python discards) lowers to `Stmt::SideEffectCall`
+            // (Rust/Ruchy emit `<call>;`). Scoped to receivers typing as a
+            // Struct with the named method, and to fns in the signature map —
+            // everything else keeps the existing subprocess-only fallback so
+            // unknown calls still fail loud.
+            None => match try_lower_side_effect_call(ctx, &e) {
+                Some(result) => result.map(|s| vec![s]),
+                None => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
+            },
         },
         // PMAT-502dr: a nested `def inner(...): return <expr>` → a closure
         // binding (`Stmt::ClosureLet`), reusing the lambda machinery.
@@ -3709,6 +3878,56 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
 /// paths like `subprocess.run([...])`). Returns `Some(Err(...))` for
 /// shape matches that fail later checks (e.g. wrong arity, non-list
 /// receiver type).
+/// PMAT-1016A: statement-position calls whose value Python discards —
+/// `c.bump()` (a method on a USER-CLASS receiver; the mutating-method
+/// surface slice A unlocks) or `helper(x)` (a call to a KNOWN user
+/// function, typically `-> None`). Lowers the call in value position (the
+/// existing machinery produces `Expr::MethodCall` / `Expr::Call`) and wraps
+/// it in `Stmt::SideEffectCall` (Rust/Ruchy emit `<call>;`). Returns `None`
+/// for every other shape so unknown calls keep the loud
+/// `lower_expr_stmt_as_cmd` fallback.
+fn try_lower_side_effect_call(
+    ctx: &mut LoweringCtx,
+    e: &ast::StmtExpr,
+) -> Option<Result<Stmt, FrontendError>> {
+    let ast::Expr::Call(call) = e.value.as_ref() else {
+        return None;
+    };
+    match call.func.as_ref() {
+        // `<obj>.<method>(...)` on a struct-typed receiver with that method.
+        ast::Expr::Attribute(attr) => {
+            let ast::Expr::Name(obj) = attr.value.as_ref() else {
+                return None;
+            };
+            let Some(Type::Struct(sname)) = ctx.name_types.get(obj.id.as_str()) else {
+                return None;
+            };
+            let has_method = ctx
+                .struct_methods
+                .get(sname)
+                .is_some_and(|ms| ms.iter().any(|(m, _)| m == attr.attr.as_str()));
+            if !has_method {
+                return None;
+            }
+            Some(
+                lower_expr_in_ctx(ctx, (*e.value).clone())
+                    .map(|call| Stmt::SideEffectCall { call }),
+            )
+        }
+        // `helper(...)` — a known user function (signature map).
+        ast::Expr::Name(fname) => {
+            if !ctx.signatures.contains_key(fname.id.as_str()) {
+                return None;
+            }
+            Some(
+                lower_expr_in_ctx(ctx, (*e.value).clone())
+                    .map(|call| Stmt::SideEffectCall { call }),
+            )
+        }
+        _ => None,
+    }
+}
+
 fn try_lower_list_method_call(
     ctx: &mut LoweringCtx,
     e: &ast::StmtExpr,
