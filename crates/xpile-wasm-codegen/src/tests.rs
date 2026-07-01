@@ -1079,7 +1079,7 @@ fn refuses_len_of_scalar() {
     let msg = err.to_string();
     assert!(msg.contains("unsupported"), "honest refusal: {msg}");
     assert!(
-        msg.contains("not a `list[scalar]` or `str` parameter"),
+        msg.contains("not a `list[scalar]`/`str` parameter or a `dict`/`set` local"),
         "names the cause: {msg}"
     );
 }
