@@ -17207,3 +17207,55 @@ fn main() {
 "#;
     assert_rustc_runs("tuple_target_loop_leak", &rust, driver);
 }
+
+/// PMAT-1016A: mutating `&mut self` methods — the "read-only `&self` first
+/// cut" refusal lifted. Direct (`self.count = …`) AND transitive
+/// (`double_bump` calls `self.bump()` — the AST fixpoint) mutating methods
+/// emit `&mut self`; the caller's receiver binds `let mut c`; statement
+/// calls lower via Stmt::SideEffectCall. Differentially verified vs CPython.
+#[test]
+fn oop_mut_methods() {
+    let rust = xpile_transpile_to_rust("oop_mut_methods.py");
+    assert!(
+        rust.contains("pub fn bump(&mut self)"),
+        "direct self-mutation → &mut self:\n{rust}"
+    );
+    assert!(
+        rust.contains("pub fn double_bump(&mut self)"),
+        "TRANSITIVE self-mutation (calls self.bump()) → &mut self:\n{rust}"
+    );
+    assert!(
+        rust.contains("pub fn value(&self)"),
+        "read-only method keeps &self (no blanket mut):\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut c: Counter"),
+        "mutating-method receiver binds `let mut`:\n{rust}"
+    );
+    let driver = r#"
+fn main() { assert_eq!(run(), 3, "bump + double_bump == 3 (CPython-verified)"); }
+"#;
+    assert_rustc_runs("oop_mut_methods", &rust, driver);
+}
+
+/// PMAT-1016A guard: a re-read struct arg passed to a callee that MUTATES
+/// the parameter (via a mutating method) is CLEAN-REFUSED — the PMAT-588
+/// clone would silently drop the mutation (rust 0 vs cpython 1, caught by
+/// the slice-A adversarial differential). The PMAT-884 guard's statement
+/// walker now visits Stmt::SideEffectCall.
+#[test]
+fn oop_mut_arg_is_rejected_not_miscompiled() {
+    let py = fixture("oop_mut_arg_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a re-read struct arg into a method-mutating callee must be REFUSED \
+         (the clone silently drops the mutation otherwise)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("object reference semantics not yet supported")
+            && stderr.contains("mutate_it"),
+        "the rejection should name the object-reference gap and the callee:\n{stderr}"
+    );
+}

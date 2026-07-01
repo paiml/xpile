@@ -445,6 +445,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-494b: tuple unpacking introduces no BigInt binding
             // (tuples aren't BigInt-typed at first cut).
             Stmt::LetTuple { .. } => false,
+            // PMAT-1016A: a side-effect call introduces no binding.
+            Stmt::SideEffectCall { .. } => false,
             // PMAT-504: a closure binding is never BigInt-typed at v0.2.0.
             Stmt::ClosureLet { .. } => false,
             // PMAT-736: a named inner fn is never BigInt-typed at v0.2.0 (its
@@ -725,6 +727,15 @@ fn emit_stmt_indented(
         Stmt::Return(e) => {
             write!(out, "{indent}return ")?;
             emit_expr(out, e, mode)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-1016A: a statement-position side-effect call — `c.bump()`
+        // (a self-mutating user-class method) or a void fn call. The value
+        // (unit) is discarded: emit `<call>;`.
+        Stmt::SideEffectCall { call } => {
+            write!(out, "{indent}")?;
+            emit_expr(out, call, mode)?;
             writeln!(out, ";")?;
             Ok(())
         }

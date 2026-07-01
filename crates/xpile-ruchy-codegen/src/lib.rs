@@ -353,6 +353,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             | Stmt::Assert { .. }
             | Stmt::Return(_)
             | Stmt::LetTuple { .. }
+            // PMAT-1016A: a side-effect call introduces no BigInt binding.
+            | Stmt::SideEffectCall { .. }
             | Stmt::ClosureLet { .. }
             // PMAT-736: a named inner fn is never BigInt-typed at v0.2.0.
             | Stmt::NestedFn { .. }
@@ -527,6 +529,14 @@ fn emit_stmt_indented(
         Stmt::Return(e) => {
             write!(out, "{indent}return ")?;
             emit_expr(out, e, mode)?;
+            writeln!(out, ";")?;
+            Ok(())
+        }
+        // PMAT-1016A: a statement-position side-effect call (mutating
+        // user-class method / void fn) — emit `<call>;` (mirror rust).
+        Stmt::SideEffectCall { call } => {
+            write!(out, "{indent}")?;
+            emit_expr(out, call, mode)?;
             writeln!(out, ";")?;
             Ok(())
         }

@@ -463,6 +463,8 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::FieldAssign { value, .. } => expr_has_int_arith(value),
         // PMAT-502at: del coll[key] — recurse into the key expression.
         Stmt::DelItem { key, .. } => expr_has_int_arith(key),
+        // PMAT-1016A: statement-position side-effect call — recurse into it.
+        Stmt::SideEffectCall { call } => expr_has_int_arith(call),
         Stmt::Assert { cond, msg } => {
             expr_has_int_arith(cond) || msg.as_ref().is_some_and(expr_has_int_arith)
         }
@@ -1115,6 +1117,19 @@ pub enum Stmt {
     /// (true for every v0.2.0 element type). Lean refuses (in-place
     /// mutation, same gap as `ListAppend`).
     ListExtend { list_name: String, other: Expr },
+    /// PMAT-1016A: an expression evaluated FOR ITS SIDE EFFECTS in statement
+    /// position — Python `c.bump()` (a self-mutating method call on a user
+    /// class) or `helper(x)` (a `-> None` function call). The value (unit)
+    /// is discarded. Distinct from the dedicated mutator statements
+    /// (`ListAppend` etc.) which carry receiver-name semantics; this carries
+    /// an arbitrary already-lowered call expression.
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: `<call>;`
+    ///   * Lean: refuses (side effects — same gap as `ListAppend`).
+    ///   * Shell / GPU / WASM / forjar: refuse (no user-class or
+    ///     void-call statement surface in those lanes yet).
+    SideEffectCall { call: Expr },
     /// In-place dict merge — Python `d.update(other)`. PMAT-502bb
     /// (Tranche 2). Inserts every entry of `other` (a dict-typed
     /// expression) into the receiver, overwriting existing keys (exactly
@@ -3751,6 +3766,7 @@ fn escape_stmt(s: &mut Stmt) {
             escape_name(name);
             escape_expr(key);
         }
+        Stmt::SideEffectCall { call } => escape_expr(call),
         Stmt::Assert { cond, msg } => {
             escape_expr(cond);
             if let Some(m) = msg {
@@ -4260,6 +4276,7 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
             acc.insert(name.clone());
             collect_idents_expr(key, acc);
         }
+        Stmt::SideEffectCall { call } => collect_idents_expr(call, acc),
         Stmt::Assert { cond, msg } => {
             collect_idents_expr(cond, acc);
             if let Some(m) = msg {
@@ -4524,6 +4541,7 @@ fn retype_stmt(
         | Stmt::NestedSubscriptAssign { .. }
         | Stmt::FieldAssign { .. }
         | Stmt::DelItem { .. }
+        | Stmt::SideEffectCall { .. }
         | Stmt::SetAdd { .. }
         | Stmt::SetRemove { .. }
         | Stmt::Assert { .. }
