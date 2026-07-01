@@ -17286,3 +17286,40 @@ fn main() {
 "#;
     assert_rustc_runs("oop_explicit_init", &rust, driver);
 }
+
+/// PMAT-1016C: struct alias `c2 = c` three-way disposition — read-only alias
+/// CLONES (was E0382), source-dead alias MOVES, mutation-with-both-live
+/// REFUSES. Differentially verified vs CPython.
+#[test]
+fn oop_struct_alias() {
+    let rust = xpile_transpile_to_rust("oop_struct_alias.py");
+    assert!(
+        rust.contains("(c).clone()"),
+        "read-only alias binds a clone (observably identical to sharing):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(read_only_alias(3), 6, "read-only alias: both names read 3");
+    assert_eq!(move_alias(5), 6, "source-dead alias: move + bump");
+}
+"#;
+    assert_rustc_runs("oop_struct_alias", &rust, driver);
+}
+
+/// PMAT-1016C case (3): alias + mutation with both names observable — clean
+/// refusal (a move was E0382 invalid emit; a clone would SILENTLY diverge,
+/// rust 0 vs cpython 1).
+#[test]
+fn oop_struct_alias_mutate_is_rejected() {
+    let py = fixture("oop_struct_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "alias + mutation with both names live must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("aliases struct `c` as `c2`") && stderr.contains("shares the object"),
+        "the rejection should name the alias pair and the sharing reason:\n{stderr}"
+    );
+}

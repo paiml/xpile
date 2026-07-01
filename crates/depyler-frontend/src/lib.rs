@@ -7527,6 +7527,38 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         Ok(Stmt::Assign { name, value })
     } else {
         let mutable = ctx.mutable.contains(&name);
+        // PMAT-1016C: STRUCT alias `c2 = c` — Python shares the object (a
+        // mutation through either name is seen by both), which value
+        // semantics cannot express. Three-way disposition, function-wide
+        // conservative (ctx.mutable = assigned/field-assigned/receiver-of-
+        // mutating-method; ctx.read_counts includes this RHS read):
+        //   1. NEITHER name ever mutated → CLONE (observably identical to
+        //      aliasing — nothing diverges; fixes the read-only-alias E0382).
+        //   2. Source never read beyond this RHS → plain MOVE (the alias
+        //      takes over; Python-equal).
+        //   3. Mutation + both names live → REFUSE (the move was rustc
+        //      E0382 fail-loud; a clone would be a SILENT divergence —
+        //      the PMAT-884/1008 posture).
+        let value = if let (Expr::Ident(src), Type::Struct(_)) = (&value, &ty) {
+            let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
+            let any_mutated = ctx.mutable.contains(src) || ctx.mutable.contains(&name);
+            if !any_mutated {
+                Expr::Clone(Box::new(value))
+            } else if src_reread {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` aliases struct `{src}` as `{name}` and mutates one of them \
+                     while both stay observable — Python shares the object (mutations through \
+                     either name are seen by both), which xpile's value semantics cannot \
+                     express (a move fails to compile; a clone silently drops the sharing). \
+                     Mutate before aliasing, or keep a single name",
+                    ctx.fn_name
+                )));
+            } else {
+                value
+            }
+        } else {
+            value
+        };
         ctx.bound.insert(name.clone());
         ctx.name_types.insert(name.clone(), ty.clone());
         Ok(Stmt::Let {
