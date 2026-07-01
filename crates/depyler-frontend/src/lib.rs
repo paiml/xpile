@@ -69,6 +69,14 @@ struct FnSig {
     /// the vararg starts at index `params.len()`. At a call site the trailing
     /// positional args are collected into a single `list[elem]` argument.
     variadic: Option<(String, Type)>,
+    /// PMAT-1018: does any return-position expression alias a PARAMETER
+    /// (a bare `return <param>`)? Such a call LAUNDERS an alias —
+    /// `d = ident(c)` makes d alias c in Python, but the PMAT-588 clone at
+    /// the call makes d a copy, so a later mutation through one name is
+    /// invisible through the other (a SILENT diverge, sweep #8). Call sites
+    /// binding a struct result of such a fn apply the PMAT-1016C
+    /// three-way disposition to (arg, binding).
+    returns_param: bool,
 }
 
 #[derive(Clone)]
@@ -980,6 +988,27 @@ fn count_mutating_method_receivers(
 /// Python and is clone-safe. The struct-alias rule (PMAT-1016C) originally
 /// keyed off `ctx.mutable`, which counts rebindings, so a rebound-but-never-
 /// object-mutated alias source was wrongly refused (sweep-#8 finding).
+/// PMAT-1018: does the function body contain a return-position bare `Name`
+/// matching one of its parameters (`return c`)? Recurses into if/while/for
+/// bodies. Conservative: ANY param-returning return marks the fn (no
+/// per-param precision at first cut).
+fn may_return_param(stmts: &[ast::Stmt], params: &[String]) -> bool {
+    stmts.iter().any(|s| match s {
+        ast::Stmt::Return(r) => matches!(
+            r.value.as_deref(),
+            Some(ast::Expr::Name(n)) if params.iter().any(|p| p == n.id.as_str())
+        ),
+        ast::Stmt::If(i) => {
+            may_return_param(&i.body, params) || may_return_param(&i.orelse, params)
+        }
+        ast::Stmt::While(w) => may_return_param(&w.body, params),
+        ast::Stmt::For(f) => {
+            may_return_param(&f.body, params) || may_return_param(&f.orelse, params)
+        }
+        _ => false,
+    })
+}
+
 fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashSet<String> {
     fn walk(stmts: &[ast::Stmt], out: &mut HashSet<String>) {
         for s in stmts {
@@ -1577,7 +1606,8 @@ impl Frontend for PythonFrontend {
                         parse_type_annotation(f.name.as_str(), "return", ann).unwrap_or(Type::I64)
                     }
                 };
-                let params = f.args.args.iter().map(|a| a.def.arg.to_string()).collect();
+                let params: Vec<String> =
+                    f.args.args.iter().map(|a| a.def.arg.to_string()).collect();
                 // PMAT-753: per-param declared type (default I64 when unannotated).
                 let param_types = f
                     .args
@@ -1615,6 +1645,8 @@ impl Frontend for PythonFrontend {
                         .unwrap_or(Type::I64);
                     (v.arg.to_string(), elem)
                 });
+                // PMAT-1018: flag param-returning fns (alias launderers).
+                let returns_param = may_return_param(&f.body, &params);
                 sig_map.insert(
                     f.name.to_string(),
                     FnSig {
@@ -1623,6 +1655,7 @@ impl Frontend for PythonFrontend {
                         param_types,
                         defaults,
                         variadic,
+                        returns_param,
                     },
                 );
             }
@@ -1696,9 +1729,12 @@ impl Frontend for PythonFrontend {
                                 param_types: param_types.clone(),
                                 defaults: defaults.clone(),
                                 variadic: None,
+                                // A synthesized ctor returns a FRESH struct.
+                                returns_param: false,
                             },
                         );
                     }
+                    let returns_param = may_return_param(&m.body, &params);
                     sig_map.insert(
                         key,
                         FnSig {
@@ -1707,6 +1743,7 @@ impl Frontend for PythonFrontend {
                             param_types,
                             defaults,
                             variadic: None,
+                            returns_param,
                         },
                     );
                 }
@@ -7693,6 +7730,42 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         //   3. Mutation + both names live → REFUSE (the move was rustc
         //      E0382 fail-loud; a clone would be a SILENT divergence —
         //      the PMAT-884/1008 posture).
+        // PMAT-1018: a call to a PARAM-RETURNING fn binding a struct result
+        // LAUNDERS an alias — `d = ident(c)` makes d alias c in Python, but
+        // the PMAT-588 clone at the call made d a COPY, so a later mutation
+        // through one name was invisible through the other: the SILENT
+        // sweep-#8 diverge (rust 30 vs cpython 31). Apply the PMAT-1016C
+        // three-way test to (each struct-ident arg, the binding): safe when
+        // neither object is mutated, or when the arg is never re-read
+        // (moved); refused when a mutation makes the laundering observable.
+        if let (Expr::Call { callee, args }, Type::Struct(_)) = (&value, &ty) {
+            if ctx.signatures.get(callee).is_some_and(|s| s.returns_param) {
+                for arg in args {
+                    let src = match arg {
+                        Expr::Ident(n) => Some(n),
+                        Expr::Clone(inner) => match inner.as_ref() {
+                            Expr::Ident(n) => Some(n),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    let Some(src) = src else { continue };
+                    if !matches!(ctx.name_types.get(src), Some(Type::Struct(_))) {
+                        continue;
+                    }
+                    let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
+                    let any_mutated =
+                        ctx.obj_mutated.contains(src) || ctx.obj_mutated.contains(&name);
+                    let dst_read = ctx.read_counts.get(&name).copied().unwrap_or(0) > 0;
+                    if any_mutated && dst_read && src_reread {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}` binds `{name}` from `{callee}({src}, …)` — `{callee}` may RETURN its parameter, so in Python `{name}` and `{src}` would be the SAME object, but xpile's pass-by-value makes `{name}` a copy and a mutation through one name is silently invisible through the other. Use the original name directly, or make `{callee}` construct a new instance",
+                            ctx.fn_name
+                        )));
+                    }
+                }
+            }
+        }
         let value = if let (Expr::Ident(src), Type::Struct(_)) = (&value, &ty) {
             let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
             // PMAT-1017 (sweep #8 refinements): (a) OBJECT mutation only — a
