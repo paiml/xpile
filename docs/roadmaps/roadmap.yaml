@@ -477,6 +477,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Discovered 2026-07-01 while probing param-path coverage after the 3 zero-arg WASM differential sweeps. The zero-arg sweeps could not reach param-based programs (str/list/struct params need drivers), so this frontend↔backend str-len gap survived. It is an HONEST REFUSAL (fail-loud at transpile, not a silent miscompile), so it is a capability/coverage gap, not a correctness defect — lower priority than the sweep-found silent bugs, but a real end-to-end gap + a witness-vs-production nuance (the PMAT-986 witness tests Expr::Len, which the frontend does not emit for str len). See [[feedback-ultracode-adversarial-verify]] corollary: "a real emit fn / passing witness" != "the production frontend→backend path a user hits".'
+- id: PMAT-1004
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1004: [rust/correctness] TWO real bugs in the PRIMARY Rust output lane — found by an ultracode differential sweep of `xpile transpile --target rust`. First sweep of the mature Rust lane (269 dep-free scalar-returning programs across comprehensions/strings/lists/numeric/control, then an independent verify pass): 7 reported, 7 CONFIRMED, 0 false positives, 3 classes. (1) LIST-REPEAT MOVE → INVALID RUST (E0382): `xs * n` lowered to `let __rep = xs;` which MOVES the non-Copy Vec, so a later use of `xs` (e.g. `xs * 3` then `xs + [4,5]`) failed rustc with `error[E0382]: borrow of moved value` — the emitted Rust did NOT COMPILE for a valid Python program. Fix: `let __rep = (xs).clone();` (Python `xs * n` is non-consuming; a literal operand clones a cheap temporary). (2) str.isdigit() ASCII-ONLY → SILENT WRONG VALUE: lowered to `chars().all(|c| c.is_ascii_digit())`, so every non-ASCII Unicode digit (Arabic-Indic ٣, fullwidth １, superscript ², circled ①) returned false where CPython (Unicode-aware) returns True. Fix: `is_numeric()` (a strict superset — no ASCII regression, fixes the common Nd/Digit cases; slightly over-accepts the rare Nl/No-fraction chars exact isdigit rejects — an honest narrow imprecision, exact isdigit needs a Unicode Numeric_Type table/dep). (3) `2**-x` (int**neg): CPython promotes to float (2**-1=0.5); the Rust lane PANICS `u32::try_from(neg)` with a SELF-DOCUMENTED C-PY-INT-ARITH message (int**neg→float unimplemented in v0.1.0) — an honest fail-loud limit, NOT fixed (needs float-power support), documented.'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "FIX 1 (invalid-Rust): crates/xpile-rust-codegen/src/lib.rs Expr::Repeat binds `let __rep = (seq).clone()` instead of moving seq. Verified end-to-end: `xs=[1,2,3]; ys=xs*3; zs=xs+[4,5]; return len(ys)+len(zs)` now COMPILES (rustc --edition 2021 -O) + runs to 14 == CPython (was E0382)."
+  - "FIX 2 (silent value bug): Expr::StrMethod IsDigit lowers to is_numeric() not is_ascii_digit(). Verified: isdigit over ²/①/１２３/٣ (non-ASCII digits) → True == CPython; ASCII '5' → True, non-digit 'a5' → False (no regression). Documented the rare Nl/No-fraction over-acceptance vs exact CPython isdigit."
+  - "WITNESS: two lib regression tests (list_repeat_clones_the_sequence_pmat_1004 asserts `.clone()`; isdigit_is_unicode_aware_pmat_1004 asserts is_numeric not is_ascii_digit). Both fixes ALSO verified end-to-end via the production CLI + rustc round-trip vs CPython."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-rust-codegen (16 lib incl the 2 new + prior). Touched crates/xpile-rust-codegen/ + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'FIRST differential sweep of the PRIMARY Rust output lane (the WASM sweeps hardened the secondary lane; this hit the mature main path). 269 programs, 7 confirmed, 0 false positives — even the mature Rust lane had a silent value bug (isdigit ASCII-only) AND an invalid-Rust emit (list-repeat E0382 move). Both fixed + regression-locked + CLI-verified. The 3rd class (int**neg→float panic) is a self-documented C-PY-INT-ARITH honest limit, left as-is. Reinforces [[feedback-ultracode-adversarial-verify]]: differential EXECUTION at scale finds bugs on EVERY lane, mature or new — the invalid-Rust-emit class (rustc-fails-on-emitted-code) is unique to compile-target lanes and only a compile-and-run harness surfaces it.'
 - id: PMAT-985
   github_issue: null
   item_type: task
