@@ -429,6 +429,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Completion of the PMAT-998 concat-operand-aliasing class. TWO scratch locals collided with string-returning operands: $__wasm_str_dst (chr, fixed PMAT-998 via $__wasm_concat_dst) and $__wasm_str_la (s[i], fixed here via $__wasm_concat_off). Found by probing the gap the sweep missed (its CLASS-A cases were all chr-based). Lesson: when a fix addresses ONE scratch-local collision, audit ALL scratch locals the operand family touches — s[i] and chr use DIFFERENT scratches. See [[feedback-ultracode-adversarial-verify]].'
+- id: PMAT-1001
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1001: [wasm/correctness] Python negative list-index normalization — found by the SECOND ultracode differential sweep (composition/list). The 2nd sweep (173 programs, 4 reported, 4 CONFIRMED, 0 false positives) found one clean class: negative list indices were NOT normalized to the tail like CPython. The WASM lane only handled the READ-side LITERAL case (the depyler frontend folds `xs[-1]` to `xs[len-1]`); it TRAPPED (fail-loud, diverging from CPython) on (a) a RUNTIME-negative read `xs[len(xs)-5]` (never foldable) and (b) ANY store-side negative `xs[-1]=v` / `xs[n]=v` with n<0 (the frontend does NOT fold the store side — asymmetric with reads). Fix: RUNTIME negative-index normalization `if i < 0 { i += len }` in the SHARED bounds-checked address emit (emit_list_elem_addr, used by both Index read + IndexAssign store), BEFORE the bounds guard — uniform, and harmless for an already-non-negative index. A still-negative result (i < -len) is caught by the existing guard (Python IndexError), and i >= len still traps.'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "FIX: crates/xpile-wasm-codegen/src/lib.rs emit_list_elem_addr inserts `local.get $idx; i64.const 0; i64.lt_s; if (local.get $idx; local.get $xs; i32.load; i64.extend_i32_u; i64.add; local.set $idx) end` after evaluating the index and before the bounds guard — Python xs[-k] wrap, shared read+store."
+  - "WITNESS (Run>=1, EXECUTED): tests/list_neg_index_witness.rs drives int-list kernels over [10,20,30,40]: xs[len-5]=xs[-1]=40 (runtime-neg read), xs[-1]=7;xs[3]=7 (store-neg literal), xs[2]=30 (positive regression), xs[10]→TRAP (IndexError), xs[-10]→TRAP (too-negative IndexError) — all value-matching CPython. Re-verified all 4 sweep divergences fixed via the production CLI + a driver."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-wasm-codegen (52 lib + list_neg_index witness + prior). No contract-equation change (a correctness refinement of existing list indexing; documented in code + witness). Touched crates/xpile-wasm-codegen/ + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The SECOND ultracode differential sweep (composition + list_driver categories) was cleaner than the first: 173 programs, 4 reported, 4 confirmed, 0 false positives — all one class (list negative-index normalization). The list lane was OLDER (PMAT-966/968) but the negative-index gap survived because the frontend folded read-literals, masking it; runtime + store negatives were never exercised. Fix is a shared-emit runtime normalization. Reinforces [[feedback-ultracode-adversarial-verify]]: even mature lanes have gaps that only DIFFERENTIAL EXECUTION at scale surfaces; the composition sweep (values flowing construct-to-construct, e.g. len()-derived indices) reached the runtime-negative case single-construct tests missed.'
 - id: PMAT-985
   github_issue: null
   item_type: task

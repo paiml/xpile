@@ -2400,6 +2400,36 @@ fn emit_list_elem_addr(
     indent(out, depth);
     writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
 
+    // PMAT-1001: Python negative-index normalization — `if i < 0 { i += len }`.
+    // A RUNTIME-negative index (`xs[len(xs)-5]`), or a store-side negative
+    // literal (`xs[-1] = v`, which the frontend does NOT fold the way it folds a
+    // read-side `xs[-1]` to `xs[len-1]`), wraps to the tail — matching CPython —
+    // instead of fail-loud trapping. A still-negative result (`i < -len`) is
+    // caught by the bounds guard below (Python raises IndexError there too).
+    // Harmless for an already-non-negative index (the `if` body is skipped).
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.const 0").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.lt_s").expect("write");
+    indent(out, depth);
+    writeln!(out, "if").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "i32.load").expect("write"); // element count (header @ base+0)
+    indent(out, depth + 1);
+    writeln!(out, "i64.extend_i32_u").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "i64.add").expect("write"); // i + len
+    indent(out, depth + 1);
+    writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
+
     // Bounds guard (PMAT-968 — the Python IndexError analogue):
     //   if (i < 0) | (i >= len) { unreachable }
     // `len` is the i32 header at base+0, zero-extended to i64 for the
