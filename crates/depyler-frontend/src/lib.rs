@@ -2492,6 +2492,49 @@ fn foreach_elem_mutated(stmts: &[Stmt], var: &str) -> bool {
     })
 }
 
+/// PMAT-1013 (sweep #7): does the (lowered) loop body MUTATE the named list
+/// the loop itself iterates? Python iterates the LIVE list — an appended
+/// element IS visited (`for x in xs: xs.append(…)` can run forever), removal
+/// shifts what's visited, and element writes are seen by later iterations —
+/// semantics the value model fundamentally cannot express. The emit today is
+/// an E0502 immutable/mutable borrow conflict (invalid Rust); a "fixed" emit
+/// that iterates a snapshot would COMPILE and silently diverge. So the
+/// pattern is CLEAN-REFUSED at lowering (the PMAT-884 alias-then-mutate
+/// posture). Covers the statement-level list mutations + the `xs.pop()`
+/// expression in Let/Assign value position; recurses through nested
+/// if/while/for bodies (mutating the OUTER iterated list from an inner loop
+/// is the same bug). `DelItem` counts only in its list form (`is_dict:
+/// false`) — dict/set iteration is out of scope here (Python itself raises
+/// RuntimeError there). Mutating a DIFFERENT list stays allowed.
+fn body_mutates_iterated_list(stmts: &[Stmt], var: &str) -> bool {
+    fn expr_pops(e: &Expr, var: &str) -> bool {
+        matches!(e, Expr::ListPop { list, .. }
+            if matches!(list.as_ref(), Expr::Ident(n) if n == var))
+    }
+    stmts.iter().any(|s| match s {
+        Stmt::ListAppend { list_name, .. }
+        | Stmt::ListExtend { list_name, .. }
+        | Stmt::ListInsert { list_name, .. }
+        | Stmt::ListRemoveValue { list_name, .. }
+        | Stmt::ListMutate { list_name, .. }
+        | Stmt::IndexAssign { list_name, .. } => list_name == var,
+        Stmt::DelItem { name, is_dict, .. } => !*is_dict && name == var,
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_pops(value, var),
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            body_mutates_iterated_list(then_body, var) || body_mutates_iterated_list(else_body, var)
+        }
+        Stmt::While { body, .. }
+        | Stmt::ForEach { body, .. }
+        | Stmt::ForEachPair { body, .. }
+        | Stmt::ForEachZip3 { body, .. } => body_mutates_iterated_list(body, var),
+        _ => false,
+    })
+}
+
 fn body_assigns_self(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|s| match s {
         Stmt::FieldAssign { obj, .. } => obj == "self",
@@ -5341,6 +5384,29 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         if mutate_elems {
             if let Expr::Ident(base) = &iter_expr {
                 ctx.mutable.insert(base.clone());
+            }
+        }
+        // PMAT-1013 (sweep #7): MUTATION-DURING-ITERATION — the body mutates
+        // the very list the loop iterates (`for x in xs: xs.append(99)`).
+        // Python iterates the LIVE list (the appended element IS visited; an
+        // append-per-element loop runs forever), which value semantics cannot
+        // express: the emit was an E0502 borrow conflict (invalid Rust), and a
+        // snapshot-iterating emit would compile but silently diverge. Clean-
+        // refuse instead (the PMAT-884 alias-then-mutate posture). Only fires
+        // when the iterable is a plain LIST-typed name; mutating a DIFFERENT
+        // list in the body stays accepted.
+        if let Expr::Ident(it_name) = &iter_expr {
+            if matches!(ctx.name_types.get(it_name), Some(Type::List(_)))
+                && body_mutates_iterated_list(&body, it_name)
+            {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` mutates list `{it_name}` inside a `for` loop that iterates it — \
+                     Python iterates the LIVE list (an appended element is itself visited; removals \
+                     shift upcoming elements), which xpile's value semantics cannot express; \
+                     iterate a copy (`for x in {it_name}[:]`) or collect changes into a separate \
+                     list and apply them after the loop",
+                    ctx.fn_name
+                )));
             }
         }
         return Ok(vec![Stmt::ForEach {
