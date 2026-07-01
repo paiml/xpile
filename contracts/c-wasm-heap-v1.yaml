@@ -176,7 +176,7 @@ equations:
       - "a string is materialised via $__alloc (the bump heap), never on the call stack"
       - "the result is a length-prefixed region (i32 count @ base+0, bytes @ base+8)"
       - "concat copies operand bytes via memory.copy; left-nested concat allocs ONCE"
-      - "PMAT-998: a concat holds its DESTINATION pointer in a DEDICATED local ($__wasm_concat_dst) distinct from the operand scratch ($__wasm_str_dst), so an operand that is ITSELF a string-returning op (chr(n) / s[i]) does not CLOBBER the destination — `chr(65)+chr(66)` builds `AB`, never the last-operand collapse `B` (found by the PMAT-998 adversarial CPython-differential sweep)"
+      - "PMAT-998/1000: a concat holds BOTH its DESTINATION pointer ($__wasm_concat_dst) AND its running WRITE-OFFSET ($__wasm_concat_off) in DEDICATED locals distinct from the operand scratches ($__wasm_str_dst / $__wasm_str_la), so an operand that is ITSELF a string-returning op — chr(n) (uses $__wasm_str_dst) or s[i] (uses $__wasm_str_la) — cannot CLOBBER the concat's destination OR offset. `chr(65)+chr(66)` builds `AB` (not the last-operand collapse `B`, PMAT-998) and `\"AB\"[0]+\"CD\"[1]` builds `AD` (not garbage from a clobbered offset, PMAT-1000). Found by the PMAT-998 adversarial CPython-differential sweep + a gap-probe."
       - "chr(n) writes the byte n & 0xFF (ASCII-bounded, the ord mirror)"
       - "s[i] as a string allocs(9), a count-1 header, a bounds-checked load8_u/store8 of byte i (PMAT-994)"
       - "a str return lowers to an i32 result (the heap base-pointer)"
