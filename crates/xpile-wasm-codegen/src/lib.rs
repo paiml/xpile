@@ -160,6 +160,16 @@ const STR_LA_SCRATCH: &str = "__wasm_str_la";
 /// header + entries. Body-driven declaration, like the string scratches.
 const DICT_DST_SCRATCH: &str = "__wasm_dict_dst";
 
+/// PMAT-996 (slice 4): the `$__alloc`-ed struct base-pointer while
+/// [`emit_struct_lit`] writes its fields. Mirrors [`DICT_DST_SCRATCH`].
+const STRUCT_DST_SCRATCH: &str = "__wasm_struct_dst";
+
+/// PMAT-996 (slice 4): every field of a struct instance occupies a uniform
+/// 8-byte slot on the bump heap, keeping i64/f64 naturally aligned (an i32/
+/// f32/bool field uses the low 4 bytes of its slot). Field `i` (definition
+/// order) is at `base + i*STRUCT_FIELD_SIZE`.
+const STRUCT_FIELD_SIZE: i32 = 8;
+
 /// PMAT-995 (slice 3b): the bump-heap layout of a `dict[K, V]` / `set[E]`.
 ///
 /// A dict/set rides an `i32` base-pointer to a bump-heap region:
@@ -1144,6 +1154,9 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     let needs_dict = dict_int_keys || dict_str_keys;
     let needs_heap = module_needs_heap(module);
     let literals = collect_str_literals(module)?;
+    // PMAT-996 (slice 4): the module's struct layout registry (name → fields),
+    // built once; non-scalar-field structs are refused here (honest early error).
+    let structs = build_struct_registry(module)?;
     let needs_str_eq = module_needs_str_eq(module) || dict_str_keys;
     if module_uses_list_param(module) || needs_heap || !literals.is_empty() || needs_str_eq {
         writeln!(
@@ -1208,7 +1221,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     for item in &module.items {
         match item {
             Item::Function(f) => {
-                let f_wat = emit_function(f, &literals)?;
+                let f_wat = emit_function(f, &literals, &structs)?;
                 out.push_str(&f_wat);
             }
             Item::Const { name, .. } => {
@@ -1216,11 +1229,11 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
                     "module-level const `{name}` (only scalar/control functions are in the WASM subset)"
                 )));
             }
-            Item::Struct { name, .. } => {
-                return Err(unsupported(&format!(
-                    "struct `{name}` (aggregates are outside the WASM scalar/control subset)"
-                )));
-            }
+            // PMAT-996 (slice 4): a struct DEFINITION emits no WAT — it is pure
+            // layout (recorded in `structs`); its instances are lowered at their
+            // `StructLit`/`FieldAccess` use sites. Non-scalar-field structs were
+            // already refused by `build_struct_registry`.
+            Item::Struct { .. } => {}
             Item::Enum { name, .. } => {
                 return Err(unsupported(&format!(
                     "enum `{name}` (outside the WASM scalar/control subset)"
@@ -1241,7 +1254,9 @@ fn module_uses_list_param(module: &Module) -> bool {
         Item::Function(f) => f
             .params
             .iter()
-            .any(|p| matches!(p.ty, Type::List(_) | Type::Str)),
+            // PMAT-996: a struct param is also an i32 base-pointer into linear
+            // memory, so it likewise needs the `(memory …)` declaration.
+            .any(|p| matches!(p.ty, Type::List(_) | Type::Str | Type::Struct(_))),
         _ => false,
     })
 }
@@ -1445,7 +1460,13 @@ fn stmt_has_heap_op(s: &Stmt) -> bool {
 /// does not recurse into its direct `StrCharAt`.
 fn expr_has_heap_op(e: &Expr) -> bool {
     match e {
-        Expr::Concat { .. } | Expr::Chr { .. } | Expr::StrCharAt { .. } => true,
+        // PMAT-996: a `StructLit` bump-allocates a heap record (like a string
+        // materialisation), so it pulls in the allocator + `(memory)`.
+        Expr::Concat { .. }
+        | Expr::Chr { .. }
+        | Expr::StrCharAt { .. }
+        | Expr::StructLit { .. } => true,
+        Expr::FieldAccess { obj, .. } => expr_has_heap_op(obj),
         Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
             expr_has_heap_op(lhs) || expr_has_heap_op(rhs)
         }
@@ -1588,6 +1609,11 @@ fn param_wat_type(ty: &Type) -> Result<WatTy, BackendError> {
         // @ base+8). Same ABI shape as a list param.
         return Ok(WatTy::I32);
     }
+    if matches!(ty, Type::Struct(_)) {
+        // PMAT-996: a struct param is an i32 base-pointer to a heap record
+        // (fields at fixed 8-byte-slot offsets); `p.field` loads from it.
+        return Ok(WatTy::I32);
+    }
     map_type(ty)
 }
 
@@ -1625,6 +1651,13 @@ struct Scope<'a> {
     /// this records its key kind so `d[k]` / `k in d` / `d[k]=v` / `s.add(e)`
     /// pick the right `$__wasm_dict_*_<k>` helper and key encoding.
     heap_maps: Vec<(String, KeyKind)>,
+    /// PMAT-996 (slice 4): the module's struct layout registry (name → fields),
+    /// shared across every function (struct definitions are module-global).
+    structs: &'a StructRegistry,
+    /// PMAT-996 (slice 4): `(name, struct_name)` for every struct-typed LOCAL
+    /// or PARAM. The name itself is an `i32` base-pointer (in [`Scope::locals`]);
+    /// this records which struct's layout drives its `obj.field` reads.
+    struct_locals: Vec<(String, String)>,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -1641,6 +1674,16 @@ impl Scope<'_> {
             .rev()
             .find(|(n, _)| n == name)
             .map(|(_, k)| *k)
+    }
+
+    /// PMAT-996: the struct type name if `name` is a struct local/param
+    /// base-pointer, else `None`. Drives `obj.field` lowering.
+    fn struct_of(&self, name: &str) -> Option<String> {
+        self.struct_locals
+            .iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, s)| s.clone())
     }
 
     fn ty_of(&self, name: &str) -> Result<WatTy, BackendError> {
@@ -1686,7 +1729,11 @@ impl Scope<'_> {
 }
 
 /// Emit one `(func …)` for `f`.
-fn emit_function(f: &Function, literals: &StrLiterals) -> Result<String, BackendError> {
+fn emit_function(
+    f: &Function,
+    literals: &StrLiterals,
+    structs: &StructRegistry,
+) -> Result<String, BackendError> {
     // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
     // base-pointer of the newly-materialised length-prefixed string in linear
     // memory (the bump heap this slice ships). The trailing return must be a
@@ -1711,6 +1758,8 @@ fn emit_function(f: &Function, literals: &StrLiterals) -> Result<String, Backend
         list_elem: Vec::new(),
         str_params: Vec::new(),
         heap_maps: Vec::new(),
+        structs,
+        struct_locals: Vec::new(),
         literals,
         ret,
         ret_is_unit,
@@ -1730,6 +1779,12 @@ fn emit_function(f: &Function, literals: &StrLiterals) -> Result<String, Backend
         }
         if matches!(ty, Type::Str) {
             scope.str_params.push(name.clone());
+        }
+        // PMAT-996: a struct PARAM rides an `i32` base-pointer into linear
+        // memory (like a list/str param); record its struct type so `p.field`
+        // reads resolve the field offset from the registry.
+        if let Type::Struct(sname) = ty {
+            scope.struct_locals.push((name.clone(), sname.clone()));
         }
     }
 
@@ -1801,6 +1856,11 @@ fn emit_function(f: &Function, literals: &StrLiterals) -> Result<String, Backend
     if body.contains(&format!("${DICT_DST_SCRATCH}")) {
         writeln!(out, "    (local ${DICT_DST_SCRATCH} i32)").expect("write");
     }
+    // PMAT-996: declare the struct-construction scratch `i32` local iff a
+    // `StructLit` actually used it (same body-driven detection).
+    if body.contains(&format!("${STRUCT_DST_SCRATCH}")) {
+        writeln!(out, "    (local ${STRUCT_DST_SCRATCH} i32)").expect("write");
+    }
 
     out.push_str(&body);
     writeln!(out, "  )").expect("write");
@@ -1838,6 +1898,17 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 let kind = dict_key_kind(e)?;
                 scope.declare(name, WatTy::I32);
                 scope.heap_maps.push((name.clone(), kind));
+            }
+            // PMAT-996 (slice 4): a struct LET binds an `i32` base-pointer local
+            // AND records its struct type (so `p.field` resolves the layout).
+            // Intercepted before `map_type`, which refuses `Struct`.
+            Stmt::Let {
+                name,
+                ty: Type::Struct(sname),
+                ..
+            } => {
+                scope.declare(name, WatTy::I32);
+                scope.struct_locals.push((name.clone(), sname.clone()));
             }
             Stmt::Let { name, ty, .. } => {
                 let wt = map_type(ty)?;
@@ -2195,6 +2266,11 @@ fn emit_expr(
         // PMAT-995 (slice 3b): `k in d` / `x in s` — i32 bool membership.
         Expr::DictContains { dict, key } => emit_dict_contains(dict, key, scope, out, depth),
         Expr::SetContains { set, elem } => emit_dict_contains(set, elem, scope, out, depth),
+        // PMAT-996 (slice 4): `Name(f=v, …)` — allocate + populate a plain-data
+        // struct on the bump heap; leaves the instance's i32 base-pointer.
+        Expr::StructLit { name, fields } => emit_struct_lit(name, fields, scope, out, depth),
+        // PMAT-996 (slice 4): `obj.field` — load a field from a struct local/param.
+        Expr::FieldAccess { obj, field } => emit_field_access(obj, field, scope, out, depth),
         // PMAT-995: a `DictLit`/`SetLit` needs its K/V from the binding's
         // declared type; it is materialised by the dict/set `Let` path
         // (`emit_heap_map_bind`), never standalone. Reaching here means a
@@ -3003,6 +3079,145 @@ fn emit_set_add(
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
     Ok(())
+}
+
+// ─── PMAT-996 (slice 4): plain-data structs over the bump heap ────────────────
+
+/// A struct's field layout: `(struct_name, fields)` where `fields` is the
+/// `(field_name, WatTy)` list in DEFINITION order. Field `i` lives at
+/// `base + i*STRUCT_FIELD_SIZE` (a uniform 8-byte slot). Built once per module
+/// from its `Item::Struct` definitions; carried in [`Scope::structs`].
+type StructRegistry = Vec<(String, Vec<(String, WatTy)>)>;
+
+/// Build the module's struct layout registry, refusing any struct whose field
+/// type is outside the WASM scalar subset (an honest early refusal — a
+/// str/list/dict/set/nested-struct field has no flat 8-byte-slot layout yet).
+fn build_struct_registry(module: &Module) -> Result<StructRegistry, BackendError> {
+    let mut reg: StructRegistry = Vec::new();
+    for item in &module.items {
+        if let Item::Struct { name, fields, .. } = item {
+            let mut flds = Vec::with_capacity(fields.len());
+            for (fname, fty) in fields {
+                let wt = map_type(fty).map_err(|_| {
+                    unsupported(&format!(
+                        "struct `{name}` field `{fname}`: type {fty:?} — the WASM \
+                         struct subset supports SCALAR fields (i64/i32/f64/f32/bool) \
+                         only; str/list/dict/set/nested-struct fields are refused"
+                    ))
+                })?;
+                flds.push((fname.clone(), wt));
+            }
+            reg.push((name.clone(), flds));
+        }
+    }
+    Ok(reg)
+}
+
+/// Look up a struct's field layout by name.
+fn struct_layout<'r>(
+    reg: &'r StructRegistry,
+    name: &str,
+) -> Result<&'r [(String, WatTy)], BackendError> {
+    reg.iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, f)| f.as_slice())
+        .ok_or_else(|| {
+            unsupported(&format!(
+                "struct `{name}` has no definition in this module (the WASM subset \
+                 lowers a struct only alongside its `class`/`@dataclass` definition)"
+            ))
+        })
+}
+
+/// Lower an `Expr::StructLit` (`Name(f0=v0, …)`) onto the bump heap: `$__alloc`
+/// `n_fields * 8` bytes, write each DEFINITION-order field into its 8-byte slot,
+/// and leave the instance's `i32` base-pointer on the stack. A missing field is
+/// refused honestly.
+fn emit_struct_lit(
+    name: &str,
+    lit_fields: &[(String, Expr)],
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let layout = struct_layout(scope.structs, name)?.to_vec();
+    let size = layout.len() as i32 * STRUCT_FIELD_SIZE;
+    // dst = __alloc(n*8)
+    indent(out, depth);
+    writeln!(out, "i32.const {size}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__alloc").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.set ${STRUCT_DST_SCRATCH}").expect("write");
+    // Write each field in DEFINITION order (offset = i*8), so field position is
+    // independent of the literal's argument order.
+    for (i, (fname, fty)) in layout.iter().enumerate() {
+        let value = lit_fields
+            .iter()
+            .find(|(n, _)| n == fname)
+            .map(|(_, v)| v)
+            .ok_or_else(|| {
+                unsupported(&format!(
+                    "struct literal `{name}` is missing field `{fname}`"
+                ))
+            })?;
+        indent(out, depth);
+        writeln!(out, "local.get ${STRUCT_DST_SCRATCH}").expect("write");
+        emit_expr_typed(value, scope, out, depth, *fty)?;
+        indent(out, depth);
+        writeln!(
+            out,
+            "{}.store offset={}",
+            fty.keyword(),
+            i as i32 * STRUCT_FIELD_SIZE
+        )
+        .expect("write");
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${STRUCT_DST_SCRATCH}").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// Lower an `Expr::FieldAccess` (`obj.field`) — load the field from the struct
+/// instance `obj` points at. `obj` must be an [`Expr::Ident`] naming a struct
+/// LOCAL or PARAM (an `i32` base-pointer); the field's offset + WAT type come
+/// from the struct registry. Returns the field's WAT type.
+fn emit_field_access(
+    obj: &Expr,
+    field: &str,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let Expr::Ident(oname) = obj else {
+        return Err(unsupported(
+            "field access `.f` over a non-name receiver — the WASM subset reads a \
+             field from a struct LOCAL/PARAM only (no nested/temporary receivers)",
+        ));
+    };
+    let sname = scope.struct_of(oname).ok_or_else(|| {
+        unsupported(&format!(
+            "field access over `{oname}` which is not a struct local/param in the \
+             WASM subset"
+        ))
+    })?;
+    let layout = struct_layout(scope.structs, &sname)?;
+    let (idx, (_, fty)) = layout
+        .iter()
+        .enumerate()
+        .find(|(_, (fn_, _))| fn_ == field)
+        .ok_or_else(|| unsupported(&format!("struct `{sname}` has no field `{field}`")))?;
+    indent(out, depth);
+    writeln!(out, "local.get ${oname}").expect("write");
+    indent(out, depth);
+    writeln!(
+        out,
+        "{}.load offset={}",
+        fty.keyword(),
+        idx as i32 * STRUCT_FIELD_SIZE
+    )
+    .expect("write");
+    Ok(*fty)
 }
 
 /// PMAT-993: lower `chr(n)` (`Expr::Chr`) — materialise a new 1-byte string

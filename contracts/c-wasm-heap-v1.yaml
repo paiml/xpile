@@ -124,6 +124,17 @@ compile_targets:
     # TRAPS (`unreachable executed`) as CPython raises KeyError. See the
     # `heap_dict_witness` integration test. Refused honestly: a non-int/str
     # key type, a non-int value, dict/set comprehensions, iteration.
+    #
+    # PMAT-996 (2026-07-01, slice 4): PLAIN-DATA STRUCTS (@dataclass/class). A
+    # struct instance is a bump-heap record with NO header — field i (definition
+    # order) at base+i*8, a uniform 8-byte slot (an i32/f32/bool field uses the
+    # low 4 bytes). StructLit (Name(f=v,…)) $__alloc's n_fields*8 + writes each
+    # field (matched by NAME, so arg order is irrelevant); FieldAccess (obj.field)
+    # loads at the field offset. A struct LOCAL and a struct PARAM both ride an
+    # i32 base-pointer; a struct DEFINITION emits no WAT (pure layout). WABT-
+    # executed (tests/heap_struct_witness.rs): Point(3,4).x+.y=7, reversed
+    # Point(y=10,x=3).x=3, Rec(5,2.5).f=2.5, a struct-param p.x+p.y=42 — all ==
+    # CPython. Refused honestly: a non-scalar field, a struct RETURN, a method call.
 
 equations:
   wasm_heap_alloc_structure_extensionality_diamond:
@@ -239,6 +250,37 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to values matching CPython (get/len/membership), and TRAPS on an absent-key get"
       - "the dict/set WASM-emitting code carries the WASM citation"
 
+  struct_is_flat_field_slot_record:
+    # PMAT-996 (slice 4): a plain-data struct (@dataclass/class) is a bump-heap
+    # record with NO header — field i (definition order) at base+i*8, a uniform
+    # 8-byte slot. The field-slot layout facts (contiguity, disjointness) are
+    # machine-checked in contracts/lean/WasmHeap.lean (struct_fields_contiguous /
+    # struct_fields_disjoint, core-only, sorry-free).
+    formula: |
+      construct(StructLit(Name, fields) + obj.field,
+                BackendConfig{target: Wasm})
+        produces wat that $__alloc's n_fields*8 bytes, writes each field into its
+        8-byte slot (field i @ base+i*8 in DEFINITION order, via {ty}.store), and
+        reads a field via {ty}.load offset=i*8. A struct LOCAL and a struct PARAM
+        both ride an i32 base-pointer. The struct DEFINITION emits no WAT (pure
+        layout).
+    domain: |
+      A plain-data struct built from a StructLit (Expr::StructLit) bound at a
+      Type::Struct let / passed as a Type::Struct param, and its field reads
+      (Expr::FieldAccess obj.field). Fields are SCALARS (i64/i32/f64/f32/bool).
+    invariants:
+      - "a struct instance is $__alloc'd (bump heap): n_fields * 8 bytes, no header"
+      - "field i is at base+i*8 in DEFINITION order; the literal's arg order is irrelevant (fields matched by NAME) — machine-checked contiguous + disjoint in WasmHeap.lean"
+      - "a field's WAT type drives its store/load ({ty}.store / {ty}.load offset=i*8); an i32/f32/bool field uses the slot's low 4 bytes"
+      - "a struct DEFINITION emits no WAT symbol (it is pure layout)"
+      - "a non-scalar field (str/list/dict/set/nested-struct), a struct RETURN, and a method CALL are REFUSED honestly"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "every struct field types as a scalar (i64/i32/f64/f32/bool)"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to field values matching CPython"
+      - "the struct WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
       construct(str_ordering | slice | str() | fstring | str_method,
@@ -271,6 +313,11 @@ proof_obligations:
     property: a dict/set is a well-formed bump-heap assoc-array; get/len/membership match CPython and an absent-key get traps
     formal: "wasm-interp(construct(d[k]/len(d)/(k in d))) == CPython AND wasm-interp(construct(d[absent])) traps"
     applies_to: dict_set_is_length_prefixed_assoc_array
+
+  - type: postcondition
+    property: a struct is a well-formed flat field-slot record; field reads match CPython
+    formal: "wasm-interp(construct(Point(x,y); p.x + p.y)) == CPython"
+    applies_to: struct_is_flat_field_slot_record
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -384,3 +431,30 @@ falsification_tests:
       - base_pointer_key_compare_passed_off_as_content
       - len_reads_wrong_header
       - duplicate_literal_key_kept_both_entries
+
+  - id: FALSIFY-WASM-HEAP-005
+    rule: |
+      PMAT-996: a plain-data struct MUST be a well-formed flat field-slot record
+      — field i (definition order) at base+i*8, no header — whose StructLit
+      construction + FieldAccess reads assemble via wat2wasm and, when executed,
+      VALUE-MATCH CPython (int AND float fields), for a struct LOCAL and a struct
+      PARAM. Fields MUST be matched by NAME (a reversed-keyword-arg literal maps
+      to the same slots). A non-scalar field, a struct RETURN, and a method call
+      MUST be refused, never miscompiled.
+    prediction: |
+      The executed WABT witness reads Point(3,4).x=3, .y=4, x+y=7; a reversed
+      Point(y=10,x=3) still yields x=3; Rec(5,2.5).f=2.5; a struct param p.x+p.y
+      over a preloaded record = 42 — all == CPython.
+    test: |
+      cargo test -p xpile-wasm-codegen --test heap_struct_witness
+    if_fails: |
+      The field-slot layout (stride, offset, name-matching), the store/load type,
+      the struct-param base-pointer, or a refusal regressed — a wrong field
+      offset, an arg-order-not-name mapping, or an aliased neighbouring field.
+      The executed values diverge from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - wrong_field_offset_or_stride
+      - literal_arg_order_used_instead_of_field_name
+      - wrong_store_or_load_type_for_field
+      - non_scalar_field_or_struct_return_miscompiled

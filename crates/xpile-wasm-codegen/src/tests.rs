@@ -1106,12 +1106,27 @@ fn refuses_len_of_list_literal() {
 }
 
 #[test]
-fn refuses_struct_item() {
+fn accepts_scalar_struct_refuses_nonscalar_field() {
+    // PMAT-996 (slice 4): a scalar-field struct DEFINITION now lowers (pure
+    // layout, no WAT symbol of its own) — it is no longer refused.
+    let ok = WasmBackend::new().lower(
+        &module_with(vec![Item::Struct {
+            name: "P".into(),
+            fields: vec![("x".into(), Type::I64)],
+            methods: Vec::new(),
+            frozen: false,
+            order: false,
+        }]),
+        &wasm_config(),
+    );
+    assert!(ok.is_ok(), "a scalar-field struct is now supported: {ok:?}");
+    // But a struct with a non-scalar field (no flat 8-byte-slot layout) is still
+    // refused honestly, naming the offending field.
     let err = WasmBackend::new()
         .lower(
             &module_with(vec![Item::Struct {
-                name: "P".into(),
-                fields: vec![("x".into(), Type::I64)],
+                name: "Q".into(),
+                fields: vec![("s".into(), Type::Str)],
                 methods: Vec::new(),
                 frozen: false,
                 order: false,
@@ -1119,7 +1134,11 @@ fn refuses_struct_item() {
             &wasm_config(),
         )
         .unwrap_err();
-    assert!(err.to_string().contains("struct"));
+    let msg = err.to_string();
+    assert!(
+        msg.contains("struct") && msg.contains("Str"),
+        "honest refusal: {msg}"
+    );
 }
 
 #[test]
