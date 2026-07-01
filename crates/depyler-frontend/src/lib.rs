@@ -1521,9 +1521,10 @@ impl Frontend for PythonFrontend {
                     // static/classmethod CALL marker (see the `Class.method(...)`
                     // dispatch), so an instance method must not collide with it.
                     let args_iter = m.args.args.iter().skip(usize::from(!is_sm));
-                    let params = args_iter.clone().map(|a| a.def.arg.to_string()).collect();
+                    let params: Vec<String> =
+                        args_iter.clone().map(|a| a.def.arg.to_string()).collect();
                     // PMAT-753: per-param declared type (default I64).
-                    let param_types = args_iter
+                    let param_types: Vec<Type> = args_iter
                         .clone()
                         .map(|a| {
                             a.def
@@ -1538,12 +1539,31 @@ impl Frontend for PythonFrontend {
                                 .unwrap_or(Type::I64)
                         })
                         .collect();
-                    let defaults = args_iter.map(|a| a.default.as_deref().cloned()).collect();
+                    let defaults: Vec<Option<ast::Expr>> =
+                        args_iter.map(|a| a.default.as_deref().cloned()).collect();
                     let key = if is_sm || is_cm {
                         format!("{}::{}", c.name, m.name)
                     } else {
                         format!("{}#{}", c.name, m.name)
                     };
+                    // PMAT-1016B: an explicit `__init__` ALSO registers under
+                    // the associated-fn call key `Class::__init__` — the
+                    // construction call site (`Point(3, 4)`) routes to it
+                    // (arity/type coercion + return-type inference ride the
+                    // ordinary FnSig machinery for free). `ret` for __init__
+                    // is the class itself, not the annotated `-> None`.
+                    if m.name.as_str() == "__init__" && !is_sm && !is_cm {
+                        sig_map.insert(
+                            format!("{}::__init__", c.name),
+                            FnSig {
+                                ret: Type::Struct(c.name.to_string()),
+                                params: params.clone(),
+                                param_types: param_types.clone(),
+                                defaults: defaults.clone(),
+                                variadic: None,
+                            },
+                        );
+                    }
                     sig_map.insert(
                         key,
                         FnSig {
@@ -2434,6 +2454,167 @@ fn lower_enum_def(c: &ast::StmtClassDef) -> Result<Item, FrontendError> {
 /// inference — deferred). `@dataclass` construction is positional over the
 /// fields; an explicit `__init__` is not supported yet.
 #[allow(clippy::too_many_arguments)]
+/// PMAT-1016B: lower `Point(3, 4)` through the class's explicit `__init__`
+/// FnSig — positional args first, then keywords by PARAM name, then declared
+/// defaults; each arg coerced to its declared param type (the same
+/// `coerce_lowered_to_optional` the ordinary call path uses). Emits
+/// `Expr::Call { callee: "Point::__init__" }` (an associated-fn call, the
+/// staticmethod emit shape); the FnSig's `ret` (the class) drives inference.
+fn lower_explicit_ctor_call(
+    ctx: &LoweringCtx,
+    ctor_name: &str,
+    init_key: &str,
+    call: &ast::ExprCall,
+) -> Result<Expr, FrontendError> {
+    let sig = ctx.signatures.get(init_key).expect("caller checked");
+    let (param_names, param_types) = (sig.params.clone(), sig.param_types.clone());
+    if call.args.len() > param_names.len() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` constructs `{ctor_name}` with {} positional arg(s) but its `__init__` takes {}",
+            ctx.fn_name,
+            call.args.len(),
+            param_names.len()
+        )));
+    }
+    let mut values: Vec<Option<Expr>> = vec![None; param_names.len()];
+    for (i, arg) in call.args.iter().enumerate() {
+        let v = lower_expr_in_ctx(ctx, arg.clone())?;
+        values[i] = Some(coerce_lowered_to_optional(ctx, v, param_types.get(i)));
+    }
+    for kw in &call.keywords {
+        let Some(kw_name) = kw.arg.as_ref().map(|id| id.to_string()) else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` constructs `{ctor_name}` with a `**`-splat — not supported at v0.2.0",
+                ctx.fn_name
+            )));
+        };
+        let Some(i) = param_names.iter().position(|p| *p == kw_name) else {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` constructs `{ctor_name}` with unknown `__init__` parameter `{kw_name}`",
+                ctx.fn_name
+            )));
+        };
+        if values[i].is_some() {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` constructs `{ctor_name}` giving `{kw_name}` both positionally and by keyword",
+                ctx.fn_name
+            )));
+        }
+        let v = lower_expr_in_ctx(ctx, kw.value.clone())?;
+        values[i] = Some(coerce_lowered_to_optional(ctx, v, param_types.get(i)));
+    }
+    // Fill trailing omissions from the declared parameter defaults.
+    for (i, slot) in values.iter_mut().enumerate() {
+        if slot.is_none() {
+            if let Some(Some(d)) = sig.defaults.get(i) {
+                let v = lower_expr_in_ctx(ctx, d.clone())?;
+                *slot = Some(coerce_lowered_to_optional(ctx, v, param_types.get(i)));
+            }
+        }
+    }
+    let missing: Vec<&str> = values
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.is_none())
+        .map(|(i, _)| param_names[i].as_str())
+        .collect();
+    if !missing.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` constructs `{ctor_name}` missing `__init__` parameter(s) {missing:?}",
+            ctx.fn_name
+        )));
+    }
+    Ok(Expr::Call {
+        callee: format!("{ctor_name}::__init__"),
+        args: values.into_iter().map(|v| v.expect("checked")).collect(),
+    })
+}
+
+/// PMAT-1016B: turn a LOWERED explicit `__init__` method into an associated
+/// constructor. Requirements (else a precise refusal): every body statement
+/// is `self.<field> = <expr>` (lowered `Stmt::FieldAssign` on `self`), every
+/// DECLARED field is assigned exactly once, the trailing return is unit, and
+/// no RHS reads `self` (field-from-field init like `self.y = self.x + 1`
+/// needs sequential semantics a struct literal cannot express). The result is
+/// `pub fn __init__(<params minus self>) -> Self { Self { f: <rhs>, … } }`
+/// with fields in ASSIGNMENT order (Python's evaluation order).
+fn synthesize_explicit_ctor(
+    class_name: &str,
+    declared_fields: &[(String, Type)],
+    method: Function,
+) -> Result<Function, FrontendError> {
+    let mut field_values: Vec<(String, Expr)> = Vec::with_capacity(declared_fields.len());
+    for st in &method.body.stmts {
+        let Stmt::FieldAssign { obj, field, value } = st else {
+            return Err(FrontendError::Lower(format!(
+                "class `{class_name}` `__init__` has a statement that isn't a plain `self.<field> = <expr>` — \
+                 v0.2.0 lowers only STRAIGHT-LINE constructors (no control flow / locals / calls-as-statements); \
+                 move the logic into a method or precompute the arguments at the call site"
+            )));
+        };
+        if obj != "self" {
+            return Err(FrontendError::Lower(format!(
+                "class `{class_name}` `__init__` assigns a field of `{obj}` — only `self.<field> = <expr>` is supported"
+            )));
+        }
+        if !declared_fields.iter().any(|(f, _)| f == field) {
+            return Err(FrontendError::Lower(format!(
+                "class `{class_name}` `__init__` assigns `self.{field}` but the class declares no field `{field}` — \
+                 declare it (`{field}: <type>`) in the class body"
+            )));
+        }
+        if field_values.iter().any(|(f, _)| f == field) {
+            return Err(FrontendError::Lower(format!(
+                "class `{class_name}` `__init__` assigns `self.{field}` twice — each field exactly once at v0.2.0"
+            )));
+        }
+        // A RHS reading `self` (`self.y = self.x + 1`) needs the sequential
+        // semantics a struct literal cannot express — refuse. (The lowered
+        // expr tree is large; the Debug scan is a guard, not a lowering.)
+        if format!("{value:?}").contains("Ident(\"self\")") {
+            return Err(FrontendError::Lower(format!(
+                "class `{class_name}` `__init__` reads `self` while assigning `self.{field}` — \
+                 field-from-field initialization is not expressible in a struct literal; \
+                 compute it from the parameters instead"
+            )));
+        }
+        field_values.push((field.clone(), value.clone()));
+    }
+    if field_values.len() != declared_fields.len() {
+        let missing: Vec<&str> = declared_fields
+            .iter()
+            .filter(|(f, _)| !field_values.iter().any(|(g, _)| g == f))
+            .map(|(f, _)| f.as_str())
+            .collect();
+        return Err(FrontendError::Lower(format!(
+            "class `{class_name}` `__init__` never assigns declared field(s) {missing:?} — \
+             every declared field must be assigned exactly once at v0.2.0"
+        )));
+    }
+    let params: Vec<Param> = method
+        .params
+        .into_iter()
+        .filter(|p| p.name != "self")
+        .map(|mut p| {
+            p.mutable = false;
+            p
+        })
+        .collect();
+    Ok(Function {
+        name: "__init__".to_string(),
+        params,
+        return_type: Type::Struct(class_name.to_string()),
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::StructLit {
+                name: class_name.to_string(),
+                fields: field_values,
+            },
+        },
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn lower_class_def(
     c: ast::StmtClassDef,
     signatures: Rc<HashMap<String, FnSig>>,
@@ -2585,9 +2766,19 @@ fn lower_class_def(
             //   field-assign reject, a frozen struct stays immutable).
             if body_assigns_self(&method.body.stmts) {
                 if method.name == "__init__" {
-                    return Err(FrontendError::Lower(format!(
-                        "class `{name}` defines an explicit `__init__` — not yet lowered (PMAT-1016B); use `@dataclass` field declarations (implicit constructor) for now",
-                    )));
+                    // PMAT-1016B: a STRAIGHT-LINE explicit `__init__` (every
+                    // statement `self.<field> = <expr>`, every declared field
+                    // assigned exactly once, no control flow) synthesizes an
+                    // associated constructor `pub fn __init__(params) -> Self`
+                    // returning a StructLit whose field exprs are the lowered
+                    // RHSs in ASSIGNMENT order (Python's evaluation order).
+                    // The construction call site (`Point(3, 4)`) routes to it
+                    // via the `Class::__init__` FnSig the pre-pass registered.
+                    // Anything fancier (control flow, self-reads, non-field
+                    // statements) refuses precisely.
+                    let ctor = synthesize_explicit_ctor(&name, &fields, method)?;
+                    methods.push(ctor);
+                    continue;
                 }
                 if frozen {
                     return Err(FrontendError::Lower(format!(
@@ -12099,6 +12290,18 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // PMAT-506h: inside a `@classmethod` body, `cls(...)` constructs
                 // the enclosing class (resolved via `ctx.cls_name`).
                 let ctor_name = ctx.resolve_class_name(fname.id.as_str());
+                // PMAT-1016B: a class with an EXPLICIT `__init__` constructs
+                // through it — `Point(3, 4)` → `Point::__init__(3, 4)` (the
+                // synthesized associated ctor), NOT the positional-field
+                // StructLit (the params need not mirror the fields). Arity,
+                // kwargs, defaults, and per-param coercion ride the FnSig the
+                // pre-pass registered under `Class::__init__`.
+                if ctx.structs.contains_key(ctor_name) {
+                    let init_key = format!("{ctor_name}::__init__");
+                    if ctx.signatures.contains_key(&init_key) {
+                        return lower_explicit_ctor_call(ctx, ctor_name, &init_key, &call);
+                    }
+                }
                 if let Some(field_names) = ctx
                     .structs
                     .get(ctor_name)

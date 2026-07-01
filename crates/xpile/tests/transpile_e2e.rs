@@ -17259,3 +17259,30 @@ fn oop_mut_arg_is_rejected_not_miscompiled() {
         "the rejection should name the object-reference gap and the callee:\n{stderr}"
     );
 }
+
+/// PMAT-1016B: explicit `__init__` → an associated constructor. Straight-line
+/// bodies synthesize `pub fn __init__(<params>) -> Rect` returning a struct
+/// literal (assignment order); `Rect(3, 4)` / `Rect(b=…, a=…)` route through
+/// the `Class::__init__` FnSig. Composes with slice A's mutating methods.
+/// Differentially verified vs CPython (12/17-style cases + defaults).
+#[test]
+fn oop_explicit_init() {
+    let rust = xpile_transpile_to_rust("oop_explicit_init.py");
+    assert!(
+        rust.contains("pub fn __init__(a: i64, b: i64) -> Rect"),
+        "synthesized associated ctor:\n{rust}"
+    );
+    assert!(
+        rust.contains("Rect::__init__("),
+        "construction routes through the ctor:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // CPython: Rect(3,4) → area 12, grow → 15.
+    assert_eq!(build(3, 4), 15, "computed field + slice-A mutating method");
+    // CPython: 2 + 5 + 10 = 17.
+    assert_eq!(build_kw(2, 5), 17, "kwargs map to __init__ PARAM names");
+}
+"#;
+    assert_rustc_runs("oop_explicit_init", &rust, driver);
+}
