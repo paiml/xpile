@@ -498,7 +498,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1005: [rust/correctness] FOLLOW-UP — precise Unicode str.isdigit() (Numeric_Type Digit/Decimal). PMAT-1004 found isdigit lowered to is_ascii_digit() (wrong for non-ASCII digits Arabic-Indic ٣ / fullwidth １ / superscript ² / circled ①), but the naive is_numeric() fix OVER-accepts (½ is Numeric but NOT a Digit; Roman numerals are Numeric_Type=Numeric), conflating isdigit with isnumeric — which CPython and the e2e str_predicates test distinguish. Rust std exposes no exact-isdigit predicate (is_numeric = general categories Nd/Nl/No; Python isdigit = Numeric_Type ∈ {Digit, Decimal} = Nd + No-with-Digit-type, EXCLUDING Nl + No-fractions). A precise fix needs a Unicode Numeric_Type table — either a small dep (e.g. unicode-properties, which the EMITTED Rust would then depend on, a cargo-deny + user-dep consideration) or a generated const match over the Numeric_Type=Digit/Decimal code-point ranges emitted as a helper fn. Same applies to isdecimal (Numeric_Type=Decimal = Nd only) if/when added.'
-  status: planned
+  status: done
   priority: low
   created: 2026-07-01T00:00:00Z
   acceptance_criteria:
@@ -507,7 +507,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Filed by PMAT-1004 (the naive is_numeric fix broke the isdigit≠isnumeric distinction). LOW priority: the common ASCII case is correct; non-ASCII digits (Arabic/fullwidth) are the real gap but need Unicode data. Prefer a generated const-range match (no new dep in the EMITTED Rust) over pulling unicode-properties into every transpiled program. Not blocking.'
+  notes: 'DONE 2026-07-02 via the GENERATED const-range option this entry preferred: PY_ISDIGIT_RANGES (83 ranges, ~2KB) generated from CPython ground truth (`chr(cp).isdigit()` over all scalar values — the same interpreter the differential harness compares against), embedded as a RAW string (escapes stay textual → the emitted source is bidi-safe ASCII, no literal RTL digits) and emitted inline as a `matches!` pattern per isdigit call site (rare; float-repr-block-sized). NO new dep in the emitted Rust. Differentially verified: accept 123/٣/１２/²/① and reject ½/Ⅻ/a1/""/12a all == CPython; the isdigit≠isnumeric DISTINCTION (the exact thing PMAT-1004''s naive fix broke) holds: ½ numeric-not-digit, ² BOTH. The str_predicates e2e + the renamed lib witness now pin the NEW invariant (isdigit = generated ranges, NOT is_numeric; isnumeric = is_numeric, NOT the ranges). isdecimal remains unimplemented (Nd-only, same recipe when needed); isalnum still under-reports No digits like ² (Rust is_alphanumeric excludes No) — residual, noted. Filed by PMAT-1004 (the naive is_numeric fix broke the isdigit≠isnumeric distinction). LOW priority: the common ASCII case is correct; non-ASCII digits (Arabic/fullwidth) are the real gap but need Unicode data. Prefer a generated const-range match (no new dep in the EMITTED Rust) over pulling unicode-properties into every transpiled program. Not blocking.'
 - id: PMAT-1006
   github_issue: null
   item_type: task

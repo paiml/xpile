@@ -518,6 +518,18 @@ fn function_bigint_mode(f: &Function) -> bool {
     f.body.stmts.iter().any(stmt_has_bigint)
 }
 
+/// PMAT-1005: the Unicode code-point ranges where CPython `str.isdigit()` is
+/// True — Numeric_Type ∈ {Digit, Decimal} (Nd blocks + the No digits like
+/// ²/³/¹/①..; EXCLUDES Nl Roman numerals and No fractions like ½, which is
+/// what keeps `isdigit` DISTINCT from `isnumeric`). GENERATED from CPython
+/// ground truth (`chr(cp).isdigit()` over all scalar values, python3 /
+/// Unicode 15-era tables, 2026-07-02, 83 ranges) — the same interpreter the
+/// differential harness compares against. Emitted inline as a `matches!`
+/// pattern at each `.isdigit()` call site (call sites are rare; the emitted
+/// pattern is ~2KB, in line with the float-repr block). A lib witness pins
+/// accept (٣ ² ① １) and reject (½ Ⅻ a) samples.
+const PY_ISDIGIT_RANGES: &str = r"'\u{30}'..='\u{39}' | '\u{b2}'..='\u{b3}' | '\u{b9}' | '\u{660}'..='\u{669}' | '\u{6f0}'..='\u{6f9}' | '\u{7c0}'..='\u{7c9}' | '\u{966}'..='\u{96f}' | '\u{9e6}'..='\u{9ef}' | '\u{a66}'..='\u{a6f}' | '\u{ae6}'..='\u{aef}' | '\u{b66}'..='\u{b6f}' | '\u{be6}'..='\u{bef}' | '\u{c66}'..='\u{c6f}' | '\u{ce6}'..='\u{cef}' | '\u{d66}'..='\u{d6f}' | '\u{de6}'..='\u{def}' | '\u{e50}'..='\u{e59}' | '\u{ed0}'..='\u{ed9}' | '\u{f20}'..='\u{f29}' | '\u{1040}'..='\u{1049}' | '\u{1090}'..='\u{1099}' | '\u{1369}'..='\u{1371}' | '\u{17e0}'..='\u{17e9}' | '\u{1810}'..='\u{1819}' | '\u{1946}'..='\u{194f}' | '\u{19d0}'..='\u{19da}' | '\u{1a80}'..='\u{1a89}' | '\u{1a90}'..='\u{1a99}' | '\u{1b50}'..='\u{1b59}' | '\u{1bb0}'..='\u{1bb9}' | '\u{1c40}'..='\u{1c49}' | '\u{1c50}'..='\u{1c59}' | '\u{2070}' | '\u{2074}'..='\u{2079}' | '\u{2080}'..='\u{2089}' | '\u{2460}'..='\u{2468}' | '\u{2474}'..='\u{247c}' | '\u{2488}'..='\u{2490}' | '\u{24ea}' | '\u{24f5}'..='\u{24fd}' | '\u{24ff}' | '\u{2776}'..='\u{277e}' | '\u{2780}'..='\u{2788}' | '\u{278a}'..='\u{2792}' | '\u{a620}'..='\u{a629}' | '\u{a8d0}'..='\u{a8d9}' | '\u{a900}'..='\u{a909}' | '\u{a9d0}'..='\u{a9d9}' | '\u{a9f0}'..='\u{a9f9}' | '\u{aa50}'..='\u{aa59}' | '\u{abf0}'..='\u{abf9}' | '\u{ff10}'..='\u{ff19}' | '\u{104a0}'..='\u{104a9}' | '\u{10a40}'..='\u{10a43}' | '\u{10d30}'..='\u{10d39}' | '\u{10e60}'..='\u{10e68}' | '\u{11052}'..='\u{1105a}' | '\u{11066}'..='\u{1106f}' | '\u{110f0}'..='\u{110f9}' | '\u{11136}'..='\u{1113f}' | '\u{111d0}'..='\u{111d9}' | '\u{112f0}'..='\u{112f9}' | '\u{11450}'..='\u{11459}' | '\u{114d0}'..='\u{114d9}' | '\u{11650}'..='\u{11659}' | '\u{116c0}'..='\u{116c9}' | '\u{11730}'..='\u{11739}' | '\u{118e0}'..='\u{118e9}' | '\u{11950}'..='\u{11959}' | '\u{11c50}'..='\u{11c59}' | '\u{11d50}'..='\u{11d59}' | '\u{11da0}'..='\u{11da9}' | '\u{11f50}'..='\u{11f59}' | '\u{16a60}'..='\u{16a69}' | '\u{16ac0}'..='\u{16ac9}' | '\u{16b50}'..='\u{16b59}' | '\u{1d7ce}'..='\u{1d7ff}' | '\u{1e140}'..='\u{1e149}' | '\u{1e2f0}'..='\u{1e2f9}' | '\u{1e4f0}'..='\u{1e4f9}' | '\u{1e950}'..='\u{1e959}' | '\u{1f100}'..='\u{1f10a}' | '\u{1fbf0}'..='\u{1fbf9}'";
+
 /// PMAT-840 (HUNT-V26 #9): the CPython-faithful `repr`/`str` of an f64 as a Rust
 /// expression block over `accessor` (the field/value access). Mirrors the
 /// `Expr::ToStr { of_float: true }` emission — `.0` for whole values, `e±NN`
@@ -2170,6 +2182,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str(").is_empty() && (");
                 emit_expr(out, recv, mode)?;
                 out.push_str(").chars().all(|__c| ");
+                // PMAT-1005: isdigit is a computed pattern (generated Unicode
+                // ranges); the rest stay static predicates.
+                if matches!(op, StrMethodOp::IsDigit) {
+                    write!(out, "matches!(__c, {PY_ISDIGIT_RANGES})")?;
+                    out.push_str("))");
+                    return Ok(());
+                }
                 out.push_str(match op {
                     // PMAT-1004: Python `str.isdigit()` is UNICODE-aware (chars
                     // with Numeric_Type Digit/Decimal — Arabic-Indic ٣, fullwidth
@@ -2183,7 +2202,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     // ASCII-only as a documented honest limit; the precise
                     // Unicode-isdigit fix (a Numeric_Type table / dep) is filed
                     // as PMAT-1005.
-                    StrMethodOp::IsDigit => "__c.is_ascii_digit()",
+                    StrMethodOp::IsDigit => unreachable!("isdigit handled above (PMAT-1005)"),
                     // PMAT-643: Unicode Number categories (Nd/Nl/No), matching
                     // Python `str.isnumeric()`.
                     StrMethodOp::IsNumeric => "__c.is_numeric()",
@@ -5433,13 +5452,19 @@ mod tests {
             };
             emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok")
         };
+        let isdigit = mk(StrMethodOp::IsDigit);
         assert!(
-            mk(StrMethodOp::IsDigit).contains("is_ascii_digit()"),
-            "isdigit stays ASCII (documented limit; distinct from isnumeric)"
+            isdigit.contains("matches!(__c, ") && isdigit.contains("'\\u{660}'"),
+            "isdigit emits the generated Numeric_Type Digit/Decimal ranges (PMAT-1005):\n{isdigit}"
         );
         assert!(
-            mk(StrMethodOp::IsNumeric).contains("is_numeric()"),
-            "isnumeric is Unicode-aware (is_numeric)"
+            !isdigit.contains("__c.is_numeric()"),
+            "isdigit must NOT conflate with isnumeric (½ is numeric, not a digit)"
+        );
+        let isnumeric = mk(StrMethodOp::IsNumeric);
+        assert!(
+            isnumeric.contains("is_numeric()") && !isnumeric.contains("matches!(__c, '"),
+            "isnumeric is Unicode-aware via is_numeric, distinct from the isdigit ranges"
         );
     }
 
