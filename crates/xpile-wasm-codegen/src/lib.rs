@@ -173,6 +173,12 @@ const STR_CONCAT_DST: &str = "__wasm_concat_dst";
 /// the destination clobber for `chr`; this fixes the offset clobber for `s[i]`).
 const STR_CONCAT_OFF: &str = "__wasm_concat_off";
 
+/// PMAT-1002: an `f64` scratch holding a float DIVISOR while it is checked
+/// against `0.0`. Python raises `ZeroDivisionError` on `x / 0.0`; a bare
+/// `f64.div` returns IEEE inf/nan instead. This local stashes the divisor so the
+/// dividend can stay on the stack while the guard traps on a zero divisor.
+const FDIV_SCRATCH: &str = "__wasm_fdiv_d";
+
 /// PMAT-995 (slice 3b): per-function scratch `i32` local holding a freshly
 /// `$__alloc`-ed dict/set base-pointer while [`emit_dict_lit`] writes its
 /// header + entries. Body-driven declaration, like the string scratches.
@@ -1878,6 +1884,10 @@ fn emit_function(
     // $__wasm_str_la so an `s[i]` operand's scratch cannot clobber it).
     if body.contains(&format!("${STR_CONCAT_OFF}")) {
         writeln!(out, "    (local ${STR_CONCAT_OFF} i32)").expect("write");
+    }
+    // PMAT-1002: the f64 float-divisor scratch (zero-divisor guard).
+    if body.contains(&format!("${FDIV_SCRATCH}")) {
+        writeln!(out, "    (local ${FDIV_SCRATCH} f64)").expect("write");
     }
     // PMAT-995: declare the dict-construction scratch `i32` local iff a
     // `DictLit`/`SetLit` actually used it (same body-driven detection).
@@ -3705,12 +3715,39 @@ fn emit_float_binop(
             rt.keyword()
         )));
     }
+    // PMAT-1002: float `/` guards the divisor against 0.0 — Python raises
+    // ZeroDivisionError, where a bare f64.div would silently return IEEE
+    // inf/nan (1.0/0.0 → +inf, 0.0/0.0 → nan). Stash the divisor (top of stack)
+    // so the dividend stays put, trap if it is 0.0 (`-0.0 == 0.0` in IEEE, so
+    // both signed zeros are caught), then divide. Found by the PMAT-1002
+    // adversarial CPython-differential sweep.
+    if matches!(op, FloatOp::Div) {
+        indent(out, depth);
+        writeln!(out, "local.set ${FDIV_SCRATCH}").expect("write"); // pop divisor; dividend stays
+        indent(out, depth);
+        writeln!(out, "local.get ${FDIV_SCRATCH}").expect("write");
+        indent(out, depth);
+        writeln!(out, "f64.const 0.0").expect("write");
+        indent(out, depth);
+        writeln!(out, "f64.eq").expect("write");
+        indent(out, depth);
+        writeln!(out, "if").expect("write");
+        indent(out, depth + 1);
+        writeln!(out, "unreachable").expect("write"); // ZeroDivisionError analogue
+        indent(out, depth);
+        writeln!(out, "end").expect("write");
+        indent(out, depth);
+        writeln!(out, "local.get ${FDIV_SCRATCH}").expect("write");
+        indent(out, depth);
+        writeln!(out, "f64.div").expect("write");
+        return Ok(WatTy::F64);
+    }
     indent(out, depth);
     let instr = match op {
         FloatOp::Add => "f64.add",
         FloatOp::Sub => "f64.sub",
         FloatOp::Mul => "f64.mul",
-        FloatOp::Div => "f64.div",
+        FloatOp::Div => unreachable!("Div handled above with the zero-divisor guard"),
         other => {
             return Err(unsupported(&format!(
                 "float op {other:?} (only + - * / are in the WASM scalar subset; \
