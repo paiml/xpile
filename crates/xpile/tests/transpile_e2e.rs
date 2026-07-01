@@ -17120,3 +17120,26 @@ fn main() {
 "#;
     assert_rustc_runs("loop_var_leak_literal_iter", &rust, driver);
 }
+
+/// PMAT-1014 (sweep #7): the four Latin DIGRAPH triples (Ǆǅǆ/Ǉǈǉ/Ǌǋǌ/Ǳǲǳ)
+/// titlecase to their MIDDLE (Lt) form — `"ǳ".capitalize()` is "ǲ" (U+01F2),
+/// but the PMAT-701 uppercase-expansion derivation gave the all-caps "Ǳ"
+/// (U+01F1): a silent DIVERGE. A const range-match intercepts the digraphs
+/// before the expansion; ß→Ss / ﬂ→Fl and ASCII behavior unchanged.
+#[test]
+fn titlecase_digraphs() {
+    let rust = xpile_transpile_to_rust("titlecase_digraphs.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(cap("ǳ".to_string()), "ǲ", "lowercase digraph → Lt middle form");
+    assert_eq!(cap("Ǳ".to_string()), "ǲ", "uppercase digraph → Lt middle form");
+    assert_eq!(cap("ǅ".to_string()), "ǅ", "Lt form is a fixed point");
+    assert_eq!(titl("ǆa".to_string()), "ǅa", "title word-start digraph");
+    assert_eq!(titl("aǳ b".to_string()), "Aǳ B", "mid-word digraph lowers, not titlecases");
+    assert_eq!(cap("ßtest".to_string()), "Sstest", "PMAT-701 expansion regression");
+    assert_eq!(titl("ﬂy".to_string()), "Fly", "PMAT-701 ligature regression");
+    assert_eq!(titl("it's".to_string()), "It'S", "ASCII word-boundary regression");
+}
+"#;
+    assert_rustc_runs("titlecase_digraphs", &rust, driver);
+}
