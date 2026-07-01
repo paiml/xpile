@@ -4337,6 +4337,28 @@ fn emit_checked_shift(
     Ok(())
 }
 
+/// PMAT-1007: emit an operand in an i64-ARITHMETIC position, unwrapping a
+/// no-default `d.get(k)` — which is `Option<i64>` (correct in truthy/`is None`
+/// contexts) — to its value. Python evaluates `d.get(k) + …` only when the key
+/// is present (a `None` operand raises `TypeError`), so an absent key PANICS (a
+/// correct fail-loud model) rather than the codegen feeding `Option<i64>` into
+/// `.checked_add(…)`, which does NOT compile (E0599 no method `checked_add` on
+/// `Option`, or E0308 expected `i64` found `Option<i64>`). Found by the Rust-lane
+/// dict differential sweep. Non-`DictGetOpt` operands pass straight through.
+fn emit_arith_operand(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {
+    if is_dict_get_opt(e) {
+        write!(out, "(")?;
+        emit_expr(out, e, mode)?;
+        write!(
+            out,
+            ").unwrap_or_else(|| panic!(\"xpile: TypeError: unsupported operand type(s) — a no-default dict.get(k) returned None (absent key) used in an arithmetic expression\"))"
+        )?;
+    } else {
+        emit_expr(out, e, mode)?;
+    }
+    Ok(())
+}
+
 /// Emit a checked binary op: `(<lhs>).<method>(<rhs>).expect("<msg> overflow ...")`.
 /// Returns `i64`, identical to infix on the no-overflow fast path.
 fn emit_checked(
@@ -4348,9 +4370,9 @@ fn emit_checked(
     mode: bool,
 ) -> Result<(), CodegenError> {
     write!(out, "(")?;
-    emit_expr(out, lhs, mode)?;
+    emit_arith_operand(out, lhs, mode)?;
     write!(out, ").{method}(")?;
-    emit_expr(out, rhs, mode)?;
+    emit_arith_operand(out, rhs, mode)?;
     write!(
         out,
         ").expect(\"xpile: i64 {op_name} overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")"
@@ -5111,6 +5133,43 @@ mod tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn dict_get_no_default_unwraps_in_arithmetic_pmat_1007() {
+        // Found by the Rust-lane dict differential sweep: `d.get(k)` (no default)
+        // is Option<i64>; feeding it straight into the C-PY-INT-ARITH
+        // `.checked_add(...)` wrapper emitted uncompilable Rust (E0599/E0308). An
+        // arithmetic operand that is a no-default get must be unwrapped (present →
+        // value; absent → panic == Python's None-in-arithmetic TypeError). The
+        // Option MUST be preserved in truthy / `is None` contexts (tested there),
+        // so this is scoped to the arithmetic operand position only.
+        let getk = |k: i64| Expr::DictGetOpt {
+            dict: Box::new(Expr::Ident("d".into())),
+            key: Box::new(Expr::LitInt(k)),
+        };
+        let f = Function {
+            name: "f".into(),
+            params: vec![Param {
+                name: "d".into(),
+                ty: Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+                mutable: false,
+            }],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::BinOp {
+                    op: BinOp::Add,
+                    lhs: Box::new(getk(1)),
+                    rhs: Box::new(getk(2)),
+                },
+            },
+        };
+        let rust = emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok");
+        assert!(
+            rust.contains(".unwrap_or_else(|| panic!") && rust.contains("checked_add"),
+            "a no-default dict.get in arithmetic must unwrap the Option before checked_add (PMAT-1007):\n{rust}"
+        );
     }
 
     #[test]
