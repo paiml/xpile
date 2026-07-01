@@ -1007,6 +1007,13 @@ fn may_return_param(stmts: &[ast::Stmt], params: &[String]) -> bool {
             ast::Expr::IfExp(t) => {
                 expr_is_param(&t.body, params) || expr_is_param(&t.orelse, params)
             }
+            // PMAT-1020: `return xs[0]` returns PART of a param — the caller's
+            // binding aliases the param's interior (Python shares the row; the
+            // clone-at-return severed it SILENTLY, sweep-9 c16). Non-slice
+            // subscript chains only (a slice is a copy in Python too).
+            ast::Expr::Subscript(s) if !matches!(s.slice.as_ref(), ast::Expr::Slice(_)) => {
+                expr_is_param(&s.value, params)
+            }
             _ => false,
         }
     }
@@ -1105,6 +1112,265 @@ fn collect_nested_mutated(stmts: &[ast::Stmt]) -> HashSet<String> {
     let mut out = HashSet::new();
     walk(stmts, &mut out);
     out
+}
+
+/// PMAT-1020 (sweep #9's systemic fix): function-local TRANSITIVE alias-CLASS
+/// analysis. Sweep #9 proved the per-site pairwise dispositions cannot cover a
+/// dataflow property: transitive chains (`b = a; c = b; c.append(4)` — per-hop
+/// clone+move severs the Python sharing SILENTLY), intra-function param-alias
+/// laundering (`ys = xs; ys.append(9)` hides the param mutation from the
+/// PMAT-884 caller guard), subscript-read aliases (`r = m[0]` clones the row
+/// Python shares), if-arm/loop-body aliases, and ctor captures (`Holder(d)`)
+/// all leak. This pass builds alias EDGES from EVERY binding form (TYPE-BLIND
+/// — safe because the refusal keys only on OBJECT mutation, which scalars
+/// never trigger), union-finds them into classes, and:
+///   * a class with an object mutation AND ≥2 observable LOCAL members →
+///     clean refusal naming two members (the observable-shared-mutation case
+///     value semantics cannot express);
+///   * a PARAM in a mutated class → returned so the caller marks the param
+///     mutable (the PMAT-884 caller-side guard then fires — refusing here
+///     would break the legitimate append-to-param idiom).
+///
+/// Edges collected: `b = a` (Assign + AnnAssign, any nesting depth);
+///   `b = a[i]`/`a[i][j]` plain index reads (element aliasing, coarse
+///   name~base; SLICE reads `a[i:j]` are copies in Python too — skipped);
+///   `b = Cls(...)` / `b = f(...)` where f may return a param or Cls is a
+///   known class — result aliased to each bare-Name argument. Ternary RHS
+///   arms recurse.
+fn alias_class_analysis(
+    body: &[ast::Stmt],
+    params: &[Param],
+    mutating_methods: &HashSet<String>,
+    signatures: &HashMap<String, FnSig>,
+    structs: &HashMap<String, Vec<(String, Type)>>,
+) -> (Option<(String, String)>, HashSet<String>) {
+    // --- tiny union-find over interned names ---
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    fn union(parent: &mut [usize], a: usize, b: usize) {
+        let (ra, rb) = (find(parent, a), find(parent, b));
+        if ra != rb {
+            parent[ra] = rb;
+        }
+    }
+    let mut ids: HashMap<String, usize> = HashMap::new();
+    let mut names: Vec<String> = Vec::new();
+    let mut parent: Vec<usize> = Vec::new();
+    fn intern(
+        n: &str,
+        ids: &mut HashMap<String, usize>,
+        names: &mut Vec<String>,
+        parent: &mut Vec<usize>,
+    ) -> usize {
+        if let Some(&i) = ids.get(n) {
+            return i;
+        }
+        let i = names.len();
+        ids.insert(n.to_string(), i);
+        names.push(n.to_string());
+        parent.push(i);
+        i
+    }
+    // RHS alias sources: bare Name; plain (non-slice) subscript chain base;
+    // ternary arms; calls to param-returning fns / known-class ctors (their
+    // bare-Name args). Returns every source name the binding may alias.
+    fn rhs_sources(
+        e: &ast::Expr,
+        signatures: &HashMap<String, FnSig>,
+        structs: &HashMap<String, Vec<(String, Type)>>,
+        out: &mut Vec<String>,
+    ) {
+        match e {
+            ast::Expr::Name(n) => out.push(n.id.to_string()),
+            ast::Expr::Subscript(s) => {
+                if !matches!(s.slice.as_ref(), ast::Expr::Slice(_)) {
+                    // walk to the chain base (a[i][j] → a)
+                    let mut cur = s.value.as_ref();
+                    loop {
+                        match cur {
+                            ast::Expr::Subscript(inner)
+                                if !matches!(inner.slice.as_ref(), ast::Expr::Slice(_)) =>
+                            {
+                                cur = inner.value.as_ref()
+                            }
+                            ast::Expr::Name(n) => {
+                                out.push(n.id.to_string());
+                                break;
+                            }
+                            _ => break,
+                        }
+                    }
+                }
+            }
+            ast::Expr::IfExp(t) => {
+                rhs_sources(&t.body, signatures, structs, out);
+                rhs_sources(&t.orelse, signatures, structs, out);
+            }
+            ast::Expr::Call(c) => {
+                if let ast::Expr::Name(f) = c.func.as_ref() {
+                    let launders = signatures
+                        .get(f.id.as_str())
+                        .is_some_and(|s| s.returns_param);
+                    let is_ctor = structs.contains_key(f.id.as_str());
+                    if launders || is_ctor {
+                        for a in &c.args {
+                            rhs_sources(a, signatures, structs, out);
+                        }
+                        for kw in &c.keywords {
+                            rhs_sources(&kw.value, signatures, structs, out);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    fn walk(
+        stmts: &[ast::Stmt],
+        edges: &mut Vec<(String, String)>,
+        signatures: &HashMap<String, FnSig>,
+        structs: &HashMap<String, Vec<(String, Type)>>,
+    ) {
+        for s in stmts {
+            match s {
+                ast::Stmt::Assign(a) => {
+                    for t in &a.targets {
+                        if let ast::Expr::Name(dst) = t {
+                            let mut srcs = Vec::new();
+                            rhs_sources(&a.value, signatures, structs, &mut srcs);
+                            for src in srcs {
+                                edges.push((dst.id.to_string(), src));
+                            }
+                        }
+                    }
+                }
+                ast::Stmt::AnnAssign(aa) => {
+                    if let (ast::Expr::Name(dst), Some(v)) = (aa.target.as_ref(), &aa.value) {
+                        let mut srcs = Vec::new();
+                        rhs_sources(v, signatures, structs, &mut srcs);
+                        for src in srcs {
+                            edges.push((dst.id.to_string(), src));
+                        }
+                    }
+                }
+                ast::Stmt::If(i) => {
+                    walk(&i.body, edges, signatures, structs);
+                    walk(&i.orelse, edges, signatures, structs);
+                }
+                ast::Stmt::While(w) => walk(&w.body, edges, signatures, structs),
+                ast::Stmt::For(f) => {
+                    walk(&f.body, edges, signatures, structs);
+                    walk(&f.orelse, edges, signatures, structs);
+                }
+                _ => {}
+            }
+        }
+    }
+    // Also alias LIST-LITERAL container embeds: `grid = [row]` / `[x, y]` —
+    // Python stores the SAME object; a nested write through the grid is
+    // visible through the element name. Edge grid~each bare-Name element.
+    fn walk_list_embeds(stmts: &[ast::Stmt], edges: &mut Vec<(String, String)>) {
+        for s in stmts {
+            match s {
+                ast::Stmt::Assign(a) => {
+                    for t in &a.targets {
+                        if let (ast::Expr::Name(dst), ast::Expr::List(l)) = (t, a.value.as_ref()) {
+                            for el in &l.elts {
+                                if let ast::Expr::Name(n) = el {
+                                    edges.push((dst.id.to_string(), n.id.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+                ast::Stmt::AnnAssign(aa) => {
+                    if let (ast::Expr::Name(dst), Some(v)) = (aa.target.as_ref(), &aa.value) {
+                        if let ast::Expr::List(l) = v.as_ref() {
+                            for el in &l.elts {
+                                if let ast::Expr::Name(n) = el {
+                                    edges.push((dst.id.to_string(), n.id.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+                ast::Stmt::If(i) => {
+                    walk_list_embeds(&i.body, edges);
+                    walk_list_embeds(&i.orelse, edges);
+                }
+                ast::Stmt::While(w) => walk_list_embeds(&w.body, edges),
+                ast::Stmt::For(f) => {
+                    walk_list_embeds(&f.body, edges);
+                    walk_list_embeds(&f.orelse, edges);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut edges: Vec<(String, String)> = Vec::new();
+    walk(body, &mut edges, signatures, structs);
+    walk_list_embeds(body, &mut edges);
+    if edges.is_empty() {
+        return (None, HashSet::new());
+    }
+    // A name's appearance as an alias-edge SOURCE is not an independent
+    // observation — `b = a; b.append(3); len(b)` must stay the legit
+    // source-dead MOVE (a's only read is the RHS itself).
+    let mut rhs_occ: HashMap<&str, usize> = HashMap::new();
+    for (_, s) in &edges {
+        *rhs_occ.entry(s.as_str()).or_insert(0) += 1;
+    }
+    for (a, b) in &edges {
+        let ia = intern(a, &mut ids, &mut names, &mut parent);
+        let ib = intern(b, &mut ids, &mut names, &mut parent);
+        union(&mut parent, ia, ib);
+    }
+    let obj_mutated = collect_obj_mutated(body, mutating_methods);
+    let reads = count_name_reads(body);
+    let param_names: HashSet<&str> = params.iter().map(|p| p.name.as_str()).collect();
+    // Group members per class root.
+    let mut classes: HashMap<usize, Vec<usize>> = HashMap::new();
+    for i in 0..names.len() {
+        let r = find(&mut parent, i);
+        classes.entry(r).or_default().push(i);
+    }
+    let mut params_to_mark: HashSet<String> = HashSet::new();
+    let mut violation: Option<(String, String)> = None;
+    for members in classes.values() {
+        if members.len() < 2 {
+            continue;
+        }
+        let mutated = members.iter().any(|&i| obj_mutated.contains(&names[i]));
+        if !mutated {
+            continue;
+        }
+        // Params: mark mutable (the caller-side PMAT-884 guard handles the
+        // boundary) — never counted toward the local refusal.
+        let mut observable_locals: Vec<&str> = Vec::new();
+        for &i in members {
+            let n = names[i].as_str();
+            if param_names.contains(n) {
+                params_to_mark.insert(n.to_string());
+            } else if reads.get(n).copied().unwrap_or(0) > rhs_occ.get(n).copied().unwrap_or(0)
+                || obj_mutated.contains(n)
+            {
+                observable_locals.push(n);
+            }
+        }
+        if observable_locals.len() >= 2 && violation.is_none() {
+            observable_locals.sort_unstable();
+            violation = Some((
+                observable_locals[0].to_string(),
+                observable_locals[1].to_string(),
+            ));
+        }
+    }
+    (violation, params_to_mark)
 }
 
 fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashSet<String> {
@@ -3569,6 +3835,7 @@ fn lower_function_def(
         }
     }
 
+    let __mm_for_alias = mutating_methods.clone();
     let mut ctx = LoweringCtx::new(
         &f.name,
         ctx_return_type.clone(),
@@ -3584,6 +3851,38 @@ fn lower_function_def(
         enums,
         mutating_methods,
     );
+
+    // PMAT-1020: function-local transitive alias-CLASS analysis (sweep #9's
+    // systemic fix). A class with an object mutation and >=2 observable LOCAL
+    // members is unrepresentable under value semantics — refuse before any
+    // per-site disposition can mis-handle a transitive chain / if-arm alias /
+    // subscript-read alias / ctor capture. A PARAM in a mutated class instead
+    // marks the param mutable so the PMAT-884 caller-side guard fires (an
+    // intra-function alias `ys = xs; ys.append(9)` no longer launders it).
+    {
+        let (violation, params_to_mark) = alias_class_analysis(
+            &body_stmts,
+            &params,
+            &__mm_for_alias,
+            &ctx.signatures,
+            &ctx.structs,
+        );
+        for p in params_to_mark {
+            ctx.mutable.insert(p);
+        }
+        if let Some((a, b)) = violation {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` aliases `{a}` and `{b}` (directly, through a chain, an element \
+                 read, a constructor capture, or a param-returning call) and mutates the shared \
+                 object while both stay observable — Python shares the object (a mutation \
+                 through either name is seen by both), which xpile's value semantics cannot \
+                 express. Keep a single name for the mutated object, or copy explicitly \
+                 (`b = a[:]`) where independent values are intended",
+                f.name
+            )));
+        }
+    }
+
     ctx.cls_name = cls_name;
 
     // PMAT-741 (HUNT-V12 V12-9/10/11): reject a mutable-collection-literal default
