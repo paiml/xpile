@@ -803,41 +803,82 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     writeln!(out, "    i32.const 0").expect("write");
     writeln!(out, "  )").expect("write");
 
-    // set: update an existing key in place, else append at count (trap if at
-    // capacity — the realloc-free bump heap's honest bound).
+    // set: update an existing key in place, else append at count. PMAT-999: on
+    // overflow (count >= capacity) the region GROWS — bump-alloc a 2x region,
+    // memory.copy the header + entries, and RETURN the (possibly relocated)
+    // base-pointer so the caller updates its local. A genuine out-of-memory
+    // (the one 64-KiB page exhausted) still traps via $__alloc's later store.
     writeln!(
         out,
-        "  ;; __wasm_dict_set_{s}(p, key, val): update-or-insert (d[key] = val)."
+        "  ;; __wasm_dict_set_{s}(p, key, val) -> p': update-or-insert (d[key] = val)."
     )
     .expect("write");
     writeln!(
         out,
-        "  ;; Appends at count; TRAPS (unreachable) if at capacity (no realloc)."
+        "  ;; GROWS (2x realloc + copy) when count >= capacity; returns the base"
     )
     .expect("write");
     writeln!(
         out,
-        "  (func $__wasm_dict_set_{s} (param $p i32) (param $k {kparam}) (param $v i64)"
+        "  ;; pointer (unchanged unless it grew), which the caller local.set's."
     )
     .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_set_{s} (param $p i32) (param $k {kparam}) (param $v i64) (result i32)"
+    )
+    .expect("write");
+    writeln!(out, "    (local $np i32)").expect("write");
     emit_dict_scan_prologue(&mut out);
     emit_dict_key_compare(&mut out, kind);
     writeln!(out, "        if").expect("write");
     writeln!(out, "          local.get $ea").expect("write");
     writeln!(out, "          local.get $v").expect("write");
     writeln!(out, "          i64.store offset={DICT_VAL_OFFSET}").expect("write");
+    // in-place update: the base-pointer did not move; return it.
+    writeln!(out, "          local.get $p").expect("write");
     writeln!(out, "          return").expect("write");
     writeln!(out, "        end").expect("write");
     emit_dict_scan_epilogue(&mut out);
-    // not found → append at slot n; trap if at capacity.
+    // not found → GROW if at capacity, then append at slot n.
     writeln!(out, "    local.get $n").expect("write");
     writeln!(out, "    local.get $p").expect("write");
     writeln!(out, "    i32.load offset={DICT_CAP_OFFSET}").expect("write");
     writeln!(out, "    i32.ge_s").expect("write");
     writeln!(out, "    if").expect("write");
-    writeln!(out, "      unreachable").expect("write");
+    // np = __alloc(header + (cap*2)*ENTRY); doubling amortises the copies.
+    writeln!(out, "      i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "      local.get $p").expect("write");
+    writeln!(out, "      i32.load offset={DICT_CAP_OFFSET}").expect("write");
+    writeln!(out, "      i32.const 2").expect("write");
+    writeln!(out, "      i32.mul").expect("write"); // new_cap = cap*2
+    writeln!(out, "      i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "      i32.mul").expect("write"); // new_cap*ENTRY
+    writeln!(out, "      i32.add").expect("write"); // header + new_cap*ENTRY
+    writeln!(out, "      call $__alloc").expect("write");
+    writeln!(out, "      local.set $np").expect("write");
+    // memory.copy(np, p, header + cap*ENTRY): header (count+cap) + all entries.
+    writeln!(out, "      local.get $np").expect("write");
+    writeln!(out, "      local.get $p").expect("write");
+    writeln!(out, "      i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "      local.get $p").expect("write");
+    writeln!(out, "      i32.load offset={DICT_CAP_OFFSET}").expect("write");
+    writeln!(out, "      i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "      i32.mul").expect("write"); // cap*ENTRY
+    writeln!(out, "      i32.add").expect("write"); // header + cap*ENTRY
+    writeln!(out, "      memory.copy").expect("write");
+    // np.capacity = cap*2 (overwrite the copied old cap).
+    writeln!(out, "      local.get $np").expect("write");
+    writeln!(out, "      local.get $p").expect("write");
+    writeln!(out, "      i32.load offset={DICT_CAP_OFFSET}").expect("write");
+    writeln!(out, "      i32.const 2").expect("write");
+    writeln!(out, "      i32.mul").expect("write");
+    writeln!(out, "      i32.store offset={DICT_CAP_OFFSET}").expect("write");
+    // p = np (WASM params are reassignable locals).
+    writeln!(out, "      local.get $np").expect("write");
+    writeln!(out, "      local.set $p").expect("write");
     writeln!(out, "    end").expect("write");
-    // $ea = p + LIST_ELEMS_OFFSET + n*DICT_ENTRY_SIZE
+    // $ea = p + LIST_ELEMS_OFFSET + n*DICT_ENTRY_SIZE  (p may have grown).
     writeln!(out, "    local.get $p").expect("write");
     writeln!(out, "    i32.const {LIST_ELEMS_OFFSET}").expect("write");
     writeln!(out, "    i32.add").expect("write");
@@ -856,6 +897,8 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     writeln!(out, "    i32.const 1").expect("write");
     writeln!(out, "    i32.add").expect("write");
     writeln!(out, "    i32.store").expect("write");
+    // return the (possibly grown) base-pointer.
+    writeln!(out, "    local.get $p").expect("write");
     writeln!(out, "  )").expect("write");
 
     out
@@ -3014,6 +3057,11 @@ fn emit_dict_lit(
         emit_expr_typed(v, scope, out, depth, WatTy::I64)?;
         indent(out, depth);
         writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
+        // PMAT-999: consume the returned (possibly grown) pointer back into the
+        // scratch. Construction pre-sizes cap = n + slack so it never grows here,
+        // but the helper now returns i32 and the value must not leak on the stack.
+        indent(out, depth);
+        writeln!(out, "local.set ${DICT_DST_SCRATCH}").expect("write");
     }
     // result = dst (the new dict's base-pointer).
     indent(out, depth);
@@ -3042,6 +3090,9 @@ fn emit_set_lit(
         writeln!(out, "i64.const 0").expect("write");
         indent(out, depth);
         writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
+        // PMAT-999: consume the returned pointer (see emit_dict_lit).
+        indent(out, depth);
+        writeln!(out, "local.set ${DICT_DST_SCRATCH}").expect("write");
     }
     indent(out, depth);
     writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
@@ -3125,6 +3176,10 @@ fn emit_dict_set(
     emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
+    // PMAT-999: the helper returns the (possibly grown) base-pointer — update
+    // the dict local so later reads see the relocated region.
+    indent(out, depth);
+    writeln!(out, "local.set ${dict_name}").expect("write");
     Ok(())
 }
 
@@ -3150,6 +3205,9 @@ fn emit_set_add(
     writeln!(out, "i64.const 0").expect("write");
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
+    // PMAT-999: update the set local from the returned (possibly grown) pointer.
+    indent(out, depth);
+    writeln!(out, "local.set ${set_name}").expect("write");
     Ok(())
 }
 
