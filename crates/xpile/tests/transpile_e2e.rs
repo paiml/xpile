@@ -17349,3 +17349,40 @@ fn main() {
 "#;
     assert_rustc_runs("oop_sweep8_fixes", &rust, driver);
 }
+
+/// PMAT-1018: RETURN-aliasing — a param-returning fn launders an alias the
+/// direct-alias rule can't see; the PMAT-588 clone at the call made the
+/// binding a COPY, so mutation through one name was invisible through the
+/// other (the one SILENT finding of sweep #8: rust 30 vs cpython 31). The
+/// FnSig `returns_param` flag + the PMAT-1016C three-way test now refuse
+/// the observable case.
+#[test]
+fn return_alias_is_rejected_not_miscompiled() {
+    let py = fixture("return_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a laundered alias with mutation + both names live must be REFUSED \
+         (the clone silently hides the mutation otherwise)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("may RETURN its parameter") && stderr.contains("ident"),
+        "the rejection should name the laundering callee:\n{stderr}"
+    );
+}
+
+/// PMAT-1018 companion: fresh-construct fns, moved launders, and read-only
+/// launders stay accepted — differentially verified vs CPython.
+#[test]
+fn return_alias_allowed_shapes() {
+    let rust = xpile_transpile_to_rust("return_alias_allowed.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(fresh_construct(30), 161, "fresh-construct fn unaffected (30 + 131)");
+    assert_eq!(moved_launder(30), 31, "moved launder (arg never re-read)");
+    assert_eq!(readonly_launder(30), 60, "read-only launder (clone-identical)");
+}
+"#;
+    assert_rustc_runs("return_alias_allowed", &rust, driver);
+}

@@ -645,11 +645,12 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1018: [rust/semantics] RETURN-aliasing — a function returning (a struct derived from) its own parameter creates an alias the PMAT-1016C rule cannot see: `def ident(c): return c` then `d = ident(c); d.bump(); print(c.get())` — the PMAT-588 clone at the CALL (`ident((c).clone())`) makes d a copy, so the mutation through d is invisible through c: SILENT DIVERGE (rust 30 vs cpython 31; the one silent finding of sweep #8). The direct-alias rule (c2 = c) refuses this shape, but routing the alias through a function launders it. Fix direction: in the module pre-pass, mark functions that MAY RETURN A PARAM (return-position Ident matching a param name, transitively through if/else branches); at call sites binding such a call result where the argument is a re-read struct, apply the SAME three-way disposition as PMAT-1016C (neither-object-mutated → fine (clone already); mutation + both live → refuse). Conservative: any param-returning fn taints its result as an alias of every struct arg.'
-  status: planned
+  status: done
   priority: high
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
-  - "The ident-launder repro (d = ident(c); d.bump(); read c) REFUSES or matches CPython — no SILENT divergence. Non-aliasing fns (constructing fresh structs) stay unaffected; passing without re-read stays a move. Witness covers laundered-alias-refused + fresh-construct-unaffected."
+  - "DONE exactly as filed: FnSig gains `returns_param` (may_return_param: return-position bare param Name, recursing if/while/for; set on module fns + instance methods; false on synthesized ctors) — ZERO new threading, the flag rides the signatures map every ctx already has. lower_assign's fresh-Let: a struct-typed Call result from a returns_param callee applies the PMAT-1016C three-way test to each struct-ident arg × the binding — refuse ONLY when (object-mutation on either) AND (binding read) AND (arg re-read). Verified: the ident-launder repro REFUSES with a message naming the callee (was SILENT rust 30 vs cpython 31); fresh-construct fn → 30/131 MATCH; moved launder (arg never re-read) → 31 MATCH; read-only launder → 30/30 MATCH (clone-identical). e2e return_alias_is_rejected_not_miscompiled + return_alias_allowed_shapes (3-assert driver); 695 e2e green."
+  - "SCOPE (honest): conservative any-param taint (no per-param precision); MethodCall results (a method returning self) not yet covered — rarer, same recipe when needed; transitive laundering f(g(c)) covered only when the OUTER callee is itself param-returning."
   phases: []
   subtasks: []
   estimated_effort: null
