@@ -626,6 +626,35 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'The loop-var-leak idiom is COMMON Python. Key lesson: PROBE the existing machinery before writing new — the fix was a 1-expression generalization (Name-lookup → probe-lower) of an existing pre-pass, not new hoisting logic. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1017
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1017: [rust/correctness] Differential sweep #8 — the DAY-OLD PMAT-1016 OOP surface (mutating methods, explicit __init__, alias disposition, statement calls): 261 programs, 6 finders, adversarial verify — 19 confirmed, 3 refuted, FOUR fix classes shipped same-slice. (1) EXPRESSION-position mutating calls (`a = p.take()`, `c.next() + c.next()`, print args) left the receiver non-mut → rustc E0596 (×4 findings, ONE root cause: the PMAT-1016A call-site walker scanned STATEMENT position only); fixed by mirroring count_pop_receivers_in_stmt (per-statement dispatch + recursive expression scan over calls/kwargs/binops/boolops/compares/subscripts/tuples/lists/ifexp/f-strings/attributes, recursing into nested bodies). (2) FieldAssign now coerces to the FIELD declared type (`self.x = n`, int param into float field, emitted E0308; to_f64_operand widening + coerce_lowered_to_optional — the general FieldAssign path, methods included, not just __init__). (3) CharCount parenthesizes: `len(g.s) < 6` emitted `…count() as i64 < 6i64` which rustc parses as `i64<` GENERICS; now `((recv).chars().count() as i64)` (3 e2e exact-text asserts updated — parens semantically neutral). (4) struct-alias rule refined: keys off a new OBJECT-mutation set (collect_obj_mutated: field writes + mutating-method receivers) instead of ctx.mutable — a REBOUND source (`c = Counter(99)` DETACHES the name in Python, clone-identical) was wrongly refused; and a DEAD (never-read) alias is clone-safe. The PMAT-884 message no longer claims "re-used afterwards" when flow-insensitivity cannot prove last-use.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "Fix 1 verified: all three E0596 repros MATCH (8/14/7, 4/3/3, 3/2); statement-position and read-only paths unregressed. Fix 2: int-param→float-field compiles and follows the documented annotations-are-authoritative widening (see notes). Fix 3: len-in-comparison MATCHes; sorted/minmax/len_encode exact-text asserts updated to the parenthesized form. Fix 4: rebind-alias → 99/5 MATCH, dead alias → 3 MATCH; the CRITICAL alias+mutate+read-orig refusal and mutated-but-unread refusal HOLD (adversarially re-probed — no silent path opened). e2e oop_sweep8_fixes (emit assert + 3 runtime asserts); 693 e2e green."
+  - "DISPOSITIONS of the other confirmed findings: int-value-into-float-annotated-field prints X.0 vs CPython X (findings 4-7, incl. the PRE-EXISTING dataclass path) = the subset's DOCUMENTED static-typing semantics (annotations are authoritative; PMAT-786 widening is load-bearing corpus-wide) — NOT flipped; non-dataclass classes getting derived PartialEq + dataclass-style Display (findings 14/15) = documented value-semantics model (CPython identity-eq / object-repr are address-based nondeterminism no deterministic subset can honor); position-insensitive alias over-refusals (mutate-BEFORE-alias, chained c3=c2=c) stay documented conservatism; return-aliasing DIVERGE filed as PMAT-1018 (the one SILENT finding)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Sweep #8 validates the campaign axiom an 8th time: a DAY-OLD surface yielded 4 real fix classes, 3 of them invalid-emit on patterns squarely inside the shipped capability. The finders quality: one verifier ISOLATED the root cause (statement-vs-expression position) with a control probe, and another identified the exact source line + the count_pop_receivers analogue to mirror. See [[feedback-ultracode-adversarial-verify]] + [[project-oop-mutation-capability]].'
+- id: PMAT-1018
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1018: [rust/semantics] RETURN-aliasing — a function returning (a struct derived from) its own parameter creates an alias the PMAT-1016C rule cannot see: `def ident(c): return c` then `d = ident(c); d.bump(); print(c.get())` — the PMAT-588 clone at the CALL (`ident((c).clone())`) makes d a copy, so the mutation through d is invisible through c: SILENT DIVERGE (rust 30 vs cpython 31; the one silent finding of sweep #8). The direct-alias rule (c2 = c) refuses this shape, but routing the alias through a function launders it. Fix direction: in the module pre-pass, mark functions that MAY RETURN A PARAM (return-position Ident matching a param name, transitively through if/else branches); at call sites binding such a call result where the argument is a re-read struct, apply the SAME three-way disposition as PMAT-1016C (neither-object-mutated → fine (clone already); mutation + both live → refuse). Conservative: any param-returning fn taints its result as an alias of every struct arg.'
+  status: planned
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "The ident-launder repro (d = ident(c); d.bump(); read c) REFUSES or matches CPython — no SILENT divergence. Non-aliasing fns (constructing fresh structs) stay unaffected; passing without re-read stays a move. Witness covers laundered-alias-refused + fresh-construct-unaffected."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'HIGH: the only SILENT finding of sweep #8 — the same value-vs-reference root as PMAT-1008/1016C, laundered through a call. The interprocedural may-return-param analysis is small (return-position Ident ∈ params, per-fn, no fixpoint needed at first cut — transitive laundering f(g(c)) can taint conservatively). Filed by PMAT-1017.'
 - id: PMAT-1016
   github_issue: null
   item_type: epic

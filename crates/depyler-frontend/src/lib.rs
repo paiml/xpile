@@ -92,6 +92,9 @@ struct LoweringCtx {
     /// body count as mutable even if the source has only one assign,
     /// because the runtime executes that assign repeatedly.
     mutable: HashSet<String>,
+    /// PMAT-1017: names whose OBJECT is mutated (field write or mutating-
+    /// method receiver) — rebindings excluded. Drives the struct-alias rule.
+    obj_mutated: HashSet<String>,
     /// PMAT-738 (HUNT-V12 V12-5): module consts assigned (→ shadowed by a
     /// function-local of the same name) in this body. A `let`/assign to such a
     /// name is rejected (Rust can't express the shadow — the name is a constant
@@ -371,6 +374,7 @@ impl LoweringCtx {
                 .collect()
         };
         let mutable = compute_mutable_names(params, body, &mutating_methods);
+        let obj_mutated = collect_obj_mutated(body, &mutating_methods);
         let read_counts = count_name_reads(body);
         Self {
             fn_name: fn_name.to_string(),
@@ -378,6 +382,7 @@ impl LoweringCtx {
             bound,
             name_types,
             mutable,
+            obj_mutated,
             shadowed_consts,
             read_counts,
             signatures,
@@ -842,49 +847,179 @@ fn class_mutating_methods(c: &ast::StmtClassDef) -> HashSet<String> {
     set
 }
 
-/// PMAT-1016A: bump the count of every `<name>.<method>(...)`
-/// statement-position receiver where `<method>` is a known self-mutating
-/// user-class method — forcing the receiver binding `mut` (+2 regardless of
-/// loop context). Recurses into nested if/while/for bodies.
+/// PMAT-1016A: bump the count of every `<name>.<method>(...)` receiver where
+/// `<method>` is a known self-mutating user-class method — forcing the
+/// receiver binding `mut` (+2 regardless of loop context).
+/// PMAT-1017 (sweep #8): the first cut matched only STATEMENT-position calls,
+/// so a mutating method invoked in EXPRESSION position — `a = p.take()`,
+/// `c.next() + c.next()`, a print/f-string/call argument, a while/if test —
+/// left the receiver non-`mut` (rustc E0596 invalid emit, three confirmed
+/// findings with one root cause). Now mirrors `count_pop_receivers_in_stmt`
+/// (the PMAT-502as builtin-mutator analogue): a per-statement dispatch scans
+/// every VALUE expression via a recursive walker covering the common
+/// nestings, and recurses into nested if/while/for bodies itself (this
+/// walker runs once at the top, unlike the pop walker which rides
+/// `walk_counts`' own recursion).
 fn count_mutating_method_receivers(
     stmts: &[ast::Stmt],
     mutating: &HashSet<String>,
     counts: &mut HashMap<String, usize>,
 ) {
-    fn stmt_receiver<'a>(e: &'a ast::Expr, mutating: &HashSet<String>) -> Option<&'a str> {
-        if let ast::Expr::Call(c) = e {
-            if let ast::Expr::Attribute(a) = c.func.as_ref() {
-                if let ast::Expr::Name(n) = a.value.as_ref() {
-                    if mutating.contains(a.attr.as_str()) {
-                        return Some(n.id.as_str());
+    fn scan_expr(e: &ast::Expr, mutating: &HashSet<String>, counts: &mut HashMap<String, usize>) {
+        use ast::Expr as E;
+        match e {
+            E::Call(call) => {
+                if let E::Attribute(attr) = call.func.as_ref() {
+                    if mutating.contains(attr.attr.as_str()) {
+                        if let E::Name(n) = attr.value.as_ref() {
+                            *counts.entry(n.id.to_string()).or_insert(0) += 2;
+                        }
                     }
+                    scan_expr(attr.value.as_ref(), mutating, counts);
+                } else {
+                    scan_expr(call.func.as_ref(), mutating, counts);
+                }
+                for a in &call.args {
+                    scan_expr(a, mutating, counts);
+                }
+                for kw in &call.keywords {
+                    scan_expr(&kw.value, mutating, counts);
                 }
             }
+            E::BinOp(b) => {
+                scan_expr(&b.left, mutating, counts);
+                scan_expr(&b.right, mutating, counts);
+            }
+            E::UnaryOp(u) => scan_expr(&u.operand, mutating, counts),
+            E::BoolOp(b) => {
+                for v in &b.values {
+                    scan_expr(v, mutating, counts);
+                }
+            }
+            E::Compare(c) => {
+                scan_expr(&c.left, mutating, counts);
+                for c2 in &c.comparators {
+                    scan_expr(c2, mutating, counts);
+                }
+            }
+            E::Subscript(s) => {
+                scan_expr(&s.value, mutating, counts);
+                scan_expr(&s.slice, mutating, counts);
+            }
+            E::Tuple(t) => {
+                for el in &t.elts {
+                    scan_expr(el, mutating, counts);
+                }
+            }
+            E::List(l) => {
+                for el in &l.elts {
+                    scan_expr(el, mutating, counts);
+                }
+            }
+            E::IfExp(i) => {
+                scan_expr(&i.test, mutating, counts);
+                scan_expr(&i.body, mutating, counts);
+                scan_expr(&i.orelse, mutating, counts);
+            }
+            E::JoinedStr(j) => {
+                for v in &j.values {
+                    scan_expr(v, mutating, counts);
+                }
+            }
+            E::FormattedValue(f) => scan_expr(&f.value, mutating, counts),
+            E::Attribute(a) => scan_expr(a.value.as_ref(), mutating, counts),
+            _ => {}
         }
-        None
     }
     if mutating.is_empty() {
         return;
     }
     for s in stmts {
         match s {
-            ast::Stmt::Expr(e) => {
-                if let Some(r) = stmt_receiver(&e.value, mutating) {
-                    *counts.entry(r.to_string()).or_insert(0) += 2;
+            ast::Stmt::Expr(e) => scan_expr(&e.value, mutating, counts),
+            ast::Stmt::Assign(a) => scan_expr(&a.value, mutating, counts),
+            ast::Stmt::AugAssign(a) => scan_expr(&a.value, mutating, counts),
+            ast::Stmt::AnnAssign(aa) => {
+                if let Some(v) = &aa.value {
+                    scan_expr(v, mutating, counts);
+                }
+            }
+            ast::Stmt::Return(r) => {
+                if let Some(v) = &r.value {
+                    scan_expr(v, mutating, counts);
+                }
+            }
+            ast::Stmt::Assert(a) => {
+                scan_expr(&a.test, mutating, counts);
+                if let Some(m) = &a.msg {
+                    scan_expr(m, mutating, counts);
                 }
             }
             ast::Stmt::If(i) => {
+                scan_expr(&i.test, mutating, counts);
                 count_mutating_method_receivers(&i.body, mutating, counts);
                 count_mutating_method_receivers(&i.orelse, mutating, counts);
             }
-            ast::Stmt::While(w) => count_mutating_method_receivers(&w.body, mutating, counts),
+            ast::Stmt::While(w) => {
+                scan_expr(&w.test, mutating, counts);
+                count_mutating_method_receivers(&w.body, mutating, counts);
+            }
             ast::Stmt::For(f) => {
+                scan_expr(&f.iter, mutating, counts);
                 count_mutating_method_receivers(&f.body, mutating, counts);
                 count_mutating_method_receivers(&f.orelse, mutating, counts);
             }
             _ => {}
         }
     }
+}
+
+/// PMAT-1017 (sweep #8): the names whose OBJECT is mutated — a field write
+/// (`c.f = …` / `c.f += …`) or a mutating-method call receiver — as opposed
+/// to a name REBINDING (`c = Counter(99)`), which detaches the name in
+/// Python and is clone-safe. The struct-alias rule (PMAT-1016C) originally
+/// keyed off `ctx.mutable`, which counts rebindings, so a rebound-but-never-
+/// object-mutated alias source was wrongly refused (sweep-#8 finding).
+fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashSet<String> {
+    fn walk(stmts: &[ast::Stmt], out: &mut HashSet<String>) {
+        for s in stmts {
+            match s {
+                ast::Stmt::Assign(a) => {
+                    for t in &a.targets {
+                        if let ast::Expr::Attribute(attr) = t {
+                            if let ast::Expr::Name(n) = attr.value.as_ref() {
+                                out.insert(n.id.to_string());
+                            }
+                        }
+                    }
+                }
+                ast::Stmt::AugAssign(a) => {
+                    if let ast::Expr::Attribute(attr) = a.target.as_ref() {
+                        if let ast::Expr::Name(n) = attr.value.as_ref() {
+                            out.insert(n.id.to_string());
+                        }
+                    }
+                }
+                ast::Stmt::If(i) => {
+                    walk(&i.body, out);
+                    walk(&i.orelse, out);
+                }
+                ast::Stmt::While(w) => walk(&w.body, out),
+                ast::Stmt::For(f) => {
+                    walk(&f.body, out);
+                    walk(&f.orelse, out);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = HashSet::new();
+    walk(stmts, &mut out);
+    // Receivers of mutating user-class methods (expression position included).
+    let mut counts = HashMap::new();
+    count_mutating_method_receivers(stmts, mutating, &mut counts);
+    out.extend(counts.into_keys());
+    out
 }
 
 fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
@@ -1776,12 +1911,14 @@ fn check_expr_for_alias_mutate(
                 };
                 return Err(FrontendError::Lower(format!(
                     "object reference semantics not yet supported — `{callee}` mutates its \
-                     parameter #{} in place, but `{name}` is passed by value and re-used \
-                     afterwards, so xpile clones it and the mutation is silently dropped (the \
-                     caller never sees it). Python's pass-by-reference here needs the Rc<RefCell> \
-                     reference layer (V29-2, architectural); until then this alias-then-mutate \
-                     pattern is REFUSED rather than miscompiled — see C-XLATE-PY-LIST-TO-VEC \
-                     alias_observation_inserts_clone",
+                     parameter #{} in place, but `{name}` is passed by value and used elsewhere \
+                     in the function (the conservative analysis cannot prove this call is its \
+                     LAST use — PMAT-1017), so xpile clones it and the mutation would be \
+                     silently dropped (the caller never sees it). Python's pass-by-reference \
+                     here needs the Rc<RefCell> reference layer (V29-2, architectural); until \
+                     then this alias-then-mutate pattern is REFUSED rather than miscompiled. \
+                     If this call IS the last use, ensure `{name}` has no other mention after \
+                     (or before) it — see C-XLATE-PY-LIST-TO-VEC alias_observation_inserts_clone",
                     i + 1
                 )));
             }
@@ -7472,6 +7609,23 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 )));
             }
             let value = lower_expr_in_ctx(ctx, *asn.value)?;
+            // PMAT-1017 (sweep #8): coerce the value to the FIELD's declared
+            // type — an int-typed value into a `float` field emitted
+            // `C { x: n }` / `self.x = n` with no cast (rustc E0308; found
+            // via an explicit `__init__(self, n: int)` assigning a float
+            // field, but the gap is the general FieldAssign path, methods
+            // included). Float widening via `to_f64_operand` (no-op when
+            // already f64); Optional wrapping via the same helper the ctor
+            // call sites use.
+            let field_ty = ctx
+                .structs
+                .get(&sname)
+                .and_then(|fs| fs.iter().find(|(f, _)| *f == field))
+                .map(|(_, t)| t.clone());
+            let value = match &field_ty {
+                Some(Type::F64) => to_f64_operand(ctx, value),
+                _ => coerce_lowered_to_optional(ctx, value, field_ty.as_ref()),
+            };
             return Ok(Stmt::FieldAssign {
                 obj: obj_name,
                 field,
@@ -7541,8 +7695,14 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         //      the PMAT-884/1008 posture).
         let value = if let (Expr::Ident(src), Type::Struct(_)) = (&value, &ty) {
             let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
-            let any_mutated = ctx.mutable.contains(src) || ctx.mutable.contains(&name);
-            if !any_mutated {
+            // PMAT-1017 (sweep #8 refinements): (a) OBJECT mutation only — a
+            // name REBINDING (`c = Counter(99)`) detaches the name in Python,
+            // so a rebound source is clone-safe (was wrongly refused via
+            // ctx.mutable, which counts rebindings); (b) a DEAD alias (never
+            // read) is harmless whatever else happens — clone it.
+            let dst_read = ctx.read_counts.get(&name).copied().unwrap_or(0) > 0;
+            let any_mutated = ctx.obj_mutated.contains(src) || ctx.obj_mutated.contains(&name);
+            if !any_mutated || !dst_read {
                 Expr::Clone(Box::new(value))
             } else if src_reread {
                 return Err(FrontendError::Lower(format!(
