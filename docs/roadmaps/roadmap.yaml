@@ -630,16 +630,18 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1015: [rust/correctness] Fresh TUPLE-target for-loop vars (`for i, v in enumerate(xs)` / zip / dict.items()) read AFTER the loop → E0425. The tuple-target analogue of PMAT-1012: PMAT-871 leaks PRE-BOUND tuple targets (pair_leak_decision), but a FRESH tuple target has no pre-declare (the PMAT-838/1012 pre-pass handles only single-Name targets). Fix: extend the pre-declare to ast::Expr::Tuple targets of plain fresh Names — derive per-element types per iterable form (enumerate(xs) → (I64, elem(xs)); zip(a,b) → (elem(a), elem(b)); d.items() → (K, V); list-of-tuples → the tuple elems), pre-declare each read-after-loop target with its primitive default. Same PMAT-838 empty-iterable tradeoff applies.'
-  status: planned
+  status: done
   priority: low
   created: 2026-07-01T00:00:00Z
   acceptance_criteria:
-  - "`for i, v in enumerate(xs): pass` then `return i + v` matches CPython (or stays a CLEAR refusal), no E0425 on emitted code; same for zip and d.items(). Pre-bound tuple targets (PMAT-871) and single-var (PMAT-1012) regressions hold. Witness covers enumerate + zip."
+  - "DONE exactly as filed: the pre-declare extended to ast::Expr::Tuple targets of plain fresh Names; per-form element types (enumerate → (I64, elem-of-probe(arg0), str arg → Str); zip → per-arg elems, arg-count == target-count; GENERAL probe-lower → list[tuple] arm covers d.items() AND list-of-tuples without special-casing). Each fresh, read-after-loop, non-`_` target pre-declares with its primitive default; the PMAT-871 leak path then assigns per iteration."
+  - "Differentially verified vs CPython: enumerate → 21 (i+v == 1+20), zip → 42, d.items() → 5 (all were E0425); partial read (only `i` after) → 1; pre-bound tuple targets (PMAT-871) → 21 and normal enumerate accumulation → 6 unregressed. e2e tuple_target_loop_leak (3-assert driver incl. an IndexMap items case)."
+  - "DONE: gate green — fmt; check --workspace; clippy -D warnings; pv lint (0/0); deny advisories; xpile e2e 687 (686+1). Touched crates/depyler-frontend/ + crates/xpile/tests/ + docs/roadmaps/roadmap.yaml. Closes the LAST open sweep-#7 disposition — all 18 confirmed findings now fixed, filed-and-closed, or documented."
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Rarer than the single-var leak (post-loop reads of enumerate/zip vars are uncommon) and fail-loud (E0425) — low priority. Needs per-form element-type derivation the single-var probe-lower gets for free. Filed by PMAT-1012.'
+  notes: 'Rarer than the single-var leak and fail-loud — was low priority, closed same-day because the general probe-lower arm made it cheap (d.items()/list-of-tuples rode the same probe PMAT-1012 introduced; only enumerate/zip needed explicit arms). Same PMAT-838 empty-iterable tradeoff, documented. Filed by PMAT-1012, closed by PMAT-1015.'
 - id: PMAT-1013
   github_issue: null
   item_type: task

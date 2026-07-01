@@ -17185,3 +17185,25 @@ fn main() {
 "#;
     assert_rustc_runs("iter_mutation_allowed", &rust, driver);
 }
+
+/// PMAT-1015 (sweep #7): the TUPLE-target analogue of PMAT-1012 — a FRESH
+/// `for i, v in enumerate(xs)` target read after the loop was rustc E0425
+/// (PMAT-871 leaks only PRE-BOUND tuple targets). The pre-declare now derives
+/// per-element types per iterable form: enumerate → (int, elem); zip →
+/// per-arg elems; anything probe-lowering to list[tuple] (dict.items(),
+/// list-of-tuples) → the tuple elems.
+#[test]
+fn tuple_target_loop_leak() {
+    let rust = xpile_transpile_to_rust("tuple_target_loop_leak.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(enum_leak(vec![10, 20]), 21, "enumerate leaks (i, v) == (1, 20)");
+    assert_eq!(zip_leak(vec![1, 2], vec![30, 40]), 42, "zip leaks last pair");
+    let mut d = indexmap::IndexMap::new();
+    d.insert("a".to_string(), 1i64);
+    d.insert("b".to_string(), 2i64);
+    assert_eq!(items_leak(d), 5, "items() leaks last value (3 + 2)");
+}
+"#;
+    assert_rustc_runs("tuple_target_loop_leak", &rust, driver);
+}
