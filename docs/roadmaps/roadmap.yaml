@@ -380,6 +380,39 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'forward_ev_ranking rank 4 (cuda-oxide 3rd PTX emitter), USER-DIRECTED 2026-07-01. Delivered as the built-in nvptx64-nvidia-cuda rustc target (LLVM NVPTX back-end), NOT the cuda-oxide crate (a verified misnomer — no such Rust->PTX crate). 3rd categorically-independent emitter: Rust->MIR->modern-LLVM->NVPTX, fails differently than hand-emit-text + nvcc-CUDA-C(NVVM/LLVM7). External rustc subprocess so xpile stays on STABLE (no nightly build lane / rustc-dev / new dep). EXECUTED witness on the RTX 4090 sm_89: rustc-nvptx PTX agrees with xpile hand-emit AND 2*in+1, max_abs_diff=0. Supersedes PMAT-480. Witness-level; a 3-way production quorum member is the follow-up. See [[project-gpu-cuda-oxide-wgpu-first-class]] (update: the pure-Rust->PTX path is the built-in target, lighter than the cuda-oxide framing).'
+- id: PMAT-998
+  github_issue: null
+  item_type: task
+  title: 'PMAT-998: [wasm/correctness] Fix the string-concat-of-string-RETURNING-operands MISCOMPILE found by an adversarial CPython-differential sweep (ultracode Workflow). Ran a multi-agent differential-hunt workflow (6 category agents × generate-in-subset-programs → xpile transpile --target wasm → wat2wasm → wasm-interp vs python3, then an independent verify pass re-executing each divergence): 150 in-subset programs executed, 21 reported, 15 CONFIRMED on independent silicon re-run. HEADLINE BUG (9 of the 15, CLASS A — a real silent MISCOMPILE): a Concat whose operand is ITSELF a string-returning op (chr(n) / s[i]) shared the single $__wasm_str_dst scratch local with its own DESTINATION pointer; evaluating each operand local.set $__wasm_str_dst, CLOBBERING the concat destination — so chr(65)+chr(66) returned the 1-char "B" (last operand) instead of "AB", and every chr/s[i]-bearing concat + its == / != comparison gave the WRONG bool. Fix: a DEDICATED $__wasm_concat_dst local for the concat destination (distinct from the operand scratch; concats flatten to one level so it never self-collides). The PMAT-993 concat witness only tested str-PARAM operands (a+b), so the chr-operand path was never executed → the happy-path gap the sweep exposed.'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "FIX: crates/xpile-wasm-codegen/src/lib.rs — new STR_CONCAT_DST local; emit_concat holds its destination base-pointer there (alloc/header/copy-dest/result) instead of STR_DST_SCRATCH, which operand evals clobber; body-driven local decl gating added. Operand evals (chr/s[i]) keep using $__wasm_str_dst; the two locals are now distinct."
+  - "WITNESS (Run>=1, EXECUTED): tests/concat_chr_witness.rs — a CONSTRUCT test (the concat declares BOTH $__wasm_concat_dst AND $__wasm_str_dst = distinct) + a WABT-executed test over 7 cases (chr+chr==\"AB\", reversed, != , literal+chr, chr+literal, 3-operand chr+chr+chr==\"XYZ\", chr+chr==\"B\") all value-matching CPython. The pre-existing concat_lowers_to_alloc_and_memory_copy lib test updated to assert the dedicated concat-dst local. All 9 CLASS-A divergences re-verified fixed via the production `xpile transpile` CLI."
+  - "HONEST TRIAGE of the other confirmed divergences (documented, NOT silently shipped): CLASS B (2/15) — a dict/set literal has a FIXED capacity (literal + DICT_GROWTH_SLACK=16); growth past it via .add/[k]=v TRAPS (fail-loud, NOT wrong-value) where CPython grows unbounded → documented in C-WASM-HEAP as a known fail-loud limit + real-realloc-growth filed as a follow-up (the set helper cannot update the caller's local pointer, so real growth is a redesign). CLASS C (4/15) — INT_MAX+1 wraps / INT_MIN//-1 traps: the DOCUMENTED wrapping-i64-vs-CPython-bigint limit, defensible fail-loud, left as-is."
+  - "CONTRACT: extends C-WASM-HEAP heap_string_is_length_prefixed with the distinct-concat-dst invariant + documents the CLASS-B fixed-capacity fail-loud limit in the dict/set equation. pv lint 0/0. No Lean change."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-wasm-codegen (52 lib + 2 concat_chr witness + prior witnesses); lake build unaffected. Touched crates/xpile-wasm-codegen/ + contracts/c-wasm-heap-v1.yaml + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'ULTRACODE differential-hunt payoff — a multi-agent adversarial CPython-differential Workflow over the WASM emit lane found a real SILENT MISCOMPILE (concat of chr/s[i] operands collapsed to the last operand due to $__wasm_str_dst scratch aliasing with the concat destination) that all happy-path witnesses (which only tested str-PARAM concat) missed. Fixed with a dedicated $__wasm_concat_dst local; 9 confirmed CLASS-A cases re-verified via CLI + a WABT-executed regression witness. The sweep also confirmed 2 CLASS-B (dict/set fixed-capacity fail-loud trap on growth — documented + follow-up filed) + 4 CLASS-C (i64-wrap-vs-bigint, documented limit). 150 programs executed, 15/21 reported divergences confirmed. Reinforces [[feedback-ultracode-adversarial-verify]]: differential-testing the NEWEST surface at scale finds real bugs green witnesses mask; the string concat had shipped in PMAT-993 witnessed only on params.'
+- id: PMAT-999
+  github_issue: null
+  item_type: task
+  title: 'PMAT-999: [wasm/runtime] FOLLOW-UP from the PMAT-998 differential sweep — real dict/set capacity GROWTH on the WASM heap (retire the fixed-capacity fail-loud trap). Today a dict/set literal allocates a FIXED capacity (literal_count + DICT_GROWTH_SLACK=16) and `d[k]=v`/`s.add(e)` past it TRAPS (`unreachable`), diverging from CPython''s unbounded growth (a confirmed CLASS-B divergence, honest fail-loud but a real limit). Real growth = on a full insert, bump-alloc a larger region, memory.copy the entries, and UPDATE THE LOCAL''S base-pointer. The redesign hurdle: the current $__wasm_dict_set_<k> helper takes the base-pointer BY VALUE and cannot update the caller''s local — so growth needs the helper to RETURN the (possibly new) base-pointer and the d[k]=v/s.add call sites to `local.set` the dict/set local from it (an emit + helper-signature change). Alternatively, a cheaper partial fix: STATIC mutation-sizing (scan the function body for DictSet/SetAdd targeting the local, size cap = literal + straight-line-mutation-count + slack) which fixes straight-line growth but not loop-driven growth. Contract-carried + WABT-executed witness on a set/dict grown well past 16 via a loop, value-matching CPython len.'
+  status: planned
+  priority: medium
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "A dict/set grown past its initial slack (e.g. `s={1}` then a loop `s.add(i)` for 100 i, or 100 straight-line adds) returns the correct len + membership, value-matching CPython, via a WABT-executed witness — no `unreachable` trap on growth within the one-page heap budget."
+  - "The growth helper returns the (possibly relocated) base-pointer; the d[k]=v / s.add(e) call sites update the dict/set local. Honest posture kept for a genuine out-of-memory (one 64-KiB page exhausted → trap, the alloc-past-page discipline). Cites C-WASM-HEAP."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-998 (the ultracode differential sweep confirmed the fixed-capacity fail-loud trap as CLASS-B). Real-growth is a redesign (helper must return + caller must update the base-pointer); a static mutation-sizing partial fix is the cheaper interim. Not blocking — the current trap is fail-loud (documented in C-WASM-HEAP), not a silent miscompile.'
 - id: PMAT-985
   github_issue: null
   item_type: task

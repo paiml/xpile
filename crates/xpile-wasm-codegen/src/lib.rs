@@ -155,6 +155,16 @@ const IDX_SCRATCH: &str = "__wasm_idx";
 const STR_DST_SCRATCH: &str = "__wasm_str_dst";
 const STR_LA_SCRATCH: &str = "__wasm_str_la";
 
+/// PMAT-998: the concat DESTINATION base-pointer, held in a local DISTINCT from
+/// [`STR_DST_SCRATCH`]. A `Concat`'s operands can THEMSELVES be string-RETURNING
+/// ops (`chr(n)`, `s[i]`) whose evaluation `local.set`s `$__wasm_str_dst`; if the
+/// concat's destination shared that local it would be CLOBBERED by each operand
+/// eval — corrupting later copies and the returned pointer (the bug that made
+/// `chr(65) + chr(66)` return the 1-char `"B"` instead of `"AB"`). A dedicated
+/// local for the destination survives operand evaluation. (Concats flatten to a
+/// single level, so this never self-collides.)
+const STR_CONCAT_DST: &str = "__wasm_concat_dst";
+
 /// PMAT-995 (slice 3b): per-function scratch `i32` local holding a freshly
 /// `$__alloc`-ed dict/set base-pointer while [`emit_dict_lit`] writes its
 /// header + entries. Body-driven declaration, like the string scratches.
@@ -1851,6 +1861,11 @@ fn emit_function(
     if body.contains(&format!("${STR_LA_SCRATCH}")) {
         writeln!(out, "    (local ${STR_LA_SCRATCH} i32)").expect("write");
     }
+    // PMAT-998: the dedicated concat-destination local (distinct from
+    // $__wasm_str_dst so operand evals don't clobber it).
+    if body.contains(&format!("${STR_CONCAT_DST}")) {
+        writeln!(out, "    (local ${STR_CONCAT_DST} i32)").expect("write");
+    }
     // PMAT-995: declare the dict-construction scratch `i32` local iff a
     // `DictLit`/`SetLit` actually used it (same body-driven detection).
     if body.contains(&format!("${DICT_DST_SCRATCH}")) {
@@ -2769,7 +2784,8 @@ fn emit_concat(
         writeln!(out, "i32.add").expect("write");
     }
     // dst = __alloc(8 + total_bytes): add the header size, call the allocator,
-    // and stash the base-pointer.
+    // and stash the base-pointer in the DEDICATED concat-dst local (PMAT-998:
+    // NOT $__wasm_str_dst — an operand's own string-returning eval clobbers that).
     indent(out, depth);
     writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
     indent(out, depth);
@@ -2777,12 +2793,12 @@ fn emit_concat(
     indent(out, depth);
     writeln!(out, "call $__alloc").expect("write");
     indent(out, depth);
-    writeln!(out, "local.set ${STR_DST_SCRATCH}").expect("write");
+    writeln!(out, "local.set ${STR_CONCAT_DST}").expect("write");
 
     // store the count header (total_bytes) at dst+0. Recompute the total from
     // the operand lengths (cheap header loads) so it lands in the header slot.
     indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    writeln!(out, "local.get ${STR_CONCAT_DST}").expect("write");
     emit_str_len_i32(operands[0], scope, out, depth)?;
     for op in &operands[1..] {
         emit_str_len_i32(op, scope, out, depth)?;
@@ -2800,9 +2816,10 @@ fn emit_concat(
     writeln!(out, "local.set ${STR_LA_SCRATCH}").expect("write");
     for op in &operands {
         // memory.copy(dest = dst+8+offset, src = op+8, n = len(op))
-        // dest:
+        // dest: (the dedicated concat-dst local, which survives the operand's
+        // own string-returning eval below — PMAT-998).
         indent(out, depth);
-        writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+        writeln!(out, "local.get ${STR_CONCAT_DST}").expect("write");
         indent(out, depth);
         writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
         indent(out, depth);
@@ -2830,9 +2847,10 @@ fn emit_concat(
         indent(out, depth);
         writeln!(out, "local.set ${STR_LA_SCRATCH}").expect("write");
     }
-    // result = dst (the new string's base-pointer).
+    // result = dst (the new string's base-pointer, from the dedicated concat-dst
+    // local — never the operand-clobbered $__wasm_str_dst; PMAT-998).
     indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    writeln!(out, "local.get ${STR_CONCAT_DST}").expect("write");
     Ok(())
 }
 

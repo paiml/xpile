@@ -573,8 +573,10 @@ fn concat_lowers_to_alloc_and_memory_copy() {
         "str-returning concat fn → i32 result:\n{wat}"
     );
     assert!(
-        wat.contains("(local $__wasm_str_dst i32)"),
-        "concat declares its destination scratch local:\n{wat}"
+        wat.contains("(local $__wasm_concat_dst i32)"),
+        "concat declares its DEDICATED destination scratch local (PMAT-998: \
+         distinct from $__wasm_str_dst so an operand's string-returning eval \
+         cannot clobber it):\n{wat}"
     );
 }
 
