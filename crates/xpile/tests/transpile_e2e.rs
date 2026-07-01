@@ -2562,7 +2562,11 @@ fn main() {
 fn str_predicates() {
     let rust = xpile_transpile_to_rust("str_predicates.py");
     assert!(
-        rust.contains(".chars().all(|__c| __c.is_ascii_digit())")
+        // PMAT-1005: isdigit emits the GENERATED Unicode Numeric_Type
+        // Digit/Decimal range pattern (Arabic-Indic block present, ASCII too),
+        // no longer the ASCII-only is_ascii_digit.
+        rust.contains(".chars().all(|__c| matches!(__c, ")
+            && rust.contains("'\\u{660}'")
             && rust.contains("is_alphabetic()")
             && rust.contains("is_whitespace()")
             && rust.contains(".is_empty() &&"),
