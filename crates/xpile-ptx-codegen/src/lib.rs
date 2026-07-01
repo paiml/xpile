@@ -37,9 +37,15 @@ use xpile_meta_hir::{BinOp, Block, Expr, FloatOp, Function, Item, Module, Param,
 mod cuda_diffexec;
 mod emit;
 mod ptx_diffexec;
+mod rustc_nvptx;
 pub use cuda_diffexec::{cuda_toolchain_available, NvccCudaDiffExecEngine, FIXTURE_INPUT};
 pub use emit::{emit_kernel, ptx_version_for, KERNEL_NAME, PTX_VERSION};
 pub use ptx_diffexec::PtxDiffExecEngine;
+// PMAT-997: the 3rd categorically-independent §29 PTX emitter — nightly rustc's
+// nvptx64-nvidia-cuda target (LLVM NVPTX back-end). External subprocess, gated.
+pub use rustc_nvptx::{
+    emit_rustc_nvptx_ptx, rustc_nvptx_available, NVPTX_TARGET, RUSTC_NVPTX_KERNEL_SRC,
+};
 
 /// PTX backend — `Backend` impl wrapping a [`MultiEmitterBackend`] so
 /// the v0.1.0 scaffold drives through the same routing the future
