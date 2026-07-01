@@ -7,6 +7,62 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.603] — 2026-07-02
+
+The 8-commit span since v0.1.602 (PMAT-1005, 1008, 1016, 1017, 1018): the
+**OOP-mutation epic** and the honest closure of the **aliasing family**.
+
+### OOP mutation — the epic (PMAT-1016, filed and completed same-day)
+
+- **Slice A — mutating `&mut self` methods**: direct (`self.f = …`) AND
+  transitive (an AST fixpoint marks `double_bump` calling `self.bump()`)
+  mutation lowers with a `&mut self` receiver; call-site receivers bind
+  `let mut`. NEW meta-HIR `Stmt::SideEffectCall` (rust/ruchy emit `<call>;`,
+  lean refuses) — also unlocked plain void user-fn statement calls
+  (`helper(x)` was refused entirely). The slice's adversarial differential
+  caught the predicted arg-clone-drops-mutation silent-drop LIVE (rust 0 vs
+  cpython 1) and the PMAT-884 guard was extended before ship.
+- **Slice B — explicit `__init__` constructors**: a straight-line body
+  synthesizes `pub fn __init__(<params>) -> Self` (StructLit in assignment
+  order); a `Class::__init__` FnSig routes `Point(3, 4)` through the
+  ordinary call machinery (arity/kwargs/defaults/coercion free). Computed +
+  renamed params work; control-flow/self-read bodies refuse precisely.
+- **Slice C — struct alias `c2 = c` three-way disposition**: neither-mutated
+  → CLONE (read-only aliases now WORK, were E0382); source-dead → MOVE;
+  mutation-with-both-live → clean refusal.
+
+### Sweep #8 — the day-old OOP surface (261 programs, 19 confirmed, PMAT-1017/1018)
+
+- Expression-position mutating calls (`a = p.take()`, `c.next() + c.next()`)
+  left receivers non-mut (E0596 ×4, one root cause) — the call-site walker
+  now mirrors `count_pop_receivers`' statement+expression recursion.
+- FieldAssign coerces to the field's declared type (int→float was E0308);
+  `len(x) < n` no longer parses as `i64<` generics (CharCount parenthesized);
+  rebound-source and dead aliases no longer over-refuse (object-mutation set).
+- **Return-aliasing** (the one SILENT finding): `d = ident(c)` laundered an
+  alias through a param-returning fn — `FnSig.returns_param` + the three-way
+  call-site test refuse the observable case (PMAT-1018).
+
+### Aliasing family closed (PMAT-1008 interim — the entry's own prescribed mitigation)
+
+- The three-way disposition extended to **containers** (list/dict/set):
+  read-only `b = a` CLONES (was E0382 — capability gain), source-dead moves,
+  mutation-with-both-live refuses. Dead-alias shortcut hardened to
+  never-read AND never-MUTATED (a subscript write is not a "read" — the
+  naive shortcut would have silently cloned `b[0] = 99`, caught in-slice).
+- The PMAT-1007 SILENT cases are now fail-loud: `[row, row]` and
+  `[[0, 0]] * 2` + nested write REFUSE (Python shares the inner object —
+  CPython 10 vs the per-element clone's 5); read-only grids and depth-1
+  slot replacement stay accepted. The full reference model (Rc<RefCell> vs
+  flow-sensitive analysis) remains the deferred strategic decision.
+
+### Precise Unicode `str.isdigit()` (PMAT-1005)
+
+- 83 generated Numeric_Type Digit/Decimal ranges from CPython ground truth,
+  emitted inline as a bidi-safe `matches!` pattern — accepts ٣/１/²/①,
+  rejects ½/Ⅻ, keeps `isdigit ≠ isnumeric` exactly. No new dependency in
+  the emitted Rust.
+
 ## [0.1.602] — 2026-07-01
 
 The span since v0.1.601 (108 commits, PMAT-905..1015). Five themes:
