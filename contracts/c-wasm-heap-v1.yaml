@@ -102,8 +102,28 @@ compile_targets:
     # "Hello, WASM!" (value-matching CPython), `is_done(s) = (s == "done")`
     # executes to True/False/False over "done"/"busy"/"don", and `at(s, i) =
     # s[i]` executes to the 1-char string "S" for "WASM"[2]. See the
-    # `literal_string_witness` integration test. Slice 3b (dict/set heap)
-    # remains.
+    # `literal_string_witness` integration test.
+    #
+    # PMAT-995 (2026-06-25, PMAT-986 slice 3b): the FIRST associative
+    # collections — dict[int|str, int] and set[int|str] — as bump-heap open
+    # assoc-arrays. Layout: an 8-byte header (i32 live count @ base+0 — the
+    # same +0 count header len() reads — + i32 capacity @ base+4), then
+    # `capacity` fixed 16-byte entries from base+8 (key @ entry+0: an i64 int
+    # key or the i32 string base-pointer for a str key; value @ entry+8: an
+    # i64, a dummy for a set). Three helpers per key kind do a LINEAR scan:
+    # $__wasm_dict_get_<k> (d[k]; TRAPS via `unreachable` on an absent key —
+    # the KeyError analogue, mirroring the list-index bounds trap),
+    # _has_<k> (k in d / x in s → 0/1), _set_<k> (d[k]=v / s.add(e):
+    # update-or-insert, TRAPS at capacity). <k> is `i` for int keys (i64.eq)
+    # or `s` for str keys ($__wasm_str_eq CONTENT compare over stored string
+    # pointers — a str key reuses the PMAT-994 literal (data) table + the
+    # content-equality helper). The emitted WAT is genuine: the PMAT-995 slice
+    # ran it through WABT — int + str dict get/len/membership and int-set
+    # membership/len all execute value-matching CPython (d[2]=20, len=3,
+    # 2 in d=1, 9 in d=0, d["y"]=200, "z" in d=0), and `d[9]` (absent key)
+    # TRAPS (`unreachable executed`) as CPython raises KeyError. See the
+    # `heap_dict_witness` integration test. Refused honestly: a non-int/str
+    # key type, a non-int value, dict/set comprehensions, iteration.
 
 equations:
   wasm_heap_alloc_structure_extensionality_diamond:
@@ -182,6 +202,42 @@ equations:
       - "the emitted WAT assembles + executes to a string / bool value-matching CPython on an ASCII fixture"
       - "the literal/equality WASM-emitting code carries the WASM citation"
 
+  dict_set_is_length_prefixed_assoc_array:
+    # PMAT-995 (slice 3b): a dict[int|str, int] / set[int|str] is a bump-heap
+    # open assoc-array. The entry-array layout facts (contiguity, disjointness,
+    # value-fits) are machine-checked in contracts/lean/WasmHeap.lean
+    # (dict_entries_contiguous / dict_entries_disjoint / dict_value_fits_in_entry,
+    # core-only, sorry-free) — they strengthen the C-WASM-HEAP tier under the
+    # existing structural Diamond.
+    formula: |
+      construct(dict/set build + d[k] / (k in d) / len(d),
+                BackendConfig{target: Wasm})
+        produces wat that $__alloc's an 8-byte header (i32 count @ base+0,
+        i32 capacity @ base+4) + `capacity` fixed 16-byte entries from base+8
+        (key @ entry+0, value @ entry+8), and reads it via a LINEAR-scan helper
+        $__wasm_dict_{get,has,set}_<i|s> — get TRAPS (`unreachable`) on an absent
+        key (the KeyError analogue), a str key compares by CONTENT via
+        $__wasm_str_eq. The i32 count @ base+0 is the same header len() reads.
+    domain: |
+      A dict/set LOCAL built from a DictLit / SetLit (Expr::DictLit /
+      Expr::SetLit bound at a `Type::Dict(K,_)` / `Type::Set(K)` let), and
+      d[k] (Expr::DictGet), `k in d` / `x in s` (Expr::DictContains /
+      Expr::SetContains), len(d) over it. Keys are int (i64) or str (i32
+      content-compared); values are int. `d[k]=v` (Stmt::DictSet) update-or-inserts.
+    invariants:
+      - "the entry array is $__alloc'd (bump heap): 8-byte header + capacity*16-byte entries"
+      - "entry i is at base+8+i*16; key @ +0, value @ +8 (machine-checked contiguous + disjoint in WasmHeap.lean)"
+      - "d[k] over an absent key TRAPS (`unreachable`) — the KeyError analogue, never a wrong value"
+      - "a str key is compared by CONTENT ($__wasm_str_eq over the literal (data) table), never a base-pointer compare"
+      - "len(d)/len(s) reads the i32 count @ base+0 — the same header the list/str len path reads"
+      - "a non-int/str key type, a non-int value, comprehensions + iteration are REFUSED honestly"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the dict/set key types as int or str; the value as int"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to values matching CPython (get/len/membership), and TRAPS on an absent-key get"
+      - "the dict/set WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
       construct(str_ordering | slice | str() | fstring | str_method,
@@ -209,6 +265,11 @@ proof_obligations:
     property: a string literal is a well-formed static (data) region, equality is a content compare
     formal: "wasm-interp(construct('Hi ' + s)) == CPython AND wasm-interp(construct(s == 'done')) == CPython"
     applies_to: string_literal_is_static_data
+
+  - type: postcondition
+    property: a dict/set is a well-formed bump-heap assoc-array; get/len/membership match CPython and an absent-key get traps
+    formal: "wasm-interp(construct(d[k]/len(d)/(k in d))) == CPython AND wasm-interp(construct(d[absent])) traps"
+    applies_to: dict_set_is_length_prefixed_assoc_array
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -295,3 +356,29 @@ falsification_tests:
       - wrong_literal_data_offset
       - literal_heap_aliasing
       - base_pointer_compare_passed_off_as_string_equality
+
+  - id: FALSIFY-WASM-HEAP-004
+    rule: |
+      PMAT-995: a dict[int|str, int] / set[int|str] MUST be a well-formed
+      bump-heap open assoc-array — an 8-byte header (i32 count @ base+0, i32
+      capacity @ base+4) then 16-byte entries from base+8 — whose get/len/
+      membership assemble via wat2wasm and, when executed, VALUE-MATCH CPython
+      on int AND str keys; and `d[k]` on an ABSENT key MUST TRAP (`unreachable
+      executed`), never return a value (the KeyError analogue). A str key MUST
+      compare by CONTENT ($__wasm_str_eq), never by base-pointer.
+    prediction: |
+      The executed WABT witness reads d[2]=20, len(d)=3, 2 in d=1, 9 in d=0,
+      d["y"]=200, "z" in d=0 (all == CPython); `d[9]` TRAPS.
+    test: |
+      cargo test -p xpile-wasm-codegen --test heap_dict_witness
+    if_fails: |
+      The entry layout (stride, header, key/value offsets), the linear-scan
+      helper, the absent-key trap, or the str-key content compare regressed —
+      a wrong entry offset, an aliased neighbour, a missing trap, or a
+      base-pointer key compare. The executed values diverge from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - wrong_entry_stride_or_offset
+      - absent_key_returns_value_instead_of_trapping
+      - base_pointer_key_compare_passed_off_as_content
+      - len_reads_wrong_header

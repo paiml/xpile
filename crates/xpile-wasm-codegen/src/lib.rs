@@ -155,6 +155,94 @@ const IDX_SCRATCH: &str = "__wasm_idx";
 const STR_DST_SCRATCH: &str = "__wasm_str_dst";
 const STR_LA_SCRATCH: &str = "__wasm_str_la";
 
+/// PMAT-995 (slice 3b): per-function scratch `i32` local holding a freshly
+/// `$__alloc`-ed dict/set base-pointer while [`emit_dict_lit`] writes its
+/// header + entries. Body-driven declaration, like the string scratches.
+const DICT_DST_SCRATCH: &str = "__wasm_dict_dst";
+
+/// PMAT-995 (slice 3b): the bump-heap layout of a `dict[K, V]` / `set[E]`.
+///
+/// A dict/set rides an `i32` base-pointer to a bump-heap region:
+///   * header (8 bytes, keeps the entry array 8-aligned):
+///       - `i32` live-entry **count** at `base+0` (the same `+0` count header
+///         a list/str carries, so `len(d)` reuses the list/str header read),
+///       - `i32` slot **capacity** at `base+4` ([`DICT_CAP_OFFSET`]),
+///   * then `capacity` fixed entries from `base+8` ([`LIST_ELEMS_OFFSET`]).
+///     Each entry is [`DICT_ENTRY_SIZE`] (16) bytes:
+///       - the **key** at `entry+0` (an `i64` for an int key; the `i32` string
+///         base-pointer in the low 4 bytes for a str key),
+///       - the **value** at `entry+`[`DICT_VAL_OFFSET`] (an `i64`; a set stores
+///         a `0` sentinel).
+///
+/// A bump heap cannot realloc, so the capacity is FIXED at construction
+/// ([`DICT_GROWTH_SLACK`] spare slots past the literal entries); an insert past
+/// capacity TRAPS (`unreachable`) rather than reallocating — an honest
+/// bounded-capacity posture, never a silent miscompile (documented on
+/// `$__wasm_dict_set_*`).
+const DICT_CAP_OFFSET: i32 = 4;
+const DICT_ENTRY_SIZE: i32 = 16;
+const DICT_VAL_OFFSET: i32 = 8;
+
+/// PMAT-995 (slice 3b): spare entry slots a `DictLit`/`SetLit` over-allocates
+/// past its literal entries, so subsequent `d[k] = v` / `s.add(e)` inserts have
+/// room in the (realloc-free) bump heap. An insert beyond `literal_count +
+/// DICT_GROWTH_SLACK` traps honestly. 16 is room for realistic build-up; a
+/// program exceeding it is trapped, not miscompiled.
+const DICT_GROWTH_SLACK: i32 = 16;
+
+/// PMAT-995 (slice 3b): the key representation a `dict`/`set` uses, derived from
+/// the binding's `Type::Dict(K, _)` / `Type::Set(K)`. Selects the comparison
+/// the heap helpers use (an `i64.eq` for an int key; `$__wasm_str_eq` over the
+/// stored `i32` string pointers for a str key) — the WASM dict subset's two
+/// supported key shapes. Every other key type is refused at binding time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyKind {
+    /// `dict[int, _]` / `set[int]` — an `i64` key compared with `i64.eq`.
+    Int,
+    /// `dict[str, _]` / `set[str]` — an `i32` string base-pointer compared by
+    /// CONTENT via `$__wasm_str_eq` (never a base-pointer `i32.eq`).
+    Str,
+}
+
+impl KeyKind {
+    /// The helper-function suffix (`i` for int keys, `s` for str keys).
+    fn suffix(self) -> &'static str {
+        match self {
+            KeyKind::Int => "i",
+            KeyKind::Str => "s",
+        }
+    }
+}
+
+/// PMAT-995: classify a dict/set KEY type, refusing anything outside the
+/// int/str key subset. Int keys (`I64`/`CLong`) ride an `i64`; str keys ride an
+/// `i32` string base-pointer (content-compared). Bool/float/unsigned/nested
+/// keys are refused honestly.
+fn dict_key_kind(ty: &Type) -> Result<KeyKind, BackendError> {
+    match ty {
+        Type::I64 | Type::CLong => Ok(KeyKind::Int),
+        Type::Str => Ok(KeyKind::Str),
+        other => Err(unsupported(&format!(
+            "dict/set key type {other:?} — the WASM dict subset supports int \
+             (i64) or str keys only; bool/float/unsigned/nested keys are refused"
+        ))),
+    }
+}
+
+/// PMAT-995: validate a dict VALUE type. The bump-heap dict stores each value in
+/// an 8-byte `i64` slot, so the first cut supports the `i64` integer domain
+/// (`I64`/`CLong`) only; bool/float/unsigned/str/nested values are refused
+/// honestly (no silent width-narrowing or reinterpret).
+fn dict_value_is_supported(ty: &Type) -> Result<(), BackendError> {
+    match ty {
+        Type::I64 | Type::CLong => Ok(()),
+        other => Err(unsupported(&format!(
+            "dict value type {other:?} — the WASM dict subset stores i64 integer \
+             values only (dict[K, int]); bool/float/str/nested values are refused"
+        ))),
+    }
+}
+
 /// PMAT-993 (slice 2): the base linear-memory address of the bump heap.
 ///
 /// String / list params (the static inputs a host preloads via `(data …)`)
@@ -299,6 +387,11 @@ fn collect_stmt_literals(s: &Stmt, out: &mut Vec<String>) {
             }
         }
         Stmt::IndexAssign { value, .. } => collect_expr_literals(value, out),
+        // PMAT-995: `d[k] = v` — a str KEY literal must be laid out too.
+        Stmt::DictSet { key, value, .. } => {
+            collect_expr_literals(key, out);
+            collect_expr_literals(value, out);
+        }
         _ => {}
     }
 }
@@ -336,6 +429,28 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
         Expr::StrCharAt { string, index } => {
             collect_expr_literals(string, out);
             collect_expr_literals(index, out);
+        }
+        // PMAT-995: a str-keyed dict/set lays out its KEY string literals into
+        // the same deduped static `(data)` table — recurse into the dict/set
+        // nodes so `{"x": 1}` / `d["y"]` / `"x" in d` register their literals.
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            collect_expr_literals(dict, out);
+            collect_expr_literals(key, out);
+        }
+        Expr::SetContains { set, elem } => {
+            collect_expr_literals(set, out);
+            collect_expr_literals(elem, out);
+        }
+        Expr::DictLit(pairs) => {
+            for (k, v) in pairs {
+                collect_expr_literals(k, out);
+                collect_expr_literals(v, out);
+            }
+        }
+        Expr::SetLit(elems) => {
+            for el in elems {
+                collect_expr_literals(el, out);
+            }
         }
         _ => {}
     }
@@ -491,6 +606,225 @@ fn heap_helpers() -> String {
   )
 "
     )
+}
+
+/// PMAT-995 (slice 3b): the `dict`/`set` heap helper functions, in WAT.
+///
+/// A dict/set is an open assoc-array over the bump heap (see [`DICT_CAP_OFFSET`]
+/// for the layout). Three helpers per key kind do a LINEAR scan of the `count`
+/// live entries:
+///   * `$__wasm_dict_get_<k>(p, key) -> i64` — Python `d[k]`: returns the value
+///     or `unreachable`-TRAPS on an absent key (the `KeyError` analogue,
+///     mirroring the list-index / dict Rust-`HashMap`-panic posture);
+///   * `$__wasm_dict_has_<k>(p, key) -> i32` — Python `k in d`: 1 if present,
+///     0 otherwise (never traps);
+///   * `$__wasm_dict_set_<k>(p, key, val)` — Python `d[k] = v` / `s.add(e)`:
+///     updates an existing key in place, else appends at `count` (incrementing
+///     it). An append past `capacity` TRAPS (`unreachable`) — the bump heap
+///     cannot realloc, so capacity is bounded; an honest trap, never a
+///     miscompile.
+///
+/// `<k>` is `i` (int keys: an `i64` key compared with `i64.eq`) or `s` (str
+/// keys: an `i32` string base-pointer compared by CONTENT via `$__wasm_str_eq`
+/// — so the str-key set FORCES `$__wasm_str_eq` to be emitted). Emitted once per
+/// module, gated on [`module_dict_key_kinds`]; a set reuses the `has`/`set`
+/// helpers (a set never `get`s — you cannot subscript a Python set).
+fn dict_helpers(need_int: bool, need_str: bool) -> String {
+    let mut out = String::new();
+    if need_int {
+        out.push_str(&dict_helpers_for(KeyKind::Int));
+    }
+    if need_str {
+        out.push_str(&dict_helpers_for(KeyKind::Str));
+    }
+    out
+}
+
+/// The shared linear-scan prologue: declare scratch locals, set `$n = count`,
+/// `$i = 0`, open `(block $done (loop $next …))`, bounds-exit at `i >= n`, and
+/// compute `$ea = p + LIST_ELEMS_OFFSET + i*DICT_ENTRY_SIZE` (entry `i`'s
+/// address). After it, the caller emits the per-op key compare + match body.
+fn emit_dict_scan_prologue(out: &mut String) {
+    for line in [
+        "    (local $i i32) (local $n i32) (local $ea i32)",
+        "    local.get $p",
+        "    i32.load",
+        "    local.set $n",
+        "    i32.const 0",
+        "    local.set $i",
+        "    (block $done",
+        "      (loop $next",
+        "        local.get $i",
+        "        local.get $n",
+        "        i32.ge_s",
+        "        br_if $done",
+        "        local.get $p",
+    ] {
+        writeln!(out, "{line}").expect("write");
+    }
+    writeln!(out, "        i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const {DICT_ENTRY_SIZE}").expect("write");
+    for line in [
+        "        i32.mul",
+        "        i32.add",
+        "        local.set $ea",
+    ] {
+        writeln!(out, "{line}").expect("write");
+    }
+}
+
+/// Push entry `$ea`'s key and compare it with `$k`, leaving an i32 bool on the
+/// stack — `i64.eq` for an int key, `$__wasm_str_eq` (CONTENT) for a str key.
+fn emit_dict_key_compare(out: &mut String, kind: KeyKind) {
+    writeln!(out, "        local.get $ea").expect("write");
+    match kind {
+        KeyKind::Int => {
+            writeln!(out, "        i64.load").expect("write");
+            writeln!(out, "        local.get $k").expect("write");
+            writeln!(out, "        i64.eq").expect("write");
+        }
+        KeyKind::Str => {
+            writeln!(out, "        i32.load").expect("write");
+            writeln!(out, "        local.get $k").expect("write");
+            writeln!(out, "        call $__wasm_str_eq").expect("write");
+        }
+    }
+}
+
+/// The loop step + `loop`/`block` close, after the per-op match body. After it
+/// the caller emits the not-found tail.
+fn emit_dict_scan_epilogue(out: &mut String) {
+    for line in [
+        "        local.get $i",
+        "        i32.const 1",
+        "        i32.add",
+        "        local.set $i",
+        "        br $next",
+        "      )",
+        "    )",
+    ] {
+        writeln!(out, "{line}").expect("write");
+    }
+}
+
+/// Store `$k` as entry `$ea`'s key — `i64.store` for an int key, `i32.store`
+/// (the low 4 bytes; the slot's high half stays 0 from the zero-init heap and is
+/// never read) for a str-key pointer.
+fn emit_dict_store_key(out: &mut String, kind: KeyKind) {
+    writeln!(out, "    local.get $ea").expect("write");
+    writeln!(out, "    local.get $k").expect("write");
+    match kind {
+        KeyKind::Int => writeln!(out, "    i64.store").expect("write"),
+        KeyKind::Str => writeln!(out, "    i32.store").expect("write"),
+    }
+}
+
+/// Emit the three heap helpers for one [`KeyKind`].
+fn dict_helpers_for(kind: KeyKind) -> String {
+    let s = kind.suffix();
+    let kparam = match kind {
+        KeyKind::Int => "i64",
+        KeyKind::Str => "i32",
+    };
+    let mut out = String::new();
+
+    // get: return the value at a matching key, else trap (KeyError analogue).
+    writeln!(
+        out,
+        "  ;; __wasm_dict_get_{s}(p, key) = d[key]; traps (unreachable) if absent (KeyError)"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_get_{s} (param $p i32) (param $k {kparam}) (result i64)"
+    )
+    .expect("write");
+    emit_dict_scan_prologue(&mut out);
+    emit_dict_key_compare(&mut out, kind);
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          local.get $ea").expect("write");
+    writeln!(out, "          i64.load offset={DICT_VAL_OFFSET}").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    emit_dict_scan_epilogue(&mut out);
+    writeln!(out, "    unreachable").expect("write");
+    writeln!(out, "  )").expect("write");
+
+    // has: 1 if a key matches, else 0 (never traps) — Python `k in d`.
+    writeln!(out, "  ;; __wasm_dict_has_{s}(p, key) = (key in d) ? 1 : 0").expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_has_{s} (param $p i32) (param $k {kparam}) (result i32)"
+    )
+    .expect("write");
+    emit_dict_scan_prologue(&mut out);
+    emit_dict_key_compare(&mut out, kind);
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          i32.const 1").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    emit_dict_scan_epilogue(&mut out);
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "  )").expect("write");
+
+    // set: update an existing key in place, else append at count (trap if at
+    // capacity — the realloc-free bump heap's honest bound).
+    writeln!(
+        out,
+        "  ;; __wasm_dict_set_{s}(p, key, val): update-or-insert (d[key] = val)."
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  ;; Appends at count; TRAPS (unreachable) if at capacity (no realloc)."
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_set_{s} (param $p i32) (param $k {kparam}) (param $v i64)"
+    )
+    .expect("write");
+    emit_dict_scan_prologue(&mut out);
+    emit_dict_key_compare(&mut out, kind);
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          local.get $ea").expect("write");
+    writeln!(out, "          local.get $v").expect("write");
+    writeln!(out, "          i64.store offset={DICT_VAL_OFFSET}").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    emit_dict_scan_epilogue(&mut out);
+    // not found → append at slot n; trap if at capacity.
+    writeln!(out, "    local.get $n").expect("write");
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load offset={DICT_CAP_OFFSET}").expect("write");
+    writeln!(out, "    i32.ge_s").expect("write");
+    writeln!(out, "    if").expect("write");
+    writeln!(out, "      unreachable").expect("write");
+    writeln!(out, "    end").expect("write");
+    // $ea = p + LIST_ELEMS_OFFSET + n*DICT_ENTRY_SIZE
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "    i32.add").expect("write");
+    writeln!(out, "    local.get $n").expect("write");
+    writeln!(out, "    i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "    i32.mul").expect("write");
+    writeln!(out, "    i32.add").expect("write");
+    writeln!(out, "    local.set $ea").expect("write");
+    emit_dict_store_key(&mut out, kind);
+    writeln!(out, "    local.get $ea").expect("write");
+    writeln!(out, "    local.get $v").expect("write");
+    writeln!(out, "    i64.store offset={DICT_VAL_OFFSET}").expect("write");
+    // count = n + 1
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    local.get $n").expect("write");
+    writeln!(out, "    i32.const 1").expect("write");
+    writeln!(out, "    i32.add").expect("write");
+    writeln!(out, "    i32.store").expect("write");
+    writeln!(out, "  )").expect("write");
+
+    out
 }
 
 /// Python floor-division and floor-modulo helper functions, in WAT.
@@ -800,9 +1134,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (and thus the `(memory …)`) is needed whenever the module references any
     // literal. `s[i]` as a 1-char string also pulls in the heap (it allocates
     // a 1-char string like `chr`), folded into `module_needs_heap`.
+    // PMAT-995 (slice 3b): a `dict`/`set` rides the bump heap too — a `DictLit`/
+    // `SetLit` allocates a `[count][cap]`-headed entry array via `$__alloc`, so
+    // a module with any dict/set needs the `(memory …)` + allocator. The key
+    // kinds drive which `$__wasm_dict_*_<k>` helper set is emitted; a str-keyed
+    // dict additionally forces `$__wasm_str_eq` (its key compare is a content
+    // compare).
+    let (dict_int_keys, dict_str_keys) = module_dict_key_kinds(module);
+    let needs_dict = dict_int_keys || dict_str_keys;
     let needs_heap = module_needs_heap(module);
     let literals = collect_str_literals(module)?;
-    let needs_str_eq = module_needs_str_eq(module);
+    let needs_str_eq = module_needs_str_eq(module) || dict_str_keys;
     if module_uses_list_param(module) || needs_heap || !literals.is_empty() || needs_str_eq {
         writeln!(
             out,
@@ -843,9 +1185,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         out.push_str(&heap_helpers());
     }
     // PMAT-994: emit the string-equality helper once, when any function
-    // compares two strings for content equality (`a == b` over `str`).
+    // compares two strings for content equality (`a == b` over `str`). Also
+    // pulled in by a str-keyed dict (PMAT-995: its key compare is a content
+    // compare via this helper) — `needs_str_eq` folds that in above.
     if needs_str_eq {
         out.push_str(STR_EQ_HELPER);
+    }
+    // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
+    // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
+    // (the str-key helpers call it).
+    if needs_dict {
+        out.push_str(&dict_helpers(dict_int_keys, dict_str_keys));
     }
     // Emit the Python floor-division / floor-modulo helpers once. WASM
     // `i64.div_s` truncates toward zero and `i64.rem_s` is the truncating
@@ -903,10 +1253,67 @@ fn module_uses_list_param(module: &Module) -> bool {
 /// `$__alloc`). A purely read-only string / scalar / list module returns
 /// `false` and carries no allocator (the slice-1 posture).
 fn module_needs_heap(module: &Module) -> bool {
-    module.items.iter().any(|item| match item {
-        Item::Function(f) => matches!(f.return_type, Type::Str) || block_has_heap_op(&f.body),
-        _ => false,
-    })
+    let (di, ds) = module_dict_key_kinds(module);
+    di || ds
+        || module.items.iter().any(|item| match item {
+            Item::Function(f) => matches!(f.return_type, Type::Str) || block_has_heap_op(&f.body),
+            _ => false,
+        })
+}
+
+/// PMAT-995 (slice 3b): which dict/set KEY kinds the module uses — `(needs_int,
+/// needs_str)` — by scanning every `Let` whose annotated type is a
+/// `Type::Dict(K, _)` or `Type::Set(K)`. Drives which `$__wasm_dict_*_<k>`
+/// helper set is emitted; a str-keyed dict additionally forces `$__wasm_str_eq`.
+///
+/// Only LET-bound dicts/sets are scanned: a dict/set is materialised in-function
+/// via a `DictLit`/`SetLit` bound to a local (a dict/set PARAMETER rides no
+/// host-preload ABI in the WASM subset and is refused by `param_wat_type`). An
+/// unsupported key/value type does not panic here — it is refused later, at
+/// binding lowering, with a precise diagnostic.
+fn module_dict_key_kinds(module: &Module) -> (bool, bool) {
+    let mut need_int = false;
+    let mut need_str = false;
+    for item in &module.items {
+        if let Item::Function(f) = item {
+            scan_block_dict_kinds(&f.body, &mut need_int, &mut need_str);
+        }
+    }
+    (need_int, need_str)
+}
+
+fn scan_block_dict_kinds(block: &Block, need_int: &mut bool, need_str: &mut bool) {
+    scan_stmts_dict_kinds(&block.stmts, need_int, need_str);
+}
+
+fn scan_stmts_dict_kinds(stmts: &[Stmt], need_int: &mut bool, need_str: &mut bool) {
+    for s in stmts {
+        match s {
+            Stmt::Let { ty, .. } => {
+                let key_ty = match ty {
+                    Type::Dict(k, _) | Type::Set(k) => Some(k.as_ref()),
+                    _ => None,
+                };
+                if let Some(k) = key_ty {
+                    match dict_key_kind(k) {
+                        Ok(KeyKind::Int) => *need_int = true,
+                        Ok(KeyKind::Str) => *need_str = true,
+                        Err(_) => {} // refused later at binding lowering
+                    }
+                }
+            }
+            Stmt::While { body, .. } => scan_stmts_dict_kinds(body, need_int, need_str),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                scan_stmts_dict_kinds(then_body, need_int, need_str);
+                scan_stmts_dict_kinds(else_body, need_int, need_str);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// PMAT-994: `true` when any function in `module` compares two strings for
@@ -1213,6 +1620,11 @@ struct Scope<'a> {
     /// `LitStr` lowers to a constant `i32.const <base>` resolved here. Shared
     /// across every function in the module (the `(data …)` region is global).
     literals: &'a StrLiterals,
+    /// PMAT-995 (slice 3b): `(name, key_kind)` for every LET-bound `dict`/`set`
+    /// local. The local itself is an `i32` base-pointer (in [`Scope::locals`]);
+    /// this records its key kind so `d[k]` / `k in d` / `d[k]=v` / `s.add(e)`
+    /// pick the right `$__wasm_dict_*_<k>` helper and key encoding.
+    heap_maps: Vec<(String, KeyKind)>,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -1220,6 +1632,17 @@ struct Scope<'a> {
 }
 
 impl Scope<'_> {
+    /// PMAT-995: the [`KeyKind`] if `name` is a dict/set base-pointer local, else
+    /// `None`. Drives dict/set op lowering (`DictGet`/`DictContains`/`DictSet`/
+    /// `SetContains`/`SetAdd`/`len`).
+    fn heap_map_kind(&self, name: &str) -> Option<KeyKind> {
+        self.heap_maps
+            .iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, k)| *k)
+    }
+
     fn ty_of(&self, name: &str) -> Result<WatTy, BackendError> {
         self.locals
             .iter()
@@ -1287,6 +1710,7 @@ fn emit_function(f: &Function, literals: &StrLiterals) -> Result<String, Backend
         locals: Vec::new(),
         list_elem: Vec::new(),
         str_params: Vec::new(),
+        heap_maps: Vec::new(),
         literals,
         ret,
         ret_is_unit,
@@ -1372,6 +1796,11 @@ fn emit_function(f: &Function, literals: &StrLiterals) -> Result<String, Backend
     if body.contains(&format!("${STR_LA_SCRATCH}")) {
         writeln!(out, "    (local ${STR_LA_SCRATCH} i32)").expect("write");
     }
+    // PMAT-995: declare the dict-construction scratch `i32` local iff a
+    // `DictLit`/`SetLit` actually used it (same body-driven detection).
+    if body.contains(&format!("${DICT_DST_SCRATCH}")) {
+        writeln!(out, "    (local ${DICT_DST_SCRATCH} i32)").expect("write");
+    }
 
     out.push_str(&body);
     writeln!(out, "  )").expect("write");
@@ -1387,6 +1816,29 @@ fn collect_let_locals(block: &Block, scope: &mut Scope) -> Result<(), BackendErr
 fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), BackendError> {
     for s in stmts {
         match s {
+            // PMAT-995 (slice 3b): a `dict`/`set` LET binds an `i32`
+            // base-pointer local AND records its key kind (the value type is
+            // validated now too, an honest early refusal). Intercepted before
+            // `map_type`, which refuses Dict/Set.
+            Stmt::Let {
+                name,
+                ty: Type::Dict(k, v),
+                ..
+            } => {
+                let kind = dict_key_kind(k)?;
+                dict_value_is_supported(v)?;
+                scope.declare(name, WatTy::I32);
+                scope.heap_maps.push((name.clone(), kind));
+            }
+            Stmt::Let {
+                name,
+                ty: Type::Set(e),
+                ..
+            } => {
+                let kind = dict_key_kind(e)?;
+                scope.declare(name, WatTy::I32);
+                scope.heap_maps.push((name.clone(), kind));
+            }
             Stmt::Let { name, ty, .. } => {
                 let wt = map_type(ty)?;
                 scope.declare(name, wt);
@@ -1403,8 +1855,13 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             // PMAT-978: `xs[i] = v` writes an EXISTING list element — it
             // introduces no new `let` local. (The `$__wasm_idx` scratch it
             // uses is declared from the emitted body, like the read path.)
+            // PMAT-995: `d[k] = v` (DictSet) and `s.add(e)` (SetAdd) mutate an
+            // existing dict/set in place — no new local (the dict/set base
+            // local was declared by its `Let`).
             Stmt::Assign { .. }
             | Stmt::IndexAssign { .. }
+            | Stmt::DictSet { .. }
+            | Stmt::SetAdd { .. }
             | Stmt::Return(_)
             | Stmt::Break
             | Stmt::Continue => {}
@@ -1452,6 +1909,16 @@ fn emit_stmt(
 ) -> Result<(), BackendError> {
     match s {
         Stmt::Let { name, value, .. } => {
+            // PMAT-995: a dict/set LET (its local recorded in `scope.heap_maps`)
+            // materialises its `DictLit`/`SetLit` on the bump heap and stashes
+            // the base-pointer; routed away from the scalar `emit_expr_typed`
+            // path (which has no K/V context).
+            if let Some(kind) = scope.heap_map_kind(name) {
+                emit_heap_map_bind(value, kind, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "local.set ${name}").expect("write");
+                return Ok(());
+            }
             let wt = scope.ty_of(name)?;
             emit_expr_typed(value, scope, out, depth, wt)?;
             indent(out, depth);
@@ -1459,12 +1926,27 @@ fn emit_stmt(
             Ok(())
         }
         Stmt::Assign { name, value } => {
+            if let Some(kind) = scope.heap_map_kind(name) {
+                emit_heap_map_bind(value, kind, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "local.set ${name}").expect("write");
+                return Ok(());
+            }
             let wt = scope.ty_of(name)?;
             emit_expr_typed(value, scope, out, depth, wt)?;
             indent(out, depth);
             writeln!(out, "local.set ${name}").expect("write");
             Ok(())
         }
+        // PMAT-995 (slice 3b): `d[k] = v` — update-or-insert over a dict local.
+        Stmt::DictSet {
+            dict_name,
+            key,
+            value,
+        } => emit_dict_set(dict_name, key, value, scope, out, depth),
+        // PMAT-995 (slice 3b): `s.add(e)` — insert into a set local (a keys-only
+        // dict; the `set` helper is shared, with a 0 sentinel value).
+        Stmt::SetAdd { set_name, elem } => emit_set_add(set_name, elem, scope, out, depth),
         Stmt::Return(e) => {
             if scope.ret_is_unit {
                 if !matches!(e, Expr::Unit) {
@@ -1707,6 +2189,22 @@ fn emit_expr(
             emit_concat(lhs, rhs, scope, out, depth)?;
             Ok(WatTy::I32)
         }
+        // PMAT-995 (slice 3b): `d[k]` — keyed dict read; returns the i64 value
+        // or TRAPS on an absent key (the Python KeyError analogue).
+        Expr::DictGet { dict, key } => emit_dict_get(dict, key, scope, out, depth),
+        // PMAT-995 (slice 3b): `k in d` / `x in s` — i32 bool membership.
+        Expr::DictContains { dict, key } => emit_dict_contains(dict, key, scope, out, depth),
+        Expr::SetContains { set, elem } => emit_dict_contains(set, elem, scope, out, depth),
+        // PMAT-995: a `DictLit`/`SetLit` needs its K/V from the binding's
+        // declared type; it is materialised by the dict/set `Let` path
+        // (`emit_heap_map_bind`), never standalone. Reaching here means a
+        // dict/set literal in a non-binding value position — refused honestly
+        // (the binding's K/V context is unavailable here).
+        Expr::DictLit(_) | Expr::SetLit(_) => Err(unsupported(
+            "a dict/set literal outside a `dict`/`set`-typed `let` binding — the \
+             WASM subset materialises a dict/set only at its annotated binding \
+             site (it needs the key/value types); a bare literal value is refused",
+        )),
         Expr::Unit => Err(unsupported(
             "unit value `()` in a value position (WASM has no unit operand)",
         )),
@@ -1930,15 +2428,19 @@ fn emit_len(
              header); len of a list literal / dict / temporary is refused",
         ));
     };
-    if scope.list_elem_of(name).is_none() && !scope.is_str_param(name) {
+    if scope.list_elem_of(name).is_none()
+        && !scope.is_str_param(name)
+        && scope.heap_map_kind(name).is_none()
+    {
         return Err(unsupported(&format!(
-            "len() over `{name}` which is not a `list[scalar]` or `str` \
-             parameter — only a list/str param carries the i32 count header \
-             in the WASM subset (no dict len)"
+            "len() over `{name}` which is not a `list[scalar]`/`str` parameter \
+             or a `dict`/`set` local — only those carry the i32 count header at \
+             base+0 in the WASM subset"
         )));
     }
-    // len = (i32 header at base+0) zero-extended to i64. Identical for a
-    // list (element count) and a str (byte count) — the shared ABI header.
+    // PMAT-995: len = (i32 header at base+0) zero-extended to i64. Identical for
+    // a list (element count), a str (byte count), AND a dict/set (live-entry
+    // count) — all three share the `+0` i32 count header.
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
     indent(out, depth);
@@ -2268,6 +2770,277 @@ fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
     } else {
         out.push(e);
     }
+}
+
+// ─── PMAT-995 (slice 3b): dict / set over the bump heap ──────────────────────
+
+/// Lower a `dict`/`set` BINDING value — its `DictLit`/`SetLit` — onto the bump
+/// heap, leaving the new region's `i32` base-pointer on the stack (the caller
+/// `local.set`s it). A dict/set-returning call / comprehension is refused (no
+/// dict-returning op in the WASM subset).
+fn emit_heap_map_bind(
+    value: &Expr,
+    kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    match value {
+        Expr::DictLit(pairs) => emit_dict_lit(pairs, kind, scope, out, depth),
+        Expr::SetLit(elems) => emit_set_lit(elems, kind, scope, out, depth),
+        other => Err(unsupported(&format!(
+            "a `dict`/`set` binding must be a dict/set LITERAL in the WASM subset \
+             (a dict/set-returning call, comprehension, or copy is refused) — got {}",
+            expr_kind(other)
+        ))),
+    }
+}
+
+/// `$__alloc` a fresh dict/set region of `cap` slots, write its `[count][cap]`
+/// header, and stash the base-pointer in [`DICT_DST_SCRATCH`]. `n` live entries
+/// at construction (== literal count).
+fn emit_map_alloc(n: i32, cap: i32, out: &mut String, depth: usize) {
+    let size = LIST_ELEMS_OFFSET + cap * DICT_ENTRY_SIZE;
+    // dst = __alloc(8 + cap*16)
+    indent(out, depth);
+    writeln!(out, "i32.const {size}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__alloc").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.set ${DICT_DST_SCRATCH}").expect("write");
+    // header: count = n at dst+0
+    indent(out, depth);
+    writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {n}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store").expect("write");
+    // header: capacity = cap at dst+4
+    indent(out, depth);
+    writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {cap}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store offset={DICT_CAP_OFFSET}").expect("write");
+}
+
+/// Push the base address of entry `i` (`dst + LIST_ELEMS_OFFSET + i*16`).
+fn emit_map_entry_addr(i: i32, out: &mut String, depth: usize) {
+    indent(out, depth);
+    writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {}", LIST_ELEMS_OFFSET + i * DICT_ENTRY_SIZE).expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+}
+
+/// Push a dict/set KEY: an `i64` for an int key, the `i32` string base-pointer
+/// for a str key. Used by both literal construction and the op lowerings.
+fn emit_dict_key(
+    key: &Expr,
+    kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    match kind {
+        KeyKind::Int => emit_expr_typed(key, scope, out, depth, WatTy::I64),
+        // A str key is a string-VALUED expr (a str param, a literal); its i32
+        // base-pointer is the stored/compared key.
+        KeyKind::Str => emit_str_expr(key, scope, out, depth),
+    }
+}
+
+/// Write entry `i`'s key: `entry_addr` then the key value then the kind's store.
+fn emit_map_write_key(
+    i: i32,
+    key: &Expr,
+    kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    emit_map_entry_addr(i, out, depth);
+    emit_dict_key(key, kind, scope, out, depth)?;
+    indent(out, depth);
+    // int key → 8-byte i64 slot; str key → i32 pointer in the low 4 bytes.
+    let store = match kind {
+        KeyKind::Int => "i64.store",
+        KeyKind::Str => "i32.store",
+    };
+    writeln!(out, "{store}").expect("write");
+    Ok(())
+}
+
+/// Write entry `i`'s value (`entry_addr` + `i64.store offset=8`). `value` is the
+/// i64 value expr for a dict, or `None` for a set (a `0` sentinel).
+fn emit_map_write_value(
+    i: i32,
+    value: Option<&Expr>,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    emit_map_entry_addr(i, out, depth);
+    match value {
+        Some(v) => emit_expr_typed(v, scope, out, depth, WatTy::I64)?,
+        None => {
+            indent(out, depth);
+            writeln!(out, "i64.const 0").expect("write");
+        }
+    }
+    indent(out, depth);
+    writeln!(out, "i64.store offset={DICT_VAL_OFFSET}").expect("write");
+    Ok(())
+}
+
+/// Lower a `DictLit` — Python `{k0: v0, k1: v1, …}` — onto the bump heap.
+fn emit_dict_lit(
+    pairs: &[(Expr, Expr)],
+    kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let n = pairs.len() as i32;
+    let cap = n + DICT_GROWTH_SLACK;
+    emit_map_alloc(n, cap, out, depth);
+    for (idx, (k, v)) in pairs.iter().enumerate() {
+        let i = idx as i32;
+        emit_map_write_key(i, k, kind, scope, out, depth)?;
+        emit_map_write_value(i, Some(v), scope, out, depth)?;
+    }
+    // result = dst (the new dict's base-pointer).
+    indent(out, depth);
+    writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+    Ok(())
+}
+
+/// Lower a `SetLit` — Python `{e0, e1, …}` — onto the bump heap (a keys-only
+/// dict; each entry's value is the `0` sentinel).
+fn emit_set_lit(
+    elems: &[Expr],
+    kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let n = elems.len() as i32;
+    let cap = n + DICT_GROWTH_SLACK;
+    emit_map_alloc(n, cap, out, depth);
+    for (idx, e) in elems.iter().enumerate() {
+        let i = idx as i32;
+        emit_map_write_key(i, e, kind, scope, out, depth)?;
+        emit_map_write_value(i, None, scope, out, depth)?;
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+    Ok(())
+}
+
+/// Resolve a dict/set op's receiver to `(name, key_kind)`, refusing a non-name
+/// or non-dict/set receiver honestly.
+fn dict_ident_kind<'e>(e: &'e Expr, scope: &Scope) -> Result<(&'e str, KeyKind), BackendError> {
+    let Expr::Ident(name) = e else {
+        return Err(unsupported(
+            "a dict/set op (d[k] / k in d) over a non-name receiver — the WASM \
+             subset operates on a `dict`/`set` LOCAL only (no temporaries)",
+        ));
+    };
+    let kind = scope.heap_map_kind(name).ok_or_else(|| {
+        unsupported(&format!(
+            "dict/set op over `{name}` which is not a `dict`/`set` local in the \
+             WASM subset"
+        ))
+    })?;
+    Ok((name.as_str(), kind))
+}
+
+/// Lower `d[k]` (`Expr::DictGet`) — push the dict base + key, call the keyed
+/// `get` helper (returns the i64 value or TRAPS on an absent key, the Python
+/// KeyError analogue).
+fn emit_dict_get(
+    dict: &Expr,
+    key: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let (name, kind) = dict_ident_kind(dict, scope)?;
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_get_{}", kind.suffix()).expect("write");
+    Ok(WatTy::I64)
+}
+
+/// Lower `k in d` / `x in s` (`Expr::DictContains` / `Expr::SetContains`) — push
+/// the base + key, call the keyed `has` helper (i32 bool, never traps).
+fn emit_dict_contains(
+    dict: &Expr,
+    key: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let (name, kind) = dict_ident_kind(dict, scope)?;
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
+    Ok(WatTy::I32)
+}
+
+/// Lower `d[k] = v` (`Stmt::DictSet`) — push base + key + i64 value, call the
+/// keyed `set` helper (update-or-insert; traps if at capacity).
+fn emit_dict_set(
+    dict_name: &str,
+    key: &Expr,
+    value: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let kind = scope.heap_map_kind(dict_name).ok_or_else(|| {
+        unsupported(&format!(
+            "`{dict_name}[k] = v` over `{dict_name}` which is not a `dict` local \
+             in the WASM subset"
+        ))
+    })?;
+    indent(out, depth);
+    writeln!(out, "local.get ${dict_name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth)?;
+    emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
+    Ok(())
+}
+
+/// Lower `s.add(e)` (`Stmt::SetAdd`) — push base + key + the `0` sentinel value,
+/// call the keyed `set` helper (a set is a keys-only dict).
+fn emit_set_add(
+    set_name: &str,
+    elem: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let kind = scope.heap_map_kind(set_name).ok_or_else(|| {
+        unsupported(&format!(
+            "`{set_name}.add(e)` over `{set_name}` which is not a `set` local in \
+             the WASM subset"
+        ))
+    })?;
+    indent(out, depth);
+    writeln!(out, "local.get ${set_name}").expect("write");
+    emit_dict_key(elem, kind, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "i64.const 0").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
+    Ok(())
 }
 
 /// PMAT-993: lower `chr(n)` (`Expr::Chr`) — materialise a new 1-byte string
