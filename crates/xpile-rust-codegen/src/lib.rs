@@ -2226,6 +2226,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     // PMAT-632: `.rjust(w, fill)`/`.ljust(w, fill)` — Rust's
                     // `format!` fill must be a literal, so pad manually by
                     // repeating the fill string to the deficit char count.
+                    // PMAT-1011 (sweep #7): CPython requires the fill to be
+                    // EXACTLY one character ("TypeError: the fill character must
+                    // be exactly one character long"), validated at the call —
+                    // even when no padding is needed. The old emit silently
+                    // `.repeat`ed a multi-char fill ("ab".rjust(8, "xy") gave
+                    // "xyxyxyab" where CPython raises).
                     out.push_str("{ let __s = (");
                     emit_expr(out, recv, mode)?;
                     out.push_str("); let __w = (");
@@ -2233,9 +2239,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     // PMAT-666: clamp a negative width to 0 (Python returns the
                     // string unchanged); a bare `as usize` underflowed to a huge
                     // width → capacity-overflow panic.
-                    out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = (");
+                    out.push_str(").max(0) as usize; let __f = (");
                     emit_expr(out, &args[1], mode)?;
-                    out.push_str(").repeat(__w - __n); ");
+                    out.push_str("); if __f.chars().count() != 1 { panic!(\"xpile: TypeError: the fill character must be exactly one character long\"); } let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = __f.repeat(__w - __n); ");
                     out.push_str(if is_r {
                         "format!(\"{}{}\", __pad, __s) } }"
                     } else {
@@ -2286,13 +2292,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 out.push_str("); let __w = (");
                 emit_expr(out, &args[0], mode)?;
                 // PMAT-666: clamp a negative width to 0 (Python returns unchanged).
-                out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
+                out.push_str(").max(0) as usize; ");
+                if args.len() == 2 {
+                    // PMAT-1011 (sweep #7): the one-char fill validation fires
+                    // BEFORE the width check (see rjust/ljust above) — CPython
+                    // raises the TypeError even when no padding is needed.
+                    out.push_str("let __fc = (");
+                    emit_expr(out, &args[1], mode)?;
+                    out.push_str("); if __fc.chars().count() != 1 { panic!(\"xpile: TypeError: the fill character must be exactly one character long\"); } ");
+                }
+                out.push_str("let __n = __s.chars().count(); if __n >= __w { __s } else { let __marg = __w - __n; let __left = __marg / 2 + (__marg & __w & 1); ");
                 if args.len() == 2 {
                     // PMAT-632: `.center(w, fill)` — repeat the fill string on
                     // both sides (same CPython left-bias as the space form).
-                    out.push_str("let __fc = (");
-                    emit_expr(out, &args[1], mode)?;
-                    out.push_str("); format!(\"{}{}{}\", __fc.repeat(__left), __s, __fc.repeat(__marg - __left)) } }");
+                    out.push_str("format!(\"{}{}{}\", __fc.repeat(__left), __s, __fc.repeat(__marg - __left)) } }");
                 } else {
                     out.push_str("format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
                 }
@@ -2382,9 +2395,13 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // a fresh `String` of the selected chars so the byte→char
                 // conversion (and the `__st` offset for find) stay correct for
                 // non-ASCII.
-                out.push_str("{ let __s = (");
+                // PMAT-1011 (sweep #7): bind a CLONE of the receiver — same
+                // E0382 move the single-arg form fixed in PMAT-851. `let __s =
+                // (recv)` MOVED a non-Copy String, so `s.index(sub, 1)` followed
+                // by any later use of `s` failed rustc (use after move).
+                out.push_str("{ let __s = ((");
                 emit_expr(out, recv, mode)?;
-                out.push_str("); let __sub = (");
+                out.push_str(").clone()); let __sub = (");
                 emit_expr(out, &args[0], mode)?;
                 out.push_str(
                     ").to_string(); let __len = __s.chars().count() as i64; let __st = ((",
@@ -3496,7 +3513,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, modulus, mode)?;
             out.push_str("); if __pmm == 0 { panic!(\"xpile: ValueError: pow() 3rd argument cannot be 0\"); } let __pme = (");
             emit_expr(out, exp, mode)?;
-            out.push_str("); if __pme < 0 { panic!(\"xpile: ValueError: pow() 2nd argument cannot be negative when 3rd argument specified\"); } let __pmb0 = (");
+            out.push_str("); let __pmb0 = (");
             emit_expr(out, base, mode)?;
             // PMAT-619: do the whole modexp on the MAGNITUDE `|m|` (in i128, so
             // `|i64::MIN|` doesn't overflow), then sign-correct the residue to the
@@ -3505,7 +3522,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             // POSITIVE modulus, so a NEGATIVE modulus (esp. with a negative base)
             // produced wrong values (`pow(-2,3,-5)` gave 3, Python gives -3).
             // Python `pow(a,b,m)` with `m<0` returns the residue in `(m, 0]`.
-            out.push_str("); let __pma = (__pmm as i128).abs(); let mut __pmb = { let __t = (__pmb0 as i128) % __pma; if __t < 0 { __t + __pma } else { __t } }; let mut __pmr = 1i128 % __pma; let mut __pmk = __pme; while __pmk > 0 { if __pmk & 1 == 1 { __pmr = (__pmr * __pmb) % __pma; } __pmk >>= 1; __pmb = (__pmb * __pmb) % __pma; } if __pmm < 0 && __pmr != 0 { __pmr -= __pma; } __pmr as i64 }");
+            // PMAT-1011: a NEGATIVE exponent is Python 3.8+ MODULAR INVERSE
+            // (bpo-36027): `pow(b, -e, m) == pow(modinv(b, m), e, m)`, raising
+            // `ValueError: base is not invertible for the given modulus` when
+            // `gcd(b, m) != 1`. The old guard panicked with the PRE-3.8 message
+            // ("2nd argument cannot be negative...") — a stale-semantics bug
+            // found by differential sweep #7 (`pow(3, -1, 7)` is 5 in CPython).
+            // The inverse is computed by extended Euclid on the normalized base;
+            // the loop then runs on |e| (unsigned_abs — i64::MIN-safe).
+            out.push_str("); let __pma = (__pmm as i128).abs(); let mut __pmb = { let __t = (__pmb0 as i128) % __pma; if __t < 0 { __t + __pma } else { __t } }; if __pme < 0 { let (mut __r0, mut __r1) = (__pma, __pmb); let (mut __s0, mut __s1) = (0i128, 1i128); while __r1 != 0 { let __q = __r0 / __r1; let __t = __r0 - __q * __r1; __r0 = __r1; __r1 = __t; let __t = __s0 - __q * __s1; __s0 = __s1; __s1 = __t; } if __r0 != 1 { panic!(\"xpile: ValueError: base is not invertible for the given modulus\"); } __pmb = ((__s0 % __pma) + __pma) % __pma; } let mut __pmr = 1i128 % __pma; let mut __pmk = (__pme as i128).unsigned_abs(); while __pmk > 0 { if __pmk & 1 == 1 { __pmr = (__pmr * __pmb) % __pma; } __pmk >>= 1; __pmb = (__pmb * __pmb) % __pma; } if __pmm < 0 && __pmr != 0 { __pmr -= __pma; } __pmr as i64 }");
         }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {

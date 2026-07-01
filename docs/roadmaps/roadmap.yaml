@@ -591,6 +591,67 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Rare edge (duplicate unpack target), fail-loud (E0416) not silent — was low priority, closed as a bounded fill-in slice while differential sweep #7 ran. The mask-to-`_` insight: dead stores of plain names are unobservable, so Python last-wins ≡ bind-only-the-last — no sequential shadowing machinery needed. Filed by PMAT-1009.'
+- id: PMAT-1011
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1011: [rust/correctness] Differential sweep #7 (un-swept surfaces: numeric-edge, comprehensions, sorting/higher-order, string-deep, bool/None semantics, control-flow) + FOUR fixes. 421 programs across 6 category finders, each finding independently re-verified (default-refuted): 18 CONFIRMED, 3 refuted, 0 false positives surviving. FIXED this slice: (1) 3-arg pow with NEGATIVE exponent implemented STALE pre-3.8 semantics — panicked "pow() 2nd argument cannot be negative when 3rd argument specified" where Python 3.8+ (bpo-36027) computes the MODULAR INVERSE (pow(3,-1,7)==5); now extended-Euclid inverse on the normalized base, exact CPython "ValueError: base is not invertible for the given modulus" when gcd!=1, loop on |e| via unsigned_abs (i64::MIN-safe), PMAT-605/619 negative-modulus re-sign preserved. (2) with-start find/index/count (PMAT-675 form) MOVED the receiver (`let __s = (s)`) → E0382 on any later use of s; now binds a clone (the same fix PMAT-851 applied to the single-arg form). (3) rjust/ljust/center fill validated EXACTLY one char — CPython raises "TypeError: the fill character must be exactly one character long" at the call (even with no deficit); old emit silently repeated a multi-char fill (SILENT-acceptance divergence). (4) bool↔float comparison (True == 1.0 / True < 1.5 / 0.5 < True) emitted bare `bool OP f64` E0308; now coerces bool→i64 and routes through the exact MixedIntFloatCmp template — closing the follow-up PMAT-617 explicitly deferred.'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "Sweep methodology (7th of the campaign): 6 category finders generate in-subset programs, run via the rebuilt diffharness.py (dep-free rustc -O path + cargo/indexmap path, MATCH/DIVERGE/BOTHRAISE/SKIP-EMIT/SKIP-INVALID-RUST/SKIP-CPY-ONLY-RAISE/SKIP-RUST-ONLY-PANIC classification); every claimed finding independently re-executed twice by an adversarial verifier (default NOT-reproduced). 421 tested / 364 match / 32 refused / 18 confirmed / 3 refuted."
+  - "FIX 1 (pow modinv): pow(3,-1,7)→5, pow(2,-2,9)→7, pow(3,-1,-7)→-2 (negative-modulus re-sign holds), pow(-3,-1,7)→2, pow(3,-1,1)→0; gcd!=1 (pow(2,-1,4), pow(0,-1,5)) both-raise == CPython; positive-path regressions pow(2,10,1000)→24, pow(-2,3,-5)→-3 hold. e2e pow_neg_exp_modinv (fixture + 9-assert driver + emit-text asserts: 3.8+ message present, stale message gone)."
+  - "FIX 2 (with-start clone): s.index(\"a\",2) then len(s)/count/rfind all compile+match (was E0382). e2e find_start_receiver_reuse."
+  - "FIX 3 (one-char fill): \"ab\".center(5,\"xy\") / rjust/ljust multi-char or empty fill → panic == CPython TypeError, fires EVEN with no deficit (\"abcdef\".rjust(2,\"xy\") both-raise); single-char fills unchanged (\"ab\".center(7,\"*\")→\"***ab**\"). e2e fill_char_one_char."
+  - "FIX 4 (bool↔float cmp): True==1.0/False==0.0/True<1.5/1.5<True/0.5<True/True!=0.5/False>=0.0 all MATCH (were E0308). e2e bool_float_compare."
+  - "DONE: gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; xpile e2e 682 (678+4 new). Touched crates/xpile-rust-codegen/ + crates/depyler-frontend/ + crates/xpile/tests/ + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'DISPOSITIONS of the other 14 confirmed findings: 7 are the DOCUMENTED fail-loud bigint i64-ceiling through new entry points (int(1e19), mul/neg/shl/+= overflow, in-comprehension, in-sort-key — the sort-key finder CLAIMED unchecked/wrap-in-release arithmetic but adversarial re-verification showed checked_mul().expect() fail-loud even under -O: finder hypothesis REFUTED, entry point already safe); 1 duplicates PMAT-1005 (Unicode isdigit); 1 is the lone-surrogate chr(55296) — unrepresentable in Rust char, fail-loud panic ACCEPTED as the honest behavior; 2 filed as PMAT-1012 (chars-loop var leak E0425) + PMAT-1013 (mutation-during-iteration E0502→refuse); 2 titlecase-digraph DIVERGEs filed as PMAT-1014. Campaign total after 7 sweeps: every sweep has found real bugs; the verify pass has refuted finder claims in BOTH directions (false findings AND false root-cause hypotheses). See [[feedback-ultracode-adversarial-verify]].'
+- id: PMAT-1012
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1012: [rust/correctness] String-chars for-loop variable LEAKS in Python but is loop-scoped in the emitted Rust → E0425. Found by sweep #7 (PMAT-1011). `for ch in "wxyz": pass` then `return ch` — Python leaks the loop var (last value, "z"); xpile emits a native `for ch in ...chars()...` whose binding dies at the loop end, so the later use is rustc E0425 (cannot find value). The RANGE-loop lane already handles this (desugars to a hoisted while / hoisted binding); the chars lane (and possibly other ForEach lanes — list iteration, enumerate, zip) never hoists. Fix: mirror the range-lane hoisting for ForEach loop vars USED AFTER the loop (needs the use-after-loop analysis the range lane already has), or refuse clearly. Python also leaves the var UNBOUND for an empty iterable — the hoisted form must preserve the panic/refuse behavior there (Python raises NameError on use-after-empty-loop; a hoisted default would silently diverge).'
+  status: planned
+  priority: medium
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "`for ch in \"wxyz\": pass` + `return ch` → \"z\" == CPython (or a clear refusal), no E0425 on emitted code. Same for list/enumerate/zip ForEach lanes if they share the gap (probe first). Empty-iterable + use-after-loop must NOT silently produce a default value (Python raises NameError) — fail-loud there. Witness covers leak + empty-iterable."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Fail-loud (E0425 at rustc), not silent — but the loop-var-leak idiom (`for x in xs: ...` then use x after) is COMMON Python, so medium priority. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1013
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1013: [rust/semantics] MUTATION-DURING-ITERATION (append to a list inside its own for-loop) → E0502 invalid Rust; should be a CLEAN REFUSAL. Found by sweep #7 (PMAT-1011). `for x in xs: xs.append(99)` — Python iterates the LIVE list (the appended element IS visited; can loop forever), a semantics xpile''s value model fundamentally cannot express: the emit `for x in xs.iter().cloned()` + `xs.push(99)` is an immutable/mutable borrow conflict (E0502). Even a compiling emit (iterate a snapshot) would SILENTLY diverge from Python''s live-list semantics. Fix: frontend detection — receiver name mutated (append/insert/remove/pop/clear/extend/[i]=/del) anywhere in the body of a for-loop iterating that same name → FrontendError naming the pattern and the live-list reason (cf. the alias_arg_mutate_reject.py precedent PMAT-884). Care: nested loops (mutation of the OUTER iterated name inside an inner loop is the same bug), shadowing, and mutation of a DIFFERENT list stays allowed.'
+  status: planned
+  priority: medium
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "`for x in xs: xs.append(99)` (and remove/pop/insert/[i]=/del variants, incl. via a nested loop body) → clear FrontendError naming mutation-during-iteration + the live-list semantics reason — no E0502 on emitted code. Mutating a DIFFERENT list inside the loop stays accepted (regression witness). Fixture + e2e reject witness, PMAT-884-style."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Same family as PMAT-884 (alias-then-mutate clean-reject) and PMAT-1008 (aliasing): Python reference semantics the value model cannot express — the honest move is a clean refusal, not a plausible-but-divergent emit. Fail-loud today (E0502), so medium priority. Filed by PMAT-1011 sweep #7.'
+- id: PMAT-1014
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1014: [rust/correctness] title()/capitalize() map the titlecase-DIGRAPH scalars to UPPERCASE, not TITLECASE — ǳ (U+01F3) becomes Ǳ (U+01F1) instead of Python''s ǲ (U+01F2). Found by sweep #7 (PMAT-1011), two DIVERGE witnesses (title + capitalize, shared root cause). PMAT-701 derived titlecase from the uppercase EXPANSION (std has no char::to_titlecase), which is correct for expanding scalars (ß→Ss) but WRONG for the single-char digraphs with distinct Lt forms: Ǆ/ǅ/ǆ (U+01C4..6), Ǉ/ǈ/ǉ, Ǌ/ǋ/ǌ (U+01C7..CC), Ǳ/ǲ/ǳ (U+01F1..F3) — their uppercase is the all-caps form but their TITLECASE is the middle Lt form. Unicode Lt is a closed small set (~31 code points: the 4 Latin digraph triples + Greek ᾈ-family composed forms); fix = a small const lookup for the digraph triples (any of the 3 forms → the ǲ-style Lt form) consulted BEFORE the uppercase-expansion path in the shared titlecase helper; the Greek Lt forms follow the same to_uppercase-is-wrong pattern and can ride the same table if cheap.'
+  status: planned
+  priority: low
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "\"ǳ\".title() == \"ǲ\" and \"ǳa\".capitalize() == \"ǲa\" == CPython (currently Ǳ/Ǳa — silent DIVERGE); ß→Ss and ﬂ→Fl expansion regressions hold (PMAT-701); a rustc round-trip witness covers digraph + expansion + ASCII."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Silent divergence but on an extremely rare input class (Latin digraph Lt scalars, Unicode-trivia territory). The 12 digraph code points are a 4-line const match. Filed by PMAT-1011 sweep #7 (string-deep finder).'
 - id: PMAT-985
   github_issue: null
   item_type: task

@@ -17012,3 +17012,93 @@ fn integ_paren_balance() {
     let driver = r#"fn main() { assert_eq!(balance("(()(()))".to_string()), 30); }"#;
     assert_rustc_runs("integ_paren_balance", &rust, driver);
 }
+
+/// PMAT-1011 (sweep #7, fix 1): 3-arg `pow` with a NEGATIVE exponent is the
+/// Python 3.8+ MODULAR INVERSE (bpo-36027) — `pow(3, -1, 7) == 5` — raising
+/// `ValueError: base is not invertible for the given modulus` when
+/// `gcd(base, mod) != 1`. The old emit panicked with the stale pre-3.8
+/// "2nd argument cannot be negative" message.
+#[test]
+fn pow_neg_exp_modinv() {
+    let rust = xpile_transpile_to_rust("pow_neg_exp_modinv.py");
+    assert!(
+        rust.contains("base is not invertible for the given modulus"),
+        "modular-inverse ValueError guard (3.8+ semantics):\n{rust}"
+    );
+    assert!(
+        !rust.contains("cannot be negative when 3rd argument specified"),
+        "the stale pre-3.8 negative-exponent panic must be gone:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(powmod(3, -1, 7), 5, "modular inverse");
+    assert_eq!(powmod(2, -2, 9), 7, "inverse then square");
+    assert_eq!(powmod(3, -1, -7), -2, "negative modulus re-sign (PMAT-605/619 holds)");
+    assert_eq!(powmod(-3, -1, 7), 2, "negative base normalises first");
+    assert_eq!(powmod(3, -1, 1), 0, "modulus 1 → 0");
+    assert_eq!(powmod(2, 10, 1000), 24, "positive path regression");
+    assert_eq!(powmod(-2, 3, -5), -3, "PMAT-619 negative-modulus regression");
+    assert!(std::panic::catch_unwind(|| powmod(2, -1, 4)).is_err(), "gcd!=1 raises");
+    assert!(std::panic::catch_unwind(|| powmod(0, -1, 5)).is_err(), "0 not invertible");
+}
+"#;
+    assert_rustc_runs("pow_neg_exp_modinv", &rust, driver);
+}
+
+/// PMAT-1011 (sweep #7, fix 2): the with-start find/index form (PMAT-675)
+/// MOVED the receiver (`let __s = (s)`), so `s.index("a", 2)` followed by any
+/// later use of `s` was rustc E0382 — the same bug PMAT-851 fixed for the
+/// single-arg form. The receiver now binds a clone.
+#[test]
+fn find_start_receiver_reuse() {
+    let rust = xpile_transpile_to_rust("find_start_receiver_reuse.py");
+    let driver = r#"
+fn main() {
+    // "banana": index("a", 2) == 3, count("a", 1) == 3, len == 6.
+    assert_eq!(f("banana".to_string()), 12);
+}
+"#;
+    assert_rustc_runs("find_start_receiver_reuse", &rust, driver);
+}
+
+/// PMAT-1011 (sweep #7, fix 3): CPython validates the rjust/ljust/center fill
+/// is EXACTLY one character (TypeError) at the call — even when no padding is
+/// needed. The old emit silently repeated a multi-char fill (silent-acceptance
+/// divergence where CPython raises).
+#[test]
+fn fill_char_one_char() {
+    let rust = xpile_transpile_to_rust("fill_char_one_char.py");
+    assert!(
+        rust.contains("the fill character must be exactly one character long"),
+        "one-char fill TypeError guard:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(ok("ab".to_string()), "000ab", "single-char fill still pads");
+    assert!(std::panic::catch_unwind(|| bad_center("ab".to_string())).is_err(), "multi-char fill raises");
+    assert!(std::panic::catch_unwind(|| bad_nopad("abcdef".to_string())).is_err(), "raises even with no deficit");
+}
+"#;
+    assert_rustc_runs("fill_char_one_char", &rust, driver);
+}
+
+/// PMAT-1011 (sweep #7, fix 4): bool↔float comparison (`True == 1.0`,
+/// `True < 1.5`, `0.5 < True`) — Python-valid (bool is an int subtype) but
+/// emitted as a bare `bool OP f64` (rustc E0308). The bool side coerces to
+/// i64 and routes through the exact MixedIntFloatCmp template (PMAT-745),
+/// closing the follow-up deferred by PMAT-617.
+#[test]
+fn bool_float_compare() {
+    let rust = xpile_transpile_to_rust("bool_float_compare.py");
+    let driver = r#"
+fn main() {
+    assert!(eq_one(true), "True == 1.0");
+    assert!(!eq_one(false), "False != 1.0");
+    assert!(lt_threshold(true, 1.5), "True < 1.5");
+    assert!(!lt_threshold(true, 0.5), "True >= 0.5");
+    assert!(rev_cmp(0.5, true), "0.5 < True");
+    assert!(!rev_cmp(1.5, true), "1.5 >= True");
+}
+"#;
+    assert_rustc_runs("bool_float_compare", &rust, driver);
+}
