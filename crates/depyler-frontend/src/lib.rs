@@ -18728,6 +18728,26 @@ fn build_chain_cmp(
             op: flip_cmp(cmp),
         });
     }
+    // PMAT-1011 (sweep #7): bool↔float comparison — the "separate rarer
+    // follow-up" deferred by PMAT-617. Python `True == 1.0` / `True < 1.5` are
+    // valid (bool is an int subtype); xpile emitted a bare `bool OP f64`
+    // (rustc E0308). Coerce the bool side to i64 and route through the same
+    // exact MixedIntFloatCmp node as int↔float (a 0/1 int is trivially exact,
+    // and this reuses the single codegen template).
+    if *lt == Type::Bool && *rt == Type::F64 {
+        return Ok(Expr::MixedIntFloatCmp {
+            int: Box::new(bool_to_i64_cast(lhs)),
+            float: Box::new(rhs),
+            op: cmp,
+        });
+    }
+    if *lt == Type::F64 && *rt == Type::Bool {
+        return Ok(Expr::MixedIntFloatCmp {
+            int: Box::new(bool_to_i64_cast(rhs)),
+            float: Box::new(lhs),
+            op: flip_cmp(cmp),
+        });
+    }
     let mut lhs = lhs;
     let mut rhs = rhs;
     if *lt == Type::Bool && *rt == Type::I64 {
