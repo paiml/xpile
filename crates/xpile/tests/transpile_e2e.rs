@@ -1946,7 +1946,7 @@ fn main() {
 fn sorted_key_lambda() {
     let rust = xpile_transpile_to_rust("sorted_key.py");
     assert!(
-        rust.contains("sort_by_key(|__k| { let w = __k.clone(); w.chars().count() as i64 }"),
+        rust.contains("sort_by_key(|__k| { let w = __k.clone(); ((w).chars().count() as i64) }"),
         "expected sort_by_key emission, got:\n{rust}"
     );
     let driver = r#"
@@ -2225,7 +2225,7 @@ fn minmax_key_lambda() {
     let rust = xpile_transpile_to_rust("minmax_key.py");
     assert!(
         rust.contains(
-            ".iter().cloned().rev().max_by_key(|__k| { let w = __k.clone(); w.chars().count() as i64 })"
+            ".iter().cloned().rev().max_by_key(|__k| { let w = __k.clone(); ((w).chars().count() as i64) })"
         ) && rust.contains(".iter().cloned().min_by_key("),
         "expected min/max_by_key emission, got:\n{rust}"
     );
@@ -9586,7 +9586,7 @@ fn len_encode_bytes() {
         "len(s.encode()) should be byte length s.len():\n{rust}"
     );
     assert!(
-        rust.contains("fn char_len(s: String) -> i64 {\n    s.chars().count() as i64"),
+        rust.contains("fn char_len(s: String) -> i64 {\n    ((s).chars().count() as i64)"),
         "plain len(s) must still count code points:\n{rust}"
     );
     let driver = r#"
@@ -17322,4 +17322,30 @@ fn oop_struct_alias_mutate_is_rejected() {
         stderr.contains("aliases struct `c` as `c2`") && stderr.contains("shares the object"),
         "the rejection should name the alias pair and the sharing reason:\n{stderr}"
     );
+}
+
+/// PMAT-1017 (sweep #8): four fix classes on the day-old OOP surface —
+/// expression-position mutating calls mark the receiver mut (was E0596 ×4),
+/// FieldAssign coerces to the field's declared type (int→float was E0308),
+/// CharCount parenthesizes (`… as i64 <` parsed as generics), and the
+/// struct-alias rule keys off OBJECT mutation (rebinding detaches — Python-
+/// safe clone) + allows dead aliases. Differentially verified vs CPython.
+#[test]
+fn oop_sweep8_fixes() {
+    let rust = xpile_transpile_to_rust("oop_sweep8_fixes.py");
+    assert!(
+        rust.contains("let mut p: Counter"),
+        "expression-position mutating call binds `let mut` (PMAT-1017 fix 1):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // CPython: take→4, take+take→3+2=5, value→2 ⇒ 4+5+2=11.
+    assert_eq!(expr_position_mut(), 11, "let-RHS + binary-expr mutating calls");
+    // CPython: c rebinds to 99 (detach), c2 keeps the shared-then-cloned 5 ⇒ 104.
+    assert_eq!(rebound_alias(), 104, "rebinding is not object mutation");
+    // CPython: len("ab")<6 ⇒ x+0.5 = 3.5 (int 3 widened to the float field).
+    assert_eq!(field_widen_and_len(3), 3.5, "field widening + parenthesized len cmp");
+}
+"#;
+    assert_rustc_runs("oop_sweep8_fixes", &rust, driver);
 }

@@ -2306,6 +2306,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, &args[0], mode)?;
                 // PMAT-666: clamp a negative width to 0 (Python returns unchanged).
                 out.push_str(").max(0) as usize; let __n = __s.chars().count(); if __n >= __w { __s } else { let __pad = \"0\".repeat(__w - __n); if __s.starts_with('-') || __s.starts_with('+') { format!(\"{}{}{}\", &__s[..1], __pad, &__s[1..]) } else { format!(\"{}{}\", __pad, __s) } } }");
+            } else if matches!(op, StrMethodOp::CharCount) {
+                // PMAT-564: `len(str)` → Unicode char count (not byte len).
+                // PMAT-1017 (sweep #8): the whole expression is PARENTHESIZED —
+                // the suffix-only emit produced `…count() as i64 < 6i64`, which
+                // rustc parses as `i64<…` GENERIC arguments, not a comparison
+                // (E0308/E0747 invalid emit on `len(g.s) < 6`-shaped code).
+                out.push_str("((");
+                emit_expr(out, recv, mode)?;
+                out.push_str(").chars().count() as i64)");
             } else if matches!(op, StrMethodOp::Center) {
                 // PMAT-502cu: `.center(w)` → space-pad centred, CPython bias
                 // `left = marg/2 + (marg & w & 1)` (extra padding parity).
@@ -2523,7 +2532,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     // does not) — trim against the Python whitespace predicate.
                     StrMethodOp::Strip => out.push_str(".trim_matches(|__c: char| __c.is_whitespace() || matches!(__c, '\\u{1c}'..='\\u{1f}')).to_string()"),
                     // PMAT-564: `len(str)` → Unicode char count (not byte len).
-                    StrMethodOp::CharCount => out.push_str(".chars().count() as i64"),
+                    StrMethodOp::CharCount => unreachable!("CharCount handled above (PMAT-1017)"),
                     // PMAT-530: `s[::-1]` → reverse by Unicode scalar value.
                     StrMethodOp::Reverse => {
                         out.push_str(".chars().rev().collect::<String>()")
