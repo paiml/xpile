@@ -2134,18 +2134,19 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 out.push_str(").chars().all(|__c| ");
                 out.push_str(match op {
-                    // PMAT-1004: Python `str.isdigit()` is UNICODE-aware (any
-                    // char with Numeric_Type Digit/Decimal — Arabic-Indic ٣,
-                    // fullwidth １, superscript ², circled ①), NOT just ASCII
-                    // '0'..'9'. `is_ascii_digit()` silently returned false for
-                    // every non-ASCII digit (a real value divergence vs CPython).
-                    // `is_numeric()` is a strict superset (no ASCII regression)
-                    // and fixes the common Nd/Digit cases; it slightly
-                    // OVER-accepts the rare Nl (Roman numerals) / No-fraction
-                    // chars that exact CPython isdigit rejects — an honest narrow
-                    // imprecision (exact isdigit needs a Unicode Numeric_Type
-                    // table / dep, out of scope), far better than ASCII-only.
-                    StrMethodOp::IsDigit => "__c.is_numeric()",
+                    // PMAT-1004: Python `str.isdigit()` is UNICODE-aware (chars
+                    // with Numeric_Type Digit/Decimal — Arabic-Indic ٣, fullwidth
+                    // １, superscript ², circled ①) but EXCLUDES Nl (Roman
+                    // numerals) and No-fractions (½), so it is DISTINCT from
+                    // isnumeric (the e2e str_predicates test enforces this on ½).
+                    // `is_ascii_digit()` under-reports non-ASCII digits, but
+                    // `is_numeric()` OVER-reports (would make isdigit==isnumeric,
+                    // breaking ½). Rust std has NO exact-isdigit predicate
+                    // (Numeric_Type is not a std char property), so this stays
+                    // ASCII-only as a documented honest limit; the precise
+                    // Unicode-isdigit fix (a Numeric_Type table / dep) is filed
+                    // as PMAT-1005.
+                    StrMethodOp::IsDigit => "__c.is_ascii_digit()",
                     // PMAT-643: Unicode Number categories (Nd/Nl/No), matching
                     // Python `str.isnumeric()`.
                     StrMethodOp::IsNumeric => "__c.is_numeric()",
@@ -5143,32 +5144,41 @@ mod tests {
     }
 
     #[test]
-    fn isdigit_is_unicode_aware_pmat_1004() {
-        // Found by the Rust-lane differential sweep: `str.isdigit()` lowered to
-        // `is_ascii_digit()`, silently returning false for every non-ASCII
-        // Unicode digit (Arabic-Indic, fullwidth, superscript, circled) that
-        // CPython accepts. Must use the Unicode-aware `is_numeric()`.
-        let f = Function {
-            name: "f".into(),
-            params: vec![Param {
-                name: "s".into(),
-                ty: Type::Str,
-                mutable: false,
-            }],
-            return_type: Type::Bool,
-            body: Block {
-                stmts: vec![],
-                trailing_return: Expr::StrMethod {
-                    recv: Box::new(Expr::Ident("s".into())),
-                    op: StrMethodOp::IsDigit,
-                    args: vec![],
+    fn isdigit_stays_distinct_from_isnumeric_pmat_1004() {
+        // The Rust-lane sweep flagged isdigit as ASCII-only (wrong for non-ASCII
+        // digits). A naive fix to is_numeric() would over-accept (½ is numeric
+        // but NOT a digit), CONFLATING isdigit with isnumeric — which the e2e
+        // str_predicates test correctly forbids, and Rust std has no exact-isdigit
+        // predicate. So isdigit stays is_ascii_digit (documented ASCII limit,
+        // precise Unicode fix = PMAT-1005) and MUST remain distinct from
+        // isnumeric's is_numeric.
+        let mk = |op: StrMethodOp| {
+            let f = Function {
+                name: "f".into(),
+                params: vec![Param {
+                    name: "s".into(),
+                    ty: Type::Str,
+                    mutable: false,
+                }],
+                return_type: Type::Bool,
+                body: Block {
+                    stmts: vec![],
+                    trailing_return: Expr::StrMethod {
+                        recv: Box::new(Expr::Ident("s".into())),
+                        op,
+                        args: vec![],
+                    },
                 },
-            },
+            };
+            emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok")
         };
-        let rust = emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok");
         assert!(
-            rust.contains("is_numeric()") && !rust.contains("is_ascii_digit"),
-            "isdigit must be Unicode-aware via is_numeric (PMAT-1004):\n{rust}"
+            mk(StrMethodOp::IsDigit).contains("is_ascii_digit()"),
+            "isdigit stays ASCII (documented limit; distinct from isnumeric)"
+        );
+        assert!(
+            mk(StrMethodOp::IsNumeric).contains("is_numeric()"),
+            "isnumeric is Unicode-aware (is_numeric)"
         );
     }
 
