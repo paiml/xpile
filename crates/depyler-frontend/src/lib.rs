@@ -3000,6 +3000,91 @@ fn lower_function_def(
                         }
                     }
                 }
+                // PMAT-1015 (sweep #7): the TUPLE-target analogue — `for i, v
+                // in enumerate(xs)` (or zip / .items() / list-of-tuples) with
+                // FRESH targets read after the loop. PMAT-871 leaks PRE-BOUND
+                // tuple targets (pair_leak_decision); a fresh one had no
+                // pre-declare, so the post-loop read was rustc E0425. Derive
+                // per-element types per iterable form (enumerate → (I64,
+                // elem); zip → per-arg elems; anything that probe-lowers to
+                // list[tuple] — .items(), a list-of-tuples var — → the tuple
+                // elems) and pre-declare EACH fresh, read-after-loop target
+                // with its primitive default; the PMAT-871 leak path then
+                // assigns it every iteration. Same PMAT-838 empty-iterable
+                // tradeoff (default value where Python raises NameError).
+                if let ast::Expr::Tuple(tt) = forst.target.as_ref() {
+                    let names: Vec<String> = tt
+                        .elts
+                        .iter()
+                        .filter_map(|e| match e {
+                            ast::Expr::Name(n) => Some(n.id.to_string()),
+                            _ => None,
+                        })
+                        .collect();
+                    // A str iterable yields 1-char Strings; a list yields its
+                    // element — the per-arg element type for enumerate/zip.
+                    let elem_of = |ctx: &LoweringCtx, e: &ast::Expr| -> Option<Type> {
+                        let p = lower_expr_in_ctx(ctx, e.clone()).ok()?;
+                        match infer_type_in_ctx(ctx, &p) {
+                            Type::List(el) => Some(*el),
+                            Type::Str => Some(Type::Str),
+                            _ => None,
+                        }
+                    };
+                    let elem_tys: Option<Vec<Type>> = if names.len() != tt.elts.len() {
+                        None // non-Name element (starred/nested) — out of scope
+                    } else {
+                        match forst.iter.as_ref() {
+                            ast::Expr::Call(c)
+                                if matches!(&*c.func, ast::Expr::Name(n) if n.id.as_str() == "enumerate")
+                                    && !c.args.is_empty()
+                                    && names.len() == 2 =>
+                            {
+                                elem_of(&ctx, &c.args[0]).map(|el| vec![Type::I64, el])
+                            }
+                            ast::Expr::Call(c)
+                                if matches!(&*c.func, ast::Expr::Name(n) if n.id.as_str() == "zip")
+                                    && c.args.len() == names.len() =>
+                            {
+                                c.args.iter().map(|a| elem_of(&ctx, a)).collect()
+                            }
+                            other => lower_expr_in_ctx(&ctx, other.clone()).ok().and_then(|p| {
+                                match infer_type_in_ctx(&ctx, &p) {
+                                    Type::List(el) => match *el {
+                                        Type::Tuple(tys) if tys.len() == names.len() => Some(tys),
+                                        _ => None,
+                                    },
+                                    _ => None,
+                                }
+                            }),
+                        }
+                    };
+                    if let Some(tys) = elem_tys {
+                        let mut after = HashMap::new();
+                        for s in &leading[i + 1..] {
+                            count_reads_stmt(s, &mut after);
+                        }
+                        count_reads_stmt(last, &mut after);
+                        for (n, t) in names.iter().zip(tys.iter()) {
+                            if n != "_"
+                                && !ctx.bound.contains(n)
+                                && !ctx.loop_scoped.contains(n)
+                                && after.get(n).copied().unwrap_or(0) > 0
+                            {
+                                if let Some(d) = primitive_default(t) {
+                                    stmts.push(Stmt::Let {
+                                        name: n.clone(),
+                                        ty: t.clone(),
+                                        value: d,
+                                        mutable: true,
+                                    });
+                                    ctx.bound.insert(n.clone());
+                                    ctx.name_types.insert(n.clone(), t.clone());
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         // A single Python statement may lower to multiple meta-HIR
