@@ -558,6 +558,37 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Fundamental Python-reference-vs-Rust-value gap, filed by PMAT-1007. HIGH priority because case (b)/(c) are SILENT miscompiles of a common Python pattern, but the fix needs a strategic call (Rc<RefCell> is invasive; refuse is honest-but-narrowing). Flagged for a design decision rather than an autonomous grind. Interim mitigation to consider FIRST: make the SILENT list-of-mutable-refs / mutable-repeat cases fail-loud (conservative refuse) so nothing miscompiles silently, deferring the full Rc<RefCell> model.'
+- id: PMAT-1009
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1009: [rust/correctness] Float zero-fill in .format()/f-strings + FORMATTING differential sweep. A CPython-differential sweep of the Rust lane FORMATTING/SLICING/UNPACKING surface (f-strings, str.format, slice-with-step, tuple unpack, enumerate — untested by prior sweeps; formatting is the classic Python↔Rust divergence source). 206 programs across fstrings/str_format_slice/unpack_iter + an independent verify pass: 5 CONFIRMED, 0 false positives. CLASS A (FIXED): a FLOAT with a zero-fill width spec (`"{:05}".format(5.0)` / `f"{x:05}"`) rendered "  5.0" not CPython "005.0". Root cause: a float is pre-rendered to its Python-repr String via ToStr{of_float:true} (to get "5.0" not Rust''s "5"), then the width spec `{:>05}` is applied to that STRING — but Rust''s `0` flag is NUMERIC-only, INERT on a &str/String, so zero-fill silently degraded to space-fill. Fix: float_repr_zero_fill_width detects a ToStr{of_float:true} value + a pure `>0W`/`0W` spec and emits Python SIGN-AWARE zero-fill (zeros AFTER the sign) manually — `5.0`@w5→`005.0`, `-3.5`@w6→`-003.5` — like the IntRadixStr PMAT-773 int path. Raw ints (native numeric zero-fill) and precision specs are untouched (narrow by the ToStr guard). CLASS B (filed PMAT-1010): `a, a = 1, 2` (duplicate unpack target) → E0416 invalid Rust (rare; Python last-wins, Rust forbids duplicate pattern bindings).'
+  status: done
+  priority: medium
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "CLASS A FIXED: crates/xpile-rust-codegen float_repr_zero_fill_width + the FormatSpec sign-aware zero-fill branch. Verified via the cargo harness: `\"{:05}\".format(5.0)`→005.0, `{:08}`(1.0)→000001.0, `{:06}`(3.5)→0003.5, `[{:07}]`(12.5)→[00012.5], `{:06}`(-3.5)→-003.5 (SIGN-AWARE), all == CPython (were space-filled). Regressions hold: `{:05}`.format(42)→00042 (int native zero-fill), f\"{y:.2f}\"→3.14 (precision). Lib witness float_zero_fill_is_sign_aware_pmat_1009 asserts the float path uses manual sign-aware fill AND a raw int does NOT."
+  - "SCOPE: narrow by the ToStr{of_float:true} guard + pure `>0W`/`0W` spec parse — precision+zerofill combos (`>08.2`), explicit sign (`+0W`), grouping (`0W,`) fall through to the existing path (rarer, not this slice)."
+  - "CLASS B (`a,a=1,2` dup unpack) filed as PMAT-1010 (rare, E0416 fail-loud)."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-rust-codegen (18 lib incl the new witness) + xpile e2e (678, no regression). Touched crates/xpile-rust-codegen/ + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Formatting sweep — the 6th differential sweep of the campaign (WASM ×3, Rust dep-free, Rust dict, Rust formatting). Formatting is a rich divergence source; the ToStr-pre-render-then-pad pattern loses numeric formatter flags on the String. See [[feedback-ultracode-adversarial-verify]].'
+- id: PMAT-1010
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1010: [rust/correctness] `a, a = 1, 2` duplicate tuple-unpack target → E0416 invalid Rust. Found by the PMAT-1009 formatting/unpack sweep. Python multiple-target unpack assigns left-to-right SEQUENTIALLY (last write wins → a==2); xpile lowers a tuple-unpack to a single irrefutable destructuring `let (mut a, mut a) = (1i64, 2i64)`, and Rust forbids an identifier bound more than once in one pattern (error[E0416]). Fix options: (1) detect duplicate target names and emit sequential shadowing bindings (`let a = t0; let a = t1;` last-wins), or (2) refuse with a clear message. Low priority: a rare pattern AND it fails LOUD (rustc E0416), not a silent miscompile.'
+  status: planned
+  priority: low
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "`a, a = 1, 2; print(a)` either transpiles + runs to 2 (Python last-wins, via sequential shadowing) or is refused with a clear message — no E0416 on emitted code. A witness covers it."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Rare edge (duplicate unpack target), fail-loud (E0416) not silent — low priority. Filed by PMAT-1009.'
 - id: PMAT-985
   github_issue: null
   item_type: task

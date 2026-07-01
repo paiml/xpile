@@ -1794,6 +1794,22 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     out,
                     "; if __nf.is_nan() {{ String::from(\"nan\") }} else {{ format!(\"{{:{rust_spec}}}\", __nf) }} }}"
                 )?;
+            } else if let Some(width) = float_repr_zero_fill_width(value, rust_spec) {
+                // PMAT-1009: a FLOAT with a pure zero-fill width spec (`{:05}`) is
+                // pre-rendered to its Python-repr String ("5.0" not Rust's "5"),
+                // then the width spec is applied to that String. But Rust's `0`
+                // flag is NUMERIC-only — inert on a `&str`/String — so zero-fill
+                // silently degraded to SPACE-fill (`"  5.0"` vs CPython `"005.0"`).
+                // Apply Python's SIGN-AWARE zero-fill to the repr string manually
+                // (zeros go AFTER the sign): `-3.5` @ w6 → `-003.5`, `5.0` @ w5 →
+                // `005.0`. Same posture as the IntRadixStr PMAT-773 int path.
+                // Found by the Rust-lane formatting differential sweep.
+                out.push_str("{ let __zf = ");
+                emit_expr(out, value, mode)?;
+                write!(
+                    out,
+                    "; let (__zs, __zm): (&str, &str) = if __zf.starts_with('-') {{ (\"-\", &__zf[1..]) }} else {{ (\"\", &__zf[..]) }}; let __zp = ({width}usize).saturating_sub(__zs.len() + __zm.chars().count()); format!(\"{{}}{{}}{{}}\", __zs, \"0\".repeat(__zp), __zm) }}"
+                )?;
             } else {
                 write!(out, "format!(\"{{:{rust_spec}}}\", ")?;
                 emit_expr(out, value, mode)?;
@@ -4561,6 +4577,26 @@ fn is_dict_get_opt(e: &Expr) -> bool {
     matches!(e, Expr::DictGetOpt { .. })
 }
 
+/// PMAT-1009: parse a PURE zero-fill width for a FLOAT being rendered to its
+/// Python-repr String — the only case that hits the broken zero-fill-on-String
+/// path. Returns `Some(width)` iff `value` is `ToStr { of_float: true }` (a float
+/// stringified to "5.0"/"−3.5", NOT a raw int which zero-fills natively) AND
+/// `rust_spec` is `>0<digits>` / `0<digits>` (the `0` flag + width, no
+/// precision/sign/type/grouping). Anything else (`>0W.P`, `+0W`, a raw int)
+/// returns `None` and falls through to the existing `format!` path — narrow by
+/// construction.
+fn float_repr_zero_fill_width(value: &Expr, rust_spec: &str) -> Option<usize> {
+    if !matches!(value, Expr::ToStr { of_float: true, .. }) {
+        return None;
+    }
+    let s = rust_spec.strip_prefix('>').unwrap_or(rust_spec);
+    let digits = s.strip_prefix('0')?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<usize>().ok()
+}
+
 /// PMAT-618: emit an `==`/`!=` where exactly one operand is a no-default
 /// `d.get(k)` (`Option<T>`). The Option side is emitted as-is; the bare-value
 /// side is wrapped in `Some(...)` so the comparison is `Option<T> == Some(v)`,
@@ -5133,6 +5169,56 @@ mod tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn float_zero_fill_is_sign_aware_pmat_1009() {
+        // Found by the Rust-lane formatting differential sweep: `"{:05}".format(5.0)`
+        // gave "  5.0" not CPython's "005.0" — a float is pre-rendered to its
+        // repr String (ToStr{of_float:true}) and Rust's `0` flag is inert on a
+        // String. The fix applies Python's SIGN-AWARE zero-fill to the repr
+        // string (zeros after the sign); a raw int (not ToStr) must NOT take this
+        // path (Rust zero-fills it natively).
+        let spec = |value: Expr| Expr::FormatSpec {
+            value: Box::new(value),
+            rust_spec: ">05".into(),
+            of_float: false,
+        };
+        let float_val = Expr::ToStr {
+            value: Box::new(Expr::LitFloat(5.0)),
+            of_float: true,
+        };
+        let f = Function {
+            name: "f".into(),
+            params: vec![],
+            return_type: Type::Str,
+            body: Block {
+                stmts: vec![],
+                trailing_return: spec(float_val),
+            },
+        };
+        let rust = emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok");
+        assert!(
+            rust.contains("\"0\".repeat(") && rust.contains("starts_with('-')"),
+            "a float zero-fill must use sign-aware manual zero-fill (PMAT-1009):\n{rust}"
+        );
+        // A raw int with the same spec must NOT take the manual path (Rust's
+        // numeric zero-fill is correct) — it falls through to `format!`.
+        let int_f = Function {
+            name: "g".into(),
+            params: vec![],
+            return_type: Type::Str,
+            body: Block {
+                stmts: vec![],
+                trailing_return: spec(Expr::LitInt(42)),
+            },
+        };
+        let rust_int =
+            emit_module(&module_with("fixture", vec![Item::Function(int_f)])).expect("emit ok");
+        assert!(
+            !rust_int.contains("\"0\".repeat("),
+            "a raw int must keep native numeric zero-fill, not the manual path:\n{rust_int}"
+        );
     }
 
     #[test]
