@@ -578,17 +578,19 @@ roadmap:
 - id: PMAT-1010
   github_issue: null
   item_type: task
-  title: 'PMAT-1010: [rust/correctness] `a, a = 1, 2` duplicate tuple-unpack target → E0416 invalid Rust. Found by the PMAT-1009 formatting/unpack sweep. Python multiple-target unpack assigns left-to-right SEQUENTIALLY (last write wins → a==2); xpile lowers a tuple-unpack to a single irrefutable destructuring `let (mut a, mut a) = (1i64, 2i64)`, and Rust forbids an identifier bound more than once in one pattern (error[E0416]). Fix options: (1) detect duplicate target names and emit sequential shadowing bindings (`let a = t0; let a = t1;` last-wins), or (2) refuse with a clear message. Low priority: a rare pattern AND it fails LOUD (rustc E0416), not a silent miscompile.'
-  status: planned
+  title: 'PMAT-1010: [rust/correctness] `a, a = 1, 2` duplicate tuple-unpack target → E0416 invalid Rust. Found by the PMAT-1009 formatting/unpack sweep. Python multiple-target unpack assigns left-to-right SEQUENTIALLY (last write wins → a==2); xpile lowered a tuple-unpack to a single irrefutable destructuring `let (mut a, mut a) = (1i64, 2i64)`, and Rust forbids an identifier bound more than once in one pattern (error[E0416]). FIXED (simpler than either filed option): earlier occurrences of a duplicated plain-name target are DEAD STORES (unobservable), so the LetTuple pattern builder masks all-but-last occurrences to `_` — `let (_, a) = (1i64, 2i64)` → a==2, Python-equal. The frontend already last-wins the name TYPE (`name_types.insert` per name in order), so `a, a = 1, "x"` types a as str consistently. Applied to BOTH the Rust and Ruchy backends (same destructure shape). The mut flag is per-NAME (ctx.mutable.contains), so the kept occurrence carries it.'
+  status: done
   priority: low
   created: 2026-07-01T00:00:00Z
   acceptance_criteria:
-  - "`a, a = 1, 2; print(a)` either transpiles + runs to 2 (Python last-wins, via sequential shadowing) or is refused with a clear message — no E0416 on emitted code. A witness covers it."
+  - "FIXED via mask-to-`_`: `a, a = 1, 2; print(a)` → 2 == CPython (was SKIP-INVALID-RUST E0416). Differentially verified: triple dup `a,a,a=1,2,3`→3; mixed `a,b,a=1,5,3` then `a=a+b`→8/5 (mut on kept occurrence); differing types `a,a=1,\"x\"`→x; bound-name dup `a=0; a,a=1,2`→2 (temps+Assign path, already last-wins). Regressions hold: swap `a,b=b,a`→2/1, discards `a,_,_=1,2,3`→1."
+  - "Lib witness dup_unpack_target_masks_all_but_last_pmat_1010 asserts `let (_, a) =` + no twice-bound pattern + distinct-name unpack untouched. Ruchy backend gets the same mask (same E0416 shape in rust-like patterns)."
+  - "DONE: gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-rust-codegen (19 lib) + xpile-ruchy-codegen (10) + xpile e2e (678, no regression). Touched crates/xpile-rust-codegen/ + crates/xpile-ruchy-codegen/ + docs/roadmaps/roadmap.yaml."
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Rare edge (duplicate unpack target), fail-loud (E0416) not silent — low priority. Filed by PMAT-1009.'
+  notes: 'Rare edge (duplicate unpack target), fail-loud (E0416) not silent — was low priority, closed as a bounded fill-in slice while differential sweep #7 ran. The mask-to-`_` insight: dead stores of plain names are unobservable, so Python last-wins ≡ bind-only-the-last — no sequential shadowing machinery needed. Filed by PMAT-1009.'
 - id: PMAT-985
   github_issue: null
   item_type: task

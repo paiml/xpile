@@ -499,11 +499,16 @@ fn emit_stmt_indented(
         } => {
             // PMAT-547: mark each unpacked name `mut` per its `mutable` flag.
             // PMAT-662: never prefix the `_` wildcard with `mut` (see rust backend).
+            // PMAT-1010: mask all-but-last duplicate targets to `_` (`a, a = 1, 2`
+            // is Python last-wins; a twice-bound pattern name is E0416 — see rust
+            // backend).
             let pat = names
                 .iter()
                 .enumerate()
                 .map(|(i, n)| {
-                    if n != "_" && mutable.get(i).copied().unwrap_or(false) {
+                    if n != "_" && names[i + 1..].contains(n) {
+                        "_".to_string()
+                    } else if n != "_" && mutable.get(i).copied().unwrap_or(false) {
                         format!("mut {n}")
                     } else {
                         n.clone()
