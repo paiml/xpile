@@ -2134,9 +2134,21 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 emit_expr(out, recv, mode)?;
                 out.push_str(").chars().all(|__c| ");
                 out.push_str(match op {
+                    // PMAT-1004: Python `str.isdigit()` is UNICODE-aware (chars
+                    // with Numeric_Type Digit/Decimal — Arabic-Indic ٣, fullwidth
+                    // １, superscript ², circled ①) but EXCLUDES Nl (Roman
+                    // numerals) and No-fractions (½), so it is DISTINCT from
+                    // isnumeric (the e2e str_predicates test enforces this on ½).
+                    // `is_ascii_digit()` under-reports non-ASCII digits, but
+                    // `is_numeric()` OVER-reports (would make isdigit==isnumeric,
+                    // breaking ½). Rust std has NO exact-isdigit predicate
+                    // (Numeric_Type is not a std char property), so this stays
+                    // ASCII-only as a documented honest limit; the precise
+                    // Unicode-isdigit fix (a Numeric_Type table / dep) is filed
+                    // as PMAT-1005.
                     StrMethodOp::IsDigit => "__c.is_ascii_digit()",
                     // PMAT-643: Unicode Number categories (Nd/Nl/No), matching
-                    // Python `str.isnumeric()` (broader than `isdigit`).
+                    // Python `str.isnumeric()`.
                     StrMethodOp::IsNumeric => "__c.is_numeric()",
                     StrMethodOp::IsAlpha => "__c.is_alphabetic()",
                     StrMethodOp::IsAlnum => "__c.is_alphanumeric()",
@@ -2908,9 +2920,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // PMAT-569: a list repeat clones its elements (slice `repeat`
                 // needs `T: Copy`, which fails for `[[0]] * n` etc.). Works for
                 // any `Clone` element; `.max(0)` clamps a negative count.
-                out.push_str("{ let __rep = ");
+                // PMAT-1004: bind `__rep` to a CLONE of the sequence, not the
+                // sequence itself — `let __rep = xs;` MOVES a non-Copy `Vec`, so
+                // a later use of `xs` (e.g. `xs * 3` then `xs + [4,5]`) failed to
+                // compile with E0382 (borrow of moved value). Cloning keeps the
+                // original usable (Python `xs * n` produces a NEW list, does not
+                // consume `xs`); a literal operand clones a cheap temporary.
+                out.push_str("{ let __rep = (");
                 emit_expr(out, seq, mode)?;
-                out.push_str("; (0..(((");
+                out.push_str(").clone(); (0..(((");
                 emit_expr(out, n, mode)?;
                 out.push_str(").max(0)) as usize)).flat_map(|_| __rep.iter().cloned()).collect::<Vec<_>>() }");
             }
@@ -5093,6 +5111,75 @@ mod tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn list_repeat_clones_the_sequence_pmat_1004() {
+        // Found by the Rust-lane differential sweep: `xs * 3` bound `let __rep =
+        // xs`, MOVING the non-Copy Vec, so a later `xs + [4,5]` failed rustc with
+        // E0382. The repeat must CLONE the sequence (Python `xs * n` is
+        // non-consuming) so `xs` stays usable.
+        let f = Function {
+            name: "f".into(),
+            params: vec![Param {
+                name: "xs".into(),
+                ty: Type::List(Box::new(Type::I64)),
+                mutable: false,
+            }],
+            return_type: Type::List(Box::new(Type::I64)),
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::Repeat {
+                    seq: Box::new(Expr::Ident("xs".into())),
+                    n: Box::new(Expr::LitInt(3)),
+                    of_str: false,
+                },
+            },
+        };
+        let rust = emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok");
+        assert!(
+            rust.contains("let __rep = (") && rust.contains(").clone();"),
+            "list repeat must CLONE the sequence (PMAT-1004, avoids E0382 on a later use):\n{rust}"
+        );
+    }
+
+    #[test]
+    fn isdigit_stays_distinct_from_isnumeric_pmat_1004() {
+        // The Rust-lane sweep flagged isdigit as ASCII-only (wrong for non-ASCII
+        // digits). A naive fix to is_numeric() would over-accept (½ is numeric
+        // but NOT a digit), CONFLATING isdigit with isnumeric — which the e2e
+        // str_predicates test correctly forbids, and Rust std has no exact-isdigit
+        // predicate. So isdigit stays is_ascii_digit (documented ASCII limit,
+        // precise Unicode fix = PMAT-1005) and MUST remain distinct from
+        // isnumeric's is_numeric.
+        let mk = |op: StrMethodOp| {
+            let f = Function {
+                name: "f".into(),
+                params: vec![Param {
+                    name: "s".into(),
+                    ty: Type::Str,
+                    mutable: false,
+                }],
+                return_type: Type::Bool,
+                body: Block {
+                    stmts: vec![],
+                    trailing_return: Expr::StrMethod {
+                        recv: Box::new(Expr::Ident("s".into())),
+                        op,
+                        args: vec![],
+                    },
+                },
+            };
+            emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok")
+        };
+        assert!(
+            mk(StrMethodOp::IsDigit).contains("is_ascii_digit()"),
+            "isdigit stays ASCII (documented limit; distinct from isnumeric)"
+        );
+        assert!(
+            mk(StrMethodOp::IsNumeric).contains("is_numeric()"),
+            "isnumeric is Unicode-aware (is_numeric)"
+        );
     }
 
     #[test]
