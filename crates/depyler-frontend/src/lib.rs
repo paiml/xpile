@@ -2914,34 +2914,45 @@ fn lower_function_def(
                 if let ast::Expr::Name(tgt) = forst.target.as_ref() {
                     let name = tgt.id.to_string();
                     if !ctx.bound.contains(&name) && !ctx.loop_scoped.contains(&name) {
-                        if let ast::Expr::Name(it) = forst.iter.as_ref() {
-                            // The leaked element type + its zero default: a
-                            // `list[prim]` iterates its element; a `str` iterates
-                            // 1-char `String`s (PMAT-838 follow-up — `for c in s:
-                            // …; return c` was equally E0425).
-                            let elem_default = match ctx.name_types.get(it.id.as_str()) {
-                                Some(Type::List(elem)) => {
-                                    primitive_default(elem).map(|d| ((**elem).clone(), d))
+                        // The leaked element type + its zero default: a
+                        // `list[prim]` iterates its element; a `str` iterates
+                        // 1-char `String`s (PMAT-838 follow-up — `for c in s:
+                        // …; return c` was equally E0425).
+                        // PMAT-1012 (sweep #7): derive the iterable's type by
+                        // PROBE-LOWERING the iter expression — the old arm
+                        // matched only a plain-Name iterable, so a str/list
+                        // LITERAL (`for ch in "wxyz"`) or a slice (`for x in
+                        // xs[1:]`) never pre-declared and the post-loop read
+                        // stayed E0425. The probe is side-effect-free
+                        // (`lower_expr_in_ctx` takes `&ctx`); a form that
+                        // doesn't lower as a value expression (e.g.
+                        // `range(...)`, which leaks via the while-rewrite)
+                        // just skips, keeping the old behavior.
+                        let elem_default = lower_expr_in_ctx(&ctx, (*forst.iter).clone())
+                            .ok()
+                            .map(|probe| infer_type_in_ctx(&ctx, &probe))
+                            .and_then(|t| match t {
+                                Type::List(elem) => {
+                                    primitive_default(&elem).map(|d| ((*elem).clone(), d))
                                 }
-                                Some(Type::Str) => Some((Type::Str, Expr::LitStr(String::new()))),
+                                Type::Str => Some((Type::Str, Expr::LitStr(String::new()))),
                                 _ => None,
-                            };
-                            if let Some((elem, default)) = elem_default {
-                                let mut after = HashMap::new();
-                                for s in &leading[i + 1..] {
-                                    count_reads_stmt(s, &mut after);
-                                }
-                                count_reads_stmt(last, &mut after);
-                                if after.get(&name).copied().unwrap_or(0) > 0 {
-                                    stmts.push(Stmt::Let {
-                                        name: name.clone(),
-                                        ty: elem.clone(),
-                                        value: default,
-                                        mutable: true,
-                                    });
-                                    ctx.bound.insert(name.clone());
-                                    ctx.name_types.insert(name.clone(), elem);
-                                }
+                            });
+                        if let Some((elem, default)) = elem_default {
+                            let mut after = HashMap::new();
+                            for s in &leading[i + 1..] {
+                                count_reads_stmt(s, &mut after);
+                            }
+                            count_reads_stmt(last, &mut after);
+                            if after.get(&name).copied().unwrap_or(0) > 0 {
+                                stmts.push(Stmt::Let {
+                                    name: name.clone(),
+                                    ty: elem.clone(),
+                                    value: default,
+                                    mutable: true,
+                                });
+                                ctx.bound.insert(name.clone());
+                                ctx.name_types.insert(name.clone(), elem);
                             }
                         }
                     }

@@ -17102,3 +17102,21 @@ fn main() {
 "#;
     assert_rustc_runs("bool_float_compare", &rust, driver);
 }
+
+/// PMAT-1012 (sweep #7): the fresh-loop-var leak pre-declare (PMAT-838)
+/// matched only a plain-NAME iterable — a str/list LITERAL (`for ch in
+/// "wxyz"`) or slice iterable never pre-declared, so the Python loop-var
+/// leak (`return ch` after the loop) was rustc E0425. The iterable's type
+/// is now derived by probe-lowering the iter expression.
+#[test]
+fn loop_var_leak_literal_iter() {
+    let rust = xpile_transpile_to_rust("loop_var_leak_literal_iter.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(last_char(), "z", "str-literal iterable leaks last char");
+    assert_eq!(last_elem(), 9, "list-literal iterable leaks last elem");
+    assert_eq!(last_tail(vec![1, 2, 3, 4]), 4, "slice iterable leaks last elem");
+}
+"#;
+    assert_rustc_runs("loop_var_leak_literal_iter", &rust, driver);
+}

@@ -613,17 +613,33 @@ roadmap:
 - id: PMAT-1012
   github_issue: null
   item_type: task
-  title: 'PMAT-1012: [rust/correctness] String-chars for-loop variable LEAKS in Python but is loop-scoped in the emitted Rust → E0425. Found by sweep #7 (PMAT-1011). `for ch in "wxyz": pass` then `return ch` — Python leaks the loop var (last value, "z"); xpile emits a native `for ch in ...chars()...` whose binding dies at the loop end, so the later use is rustc E0425 (cannot find value). The RANGE-loop lane already handles this (desugars to a hoisted while / hoisted binding); the chars lane (and possibly other ForEach lanes — list iteration, enumerate, zip) never hoists. Fix: mirror the range-lane hoisting for ForEach loop vars USED AFTER the loop (needs the use-after-loop analysis the range lane already has), or refuse clearly. Python also leaves the var UNBOUND for an empty iterable — the hoisted form must preserve the panic/refuse behavior there (Python raises NameError on use-after-empty-loop; a hoisted default would silently diverge).'
-  status: planned
+  title: 'PMAT-1012: [rust/correctness] Fresh for-loop variable read AFTER the loop → E0425 when the iterable is a LITERAL or slice (Python leaks the loop var). Found by sweep #7 (PMAT-1011). PROBED before fixing: the machinery already existed on two levels — PMAT-784 leaks a PRE-BOUND target through ANY iterable form (rename to __feN + per-iteration assign), and PMAT-838 pre-declares a FRESH target (`let mut x = <default>` when read after the loop) — but the PMAT-838 pre-declare matched only a plain-NAME iterable (`for x in xs`), so `for ch in "wxyz"` / `for x in [7,8,9]` / `for x in xs[1:]` never pre-declared and the post-loop read was rustc E0425. FIXED by deriving the iterable type via PROBE-LOWERING the iter expression (side-effect-free, `lower_expr_in_ctx(&ctx)`) instead of the Name-only name_types lookup; forms that do not lower as value expressions (range(...), which leaks via the while-rewrite) skip, keeping old behavior. Tuple-target loops (fresh `for i, v in enumerate/zip/items`) share the gap but need per-form element-type derivation — filed as PMAT-1015.'
+  status: done
   priority: medium
   created: 2026-07-01T00:00:00Z
   acceptance_criteria:
-  - "`for ch in \"wxyz\": pass` + `return ch` → \"z\" == CPython (or a clear refusal), no E0425 on emitted code. Same for list/enumerate/zip ForEach lanes if they share the gap (probe first). Empty-iterable + use-after-loop must NOT silently produce a default value (Python raises NameError) — fail-loud there. Witness covers leak + empty-iterable."
+  - "FIXED: `for ch in \"wxyz\"` + `return ch` → \"z\"; `for x in [7,8,9]` → 9; `for x in xs[1:]` → 4 — all == CPython (were E0425). Regressions differentially verified: Name-iter list → 3, str-param → \"c\", pre-bound + str-literal (PMAT-784 path) → \"z\", range → 4, no-post-read loop unaffected, body-and-after use → \"wxyzz\" (true LAST element). e2e loop_var_leak_literal_iter (3-assert driver)."
+  - "SCOPE (honest): the empty-iterable + post-loop-read degenerate case (Python NameError, xpile yields the pre-declared default) is the PRE-EXISTING PMAT-838 tradeoff this fix inherits — statically-nonempty literals cannot hit it; a runtime-empty slice can (documented, same as the Name-iter case since PMAT-838). Fresh TUPLE-target loops (enumerate/zip/items) still E0425 → PMAT-1015."
+  - "DONE: gate green — fmt; check --workspace; clippy -D warnings; pv lint (0/0); deny advisories; xpile e2e 683 (682+1); depyler-frontend 16 lib. Touched crates/depyler-frontend/ + crates/xpile/tests/ + docs/roadmaps/roadmap.yaml."
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Fail-loud (E0425 at rustc), not silent — but the loop-var-leak idiom (`for x in xs: ...` then use x after) is COMMON Python, so medium priority. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+  notes: 'The loop-var-leak idiom is COMMON Python. Key lesson: PROBE the existing machinery before writing new — the fix was a 1-expression generalization (Name-lookup → probe-lower) of an existing pre-pass, not new hoisting logic. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1015
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1015: [rust/correctness] Fresh TUPLE-target for-loop vars (`for i, v in enumerate(xs)` / zip / dict.items()) read AFTER the loop → E0425. The tuple-target analogue of PMAT-1012: PMAT-871 leaks PRE-BOUND tuple targets (pair_leak_decision), but a FRESH tuple target has no pre-declare (the PMAT-838/1012 pre-pass handles only single-Name targets). Fix: extend the pre-declare to ast::Expr::Tuple targets of plain fresh Names — derive per-element types per iterable form (enumerate(xs) → (I64, elem(xs)); zip(a,b) → (elem(a), elem(b)); d.items() → (K, V); list-of-tuples → the tuple elems), pre-declare each read-after-loop target with its primitive default. Same PMAT-838 empty-iterable tradeoff applies.'
+  status: planned
+  priority: low
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "`for i, v in enumerate(xs): pass` then `return i + v` matches CPython (or stays a CLEAR refusal), no E0425 on emitted code; same for zip and d.items(). Pre-bound tuple targets (PMAT-871) and single-var (PMAT-1012) regressions hold. Witness covers enumerate + zip."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Rarer than the single-var leak (post-loop reads of enumerate/zip vars are uncommon) and fail-loud (E0425) — low priority. Needs per-form element-type derivation the single-var probe-lower gets for free. Filed by PMAT-1012.'
 - id: PMAT-1013
   github_issue: null
   item_type: task
