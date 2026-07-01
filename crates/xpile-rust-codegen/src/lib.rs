@@ -692,11 +692,19 @@ fn emit_stmt_indented(
             // invalid Rust ("`mut` must be followed by a named binding"). Repeated
             // discards (`a, _, _ = t`) aggregate the `_` count in the mutability
             // pre-walk, so the 2nd+ `_` was wrongly flagged mutable.
+            // PMAT-1010: a DUPLICATE unpack target (`a, a = 1, 2`) is legal Python
+            // (assigns left-to-right, last write wins → a == 2) but Rust forbids an
+            // identifier bound twice in one pattern (E0416). Earlier occurrences of
+            // a duplicated name are dead stores of plain names — unobservable — so
+            // mask them to `_` and keep only the LAST occurrence bound (the
+            // frontend's `name_types.insert` already last-wins the type the same way).
             let pat = names
                 .iter()
                 .enumerate()
                 .map(|(i, n)| {
-                    if n != "_" && mutable.get(i).copied().unwrap_or(false) {
+                    if n != "_" && names[i + 1..].contains(n) {
+                        "_".to_string()
+                    } else if n != "_" && mutable.get(i).copied().unwrap_or(false) {
                         format!("mut {n}")
                     } else {
                         n.clone()
@@ -5218,6 +5226,58 @@ mod tests {
         assert!(
             !rust_int.contains("\"0\".repeat("),
             "a raw int must keep native numeric zero-fill, not the manual path:\n{rust_int}"
+        );
+    }
+
+    #[test]
+    fn dup_unpack_target_masks_all_but_last_pmat_1010() {
+        // Found by the PMAT-1009 formatting/unpack sweep: `a, a = 1, 2` is legal
+        // Python (left-to-right, last write wins → a == 2) but lowered to
+        // `let (mut a, mut a) = (1i64, 2i64)` — Rust forbids a twice-bound
+        // pattern identifier (E0416). Earlier occurrences are dead stores of
+        // plain names (unobservable), so they mask to `_` and only the LAST
+        // occurrence binds: `let (_, a) = (1i64, 2i64)` → a == 2, Python-equal.
+        let f = Function {
+            name: "f".into(),
+            params: vec![],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![Stmt::LetTuple {
+                    names: vec!["a".into(), "a".into()],
+                    mutable: vec![false, false],
+                    value: Expr::TupleLit(vec![Expr::LitInt(1), Expr::LitInt(2)]),
+                }],
+                trailing_return: Expr::Ident("a".into()),
+            },
+        };
+        let rust = emit_module(&module_with("fixture", vec![Item::Function(f)])).expect("emit ok");
+        assert!(
+            rust.contains("let (_, a) ="),
+            "duplicate unpack targets must mask all-but-last to `_` (PMAT-1010):\n{rust}"
+        );
+        assert!(
+            !rust.contains("let (a, a)") && !rust.contains("let (mut a, mut a)"),
+            "a twice-bound pattern name is E0416 invalid Rust:\n{rust}"
+        );
+        // A distinct-name unpack is untouched.
+        let g = Function {
+            name: "g".into(),
+            params: vec![],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![Stmt::LetTuple {
+                    names: vec!["a".into(), "b".into()],
+                    mutable: vec![false, false],
+                    value: Expr::TupleLit(vec![Expr::LitInt(1), Expr::LitInt(2)]),
+                }],
+                trailing_return: Expr::Ident("b".into()),
+            },
+        };
+        let rust_g =
+            emit_module(&module_with("fixture", vec![Item::Function(g)])).expect("emit ok");
+        assert!(
+            rust_g.contains("let (a, b) ="),
+            "distinct unpack targets must keep their bindings:\n{rust_g}"
         );
     }
 
