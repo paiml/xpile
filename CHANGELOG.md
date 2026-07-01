@@ -7,6 +7,103 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.602] — 2026-07-01
+
+The span since v0.1.601 (108 commits, PMAT-905..1015). Five themes:
+
+### The differential-hunt campaign — 7 CPython-differential sweeps, ~1,850 programs, every finding adversarially re-verified
+
+- **Sweeps 1–3 (WASM lane, PMAT-998..1002 + 995):** concat-of-chr scratch
+  aliasing (`chr(65)+chr(66)` returned "B" not "AB" — silent miscompile),
+  `s[i]`-in-concat offset clobber, list negative-index normalization,
+  float `x/0.0` → ZeroDivisionError trap (was IEEE inf), duplicate
+  dict/set-literal keys collapse last-wins. All executed-verified via WABT.
+- **Sweep 4 (Rust dep-free, PMAT-1004):** `xs*n` receiver move (E0382) fixed;
+  `str.isdigit()` stays ASCII — the naive `is_numeric` fix broke the
+  isdigit≠isnumeric distinction (caught by workspace e2e; filed PMAT-1005).
+- **Sweep 5 (Rust dict/container, PMAT-1007):** no-default `d.get(k)` in
+  arithmetic emitted uncompilable Rust — unwrapped only in arith position,
+  Option preserved in truthy/`is None`. Filed PMAT-1008: container reference
+  ALIASING is a fundamental value-vs-reference gap (strategic decision, not
+  autonomously fixable).
+- **Sweep 6 (Rust formatting, PMAT-1009/1010):** float zero-fill
+  (`"{:05}".format(5.0)` → "005.0", sign-aware) — Rust's `0` flag is inert on
+  a pre-rendered repr String; duplicate unpack target `a, a = 1, 2` (E0416)
+  → mask all-but-last to `_` (Python last-wins ≡ bind-only-the-last).
+- **Sweep 7 (numeric-edge/comprehensions/sorting/string-deep/bool-None/
+  control-flow, PMAT-1011..1015):** 421 programs, 18 confirmed, 0 surviving
+  false positives, ALL dispositioned:
+  - `pow(b, -e, m)` implemented STALE pre-3.8 semantics — now the Python 3.8+
+    modular inverse via extended Euclid (`pow(3,-1,7) == 5`), exact CPython
+    ValueError when gcd≠1.
+  - with-start `s.index(sub, start)` moved the receiver (E0382) — clone,
+    the PMAT-851 fix applied to the start/end form.
+  - rjust/ljust/center fill must be EXACTLY one char (CPython TypeError,
+    validated even with no deficit) — was silently repeating a multi-char fill.
+  - bool↔float comparison (`True == 1.0`) E0308 → exact MixedIntFloatCmp.
+  - fresh loop-var leak over literal/slice iterables (E0425) → probe-lower
+    the iter type (PMAT-1012); tuple-target analogue for enumerate/zip/items
+    (PMAT-1015).
+  - mutation-during-iteration (`for x in xs: xs.append(99)`) → CLEAN REFUSAL
+    with a verified workaround (`for x in xs[:]`) — Python's live-list
+    semantics are unrepresentable under value semantics (PMAT-1013).
+  - Latin digraph titlecase (`'ǳ'.capitalize()` → 'ǲ' not 'Ǳ') via a 4-arm
+    const Lt range-match (PMAT-1014).
+  - The verify pass REFUTED a finder's root-cause claim (sort-key arithmetic
+    is checked, not wrapping) — adversarial verification works both ways.
+
+### §29 Multi-Emitter Oracle Quorum — witness integrity + real production emitters
+
+- **rustc-nvptx PRODUCTION 3-way quorum (PMAT-997/1006):** third
+  categorically-independent PTX toolchain (nightly rustc nvptx64 / modern
+  LLVM NVPTX vs xpile hand-emit vs nvcc NVVM-LLVM7) promoted from witness to
+  production voter — `diff_exec_extra_emitters` reports it ONLY when it
+  actually ran; executed on RTX 4090 sm_89, max_abs_diff=0.
+- **Witness-integrity closure (PMAT-975..990):** every GPU/WASM witness now
+  drives xpile's REAL production emitters — retired the hardcoded-WAT general
+  side, the hardcoded SPIR-V constants (attested == executed now), the
+  `// TODO: lower to WGSL` production scaffold, and bashrs's silent
+  control-flow shredding (now a hard refusal). An independent adversarial
+  re-verification of the PMAT-949..984 witness batch found the batch sound.
+- **Real emitters + end-to-end proofs:** real meta-HIR→PTX emitter with
+  control flow (PMAT-961/962), cross-hardware anti-correlation vote
+  (sm_89 + sm_121, PMAT-963), Target::Spirv lit (PMAT-960), executed
+  real-program composition proofs on WASM/WGSL/PTX (PMAT-981/983/984).
+
+### Native WASM lane — from scalar scaffold to heap runtime + bidirectional
+
+- **Emit half (PMAT-951):** `Target::Wasm` + `xpile-wasm-codegen`, no Ruchy hop.
+- **Heap-runtime epic (PMAT-986/993/994/995/996/999):** bump allocator;
+  complete strings (literals, `s[i]`, concat, content equality, `len`/`ord`);
+  dicts/sets with REAL 2× capacity growth; plain-data structs.
+- **Aggregates (PMAT-966/968/978/980):** `list[int|float]` params via linear
+  memory, bounds-checked reads (IndexError analogue), element writes.
+- **Lift half (PMAT-954/957/959):** `SourceLang::Wasm` recovers structured
+  control flow from WAT (`block/loop/br_if` → While, `if/else` → If/IfExpr).
+
+### Provability substrate
+
+- **PyIntArith capstone discharged (PMAT-948)** — the ENTIRE `contracts/lean/`
+  substrate is machine-checked (23-module lake pilot, no sorry/axiom/Mathlib).
+- Six more contract heads discharged into the pilot (PMAT-913..916, 936..938);
+  derived citation-completeness gate computed from live meta-HIR (PMAT-955/958);
+  new contracts C-XLATE-PY-BOOL-TO-RUST-BOOL, C-C-FLOAT-ARITH,
+  C-FFI-SHELL-SUBPROCESS (PMAT-935/912/907).
+
+### decy ABI ceilings + hybrid FFI + formatting fill
+
+- **decy C lane:** distinct widths for `long`/`unsigned`/`uint64_t`/`double`/
+  `float`, pointer ABI (`int*`/`char*` → `Type::Ptr`), `char*` ⇄
+  `&str`/`String` marshalling (PMAT-909/910/911/918/921/924/925); C bitwise +
+  shifts (PMAT-964); Ruchy emit parity for C sources (PMAT-967).
+- **Hybrid:** real pyo3 + pybind11 shim emitters, Python→Shell producer,
+  fail-closed RepairLoop + FloatReprRepair (PMAT-908/926/927/932/933).
+- **f-string/format fill:** thousands grouping (`:,`/`:_`), scientific
+  (`:e`), general (`:g`), space-sign, `#` alternate radix, `:c` char specs,
+  str precision `.N` (PMAT-923/939..947/965/969/982).
+- **forjar backend (PMAT-953):** `Target::ForjarYaml` — shell-origin meta-HIR
+  to forjar `file`/`task` resources, backend-only by design.
+
 ### Added
 
 - **PMAT-950 (§29 GPU) — FIRST real *executed* cross-vendor GPU DiffExec
