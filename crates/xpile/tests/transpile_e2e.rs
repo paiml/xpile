@@ -17319,7 +17319,7 @@ fn oop_struct_alias_mutate_is_rejected() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("aliases struct `c` as `c2`") && stderr.contains("shares the object"),
+        stderr.contains("aliases `c` as `c2`") && stderr.contains("shares the object"),
         "the rejection should name the alias pair and the sharing reason:\n{stderr}"
     );
 }
@@ -17385,4 +17385,46 @@ fn main() {
 }
 "#;
     assert_rustc_runs("return_alias_allowed", &rust, driver);
+}
+
+/// PMAT-1008-interim: the alias three-way disposition extended to CONTAINERS —
+/// read-only alias clones (was E0382), source-dead alias moves. Differentially
+/// verified vs CPython.
+#[test]
+fn container_alias_disposition() {
+    let rust = xpile_transpile_to_rust("container_alias_disposition.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(read_only_alias(), 7, "read-only list alias clones (3+3+1)");
+    assert_eq!(dead_source_alias(), 3, "source-dead alias moves");
+    assert_eq!(dict_read_only(), 2, "read-only dict alias clones");
+}
+"#;
+    assert_rustc_runs("container_alias_disposition", &rust, driver);
+}
+
+/// PMAT-1008-interim rejects: (1) subscript-write through a live alias — the
+/// dead-alias shortcut must require never-read AND never-MUTATED (a subscript
+/// write is not a read; the old shortcut silently cloned); (2) the shared-
+/// inner-row miscompiles `[[0,0]]*2` / `[row, row]` + nested write (CPython
+/// shares → 10; the per-element clone gave 5 SILENTLY).
+#[test]
+fn container_alias_and_shared_row_rejects() {
+    let py = fixture("container_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(!out.status.success(), "subscript-write alias must refuse");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("aliases `a` as `b`") && stderr.contains("shares the object"),
+        "alias reject names the pair:\n{stderr}"
+    );
+
+    let py = fixture("shared_inner_row_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(!out.status.success(), "shared-inner-row repeat must refuse");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("repeating a mutable inner container"),
+        "repeat reject names the shape:\n{stderr}"
+    );
 }

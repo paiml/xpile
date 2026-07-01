@@ -103,6 +103,9 @@ struct LoweringCtx {
     /// PMAT-1017: names whose OBJECT is mutated (field write or mutating-
     /// method receiver) — rebindings excluded. Drives the struct-alias rule.
     obj_mutated: HashSet<String>,
+    /// PMAT-1008-interim: names NESTED-mutated (depth>=2 subscript write or
+    /// `name[i].mutator()`) — drives the shared-inner-row guards.
+    nested_mutated: HashSet<String>,
     /// PMAT-738 (HUNT-V12 V12-5): module consts assigned (→ shadowed by a
     /// function-local of the same name) in this body. A `let`/assign to such a
     /// name is rejected (Rust can't express the shadow — the name is a constant
@@ -383,6 +386,7 @@ impl LoweringCtx {
         };
         let mutable = compute_mutable_names(params, body, &mutating_methods);
         let obj_mutated = collect_obj_mutated(body, &mutating_methods);
+        let nested_mutated = collect_nested_mutated(body);
         let read_counts = count_name_reads(body);
         Self {
             fn_name: fn_name.to_string(),
@@ -391,6 +395,7 @@ impl LoweringCtx {
             name_types,
             mutable,
             obj_mutated,
+            nested_mutated,
             shadowed_consts,
             read_counts,
             signatures,
@@ -995,9 +1000,9 @@ fn count_mutating_method_receivers(
 fn may_return_param(stmts: &[ast::Stmt], params: &[String]) -> bool {
     stmts.iter().any(|s| match s {
         ast::Stmt::Return(r) => matches!(
-            r.value.as_deref(),
-            Some(ast::Expr::Name(n)) if params.iter().any(|p| p == n.id.as_str())
-        ),
+        r.value.as_deref(),
+        Some(ast::Expr::Name(n)) if params.iter().any(|p| p == n.id.as_str())
+               ),
         ast::Stmt::If(i) => {
             may_return_param(&i.body, params) || may_return_param(&i.orelse, params)
         }
@@ -1009,7 +1014,122 @@ fn may_return_param(stmts: &[ast::Stmt], params: &[String]) -> bool {
     })
 }
 
+/// PMAT-1008-interim: names whose container is NESTED-mutated — a depth>=2
+/// subscript WRITE (`grid[0][0] = v`, `+=`) or an element-mutator call
+/// through a subscript (`grid[0].append(x)`). Depth-1 writes (`grid[0] = x`)
+/// are slot REPLACEMENT, which value semantics render faithfully — only
+/// writes that reach the SHARED INNER object diverge when the outer list was
+/// built from a duplicated name (`[row, row]`) or a repeat (`[[0, 0]] * 2`).
+fn collect_nested_mutated(stmts: &[ast::Stmt]) -> HashSet<String> {
+    fn subscript_depth_base(t: &ast::Expr) -> Option<(String, usize)> {
+        let mut depth = 0usize;
+        let mut cur = t;
+        loop {
+            match cur {
+                ast::Expr::Subscript(s) => {
+                    depth += 1;
+                    cur = s.value.as_ref();
+                }
+                ast::Expr::Name(n) => return (depth > 0).then(|| (n.id.to_string(), depth)),
+                _ => return None,
+            }
+        }
+    }
+    fn expr_subscript_mutator(e: &ast::Expr, out: &mut HashSet<String>) {
+        if let ast::Expr::Call(c) = e {
+            if let ast::Expr::Attribute(attr) = c.func.as_ref() {
+                if matches!(
+                    attr.attr.as_str(),
+                    "append"
+                        | "extend"
+                        | "insert"
+                        | "remove"
+                        | "sort"
+                        | "reverse"
+                        | "clear"
+                        | "pop"
+                        | "add"
+                        | "update"
+                        | "discard"
+                        | "setdefault"
+                ) {
+                    if let Some((base, _)) = subscript_depth_base(attr.value.as_ref()) {
+                        out.insert(base);
+                    }
+                }
+            }
+        }
+    }
+    fn walk(stmts: &[ast::Stmt], out: &mut HashSet<String>) {
+        for s in stmts {
+            match s {
+                ast::Stmt::Assign(a) => {
+                    for t in &a.targets {
+                        if let Some((base, depth)) = subscript_depth_base(t) {
+                            if depth >= 2 {
+                                out.insert(base);
+                            }
+                        }
+                    }
+                }
+                ast::Stmt::AugAssign(a) => {
+                    if let Some((base, depth)) = subscript_depth_base(a.target.as_ref()) {
+                        if depth >= 2 {
+                            out.insert(base);
+                        }
+                    }
+                }
+                ast::Stmt::Expr(e) => expr_subscript_mutator(&e.value, out),
+                ast::Stmt::If(i) => {
+                    walk(&i.body, out);
+                    walk(&i.orelse, out);
+                }
+                ast::Stmt::While(w) => walk(&w.body, out),
+                ast::Stmt::For(f) => {
+                    walk(&f.body, out);
+                    walk(&f.orelse, out);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = HashSet::new();
+    walk(stmts, &mut out);
+    out
+}
+
 fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashSet<String> {
+    // PMAT-1008-interim: the builtin container mutators (mirrors
+    // `for_target_mutated_ast`'s set + `setdefault`), so the alias
+    // disposition covers list/dict/set objects too.
+    fn is_builtin_mutator(m: &str) -> bool {
+        matches!(
+            m,
+            "append"
+                | "extend"
+                | "insert"
+                | "remove"
+                | "sort"
+                | "reverse"
+                | "clear"
+                | "pop"
+                | "add"
+                | "update"
+                | "discard"
+                | "setdefault"
+        )
+    }
+    fn expr_mutator_receiver(e: &ast::Expr, out: &mut HashSet<String>) {
+        if let ast::Expr::Call(c) = e {
+            if let ast::Expr::Attribute(attr) = c.func.as_ref() {
+                if is_builtin_mutator(attr.attr.as_str()) {
+                    if let ast::Expr::Name(n) = attr.value.as_ref() {
+                        out.insert(n.id.to_string());
+                    }
+                }
+            }
+        }
+    }
     fn walk(stmts: &[ast::Stmt], out: &mut HashSet<String>) {
         for s in stmts {
             match s {
@@ -1020,6 +1140,11 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
                                 out.insert(n.id.to_string());
                             }
                         }
+                        // PMAT-1008-interim: `xs[i] = v` / `grid[i][j] = v`
+                        // mutates the base container object.
+                        if let Some(base) = subscript_chain_base_name(t) {
+                            out.insert(base);
+                        }
                     }
                 }
                 ast::Stmt::AugAssign(a) => {
@@ -1028,7 +1153,20 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
                             out.insert(n.id.to_string());
                         }
                     }
+                    if let Some(base) = subscript_chain_base_name(a.target.as_ref()) {
+                        out.insert(base);
+                    }
                 }
+                // PMAT-1008-interim: `del xs[i]` / `del d[k]` mutate the base.
+                ast::Stmt::Delete(d) => {
+                    for t in &d.targets {
+                        if let Some(base) = subscript_chain_base_name(t) {
+                            out.insert(base);
+                        }
+                    }
+                }
+                // `xs.append(v)` etc. as a statement.
+                ast::Stmt::Expr(e) => expr_mutator_receiver(&e.value, out),
                 ast::Stmt::If(i) => {
                     walk(&i.body, out);
                     walk(&i.orelse, out);
@@ -1048,6 +1186,13 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
     let mut counts = HashMap::new();
     count_mutating_method_receivers(stmts, mutating, &mut counts);
     out.extend(counts.into_keys());
+    // PMAT-1008-interim: expression-position builtin mutators (`x = xs.pop()`,
+    // `d.setdefault(k, v)` in value position) — reuse the PMAT-502as walker.
+    let mut pop_counts = HashMap::new();
+    for s in stmts {
+        count_pop_receivers_in_stmt(s, &mut pop_counts, 1);
+    }
+    out.extend(pop_counts.into_keys());
     out
 }
 
@@ -1948,14 +2093,14 @@ fn check_expr_for_alias_mutate(
                 };
                 return Err(FrontendError::Lower(format!(
                     "object reference semantics not yet supported — `{callee}` mutates its \
-                     parameter #{} in place, but `{name}` is passed by value and used elsewhere \
-                     in the function (the conservative analysis cannot prove this call is its \
-                     LAST use — PMAT-1017), so xpile clones it and the mutation would be \
-                     silently dropped (the caller never sees it). Python's pass-by-reference \
-                     here needs the Rc<RefCell> reference layer (V29-2, architectural); until \
-                     then this alias-then-mutate pattern is REFUSED rather than miscompiled. \
-                     If this call IS the last use, ensure `{name}` has no other mention after \
-                     (or before) it — see C-XLATE-PY-LIST-TO-VEC alias_observation_inserts_clone",
+ parameter #{} in place, but `{name}` is passed by value and used elsewhere \
+ in the function (the conservative analysis cannot prove this call is its \
+ LAST use — PMAT-1017), so xpile clones it and the mutation would be \
+ silently dropped (the caller never sees it). Python's pass-by-reference \
+ here needs the Rc<RefCell> reference layer (V29-2, architectural); until \
+ then this alias-then-mutate pattern is REFUSED rather than miscompiled. \
+ If this call IS the last use, ensure `{name}` has no other mention after \
+ (or before) it — see C-XLATE-PY-LIST-TO-VEC alias_observation_inserts_clone",
                     i + 1
                 )));
             }
@@ -2310,18 +2455,18 @@ fn lower_top_level_stmt(
     }
     match stmt {
         ast::Stmt::FunctionDef(f) => lower_function_def(
-            f,
-            signatures,
-            consts,
-            structs,
-            struct_methods,
-            struct_field_defaults,
-            struct_properties,
-            frozen_structs,
-            enums,
-            None,
-            None,
-            mutating_methods,
+ f,
+ signatures,
+ consts,
+ structs,
+ struct_methods,
+ struct_field_defaults,
+ struct_properties,
+ frozen_structs,
+ enums,
+ None,
+ None,
+ mutating_methods,
         )
         .map(Item::Function),
         // PMAT-513: a `class C(Enum):` → an `Item::Enum` (handled before the
@@ -2330,16 +2475,16 @@ fn lower_top_level_stmt(
         // PMAT-505a/506d (classes epic): a field-only / `@dataclass` class → an
         // `Item::Struct` (fields + instance methods).
         ast::Stmt::ClassDef(c) => lower_class_def(
-            c,
-            signatures,
-            consts,
-            structs,
-            struct_methods,
-            struct_field_defaults,
-            struct_properties,
-            frozen_structs,
-            enums,
-            mutating_methods,
+ c,
+ signatures,
+ consts,
+ structs,
+ struct_methods,
+ struct_field_defaults,
+ struct_properties,
+ frozen_structs,
+ enums,
+ mutating_methods,
         ),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
@@ -2347,7 +2492,7 @@ fn lower_top_level_stmt(
         )),
         other => Err(FrontendError::Lower(format!(
             "unsupported top-level statement: {:?} — only `def` and `NAME = <literal>` constants are supported at v0.2.0",
-            std::mem::discriminant(&other)
+ std::mem::discriminant(&other)
         ))),
     }
 }
@@ -2371,7 +2516,7 @@ fn rust_prelude_type_collision(name: &str) -> Option<String> {
     collides.then(|| {
         format!(
             "class/enum `{name}` collides with a Rust prelude type that xpile emits — \
-             rename it (e.g. `{name}_`) so the generated code compiles"
+ rename it (e.g. `{name}_`) so the generated code compiles"
         )
     })
 }
@@ -2429,7 +2574,7 @@ fn class_def_signature(
                     if !is_literal_default(default_ast) {
                         return Err(FrontendError::Lower(format!(
                             "class `{name}` field `{}` has a non-literal default — v0.2.0 first cut supports only literal field defaults (int/float/str/bool, optionally negated)",
-                            field.id
+ field.id
                         )));
                     }
                     let default = lower_expr((**default_ast).clone())?;
@@ -2519,10 +2664,10 @@ fn dataclass_kw_true(c: &ast::StmtClassDef, kw_name: &str) -> bool {
     c.decorator_list.iter().any(|d| {
         let ast::Expr::Call(call) = d else { return false };
         if !matches!(call.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "dataclass") {
-            return false;
+ return false;
         }
         call.keywords.iter().any(|kw| {
-            kw.arg.as_deref() == Some(kw_name)
+ kw.arg.as_deref() == Some(kw_name)
                 && matches!(&kw.value, ast::Expr::Constant(c) if matches!(c.value, ast::Constant::Bool(true)))
         })
     })
@@ -2553,9 +2698,9 @@ fn enum_variants(c: &ast::StmtClassDef) -> Result<Vec<(String, i64)>, FrontendEr
                     )));
                 };
                 let disc = int_literal_value(a.value.as_ref()).ok_or_else(|| {
-                    FrontendError::Lower(format!(
+ FrontendError::Lower(format!(
                         "enum `{name}` member `{}` is not an integer literal — v0.2.0 supports only `NAME = <int>` (no `auto()`/computed/str values)",
-                        member.id
+ member.id
                     ))
                 })?;
                 variants.push((member.id.to_string(), disc));
@@ -2645,9 +2790,9 @@ fn lower_explicit_ctor_call(
     if call.args.len() > param_names.len() {
         return Err(FrontendError::Lower(format!(
             "function `{}` constructs `{ctor_name}` with {} positional arg(s) but its `__init__` takes {}",
-            ctx.fn_name,
-            call.args.len(),
-            param_names.len()
+ ctx.fn_name,
+ call.args.len(),
+ param_names.len()
         )));
     }
     let mut values: Vec<Option<Expr>> = vec![None; param_names.len()];
@@ -2659,19 +2804,19 @@ fn lower_explicit_ctor_call(
         let Some(kw_name) = kw.arg.as_ref().map(|id| id.to_string()) else {
             return Err(FrontendError::Lower(format!(
                 "function `{}` constructs `{ctor_name}` with a `**`-splat — not supported at v0.2.0",
-                ctx.fn_name
+ ctx.fn_name
             )));
         };
         let Some(i) = param_names.iter().position(|p| *p == kw_name) else {
             return Err(FrontendError::Lower(format!(
                 "function `{}` constructs `{ctor_name}` with unknown `__init__` parameter `{kw_name}`",
-                ctx.fn_name
+ ctx.fn_name
             )));
         };
         if values[i].is_some() {
             return Err(FrontendError::Lower(format!(
                 "function `{}` constructs `{ctor_name}` giving `{kw_name}` both positionally and by keyword",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         let v = lower_expr_in_ctx(ctx, kw.value.clone())?;
@@ -2722,8 +2867,8 @@ fn synthesize_explicit_ctor(
         let Stmt::FieldAssign { obj, field, value } = st else {
             return Err(FrontendError::Lower(format!(
                 "class `{class_name}` `__init__` has a statement that isn't a plain `self.<field> = <expr>` — \
-                 v0.2.0 lowers only STRAIGHT-LINE constructors (no control flow / locals / calls-as-statements); \
-                 move the logic into a method or precompute the arguments at the call site"
+ v0.2.0 lowers only STRAIGHT-LINE constructors (no control flow / locals / calls-as-statements); \
+ move the logic into a method or precompute the arguments at the call site"
             )));
         };
         if obj != "self" {
@@ -2734,7 +2879,7 @@ fn synthesize_explicit_ctor(
         if !declared_fields.iter().any(|(f, _)| f == field) {
             return Err(FrontendError::Lower(format!(
                 "class `{class_name}` `__init__` assigns `self.{field}` but the class declares no field `{field}` — \
-                 declare it (`{field}: <type>`) in the class body"
+ declare it (`{field}: <type>`) in the class body"
             )));
         }
         if field_values.iter().any(|(f, _)| f == field) {
@@ -2748,8 +2893,8 @@ fn synthesize_explicit_ctor(
         if format!("{value:?}").contains("Ident(\"self\")") {
             return Err(FrontendError::Lower(format!(
                 "class `{class_name}` `__init__` reads `self` while assigning `self.{field}` — \
-                 field-from-field initialization is not expressible in a struct literal; \
-                 compute it from the parameters instead"
+ field-from-field initialization is not expressible in a struct literal; \
+ compute it from the parameters instead"
             )));
         }
         field_values.push((field.clone(), value.clone()));
@@ -2762,7 +2907,7 @@ fn synthesize_explicit_ctor(
             .collect();
         return Err(FrontendError::Lower(format!(
             "class `{class_name}` `__init__` never assigns declared field(s) {missing:?} — \
-             every declared field must be assigned exactly once at v0.2.0"
+ every declared field must be assigned exactly once at v0.2.0"
         )));
     }
     let params: Vec<Param> = method
@@ -2860,7 +3005,7 @@ fn lower_class_def(
                 if body_assigns_self(&method.body.stmts) {
                     return Err(FrontendError::Lower(format!(
                         "class `{name}` `@property` `{}` assigns to `self` — properties are read-only at v0.2.0",
-                        method.name
+ method.name
                     )));
                 }
                 methods.push(method);
@@ -2911,7 +3056,7 @@ fn lower_class_def(
             if !first_is_self {
                 return Err(FrontendError::Lower(format!(
                     "class `{name}` method `{}` has no `self` first parameter — use `@staticmethod` (no receiver) or `@classmethod` (`cls` receiver)",
-                    m.name
+ m.name
                 )));
             }
             let mut method = lower_function_def(
@@ -2957,7 +3102,7 @@ fn lower_class_def(
                 if frozen {
                     return Err(FrontendError::Lower(format!(
                         "class `{name}` method `{}` assigns to `self` but the dataclass is FROZEN — Python raises FrozenInstanceError; remove `frozen=True` or the mutation",
-                        method.name
+ method.name
                     )));
                 }
                 if let Some(recv) = method.params.first_mut() {
@@ -3027,7 +3172,7 @@ fn foreach_elem_mutated(stmts: &[Stmt], var: &str) -> bool {
 fn body_mutates_iterated_list(stmts: &[Stmt], var: &str) -> bool {
     fn expr_pops(e: &Expr, var: &str) -> bool {
         matches!(e, Expr::ListPop { list, .. }
-            if matches!(list.as_ref(), Expr::Ident(n) if n == var))
+ if matches!(list.as_ref(), Expr::Ident(n) if n == var))
     }
     stmts.iter().any(|s| match s {
         Stmt::ListAppend { list_name, .. }
@@ -3361,8 +3506,8 @@ fn lower_function_def(
         if consts.contains_key(&p.name) {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a parameter `{}` that shadows the module-level constant `{}` — \
-                 Rust forbids this (a parameter cannot shadow a constant). Rename the parameter \
-                 or the module constant.",
+ Rust forbids this (a parameter cannot shadow a constant). Rename the parameter \
+ or the module constant.",
                 f.name, p.name, p.name
             )));
         }
@@ -3452,11 +3597,11 @@ fn lower_function_def(
         if ctx.mutable.contains(name) {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a mutable default argument `{name}` (a {kind}) that is mutated in \
-                 its body. Python evaluates a default ONCE at definition and shares that single \
-                 instance across every call (so the mutations accumulate); xpile gives each call a \
-                 fresh value, which would silently diverge. Use `{name}: Optional[...] = None` and \
-                 initialize it in the body (`if {name} is None: {name} = ...`).",
-                f.name
+ its body. Python evaluates a default ONCE at definition and shares that single \
+ instance across every call (so the mutations accumulate); xpile gives each call a \
+ fresh value, which would silently diverge. Use `{name}: Optional[...] = None` and \
+ initialize it in the body (`if {name} is None: {name} = ...`).",
+ f.name
             )));
         }
     }
@@ -3694,7 +3839,7 @@ fn lower_function_def(
             None => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}`'s final `if` is not an exhaustive `if/elif/else` whose every branch is a single `return <expr>` — v0.2.0 supports that shape (or a trailing `return`)",
-                    f.name
+ f.name
                 )));
             }
         },
@@ -3706,7 +3851,7 @@ fn lower_function_def(
             None => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}`'s final `try` is not the supported `try: return <expr> except [E]: return <expr>` shape — v0.2.0 first cut requires a single `except` (no bound name), no `else`/`finally`, and a single `return` in each arm",
-                    f.name
+ f.name
                 )));
             }
         },
@@ -3720,7 +3865,7 @@ fn lower_function_def(
                 None => {
                     return Err(FrontendError::Lower(format!(
                         "function `{}`'s final `match` does not have a single `return <expr>` in every case — v0.2.0 supports literal `case` patterns + a trailing `case _:`, each returning",
-                        f.name
+ f.name
                     )));
                 }
             }
@@ -3744,7 +3889,7 @@ fn lower_function_def(
         if ctx.closure_returns.contains_key(name) {
             return Err(FrontendError::Lower(format!(
                 "function `{}` returns a nested function / closure (`{name}`) — returning a callable is not supported at v0.2.0 (the `-> Callable[...]` annotation is likewise rejected); inline the logic, or call it before returning",
-                f.name
+ f.name
             )));
         }
     }
@@ -3768,7 +3913,7 @@ fn lower_function_def(
             if !empty_literal_ok && declared != inferred_return {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` declared return type {declared:?} but body produces {inferred_return:?}",
-                    f.name
+ f.name
                 )));
             }
             declared
@@ -3799,7 +3944,7 @@ fn lower_function_def(
     if bigint_mode && body_uses_dict(&body) {
         return Err(FrontendError::Lower(format!(
             "function `{}` combines BigInt (overflow slow-path) arithmetic with dict operations — unsupported at v0.2.0: dict keys/values are fixed-width while BigInt is unbounded, so the emission is type-incoherent. Move the dict work into a non-BigInt helper.",
-            f.name
+ f.name
         )));
     }
 
@@ -3854,7 +3999,7 @@ fn resolve_type_name(fn_name: &str, site: &str, name: &str) -> Result<Type, Fron
         // value emits the bare name; if no such class exists the emitted Rust
         // fails to compile (clean enough). Lowercase unknowns stay an error.
         other if other.starts_with(|ch: char| ch.is_ascii_uppercase()) => {
-            Ok(Type::Struct(other.to_string()))
+ Ok(Type::Struct(other.to_string()))
         }
         other => Err(FrontendError::Lower(format!(
             "function `{fn_name}` annotates `{site}` with unsupported type `{other}` — only `int`, `bool`, `BigInt`, `str`, `None`, `list[T]`, or a class/dataclass name at v0.2.0"
@@ -3881,18 +4026,18 @@ fn parse_type_annotation(
         // `def make(cls) -> "Counter"` was rejected, and an unannotated one
         // defaulted to `()` → the result couldn't be used as the class (E0308).
         ast::Expr::Constant(c) => {
-            if let ast::Constant::Str(s) = &c.value {
-                let name = s.to_string();
-                let name = name.trim();
-                if !name.is_empty()
+ if let ast::Constant::Str(s) = &c.value {
+ let name = s.to_string();
+ let name = name.trim();
+ if !name.is_empty()
                     && name
                         .chars()
                         .all(|ch| ch.is_alphanumeric() || ch == '_')
                 {
-                    return resolve_type_name(fn_name, site, name);
+ return resolve_type_name(fn_name, site, name);
                 }
             }
-            Err(FrontendError::Lower(format!(
+ Err(FrontendError::Lower(format!(
                 "function `{fn_name}` annotates `{site}` with an unsupported constant type annotation — a string forward-reference must be a simple type/class name (`\"Counter\"`); complex string annotations (`\"list[int]\"`) are deferred"
             )))
         }
@@ -3901,8 +4046,8 @@ fn parse_type_annotation(
         // outer name selects the collection kind; the slice is either
         // a single type (list) or a tuple of two types (dict).
         ast::Expr::Subscript(sub) => {
-            let ast::Expr::Name(outer) = sub.value.as_ref() else {
-                return Err(FrontendError::Lower(format!(
+ let ast::Expr::Name(outer) = sub.value.as_ref() else {
+ return Err(FrontendError::Lower(format!(
                     "function `{fn_name}` annotates `{site}` with non-Name subscripted type — only `list[T]` / `dict[K, V]` at v0.2.0"
                 )));
             };
@@ -3911,38 +4056,38 @@ fn parse_type_annotation(
             // aliases of the lowercase builtin generics — the older Python style
             // is extremely common. They behave identically to the lowercase form
             // thereafter. (`Optional` is handled by its own arm below.)
-            let outer_id = match outer.id.as_str() {
+ let outer_id = match outer.id.as_str() {
                 "List" => "list",
                 "Dict" => "dict",
                 "Tuple" => "tuple",
                 "Set" => "set",
                 "FrozenSet" => "frozenset",
-                other => other,
+ other => other,
             };
-            match outer_id {
+ match outer_id {
                 "list" => {
-                    let elem_ty = parse_type_annotation(
-                        fn_name,
+ let elem_ty = parse_type_annotation(
+ fn_name,
                         &format!("{site} element"),
                         &sub.slice,
                     )?;
-                    Ok(Type::List(Box::new(elem_ty)))
+ Ok(Type::List(Box::new(elem_ty)))
                 }
                 // PMAT-502ew: `Optional[T]` → `Type::Optional(T)`. First cut
                 // supports it as a function return type only (see the
                 // return-wrapping in the function-body lowering).
                 "Optional" => {
-                    let inner = parse_type_annotation(
-                        fn_name,
+ let inner = parse_type_annotation(
+ fn_name,
                         &format!("{site} Optional element"),
                         &sub.slice,
                     )?;
-                    Ok(Type::Optional(Box::new(inner)))
+ Ok(Type::Optional(Box::new(inner)))
                 }
                 // PMAT-500: `set[T]` annotation.
                 "set" => {
-                    let elem_ty = parse_type_annotation(
-                        fn_name,
+ let elem_ty = parse_type_annotation(
+ fn_name,
                         &format!("{site} element"),
                         &sub.slice,
                     )?;
@@ -3950,28 +4095,28 @@ fn parse_type_annotation(
                     // which is invalid Rust (`f64: !Eq`, `!Hash`) — a transpile
                     // success that fails `rustc` (E0277). Reject at lowering with
                     // a clear message instead of emitting uncompilable Rust.
-                    reject_float_hashed(fn_name, site, "set element", &elem_ty)?;
-                    Ok(Type::Set(Box::new(elem_ty)))
+ reject_float_hashed(fn_name, site, "set element", &elem_ty)?;
+ Ok(Type::Set(Box::new(elem_ty)))
                 }
                 "dict" => {
-                    let ast::Expr::Tuple(t) = sub.slice.as_ref() else {
-                        return Err(FrontendError::Lower(format!(
+ let ast::Expr::Tuple(t) = sub.slice.as_ref() else {
+ return Err(FrontendError::Lower(format!(
                             "function `{fn_name}` annotates `{site}` with `dict[...]` lacking a key/value pair — expected `dict[K, V]`"
                         )));
                     };
-                    if t.elts.len() != 2 {
-                        return Err(FrontendError::Lower(format!(
+ if t.elts.len() != 2 {
+ return Err(FrontendError::Lower(format!(
                             "function `{fn_name}` annotates `{site}` with `dict[...]` containing {} type(s); expected exactly 2 (K, V)",
-                            t.elts.len()
+ t.elts.len()
                         )));
                     }
-                    let k_ty = parse_type_annotation(
-                        fn_name,
+ let k_ty = parse_type_annotation(
+ fn_name,
                         &format!("{site} key"),
                         &t.elts[0],
                     )?;
-                    let v_ty = parse_type_annotation(
-                        fn_name,
+ let v_ty = parse_type_annotation(
+ fn_name,
                         &format!("{site} value"),
                         &t.elts[1],
                     )?;
@@ -3979,28 +4124,28 @@ fn parse_type_annotation(
                     // (E0277 — `f64: !Eq`, `!Hash`). Reject cleanly. A float
                     // VALUE is fine (only the key is hashed), so `v_ty` is not
                     // checked.
-                    reject_float_hashed(fn_name, site, "dict key", &k_ty)?;
-                    Ok(Type::Dict(Box::new(k_ty), Box::new(v_ty)))
+ reject_float_hashed(fn_name, site, "dict key", &k_ty)?;
+ Ok(Type::Dict(Box::new(k_ty), Box::new(v_ty)))
                 }
                 // PMAT-494: `tuple[T0, T1, ...]` (or single `tuple[T]`).
                 "tuple" => {
-                    let elem_tys = match sub.slice.as_ref() {
-                        ast::Expr::Tuple(t) => t
+ let elem_tys = match sub.slice.as_ref() {
+ ast::Expr::Tuple(t) => t
                             .elts
                             .iter()
                             .map(|e| {
-                                parse_type_annotation(fn_name, &format!("{site} element"), e)
+ parse_type_annotation(fn_name, &format!("{site} element"), e)
                             })
                             .collect::<Result<Vec<_>, _>>()?,
-                        single => vec![parse_type_annotation(
-                            fn_name,
+ single => vec![parse_type_annotation(
+ fn_name,
                             &format!("{site} element"),
-                            single,
+ single,
                         )?],
                     };
-                    Ok(Type::Tuple(elem_tys))
+ Ok(Type::Tuple(elem_tys))
                 }
-                other => Err(FrontendError::Lower(format!(
+ other => Err(FrontendError::Lower(format!(
                     "function `{fn_name}` annotates `{site}` with subscripted `{other}[...]` — only `list[T]` / `dict[K, V]` / `tuple[...]` at v0.2.0"
                 ))),
             }
@@ -4027,33 +4172,33 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             // PMAT-473 (R4): `name = [elem for var in iter]` materialises
             // to `name = []` + a for-append loop (a comprehension is an
             // expression but the meta-HIR has no block-expression).
-            if asn.targets.len() == 1 {
-                if let (ast::Expr::Name(n), ast::Expr::ListComp(comp)) =
-                    (&asn.targets[0], asn.value.as_ref())
+ if asn.targets.len() == 1 {
+ if let (ast::Expr::Name(n), ast::Expr::ListComp(comp)) =
+ (&asn.targets[0], asn.value.as_ref())
                 {
-                    let name = n.id.to_string();
-                    return desugar_list_comp(ctx, &name, comp);
+ let name = n.id.to_string();
+ return desugar_list_comp(ctx, &name, comp);
                 }
                 // PMAT-501: `name = {k: v for x in xs}` dict comprehension.
-                if let (ast::Expr::Name(n), ast::Expr::DictComp(comp)) =
-                    (&asn.targets[0], asn.value.as_ref())
+ if let (ast::Expr::Name(n), ast::Expr::DictComp(comp)) =
+ (&asn.targets[0], asn.value.as_ref())
                 {
-                    let name = n.id.to_string();
-                    return desugar_dict_comp(ctx, &name, comp);
+ let name = n.id.to_string();
+ return desugar_dict_comp(ctx, &name, comp);
                 }
                 // PMAT-501b: `name = {e for x in xs}` set comprehension.
-                if let (ast::Expr::Name(n), ast::Expr::SetComp(comp)) =
-                    (&asn.targets[0], asn.value.as_ref())
+ if let (ast::Expr::Name(n), ast::Expr::SetComp(comp)) =
+ (&asn.targets[0], asn.value.as_ref())
                 {
-                    let name = n.id.to_string();
-                    return desugar_set_comp(ctx, &name, comp);
+ let name = n.id.to_string();
+ return desugar_set_comp(ctx, &name, comp);
                 }
                 // PMAT-504: `name = lambda param: body` → a closure binding.
-                if let (ast::Expr::Name(n), ast::Expr::Lambda(lam)) =
-                    (&asn.targets[0], asn.value.as_ref())
+ if let (ast::Expr::Name(n), ast::Expr::Lambda(lam)) =
+ (&asn.targets[0], asn.value.as_ref())
                 {
-                    let name = n.id.to_string();
-                    return desugar_closure_assign(ctx, &name, lam).map(|s| vec![s]);
+ let name = n.id.to_string();
+ return desugar_closure_assign(ctx, &name, lam).map(|s| vec![s]);
                 }
             }
             // PMAT-502bz: chained assignment `x = y = z = <literal>`. Python
@@ -4063,8 +4208,8 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             // per target is side-effect-free and each target gets an
             // independent copy (matches Python for scalars; list/dict
             // aliasing is out of scope under value semantics).
-            if asn.targets.len() > 1 {
-                return lower_chained_assign(ctx, asn);
+ if asn.targets.len() > 1 {
+ return lower_chained_assign(ctx, asn);
             }
             // PMAT-559: tuple-unpack with a subscript target —
             // `xs[i], xs[j] = xs[j], xs[i]` (the in-place swap idiom) and
@@ -4078,41 +4223,41 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             // first (swap-safe) then `Assign`s each already-bound name. A *fresh*
             // all-Name unpack keeps the `Stmt::LetTuple` path. A non-tuple-literal
             // RHS reassign (`a, b = f()`) stays on `LetTuple` (deferred edge).
-            if let ast::Expr::Tuple(targets) = &asn.targets[0] {
+ if let ast::Expr::Tuple(targets) = &asn.targets[0] {
                 // PMAT-645/646: starred unpacking `n…, *star, m… = xs` (star at
                 // ANY position) — desugar over a list to `let n_i = xs[i]` for the
                 // prefix, `let star = xs[p:len-s]` for the rest, and `let m_j =
                 // xs[len-s+j]` for the suffix (no new IR; reuses Index + Slice).
                 // Python allows at most one starred target; every other element
                 // must be a plain name.
-                let stars: Vec<usize> = targets
+ let stars: Vec<usize> = targets
                     .elts
                     .iter()
                     .enumerate()
                     .filter(|(_, e)| matches!(e, ast::Expr::Starred(_)))
                     .map(|(i, _)| i)
                     .collect();
-                if stars.len() == 1 {
-                    let star_idx = stars[0];
-                    let others_names = targets
+ if stars.len() == 1 {
+ let star_idx = stars[0];
+ let others_names = targets
                         .elts
                         .iter()
                         .enumerate()
                         .all(|(i, e)| i == star_idx || matches!(e, ast::Expr::Name(_)));
-                    if others_names {
-                        return lower_starred_unpack(ctx, asn);
+ if others_names {
+ return lower_starred_unpack(ctx, asn);
                     }
                 }
-                let has_subscript = targets
+ let has_subscript = targets
                     .elts
                     .iter()
                     .any(|e| matches!(e, ast::Expr::Subscript(_)));
-                let reassigns_bound = targets.elts.iter().any(
+ let reassigns_bound = targets.elts.iter().any(
                     |e| matches!(e, ast::Expr::Name(n) if ctx.bound.contains(n.id.as_str())),
                 );
-                let rhs_is_tuple_lit = matches!(asn.value.as_ref(), ast::Expr::Tuple(_));
-                if has_subscript || (reassigns_bound && rhs_is_tuple_lit) {
-                    return lower_tuple_unpack_with_subscript(ctx, asn);
+ let rhs_is_tuple_lit = matches!(asn.value.as_ref(), ast::Expr::Tuple(_));
+ if has_subscript || (reassigns_bound && rhs_is_tuple_lit) {
+ return lower_tuple_unpack_with_subscript(ctx, asn);
                 }
                 // PMAT-700: a plain (no-star) tuple-unpack over a LIST —
                 // `a, b = xs` — was rejected ("expected a tuple"), though the
@@ -4122,17 +4267,17 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
                 // positional-index desugar (length assert + `let a = xs[0]; …`).
                 // A tuple-literal RHS is definitely a tuple (handled by
                 // `lower_assign`'s `LetTuple` path), so skip the probe-lower there.
-                let all_plain_names = targets.elts.iter().all(|e| matches!(e, ast::Expr::Name(_)));
-                if all_plain_names && !rhs_is_tuple_lit {
-                    let probe = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
-                    if let Type::List(elem) = infer_type_in_ctx(ctx, &probe) {
-                        return lower_list_positional_unpack(ctx, targets, probe, *elem);
+ let all_plain_names = targets.elts.iter().all(|e| matches!(e, ast::Expr::Name(_)));
+ if all_plain_names && !rhs_is_tuple_lit {
+ let probe = lower_expr_in_ctx(ctx, (*asn.value).clone())?;
+ if let Type::List(elem) = infer_type_in_ctx(ctx, &probe) {
+ return lower_list_positional_unpack(ctx, targets, probe, *elem);
                     }
                     // Not a list (e.g. a tuple-typed variable) — fall through to
                     // `lower_assign` (re-lowered there).
                 }
             }
-            lower_assign(ctx, asn).map(|s| vec![s])
+ lower_assign(ctx, asn).map(|s| vec![s])
         }
         // PMAT-470 (R1): augmented assignment `x += e` → `x = x <op> e`.
         ast::Stmt::AugAssign(aug) => lower_aug_assign(ctx, aug),
@@ -4172,19 +4317,19 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // a bare `return` would yield `None`, a type error, so it stays
         // rejected (with a clearer message).
         ast::Stmt::Return(ret) => match ret.value.as_ref() {
-            Some(value) => {
+ Some(value) => {
                 // PMAT-502ec: an early `return []` / `return {}` takes its
                 // element / K-V types from the declared return type. PMAT-502ew:
                 // an `Optional[T]` return wraps the value in `OptionExpr`.
-                let lowered = lower_return_value(ctx, value)?;
-                Ok(vec![Stmt::Return(lowered)])
+ let lowered = lower_return_value(ctx, value)?;
+ Ok(vec![Stmt::Return(lowered)])
             }
-            None if matches!(ctx.fn_return_type, Type::Unit) => {
-                Ok(vec![Stmt::Return(Expr::Unit)])
+ None if matches!(ctx.fn_return_type, Type::Unit) => {
+ Ok(vec![Stmt::Return(Expr::Unit)])
             }
-            None => Err(FrontendError::Lower(format!(
+ None => Err(FrontendError::Lower(format!(
                 "function `{}` has a bare `return` (Python `return None`) but its return type is not `None` — add a return value or annotate `-> None`",
-                ctx.fn_name
+ ctx.fn_name
             ))),
         },
         // PMAT-040 / XPILE-BASHRS-MERGER-001 v0.3.0 falsifier evidence:
@@ -4203,10 +4348,10 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // PMAT-502bw: `print(a, b, …)` builtin → `Stmt::Print`. Checked
         // before the list-method / subprocess.run paths.
         ast::Stmt::Expr(e) if is_print_call(&e) => {
-            lower_print_stmt(ctx, &e).map(|s| vec![s])
+ lower_print_stmt(ctx, &e).map(|s| vec![s])
         }
         ast::Stmt::Expr(e) => match try_lower_list_method_call(ctx, &e) {
-            Some(result) => result.map(|s| vec![s]),
+ Some(result) => result.map(|s| vec![s]),
             // PMAT-1016A: a statement-position call on a USER-CLASS receiver
             // (`c.bump()` — the mutating-method surface this slice unlocks) or
             // a KNOWN user function (`helper(x)` — a `-> None` call whose
@@ -4215,9 +4360,9 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
             // Struct with the named method, and to fns in the signature map —
             // everything else keeps the existing subprocess-only fallback so
             // unknown calls still fail loud.
-            None => match try_lower_side_effect_call(ctx, &e) {
-                Some(result) => result.map(|s| vec![s]),
-                None => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
+ None => match try_lower_side_effect_call(ctx, &e) {
+ Some(result) => result.map(|s| vec![s]),
+ None => lower_expr_stmt_as_cmd(ctx, e).map(|s| vec![s]),
             },
         },
         // PMAT-502dr: a nested `def inner(...): return <expr>` → a closure
@@ -4230,8 +4375,8 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         ast::Stmt::Try(try_stmt) => lower_assignment_try(ctx, try_stmt),
         other => Err(FrontendError::Lower(format!(
             "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, subprocess.run([...]), then a final `return`",
-            ctx.fn_name,
-            std::mem::discriminant(&other)
+ ctx.fn_name,
+ std::mem::discriminant(&other)
         ))),
     }
 }
@@ -4326,7 +4471,7 @@ fn try_lower_list_method_call(
                         if call.args.len() != 1 || !call.keywords.is_empty() {
                             return Some(Err(FrontendError::Lower(format!(
                                 "function `{}` calls `{base_name}[...].append(...)` with {} \
-                                 positional arg(s); append takes exactly 1",
+ positional arg(s); append takes exactly 1",
                                 ctx.fn_name,
                                 call.args.len()
                             ))));
@@ -4420,7 +4565,7 @@ fn try_lower_list_method_call(
         if !call.keywords.is_empty() || call.args.len() != 1 {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.{method}(...)` with {} positional arg(s){}; \
-                 set remove/discard take exactly 1",
+ set remove/discard take exactly 1",
                 ctx.fn_name,
                 call.args.len(),
                 if call.keywords.is_empty() {
@@ -4450,14 +4595,14 @@ fn try_lower_list_method_call(
         if !call.keywords.is_empty() {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.update(...)` with keyword args; \
-                 v0.2.0 takes a single positional set",
+ v0.2.0 takes a single positional set",
                 ctx.fn_name
             ))));
         }
         if call.args.len() != 1 {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.update(...)` with {} positional arg(s); \
-                 v0.2.0 requires exactly 1 (a set)",
+ v0.2.0 requires exactly 1 (a set)",
                 ctx.fn_name,
                 call.args.len()
             ))));
@@ -4506,7 +4651,7 @@ fn try_lower_list_method_call(
         if !call.args.is_empty() || !call.keywords.is_empty() {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.clear(...)` with arguments; \
-                 the in-place container clear takes none at v0.2.0",
+ the in-place container clear takes none at v0.2.0",
                 ctx.fn_name
             ))));
         }
@@ -4539,37 +4684,37 @@ fn try_lower_list_method_call(
         };
         for kw in &call.keywords {
             match kw.arg.as_deref() {
-                Some("key") => match lower_sort_key(ctx, &kw.value, elem_ty.clone()) {
-                    Ok(Some(k)) => key = Some(k),
-                    Ok(None) => {
-                        return Some(Err(FrontendError::Lower(format!(
+ Some("key") => match lower_sort_key(ctx, &kw.value, elem_ty.clone()) {
+ Ok(Some(k)) => key = Some(k),
+ Ok(None) => {
+ return Some(Err(FrontendError::Lower(format!(
                             "function `{}` calls `{receiver_name}.sort(key=…)` with an unsupported key — only `lambda p: e` and a bare callable name are supported",
-                            ctx.fn_name
+ ctx.fn_name
                         ))))
                     }
-                    Err(e) => return Some(Err(e)),
+ Err(e) => return Some(Err(e)),
                 },
-                Some("reverse") => match &kw.value {
-                    ast::Expr::Constant(c) => match &c.value {
-                        ast::Constant::Bool(b) => reverse = *b,
+ Some("reverse") => match &kw.value {
+ ast::Expr::Constant(c) => match &c.value {
+ ast::Constant::Bool(b) => reverse = *b,
                         _ => {
-                            return Some(Err(FrontendError::Lower(format!(
+ return Some(Err(FrontendError::Lower(format!(
                                 "function `{}` calls `{receiver_name}.sort(reverse=…)` with a non-bool value",
-                                ctx.fn_name
+ ctx.fn_name
                             ))))
                         }
                     },
                     _ => {
-                        return Some(Err(FrontendError::Lower(format!(
+ return Some(Err(FrontendError::Lower(format!(
                             "function `{}` calls `{receiver_name}.sort(reverse=…)` with a non-literal value",
-                            ctx.fn_name
+ ctx.fn_name
                         ))))
                     }
                 },
                 _ => {
-                    return Some(Err(FrontendError::Lower(format!(
+ return Some(Err(FrontendError::Lower(format!(
                         "function `{}` calls `{receiver_name}.sort(...)` with an unsupported keyword argument",
-                        ctx.fn_name
+ ctx.fn_name
                     ))))
                 }
             }
@@ -4582,9 +4727,9 @@ fn try_lower_list_method_call(
             Some(k) => sort_key_is_float(ctx, k, elem_ty.clone()),
             // PMAT-622: float anywhere in the element (tuple/nested) → partial_cmp.
             None => matches!(
-                infer_type_in_ctx(ctx, &Expr::Ident(receiver_name.to_string())),
-                Type::List(elem) if type_contains_float(&elem)
-            ),
+            infer_type_in_ctx(ctx, &Expr::Ident(receiver_name.to_string())),
+            Type::List(elem) if type_contains_float(&elem)
+                       ),
         };
         return Some(Ok(Stmt::Assign {
             name: receiver_name.to_string(),
@@ -4618,27 +4763,27 @@ fn try_lower_list_method_call(
             && call.keywords[0].arg.as_ref().map(|a| a.as_str()) == Some("reverse");
         if is_sort_reverse_kwarg {
             match &call.keywords[0].value {
-                ast::Expr::Constant(c) => match &c.value {
-                    ast::Constant::Bool(true) => op = ListMutateOp::SortDesc,
-                    ast::Constant::Bool(false) => {}
+ ast::Expr::Constant(c) => match &c.value {
+ ast::Constant::Bool(true) => op = ListMutateOp::SortDesc,
+ ast::Constant::Bool(false) => {}
                     _ => {
-                        return Some(Err(FrontendError::Lower(format!(
+ return Some(Err(FrontendError::Lower(format!(
                             "function `{}` calls `{receiver_name}.sort(reverse=...)` with a non-bool value",
-                            ctx.fn_name
+ ctx.fn_name
                         ))))
                     }
                 },
                 _ => {
-                    return Some(Err(FrontendError::Lower(format!(
+ return Some(Err(FrontendError::Lower(format!(
                         "function `{}` calls `{receiver_name}.sort(reverse=...)` with a non-literal value — only `True`/`False` are supported",
-                        ctx.fn_name
+ ctx.fn_name
                     ))))
                 }
             }
         } else if !call.args.is_empty() || !call.keywords.is_empty() {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.{method}(...)` with arguments; \
-                 the in-place list mutators take none, except `sort(reverse=<bool>)`, at v0.2.0",
+ the in-place list mutators take none, except `sort(reverse=<bool>)`, at v0.2.0",
                 ctx.fn_name
             ))));
         }
@@ -4664,14 +4809,14 @@ fn try_lower_list_method_call(
         if !call.keywords.is_empty() {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.extend(...)` with keyword args; \
-                 v0.2.0 takes a single positional list",
+ v0.2.0 takes a single positional list",
                 ctx.fn_name
             ))));
         }
         if call.args.len() != 1 {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.extend(...)` with {} positional arg(s); \
-                 v0.2.0 requires exactly 1 (a list)",
+ v0.2.0 requires exactly 1 (a list)",
                 ctx.fn_name,
                 call.args.len()
             ))));
@@ -4744,14 +4889,14 @@ fn try_lower_list_method_call(
             }
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.update(...)` with keyword args; \
-                 v0.2.0 supports `.update(<dict>)` or `.update(a=1, b=2)` over a str-keyed dict",
+ v0.2.0 supports `.update(<dict>)` or `.update(a=1, b=2)` over a str-keyed dict",
                 ctx.fn_name
             ))));
         }
         if call.args.len() != 1 {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.update(...)` with {} positional arg(s); \
-                 v0.2.0 requires exactly 1 (a dict)",
+ v0.2.0 requires exactly 1 (a dict)",
                 ctx.fn_name,
                 call.args.len()
             ))));
@@ -4774,14 +4919,14 @@ fn try_lower_list_method_call(
         if !call.keywords.is_empty() {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.insert(...)` with keyword args; \
-                 v0.2.0 takes two positional args (index, value)",
+ v0.2.0 takes two positional args (index, value)",
                 ctx.fn_name
             ))));
         }
         if call.args.len() != 2 {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.insert(...)` with {} positional arg(s); \
-                 v0.2.0 requires exactly 2 (index, value)",
+ v0.2.0 requires exactly 2 (index, value)",
                 ctx.fn_name,
                 call.args.len()
             ))));
@@ -4793,7 +4938,7 @@ fn try_lower_list_method_call(
         if infer_type_in_ctx(ctx, &index) != Type::I64 {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.insert(<index>, ...)` with a non-int index; \
-                 v0.2.0 requires an int position",
+ v0.2.0 requires an int position",
                 ctx.fn_name
             ))));
         }
@@ -4815,7 +4960,7 @@ fn try_lower_list_method_call(
         if !call.keywords.is_empty() || call.args.len() != 1 {
             return Some(Err(FrontendError::Lower(format!(
                 "function `{}` calls `{receiver_name}.remove(...)` with {} positional arg(s){}; \
-                 list remove takes exactly 1 (a value)",
+ list remove takes exactly 1 (a value)",
                 ctx.fn_name,
                 call.args.len(),
                 if call.keywords.is_empty() {
@@ -4881,15 +5026,15 @@ fn try_lower_list_method_call(
     if !call.keywords.is_empty() {
         return Some(Err(FrontendError::Lower(format!(
             "function `{}` calls `{receiver_name}.{method}(...)` with keyword args; \
-             v0.2.0 first cut takes a single positional value",
+ v0.2.0 first cut takes a single positional value",
             ctx.fn_name
         ))));
     }
     if call.args.len() != 1 {
         return Some(Err(FrontendError::Lower(format!(
             "function `{}` calls `{receiver_name}.{method}(...)` with {} positional arg(s); v0.2.0 requires exactly 1",
-            ctx.fn_name,
-            call.args.len()
+ ctx.fn_name,
+ call.args.len()
         ))));
     }
     // PMAT-466: ctx-aware so `xs.append(d[k])` lowers the dict read to
@@ -4973,13 +5118,13 @@ fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, Fr
                 let ast::Expr::Constant(c) = &kw.value else {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` calls `print(..., {name}=<expr>)` with a non-literal — only a string literal is supported at v0.2.0",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 };
                 let ast::Constant::Str(s) = &c.value else {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` calls `print(..., {name}=<non-str>)` — only a string literal is supported at v0.2.0",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 };
                 if name == "sep" {
@@ -4991,7 +5136,7 @@ fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, Fr
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` calls `print(..., {other}=…)` — only `sep=`/`end=` string-literal kwargs are supported (`file=` deferred)",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         }
@@ -5023,7 +5168,7 @@ fn lower_print_stmt(ctx: &mut LoweringCtx, e: &ast::StmtExpr) -> Result<Stmt, Fr
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` calls `print(...)` with a `{other:?}` argument — only int/str/float/bool/list/tuple (incl. f-strings) are supported at v0.2.0 (dict/set repr deferred)",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         }
@@ -5035,28 +5180,28 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
     let ast::Expr::Call(call) = *e.value else {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a non-call expression statement — only `subprocess.run([...])` is recognised as an expression statement at v0.1.0",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     // Callee must be `subprocess.run` (Attribute(Name("subprocess"), "run")).
     let ast::Expr::Attribute(attr) = call.func.as_ref() else {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a non-`subprocess.run` call as expression statement — only `subprocess.run([...])` is recognised at v0.1.0",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     let ast::Expr::Name(receiver) = attr.value.as_ref() else {
         return Err(FrontendError::Lower(format!(
             "function `{}`'s expression-statement call's receiver isn't a simple `subprocess` Name — only `subprocess.run([...])` shape is recognised",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     if receiver.id.as_str() != "subprocess" || attr.attr.as_str() != "run" {
         return Err(FrontendError::Lower(format!(
             "function `{}` calls `{}.{}` as expression statement — only `subprocess.run([...])` is recognised at v0.1.0",
-            ctx.fn_name,
-            receiver.id.as_str(),
-            attr.attr.as_str()
+ ctx.fn_name,
+ receiver.id.as_str(),
+ attr.attr.as_str()
         )));
     }
     // Exactly one positional argument: a list literal of string literals.
@@ -5068,20 +5213,20 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
     if positional.len() != 1 {
         return Err(FrontendError::Lower(format!(
             "function `{}` calls `subprocess.run` with {} positional arg(s); v0.1.0 requires exactly 1 (a list literal of string literals)",
-            ctx.fn_name,
-            positional.len()
+ ctx.fn_name,
+ positional.len()
         )));
     }
     let ast::Expr::List(list) = positional[0] else {
         return Err(FrontendError::Lower(format!(
             "function `{}` calls `subprocess.run(<expr>)` with a non-list argument — v0.1.0 supports only a list literal of string literals (e.g. `subprocess.run([\"echo\", \"hi\"])`)",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     if list.elts.is_empty() {
         return Err(FrontendError::Lower(format!(
             "function `{}` calls `subprocess.run([])` with an empty list — at least one element is required (the program to run)",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     let mut tokens: Vec<String> = Vec::with_capacity(list.elts.len());
@@ -5089,13 +5234,13 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
         let ast::Expr::Constant(c) = elt else {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `subprocess.run([..., <expr>, ...])` with a non-literal element — v0.1.0 supports only string literals in the list",
-                ctx.fn_name
+ ctx.fn_name
             )));
         };
         let ast::Constant::Str(s) = &c.value else {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `subprocess.run([..., <non-string>, ...])` — v0.1.0 supports only string-literal elements",
-                ctx.fn_name
+ ctx.fn_name
             )));
         };
         tokens.push(s.to_string());
@@ -5262,8 +5407,8 @@ fn lower_arg_materializing_range(
 /// PMAT-534: lower `x in range(...)` to a bounds check (the range is NOT
 /// materialized — `x in range(10**9)` must not allocate a Vec). `x` must type
 /// as `int`. Builds the equivalent meta-HIR boolean expression directly:
-///   - `range(stop)`:                  `0 <= x && x < stop`
-///   - `range(start, stop)`:           `start <= x && x < stop`
+///   - `range(stop)`: `0 <= x && x < stop`
+///   - `range(start, stop)`: `start <= x && x < stop`
 ///   - `range(start, stop, step>0)`:   `start <= x && x < stop && (x - start) % step == 0`
 ///   - `range(start, stop, step<0)`:   `start >= x && x > stop && (start - x) % -step == 0`
 ///
@@ -5278,14 +5423,14 @@ fn lower_in_range(
     if !call.keywords.is_empty() {
         return Err(FrontendError::Lower(format!(
             "function `{}` tests `x in range(..., kw=...)` with keyword args — only positional are supported",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     let x = lower_expr_in_ctx(ctx, left.clone())?;
     if !matches!(infer_type_in_ctx(ctx, &x), Type::I64) {
         return Err(FrontendError::Lower(format!(
             "function `{}` tests `x in range(...)` with a non-int `x` — only int membership is supported at v0.2.0",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     let and = |a: Expr, b: Expr| Expr::BinOp {
@@ -5307,9 +5452,9 @@ fn lower_in_range(
         ),
         [start, stop, step] => {
             let s = extract_step_literal(step).ok_or_else(|| {
-                FrontendError::Lower(format!(
+ FrontendError::Lower(format!(
                     "function `{}` tests `x in range(start, stop, step)` with a non-literal-int or zero step — a non-zero integer literal is required",
-                    ctx.fn_name
+ ctx.fn_name
                 ))
             })?;
             (
@@ -5378,9 +5523,9 @@ fn lower_range_list(ctx: &LoweringCtx, call: &ast::ExprCall) -> Result<Expr, Fro
             // PMAT-523: a non-zero integer literal step — positive OR negative.
             // `extract_step_literal` already rejects a zero / non-literal step.
             let s = extract_step_literal(step).ok_or_else(|| {
-                FrontendError::Lower(format!(
+ FrontendError::Lower(format!(
                     "function `{}` uses `list(range(..., step))` with a non-literal-int or zero step — v0.2.0 requires a non-zero integer literal",
-                    ctx.fn_name
+ ctx.fn_name
                 ))
             })?;
             (
@@ -5584,7 +5729,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                             let Type::List(elem) = infer_type_in_ctx(ctx, &it) else {
                                 return Err(FrontendError::Lower(format!(
                                     "function `{}` uses `zip(...)` with a non-list/str argument — only list and str iteration is supported at v0.2.0",
-                                    ctx.fn_name
+ ctx.fn_name
                                 )));
                             };
                             iters.push((it, *elem));
@@ -5658,7 +5803,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                             let Type::List(elem) = infer_type_in_ctx(ctx, &iter_expr) else {
                                 return Err(FrontendError::Lower(format!(
                                     "function `{}` uses `{fname}(...)` over a non-list/str — only list and str iteration is supported at v0.2.0 first cut",
-                                    ctx.fn_name
+ ctx.fn_name
                                 )));
                             };
                             let kind = if fname == "enumerate" {
@@ -5676,7 +5821,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                                     let kw = bad.arg.as_deref().unwrap_or("**kwargs");
                                     return Err(FrontendError::Lower(format!(
                                         "function `{}` uses `enumerate(...)` with an unsupported keyword argument `{kw}` — only `start=` is supported",
-                                        ctx.fn_name
+ ctx.fn_name
                                     )));
                                 }
                                 let kw_start = call
@@ -5687,7 +5832,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                                     if kw_start.is_some() {
                                         return Err(FrontendError::Lower(format!(
                                             "function `{}` uses `enumerate(xs, <start>, start=…)` giving the start both positionally and by keyword",
-                                            ctx.fn_name
+ ctx.fn_name
                                         )));
                                     }
                                     Some(&call.args[1])
@@ -5702,11 +5847,11 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                                 // fine). A non-literal / non-int start still
                                 // rejects.
                                 let start = match start_src {
-                                    None => 0,
-                                    Some(e) => extract_int_literal(e).ok_or_else(|| {
-                                        FrontendError::Lower(format!(
+ None => 0,
+ Some(e) => extract_int_literal(e).ok_or_else(|| {
+ FrontendError::Lower(format!(
                                             "function `{}` uses `enumerate(xs, <start>)` with a non-literal-int start — only an integer literal (e.g. `5`, `-1`) is supported at v0.2.0",
-                                            ctx.fn_name
+ ctx.fn_name
                                         ))
                                     })?,
                                 };
@@ -5719,7 +5864,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                                 if !call.keywords.is_empty() {
                                     return Err(FrontendError::Lower(format!(
                                         "function `{}` uses `zip(...)` with keyword arguments — `zip` takes only positional iterables",
-                                        ctx.fn_name
+ ctx.fn_name
                                     )));
                                 }
                                 let mut other = lower_expr_in_ctx(ctx, call.args[1].clone())?;
@@ -5732,7 +5877,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                                 let Type::List(elem2) = infer_type_in_ctx(ctx, &other) else {
                                     return Err(FrontendError::Lower(format!(
                                         "function `{}` uses `zip(...)` with a non-list/str second argument",
-                                        ctx.fn_name
+ ctx.fn_name
                                     )));
                                 };
                                 ctx.name_types.insert(first.clone(), (*elem).clone());
@@ -5833,9 +5978,9 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         if tgt.elts.len() >= 3 && tgt.elts.iter().all(|e| matches!(e, ast::Expr::Name(_))) {
             let iter_probe = lower_expr_in_ctx(ctx, (*f.iter).clone())?;
             let arity_ok = matches!(
-                infer_type_in_ctx(ctx, &iter_probe),
-                Type::List(ref el) if matches!(&**el, Type::Tuple(tys) if tys.len() == tgt.elts.len())
-            );
+            infer_type_in_ctx(ctx, &iter_probe),
+            Type::List(ref el) if matches!(&**el, Type::Tuple(tys) if tys.len() == tgt.elts.len())
+                       );
             if arity_ok {
                 let rng = tgt.range;
                 let fresh = ctx.fresh_unpack();
@@ -5866,7 +6011,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` uses a non-Name `for` target (tuple unpacking, attribute, subscript) — not supported at v0.1.0",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -5955,9 +6100,9 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` iterates a non-collection expression typing as {other:?} — \
-                     v0.2.0 supports `for target in range(...)`, `for target in <list[T]>`, \
-                     `for key in <dict[K, V]>`, `for x in <set[T]>`, `for x in <tuple>`, \
-                     or `for char in <str>`; other iterables are deferred",
+ v0.2.0 supports `for target in range(...)`, `for target in <list[T]>`, \
+ `for key in <dict[K, V]>`, `for x in <set[T]>`, `for x in <tuple>`, \
+ or `for char in <str>`; other iterables are deferred",
                     ctx.fn_name
                 )));
             }
@@ -6070,11 +6215,11 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` mutates list `{it_name}` inside a `for` loop that iterates it — \
-                     Python iterates the LIVE list (an appended element is itself visited; removals \
-                     shift upcoming elements), which xpile's value semantics cannot express; \
-                     iterate a copy (`for x in {it_name}[:]`) or collect changes into a separate \
-                     list and apply them after the loop",
-                    ctx.fn_name
+ Python iterates the LIVE list (an appended element is itself visited; removals \
+ shift upcoming elements), which xpile's value semantics cannot express; \
+ iterate a copy (`for x in {it_name}[:]`) or collect changes into a separate \
+ list and apply them after the loop",
+ ctx.fn_name
                 )));
             }
         }
@@ -6099,7 +6244,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                 && c.keywords.is_empty()
                 && c.args.len() == 1
                 && matches!(&c.args[0], ast::Expr::Call(inner)
-                    if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")) =>
+ if matches!(&*inner.func, ast::Expr::Name(n) if n.id.as_str() == "range")) =>
         {
             (&c.args[0], true)
         }
@@ -6113,7 +6258,7 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` iterates a non-call expression — v0.1.0 supports only `for target in range(...)`",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -6122,14 +6267,14 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` iterates a non-`range(...)` call — v0.1.0 supports only `for target in range(...)`",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
     if !call.keywords.is_empty() {
         return Err(FrontendError::Lower(format!(
             "function `{}` passes keyword args to `{callee}(...)` — v0.1.0 supports only positional args",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     // PMAT-466: route range bounds through the context-aware path so a
@@ -6151,9 +6296,9 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             // as UnaryOp(USub, Constant(3)) rather than Constant(-3),
             // so we look through that.
             let step = extract_step_literal(step).ok_or_else(|| {
-                FrontendError::Lower(format!(
+ FrontendError::Lower(format!(
                     "function `{}` uses `range(..., step)` with a non-literal-int or zero step — v0.1.0 requires a non-zero integer literal here",
-                    ctx.fn_name
+ ctx.fn_name
                 ))
             })?;
             (
@@ -6181,13 +6326,13 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         if step_int != 1 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` uses `reversed(range(..., step))` with a non-default step — deferred at v0.2.0",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         if matches!(ctx.fn_return_type, Type::BigInt) {
             return Err(FrontendError::Lower(format!(
                 "function `{}` uses `reversed(range(...))` in a BigInt-mode function — deferred at v0.2.0",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         let sub1 = |e: Expr| Expr::BinOp {
@@ -6523,7 +6668,7 @@ fn lower_assert_stmt(ctx: &mut LoweringCtx, a: ast::StmtAssert) -> Result<Stmt, 
     if infer_type_in_ctx(ctx, &cond) != Type::Bool {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an `assert` whose expression is not Bool (no int-truthiness at v0.1.0)",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     // PMAT-502ao: `assert cond, msg` — the message must type as a `Str`.
@@ -6559,13 +6704,13 @@ fn lower_delete_stmt(ctx: &mut LoweringCtx, d: ast::StmtDelete) -> Result<Stmt, 
     let ast::Expr::Subscript(sub) = &d.targets[0] else {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a `del` of a non-subscript target — v0.2.0 supports `del coll[key]` only",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     let ast::Expr::Name(recv) = sub.value.as_ref() else {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a `del` whose collection isn't a simple Name — v0.2.0 supports `del <name>[key]` only",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     let name = recv.id.to_string();
@@ -6574,42 +6719,42 @@ fn lower_delete_stmt(ctx: &mut LoweringCtx, d: ast::StmtDelete) -> Result<Stmt, 
         Some(Type::List(_)) => {
             // PMAT-570: `del xs[-k]` deletes from the end — resolve the negative
             // literal to `len(xs) - k` (else `(-k) as usize` → usize::MAX → panic).
-            let key = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
-                Expr::BinOp {
-                    op: BinOp::Sub,
-                    lhs: Box::new(Expr::Len(Box::new(Expr::Ident(name.clone())))),
-                    rhs: Box::new(Expr::LitInt(k)),
+ let key = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
+ Expr::BinOp {
+ op: BinOp::Sub,
+ lhs: Box::new(Expr::Len(Box::new(Expr::Ident(name.clone())))),
+ rhs: Box::new(Expr::LitInt(k)),
                 }
             } else {
-                let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
-                let idx_ty = infer_type_in_ctx(ctx, &key);
-                if !matches!(idx_ty, Type::I64) {
-                    return Err(FrontendError::Lower(format!(
+ let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+ let idx_ty = infer_type_in_ctx(ctx, &key);
+ if !matches!(idx_ty, Type::I64) {
+ return Err(FrontendError::Lower(format!(
                         "function `{}` deletes `{name}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
-                key
+ key
             };
-            ctx.mutable.insert(name.clone());
-            Ok(Stmt::DelItem {
-                name,
-                key,
-                is_dict: false,
+ ctx.mutable.insert(name.clone());
+ Ok(Stmt::DelItem {
+ name,
+ key,
+ is_dict: false,
             })
         }
         Some(Type::Dict(_, _)) => {
-            let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
-            ctx.mutable.insert(name.clone());
-            Ok(Stmt::DelItem {
-                name,
-                key,
-                is_dict: true,
+ let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+ ctx.mutable.insert(name.clone());
+ Ok(Stmt::DelItem {
+ name,
+ key,
+ is_dict: true,
             })
         }
         _ => Err(FrontendError::Lower(format!(
             "function `{}` deletes from `{name}` which doesn't type as list[T] or dict[K, V] — v0.2.0 supports list/dict `del` only",
-            ctx.fn_name
+ ctx.fn_name
         ))),
     }
 }
@@ -6630,7 +6775,7 @@ fn lower_raise_stmt(ctx: &mut LoweringCtx, r: ast::StmtRaise) -> Result<Stmt, Fr
     let Some(exc) = r.exc else {
         return Err(FrontendError::Lower(format!(
             "function `{}` uses a bare `raise` (re-raise) — only `raise Exc(\"msg\")` is supported at v0.1.0",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     // PMAT-631: prefix the panic payload with the exception TYPE
@@ -6648,7 +6793,7 @@ fn lower_raise_stmt(ctx: &mut LoweringCtx, r: ast::StmtRaise) -> Result<Stmt, Fr
             if infer_type_in_ctx(ctx, &msg) != Type::Str {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` raises with a non-string message — only a `Str` \
-                     message (`raise Exc(\"...\")`) is supported at v0.1.0",
+ message (`raise Exc(\"...\")`) is supported at v0.1.0",
                     ctx.fn_name
                 )));
             }
@@ -6704,7 +6849,7 @@ fn lower_if_stmt_as_lets(
     if target_names.is_empty() {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an if-branch with no assignments — v0.1.0 if-as-let requires at least one assignment per branch",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     validate_branch_name_sets(&ctx.fn_name, &if_stmt, &target_names)?;
@@ -6823,11 +6968,11 @@ fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError>
     // downstream so `subject == Color::RED` type-checks.
     let literal_value = |pat: &ast::Pattern| -> Result<ast::Expr, FrontendError> {
         match pat {
-            ast::Pattern::MatchValue(pv)
-                if is_literal_default(pv.value.as_ref())
+ ast::Pattern::MatchValue(pv)
+ if is_literal_default(pv.value.as_ref())
                     || matches!(pv.value.as_ref(), ast::Expr::Attribute(a) if matches!(a.value.as_ref(), ast::Expr::Name(_))) =>
             {
-                Ok((*pv.value).clone())
+ Ok((*pv.value).clone())
             }
             _ => Err(FrontendError::Lower(
                 "`match` supports literal value patterns (`case 0:`/`case \"x\":`), dotted value patterns (`case Color.RED:`), `|`-patterns of those, and a trailing `case _:` at v0.2.0 — captures/guards/class/sequence/mapping/`True`/`False`/`None` patterns are unsupported".to_string(),
@@ -7161,7 +7306,7 @@ fn hoist_walruses_into(
         let ast::Expr::Name(tgt) = named.target.as_ref() else {
             return Err(FrontendError::Lower(format!(
                 "function `{}` uses a walrus `:=` whose target is not a plain name — only `(name := expr)` is supported at v0.2.0",
-                ctx.fn_name
+ ctx.fn_name
             )));
         };
         let tgt = tgt.clone();
@@ -7231,7 +7376,7 @@ fn lower_if_stmt(
     if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
         return Err(FrontendError::Lower(format!(
             "function `{}` has an `if` condition that does not type as bool — v0.2.0 requires a boolean condition",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     // PMAT-502fa: intra-branch Optional narrowing for `if x is not None:`. The
@@ -7343,9 +7488,9 @@ fn validate_branch_name_sets(
 /// support elif:
 ///
 /// ```text
-/// if a: x = 1                            if a { 1 }
-/// elif b: x = 2          lowers to       else if b { 2 }
-/// else:    x = 3                         else { 3 }
+/// if a: x = 1 if a { 1 }
+/// elif b: x = 2 lowers to       else if b { 2 }
+/// else:    x = 3 else { 3 }
 /// ```
 ///
 /// Internally this becomes nested IfExpr nodes; the codegen pretty-print
@@ -7459,23 +7604,23 @@ fn lower_chained_assign(
         .targets
         .iter()
         .map(|t| match t {
-            ast::Expr::Name(n) => Ok(n.id.to_string()),
+ ast::Expr::Name(n) => Ok(n.id.to_string()),
             _ => Err(FrontendError::Lower(format!(
                 "function `{}` has a chained assignment with a non-Name target — only `a = b = … = <literal>` (plain names) is supported at v0.2.0",
-                ctx.fn_name
+ ctx.fn_name
             ))),
         })
         .collect::<Result<Vec<_>, _>>()?;
     let is_scalar_literal = matches!(
-        asn.value.as_ref(),
-        ast::Expr::Constant(c) if matches!(
-            c.value,
-            ast::Constant::Int(_)
-                | ast::Constant::Float(_)
-                | ast::Constant::Bool(_)
-                | ast::Constant::Str(_)
-        )
-    );
+           asn.value.as_ref(),
+           ast::Expr::Constant(c) if matches!(
+    c.value,
+    ast::Constant::Int(_)
+                   | ast::Constant::Float(_)
+                   | ast::Constant::Bool(_)
+                   | ast::Constant::Str(_)
+           )
+       );
     // PMAT-683: a non-literal chained assignment `a = b = <expr>` is allowed when
     // the value is a COPY scalar (int/float/bool) — bind it ONCE to a temp and copy
     // it into each target (`let __chain = EXPR; a = __chain; b = __chain;`). This
@@ -7489,7 +7634,7 @@ fn lower_chained_assign(
     if !is_scalar_literal && !is_copy_scalar {
         return Err(FrontendError::Lower(format!(
             "function `{}` has a chained assignment `a = b = …` with a non-literal {ty0:?} value — only a scalar literal (int/float/bool/str) or a Copy-scalar expression (int/float/bool) is supported at v0.2.0 (str/list/dict/set would move or alias, diverging from Python)",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     let mut out = Vec::with_capacity(names.len() + 1);
@@ -7551,10 +7696,10 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 .elts
                 .iter()
                 .map(|e| match e {
-                    ast::Expr::Name(n) => Ok(n.id.to_string()),
+ ast::Expr::Name(n) => Ok(n.id.to_string()),
                     _ => Err(FrontendError::Lower(format!(
                         "function `{}` uses a non-Name tuple-unpacking target (nested / starred / subscript) — not supported at v0.2.0 first cut",
-                        ctx.fn_name
+ ctx.fn_name
                     ))),
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -7572,9 +7717,9 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                 other => {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` unpacks {} names but the right-hand side types as {other:?} — expected a tuple of {} elements",
-                        ctx.fn_name,
-                        names.len(),
-                        names.len()
+ ctx.fn_name,
+ names.len(),
+ names.len()
                     )));
                 }
             }
@@ -7610,7 +7755,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             let ast::Expr::Name(obj) = attr.value.as_ref() else {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns to a non-Name attribute receiver — only `obj.field = v` over a struct local/param is supported at v0.2.0",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             };
             let obj_name = obj.id.to_string();
@@ -7619,7 +7764,7 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             let Type::Struct(sname) = obj_ty else {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns to `.{field}` of `{obj_name}`, which is not a struct value",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             };
             let known = ctx
@@ -7639,9 +7784,9 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             if ctx.frozen_structs.contains(&sname) {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns field `{field}` of `{obj_name}`, a frozen dataclass \
-                     `{sname}` — Python raises FrozenInstanceError (a `@dataclass(frozen=True)` \
-                     instance is immutable). Drop `frozen=True`, or build a new instance instead \
-                     of mutating",
+ `{sname}` — Python raises FrozenInstanceError (a `@dataclass(frozen=True)` \
+ instance is immutable). Drop `frozen=True`, or build a new instance instead \
+ of mutating",
                     ctx.fn_name
                 )));
             }
@@ -7687,9 +7832,9 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     if ctx.shadowed_consts.contains(&name) {
         return Err(FrontendError::Lower(format!(
             "function `{}` assigns `{name}`, which shadows the module-level constant `{name}` — \
-             in Python this would create a function-local, but xpile cannot emit a Rust binding \
-             that shadows the `const {name}` (the name resolves to a constant pattern, not a fresh \
-             binding). Rename the local (e.g. `{name}_local`) or the module constant.",
+ in Python this would create a function-local, but xpile cannot emit a Rust binding \
+ that shadows the `const {name}` (the name resolves to a constant pattern, not a fresh \
+ binding). Rename the local (e.g. `{name}_local`) or the module constant.",
             ctx.fn_name
         )));
     }
@@ -7738,7 +7883,11 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         // three-way test to (each struct-ident arg, the binding): safe when
         // neither object is mutated, or when the arg is never re-read
         // (moved); refused when a mutation makes the laundering observable.
-        if let (Expr::Call { callee, args }, Type::Struct(_)) = (&value, &ty) {
+        if let (
+            Expr::Call { callee, args },
+            Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_),
+        ) = (&value, &ty)
+        {
             if ctx.signatures.get(callee).is_some_and(|s| s.returns_param) {
                 for arg in args {
                     let src = match arg {
@@ -7750,40 +7899,111 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
                         _ => None,
                     };
                     let Some(src) = src else { continue };
-                    if !matches!(ctx.name_types.get(src), Some(Type::Struct(_))) {
+                    if !matches!(
+                        ctx.name_types.get(src),
+                        Some(Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_))
+                    ) {
                         continue;
                     }
                     let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
-                    let any_mutated =
-                        ctx.obj_mutated.contains(src) || ctx.obj_mutated.contains(&name);
+                    let src_mutated = ctx.obj_mutated.contains(src);
+                    let name_mutated = ctx.obj_mutated.contains(&name);
                     let dst_read = ctx.read_counts.get(&name).copied().unwrap_or(0) > 0;
-                    if any_mutated && dst_read && src_reread {
+                    // Observable laundering: some object mutation AND the source
+                    // re-read AND the binding observable (read OR itself mutated —
+                    // a subscript write is not a "read").
+                    if (src_mutated || name_mutated) && src_reread && (dst_read || name_mutated) {
                         return Err(FrontendError::Lower(format!(
                             "function `{}` binds `{name}` from `{callee}({src}, …)` — `{callee}` may RETURN its parameter, so in Python `{name}` and `{src}` would be the SAME object, but xpile's pass-by-value makes `{name}` a copy and a mutation through one name is silently invisible through the other. Use the original name directly, or make `{callee}` construct a new instance",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
                 }
             }
         }
-        let value = if let (Expr::Ident(src), Type::Struct(_)) = (&value, &ty) {
+        // PMAT-1008-interim: the SHARED-INNER-ROW silent miscompiles. Python
+        // `grid = [row, row]` stores the SAME inner list twice and
+        // `m = [[0, 0]] * 2` replicates ONE shared inner list — a later
+        // NESTED write (`grid[0][0] = 5`) is visible through every slot
+        // (CPython 10), but xpile's value semantics clone per element/rep
+        // (rust 5): confirmed silent DIVERGEs (PMAT-1007 cases b/c). Refuse
+        // the construction when the bound name is nested-mutated; read-only
+        // grids (the common init-then-read shape) stay accepted, and depth-1
+        // slot replacement (`grid[0] = x`) is value-faithful and unaffected.
+        if ctx.nested_mutated.contains(&name) {
+            let container_ident = |e: &Expr| -> Option<String> {
+                // The list-literal lowering CLONES named elements
+                // (`(row).clone()`), so unwrap Expr::Clone first.
+                let inner = match e {
+                    Expr::Clone(inner) => inner.as_ref(),
+                    other => other,
+                };
+                if let Expr::Ident(n) = inner {
+                    if matches!(
+                        ctx.name_types.get(n),
+                        Some(Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Struct(_))
+                    ) {
+                        return Some(n.clone());
+                    }
+                }
+                None
+            };
+            if let Expr::ListLit(elems) = &value {
+                let idents: Vec<String> = elems.iter().filter_map(container_ident).collect();
+                let has_dup = idents
+                    .iter()
+                    .any(|n| idents.iter().filter(|m| *m == n).count() >= 2);
+                if has_dup {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` builds `{name}` as a list holding the same inner container more than once and then writes through it (e.g. `{name}[i][j] = …`) — Python SHARES the inner object across slots (the write is visible through every slot), which xpile's per-element clone cannot express. Use independent inner lists (e.g. a fresh literal per slot)",
+ ctx.fn_name
+                    )));
+                }
+            }
+            if let Expr::Repeat { of_str: false, .. } = &value {
+                if matches!(
+                                   &ty,
+                Type::List(elem) if matches!(
+                elem.as_ref(),
+                Type::List(_) | Type::Dict(_, _) | Type::Set(_) | Type::Struct(_)
+                                   )
+                               )
+                {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` builds `{name}` by repeating a mutable inner container (`[…] * n`) and then writes through it (e.g. `{name}[i][j] = …`) — Python replicates ONE shared inner object (the write is visible in every replica), which xpile's per-replica clone cannot express. Build independent rows instead (e.g. `[[0] * w for _ in range(h)]`-style, or append fresh literals in a loop)",
+ ctx.fn_name
+                    )));
+                }
+            }
+        }
+        let value = if let (
+            Expr::Ident(src),
+            Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_),
+        ) = (&value, &ty)
+        {
             let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
             // PMAT-1017 (sweep #8 refinements): (a) OBJECT mutation only — a
             // name REBINDING (`c = Counter(99)`) detaches the name in Python,
             // so a rebound source is clone-safe (was wrongly refused via
-            // ctx.mutable, which counts rebindings); (b) a DEAD alias (never
-            // read) is harmless whatever else happens — clone it.
+            // ctx.mutable, which counts rebindings); (b) a DEAD alias — never
+            // read AND never mutated — is harmless whatever else happens.
+            // PMAT-1008-interim: "dead" MUST include never-MUTATED — a
+            // subscript WRITE (`b[0] = 99`) is not a read, so a mutated-but-
+            // never-read alias slipped the old `!dst_read` shortcut into the
+            // clone path and the write landed on the copy (SILENT diverge,
+            // caught while extending this rule to containers).
             let dst_read = ctx.read_counts.get(&name).copied().unwrap_or(0) > 0;
-            let any_mutated = ctx.obj_mutated.contains(src) || ctx.obj_mutated.contains(&name);
-            if !any_mutated || !dst_read {
+            let src_mutated = ctx.obj_mutated.contains(src);
+            let name_mutated = ctx.obj_mutated.contains(&name);
+            if !name_mutated && (!src_mutated || !dst_read) {
                 Expr::Clone(Box::new(value))
             } else if src_reread {
                 return Err(FrontendError::Lower(format!(
-                    "function `{}` aliases struct `{src}` as `{name}` and mutates one of them \
-                     while both stay observable — Python shares the object (mutations through \
-                     either name are seen by both), which xpile's value semantics cannot \
-                     express (a move fails to compile; a clone silently drops the sharing). \
-                     Mutate before aliasing, or keep a single name",
+                    "function `{}` aliases `{src}` as `{name}` and mutates one of them \
+ while both stay observable — Python shares the object (mutations through \
+ either name are seen by both), which xpile's value semantics cannot \
+ express (a move fails to compile; a clone silently drops the sharing). \
+ Mutate before aliasing, or keep a single name",
                     ctx.fn_name
                 )));
             } else {
@@ -7835,11 +8055,11 @@ fn lower_starred_unpack(
     let suffix_names = names_of(&targets.elts[star_pos + 1..]);
     let star_name = match &targets.elts[star_pos] {
         ast::Expr::Starred(s) => match s.value.as_ref() {
-            ast::Expr::Name(n) => n.id.to_string(),
+ ast::Expr::Name(n) => n.id.to_string(),
             _ => {
-                return Err(FrontendError::Lower(format!(
+ return Err(FrontendError::Lower(format!(
                     "function `{}` has a starred unpacking target that isn't a plain name (`*expr`) — only `*name` is supported",
-                    ctx.fn_name
+ ctx.fn_name
                 )))
             }
         },
@@ -7852,7 +8072,7 @@ fn lower_starred_unpack(
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` uses starred unpacking over a value typing as {other:?} — only `list[T]` is supported",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -8041,7 +8261,7 @@ fn lower_tuple_unpack_with_subscript(
     let ast::Expr::Tuple(rhs) = asn.value.as_ref() else {
         return Err(FrontendError::Lower(format!(
             "function `{}` unpacks into subscript targets from a non-tuple-literal right-hand side — only `a[i], b[j] = x, y` is supported at v0.2.0",
-            ctx.fn_name
+ ctx.fn_name
         )));
     };
     if rhs.elts.len() != targets.len() {
@@ -8097,8 +8317,8 @@ fn lower_tuple_unpack_with_subscript(
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` has an unsupported tuple-unpack target {:?} — only names and single-level subscripts are supported at v0.2.0",
-                    ctx.fn_name,
-                    std::mem::discriminant(&other)
+ ctx.fn_name,
+ std::mem::discriminant(&other)
                 )));
             }
         }
@@ -8147,51 +8367,51 @@ fn lower_subscript_assign_target(
             // pre-folded to `len - k`, which codegen then wrapped a SECOND time:
             // `xs[-5]` on a len-3 list became `len + (len-5)` = 1, silently
             // writing an in-bounds slot instead of raising IndexError.)
-            let index = if let Some(k) = neg_literal_int(&single) {
-                Expr::LitInt(-k)
+ let index = if let Some(k) = neg_literal_int(&single) {
+ Expr::LitInt(-k)
             } else {
                 // PMAT-466: ctx-aware so a dict read used as a list index
                 // (`xs[d[k]] = v`) lowers to `DictGet`, not a nested list index.
-                let index = lower_expr_in_ctx(ctx, single)?;
-                let idx_ty = infer_type_in_ctx(ctx, &index);
-                if !matches!(idx_ty, Type::I64) {
-                    return Err(FrontendError::Lower(format!(
+ let index = lower_expr_in_ctx(ctx, single)?;
+ let idx_ty = infer_type_in_ctx(ctx, &index);
+ if !matches!(idx_ty, Type::I64) {
+ return Err(FrontendError::Lower(format!(
                         "function `{}` indexed-assigns `{receiver}[<expr>]` where index types as {idx_ty:?}; only `int` indices are supported at v0.2.0",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
-                index
+ index
             };
-            ctx.mutable.insert(receiver.clone());
-            Ok(Stmt::IndexAssign {
-                list_name: receiver,
-                indices: vec![index],
-                value,
+ ctx.mutable.insert(receiver.clone());
+ Ok(Stmt::IndexAssign {
+ list_name: receiver,
+ indices: vec![index],
+ value,
             })
         }
         Some(Type::Dict(key_ty, _)) => {
-            let key = lower_expr_in_ctx(ctx, single)?;
+ let key = lower_expr_in_ctx(ctx, single)?;
             // PMAT-829 (HUNT-V25 #4): a bool key into an INT-keyed dict —
             // `d[True] = v` — coerce bool→i64 (Python `True == 1`), mirroring the
             // already-shipped get-path coercion (PMAT-751). Without it the insert
             // emitted `d.insert(true, …)` into a `HashMap<i64, _>` → rustc E0308.
-            let key = if matches!(*key_ty, Type::I64)
+ let key = if matches!(*key_ty, Type::I64)
                 && matches!(infer_type_in_ctx(ctx, &key), Type::Bool)
             {
-                to_i64_operand(ctx, key)
+ to_i64_operand(ctx, key)
             } else {
-                key
+ key
             };
-            ctx.mutable.insert(receiver.clone());
-            Ok(Stmt::DictSet {
-                dict_name: receiver,
-                key,
-                value,
+ ctx.mutable.insert(receiver.clone());
+ Ok(Stmt::DictSet {
+ dict_name: receiver,
+ key,
+ value,
             })
         }
         _ => Err(FrontendError::Lower(format!(
             "function `{}` keyed-assigns to `{receiver}` which doesn't type as list[T] or dict[K, V] — v0.2.0 supports list/dict subscript assignment only",
-            ctx.fn_name
+ ctx.fn_name
         ))),
     }
 }
@@ -8211,7 +8431,7 @@ fn lower_assignment_try(
     let unsupported = |ctx: &LoweringCtx| {
         FrontendError::Lower(format!(
             "function `{}`'s `try` is not the supported `try: x = <expr> except [E]: x = <expr>` shape (same target, single `except` without a bound name, no `else`/`finally`, one assignment per arm) — v0.2.0 first cut",
-            ctx.fn_name
+ ctx.fn_name
         ))
     };
     if !try_stmt.orelse.is_empty() || !try_stmt.finalbody.is_empty() || try_stmt.handlers.len() != 1
@@ -8245,7 +8465,7 @@ fn lower_assignment_try(
     if body_name != handler_name {
         return Err(FrontendError::Lower(format!(
             "function `{}`'s try/except assigns different names (`{body_name}` vs `{handler_name}`) — both arms must assign the same target",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     let body = lower_expr_in_ctx(ctx, body_val.clone())?;
@@ -8425,7 +8645,7 @@ fn peel_nested_subscript_assign(
             _ => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` has a non-Name subscript-assignment target — v0.2.0 supports `<name>[k]…[k] = v`",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         }
@@ -8450,7 +8670,7 @@ fn peel_nested_subscript_assign(
                 if !matches!(infer_type_in_ctx(ctx, &idx), Type::I64) {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` nested-indexed-assigns `{receiver}[…]` with a non-int list index — only `int` list indices are supported",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 steps.push((idx, false));
@@ -8464,7 +8684,7 @@ fn peel_nested_subscript_assign(
             _ => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` nested-subscript-assigns `{receiver}[…][…]` but it is not a nested `list`/`dict` of matching depth — supported nests are `list[list[…]]` and `dict`-bearing (`d[a][b]`, `dm[k][i]`) at v0.2.0",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         }
@@ -8545,11 +8765,11 @@ fn lower_aug_assign(
     let rhs = lower_expr_in_ctx(ctx, (*aug.value).clone())?;
     match aug.target.as_ref() {
         ast::Expr::Name(n) => {
-            let name = n.id.to_string();
-            if !ctx.bound.contains(&name) {
-                return Err(FrontendError::Lower(format!(
+ let name = n.id.to_string();
+ if !ctx.bound.contains(&name) {
+ return Err(FrontendError::Lower(format!(
                     "function `{}` augments `{name}` (`{name} <op>= …`) before it is assigned — initialise `{name}` first",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
             // PMAT-502eb: `xs += ys` over a list is Python's in-place list
@@ -8558,38 +8778,38 @@ fn lower_aug_assign(
             // `checked_add`, which doesn't exist on `Vec` (silent miscompile).
             // Any other augmented operator on a list (`*=`, …) is rejected
             // cleanly rather than miscompiled.
-            if matches!(ctx.name_types.get(&name), Some(Type::List(_))) {
+ if matches!(ctx.name_types.get(&name), Some(Type::List(_))) {
                 // PMAT-629: `xs *= n` is list repetition (`xs = xs * n`) — route
                 // through `combine_aug` (which returns `Expr::Repeat`) and reassign,
                 // mirroring `s *= n` for strings. (Was rejected as "only +=".)
-                if matches!(aug.op, ast::Operator::Mult) {
-                    if !matches!(infer_type_in_ctx(ctx, &rhs), Type::I64) {
-                        return Err(FrontendError::Lower(format!(
+ if matches!(aug.op, ast::Operator::Mult) {
+ if !matches!(infer_type_in_ctx(ctx, &rhs), Type::I64) {
+ return Err(FrontendError::Lower(format!(
                             "function `{}` uses `{name} *= <non-int>` on a list — repetition needs an int count",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
-                    ctx.mutable.insert(name.clone());
-                    let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
-                    return Ok(vec![Stmt::Assign { name, value }]);
+ ctx.mutable.insert(name.clone());
+ let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
+ return Ok(vec![Stmt::Assign { name, value }]);
                 }
-                if !matches!(aug.op, ast::Operator::Add) {
-                    return Err(FrontendError::Lower(format!(
+ if !matches!(aug.op, ast::Operator::Add) {
+ return Err(FrontendError::Lower(format!(
                         "function `{}` uses `{name} <op>= …` on a list with an operator other than `+=` (extend) or `*=` (repeat) — v0.2.0 supports those two",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
-                let other_ty = infer_type_in_ctx(ctx, &rhs);
-                if !matches!(other_ty, Type::List(_)) {
-                    return Err(FrontendError::Lower(format!(
+ let other_ty = infer_type_in_ctx(ctx, &rhs);
+ if !matches!(other_ty, Type::List(_)) {
+ return Err(FrontendError::Lower(format!(
                         "function `{}` augments list `{name}` with `+= <{other_ty:?}>`; v0.2.0 supports `list += list` (in-place extend)",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
-                ctx.mutable.insert(name.clone());
-                return Ok(vec![Stmt::ListExtend {
-                    list_name: name,
-                    other: rhs,
+ ctx.mutable.insert(name.clone());
+ return Ok(vec![Stmt::ListExtend {
+ list_name: name,
+ other: rhs,
                 }]);
             }
             // PMAT-593: `a |= b` over two dicts is PEP 584 in-place union —
@@ -8597,28 +8817,28 @@ fn lower_aug_assign(
             // key conflicts). Other augmented operators on a dict are rejected
             // cleanly rather than routed through `combine_aug` (which would
             // emit an invalid `a = (a | b)` over `HashMap`).
-            if matches!(ctx.name_types.get(&name), Some(Type::Dict(_, _))) {
-                if !matches!(aug.op, ast::Operator::BitOr) {
-                    return Err(FrontendError::Lower(format!(
+ if matches!(ctx.name_types.get(&name), Some(Type::Dict(_, _))) {
+ if !matches!(aug.op, ast::Operator::BitOr) {
+ return Err(FrontendError::Lower(format!(
                         "function `{}` uses `{name} <op>= …` on a dict with an operator other than `|=` (PEP 584 union) — v0.2.0 supports only dict `|=`",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
-                let other_ty = infer_type_in_ctx(ctx, &rhs);
-                if !matches!(other_ty, Type::Dict(_, _)) {
-                    return Err(FrontendError::Lower(format!(
+ let other_ty = infer_type_in_ctx(ctx, &rhs);
+ if !matches!(other_ty, Type::Dict(_, _)) {
+ return Err(FrontendError::Lower(format!(
                         "function `{}` augments dict `{name}` with `|= <{other_ty:?}>`; v0.2.0 supports `dict |= dict` (in-place union)",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
-                ctx.mutable.insert(name.clone());
-                return Ok(vec![Stmt::DictUpdate {
-                    dict_name: name,
-                    other: rhs,
+ ctx.mutable.insert(name.clone());
+ return Ok(vec![Stmt::DictUpdate {
+ dict_name: name,
+ other: rhs,
                 }]);
             }
-            let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
-            Ok(vec![Stmt::Assign { name, value }])
+ let value = combine_aug(ctx, &aug.op, Expr::Ident(name.clone()), rhs)?;
+ Ok(vec![Stmt::Assign { name, value }])
         }
         // PMAT-497: augmented subscript assignment `d[k] += v` /
         // `xs[i] += v` — desugar to `d[k] = d[k] <op> v`, reusing the
@@ -8629,108 +8849,108 @@ fn lower_aug_assign(
             // path (shared with plain `= v`), fold the indices into a nested
             // `Expr::Index` read for the current value, combine, then emit a
             // multi-index `IndexAssign`. `None` ⇒ single-level (below).
-            if let Some((receiver, steps)) = peel_nested_subscript_assign(ctx, sub)? {
+ if let Some((receiver, steps)) = peel_nested_subscript_assign(ctx, sub)? {
                 // PMAT-730: augmented nested assign supports the all-LIST nest
                 // (`grid[i][j] += v`). A dict level in the path needs a read +
                 // get_mut write and is deferred — reject cleanly.
-                if steps.iter().any(|(_, is_dict)| *is_dict) {
-                    return Err(FrontendError::Lower(format!(
+ if steps.iter().any(|(_, is_dict)| *is_dict) {
+ return Err(FrontendError::Lower(format!(
                         "function `{}` uses an augmented nested-subscript assignment with a dict level (`d[a][b] <op>= v`) — not supported at v0.2.0 (plain `d[a][b] = v` is)",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 // PMAT-755: bind each impure index to a temp ONCE — a
                 // side-effecting index (`grid[q.pop(0)][j] += v`) is read AND
                 // written, so it must be evaluated a single time.
-                let mut pre: Vec<Stmt> = Vec::new();
-                let indices: Vec<Expr> = steps
+ let mut pre: Vec<Stmt> = Vec::new();
+ let indices: Vec<Expr> = steps
                     .into_iter()
                     .map(|(i, _)| {
-                        let (let_stmt, idx) = bind_if_impure(ctx, i);
-                        if let Some(s) = let_stmt {
-                            pre.push(s);
+ let (let_stmt, idx) = bind_if_impure(ctx, i);
+ if let Some(s) = let_stmt {
+ pre.push(s);
                         }
-                        idx
+ idx
                     })
                     .collect();
-                let mut current = Expr::Ident(receiver.clone());
-                for idx in &indices {
-                    current = Expr::Index {
-                        collection: Box::new(current),
-                        index: Box::new(idx.clone()),
+ let mut current = Expr::Ident(receiver.clone());
+ for idx in &indices {
+ current = Expr::Index {
+ collection: Box::new(current),
+ index: Box::new(idx.clone()),
                     };
                 }
-                let value = combine_aug(ctx, &aug.op, current, rhs)?;
-                ctx.mutable.insert(receiver.clone());
-                pre.push(Stmt::IndexAssign {
-                    list_name: receiver,
-                    indices,
-                    value,
+ let value = combine_aug(ctx, &aug.op, current, rhs)?;
+ ctx.mutable.insert(receiver.clone());
+ pre.push(Stmt::IndexAssign {
+ list_name: receiver,
+ indices,
+ value,
                 });
-                return Ok(pre);
+ return Ok(pre);
             }
-            let receiver = match sub.value.as_ref() {
-                ast::Expr::Name(n) => n.id.to_string(),
+ let receiver = match sub.value.as_ref() {
+ ast::Expr::Name(n) => n.id.to_string(),
                 _ => unreachable!("peel_nested_subscript_assign validated a Name base"),
             };
-            match ctx.name_types.get(&receiver).cloned() {
-                Some(Type::Dict(_, _)) => {
-                    let key0 = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+ match ctx.name_types.get(&receiver).cloned() {
+ Some(Type::Dict(_, _)) => {
+ let key0 = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
                     // PMAT-755: bind a side-effecting key once (read + write).
-                    let (let_stmt, key) = bind_if_impure(ctx, key0);
-                    let current = Expr::DictGet {
-                        dict: Box::new(Expr::Ident(receiver.clone())),
-                        key: Box::new(key.clone()),
+ let (let_stmt, key) = bind_if_impure(ctx, key0);
+ let current = Expr::DictGet {
+ dict: Box::new(Expr::Ident(receiver.clone())),
+ key: Box::new(key.clone()),
                     };
-                    let value = combine_aug(ctx, &aug.op, current, rhs)?;
-                    ctx.mutable.insert(receiver.clone());
-                    let mut out: Vec<Stmt> = let_stmt.into_iter().collect();
-                    out.push(Stmt::DictSet {
-                        dict_name: receiver,
-                        key,
-                        value,
+ let value = combine_aug(ctx, &aug.op, current, rhs)?;
+ ctx.mutable.insert(receiver.clone());
+ let mut out: Vec<Stmt> = let_stmt.into_iter().collect();
+ out.push(Stmt::DictSet {
+ dict_name: receiver,
+ key,
+ value,
                     });
-                    Ok(out)
+ Ok(out)
                 }
-                Some(Type::List(_)) => {
+ Some(Type::List(_)) => {
                     // PMAT-560: negative-literal index `xs[-k] += v` resolves to
                     // `xs[len(xs) - k]` on both the read and write side (same
                     // desugar as plain `xs[-k] = v`).
-                    let index = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
-                        Expr::BinOp {
-                            op: BinOp::Sub,
-                            lhs: Box::new(Expr::Len(Box::new(Expr::Ident(receiver.clone())))),
-                            rhs: Box::new(Expr::LitInt(k)),
+ let index = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
+ Expr::BinOp {
+ op: BinOp::Sub,
+ lhs: Box::new(Expr::Len(Box::new(Expr::Ident(receiver.clone())))),
+ rhs: Box::new(Expr::LitInt(k)),
                         }
                     } else {
-                        let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
-                        if !matches!(infer_type_in_ctx(ctx, &index), Type::I64) {
-                            return Err(FrontendError::Lower(format!(
+ let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+ if !matches!(infer_type_in_ctx(ctx, &index), Type::I64) {
+ return Err(FrontendError::Lower(format!(
                                 "function `{}` augments `{receiver}[<expr>]` with a non-int index",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
-                        index
+ index
                     };
                     // PMAT-755: bind a side-effecting index once (read + write).
-                    let (let_stmt, index) = bind_if_impure(ctx, index);
-                    let current = Expr::Index {
-                        collection: Box::new(Expr::Ident(receiver.clone())),
-                        index: Box::new(index.clone()),
+ let (let_stmt, index) = bind_if_impure(ctx, index);
+ let current = Expr::Index {
+ collection: Box::new(Expr::Ident(receiver.clone())),
+ index: Box::new(index.clone()),
                     };
-                    let value = combine_aug(ctx, &aug.op, current, rhs)?;
-                    ctx.mutable.insert(receiver.clone());
-                    let mut out: Vec<Stmt> = let_stmt.into_iter().collect();
-                    out.push(Stmt::IndexAssign {
-                        list_name: receiver,
-                        indices: vec![index],
-                        value,
+ let value = combine_aug(ctx, &aug.op, current, rhs)?;
+ ctx.mutable.insert(receiver.clone());
+ let mut out: Vec<Stmt> = let_stmt.into_iter().collect();
+ out.push(Stmt::IndexAssign {
+ list_name: receiver,
+ indices: vec![index],
+ value,
                     });
-                    Ok(out)
+ Ok(out)
                 }
                 _ => Err(FrontendError::Lower(format!(
                     "function `{}` augments `{receiver}[...]` which doesn't type as list[T] or dict[K, V]",
-                    ctx.fn_name
+ ctx.fn_name
                 ))),
             }
         }
@@ -8743,46 +8963,46 @@ fn lower_aug_assign(
         // `FieldAssign { obj: "self", … }` and is then rejected by
         // `body_assigns_self` (read-only methods), consistent with `self.f = v`.
         ast::Expr::Attribute(attr) => {
-            let ast::Expr::Name(obj) = attr.value.as_ref() else {
-                return Err(FrontendError::Lower(format!(
+ let ast::Expr::Name(obj) = attr.value.as_ref() else {
+ return Err(FrontendError::Lower(format!(
                     "function `{}` augments a non-Name attribute receiver — only `obj.field <op>= v` over a struct local/param is supported at v0.2.0",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             };
-            let obj_name = obj.id.to_string();
-            let field = attr.attr.to_string();
-            let obj_ty = ctx.name_types.get(&obj_name).cloned().unwrap_or(Type::I64);
-            let Type::Struct(sname) = obj_ty else {
-                return Err(FrontendError::Lower(format!(
+ let obj_name = obj.id.to_string();
+ let field = attr.attr.to_string();
+ let obj_ty = ctx.name_types.get(&obj_name).cloned().unwrap_or(Type::I64);
+ let Type::Struct(sname) = obj_ty else {
+ return Err(FrontendError::Lower(format!(
                     "function `{}` augments `.{field}` of `{obj_name}`, which is not a struct value",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             };
-            let known = ctx
+ let known = ctx
                 .structs
                 .get(&sname)
                 .is_some_and(|fs| fs.iter().any(|(f, _)| *f == field));
-            if !known {
-                return Err(FrontendError::Lower(format!(
+ if !known {
+ return Err(FrontendError::Lower(format!(
                     "function `{}` augments field `{field}` of `{sname}`, which has no such field",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
-            let current = Expr::FieldAccess {
-                obj: Box::new(Expr::Ident(obj_name.clone())),
-                field: field.clone(),
+ let current = Expr::FieldAccess {
+ obj: Box::new(Expr::Ident(obj_name.clone())),
+ field: field.clone(),
             };
-            let value = combine_aug(ctx, &aug.op, current, rhs)?;
-            ctx.mutable.insert(obj_name.clone());
-            Ok(vec![Stmt::FieldAssign {
-                obj: obj_name,
-                field,
-                value,
+ let value = combine_aug(ctx, &aug.op, current, rhs)?;
+ ctx.mutable.insert(obj_name.clone());
+ Ok(vec![Stmt::FieldAssign {
+ obj: obj_name,
+ field,
+ value,
             }])
         }
         _ => Err(FrontendError::Lower(format!(
             "function `{}` uses augmented assignment on an unsupported target — supported: `name <op>= e`, `d[k] <op>= e`, `xs[i] <op>= e`, `obj.field <op>= e`",
-            ctx.fn_name
+ ctx.fn_name
         ))),
     }
 }
@@ -8814,7 +9034,7 @@ fn comp_range_bounds(
     if !call.keywords.is_empty() {
         return Err(FrontendError::Lower(format!(
             "function `{}` passes keyword args to `range(...)` in a comprehension — only positional args are supported",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     let bounds = match call.args.as_slice() {
@@ -8826,9 +9046,9 @@ fn comp_range_bounds(
         ),
         [start, stop, step] => {
             let step = extract_step_literal(step).ok_or_else(|| {
-                FrontendError::Lower(format!(
+ FrontendError::Lower(format!(
                     "function `{}` uses `range(..., step)` in a comprehension with a non-literal-int or zero step — a non-zero integer literal is required",
-                    ctx.fn_name
+ ctx.fn_name
                 ))
             })?;
             (
@@ -8840,8 +9060,8 @@ fn comp_range_bounds(
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `range(...)` with {} args in a comprehension — Python supports 1-3",
-                ctx.fn_name,
-                call.args.len()
+ ctx.fn_name,
+ call.args.len()
             )));
         }
     };
@@ -8875,7 +9095,7 @@ fn desugar_comp_2gen(
     let fn_name = ctx.fn_name.clone();
     let plain_name = |g: &ast::Comprehension| -> Result<String, FrontendError> {
         match &g.target {
-            ast::Expr::Name(n) => Ok(n.id.to_string()),
+ ast::Expr::Name(n) => Ok(n.id.to_string()),
             _ => Err(FrontendError::Lower(format!(
                 "function `{fn_name}` has a multi-generator {kind} comprehension with a tuple/non-Name target — deferred (use plain `for x in … for y in …`)"
             ))),
@@ -8883,8 +9103,8 @@ fn desugar_comp_2gen(
     };
     let list_elem = |ty: Type| -> Result<Type, FrontendError> {
         match ty {
-            Type::List(e) => Ok(*e),
-            other => Err(FrontendError::Lower(format!(
+ Type::List(e) => Ok(*e),
+ other => Err(FrontendError::Lower(format!(
                 "function `{fn_name}` has a multi-generator {kind} comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` / `range(...)` iterables (dict iterables deferred)"
             ))),
         }
@@ -9052,8 +9272,8 @@ fn desugar_list_comp(
     if comp.generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
             "function `{}` uses a list comprehension with {} `for` clauses — v0.2.0 supports one or two",
-            ctx.fn_name,
-            comp.generators.len()
+ ctx.fn_name,
+ comp.generators.len()
         )));
     }
     let gen = &comp.generators[0];
@@ -9070,7 +9290,7 @@ fn desugar_list_comp(
             _ => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` has a list-comprehension tuple target that isn't exactly two plain names — only `for k, v in …` is supported at v0.2.0",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         };
@@ -9081,14 +9301,14 @@ fn desugar_list_comp(
                 other => {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` list-comprehends `for k, v in …` over a list whose element types as {other:?}; expected a list of 2-tuples (e.g. `d.items()`)",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
             },
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` list-comprehends `for k, v in …` over a {other:?}; expected an iterable of 2-tuples (e.g. `d.items()`)",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         };
@@ -9215,7 +9435,7 @@ fn desugar_list_comp(
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` comprehends over an iterable typing as {other:?}; v0.2.0 supports `[… for x in <list[T]>]`, `[… for x in range(...)]`, `[… for k in <dict>]`, `[… for x in <set>]`, or `[… for x in <tuple>]`",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -9279,8 +9499,8 @@ fn desugar_dict_comp(
     if comp.generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
             "function `{}` uses a dict comprehension with {} `for` clauses — v0.2.0 supports one or two",
-            ctx.fn_name,
-            comp.generators.len()
+ ctx.fn_name,
+ comp.generators.len()
         )));
     }
     let gen = &comp.generators[0];
@@ -9297,7 +9517,7 @@ fn desugar_dict_comp(
             _ => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` has a dict-comprehension tuple target that isn't exactly two plain names — only `for k, v in …` is supported at v0.2.0",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         };
@@ -9308,14 +9528,14 @@ fn desugar_dict_comp(
                 other => {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` dict-comprehends `for k, v in …` over a list whose element types as {other:?}; expected a list of 2-tuples (e.g. `d.items()`)",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
             },
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` dict-comprehends `for k, v in …` over a {other:?}; expected an iterable of 2-tuples (e.g. `d.items()`)",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         };
@@ -9370,7 +9590,7 @@ fn desugar_dict_comp(
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a non-Name dict-comprehension target (tuple unpacking) — deferred",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -9416,7 +9636,7 @@ fn desugar_dict_comp(
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` dict-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}` or `{{… for x in range(...)}}`",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -9512,7 +9732,7 @@ fn combine_comp_filters(
         if infer_type_in_ctx(ctx, &cond) != Type::Bool {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a {kind}-comprehension filter that is not Bool (no int-truthiness at v0.2.0)",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         acc = Some(match acc {
@@ -9596,8 +9816,8 @@ fn desugar_set_comp(
     if comp.generators.len() != 1 {
         return Err(FrontendError::Lower(format!(
             "function `{}` uses a set comprehension with {} `for` clauses — v0.2.0 supports one or two",
-            ctx.fn_name,
-            comp.generators.len()
+ ctx.fn_name,
+ comp.generators.len()
         )));
     }
     let gen = &comp.generators[0];
@@ -9613,7 +9833,7 @@ fn desugar_set_comp(
             _ => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` has a set-comprehension tuple target that isn't exactly two plain names — only `for k, v in …` is supported at v0.2.0",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         };
@@ -9624,14 +9844,14 @@ fn desugar_set_comp(
                 other => {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` set-comprehends `for k, v in …` over a list whose element types as {other:?}; expected a list of 2-tuples (e.g. `d.items()`)",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
             },
             other => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` set-comprehends `for k, v in …` over a {other:?}; expected an iterable of 2-tuples (e.g. `d.items()`)",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         };
@@ -9681,7 +9901,7 @@ fn desugar_set_comp(
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a non-Name set-comprehension target (tuple unpacking) — deferred",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -9720,7 +9940,7 @@ fn desugar_set_comp(
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` set-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}` or `{{… for x in range(...)}}`",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -9798,7 +10018,7 @@ fn desugar_nested_fn(
     {
         return Err(FrontendError::Lower(format!(
             "nested function `{}` uses pos-only / keyword-only / *args / **kwargs — only plain positional parameters are supported",
-            f.name
+ f.name
         )));
     }
     // First cut: the body must be exactly one `return <expr>` (a closure body
@@ -9819,7 +10039,7 @@ fn desugar_nested_fn(
             None => {
                 return Err(FrontendError::Lower(format!(
                     "nested function `{}` ends with a bare `return` — only `return <expr>` is supported",
-                    f.name
+ f.name
                 )));
             }
         },
@@ -9908,7 +10128,7 @@ fn desugar_nested_fn(
             if !empty_literal_ok && declared != inferred_ret {
                 return Err(FrontendError::Lower(format!(
                     "nested function `{name}` declared return type {declared:?} but body produces {inferred_ret:?}",
-                    name = f.name
+ name = f.name
                 )));
             }
             declared
@@ -9952,9 +10172,9 @@ fn desugar_nested_fn(
             captures.sort();
             return Err(FrontendError::Lower(format!(
                 "recursive nested function `{name}` also captures enclosing variable(s) `{}` — \
-                 not supported at v0.2.0: a named inner `fn` can recurse but cannot capture an \
-                 outer variable, and a closure can capture but cannot call itself by name. Pass \
-                 the captured value(s) to `{name}` as parameters, or inline the recursion.",
+ not supported at v0.2.0: a named inner `fn` can recurse but cannot capture an \
+ outer variable, and a closure can capture but cannot call itself by name. Pass \
+ the captured value(s) to `{name}` as parameters, or inline the recursion.",
                 captures.join("`, `")
             )));
         }
@@ -9990,7 +10210,7 @@ fn desugar_closure_assign(
     {
         return Err(FrontendError::Lower(format!(
             "function `{}` binds a lambda with an unsupported parameter list (posonly/kwonly/*args/**kwargs); v0.2.0 supports plain positional parameters (`name = lambda x, y: …`)",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     // First cut: every parameter types as `i64` (covers arithmetic /
@@ -10071,13 +10291,13 @@ fn reorder_kwargs_to_positional(
     let callee = callee_name.ok_or_else(|| {
         FrontendError::Lower(format!(
             "function `{}` passes keyword args to a non-Name callee — only `f(x=…)` to a top-level function is supported",
-            ctx.fn_name
+ ctx.fn_name
         ))
     })?;
     let sig = ctx.signatures.get(&callee).ok_or_else(|| {
         FrontendError::Lower(format!(
             "function `{}` passes keyword args to unknown function `{callee}` — only top-level functions in this module support keyword calls",
-            ctx.fn_name
+ ctx.fn_name
         ))
     })?;
     let n_pos = call.args.len();
@@ -10095,7 +10315,7 @@ fn reorder_kwargs_to_positional(
         if !sig.params[n_pos..].iter().any(|p| p == name) {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `{callee}` with keyword `{name}` naming an unknown parameter or one already filled positionally",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     }
@@ -10116,7 +10336,7 @@ fn reorder_kwargs_to_positional(
         } else {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `{callee}` missing argument `{pname}` (no value and no default)",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     }
@@ -10527,7 +10747,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a non-Name annotated-assignment target — v0.2.0 supports `name: T = value` only",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -10535,7 +10755,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
     let value_expr = aa.value.ok_or_else(|| {
         FrontendError::Lower(format!(
             "function `{}` declares `{name}: {declared_ty:?}` without an initializer — v0.2.0 requires `name: T = value`",
-            ctx.fn_name
+ ctx.fn_name
         ))
     })?;
     // Empty dict literal: the annotation supplies K/V that the value
@@ -10546,7 +10766,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
             if !matches!(declared_ty, Type::Dict(_, _)) {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns empty `{{}}` to `{name}` annotated as {declared_ty:?}; an empty literal requires a `dict[K, V]` annotation",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
             Expr::DictLit(Vec::new())
@@ -10558,7 +10778,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
             if !matches!(declared_ty, Type::List(_)) {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns empty `[]` to `{name}` annotated as {declared_ty:?}; an empty literal requires a `list[T]` annotation",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
             Expr::ListLit(Vec::new())
@@ -10571,7 +10791,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
             if !matches!(declared_ty, Type::Optional(_)) {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` assigns `None` to `{name}` annotated as {declared_ty:?}; `None` requires an `Optional[T]` annotation",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
             Expr::OptionExpr(None)
@@ -10644,7 +10864,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
         if vk != declared_kind {
             return Err(FrontendError::Lower(format!(
                 "function `{}` annotates `{name}` as {declared_ty:?} ({declared_kind}) but its initializer is {vk} — the annotation and value must agree",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     }
@@ -10660,7 +10880,7 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
     {
         return Err(FrontendError::Lower(format!(
             "function `{}` annotates `{name}` as {declared_ty:?} but its initializer is Optional (e.g. 1-arg `d.get(k)`); use an `Optional[...]` annotation or `d.get(k, default)`",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     // Annotation is the source of truth for the binding type (an empty
@@ -10758,7 +10978,7 @@ fn infer_type(e: &Expr) -> Type {
         // (Python int).
         Expr::Len(_) => Type::I64,
         Expr::BinOp { op, lhs, rhs } => match op {
-            BinOp::Add
+ BinOp::Add
             | BinOp::Sub
             | BinOp::Mul
             | BinOp::FloorDiv
@@ -10768,17 +10988,17 @@ fn infer_type(e: &Expr) -> Type {
             | BinOp::Pow => Type::I64,
             // PMAT-580: `&`/`|`/`^` over two bools is a bool (Python); otherwise
             // an int. (Context-free counterpart of the `infer_type_in_ctx` arm.)
-            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
-                if infer_type(lhs) == Type::Bool && infer_type(rhs) == Type::Bool {
-                    Type::Bool
+ BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
+ if infer_type(lhs) == Type::Bool && infer_type(rhs) == Type::Bool {
+ Type::Bool
                 } else {
-                    Type::I64
+ Type::I64
                 }
             }
-            BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
-                Type::Bool
+ BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
+ Type::Bool
             }
-            BinOp::And | BinOp::Or => Type::Bool,
+ BinOp::And | BinOp::Or => Type::Bool,
         },
         Expr::IfExpr { then_expr, .. } => infer_type(then_expr),
         // Without a cross-function signature table, assume calls return I64
@@ -10787,10 +11007,10 @@ fn infer_type(e: &Expr) -> Type {
         // computation).
         Expr::Call { .. } => Type::I64,
         Expr::UnOp { op, .. } => match op {
-            UnOp::Neg => Type::I64,
-            UnOp::Not => Type::Bool,
+ UnOp::Neg => Type::I64,
+ UnOp::Not => Type::Bool,
             // PMAT-502fb: bitwise invert yields I64.
-            UnOp::BitNot => Type::I64,
+ UnOp::BitNot => Type::I64,
         },
         // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal now
         // produces `Expr::LitStr` and is typed as `Type::Str`.
@@ -10824,23 +11044,23 @@ fn infer_type(e: &Expr) -> Type {
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
         Expr::StrMethod { op, .. } => match op {
-            StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
-            StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
-            StrMethodOp::Split
+ StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
+ StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
+ StrMethodOp::Split
             | StrMethodOp::SplitN
             | StrMethodOp::RSplitN
             | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
-            StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
+ StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
-            StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
-            StrMethodOp::Find
+ StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
+ StrMethodOp::Find
             | StrMethodOp::Rfind
             | StrMethodOp::RIndex
             | StrMethodOp::Count
             | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
             // PMAT-502ag/502di/643/695: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower/isascii → Bool.
-            StrMethodOp::IsDigit
+ StrMethodOp::IsDigit
             | StrMethodOp::IsNumeric
             | StrMethodOp::IsAlpha
             | StrMethodOp::IsSpace
@@ -10849,25 +11069,25 @@ fn infer_type(e: &Expr) -> Type {
             | StrMethodOp::IsLower
             | StrMethodOp::IsAscii => Type::Bool,
             // PMAT-502ah: capitalize → Str. PMAT-502aj: title → Str.
-            StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
+ StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
             // PMAT-502aw: rjust/ljust → Str.
-            StrMethodOp::RJust | StrMethodOp::LJust => Type::Str,
+ StrMethodOp::RJust | StrMethodOp::LJust => Type::Str,
             // PMAT-502cq: removeprefix/removesuffix → Str.
-            StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => Type::Str,
+ StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => Type::Str,
             // PMAT-502cr: swapcase → Str.
-            StrMethodOp::SwapCase => Type::Str,
+ StrMethodOp::SwapCase => Type::Str,
             // PMAT-502cs: zfill → Str.
-            StrMethodOp::ZFill => Type::Str,
+ StrMethodOp::ZFill => Type::Str,
             // PMAT-502cu: center → Str.
-            StrMethodOp::Center => Type::Str,
+ StrMethodOp::Center => Type::Str,
             // PMAT-502dj: partition/rpartition → (str, str, str).
-            StrMethodOp::Partition | StrMethodOp::RPartition => {
-                Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
+ StrMethodOp::Partition | StrMethodOp::RPartition => {
+ Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
             }
             // PMAT-502dl: splitlines → list[str].
-            StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
+ StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
             // PMAT-530: s[::-1] reverse-slice → Str.
-            StrMethodOp::Reverse => Type::Str,
+ StrMethodOp::Reverse => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -10875,12 +11095,12 @@ fn infer_type(e: &Expr) -> Type {
         // List I64 — the frontend rejects empty literals without an
         // annotation, so this path is only reached for non-empty.
         Expr::ListLit(elems) => {
-            let elem_ty = elems.first().map(infer_type).unwrap_or(Type::I64);
-            Type::List(Box::new(elem_ty))
+ let elem_ty = elems.first().map(infer_type).unwrap_or(Type::I64);
+ Type::List(Box::new(elem_ty))
         }
         // PMAT-500: set literal / membership.
         Expr::SetLit(elems) => {
-            Type::Set(Box::new(elems.first().map(infer_type).unwrap_or(Type::I64)))
+ Type::Set(Box::new(elems.first().map(infer_type).unwrap_or(Type::I64)))
         }
         Expr::SetContains { .. } => Type::Bool,
         // PMAT-502an: list membership -> Bool.
@@ -10899,7 +11119,7 @@ fn infer_type(e: &Expr) -> Type {
         // has no payload to infer (defaults `I64`; the return-type check
         // tolerates this against any declared `Optional`).
         Expr::OptionExpr(inner) => Type::Optional(Box::new(
-            inner.as_deref().map(infer_type).unwrap_or(Type::I64),
+ inner.as_deref().map(infer_type).unwrap_or(Type::I64),
         )),
         // PMAT-721: Optional truthiness yields Bool.
         Expr::OptionTruthy { .. } => Type::Bool,
@@ -10909,8 +11129,8 @@ fn infer_type(e: &Expr) -> Type {
         Expr::IsNone { .. } => Type::Bool,
         // PMAT-502ez: unwrap yields the inner type of the operand's Optional.
         Expr::OptionUnwrap(inner) => match infer_type(inner) {
-            Type::Optional(t) => *t,
-            other => other,
+ Type::Optional(t) => *t,
+ other => other,
         },
         // PMAT-503b: try/except types as the body (handler matches it).
         Expr::TryCatch { body, .. } => infer_type(body),
@@ -10918,7 +11138,7 @@ fn infer_type(e: &Expr) -> Type {
         Expr::TupleLit(elems) => Type::Tuple(elems.iter().map(infer_type).collect()),
         // PMAT-502q: tuple constant-index → the N-th element type.
         Expr::TupleIndex { tuple, index } => match infer_type(tuple) {
-            Type::Tuple(elems) => elems.get(*index).cloned().unwrap_or(Type::I64),
+ Type::Tuple(elems) => elems.get(*index).cloned().unwrap_or(Type::I64),
             _ => Type::I64,
         },
         // PMAT-496: a slice has the same type as its collection.
@@ -10928,7 +11148,7 @@ fn infer_type(e: &Expr) -> Type {
         // (Python `math.floor`/`ceil` return an int); `abs`/`min`/`max` take
         // the first argument's type.
         Expr::NumBuiltin { op, args, .. } => match op {
-            NumBuiltinOp::Sqrt
+ NumBuiltinOp::Sqrt
             | NumBuiltinOp::Sin
             | NumBuiltinOp::Cos
             | NumBuiltinOp::Tan
@@ -10936,25 +11156,25 @@ fn infer_type(e: &Expr) -> Type {
             | NumBuiltinOp::Ln
             | NumBuiltinOp::Log10
             | NumBuiltinOp::Log2 => Type::F64,
-            NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc => Type::I64,
+ NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc => Type::I64,
             _ => args.first().map(infer_type).unwrap_or(Type::I64),
         },
         // PMAT-498b: sum types as the list's element type.
         Expr::Sum { of_float, .. } => {
-            if *of_float {
-                Type::F64
+ if *of_float {
+ Type::F64
             } else {
-                Type::I64
+ Type::I64
             }
         }
         // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
         Expr::BoolReduce { .. } => Type::Bool,
         // PMAT-502m: int(x)/float(x) type as I64/F64 respectively.
         Expr::NumCast { to_float, .. } => {
-            if *to_float {
-                Type::F64
+ if *to_float {
+ Type::F64
             } else {
-                Type::I64
+ Type::I64
             }
         }
         // PMAT-502ad: str(x) → Str.
@@ -10983,19 +11203,19 @@ fn infer_type(e: &Expr) -> Type {
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
         Expr::SetFromList { list } => match infer_type(list) {
-            Type::List(elem) => Type::Set(elem),
+ Type::List(elem) => Type::Set(elem),
             _ => Type::Set(Box::new(Type::I64)),
         },
         // PMAT-520: list(set) / sorted(set) → List over the set's element type.
         Expr::SetToList { set } => match infer_type(set) {
-            Type::Set(elem) => Type::List(elem),
+ Type::Set(elem) => Type::List(elem),
             _ => Type::List(Box::new(Type::I64)),
         },
         // PMAT-502dk: dict(pairs) → Dict(K, V) over the list's tuple[K, V].
         Expr::DictFromPairs { pairs } => match infer_type(pairs) {
-            Type::List(elem) => match *elem {
-                Type::Tuple(tys) if tys.len() == 2 => {
-                    Type::Dict(Box::new(tys[0].clone()), Box::new(tys[1].clone()))
+ Type::List(elem) => match *elem {
+ Type::Tuple(tys) if tys.len() == 2 => {
+ Type::Dict(Box::new(tys[0].clone()), Box::new(tys[1].clone()))
                 }
                 _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
             },
@@ -11004,9 +11224,9 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-502dw/dx: dict merge types as the first entry's dict type
         // (a splat's dict, or `dict[typeof k, typeof v]` for an explicit pair).
         Expr::DictMerge { entries } => match entries.first() {
-            Some((Some(k), v)) => Type::Dict(Box::new(infer_type(k)), Box::new(infer_type(v))),
-            Some((None, d)) => infer_type(d),
-            None => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+ Some((Some(k), v)) => Type::Dict(Box::new(infer_type(k)), Box::new(infer_type(v))),
+ Some((None, d)) => infer_type(d),
+ None => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
         },
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type(list),
@@ -11015,61 +11235,61 @@ fn infer_type(e: &Expr) -> Type {
             // PMAT-678: context-free counterpart — without a ctx we can't bind
             // the loop var, but the identity body (`[w for w in xs]`, body is the
             // bare loop var) is exactly the iterable's type.
-            if matches!(&*lambda.body, Expr::Ident(n) if *n == lambda.param) {
-                infer_type(list)
+ if matches!(&*lambda.body, Expr::Ident(n) if *n == lambda.param) {
+ infer_type(list)
             } else {
-                Type::List(Box::new(infer_type(&lambda.body)))
+ Type::List(Box::new(infer_type(&lambda.body)))
             }
         }
         // PMAT-502ai: enumerate(xs) → List(Tuple[I64, elem]); zip(xs, ys) →
         // List(Tuple[elemL, elemR]).
         Expr::Enumerate { list, .. } => {
-            let elem = match infer_type(list) {
-                Type::List(e) => *e,
+ let elem = match infer_type(list) {
+ Type::List(e) => *e,
                 _ => Type::I64,
             };
-            Type::List(Box::new(Type::Tuple(vec![Type::I64, elem])))
+ Type::List(Box::new(Type::Tuple(vec![Type::I64, elem])))
         }
         Expr::Zip { left, right } => {
-            let el = match infer_type(left) {
-                Type::List(e) => *e,
+ let el = match infer_type(left) {
+ Type::List(e) => *e,
                 _ => Type::I64,
             };
-            let er = match infer_type(right) {
-                Type::List(e) => *e,
+ let er = match infer_type(right) {
+ Type::List(e) => *e,
                 _ => Type::I64,
             };
-            Type::List(Box::new(Type::Tuple(vec![el, er])))
+ Type::List(Box::new(Type::Tuple(vec![el, er])))
         }
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
         Expr::ListMinMax { list, .. } => match infer_type(list) {
-            Type::List(elem) => *elem,
+ Type::List(elem) => *elem,
             _ => Type::I64,
         },
         // PMAT-502u: list.count(x)/index(x) return Int.
         Expr::ListQuery { .. } => Type::I64,
         // PMAT-502as: list.pop() returns the list's element type.
         Expr::ListPop { list, .. } => match infer_type(list) {
-            Type::List(elem) => *elem,
+ Type::List(elem) => *elem,
             _ => Type::I64,
         },
         // PMAT-502au: dict.pop() returns the dict's value type.
         Expr::DictPop { dict, .. } => match infer_type(dict) {
-            Type::Dict(_, v) => *v,
+ Type::Dict(_, v) => *v,
             _ => Type::I64,
         },
         // PMAT-502ax: dict.setdefault() returns the dict's value type.
         Expr::DictSetDefault { dict, .. } => match infer_type(dict) {
-            Type::Dict(_, v) => *v,
+ Type::Dict(_, v) => *v,
             _ => Type::I64,
         },
         // PMAT-502v/502x: d.keys()/d.values()/d.items() materialize to
         // List(K)/List(V)/List(Tuple[K, V]).
         Expr::DictView { dict, kind } => match infer_type(dict) {
-            Type::Dict(k, v) => Type::List(match kind {
-                DictViewKind::Keys => k,
-                DictViewKind::Values => v,
-                DictViewKind::Items => Box::new(Type::Tuple(vec![*k, *v])),
+ Type::Dict(k, v) => Type::List(match kind {
+ DictViewKind::Keys => k,
+ DictViewKind::Values => v,
+ DictViewKind::Items => Box::new(Type::Tuple(vec![*k, *v])),
             }),
             _ => Type::List(Box::new(Type::I64)),
         },
@@ -11078,19 +11298,19 @@ fn infer_type(e: &Expr) -> Type {
         // Type::List(T), the result is T; otherwise fall back to I64
         // (defensive — frontend only emits Index when typing succeeds).
         Expr::Index { collection, .. } => match infer_type(collection) {
-            Type::List(elem_ty) => *elem_ty,
-            Type::Dict(_, value_ty) => *value_ty,
+ Type::List(elem_ty) => *elem_ty,
+ Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
         },
         // PMAT-466 (v0.2.0 Track 1.C): dict read + get-with-default
         // return the dict's value type; membership is Bool.
         Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => match infer_type(dict) {
-            Type::Dict(_, value_ty) => *value_ty,
+ Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
         },
         // PMAT-502ey: 1-arg `d.get(k)` → `Optional[V]`.
         Expr::DictGetOpt { dict, .. } => match infer_type(dict) {
-            Type::Dict(_, value_ty) => Type::Optional(value_ty),
+ Type::Dict(_, value_ty) => Type::Optional(value_ty),
             _ => Type::Optional(Box::new(Type::I64)),
         },
         Expr::DictContains { .. } => Type::Bool,
@@ -11098,11 +11318,11 @@ fn infer_type(e: &Expr) -> Type {
         // Type::Dict over the inferred key + value types from the
         // first pair. Frontend enforces homogeneity at lowering time.
         Expr::DictLit(pairs) => {
-            let (k_ty, v_ty) = pairs
+ let (k_ty, v_ty) = pairs
                 .first()
                 .map(|(k, v)| (infer_type(k), infer_type(v)))
                 .unwrap_or((Type::Str, Type::I64));
-            Type::Dict(Box::new(k_ty), Box::new(v_ty))
+ Type::Dict(Box::new(k_ty), Box::new(v_ty))
         }
         // PMAT-042 + PMAT-045 + PMAT-047 + PMAT-055: shell-domain
         // Expr variants don't appear inside Python-frontend lowering.
@@ -11131,7 +11351,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-513: an enum member types as the enum (a named type).
         Expr::EnumVariant { enum_name, .. } => Type::Struct(enum_name.clone()),
         Expr::FieldAccess { obj, field } => match infer_type_in_ctx(ctx, obj) {
-            Type::Struct(name) => ctx
+ Type::Struct(name) => ctx
                 .structs
                 .get(&name)
                 .and_then(|fs| fs.iter().find(|(f, _)| f == field))
@@ -11141,7 +11361,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         },
         // PMAT-506d: a method call types as the method's declared return type.
         Expr::MethodCall { obj, method, .. } => match infer_type_in_ctx(ctx, obj) {
-            Type::Struct(name) => ctx
+ Type::Struct(name) => ctx
                 .struct_methods
                 .get(&name)
                 .and_then(|ms| ms.iter().find(|(m, _)| m == method))
@@ -11157,13 +11377,13 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // temp; registering the block's Let types subsumes the old bare-Ident
         // special-case.
         Expr::Block(b) => {
-            let mut sub = ctx.clone();
-            for s in &b.stmts {
-                if let Stmt::Let { name, ty, .. } = s {
-                    sub.name_types.insert(name.clone(), ty.clone());
+ let mut sub = ctx.clone();
+ for s in &b.stmts {
+ if let Stmt::Let { name, ty, .. } = s {
+ sub.name_types.insert(name.clone(), ty.clone());
                 }
             }
-            infer_type_in_ctx(&sub, &b.trailing_return)
+ infer_type_in_ctx(&sub, &b.trailing_return)
         }
         // PMAT-477 (R8): float literal + float arithmetic are Type::F64.
         Expr::LitFloat(_) | Expr::FloatBinOp { .. } => Type::F64,
@@ -11172,33 +11392,33 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-459: len() always returns Type::I64.
         Expr::Len(_) => Type::I64,
         Expr::LitInt(_) => {
-            if matches!(ctx.fn_return_type, Type::BigInt) {
-                Type::BigInt
+ if matches!(ctx.fn_return_type, Type::BigInt) {
+ Type::BigInt
             } else {
-                Type::I64
+ Type::I64
             }
         }
         Expr::BinOp { op, lhs, rhs } => match op {
-            BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
-                Type::Bool
+ BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => {
+ Type::Bool
             }
-            BinOp::And | BinOp::Or => Type::Bool,
+ BinOp::And | BinOp::Or => Type::Bool,
             _ => {
-                let lt = infer_type_in_ctx(ctx, lhs);
-                let rt = infer_type_in_ctx(ctx, rhs);
+ let lt = infer_type_in_ctx(ctx, lhs);
+ let rt = infer_type_in_ctx(ctx, rhs);
                 // PMAT-580: `&`/`|`/`^` over two bools is a bool in Python
                 // (`True & False` is `bool`, not `int`); Rust's `bool: BitAnd`
                 // matches. Without this the result inferred as I64 and a
                 // `-> bool` function was rejected ("body produces I64").
-                if matches!(op, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor)
+ if matches!(op, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor)
                     && lt == Type::Bool
                     && rt == Type::Bool
                 {
-                    Type::Bool
+ Type::Bool
                 } else if matches!(lt, Type::BigInt) || matches!(rt, Type::BigInt) {
-                    Type::BigInt
+ Type::BigInt
                 } else {
-                    Type::I64
+ Type::I64
                 }
             }
         },
@@ -11216,17 +11436,17 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             .cloned()
             .or_else(|| ctx.signatures.get(callee).map(|s| s.ret.clone()))
             .unwrap_or_else(|| {
-                if callee == &ctx.fn_name {
-                    ctx.fn_return_type.clone()
+ if callee == &ctx.fn_name {
+ ctx.fn_return_type.clone()
                 } else {
-                    Type::I64
+ Type::I64
                 }
             }),
         Expr::UnOp { op, operand } => match op {
-            UnOp::Neg => infer_type_in_ctx(ctx, operand),
-            UnOp::Not => Type::Bool,
+ UnOp::Neg => infer_type_in_ctx(ctx, operand),
+ UnOp::Not => Type::Bool,
             // PMAT-502fb: bitwise invert yields I64.
-            UnOp::BitNot => Type::I64,
+ UnOp::BitNot => Type::I64,
         },
         // PMAT-449 (v0.2.0 Track 1.A): Python `"..."` literal is
         // typed as `Type::Str`.
@@ -11260,23 +11480,23 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::FormatSpec { .. } => Type::Str,
         // PMAT-492: string transform methods (upper/lower/strip) → Str.
         Expr::StrMethod { op, .. } => match op {
-            StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
-            StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
-            StrMethodOp::Split
+ StrMethodOp::Upper | StrMethodOp::Lower | StrMethodOp::Strip => Type::Str,
+ StrMethodOp::StartsWith | StrMethodOp::EndsWith => Type::Bool,
+ StrMethodOp::Split
             | StrMethodOp::SplitN
             | StrMethodOp::RSplitN
             | StrMethodOp::SplitWhitespace => Type::List(Box::new(Type::Str)),
-            StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
+ StrMethodOp::Join | StrMethodOp::Replace | StrMethodOp::ReplaceN => Type::Str,
             // PMAT-502l: lstrip/rstrip → Str; find/count → Int.
-            StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
-            StrMethodOp::Find
+ StrMethodOp::LStrip | StrMethodOp::RStrip => Type::Str,
+ StrMethodOp::Find
             | StrMethodOp::Rfind
             | StrMethodOp::RIndex
             | StrMethodOp::Count
             | StrMethodOp::CharCount
             | StrMethodOp::StrIndex => Type::I64,
             // PMAT-502ag/502di/643/695: isdigit/isnumeric/isalpha/isspace/isalnum/isupper/islower/isascii → Bool.
-            StrMethodOp::IsDigit
+ StrMethodOp::IsDigit
             | StrMethodOp::IsNumeric
             | StrMethodOp::IsAlpha
             | StrMethodOp::IsSpace
@@ -11285,38 +11505,38 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             | StrMethodOp::IsLower
             | StrMethodOp::IsAscii => Type::Bool,
             // PMAT-502ah: capitalize → Str. PMAT-502aj: title → Str.
-            StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
+ StrMethodOp::Capitalize | StrMethodOp::Title => Type::Str,
             // PMAT-502aw: rjust/ljust → Str.
-            StrMethodOp::RJust | StrMethodOp::LJust => Type::Str,
+ StrMethodOp::RJust | StrMethodOp::LJust => Type::Str,
             // PMAT-502cq: removeprefix/removesuffix → Str.
-            StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => Type::Str,
+ StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix => Type::Str,
             // PMAT-502cr: swapcase → Str.
-            StrMethodOp::SwapCase => Type::Str,
+ StrMethodOp::SwapCase => Type::Str,
             // PMAT-502cs: zfill → Str.
-            StrMethodOp::ZFill => Type::Str,
+ StrMethodOp::ZFill => Type::Str,
             // PMAT-502cu: center → Str.
-            StrMethodOp::Center => Type::Str,
+ StrMethodOp::Center => Type::Str,
             // PMAT-502dj: partition/rpartition → (str, str, str).
-            StrMethodOp::Partition | StrMethodOp::RPartition => {
-                Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
+ StrMethodOp::Partition | StrMethodOp::RPartition => {
+ Type::Tuple(vec![Type::Str, Type::Str, Type::Str])
             }
             // PMAT-502dl: splitlines → list[str].
-            StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
+ StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
             // PMAT-530: s[::-1] reverse-slice → Str.
-            StrMethodOp::Reverse => Type::Str,
+ StrMethodOp::Reverse => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
         Expr::ListLit(elems) => {
-            let elem_ty = elems
+ let elem_ty = elems
                 .first()
                 .map(|e| infer_type_in_ctx(ctx, e))
                 .unwrap_or(Type::I64);
-            Type::List(Box::new(elem_ty))
+ Type::List(Box::new(elem_ty))
         }
         // PMAT-500: set literal / membership.
         Expr::SetLit(elems) => Type::Set(Box::new(
-            elems
+ elems
                 .first()
                 .map(|e| infer_type_in_ctx(ctx, e))
                 .unwrap_or(Type::I64),
@@ -11337,7 +11557,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-502ew: `Some(e)` → `Optional(typeof e)`; bare `None` defaults
         // I64 (return-type check tolerates it against any declared Optional).
         Expr::OptionExpr(inner) => Type::Optional(Box::new(
-            inner
+ inner
                 .as_deref()
                 .map(|e| infer_type_in_ctx(ctx, e))
                 .unwrap_or(Type::I64),
@@ -11350,18 +11570,18 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::IsNone { .. } => Type::Bool,
         // PMAT-502ez: unwrap yields the inner type of the operand's Optional.
         Expr::OptionUnwrap(inner) => match infer_type_in_ctx(ctx, inner) {
-            Type::Optional(t) => *t,
-            other => other,
+ Type::Optional(t) => *t,
+ other => other,
         },
         // PMAT-503b: try/except types as the body (handler matches it).
         Expr::TryCatch { body, .. } => infer_type_in_ctx(ctx, body),
         // PMAT-494: tuple literal → Type::Tuple of each element's type.
         Expr::TupleLit(elems) => {
-            Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
+ Type::Tuple(elems.iter().map(|e| infer_type_in_ctx(ctx, e)).collect())
         }
         // PMAT-502q: tuple constant-index → the N-th element type.
         Expr::TupleIndex { tuple, index } => match infer_type_in_ctx(ctx, tuple) {
-            Type::Tuple(elems) => elems.get(*index).cloned().unwrap_or(Type::I64),
+ Type::Tuple(elems) => elems.get(*index).cloned().unwrap_or(Type::I64),
             _ => Type::I64,
         },
         // PMAT-496: a slice has the same type as its collection.
@@ -11369,7 +11589,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-498: numeric builtin types as its first argument.
         // PMAT-502ek: see the context-free twin — op-specific return type.
         Expr::NumBuiltin { op, args, .. } => match op {
-            NumBuiltinOp::Sqrt
+ NumBuiltinOp::Sqrt
             | NumBuiltinOp::Sin
             | NumBuiltinOp::Cos
             | NumBuiltinOp::Tan
@@ -11377,7 +11597,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
             | NumBuiltinOp::Ln
             | NumBuiltinOp::Log10
             | NumBuiltinOp::Log2 => Type::F64,
-            NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc => Type::I64,
+ NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc => Type::I64,
             _ => args
                 .first()
                 .map(|a| infer_type_in_ctx(ctx, a))
@@ -11385,20 +11605,20 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         },
         // PMAT-498b: sum types as the list's element type.
         Expr::Sum { of_float, .. } => {
-            if *of_float {
-                Type::F64
+ if *of_float {
+ Type::F64
             } else {
-                Type::I64
+ Type::I64
             }
         }
         // PMAT-502j: all(xs)/any(xs) reduce a bool list to a Bool.
         Expr::BoolReduce { .. } => Type::Bool,
         // PMAT-502m: int(x)/float(x) type as I64/F64 respectively.
         Expr::NumCast { to_float, .. } => {
-            if *to_float {
-                Type::F64
+ if *to_float {
+ Type::F64
             } else {
-                Type::I64
+ Type::I64
             }
         }
         // PMAT-502ad: str(x) → Str.
@@ -11427,19 +11647,19 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::RangeList { .. } => Type::List(Box::new(Type::I64)),
         // PMAT-502cw: set(xs) → set over the list's element type.
         Expr::SetFromList { list } => match infer_type_in_ctx(ctx, list) {
-            Type::List(elem) => Type::Set(elem),
+ Type::List(elem) => Type::Set(elem),
             _ => Type::Set(Box::new(Type::I64)),
         },
         // PMAT-520: list(set) / sorted(set) → List over the set's element type.
         Expr::SetToList { set } => match infer_type_in_ctx(ctx, set) {
-            Type::Set(elem) => Type::List(elem),
+ Type::Set(elem) => Type::List(elem),
             _ => Type::List(Box::new(Type::I64)),
         },
         // PMAT-502dk: dict(pairs) → Dict(K, V) over the list's tuple[K, V].
         Expr::DictFromPairs { pairs } => match infer_type_in_ctx(ctx, pairs) {
-            Type::List(elem) => match *elem {
-                Type::Tuple(tys) if tys.len() == 2 => {
-                    Type::Dict(Box::new(tys[0].clone()), Box::new(tys[1].clone()))
+ Type::List(elem) => match *elem {
+ Type::Tuple(tys) if tys.len() == 2 => {
+ Type::Dict(Box::new(tys[0].clone()), Box::new(tys[1].clone()))
                 }
                 _ => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
             },
@@ -11447,12 +11667,12 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         },
         // PMAT-502dw/dx: dict merge types as the first entry's dict type.
         Expr::DictMerge { entries } => match entries.first() {
-            Some((Some(k), v)) => Type::Dict(
-                Box::new(infer_type_in_ctx(ctx, k)),
-                Box::new(infer_type_in_ctx(ctx, v)),
+ Some((Some(k), v)) => Type::Dict(
+ Box::new(infer_type_in_ctx(ctx, k)),
+ Box::new(infer_type_in_ctx(ctx, v)),
             ),
-            Some((None, d)) => infer_type_in_ctx(ctx, d),
-            None => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+ Some((None, d)) => infer_type_in_ctx(ctx, d),
+ None => Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
         },
         // PMAT-502ab: filter(pred, xs) keeps the input list type.
         Expr::Filter { list, .. } => infer_type_in_ctx(ctx, list),
@@ -11464,93 +11684,93 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // `sorted([w for w in words])`. Mirrors the binding `lower_comp_to_map`
         // applies during lowering (PMAT-525/531).
         Expr::Map { list, lambda } => {
-            let body_ty = match infer_type_in_ctx(ctx, list) {
-                Type::List(elem) => {
-                    let mut sub = ctx.clone();
-                    bind_comp_param(&mut sub, &lambda.param, *elem);
-                    infer_type_in_ctx(&sub, &lambda.body)
+ let body_ty = match infer_type_in_ctx(ctx, list) {
+ Type::List(elem) => {
+ let mut sub = ctx.clone();
+ bind_comp_param(&mut sub, &lambda.param, *elem);
+ infer_type_in_ctx(&sub, &lambda.body)
                 }
                 _ => infer_type_in_ctx(ctx, &lambda.body),
             };
-            Type::List(Box::new(body_ty))
+ Type::List(Box::new(body_ty))
         }
         // PMAT-502ai: enumerate/zip → List(Tuple[...]).
         Expr::Enumerate { list, .. } => {
-            let elem = match infer_type_in_ctx(ctx, list) {
-                Type::List(e) => *e,
+ let elem = match infer_type_in_ctx(ctx, list) {
+ Type::List(e) => *e,
                 _ => Type::I64,
             };
-            Type::List(Box::new(Type::Tuple(vec![Type::I64, elem])))
+ Type::List(Box::new(Type::Tuple(vec![Type::I64, elem])))
         }
         Expr::Zip { left, right } => {
-            let el = match infer_type_in_ctx(ctx, left) {
-                Type::List(e) => *e,
+ let el = match infer_type_in_ctx(ctx, left) {
+ Type::List(e) => *e,
                 _ => Type::I64,
             };
-            let er = match infer_type_in_ctx(ctx, right) {
-                Type::List(e) => *e,
+ let er = match infer_type_in_ctx(ctx, right) {
+ Type::List(e) => *e,
                 _ => Type::I64,
             };
-            Type::List(Box::new(Type::Tuple(vec![el, er])))
+ Type::List(Box::new(Type::Tuple(vec![el, er])))
         }
         // PMAT-502e: min(xs)/max(xs) reduce a list to its element type.
         Expr::ListMinMax { list, .. } => match infer_type_in_ctx(ctx, list) {
-            Type::List(elem) => *elem,
+ Type::List(elem) => *elem,
             _ => Type::I64,
         },
         // PMAT-502u: list.count(x)/index(x) return Int.
         Expr::ListQuery { .. } => Type::I64,
         // PMAT-502as: list.pop() returns the list's element type.
         Expr::ListPop { list, .. } => match infer_type_in_ctx(ctx, list) {
-            Type::List(elem) => *elem,
+ Type::List(elem) => *elem,
             _ => Type::I64,
         },
         // PMAT-502au: dict.pop() returns the dict's value type.
         Expr::DictPop { dict, .. } => match infer_type_in_ctx(ctx, dict) {
-            Type::Dict(_, v) => *v,
+ Type::Dict(_, v) => *v,
             _ => Type::I64,
         },
         // PMAT-502ax: dict.setdefault() returns the dict's value type.
         Expr::DictSetDefault { dict, .. } => match infer_type_in_ctx(ctx, dict) {
-            Type::Dict(_, v) => *v,
+ Type::Dict(_, v) => *v,
             _ => Type::I64,
         },
         // PMAT-502v: d.keys()/d.values() materialize to List(K)/List(V).
         Expr::DictView { dict, kind } => match infer_type_in_ctx(ctx, dict) {
-            Type::Dict(k, v) => Type::List(match kind {
-                DictViewKind::Keys => k,
-                DictViewKind::Values => v,
-                DictViewKind::Items => Box::new(Type::Tuple(vec![*k, *v])),
+ Type::Dict(k, v) => Type::List(match kind {
+ DictViewKind::Keys => k,
+ DictViewKind::Values => v,
+ DictViewKind::Items => Box::new(Type::Tuple(vec![*k, *v])),
             }),
             _ => Type::List(Box::new(Type::I64)),
         },
         // PMAT-457: indexed access returns the collection element type.
         Expr::Index { collection, .. } => match infer_type_in_ctx(ctx, collection) {
-            Type::List(elem_ty) => *elem_ty,
-            Type::Dict(_, value_ty) => *value_ty,
+ Type::List(elem_ty) => *elem_ty,
+ Type::Dict(_, value_ty) => *value_ty,
             _ => Type::I64,
         },
         // PMAT-466 (v0.2.0 Track 1.C): dict read + get-with-default
         // return the dict value type; membership is Bool.
         Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => {
-            match infer_type_in_ctx(ctx, dict) {
-                Type::Dict(_, value_ty) => *value_ty,
+ match infer_type_in_ctx(ctx, dict) {
+ Type::Dict(_, value_ty) => *value_ty,
                 _ => Type::I64,
             }
         }
         // PMAT-502ey: 1-arg `d.get(k)` → `Optional[V]`.
         Expr::DictGetOpt { dict, .. } => match infer_type_in_ctx(ctx, dict) {
-            Type::Dict(_, value_ty) => Type::Optional(value_ty),
+ Type::Dict(_, value_ty) => Type::Optional(value_ty),
             _ => Type::Optional(Box::new(Type::I64)),
         },
         Expr::DictContains { .. } => Type::Bool,
         // PMAT-462: dict literal — see twin arm in `infer_type` above.
         Expr::DictLit(pairs) => {
-            let (k_ty, v_ty) = pairs
+ let (k_ty, v_ty) = pairs
                 .first()
                 .map(|(k, v)| (infer_type_in_ctx(ctx, k), infer_type_in_ctx(ctx, v)))
                 .unwrap_or((Type::Str, Type::I64));
-            Type::Dict(Box::new(k_ty), Box::new(v_ty))
+ Type::Dict(Box::new(k_ty), Box::new(v_ty))
         }
         Expr::QuotedString { .. }
         | Expr::ShellVar(_)
@@ -11712,7 +11932,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if !matches!(idx_ty, Type::I64) {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` indexes a string with a {idx_ty:?} index — only `int` is supported",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 return Ok(Expr::StrCharAt {
@@ -11741,13 +11961,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                         return Err(FrontendError::Lower(format!(
                             "function `{}` indexes a {arity}-element tuple with out-of-range index {n} (Python IndexError)",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
                     None => {
                         return Err(FrontendError::Lower(format!(
                             "function `{}` indexes a tuple with a non-literal index; a heterogeneous fixed-arity tuple supports only constant `t[N]` indexing at v0.2.0",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
                 }
@@ -11808,8 +12028,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             if !matches!(idx_ty, Type::I64) {
                 return Err(FrontendError::Lower(format!(
                     "list-index expression types as {idx_ty:?} but only `int` indices are \
-                     supported at v0.2.0 first cut — slicing, negative-step ranges, and \
-                     non-integer keys are deferred to subsequent sub-tracks"
+ supported at v0.2.0 first cut — slicing, negative-step ranges, and \
+ non-integer keys are deferred to subsequent sub-tracks"
                 )));
             }
             Ok(Expr::Index {
@@ -11844,7 +12064,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             if !call.keywords.is_empty() {
                                 return Err(FrontendError::Lower(format!(
                                     "function `{}` calls static method `{key}` with keyword args — v0.2.0 first cut supports positional calls only",
-                                    ctx.fn_name
+ ctx.fn_name
                                 )));
                             }
                             // PMAT-820 (HUNT-V24 MDA): fill omitted trailing args
@@ -11883,7 +12103,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         }
                         return Err(FrontendError::Lower(format!(
                             "function `{}` calls `{class}.{method}()`, which is not a `@staticmethod`/`@classmethod` of `{class}` — call an instance method on an instance, not the class",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
                 }
@@ -11902,13 +12122,13 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !known {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls `.{method}()` on `{sname}`, which has no such method",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                         if !call.keywords.is_empty() {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls method `{sname}.{method}` with keyword args — v0.2.0 first cut supports positional method calls only",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                         // PMAT-820 (HUNT-V24 MDA): fill omitted trailing args with
@@ -11964,10 +12184,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !call.keywords.is_empty() || call.args.len() != 1 {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls set `.{}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 1 (a set)",
-                                ctx.fn_name,
-                                attr.attr.as_str(),
-                                call.args.len(),
-                                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+ ctx.fn_name,
+ attr.attr.as_str(),
+ call.args.len(),
+ if call.keywords.is_empty() { "" } else { " plus keyword args" },
                             )));
                         }
                         let other = lower_expr_in_ctx(ctx, call.args[0].clone())?;
@@ -11994,10 +12214,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !call.keywords.is_empty() || call.args.len() != 1 {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls set `.{}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 1 (a set)",
-                                ctx.fn_name,
-                                attr.attr.as_str(),
-                                call.args.len(),
-                                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+ ctx.fn_name,
+ attr.attr.as_str(),
+ call.args.len(),
+ if call.keywords.is_empty() { "" } else { " plus keyword args" },
                             )));
                         }
                         let other = lower_expr_in_ctx(ctx, call.args[0].clone())?;
@@ -12061,9 +12281,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         // → rustc E0308 (and Python promotes the 0 to 0.0 anyway in
                         // the float arithmetic that follows).
                         let dict_val_is_float = matches!(
-                            infer_type_in_ctx(ctx, &recv),
-                            Type::Dict(_, v) if matches!(*v, Type::F64)
-                        );
+                        infer_type_in_ctx(ctx, &recv),
+                        Type::Dict(_, v) if matches!(*v, Type::F64)
+                                               );
                         let default = if dict_val_is_float
                             && matches!(infer_type_in_ctx(ctx, &default), Type::I64)
                         {
@@ -12095,7 +12315,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !call.keywords.is_empty() || call.args.len() != 2 {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls dict `.setdefault(...)` with {} positional \
-                                 arg(s){} — v0.2.0 supports exactly `.setdefault(key, default)`",
+ arg(s){} — v0.2.0 supports exactly `.setdefault(key, default)`",
                                 ctx.fn_name,
                                 call.args.len(),
                                 if call.keywords.is_empty() {
@@ -12175,7 +12395,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     && call.keywords.is_empty()
                     && call.args.len() == 1
                     && matches!(&call.args[0],
-                        ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None));
+ ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None));
                 if attr.attr.as_str() == "split"
                     && call.keywords.is_empty()
                     && (call.args.is_empty() || split_none_sep)
@@ -12245,7 +12465,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !matches!(infer_type_in_ctx(ctx, &args[2]), Type::I64) {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls str `.replace(old, new, count)` with a non-int count",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                         return Ok(Expr::StrMethod {
@@ -12267,7 +12487,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !matches!(infer_type_in_ctx(ctx, &maxsplit), Type::I64) {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls str `.split(sep, maxsplit)` with a non-int maxsplit",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                         return Ok(Expr::StrMethod {
@@ -12293,7 +12513,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !matches!(infer_type_in_ctx(ctx, &maxsplit), Type::I64) {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls str `.rsplit(sep, maxsplit)` with a non-int maxsplit",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                         return Ok(Expr::StrMethod {
@@ -12354,7 +12574,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if !call.keywords.is_empty() || !ok_argc {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls str `.{}(...)` with {} positional arg(s){}; \
-                                 expected exactly {arity}",
+ expected exactly {arity}",
                                 ctx.fn_name,
                                 attr.attr.as_str(),
                                 call.args.len(),
@@ -12400,7 +12620,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     // — the `ListQuery` codegen now compares by place (`**__e == x`),
                     // valid for a non-Copy `String` too.
                     if matches!(infer_type_in_ctx(ctx, &recv),
-                        Type::List(elem) if matches!(*elem, Type::I64 | Type::Str | Type::F64 | Type::Bool))
+ Type::List(elem) if matches!(*elem, Type::I64 | Type::Str | Type::F64 | Type::Bool))
                         && call.keywords.is_empty()
                         && call.args.len() == 1
                     {
@@ -12455,7 +12675,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 if infer_type_in_ctx(ctx, &i) != Type::I64 {
                                     return Err(FrontendError::Lower(format!(
                                         "function `{}` calls list `.pop(<index>)` with a \
-                                         non-int index; v0.2.0 requires an int position",
+ non-int index; v0.2.0 requires an int position",
                                         ctx.fn_name
                                     )));
                                 }
@@ -12587,10 +12807,10 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     if call.args.len() > field_names.len() {
                         return Err(FrontendError::Lower(format!(
                             "function `{}` constructs `{}` with {} positional arg(s) but the class has {} field(s)",
-                            ctx.fn_name,
-                            fname.id,
-                            call.args.len(),
-                            field_names.len()
+ ctx.fn_name,
+ fname.id,
+ call.args.len(),
+ field_names.len()
                         )));
                     }
                     let mut values: HashMap<String, Expr> = HashMap::new();
@@ -12605,7 +12825,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         let Some(kw_name) = kw.arg.as_ref().map(|id| id.to_string()) else {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` constructs `{}` with a `**`-splat — not supported at v0.2.0",
-                                ctx.fn_name, fname.id
+ ctx.fn_name, fname.id
                             )));
                         };
                         if !field_names.contains(&kw_name) {
@@ -12617,7 +12837,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if values.contains_key(&kw_name) {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` constructs `{}` giving field `{kw_name}` both positionally and by keyword",
-                                ctx.fn_name, fname.id
+ ctx.fn_name, fname.id
                             )));
                         }
                         let v = lower_expr_in_ctx(ctx, kw.value.clone())?;
@@ -12643,7 +12863,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             .collect();
                         return Err(FrontendError::Lower(format!(
                             "function `{}` constructs `{}` missing field(s) with no default: {missing:?}",
-                            ctx.fn_name, fname.id
+ ctx.fn_name, fname.id
                         )));
                     }
                     // Emit fields in declaration order (deterministic).
@@ -12757,11 +12977,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                     };
                                     return Err(FrontendError::Lower(format!(
                                         "function `{}` calls `{fname}()` over a mix of `int`/`bool` and `float` arguments — \
-                                         Python returns the winning operand with its own type (e.g. `{fname}(3, 2.5)` is the int `3`, \
-                                         `{fname}(3.5, 2)` is the float `3.5`), which a single Rust numeric type cannot represent; \
-                                         use all-int or all-float arguments (cast with `float(...)`/`int(...)`) — \
-                                         a tagged-numeric result is not yet supported (contract C-PY-INT-ARITH / C-PY-FLOAT-ARITH)",
-                                        ctx.fn_name
+ Python returns the winning operand with its own type (e.g. `{fname}(3, 2.5)` is the int `3`, \
+ `{fname}(3.5, 2)` is the float `3.5`), which a single Rust numeric type cannot represent; \
+ use all-int or all-float arguments (cast with `float(...)`/`int(...)`) — \
+ a tagged-numeric result is not yet supported (contract C-PY-INT-ARITH / C-PY-FLOAT-ARITH)",
+ ctx.fn_name
                                     )));
                                 }
                             }
@@ -12906,9 +13126,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             let is_utf8_arg = enc.args.is_empty()
                                 || (enc.args.len() == 1
                                     && matches!(&enc.args[0],
-                                        ast::Expr::Constant(c)
-                                            if matches!(&c.value, ast::Constant::Str(s)
-                                                if matches!(s.to_ascii_lowercase().replace('-', "").as_str(), "utf8"))));
+ ast::Expr::Constant(c)
+ if matches!(&c.value, ast::Constant::Str(s)
+ if matches!(s.to_ascii_lowercase().replace('-', "").as_str(), "utf8"))));
                             if enc_attr.attr.as_str() == "encode"
                                 && enc.keywords.is_empty()
                                 && is_utf8_arg
@@ -13008,7 +13228,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                     if !matches!(sty, Type::I64 | Type::F64) {
                                         return Err(FrontendError::Lower(format!(
                                             "sum(xs, start): start must be numeric (int/float), \
-                                             got {sty:?}"
+ got {sty:?}"
                                         )));
                                     }
                                     // PMAT-703: Python promotes int+float freely —
@@ -13260,25 +13480,25 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         rhs: Box::new(Expr::LitInt(0)),
                     };
                     return match infer_type_in_ctx(ctx, &value) {
-                        Type::Bool => Ok(value),
-                        Type::I64 => Ok(ne_zero(value)),
+ Type::Bool => Ok(value),
+ Type::I64 => Ok(ne_zero(value)),
                         // PMAT-681: `bool(x)` over a float is `x != 0.0` — closes a
                         // self-inconsistency (the implicit `if x:` float-truthiness
                         // path already lowers to `x != 0.0`). Rust `x != 0.0`
                         // matches Python exactly: 0.0 / -0.0 are falsy, NaN is
                         // truthy (`NaN != 0.0` is true). (Was rejected: "float
                         // deferred".)
-                        Type::F64 => Ok(Expr::BinOp {
-                            op: BinOp::NotEq,
-                            lhs: Box::new(value),
-                            rhs: Box::new(Expr::LitFloat(0.0)),
+ Type::F64 => Ok(Expr::BinOp {
+ op: BinOp::NotEq,
+ lhs: Box::new(value),
+ rhs: Box::new(Expr::LitFloat(0.0)),
                         }),
-                        Type::Str | Type::List(_) | Type::Dict(_, _) | Type::Set(_) => {
-                            Ok(ne_zero(Expr::Len(Box::new(value))))
+ Type::Str | Type::List(_) | Type::Dict(_, _) | Type::Set(_) => {
+ Ok(ne_zero(Expr::Len(Box::new(value))))
                         }
-                        other => Err(FrontendError::Lower(format!(
+ other => Err(FrontendError::Lower(format!(
                             "function `{}` calls `bool(...)` on a {other:?}; v0.2.0 supports bool over int/bool/str/float/list/dict/set",
-                            ctx.fn_name
+ ctx.fn_name
                         ))),
                     };
                 }
@@ -13428,14 +13648,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 _ => {
                                     return Err(FrontendError::Lower(format!(
                                         "function `{}` calls `format(x, spec)` with a non-string spec",
-                                        ctx.fn_name
+ ctx.fn_name
                                     )));
                                 }
                             },
                             _ => {
                                 return Err(FrontendError::Lower(format!(
                                     "function `{}` calls `format(x, spec)` with a non-literal spec — only a string-literal spec is supported at v0.2.0",
-                                    ctx.fn_name
+ ctx.fn_name
                                 )));
                             }
                         }
@@ -13447,19 +13667,19 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                     // No spec / empty spec → `str(value)`.
                     return match infer_type_in_ctx(ctx, &value) {
-                        Type::I64 => Ok(Expr::ToStr {
-                            value: Box::new(value),
-                            of_float: false,
+ Type::I64 => Ok(Expr::ToStr {
+ value: Box::new(value),
+ of_float: false,
                         }),
-                        Type::F64 => Ok(Expr::ToStr {
-                            value: Box::new(value),
-                            of_float: true,
+ Type::F64 => Ok(Expr::ToStr {
+ value: Box::new(value),
+ of_float: true,
                         }),
-                        Type::Bool => Ok(bool_to_python_str(value)),
-                        Type::Str => Ok(value), // `format(s)` == `s`
-                        other => Err(FrontendError::Lower(format!(
+ Type::Bool => Ok(bool_to_python_str(value)),
+ Type::Str => Ok(value), // `format(s)` == `s`
+ other => Err(FrontendError::Lower(format!(
                             "function `{}` calls `format(...)` on a {other:?}; v0.2.0 supports format over int/float/bool/str",
-                            ctx.fn_name
+ ctx.fn_name
                         ))),
                     };
                 }
@@ -13493,7 +13713,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         other => {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls `repr(...)` on a {other:?}; v0.2.0 supports repr over int/float/bool/str (container repr deferred)",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                     }
@@ -13514,7 +13734,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                     return Err(FrontendError::Lower(format!(
                         "function `{}` uses `isinstance(x, T)` where T (or x's type) isn't a resolvable concrete type — v0.2.0 folds isinstance over int/float/bool/str/list/dict/set/tuple/<dataclass> (and a tuple of those); Optional/Union operands are deferred",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 // PMAT-878: a bare `type(x)` (outside a `type(x) == T` comparison,
@@ -13526,7 +13746,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if fname.id.as_str() == "type" && call.keywords.is_empty() && call.args.len() == 1 {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` uses a bare `type(x)` — reflective type objects aren't supported at v0.2.0; use `type(x) == T` (folded to a static check) or `isinstance(x, T)` instead",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 // PMAT-502ak: `round(x)` (1-arg). Over a `float` → the nearest
@@ -13845,7 +14065,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 // needs the partial_cmp path (else E0277).
                                 None => {
                                     matches!(infer_type_in_ctx(ctx, &list), Type::List(elem)
-                                        if type_contains_float(&elem)
+ if type_contains_float(&elem)
                                             || type_contains_custom_lt_struct(&elem, &ctx.struct_methods))
                                 }
                             };
@@ -14046,7 +14266,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         let kw = bad.arg.as_deref().unwrap_or("**kwargs");
                         return Err(FrontendError::Lower(format!(
                             "function `{}` uses `enumerate(...)` with an unsupported keyword argument `{kw}` — only `start=` is supported",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
                     let kw_start = call
@@ -14057,7 +14277,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if kw_start.is_some() {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` uses `enumerate(xs, <start>, start=…)` giving the start both positionally and by keyword",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                         Some(&call.args[1])
@@ -14065,11 +14285,11 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         kw_start.map(|k| &k.value)
                     };
                     let start = match start_src {
-                        None => 0,
-                        Some(e) => extract_int_literal(e).ok_or_else(|| {
-                            FrontendError::Lower(format!(
+ None => 0,
+ Some(e) => extract_int_literal(e).ok_or_else(|| {
+ FrontendError::Lower(format!(
                                 "function `{}` uses `enumerate(xs, <start>)` with a non-literal-int start — only an integer literal (e.g. `5`, `-1`) is supported at v0.2.0",
-                                ctx.fn_name
+ ctx.fn_name
                             ))
                         })?,
                     };
@@ -14246,7 +14466,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                     return Err(FrontendError::Lower(format!(
                         "function `{}` calls `{}(<expr>)` over an unsupported iterable — v0.2.0 supports `set()`/`frozenset()` (empty), a `<list>`, a `str`, or a tuple literal",
-                        ctx.fn_name, fname.id
+ ctx.fn_name, fname.id
                     )));
                 }
                 // PMAT-811 (HUNT-V22 #9 CC-1): `dict(a=1, b=2)` keyword
@@ -14261,7 +14481,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         let Some(key) = kw.arg.as_ref() else {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` calls `dict(**…)` with a `**`-splat — only the `dict(a=1, …)` keyword form is supported at v0.2.0",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         };
                         let value = lower_expr_in_ctx(ctx, kw.value.clone())?;
@@ -14291,7 +14511,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                     return Err(FrontendError::Lower(format!(
                         "function `{}` calls `dict(<expr>)` over a non-(list of 2-tuples) — v0.2.0 supports `dict()` (empty), `dict(<list of (key, value) pairs>)`, or `dict(<dict>)` (copy)",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 // PMAT-502i: empty collection constructors. `set()`/`dict()`/
@@ -14319,8 +14539,8 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 if fname.id.as_str() == "tuple" {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` calls `tuple(...)` — Rust tuples are fixed-arity, so a \
-                         variable-length `tuple(<iterable>)` has no Rust counterpart at v0.2.0; \
-                         write a fixed tuple as a `(a, b)` literal, or keep the value as a `list`",
+ variable-length `tuple(<iterable>)` has no Rust counterpart at v0.2.0; \
+ write a fixed tuple as a `(a, b)` literal, or keep the value as a `list`",
                         ctx.fn_name
                     )));
                 }
@@ -14356,9 +14576,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     if sig.is_some_and(|s| s.defaults.iter().any(|d| d.is_some())) {
                         return Err(FrontendError::Lower(format!(
                             "function `{}` splats `*<expr>` into `{}` which has default \
-                             parameters — `f(*xs)` into a callee with defaults accepts a range of \
-                             arities decided at runtime and is not supported at v0.2.0; pass the \
-                             arguments positionally instead",
+ parameters — `f(*xs)` into a callee with defaults accepts a range of \
+ arities decided at runtime and is not supported at v0.2.0; pass the \
+ arguments positionally instead",
                             ctx.fn_name, n.id
                         )));
                     }
@@ -14371,7 +14591,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         let Type::List(elem_ty) = infer_type_in_ctx(ctx, &list) else {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` splats `*<expr>` into `{callee}`, but the expr is not a list",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         };
                         // Mirror `lower_list_positional_unpack`: a bare-variable
@@ -14460,7 +14680,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             if !matches!(infer_type_in_ctx(ctx, &list), Type::List(_)) {
                                 return Err(FrontendError::Lower(format!(
                                     "function `{}` splats `*<expr>` into variadic `{callee}`, but the expr is not a list",
-                                    ctx.fn_name
+ ctx.fn_name
                                 )));
                             }
                             lowered.push(list);
@@ -14474,7 +14694,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         if call.args.iter().any(|a| matches!(a, ast::Expr::Starred(_))) {
                             return Err(FrontendError::Lower(format!(
                                 "function `{}` uses an unsupported `*`-splat shape calling variadic `{callee}` — only `{callee}(fixed…, *iterable)` is supported",
-                                ctx.fn_name
+ ctx.fn_name
                             )));
                         }
                         let mut lowered: Vec<Expr> = Vec::with_capacity(fixed + 1);
@@ -14925,7 +15145,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 }
                 return Err(FrontendError::Lower(format!(
                     "function `{}` applies `{:?}` to two dicts; Python defines only `|` (PEP 584 union) as a binary dict operator",
-                    ctx.fn_name, b.op
+ ctx.fn_name, b.op
                 )));
             }
             let op = lower_binop(&b.op)?;
@@ -14976,9 +15196,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                     return Err(FrontendError::Lower(format!(
                         "function `{}` concatenates two tuples where an operand is not a \
-                         simple name or tuple literal; tuple `+` reads each field of the \
-                         operand individually, so a call-result operand would be \
-                         re-evaluated per field — bind it to a local first",
+ simple name or tuple literal; tuple `+` reads each field of the \
+ operand individually, so a call-result operand would be \
+ re-evaluated per field — bind it to a local first",
                         ctx.fn_name
                     )));
                 }
@@ -15317,7 +15537,7 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             }
             Err(FrontendError::Lower(format!(
                 "function `{}` reads attribute `.{field}` of a non-struct value — only struct/dataclass field access is supported at v0.2.0",
-                ctx.fn_name
+ ctx.fn_name
             )))
         }
         // No dict-specific shape: the context-free path is sufficient.
@@ -15411,7 +15631,7 @@ fn lower_math_const(ctx: &LoweringCtx, name: &str) -> Result<Expr, FrontendError
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` reads `math.{other}` — v0.2.0 supports the constants `math.pi`/`math.e`/`math.tau` (and the `math.<fn>(...)` functions); `math.inf`/`math.nan` are a follow-up",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -15434,9 +15654,9 @@ fn lower_math_call(
         if !call.keywords.is_empty() || call.args.len() != 2 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 2 ints",
-                ctx.fn_name,
-                call.args.len(),
-                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+ ctx.fn_name,
+ call.args.len(),
+ if call.keywords.is_empty() { "" } else { " plus keyword args" },
             )));
         }
         let a = lower_expr_in_ctx(ctx, call.args[0].clone())?;
@@ -15444,7 +15664,7 @@ fn lower_math_call(
         if infer_type_in_ctx(ctx, &a) != Type::I64 || infer_type_in_ctx(ctx, &b) != Type::I64 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{fn_name}(...)` with a non-int argument — only `int` is supported",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         let (a, b) = (Box::new(a), Box::new(b));
@@ -15461,16 +15681,16 @@ fn lower_math_call(
         if !call.keywords.is_empty() || call.args.is_empty() || call.args.len() > 2 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.perm(...)` with {} positional arg(s){}; takes 1 or 2 ints",
-                ctx.fn_name,
-                call.args.len(),
-                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+ ctx.fn_name,
+ call.args.len(),
+ if call.keywords.is_empty() { "" } else { " plus keyword args" },
             )));
         }
         let n = lower_expr_in_ctx(ctx, call.args[0].clone())?;
         if infer_type_in_ctx(ctx, &n) != Type::I64 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.perm(...)` with a non-int argument — only `int` is supported",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         if call.args.len() == 1 {
@@ -15480,7 +15700,7 @@ fn lower_math_call(
         if infer_type_in_ctx(ctx, &k) != Type::I64 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.perm(...)` with a non-int argument — only `int` is supported",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         return Ok(Expr::Perm {
@@ -15494,16 +15714,16 @@ fn lower_math_call(
         if !call.keywords.is_empty() || call.args.len() != 1 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; v0.2.0 takes exactly 1 int",
-                ctx.fn_name,
-                call.args.len(),
-                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+ ctx.fn_name,
+ call.args.len(),
+ if call.keywords.is_empty() { "" } else { " plus keyword args" },
             )));
         }
         let n = lower_expr_in_ctx(ctx, call.args[0].clone())?;
         if infer_type_in_ctx(ctx, &n) != Type::I64 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{fn_name}(...)` with a non-int argument — only `int` is supported",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         let n = Box::new(n);
@@ -15530,9 +15750,9 @@ fn lower_math_call(
         if !call.keywords.is_empty() || call.args.len() != 2 {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; it takes exactly 2",
-                ctx.fn_name,
-                call.args.len(),
-                if call.keywords.is_empty() { "" } else { " plus keyword args" },
+ ctx.fn_name,
+ call.args.len(),
+ if call.keywords.is_empty() { "" } else { " plus keyword args" },
             )));
         }
         let lhs = lower_expr_in_ctx(ctx, call.args[0].clone())?;
@@ -15542,7 +15762,7 @@ fn lower_math_call(
         if !matches!(lty, Type::I64 | Type::F64) || !matches!(rty, Type::I64 | Type::F64) {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{fn_name}(...)` with a non-numeric argument ({lty:?}, {rty:?})",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
         return Ok(Expr::FloatBinOp {
@@ -15568,16 +15788,16 @@ fn lower_math_call(
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` calls `math.{other}(...)` — v0.2.0 supports `math.sqrt`/`floor`/`ceil`/`trunc`/`sin`/`cos`/`tan`/`exp`/`log`/`log10`/`log2`/`pow`/`hypot`/`atan2` (other `math` functions are a follow-up)",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
     if !call.keywords.is_empty() || call.args.len() != 1 {
         return Err(FrontendError::Lower(format!(
             "function `{}` calls `math.{fn_name}(...)` with {} positional arg(s){}; it takes exactly 1",
-            ctx.fn_name,
-            call.args.len(),
-            if call.keywords.is_empty() {
+ ctx.fn_name,
+ call.args.len(),
+ if call.keywords.is_empty() {
                 ""
             } else {
                 " plus keyword args"
@@ -15661,8 +15881,8 @@ fn reject_float_hashed(
     if type_contains_float(ty) {
         return Err(FrontendError::Lower(format!(
             "function `{fn_name}` uses a float-typed {position} at `{site}` ({ty:?}) — \
-             a float can't key a Rust `HashSet`/`HashMap` (`f64` is not `Eq`/`Hash`). \
-             Use an int/str key, round to an int, or key on a string form at v0.2.0"
+ a float can't key a Rust `HashSet`/`HashMap` (`f64` is not `Eq`/`Hash`). \
+ Use an int/str key, round to an int, or key on a string form at v0.2.0"
         )));
     }
     Ok(())
@@ -15974,8 +16194,8 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     if matches!(value, Expr::DictGetOpt { .. }) {
         return Err(FrontendError::Lower(format!(
             "function `{}` interpolates a bare `d.get(k)` (an Optional) in an f-string; \
-             rendering an Optional is not supported — use `d.get(k, <default>)`, or guard \
-             with `k in d` and index `d[k]`",
+ rendering an Optional is not supported — use `d.get(k, <default>)`, or guard \
+ with `k in d` and index `d[k]`",
             ctx.fn_name
         )));
     }
@@ -16015,9 +16235,9 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
             Type::Dict(_, _) | Type::Set(_) => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` interpolates a bare dict/set in an f-string — a Rust \
-                     HashMap/HashSet has no `Display` and its iteration order is \
-                     non-deterministic; format the contents explicitly (e.g. via a sorted \
-                     comprehension) at v0.2.0",
+ HashMap/HashSet has no `Display` and its iteration order is \
+ non-deterministic; format the contents explicitly (e.g. via a sorted \
+ comprehension) at v0.2.0",
                     ctx.fn_name
                 )));
             }
@@ -16040,8 +16260,8 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
                 }
                 return Err(FrontendError::Lower(format!(
                     "function `{}` interpolates a dataclass `{sname}` with non-int/bool fields in \
-                     an f-string — only an all-int/bool dataclass renders (as `{sname}(f=v, …)`) \
-                     at v0.2.0; format the fields explicitly (str/float/nested repr is deferred)",
+ an f-string — only an all-int/bool dataclass renders (as `{sname}(f=v, …)`) \
+ at v0.2.0; format the fields explicitly (str/float/nested repr is deferred)",
                     ctx.fn_name
                 )));
             }
@@ -16051,7 +16271,7 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     let Some(spec) = static_format_spec(spec_expr) else {
         return Err(FrontendError::Lower(
             "f-string format spec must be a static literal (dynamic widths like `{x:{w}}` \
-             are not supported at v0.2.0)"
+ are not supported at v0.2.0)"
                 .into(),
         ));
     };
@@ -16702,8 +16922,8 @@ fn apply_nonempty_format_spec(
         }),
         None => Err(FrontendError::Lower(format!(
             "unsupported format spec `:{spec}` (for a {ty:?} value) — supported: \
-             `.Nf` (float), `.N%` (float percent), `.N` (str truncate), `0Nd`/`Nd` (int), `c` (int char), \
-             `>N`/`<N`/`^N` (align), `+`/`-` (sign) at v0.2.0"
+ `.Nf` (float), `.N%` (float percent), `.N` (str truncate), `0Nd`/`Nd` (int), `c` (int char), \
+ `>N`/`<N`/`^N` (align), `+`/`-` (sign) at v0.2.0"
         ))),
     }
 }
@@ -16724,7 +16944,7 @@ fn lower_slice_in_ctx(
         other => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` slices a value typing as {other:?}; only `list[T]` and `str` are sliceable at v0.2.0 first cut",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     };
@@ -16772,7 +16992,7 @@ fn lower_slice_in_ctx(
                 if slice.lower.is_some() || slice.upper.is_some() {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` uses a negative-step slice with bounds; \
-                         v0.2.0 supports only the unbounded form `xs[::-k]`/`s[::-k]` (and `xs[::-1]`/`s[::-1]`)",
+ v0.2.0 supports only the unbounded form `xs[::-k]`/`s[::-k]` (and `xs[::-1]`/`s[::-1]`)",
                         ctx.fn_name
                     )));
                 }
@@ -16785,7 +17005,7 @@ fn lower_slice_in_ctx(
             _ => {
                 return Err(FrontendError::Lower(format!(
                     "function `{}` uses a zero or non-literal slice step; v0.2.0 requires a non-zero integer literal step",
-                    ctx.fn_name
+ ctx.fn_name
                 )));
             }
         }
@@ -16803,7 +17023,7 @@ fn lower_slice_in_ctx(
                 if !matches!(bt, Type::I64) {
                     return Err(FrontendError::Lower(format!(
                             "function `{}` has a slice {which} bound typing as {bt:?}; only `int` bounds are supported",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                 }
                 Ok(Some(Box::new(lowered)))
@@ -16827,7 +17047,7 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         ast::Expr::Constant(c) => match c.value {
             ast::Constant::Int(big) => {
                 let v: i64 = big.try_into().map_err(|_| {
-                    FrontendError::Lower(
+ FrontendError::Lower(
                         "integer literal does not fit in i64 — bigint promotion not implemented at v0.1.0".into(),
                     )
                 })?;
@@ -16861,7 +17081,7 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             // `bytes`. `bytes`/`bytearray` are a deferred feature.
             ast::Constant::Bytes(_) => Err(FrontendError::Lower(
                 "bytes literals (`b\"...\"`) are not supported at v0.2.0 — \
-                 `bytes`/`bytearray` (indexing, iteration, `.decode()`) is a deferred feature"
+ `bytes`/`bytearray` (indexing, iteration, `.decode()`) is a deferred feature"
                     .to_string(),
             )),
             other => Err(FrontendError::Lower(format!(
@@ -17011,8 +17231,8 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             if !matches!(idx_ty, Type::I64) {
                 return Err(FrontendError::Lower(format!(
                     "list-index expression types as {idx_ty:?} but only `int` indices are \
-                     supported at v0.2.0 first cut — slicing, negative-step ranges, and \
-                     non-integer keys are deferred to subsequent sub-tracks"
+ supported at v0.2.0 first cut — slicing, negative-step ranges, and \
+ non-integer keys are deferred to subsequent sub-tracks"
                 )));
             }
             Ok(Expr::Index {
@@ -17030,8 +17250,8 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             if dict_expr.keys.is_empty() {
                 return Err(FrontendError::Lower(
                     "empty dict literal `{}` requires a type annotation to infer K/V — \
-                     pass via `def f() -> dict[str, int]: return {}` once empty-literal annotation \
-                     threading lands in a subsequent v0.2.0 Track 1.C sub-track"
+ pass via `def f() -> dict[str, int]: return {}` once empty-literal annotation \
+ threading lands in a subsequent v0.2.0 Track 1.C sub-track"
                         .into(),
                 ));
             }
@@ -17052,7 +17272,7 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                     if expected != &kt {
                         return Err(FrontendError::Lower(format!(
                             "heterogeneous dict literal — key types {expected:?} and {kt:?} \
-                             mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys"
+ mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys"
                         )));
                     }
                 } else {
@@ -17062,7 +17282,7 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                     if expected != &vt {
                         return Err(FrontendError::Lower(format!(
                             "heterogeneous dict literal — value types {expected:?} and {vt:?} \
-                             mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous values"
+ mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous values"
                         )));
                     }
                 } else {
@@ -17077,7 +17297,7 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                 return Err(FrontendError::Lower(
                     "empty list literal `[]` requires a type annotation to infer the element type \
                      — pass via `def f() -> list[int]: return []` once empty-literal annotation \
-                     threading lands in a subsequent v0.2.0 Track 1.B sub-track"
+ threading lands in a subsequent v0.2.0 Track 1.B sub-track"
                         .into(),
                 ));
             }
@@ -17090,7 +17310,7 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
                     if expected != &ty {
                         return Err(FrontendError::Lower(format!(
                             "heterogeneous list literal — element types {expected:?} and {ty:?} \
-                             mixed; C-XLATE-PY-LIST-TO-VEC requires homogeneous element types"
+ mixed; C-XLATE-PY-LIST-TO-VEC requires homogeneous element types"
                         )));
                     }
                 } else {
@@ -17136,7 +17356,7 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
             if fv.conversion != ast::ConversionFlag::None || fv.format_spec.is_some() {
                 return Err(FrontendError::Lower(
                     "f-string conversion flags (`!r`/`!s`/`!a`) and format specs (`:>10`/`:.2f`/etc.) \
-                     are not supported at v0.2.0 — use plain `{expr}` only"
+ are not supported at v0.2.0 — use plain `{expr}` only"
                         .into(),
                 ));
             }
@@ -17160,8 +17380,8 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         // position. Name it clearly instead of leaking the opaque AST discriminant.
         ast::Expr::NamedExpr(_) => Err(FrontendError::Lower(
             "a walrus assignment `(name := expr)` is only supported inside an `if` \
-             condition at v0.2.0 — in a `while` condition / comprehension / general \
-             expression, assign `name = expr` on a preceding line instead"
+ condition at v0.2.0 — in a `while` condition / comprehension / general \
+ expression, assign `name = expr` on a preceding line instead"
                 .to_string(),
         )),
         // PMAT-729 (HUNT-V10 V10-6): a `Slice` node reaching general expression
@@ -17171,8 +17391,8 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         // the opaque AST discriminant (`unsupported expression: Discriminant(26)`).
         ast::Expr::Slice(_) => Err(FrontendError::Lower(
             "slice assignment (`xs[a:b] = ...`) and slice deletion (`del xs[a:b]`) \
-             are not supported at v0.2.0 — assign/delete a single index (`xs[i] = ...`, \
-             `del xs[i]`), or rebuild the list; slice READS (`xs[a:b]`) do work"
+ are not supported at v0.2.0 — assign/delete a single index (`xs[i] = ...`, \
+ `del xs[i]`), or rebuild the list; slice READS (`xs[a:b]`) do work"
                 .to_string(),
         )),
         // PMAT-735 (HUNT-V11 V11-12): a lambda reaching general expression lowering
@@ -17184,9 +17404,9 @@ fn lower_expr(e: ast::Expr) -> Result<Expr, FrontendError> {
         // collection / general expression position is the unsupported case.
         ast::Expr::Lambda(_) => Err(FrontendError::Lower(
             "lambda expressions are only supported as `name = lambda …` or a \
-             `key=`/`map`/`filter`/`sorted`/`min`/`max` argument at v0.2.0 — a \
-             lambda stored in a list / comprehension / general expression (a \
-             first-class callable value) is not supported"
+ `key=`/`map`/`filter`/`sorted`/`min`/`max` argument at v0.2.0 — a \
+ lambda stored in a list / comprehension / general expression (a \
+ first-class callable value) is not supported"
                 .to_string(),
         )),
         other => Err(FrontendError::Lower(format!(
@@ -17697,10 +17917,10 @@ fn lower_bool_op_core(
             if !all_bool && !truthy {
                 return Err(FrontendError::Lower(
                     "`and`/`or` in value position over non-bool / mixed-type operands returns \
-                     Python's union operand value, which has no single Rust type at v0.2.0 — \
-                     same-typed operands DO return a value (`x or 0`, `s or \"d\"`), and \
-                     mixed / non-bool `and`/`or` is supported in a boolean context \
-                     (if / while / assert / `not` / `bool()` / a ternary condition)"
+ Python's union operand value, which has no single Rust type at v0.2.0 — \
+ same-typed operands DO return a value (`x or 0`, `s or \"d\"`), and \
+ mixed / non-bool `and`/`or` is supported in a boolean context \
+ (if / while / assert / `not` / `bool()` / a ternary condition)"
                         .into(),
                 ));
             }
@@ -18035,9 +18255,9 @@ fn reject_intfloat_ternary_comp_elem(
     if mixed {
         return Err(FrontendError::Lower(format!(
             "heterogeneous {kind} comprehension — the `int`/`float` ternary element \
-             ({then_ty:?} vs {else_ty:?}) would silently widen the int branch to f64 \
-             (an int element prints as `N.0`); C-XLATE-PY-LIST-TO-VEC requires \
-             homogeneous element types — make both ternary branches the same type"
+ ({then_ty:?} vs {else_ty:?}) would silently widen the int branch to f64 \
+ (an int element prints as `N.0`); C-XLATE-PY-LIST-TO-VEC requires \
+ homogeneous element types — make both ternary branches the same type"
         )));
     }
     Ok(())
@@ -18294,13 +18514,13 @@ fn lower_str_format_kwargs(
                 if name.is_empty() || name.chars().all(|ch| ch.is_ascii_digit()) {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` mixes auto/positional `{{}}` fields with `.format(name=...)` keyword args — use named `{{field}}` placeholders",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 if !kw.contains_key(name) {
                     return Err(FrontendError::Lower(format!(
                         "function `{}` `.format(...)` template references `{{{name}}}` with no matching keyword arg",
-                        ctx.fn_name
+ ctx.fn_name
                     )));
                 }
                 let idx = match used.iter().position(|u| u == name) {
@@ -18429,7 +18649,7 @@ fn lower_percent_format(
                         if precision.is_some() {
                             return Err(FrontendError::Lower(
                                 "`%.Ns` over an int is not supported (precision truncation \
-                                 differs from Rust)"
+ differs from Rust)"
                                     .into(),
                             ));
                         }
@@ -18489,7 +18709,7 @@ fn lower_percent_format(
                         if precision.is_some() || flag_zero || flag_plus {
                             return Err(FrontendError::Lower(
                                 "`%x`/`%X`/`%o` support only an optional width (precision, `0`, \
-                                 and `+` are not yet supported)"
+ and `+` are not yet supported)"
                                     .into(),
                             ));
                         }
@@ -18506,7 +18726,7 @@ fn lower_percent_format(
                     's' | 'd' | 'i' | 'f' | 'x' | 'X' | 'o' => {
                         return Err(FrontendError::Lower(format!(
                             "`%{conv}` format expects a different argument type than {ty:?} \
-                             (`%s` str/bool/float, `%d`/`%x`/`%X`/`%o` int, `%f` float)"
+ (`%s` str/bool/float, `%d`/`%x`/`%X`/`%o` int, `%f` float)"
                         )));
                     }
                     _ => {
@@ -18752,7 +18972,7 @@ fn lower_str_format(
                     _ => {
                         return Err(FrontendError::Lower(format!(
                             "function `{fname}` formats a {:?} value via str.format without a spec; v0.2.0 supports int/str and a float/bool referenced once (a float/bool shared with a `:spec` field needs the spec, e.g. `{{:.2f}}`)",
-                            arg_tys[arg_idx]
+ arg_tys[arg_idx]
                         )));
                     }
                 }
@@ -18830,10 +19050,10 @@ fn lower_str_format(
                     // this is behavior-preserving otherwise. Multi-reference (rare)
                     // keeps the inline embed.
                     let rust_spec =
-                        translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
-                            FrontendError::Lower(format!(
+ translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
+ FrontendError::Lower(format!(
                                 "function `{fname}` uses an unsupported str.format spec `{{:{s}}}` for a {:?} value",
-                                arg_tys[arg_idx]
+ arg_tys[arg_idx]
                             ))
                         })?;
                     args[arg_idx] = Expr::FormatSpec {
@@ -18846,10 +19066,10 @@ fn lower_str_format(
                     // emit a plain `{field_str}` field (the arg is now the string)
                 } else {
                     let rust_spec =
-                        translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
-                            FrontendError::Lower(format!(
+ translate_format_spec(s, &arg_tys[arg_idx]).ok_or_else(|| {
+ FrontendError::Lower(format!(
                                 "function `{fname}` uses an unsupported str.format spec `{{:{s}}}` for a {:?} value",
-                                arg_tys[arg_idx]
+ arg_tys[arg_idx]
                             ))
                         })?;
                     rust_fmt.push(':');
@@ -19362,7 +19582,7 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
         }
         return Err(FrontendError::Lower(format!(
             "function `{}` compares against `None` (`is`/`==`) on a non-`Optional` value — v0.2.0 supports the `None` test only on `Optional[T]` values",
-            ctx.fn_name
+ ctx.fn_name
         )));
     }
     // PMAT-878: `type(x) == T` / `type(x) != T` (and the symmetric `T == type(x)`
@@ -19415,7 +19635,7 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
         if left_ty_arg.is_some() || right_ty_arg.is_some() {
             return Err(FrontendError::Lower(format!(
                 "function `{}` uses `type(x)` in a comparison that isn't a resolvable concrete-type check — v0.2.0 folds `type(x) == T` / `type(x) == type(y)` over int/float/bool/str/list/dict/set/tuple/<dataclass>; Optional/Union operands and reflective `type()` objects are not supported",
-                ctx.fn_name
+ ctx.fn_name
             )));
         }
     }
@@ -19633,7 +19853,7 @@ fn lower_list_literal_in_ctx(
         return Err(FrontendError::Lower(
             "empty list literal `[]` requires a type annotation to infer the element type \
              — pass via `def f() -> list[int]: return []` once empty-literal annotation \
-             threading lands in a subsequent v0.2.0 Track 1.B sub-track"
+ threading lands in a subsequent v0.2.0 Track 1.B sub-track"
                 .into(),
         ));
     }
@@ -19656,7 +19876,7 @@ fn lower_list_literal_in_ctx(
                     if !matches!(infer_type_in_ctx(ctx, &inner), Type::List(_)) {
                         return Err(FrontendError::Lower(format!(
                             "function `{}` splats a non-list (`[*x]` where `x` is not a list) — only list splats are supported at v0.2.0",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
                     inner
@@ -19688,7 +19908,7 @@ fn lower_list_literal_in_ctx(
             if expected != &ty {
                 return Err(FrontendError::Lower(format!(
                     "heterogeneous list literal — element types {expected:?} and {ty:?} \
-                     mixed; C-XLATE-PY-LIST-TO-VEC requires homogeneous element types"
+ mixed; C-XLATE-PY-LIST-TO-VEC requires homogeneous element types"
                 )));
             }
         } else {
@@ -19714,8 +19934,8 @@ fn lower_dict_literal_in_ctx(
     if dict_expr.keys.is_empty() {
         return Err(FrontendError::Lower(
             "empty dict literal `{}` requires a type annotation to infer K/V — \
-             pass via `def f() -> dict[str, int]: return {}` once empty-literal annotation \
-             threading lands in a subsequent v0.2.0 Track 1.C sub-track"
+ pass via `def f() -> dict[str, int]: return {}` once empty-literal annotation \
+ threading lands in a subsequent v0.2.0 Track 1.C sub-track"
                 .into(),
         ));
     }
@@ -19761,7 +19981,7 @@ fn lower_dict_literal_in_ctx(
             if expected != &kt {
                 return Err(FrontendError::Lower(format!(
                     "heterogeneous dict literal — key types {expected:?} and {kt:?} \
-                     mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys"
+ mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous keys"
                 )));
             }
         } else {
@@ -19771,7 +19991,7 @@ fn lower_dict_literal_in_ctx(
             if expected != &vt {
                 return Err(FrontendError::Lower(format!(
                     "heterogeneous dict literal — value types {expected:?} and {vt:?} \
-                     mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous values"
+ mixed; C-XLATE-PY-DICT-TO-HASHMAP requires homogeneous values"
                 )));
             }
         } else {
@@ -19818,7 +20038,7 @@ fn lower_set_literal_in_ctx(
                     if !matches!(infer_type_in_ctx(ctx, &inner), Type::Set(_)) {
                         return Err(FrontendError::Lower(format!(
                             "function `{}` splats a non-set (`{{*x}}` where `x` is not a set) — only set splats are supported at v0.2.0",
-                            ctx.fn_name
+ ctx.fn_name
                         )));
                     }
                     inner
@@ -20107,7 +20327,7 @@ fn lower_comp_to_map(
         _ => {
             return Err(FrontendError::Lower(format!(
                 "{kind} iterates over a non-list — only `range(...)`, list-typed, dict (keys), \
-                 set, and tuple iterables are supported at v0.2.0"
+ set, and tuple iterables are supported at v0.2.0"
             )));
         }
     };
@@ -20122,9 +20342,9 @@ fn lower_comp_to_map(
         targets[0].clone()
     } else {
         let (ta, tb) = match elem_ty {
-            Type::Tuple(tys) if tys.len() == 2 => (tys[0].clone(), tys[1].clone()),
-            other => {
-                return Err(FrontendError::Lower(format!(
+ Type::Tuple(tys) if tys.len() == 2 => (tys[0].clone(), tys[1].clone()),
+ other => {
+ return Err(FrontendError::Lower(format!(
                     "{kind} `for k, v in …` iterates a {other:?}; expected an iterable of 2-tuples (e.g. `d.items()`)"
                 )))
             }
