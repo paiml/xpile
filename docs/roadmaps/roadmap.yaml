@@ -526,6 +526,38 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'USER-DIRECTED next after the differential campaign. rustc-nvptx (PMAT-997) promoted from witness-level to a PRODUCTION §29 quorum member: the anti-correlation guard now runs 3 categorically-independent toolchains in production, discharging the audit Run=1/in-vacuum caveat with a stronger 3-toolchain agreement (a miscompile would have to corrupt all three identically). Small additive xpile-backend change (diff_exec_extra_emitters) — no trait break, no other-backend impact; HONEST reporting (rustc-nvptx named only when it actually voted). Executed on RTX 4090 sm_89, max_abs_diff=0. See [[project-gpu-cuda-oxide-wgpu-first-class]].'
+- id: PMAT-1007
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1007: [rust/correctness] Rust-lane DICT/CONTAINER differential sweep — the surface the dep-free sweep could not reach (dicts pull indexmap). Stood up a cargo-project harness (rust_diff_harness.py: transpile→drop into an indexmap cargo project with a SHARED cached target dir→cargo run→diff CPython, classifying MATCH / DIVERGE / SKIP-INVALID-RUST / both-raise). 302 programs across dict_ops/set_ops/str_keyed/nested_containers/container_interactions + an independent verify pass: 6 CONFIRMED, 0 false positives, TWO classes. CLASS A (FIXED this slice): a no-default `d.get(k)` in an ARITHMETIC context emitted uncompilable Rust — `d.get(k)` is `Option<i64>` (correct in truthy/`is None`), but feeding it into the C-PY-INT-ARITH `.checked_add(...)` wrapper gave E0599 (no `checked_add` on Option) / E0308 (expected i64 found Option). Fix: emit_arith_operand unwraps a DictGetOpt operand in emit_checked (present→value, absent→panic == Python None-in-arithmetic TypeError); Option preserved in truthy/is-none. CLASS B (FILED as PMAT-1008, NOT fixed — fundamental): Python LIST REFERENCE ALIASING is not modeled. `b = a` shares the list (mutations via b visible through a); xpile uses VALUE semantics → either MOVES (`b=a; …a…` → rustc E0382, fail-loud) or DEEP-CLONES (`[row,row]` / `[[0,0]]*2` then mutate → SILENT wrong value 5≠10). Needs a strategic decision (Rc<RefCell> value model / aliasing analysis / conservative refuse), too big + too invasive to pick autonomously.'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "CLASS A FIXED: emit_arith_operand (crates/xpile-rust-codegen) unwraps a no-default DictGetOpt operand in emit_checked (Add/Sub/Mul). Verified end-to-end via the cargo harness: `d.get(1)+d.get(2)`→30, `len(d)+d.get(1)`→12 (both were SKIP INVALID-RUST); truthy `if d.get(1):`→7, `is None`→8, `d.get(2,0)`→0 all still MATCH (Option preserved, no regression); absent-key arith → both-raise (Python TypeError / Rust panic). Lib witness dict_get_no_default_unwraps_in_arithmetic_pmat_1007 asserts the unwrap+checked_add."
+  - "SCOPE NOTE: the fix covers emit_checked (Add/Sub/Mul), the confirmed + common case. floor-div/mod/pow/shift and ordering (< > <= >=) on a no-default DictGetOpt have the SAME latent Option-in-value-position pattern (rarer — who writes `d.get(1)//d.get(2)`); noted for a follow-up, not blocking (they fail-loud at rustc, not silently)."
+  - "CLASS B filed as PMAT-1008 (list reference aliasing — fundamental, needs a strategic decision). Documented honestly, NOT force-fixed."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-rust-codegen (17 lib incl the new witness) + xpile e2e (no regression). Touched crates/xpile-rust-codegen/ + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The Rust-lane dict/container surface the dep-free PMAT-1004 sweep structurally could not reach (indexmap dep). The cargo harness (shared cached target dir) makes dep-carrying emit differentially testable — reuse it for future container sweeps. Reinforces [[feedback-ultracode-adversarial-verify]]: differential EXECUTION at scale keeps finding real bugs on the mature primary lane; and the harness-classification (MATCH/DIVERGE/SKIP-INVALID-RUST/both-raise) let agents cleanly separate value bugs from invalid-emit from fail-loud-agreement.'
+- id: PMAT-1008
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1008: [rust/semantics/FRONTIER] Python list (and dict/set) REFERENCE ALIASING is not modeled on the Rust lane — a FUNDAMENTAL value-vs-reference gap. Found by the PMAT-1007 dict/container sweep. Python containers are shared mutable references: `b = a` makes b and a the SAME object, so `b.append(4)` changes a too; `grid = [row, row]` stores the same inner list twice; `[[0,0]] * 2` replicates ONE shared inner list. xpile lowers assignment as a MOVE (`let mut b = a`) and list-literal/repeat elements as CLONES (`(row).clone()`, `.iter().cloned()`), which gives Rust VALUE semantics. Consequences the sweep confirmed: (a) `b = a; b.append(4); len(a)` and `b = a; b[0]=99; a[0]` → rustc E0382 borrow-of-moved-value (fail-loud, at least not silent); (b) `grid=[row,row]; grid[0][0]=5; grid[0][0]+grid[1][0]` → SILENT wrong value (Rust 5, CPython 10 — the mutation is not shared); (c) `m=[[0,0]]*2; m[0][0]=5; …` → same SILENT 5≠10. This is the classic Python aliasing footgun, and modeling it correctly is a STRATEGIC decision (like the Mathlib gate) — do NOT drift into it autonomously.'
+  status: planned
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "STRATEGIC DECISION required among: (1) Rc<RefCell<Vec<...>>> for aliasable containers — models Python shared-mutable exactly but is a deep, pervasive value-model change (every container type + every op) with runtime-borrow-panic risk; (2) a static ALIASING ANALYSIS that inserts .clone() only where safe and REFUSES (fail-loud) where a shared mutation is observable — sound but complex; (3) CONSERVATIVE REFUSE: reject `b = a` where a is later used, and `[mutable]*n` / `[x, x]` list-of-mutable-refs (fail-loud, honest, capability-narrowing) as an interim so the SILENT cases (b)/(c) become loud. The silent-miscompile cases (b)/(c) are the priority to neutralize; the E0382 cases already fail loud."
+  - "Whichever path: add a witness that `b=a; b.append(4); len(a)`==4 (aliasing) OR is refused; and `[[0,0]]*2` mutation matches CPython OR is refused — no SILENT divergence remains. Keep the Rust round-trip + e2e green."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Fundamental Python-reference-vs-Rust-value gap, filed by PMAT-1007. HIGH priority because case (b)/(c) are SILENT miscompiles of a common Python pattern, but the fix needs a strategic call (Rc<RefCell> is invasive; refuse is honest-but-narrowing). Flagged for a design decision rather than an autonomous grind. Interim mitigation to consider FIRST: make the SILENT list-of-mutable-refs / mutable-repeat cases fail-loud (conservative refuse) so nothing miscompiles silently, deferring the full Rc<RefCell> model.'
 - id: PMAT-985
   github_issue: null
   item_type: task
