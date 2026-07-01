@@ -129,4 +129,35 @@ theorem dict_entries_disjoint (base i j : Nat) (h : i < j) :
 theorem dict_value_fits_in_entry : dictValOff + 8 ≤ dictEntrySize := by
   decide
 
+/-
+  ── PMAT-996 (slice 4): the plain-data struct field layout ────────────────
+
+  A struct instance is a bump-heap record with NO header: field `i` (definition
+  order) sits at `fieldAddr base i = base + i * structFieldSize` (a uniform
+  8-byte slot; an i32/f32/bool field uses the slot's low 4 bytes). The lemmas
+  below machine-check the layout is WELL-FORMED — consecutive fields are
+  contiguous and distinct fields are DISJOINT (a `p.field` load never reads a
+  neighbouring field). Core-only, sorry-free.
+-/
+
+/-- The uniform byte size of one struct field slot (keeps i64/f64 aligned). -/
+def structFieldSize : Nat := 8
+
+/-- Linear-memory address of field `i` in a struct at base pointer `base`. -/
+def fieldAddr (base i : Nat) : Nat := base + i * structFieldSize
+
+/-- Consecutive struct fields are CONTIGUOUS. -/
+theorem struct_fields_contiguous (base i : Nat) :
+    fieldAddr base i + structFieldSize = fieldAddr base (i + 1) := by
+  unfold fieldAddr structFieldSize
+  omega
+
+/-- Distinct struct fields are DISJOINT: for `i < j`, field `i`'s 8-byte slot
+    ends at or before field `j` begins — a field load never aliases a neighbour. -/
+theorem struct_fields_disjoint (base i j : Nat) (h : i < j) :
+    fieldAddr base i + structFieldSize ≤ fieldAddr base j := by
+  unfold fieldAddr structFieldSize
+  have : i + 1 ≤ j := h
+  omega
+
 end XpileContracts.CWasmHeap
