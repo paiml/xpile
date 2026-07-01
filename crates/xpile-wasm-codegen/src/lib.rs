@@ -119,7 +119,7 @@ use xpile_backend::{
 };
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -2298,6 +2298,21 @@ fn emit_expr(
         }
         Expr::Index { collection, index } => emit_index(collection, index, scope, out, depth),
         Expr::Len(collection) => emit_len(collection, scope, out, depth),
+        // PMAT-1003: `len(s)` over a str is synthesized by the frontend as
+        // StrMethod(CharCount) (Python counts Unicode code points, so a str len
+        // must NOT reuse Expr::Len = byte length). The WASM str subset is
+        // ASCII-only (byte count == code-point count), so this is exactly the
+        // byte-count header read emit_len already does for a str param. Other
+        // string methods (upper/lower/strip/split/…) are refused honestly.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::CharCount,
+            args,
+        } if args.is_empty() => emit_len(recv, scope, out, depth),
+        Expr::StrMethod { op, .. } => Err(unsupported(&format!(
+            "string method {op:?} on the WASM lane — only `len(s)` (CharCount) is \
+             supported; upper/lower/strip/split/replace/find/… are refused"
+        ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
         // other `ord` operand (e.g. `ord(chr(n))`) is refused.
