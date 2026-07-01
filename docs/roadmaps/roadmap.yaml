@@ -462,6 +462,21 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'THIRD ultracode differential sweep — 190 programs, 3 reported, 3 confirmed, 0 false positives, one class: float / 0.0 returned IEEE inf/nan instead of CPython ZeroDivisionError. The three WASM sweeps together found FIVE real correctness divergences across FOUR classes (concat-chr miscompile PMAT-998, s[i]-concat PMAT-1000, list negative-index PMAT-1001, float div-by-zero PMAT-1002) — all silent-wrong-or-wrong-fail masked by happy-path witnesses, all executed-verified fixes. The sweeps are CONVERGING (sweep 1: 3 classes; sweep 2: 1 class; sweep 3: 1 class), suggesting the zero-arg-runnable WASM subset is nearing well-hardened. Reinforces [[feedback-ultracode-adversarial-verify]].'
+- id: PMAT-1003
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1003: [wasm/frontend-gap] FOLLOW-UP — str-param `len(s)` REFUSES via the production `xpile transpile --target wasm` CLI, though the WASM backend handles it and the PMAT-986 witness passes. Found by probing the param-path coverage after the zero-arg differential sweeps. Root cause (diagnosed, not yet fixed): the Python frontend lowers str `len(s)` to a Unicode CHARACTER-count node (the Rust codegen renders it `s.chars().count()`), NOT `Expr::Len` — while the WASM `emit_len` accepts `Expr::Len` (the i32 byte-count header @ base+0, correct for the lane''s ASCII str subset since char==byte for ASCII) but NOT the char-count node, so it falls to the generic `<container/aggregate/builtin expression>` honest refusal. NUANCE (witness-vs-production, honest): the PMAT-986 slice-1 `str_program_witness` builds `Expr::Len` DIRECTLY (which emit_len handles) — so it proves the BACKEND capability but NOT the FRONTEND→WASM str-len path a user hits; `len(s)` on a str param is refused end-to-end. `ord(s[i])` DOES work end-to-end (the frontend emits Expr::Ord/StrCharAt the backend handles). This is an HONEST REFUSAL (not a silent miscompile), so lower-severity than the sweep-found bugs.'
+  status: planned
+  priority: medium
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "Make `def f(s: str) -> int: return len(s)` transpile + execute on the WASM lane, value-matching CPython len for ASCII (byte==char). Options: (a) the WASM backend maps the frontend''s str char-count node to the byte-count header read (ASCII-valid, refusing/documenting non-ASCII); or (b) the frontend emits Expr::Len for str len (with the WASM lane''s ASCII assumption). Add an END-TO-END witness that transpiles via the production CLI (not a direct-meta-HIR construct) so the frontend→backend path is covered, closing the witness-vs-production gap."
+  - "Audit the other str-param builtins for the same frontend↔backend node mismatch (the direct-meta-HIR witnesses may test nodes the frontend does not emit for str)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Discovered 2026-07-01 while probing param-path coverage after the 3 zero-arg WASM differential sweeps. The zero-arg sweeps could not reach param-based programs (str/list/struct params need drivers), so this frontend↔backend str-len gap survived. It is an HONEST REFUSAL (fail-loud at transpile, not a silent miscompile), so it is a capability/coverage gap, not a correctness defect — lower priority than the sweep-found silent bugs, but a real end-to-end gap + a witness-vs-production nuance (the PMAT-986 witness tests Expr::Len, which the frontend does not emit for str len). See [[feedback-ultracode-adversarial-verify]] corollary: "a real emit fn / passing witness" != "the production frontend→backend path a user hits".'
 - id: PMAT-985
   github_issue: null
   item_type: task
