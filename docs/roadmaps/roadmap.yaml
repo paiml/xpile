@@ -413,6 +413,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Filed by PMAT-998 (the ultracode differential sweep confirmed the fixed-capacity fail-loud trap as CLASS-B). Real-growth is a redesign (helper must return + caller must update the base-pointer); a static mutation-sizing partial fix is the cheaper interim. Not blocking — the current trap is fail-loud (documented in C-WASM-HEAP), not a silent miscompile.'
+- id: PMAT-1000
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1000: [wasm/correctness] Complete the concat-operand-aliasing fix — a `s[i]` (StrCharAt) concat operand clobbered the concat OFFSET tracker. PMAT-998 fixed the DESTINATION clobber (chr operands, which use $__wasm_str_dst) via a dedicated $__wasm_concat_dst local, but a gap-probe right after found the SECOND half: `s[i]` (Expr::StrCharAt) uses $__wasm_str_la as ITS OWN scratch (the source string base), and the concat ALSO used $__wasm_str_la as its running write-offset — so a StrCharAt concat operand CLOBBERED the offset, and `\"AB\"[0] + \"CD\"[1]` produced garbage instead of \"AD\" (the `==`/`!=` bool then wrong). Fix: a dedicated $__wasm_concat_off local for the concat write-offset, distinct from $__wasm_str_la. Now BOTH the destination and the offset survive any string-returning operand eval. This is the completion of the PMAT-998 class; the PMAT-998 witness only covered chr operands, missing the StrCharAt-uses-a-different-scratch case.'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "FIX: crates/xpile-wasm-codegen/src/lib.rs — new STR_CONCAT_OFF local; emit_concat tracks its write-offset there (init + dest-addr + update) instead of STR_LA_SCRATCH, which a StrCharAt operand clobbers; body-driven local-decl gating added."
+  - "WITNESS: tests/concat_chr_witness.rs extended with 4 s[i]-in-concat cases (\"AB\"[0]+\"CD\"[1]==\"AD\", s[i]+chr, chr+s[i], 3-operand s[i]) — WABT-executed, value-matching CPython; chr cases unregressed. Re-verified via the production CLI: all pass."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-wasm-codegen (52 lib + concat_chr witness 11 cases + prior). Touched crates/xpile-wasm-codegen/ + contracts/c-wasm-heap-v1.yaml + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Completion of the PMAT-998 concat-operand-aliasing class. TWO scratch locals collided with string-returning operands: $__wasm_str_dst (chr, fixed PMAT-998 via $__wasm_concat_dst) and $__wasm_str_la (s[i], fixed here via $__wasm_concat_off). Found by probing the gap the sweep missed (its CLASS-A cases were all chr-based). Lesson: when a fix addresses ONE scratch-local collision, audit ALL scratch locals the operand family touches — s[i] and chr use DIFFERENT scratches. See [[feedback-ultracode-adversarial-verify]].'
 - id: PMAT-985
   github_issue: null
   item_type: task

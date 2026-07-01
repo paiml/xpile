@@ -46,6 +46,15 @@ fn ne(l: Expr, r: Expr) -> Expr {
 fn lit(s: &str) -> Expr {
     Expr::LitStr(s.into())
 }
+/// `s[i]` over a literal — a string-returning op (allocates a 1-char string,
+/// using `$__wasm_str_la` as its own scratch), exercising the PMAT-1000
+/// concat-OFFSET aliasing path.
+fn charat(s: &str, i: i64) -> Expr {
+    Expr::StrCharAt {
+        string: Box::new(Expr::LitStr(s.into())),
+        index: Box::new(Expr::LitInt(i)),
+    }
+}
 
 fn bool_fn(name: &str, tail: Expr) -> Item {
     Item::Function(Function {
@@ -80,6 +89,33 @@ fn cases() -> Vec<(&'static str, Expr, bool)> {
         ),
         // chr + chr == "B" (the collapsed-to-last-char false match)  → False
         ("not_b", eq(concat(chr(65), chr(66)), lit("B")), false),
+        // PMAT-1000: s[i] + s[j] == "AD"  → True (the concat-OFFSET aliasing bug:
+        // s[i] clobbered $__wasm_str_la, the concat's offset tracker).
+        (
+            "sij",
+            eq(concat(charat("AB", 0), charat("CD", 1)), lit("AD")),
+            true,
+        ),
+        // s[i] mixed with chr + literal
+        (
+            "mix1",
+            eq(concat(charat("AB", 0), chr(66)), lit("AB")),
+            true,
+        ),
+        (
+            "mix2",
+            eq(concat(chr(65), charat("XY", 1)), lit("AY")),
+            true,
+        ),
+        // 3-operand s[i] concat
+        (
+            "sij3",
+            eq(
+                concat(concat(charat("AB", 0), charat("AB", 1)), charat("AB", 0)),
+                lit("ABA"),
+            ),
+            true,
+        ),
     ]
 }
 

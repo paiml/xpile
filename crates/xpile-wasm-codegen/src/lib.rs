@@ -165,6 +165,14 @@ const STR_LA_SCRATCH: &str = "__wasm_str_la";
 /// single level, so this never self-collides.)
 const STR_CONCAT_DST: &str = "__wasm_concat_dst";
 
+/// PMAT-1000: the concat's running WRITE-OFFSET, held in a local DISTINCT from
+/// [`STR_LA_SCRATCH`]. `s[i]` (`Expr::StrCharAt`) uses `$__wasm_str_la` as its
+/// OWN scratch (the source string's base), so if the concat tracked its offset
+/// in that same local, a `StrCharAt` concat operand would CLOBBER the offset —
+/// the second half of the concat-operand-aliasing bug ([`STR_CONCAT_DST`] fixed
+/// the destination clobber for `chr`; this fixes the offset clobber for `s[i]`).
+const STR_CONCAT_OFF: &str = "__wasm_concat_off";
+
 /// PMAT-995 (slice 3b): per-function scratch `i32` local holding a freshly
 /// `$__alloc`-ed dict/set base-pointer while [`emit_dict_lit`] writes its
 /// header + entries. Body-driven declaration, like the string scratches.
@@ -1866,6 +1874,11 @@ fn emit_function(
     if body.contains(&format!("${STR_CONCAT_DST}")) {
         writeln!(out, "    (local ${STR_CONCAT_DST} i32)").expect("write");
     }
+    // PMAT-1000: the dedicated concat write-offset local (distinct from
+    // $__wasm_str_la so an `s[i]` operand's scratch cannot clobber it).
+    if body.contains(&format!("${STR_CONCAT_OFF}")) {
+        writeln!(out, "    (local ${STR_CONCAT_OFF} i32)").expect("write");
+    }
     // PMAT-995: declare the dict-construction scratch `i32` local iff a
     // `DictLit`/`SetLit` actually used it (same body-driven detection).
     if body.contains(&format!("${DICT_DST_SCRATCH}")) {
@@ -2809,11 +2822,12 @@ fn emit_concat(
     writeln!(out, "i32.store").expect("write");
 
     // Copy each operand's bytes to dst+8+offset, tracking the running offset
-    // in $__wasm_str_la (reused as the cumulative write offset). Start at 0.
+    // in the DEDICATED $__wasm_concat_off local (PMAT-1000: NOT $__wasm_str_la —
+    // an `s[i]` operand uses that as its own source-base scratch). Start at 0.
     indent(out, depth);
     writeln!(out, "i32.const 0").expect("write");
     indent(out, depth);
-    writeln!(out, "local.set ${STR_LA_SCRATCH}").expect("write");
+    writeln!(out, "local.set ${STR_CONCAT_OFF}").expect("write");
     for op in &operands {
         // memory.copy(dest = dst+8+offset, src = op+8, n = len(op))
         // dest: (the dedicated concat-dst local, which survives the operand's
@@ -2825,7 +2839,7 @@ fn emit_concat(
         indent(out, depth);
         writeln!(out, "i32.add").expect("write");
         indent(out, depth);
-        writeln!(out, "local.get ${STR_LA_SCRATCH}").expect("write");
+        writeln!(out, "local.get ${STR_CONCAT_OFF}").expect("write");
         indent(out, depth);
         writeln!(out, "i32.add").expect("write");
         // src = op_base + 8:
@@ -2840,12 +2854,12 @@ fn emit_concat(
         writeln!(out, "memory.copy").expect("write");
         // offset += len(op):
         indent(out, depth);
-        writeln!(out, "local.get ${STR_LA_SCRATCH}").expect("write");
+        writeln!(out, "local.get ${STR_CONCAT_OFF}").expect("write");
         emit_str_len_i32(op, scope, out, depth)?;
         indent(out, depth);
         writeln!(out, "i32.add").expect("write");
         indent(out, depth);
-        writeln!(out, "local.set ${STR_LA_SCRATCH}").expect("write");
+        writeln!(out, "local.set ${STR_CONCAT_OFF}").expect("write");
     }
     // result = dst (the new string's base-pointer, from the dedicated concat-dst
     // local — never the operand-clobbered $__wasm_str_dst; PMAT-998).
