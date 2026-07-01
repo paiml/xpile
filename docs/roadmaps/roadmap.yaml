@@ -626,6 +626,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'The loop-var-leak idiom is COMMON Python. Key lesson: PROBE the existing machinery before writing new — the fix was a 1-expression generalization (Name-lookup → probe-lower) of an existing pre-pass, not new hoisting logic. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1016
+  github_issue: null
+  item_type: epic
+  title: 'PMAT-1016: [rust/capability/EPIC] OOP MUTATION — mutating `&mut self` methods + explicit `__init__` constructors. THE next big Python→Rust capability gap (probed 2026-07-01): classes with declared fields + read-only `&self` methods + @dataclass implicit constructors WORK; any method that assigns `self.field` — including `__init__` — is REFUSED at crates/depyler-frontend/src/lib.rs:~2445 ("v0.2.0 first cut supports read-only `&self` methods only", gate = body_assigns_self). Mutating methods (`c.bump()`) and explicit constructors are core mainstream-Python surface. THREE SLICES, each independently shippable: (A) `&mut self` methods — lift the refusal for non-__init__ methods: mark the method self-mutating (Param.mutable on the self receiver already exists in the HIR), emit `&mut self` in rust-codegen method emission, and mark the CALL-SITE receiver mutable in the mutability pre-walk (needs a struct_methods-adjacent "mutating" flag so `c.bump()` forces `let mut c`). CRITICAL GUARD: extending mutation to structs makes the PMAT-884 arg-clone-drops-mutation silent-wrong REACHABLE for struct args (the PMAT-588 ownership clone would silently swallow `def f(c: Counter): c.bump()` mutations) — the PMAT-884 clean-reject MUST be extended to struct args passed to self-mutating-method callers IN THE SAME SLICE, else slice A introduces a new silent miscompile class. (B) explicit `__init__` → constructor: lower a STRAIGHT-LINE `__init__` body (every stmt `self.f = <expr>`, every declared field assigned exactly once, no control flow) to the same positional-constructor path @dataclass uses (`Point(3, 4)` → `Point { x: 3i64, y: 4i64 }` with params threaded); REFUSE computed/conditional __init__ bodies with a precise message (first cut). (C) struct ALIASING guard: `c2 = c; c2.bump(); c.value()` — struct assignment is a Rust move/clone, so shared-mutation via the alias silently diverges exactly like PMAT-1008 lists; extend the alias-then-mutate detection to struct locals with mutating-method calls (refuse the observable case). Order A→B (B is useless without A for mutable init patterns; A alone unlocks bump/setters on @dataclass).'
+  status: planned
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "SLICE A: `@dataclass class Counter: count: int` + `def bump(self) -> None: self.count += 1` transpiles; `c = Counter(0); c.bump(); c.bump(); c.value()` → 2 == CPython, emitted as `pub fn bump(&mut self)` + `let mut c`. Read-only methods keep `&self` (no blanket mut). PMAT-884 extension: passing `c` to a helper that calls a mutating method on the param either preserves the mutation observably or CLEAN-REJECTS — differential witness proves NO silent-drop. e2e + differential harness coverage."
+  - "SLICE B: `class Point` with `__init__(self, x: int, y: int)` assigning both fields straight-line transpiles; `Point(3, 4)` constructs; a computed/conditional __init__ refuses with a precise message. Param names ≠ field names handled (`self.x = a`). e2e witness."
+  - "SLICE C: `c2 = c` followed by `c2.<mutating>()` with `c` still live → clean refusal (or a correct Rust-side aliasing emit) — no silent divergence. Witness covers the observable alias case + the moved-never-reused case staying accepted."
+  - "Each slice: full gate (fmt/check/clippy -D warnings/pv lint 0-0/deny/xpile e2e) + differential verification vs CPython via the sweep harness pattern."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed 2026-07-01 after probing the class-support boundary (read-only &self + @dataclass works; ALL self-assignment refuses). The highest-value Python-surface capability gap now that the sweep campaign has hardened the expression/statement core: real Python programs are full of counters, accumulators, and explicit __init__. Slice A''s PMAT-884-extension guard is NON-NEGOTIABLE — without it the slice would trade a fail-loud refusal for a silent miscompile (the exact anti-pattern the campaign exists to kill). Related: [[project-adversarial-findings-2026-06-25]] posture, PMAT-1008 (list aliasing — same value-vs-reference root), PMAT-884 (arg-clone-drops-mutation).'
 - id: PMAT-1015
   github_issue: null
   item_type: task
