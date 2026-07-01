@@ -122,12 +122,17 @@ compile_targets:
     # (NVVM/LLVM-7) paths. tests/rustc_nvptx_witness.rs runs its PTX on the
     # GPU (Driver API) and confirms it AGREES with xpile's hand-emitted PTX
     # (max_abs_diff=0 on sm_89) AND the reference 2*in+1 (three independent
-    # toolchains now witness the kernel). Witness-level today (a 3-way
-    # PRODUCTION quorum member is the follow-up); external `rustc +nightly`
-    # subprocess, so xpile keeps building on STABLE (no nightly build lane,
-    # no rustc-dev, no new Cargo dep). The roadmap's `cuda-oxide` framing
-    # (PMAT-480) is superseded: the built-in nvptx64 target IS the pure-Rust
-    # -> PTX path and is lighter (no crate, no rustc-dev).
+    # toolchains now witness the kernel). PMAT-1006: rustc-nvptx is now a
+    # PRODUCTION §29 quorum member (not just witness-level) — the
+    # `PtxBackend::new_ptx_3way_diffexec_witness()` path runs a 3-WAY DiffExec
+    # (xpile hand-emit + nvcc CUDA-C + rustc-nvptx) and QuorumStatus::Multi
+    # HONESTLY names all three voters (max_abs_diff=0 on the RTX 4090 sm_89,
+    # tests/three_way_quorum_witness.rs). Graceful: without rustc-nvptx it falls
+    # back to the 2-way quorum; without a GPU, NotRun — never a false 3rd voter.
+    # External `rustc +nightly` subprocess, so xpile keeps building on STABLE (no
+    # nightly build lane, no rustc-dev, no new Cargo dep). The roadmap's
+    # `cuda-oxide` framing (PMAT-480) is superseded: the built-in nvptx64 target
+    # IS the pure-Rust -> PTX path and is lighter (no crate, no rustc-dev).
     # Invariant (contract_via_roles.rs): exactly ONE role: general.
     via_roles:
       - emitter: xpile-ptx-hand-emitted
@@ -139,7 +144,7 @@ compile_targets:
       - emitter: rustc-nvptx
         role: specialist
         crate: xpile-ptx-codegen
-        witness: executed-max-abs-diff-0-sm89
+        witness: executed-3way-production-quorum-max-abs-diff-0-sm89
       - emitter: aprender-gpu
         role: specialist
         cross_repo: aprender

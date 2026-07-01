@@ -357,6 +357,14 @@ pub struct MultiEmitterBackend {
     /// default) records `NotRun { no-engine }` under `QuorumPolicy::
     /// DiffExec`; `Some(engine)` runs the Runtime-stratum comparison.
     pub diff_exec_engine: Option<std::sync::Arc<dyn DiffExecEngine>>,
+    /// PMAT-1006: names of ADDITIONAL categorically-independent emitters the
+    /// installed `DiffExec` engine runs INTERNALLY beyond `general`+`specialist`
+    /// (e.g. the PTX §29 3-way quorum's `rustc-nvptx` arm, self-generated inside
+    /// the engine). When the engine reports a `Match`/`Divergent` (i.e. it
+    /// actually executed), these are appended to the reported `emitters` list so
+    /// `QuorumStatus::Multi` HONESTLY names every toolchain that voted. Empty for
+    /// every other backend (no behaviour change).
+    pub diff_exec_extra_emitters: Vec<String>,
 }
 
 impl MultiEmitterBackend {
@@ -367,6 +375,7 @@ impl MultiEmitterBackend {
             specialist: None,
             quorum_policy: QuorumPolicy::PreferSpecialist,
             diff_exec_engine: None,
+            diff_exec_extra_emitters: Vec::new(),
         }
     }
 
@@ -382,6 +391,7 @@ impl MultiEmitterBackend {
             specialist: Some(specialist),
             quorum_policy,
             diff_exec_engine: None,
+            diff_exec_extra_emitters: Vec::new(),
         }
     }
 
@@ -390,6 +400,14 @@ impl MultiEmitterBackend {
     /// self-hosted GPU runners; on free CI the engine stays `None`.
     pub fn with_diff_exec_engine(mut self, engine: std::sync::Arc<dyn DiffExecEngine>) -> Self {
         self.diff_exec_engine = Some(engine);
+        self
+    }
+
+    /// PMAT-1006: declare additional emitters the installed `DiffExec` engine
+    /// runs internally (beyond general+specialist), so an EXECUTED `Multi`
+    /// result names every toolchain that voted (the PTX 3-way §29 quorum).
+    pub fn with_diff_exec_extra_emitters(mut self, names: Vec<String>) -> Self {
+        self.diff_exec_extra_emitters = names;
         self
     }
 }
@@ -495,6 +513,19 @@ impl Backend for MultiEmitterBackend {
                                 ),
                             },
                         };
+                        // PMAT-1006: the base voters are general + specialist.
+                        // When the engine actually EXECUTED (Match/Divergent, not
+                        // NotRun), append the extra toolchains it ran internally
+                        // (e.g. the PTX 3-way `rustc-nvptx` arm) so the reported
+                        // quorum HONESTLY names every voter. A non-executed run
+                        // (NotRun, no GPU) reports only the emitters that fired.
+                        let mut emitters = vec![self.general.name().to_string(), specialist_name];
+                        if matches!(
+                            diff_exec,
+                            DiffExecResult::Match { .. } | DiffExecResult::Divergent { .. }
+                        ) {
+                            emitters.extend(self.diff_exec_extra_emitters.iter().cloned());
+                        }
                         Ok(Artifact {
                             primary: general_result.primary.clone(),
                             sidecars: vec![(
@@ -503,7 +534,7 @@ impl Backend for MultiEmitterBackend {
                             )],
                             citations: general_result.citations,
                             quorum_status: QuorumStatus::Multi {
-                                emitters: vec![self.general.name().to_string(), specialist_name],
+                                emitters,
                                 diff_exec: Some(diff_exec),
                             },
                         })

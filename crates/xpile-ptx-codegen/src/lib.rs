@@ -127,6 +127,37 @@ impl PtxBackend {
         Self { inner }
     }
 
+    /// PMAT-1006 — the §29 PTX quorum with the **rustc-nvptx** (LLVM NVPTX
+    /// back-end) arm as a THIRD production voter, so the anti-correlation guard
+    /// runs THREE categorically-independent codegen toolchains (xpile hand-emit
+    /// text / nvcc CUDA-C via NVVM / rustc via modern LLVM NVPTX) in production,
+    /// not just at witness level.
+    ///
+    /// HONEST reporting: rustc-nvptx is a reported voter ONLY when it actually
+    /// runs. On a CUDA box WITH nightly rustc + the `nvptx64-nvidia-cuda` target,
+    /// the DiffExec runs all three and `QuorumStatus::Multi` names 3 emitters;
+    /// WITHOUT rustc-nvptx it falls back to the 2-way quorum (2 emitters);
+    /// WITHOUT a GPU it records `NotRun` (2 emitters, no vote) — never a false
+    /// third voter.
+    pub fn new_ptx_3way_diffexec_witness() -> Self {
+        let mut inner = MultiEmitterBackend::new_with_specialist(
+            Target::Ptx,
+            Box::new(XpileSaxpyPtxEmitter),
+            Box::new(CudaSaxpyGeneralEmitter),
+            QuorumPolicy::DiffExec { tolerance: 1.0e-3 },
+        );
+        if cuda_toolchain_available() {
+            if rustc_nvptx_available() {
+                inner = inner
+                    .with_diff_exec_engine(std::sync::Arc::new(PtxDiffExecEngine::new_three_way()))
+                    .with_diff_exec_extra_emitters(vec!["rustc-nvptx".to_string()]);
+            } else {
+                inner = inner.with_diff_exec_engine(std::sync::Arc::new(PtxDiffExecEngine::new()));
+            }
+        }
+        Self { inner }
+    }
+
     /// PMAT-962 — the anti-correlation §29 PTX witness for a NEW construct:
     /// **control flow** (`if`/`else` + comparison), not just straight-line
     /// arithmetic.
