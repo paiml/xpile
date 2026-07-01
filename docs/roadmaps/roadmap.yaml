@@ -508,6 +508,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Filed by PMAT-1004 (the naive is_numeric fix broke the isdigit≠isnumeric distinction). LOW priority: the common ASCII case is correct; non-ASCII digits (Arabic/fullwidth) are the real gap but need Unicode data. Prefer a generated const-range match (no new dep in the EMITTED Rust) over pulling unicode-properties into every transpiled program. Not blocking.'
+- id: PMAT-1006
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1006: [Pillar-C/§29] rustc-nvptx PRODUCTION 3-way quorum — USER-DIRECTED 2026-07-01. PMAT-997 delivered rustc-nvptx (nightly rustc nvptx64 target, LLVM NVPTX back-end) as a WITNESS-level 3rd §29 PTX emitter; this makes it a genuine PRODUCTION quorum member so the anti-correlation guard runs THREE categorically-independent codegen toolchains in production (xpile hand-emit PTX text / nvcc CUDA-C via NVVM-LLVM7 / rustc via modern-LLVM NVPTX). The hurdle (from the earlier scoping): MultiEmitterBackend supported one general + one specialist and DiffExecEngine::execute_and_compare took exactly TWO texts. Solved with a SMALL ADDITIVE change (no trait break, no other-backend impact): MultiEmitterBackend gains a default-empty `diff_exec_extra_emitters: Vec<String>` (names of extra voters the engine runs INTERNALLY) appended to the reported emitters ONLY when the DiffExec actually executed (Match/Divergent, not NotRun); PtxDiffExecEngine gains a `three_way` mode (new_three_way()) that runs the rustc-nvptx arm via the SAME Driver-API driver_harness as xpile hand-emit and folds its diff; PtxBackend::new_ptx_3way_diffexec_witness() gates the 3rd arm + the extra-emitter on rustc_nvptx_available() so rustc-nvptx is a REPORTED voter ONLY when it actually runs (falls back to 2-way without it; NotRun without a GPU — never a false 3rd voter).'
+  status: done
+  priority: high
+  created: 2026-07-01T00:00:00Z
+  acceptance_criteria:
+  - "xpile-backend: MultiEmitterBackend.diff_exec_extra_emitters (default empty, set in both constructors + a with_diff_exec_extra_emitters builder); lower() appends them to QuorumStatus::Multi.emitters ONLY on an executed DiffExec (Match/Divergent). No behaviour change for WGSL/SPIR-V/WASM backends (verified: their witnesses stay green)."
+  - "xpile-ptx-codegen: PtxDiffExecEngine gains three_way + new_three_way(); execute_and_compare runs the rustc-nvptx arm (emit_rustc_nvptx_ptx via driver_harness, gated on rustc_nvptx_available) and folds max_abs_diff over all three. PtxBackend::new_ptx_3way_diffexec_witness() wires it + the extra emitter, gated on availability."
+  - "WITNESS (Run>=1, EXECUTED): tests/three_way_quorum_witness.rs — on the RTX 4090 sm_89 the production 3-way quorum ran all THREE toolchains, QuorumStatus::Multi reported 3 emitters [xpile-ptx-hand-emitted, cuda-saxpy-general, rustc-nvptx], DiffExecResult::Match max_abs_diff=0. Graceful-degrade asserted: no-GPU → NotRun with 2 emitters (no false rustc-nvptx voter); rustc-nvptx-absent → 2-way fallback."
+  - "CONTRACT: compile-rust-to-ptx-mma-v1.yaml rustc-nvptx via_role updated witness→executed-3way-production-quorum + prose (production, not witness-level). contract_via_roles.rs stays green (still exactly ONE role: general). pv lint 0/0. No Lean change."
+  - "DONE: worktree gate green — fmt; check --workspace; clippy --workspace --all-targets -D warnings; pv lint (0/0); cargo deny advisories; cargo test -p xpile-ptx-codegen (2-way + 3-way witnesses, executed on RTX 4090) + xpile-backend + WGSL/SPIR-V/WASM (no regression); lake build unaffected. Touched crates/xpile-backend/ + crates/xpile-ptx-codegen/ + contracts/compile-rust-to-ptx-mma-v1.yaml + docs/roadmaps/roadmap.yaml."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'USER-DIRECTED next after the differential campaign. rustc-nvptx (PMAT-997) promoted from witness-level to a PRODUCTION §29 quorum member: the anti-correlation guard now runs 3 categorically-independent toolchains in production, discharging the audit Run=1/in-vacuum caveat with a stronger 3-toolchain agreement (a miscompile would have to corrupt all three identically). Small additive xpile-backend change (diff_exec_extra_emitters) — no trait break, no other-backend impact; HONEST reporting (rustc-nvptx named only when it actually voted). Executed on RTX 4090 sm_89, max_abs_diff=0. See [[project-gpu-cuda-oxide-wgpu-first-class]].'
 - id: PMAT-985
   github_issue: null
   item_type: task

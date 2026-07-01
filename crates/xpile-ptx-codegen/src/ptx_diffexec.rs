@@ -53,6 +53,7 @@ use xpile_backend::{BackendConfig, DiffExecEngine, DiffExecResult, HwProfile};
 use xpile_meta_hir::Module;
 
 use crate::cuda_diffexec::{NvccCudaDiffExecEngine, FIXTURE_INPUT};
+use crate::rustc_nvptx::{emit_rustc_nvptx_ptx, rustc_nvptx_available};
 
 /// A real anti-correlation CUDA `DiffExecEngine`: runs xpile's hand-emitted PTX
 /// (via the CUDA Driver API) AND the nvcc-compiled CUDA-C kernel, then diffs
@@ -60,6 +61,10 @@ use crate::cuda_diffexec::{NvccCudaDiffExecEngine, FIXTURE_INPUT};
 /// §29 PTX lane (PMAT-961).
 pub struct PtxDiffExecEngine {
     work_dir: PathBuf,
+    /// PMAT-1006: when `true`, ALSO run the rustc-nvptx (LLVM NVPTX back-end)
+    /// arm as a THIRD categorically-independent voter and require all three
+    /// toolchains to agree — the production §29 3-way quorum.
+    three_way: bool,
 }
 
 impl Default for PtxDiffExecEngine {
@@ -84,7 +89,21 @@ impl PtxDiffExecEngine {
             SEQ.fetch_add(1, Ordering::Relaxed)
         );
         let work_dir = std::env::temp_dir().join(format!("xpile-ptx-diffexec-{uniq}"));
-        Self { work_dir }
+        Self {
+            work_dir,
+            three_way: false,
+        }
+    }
+
+    /// PMAT-1006: a 3-WAY engine that runs the rustc-nvptx arm in addition to
+    /// xpile-hand-emit + nvcc-CUDA-C, requiring all THREE toolchains to agree.
+    /// Used by [`crate::PtxBackend::new_ptx_3way_diffexec_witness`] only when
+    /// `rustc_nvptx_available()`.
+    pub fn new_three_way() -> Self {
+        Self {
+            three_way: true,
+            ..Self::new()
+        }
     }
 
     /// `compute_capability` (e.g. `sm_89`) → the `nvcc -arch` flag. Derived,
@@ -255,11 +274,37 @@ impl DiffExecEngine for PtxDiffExecEngine {
                 tolerance,
             });
         }
-        let max_abs_diff = xpile_out
+        let mut max_abs_diff = xpile_out
             .iter()
             .zip(nvcc_out.iter())
             .map(|(g, s)| (g - s).abs())
             .fold(0.0_f64, f64::max);
+
+        // PMAT-1006: the THIRD independent toolchain — nightly rustc's NVPTX
+        // back-end. Its PTX runs via the SAME Driver-API harness as xpile's
+        // hand-emit (the driver JITs it); its output must also agree. A miscompile
+        // would now have to corrupt all THREE codegen paths identically.
+        if self.three_way && rustc_nvptx_available() {
+            let rustc_ptx = emit_rustc_nvptx_ptx()?;
+            let rustc_out = self.compile_run_parse(
+                &Self::driver_harness(&rustc_ptx),
+                &arch,
+                "rustc_nvptx_driver",
+                &["-lcuda"],
+            )?;
+            if rustc_out.len() != xpile_out.len() {
+                return Ok(DiffExecResult::Divergent {
+                    max_abs_diff: f64::INFINITY,
+                    tolerance,
+                });
+            }
+            let rustc_diff = xpile_out
+                .iter()
+                .zip(rustc_out.iter())
+                .map(|(g, r)| (g - r).abs())
+                .fold(0.0_f64, f64::max);
+            max_abs_diff = max_abs_diff.max(rustc_diff);
+        }
 
         if max_abs_diff <= tolerance {
             Ok(DiffExecResult::Match { max_abs_diff })
