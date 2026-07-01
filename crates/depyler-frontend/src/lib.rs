@@ -2426,7 +2426,7 @@ fn lower_class_def(
                     m.name
                 )));
             }
-            let method = lower_function_def(
+            let mut method = lower_function_def(
                 m,
                 signatures.clone(),
                 consts.clone(),
@@ -2439,14 +2439,33 @@ fn lower_class_def(
                 Some(self_ty.clone()),
                 None,
             )?;
-            // First cut: read-only methods. A `self.field = v` (FieldAssign on
-            // `self`) would need a `&mut self` receiver + caller mutability —
-            // deferred. Reject so we never emit code that fails to compile.
+            // PMAT-1016A: a SELF-MUTATING method (`self.field = v` /
+            // `self.field += v` anywhere in the body) now lowers with a
+            // `&mut self` receiver — mark the receiver Param `mutable` (the
+            // rust-codegen `emit_param` then emits `&mut self`, and the
+            // caller-side mutability pre-walk forces `let mut` on receivers
+            // of registered mutating methods). Two shapes still refuse:
+            // - `__init__` (constructor desugar is slice B, PMAT-1016B);
+            // - methods of a FROZEN dataclass (Python raises
+            //   FrozenInstanceError at runtime — mirroring PMAT-1473's
+            //   field-assign reject, a frozen struct stays immutable).
             if body_assigns_self(&method.body.stmts) {
-                return Err(FrontendError::Lower(format!(
-                    "class `{name}` method `{}` assigns to `self` (mutating method) — v0.2.0 first cut supports read-only `&self` methods only",
-                    method.name
-                )));
+                if method.name == "__init__" {
+                    return Err(FrontendError::Lower(format!(
+                        "class `{name}` defines an explicit `__init__` — not yet lowered (PMAT-1016B); use `@dataclass` field declarations (implicit constructor) for now",
+                    )));
+                }
+                if frozen {
+                    return Err(FrontendError::Lower(format!(
+                        "class `{name}` method `{}` assigns to `self` but the dataclass is FROZEN — Python raises FrozenInstanceError; remove `frozen=True` or the mutation",
+                        method.name
+                    )));
+                }
+                if let Some(recv) = method.params.first_mut() {
+                    if recv.name == "self" {
+                        recv.mutable = true;
+                    }
+                }
             }
             methods.push(method);
         }

@@ -1364,10 +1364,12 @@ fn emit_stmt_indented(
 }
 
 fn emit_param(out: &mut String, p: &Param) -> Result<(), CodegenError> {
-    // PMAT-506d: a method's `self` receiver emits as `&self` (read-only first
-    // cut) — never `self: StructName`.
+    // PMAT-506d: a method's `self` receiver emits as `&self` — never
+    // `self: StructName`. PMAT-1016A: a SELF-MUTATING method (any
+    // `self.field = …` in the body — the frontend sets the receiver Param's
+    // `mutable` flag) emits `&mut self`, lifting the read-only first cut.
     if p.name == "self" {
-        out.push_str("&self");
+        out.push_str(if p.mutable { "&mut self" } else { "&self" });
         return Ok(());
     }
     // PMAT-460: `mut name: T` for params mutated in-place (currently
