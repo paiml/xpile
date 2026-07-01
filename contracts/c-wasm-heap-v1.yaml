@@ -228,6 +228,7 @@ equations:
       - "the entry array is $__alloc'd (bump heap): 8-byte header + capacity*16-byte entries"
       - "entry i is at base+8+i*16; key @ +0, value @ +8 (machine-checked contiguous + disjoint in WasmHeap.lean)"
       - "d[k] over an absent key TRAPS (`unreachable`) — the KeyError analogue, never a wrong value"
+      - "a DUPLICATE literal key/elem COLLAPSES: a dict keeps the LAST value, a set dedups, and the live count is the DISTINCT count — the literal is built via update-or-insert (`$__wasm_dict_set`), matching CPython {1:10,1:20}=={1:20} (len 1) and {5,5,6} (len 2), NOT a blind sequential write that keeps both"
       - "a str key is compared by CONTENT ($__wasm_str_eq over the literal (data) table), never a base-pointer compare"
       - "len(d)/len(s) reads the i32 count @ base+0 — the same header the list/str len path reads"
       - "a non-int/str key type, a non-int value, comprehensions + iteration are REFUSED honestly"
@@ -382,3 +383,4 @@ falsification_tests:
       - absent_key_returns_value_instead_of_trapping
       - base_pointer_key_compare_passed_off_as_content
       - len_reads_wrong_header
+      - duplicate_literal_key_kept_both_entries

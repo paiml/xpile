@@ -86,6 +86,44 @@ fn int_set_let() -> Stmt {
     }
 }
 
+/// `d = {1: 10, 1: 20}` — a DUPLICATE-key dict. CPython keeps the LAST value
+/// (`{1: 20}`, len 1); the WASM build must collapse it (update-or-insert), not
+/// keep both. Regression guard for the pre-fix blind-sequential-write bug.
+fn dup_dict_let() -> Stmt {
+    Stmt::Let {
+        name: "d".into(),
+        ty: Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+        mutable: false,
+        value: Expr::DictLit(vec![
+            (Expr::LitInt(1), Expr::LitInt(10)),
+            (Expr::LitInt(1), Expr::LitInt(20)),
+        ]),
+    }
+}
+
+/// `d = {"k": 100, "k": 999}` — a DUPLICATE str-key dict (last wins → 999, len 1).
+fn dup_str_dict_let() -> Stmt {
+    Stmt::Let {
+        name: "d".into(),
+        ty: Type::Dict(Box::new(Type::Str), Box::new(Type::I64)),
+        mutable: false,
+        value: Expr::DictLit(vec![
+            (Expr::LitStr("k".into()), Expr::LitInt(100)),
+            (Expr::LitStr("k".into()), Expr::LitInt(999)),
+        ]),
+    }
+}
+
+/// `s = {5, 5, 6}` — a DUPLICATE-elem set. CPython dedups (`{5, 6}`, len 2).
+fn dup_set_let() -> Stmt {
+    Stmt::Let {
+        name: "s".into(),
+        ty: Type::Set(Box::new(Type::I64)),
+        mutable: false,
+        value: Expr::SetLit(vec![Expr::LitInt(5), Expr::LitInt(5), Expr::LitInt(6)]),
+    }
+}
+
 fn dict_get(name: &str, key: Expr) -> Expr {
     Expr::DictGet {
         dict: Box::new(ident(name)),
@@ -208,6 +246,37 @@ fn probe_module() -> Module {
                 vec![str_dict_let()],
                 dict_has("d", Expr::LitStr("z".into())),
             ),
+            // DUPLICATE keys/elems: CPython last-wins (dict) / dedup (set).
+            func(
+                "dupget",
+                Type::I64,
+                vec![dup_dict_let()],
+                dict_get("d", Expr::LitInt(1)),
+            ),
+            func(
+                "duplen",
+                Type::I64,
+                vec![dup_dict_let()],
+                Expr::Len(Box::new(ident("d"))),
+            ),
+            func(
+                "sdupget",
+                Type::I64,
+                vec![dup_str_dict_let()],
+                dict_get("d", Expr::LitStr("k".into())),
+            ),
+            func(
+                "sduplen",
+                Type::I64,
+                vec![dup_str_dict_let()],
+                Expr::Len(Box::new(ident("d"))),
+            ),
+            func(
+                "setduplen",
+                Type::I64,
+                vec![dup_set_let()],
+                Expr::Len(Box::new(ident("s"))),
+            ),
         ],
     )
 }
@@ -228,6 +297,12 @@ const PINS: &[(&str, i64)] = &[
     ("sgetX", 100),
     ("shasY", 1),
     ("shasZ", 0),
+    // duplicate-key/elem collapse (CPython last-wins / dedup)
+    ("dupget", 20),
+    ("duplen", 1),
+    ("sdupget", 999),
+    ("sduplen", 1),
+    ("setduplen", 2),
 ];
 
 // ---- WABT harness -----------------------------------------------------------
@@ -422,12 +497,18 @@ fn cpython_pins_are_python() {
 d = {1: 10, 2: 20, 3: 30}\n\
 sd = {'x': 100, 'y': 200}\n\
 s = {5, 6, 7}\n\
+dd = {1: 10, 1: 20}\n\
+sdd = {'k': 100, 'k': 999}\n\
+ds = {5, 5, 6}\n\
 vals = {\n\
  'get2': d[2], 'get3': d[3], 'lend': len(d),\n\
  'has2': int(2 in d), 'has9': int(9 in d),\n\
  'shas6': int(6 in s), 'shas8': int(8 in s), 'slen': len(s),\n\
  'sgetY': sd['y'], 'sgetX': sd['x'],\n\
  'shasY': int('y' in sd), 'shasZ': int('z' in sd),\n\
+ 'dupget': dd[1], 'duplen': len(dd),\n\
+ 'sdupget': sdd['k'], 'sduplen': len(sdd),\n\
+ 'setduplen': len(ds),\n\
 }\n\
 print(';'.join(f'{k}={v}' for k, v in vals.items()))\n";
     let out = match Command::new("python3").arg("-c").arg(py).output() {

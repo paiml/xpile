@@ -2796,10 +2796,12 @@ fn emit_heap_map_bind(
     }
 }
 
-/// `$__alloc` a fresh dict/set region of `cap` slots, write its `[count][cap]`
-/// header, and stash the base-pointer in [`DICT_DST_SCRATCH`]. `n` live entries
-/// at construction (== literal count).
-fn emit_map_alloc(n: i32, cap: i32, out: &mut String, depth: usize) {
+/// `$__alloc` a fresh dict/set region of `cap` slots, write its `[count=0][cap]`
+/// header, and stash the base-pointer in [`DICT_DST_SCRATCH`]. Construction
+/// starts EMPTY (count 0); each literal entry is then update-or-inserted via
+/// `$__wasm_dict_set_<k>`, so a DUPLICATE key collapses (CPython last-wins +
+/// distinct live count).
+fn emit_map_alloc(cap: i32, out: &mut String, depth: usize) {
     let size = LIST_ELEMS_OFFSET + cap * DICT_ENTRY_SIZE;
     // dst = __alloc(8 + cap*16)
     indent(out, depth);
@@ -2808,11 +2810,11 @@ fn emit_map_alloc(n: i32, cap: i32, out: &mut String, depth: usize) {
     writeln!(out, "call $__alloc").expect("write");
     indent(out, depth);
     writeln!(out, "local.set ${DICT_DST_SCRATCH}").expect("write");
-    // header: count = n at dst+0
+    // header: count = 0 at dst+0 (entries are inserted below, incrementing it)
     indent(out, depth);
     writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
     indent(out, depth);
-    writeln!(out, "i32.const {n}").expect("write");
+    writeln!(out, "i32.const 0").expect("write");
     indent(out, depth);
     writeln!(out, "i32.store").expect("write");
     // header: capacity = cap at dst+4
@@ -2822,16 +2824,6 @@ fn emit_map_alloc(n: i32, cap: i32, out: &mut String, depth: usize) {
     writeln!(out, "i32.const {cap}").expect("write");
     indent(out, depth);
     writeln!(out, "i32.store offset={DICT_CAP_OFFSET}").expect("write");
-}
-
-/// Push the base address of entry `i` (`dst + LIST_ELEMS_OFFSET + i*16`).
-fn emit_map_entry_addr(i: i32, out: &mut String, depth: usize) {
-    indent(out, depth);
-    writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const {}", LIST_ELEMS_OFFSET + i * DICT_ENTRY_SIZE).expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.add").expect("write");
 }
 
 /// Push a dict/set KEY: an `i64` for an int key, the `i32` string base-pointer
@@ -2851,50 +2843,13 @@ fn emit_dict_key(
     }
 }
 
-/// Write entry `i`'s key: `entry_addr` then the key value then the kind's store.
-fn emit_map_write_key(
-    i: i32,
-    key: &Expr,
-    kind: KeyKind,
-    scope: &Scope,
-    out: &mut String,
-    depth: usize,
-) -> Result<(), BackendError> {
-    emit_map_entry_addr(i, out, depth);
-    emit_dict_key(key, kind, scope, out, depth)?;
-    indent(out, depth);
-    // int key → 8-byte i64 slot; str key → i32 pointer in the low 4 bytes.
-    let store = match kind {
-        KeyKind::Int => "i64.store",
-        KeyKind::Str => "i32.store",
-    };
-    writeln!(out, "{store}").expect("write");
-    Ok(())
-}
-
-/// Write entry `i`'s value (`entry_addr` + `i64.store offset=8`). `value` is the
-/// i64 value expr for a dict, or `None` for a set (a `0` sentinel).
-fn emit_map_write_value(
-    i: i32,
-    value: Option<&Expr>,
-    scope: &Scope,
-    out: &mut String,
-    depth: usize,
-) -> Result<(), BackendError> {
-    emit_map_entry_addr(i, out, depth);
-    match value {
-        Some(v) => emit_expr_typed(v, scope, out, depth, WatTy::I64)?,
-        None => {
-            indent(out, depth);
-            writeln!(out, "i64.const 0").expect("write");
-        }
-    }
-    indent(out, depth);
-    writeln!(out, "i64.store offset={DICT_VAL_OFFSET}").expect("write");
-    Ok(())
-}
-
-/// Lower a `DictLit` — Python `{k0: v0, k1: v1, …}` — onto the bump heap.
+/// Lower a `DictLit` — Python `{k0: v0, k1: v1, …}` — onto the bump heap. Builds
+/// an EMPTY region then update-or-inserts each pair (in source order) via
+/// `$__wasm_dict_set_<k>`, so a DUPLICATE key keeps the LAST value and the live
+/// count is the number of DISTINCT keys — matching CPython (`{1: 10, 1: 20}` ==
+/// `{1: 20}`, len 1). A blind sequential write (the pre-fix path) kept both
+/// entries: wrong len + a first-wins lookup. `cap = len + slack` guarantees the
+/// inserts never trap on capacity (dedup only shrinks the live count).
 fn emit_dict_lit(
     pairs: &[(Expr, Expr)],
     kind: KeyKind,
@@ -2902,13 +2857,15 @@ fn emit_dict_lit(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
-    let n = pairs.len() as i32;
-    let cap = n + DICT_GROWTH_SLACK;
-    emit_map_alloc(n, cap, out, depth);
-    for (idx, (k, v)) in pairs.iter().enumerate() {
-        let i = idx as i32;
-        emit_map_write_key(i, k, kind, scope, out, depth)?;
-        emit_map_write_value(i, Some(v), scope, out, depth)?;
+    let cap = pairs.len() as i32 + DICT_GROWTH_SLACK;
+    emit_map_alloc(cap, out, depth);
+    for (k, v) in pairs {
+        indent(out, depth);
+        writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+        emit_dict_key(k, kind, scope, out, depth)?;
+        emit_expr_typed(v, scope, out, depth, WatTy::I64)?;
+        indent(out, depth);
+        writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
     }
     // result = dst (the new dict's base-pointer).
     indent(out, depth);
@@ -2917,7 +2874,9 @@ fn emit_dict_lit(
 }
 
 /// Lower a `SetLit` — Python `{e0, e1, …}` — onto the bump heap (a keys-only
-/// dict; each entry's value is the `0` sentinel).
+/// dict; each entry's value is the `0` sentinel). Builds EMPTY then inserts each
+/// elem via `$__wasm_dict_set_<k>`, so a DUPLICATE elem is dropped and len is the
+/// distinct count — matching CPython (`{5, 5, 6}` has len 2).
 fn emit_set_lit(
     elems: &[Expr],
     kind: KeyKind,
@@ -2925,13 +2884,16 @@ fn emit_set_lit(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
-    let n = elems.len() as i32;
-    let cap = n + DICT_GROWTH_SLACK;
-    emit_map_alloc(n, cap, out, depth);
-    for (idx, e) in elems.iter().enumerate() {
-        let i = idx as i32;
-        emit_map_write_key(i, e, kind, scope, out, depth)?;
-        emit_map_write_value(i, None, scope, out, depth)?;
+    let cap = elems.len() as i32 + DICT_GROWTH_SLACK;
+    emit_map_alloc(cap, out, depth);
+    for e in elems {
+        indent(out, depth);
+        writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+        emit_dict_key(e, kind, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i64.const 0").expect("write");
+        indent(out, depth);
+        writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
     }
     indent(out, depth);
     writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
