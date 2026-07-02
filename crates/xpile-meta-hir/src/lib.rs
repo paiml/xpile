@@ -395,6 +395,7 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             body,
             handler,
             extra_handlers,
+            finally,
             ..
         } => {
             body.iter().any(stmt_has_int_arith)
@@ -402,6 +403,7 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
                 || extra_handlers
                     .iter()
                     .any(|h| h.body.iter().any(stmt_has_int_arith))
+                || finally.iter().any(stmt_has_int_arith)
         }
         // PMAT-502bk: loop-control statements carry no expression.
         Stmt::Continue | Stmt::Break => false,
@@ -1342,6 +1344,12 @@ pub enum Stmt {
         /// final else. `#[serde(default)]` keeps single-except IR compatible.
         #[serde(default)]
         extra_handlers: Vec<TryHandler>,
+        /// PMAT-1070: the `finally:` block, run in EVERY exit path — after a
+        /// clean body, after a matched handler, and (before `resume_unwind`)
+        /// when the exception propagates unmatched. Empty when absent.
+        /// `#[serde(default)]` keeps pre-finally IR compatible.
+        #[serde(default)]
+        finally: Vec<Stmt>,
     },
     /// `program arg1 arg2 ...` — a single shell-command invocation.
     /// PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: the first shell
@@ -3702,6 +3710,7 @@ fn escape_stmt(s: &mut Stmt) {
             body,
             handler,
             extra_handlers,
+            finally,
             ..
         } => {
             for st in body {
@@ -3714,6 +3723,9 @@ fn escape_stmt(s: &mut Stmt) {
                 for st in &mut h.body {
                     escape_stmt(st);
                 }
+            }
+            for st in finally {
+                escape_stmt(st);
             }
         }
         Stmt::Continue | Stmt::Break => {}
@@ -4248,6 +4260,7 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
             body,
             handler,
             extra_handlers,
+            finally,
             ..
         } => {
             for st in body {
@@ -4260,6 +4273,9 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
                 for st in &h.body {
                     collect_idents_stmt(st, acc);
                 }
+            }
+            for st in finally {
+                collect_idents_stmt(st, acc);
             }
         }
         Stmt::Continue | Stmt::Break => {}
@@ -4634,6 +4650,7 @@ fn retype_stmt(
             body,
             handler,
             extra_handlers,
+            finally,
             ..
         } => {
             for st in body {
@@ -4646,6 +4663,9 @@ fn retype_stmt(
                 for st in &mut h.body {
                     retype_stmt(st, float_ffi, float_locals);
                 }
+            }
+            for st in finally {
+                retype_stmt(st, float_ffi, float_locals);
             }
         }
         Stmt::While { body, .. }

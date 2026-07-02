@@ -921,6 +921,14 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'Suite 747 green; MATCH caught/oob/-1/boom/2/0; adversarially verified — no-swallow (a1 BOTHRAISE), own-type catch, handler-raise-propagates, loop-in-try, nested; else/finally/multi-except refuse precisely. Meta-HIR variant + 4 walkers + rust/ruchy emit + lean/wasm refuse + frontend dispatch. Low collision risk with the cron OOP lane.'
+- id: PMAT-1070
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1070: [rust/capability/exceptions] `finally:` on a statement-form try/except — runs in EVERY exit path (clean body, matched handler, handler-raised, unmatched-propagate). Builds on PMAT-1058/1065. Emitted by wrapping the whole try/except in an OUTER catch_unwind: `{ let __tc_outer = catch_unwind(|| { <inner try/except match> }); <F>; if let Err(e) = __tc_outer { resume_unwind(e) } }` — F runs after the inner completes/propagates, so it runs even when a HANDLER itself raises, and BEFORE the exception reaches an enclosing try (adversarially verified: nested finally-before-propagate). Additive meta-HIR: Stmt::TryCatch gains `finally: Vec<Stmt>` (`#[serde(default)]`, byte-unchanged when empty). Works with single + multiple except. DEFERRED: finally-ONLY (`try: B finally: F` with no except — needs a no-catch encoding distinct from `except: pass` which SWALLOWS; precise refusal), and `else`.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'high-water-mark re-checked (1066) before allocating 1070. Suite 749 green; MATCH tf/tef/kF/1; adversarially verified — finally on clean/caught/multi-except/nested-propagate paths; single-except-no-finally byte-unchanged. Additive finally field + 4 walkers + rust/ruchy outer-wrap emit + frontend.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

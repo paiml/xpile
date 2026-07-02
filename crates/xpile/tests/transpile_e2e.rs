@@ -19266,3 +19266,25 @@ fn main() {
 "#;
     assert_rustc_runs("multiple_except", &rust, driver);
 }
+
+/// PMAT-1070: `finally:` runs in every exit path (clean, matched handler,
+/// handler-raised, unmatched-propagate) via an outer catch_unwind wrap.
+/// MATCH tf/tef/kF/1 (the last: nested finally runs before the exception
+/// reaches the outer handler).
+#[test]
+fn try_finally() {
+    let rust = xpile_transpile_to_rust("try_finally.py");
+    assert!(
+        rust.contains("__tc_outer"),
+        "finally wraps the try/except in an outer catch_unwind:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(clean_path(), "tf", "no exception: try then finally");
+    assert_eq!(caught_path(), "tef", "raise caught: try, handler, finally");
+    assert_eq!(multi_except_finally(), "kF", "2nd except matches, then finally");
+    assert_eq!(finally_runs_before_propagate(), 1, "inner finally runs before outer catch");
+}
+"#;
+    assert_rustc_runs("try_finally", &rust, driver);
+}
