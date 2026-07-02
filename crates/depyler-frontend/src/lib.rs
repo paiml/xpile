@@ -6048,23 +6048,24 @@ fn try_lower_list_method_call(
                             Ok(e) => e,
                             Err(err) => return Some(Err(err)),
                         };
-                        // PMAT-1047: widen an int/bool elem into a float INNER
-                        // list slot — `d["a"].append(2)` over
-                        // `dict[str, list[float]]`, `xs[i].append(2)` over
-                        // `list[list[float]]` (rustc E0308 otherwise).
-                        let inner_f64 = match ctx.name_types.get(&base_name) {
-                            Some(Type::List(inner)) => {
-                                matches!(inner.as_ref(), Type::List(e) if matches!(e.as_ref(), Type::F64))
-                            }
-                            Some(Type::Dict(_, val)) => {
-                                matches!(val.as_ref(), Type::List(e) if matches!(e.as_ref(), Type::F64))
-                            }
-                            _ => false,
+                        // PMAT-1047/1048: coerce the elem to the INNER list's
+                        // element type — `d["a"].append(2)` over
+                        // `dict[str, list[float]]`, `xs[i].append([2, 3])` over
+                        // `list[list[list[float]]]` (rustc E0308 otherwise).
+                        let inner_elem: Option<Type> = match ctx.name_types.get(&base_name) {
+                            Some(Type::List(inner)) => match inner.as_ref() {
+                                Type::List(e) => Some((**e).clone()),
+                                _ => None,
+                            },
+                            Some(Type::Dict(_, val)) => match val.as_ref() {
+                                Type::List(e) => Some((**e).clone()),
+                                _ => None,
+                            },
+                            _ => None,
                         };
-                        let elem = if inner_f64 {
-                            to_f64_operand(ctx, elem)
-                        } else {
-                            elem
+                        let elem = match inner_elem {
+                            Some(t) => coerce_expr_to_type(ctx, elem, &t),
+                            None => elem,
                         };
                         ctx.mutable.insert(base_name.clone());
                         return Some(Ok(Stmt::IndexAppend {
@@ -6625,18 +6626,14 @@ fn try_lower_list_method_call(
         Ok(e) => e,
         Err(err) => return Some(Err(err)),
     };
-    // PMAT-1047: widen an int/bool elem into a FLOAT-typed list/set slot —
-    // `xs: list[float]; xs.append(3)` emitted `xs.push(3i64)` (rustc E0308).
-    // Mirrors the subscript-slot widening (PMAT-1040) and the field-append
-    // widening (PMAT-1037 slice D); `s.add(3)` into a `set[float]` too.
-    let widen_f64 = matches!(
-        ctx.name_types.get(receiver_name),
-        Some(Type::List(el) | Type::Set(el)) if matches!(el.as_ref(), Type::F64)
-    );
-    let elem = if widen_f64 {
-        to_f64_operand(ctx, elem)
-    } else {
-        elem
+    // PMAT-1047/1048: coerce the elem to the receiver's declared element type
+    // — widen a scalar int/bool into a `list[float]`/`set[float]` slot
+    // (`xs.append(3)`, PMAT-1047) AND element-wise-widen a nested list LITERAL
+    // into `list[list[float]]` (`g.append([2, 3])`, PMAT-1048). A list already
+    // of the right type (a variable) is left untouched.
+    let elem = match ctx.name_types.get(receiver_name).cloned() {
+        Some(Type::List(el) | Type::Set(el)) => coerce_expr_to_type(ctx, elem, &el),
+        _ => elem,
     };
     // PMAT-628: clone a reused non-Copy variable element so `g.append(row);
     // g.append(row)` (or `row` used after) doesn't move-then-use (E0382).
@@ -20579,6 +20576,34 @@ fn float_op_from_ast(op: &ast::Operator) -> Option<FloatOp> {
 /// PMAT-502bs: wrap `e` in an `(e) as f64` cast unless it already types as
 /// `F64`. Used by Python-3 true division `/`, which always yields a float
 /// even for two int operands (`7 / 2 == 3.5`).
+/// PMAT-1048: coerce a (possibly nested) list-LITERAL expression element-wise
+/// to a target container element type. `g.append([2, 3])` over
+/// `list[list[float]]` needs `[2, 3]` widened to `vec![2f64, 3f64]` (the
+/// literal infers `list[int]`, but the target inner is `float`). Recurses
+/// into nested list literals; a `float` leaf widens int/bool elements via
+/// [`to_f64_operand`]. Non-literal expressions (a variable already of the
+/// right type) and non-float leaves are returned unchanged — this only
+/// rewrites the literal-vs-target element-type gap the scalar widen
+/// (PMAT-1040/1047) doesn't reach.
+fn coerce_expr_to_type(ctx: &LoweringCtx, expr: Expr, target: &Type) -> Expr {
+    match target {
+        Type::F64 => to_f64_operand(ctx, expr),
+        Type::List(inner) => {
+            if let Expr::ListLit(elems) = expr {
+                Expr::ListLit(
+                    elems
+                        .into_iter()
+                        .map(|e| coerce_expr_to_type(ctx, e, inner))
+                        .collect(),
+                )
+            } else {
+                expr
+            }
+        }
+        _ => expr,
+    }
+}
+
 fn to_f64_operand(ctx: &LoweringCtx, e: Expr) -> Expr {
     match infer_type_in_ctx(ctx, &e) {
         Type::F64 => e,
