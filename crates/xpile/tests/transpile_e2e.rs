@@ -18709,3 +18709,22 @@ fn main() {
 "#;
     assert_rustc_runs("branch_parity_prebound", &rust, driver);
 }
+
+/// PMAT-1043 (sweep #12): a same-named method across two classes (one mutates
+/// its param, one doesn't) collided in the guard's bare-name map — the
+/// non-mutating sibling masked the mutating one and the reuse-clone silently
+/// dropped the mutation. Now the shape REFUSES loudly.
+#[test]
+fn method_name_collision_is_rejected() {
+    let py = fixture("method_name_collision_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "reused arg into a same-named param-mutating method must be REFUSED, not silently miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("mutates its") && stderr.contains("parameter #1"),
+        "the rejection should name the mutating parameter:\n{stderr}"
+    );
+}
