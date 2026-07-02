@@ -658,7 +658,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1021: [rust/correctness] Unicode isnumeric/isalpha via the PMAT-1005 generated-ranges recipe. Sweep #9 confirmed: (a) isnumeric lowers to Rust char::is_numeric (general category N*) but CPython tests Numeric_Type∈{Decimal,Digit,Numeric} — Han numeral ideographs 一/三/五/百/万/億 (category Lo, Numeric_Type=Numeric) return False in xpile, True in CPython; (b) isalpha lowers to char::is_alphabetic (derived Alphabetic = L* + Nl + Other_Alphabetic) but CPython isalpha is category L* ONLY — Nl numerals (Ⅻ, ⅰ, 〸) and Other_Alphabetic marks (ा) over-accept. Fix: generate PY_ISNUMERIC_RANGES and PY_ISALPHA_RANGES from CPython ground truth exactly like PY_ISDIGIT_RANGES (raw-string consts, bidi-safe, no dep); update the str_predicates distinction witnesses. Also sweep-9-noted residuals: isalnum over-/under-reports (² known), isdecimal unimplemented.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
@@ -667,7 +667,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Same proven recipe as PMAT-1005 (one python3 generation script, raw-string const, inline matches!). Filed by PMAT-1019 (sweep #9).'
+  notes: 'DONE 2026-07-02 via the same recipe: PY_ISNUMERIC_RANGES (219 ranges) + PY_ISALPHA_RANGES (660 ranges, ~15KB inlined — isalpha call sites are rare; bidi-safe ASCII raw-string consts) generated from CPython ground truth. Differentially verified: isnumeric accepts 一三五/億/½/Ⅻ/① and rejects abc; isalpha rejects Ⅻ/ⅰ/〸 and accepts éα中; the three-way isdigit/isnumeric/isalpha matrix holds exactly (² digit+numeric+NOT-alpha; 一 numeric+alpha+NOT-digit). str_isnumeric/str_predicates e2e + the lib distinction witness updated to pin the generated-ranges invariants (½ sits in the ¼½¾ range — asserts key on the range START). isalnum/isdecimal remain documented residuals. Same proven recipe as PMAT-1005 (one python3 generation script, raw-string const, inline matches!). Filed by PMAT-1019 (sweep #9).'
 - id: PMAT-1022
   github_issue: null
   item_type: task

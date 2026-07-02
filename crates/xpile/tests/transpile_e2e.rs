@@ -2567,7 +2567,6 @@ fn str_predicates() {
         // no longer the ASCII-only is_ascii_digit.
         rust.contains(".chars().all(|__c| matches!(__c, ")
             && rust.contains("'\\u{660}'")
-            && rust.contains("is_alphabetic()")
             && rust.contains("is_whitespace()")
             && rust.contains(".is_empty() &&"),
         "expected predicate emission, got:\n{rust}"
@@ -2593,8 +2592,10 @@ fn main() {
 fn str_isnumeric() {
     let rust = xpile_transpile_to_rust("str_isnumeric.py");
     assert!(
-        rust.contains(".chars().all(|__c| __c.is_numeric())"),
-        "isnumeric should use char::is_numeric():\n{rust}"
+        // PMAT-1021: isnumeric emits its own GENERATED range set (incl. Han
+        // numerals + fractions Rust's char::is_numeric mis-handles).
+        rust.contains(".chars().all(|__c| matches!(__c, ") && rust.contains("'\\u{bc}'"),
+        "isnumeric emits the generated ranges (incl. u+00BD = ½):\n{rust}"
     );
     let driver = r#"
 fn main() {
