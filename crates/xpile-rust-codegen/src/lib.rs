@@ -1509,7 +1509,22 @@ fn emit_stmt_indented(
         // `Stmt::Cmd` would still be lowered via Rust's
         // `std::process::Command` API — that's separate machinery, not
         // a generic Cmd-to-Rust translation.)
-        Stmt::FileWrite { path, content } => {
+        Stmt::FileWrite {
+            path,
+            content,
+            append,
+        } => {
+            if *append {
+                // PMAT-1078: `open(p, "a").write(s)` — append (create if absent),
+                // via OpenOptions + write_all (std::fs::write only truncates).
+                write!(out, "{indent}{{ use ::std::io::Write as _; let mut __wf = ::std::fs::OpenOptions::new().create(true).append(true).open(&(")?;
+                emit_expr(out, path, mode)?;
+                out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }); __wf.write_all((&("##);
+                emit_expr(out, content, mode)?;
+                out.push_str(r##")).as_bytes()).unwrap_or_else(|__e| panic!("xpile: OSError: {}", __e)); }"##);
+                writeln!(out)?;
+                return Ok(());
+            }
             // PMAT-1075: `open(p, "w").write(s)` → inline std::fs::write (truncate).
             // Borrow path + content (`&(...)`) via AsRef so a variable path/content
             // isn't moved (it may be read again after the write) — E0382 otherwise.
