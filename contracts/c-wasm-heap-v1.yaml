@@ -52,10 +52,16 @@ metadata:
       * string content EQUALITY `a == b` / `a != b` lowers to `$__wasm_str_eq`
         (a length check + a byte-compare loop → i32 bool) — REAL string-content
         logic, NEVER a base-pointer compare — correct for params, literals, and
-        heap strings (all share the length-prefixed ABI).
+        heap strings (all share the length-prefixed ABI);
+      * a string SLICE `s[lo:hi]` (PMAT-1058, `Expr::Slice` of_str/unstepped)
+        materialises a NEW heap SUBSTRING via `$__wasm_str_slice` — a CHAR-exact
+        walk (a multi-byte code point copied whole, never split) with full
+        Python clamp semantics (negative-bound normalise, clamp to `[0, len]`,
+        `hi = max(hi, lo)`, missing bound → `0` / `len`) that never traps on an
+        out-of-range bound.
     Still REFUSED with a hard error rather than miscompiled (a Lean-style honest
-    refusal): string ORDERING (`<` / `>`), slicing, `str(x)`/`repr(x)`,
-    f-strings, string methods.
+    refusal): string ORDERING (`<` / `>`), STEPPED / list slicing,
+    `str(x)`/`repr(x)`, f-strings, string methods.
   xpile:
     layer: compile
   references:
@@ -213,6 +219,42 @@ equations:
     postconditions:
       - "the emitted WAT assembles + executes to a string / bool value-matching CPython on an ASCII fixture"
       - "the literal/equality WASM-emitting code carries the WASM citation"
+
+  string_slice_is_charexact_substring:
+    # PMAT-1058: a string slice `s[lo:hi]` (unstepped) materialises a NEW
+    # heap SUBSTRING — the CHARACTERS in [lo, hi), never a byte slice that
+    # could split a multi-byte code point. Same length-prefixed ABI as every
+    # other string, so it composes with len / Concat / equality / a str return.
+    formula: |
+      construct(Slice{collection, lo, hi, of_str: true, step: None},
+                BackendConfig{target: Wasm})
+        emits `<base> <lo:i64> <hi:i64> call $__wasm_str_slice`, where
+        $__wasm_str_slice normalises the CHARACTER bounds with full Python
+        semantics (a negative bound += charlen; both CLAMP to [0, charlen];
+        hi = max(hi, lo)), then two UTF-8 char-walks from base+8 find the byte
+        offsets of chars lo and hi, and $__alloc(8 + (endoff-startoff)) + a
+        header store + memory.copy build the substring. A missing `lo` lowers
+        to 0, a missing `hi` to i64::MAX (clamped to charlen). The result is a
+        fresh length-prefixed heap string. A LIST slice (of_str: false) and a
+        STEPPED string slice (step != None, incl. the s[::-1] reverse) REFUSE.
+    domain: |
+      A string slice expression `s[lo:hi]` (Expr::Slice with of_str: true,
+      step: None) — bounds are optional i64 CHARACTER indices (any int-valued
+      expression). Reached in a value position and in a string position (a str
+      return / a concat operand). A list slice or stepped string slice is out
+      of subset and refused with a precise diagnostic (never wrong WAT).
+    invariants:
+      - "the slice indexes by CHARACTERS (code points), not bytes — a multi-byte char is copied whole, never split"
+      - "out-of-range slice bounds CLAMP to [0, charlen] and never trap (unlike s[i], which traps on IndexError)"
+      - "a negative bound is normalised Python-style (+= charlen) before clamping; hi is raised to lo (empty slice, never a negative length)"
+      - "the result is a fresh $__alloc'd length-prefixed heap string (i32 byte-count header @ base+0, UTF-8 bytes @ base+8)"
+      - "a missing lo defaults to 0, a missing hi to charlen (passed as i64::MAX, clamped)"
+      - "a stepped string slice / a list slice is REFUSED (loud diagnostic), never emitted as wrong WAT"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) and executes (wasm-interp) to a substring value-matching CPython, including on a MULTI-BYTE fixture (s[1:4] over 'abécd' == 'béc')"
+      - "the slice WASM-emitting code carries the WASM citation"
 
   dict_set_is_length_prefixed_assoc_array:
     # PMAT-995 (slice 3b): a dict[int|str, int] / set[int|str] is a bump-heap
@@ -460,3 +502,32 @@ falsification_tests:
       - literal_arg_order_used_instead_of_field_name
       - wrong_store_or_load_type_for_field
       - non_scalar_field_or_struct_return_miscompiled
+
+  - id: FALSIFY-WASM-HEAP-006
+    rule: |
+      PMAT-1058: a string slice `s[lo:hi]` (unstepped) MUST materialise a
+      well-formed length-prefixed heap SUBSTRING holding the CHARACTERS in
+      [lo, hi) — char-exact (a multi-byte code point copied whole, never split),
+      with Python clamp semantics (negative-bound normalise, clamp to
+      [0, charlen], hi = max(hi, lo), missing lo → 0 / missing hi → charlen)
+      that never trap on out-of-range bounds — assembling via wat2wasm and, when
+      executed, reading back byte-for-byte equal to CPython, INCLUDING on a
+      multi-byte fixture. A stepped string slice / a list slice MUST refuse.
+    prediction: |
+      The executed WABT witness reconstructs `mid(s) = s[1:4]` over the
+      multi-byte fixture "abécd" to "béc" (bytes [98,195,169,99], the 2-byte é
+      copied whole) == CPython.
+    test: |
+      cargo test -p xpile-wasm-codegen --test str_slice_witness
+    if_fails: |
+      The char-walk (byte-vs-char indexing), the bound clamping/normalisation,
+      the substring alloc/copy, or the step/list refusal regressed — a byte
+      slice that splits a multi-byte char, a trap on a clamped bound, a wrong
+      length, or wrong WAT for a stepped slice. The constructed substring
+      diverges from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - byte_slice_splits_multibyte_char
+      - out_of_range_bound_traps_instead_of_clamping
+      - wrong_substring_length_or_offset
+      - stepped_or_list_slice_miscompiled
