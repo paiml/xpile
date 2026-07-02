@@ -929,6 +929,20 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'high-water-mark re-checked (1066) before allocating 1070. Suite 749 green; MATCH tf/tef/kF/1; adversarially verified — finally on clean/caught/multi-except/nested-propagate paths; single-except-no-finally byte-unchanged. Additive finally field + 4 walkers + rust/ruchy outer-wrap emit + frontend.'
+- id: PMAT-1071
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1071: [rust/capability] GENERATORS / `yield` — `def gen(): yield 1; yield 2` used as a lazy iterator (`for x in gen()`). Found by a fresh-area probe (all other collection/string/functional/numeric surfaces MATCH; this + context managers are the two remaining BIG gaps). A generator is a state machine: each `yield` suspends and resumes. Rust has no direct coroutine in stable; the tractable lowerings are (a) EAGER materialization — collect all yields into a Vec and iterate that (loses laziness/infinite generators but covers the common finite `for x in gen()` case), or (b) a hand-rolled state-machine struct impl Iterator (faithful but a large per-generator codegen). Start with (a) EAGER for finite generators with simple control flow (straight-line yields, yields in a bounded for/while), refuse unbounded/`yield from`/generator-expressions-as-values. Multi-slice; NOT a rush-at-depth item — filed for a focused session.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+- id: PMAT-1072
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1072: [rust/capability] CONTEXT MANAGERS / `with` — `with cm as x: <body>`. Found by the same fresh-area probe. Two sub-cases: (1) `with open(path) as f:` needs FILE I/O (a whole domain — std::fs, error handling) — larger; (2) `with <user-class instance> as x:` where the class defines `__enter__`/`__exit__` is more tractable: desugar to `let x = cm.__enter__(); <body>; cm.__exit__()` with the __exit__ in a finally-like guard (reuse the PMAT-1070 outer-catch_unwind wrap so __exit__ runs on the exception path too). Start with (2) user context managers (no file I/O), refuse `with open(...)` precisely. Depends on the class-method machinery (mature) + the try/finally wrap (PMAT-1070, done). Multi-slice — filed for a focused session.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
 - id: PMAT-1065
   github_issue: null
   item_type: capability
