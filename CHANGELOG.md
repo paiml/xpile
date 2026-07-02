@@ -7,6 +7,59 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.604] — 2026-07-02
+
+The sweep-#9 response (4 commits, PMAT-1019/1020/1021/1022). Sweep #9 hit the
+hours-old v0.1.603 surfaces with 272 programs and confirmed **40 findings** —
+the campaign's biggest haul — whose structural lesson was that syntactic
+point-checks cannot guard a dataflow property. The response, same-day:
+
+### The transitive alias-CLASS analysis (PMAT-1020) — the systemic fix
+
+- A function-local union-find over alias edges from EVERY binding form:
+  `name = name` at any nesting (if-arms, loop bodies), list-literal container
+  embeds (`[row]`, `[x, y]`), param-returning/ctor call captures, ternary
+  arms, and interior returns (`return xs[0]`). TYPE-BLIND by design — the
+  refusal keys only on OBJECT mutation, which scalar classes never trigger.
+- A class with an object mutation and ≥2 observable local members refuses
+  cleanly; a PARAM in a mutated class marks `mutable` instead, so the
+  PMAT-884 caller guard fires — the intra-function launder
+  (`ys = xs; ys.append(9)`) no longer hides mutations from callers.
+- Flipped: transitive chains (silent 3≠4), param-alias laundering (silent),
+  subscript-read aliases (silent), embeds/cross-visibility (silent), ctor
+  captures + loop realiases (E0382) — all to clean refusals; benign shapes
+  (source-dead move, read-only clone, slice-copy, fresh constructs)
+  unregressed, zero corpus false positives.
+
+### Guard-suite unification (PMAT-1019)
+
+- EVERY alias/launder/shared-row guard lived only in `lower_assign`;
+  annotated bindings (`b: list[int] = a`) bypassed the entire suite (~10
+  findings, several silent). Now one shared `apply_alias_dispositions`
+  called by both binding forms. Ternary returns (`return xs if f else [0]`)
+  and nested launder chains (`ident(ident(c))`) flag too (6 silent findings).
+
+### self.FIELD container mutators + a merged-regression fix (PMAT-1022)
+
+- `self.items.append(x)` statements lower (MethodCall push, was refused with
+  a wrong diagnostic); `self.items.pop()` mutates the REAL field (was
+  silently popping a clone); both promote `&mut self`. `return self` chains
+  clone (was E0308); method-returns-field and `grow(b.items)` field args
+  refuse (were silent).
+- The refinement its own witnesses caught: the type-blind flags falsely
+  refused SCALAR idioms — including `first = xs[0]`, a regression that had
+  MERGED in the alias-analysis PR hours earlier. Flags are now gated on a
+  container/struct RETURN type and the subscript edge became a TYPED
+  per-site disposition. Scalar idioms all MATCH again.
+
+### Precise Unicode isnumeric/isalpha (PMAT-1021)
+
+- Generated CPython ranges (219 + 660): isnumeric now accepts Han numeral
+  ideographs (一三五百万億) Rust's `char::is_numeric` missed; isalpha now
+  rejects the Nl numerals (Ⅻ ⅰ 〸) and marks `char::is_alphabetic`
+  over-accepted. The three-way isdigit/isnumeric/isalpha matrix holds
+  exactly (² digit+numeric+not-alpha; 一 numeric+alpha+not-digit).
+
 ## [0.1.603] — 2026-07-02
 
 The 8-commit span since v0.1.602 (PMAT-1005, 1008, 1016, 1017, 1018): the
