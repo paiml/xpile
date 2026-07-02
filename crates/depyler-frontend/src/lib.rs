@@ -498,16 +498,24 @@ fn count_reads_stmt(s: &ast::Stmt, counts: &mut HashMap<String, usize>) {
                 count_reads_stmt(st, counts);
             }
         }
+        // PMAT-1023 (sweep #10): loop bodies count TWICE — a name read once
+        // INSIDE a loop is read on every iteration, so a by-value move there
+        // is E0382 on iteration 2 (`two_sum(nums, t)` in a for body). The
+        // extra count only ADDS clones (Python-equal for reads).
         S::While(w) => {
             count_reads_expr(&w.test, counts);
-            for st in &w.body {
-                count_reads_stmt(st, counts);
+            for _ in 0..2 {
+                for st in &w.body {
+                    count_reads_stmt(st, counts);
+                }
             }
         }
         S::For(f) => {
             count_reads_expr(&f.iter, counts);
-            for st in &f.body {
-                count_reads_stmt(st, counts);
+            for _ in 0..2 {
+                for st in &f.body {
+                    count_reads_stmt(st, counts);
+                }
             }
         }
         S::Assert(a) => {
@@ -585,6 +593,21 @@ fn count_reads_expr(e: &ast::Expr, counts: &mut HashMap<String, usize>) {
             count_reads_expr(&s.slice, counts);
         }
         E::Attribute(a) => count_reads_expr(&a.value, counts),
+        // PMAT-1023 (sweep #10): f-string interiors were INVISIBLE to the
+        // read counter, so `f"{mean(temps)}"` never counted temps and the
+        // PMAT-588 clone-if-reused skipped — the everyday
+        // compute-then-reuse shape was E0382 (9 confirmed findings).
+        E::JoinedStr(j) => {
+            for v in &j.values {
+                count_reads_expr(v, counts);
+            }
+        }
+        E::FormattedValue(f) => {
+            count_reads_expr(&f.value, counts);
+            if let Some(spec) = &f.format_spec {
+                count_reads_expr(spec, counts);
+            }
+        }
         E::IfExp(i) => {
             count_reads_expr(&i.test, counts);
             count_reads_expr(&i.body, counts);
@@ -8806,6 +8829,12 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         } else {
             value
         };
+        // PMAT-1023 (sweep #10): a REASSIGNMENT from a re-read name moved it
+        // (`best = name` inside `for name in …` — the canonical track-the-
+        // best-key idiom was E0382). Clone-if-reused: Python-equal for
+        // immutable strings and for read-only containers; mutated-container
+        // aliases already refuse via the PMAT-1020 class analysis.
+        let value = clone_if_reused_non_copy(ctx, value);
         Ok(Stmt::Assign { name, value })
     } else {
         let mutable = ctx.mutable.contains(&name);
@@ -20949,10 +20978,13 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
             Expr::Ident(temp(i + 1)),
             &op_types[i + 1],
         )?;
+        // PMAT-1023 (sweep #10): a non-Copy operand (a String loop var in
+        // `"a" <= ch <= "z"`) MOVED into its temp, so any later use of the
+        // name was E0382 — clone-if-reused keeps the binding alive.
         let mut stmts = vec![Stmt::Let {
             name: temp(i + 1),
             ty: op_types[i + 1].clone(),
-            value: operands[i + 1].clone(),
+            value: clone_if_reused_non_copy(ctx, operands[i + 1].clone()),
             mutable: false,
         }];
         if i == 0 {
@@ -20961,7 +20993,7 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
                 Stmt::Let {
                     name: temp(0),
                     ty: op_types[0].clone(),
-                    value: operands[0].clone(),
+                    value: clone_if_reused_non_copy(ctx, operands[0].clone()),
                     mutable: false,
                 },
             );
