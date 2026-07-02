@@ -1268,7 +1268,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // reference-semantics frontend passes through) need the callee's return
     // shape to know whether a result must be dropped.
     let mod_fns = build_module_fn_registry(module)?;
-    let needs_str_eq = module_needs_str_eq(module) || dict_str_keys;
+    // PMAT-1028: the str-returning callables, so a call may feed a string
+    // position (`s: str = build(5)`, a concat operand) with proven str-ness.
+    let str_rets = build_str_returners(module);
+    let regs = Registries {
+        literals: &literals,
+        structs: &structs,
+        methods: &methods,
+        assoc_fns: &assoc_fns,
+        mod_fns: &mod_fns,
+        str_rets: &str_rets,
+    };
+    let needs_str_eq = module_needs_str_eq(module, &str_rets) || dict_str_keys;
     if module_uses_list_param(module) || needs_heap || !literals.is_empty() || needs_str_eq {
         writeln!(
             out,
@@ -1332,9 +1343,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     for item in &module.items {
         match item {
             Item::Function(f) => {
-                let f_wat = emit_function(
-                    f, &literals, &structs, &methods, &assoc_fns, &mod_fns, &f.name,
-                )?;
+                let f_wat = emit_function(f, &regs, &f.name)?;
                 out.push_str(&f_wat);
             }
             Item::Const { name, .. } => {
@@ -1367,9 +1376,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
                     } else {
                         format!("{name}::{}", m.name)
                     };
-                    let m_wat = emit_function(
-                        m, &literals, &structs, &methods, &assoc_fns, &mod_fns, &wat_name,
-                    )?;
+                    let m_wat = emit_function(m, &regs, &wat_name)?;
                     out.push_str(&m_wat);
                 }
             }
@@ -1483,46 +1490,88 @@ fn scan_stmts_dict_kinds(stmts: &[Stmt], need_int: &mut bool, need_str: &mut boo
 /// PMAT-994: `true` when any function in `module` compares two strings for
 /// content equality (`a == b` / `a != b` over `str` operands) — the trigger
 /// for emitting the `$__wasm_str_eq` helper. A binop `Eq`/`NotEq` whose operand
-/// is a string-VALUED expression (a str param `Ident`, a literal, a `Concat`,
-/// or a `Chr`) needs the content-compare helper. The str-param set is computed
-/// per-function so `str_param == str_param` (the common case) is detected.
-fn module_needs_str_eq(module: &Module) -> bool {
+/// is a string-VALUED expression (a str-name `Ident`, a literal, a `Concat`,
+/// a `Chr`, or PMAT-1028 a str-returning call) needs the content-compare
+/// helper. The str-name set is computed per-function — str PARAMS plus
+/// (PMAT-1028) str-annotated LET locals — so `str == str` over either kind
+/// of name is detected. UNDER-detection here is a hard wat2wasm failure
+/// (a `call $__wasm_str_eq` against a helper never emitted), so the scan
+/// over-approximates where it lacks scope context (see [`StrEqScan`]).
+fn module_needs_str_eq(module: &Module, rets: &StrReturners) -> bool {
     module_functions(module).any(|f| {
-        let str_params: Vec<&str> = f
+        let mut names: Vec<&str> = f
             .params
             .iter()
             .filter(|p| matches!(p.ty, Type::Str))
             .map(|p| p.name.as_str())
             .collect();
-        block_has_str_eq(&f.body, &str_params)
+        collect_str_let_names(&f.body.stmts, &mut names);
+        let scan = StrEqScan { names, rets };
+        block_has_str_eq(&f.body, &scan)
     })
 }
 
-fn block_has_str_eq(block: &Block, str_params: &[&str]) -> bool {
-    block.stmts.iter().any(|s| stmt_has_str_eq(s, str_params))
-        || expr_has_str_eq(&block.trailing_return, str_params)
+/// PMAT-1028: the per-function context for the `$__wasm_str_eq` pre-scan —
+/// the function's str NAMES (params + let-bound locals) and the module's
+/// str-RETURNING callables. The pre-scan has no lowering scope, so its
+/// method-call check keys on the method NAME alone (over-approximate; a
+/// spurious hit merely emits the helper unused, while a miss would emit a
+/// call against a missing helper — a hard downstream failure).
+struct StrEqScan<'a> {
+    names: Vec<&'a str>,
+    rets: &'a StrReturners,
 }
 
-fn stmt_has_str_eq(s: &Stmt, str_params: &[&str]) -> bool {
+/// PMAT-1028: collect the names of str-annotated `Let` locals anywhere in
+/// `stmts` (including nested `If`/`While` bodies) into `out` — the local half
+/// of the pre-scan str-name set (params are gathered by the caller).
+fn collect_str_let_names<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a str>) {
+    for s in stmts {
+        match s {
+            Stmt::Let {
+                name,
+                ty: Type::Str,
+                ..
+            } => out.push(name.as_str()),
+            Stmt::While { body, .. } => collect_str_let_names(body, out),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_str_let_names(then_body, out);
+                collect_str_let_names(else_body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn block_has_str_eq(block: &Block, scan: &StrEqScan<'_>) -> bool {
+    block.stmts.iter().any(|s| stmt_has_str_eq(s, scan))
+        || expr_has_str_eq(&block.trailing_return, scan)
+}
+
+fn stmt_has_str_eq(s: &Stmt, scan: &StrEqScan<'_>) -> bool {
     match s {
-        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_str_eq(value, str_params),
-        Stmt::Return(e) => expr_has_str_eq(e, str_params),
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_str_eq(value, scan),
+        Stmt::Return(e) => expr_has_str_eq(e, scan),
         Stmt::If {
             cond,
             then_body,
             else_body,
         } => {
-            expr_has_str_eq(cond, str_params)
-                || then_body.iter().any(|s| stmt_has_str_eq(s, str_params))
-                || else_body.iter().any(|s| stmt_has_str_eq(s, str_params))
+            expr_has_str_eq(cond, scan)
+                || then_body.iter().any(|s| stmt_has_str_eq(s, scan))
+                || else_body.iter().any(|s| stmt_has_str_eq(s, scan))
         }
         Stmt::While { cond, body } => {
-            expr_has_str_eq(cond, str_params) || body.iter().any(|s| stmt_has_str_eq(s, str_params))
+            expr_has_str_eq(cond, scan) || body.iter().any(|s| stmt_has_str_eq(s, scan))
         }
-        Stmt::IndexAssign { value, .. } => expr_has_str_eq(value, str_params),
+        Stmt::IndexAssign { value, .. } => expr_has_str_eq(value, scan),
         // PMAT-1023: field-write values and statement method-call args.
-        Stmt::FieldAssign { value, .. } => expr_has_str_eq(value, str_params),
-        Stmt::SideEffectCall { call } => expr_has_str_eq(call, str_params),
+        Stmt::FieldAssign { value, .. } => expr_has_str_eq(value, scan),
+        Stmt::SideEffectCall { call } => expr_has_str_eq(call, scan),
         _ => false,
     }
 }
@@ -1531,51 +1580,55 @@ fn stmt_has_str_eq(s: &Stmt, str_params: &[&str]) -> bool {
 /// content comparison the `$__wasm_str_eq` helper backs. A binop is a str
 /// equality iff its op is `Eq`/`NotEq` and either operand is a string-valued
 /// `Expr`: a `LitStr` / `Concat` / `Chr` / bare `StrCharAt` (structural), or a
-/// str-param `Ident` (looked up in `str_params`).
-fn expr_has_str_eq(e: &Expr, str_params: &[&str]) -> bool {
+/// str-name `Ident` (param or PMAT-1028 let-bound local) (looked up in `str_names`).
+fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
     match e {
         Expr::BinOp { op, lhs, rhs } => {
             (matches!(op, BinOp::Eq | BinOp::NotEq)
-                && (expr_is_str_valued(lhs, str_params) || expr_is_str_valued(rhs, str_params)))
-                || expr_has_str_eq(lhs, str_params)
-                || expr_has_str_eq(rhs, str_params)
+                && (expr_is_str_valued(lhs, scan) || expr_is_str_valued(rhs, scan)))
+                || expr_has_str_eq(lhs, scan)
+                || expr_has_str_eq(rhs, scan)
         }
         Expr::FloatBinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
-            expr_has_str_eq(lhs, str_params) || expr_has_str_eq(rhs, str_params)
+            expr_has_str_eq(lhs, scan) || expr_has_str_eq(rhs, scan)
         }
-        Expr::UnOp { operand, .. } => expr_has_str_eq(operand, str_params),
+        Expr::UnOp { operand, .. } => expr_has_str_eq(operand, scan),
         Expr::IfExpr {
             cond,
             then_expr,
             else_expr,
         } => {
-            expr_has_str_eq(cond, str_params)
-                || expr_has_str_eq(then_expr, str_params)
-                || expr_has_str_eq(else_expr, str_params)
+            expr_has_str_eq(cond, scan)
+                || expr_has_str_eq(then_expr, scan)
+                || expr_has_str_eq(else_expr, scan)
         }
-        Expr::Call { args, .. } => args.iter().any(|a| expr_has_str_eq(a, str_params)),
+        Expr::Call { args, .. } => args.iter().any(|a| expr_has_str_eq(a, scan)),
         Expr::Index { collection, index } => {
-            expr_has_str_eq(collection, str_params) || expr_has_str_eq(index, str_params)
+            expr_has_str_eq(collection, scan) || expr_has_str_eq(index, scan)
         }
-        Expr::Len(c) => expr_has_str_eq(c, str_params),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_eq(value, str_params),
+        Expr::Len(c) => expr_has_str_eq(c, scan),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_eq(value, scan),
         Expr::StrCharAt { string, index } => {
-            expr_has_str_eq(string, str_params) || expr_has_str_eq(index, str_params)
+            expr_has_str_eq(string, scan) || expr_has_str_eq(index, scan)
         }
         // PMAT-1023: method-call args may carry a string equality.
         Expr::MethodCall { obj, args, .. } => {
-            expr_has_str_eq(obj, str_params) || args.iter().any(|a| expr_has_str_eq(a, str_params))
+            expr_has_str_eq(obj, scan) || args.iter().any(|a| expr_has_str_eq(a, scan))
         }
         _ => false,
     }
 }
 
 /// `true` if `e` is a string-valued expression: a `LitStr` / `Concat` / `Chr`
-/// / bare `StrCharAt` (structural), or a str-param `Ident` (in `str_params`).
-fn expr_is_str_valued(e: &Expr, str_params: &[&str]) -> bool {
+/// / bare `StrCharAt` (structural), a str-name `Ident` (param or let-bound
+/// local), or PMAT-1028 a call of a str-returning callable (free/assoc fn by
+/// key; a method by NAME alone — over-approximate, see [`StrEqScan`]).
+fn expr_is_str_valued(e: &Expr, scan: &StrEqScan<'_>) -> bool {
     match e {
         Expr::LitStr(_) | Expr::Concat { .. } | Expr::Chr { .. } | Expr::StrCharAt { .. } => true,
-        Expr::Ident(name) => str_params.contains(&name.as_str()),
+        Expr::Ident(name) => scan.names.contains(&name.as_str()),
+        Expr::Call { callee, .. } => scan.rets.keys.iter().any(|k| k == callee),
+        Expr::MethodCall { method, .. } => scan.rets.methods.iter().any(|(_, m)| m == method),
         _ => false,
     }
 }
@@ -1799,12 +1852,15 @@ struct Scope<'a> {
     /// WAT type its elements load as (`i64`/`f64`/`f32`). `Index` over such
     /// a local emits `base + i*size` + that element's `*.load`.
     list_elem: Vec<(String, WatTy)>,
-    /// PMAT-986: names of params that are `str` base-pointers into linear
-    /// memory (i32 byte count @ base+0, UTF-8 bytes @ base+8). `len(s)` reads
-    /// the header; `ord(s[i])` does a bounds-checked `i32.load8_u` of byte
-    /// `i`. Only str PARAMS land here; PMAT-994 adds str LITERALS (resolved
-    /// via [`Scope::literals`]) — there are still no str LOCALS in the subset.
-    str_params: Vec<String>,
+    /// PMAT-986: names that are `str` base-pointers into linear memory (i32
+    /// byte count @ base+0, UTF-8 bytes @ base+8). `len(s)` reads the header;
+    /// `ord(s[i])` does a bounds-checked `i32.load8_u` of byte `i`. Str
+    /// PARAMS land here at scope construction; PMAT-1028 adds str-annotated
+    /// LET locals (`s: str = …`, registered by `collect_let_locals_stmts`) —
+    /// a local holds the same length-prefixed base-pointer a param does, so
+    /// every read path (len/ord/concat/eq/s[i]) is shared. Str LITERALS are
+    /// separate (resolved via [`Scope::literals`]).
+    str_names: Vec<String>,
     /// PMAT-994 (slice 3a): the module's static string-literal layout. A
     /// `LitStr` lowers to a constant `i32.const <base>` resolved here. Shared
     /// across every function in the module (the `(data …)` region is global).
@@ -1834,6 +1890,12 @@ struct Scope<'a> {
     /// keyed by the plain fn name) — statement-position calls (`bump(c)`)
     /// type their args and know whether a result needs dropping.
     mod_fns: &'a AssocFnRegistry,
+    /// PMAT-1028: the module's str-RETURNING callables (free/assoc fns by
+    /// call key, methods by `(struct, method)`). A call in a STRING position
+    /// (`s: str = build(5)`, a concat operand, a str return) must be
+    /// verified to actually produce a str pointer — its i32 result alone is
+    /// ambiguous (bool and struct returns are i32 too).
+    str_rets: &'a StrReturners,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -1907,11 +1969,25 @@ impl Scope<'_> {
             .map(|(_, t)| *t)
     }
 
-    /// PMAT-986: `true` if `name` is a `str` parameter base-pointer (a
-    /// length-prefixed UTF-8 byte region in linear memory). Drives
-    /// `len(s)` and `ord(s[i])` lowering.
-    fn is_str_param(&self, name: &str) -> bool {
-        self.str_params.iter().any(|n| n == name)
+    /// PMAT-986: `true` if `name` is a `str` param or (PMAT-1028) str-annotated
+    /// local base-pointer (a length-prefixed UTF-8 byte region in linear
+    /// memory). Drives `len(s)`, `ord(s[i])`, and string-position lowering.
+    fn is_str_name(&self, name: &str) -> bool {
+        self.str_names.iter().any(|n| n == name)
+    }
+
+    /// PMAT-1028: `true` if the callable registered under call key `key` (a
+    /// plain free-fn name or a `<Struct>::<name>` assoc key) returns a `str`.
+    fn call_returns_str(&self, key: &str) -> bool {
+        self.str_rets.keys.iter().any(|k| k == key)
+    }
+
+    /// PMAT-1028: `true` if `<sname>.<mname>` is a str-returning method.
+    fn method_returns_str(&self, sname: &str, mname: &str) -> bool {
+        self.str_rets
+            .methods
+            .iter()
+            .any(|(s, m)| s == sname && m == mname)
     }
 
     /// PMAT-994: the static base address of the string literal `content`, or
@@ -1935,15 +2011,32 @@ impl Scope<'_> {
 /// (PMAT-1023; both are legal WAT id characters, and Python identifiers can
 /// never collide with the dotted form).
 #[allow(clippy::too_many_arguments)]
+/// The module-wide lookup tables `emit_function` lowers against, built once
+/// per module by `emit_module` and shared (immutably) by every function and
+/// method body. Bundled so the per-function entry point stays a small
+/// signature as registries accrete (PMAT-1028 added `str_rets`).
+struct Registries<'a> {
+    literals: &'a StrLiterals,
+    structs: &'a StructRegistry,
+    methods: &'a MethodRegistry,
+    assoc_fns: &'a AssocFnRegistry,
+    mod_fns: &'a AssocFnRegistry,
+    str_rets: &'a StrReturners,
+}
+
 fn emit_function(
     f: &Function,
-    literals: &StrLiterals,
-    structs: &StructRegistry,
-    methods: &MethodRegistry,
-    assoc_fns: &AssocFnRegistry,
-    mod_fns: &AssocFnRegistry,
+    regs: &Registries<'_>,
     wat_name: &str,
 ) -> Result<String, BackendError> {
+    let Registries {
+        literals,
+        structs,
+        methods,
+        assoc_fns,
+        mod_fns,
+        str_rets,
+    } = *regs;
     // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
     // base-pointer of the newly-materialised length-prefixed string in linear
     // memory (the bump heap this slice ships). The trailing return must be a
@@ -1973,13 +2066,14 @@ fn emit_function(
     let mut scope = Scope {
         locals: Vec::new(),
         list_elem: Vec::new(),
-        str_params: Vec::new(),
+        str_names: Vec::new(),
         heap_maps: Vec::new(),
         structs,
         struct_locals: Vec::new(),
         methods,
         assoc_fns,
         mod_fns,
+        str_rets,
         literals,
         ret,
         ret_is_unit,
@@ -1998,7 +2092,7 @@ fn emit_function(
             scope.list_elem.push((name.clone(), elem));
         }
         if matches!(ty, Type::Str) {
-            scope.str_params.push(name.clone());
+            scope.str_names.push(name.clone());
         }
         // PMAT-996: a struct PARAM rides an `i32` base-pointer into linear
         // memory (like a list/str param); record its struct type so `p.field`
@@ -2144,6 +2238,19 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 scope.declare(name, WatTy::I32);
                 scope.struct_locals.push((name.clone(), sname.clone()));
             }
+            // PMAT-1028: a str LET binds an `i32` base-pointer local AND
+            // registers in the scope's str-name set, so every string position
+            // (concat operand, `==` content compare, len/ord/s[i], a str
+            // return) classifies the local exactly like a str param.
+            // Intercepted before `map_type`, which refuses `Str`.
+            Stmt::Let {
+                name,
+                ty: Type::Str,
+                ..
+            } => {
+                scope.declare(name, WatTy::I32);
+                scope.str_names.push(name.clone());
+            }
             Stmt::Let { name, ty, .. } => {
                 let wt = map_type(ty)?;
                 scope.declare(name, wt);
@@ -2231,6 +2338,18 @@ fn emit_stmt(
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
             }
+            // PMAT-1028: a str-name binding routes through the dedicated
+            // string lowering — its value must be string-VALUED (a str name,
+            // a literal, a Concat/Chr/s[i] result), NOT merely i32-typed (a
+            // bool is i32 too; the generic typed path could silently bind a
+            // 0/1 as a "pointer"). Strings are immutable in Python, so the
+            // pointer copy IS reference semantics — no disposition needed.
+            if scope.is_str_name(name) {
+                emit_str_expr(value, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "local.set ${name}").expect("write");
+                return Ok(());
+            }
             let wt = scope.ty_of(name)?;
             emit_expr_typed(value, scope, out, depth, wt)?;
             indent(out, depth);
@@ -2240,6 +2359,17 @@ fn emit_stmt(
         Stmt::Assign { name, value } => {
             if let Some(kind) = scope.heap_map_kind(name) {
                 emit_heap_map_bind(value, kind, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "local.set ${name}").expect("write");
+                return Ok(());
+            }
+            // PMAT-1028: str reassignment — the string-ACCUMULATOR idiom
+            // (`out = out + chr(…)` in a loop). Concat allocates a fresh
+            // heap string each pass; rebinding the local to the new pointer
+            // is exactly CPython's immutable-str rebind. Covers str PARAM
+            // reassignment too (params are in the str-name set).
+            if scope.is_str_name(name) {
+                emit_str_expr(value, scope, out, depth)?;
                 indent(out, depth);
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
@@ -2894,18 +3024,18 @@ fn emit_len(
     let Expr::Ident(name) = collection else {
         return Err(unsupported(
             "len() of a non-name collection — the WASM subset only takes \
-             len() of a `list[scalar]` or `str` PARAMETER (its i32 length \
+             len() of a `list[scalar]` param or a `str` name (its i32 length \
              header); len of a list literal / dict / temporary is refused",
         ));
     };
     if scope.list_elem_of(name).is_none()
-        && !scope.is_str_param(name)
+        && !scope.is_str_name(name)
         && scope.heap_map_kind(name).is_none()
     {
         return Err(unsupported(&format!(
-            "len() over `{name}` which is not a `list[scalar]`/`str` parameter \
-             or a `dict`/`set` local — only those carry the i32 count header at \
-             base+0 in the WASM subset"
+            "len() over `{name}` which is not a `list[scalar]` parameter, a \
+             `str` param/local, or a `dict`/`set` local — only those carry the \
+             i32 count header at base+0 in the WASM subset"
         )));
     }
     // PMAT-995: len = (i32 header at base+0) zero-extended to i64. Identical for
@@ -2960,10 +3090,10 @@ fn emit_ord(
              over a `str` parameter (i32 base-pointer) is supported",
         ));
     };
-    if !scope.is_str_param(name) {
+    if !scope.is_str_name(name) {
         return Err(unsupported(&format!(
-            "ord({name}[i]) where `{name}` is not a `str` parameter — only a \
-             str param (i32 base-pointer into linear memory) supports \
+            "ord({name}[i]) where `{name}` is not a `str` param or local — \
+             only a str name (i32 base-pointer into linear memory) supports \
              per-byte ord() in the WASM subset"
         )));
     }
@@ -3065,15 +3195,16 @@ fn emit_str_expr(
     depth: usize,
 ) -> Result<(), BackendError> {
     match e {
-        Expr::Ident(name) if scope.is_str_param(name) => {
+        Expr::Ident(name) if scope.is_str_name(name) => {
             indent(out, depth);
             writeln!(out, "local.get ${name}").expect("write");
             Ok(())
         }
         Expr::Ident(name) => Err(unsupported(&format!(
-            "string-position use of `{name}` which is not a `str` parameter — \
-             the WASM string subset has no str locals (only str params, string \
-             literals, and heap-constructed Concat/Chr/s[i] results)"
+            "string-position use of `{name}` which is not a `str` parameter or \
+             str-annotated local — the WASM string subset carries str params, \
+             str locals (PMAT-1028), string literals, and heap-constructed \
+             Concat/Chr/s[i] results"
         ))),
         // PMAT-994: a string LITERAL is a constant pointer to its static
         // `(data …)` segment in `[LITERAL_BASE, HEAP_BASE)`. It shares the
@@ -3104,10 +3235,31 @@ fn emit_str_expr(
             emit_str_char_at(string, index, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1028: a CALL of a PROVEN str-returning callable (free fn,
+        // `Struct::__init__`-style assoc fn) in a string position — the
+        // factory-composition idiom `s: str = build(5)`. Delegates to the
+        // typed value-position lowering (PMAT-1026: arity-checked, exactly
+        // typed from the registry). Gated on the str-returner set, NOT the
+        // i32 result alone — a bool/struct-returning call is i32 too and
+        // must keep refusing here.
+        Expr::Call { callee, .. } if scope.call_returns_str(callee) => {
+            emit_expr_typed(e, scope, out, depth, WatTy::I32)?;
+            Ok(())
+        }
+        // PMAT-1028: same for a str-returning METHOD on a struct local/param
+        // (`obj.render()` feeding a string position).
+        Expr::MethodCall { obj, method, .. }
+            if matches!(obj.as_ref(), Expr::Ident(o)
+                if scope.struct_of(o).is_some_and(|s| scope.method_returns_str(&s, method))) =>
+        {
+            emit_expr_typed(e, scope, out, depth, WatTy::I32)?;
+            Ok(())
+        }
         other => Err(unsupported(&format!(
             "expression {} in a string position — the WASM string subset \
-             returns a `str` param, a string literal, a `Concat` (a + b), a \
-             `Chr` (chr(n)), or `s[i]`; slicing / str() / f-strings are refused",
+             returns a `str` name (param/local), a string literal, a `Concat` \
+             (a + b), a `Chr` (chr(n)), `s[i]`, or a str-returning call; \
+             slicing / str() / f-strings are refused",
             expr_kind(other)
         ))),
     }
@@ -3602,6 +3754,48 @@ fn build_method_registry(
     Ok((reg, assoc))
 }
 
+/// PMAT-1028: the module's str-RETURNING callables. `keys` holds free-fn
+/// names and `<Struct>::<name>` assoc-fn call keys; `methods` holds
+/// `(struct, method)` pairs for `self`-receiver instance methods. Consulted
+/// by string-position lowering (`emit_str_expr`): a call's i32 result alone
+/// cannot prove str-ness (bool and struct returns are i32 too), so only
+/// callables in this set may feed a string position.
+#[derive(Default)]
+struct StrReturners {
+    keys: Vec<String>,
+    methods: Vec<(String, String)>,
+}
+
+/// Build the module's str-returner set — every free function, associated
+/// fn, and instance method whose declared return type is `Type::Str`.
+fn build_str_returners(module: &Module) -> StrReturners {
+    let mut out = StrReturners::default();
+    for item in &module.items {
+        match item {
+            Item::Function(f) if matches!(f.return_type, Type::Str) => {
+                out.keys.push(f.name.clone());
+            }
+            Item::Struct { name, methods, .. } => {
+                for m in methods {
+                    if !matches!(m.return_type, Type::Str) {
+                        continue;
+                    }
+                    let has_self = m.params.first().is_some_and(
+                        |p| matches!((&p.name, &p.ty), (n, Type::Struct(s)) if n == "self" && s == name),
+                    );
+                    if has_self {
+                        out.methods.push((name.clone(), m.name.clone()));
+                    } else {
+                        out.keys.push(format!("{name}::{}", m.name));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// PMAT-1024: build the FREE-function signature registry (plain fn name →
 /// param WAT types + result shape). Statement-position plain calls
 /// (`Stmt::SideEffectCall { call: Expr::Call }` — the `bump(c)`
@@ -4073,14 +4267,19 @@ fn emit_unop(
     }
 }
 
-/// PMAT-994: `true` if `e` is a string-VALUED binop operand — a str param
-/// `Ident`, a string literal, a `Concat`, a `Chr`, or a bare `StrCharAt`. Such
-/// an operand is an i32 base-pointer, NOT an arithmetic/bool value; a `==`/`!=`
-/// over it routes to the content-compare helper, any other op is refused.
+/// PMAT-994: `true` if `e` is a string-VALUED binop operand — a str-name
+/// `Ident` (param or PMAT-1028 local), a string literal, a `Concat`, a `Chr`,
+/// a bare `StrCharAt`, or PMAT-1028 a call/method-call of a PROVEN
+/// str-returning callable. Such an operand is an i32 base-pointer, NOT an
+/// arithmetic/bool value; a `==`/`!=` over it routes to the content-compare
+/// helper, any other op is refused.
 fn binop_operand_is_string(e: &Expr, scope: &Scope) -> bool {
     match e {
-        Expr::Ident(name) => scope.is_str_param(name),
+        Expr::Ident(name) => scope.is_str_name(name),
         Expr::LitStr(_) | Expr::Concat { .. } | Expr::Chr { .. } | Expr::StrCharAt { .. } => true,
+        Expr::Call { callee, .. } => scope.call_returns_str(callee),
+        Expr::MethodCall { obj, method, .. } => matches!(obj.as_ref(), Expr::Ident(o)
+            if scope.struct_of(o).is_some_and(|s| scope.method_returns_str(&s, method))),
         _ => false,
     }
 }
