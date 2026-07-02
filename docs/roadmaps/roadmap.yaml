@@ -626,6 +626,50 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'The loop-var-leak idiom is COMMON Python. Key lesson: PROBE the existing machinery before writing new — the fix was a 1-expression generalization (Name-lookup → probe-lower) of an existing pre-pass, not new hoisting logic. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1025
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1025: [discipline/sweep-10 + frontend/capability] Adversarial differential sweep #10 on the day-old WASM OOP/alias lane (PMAT-1023/1024) + FIRST RESPONSE: field DISCOVERY from `__init__`. THE SWEEP (31 adversarial programs through the real CLI -> wat2wasm -> wasm-interp, value-matched vs CPython): ZERO silent divergences on the executable surface — 19/19 executed cases value-match (transitive alias chains, rebind-severs, branch-phi aliases, helper-launders, distinct-object independence, field aug-assign via alias, two-field offsets, method-calls-method, mutate-in-expr-position, recursive helper mutation, float fields); the dict-alias relocation-hazard lock, struct-== pointer-identity refusal, and PMAT-884/1020 guards all held. FOUR refutation-grade findings, ALL over-refusals/diagnostics (fail-loud honesty held): (1) FIELD DISCOVERY — the entire PMAT-1016..1024 OOP surface accepted ONLY the class-body-declaration style; `self.n: int = n` (PEP 526, the idiom typed Python actually writes) refused "non-Name annotated-assignment target" and undeclared `self.n = n` refused "no such field", on BOTH lanes — the shipped fixtures quietly dodged the standard idiom; (2) free functions returning a struct refuse at the WASM backend ("expected i32 but lowered i64") — the PMAT-1023 "struct returns upgraded" claim covered only the AssocFnRegistry ctor path, not the plain FnSig lane (-> PMAT-1026); (3) the factually-wrong "only subprocess.run([...]) is recognised" diagnostic resurfaces for statement method-calls on unknown-typed receivers (-> PMAT-1027); (4) collect_container_mutated is NAME-keyed — a struct method named `add`/`pop`/`update`/... false-refuses through an alias on the reference lane (isolated: `b.add(5)` refuses while `b.plus(5)` executes); the safe fix needs the typed disposition pass, since exempting the names would silently unlock genuine set/dict alias hazards (-> PMAT-1027). THE FIX (finding 1, frontend-wide, all targets): class_def_signature discovers fields from top-level `__init__` statements — `self.f: T = v` declares f: T (conflict with a class-body declaration refuses "must agree"); undeclared `self.f = v` infers from the assigned param''s annotation or a literal RHS (computed RHS keeps a precise how-to-fix refusal); lower_ann_assign lowers `obj.field: T = value` via a shared lower_field_assign helper (extracted from the PMAT-506c Assign arm; annotation must match the registered field type; empty `[]`/`{}` values thread the FIELD''s declared type); walk_counts marks AnnAssign-attribute receivers mutable (loop-aware); for_target_mutated_ast gets the AnnAssign arm so PEP 526 stores drive &mut self.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "SWEEP: 31 adversarial cases, 19 executed 19 value-matched (zero silent divergences), 12 refusals all honest-and-precise except the 4 filed findings. Finding 4 isolated to the name collision (b.add(5) refuses / b.plus(5) executes -> 6 == CPython)."
+  - "FIX EXECUTED both lanes: init_field_discovery.py (NO class-body declarations; PEP 526 + param-inferred + literal-inferred fields; PEP 526 store in incr()) -> rustc-compiled run() == 521 == CPython AND wat2wasm + wasm-interp run() => i64:521. The sweep battery re-run post-fix: the PEP 526 battery goes 19/19 MATCH (was 0 executed / 30 refused); the bare-assign battery 18/18 with only the computed-RHS ctor case keeping its precise inference refusal."
+  - "Unit: discovered fields [(n,I64),(limit,I64),(hits,I64)] in assignment order; &mut self driven by the PEP 526 store; conflicting class-body vs __init__ annotation refuses 'must agree'; computed-RHS undeclared field refuses 'cannot be inferred'. Zero regressions: depyler-frontend 22 (19+3), xpile e2e 706 (705+1) green."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Sweep cadence honored (5 slices since sweep #9; the fresh PMAT-1023/1024 surface was the target — same day-old-surface pattern that made sweep #8 productive). The core result is a CONFIDENCE upgrade: the reference-semantics execution model itself held on every adversarial shape tried; every gap found was an over-refusal, not a lie. Field discovery was the right first response — it unblocks the idiom EVERY future OOP fixture/user program will write and retro-unlocks the whole PMAT-1016..1024 surface for real-world Python. Follow-ups filed: PMAT-1026 (free-fn struct-return i32 typing on the WASM lane), PMAT-1027 (typed mutation-shape classification + the wrong subprocess diagnostic).'
+- id: PMAT-1026
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1026: [wasm/capability] Free-function STRUCT returns on the WASM lane — sweep #10 finding (2). `def make() -> Counter: return Counter(3)` then `c = make(); c.incr()` refuses "type mismatch — expected WASM i32 but expression lowered to i64" (same for the returns-param identity shape `def pick(c: Counter) -> Counter: return c`). The PMAT-1023 AssocFnRegistry fixed exactly this conservative-i64 mistyping for `Class::__init__` call sites; plain free functions returning Type::Struct still type i64 at their call sites. Fix: thread the FnSig return type into the WASM call-site typing (the registry/FnSig already knows Type::Struct -> i32 base-pointer); factory + identity + chained-call witnesses value-matched vs CPython; the Rust lane is unaffected (already executes factories).'
+  status: pending
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - 'EXECUTED vs CPython on the wasm lane: factory (make() -> mutate -> read == 4), identity/returns-param (pick(a) alias executes reference semantics), and a ctor-arg chain. No regression in the 15 wasm-codegen suites + 706 e2e.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-1025 (sweep #10). Honest today (fail-loud refusal), but the factory-function idiom is core OOP Python; the fix is the same shape PMAT-1023 already proved for ctors.'
+- id: PMAT-1027
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1027: [frontend/precision] TYPED mutation-shape classification — sweep #10 findings (3)+(4). (4) collect_container_mutated keys on METHOD NAME (append/add/pop/update/remove/clear/...), so a struct method that happens to share a builtin-mutator name false-refuses through an alias on the reference lane (`b.add(5)` refuses while the identical `b.plus(5)` executes; `add` is the natural name for accumulators). The safe fix is NOT to exempt module-defined method names in the type-blind AST pass — a genuinely set-typed receiver would then silently lose its relocation-hazard refusal; instead move the builtin-mutator gate to the TYPED per-site disposition (the same migration PMAT-1022 did for the subscript edge, keying on the receiver''s lowered type: Struct-typed receiver + module-defined method -> struct-shaped, executes; Set/Dict/List-typed receiver -> container-shaped, keeps the refusal). (3) statement-position method calls on an UNKNOWN-typed receiver (e.g. bound from an unannotated method''s return) refuse with the factually-wrong "only subprocess.run([...]) is recognised at v0.1.0" message — the same wrong-diagnostic class PMAT-1022(a) fixed for self.field receivers; emit a precise "cannot type receiver `b` (annotate `me`''s return) " refusal instead.'
+  status: pending
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - '(4): a struct method named `add`/`update`/`pop` mutated through an alias EXECUTES value-matched vs CPython on the wasm lane; a set/dict receiver with the same method names KEEPS the refusal (relocation-hazard lock re-pinned). (3): the unknown-receiver statement call names the receiver and the missing annotation, never subprocess.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-1025 (sweep #10). Finding 4 is the sharper one: it is a false refusal keyed on an accident of naming, and the isolation proved the classifier (not the alias analysis) is the culprit.'
 - id: PMAT-1024
   github_issue: null
   item_type: task

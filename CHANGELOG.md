@@ -7,6 +7,38 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Sweep #10 + field discovery from `__init__` (PMAT-1025)
+
+- **Adversarial differential sweep #10** hit the day-old WASM OOP/alias lane
+  (PMAT-1023/1024) with 31 adversarial programs through the real CLI →
+  wat2wasm → wasm-interp, value-matched vs CPython. **Zero silent divergences
+  on the executable surface** — 19/19 executed cases match (transitive alias
+  chains, rebind-severs, branch-phi aliases, helper launders, distinct-object
+  independence, field aug-assign via alias, recursive helper mutation, float
+  fields); the dict-alias relocation-hazard lock, struct-`==`
+  pointer-identity refusal, and PMAT-884/1020 guards all held. Four
+  refutation-grade findings, ALL over-refusals/diagnostics: the field-idiom
+  gap (fixed below), free-fn struct returns mistyping i64 on the WASM lane
+  (→ PMAT-1026), the wrong `subprocess.run` diagnostic on unknown-typed
+  receivers and the NAME-keyed mutator classifier false-refusing struct
+  methods named `add`/`pop`/`update`/… through aliases (→ PMAT-1027;
+  isolated: `b.add(5)` refused while the identical `b.plus(5)` executed).
+- **First response — field DISCOVERY from `__init__`** (frontend-wide, all
+  targets): the entire PMAT-1016..1024 OOP surface accepted only class-body
+  field declarations; `self.n: int = n` (PEP 526 — the idiom typed Python
+  actually writes) refused "non-Name annotated-assignment target" and an
+  undeclared `self.n = n` refused "no such field", on BOTH lanes. Now:
+  `self.f: T = v` in `__init__` declares `f: T` (a conflicting class-body
+  declaration refuses "must agree"); an undeclared `self.f = v` infers its
+  type from the assigned parameter's annotation or a literal RHS (a computed
+  RHS keeps a precise how-to-fix refusal); `obj.field: T = value` lowers as a
+  field store anywhere (shared `lower_field_assign`; annotation must match
+  the registered field type; empty `[]`/`{}` values thread the FIELD's
+  declared type); PEP 526 stores mark the receiver mutable and drive
+  `&mut self` exactly like bare assigns. Witness: `init_field_discovery.py`
+  (no class-body declarations, all three idioms) executes 521 == CPython on
+  the Rust AND WASM lanes.
+
 ### Target-aware alias disposition — Python aliasing EXECUTES on WASM (PMAT-1024)
 
 - **The PMAT-1023 residual discharged**: the frontend's value-semantics alias
