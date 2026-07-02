@@ -459,6 +459,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         Stmt::NestedSubscriptAssign { steps, value, .. } => {
             steps.iter().any(|(i, _)| expr_has_int_arith(i)) || expr_has_int_arith(value)
         }
+        // PMAT-1037: field subscript store — recurse into step indices + value.
+        Stmt::FieldIndexAssign { steps, value, .. } => {
+            steps.iter().any(|(i, _)| expr_has_int_arith(i)) || expr_has_int_arith(value)
+        }
         // PMAT-506c: field assignment — the assigned value may carry int arith.
         Stmt::FieldAssign { value, .. } => expr_has_int_arith(value),
         // PMAT-502at: del coll[key] — recurse into the key expression.
@@ -1016,6 +1020,30 @@ pub enum Stmt {
     NestedSubscriptAssign {
         base: String,
         /// `(index, is_dict)` per level, base→leaf; `len >= 2`.
+        steps: Vec<(Expr, bool)>,
+        value: Expr,
+    },
+    /// PMAT-1037: subscript store through a STRUCT FIELD — Python
+    /// `self.counts[i] = v` / `self.cells[r][c] = v` inside a method, or
+    /// `obj.field[k] = v` on a struct-typed local. The receiver is
+    /// `obj.field` (like [`Stmt::FieldAssign`], `obj` is a plain bound
+    /// name — `"self"` inside methods); `steps` is the per-level
+    /// `(index, is_dict)` path, base→leaf, `len >= 1` (unlike
+    /// [`Stmt::NestedSubscriptAssign`] a SINGLE step lands here too — the
+    /// field access replaces the plain-Name base of
+    /// [`Stmt::IndexAssign`]/[`Stmt::DictSet`]).
+    ///
+    /// Backends:
+    ///   * Rust / Ruchy: reuse the [`Stmt::NestedSubscriptAssign`] emitter
+    ///     with base `<obj>.<field>` — RHS-first sequencing (E0502),
+    ///     per-level `get_mut(&k).unwrap()` (dict, KeyError-on-absent) /
+    ///     negative-index wrap (list).
+    ///   * Lean / Shell / Wasm: refuse (in-place mutation, same
+    ///     monadic-encoding gap as `IndexAssign`).
+    FieldIndexAssign {
+        obj: String,
+        field: String,
+        /// `(index, is_dict)` per level, base→leaf; `len >= 1`.
         steps: Vec<(Expr, bool)>,
         value: Expr,
     },
@@ -3758,6 +3786,15 @@ fn escape_stmt(s: &mut Stmt) {
             }
             escape_expr(value);
         }
+        Stmt::FieldIndexAssign {
+            obj, steps, value, ..
+        } => {
+            escape_name(obj);
+            for (i, _) in steps {
+                escape_expr(i);
+            }
+            escape_expr(value);
+        }
         Stmt::FieldAssign { obj, value, .. } => {
             escape_name(obj);
             escape_expr(value);
@@ -4268,6 +4305,15 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
             }
             collect_idents_expr(value, acc);
         }
+        Stmt::FieldIndexAssign {
+            obj, steps, value, ..
+        } => {
+            acc.insert(obj.clone());
+            for (i, _) in steps {
+                collect_idents_expr(i, acc);
+            }
+            collect_idents_expr(value, acc);
+        }
         Stmt::FieldAssign { obj, value, .. } => {
             acc.insert(obj.clone());
             collect_idents_expr(value, acc);
@@ -4539,6 +4585,7 @@ fn retype_stmt(
         | Stmt::DictUpdate { .. }
         | Stmt::DictSetdefaultAppend { .. }
         | Stmt::NestedSubscriptAssign { .. }
+        | Stmt::FieldIndexAssign { .. }
         | Stmt::FieldAssign { .. }
         | Stmt::DelItem { .. }
         | Stmt::SideEffectCall { .. }

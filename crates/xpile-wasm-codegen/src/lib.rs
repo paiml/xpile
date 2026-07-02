@@ -3090,6 +3090,9 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             | Stmt::Return(_)
             | Stmt::Break
             | Stmt::Continue => {}
+            // PMAT-1034: a `raise` (→ `unreachable` trap) introduces no
+            // locals — its message expression is never evaluated on WASM.
+            Stmt::Raise { .. } => {}
             // PMAT-1033: growth stays REFUSED precisely — a fixed-size list
             // record cannot grow in place on the bump heap, and relocating it
             // would silently break every alias holding the old base-pointer
@@ -3132,6 +3135,7 @@ fn stmt_kind(s: &Stmt) -> &'static str {
         Stmt::Print { .. } => "Print",
         Stmt::IndexAssign { .. } => "IndexAssign",
         Stmt::FieldAssign { .. } => "FieldAssign",
+        Stmt::FieldIndexAssign { .. } => "FieldIndexAssign",
         Stmt::SideEffectCall { .. } => "SideEffectCall",
         _ => "<container/aggregate statement>",
     }
@@ -3366,6 +3370,19 @@ fn emit_stmt(
             indices,
             value,
         } => emit_index_assign(list_name, indices, value, scope, out, depth),
+        // PMAT-1034: `raise Exc("…")` — Python's raise is an error exit; the
+        // WASM analogue is an `unreachable` trap, matching the existing
+        // IndexError/TypeError-analogue trap posture (PMAT-968/1030). The
+        // message expression is NOT evaluated or carried (a WAT trap has no
+        // payload); the raise/no-raise boundary is what the lane preserves.
+        // First producer: the empty-iterable loop-var-leak guard (the
+        // UnboundLocalError analogue), which traps exactly where CPython
+        // raises.
+        Stmt::Raise { .. } => {
+            indent(out, depth);
+            writeln!(out, "unreachable ;; raise (Python exception analogue)").expect("write");
+            Ok(())
+        }
         other => Err(unsupported(&format!(
             "statement {} (outside the WASM scalar/control subset)",
             stmt_kind(other)

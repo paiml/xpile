@@ -29,7 +29,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
-use xpile_frontend::{AliasSemantics, Frontend, FrontendError};
+use xpile_frontend::{AliasSemantics, Frontend, FrontendError, LoweringProfile};
 use xpile_meta_hir::{
     collect_block_idents, BinOp, Block, DictViewKind, Expr, FfiBoundary, FloatOp, Function, Item,
     ListMutateOp, ListQueryOp, Module, NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp,
@@ -228,6 +228,28 @@ struct LoweringCtx {
     /// value-semantics alias dispositions are skipped for pointer-stable
     /// types (see [`reference_native`]).
     alias_semantics: AliasSemantics,
+    /// PMAT-1034: the target can express a runtime abort (Rust/Ruchy
+    /// `panic!`, WASM `unreachable`), so the empty-iterable loop-var-leak
+    /// guard (`UnboundLocalError` analogue) may be emitted. `false` for
+    /// no-abort lanes (PTX/WGSL/SPIR-V/Lean/shell), where the guard would
+    /// refuse shapes those lanes execute exactly on non-empty input.
+    runtime_abort: bool,
+    /// PMAT-1034: a minted-but-not-yet-consumed leak-guard flag,
+    /// `(flag_name, loop_var)`. Set by `lower_function_def` just before it
+    /// lowers a top-level `for` whose FRESH single-name target is read
+    /// unconditionally after the loop; consumed (taken) by the loop
+    /// lowering, which pushes `flag = true` at the top of the loop body iff
+    /// the loop actually leak-assigns that var (and reports back via
+    /// [`Self::leak_flag_consumed`]). Always `None` while a loop BODY is
+    /// being lowered — both single-target loop paths take it before their
+    /// body statements lower, so a nested loop can never mis-consume an
+    /// outer loop's flag.
+    pending_leak_flag: Option<(String, String)>,
+    /// PMAT-1034: whether the last pending leak flag was actually consumed
+    /// (the loop pushed `flag = true` into its body). `lower_function_def`
+    /// reads-and-resets this after lowering the `for`; only a consumed flag
+    /// gets its `let mut flag = false` declaration and post-loop guard.
+    leak_flag_consumed: bool,
 }
 
 impl LoweringCtx {
@@ -301,6 +323,17 @@ impl LoweringCtx {
         format!("__fe{n}")
     }
 
+    /// PMAT-1034: a fresh `__feset{N}` was-bound flag for the empty-iterable
+    /// loop-var-leak guard (`for x in xs:` with a fresh `x` read after the
+    /// loop — CPython raises `UnboundLocalError` when `xs` was empty; the
+    /// flag records whether the loop body ever ran). Shares the loop counter
+    /// so it never collides with `__forc{N}`/`__fe{N}`/`__broke{N}`.
+    fn fresh_leak_flag(&mut self) -> String {
+        let n = self.loop_counter;
+        self.loop_counter += 1;
+        format!("__feset{n}")
+    }
+
     /// PMAT-798: a fresh `__unpack{N}` name for the loop var of an N-arity
     /// tuple-unpack `for`-target desugar. Shares the loop counter (never collides).
     fn fresh_unpack(&mut self) -> String {
@@ -355,7 +388,7 @@ impl LoweringCtx {
         frozen_structs: Rc<HashSet<String>>,
         enums: Rc<HashMap<String, Vec<(String, i64)>>>,
         mutating_methods: Rc<HashSet<String>>,
-        alias_semantics: AliasSemantics,
+        profile: LoweringProfile,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -419,7 +452,10 @@ impl LoweringCtx {
             loop_pure_vars: HashSet::new(),
             loop_scoped: HashSet::new(),
             cls_name: None,
-            alias_semantics,
+            alias_semantics: profile.alias_semantics,
+            runtime_abort: profile.runtime_abort,
+            pending_leak_flag: None,
+            leak_flag_consumed: false,
         }
     }
 }
@@ -2395,6 +2431,29 @@ impl Frontend for PythonFrontend {
         source: &str,
         semantics: AliasSemantics,
     ) -> Result<Module, FrontendError> {
+        self.parse_and_lower_profiled(
+            path,
+            source,
+            LoweringProfile {
+                alias_semantics: semantics,
+                runtime_abort: false,
+            },
+        )
+    }
+
+    /// PMAT-1034: the full-profile lowering — [`AliasSemantics`] plus the
+    /// runtime-abort capability. `runtime_abort` targets (Rust/Ruchy/WASM)
+    /// additionally get the empty-iterable loop-var-leak guard (a fresh
+    /// `for` target read unconditionally after the loop panics/traps like
+    /// CPython's `UnboundLocalError` when the iterable never produced an
+    /// element, instead of silently executing the pre-declared default).
+    fn parse_and_lower_profiled(
+        &self,
+        path: &Path,
+        source: &str,
+        profile: LoweringProfile,
+    ) -> Result<Module, FrontendError> {
+        let semantics = profile.alias_semantics;
         let module_name = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -2687,7 +2746,7 @@ impl Frontend for PythonFrontend {
                 frozen_structs.clone(),
                 enums.clone(),
                 mutating_methods.clone(),
-                semantics,
+                profile,
             )?;
             items.push(item);
         }
@@ -3164,7 +3223,7 @@ fn lower_top_level_stmt(
     frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     mutating_methods: Rc<HashSet<String>>,
-    alias_semantics: AliasSemantics,
+    profile: LoweringProfile,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -3185,7 +3244,7 @@ fn lower_top_level_stmt(
  None,
  None,
  mutating_methods,
- alias_semantics,
+ profile,
         )
         .map(Item::Function),
         // PMAT-513: a `class C(Enum):` → an `Item::Enum` (handled before the
@@ -3204,7 +3263,7 @@ fn lower_top_level_stmt(
  frozen_structs,
  enums,
  mutating_methods,
- alias_semantics,
+ profile,
         ),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
@@ -3766,7 +3825,7 @@ fn lower_class_def(
     frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     mutating_methods: Rc<HashSet<String>>,
-    alias_semantics: AliasSemantics,
+    profile: LoweringProfile,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
     // PMAT-592/648: record `@dataclass(frozen=True)`/`(order=True)` before
@@ -3805,7 +3864,7 @@ fn lower_class_def(
                     None,
                     None,
                     mutating_methods.clone(),
-                    alias_semantics,
+                    profile,
                 )?;
                 methods.push(method);
                 continue;
@@ -3830,7 +3889,7 @@ fn lower_class_def(
                     Some(self_ty.clone()),
                     None,
                     mutating_methods.clone(),
-                    alias_semantics,
+                    profile,
                 )?;
                 if body_assigns_self(&method.body.stmts) {
                     return Err(FrontendError::Lower(format!(
@@ -3873,7 +3932,7 @@ fn lower_class_def(
                     None,
                     Some(name.clone()),
                     mutating_methods.clone(),
-                    alias_semantics,
+                    profile,
                 )?;
                 methods.push(method);
                 continue;
@@ -3903,7 +3962,7 @@ fn lower_class_def(
                 Some(self_ty.clone()),
                 None,
                 mutating_methods.clone(),
-                alias_semantics,
+                profile,
             )?;
             // PMAT-1016A: a SELF-MUTATING method (`self.field = v` /
             // `self.field += v` anywhere in the body) now lowers with a
@@ -4271,6 +4330,144 @@ fn pair_leak_decision(
     }
 }
 
+/// PMAT-1034: where the empty-iterable loop-var-leak guard belongs, relative
+/// to the function's statement list.
+enum LeakGuardPos {
+    /// Immediately before `leading[i]` — the first statement whose
+    /// always-evaluated prelude reads the leaked var.
+    Leading(usize),
+    /// After every leading statement — the first unconditional read is in the
+    /// function's final statement (the trailing `return` / a void last stmt).
+    Trailing,
+}
+
+/// PMAT-1034: how one post-loop statement relates to the leaked loop var,
+/// for the guard-placement scan.
+enum LeakReadClass {
+    /// The statement's ALWAYS-evaluated prelude reads the var — executing it
+    /// with the var unbound is exactly where CPython raises
+    /// `UnboundLocalError`, so the guard belongs immediately before it.
+    UnconditionalRead,
+    /// The statement involves the var some other way (a branch-only read, a
+    /// rebind, a possibly-conditional rebind, an unrecognized statement
+    /// kind…) — exact static placement is no longer possible, so the scan
+    /// BAILS and no guard is emitted: the divergence-on-error corner stays
+    /// open rather than risking a panic on a program CPython completes.
+    Mentions,
+    /// The statement does not involve the var at all.
+    Clean,
+}
+
+/// PMAT-1034: classify one statement for the leak-guard scan. The prelude
+/// exprs (evaluated unconditionally when the statement begins) are checked
+/// with [`count_reads_expr`]; anything else that names the var — branch-arm
+/// reads via [`count_reads_stmt`], rebinds (incl. walrus / for-targets) via
+/// [`walk_counts`] — classifies `Mentions`. Statement kinds outside the
+/// explicit list are `Mentions` whenever the scan cannot prove them clean
+/// (both walkers silent), because their evaluation order is not modeled.
+fn leak_read_class(s: &ast::Stmt, name: &str) -> LeakReadClass {
+    use ast::Stmt as S;
+    let reads = |exprs: &[&ast::Expr]| -> bool {
+        let mut counts = HashMap::new();
+        for e in exprs {
+            count_reads_expr(e, &mut counts);
+        }
+        counts.get(name).copied().unwrap_or(0) > 0
+    };
+    let prelude_read = match s {
+        S::Expr(e) => reads(&[&e.value]),
+        S::Return(r) => r.value.as_deref().map(|v| reads(&[v])).unwrap_or(false),
+        // Assignment: the value always evaluates; a NON-name target's
+        // interior (subscript index / attribute base) also loads before the
+        // store. A plain-Name target is a rebind → caught by `Mentions`.
+        S::Assign(a) => {
+            reads(&[&a.value]) || a.targets.iter().any(|t| reads(&[t]))
+        }
+        S::AnnAssign(aa) => aa.value.as_deref().map(|v| reads(&[v])).unwrap_or(false),
+        // `x <op>= e` LOADS `x` before anything else (CPython raises there
+        // even if `e` would too), and `e` always evaluates.
+        S::AugAssign(a) => {
+            matches!(a.target.as_ref(), ast::Expr::Name(n) if n.id.as_str() == name)
+                || reads(&[&a.target, &a.value])
+        }
+        S::If(i) => reads(&[&i.test]),
+        S::While(w) => reads(&[&w.test]),
+        S::For(f) => reads(&[&f.iter]),
+        // `assert t, msg`: the test always evaluates; the msg only on
+        // failure (conditional → mentions-check handles it).
+        S::Assert(a) => reads(&[&a.test]),
+        S::Pass(_) | S::Break(_) | S::Continue(_) => false,
+        // Unmodeled statement kind: never place a guard across it.
+        _ => return LeakReadClass::Mentions,
+    };
+    if prelude_read {
+        return LeakReadClass::UnconditionalRead;
+    }
+    let mut read_counts = HashMap::new();
+    count_reads_stmt(s, &mut read_counts);
+    let mentioned = read_counts.get(name).copied().unwrap_or(0) > 0
+        || walk_counts(std::slice::from_ref(s), false)
+            .get(name)
+            .copied()
+            .unwrap_or(0)
+            > 0;
+    if mentioned {
+        LeakReadClass::Mentions
+    } else {
+        LeakReadClass::Clean
+    }
+}
+
+/// PMAT-1034: find the first statement after a `for` loop that reads the
+/// fresh loop var `name` UNCONDITIONALLY (its always-evaluated prelude), so
+/// the `UnboundLocalError`-analogue guard can sit exactly where CPython
+/// raises. Returns `None` when any earlier statement involves the var in a
+/// way the scan cannot model exactly (branch-only read, rebind, closure) —
+/// no guard is emitted then, so a program CPython completes never panics.
+/// `after` is `leading[i+1..]` (positions returned relative to it); `last`
+/// is the function's final statement.
+fn leak_guard_scan(after: &[ast::Stmt], last: &ast::Stmt, name: &str) -> Option<LeakGuardPos> {
+    for (k, s) in after.iter().enumerate() {
+        match leak_read_class(s, name) {
+            LeakReadClass::UnconditionalRead => return Some(LeakGuardPos::Leading(k)),
+            LeakReadClass::Mentions => return None,
+            LeakReadClass::Clean => {
+                // A clean top-level `return` ends the function before any
+                // later read could execute — nothing beyond it runs.
+                if matches!(s, ast::Stmt::Return(_)) {
+                    return None;
+                }
+            }
+        }
+    }
+    match leak_read_class(last, name) {
+        LeakReadClass::UnconditionalRead => Some(LeakGuardPos::Trailing),
+        _ => None,
+    }
+}
+
+/// PMAT-1034: the guard itself — `if not <flag>: raise UnboundLocalError…`.
+/// Reuses the PMAT-687 `flag == false` comparison shape and the PMAT-503a
+/// `Stmt::Raise` lowering (`panic!` on Rust/Ruchy, `unreachable` trap on
+/// WASM), so no new emission machinery is needed on any lane.
+fn leak_guard_stmt(flag: &str, var: &str) -> Stmt {
+    Stmt::If {
+        cond: Expr::BinOp {
+            op: BinOp::Eq,
+            lhs: Box::new(Expr::Ident(flag.to_string())),
+            rhs: Box::new(Expr::LitBool(false)),
+        },
+        then_body: vec![Stmt::Raise {
+            message: Expr::LitStr(format!(
+                "UnboundLocalError: local variable '{var}' referenced before assignment — \
+                 the `for` loop iterated an EMPTY iterable, so `{var}` was never bound \
+                 (CPython raises exactly here)"
+            )),
+        }],
+        else_body: Vec::new(),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn lower_function_def(
     f: ast::StmtFunctionDef,
@@ -4294,9 +4491,11 @@ fn lower_function_def(
     // (AST-derived incl. the transitive fixpoint) — receivers of these calls
     // bind `mut` in the mutability pre-walk.
     mutating_methods: Rc<HashSet<String>>,
-    // PMAT-1024: the target's binding model (reference targets skip the
-    // value-semantics alias dispositions for pointer-stable types).
-    alias_semantics: AliasSemantics,
+    // PMAT-1024/1034: the target's lowering profile — binding model
+    // (reference targets skip the value-semantics alias dispositions for
+    // pointer-stable types) + runtime-abort capability (gates the
+    // empty-iterable loop-var-leak guard).
+    profile: LoweringProfile,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -4447,7 +4646,7 @@ fn lower_function_def(
         frozen_structs,
         enums,
         mutating_methods,
-        alias_semantics,
+        profile,
     );
 
     // PMAT-1020: function-local transitive alias-CLASS analysis (sweep #9's
@@ -4464,7 +4663,7 @@ fn lower_function_def(
             &__mm_for_alias,
             &ctx.signatures,
             &ctx.structs,
-            alias_semantics,
+            profile.alias_semantics,
         );
         for p in params_to_mark {
             ctx.mutable.insert(p);
@@ -4514,7 +4713,63 @@ fn lower_function_def(
     }
 
     let mut stmts: Vec<Stmt> = Vec::with_capacity(leading.len());
+    // PMAT-1034: pending empty-iterable leak guards — `(leading index, guard)`
+    // pairs flushed immediately BEFORE the indexed statement lowers, plus the
+    // guards whose first unconditional read is the function's final statement.
+    let mut leak_guards: Vec<(usize, Stmt)> = Vec::new();
+    let mut trailing_leak_guards: Vec<Stmt> = Vec::new();
     for (i, stmt) in leading.iter().enumerate() {
+        // PMAT-1034: flush any guard scheduled right before this statement
+        // (the first statement that unconditionally reads a leaked loop var).
+        while let Some(p) = leak_guards.iter().position(|(j, _)| *j == i) {
+            let (_, g) = leak_guards.remove(p);
+            stmts.push(g);
+        }
+        // PMAT-1034 (sweep #11 finding 4): a FRESH single-name `for` target
+        // read UNCONDITIONALLY after the loop diverges on an EMPTY iterable —
+        // the PMAT-838/634 leak machinery executes the pre-declared default
+        // where CPython raises `UnboundLocalError`. On runtime-abort targets
+        // (Rust/Ruchy panic, WASM trap), mint a `__feset{N}` was-bound flag:
+        // the loop lowering sets it at the top of the body (and reports
+        // consumption back), and the guard panics at exactly the statement
+        // where CPython raises. Conditional-read shapes are skipped (see
+        // `leak_guard_scan`) — the guard can never fire on a program CPython
+        // completes. Pre-BOUND targets never register (an empty loop leaves
+        // the prior value, matching Python — no divergence to close).
+        let leak_plan: Option<(String, String, LeakGuardPos)> = if ctx.runtime_abort {
+            match stmt {
+                ast::Stmt::For(forst)
+                    if forst.orelse.is_empty()
+                        && matches!(forst.target.as_ref(), ast::Expr::Name(_)) =>
+                {
+                    let ast::Expr::Name(tgt) = forst.target.as_ref() else {
+                        unreachable!("matched Name above")
+                    };
+                    let name = tgt.id.to_string();
+                    if name != "_"
+                        && !ctx.bound.contains(&name)
+                        && !ctx.loop_scoped.contains(&name)
+                    {
+                        leak_guard_scan(&leading[i + 1..], last, &name)
+                            .map(|pos| {
+                                let pos = match pos {
+                                    LeakGuardPos::Leading(k) => LeakGuardPos::Leading(i + 1 + k),
+                                    LeakGuardPos::Trailing => LeakGuardPos::Trailing,
+                                };
+                                (ctx.fresh_leak_flag(), name, pos)
+                            })
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some((flag, var, _)) = &leak_plan {
+            ctx.pending_leak_flag = Some((flag.clone(), var.clone()));
+        }
         // PMAT-838 (HUNT-V26 #1): Python leaks a `for` loop variable into the
         // enclosing scope — `for x in xs: …` then `return x` reads the last
         // iterated value. A range loop already leaks via the while-rewrite
@@ -4666,13 +4921,46 @@ fn lower_function_def(
         // statements — most notably a multi-assignment `if/else`, where
         // each assigned name gets its own `Let` with an `IfExpr` value
         // (PMAT-005), or a `while` whose body lowers to a nested vec.
-        stmts.extend(lower_block_stmt(&mut ctx, stmt.clone())?);
+        let lowered = lower_block_stmt(&mut ctx, stmt.clone())?;
+        // PMAT-1034: settle the leak plan. Only a CONSUMED flag (the loop
+        // lowering pushed `flag = true` into its body) gets its declaration
+        // and guard — an unconsumed plan (a loop shape without the leak
+        // assign, e.g. a dict/set iterable whose fresh var stays natively
+        // loop-scoped and is E0425-loud on a post-loop read) emits nothing.
+        ctx.pending_leak_flag = None;
+        let leak_consumed = std::mem::take(&mut ctx.leak_flag_consumed);
+        if let Some((flag, var, pos)) = leak_plan {
+            if leak_consumed {
+                stmts.push(Stmt::Let {
+                    name: flag.clone(),
+                    ty: Type::Bool,
+                    value: Expr::LitBool(false),
+                    mutable: true,
+                });
+                match pos {
+                    LeakGuardPos::Leading(j) => {
+                        leak_guards.push((j, leak_guard_stmt(&flag, &var)));
+                    }
+                    LeakGuardPos::Trailing => {
+                        trailing_leak_guards.push(leak_guard_stmt(&flag, &var));
+                    }
+                }
+            }
+        }
+        stmts.extend(lowered);
         // PMAT-502ez: after a provably-exiting `if x is None: return …` guard,
         // narrow `x` to `Some` for the remaining (and trailing) statements.
         // (Function-body level — not inside a loop, so `continue`/`break` don't
         // count as guard exits here.)
         register_none_guard_narrowing(&mut ctx, stmt, /*in_loop=*/ false);
     }
+
+    // PMAT-1034: guards whose first unconditional read is the function's
+    // final statement (the trailing `return <expr>` of a value function, or
+    // the last statement of a void one) sit after every leading statement —
+    // any leading early-return exits before them, exactly as CPython never
+    // reaches the raising read on that path.
+    stmts.extend(trailing_leak_guards);
 
     // PMAT-502bl: a void (`-> None`) function has no trailing `return
     // expr` — its last statement is a regular (side-effecting) statement,
@@ -7180,6 +7468,20 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
                 value: Expr::Ident(loop_var.clone()),
             });
         }
+        // PMAT-1034: take the pending leak flag BEFORE the body lowers (a
+        // nested loop must never mis-consume an outer loop's flag). It is
+        // consumed — `flag = true` at the top of every iteration — only when
+        // this loop actually leak-assigns the registered var; otherwise it is
+        // dropped and `lower_function_def` emits no declaration or guard.
+        if let Some((flag, var)) = ctx.pending_leak_flag.take() {
+            if leak_to_outer && var == target_name {
+                body.push(Stmt::Assign {
+                    name: flag,
+                    value: Expr::LitBool(true),
+                });
+                ctx.leak_flag_consumed = true;
+            }
+        }
         // PMAT-893: apply `if x is None: continue` guard-narrowing INSIDE the loop
         // body (the dominant None-filter idiom). After such a provably-exiting
         // guard, the loop var is `Some` for the rest of this iteration, so reads
@@ -7467,6 +7769,21 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         name: target_name.clone(),
         value: Expr::Ident(counter.clone()),
     });
+    // PMAT-1034: take the pending leak flag BEFORE the body lowers (a nested
+    // loop must never mis-consume it). A registered fresh target took the
+    // re-declare arm above, so its post-loop read sees the default when the
+    // range is EMPTY — where CPython raises UnboundLocalError. Setting the
+    // flag right after the per-iteration target assign lets the post-loop
+    // guard panic exactly there (`for i in range(0)` included).
+    if let Some((flag, var)) = ctx.pending_leak_flag.take() {
+        if var == target_name {
+            body.push(Stmt::Assign {
+                name: flag,
+                value: Expr::LitBool(true),
+            });
+            ctx.leak_flag_consumed = true;
+        }
+    }
     for stmt in f.body {
         body.extend(lower_block_stmt(ctx, stmt)?);
     }
