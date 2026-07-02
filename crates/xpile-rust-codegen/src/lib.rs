@@ -1543,7 +1543,7 @@ fn emit_stmt_indented(
                 // via OpenOptions + write_all (std::fs::write only truncates).
                 write!(out, "{indent}{{ use ::std::io::Write as _; let mut __wf = ::std::fs::OpenOptions::new().create(true).append(true).open(&(")?;
                 emit_expr(out, path, mode)?;
-                out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }); __wf.write_all((&("##);
+                out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!("xpile: PermissionError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }); __wf.write_all((&("##);
                 emit_expr(out, content, mode)?;
                 out.push_str(r##")).as_bytes()).unwrap_or_else(|__e| panic!("xpile: OSError: {}", __e)); }"##);
                 writeln!(out)?;
@@ -1556,7 +1556,7 @@ fn emit_stmt_indented(
             emit_expr(out, path, mode)?;
             out.push_str("), &(");
             emit_expr(out, content, mode)?;
-            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) });"##);
+            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!("xpile: PermissionError: {}", __e) } else { panic!("xpile: OSError: {}", __e) });"##);
             writeln!(out)?;
             Ok(())
         }
@@ -4392,17 +4392,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-1074: `open(path).read()` → inline std::fs::read_to_string with a
         // panic on error. NotFound → FileNotFoundError (matches CPython's
-        // open()), any other io error → OSError; both make CPython + rustc RAISE.
+        // open()), PermissionDenied → PermissionError (PMAT-1081), any other io
+        // error → OSError; all make CPython + rustc RAISE.
+        // PMAT-1081: (a) the path is BORROWED (`&(...)`) so a variable path is
+        // not moved — the read/modify/write idiom reuses it (E0382 otherwise);
+        // (b) CPython text mode implies UNIVERSAL NEWLINES — `\r\n` and lone
+        // `\r` both read as `\n` — so the content is normalized (CRLF first,
+        // then stray CRs; the reverse order would corrupt CRLF into `\n\n`).
         Expr::FileReadAll(path) => {
-            out.push_str("::std::fs::read_to_string(");
+            out.push_str("::std::fs::read_to_string(&(");
             emit_expr(out, path, mode)?;
-            out.push_str(r##").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) })"##);
+            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!("xpile: PermissionError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }).replace("\r\n", "\n").replace('\r', "\n")"##);
         }
         // PMAT-1077: file lines WITH keepends (split_inclusive matches CPython).
+        // PMAT-1081: same borrowed path + universal-newline normalization as
+        // FileReadAll — CPython iterates a CRLF file as `\n`-terminated lines.
         Expr::FileReadLines(path) => {
-            out.push_str("::std::fs::read_to_string(");
+            out.push_str("::std::fs::read_to_string(&(");
             emit_expr(out, path, mode)?;
-            out.push_str(r##").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }).split_inclusive('\n').map(|__l| __l.to_string()).collect::<Vec<String>>()"##);
+            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!("xpile: PermissionError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }).replace("\r\n", "\n").replace('\r', "\n").split_inclusive('\n').map(|__l| __l.to_string()).collect::<Vec<String>>()"##);
         }
         Expr::IfExpr {
             cond,
