@@ -891,6 +891,13 @@ roadmap:
   status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
+- id: PMAT-1055
+  github_issue: null
+  item_type: verification
+  title: 'PMAT-1055: [verify/adversarial] independent skeptic pass on the recent OOP codegen lane (PMAT-1037/1052/1054) — the first dedicated adversarial-verify since PMAT-987 (~67 slices), overdue vs the every-5-8-slices discipline. Recent work concentrated in the SERIAL codegen hotspot (class constants, dict-of-list grouping, field-subscript stores), exactly where a regression or silent-wrong-answer hides behind a "compiles" claim. Method: construct adversarial Python that COMBINES the per-slice capabilities in ONE class at edges the isolated fixtures never reach — a str+int class-constant set folded across methods BESIDE real instance fields, an empty-dict field grown by `self.buckets[k].append(v)` grouping, a PARALLEL insertion-order list proving dict iteration order == insertion order (indexmap vs CPython dict — the classic HashMap divergence), a class-constant threshold read inside a nested loop, a negative-index field read-back, and a class constant inside overflow-checked multiplication — then transpile -> rustc-compile -> RUN -> differential-diff vs CPython. VERDICT: SOUND, no defect — Rust output MATCHES CPython (Hzam/2/6/m) on every probe; also disproved a suspected class-constant x empty-dict-field interaction bug (the apparent failure was a STALE `./target/debug/xpile` binary shadowing the canonical `/mnt/nvme-raid0/targets/xpile` target-dir output — a harness artifact, not an xpile defect). Banks the combination as a permanent gated e2e differential test (oop_capability_combo.py + oop_capability_combo) so the interaction cannot silently regress. Contract citations on the emitted output verified present (C-XLATE-PY-CLASS-TO-STRUCT / C-PY-INT-ARITH / C-XLATE-PY-STR-TO-RUST-STRING).'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
 - id: PMAT-1051
   github_issue: null
   item_type: bug
