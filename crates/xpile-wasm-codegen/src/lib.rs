@@ -503,6 +503,19 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
             collect_expr_literals(string, out);
             collect_expr_literals(index, out);
         }
+        // PMAT-1058: a slice base / bounds may reference literals
+        // (`"hello"[1:4]`, `s[0:n]`).
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            collect_expr_literals(collection, out);
+            if let Some(b) = lo {
+                collect_expr_literals(b, out);
+            }
+            if let Some(b) = hi {
+                collect_expr_literals(b, out);
+            }
+        }
         // PMAT-995: a str-keyed dict/set lays out its KEY string literals into
         // the same deduped static `(data)` table — recurse into the dict/set
         // nodes so `{"x": 1}` / `d["y"]` / `"x" in d` register their literals.
@@ -1104,6 +1117,179 @@ const STR_CHAR_ALLOC_HELPERS: &str = "\
       i32.or
       i32.store8 offset=11
     end
+    local.get $dst
+  )
+";
+
+/// PMAT-1058: the string-SLICE helper (allocating — rides the `needs_heap`
+/// gate like [`STR_CHAR_ALLOC_HELPERS`], and calls `$__wasm_str_charlen` +
+/// `$__wasm_str_char_width` from [`STR_CHAR_HELPERS`]).
+///
+///   * `$__wasm_str_slice(s, lo, hi) -> i32` — Python `s[lo:hi]` (char-exact,
+///     no step): materialise a NEW heap string holding the CHARACTERS in the
+///     half-open range `[lo, hi)`. `lo`/`hi` are i64 CHARACTER indices with
+///     full Python slice semantics — a negative bound is normalised (`+= len`),
+///     both bounds CLAMP to `[0, len]` (out-of-range slice bounds never trap,
+///     unlike `s[i]`), and `hi` is raised to `lo` when it would fall below it
+///     (an empty slice, never a negative length). A missing bound is passed as
+///     `0` (lo) / `i64::MAX` (hi) by the lowering and clamps to `0` / `len`.
+///
+/// The substring bytes are found by two CHAR walks from `base+8` (each byte
+/// advanced by its UTF-8 lead-byte width), so the copied byte range is exactly
+/// the encoding of chars `[lo, hi)` — char-exact for non-ASCII, never a byte
+/// slice that could split a multi-byte code point. The result is a fresh
+/// length-prefixed heap string (i32 byte-count header + UTF-8 bytes), so it
+/// composes uniformly with `len` / `Concat` / equality / a str RETURN.
+const STR_SLICE_HELPER: &str = "\
+  ;; __wasm_str_slice(s, lo, hi) = a NEW heap string holding chars [lo, hi) of s
+  ;; (Python s[lo:hi], char-exact, Python clamp semantics, no step).
+  (func $__wasm_str_slice (param $s i32) (param $lo i64) (param $hi i64) (result i32)
+    (local $cl i64)
+    (local $begin i32)
+    (local $p i32)
+    (local $k i64)
+    (local $startoff i32)
+    (local $endoff i32)
+    (local $nlen i32)
+    (local $dst i32)
+    ;; cl = charlen(s); begin = base+8 (first payload byte).
+    local.get $s
+    call $__wasm_str_charlen
+    i64.extend_i32_u
+    local.set $cl
+    local.get $s
+    i32.const 8
+    i32.add
+    local.set $begin
+    ;; --- normalise lo: if lo<0 lo+=cl; then clamp to [0, cl] ---
+    local.get $lo
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $lo
+      local.get $cl
+      i64.add
+      local.set $lo
+    end
+    local.get $lo
+    i64.const 0
+    i64.lt_s
+    if
+      i64.const 0
+      local.set $lo
+    end
+    local.get $lo
+    local.get $cl
+    i64.gt_s
+    if
+      local.get $cl
+      local.set $lo
+    end
+    ;; --- normalise hi: if hi<0 hi+=cl; then clamp to [0, cl] ---
+    local.get $hi
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $hi
+      local.get $cl
+      i64.add
+      local.set $hi
+    end
+    local.get $hi
+    i64.const 0
+    i64.lt_s
+    if
+      i64.const 0
+      local.set $hi
+    end
+    local.get $hi
+    local.get $cl
+    i64.gt_s
+    if
+      local.get $cl
+      local.set $hi
+    end
+    ;; hi = max(hi, lo) — an empty slice when hi < lo, never a negative length.
+    local.get $hi
+    local.get $lo
+    i64.lt_s
+    if
+      local.get $lo
+      local.set $hi
+    end
+    ;; --- walk to the byte offset of char lo (startoff), then char hi (endoff) ---
+    local.get $begin
+    local.set $p
+    i64.const 0
+    local.set $k
+    (block $s_done
+      (loop $s_next
+        local.get $k
+        local.get $lo
+        i64.ge_s
+        br_if $s_done
+        local.get $p
+        local.get $p
+        i32.load8_u
+        call $__wasm_str_char_width
+        i32.add
+        local.set $p
+        local.get $k
+        i64.const 1
+        i64.add
+        local.set $k
+        br $s_next
+      )
+    )
+    local.get $p
+    local.get $begin
+    i32.sub
+    local.set $startoff
+    (block $e_done
+      (loop $e_next
+        local.get $k
+        local.get $hi
+        i64.ge_s
+        br_if $e_done
+        local.get $p
+        local.get $p
+        i32.load8_u
+        call $__wasm_str_char_width
+        i32.add
+        local.set $p
+        local.get $k
+        i64.const 1
+        i64.add
+        local.set $k
+        br $e_next
+      )
+    )
+    local.get $p
+    local.get $begin
+    i32.sub
+    local.set $endoff
+    ;; nlen = endoff - startoff (byte length of the substring).
+    local.get $endoff
+    local.get $startoff
+    i32.sub
+    local.set $nlen
+    ;; dst = alloc(8 + nlen); header = nlen; copy the bytes.
+    local.get $nlen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $nlen
+    i32.store
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.get $begin
+    local.get $startoff
+    i32.add
+    local.get $nlen
+    memory.copy
     local.get $dst
   )
 ";
@@ -2035,6 +2221,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         out.push_str(STR_CHAR_HELPERS);
         if needs_heap {
             out.push_str(STR_CHAR_ALLOC_HELPERS);
+            // PMAT-1058: the string-SLICE helper (`s[lo:hi]`) — allocating, so
+            // it rides `needs_heap`; gated further on an actual slice use so a
+            // heap-string module with no slice carries no dead helper.
+            if module_uses_str_slice(module) {
+                out.push_str(STR_SLICE_HELPER);
+            }
         }
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
@@ -2215,6 +2407,87 @@ fn expr_touches_str(e: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => {
             expr_touches_str(obj) || args.iter().any(expr_touches_str)
         }
+        Expr::Slice { collection, .. } => expr_touches_str(collection),
+        _ => false,
+    }
+}
+
+/// PMAT-1058: `true` when any function in `module` uses a supported string
+/// slice `s[lo:hi]` (`Expr::Slice { of_str: true, step: None }`) — the gate for
+/// emitting [`STR_SLICE_HELPER`]. A stepped string slice or a list slice is
+/// refused at lowering (not counted here), so the helper is emitted only for a
+/// module that actually materialises a substring.
+fn module_uses_str_slice(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_str_slice(&f.body))
+}
+
+fn block_has_str_slice(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_str_slice) || expr_has_str_slice(&block.trailing_return)
+}
+
+fn stmt_has_str_slice(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
+            expr_has_str_slice(value)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_str_slice(cond)
+                || then_body.iter().any(stmt_has_str_slice)
+                || else_body.iter().any(stmt_has_str_slice)
+        }
+        Stmt::While { cond, body } => {
+            expr_has_str_slice(cond) || body.iter().any(stmt_has_str_slice)
+        }
+        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
+            expr_has_str_slice(value)
+        }
+        Stmt::SideEffectCall { call } => expr_has_str_slice(call),
+        _ => false,
+    }
+}
+
+fn expr_has_str_slice(e: &Expr) -> bool {
+    match e {
+        // this node IS a supported string slice — no need to recurse further.
+        Expr::Slice {
+            of_str: true,
+            step: None,
+            ..
+        } => true,
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_has_str_slice(collection)
+                || lo.as_deref().is_some_and(expr_has_str_slice)
+                || hi.as_deref().is_some_and(expr_has_str_slice)
+        }
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => expr_has_str_slice(lhs) || expr_has_str_slice(rhs),
+        Expr::UnOp { operand, .. } => expr_has_str_slice(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_str_slice(cond)
+                || expr_has_str_slice(then_expr)
+                || expr_has_str_slice(else_expr)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_str_slice),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_str_slice(obj) || args.iter().any(expr_has_str_slice)
+        }
+        Expr::Len(c) => expr_has_str_slice(c),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_slice(value),
+        Expr::StrCharAt { string, index } => {
+            expr_has_str_slice(string) || expr_has_str_slice(index)
+        }
+        Expr::FieldAccess { obj, .. } => expr_has_str_slice(obj),
         _ => false,
     }
 }
@@ -2464,6 +2737,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         | Expr::StrCharAt { .. }
         | Expr::StructLit { .. }
         | Expr::ListLit(_) => true,
+        // PMAT-1058: a string slice `s[lo:hi]` materialises a fresh heap
+        // substring (calls `$__alloc`), so it pulls in the bump heap.
+        Expr::Slice { of_str: true, .. } => true,
         Expr::FieldAccess { obj, .. } => expr_has_heap_op(obj),
         Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
             expr_has_heap_op(lhs) || expr_has_heap_op(rhs)
@@ -3602,6 +3878,19 @@ fn emit_expr(
             emit_concat(lhs, rhs, scope, out, depth)?;
             Ok(WatTy::I32)
         }
+        // PMAT-1058: `s[lo:hi]` — a char-exact string slice, materialised as a
+        // NEW heap substring. The result is an i32 (the str pointer). A list
+        // slice / stepped string slice is refused inside `emit_str_slice`.
+        Expr::Slice {
+            collection,
+            lo,
+            hi,
+            of_str,
+            step,
+        } => {
+            emit_str_slice(collection, lo, hi, *of_str, *step, scope, out, depth)?;
+            Ok(WatTy::I32)
+        }
         // PMAT-995 (slice 3b): `d[k]` — keyed dict read; returns the i64 value
         // or TRAPS on an absent key (the Python KeyError analogue).
         Expr::DictGet { dict, key } => emit_dict_get(dict, key, scope, out, depth),
@@ -4014,15 +4303,78 @@ fn emit_ord(
     Ok(WatTy::I64)
 }
 
+/// PMAT-1058: lower a string slice `s[lo:hi]` — a char-exact heap substring.
+///
+/// Pushes the base string's i32 base-pointer (`emit_str_expr` — a param/local/
+/// literal/concat/… all work), then the `lo` and `hi` CHARACTER indices as
+/// `i64` (a missing bound lowers to `0` for `lo` and `i64::MAX` for `hi`, both
+/// clamped to `[0, len]` by the helper), then calls `$__wasm_str_slice`, which
+/// materialises the substring in the bump heap and leaves its i32 base-pointer.
+///
+/// Only the unstepped `of_str` form is supported. A LIST slice (`of_str: false`
+/// — lists are param-only base-pointers in the WASM subset, there is no
+/// list-return/temporary shape) and a STEPPED string slice (`s[i:j:k]`, incl.
+/// the `xs[::-1]` reverse the frontend lowers to a negative `step`) refuse
+/// honestly, never a silent miscompile.
+#[allow(clippy::too_many_arguments)]
+fn emit_str_slice(
+    collection: &Expr,
+    lo: &Option<Box<Expr>>,
+    hi: &Option<Box<Expr>>,
+    of_str: bool,
+    step: Option<i64>,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if !of_str {
+        return Err(unsupported(
+            "a LIST slice `xs[i:j]` — the WASM list subset carries a \
+             `list[scalar]` only as a PARAMETER base-pointer (no list \
+             temporaries / returns to hold a sub-list); refused",
+        ));
+    }
+    if step.is_some() {
+        return Err(unsupported(
+            "a STEPPED string slice `s[i:j:k]` (incl. the `s[::-1]` reverse \
+             idiom) — the WASM string subset slices `s[lo:hi]` (step 1) only; \
+             refused",
+        ));
+    }
+    // base string pointer.
+    emit_str_expr(collection, scope, out, depth)?;
+    // lo (i64 char index) — a missing `lo` defaults to 0.
+    match lo {
+        Some(b) => emit_expr_typed(b, scope, out, depth, WatTy::I64)?,
+        None => {
+            indent(out, depth);
+            writeln!(out, "i64.const 0").expect("write");
+        }
+    }
+    // hi (i64 char index) — a missing `hi` defaults to i64::MAX, which the
+    // helper clamps down to the string's char length.
+    match hi {
+        Some(b) => emit_expr_typed(b, scope, out, depth, WatTy::I64)?,
+        None => {
+            indent(out, depth);
+            writeln!(out, "i64.const 9223372036854775807").expect("write");
+        }
+    }
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_slice").expect("write");
+    Ok(())
+}
+
 /// PMAT-993: emit a string-VALUED expression, leaving its `i32` base-pointer
 /// (into the length-prefixed linear-memory region) on the WASM stack.
 ///
 /// The string-valued forms are: a `str` PARAMETER (`Expr::Ident` of a str
 /// param — already a base-pointer), a string LITERAL (PMAT-994 `Expr::LitStr`,
 /// a constant static-`(data)` base-pointer), a `Concat` (string `+`,
-/// materialised in the heap), a `Chr` (a new 1-char string), and a bare
-/// `StrCharAt` (PMAT-994 `s[i]` as a new 1-char heap string). Any other
-/// expression in a string position is refused.
+/// materialised in the heap), a `Chr` (a new 1-char string), a bare
+/// `StrCharAt` (PMAT-994 `s[i]` as a new 1-char heap string), and (PMAT-1058)
+/// a `Slice` (`s[lo:hi]` as a new heap substring). Any other expression in a
+/// string position is refused.
 ///
 /// Used by a `str`-returning function's trailing return and (transitively, via
 /// `concat_operands`) by nested concat. A str param, a literal pointer, and a
@@ -4076,6 +4428,18 @@ fn emit_str_expr(
             emit_str_char_at(string, index, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1058: `s[lo:hi]` as a string value — a char-exact heap
+        // substring. A list slice / stepped slice refuses in `emit_str_slice`.
+        Expr::Slice {
+            collection,
+            lo,
+            hi,
+            of_str,
+            step,
+        } => {
+            emit_str_slice(collection, lo, hi, *of_str, *step, scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1028: a CALL of a PROVEN str-returning callable (free fn,
         // `Struct::__init__`-style assoc fn) in a string position — the
         // factory-composition idiom `s: str = build(5)`. Delegates to the
@@ -4099,8 +4463,8 @@ fn emit_str_expr(
         other => Err(unsupported(&format!(
             "expression {} in a string position — the WASM string subset \
              returns a `str` name (param/local), a string literal, a `Concat` \
-             (a + b), a `Chr` (chr(n)), `s[i]`, or a str-returning call; \
-             slicing / str() / f-strings are refused",
+             (a + b), a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, or a str-returning \
+             call; stepped slicing / str() / f-strings are refused",
             expr_kind(other)
         ))),
     }
