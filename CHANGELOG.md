@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Invalid emit fixed: empty explicit `__init__` on a const-only class (PMAT-1057)
+
+- `class Config: VERSION: int = 5; def __init__(self): pass` then `Config()` was
+  rustc E0061 — the ctor-synthesis dispatch gated on `body_assigns_self` (false
+  for an empty body), so the empty `__init__` emitted as a `&self` method and
+  `Config::__init__()` mismatched. `__init__` is a constructor, so it now always
+  synthesizes as `fn __init__(...) -> Self` (empty struct literal for a
+  field-less class). Completes the PMAT-1054 class-const surface (instance
+  access `c.VERSION` with an explicit empty init). Found completing an OOP
+  interaction probe.
+- 1 e2e test; differentially verified (MATCH 105/"hi").
+
 ## [0.1.607] — 2026-07-02
 
 ### Grouping-in-a-class: `self.field[k].append(e)` (PMAT-1052)

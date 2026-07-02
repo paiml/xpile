@@ -905,6 +905,14 @@ roadmap:
   status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
+- id: PMAT-1057
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1057: [rust/correctness] invalid emit (E0061) — an explicit EMPTY `def __init__(self): pass` on a const-only / field-less class was not routed through the constructor synthesis. The dispatch gated `__init__` synthesis on `body_assigns_self` (false for an empty body), so an empty explicit `__init__` fell through to the regular-method path and emitted `pub fn __init__(&self) -> ()` — then the construction `Config::__init__()` mismatched (E0061, expects a `&self` receiver). Completes the PMAT-1054 class-const surface: instance access `c.VERSION` on a const-only class with an explicit empty init. FIX: `__init__` is a CONSTRUCTOR, not a regular method — hoist its synthesis ABOVE the `body_assigns_self` gate so it ALWAYS synthesizes as `fn __init__(...) -> Self` (a StructLit of the field RHSs, empty for a field-less class); fancier bodies still refuse precisely inside synthesize_explicit_ctor.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Found completing the OOP interaction probe (cc2). Suite 746 green; MATCH cc2b 105 + empty-with-method; normal + synthesized ctor regressions pass. Reconciliation: the cron shipped PMAT-1054 (class constants) / 1055 (verify) / 1056 (property setter) in parallel — my redundant class-const attempt was discarded; this is the one non-overlapping residual.'
 - id: PMAT-1051
   github_issue: null
   item_type: bug
