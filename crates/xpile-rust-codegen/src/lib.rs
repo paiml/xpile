@@ -473,6 +473,10 @@ fn function_bigint_mode(f: &Function) -> bool {
                 else_body,
                 ..
             } => then_body.iter().any(stmt_has_bigint) || else_body.iter().any(stmt_has_bigint),
+            // PMAT-1058: statement-form try/except — a bigint op in either arm.
+            Stmt::TryCatch { body, handler, .. } => {
+                body.iter().any(stmt_has_bigint) || handler.iter().any(stmt_has_bigint)
+            }
             // PMAT-460: list.append() carries no Type::Let, so no
             // BigInt-mode trigger of its own. PMAT-502ap/aq/ar: in-place
             // list mutators / extend / insert likewise carry no binding.
@@ -1340,6 +1344,69 @@ fn emit_stmt_indented(
             write!(out, "{indent}panic!(\"{{}}\", ")?;
             emit_expr(out, message, mode)?;
             writeln!(out, ");")?;
+            Ok(())
+        }
+        // PMAT-1058: statement-form `try: <stmts> except E [as e]: <stmts>` —
+        // catch the panics xpile raises for Python exceptions. Mirrors
+        // `Expr::TryCatch` (the value form) but the arms are statement BLOCKS
+        // and neither produces a value: `Ok(_) => {}`. SAME PMAT-789 allowlist
+        // re-raise (a payload naming a builtin NOT in `except_types` resumes
+        // the unwind) and PMAT-817 `as e` message binding.
+        Stmt::TryCatch {
+            body,
+            handler,
+            except_types,
+            bound_name,
+        } => {
+            let bind = |out: &mut String, name: &str| -> Result<(), CodegenError> {
+                write!(
+                    out,
+                    "let {name} = __xpile_m.strip_prefix(\"xpile: \").and_then(|__s| __s.splitn(2, \": \").nth(1)).unwrap_or(__xpile_m).to_string(); "
+                )?;
+                Ok(())
+            };
+            write!(
+                out,
+                "{indent}match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {{ "
+            )?;
+            for st in body {
+                emit_stmt_indented(out, st, "", mode)?;
+            }
+            out.push_str(" })) { Ok(_) => {}, ");
+            if except_types.is_empty() {
+                if let Some(name) = bound_name {
+                    out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
+                    bind(out, name)?;
+                    for st in handler {
+                        emit_stmt_indented(out, st, "", mode)?;
+                    }
+                    out.push_str(" }");
+                } else {
+                    out.push_str("Err(_) => { ");
+                    for st in handler {
+                        emit_stmt_indented(out, st, "", mode)?;
+                    }
+                    out.push_str(" }");
+                }
+            } else {
+                out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
+                for (i, k) in except_types.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(" || ");
+                    }
+                    write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                }
+                out.push_str(" { ");
+                if let Some(name) = bound_name {
+                    bind(out, name)?;
+                }
+                for st in handler {
+                    emit_stmt_indented(out, st, "", mode)?;
+                }
+                out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
+            }
+            out.push_str(" }");
+            writeln!(out)?;
             Ok(())
         }
         // PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: shell-command

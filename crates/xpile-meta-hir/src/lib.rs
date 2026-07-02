@@ -379,6 +379,10 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
                 || then_body.iter().any(stmt_has_int_arith)
                 || else_body.iter().any(stmt_has_int_arith)
         }
+        // PMAT-1058: statement-form try/except — recurse into both blocks.
+        Stmt::TryCatch { body, handler, .. } => {
+            body.iter().any(stmt_has_int_arith) || handler.iter().any(stmt_has_int_arith)
+        }
         // PMAT-502bk: loop-control statements carry no expression.
         Stmt::Continue | Stmt::Break => false,
         // PMAT-502bw: `print(a, b, …)` — recurse into the argument exprs
@@ -1292,6 +1296,25 @@ pub enum Stmt {
     /// `try/except` catch side and `Result`-typed propagation follow as
     /// their own slices. PMAT-503a.
     Raise { message: Expr },
+    /// PMAT-1058 (exceptions epic): a STATEMENT-position `try`/`except` whose
+    /// arms are side-effecting statement BLOCKS — `try: <stmts> except E [as e]:
+    /// <stmts>`. The value-producing [`Expr::TryCatch`] covers `try: x = e
+    /// except: x = e` and `try: return e except: return e`; this covers the
+    /// common `try: risky_call() except E: handle()` shape where neither arm
+    /// produces a value. xpile models Python exceptions as Rust panics, so the
+    /// `except` catches them: Rust/Ruchy emit `match
+    /// std::panic::catch_unwind(AssertUnwindSafe(|| { <body> })) { Ok(_) => {},
+    /// Err(…) => { <handler> } }` — the SAME allowlist re-raise (a payload
+    /// naming a builtin NOT in `except_types` resumes the unwind, so
+    /// `except ValueError:` doesn't swallow a `ZeroDivisionError` — PMAT-789)
+    /// and `as e` message binding as the expression form. Lean/WASM refuse (no
+    /// panic model). No `else`/`finally` (deferred).
+    TryCatch {
+        body: Vec<Stmt>,
+        handler: Vec<Stmt>,
+        except_types: Vec<String>,
+        bound_name: Option<String>,
+    },
     /// `program arg1 arg2 ...` — a single shell-command invocation.
     /// PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: the first shell
     /// variant to land in meta-HIR.
@@ -3646,6 +3669,15 @@ fn escape_stmt(s: &mut Stmt) {
                 escape_stmt(st);
             }
         }
+        // PMAT-1058: statement-form try/except — escape both blocks.
+        Stmt::TryCatch { body, handler, .. } => {
+            for st in body {
+                escape_stmt(st);
+            }
+            for st in handler {
+                escape_stmt(st);
+            }
+        }
         Stmt::Continue | Stmt::Break => {}
         Stmt::Print { args, .. } => {
             for a in args {
@@ -4173,6 +4205,15 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
                 collect_idents_stmt(st, acc);
             }
         }
+        // PMAT-1058: statement-form try/except — collect from both blocks.
+        Stmt::TryCatch { body, handler, .. } => {
+            for st in body {
+                collect_idents_stmt(st, acc);
+            }
+            for st in handler {
+                collect_idents_stmt(st, acc);
+            }
+        }
         Stmt::Continue | Stmt::Break => {}
         Stmt::Print { args, .. } => {
             for a in args {
@@ -4537,6 +4578,15 @@ fn retype_stmt(
                 retype_stmt(st, float_ffi, float_locals);
             }
             for st in else_body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        // PMAT-1058: statement-form try/except — retype both blocks.
+        Stmt::TryCatch { body, handler, .. } => {
+            for st in body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+            for st in handler {
                 retype_stmt(st, float_ffi, float_locals);
             }
         }

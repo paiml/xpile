@@ -913,6 +913,14 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'Found completing the OOP interaction probe (cc2). Suite 746 green; MATCH cc2b 105 + empty-with-method; normal + synthesized ctor regressions pass. Reconciliation: the cron shipped PMAT-1054 (class constants) / 1055 (verify) / 1056 (property setter) in parallel — my redundant class-const attempt was discarded; this is the one non-overlapping residual.'
+- id: PMAT-1058
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1058: [rust/capability/exceptions] STATEMENT-form try/except — `try: <stmts> except E [as e]: <stmts>` where the arms are side-effecting statement BLOCKS (the ubiquitous `try: risky_call() except E: handle()` shape), neither producing a value. The value-form Expr::TryCatch (PMAT-503b) covers `try: x = e except: x = e` / `try: return e except: return e` only; a bare-call or multi-statement try refused ("not the supported shape"). NEW meta-HIR Stmt::TryCatch {body, handler, except_types, bound_name}: rust/ruchy emit `match catch_unwind(AssertUnwindSafe(|| { <body> })) { Ok(_) => {}, Err(...) => { <handler> } }` with the SAME PMAT-789 ALLOWLIST re-raise (a payload naming a builtin NOT in except_types resume_unwinds — `except ValueError` does NOT swallow a ZeroDivisionError, adversarially verified BOTHRAISE) and PMAT-817 `as e` message binding; lean/wasm refuse (no panic model). Frontend: is_assignment_try_shape routes the single-assign form to the better-typed value path, else lower_statement_try lowers body/handler as blocks (ctx.bound snapshot/restore so try-locals do not pollute the enclosing scope). First-cut limits (precise refusals): single except, no else/finally; a name FIRST-bound in the try body and read AFTER is E0425 (Rust block-scopes it; set it in both arms via the assignment-form, or pre-declare).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Suite 747 green; MATCH caught/oob/-1/boom/2/0; adversarially verified — no-swallow (a1 BOTHRAISE), own-type catch, handler-raise-propagates, loop-in-try, nested; else/finally/multi-except refuse precisely. Meta-HIR variant + 4 walkers + rust/ruchy emit + lean/wasm refuse + frontend dispatch. Low collision risk with the cron OOP lane.'
 - id: PMAT-1060
   github_issue: null
   item_type: feature
