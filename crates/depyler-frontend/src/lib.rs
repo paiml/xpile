@@ -842,6 +842,14 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
         ast::Stmt::Assign(a) => {
             a.targets.iter().any(|t| base_is(t, target)) || expr_has_mutator(&a.value, target)
         }
+        // PMAT-1025: `self.f: T = v` (PEP 526) stores a field exactly like the
+        // bare Assign form — it must drive `&mut self` the same way.
+        ast::Stmt::AnnAssign(a) => {
+            base_is(&a.target, target)
+                || a.value
+                    .as_deref()
+                    .is_some_and(|v| expr_has_mutator(v, target))
+        }
         ast::Stmt::AugAssign(a) => base_is(&a.target, target) || expr_has_mutator(&a.value, target),
         ast::Stmt::Return(r) => r
             .value
@@ -1715,6 +1723,14 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
             ast::Stmt::AnnAssign(aa) => {
                 if let ast::Expr::Name(n) = aa.target.as_ref() {
                     *counts.entry(n.id.to_string()).or_insert(0) += 1;
+                } else if let ast::Expr::Attribute(attr) = aa.target.as_ref() {
+                    // PMAT-1025: `obj.field: T = v` mutates `obj` in place —
+                    // count the receiver loop-aware (mirrors the PMAT-506c
+                    // Assign arm; the exactly-once fresh-rebind rationale
+                    // above applies to Name locals, not to field stores).
+                    if let ast::Expr::Name(n) = attr.value.as_ref() {
+                        *counts.entry(n.id.to_string()).or_insert(0) += if in_loop { 2 } else { 1 };
+                    }
                 }
             }
             // PMAT-500b: an in-place mutation method call `<name>.add(x)`
@@ -3094,7 +3110,108 @@ fn class_def_signature(
             }
         }
     }
+    // PMAT-1025 (sweep #10): field DISCOVERY from `__init__` — the two idioms
+    // typed Python actually writes, both of which previously refused ("non-Name
+    // annotated-assignment target" / "no such field") leaving class-body
+    // declarations the only accepted shape. (1) `self.f: T = v` (PEP 526)
+    // declares field `f: T` directly; (2) an undeclared bare `self.f = v`
+    // infers its type from the assigned `__init__` parameter's annotation or a
+    // literal RHS. Class-body declarations keep priority; a conflicting
+    // re-annotation refuses. Discovery walks only TOP-LEVEL `__init__`
+    // statements — the straight-line subset the explicit-ctor synthesis
+    // (PMAT-1016B) lowers; anything else refuses there, not here.
+    if let Some(init) = c.body.iter().find_map(|s| match s {
+        ast::Stmt::FunctionDef(m)
+            if m.name.as_str() == "__init__" && !is_staticmethod(m) && !is_classmethod(m) =>
+        {
+            Some(m)
+        }
+        _ => None,
+    }) {
+        let param_types: HashMap<String, Type> = init
+            .args
+            .args
+            .iter()
+            .skip(1) // the `self` receiver
+            .filter_map(|a| {
+                let ann = a.def.annotation.as_ref()?;
+                let ty = parse_type_annotation(&name, a.def.arg.as_str(), ann).ok()?;
+                Some((a.def.arg.to_string(), ty))
+            })
+            .collect();
+        for stmt in &init.body {
+            match stmt {
+                ast::Stmt::AnnAssign(aa) if aa.value.is_some() => {
+                    let Some(field) = self_field_target(aa.target.as_ref()) else {
+                        continue;
+                    };
+                    let ty = parse_type_annotation(&name, field, &aa.annotation)?;
+                    match fields.iter().find(|(f, _)| f == field) {
+                        Some((_, declared)) if *declared == ty => {}
+                        Some((_, declared)) => {
+                            return Err(FrontendError::Lower(format!(
+                                "class `{name}` `__init__` annotates `self.{field}: {ty:?}` but the class body declares `{field}: {declared:?}` — the two must agree"
+                            )));
+                        }
+                        None => fields.push((field.to_string(), ty)),
+                    }
+                }
+                ast::Stmt::Assign(a) if a.targets.len() == 1 => {
+                    let Some(field) = self_field_target(&a.targets[0]) else {
+                        continue;
+                    };
+                    if fields.iter().any(|(f, _)| f == field) {
+                        continue;
+                    }
+                    let Some(ty) = infer_init_field_type(a.value.as_ref(), &param_types) else {
+                        return Err(FrontendError::Lower(format!(
+                            "class `{name}` `__init__` assigns `self.{field}` but `{field}` is not declared and its type cannot be inferred from the right-hand side — annotate the assignment (`self.{field}: T = …`), annotate the parameter it copies, or declare `{field}: T` in the class body"
+                        )));
+                    };
+                    fields.push((field.to_string(), ty));
+                }
+                _ => {}
+            }
+        }
+    }
     Ok((name, fields, method_returns, field_defaults))
+}
+
+/// PMAT-1025 (sweep #10): `self.<field>` as an assignment target — returns the
+/// field name when `e` is `Attribute(Name("self"), field)`.
+fn self_field_target(e: &ast::Expr) -> Option<&str> {
+    let ast::Expr::Attribute(attr) = e else {
+        return None;
+    };
+    matches!(attr.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "self")
+        .then(|| attr.attr.as_str())
+}
+
+/// PMAT-1025 (sweep #10): infer the type of an UNDECLARED `self.f = <rhs>`
+/// `__init__` field from the RHS — an annotated `__init__` parameter copied
+/// verbatim (`self.n = n`, the ubiquitous ctor idiom) or a literal
+/// (optionally negated). Anything else returns `None` and the caller refuses
+/// with a precise message — inference stays conservative rather than guessing.
+fn infer_init_field_type(rhs: &ast::Expr, param_types: &HashMap<String, Type>) -> Option<Type> {
+    match rhs {
+        ast::Expr::Name(n) => param_types.get(n.id.as_str()).cloned(),
+        ast::Expr::Constant(c) => match &c.value {
+            ast::Constant::Bool(_) => Some(Type::Bool),
+            ast::Constant::Int(_) => Some(Type::I64),
+            ast::Constant::Float(_) => Some(Type::F64),
+            ast::Constant::Str(_) => Some(Type::Str),
+            _ => None,
+        },
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => match u.operand.as_ref() {
+            ast::Expr::Constant(c) => match &c.value {
+                ast::Constant::Int(_) => Some(Type::I64),
+                ast::Constant::Float(_) => Some(Type::F64),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// PMAT-506g (classes epic): true if a class method carries a bare
@@ -8395,69 +8512,10 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         // PMAT-506c (classes epic): struct field assignment `obj.field = value`.
         // `obj` must be a plain bound name typing as a struct, and `field` a
         // known member; the value lowers context-aware and `obj` is marked
-        // mutable by the pre-walk.
+        // mutable by the pre-walk. (Shared with the PMAT-1025 annotated form
+        // `obj.field: T = value` — see `lower_field_assign`.)
         ast::Expr::Attribute(attr) => {
-            let ast::Expr::Name(obj) = attr.value.as_ref() else {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` assigns to a non-Name attribute receiver — only `obj.field = v` over a struct local/param is supported at v0.2.0",
- ctx.fn_name
-                )));
-            };
-            let obj_name = obj.id.to_string();
-            let field = attr.attr.to_string();
-            let obj_ty = ctx.name_types.get(&obj_name).cloned().unwrap_or(Type::I64);
-            let Type::Struct(sname) = obj_ty else {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` assigns to `.{field}` of `{obj_name}`, which is not a struct value",
- ctx.fn_name
-                )));
-            };
-            let known = ctx
-                .structs
-                .get(&sname)
-                .is_some_and(|fs| fs.iter().any(|(f, _)| *f == field));
-            if !known {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` assigns field `{field}` of `{sname}`, which has no such field",
-                    ctx.fn_name
-                )));
-            }
-            // PMAT-752 (HUNT-V14 #16): a `@dataclass(frozen=True)` instance is
-            // immutable — Python raises `FrozenInstanceError` on `p.field = v`.
-            // xpile compiled the assignment and SILENTLY mutated; reject it with a
-            // clear message so the divergence fails loud at transpile time.
-            if ctx.frozen_structs.contains(&sname) {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}` assigns field `{field}` of `{obj_name}`, a frozen dataclass \
- `{sname}` — Python raises FrozenInstanceError (a `@dataclass(frozen=True)` \
- instance is immutable). Drop `frozen=True`, or build a new instance instead \
- of mutating",
-                    ctx.fn_name
-                )));
-            }
-            let value = lower_expr_in_ctx(ctx, *asn.value)?;
-            // PMAT-1017 (sweep #8): coerce the value to the FIELD's declared
-            // type — an int-typed value into a `float` field emitted
-            // `C { x: n }` / `self.x = n` with no cast (rustc E0308; found
-            // via an explicit `__init__(self, n: int)` assigning a float
-            // field, but the gap is the general FieldAssign path, methods
-            // included). Float widening via `to_f64_operand` (no-op when
-            // already f64); Optional wrapping via the same helper the ctor
-            // call sites use.
-            let field_ty = ctx
-                .structs
-                .get(&sname)
-                .and_then(|fs| fs.iter().find(|(f, _)| *f == field))
-                .map(|(_, t)| t.clone());
-            let value = match &field_ty {
-                Some(Type::F64) => to_f64_operand(ctx, value),
-                _ => coerce_lowered_to_optional(ctx, value, field_ty.as_ref()),
-            };
-            return Ok(Stmt::FieldAssign {
-                obj: obj_name,
-                field,
-                value,
-            });
+            return lower_field_assign(ctx, &attr, *asn.value, None);
         }
         other => {
             return Err(FrontendError::Lower(format!(
@@ -11505,9 +11563,131 @@ fn lower_return_value(ctx: &LoweringCtx, value: &ast::Expr) -> Result<Expr, Fron
     lower_value_expecting(ctx, value, &ctx.fn_return_type)
 }
 
+/// PMAT-506c / PMAT-1025: struct field assignment `obj.field = value` — and
+/// its PEP 526 twin `obj.field: T = value` (`annotated` carries `T`, which
+/// must match the field's registered type). `obj` must be a plain bound name
+/// typing as a struct, and `field` a known member; the value lowers
+/// context-aware (an empty `[]`/`{}` threads the FIELD's declared type, which
+/// a bare literal cannot self-infer) and `obj` is marked mutable by the
+/// pre-walk.
+fn lower_field_assign(
+    ctx: &mut LoweringCtx,
+    attr: &ast::ExprAttribute,
+    value_ast: ast::Expr,
+    annotated: Option<&Type>,
+) -> Result<Stmt, FrontendError> {
+    let ast::Expr::Name(obj) = attr.value.as_ref() else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` assigns to a non-Name attribute receiver — only `obj.field = v` over a struct local/param is supported at v0.2.0",
+            ctx.fn_name
+        )));
+    };
+    let obj_name = obj.id.to_string();
+    let field = attr.attr.to_string();
+    let obj_ty = ctx.name_types.get(&obj_name).cloned().unwrap_or(Type::I64);
+    let Type::Struct(sname) = obj_ty else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` assigns to `.{field}` of `{obj_name}`, which is not a struct value",
+            ctx.fn_name
+        )));
+    };
+    let field_ty = ctx
+        .structs
+        .get(&sname)
+        .and_then(|fs| fs.iter().find(|(f, _)| *f == field))
+        .map(|(_, t)| t.clone());
+    let Some(field_ty) = field_ty else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` assigns field `{field}` of `{sname}`, which has no such field",
+            ctx.fn_name
+        )));
+    };
+    // PMAT-1025: the `obj.field: T = v` annotation must agree with the field's
+    // registered type — silently preferring either would mistype the store.
+    if let Some(ann) = annotated {
+        if *ann != field_ty {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` annotates `{obj_name}.{field}: {ann:?}` but `{sname}` declares `{field}: {field_ty:?}` — the two must agree",
+                ctx.fn_name
+            )));
+        }
+    }
+    // PMAT-752 (HUNT-V14 #16): a `@dataclass(frozen=True)` instance is
+    // immutable — Python raises `FrozenInstanceError` on `p.field = v`.
+    // xpile compiled the assignment and SILENTLY mutated; reject it with a
+    // clear message so the divergence fails loud at transpile time.
+    if ctx.frozen_structs.contains(&sname) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` assigns field `{field}` of `{obj_name}`, a frozen dataclass \
+ `{sname}` — Python raises FrozenInstanceError (a `@dataclass(frozen=True)` \
+ instance is immutable). Drop `frozen=True`, or build a new instance instead \
+ of mutating",
+            ctx.fn_name
+        )));
+    }
+    // PMAT-1025: an empty collection literal cannot self-infer its element
+    // type — thread the FIELD's declared type (mirrors `lower_ann_assign`'s
+    // empty-literal arms; previously `self.items = []` refused even with the
+    // field declared `list[int]`).
+    let value = match &value_ast {
+        ast::Expr::List(l) if l.elts.is_empty() => {
+            if !matches!(field_ty, Type::List(_)) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns empty `[]` to field `{field}` of `{sname}` declared as {field_ty:?}; an empty literal requires a `list[T]` field",
+                    ctx.fn_name
+                )));
+            }
+            Expr::ListLit(Vec::new())
+        }
+        ast::Expr::Dict(d) if d.keys.is_empty() => {
+            if !matches!(field_ty, Type::Dict(_, _)) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` assigns empty `{{}}` to field `{field}` of `{sname}` declared as {field_ty:?}; an empty literal requires a `dict[K, V]` field",
+                    ctx.fn_name
+                )));
+            }
+            Expr::DictLit(Vec::new())
+        }
+        _ => lower_expr_in_ctx(ctx, value_ast)?,
+    };
+    // PMAT-1017 (sweep #8): coerce the value to the FIELD's declared
+    // type — an int-typed value into a `float` field emitted
+    // `C { x: n }` / `self.x = n` with no cast (rustc E0308; found
+    // via an explicit `__init__(self, n: int)` assigning a float
+    // field, but the gap is the general FieldAssign path, methods
+    // included). Float widening via `to_f64_operand` (no-op when
+    // already f64); Optional wrapping via the same helper the ctor
+    // call sites use.
+    let value = match &field_ty {
+        Type::F64 => to_f64_operand(ctx, value),
+        _ => coerce_lowered_to_optional(ctx, value, Some(&field_ty)),
+    };
+    Ok(Stmt::FieldAssign {
+        obj: obj_name,
+        field,
+        value,
+    })
+}
+
 fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stmt, FrontendError> {
     let name = match aa.target.as_ref() {
         ast::Expr::Name(n) => n.id.to_string(),
+        // PMAT-1025 (sweep #10): `obj.field: T = value` — the PEP 526
+        // instance-attribute idiom (`self.n: int = n` in `__init__` is the
+        // standard way typed Python declares fields; it previously refused
+        // here on BOTH lanes). Lowers exactly like `obj.field = value`
+        // (`Stmt::FieldAssign`), with the annotation checked against the
+        // field's registered type.
+        ast::Expr::Attribute(attr) => {
+            let Some(value_ast) = aa.value else {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` annotates `.{}` without assigning — a bare field annotation creates no attribute in Python; v0.2.0 supports `obj.field: T = value` only",
+                    ctx.fn_name, attr.attr
+                )));
+            };
+            let ann_ty = parse_type_annotation(&ctx.fn_name, attr.attr.as_str(), &aa.annotation)?;
+            return lower_field_assign(ctx, attr, *value_ast, Some(&ann_ty));
+        }
         _ => {
             return Err(FrontendError::Lower(format!(
                 "function `{}` has a non-Name annotated-assignment target — v0.2.0 supports `name: T = value` only",
@@ -21593,5 +21773,84 @@ mod tests {
             }
             _ => panic!("expected Lower error"),
         }
+    }
+
+    /// PMAT-1025 (sweep #10): field DISCOVERY from `__init__` — a class with
+    /// NO class-body declarations, using the PEP 526 idiom (`self.n: int = n`)
+    /// plus bare assigns inferred from a param annotation (`self.limit =
+    /// limit`) and a literal (`self.hits = 0`). Previously every one of these
+    /// refused; only the class-body-declaration style lowered.
+    #[test]
+    fn init_field_discovery_both_idioms() {
+        let m = parse(
+            "class Tally:\n    def __init__(self, n: int, limit: int) -> None:\n        self.n: int = n\n        self.limit = limit\n        self.hits = 0\n\n    def incr(self) -> None:\n        self.n = self.n + 1\n",
+        );
+        let (fields, methods) = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Struct {
+                    name,
+                    fields,
+                    methods,
+                    ..
+                } if name == "Tally" => Some((fields, methods)),
+                _ => None,
+            })
+            .expect("Tally lowered as a struct");
+        assert_eq!(
+            fields
+                .iter()
+                .map(|(f, t)| (f.as_str(), t.clone()))
+                .collect::<Vec<_>>(),
+            vec![("n", Type::I64), ("limit", Type::I64), ("hits", Type::I64)],
+            "all three __init__-discovered fields, in assignment order"
+        );
+        // The PEP 526 store in `incr` drives `&mut self` exactly like the
+        // bare-assign form (for_target_mutated_ast's AnnAssign arm).
+        let incr = methods
+            .iter()
+            .find(|f| f.name == "incr")
+            .expect("incr lowered");
+        assert!(
+            incr.params
+                .first()
+                .is_some_and(|p| p.name == "self" && p.mutable),
+            "self.n = … in incr drives &mut self"
+        );
+    }
+
+    /// PMAT-1025: a class-body declaration and a conflicting `__init__`
+    /// re-annotation must refuse (silently preferring either would mistype
+    /// the field).
+    #[test]
+    fn init_field_conflicting_annotation_refuses() {
+        let err = PythonFrontend
+            .parse_and_lower(
+                &PathBuf::from("fixture.py"),
+                "class C:\n    n: int\n\n    def __init__(self, n: float) -> None:\n        self.n: float = n\n",
+            )
+            .expect_err("conflicting field annotations must refuse");
+        assert!(
+            format!("{err}").contains("must agree"),
+            "names the conflict: {err}"
+        );
+    }
+
+    /// PMAT-1025: an UNDECLARED field assigned a computed expression stays a
+    /// refusal — inference is conservative (param copies + literals only),
+    /// and the message says exactly how to fix it.
+    #[test]
+    fn init_field_uninferable_refuses() {
+        let err = PythonFrontend
+            .parse_and_lower(
+                &PathBuf::from("fixture.py"),
+                "class C:\n    def __init__(self, n: int) -> None:\n        self.n = n * 2 + 1\n",
+            )
+            .expect_err("uninferable undeclared field must refuse");
+        assert!(
+            format!("{err}").contains("cannot be inferred"),
+            "precise inference refusal: {err}"
+        );
     }
 }

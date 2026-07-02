@@ -17751,3 +17751,80 @@ fn transpile_bump_helper_py_wasm_executes_rust_refuses() {
          object through the shared pointer):\n{interp_out}"
     );
 }
+
+/// PMAT-1025 (sweep #10): field DISCOVERY from `__init__` — the fixture
+/// declares NO class-body fields, mixing the PEP 526 idiom (`self.n: int =
+/// n`), a param-annotation-inferred bare assign (`self.limit = limit`), and a
+/// literal-inferred one (`self.hits = 0`). Sweep #10 found that EVERY class
+/// case written in either standard idiom refused ("non-Name
+/// annotated-assignment target" / "no such field") on BOTH lanes — the
+/// class-body-declaration style the shipped fixtures use was the only
+/// accepted shape. Executed value-match vs CPython (521) on the Rust AND
+/// WASM lanes.
+#[test]
+fn transpile_init_field_discovery_py_both_lanes_execute() {
+    let py = fixture("init_field_discovery.py");
+
+    // Rust lane: transpiles, compiles, runs == CPython.
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    let rust_src = String::from_utf8_lossy(&rust_out.stdout);
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_out.status.success(),
+        "xpile --target rust failed on __init__-discovered fields: stderr={rust_err}"
+    );
+    assert!(
+        rust_src.contains("pub struct Tally") && rust_src.contains("pub fn incr(&mut self)"),
+        "all three discovered fields make a struct; the PEP 526 store drives &mut self:\n{rust_src}"
+    );
+    assert_rustc_runs(
+        "init_field_discovery",
+        &rust_src,
+        "fn main() {\n    assert_eq!(run(), 521, \"CPython ground truth\");\n}",
+    );
+
+    // WASM lane: emits, assembles, executes == CPython.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on __init__-discovered fields: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("call $Tally::__init__") && stdout.contains("call $Tally.incr"),
+        "run() drives the ctor + mutating method:\n{stdout}"
+    );
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1025: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-initdisc-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("tally.wat");
+    let wasm_path = dir.join("tally.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:521"),
+        "executed run() must == CPython 521 (two incr()s from 3, hits 2, \
+         full() at the 5 limit):\n{interp_out}"
+    );
+}
