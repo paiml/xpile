@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Empty-literal subscript stores — the grouping idiom lands (PMAT-1041)
+
+- `d[k] = []` (the if-not-in-then-init grouping idiom), `d[k] = {}`,
+  `g[0] = []`, and the field path `self.groups[k] = []` were all refused
+  ("empty list literal requires a type annotation") though the slot's
+  declared type fully determines the element type. The Subscript-target arm
+  of `lower_assign` now lowers empty List/Dict literals directly — both
+  emitters are inference-friendly (`vec![]` / `IndexMap::new()`), typed by
+  the emitted insert/assign site. The `setdefault` alternative already
+  worked; this closes the sweep-#10 grouping cluster.
+- 1 e2e test (725 total); differentially verified vs CPython
+  (MATCH 23/2/19/2).
+
 ### Int-into-float-slot stores on Name-bottoming paths (PMAT-1040)
 
 - `xs[0] = 3` over `list[float]`, `d["a"] = 3` over `dict[str, float]`, and

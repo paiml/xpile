@@ -18664,3 +18664,26 @@ fn main() {
 "#;
     assert_rustc_runs("float_slot_stores", &rust, driver);
 }
+
+/// PMAT-1041: empty container literals stored into subscript slots —
+/// `d[k] = []` (the grouping idiom), `d[k] = {}`, `g[0] = []`, and the field
+/// path — were refused ("requires a type annotation") though the slot's
+/// declared type determines everything; the emitted insert site types the
+/// inference-friendly empty literal. MATCH 23/2/19/2 vs CPython.
+#[test]
+fn empty_literal_stores() {
+    let rust = xpile_transpile_to_rust("empty_literal_stores.py");
+    let driver = r#"
+fn main() {
+    // "bb","cc" land in d[2] (2 entries), d has 3 keys ⇒ 23.
+    assert_eq!(group_by_len(), 23, "if-not-in-then-init grouping idiom");
+    // {} then two inserts ⇒ 2.
+    assert_eq!(dict_into_dict(), 2, "empty dict into a dict-of-dict slot");
+    // [1,2,3] reset to [] then one append ⇒ len 1, elem 9 ⇒ 19.
+    assert_eq!(reset_slot(), 19, "reset an existing slot to empty");
+    // two ensured keys through the self-field path ⇒ 2.
+    assert_eq!(field_slot(), 2, "empty literal through self.groups[k]");
+}
+"#;
+    assert_rustc_runs("empty_literal_stores", &rust, driver);
+}

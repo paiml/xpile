@@ -860,6 +860,14 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).' SHIPPED 2026-07-02: fresh top-level loop-body bindings read after the loop pre-declare `let mut <name>: T = <default>` (RHS probe-typed, for/while both; range targets trivially int; list defaults vec![]); definitely-scalar list-literal embeds no longer edge the alias analysis (the false `aliases i and row` refusal); pre-bound-target + element-mutation refuses precisely (the leak clone silently absorbed the mutation — pre-existing silent bug, now loud). Residual: bindings nested in inner if/loops and dict/set-valued loop locals keep E0425.
+- id: PMAT-1041
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1041: [rust/capability] EMPTY container literals stored into subscript slots — `d[k] = []` (THE grouping idiom''s init step, sweep-#10 residual filed under PMAT-1039), `d[k] = {}`, `g[0] = []`, and the field path `self.groups[k] = []` — all refused at lower_expr_in_ctx ("empty list literal requires a type annotation") though the SLOT''s declared type fully determines the element type. FIX: the Subscript-target arm of lower_assign lowers empty List/Dict literals directly to ListLit(vec![])/DictLit(vec![]) — both emitters are inference-friendly (`vec![]` / `IndexMap::new()`) and the emitted insert/assign site supplies the concrete type. The setdefault grouping alternative already worked; this closes the if-not-in-then-init cluster.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Shipped same-day with differential verification (MATCH 23/2/19/2 + 5 ad-hoc probes incl. reset-then-refill and dict-into-dict). Remaining PMAT-1039 residuals: branch-parity (different names per if-arm), math.fabs, per-param launder precision.'
 - id: PMAT-1040
   github_issue: null
   item_type: task
