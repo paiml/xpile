@@ -944,6 +944,14 @@ roadmap:
   status: planned
   priority: medium
   created: 2026-07-02T00:00:00Z
+- id: PMAT-1073
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1073: [rust/capability/exceptions] finally-ONLY try — `try: B finally: F` with NO `except`. Completes PMAT-1070 (which deferred it). Runs cleanup in every path and PROPAGATES any exception — distinct from `except: pass` (empty catch-all, which SWALLOWS). Additive `finally_only: bool` on Stmt::TryCatch (`#[serde(default)]`); its emit skips the handler dispatch entirely: `{ let __tc_outer = catch_unwind(|| { B }); F; if let Err(e) = __tc_outer { resume_unwind(e) } }`. Frontend lower_statement_try builds a finally-only TryCatch when handlers is empty + finalbody non-empty. UNBLOCKS context managers (PMAT-1072 — `with cm as x:` desugars to enter + finally-only-try + exit).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'high-water re-checked (1072) before allocating 1073. Suite 751 green; MATCH body-t-clean/399; adversarially verified — cleanup-on-clean, cleanup-then-propagate (BOTHRAISE), does-NOT-swallow (vs except:pass swallows), multi-statement cleanup; try/except/finally unregressed.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

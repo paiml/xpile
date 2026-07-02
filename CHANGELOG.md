@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### finally-only try (PMAT-1073)
+
+- `try: B finally: F` with no `except` now works — runs cleanup in every path
+  and propagates any exception (does NOT swallow, unlike `except: pass`).
+  Additive `finally_only` flag whose emit skips the handler dispatch:
+  `{ let r = catch_unwind(|| B); F; if let Err(e) = r { resume_unwind(e) } }`.
+  Completes PMAT-1070 and unblocks context managers.
+- 1 e2e test (751 total); adversarially verified (cleanup-then-propagate,
+  does-not-swallow vs except:pass).
+
 ### Generators / `yield` — eager materialization (PMAT-1071)
 
 - `def g() -> T: … yield e …` used as `for x in g()` / `list(g())` / `sum(g())`

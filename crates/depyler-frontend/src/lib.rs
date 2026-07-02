@@ -11256,13 +11256,14 @@ fn lower_statement_try(
             ctx.fn_name
         )));
     }
-    if try_stmt.handlers.is_empty() {
-        // PMAT-1070: `try: B finally: F` with NO `except` (propagate-through
-        // cleanup) needs a "no-catch" encoding distinct from `except: pass`
-        // (which SWALLOWS) — deferred. `try/except/finally` (>=1 except) works.
+    // PMAT-1073: a `try: B finally: F` with NO `except` — finally-only. Lower
+    // the body + finally and emit a no-catch propagate (handled by the
+    // `finally_only` flag). A truly empty `try` (no except, no finally) can't
+    // occur (Python requires one), but refuse defensively.
+    let finally_only = try_stmt.handlers.is_empty();
+    if finally_only && try_stmt.finalbody.is_empty() {
         return Err(FrontendError::Lower(format!(
-            "function `{}`'s `try` has a `finally` but no `except` — v0.2.0 first cut supports \
-             `try/except[/finally]`; add an `except` clause or move the cleanup after the `try`",
+            "function `{}`'s `try` has neither `except` nor `finally`",
             ctx.fn_name
         )));
     }
@@ -11298,17 +11299,23 @@ fn lower_statement_try(
         ctx.name_types = saved_t;
         Ok((except_types, bound_name, hbody))
     };
-    let ast::ExceptHandler::ExceptHandler(h0) = &try_stmt.handlers[0];
-    let (except_types, bound_name, handler) = lower_handler(ctx, h0)?;
+    let (except_types, bound_name, handler) = if finally_only {
+        (Vec::new(), None, Vec::new())
+    } else {
+        let ast::ExceptHandler::ExceptHandler(h0) = &try_stmt.handlers[0];
+        lower_handler(ctx, h0)?
+    };
     let mut extra_handlers = Vec::new();
-    for hh in &try_stmt.handlers[1..] {
-        let ast::ExceptHandler::ExceptHandler(h) = hh;
-        let (types, name, hbody) = lower_handler(ctx, h)?;
-        extra_handlers.push(TryHandler {
-            except_types: types,
-            bound_name: name,
-            body: hbody,
-        });
+    if !finally_only {
+        for hh in &try_stmt.handlers[1..] {
+            let ast::ExceptHandler::ExceptHandler(h) = hh;
+            let (types, name, hbody) = lower_handler(ctx, h)?;
+            extra_handlers.push(TryHandler {
+                except_types: types,
+                bound_name: name,
+                body: hbody,
+            });
+        }
     }
     // PMAT-1070: lower the `finally:` block (runs in every exit path). Its
     // locals are block-scoped like the arms (snapshot/restore ctx.bound).
@@ -11327,6 +11334,7 @@ fn lower_statement_try(
         bound_name,
         extra_handlers,
         finally,
+        finally_only,
     }])
 }
 

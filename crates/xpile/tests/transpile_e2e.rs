@@ -19310,3 +19310,21 @@ fn main() {
 "#;
     assert_rustc_runs("generators_eager", &rust, driver);
 }
+
+/// PMAT-1073: finally-only try (`try: B finally: F`, no except) runs cleanup
+/// and propagates (does NOT swallow like `except: pass`). MATCH.
+#[test]
+fn try_finally_only() {
+    let rust = xpile_transpile_to_rust("try_finally_only.py");
+    assert!(
+        rust.contains("__tc_outer") && !rust.contains("Err(_) => {"),
+        "finally-only emits no handler dispatch:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(cleanup_runs(), "body-t-clean", "no exception: body then cleanup");
+    assert_eq!(multi_cleanup(), 399, "multi-statement cleanup runs");
+}
+"#;
+    assert_rustc_runs("try_finally_only", &rust, driver);
+}

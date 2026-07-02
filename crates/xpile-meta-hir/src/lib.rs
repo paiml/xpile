@@ -1350,6 +1350,14 @@ pub enum Stmt {
         /// `#[serde(default)]` keeps pre-finally IR compatible.
         #[serde(default)]
         finally: Vec<Stmt>,
+        /// PMAT-1073: `true` for a `try: B finally: F` with NO `except` at all
+        /// (propagate-through cleanup) — distinct from `except: pass`
+        /// (`handler`/`except_types` empty = catch-all, which SWALLOWS). The
+        /// emit skips the handler dispatch: `{ let r = catch_unwind(|| B); F;
+        /// if let Err(e) = r { resume_unwind(e) } }`. Always paired with a
+        /// non-empty `finally`. `#[serde(default)]` keeps prior IR compatible.
+        #[serde(default)]
+        finally_only: bool,
     },
     /// `program arg1 arg2 ...` — a single shell-command invocation.
     /// PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: the first shell
