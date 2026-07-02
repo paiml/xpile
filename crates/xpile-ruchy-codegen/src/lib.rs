@@ -387,8 +387,6 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::IndexAssign { .. } => false,
             // PMAT-730: nested subscript assign carries no Type::Let.
             Stmt::NestedSubscriptAssign { .. } => false,
-            // PMAT-1037: field subscript store carries no Type::Let.
-            Stmt::FieldIndexAssign { .. } => false,
             // PMAT-533: subscript-receiver append carries no Type::Let.
             Stmt::IndexAppend { .. } => false,
             // PMAT-727: setdefault-append carries no Type::Let.
@@ -967,16 +965,38 @@ fn emit_stmt_indented(
         // PMAT-730 (HUNT-V10 V10-7): nested subscript assign with a dict level —
         // progressive `&mut` navigation then leaf assign (mirrors the Rust backend).
         Stmt::NestedSubscriptAssign { base, steps, value } => {
-            emit_subscript_write_through(out, indent, base, steps, value, mode)
+            let n = steps.len();
+            // PMAT-833 (HUNT-V26 #3): bind the RHS BEFORE `&mut base` so a nested
+            // read-modify-write (`d["a"]["x"] = d["a"]["x"] + 5`) doesn't read
+            // `base` immutably under the live `&mut base` borrow (E0502). Mirrors
+            // the Rust backend.
+            write!(out, "{indent}{{ let __rhs = ")?;
+            emit_expr(out, value, mode)?;
+            write!(out, "; let __t0 = &mut {base}; ")?;
+            for (i, (idx, is_dict)) in steps[..n - 1].iter().enumerate() {
+                if *is_dict {
+                    write!(out, "let __t{} = __t{i}.get_mut(&(", i + 1)?;
+                    emit_expr(out, idx, mode)?;
+                    out.push_str(")).unwrap(); ");
+                } else {
+                    write!(out, "let __li{i} = (")?;
+                    emit_expr(out, idx, mode)?;
+                    write!(out, ") as i64; let __lx{i} = if __li{i} < 0 {{ __t{i}.len() as i64 + __li{i} }} else {{ __li{i} }}; let __t{} = &mut __t{i}[__lx{i} as usize]; ", i + 1)?;
+                }
+            }
+            let (leaf_idx, leaf_is_dict) = &steps[n - 1];
+            if *leaf_is_dict {
+                write!(out, "__t{}.insert(", n - 1)?;
+                emit_expr(out, leaf_idx, mode)?;
+                out.push_str(", __rhs); }");
+            } else {
+                write!(out, "let __ll = (")?;
+                emit_expr(out, leaf_idx, mode)?;
+                write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = __rhs; }}", n - 1, n - 1)?;
+            }
+            writeln!(out)?;
+            Ok(())
         }
-        // PMAT-1037: subscript store through a struct field — same progressive
-        // `&mut` walk with base `<obj>.<field>` (mirrors the Rust backend).
-        Stmt::FieldIndexAssign {
-            obj,
-            field,
-            steps,
-            value,
-        } => emit_subscript_write_through(out, indent, &format!("{obj}.{field}"), steps, value, mode),
         // PMAT-466 (v0.2.0 Track 1.C): Ruchy → Rust
         // `{ let __v = v; d.insert(k.clone(), __v); }`, matching the Rust
         // backend — value bound to a temp before insert, and the key
@@ -1270,50 +1290,6 @@ fn expr_mentions_ident(e: &Expr, name: &str) -> bool {
         }
         _ => false,
     }
-}
-
-/// PMAT-730/PMAT-1037: the shared writer for a subscript store through `base`
-/// — [`Stmt::NestedSubscriptAssign`] (plain-Name base, `len >= 2`) and
-/// [`Stmt::FieldIndexAssign`] (`<obj>.<field>` base, `len >= 1`) emit the same
-/// shape. PMAT-833 (HUNT-V26 #3): bind the RHS BEFORE `&mut base` so a nested
-/// read-modify-write (`d["a"]["x"] = d["a"]["x"] + 5`) doesn't read `base`
-/// immutably under the live `&mut base` borrow (E0502). Mirrors the Rust
-/// backend.
-fn emit_subscript_write_through(
-    out: &mut String,
-    indent: &str,
-    base: &str,
-    steps: &[(Expr, bool)],
-    value: &Expr,
-    mode: bool,
-) -> Result<(), RuchyCodegenError> {
-    let n = steps.len();
-    write!(out, "{indent}{{ let __rhs = ")?;
-    emit_expr(out, value, mode)?;
-    write!(out, "; let __t0 = &mut {base}; ")?;
-    for (i, (idx, is_dict)) in steps[..n - 1].iter().enumerate() {
-        if *is_dict {
-            write!(out, "let __t{} = __t{i}.get_mut(&(", i + 1)?;
-            emit_expr(out, idx, mode)?;
-            out.push_str(")).unwrap(); ");
-        } else {
-            write!(out, "let __li{i} = (")?;
-            emit_expr(out, idx, mode)?;
-            write!(out, ") as i64; let __lx{i} = if __li{i} < 0 {{ __t{i}.len() as i64 + __li{i} }} else {{ __li{i} }}; let __t{} = &mut __t{i}[__lx{i} as usize]; ", i + 1)?;
-        }
-    }
-    let (leaf_idx, leaf_is_dict) = &steps[n - 1];
-    if *leaf_is_dict {
-        write!(out, "__t{}.insert(", n - 1)?;
-        emit_expr(out, leaf_idx, mode)?;
-        out.push_str(", __rhs); }");
-    } else {
-        write!(out, "let __ll = (")?;
-        emit_expr(out, leaf_idx, mode)?;
-        write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = __rhs; }}", n - 1, n - 1)?;
-    }
-    writeln!(out)?;
-    Ok(())
 }
 
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenError> {

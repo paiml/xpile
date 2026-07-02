@@ -3135,7 +3135,6 @@ fn stmt_kind(s: &Stmt) -> &'static str {
         Stmt::Print { .. } => "Print",
         Stmt::IndexAssign { .. } => "IndexAssign",
         Stmt::FieldAssign { .. } => "FieldAssign",
-        Stmt::FieldIndexAssign { .. } => "FieldIndexAssign",
         Stmt::SideEffectCall { .. } => "SideEffectCall",
         _ => "<container/aggregate statement>",
     }
