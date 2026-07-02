@@ -1394,8 +1394,45 @@ fn alias_class_analysis(
     // mutation keeps the refusal (see `collect_container_mutated`) — a
     // struct-shaped mutation is an in-place store through the shared
     // base-pointer, executable exactly.
+    //
+    // PMAT-1027 (sweep #10 finding 4): the container/struct split is TYPED,
+    // not name-keyed. Per-name type evidence (param/AnnAssign annotations,
+    // ctor calls, container literals) propagates over the union-find alias
+    // classes; a class whose evidence UNANIMOUSLY names one struct maps every
+    // member into `struct_of`, exempting its module-defined methods from the
+    // builtin-mutator name check (`b.add(5)` on a `Bag` is struct-shaped).
+    // Any container evidence or a struct-name conflict poisons the class —
+    // set/dict receivers keep the relocation-hazard refusal.
     let container_mutated = if alias_semantics.is_reference() {
-        collect_container_mutated(body)
+        let mut evidence: Vec<(String, Option<String>)> = Vec::new();
+        collect_struct_type_evidence(body, params, structs, &mut evidence);
+        // Aggregate per class root: Some(Some(s)) = unanimous struct s so
+        // far; Some(None) = poisoned (container evidence or conflict).
+        let mut root_ev: HashMap<usize, Option<String>> = HashMap::new();
+        for (name, ev) in evidence {
+            // Names outside every alias class can't contribute to a refusal.
+            let Some(&i) = ids.get(name.as_str()) else {
+                continue;
+            };
+            let r = find(&mut parent, i);
+            match root_ev.get(&r) {
+                None => {
+                    root_ev.insert(r, ev);
+                }
+                Some(existing) if *existing != ev => {
+                    root_ev.insert(r, None);
+                }
+                Some(_) => {}
+            }
+        }
+        let mut struct_of: HashMap<String, String> = HashMap::new();
+        for (i, name) in names.iter().enumerate() {
+            let r = find(&mut parent, i);
+            if let Some(Some(s)) = root_ev.get(&r) {
+                struct_of.insert(name.clone(), s.clone());
+            }
+        }
+        collect_container_mutated(body, &struct_of, signatures)
     } else {
         HashSet::new()
     };
@@ -1553,11 +1590,33 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
 /// target those are plain in-place stores through the shared base-pointer,
 /// while a container INSERT can RELOCATE (the PMAT-999 dict/set grow updates
 /// only the receiver's local), so only container-shaped mutation keeps the
-/// alias-class refusal there. Type-blind like its parent: a user method that
-/// happens to share a builtin-mutator name over-taints (benign — refusal is
-/// conservative).
-fn collect_container_mutated(stmts: &[ast::Stmt]) -> HashSet<String> {
-    fn expr_mutator_receiver(e: &ast::Expr, out: &mut HashSet<String>) {
+/// alias-class refusal there.
+///
+/// PMAT-1027 (sweep #10 finding 4): no longer purely name-keyed. A receiver
+/// whose alias class carries UNANIMOUS struct-type evidence (`struct_of`,
+/// see [`alias_class_analysis`]) and whose method is module-defined on that
+/// struct (`signatures` has `Struct#method`) is STRUCT-shaped — `b.add(5)`
+/// on a `Bag` executes on the reference lane instead of false-refusing on
+/// the accident that `add` is also the set mutator. Any container evidence
+/// in the class (annotation, literal, `set()`/`dict()`/`list()` call, or a
+/// container-typed param) poisons the exemption, so a genuinely set/dict
+/// receiver KEEPS the relocation-hazard refusal; an evidence-free class
+/// stays conservatively container-shaped.
+fn collect_container_mutated(
+    stmts: &[ast::Stmt],
+    struct_of: &HashMap<String, String>,
+    signatures: &HashMap<String, FnSig>,
+) -> HashSet<String> {
+    let struct_shaped = |receiver: &str, method: &str| -> bool {
+        struct_of
+            .get(receiver)
+            .is_some_and(|s| signatures.contains_key(&format!("{s}#{method}")))
+    };
+    fn expr_mutator_receiver(
+        e: &ast::Expr,
+        out: &mut HashSet<String>,
+        struct_shaped: &dyn Fn(&str, &str) -> bool,
+    ) {
         if let ast::Expr::Call(c) = e {
             if let ast::Expr::Attribute(attr) = c.func.as_ref() {
                 if matches!(
@@ -1576,13 +1635,19 @@ fn collect_container_mutated(stmts: &[ast::Stmt]) -> HashSet<String> {
                         | "setdefault"
                 ) {
                     if let ast::Expr::Name(n) = attr.value.as_ref() {
-                        out.insert(n.id.to_string());
+                        if !struct_shaped(n.id.as_str(), attr.attr.as_str()) {
+                            out.insert(n.id.to_string());
+                        }
                     }
                 }
             }
         }
     }
-    fn walk(stmts: &[ast::Stmt], out: &mut HashSet<String>) {
+    fn walk(
+        stmts: &[ast::Stmt],
+        out: &mut HashSet<String>,
+        struct_shaped: &dyn Fn(&str, &str) -> bool,
+    ) {
         for s in stmts {
             match s {
                 ast::Stmt::Assign(a) => {
@@ -1604,28 +1669,158 @@ fn collect_container_mutated(stmts: &[ast::Stmt]) -> HashSet<String> {
                         }
                     }
                 }
-                ast::Stmt::Expr(e) => expr_mutator_receiver(&e.value, out),
+                ast::Stmt::Expr(e) => expr_mutator_receiver(&e.value, out, struct_shaped),
                 ast::Stmt::If(i) => {
-                    walk(&i.body, out);
-                    walk(&i.orelse, out);
+                    walk(&i.body, out, struct_shaped);
+                    walk(&i.orelse, out, struct_shaped);
                 }
-                ast::Stmt::While(w) => walk(&w.body, out),
+                ast::Stmt::While(w) => walk(&w.body, out, struct_shaped),
                 ast::Stmt::For(f) => {
-                    walk(&f.body, out);
-                    walk(&f.orelse, out);
+                    walk(&f.body, out, struct_shaped);
+                    walk(&f.orelse, out, struct_shaped);
                 }
                 _ => {}
             }
         }
     }
     let mut out = HashSet::new();
-    walk(stmts, &mut out);
+    walk(stmts, &mut out, &struct_shaped);
     let mut pop_counts = HashMap::new();
     for s in stmts {
         count_pop_receivers_in_stmt(s, &mut pop_counts, 1);
     }
-    out.extend(pop_counts.into_keys());
+    out.extend(
+        pop_counts
+            .into_keys()
+            .filter(|n| !struct_shaped(n.as_str(), "pop")),
+    );
     out
+}
+
+/// PMAT-1027: per-name TYPE EVIDENCE feeding the struct-shaped exemption in
+/// [`collect_container_mutated`]. Each entry is `(name, Some(struct_name))`
+/// for struct evidence or `(name, None)` for container evidence. Sources:
+/// param annotations (`b: Bag` / `xs: list`), body `AnnAssign` annotations
+/// (incl. `"Bag"` forward-reference strings and `list[int]`-style
+/// subscripts), ctor calls (`b = Bag(2)`), container literals /
+/// comprehensions, and `set()`/`dict()`/`list()` builtin calls. Names with
+/// NO evidence contribute nothing — the caller treats their classes
+/// conservatively (container-shaped).
+fn collect_struct_type_evidence(
+    body: &[ast::Stmt],
+    params: &[Param],
+    structs: &HashMap<String, Vec<(String, Type)>>,
+    out: &mut Vec<(String, Option<String>)>,
+) {
+    fn ann_evidence(
+        ann: &ast::Expr,
+        structs: &HashMap<String, Vec<(String, Type)>>,
+    ) -> Option<Option<String>> {
+        match ann {
+            ast::Expr::Name(n) => {
+                let id = n.id.as_str();
+                if structs.contains_key(id) {
+                    Some(Some(id.to_string()))
+                } else if matches!(id, "list" | "dict" | "set" | "List" | "Dict" | "Set") {
+                    Some(None)
+                } else {
+                    None
+                }
+            }
+            ast::Expr::Subscript(s) => {
+                if let ast::Expr::Name(n) = s.value.as_ref() {
+                    if matches!(
+                        n.id.as_str(),
+                        "list" | "dict" | "set" | "List" | "Dict" | "Set"
+                    ) {
+                        return Some(None);
+                    }
+                }
+                None
+            }
+            // A `"Bag"` forward-reference string annotation (PMAT-758 shape).
+            ast::Expr::Constant(c) => {
+                if let ast::Constant::Str(s) = &c.value {
+                    if structs.contains_key(s.trim()) {
+                        return Some(Some(s.trim().to_string()));
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+    fn value_evidence(
+        v: &ast::Expr,
+        structs: &HashMap<String, Vec<(String, Type)>>,
+    ) -> Option<Option<String>> {
+        match v {
+            ast::Expr::Call(c) => {
+                if let ast::Expr::Name(f) = c.func.as_ref() {
+                    if structs.contains_key(f.id.as_str()) {
+                        return Some(Some(f.id.to_string()));
+                    }
+                    if matches!(f.id.as_str(), "list" | "dict" | "set") {
+                        return Some(None);
+                    }
+                }
+                None
+            }
+            ast::Expr::List(_)
+            | ast::Expr::Dict(_)
+            | ast::Expr::Set(_)
+            | ast::Expr::ListComp(_)
+            | ast::Expr::DictComp(_)
+            | ast::Expr::SetComp(_) => Some(None),
+            _ => None,
+        }
+    }
+    fn walk(
+        stmts: &[ast::Stmt],
+        structs: &HashMap<String, Vec<(String, Type)>>,
+        out: &mut Vec<(String, Option<String>)>,
+    ) {
+        for s in stmts {
+            match s {
+                ast::Stmt::Assign(a) => {
+                    if let Some(ev) = value_evidence(&a.value, structs) {
+                        for t in &a.targets {
+                            if let ast::Expr::Name(n) = t {
+                                out.push((n.id.to_string(), ev.clone()));
+                            }
+                        }
+                    }
+                }
+                ast::Stmt::AnnAssign(aa) => {
+                    if let ast::Expr::Name(n) = aa.target.as_ref() {
+                        if let Some(ev) = ann_evidence(&aa.annotation, structs)
+                            .or_else(|| aa.value.as_ref().and_then(|v| value_evidence(v, structs)))
+                        {
+                            out.push((n.id.to_string(), ev));
+                        }
+                    }
+                }
+                ast::Stmt::If(i) => {
+                    walk(&i.body, structs, out);
+                    walk(&i.orelse, structs, out);
+                }
+                ast::Stmt::While(w) => walk(&w.body, structs, out),
+                ast::Stmt::For(f) => {
+                    walk(&f.body, structs, out);
+                    walk(&f.orelse, structs, out);
+                }
+                _ => {}
+            }
+        }
+    }
+    for p in params {
+        match &p.ty {
+            Type::Struct(s) => out.push((p.name.clone(), Some(s.clone()))),
+            Type::List(_) | Type::Dict(_, _) | Type::Set(_) => out.push((p.name.clone(), None)),
+            _ => {}
+        }
+    }
+    walk(body, structs, out);
 }
 
 fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
@@ -5171,20 +5366,57 @@ fn try_lower_side_effect_call(
             let ast::Expr::Name(obj) = attr.value.as_ref() else {
                 return None;
             };
-            let Some(Type::Struct(sname)) = ctx.name_types.get(obj.id.as_str()) else {
-                return None;
-            };
-            let has_method = ctx
-                .struct_methods
-                .get(sname)
-                .is_some_and(|ms| ms.iter().any(|(m, _)| m == attr.attr.as_str()));
-            if !has_method {
-                return None;
+            // PMAT-1027 (sweep #10 finding 3): a statement-position method
+            // call on a receiver the lowering can actually see must never
+            // fall through to the `subprocess.run` recognizer's factually
+            // wrong "only subprocess.run([...]) is recognised" message.
+            // Precise refusals per case; only a genuinely UNBOUND name (a
+            // module receiver like `subprocess`) keeps the fallback.
+            match ctx.name_types.get(obj.id.as_str()) {
+                Some(Type::Struct(sname)) => {
+                    let has_method = ctx
+                        .struct_methods
+                        .get(sname)
+                        .is_some_and(|ms| ms.iter().any(|(m, _)| m == attr.attr.as_str()));
+                    if !has_method {
+                        return Some(Err(FrontendError::Lower(format!(
+                            "function `{}` calls `{}.{}(...)` but class `{sname}` defines no \
+                             method `{}`",
+                            ctx.fn_name,
+                            obj.id.as_str(),
+                            attr.attr.as_str(),
+                            attr.attr.as_str()
+                        ))));
+                    }
+                    Some(
+                        lower_expr_in_ctx(ctx, (*e.value).clone())
+                            .map(|call| Stmt::SideEffectCall { call }),
+                    )
+                }
+                Some(Type::Unit) => Some(Err(FrontendError::Lower(format!(
+                    "function `{}` calls `{}.{}(...)` as a statement but receiver `{}` types \
+                     as `None` — it was likely bound from a function/method call whose return \
+                     type is unannotated; annotate that callable's `->` return type so `{}` \
+                     gets a real type",
+                    ctx.fn_name,
+                    obj.id.as_str(),
+                    attr.attr.as_str(),
+                    obj.id.as_str(),
+                    obj.id.as_str()
+                )))),
+                Some(other) => Some(Err(FrontendError::Lower(format!(
+                    "function `{}` calls `{}.{}(...)` as a statement but receiver `{}` types \
+                     as {other:?}, which has no lowerable statement-position method `{}` — \
+                     supported: builtin container mutators on list/dict/set receivers and \
+                     module-defined methods on class instances",
+                    ctx.fn_name,
+                    obj.id.as_str(),
+                    attr.attr.as_str(),
+                    obj.id.as_str(),
+                    attr.attr.as_str()
+                )))),
+                None => None,
             }
-            Some(
-                lower_expr_in_ctx(ctx, (*e.value).clone())
-                    .map(|call| Stmt::SideEffectCall { call }),
-            )
         }
         // `helper(...)` — a known user function (signature map).
         ast::Expr::Name(fname) => {
@@ -21574,6 +21806,116 @@ mod tests {
         assert!(
             matches!(alias_value, Expr::Ident(n) if n == "s"),
             "a dead-source str alias moves (no wasted clone): {alias_value:?}"
+        );
+    }
+
+    /// PMAT-1027 (sweep #10 finding 4): a struct method that happens to
+    /// share a builtin-mutator NAME (`add`) mutated through an alias.
+    const STRUCT_ADD_ALIAS: &str = "class Bag:\n    n: int\n\n    def __init__(self, n: int) -> None:\n        self.n = n\n\n    def add(self, v: int) -> None:\n        self.n = self.n + v\n\ndef run() -> int:\n    a = Bag(2)\n    b = a\n    b.add(5)\n    return a.n\n";
+
+    /// PMAT-1027 (sweep #10 finding 4): the mutation-shape classifier is
+    /// TYPED — `b.add(5)` on a proven `Bag` receiver is struct-shaped and
+    /// the reference lane EXECUTES it (previously the name-keyed
+    /// `collect_container_mutated` false-refused on the accident that `add`
+    /// is also the set mutator). The value lane keeps refusing (`add`
+    /// genuinely mutates through the alias).
+    #[test]
+    fn reference_lane_executes_struct_method_named_like_builtin_mutator() {
+        let err = PythonFrontend
+            .parse_and_lower(&PathBuf::from("fixture.py"), STRUCT_ADD_ALIAS)
+            .expect_err("value lane must keep refusing the mutated alias");
+        assert!(
+            format!("{err}").contains("aliases `a` and `b`"),
+            "value-lane refusal names the pair: {err}"
+        );
+
+        let m = parse_for_reference(STRUCT_ADD_ALIAS)
+            .expect("reference lane accepts the struct-shaped `add` through the alias");
+        let run = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "run" => Some(f),
+                _ => None,
+            })
+            .expect("run() lowered");
+        let saw_method_call = run.body.stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::SideEffectCall {
+                    call: Expr::MethodCall { method, .. }
+                } if method == "add"
+            )
+        });
+        assert!(saw_method_call, "b.add(5) lowers as a struct MethodCall");
+    }
+
+    /// PMAT-1027: the relocation-hazard lock re-pinned — a genuinely
+    /// SET-typed receiver with the same method name keeps the refusal on
+    /// the reference lane (a set insert can RELOCATE the record; an alias
+    /// would go silently stale).
+    #[test]
+    fn reference_lane_keeps_set_alias_refusal_for_builtin_add() {
+        let src =
+            "def run() -> int:\n    a: set = {1, 2}\n    b = a\n    b.add(5)\n    return len(a)\n";
+        let err = parse_for_reference(src).expect_err("set alias must keep refusing");
+        assert!(
+            format!("{err}").contains("aliases `a` and `b`"),
+            "refusal is the alias disposition: {err}"
+        );
+    }
+
+    /// PMAT-1027: CONFLICTING evidence poisons the exemption — a class
+    /// carrying both set evidence and struct evidence (branch-dependent
+    /// binding) keeps the conservative container-shaped refusal.
+    #[test]
+    fn reference_lane_conflicting_evidence_keeps_refusal() {
+        let src = "class Bag:\n    n: int\n\n    def __init__(self, n: int) -> None:\n        self.n = n\n\n    def add(self, v: int) -> None:\n        self.n = self.n + v\n\ndef run(flag: bool) -> int:\n    b: set = {1, 2}\n    if flag:\n        c = Bag(2)\n        b = c\n    d = b\n    d.add(5)\n    return len(b)\n";
+        let err = parse_for_reference(src).expect_err("poisoned class must keep refusing");
+        assert!(
+            format!("{err}").contains("aliases `b` and `d`"),
+            "refusal names the alias pair: {err}"
+        );
+    }
+
+    /// PMAT-1027 (sweep #10 finding 3): a statement-position method call on
+    /// an unknown-typed receiver (bound from an UNANNOTATED method's return,
+    /// which defaults to Unit) names the receiver and the missing annotation
+    /// — never the factually wrong "only subprocess.run([...])" message.
+    #[test]
+    fn unknown_receiver_statement_call_names_receiver_not_subprocess() {
+        let src = "class Me:\n    n: int\n\n    def __init__(self, n: int) -> None:\n        self.n = n\n\n    def thing(self):\n        return self\n\n    def bump(self) -> None:\n        self.n = self.n + 1\n\ndef run() -> int:\n    me = Me(1)\n    b = me.thing()\n    b.bump()\n    return me.n\n";
+        let err = PythonFrontend
+            .parse_and_lower(&PathBuf::from("fixture.py"), src)
+            .expect_err("the untyped receiver must refuse");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("receiver `b`") && msg.contains("annotate"),
+            "refusal names the receiver and the fix: {msg}"
+        );
+        assert!(
+            !msg.contains("subprocess"),
+            "the wrong subprocess diagnostic must be gone: {msg}"
+        );
+    }
+
+    /// PMAT-1027: a struct-typed receiver calling a method its class does
+    /// NOT define gets a precise "defines no method" refusal (previously the
+    /// subprocess message).
+    #[test]
+    fn struct_receiver_unknown_method_names_the_class() {
+        let src = "class Bag:\n    n: int\n\n    def __init__(self, n: int) -> None:\n        self.n = n\n\ndef run() -> int:\n    a = Bag(2)\n    a.frobnicate(5)\n    return a.n\n";
+        let err = PythonFrontend
+            .parse_and_lower(&PathBuf::from("fixture.py"), src)
+            .expect_err("the unknown method must refuse");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("class `Bag` defines no method `frobnicate`"),
+            "refusal names class and method: {msg}"
+        );
+        assert!(
+            !msg.contains("subprocess"),
+            "never the subprocess message: {msg}"
         );
     }
 

@@ -17969,6 +17969,107 @@ fn transpile_struct_pick_alias_py_wasm_executes_rust_refuses() {
     );
 }
 
+/// PMAT-1027 (sweep #10 finding 4): struct methods sharing builtin-mutator
+/// NAMES (`add`, `pop`, `update`) mutated through an alias. The name-keyed
+/// classifier false-refused the whole program on the reference lane on the
+/// accident of naming (`b.add(5)` refused while `b.plus(5)` executed); the
+/// TYPED classifier proves the receiver's alias class is unanimously `Bag`
+/// and executes all three. The Rust lane keeps refusing — the methods
+/// genuinely mutate through the alias, which value semantics cannot express.
+#[test]
+fn transpile_struct_mutator_names_py_wasm_executes_rust_refuses() {
+    let py = fixture("struct_mutator_names.py");
+
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !rust_out.status.success(),
+        "the rust lane must still REFUSE the mutated struct alias"
+    );
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_err.contains("aliases `a` and `b`"),
+        "the alias-class refusal names the pair:\n{rust_err}"
+    );
+
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the mutator-named struct methods: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("call $Bag.add")
+            && stdout.contains("call $Bag.pop")
+            && stdout.contains("call $Bag.update"),
+        "run() drives all three mutator-named methods:\n{stdout}"
+    );
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1027: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-mutnames-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("mutnames.wat");
+    let wasm_path = dir.join("mutnames.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:1614"),
+        "executed run() must == CPython 1614 (10+5=15 via add; pop → 14, \
+         x=14; update +2 → 16; 16*100+14):\n{interp_out}"
+    );
+}
+
+/// PMAT-1027 (sweep #10 finding 3): a statement-position method call on a
+/// receiver bound from an UNANNOTATED method's return refuses by NAMING the
+/// receiver and the missing annotation — never the factually wrong
+/// "only subprocess.run([...]) is recognised" message.
+#[test]
+fn transpile_unknown_receiver_statement_call_precise_refusal() {
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-unkrecv-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let py = dir.join("unknown_receiver.py");
+    std::fs::write(
+        &py,
+        "class Me:\n    n: int\n\n    def __init__(self, n: int) -> None:\n        self.n = n\n\n    def thing(self):\n        return self\n\n    def bump(self) -> None:\n        self.n = self.n + 1\n\ndef run() -> int:\n    me = Me(1)\n    b = me.thing()\n    b.bump()\n    return me.n\n",
+    )
+    .expect("write fixture");
+    for target in ["rust", "wasm"] {
+        let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", target]);
+        assert!(
+            !out.status.success(),
+            "the untyped receiver must refuse on --target {target}"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("receiver `b`") && stderr.contains("annotate"),
+            "--target {target}: refusal names the receiver and the fix:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("subprocess"),
+            "--target {target}: the wrong subprocess diagnostic must be gone:\n{stderr}"
+        );
+    }
+}
+
 /// PMAT-1028: str LOCALS + reassignment on the WASM lane — the string
 /// ACCUMULATOR idiom (`out = out + chr(…)` in a loop), str-literal locals,
 /// concat of locals, CONTENT equality over a fresh heap copy (`c = s + ""`;
