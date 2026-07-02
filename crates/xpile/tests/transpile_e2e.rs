@@ -19348,3 +19348,24 @@ fn main() {
 "#;
     assert_rustc_runs("context_managers", &rust, driver);
 }
+
+/// PMAT-1074: `open(path).read()` → inline `std::fs::read_to_string`. The
+/// driver writes a temp file, then asserts the transpiled readers. MATCH.
+#[test]
+fn file_read() {
+    let rust = xpile_transpile_to_rust("file_read.py");
+    assert!(
+        rust.contains("read_to_string") && rust.contains("FileNotFoundError"),
+        "open().read() lowers to std::fs::read_to_string with a FileNotFoundError panic:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let path = "/tmp/xpile_e2e_file_read.txt";
+    ::std::fs::write(path, "alpha\nbeta\ngamma\n").unwrap();
+    assert_eq!(read_all(path.to_string()), "alpha\nbeta\ngamma\n", "whole-file read");
+    assert_eq!(line_count(path.to_string()), 3, "splitlines count");
+    assert_eq!(char_count(path.to_string()), 17, "byte/char count");
+}
+"#;
+    assert_rustc_runs("file_read", &rust, driver);
+}

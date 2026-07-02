@@ -3512,6 +3512,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(" }");
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
+        // PMAT-1074: `open(path).read()` → inline std::fs::read_to_string.
+        Expr::FileReadAll(path) => {
+            out.push_str("::std::fs::read_to_string(");
+            emit_expr(out, path, mode)?;
+            out.push_str(").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!(\"xpile: FileNotFoundError: {}\", __e) } else { panic!(\"xpile: OSError: {}\", __e) })");
+        }
         Expr::Len(inner) => {
             // PMAT-761 (HUNT-V16 CFD-3): parenthesize the cast so `len(x) < N`
             // doesn't make rustc read `i64 <` as a turbofish (parse error).

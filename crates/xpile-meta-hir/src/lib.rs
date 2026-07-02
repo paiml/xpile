@@ -780,6 +780,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // PMAT-459 (v0.2.0 Track 1.B): len() of a collection is not
         // itself arithmetic; recurse defensively into the inner expr.
         Expr::Len(inner) => expr_has_int_arith(inner),
+        Expr::FileReadAll(inner) => expr_has_int_arith(inner),
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
         // PMAT-055: shell special parameters same disposition.
@@ -1755,6 +1756,13 @@ pub enum Expr {
     ///     coerced to `Int` via the explicit type ascription).
     ///   * Shell: refuses (no collection-length concept).
     Len(Box<Expr>),
+    /// PMAT-1074: `open(<path>).read()` — read a whole file to a `str`. Emitted
+    /// INLINE as `std::fs::read_to_string(<path>)` with a panic on error
+    /// (missing file → `xpile: FileNotFoundError` = CPython's FileNotFoundError,
+    /// so both raise = BOTHRAISE). The inner expr is the path (a `str`). First
+    /// increment of the file-I/O domain; write / `with open()` / line iteration
+    /// are the follow-ups (see roadmap PMAT-1074).
+    FileReadAll(Box<Expr>),
     /// List indexed access — Python `xs[i]`. PMAT-457, v0.2.0 Track 1.B.
     ///
     /// At v0.2.0 first cut the `index` expression is treated as a
@@ -3655,6 +3663,7 @@ fn escape_expr(e: &mut Expr) {
         }
         Expr::DictView { dict, .. } => escape_expr(dict),
         Expr::Len(inner) => escape_expr(inner),
+        Expr::FileReadAll(inner) => escape_expr(inner),
         Expr::CommandSubstitution(inner) => escape_stmt(inner),
     }
 }
@@ -4211,6 +4220,7 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         }
         Expr::DictView { dict, .. } => collect_idents_expr(dict, acc),
         Expr::Len(inner) => collect_idents_expr(inner, acc),
+        Expr::FileReadAll(inner) => collect_idents_expr(inner, acc),
         Expr::CommandSubstitution(inner) => collect_idents_stmt(inner, acc),
     }
 }
