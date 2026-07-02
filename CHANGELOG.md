@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.609] — 2026-07-02
+
 ### try/except/finally (PMAT-1070)
 
 - `finally:` on a statement-form try/except now runs in every exit path
