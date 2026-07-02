@@ -7,6 +7,42 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Field subscript stores — `self.counts[i] = v` lands (PMAT-1037 slice C)
+
+- **New meta-HIR `Stmt::FieldIndexAssign { obj, field, steps, value }`** —
+  subscript stores through a struct FIELD, the dominant remaining
+  class-state refusal ("non-Name subscript-assignment target", sweep-#10
+  cluster). Covers `self.counts[i] = v`, dict fields `self.m[k] = v`
+  (insert-or-overwrite, bool→i64 key coercion), nested
+  `self.cells[r][c] = v`, mixed dict-of-list `self.grid[k][i] = v`,
+  augmented `+=` (dict leaves included — the RHS-first sequencing makes the
+  read + `get_mut` write borrow-safe), LOCAL struct receivers
+  (`c.counts[0] = v`), negative-index wrap, and int→float leaf widening
+  (PMAT-1017 parity). Rust/Ruchy reuse the NestedSubscriptAssign emitter
+  (extracted `emit_subscript_write_through`, byte-identical for the old
+  variant) with base `<obj>.<field>`; Lean/WASM refuse precisely.
+- **Blast-radius fixes the new shape forced** (each caught by an in-slice
+  adversarial witness, all differentially verified vs CPython):
+  `for c in cs: c.counts[0] = v` now drives `iter_mut()`
+  (`foreach_elem_mutated` gained FieldIndexAssign + NestedSubscriptAssign
+  arms — the write previously landed on an owned clone, E0596);
+  `expr_has_mutator` gained Subscript/Attribute arms so `q.pop(0)` buried
+  in a store's INDEX marks the callee as mutating that param (the PMAT-884
+  guard was silent on `xs[q.pop(0)] = v` shapes); METHOD-call args now ride
+  `clone_reused_call_args` like free-fn args (`g.score(q) + g.score(q)` was
+  E0382) **paired with** the `check_expr_for_alias_mutate` MethodCall arm
+  (param index offset by the `self` slot) — the pair is load-bearing:
+  clone-without-guard would turn the loud E0382 into a silent
+  stale-container divergence (`c.drain(q); len(q)` → 2 vs CPython 1).
+- Known residuals (pre-existing classes, observed while probing): int
+  stored into a float-annotated slot prints `3.0` vs CPython `3` (the
+  shipped param-coercion convention, same class as `f(3)` for
+  `f(x: float)`); the LOCAL-list sibling `xs[i] = 3` over `list[float]`
+  emits E0308 invalid Rust (no leaf widening on the Name-bottoming path).
+- 3 e2e tests (719 total): the 6-function differential fixture
+  (MATCH 14/56/56/4.5/14/6), the live-alias store refusal, and the
+  reused-arg mutating-method refusal.
+
 ### Sweep #11 + reassignments routed through the alias-disposition suite (PMAT-1031)
 
 - **Adversarial differential sweep #11** hit the day-old PMAT-1026..1030
