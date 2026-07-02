@@ -47,6 +47,23 @@ impl AliasSemantics {
     }
 }
 
+/// PMAT-1034: target capabilities threaded into lowering, extending the
+/// PMAT-1024 [`AliasSemantics`] hint with a runtime-abort capability.
+///
+/// `runtime_abort` is true when the target can express a runtime abort — a
+/// Rust/Ruchy `panic!` or a WASM `unreachable` trap. The Python frontend
+/// then emits the empty-iterable loop-var-leak guard (an `UnboundLocalError`
+/// analogue: `for x in xs: …` then a post-loop read of `x` raises in CPython
+/// when `xs` was empty). Lanes with no portable abort (PTX / WGSL / SPIR-V /
+/// Lean / shell) keep `false`: emitting the guard there would refuse shapes
+/// those lanes execute exactly on every non-empty input, which is the
+/// over-refusal PMAT-1034 explicitly rejects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LoweringProfile {
+    pub alias_semantics: AliasSemantics,
+    pub runtime_abort: bool,
+}
+
 pub trait Frontend: Send + Sync {
     /// Human-readable language name, e.g. "python", "c", "ruchy".
     fn name(&self) -> &'static str;
@@ -85,5 +102,20 @@ pub trait Frontend: Send + Sync {
     ) -> Result<Module, FrontendError> {
         let _ = semantics;
         self.parse_and_lower(path, source)
+    }
+
+    /// PMAT-1034: parse and lower for a target of known [`LoweringProfile`]
+    /// (alias semantics + runtime-abort capability). The default delegates to
+    /// [`Frontend::parse_and_lower_for`], ignoring the abort capability, so
+    /// existing frontends are unaffected; a frontend that emits
+    /// abort-carrying runtime guards (depyler-frontend's empty-iterable
+    /// loop-var-leak guard) overrides this to honor the full profile.
+    fn parse_and_lower_profiled(
+        &self,
+        path: &Path,
+        source: &str,
+        profile: LoweringProfile,
+    ) -> Result<Module, FrontendError> {
+        self.parse_and_lower_for(path, source, profile.alias_semantics)
     }
 }

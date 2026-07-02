@@ -23,7 +23,7 @@ use xpile_core::TranspileSession;
 use xpile_ffi_manifest::{
     defining_function, resolve_boundary_to_langs, retype_float_ffi_sites, FfiEntry, FfiManifest,
 };
-use xpile_frontend::AliasSemantics;
+use xpile_frontend::{AliasSemantics, LoweringProfile};
 use xpile_meta_hir::{Module, SourceLang, Type};
 use xpile_oracle::{capture_cpython_hybrid_ref, diff_stdout, ComparisonResult, CtypesBinding};
 
@@ -606,7 +606,7 @@ fn transpile(
     // skipped for pointer-stable types there).
     let target = parse_target(target_str)?;
     let module = frontend
-        .parse_and_lower_for(input, &source, alias_semantics_for(target))
+        .parse_and_lower_profiled(input, &source, lowering_profile_for(target))
         .with_context(|| format!("parse_and_lower failed for {}", input.display()))?;
 
     let backend = session
@@ -651,6 +651,19 @@ fn alias_semantics_for(target: Target) -> AliasSemantics {
     match target {
         Target::Wasm => AliasSemantics::Reference,
         _ => AliasSemantics::Value,
+    }
+}
+
+/// PMAT-1034: the full lowering profile — alias semantics plus whether the
+/// target can express a runtime abort. Rust/Ruchy `panic!` and the WASM
+/// `unreachable` trap can carry the empty-iterable loop-var-leak guard (the
+/// `UnboundLocalError` analogue); PTX/WGSL/SPIR-V/Lean/shell have no portable
+/// abort, so the guard is not emitted there (refusing those shapes instead
+/// would block programs they execute exactly on every non-empty input).
+fn lowering_profile_for(target: Target) -> LoweringProfile {
+    LoweringProfile {
+        alias_semantics: alias_semantics_for(target),
+        runtime_abort: matches!(target, Target::Rust | Target::Ruchy | Target::Wasm),
     }
 }
 

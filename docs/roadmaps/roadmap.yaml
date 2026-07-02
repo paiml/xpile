@@ -238,7 +238,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1034: [rust/semantics-edge] for-loop var leak over an EMPTY iterable executes the type-default where CPython raises UnboundLocalError (sweep #11 finding 4). `for x in xs: …` then a post-loop read of `x`: the rust lane hoists `let mut x = <default>` so the NON-empty leak matches CPython exactly (a06: 1331 == 1331, a10 break-var: 15 == 15, e03 method-scope: 12 == 12 — the leak support is real and correct), but when the iterable is EMPTY at runtime CPython raises UnboundLocalError and the rust lane silently returns the 0-default (a07: rust 0, py raises). Emptiness is dynamic, so a static refusal would kill the correct non-empty idiom. HONEST OPTIONS: (a) a was-set runtime flag when (and only when) the loop var is read post-loop AND the iterable is not provably non-empty — panic "UnboundLocalError analogue" on the unset read (exact, costs one bool local); (b) refuse post-loop loop-var reads unless the iterable is a non-empty literal (over-refuses a06/a10/e03 — NOT acceptable, they currently match); (c) document as a known divergence-on-error corner (Python errors, xpile executes — the same class as the OverflowError-vs-wrap family already documented). Option (a) is the correct fix; its cost is scoped to functions that actually leak-read.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
