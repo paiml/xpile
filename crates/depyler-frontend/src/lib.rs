@@ -1575,6 +1575,16 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
                     if let ast::Expr::Name(n) = attr.value.as_ref() {
                         out.insert(n.id.to_string());
                     }
+                    // PMAT-1037 slice D (d5 witness): `b2.items.append(9)` —
+                    // an attribute-CHAIN receiver mutates the ROOT object.
+                    // Before slice D this shape refused at lowering, masking
+                    // the gap; once it lowers, a cloned alias would silently
+                    // drop the shared mutation (rust 1 vs CPython 2).
+                    if let ast::Expr::Attribute(inner) = attr.value.as_ref() {
+                        if let ast::Expr::Name(root) = inner.value.as_ref() {
+                            out.insert(root.id.to_string());
+                        }
+                    }
                 }
             }
         }
@@ -2041,6 +2051,18 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                                 if let ast::Expr::Name(base) = sub.value.as_ref() {
                                     let bump = if in_loop { 2 } else { 1 };
                                     *counts.entry(base.id.to_string()).or_insert(0) += bump;
+                                }
+                            }
+                            // PMAT-1037 slice D: `b.items.append(e)` — an
+                            // attribute-CHAIN receiver mutates the root
+                            // struct binding in place (lowered as a
+                            // MethodCall{push} on the FieldAccess), so `b`
+                            // must be `let mut` (the lowering-time insert is
+                            // too late for the local's own `let`).
+                            if let ast::Expr::Attribute(inner) = attr.value.as_ref() {
+                                if let ast::Expr::Name(root) = inner.value.as_ref() {
+                                    let bump = if in_loop { 2 } else { 1 };
+                                    *counts.entry(root.id.to_string()).or_insert(0) += bump;
                                 }
                             }
                         }
@@ -5417,15 +5439,21 @@ fn try_lower_side_effect_call(
             // (valid with the &mut self the extended detector now forces);
             // the other field mutators refuse with a precise message.
             if let ast::Expr::Attribute(inner) = attr.value.as_ref() {
-                if matches!(inner.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "self") {
+                // PMAT-1037 slice D: generalized from `self` to ANY
+                // struct-typed Name receiver — `b.items.append(x)` on a
+                // struct LOCAL outside methods hit the subprocess recognizer
+                // with a factually wrong message (`self` is just the method
+                // case: it types as Struct like any other bound name).
+                if let ast::Expr::Name(recv) = inner.value.as_ref() {
+                    let obj = recv.id.to_string();
                     let field = inner.attr.to_string();
-                    let self_struct = match ctx.name_types.get("self") {
+                    let recv_struct = match ctx.name_types.get(&obj) {
                         Some(Type::Struct(s)) => s.clone(),
                         _ => return None,
                     };
                     let field_ty = ctx
                         .structs
-                        .get(&self_struct)
+                        .get(&recv_struct)
                         .and_then(|fs| fs.iter().find(|(f, _)| *f == field))
                         .map(|(_, t)| t.clone())?;
                     let mutator = attr.attr.as_str();
@@ -5448,7 +5476,7 @@ fn try_lower_side_effect_call(
                     if mutator == "append" && matches!(field_ty, Type::List(_)) {
                         if call.args.len() != 1 || !call.keywords.is_empty() {
                             return Some(Err(FrontendError::Lower(format!(
-                                "function `{}` calls `self.{field}.append(...)` with {} arg(s) — exactly 1 positional value",
+                                "function `{}` calls `{obj}.{field}.append(...)` with {} arg(s) — exactly 1 positional value",
                                 ctx.fn_name,
                                 call.args.len()
                             ))));
@@ -5466,10 +5494,15 @@ fn try_lower_side_effect_call(
                         } else {
                             arg
                         };
+                        // PMAT-1037 slice D (d7 witness): the pushed value
+                        // rides the same reuse-clone as plain ListAppend —
+                        // `b.items.append(w)` twice moved `w` (E0382).
+                        let arg = clone_if_reused_non_copy(ctx, arg);
+                        ctx.mutable.insert(obj.clone());
                         return Some(Ok(Stmt::SideEffectCall {
                             call: Expr::MethodCall {
                                 obj: Box::new(Expr::FieldAccess {
-                                    obj: Box::new(Expr::Ident("self".to_string())),
+                                    obj: Box::new(Expr::Ident(obj)),
                                     field,
                                 }),
                                 method: "push".to_string(),
@@ -5478,7 +5511,7 @@ fn try_lower_side_effect_call(
                         }));
                     }
                     return Some(Err(FrontendError::Lower(format!(
-                        "function `{}` calls `self.{field}.{mutator}(...)` — field-container mutators other than `append` are not yet lowered (PMAT-1022 first cut); assign the field to a local, mutate, and store back",
+                        "function `{}` calls `{obj}.{field}.{mutator}(...)` — field-container mutators other than `append` are not yet lowered (PMAT-1022 first cut); assign the field to a local, mutate, and store back",
                         ctx.fn_name
                     ))));
                 }

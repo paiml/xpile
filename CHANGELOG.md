@@ -7,6 +7,29 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Attribute-chain field appends on struct locals — the PMAT-1037 epic completes (slice D)
+
+- **`b.items.append(x)` outside methods lands** — the PMAT-1022
+  statement-position field-mutator branch generalized from `self` to ANY
+  struct-typed Name receiver (`self` is just the method case). The chain
+  lowers to `MethodCall{push}` on the FieldAccess; the mutability pre-walk
+  marks the root binding `let mut`; the pushed value rides
+  `clone_if_reused_non_copy` (ListAppend parity — a reused `w` appended
+  twice was E0382); int→float widening applies to the pushed value.
+  Non-append field mutators (`sort`/`extend`/…) keep the precise
+  PMAT-1022 first-cut refusal, now naming the actual receiver.
+- **Silent-divergence guard the generalization exposed (d5 witness)**:
+  `collect_obj_mutated`'s `expr_mutator_receiver` only saw Name receivers,
+  so `b2.items.append(9)` never counted as object mutation of `b2` — the
+  alias disposition CLONED the alias and the shared mutation silently
+  dropped (rust 1 vs CPython 2). The refusal that slice D removed had been
+  MASKING the gap. The attribute-chain arm now routes the shape to the
+  precise alias refusal.
+- With slices A–C (cron stream #1640 + #1651), every door of the PMAT-1037
+  PEP-526/field epic now lowers or refuses precisely; the epic is done.
+- 2 e2e tests (721 total): the 4-function differential fixture
+  (MATCH 11/9/2.5/4) and the live-alias chain-append refusal.
+
 ### Field subscript stores — `self.counts[i] = v` lands (PMAT-1037 slice C)
 
 - **New meta-HIR `Stmt::FieldIndexAssign { obj, field, steps, value }`** —
