@@ -921,6 +921,14 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'Suite 747 green; MATCH caught/oob/-1/boom/2/0; adversarially verified — no-swallow (a1 BOTHRAISE), own-type catch, handler-raise-propagates, loop-in-try, nested; else/finally/multi-except refuse precisely. Meta-HIR variant + 4 walkers + rust/ruchy emit + lean/wasm refuse + frontend dispatch. Low collision risk with the cron OOP lane.'
+- id: PMAT-1059
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1059: [rust/capability/exceptions] MULTIPLE `except` clauses on a statement-form try — `try: B except E1: H1 except E2: H2 except: H3`. Builds on PMAT-1058: the Err arm of the catch_unwind emits an ordered if/else-if chain over the handlers (first matching TYPE wins, SOURCE order); a catch-all (`except:` / `except Exception:`, empty types — Python-required last) is the final `else`, otherwise the chain ends in resume_unwind so an unmatched exception PROPAGATES (not swallowed — adversarially verified BOTHRAISE). Additive meta-HIR: Stmt::TryCatch gains `extra_handlers: Vec<TryHandler>` (`#[serde(default)]`, so single-except IR + emit are byte-unchanged); a new `TryHandler {except_types, bound_name, body}` struct. Frontend lower_statement_try builds the first handler + extra_handlers, each `as e` scoped to its own block. Still deferred: else/finally, bare re-raise.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Suite 748 green; MATCH val/key/other/key/idx; adversarially verified — ordered first-match, catch-all-last, 4-handler chain, unmatched-propagates (BOTHRAISE), loop-in-body, single-except unchanged. Additive extra_handlers + 4 walkers + rust/ruchy chain emit + frontend.'
 - id: PMAT-1060
   github_issue: null
   item_type: feature

@@ -33,7 +33,7 @@ use xpile_frontend::{AliasSemantics, Frontend, FrontendError, LoweringProfile};
 use xpile_meta_hir::{
     collect_block_idents, BinOp, Block, DictViewKind, Expr, FfiBoundary, FloatOp, Function, Item,
     ListMutateOp, ListQueryOp, Module, NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp,
-    SortKey, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    SortKey, SourceLang, Stmt, StrMethodOp, TryHandler, Type, UnOp,
 };
 
 use rustpython_parser::ast;
@@ -11057,6 +11057,9 @@ fn is_assignment_try_shape(try_stmt: &ast::StmtTry) -> bool {
 /// a name first-bound INSIDE an arm does not leak past the `try` (the
 /// value model can't express Python's leak of a maybe-unset try local —
 /// reading such a name after refuses at lowering, loud, not miscompiled).
+/// PMAT-1059: a lowered `except` clause — `(except_types, as-name, body)`.
+type LoweredHandler = (Vec<String>, Option<String>, Vec<Stmt>);
+
 fn lower_statement_try(
     ctx: &mut LoweringCtx,
     try_stmt: ast::StmtTry,
@@ -11067,16 +11070,12 @@ fn lower_statement_try(
             ctx.fn_name
         )));
     }
-    if try_stmt.handlers.len() != 1 {
+    if try_stmt.handlers.is_empty() {
         return Err(FrontendError::Lower(format!(
-            "function `{}`'s `try` has {} `except` clauses — v0.2.0 first cut supports a single `except`",
-            ctx.fn_name,
-            try_stmt.handlers.len()
+            "function `{}`'s `try` has no `except` clause — v0.2.0 requires at least one",
+            ctx.fn_name
         )));
     }
-    let ast::ExceptHandler::ExceptHandler(h) = &try_stmt.handlers[0];
-    let bound_name = h.name.as_ref().map(|n| n.to_string());
-    let except_types = except_type_names(h.type_.as_deref());
     // Lower the try body as a block — locals declared here are scoped to it.
     let saved_bound = ctx.bound.clone();
     let saved_types = ctx.name_types.clone();
@@ -11088,25 +11087,45 @@ fn lower_statement_try(
     // emitted Rust block-scopes them; a post-`try` read then refuses, loud).
     ctx.bound = saved_bound;
     ctx.name_types = saved_types;
-    // Lower the handler as a block, with `as <name>` (the exception message)
-    // scoped to it (PMAT-817 parity with the value form).
-    let saved_bound_h = ctx.bound.clone();
-    let saved_types_h = ctx.name_types.clone();
-    if let Some(name) = &bound_name {
-        ctx.bound.insert(name.clone());
-        ctx.name_types.insert(name.clone(), Type::Str);
+    // PMAT-1058/1059: lower each `except` clause's block, with its `as <name>`
+    // (the exception message) scoped to that handler only (PMAT-817 parity).
+    let lower_handler = |ctx: &mut LoweringCtx,
+                         h: &ast::ExceptHandlerExceptHandler|
+     -> Result<LoweredHandler, FrontendError> {
+        let bound_name = h.name.as_ref().map(|n| n.to_string());
+        let except_types = except_type_names(h.type_.as_deref());
+        let saved_b = ctx.bound.clone();
+        let saved_t = ctx.name_types.clone();
+        if let Some(name) = &bound_name {
+            ctx.bound.insert(name.clone());
+            ctx.name_types.insert(name.clone(), Type::Str);
+        }
+        let mut hbody = Vec::new();
+        for st in &h.body {
+            hbody.extend(lower_block_stmt(ctx, st.clone())?);
+        }
+        ctx.bound = saved_b;
+        ctx.name_types = saved_t;
+        Ok((except_types, bound_name, hbody))
+    };
+    let ast::ExceptHandler::ExceptHandler(h0) = &try_stmt.handlers[0];
+    let (except_types, bound_name, handler) = lower_handler(ctx, h0)?;
+    let mut extra_handlers = Vec::new();
+    for hh in &try_stmt.handlers[1..] {
+        let ast::ExceptHandler::ExceptHandler(h) = hh;
+        let (types, name, hbody) = lower_handler(ctx, h)?;
+        extra_handlers.push(TryHandler {
+            except_types: types,
+            bound_name: name,
+            body: hbody,
+        });
     }
-    let mut handler = Vec::new();
-    for st in &h.body {
-        handler.extend(lower_block_stmt(ctx, st.clone())?);
-    }
-    ctx.bound = saved_bound_h;
-    ctx.name_types = saved_types_h;
     Ok(vec![Stmt::TryCatch {
         body,
         handler,
         except_types,
         bound_name,
+        extra_handlers,
     }])
 }
 
