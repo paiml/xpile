@@ -19409,3 +19409,24 @@ fn main() {
 "#;
     assert_rustc_runs("with_open", &rust, driver);
 }
+
+/// PMAT-1077: `for line in open(P)` / `with open(P) as f: for line in f:` —
+/// lines with keepends (split_inclusive matches CPython). MATCH.
+#[test]
+fn file_lines() {
+    let rust = xpile_transpile_to_rust("file_lines.py");
+    assert!(
+        rust.contains("split_inclusive"),
+        "file line iteration uses split_inclusive (keepends):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let p = "/tmp/xpile_e2e_file_lines.txt".to_string();
+    ::std::fs::write(&p, "alpha\nbeta\ngamma\n").unwrap();
+    assert_eq!(count_lines(p.clone()), 3, "3 lines");
+    assert_eq!(total_chars_with_newlines(p.clone()), 17, "keepends: 6+5+6 incl newlines");
+    assert_eq!(count_via_with(p.clone()), 3, "with open: for line in f");
+}
+"#;
+    assert_rustc_runs("file_lines", &rust, driver);
+}

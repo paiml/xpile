@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### File I/O — line iteration (PMAT-1077, fourth increment)
+
+- `for line in open(path)` and `with open(path) as f: for line in f:` now
+  iterate the file's lines WITH their trailing newline (keepends), matching
+  CPython text-mode iteration exactly. New meta-HIR `Expr::FileReadLines`
+  emits `read_to_string(path)...split_inclusive('\n')...` (a `list[str]`);
+  recognized only in for-loop iterable position (a bare `open(P)` stays a
+  handle). Lean and WASM refuse it. This completes practical file I/O
+  (read-all + write + with-open + line iteration).
+- 1 e2e test (756 total); differentially verified (count, keepends length,
+  no-trailing-newline, empty file, with-open form).
+
 ## [0.1.612] — 2026-07-02
 
 ### File I/O — idiomatic `with open()` (PMAT-1076, third increment)
