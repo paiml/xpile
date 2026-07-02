@@ -58,10 +58,16 @@ metadata:
         walk (a multi-byte code point copied whole, never split) with full
         Python clamp semantics (negative-bound normalise, clamp to `[0, len]`,
         `hi = max(hi, lo)`, missing bound → `0` / `len`) that never traps on an
-        out-of-range bound.
+        out-of-range bound;
+      * string ORDERING `a < b` / `a <= b` / `a > b` / `a >= b` (PMAT-1059)
+        lowers to `$__wasm_str_cmp` — a byte-wise lexicographic 3-way compare
+        (`min(len)` unsigned byte compares, then shorter-is-less), the result
+        tested against 0 with the matching signed op. Byte order == code-point
+        order for UTF-8, so this IS Python's str ordering, NEVER a base-pointer
+        compare and correct across multi-byte code points.
     Still REFUSED with a hard error rather than miscompiled (a Lean-style honest
-    refusal): string ORDERING (`<` / `>`), STEPPED / list slicing,
-    `str(x)`/`repr(x)`, f-strings, string methods.
+    refusal): STEPPED / list slicing, `str(x)`/`repr(x)`, f-strings, string
+    methods.
   xpile:
     layer: compile
   references:
@@ -325,15 +331,47 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to field values matching CPython"
       - "the struct WASM-emitting code carries the WASM citation"
 
+  string_ordering_is_lexicographic:
+    # PMAT-1059: string ORDERING `a < b` / `a <= b` / `a > b` / `a >= b` lowers
+    # to a byte-wise lexicographic 3-way compare ($__wasm_str_cmp). UTF-8 is
+    # designed so byte-lexicographic order == code-point-lexicographic order, so
+    # a plain byte compare over the length-prefixed payload reproduces CPython's
+    # code-point ordering EXACTLY — no char walk (unlike len/index/slice).
+    formula: |
+      construct(BinOp{op ∈ {Lt, LtEq, Gt, GtEq}, lhs, rhs} over str operands,
+                BackendConfig{target: Wasm})
+        emits `<lhs> <rhs> call $__wasm_str_cmp  i32.const 0  <signed cmp>`,
+        where $__wasm_str_cmp does an UNSIGNED byte compare over min(len(a),
+        len(b)) bytes from base+8 (returning a[i]-b[i] at the first differing
+        byte) then shorter-is-less (len(a)-len(b)) → i32 <0/0/>0, and the signed
+        cmp is i32.{lt,le,gt,ge}_s against 0. NEVER a base-pointer i32 compare.
+    domain: |
+      A string ordering `a < b` / `a <= b` / `a > b` / `a >= b` (Expr::BinOp
+      with op in {Lt, LtEq, Gt, GtEq}) over two string-valued operands (a LitStr
+      / Concat / Chr / bare StrCharAt, a str-name Ident, or a str-returning
+      call). A mixed `str <op> non-str` is REFUSED (never a wrong compare).
+    invariants:
+      - "the compare is byte-wise UNSIGNED (i32.load8_u) — UTF-8 byte order == code-point order, so it IS Python's str ordering even across multi-byte code points (a signed read would mis-order a lead byte >= 0x80)"
+      - "a common prefix falls to shorter-is-less (len(a)-len(b)), matching Python ('app' < 'apple')"
+      - "the 3-way result is tested against 0 with the matching signed op (lt_s/le_s/gt_s/ge_s) — never a base-pointer compare"
+      - "$__wasm_str_cmp reads linear memory but allocates NOTHING (independent of the bump-heap gate; a pure-ordering module carries no $__alloc)"
+      - "a `str <op> non-str` mixed comparison is REFUSED honestly"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "both operands type as str"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a bool value-matching CPython, including on MULTI-BYTE fixtures ('abé' > 'abz', 'café' > 'cafe')"
+      - "the ordering WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
-      construct(str_ordering | slice | str() | fstring | str_method,
+      construct(slice_stepped | list_slice | str() | fstring | str_method,
                 BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
-      A string op still outside the WASM string subset: string ORDERING
-      (`<` / `>` / `<=` / `>=`, needs lexicographic logic), a general slice,
-      str()/repr(), an f-string, a string method.
+      A string op still outside the WASM string subset: a STEPPED string slice
+      or a list slice, str()/repr(), an f-string, a string method. (String
+      ORDERING is now supported — see `string_ordering_is_lexicographic`.)
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
       - "the refusal names the op + the follow-up (honest diagnostic)"
@@ -362,6 +400,11 @@ proof_obligations:
     property: a struct is a well-formed flat field-slot record; field reads match CPython
     formal: "wasm-interp(construct(Point(x,y); p.x + p.y)) == CPython"
     applies_to: struct_is_flat_field_slot_record
+
+  - type: postcondition
+    property: string ordering is a lexicographic byte compare; results match CPython on multi-byte fixtures
+    formal: "wasm-interp(construct(a < b)) == CPython(a < b) AND wasm-interp(construct('abé' > 'abz')) == True"
+    applies_to: string_ordering_is_lexicographic
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -408,10 +451,11 @@ falsification_tests:
 
   - id: FALSIFY-WASM-HEAP-002
     rule: |
-      A string op still outside the WASM string subset (string ORDERING `<`/`>`,
-      slicing, str(), f-strings, string methods) MUST be refused with a hard
-      error, NEVER emitted as wrong WAT. (PMAT-994 wired literals, `s[i]` as a
-      string, and content equality `==`/`!=`; those are no longer refused.)
+      A string op still outside the WASM string subset (a STEPPED / list slice,
+      str(), f-strings, string methods) MUST be refused with a hard error, NEVER
+      emitted as wrong WAT. (PMAT-994 wired literals, `s[i]` as a string, and
+      content equality `==`/`!=`; PMAT-1058 slicing; PMAT-1059 ordering `<`/
+      `<=`/`>`/`>=`; those are no longer refused.)
     prediction: |
       `lower` returns `Err(BackendError::Lower(...))` naming the op + follow-up.
     test: |
@@ -531,3 +575,32 @@ falsification_tests:
       - out_of_range_bound_traps_instead_of_clamping
       - wrong_substring_length_or_offset
       - stepped_or_list_slice_miscompiled
+
+  - id: FALSIFY-WASM-HEAP-007
+    rule: |
+      PMAT-1059: string ORDERING `a < b` / `a <= b` / `a > b` / `a >= b` MUST
+      lower to a byte-wise lexicographic 3-way compare ($__wasm_str_cmp) — an
+      UNSIGNED byte compare over min(len) bytes then shorter-is-less — tested
+      against 0 with the matching signed op, NEVER a base-pointer i32 compare.
+      Byte order == code-point order for UTF-8, so the result MUST value-match
+      CPython, INCLUDING on multi-byte fixtures where a signed-byte read would
+      mis-order. A `str <op> non-str` mixed comparison MUST refuse.
+    prediction: |
+      The executed WABT witness runs every (case × op) pair and each equals the
+      pinned CPython bool — "app" < "apple" (prefix), "abc" <= "abc" (equal),
+      and the multi-byte "abé" > "abz" / "café" > "cafe" (byte order == code
+      point order). A pure-ordering module carries no $__alloc.
+    test: |
+      cargo test -p xpile-wasm-codegen --test str_ordering_witness
+    if_fails: |
+      The 3-way compare (signed vs unsigned byte read, prefix shorter-is-less,
+      the against-0 signed op), the helper gate, or the mixed-operand refusal
+      regressed — a base-pointer compare, a signed-byte mis-order of a
+      multi-byte lead byte, or a wrong prefix result. The bool diverges from
+      CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - base_pointer_compare_passed_off_as_string_ordering
+      - signed_byte_read_misorders_multibyte_lead_byte
+      - prefix_shorter_is_less_wrong
+      - mixed_str_nonstr_ordering_miscompiled

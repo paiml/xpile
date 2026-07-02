@@ -659,6 +659,101 @@ const STR_EQ_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1059: `$__wasm_str_cmp(a, b)` — Python-style lexicographic 3-way
+/// compare of two length-prefixed UTF-8 strings, backing the ORDERING ops
+/// (`<` / `<=` / `>` / `>=`). Returns i32 `<0` if `a < b`, `0` if `a == b`,
+/// `>0` if `a > b`.
+///
+/// The compare is a byte-wise UNSIGNED lexicographic compare over
+/// `min(len(a), len(b))` bytes, then shorter-is-less on a common prefix
+/// (`len(a) - len(b)`). This IS Python's string ordering: UTF-8 is designed so
+/// byte-lexicographic order EQUALS code-point-lexicographic order (a fundamental
+/// property — the lead byte of a higher code point is numerically larger, and
+/// the char boundaries of a shared prefix align, so the first differing byte
+/// lands at the same intra-char offset in both). So a byte compare over the
+/// UTF-8 payload reproduces CPython's code-point compare EXACTLY — no char walk
+/// needed (unlike len / index / slice, which must count code points). Bytes are
+/// read with `i32.load8_u` (0..255), so `a[i] - b[i]` carries the correct sign.
+/// Emitted once per module (gated on [`module_needs_str_cmp`]).
+const STR_CMP_HELPER: &str = "\
+  ;; __wasm_str_cmp(a, b) = Python lexicographic 3-way compare (str < / <= / > / >=)
+  ;; a, b are i32 base-pointers to length-prefixed regions (i32 byte count @
+  ;; base+0, UTF-8 bytes @ base+8). Returns i32 <0 / 0 / >0. Byte-wise UNSIGNED
+  ;; compare over min(len) bytes then shorter-is-less — UTF-8 byte order ==
+  ;; code-point order, so this IS Python str ordering.
+  (func $__wasm_str_cmp (param $a i32) (param $b i32) (result i32)
+    (local $na i32)
+    (local $nb i32)
+    (local $n i32)
+    (local $i i32)
+    (local $ba i32)
+    (local $bb i32)
+    ;; na = len(a); nb = len(b)
+    local.get $a
+    i32.load
+    local.set $na
+    local.get $b
+    i32.load
+    local.set $nb
+    ;; n = min(na, nb)
+    local.get $na
+    local.get $nb
+    i32.lt_s
+    if (result i32)
+      local.get $na
+    else
+      local.get $nb
+    end
+    local.set $n
+    ;; i = 0; while i < n: compare byte i (unsigned)
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $n
+        i32.ge_s
+        br_if $done
+        ;; ba = a[8+i]
+        local.get $a
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $ba
+        ;; bb = b[8+i]
+        local.get $b
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $bb
+        ;; if ba != bb return ba - bb (unsigned bytes → correct sign)
+        local.get $ba
+        local.get $bb
+        i32.ne
+        if
+          local.get $ba
+          local.get $bb
+          i32.sub
+          return
+        end
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    ;; common prefix equal → shorter is less: na - nb
+    local.get $na
+    local.get $nb
+    i32.sub
+  )
+";
+
 /// PMAT-1032: the CHAR-semantics helper family (non-allocating half).
 ///
 /// CPython strings are sequences of Unicode CODE POINTS; the WASM str ABI is
@@ -2165,7 +2260,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         str_rets: &str_rets,
     };
     let needs_str_eq = module_needs_str_eq(module, &str_rets) || dict_str_keys;
-    if module_uses_list_param(module) || needs_heap || !literals.is_empty() || needs_str_eq {
+    // PMAT-1059: a string ORDERING compare (`<`/`<=`/`>`/`>=`) reads the str
+    // bytes via `$__wasm_str_cmp` — it needs linear memory declared (to load
+    // the payload) but NOT the bump allocator (it allocates nothing).
+    let needs_str_cmp = module_needs_str_cmp(module, &str_rets);
+    if module_uses_list_param(module)
+        || needs_heap
+        || !literals.is_empty()
+        || needs_str_eq
+        || needs_str_cmp
+    {
         writeln!(
             out,
             "  ;; PMAT-968/986: list AND str params are an i32 base-pointer to \
@@ -2210,6 +2314,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // compare via this helper) — `needs_str_eq` folds that in above.
     if needs_str_eq {
         out.push_str(STR_EQ_HELPER);
+    }
+    // PMAT-1059: emit the string-ordering helper once, when any function
+    // compares two strings with `<`/`<=`/`>`/`>=`. Byte-wise lexicographic
+    // compare == Python code-point order for UTF-8 — reads memory, allocates
+    // nothing (independent of the bump-heap gate).
+    if needs_str_cmp {
+        out.push_str(STR_CMP_HELPER);
     }
     // PMAT-1032: emit the CHAR-semantics helper family once, when any function
     // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
@@ -2564,20 +2675,51 @@ fn module_needs_str_eq(module: &Module, rets: &StrReturners) -> bool {
             .map(|p| p.name.as_str())
             .collect();
         collect_str_let_names(&f.body.stmts, &mut names);
-        let scan = StrEqScan { names, rets };
+        let scan = StrEqScan {
+            names,
+            rets,
+            ops: &[BinOp::Eq, BinOp::NotEq],
+        };
         block_has_str_eq(&f.body, &scan)
     })
 }
 
-/// PMAT-1028: the per-function context for the `$__wasm_str_eq` pre-scan —
-/// the function's str NAMES (params + let-bound locals) and the module's
-/// str-RETURNING callables. The pre-scan has no lowering scope, so its
-/// method-call check keys on the method NAME alone (over-approximate; a
-/// spurious hit merely emits the helper unused, while a miss would emit a
-/// call against a missing helper — a hard downstream failure).
+/// PMAT-1059: `true` if any function performs a string ORDERING compare
+/// (`<` / `<=` / `>` / `>=`) over string-valued operands — gates the
+/// `$__wasm_str_cmp` helper. Mirrors [`module_needs_str_eq`]'s pre-scan
+/// (params + let-bound str locals + str returners); the only difference is the
+/// op set it hunts (ordering, not equality). A str-keyed dict does NOT pull it
+/// in (its key compare is content EQUALITY via `$__wasm_str_eq`, never ordering).
+fn module_needs_str_cmp(module: &Module, rets: &StrReturners) -> bool {
+    module_functions(module).any(|f| {
+        let mut names: Vec<&str> = f
+            .params
+            .iter()
+            .filter(|p| matches!(p.ty, Type::Str))
+            .map(|p| p.name.as_str())
+            .collect();
+        collect_str_let_names(&f.body.stmts, &mut names);
+        let scan = StrEqScan {
+            names,
+            rets,
+            ops: &[BinOp::Lt, BinOp::LtEq, BinOp::Gt, BinOp::GtEq],
+        };
+        block_has_str_eq(&f.body, &scan)
+    })
+}
+
+/// PMAT-1028/1059: the per-function context for a string-COMPARISON pre-scan —
+/// the function's str NAMES (params + let-bound locals), the module's
+/// str-RETURNING callables, and the comparison OPS to hunt for. The pre-scan
+/// has no lowering scope, so its method-call check keys on the method NAME
+/// alone (over-approximate; a spurious hit merely emits the helper unused,
+/// while a miss would emit a call against a missing helper — a hard downstream
+/// failure). PMAT-1059 generalised `ops`: `[Eq, NotEq]` gates `$__wasm_str_eq`,
+/// `[Lt, LtEq, Gt, GtEq]` gates `$__wasm_str_cmp` — same walk, different op set.
 struct StrEqScan<'a> {
     names: Vec<&'a str>,
     rets: &'a StrReturners,
+    ops: &'a [BinOp],
 }
 
 /// PMAT-1028: collect the names of str-annotated `Let` locals anywhere in
@@ -2634,15 +2776,16 @@ fn stmt_has_str_eq(s: &Stmt, scan: &StrEqScan<'_>) -> bool {
     }
 }
 
-/// `true` if `e` (or any sub-expression) is a string-valued `==`/`!=` — a
-/// content comparison the `$__wasm_str_eq` helper backs. A binop is a str
-/// equality iff its op is `Eq`/`NotEq` and either operand is a string-valued
+/// `true` if `e` (or any sub-expression) is a string-valued comparison whose
+/// op is in `scan.ops` — a content compare a helper backs (`$__wasm_str_eq` for
+/// `Eq`/`NotEq`, `$__wasm_str_cmp` for the ordering ops, PMAT-1059). A binop
+/// qualifies iff its op is in `scan.ops` and either operand is a string-valued
 /// `Expr`: a `LitStr` / `Concat` / `Chr` / bare `StrCharAt` (structural), or a
 /// str-name `Ident` (param or PMAT-1028 let-bound local) (looked up in `str_names`).
 fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
     match e {
         Expr::BinOp { op, lhs, rhs } => {
-            (matches!(op, BinOp::Eq | BinOp::NotEq)
+            (scan.ops.contains(op)
                 && (expr_is_str_valued(lhs, scan) || expr_is_str_valued(rhs, scan)))
                 || expr_has_str_eq(lhs, scan)
                 || expr_has_str_eq(rhs, scan)
@@ -5513,12 +5656,13 @@ fn emit_binop(
     out: &mut String,
     depth: usize,
 ) -> Result<WatTy, BackendError> {
-    // PMAT-986/994: a `str` lowers to an `i32` base-pointer, INDISTINGUISHABLE
+    // PMAT-986/994/1059: a `str` lowers to an `i32` base-pointer, INDISTINGUISHABLE
     // from a bool `i32` in the opcode table below — so a naive `a < b` over two
     // strings would silently compare BASE-POINTERS (wrong code). PMAT-994 wires
     // string EQUALITY (`a == b` / `a != b`) via a real content-compare helper
-    // (`$__wasm_str_eq`); ordering / arithmetic / methods over strings stay
-    // refused (they need ordering / content logic not yet wired).
+    // (`$__wasm_str_eq`); PMAT-1059 wires ORDERING (`<`/`<=`/`>`/`>=`) via a
+    // byte-wise lexicographic 3-way compare (`$__wasm_str_cmp`). Arithmetic
+    // (other than `Concat`'s `+`) / methods over strings stay refused.
     if binop_operand_is_string(lhs, scope) || binop_operand_is_string(rhs, scope) {
         // PMAT-994: string content EQUALITY — `a == b` / `a != b` over two
         // string-valued operands. Lower to `$__wasm_str_eq(a, b)` (a length
@@ -5544,6 +5688,38 @@ fn emit_binop(
             }
             return Ok(WatTy::I32);
         }
+        // PMAT-1059: string ORDERING — `a < b` / `a <= b` / `a > b` / `a >= b`
+        // over two string-valued operands. Lower to `$__wasm_str_cmp(a, b)` (a
+        // byte-wise lexicographic 3-way compare → i32 <0/0/>0), then compare the
+        // result against 0 with the matching signed op. Byte order == code-point
+        // order for UTF-8, so this IS Python's str ordering (never a
+        // base-pointer compare). Same mixed-operand guard as equality: `str < int`
+        // is refused.
+        if matches!(op, BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq) {
+            if !(binop_operand_is_string(lhs, scope) && binop_operand_is_string(rhs, scope)) {
+                return Err(unsupported(&format!(
+                    "binary op {op:?} mixing a `str` operand with a non-`str` \
+                     operand — string ordering compares two strings; a mixed \
+                     comparison is refused"
+                )));
+            }
+            emit_str_expr(lhs, scope, out, depth)?;
+            emit_str_expr(rhs, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_cmp").expect("write");
+            indent(out, depth);
+            writeln!(out, "i32.const 0").expect("write");
+            let cmp = match op {
+                BinOp::Lt => "i32.lt_s",
+                BinOp::LtEq => "i32.le_s",
+                BinOp::Gt => "i32.gt_s",
+                BinOp::GtEq => "i32.ge_s",
+                _ => unreachable!("guarded by the matches! above"),
+            };
+            indent(out, depth);
+            writeln!(out, "{cmp}").expect("write");
+            return Ok(WatTy::I32);
+        }
         // PMAT-993: string concat `a + b` is the frontend's `Expr::Concat`,
         // lowered through the heap path (`emit_concat`). A *`BinOp::Add`* over
         // str base-pointers is genuine (meaningless) pointer arithmetic, NOT
@@ -5558,11 +5734,12 @@ fn emit_binop(
             ));
         }
         return Err(unsupported(&format!(
-            "binary op {op:?} over `str` operand(s) — string ORDERING (`<` / \
-             `>` / …) / methods are not in the WASM string subset (only \
-             read-only `len(s)` + `ord(s[i])` + heap `Concat`/`chr`/`s[i]` + \
-             content equality `==`/`!=`); ordering needs lexicographic logic \
-             not yet wired, refused honestly rather than comparing base-pointers"
+            "binary op {op:?} over `str` operand(s) — string METHODS / other \
+             ops are not in the WASM string subset (supported: read-only \
+             `len(s)` + `ord(s[i])` + heap `Concat`/`chr`/`s[i]`/slice + \
+             content equality `==`/`!=` + PMAT-1059 ordering `<`/`<=`/`>`/`>=`); \
+             this op needs logic not yet wired, refused honestly rather than \
+             comparing base-pointers"
         )));
     }
 
