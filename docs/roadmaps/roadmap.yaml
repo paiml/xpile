@@ -941,9 +941,10 @@ roadmap:
   github_issue: null
   item_type: capability
   title: 'PMAT-1072: [rust/capability] CONTEXT MANAGERS / `with` — `with cm as x: <body>`. Found by the same fresh-area probe. Two sub-cases: (1) `with open(path) as f:` needs FILE I/O (a whole domain — std::fs, error handling) — larger; (2) `with <user-class instance> as x:` where the class defines `__enter__`/`__exit__` is more tractable: desugar to `let x = cm.__enter__(); <body>; cm.__exit__()` with the __exit__ in a finally-like guard (reuse the PMAT-1070 outer-catch_unwind wrap so __exit__ runs on the exception path too). Start with (2) user context managers (no file I/O), refuse `with open(...)` precisely. Depends on the class-method machinery (mature) + the try/finally wrap (PMAT-1070, done). Multi-slice — filed for a focused session.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
+  notes: 'SHIPPED 2026-07-02 (user context managers, sub-case 2): AST pre-pass desugars with ClassName(...) [as x] into __enter__ + finally-only __exit__ (PMAT-1073), so __exit__ runs on the exception path (verified: acquire/raise/release/caught). Bundled a general fix — count_mutating_method_receivers now recurses into try/except/finally (a mutating method call there marks its receiver mut). SAFE subset: MUTATING context managers (enter/exit mutate self) REFUSE precisely (a captured mutable would clone and silently drop the mutation — the Rc<RefCell> gap); with open(...) refuses (file I/O). Suite 752 green.'
 - id: PMAT-1073
   github_issue: null
   item_type: capability

@@ -19328,3 +19328,23 @@ fn main() {
 "#;
     assert_rustc_runs("try_finally_only", &rust, driver);
 }
+
+/// PMAT-1072: user context managers — `with ClassName() as x: BODY` desugars
+/// to __enter__ + finally-only-__exit__ (so __exit__ runs on the exception
+/// path). Mutating context managers refuse (reference-model gap). MATCH.
+#[test]
+fn context_managers() {
+    let rust = xpile_transpile_to_rust("context_managers.py");
+    assert!(
+        rust.contains("__enter__") && rust.contains("__exit__") && rust.contains("__tc_outer"),
+        "with desugars to enter + finally-only exit:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(use_resource(), 42, "with Resource(21) as r: r.doubled()");
+    // trace_lifecycle prints acquire/work/release (side effects — not asserted here)
+    assert_eq!(exit_runs_on_exception(), "caught", "__exit__ runs on the exception path, then propagates");
+}
+"#;
+    assert_rustc_runs("context_managers", &rust, driver);
+}

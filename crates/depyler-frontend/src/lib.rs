@@ -1158,6 +1158,18 @@ fn count_mutating_method_receivers(
                 count_mutating_method_receivers(&f.body, mutating, counts);
                 count_mutating_method_receivers(&f.orelse, mutating, counts);
             }
+            // PMAT-1072: a mutating method call inside a try/except/finally
+            // (e.g. a context manager's `__cm.__exit__()` in the finally, or
+            // `c.mutate()` in a try body) must mark the receiver `mut`.
+            ast::Stmt::Try(t) => {
+                count_mutating_method_receivers(&t.body, mutating, counts);
+                count_mutating_method_receivers(&t.orelse, mutating, counts);
+                count_mutating_method_receivers(&t.finalbody, mutating, counts);
+                for h in &t.handlers {
+                    let ast::ExceptHandler::ExceptHandler(h) = h;
+                    count_mutating_method_receivers(&h.body, mutating, counts);
+                }
+            }
             _ => {}
         }
     }
@@ -2681,6 +2693,13 @@ impl Frontend for PythonFrontend {
         // downstream (return type list[T], call sites `for x in g()`) is
         // handled by the existing list machinery with no other change.
         transform_generators(&mut suite)?;
+
+        // PMAT-1072: desugar `with cm as x: BODY` (user context managers) into
+        // `__cm = cm; x = __cm.__enter__(); try: BODY finally: __cm.__exit__(…)`
+        // — a finally-only try (PMAT-1073) so __exit__ runs on the exception
+        // path too. AST pre-pass; refuses `with open(...)` / multi-item /
+        // non-constructor forms precisely.
+        transform_with_statements(&mut suite)?;
 
         // PMAT-471 (R2) + PMAT-474 (R5): pre-pass — record every
         // top-level function's declared return type (so cross-function
@@ -9527,6 +9546,257 @@ fn transform_generators(suite: &mut [ast::Stmt]) -> Result<(), FrontendError> {
         // Retype `-> T` to `-> list[T]`.
         f.returns = Some(Box::new(list_of_t));
     }
+    Ok(())
+}
+
+/// PMAT-1072: desugar `with` statements over USER context managers into an
+/// `__enter__` / finally-only-`__exit__` sequence. Only `with ClassName(...)
+/// [as x]: BODY` over a class defining `__enter__` and `__exit__` is supported
+/// (the class is resolved from the constructor call so `__exit__`'s parameter
+/// types are known). `with open(...)`, a non-constructor context expr, and
+/// multi-item `with a, b:` refuse precisely.
+fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendError> {
+    use ast::{Expr, ExprContext as Ctx, Stmt};
+
+    let mut cms: HashMap<String, Vec<Option<ast::Expr>>> = HashMap::new();
+    let mut mutating_cms: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for s in suite.iter() {
+        if let Stmt::ClassDef(c) = s {
+            let mut has_enter = false;
+            let mut exit_params: Option<Vec<Option<ast::Expr>>> = None;
+            for m in &c.body {
+                if let Stmt::FunctionDef(f) = m {
+                    match f.name.as_str() {
+                        "__enter__" => has_enter = true,
+                        "__exit__" => {
+                            exit_params = Some(
+                                f.args
+                                    .args
+                                    .iter()
+                                    .skip(1)
+                                    .map(|a| a.def.annotation.as_deref().cloned())
+                                    .collect(),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if has_enter {
+                if let Some(ep) = exit_params {
+                    // PMAT-1072: a MUTATING context manager (`__enter__`/`__exit__`
+                    // mutates self — e.g. captures an external list and appends to
+                    // it) would clone the captured object under value semantics and
+                    // silently drop the mutation (the Rc<RefCell> reference-model
+                    // gap). Exclude such classes here; the `with` site then refuses
+                    // with a precise message. Pure / side-effect-only (print/return)
+                    // context managers stay supported.
+                    let mutates = c.body.iter().any(|m| match m {
+                        ast::Stmt::FunctionDef(f)
+                            if matches!(f.name.as_str(), "__enter__" | "__exit__") =>
+                        {
+                            for_target_mutated_ast(&f.body, "self")
+                        }
+                        _ => false,
+                    });
+                    if mutates {
+                        mutating_cms.insert(c.name.to_string());
+                    } else {
+                        cms.insert(c.name.to_string(), ep);
+                    }
+                }
+            }
+        }
+    }
+
+    fn zero_arg(
+        ann: &Option<ast::Expr>,
+        rng: ast::text_size::TextRange,
+        cls: &str,
+    ) -> Result<ast::Expr, FrontendError> {
+        let c = |v: ast::Constant| {
+            ast::Expr::Constant(ast::ExprConstant {
+                range: rng,
+                value: v,
+                kind: None,
+            })
+        };
+        match ann {
+            None => Ok(c(ast::Constant::Int(ast::bigint::BigInt::from(0u32)))),
+            Some(ast::Expr::Name(n)) => match n.id.as_str() {
+                "int" => Ok(c(ast::Constant::Int(ast::bigint::BigInt::from(0u32)))),
+                "float" => Ok(c(ast::Constant::Float(0.0))),
+                "str" => Ok(c(ast::Constant::Str(String::new()))),
+                "bool" => Ok(c(ast::Constant::Bool(false))),
+                other => Err(FrontendError::Lower(format!(
+                    "context manager `{cls}`'s `__exit__` has a parameter typed `{other}` — v0.2.0 first cut supports int/float/str/bool `__exit__` params"
+                ))),
+            },
+            Some(_) => Err(FrontendError::Lower(format!(
+                "context manager `{cls}`'s `__exit__` has a complex parameter annotation — v0.2.0 first cut supports simple int/float/str/bool `__exit__` params"
+            ))),
+        }
+    }
+
+    fn rewrite(
+        body: Vec<ast::Stmt>,
+        cms: &HashMap<String, Vec<Option<ast::Expr>>>,
+        mut_cms: &std::collections::HashSet<String>,
+        counter: &mut usize,
+    ) -> Result<Vec<ast::Stmt>, FrontendError> {
+        let mut out: Vec<ast::Stmt> = Vec::with_capacity(body.len());
+        for s in body {
+            match s {
+                Stmt::With(w) => {
+                    if w.items.len() != 1 {
+                        return Err(FrontendError::Lower(
+                            "a `with` with multiple items (`with a, b:`) is not supported at v0.2.0 — nest them".into(),
+                        ));
+                    }
+                    let rng = w.range;
+                    let item = &w.items[0];
+                    let cls = match &item.context_expr {
+                        Expr::Call(call) => match call.func.as_ref() {
+                            Expr::Name(n) if cms.contains_key(n.id.as_str()) => n.id.to_string(),
+                            Expr::Name(n) if mut_cms.contains(n.id.as_str()) => {
+                                return Err(FrontendError::Lower(format!(
+                                    "`with {}(...)` — `{}` is a MUTATING context manager (its `__enter__`/`__exit__` mutates `self`); a captured mutable object would be cloned and the mutation silently dropped (the Rc<RefCell> reference-model gap). Supported: pure / side-effect-only (print/return) context managers at v0.2.0",
+                                    n.id, n.id
+                                )));
+                            }
+                            Expr::Name(n) => {
+                                return Err(FrontendError::Lower(format!(
+                                    "`with {}(...)` — `{}` is not a context manager (no `__enter__`/`__exit__`), or it is `open(...)` (file I/O not supported at v0.2.0)",
+                                    n.id, n.id
+                                )));
+                            }
+                            _ => {
+                                return Err(FrontendError::Lower(
+                                    "`with <expr>:` requires a `ClassName(...)` context-manager constructor at v0.2.0".into(),
+                                ));
+                            }
+                        },
+                        _ => {
+                            return Err(FrontendError::Lower(
+                                "`with <expr>:` requires a `ClassName(...)` context-manager constructor at v0.2.0 (bind other exprs first)".into(),
+                            ));
+                        }
+                    };
+                    let cm_name = format!("__cm{counter}");
+                    *counter += 1;
+                    let name = |id: &str, ctx: Ctx| {
+                        Expr::Name(ast::ExprName {
+                            range: rng,
+                            id: ast::Identifier::new(id),
+                            ctx,
+                        })
+                    };
+                    let mcall = |obj: &str, method: &str, args: Vec<ast::Expr>| {
+                        Expr::Call(ast::ExprCall {
+                            range: rng,
+                            func: Box::new(Expr::Attribute(ast::ExprAttribute {
+                                range: rng,
+                                value: Box::new(name(obj, Ctx::Load)),
+                                attr: ast::Identifier::new(method),
+                                ctx: Ctx::Load,
+                            })),
+                            args,
+                            keywords: vec![],
+                        })
+                    };
+                    out.push(Stmt::Assign(ast::StmtAssign {
+                        range: rng,
+                        targets: vec![name(&cm_name, Ctx::Store)],
+                        value: Box::new(item.context_expr.clone()),
+                        type_comment: None,
+                    }));
+                    let enter = mcall(&cm_name, "__enter__", vec![]);
+                    match item.optional_vars.as_deref() {
+                        Some(Expr::Name(x)) => {
+                            out.push(Stmt::Assign(ast::StmtAssign {
+                                range: rng,
+                                targets: vec![name(x.id.as_str(), Ctx::Store)],
+                                value: Box::new(enter),
+                                type_comment: None,
+                            }));
+                        }
+                        Some(_) => {
+                            return Err(FrontendError::Lower(
+                                "`with … as <target>:` requires a simple name target at v0.2.0"
+                                    .into(),
+                            ));
+                        }
+                        None => {
+                            out.push(Stmt::Expr(ast::StmtExpr {
+                                range: rng,
+                                value: Box::new(enter),
+                            }));
+                        }
+                    }
+                    let inner = rewrite(w.body, cms, mut_cms, counter)?;
+                    let exit_params = &cms[&cls];
+                    let mut exit_args = Vec::with_capacity(exit_params.len());
+                    for p in exit_params {
+                        exit_args.push(zero_arg(p, rng, &cls)?);
+                    }
+                    let exit_stmt = Stmt::Expr(ast::StmtExpr {
+                        range: rng,
+                        value: Box::new(mcall(&cm_name, "__exit__", exit_args)),
+                    });
+                    out.push(Stmt::Try(ast::StmtTry {
+                        range: rng,
+                        body: inner,
+                        handlers: vec![],
+                        orelse: vec![],
+                        finalbody: vec![exit_stmt],
+                    }));
+                }
+                other => out.push(rewrite_nested(other, cms, mut_cms, counter)?),
+            }
+        }
+        Ok(out)
+    }
+
+    fn rewrite_nested(
+        mut s: ast::Stmt,
+        cms: &HashMap<String, Vec<Option<ast::Expr>>>,
+        mut_cms: &std::collections::HashSet<String>,
+        counter: &mut usize,
+    ) -> Result<ast::Stmt, FrontendError> {
+        match &mut s {
+            Stmt::FunctionDef(f) => {
+                f.body = rewrite(std::mem::take(&mut f.body), cms, mut_cms, counter)?
+            }
+            Stmt::ClassDef(c) => {
+                let taken = std::mem::take(&mut c.body);
+                let mut nb = Vec::with_capacity(taken.len());
+                for m in taken {
+                    nb.push(rewrite_nested(m, cms, mut_cms, counter)?);
+                }
+                c.body = nb;
+            }
+            Stmt::If(i) => {
+                i.body = rewrite(std::mem::take(&mut i.body), cms, mut_cms, counter)?;
+                i.orelse = rewrite(std::mem::take(&mut i.orelse), cms, mut_cms, counter)?;
+            }
+            Stmt::While(w) => w.body = rewrite(std::mem::take(&mut w.body), cms, mut_cms, counter)?,
+            Stmt::For(f) => f.body = rewrite(std::mem::take(&mut f.body), cms, mut_cms, counter)?,
+            Stmt::Try(t) => {
+                t.body = rewrite(std::mem::take(&mut t.body), cms, mut_cms, counter)?;
+                t.finalbody = rewrite(std::mem::take(&mut t.finalbody), cms, mut_cms, counter)?;
+                for h in &mut t.handlers {
+                    let ast::ExceptHandler::ExceptHandler(h) = h;
+                    h.body = rewrite(std::mem::take(&mut h.body), cms, mut_cms, counter)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(s)
+    }
+
+    let mut counter = 0usize;
+    let taken = std::mem::take(suite);
+    *suite = rewrite(taken, &cms, &mutating_cms, &mut counter)?;
     Ok(())
 }
 

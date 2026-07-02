@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Context managers / `with` — user context managers (PMAT-1072)
+
+- `with ClassName(...) [as x]: BODY` over a class defining `__enter__`/`__exit__`
+  now works. An AST pre-pass desugars it to `__cm = ClassName(...); x =
+  __cm.__enter__(); try: BODY finally: __cm.__exit__(…)` — a finally-only try
+  (PMAT-1073), so `__exit__` runs on the exception path too. Also fixes the
+  mutability pre-walk to recurse into `try`/`except`/`finally` (a mutating
+  method call there now marks its receiver `mut`). Safe subset: MUTATING
+  context managers (whose `__enter__`/`__exit__` mutate `self`) refuse
+  precisely (a captured mutable would be cloned and the mutation silently
+  dropped — the reference-model gap); `with open(...)` refuses (file I/O).
+- 1 e2e test (752 total); differentially verified (incl. exit-runs-on-exception).
+
 ### finally-only try (PMAT-1073)
 
 - `try: B finally: F` with no `except` now works — runs cleanup in every path
