@@ -8806,6 +8806,23 @@ fn apply_alias_dispositions(
             }
         }
     }
+    // PMAT-1029: a STRING alias `b = s` — Python strings are IMMUTABLE, so
+    // aliasing is always observationally equal to copying: no mutation can
+    // ever diverge through either name (str has no mutators; `s += …`
+    // REBINDS, detaching the name). The bare move compiled only while the
+    // source stayed dead; any later read of `s` was rustc E0382 — an
+    // INVALID EMIT on valid Python (found by the PMAT-1028 both-lanes
+    // fixture). Clone when the source is re-read; keep the cheaper move
+    // when this RHS is its last read. Deliberately NOT folded into the
+    // container three-way below: its REFUSE arm keys on obj_mutated, a
+    // type-blind name-keyed set that must never block an immutable alias.
+    if let (Expr::Ident(src), Type::Str) = (&value, &ty) {
+        let src_reread = ctx.read_counts.get(src).copied().unwrap_or(0) > 1;
+        if src_reread {
+            return Ok(Expr::Clone(Box::new(value)));
+        }
+        return Ok(value);
+    }
     let value = if let (
         Expr::Ident(src),
         Type::Struct(_) | Type::List(_) | Type::Dict(_, _) | Type::Set(_),
@@ -21498,6 +21515,66 @@ mod tests {
             }
         }
         assert!(saw_bare_arg, "expected a lowered bump(c) call");
+    }
+
+    /// PMAT-1029: a str alias whose source stays live must CLONE — the bare
+    /// move was an INVALID EMIT (`let b: String = s;` then a later read of
+    /// `s` is rustc E0382) on valid Python. Strings are immutable, so the
+    /// clone is observationally identical to Python's sharing.
+    #[test]
+    fn str_alias_clones_while_source_stays_live() {
+        let m = parse(
+            "def f() -> int:\n    s: str = \"abc\"\n    b: str = s\n    return len(b) + len(s)\n",
+        );
+        let f = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "f" => Some(f),
+                _ => None,
+            })
+            .expect("f() lowered");
+        let alias_value = f
+            .body
+            .stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::Let { name, value, .. } if name == "b" => Some(value),
+                _ => None,
+            })
+            .expect("`b = s` lowered as a Let");
+        assert!(
+            matches!(alias_value, Expr::Clone(inner) if matches!(inner.as_ref(), Expr::Ident(n) if n == "s")),
+            "a live-source str alias clones (the move was E0382): {alias_value:?}"
+        );
+    }
+
+    /// PMAT-1029: when the alias RHS is the source's LAST read, the cheaper
+    /// move stays (Python-equal — the alias simply takes over the value).
+    #[test]
+    fn str_alias_moves_when_source_is_dead_after() {
+        let m = parse("def f() -> int:\n    s: str = \"abc\"\n    b: str = s\n    return len(b)\n");
+        let f = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "f" => Some(f),
+                _ => None,
+            })
+            .expect("f() lowered");
+        let alias_value = f
+            .body
+            .stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::Let { name, value, .. } if name == "b" => Some(value),
+                _ => None,
+            })
+            .expect("`b = s` lowered as a Let");
+        assert!(
+            matches!(alias_value, Expr::Ident(n) if n == "s"),
+            "a dead-source str alias moves (no wasted clone): {alias_value:?}"
+        );
     }
 
     #[test]
