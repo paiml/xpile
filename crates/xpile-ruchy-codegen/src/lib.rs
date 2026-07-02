@@ -1103,6 +1103,7 @@ fn emit_stmt_indented(
             handler,
             except_types,
             bound_name,
+            extra_handlers,
         } => {
             let bind = |out: &mut String, name: &str| -> Result<(), RuchyCodegenError> {
                 write!(
@@ -1119,37 +1120,83 @@ fn emit_stmt_indented(
                 emit_stmt_indented(out, st, "", mode)?;
             }
             out.push_str(" })) { Ok(_) => {}, ");
-            if except_types.is_empty() {
-                if let Some(name) = bound_name {
-                    out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
-                    bind(out, name)?;
-                    for st in handler {
-                        emit_stmt_indented(out, st, "", mode)?;
+            if extra_handlers.is_empty() {
+                if except_types.is_empty() {
+                    if let Some(name) = bound_name {
+                        out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
+                        bind(out, name)?;
+                        for st in handler {
+                            emit_stmt_indented(out, st, "", mode)?;
+                        }
+                        out.push_str(" }");
+                    } else {
+                        out.push_str("Err(_) => { ");
+                        for st in handler {
+                            emit_stmt_indented(out, st, "", mode)?;
+                        }
+                        out.push_str(" }");
                     }
-                    out.push_str(" }");
                 } else {
-                    out.push_str("Err(_) => { ");
+                    out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
+                    for (i, k) in except_types.iter().enumerate() {
+                        if i > 0 {
+                            out.push_str(" || ");
+                        }
+                        write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                    }
+                    out.push_str(" { ");
+                    if let Some(name) = bound_name {
+                        bind(out, name)?;
+                    }
                     for st in handler {
                         emit_stmt_indented(out, st, "", mode)?;
                     }
-                    out.push_str(" }");
+                    out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
                 }
             } else {
-                out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
-                for (i, k) in except_types.iter().enumerate() {
+                // PMAT-1059: multiple `except` clauses — an ordered
+                // if/else-if chain over [first] ++ extra_handlers; a catch-all
+                // (empty types, Python-required last) is the final `else`,
+                // otherwise the chain ends in `resume_unwind` (propagate).
+                out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
+                let all: Vec<(&Vec<String>, &Option<String>, &Vec<Stmt>)> =
+                    std::iter::once((except_types, bound_name, handler))
+                        .chain(
+                            extra_handlers
+                                .iter()
+                                .map(|h| (&h.except_types, &h.bound_name, &h.body)),
+                        )
+                        .collect();
+                let mut catch_all_seen = false;
+                for (i, (types, name, hbody)) in all.iter().enumerate() {
                     if i > 0 {
-                        out.push_str(" || ");
+                        out.push_str(" else ");
                     }
-                    write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                    if types.is_empty() {
+                        out.push_str("{ ");
+                        catch_all_seen = true;
+                    } else {
+                        out.push_str("if ");
+                        for (j, k) in types.iter().enumerate() {
+                            if j > 0 {
+                                out.push_str(" || ");
+                            }
+                            write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                        }
+                        out.push_str(" { ");
+                    }
+                    if let Some(n) = name {
+                        bind(out, n)?;
+                    }
+                    for st in hbody.iter() {
+                        emit_stmt_indented(out, st, "", mode)?;
+                    }
+                    out.push_str(" }");
                 }
-                out.push_str(" { ");
-                if let Some(name) = bound_name {
-                    bind(out, name)?;
+                if !catch_all_seen {
+                    out.push_str(" else { ::std::panic::resume_unwind(__xpile_e) }");
                 }
-                for st in handler {
-                    emit_stmt_indented(out, st, "", mode)?;
-                }
-                out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
+                out.push_str(" }");
             }
             out.push_str(" }");
             writeln!(out)?;

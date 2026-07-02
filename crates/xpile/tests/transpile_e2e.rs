@@ -19244,3 +19244,25 @@ fn main() {
 "#;
     assert_rustc_runs("statement_try_except", &rust, driver);
 }
+
+/// PMAT-1059: multiple `except` clauses — an ordered if/else-if chain over the
+/// handlers (first matching type wins; catch-all last; unmatched propagates).
+/// Differentially verified (val/key/other/key/idx).
+#[test]
+fn multiple_except() {
+    let rust = xpile_transpile_to_rust("multiple_except.py");
+    assert!(
+        rust.contains("else if") || rust.contains("} else if"),
+        "multiple handlers emit an if/else-if chain:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(classify(1), "val", "ValueError → the 2nd except");
+    assert_eq!(classify(2), "key", "KeyError → the 1st except");
+    assert_eq!(classify(3), "other", "ZeroDivisionError → the catch-all");
+    assert_eq!(ordered_first_wins(), "key", "first matching handler wins");
+    assert_eq!(tuple_then_single(), "idx", "tuple-except then a single-type except");
+}
+"#;
+    assert_rustc_runs("multiple_except", &rust, driver);
+}

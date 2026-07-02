@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Multiple except clauses (PMAT-1059)
+
+- `try: B except E1: H1 except E2: H2 except: H3` — multiple `except` clauses
+  on a statement-form try now lower to an ordered if/else-if chain in the
+  `catch_unwind` `Err` arm (first matching type wins, source order; a
+  catch-all is the final `else`; an unmatched exception propagates via
+  `resume_unwind`, not swallowed). Additive: `Stmt::TryCatch` gains a
+  `serde(default)` `extra_handlers` field, so single-except IR and emission
+  are byte-unchanged. Deferred: `else`/`finally`, bare re-raise.
+- 1 e2e test (748 total); differentially + adversarially verified
+  (ordered-match, catch-all-last, unmatched-propagates, 4-handler chain).
+
 ### Statement-form try/except (PMAT-1058)
 
 - `try: <stmts> except E [as e]: <stmts>` where the arms are side-effecting

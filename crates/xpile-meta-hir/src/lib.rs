@@ -123,6 +123,16 @@ pub enum Item {
     },
 }
 
+/// PMAT-1059: one `except` clause of a multi-handler statement-form
+/// [`Stmt::TryCatch`] — its caught exception type(s) (empty = catch-all),
+/// optional `as <name>` message binding, and handler statement block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TryHandler {
+    pub except_types: Vec<String>,
+    pub bound_name: Option<String>,
+    pub body: Vec<Stmt>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Function {
     pub name: String,
@@ -379,9 +389,19 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
                 || then_body.iter().any(stmt_has_int_arith)
                 || else_body.iter().any(stmt_has_int_arith)
         }
-        // PMAT-1058: statement-form try/except — recurse into both blocks.
-        Stmt::TryCatch { body, handler, .. } => {
-            body.iter().any(stmt_has_int_arith) || handler.iter().any(stmt_has_int_arith)
+        // PMAT-1058/1059: statement-form try/except — recurse into the body,
+        // the first handler, and every extra handler.
+        Stmt::TryCatch {
+            body,
+            handler,
+            extra_handlers,
+            ..
+        } => {
+            body.iter().any(stmt_has_int_arith)
+                || handler.iter().any(stmt_has_int_arith)
+                || extra_handlers
+                    .iter()
+                    .any(|h| h.body.iter().any(stmt_has_int_arith))
         }
         // PMAT-502bk: loop-control statements carry no expression.
         Stmt::Continue | Stmt::Break => false,
@@ -1314,6 +1334,14 @@ pub enum Stmt {
         handler: Vec<Stmt>,
         except_types: Vec<String>,
         bound_name: Option<String>,
+        /// PMAT-1059: the 2nd+ `except` clauses of `try: B except E1: H1
+        /// except E2: H2 …`, checked in SOURCE ORDER after the first (the
+        /// `handler`/`except_types`/`bound_name` fields above). The Err arm
+        /// emits an ordered if/else-if chain; a catch-all (`except:` / a base
+        /// class, empty `except_types`) — which Python requires LAST — is the
+        /// final else. `#[serde(default)]` keeps single-except IR compatible.
+        #[serde(default)]
+        extra_handlers: Vec<TryHandler>,
     },
     /// `program arg1 arg2 ...` — a single shell-command invocation.
     /// PMAT-039 / XPILE-BASHRS-MERGER-001 Layer B: the first shell
@@ -3669,13 +3697,23 @@ fn escape_stmt(s: &mut Stmt) {
                 escape_stmt(st);
             }
         }
-        // PMAT-1058: statement-form try/except — escape both blocks.
-        Stmt::TryCatch { body, handler, .. } => {
+        // PMAT-1058/1059: statement-form try/except — escape body + all handlers.
+        Stmt::TryCatch {
+            body,
+            handler,
+            extra_handlers,
+            ..
+        } => {
             for st in body {
                 escape_stmt(st);
             }
             for st in handler {
                 escape_stmt(st);
+            }
+            for h in extra_handlers {
+                for st in &mut h.body {
+                    escape_stmt(st);
+                }
             }
         }
         Stmt::Continue | Stmt::Break => {}
@@ -4205,13 +4243,23 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
                 collect_idents_stmt(st, acc);
             }
         }
-        // PMAT-1058: statement-form try/except — collect from both blocks.
-        Stmt::TryCatch { body, handler, .. } => {
+        // PMAT-1058/1059: statement-form try/except — collect body + handlers.
+        Stmt::TryCatch {
+            body,
+            handler,
+            extra_handlers,
+            ..
+        } => {
             for st in body {
                 collect_idents_stmt(st, acc);
             }
             for st in handler {
                 collect_idents_stmt(st, acc);
+            }
+            for h in extra_handlers {
+                for st in &h.body {
+                    collect_idents_stmt(st, acc);
+                }
             }
         }
         Stmt::Continue | Stmt::Break => {}
@@ -4581,13 +4629,23 @@ fn retype_stmt(
                 retype_stmt(st, float_ffi, float_locals);
             }
         }
-        // PMAT-1058: statement-form try/except — retype both blocks.
-        Stmt::TryCatch { body, handler, .. } => {
+        // PMAT-1058/1059: statement-form try/except — retype body + handlers.
+        Stmt::TryCatch {
+            body,
+            handler,
+            extra_handlers,
+            ..
+        } => {
             for st in body {
                 retype_stmt(st, float_ffi, float_locals);
             }
             for st in handler {
                 retype_stmt(st, float_ffi, float_locals);
+            }
+            for h in extra_handlers {
+                for st in &mut h.body {
+                    retype_stmt(st, float_ffi, float_locals);
+                }
             }
         }
         Stmt::While { body, .. }
