@@ -222,7 +222,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1033: [wasm/capability] list[int] LOCALS + list LITERALS on the WASM lane — the for-loop scan family is currently unwitnessable end-to-end (sweep #11 finding 3). `xs: list[int] = [1, 2, 3]` refuses at map_type ("type List(I64) — the WASM emit subset") and a list literal in ANY position (even a call argument: `scan([2, 4, 6])`) refuses as ListLit-outside-subset, so `for x in xs` (the PMAT-1030 ForEach desugar) can only execute when a list arrives as a PARAM — which wasm-interp cannot supply (scalar args only). Net: PMAT-1030''s "scan/filter/checksum family unblocked" holds end-to-end ONLY for str/range iteration; 11 of sweep #11''s 35 programs refuse on this one gate (basic sum, continue/break, nested loops, var-leak, shadow, index-write, method-with-loop shapes — all of which the RUST lane executes == CPython). FIX (the PMAT-1028 recipe, list edition): (1) list-annotated Lets register as i32 base-pointer heap allocations (the PMAT-996/999 array runtime already lays out [len][elem0..] records for params — reuse the layout + bounds-guarded Index/IndexAssign paths verbatim); (2) ListLit lowers to alloc + per-element i64.store (element exprs type through the existing scalar paths); (3) len()/for-desugar/subscript read+write over the new locals ride the existing param machinery unchanged; (4) append/growth stays REFUSED honestly (the PMAT-999 relocation-hazard posture) until the heap gets a grow story — fixed-size literals + reads + index writes are the value here. Unblocks: the whole sweep-#11 a-series as both-lane fixtures, real scan/filter/checksum differential witnesses on the wasm lane, and the aliasing follow-on (a list alias is a pointer copy = Python sharing, same as structs — the PMAT-1024 reference_native skip already covers List).'
-  status: planned
+  status: done
   priority: high
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
@@ -231,7 +231,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Filed by PMAT-1031 (sweep #11). This is EV item 2 (heap runtime) work and the highest-value capability gap the sweep surfaced: the rust lane executes ALL of these shapes, so every one becomes a both-lanes differential witness the moment list locals exist. The var-leak shapes (a06/a10) need the leak semantics check vs PMAT-1034 first.'
+  notes: 'DONE 2026-07-02. Exactly the filed recipe: (1) a list-annotated LET registers in the SAME scope.list_elem registry a param uses (declared i32, element type validated by map_list_elem_type — so bounds-guarded Index/IndexAssign, len(), and the PMAT-1030 ForEach desugar ride the param machinery VERBATIM, zero new guard code); (2) Expr::ListLit lowers via emit_list_lit — $__alloc(8+n*elem_size), i32 count @ base+0, packed elements @ base+8 (the exact PMAT-968 param ABI), through a dedicated $__wasm_list_dst scratch (no clobber: a ListLit is only accepted binding a list local, never nested in element exprs); (3) a list-NAME binding (ys = xs, Let AND Assign/reassignment) is a bare pointer copy — Python sharing, native to linear memory (read-only alias executed == CPython 10; elem-type-mismatched alias refuses); (4) BONUS: a list-literal ITERABLE (for x in [5,10,15]) binds once into a synthetic __wasm_fe_l_<k> local (the PMAT-1028 str-literal pattern, list edition) — executed == CPython 30; (5) append/growth refuses PRECISELY at the new Stmt::ListAppend arm (fixed-size record, relocation-would-break-aliases message + pre-size how-to-fix) — the PMAT-999 posture. EXECUTED acceptance: all six a-series shapes == CPython in WABT (23/4/10/180/3/50) via tests/list_local_witness.rs (8 pinned exports incl. alias + lit-iter) + the both-lanes CLI fixture list_local_scan.py (rust rustc-run == wasm wasm-interp == CPython 16). FOLLOW-ON FILED PMAT-1035: the FRONTEND alias-class analysis (PMAT-1020/1024/1027) still refuses list-alias + subscript-WRITE (ys = xs; ys[0] = 99) on the REFERENCE lane — collect_container_mutated counts every subscript-chain write as container-shaped (relocation-hazard class), but a single-index list write cannot relocate (only dict/set insert grows); needs list-type evidence over the union-find classes to exempt it. Over-refusal (honest), not a divergence.'
 - id: PMAT-1034
   github_issue: null
   item_type: task
@@ -246,6 +246,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Filed by PMAT-1031 (sweep #11). Same divergence-on-error class as the documented int-overflow family, but cheaply closable — prefer closing it. Applies to range loops too (`for i in range(0)`).'
+- id: PMAT-1035
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1035: [frontend/reference-lane precision] list-alias + subscript-WRITE over-refuses on the REFERENCE (wasm) lane — `ys = xs; ys[0] = 99; return xs[0]` refuses at the PMAT-1020 alias-class analysis even for `--target wasm`, where the PMAT-1033 backend now executes the sharing EXACTLY (a list alias is a bare pointer copy; a single-index write is an in-place fixed-slot store through the shared base-pointer, identical to the struct field writes the reference lane already exempts). ROOT CAUSE: `collect_container_mutated` (the PMAT-1024 reference-lane split) counts EVERY subscript-chain write as container-shaped because the relocation hazard is real for DICT/SET (`$__wasm_dict_set` grows by relocating and updates only the receiver''s local) — but it is type-blind between list and dict, and a LIST single-index write CANNOT relocate (list growth refuses at the backend; Python raises IndexError past the end). FIX (the PMAT-1027 recipe, subscript edition): extend the type-evidence aggregation over the union-find alias classes with LIST evidence (list-annotated params/AnnAssigns, list literals, `list()` calls); a class whose evidence is unanimously List exempts its single-level subscript WRITES from `collect_container_mutated` — while builtin-mutator calls (append/extend/pop/…) and any dict/set evidence keep the refusal. Multi-level writes (`xs[i][j] = v`) keep the refusal (nested lists are outside the wasm subset anyway). Over-refusal today (honest, with a misleading value-semantics message on a reference-semantics lane), not a divergence — but it blocks the natural sibling of the PMAT-1024 struct-alias capability and the sweep-#11 aliasing follow-on fixtures.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - '`ys = xs; ys[0] = 99; return xs[0]` (and the loop-carried variant) EXECUTES on the wasm lane == CPython 99 through the real CLI + WABT as a committed fixture, while the SAME source keeps the alias-class refusal on the rust lane, `ys = xs; ys.append(9)` keeps refusing on BOTH lanes (growth/relocation), and a dict-evidenced class (`d2 = d; d2[k] = v`) keeps the reference-lane refusal. No regression across depyler-frontend + wasm-codegen suites.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-1033 (found probing the alias-share battery shape: the backend executes it but the frontend never lets it through). The evidence machinery to extend is exactly PMAT-1027''s struct_of aggregation — add a List evidence kind alongside the struct names.'
 - id: PMAT-991
   github_issue: null
   item_type: task

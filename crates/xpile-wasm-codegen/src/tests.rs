@@ -980,7 +980,7 @@ fn refuses_index_over_non_list() {
     let msg = err.to_string();
     assert!(msg.contains("unsupported"), "honest refusal: {msg}");
     assert!(
-        msg.contains("not a `list[scalar]` parameter"),
+        msg.contains("not a `list[scalar]` param/local"),
         "names the cause: {msg}"
     );
 }
@@ -1082,7 +1082,7 @@ fn refuses_len_of_scalar() {
     assert!(msg.contains("unsupported"), "honest refusal: {msg}");
     assert!(
         msg.contains(
-            "not a `list[scalar]` parameter, a `str` param/local, or a `dict`/`set` local"
+            "not a `list[scalar]` param/local, a `str` param/local, or a `dict`/`set` local"
         ),
         "names the cause: {msg}"
     );
@@ -1289,7 +1289,7 @@ fn refuses_write_over_non_list_param() {
         .unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("not a `list[scalar]` parameter"),
+        msg.contains("not a `list[scalar]` param/local"),
         "names the cause: {msg}"
     );
 }

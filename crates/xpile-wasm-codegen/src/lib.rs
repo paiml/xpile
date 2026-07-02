@@ -80,10 +80,16 @@
 //!   refused. As of PMAT-978 a single-index **write** `xs[i] = v`
 //!   (`Stmt::IndexAssign`) is also supported — the mutation companion of the
 //!   read path, reusing the SAME bounds guard + address math but terminating
-//!   in a natural-width `*.store`. A list **literal**, list **return**, list
-//!   **append** / growth, and a MULTI-index / nested-list write
-//!   (`xs[i][j] = v`) remain refused — fixed-list scalar access (read +
-//!   single-index write) plus `len` is the deliverable.
+//!   in a natural-width `*.store`. As of **PMAT-1033** a `list[scalar]`
+//!   **LOCAL** (`xs: list[int] = [1, 2, 3]`) binds too: the `ListLit`
+//!   materialises a fresh length-prefixed record on the bump heap (the same
+//!   ABI a param rides, so `xs[i]`/`xs[i] = v`/`len(xs)` and the PMAT-1030
+//!   `for x in xs` desugar work over it verbatim), and a list-name binding
+//!   (`ys = xs`) is a bare pointer copy — Python's aliasing, native to
+//!   linear memory. A list **return**, list **append** / growth (fixed-size
+//!   records; growth would relocate and break aliases — the PMAT-999
+//!   posture), list-returning calls, and a MULTI-index / nested-list write
+//!   (`xs[i][j] = v`) remain refused.
 //! - Statements: `Let`/`Assign` (→ `local` + `local.set`), `If`/`While`/
 //!   `Break`/`Continue`/`Return`, `xs[i] = v` (`IndexAssign`) over a
 //!   `list[scalar]` param (bounds-checked `*.store`), and as of **PMAT-1023**
@@ -205,6 +211,13 @@ const DICT_DST_SCRATCH: &str = "__wasm_dict_dst";
 /// PMAT-996 (slice 4): the `$__alloc`-ed struct base-pointer while
 /// [`emit_struct_lit`] writes its fields. Mirrors [`DICT_DST_SCRATCH`].
 const STRUCT_DST_SCRATCH: &str = "__wasm_struct_dst";
+
+/// PMAT-1033: the `$__alloc`-ed list base-pointer while [`emit_list_lit`]
+/// writes its header + elements. Mirrors [`STRUCT_DST_SCRATCH`]. No
+/// self-clobber hazard: a `ListLit` is only accepted binding a list-annotated
+/// local (never nested inside an element expression — nested lists refuse at
+/// element-type validation, and list-valued calls/args stay refused).
+const LIST_DST_SCRATCH: &str = "__wasm_list_dst";
 
 /// PMAT-996 (slice 4): every field of a struct instance occupies a uniform
 /// 8-byte slot on the bump heap, keeping i64/f64 naturally aligned (an i32/
@@ -1334,10 +1347,27 @@ fn desugar_foreach_stmts(stmts: &[Stmt], next: &mut usize) -> Result<Vec<Stmt>, 
                     // `for x in xs` — a named list[scalar]; `len(xs)` and
                     // `xs[i]` refuse precisely downstream if it is not.
                     Expr::Ident(n) => (None, n.clone()),
+                    // PMAT-1033: `for x in [1, 2, 3]` — bind the literal ONCE
+                    // into a synthetic list local (the PMAT-1028 str-literal
+                    // pattern, list edition); the loop then iterates the
+                    // name. An unsupported element type refuses at the
+                    // local's registration, honestly.
+                    lit @ Expr::ListLit(_) => {
+                        let l_name = format!("__wasm_fe_l_{k}");
+                        (
+                            Some(Stmt::Let {
+                                name: l_name.clone(),
+                                ty: Type::List(Box::new(elem_ty.clone())),
+                                value: lit.clone(),
+                                mutable: false,
+                            }),
+                            l_name,
+                        )
+                    }
                     other => {
                         return Err(unsupported(&format!(
                             "for-loop over {} — the WASM subset iterates a \
-                             named `list[scalar]` param or a string \
+                             named `list[scalar]`, a list literal, or a string \
                              (name/literal/concat/str-returning call); bind \
                              the iterable to a name first",
                             expr_kind(other)
@@ -1872,10 +1902,13 @@ fn expr_has_heap_op(e: &Expr) -> bool {
     match e {
         // PMAT-996: a `StructLit` bump-allocates a heap record (like a string
         // materialisation), so it pulls in the allocator + `(memory)`.
+        // PMAT-1033: a `ListLit` likewise bump-allocates its length-prefixed
+        // record.
         Expr::Concat { .. }
         | Expr::Chr { .. }
         | Expr::StrCharAt { .. }
-        | Expr::StructLit { .. } => true,
+        | Expr::StructLit { .. }
+        | Expr::ListLit(_) => true,
         Expr::FieldAccess { obj, .. } => expr_has_heap_op(obj),
         Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
             expr_has_heap_op(lhs) || expr_has_heap_op(rhs)
@@ -2389,6 +2422,11 @@ fn emit_function(
     if body.contains(&format!("${STRUCT_DST_SCRATCH}")) {
         writeln!(out, "    (local ${STRUCT_DST_SCRATCH} i32)").expect("write");
     }
+    // PMAT-1033: declare the list-construction scratch `i32` local iff a
+    // `ListLit` actually used it (same body-driven detection).
+    if body.contains(&format!("${LIST_DST_SCRATCH}")) {
+        writeln!(out, "    (local ${LIST_DST_SCRATCH} i32)").expect("write");
+    }
 
     out.push_str(&body);
     writeln!(out, "  )").expect("write");
@@ -2451,6 +2489,21 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 scope.declare(name, WatTy::I32);
                 scope.str_names.push(name.clone());
             }
+            // PMAT-1033: a `list[scalar]` LET binds an `i32` base-pointer
+            // local AND records its element type in `scope.list_elem` — the
+            // SAME registry a list param uses, so `xs[i]` reads/writes,
+            // `len(xs)`, and the PMAT-1030 ForEach desugar treat the local
+            // exactly like a param (bounds guards + typed loads verbatim).
+            // Intercepted before `map_type`, which refuses `List`.
+            Stmt::Let {
+                name,
+                ty: Type::List(inner),
+                ..
+            } => {
+                let elem = map_list_elem_type(inner)?;
+                scope.declare(name, WatTy::I32);
+                scope.list_elem.push((name.clone(), elem));
+            }
             Stmt::Let { name, ty, .. } => {
                 let wt = map_type(ty)?;
                 scope.declare(name, wt);
@@ -2482,6 +2535,18 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             | Stmt::Return(_)
             | Stmt::Break
             | Stmt::Continue => {}
+            // PMAT-1033: growth stays REFUSED precisely — a fixed-size list
+            // record cannot grow in place on the bump heap, and relocating it
+            // would silently break every alias holding the old base-pointer
+            // (the PMAT-999 relocation-hazard posture).
+            Stmt::ListAppend { list_name, .. } => {
+                return Err(unsupported(&format!(
+                    "`{list_name}.append(…)` — list growth is outside the WASM \
+                     subset (a fixed-size heap record cannot grow in place; \
+                     relocation would break aliases). Pre-size the list and \
+                     write `{list_name}[i] = …` instead"
+                )));
+            }
             other => {
                 return Err(unsupported(&format!(
                     "statement {} (outside the WASM scalar/control subset)",
@@ -2550,6 +2615,17 @@ fn emit_stmt(
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
             }
+            // PMAT-1033: a list-name binding routes through the dedicated
+            // list lowering — its value must be list-VALUED (a `ListLit`
+            // materialised on the bump heap, or another list name: a pointer
+            // copy, which IS Python's reference/sharing semantics — the
+            // PMAT-1024 reference-native posture, no disposition needed).
+            if let Some(elem) = scope.list_elem_of(name) {
+                emit_list_expr(value, elem, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "local.set ${name}").expect("write");
+                return Ok(());
+            }
             let wt = scope.ty_of(name)?;
             emit_expr_typed(value, scope, out, depth, wt)?;
             indent(out, depth);
@@ -2570,6 +2646,16 @@ fn emit_stmt(
             // reassignment too (params are in the str-name set).
             if scope.is_str_name(name) {
                 emit_str_expr(value, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "local.set ${name}").expect("write");
+                return Ok(());
+            }
+            // PMAT-1033: list reassignment — `xs = [4, 5]` allocates a fresh
+            // record and rebinds the local; `ys = xs` rebinds to the same
+            // base-pointer (Python's rebind never mutates the old record, so
+            // both are exact). Covers list PARAM reassignment too.
+            if let Some(elem) = scope.list_elem_of(name) {
+                emit_list_expr(value, elem, scope, out, depth)?;
                 indent(out, depth);
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
@@ -3022,8 +3108,8 @@ fn emit_index(
     };
     let Some(elem) = scope.list_elem_of(name) else {
         return Err(unsupported(&format!(
-            "index over `{name}` which is not a `list[scalar]` parameter — \
-             only a list param (i32 base-pointer into linear memory) can be \
+            "index over `{name}` which is not a `list[scalar]` param/local — \
+             only a list (i32 base-pointer into linear memory) can be \
              indexed in the WASM subset (no str/dict/tuple indexing)"
         )));
     };
@@ -3181,7 +3267,7 @@ fn emit_index_assign(
     let Some(elem) = scope.list_elem_of(list_name) else {
         return Err(unsupported(&format!(
             "index-assignment `{list_name}[i] = v` over `{list_name}` which is \
-             not a `list[scalar]` parameter — only a list param (i32 \
+             not a `list[scalar]` param/local — only a list (i32 \
              base-pointer into linear memory) can be element-assigned in the \
              WASM subset (no str/dict/tuple element-assignment)"
         )));
@@ -3233,7 +3319,7 @@ fn emit_len(
         && scope.heap_map_kind(name).is_none()
     {
         return Err(unsupported(&format!(
-            "len() over `{name}` which is not a `list[scalar]` parameter, a \
+            "len() over `{name}` which is not a `list[scalar]` param/local, a \
              `str` param/local, or a `dict`/`set` local — only those carry the \
              i32 count header at base+0 in the WASM subset"
         )));
@@ -4137,6 +4223,109 @@ fn emit_struct_lit(
     indent(out, depth);
     writeln!(out, "local.get ${STRUCT_DST_SCRATCH}").expect("write");
     Ok(WatTy::I32)
+}
+
+/// PMAT-1033: lower a list-VALUED expression binding a `list[scalar]`
+/// local/param — leaves the record's `i32` base-pointer on the stack.
+///
+/// Accepted shapes:
+/// * [`Expr::ListLit`] — materialise a fresh length-prefixed record on the
+///   bump heap ([`emit_list_lit`]);
+/// * a list-name [`Expr::Ident`] with the SAME element type — a bare
+///   `local.get`: the pointer copy IS Python's aliasing (mutations through
+///   either name hit the one record — the PMAT-1024 reference-native
+///   posture linear memory gives for free; the Rust lane must clone/refuse
+///   these same shapes).
+///
+/// Everything else (list-returning calls, slices, comprehensions) refuses
+/// honestly — never a silent scalar bound as a "pointer".
+fn emit_list_expr(
+    value: &Expr,
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    match value {
+        Expr::ListLit(elems) => emit_list_lit(elems, elem, scope, out, depth),
+        Expr::Ident(src) => {
+            let Some(src_elem) = scope.list_elem_of(src) else {
+                return Err(unsupported(&format!(
+                    "binding a list local from `{src}` which is not a \
+                     `list[scalar]` local/param in the WASM subset"
+                )));
+            };
+            if src_elem != elem {
+                return Err(unsupported(&format!(
+                    "list alias from `{src}` changes element type \
+                     ({} vs {}) — the WASM subset shares records of one \
+                     element type only",
+                    src_elem.keyword(),
+                    elem.keyword()
+                )));
+            }
+            indent(out, depth);
+            writeln!(out, "local.get ${src}").expect("write");
+            Ok(())
+        }
+        other => Err(unsupported(&format!(
+            "binding a list local from {} — the WASM subset materialises a \
+             list LITERAL or shares another named list local/param \
+             (list-returning calls/slices are refused)",
+            expr_kind(other)
+        ))),
+    }
+}
+
+/// PMAT-1033: lower an [`Expr::ListLit`] (`[e0, e1, …]`) onto the bump heap
+/// under the SAME length-prefixed ABI a `list[scalar]` param rides
+/// (PMAT-968): `$__alloc(8 + n*elem_size)`, an `i32` element count at
+/// `base+0`, packed elements from `base + LIST_ELEMS_OFFSET` — so the
+/// existing bounds-guarded `Index`/`IndexAssign`/`Len` lowerings work on the
+/// record verbatim. Leaves the `i32` base-pointer on the stack. Element
+/// expressions type through the ordinary scalar paths; the record is
+/// fixed-size (growth refuses — the PMAT-999 relocation posture).
+fn emit_list_lit(
+    elems: &[Expr],
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let n = i32::try_from(elems.len())
+        .map_err(|_| unsupported("list literal longer than i32::MAX elements"))?;
+    let size = LIST_ELEMS_OFFSET + n * elem.byte_size();
+    // dst = __alloc(8 + n*elem_size)
+    indent(out, depth);
+    writeln!(out, "i32.const {size}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__alloc").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.set ${LIST_DST_SCRATCH}").expect("write");
+    // Header: the i32 element count at base+0.
+    indent(out, depth);
+    writeln!(out, "local.get ${LIST_DST_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {n}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store").expect("write");
+    // Each element at base + LIST_ELEMS_OFFSET + i*elem_size.
+    for (i, e) in elems.iter().enumerate() {
+        indent(out, depth);
+        writeln!(out, "local.get ${LIST_DST_SCRATCH}").expect("write");
+        emit_expr_typed(e, scope, out, depth, elem)?;
+        indent(out, depth);
+        writeln!(
+            out,
+            "{}.store offset={}",
+            elem.keyword(),
+            LIST_ELEMS_OFFSET + i as i32 * elem.byte_size()
+        )
+        .expect("write");
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${LIST_DST_SCRATCH}").expect("write");
+    Ok(())
 }
 
 /// Lower an `Expr::FieldAccess` (`obj.field`) — load the field from the struct

@@ -18293,3 +18293,78 @@ fn transpile_str_alias_branch_py_both_lanes_execute() {
         "executed run() must == CPython 77 (7*10 + 7):\n{interp_out}"
     );
 }
+
+// ─── PMAT-1033: list[int] LOCALS + list LITERALS on the WASM lane ───────────
+
+/// PMAT-1033: the sweep-#11 a-series family (scan + continue + index-write +
+/// len over a LET-bound list literal) executes on BOTH lanes == CPython 16.
+/// Before this slice the WASM lane refused every `list[scalar]` LOCAL at its
+/// `map_type` gate — a list could only arrive as a param, which wasm-interp
+/// cannot supply — so the family was Rust-lane-only. Now the `ListLit`
+/// materialises a length-prefixed record on the bump heap (the exact param
+/// ABI) and every downstream path (bounds-guarded index read/write, `len`,
+/// the PMAT-1030 ForEach desugar) rides the param machinery verbatim.
+#[test]
+fn transpile_list_local_scan_py_both_lanes_execute() {
+    let py = fixture("list_local_scan.py");
+
+    // Rust lane: unchanged — still executes == CPython.
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    let rust_src = String::from_utf8_lossy(&rust_out.stdout);
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_out.status.success(),
+        "xpile --target rust failed on the list-local scan: stderr={rust_err}"
+    );
+    assert_rustc_runs(
+        "list_local_scan",
+        &rust_src,
+        "fn main() {\n    assert_eq!(run(), 16, \"CPython ground truth\");\n}",
+    );
+
+    // WASM lane: the PMAT-1033 unblock — emits and (with WABT) executes.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the list-local scan: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("(local $__wasm_list_dst i32)") && stdout.contains("call $__alloc"),
+        "the list literal bump-allocates through the dedicated scratch:\n{stdout}"
+    );
+
+    // EXECUTED half — gated on WABT (mirrors the wasm-codegen witnesses).
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1033: skipping EXECUTED half — WABT absent (emit asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-listlocal-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("listlocal.wat");
+    let wasm_path = dir.join("listlocal.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:16"),
+        "executed run() must == CPython 16 (scan 12 + index-write + len 4):\n{interp_out}"
+    );
+}
