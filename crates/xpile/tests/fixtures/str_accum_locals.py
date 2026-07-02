@@ -9,11 +9,15 @@ def build(n: int) -> str:
 
 def run() -> int:
     s: str = build(5)
+    b: str = s
+    c: str = s + ""
     prefix: str = "id-"
     msg: str = prefix + s
     total: int = 0
     if msg == "id-ABCDE":
         total = total + 1000
+    if b == c:
+        total = total + 100
     total = total + len(msg)
     total = total + ord(s[4])
     return total

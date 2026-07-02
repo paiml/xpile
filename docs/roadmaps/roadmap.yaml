@@ -659,8 +659,8 @@ roadmap:
 - id: PMAT-1029
   github_issue: null
   item_type: task
-  title: 'PMAT-1029: [rust/correctness] str-local ALIAS emits non-compiling Rust (E0382) — invalid-emit class. `b: str = s` lowers to `let b: String = s;` which MOVES `s`; a later use of `s` (e.g. `c: str = s + ""` or `ord(s[4])`) fails rustc "borrow of moved value". Valid Python (strings are immutable — aliasing is always safe), so this is the campaign''s worst category: an invalid emit, not a refusal. Found while building the PMAT-1028 both-lanes fixture (the WASM lane executes the same program correctly — pointer copy IS reference semantics for immutable strings). Candidate fixes: clone-on-alias for String locals (strings are clone-safe by immutability — the PMAT-1008/1020 alias-class machinery already classifies clone dispositions for containers; a String alias is the TRIVIALLY clone-safe case), or borrow where flow allows. Repro: def run(): s = build(5); b = s; c = s + ""; return len(c).'
-  status: pending
+  title: 'PMAT-1029: [rust/correctness] str-local ALIAS emits non-compiling Rust (E0382) — invalid-emit class. `b: str = s` lowers to `let b: String = s;` which MOVES `s`; a later use of `s` (e.g. `c: str = s + ""` or `ord(s[4])`) fails rustc "borrow of moved value". Valid Python (strings are immutable — aliasing is always safe), so this is the campaign''s worst category: an invalid emit, not a refusal. Found while building the PMAT-1028 both-lanes fixture (the WASM lane executes the same program correctly — pointer copy IS reference semantics for immutable strings). FIX: a dedicated Type::Str arm in apply_alias_dispositions — clone when the source is re-read beyond the alias RHS, keep the cheaper move when the RHS is its last read. Deliberately NOT folded into the container three-way: its REFUSE arm keys on obj_mutated (a type-blind name-keyed set) which must never block an immutable alias. Covers both AnnAssign (`b: str = s`) and plain Assign (`b = s`) paths; alias CHAINS (`b = s; c = b`) and param-source aliases (`def f(s: str): b = s; …len(s)`) fixed by the same arm. Probed adjacent shapes already safe: call args (clone at call site), list-literal embeds (per-element clone), element reads (`b = xs[0]` clones); the WASM reference lane was already exact (pointer copy IS sharing for immutable strings) and is untouched (reference_native skips Str before the new arm).'
+  status: done
   priority: high
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
@@ -669,7 +669,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Filed by PMAT-1028 (2026-07-02). The str_accum_locals.py e2e fixture deliberately EXCLUDES the alias pair so both lanes execute; the alias pair is proven wasm-side in str_local_witness. When this lands, extend the fixture back to the full 1177 shape.'
+  notes: 'Filed by PMAT-1028 (2026-07-02). DONE 2026-07-02: str_accum_locals.py extended back to the FULL 1177 shape (alias pair + 100-point b == c content-eq restored) and now EXECUTES on BOTH lanes == CPython 1177 (rust rustc-runs, wasm wat2wasm+wasm-interp); the fixture that dodged the bug now pins the fix. Frontend unit tests pin both dispositions: live-source alias → Expr::Clone (the E0382 fix), dead-source alias → bare move (no wasted clone). Differential-verified 7 probe shapes vs CPython (alias+concat, alias chain b=s;c=b, param-source alias, repeated call args, list embeds, element reads) — all value-match.'
 - id: PMAT-1026
   github_issue: null
   item_type: task

@@ -17976,12 +17976,13 @@ fn transpile_struct_pick_alias_py_wasm_executes_rust_refuses() {
 /// build(5)` — a str local bound to a str-returning call, gated on the
 /// PMAT-1028 StrReturners registry, never the ambiguous i32 result).
 /// Previously every one of these refused "type Str (the WASM emit subset is
-/// i64/i32/f64/f32/bool only)". Executes on BOTH lanes == CPython 1077
-/// (1000 content-eq on the concat + len("id-ABCDE")=8 + ord('E')=69).
-/// The alias/content-eq pair (`b = s; c = s + ""; b == c`) is proven in the
-/// str_local_witness suite on the WASM lane only — the RUST lane currently
-/// emits non-compiling code for it (`let b: String = s;` MOVES `s`, E0382
-/// at the later `s + ""` — an invalid-emit gap filed as a follow-up).
+/// i64/i32/f64/f32/bool only)". Executes on BOTH lanes == CPython 1177
+/// (1000 content-eq on the concat, 100 alias/content-eq, len("id-ABCDE")=8,
+/// ord('E')=69). PMAT-1029 restored the alias/content-eq pair (`b = s;
+/// c = s + ""; b == c`) to this both-lanes fixture: the RUST lane used to
+/// emit non-compiling code for it (`let b: String = s;` MOVES `s`, E0382 at
+/// the later `s + ""`) — strings are immutable, so the alias now clones
+/// while the source stays live (observationally identical to sharing).
 #[test]
 fn transpile_str_accum_locals_py_both_lanes_execute() {
     let py = fixture("str_accum_locals.py");
@@ -17998,7 +17999,7 @@ fn transpile_str_accum_locals_py_both_lanes_execute() {
     assert_rustc_runs(
         "str_accum_locals",
         &rust_src,
-        "fn main() {\n    assert_eq!(run(), 1077, \"CPython ground truth\");\n}",
+        "fn main() {\n    assert_eq!(run(), 1177, \"CPython ground truth\");\n}",
     );
 
     // WASM lane: emits (the previously-refusing half), assembles, executes.
@@ -18041,8 +18042,8 @@ fn transpile_str_accum_locals_py_both_lanes_execute() {
         .expect("spawn wasm-interp");
     let interp_out = String::from_utf8_lossy(&run.stdout);
     assert!(
-        interp_out.contains("run() => i64:1077"),
-        "executed run() must == CPython 1077 (1000 content-eq + len 8 + \
-         ord('E') 69):\n{interp_out}"
+        interp_out.contains("run() => i64:1177"),
+        "executed run() must == CPython 1177 (1000 content-eq + 100 \
+         alias/content-eq + len 8 + ord('E') 69):\n{interp_out}"
     );
 }
