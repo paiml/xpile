@@ -1358,7 +1358,12 @@ fn emit_stmt_indented(
             except_types,
             bound_name,
             extra_handlers,
+            finally,
         } => {
+            // PMAT-1070: `finally` wraps the whole try/except in an OUTER
+            // catch_unwind so it runs in EVERY exit path (clean, matched
+            // handler, handler-raised, or unmatched-propagate).
+            let has_finally = !finally.is_empty();
             let bind = |out: &mut String, name: &str| -> Result<(), CodegenError> {
                 write!(
                     out,
@@ -1366,10 +1371,17 @@ fn emit_stmt_indented(
                 )?;
                 Ok(())
             };
-            write!(
-                out,
-                "{indent}match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {{ "
-            )?;
+            if has_finally {
+                write!(
+                    out,
+                    "{indent}{{ let __tc_outer = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {{ match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {{ "
+                )?;
+            } else {
+                write!(
+                    out,
+                    "{indent}match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {{ "
+                )?;
+            }
             for st in body {
                 emit_stmt_indented(out, st, "", mode)?;
             }
@@ -1453,6 +1465,15 @@ fn emit_stmt_indented(
                 out.push_str(" }");
             }
             out.push_str(" }");
+            if has_finally {
+                out.push_str(" })); ");
+                for st in finally {
+                    emit_stmt_indented(out, st, "", mode)?;
+                }
+                out.push_str(
+                    "if let Err(__e) = __tc_outer { ::std::panic::resume_unwind(__e); } }",
+                );
+            }
             writeln!(out)?;
             Ok(())
         }

@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### try/except/finally (PMAT-1070)
+
+- `finally:` on a statement-form try/except now runs in every exit path
+  (clean body, matched handler, handler-raised, unmatched-propagate). Emitted
+  by wrapping the whole try/except in an outer `catch_unwind`, running the
+  finally block, then re-propagating — so it runs even when a handler itself
+  raises, and before the exception reaches an enclosing try. Works with
+  single and multiple except. Additive `serde(default)` `finally` field, so
+  finally-less try emission is byte-unchanged. Deferred: finally-only (no
+  except) and `else`.
+- 1 e2e test (749 total); differentially + adversarially verified (tf/tef/kF
+  + nested finally-before-propagate).
+
 ## [0.1.608] — 2026-07-02
 
 ### Multiple except clauses (PMAT-1059)

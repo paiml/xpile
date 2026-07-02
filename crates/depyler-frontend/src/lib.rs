@@ -11036,6 +11036,11 @@ fn is_assignment_try_shape(try_stmt: &ast::StmtTry) -> bool {
             _ => None,
         }
     }
+    // PMAT-1070: a `finally` needs the statement-form path (the value-form
+    // Expr::TryCatch has no finally slot) — never the assignment shape.
+    if !try_stmt.finalbody.is_empty() {
+        return false;
+    }
     if try_stmt.handlers.len() != 1 {
         return false;
     }
@@ -11064,15 +11069,19 @@ fn lower_statement_try(
     ctx: &mut LoweringCtx,
     try_stmt: ast::StmtTry,
 ) -> Result<Vec<Stmt>, FrontendError> {
-    if !try_stmt.orelse.is_empty() || !try_stmt.finalbody.is_empty() {
+    if !try_stmt.orelse.is_empty() {
         return Err(FrontendError::Lower(format!(
-            "function `{}`'s `try` has an `else`/`finally` clause — v0.2.0 first cut supports `try: <stmts> except [E [as e]]: <stmts>` only",
+            "function `{}`'s `try` has an `else` clause — v0.2.0 supports `try: <stmts> except [E [as e]]: <stmts> [finally: <stmts>]` (no `else` yet)",
             ctx.fn_name
         )));
     }
     if try_stmt.handlers.is_empty() {
+        // PMAT-1070: `try: B finally: F` with NO `except` (propagate-through
+        // cleanup) needs a "no-catch" encoding distinct from `except: pass`
+        // (which SWALLOWS) — deferred. `try/except/finally` (>=1 except) works.
         return Err(FrontendError::Lower(format!(
-            "function `{}`'s `try` has no `except` clause — v0.2.0 requires at least one",
+            "function `{}`'s `try` has a `finally` but no `except` — v0.2.0 first cut supports \
+             `try/except[/finally]`; add an `except` clause or move the cleanup after the `try`",
             ctx.fn_name
         )));
     }
@@ -11120,12 +11129,23 @@ fn lower_statement_try(
             body: hbody,
         });
     }
+    // PMAT-1070: lower the `finally:` block (runs in every exit path). Its
+    // locals are block-scoped like the arms (snapshot/restore ctx.bound).
+    let saved_b_f = ctx.bound.clone();
+    let saved_t_f = ctx.name_types.clone();
+    let mut finally = Vec::new();
+    for st in &try_stmt.finalbody {
+        finally.extend(lower_block_stmt(ctx, st.clone())?);
+    }
+    ctx.bound = saved_b_f;
+    ctx.name_types = saved_t_f;
     Ok(vec![Stmt::TryCatch {
         body,
         handler,
         except_types,
         bound_name,
         extra_handlers,
+        finally,
     }])
 }
 
