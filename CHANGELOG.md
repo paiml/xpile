@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.607] — 2026-07-02
+
 ### Grouping-in-a-class: `self.field[k].append(e)` (PMAT-1052)
 
 - `self.g[k].append(w)` / `obj.field[k].append(e)` — the grouping idiom
