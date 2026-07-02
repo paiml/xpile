@@ -876,6 +876,13 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'Suite 738 green; MATCH grouping 32 + field-pushes 11.5; alias shape + grouping + list-of-list-field + local-receiver + append-only-method all covered; the deep 2-level chain (o.inner.items.append) stays PMAT-1051-refused.'
+- id: PMAT-1053
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1053: [rust/capability] CLASS CONSTANTS — a class-body `NAME: T = <literal>` used as a shared class attribute (`Config.VERSION`, `self.LIMIT` for read-only, `Config.MAX`), NOT a per-instance field. Found by an advanced-OOP interaction probe. Three failing shapes: (a) `Config.VERSION` (read via the CLASS NAME) → "reads attribute of a non-struct value" (the class name is not a struct instance); (b) `c.VERSION` (instance read of a class const) → E0061 (VERSION is treated as an instance field, so `Config()` mismatches the synthesized ctor arity); (c) a class const alongside instance fields (`LIMIT: int = 10` + `n: int`) → "__init__ never assigns declared field LIMIT" (xpile requires every class-body-annotated field to be assigned in __init__). ROOT: xpile treats EVERY class-body annotated name as an instance struct field; a `NAME: T = <literal>` with a default that is (i) never assigned via `self.NAME = …` in any __init__/method AND (ii) read via `ClassName.NAME` or as a read-only `self.NAME` is a CLASS CONSTANT → should emit as an associated `const NAME: T = <literal>;` in the impl block and resolve `ClassName.NAME` / `self.NAME` to `Self::NAME`. SEMANTIC SUBTLETY (why filed, not rushed): must NOT regress the dataclass/instance-field-with-default case (`count: int = 0` then `self.count += 1` — an instance field, PMAT k11 passes) — the distinguisher is "assigned via self anywhere" (instance field) vs "only read + accessed via ClassName" (constant); needs whole-class analysis. Module-level constants + @property + @staticmethod + @classmethod + __eq__/__str__/__len__/__lt__/__getitem__ + @dataclass ALL WORK (probed); inheritance correctly refuses.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
 - id: PMAT-1051
   github_issue: null
   item_type: bug
