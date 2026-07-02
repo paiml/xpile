@@ -898,6 +898,13 @@ roadmap:
   status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
+- id: PMAT-1056
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1056: [rust/capability] @property SETTER — the writable half of Python''s property idiom (`@<prop>.setter def <prop>(self, v)`), the last-standing clean OOP reject alongside the getter that already shipped (PMAT-506j). Before this slice a `@c.setter` method reached the generic "function `c` has decorators — not supported" reject and `obj.c = v` on a read-only property gave a confusing "no such field". ROOT: xpile recognized `@property`/`@staticmethod`/`@classmethod` but not the attribute-decorator `@<name>.setter` (parses as `Attribute { value: Name(<prop>), attr: "setter" }`), and the assignment path only knew struct fields. FIX (frontend-only, NO meta-HIR/codegen change — SERIAL-hotspot avoided, mirrors the PMAT-1054 discipline): (1) new `property_setter_name` helper; (2) the setter is RENAMED `set_<prop>` at class-lowering and flows through the generic instance-method path, which infers `&mut self` from its `self.<backing> = v` write — so it lands in the impl as `pub fn set_<prop>(&mut self, v: T)` with no collision with the getter `<prop>()`; (3) `class_def_signature` registers it as `(set_<prop>, Unit)` in method_returns (settability lookup, no getter shadow) and EXCLUDES `@property` names from `__init__` field-discovery (a property is never a phantom struct field); (4) `class_mutating_methods` keys the setter under its lowered `set_<prop>` name so a caller `obj.set_<prop>(v)` binds the receiver `mut` while a read-only getter read does NOT (avoids a spurious `unused_mut` / E0596); (5) `lower_field_assign` rewrites `obj.<prop> = v` to `Stmt::SideEffectCall(obj.set_<prop>(v))`, coercing the value to the property''s type (int→float widening like a field store). Honest refusals (never a silent miscompile): a read-only property assign names the property + cites AttributeError; `self.<prop> = v` INSIDE __init__ refuses (the synthesized ctor cannot call a setter on a not-yet-built `self` — write the backing field directly). Reuses shipped Stmt::SideEffectCall + Expr::MethodCall + &mut-self, so it is portable to every target for free. Differentially verified vs CPython: oracle fixture property_setter.py (a clamping Volume setter — 50/100/0/73/0/43 byte-identical) + e2e property_setter (external assign, in-method self-assign, int-widen) + two reject tests (read-only, in-init). RESIDUAL: `obj.<prop> += v` (aug-assign on a property) and a setter used inside __init__ stay deferred rejects; both refuse loudly.'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
 - id: PMAT-1051
   github_issue: null
   item_type: bug

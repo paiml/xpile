@@ -1007,16 +1007,25 @@ fn class_mutating_methods(c: &ast::StmtClassDef) -> HashSet<String> {
             _ => None,
         })
         .collect();
+    // PMAT-1056: a `@<prop>.setter` mutates `self` (it writes the backing
+    // field), but it lowers RENAMED to `set_<prop>` — the caller side invokes
+    // `obj.set_<prop>(v)`, so the mutating set must key on the lowered name (not
+    // the getter-shared AST name `<prop>`, which would spuriously mark a
+    // read-only `obj.<prop>` getter receiver `mut`).
+    let eff_name = |f: &&ast::StmtFunctionDef| {
+        property_setter_name(f).map_or_else(|| f.name.to_string(), |p| format!("set_{p}"))
+    };
     let mut set: HashSet<String> = methods
         .iter()
         .filter(|f| for_target_mutated_ast(&f.body, "self"))
-        .map(|f| f.name.to_string())
+        .map(&eff_name)
         .collect();
     loop {
         let mut added = false;
         for f in &methods {
-            if !set.contains(f.name.as_str()) && calls_self_method_in(&f.body, &set) {
-                set.insert(f.name.to_string());
+            let name = eff_name(f);
+            if !set.contains(&name) && calls_self_method_in(&f.body, &set) {
+                set.insert(name);
                 added = true;
             }
         }
@@ -3870,6 +3879,15 @@ fn class_def_signature(
                 if is_staticmethod(m) || is_classmethod(m) {
                     continue;
                 }
+                // PMAT-1056: a `@<prop>.setter` shares the getter's Python name
+                // but lowers RENAMED to `set_<prop>`. Register it under that
+                // lowered name (return `Unit`) so the assignment-site rewrite can
+                // detect settability via `struct_methods` — and so it does not
+                // shadow the getter's `(<prop>, T)` return entry.
+                if let Some(prop) = property_setter_name(m) {
+                    method_returns.push((format!("set_{prop}"), Type::Unit));
+                    continue;
+                }
                 let ret = match m.returns.as_ref() {
                     None => Type::Unit,
                     Some(ann) => parse_type_annotation(&name, "<method return>", ann)?,
@@ -3896,6 +3914,19 @@ fn class_def_signature(
     // re-annotation refuses. Discovery walks only TOP-LEVEL `__init__`
     // statements — the straight-line subset the explicit-ctor synthesis
     // (PMAT-1016B) lowers; anything else refuses there, not here.
+    // PMAT-1056: `@property` names are NOT fields — exclude them from `__init__`
+    // field-discovery so a `self.<prop> = v` in `__init__` never synthesizes a
+    // phantom struct field that would collide with the getter method `<prop>()`.
+    // (Such an assignment is instead refused at lowering — the ctor cannot call
+    // a setter on a not-yet-constructed `self`.)
+    let prop_names: HashSet<&str> = c
+        .body
+        .iter()
+        .filter_map(|m| match m {
+            ast::Stmt::FunctionDef(f) if is_property(f) => Some(f.name.as_str()),
+            _ => None,
+        })
+        .collect();
     if let Some(init) = c.body.iter().find_map(|s| match s {
         ast::Stmt::FunctionDef(m)
             if m.name.as_str() == "__init__" && !is_staticmethod(m) && !is_classmethod(m) =>
@@ -3921,6 +3952,9 @@ fn class_def_signature(
                     let Some(field) = self_field_target(aa.target.as_ref()) else {
                         continue;
                     };
+                    if prop_names.contains(field) {
+                        continue; // PMAT-1056: a property, not a field.
+                    }
                     let ty = parse_type_annotation(&name, field, &aa.annotation)?;
                     match fields.iter().find(|(f, _)| f == field) {
                         Some((_, declared)) if *declared == ty => {}
@@ -3936,6 +3970,9 @@ fn class_def_signature(
                     let Some(field) = self_field_target(&a.targets[0]) else {
                         continue;
                     };
+                    if prop_names.contains(field) {
+                        continue; // PMAT-1056: a property, not a field.
+                    }
                     if fields.iter().any(|(f, _)| f == field) {
                         continue;
                     }
@@ -4117,11 +4154,29 @@ fn is_classmethod(m: &ast::StmtFunctionDef) -> bool {
 /// PMAT-506j (classes epic): true if a class method carries a bare `@property`
 /// decorator. A property is a read-only `self` method accessed as a bare
 /// attribute (`obj.area`, no parens) — it lowers to `(obj).area()` (an
-/// `Expr::MethodCall` with no args). Setters (`@area.setter`) are not supported.
+/// `Expr::MethodCall` with no args). Its writable partner is `@area.setter`
+/// (see `property_setter_name`, PMAT-1056).
 fn is_property(m: &ast::StmtFunctionDef) -> bool {
     m.decorator_list
         .iter()
         .any(|d| matches!(d, ast::Expr::Name(n) if n.id.as_str() == "property"))
+}
+
+/// PMAT-1056 (classes epic): the property name of a `@<name>.setter` method,
+/// or `None`. Python's writable-property idiom is a second method with the same
+/// name as the `@property` getter, decorated `@<prop>.setter` — the decorator
+/// parses as an `Attribute { value: Name(<prop>), attr: "setter" }`. Such a
+/// method lowers to a normal `&mut self` method RENAMED `set_<prop>` (so it does
+/// not collide with the getter `<prop>()`), and an assignment `obj.<prop> = v`
+/// is rewritten to `obj.set_<prop>(v)` (see `lower_field_assign`).
+fn property_setter_name(m: &ast::StmtFunctionDef) -> Option<String> {
+    m.decorator_list.iter().find_map(|d| match d {
+        ast::Expr::Attribute(a) if a.attr.as_str() == "setter" => match a.value.as_ref() {
+            ast::Expr::Name(n) => Some(n.id.to_string()),
+            _ => None,
+        },
+        _ => None,
+    })
 }
 
 /// PMAT-592 (classes epic): true if a class carries `@dataclass(frozen=True)`.
@@ -4444,6 +4499,16 @@ fn lower_class_def(
     let mut methods: Vec<Function> = Vec::new();
     for stmt in c.body {
         if let ast::Stmt::FunctionDef(mut m) = stmt {
+            // PMAT-1056: a `@<prop>.setter` is a normal `(self, value)` instance
+            // method — RENAME it `set_<prop>` (so it does not collide with the
+            // getter `<prop>()`), strip the decorator, and let it flow through
+            // the generic instance-method path below (which infers `&mut self`
+            // from the `self.<backing> = value` write). Assignment sites
+            // `obj.<prop> = v` route to `obj.set_<prop>(v)` in `lower_field_assign`.
+            if let Some(prop) = property_setter_name(&m) {
+                m.name = ast::Identifier::new(format!("set_{prop}"));
+                m.decorator_list.clear();
+            }
             // PMAT-506g: a `@staticmethod` lowers as a plain associated function
             // (no `self` receiver). Strip the decorator (lower_function_def
             // rejects decorators) and lower with `self_type = None`; the emitted
@@ -13438,6 +13503,50 @@ fn lower_field_assign(
             ctx.fn_name
         )));
     };
+    // PMAT-1056: `obj.<prop> = v` where `<prop>` is a `@property` — a property is
+    // not a struct field, so route the write to its setter rather than let the
+    // field store below refuse it ("no such field").
+    if ctx
+        .struct_properties
+        .get(&sname)
+        .is_some_and(|ps| ps.contains(&field))
+    {
+        let setter = format!("set_{field}");
+        let settable = ctx
+            .struct_methods
+            .get(&sname)
+            .is_some_and(|ms| ms.iter().any(|(n, _)| *n == setter));
+        if !settable {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` assigns `{obj_name}.{field}`, but `{field}` is a read-only `@property` of `{sname}` (no `@{field}.setter`) — Python raises AttributeError. Add a setter, or write the backing field directly",
+                ctx.fn_name
+            )));
+        }
+        if ctx.fn_name == "__init__" {
+            return Err(FrontendError::Lower(format!(
+                "class `{sname}` `__init__` assigns the `@property` `{field}` through its setter — unsupported at v0.2.0 (the constructor cannot call a method on a not-yet-built `self`). Assign the backing field directly (e.g. `self._{field} = …`)"
+            )));
+        }
+        // Coerce the value to the property's type (the getter's return type):
+        // a `float` property fed an `int` needs the same widening the field
+        // store applies (an Optional property likewise wraps a bare value).
+        let prop_ty = ctx
+            .struct_methods
+            .get(&sname)
+            .and_then(|ms| ms.iter().find(|(n, _)| *n == field).map(|(_, t)| t.clone()));
+        let value = lower_expr_in_ctx(ctx, value_ast)?;
+        let value = match &prop_ty {
+            Some(Type::F64) => to_f64_operand(ctx, value),
+            other => coerce_lowered_to_optional(ctx, value, other.as_ref()),
+        };
+        return Ok(Stmt::SideEffectCall {
+            call: Expr::MethodCall {
+                obj: Box::new(Expr::Ident(obj_name)),
+                method: setter,
+                args: vec![value],
+            },
+        });
+    }
     let field_ty = ctx
         .structs
         .get(&sname)

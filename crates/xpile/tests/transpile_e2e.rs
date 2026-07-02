@@ -6671,6 +6671,74 @@ fn main() {
     assert_rustc_runs("dataclass_property", &rust, driver);
 }
 
+/// PMAT-1056: a `@<prop>.setter` (Python's writable-property idiom) lowers to a
+/// `&mut self` method RENAMED `set_<prop>` (no collision with the getter
+/// `<prop>()`), and an assignment `obj.<prop> = v` is rewritten to
+/// `obj.set_<prop>(v)`. `self.<prop> = v` inside a non-__init__ method routes
+/// through the setter too; an int assigned to a float property widens like a
+/// field store. Cross-checked vs CPython here + in the oracle fixture.
+#[test]
+fn property_setter() {
+    let rust = xpile_transpile_to_rust("property_setter.py");
+    assert!(
+        rust.contains("pub fn c(&self) -> f64") && rust.contains("pub fn set_c(&mut self, v: f64)"),
+        "the getter stays `&self c()`; the setter lowers to a renamed `&mut self set_c`:\n{rust}"
+    );
+    assert!(
+        rust.contains("(t).set_c(") && rust.contains("(self).set_c(0f64)"),
+        "an external `t.c = v` and an in-method `self.c = 0.0` both route to `set_c`:\n{rust}"
+    );
+    assert!(
+        rust.contains("(t).set_c(((7i64) as f64))"),
+        "an int assigned to a float property widens at the setter call:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(set_external(Temp::__init__(20.0), 25.0), 25.0);
+    assert_eq!(set_from_int(Temp::__init__(20.0)), 7.0);
+    assert_eq!(reset_it(Temp::__init__(20.0)), 0.0);
+}
+"#;
+    assert_rustc_runs("property_setter", &rust, driver);
+}
+
+/// PMAT-1056: assigning a read-only `@property` (no `@c.setter`) REFUSES — Python
+/// raises AttributeError. xpile must not synthesize a phantom field; it names the
+/// read-only property clearly instead of the confusing "no such field".
+#[test]
+fn property_setter_readonly_rejected() {
+    let py = fixture("property_setter_readonly_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "assigning a read-only @property must reject"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("read-only `@property`") && stderr.contains("`c`"),
+        "expected a clear read-only-property message naming `c`; got: {stderr}"
+    );
+}
+
+/// PMAT-1056: `self.<prop> = v` inside __init__ where <prop> is a settable
+/// @property is REFUSED (honest deferral) — the synthesized ctor cannot call a
+/// setter on a not-yet-built `self`. Guards against a silent phantom-field
+/// miscompile (the property name must never become a struct field).
+#[test]
+fn property_setter_in_init_rejected() {
+    let py = fixture("property_setter_in_init_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "assigning a @property through its setter in __init__ must reject"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("__init__") && stderr.contains("not-yet-built"),
+        "expected a clear __init__-setter deferral message; got: {stderr}"
+    );
+}
+
 /// PMAT-510 (Tranche 2): the `match` statement — the literal-dispatch subset
 /// (`case <literal>:` + a trailing `case _:`, Name subject) desugars to an
 /// `if`/`elif`/`else` chain, reusing all existing `if` lowering (no new IR).
