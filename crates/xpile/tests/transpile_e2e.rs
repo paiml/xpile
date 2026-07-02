@@ -18221,3 +18221,75 @@ fn transpile_for_iter_str_py_both_lanes_execute() {
          continue 3 / break 2 / nested pairs 5 / ord checksum 2):\n{interp_out}"
     );
 }
+
+/// PMAT-1031 (sweep #11): a str alias bound by REASSIGNMENT inside an
+/// if-arm (`b: str = ""` … `if n > 3: b = s` … read BOTH names after).
+/// Valid Python — strings are immutable, so the alias is always safe —
+/// but the reassignment path skipped the whole alias-disposition suite
+/// (only fresh `Let`/AnnAssign bindings ran it), so the rust lane emitted
+/// `b = s;` (a MOVE) and the later `len(s)` was rustc E0382: an INVALID
+/// EMIT, the campaign's worst class. Executes on BOTH lanes == CPython 77
+/// (len("branchy") = 7 → 7*10 + 7). The same routing fix also cloned
+/// read-only CONTAINER reassignment aliases (same E0382) and turned the
+/// element-read reassignment silent diverge (`r = m[0]; r.append(9)` —
+/// rust 2 vs CPython 3) into the precise PMAT-1022 refusal; those two are
+/// pinned as depyler-frontend unit tests.
+#[test]
+fn transpile_str_alias_branch_py_both_lanes_execute() {
+    let py = fixture("str_alias_branch.py");
+
+    // Rust lane: the previously-E0382 half — transpiles, compiles, runs.
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    let rust_src = String::from_utf8_lossy(&rust_out.stdout);
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_out.status.success(),
+        "xpile --target rust failed on the if-arm str alias: stderr={rust_err}"
+    );
+    assert_rustc_runs(
+        "str_alias_branch",
+        &rust_src,
+        "fn main() {\n    assert_eq!(run(), 77, \"CPython ground truth\");\n}",
+    );
+
+    // WASM lane: already executed exactly (pointer copy IS sharing for
+    // immutable strings) — pinned so the rust-lane fix stays lane-neutral.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the if-arm str alias: stderr={stderr}"
+    );
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1031: skipping EXECUTED half — WABT absent (emit asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-strbranch-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("strbranch.wat");
+    let wasm_path = dir.join("strbranch.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:77"),
+        "executed run() must == CPython 77 (7*10 + 7):\n{interp_out}"
+    );
+}

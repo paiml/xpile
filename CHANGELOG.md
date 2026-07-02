@@ -7,6 +7,42 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Sweep #11 + reassignments routed through the alias-disposition suite (PMAT-1031)
+
+- **Adversarial differential sweep #11** hit the day-old PMAT-1026..1030
+  loop/str/classifier surface with 35 programs + 7 sharpening probes, every
+  one run on all THREE lanes (CPython ground truth, rust → rustc → run,
+  wasm → wat2wasm → wasm-interp). HELD: 20 executed rust-lane and 12
+  wasm-lane cases value-match; the live-list-mutation-in-`for` refusal, the
+  PMAT-1020/1027 alias + classifier guards, and both empty-index
+  `IndexError` analogues all held.
+- **Fixed here (finding 1, rust/correctness): REASSIGNMENT of an existing
+  name skipped `apply_alias_dispositions` entirely** — only fresh
+  `Let`/`AnnAssign` bindings ran the suite. Three confirmed consequences,
+  all valid Python: `b = s` (str) and `b = xs` (container) reassignment
+  aliases emitted bare MOVES → rustc E0382 **invalid emit** (top-level,
+  if-arm, and while-body forms all confirmed — the PMAT-1029 fix only
+  covered fresh bindings), and `r = m[0]; r.append(9)` re-bound from an
+  element **silently cloned** where Python shares the row (rust 2 vs
+  CPython 3). One-call-site fix in `lower_assign`'s already-bound branch:
+  route the value through the same disposition suite as the Let path
+  (before the PMAT-690 `Optional` wrap). Str/read-only-container
+  reassignment aliases now clone; the element-read mutation hits the
+  precise PMAT-1022 refusal. Witness: `str_alias_branch.py` executes on
+  BOTH lanes == CPython 77; three new frontend unit tests pin the clone /
+  clone / refuse dispositions. Zero regressions (frontend 32, e2e 713).
+- **Filed (honest ledger):** PMAT-1032 — the WASM str runtime is
+  BYTE-oriented vs CPython's chars (`len("héllo")` = 6 vs 5, `for ch` over
+  `"abé"` = 4 vs 3 iterations, `ord("é")` traps where Python returns 233 —
+  the PMAT-1030 "TypeError analogue" framing is wrong for multi-byte single
+  chars — `s[-1]` traps, `chr(233)` is internally inconsistent with the
+  2-byte literal encoding). PMAT-1033 — `list[int]` LOCALS/literals are
+  outside the WASM subset, so the PMAT-1030 scan family is end-to-end
+  witnessable only for str/range iteration (11 sweep programs refuse on
+  that one gate). PMAT-1034 — the rust-lane for-var leak over an EMPTY
+  iterable executes the 0-default where CPython raises
+  `UnboundLocalError` (the non-empty leak matches exactly).
+
 ### Typed mutation-shape classification + precise receiver diagnostics (PMAT-1027)
 
 - **Sweep #10 finding 4 discharged — the mutator classifier is TYPED, not
