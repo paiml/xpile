@@ -2929,17 +2929,35 @@ impl Frontend for PythonFrontend {
 /// A call into a non-mutating helper (e.g. `helper(xs) + helper(xs)` in
 /// `call_arg_reuse.py`) leaves `Param::mutable == false`, so it is untouched.
 fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
-    // Map each top-level / method function name → its per-parameter in-place
-    // mutation flags (parallel to its parameter list).
-    let mut mutating: HashMap<String, Vec<bool>> = HashMap::new();
+    // PMAT-1043: free functions and methods live in SEPARATE name maps. A
+    // single bare-name HashMap let a non-mutating same-named sibling MASK a
+    // mutating one — `a.f(q)` where `A::f` mutates its param silently dropped
+    // the mutation when a `B::f` (or a free `f`) that DOESN'T mutate was
+    // registered under the same key last (the guard read the wrong flags, so
+    // it never fired, and the reuse-clone shipped a detached copy). Free calls
+    // check `mutating_fns`; method calls check `mutating_methods`. Same-named
+    // METHODS across classes UNION their per-position flags — the checker sees
+    // only the lowered `MethodCall` (no receiver class), so a position counts
+    // as mutating if ANY class's same-named method mutates it. Conservative:
+    // may REFUSE a call into a genuinely non-mutating sibling (loud), never
+    // miscompiles.
+    let mut mutating_fns: HashMap<String, Vec<bool>> = HashMap::new();
+    let mut mutating_methods: HashMap<String, Vec<bool>> = HashMap::new();
     for item in items {
         match item {
             Item::Function(f) => {
-                mutating.insert(f.name.clone(), f.params.iter().map(|p| p.mutable).collect());
+                mutating_fns.insert(f.name.clone(), f.params.iter().map(|p| p.mutable).collect());
             }
             Item::Struct { methods, .. } => {
                 for m in methods {
-                    mutating.insert(m.name.clone(), m.params.iter().map(|p| p.mutable).collect());
+                    let entry = mutating_methods.entry(m.name.clone()).or_default();
+                    for (i, p) in m.params.iter().enumerate() {
+                        if i >= entry.len() {
+                            entry.push(p.mutable);
+                        } else {
+                            entry[i] = entry[i] || p.mutable;
+                        }
+                    }
                 }
             }
             Item::Const { .. } | Item::Enum { .. } => {}
@@ -2953,7 +2971,9 @@ fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
             Item::Const { .. } | Item::Enum { .. } => Vec::new(),
         };
         for body in bodies {
-            check_block_children(body, &mut |e| check_expr_for_alias_mutate(e, &mutating))?;
+            check_block_children(body, &mut |e| {
+                check_expr_for_alias_mutate(e, &mutating_fns, &mutating_methods)
+            })?;
         }
     }
     Ok(())
@@ -2966,21 +2986,32 @@ fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
 /// mutated in place (`Param::mutable`).
 fn check_expr_for_alias_mutate(
     expr: &Expr,
-    mutating: &HashMap<String, Vec<bool>>,
+    mutating_fns: &HashMap<String, Vec<bool>>,
+    mutating_methods: &HashMap<String, Vec<bool>>,
 ) -> Result<(), FrontendError> {
     // PMAT-1037: method calls check the same conjunction with the parameter
     // index offset by 1 — a method's `params[0]` is `self`, so its i-th
     // ARGUMENT corresponds to parameter i+1. Without this arm a mutating
     // method taking a container (`c.drain(q)`) never fired the guard.
-    let (callee, args, param_offset): (&String, &Vec<Expr>, usize) = match expr {
-        Expr::Call { callee, args } => (callee, args, 0),
-        Expr::MethodCall { method, args, .. } => (method, args, 1),
+    // PMAT-1043: a `Call` resolves against `mutating_fns`, a `MethodCall`
+    // against `mutating_methods` — never a shared map (see the collision note
+    // on `reject_alias_then_mutate`).
+    let (callee, args, param_offset, map): (
+        &String,
+        &Vec<Expr>,
+        usize,
+        &HashMap<String, Vec<bool>>,
+    ) = match expr {
+        Expr::Call { callee, args } => (callee, args, 0, mutating_fns),
+        Expr::MethodCall { method, args, .. } => (method, args, 1, mutating_methods),
         _ => {
-            return walk_expr_children(expr, &mut |e| check_expr_for_alias_mutate(e, mutating));
+            return walk_expr_children(expr, &mut |e| {
+                check_expr_for_alias_mutate(e, mutating_fns, mutating_methods)
+            });
         }
     };
     {
-        if let Some(param_mut) = mutating.get(callee) {
+        if let Some(param_mut) = map.get(callee) {
             for (i, arg) in args.iter().enumerate() {
                 if !param_mut.get(i + param_offset).copied().unwrap_or(false) {
                     continue;
@@ -3020,7 +3051,9 @@ fn check_expr_for_alias_mutate(
             }
         }
     }
-    walk_expr_children(expr, &mut |e| check_expr_for_alias_mutate(e, mutating))
+    walk_expr_children(expr, &mut |e| {
+        check_expr_for_alias_mutate(e, mutating_fns, mutating_methods)
+    })
 }
 
 /// Apply `f` to every direct child `Expr` of `expr`, short-circuiting on the

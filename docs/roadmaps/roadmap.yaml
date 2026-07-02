@@ -860,6 +860,14 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).' SHIPPED 2026-07-02: fresh top-level loop-body bindings read after the loop pre-declare `let mut <name>: T = <default>` (RHS probe-typed, for/while both; range targets trivially int; list defaults vec![]); definitely-scalar list-literal embeds no longer edge the alias analysis (the false `aliases i and row` refusal); pre-bound-target + element-mutation refuses precisely (the leak clone silently absorbed the mutation — pre-existing silent bug, now loud). Residual: bindings nested in inner if/loops and dict/set-valued loop locals keep E0425.
+- id: PMAT-1043
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1043: [rust/correctness] SILENT miscompile — same-named method/free-fn collision in the alias-then-mutate guard (sweep #12). The guard`s `mutating` map was keyed by BARE function name, so two classes with a method of the same name (or a free fn + method same name) collided: a non-mutating sibling registered last MASKED a mutating one. Result: `a.f(q)` where `A.f` appends to its param and `q` is reused after never fired the guard (it read `B.f`s non-mutating flags), and the unconditional reuse-clone shipped a detached copy — the append silently dropped (rust len 1 vs CPython 2). Confirmed on three shapes (two-classes-same-method, free-fn-shadowed-by-method, method-shadowed-by-free-fn). FIX: split into `mutating_fns` (free, by name) + `mutating_methods` (by name, per-position OR-union across same-named methods since the lowered MethodCall carries no receiver class); Call→fns, MethodCall→methods. Conservative (may refuse a call into a genuinely non-mutating sibling — loud), never miscompiles. These shapes now REFUSE loudly (the established reused-arg-into-param-mutating posture).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 finding, adversarially reproduced main-loop (the workflow verify wave died on credit exhaustion; findings re-verified by hand). Full suite 727 green; differentially confirmed the 4 collision shapes now refuse.'
 - id: PMAT-1042
   github_issue: null
   item_type: task

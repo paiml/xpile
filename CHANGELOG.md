@@ -7,6 +7,23 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Silent miscompile fixed: same-named method/free-fn guard collision (PMAT-1043)
+
+- The alias-then-mutate guard keyed its per-parameter mutation map by BARE
+  function name, so two classes with a same-named method (or a free fn and a
+  method sharing a name) collided — a non-mutating sibling registered last
+  masked a mutating one. `a.f(q)` where `A.f` appends to its param and `q` is
+  reused after never fired the guard (it read the sibling's non-mutating
+  flags) and the reuse-clone shipped a detached copy: the append silently
+  dropped (rust len 1 vs CPython 2). Found by adversarial sweep #12.
+- Fix: separate `mutating_fns` (free functions) and `mutating_methods` maps;
+  same-named methods union their per-position flags (the lowered `MethodCall`
+  carries no receiver class, so a position counts as mutating if any
+  same-named method mutates it — conservative, may refuse a call into a
+  genuinely non-mutating sibling, never miscompiles). These shapes now
+  REFUSE loudly (the established reused-arg-into-param-mutating posture).
+- 1 refusal test (727 total).
+
 ## [0.1.605] — 2026-07-02
 
 ### Branch parity no longer required for pre-bound names (PMAT-1042)
