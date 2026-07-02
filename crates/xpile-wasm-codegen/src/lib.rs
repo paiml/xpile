@@ -85,13 +85,28 @@
 //!   (`xs[i][j] = v`) remain refused — fixed-list scalar access (read +
 //!   single-index write) plus `len` is the deliverable.
 //! - Statements: `Let`/`Assign` (→ `local` + `local.set`), `If`/`While`/
-//!   `Break`/`Continue`/`Return`, and `xs[i] = v` (`IndexAssign`) over a
-//!   `list[scalar]` param (bounds-checked `*.store`).
+//!   `Break`/`Continue`/`Return`, `xs[i] = v` (`IndexAssign`) over a
+//!   `list[scalar]` param (bounds-checked `*.store`), and as of **PMAT-1023**
+//!   `obj.field = v` (`FieldAssign` — a `*.store` at the field's 8-byte-slot
+//!   offset) plus statement-position method calls (`SideEffectCall` over an
+//!   `Expr::MethodCall`, dropping a discarded result).
 //! - Expressions: `Ident` (→ `local.get`), `LitInt`/`LitFloat`/`LitBool`,
 //!   `BinOp` (arith/bitwise/shift + comparisons), `FloatBinOp`, `UnOp`,
 //!   `IfExpr`, `Index` over a `list[scalar]` param (bounds-checked `*.load`),
 //!   `Len` over a `list[scalar]` param (→ header `i32.load` + `i64` extend),
-//!   and a direct intra-module `Call`.
+//!   a direct intra-module `Call`, and `obj.method(args)` (`MethodCall`)
+//!   over a struct local/param receiver.
+//! - **Struct METHODS (PMAT-1023):** each `Item::Struct` method — including
+//!   SELF-MUTATING ones (`self.count = self.count + 1`) — emits as an
+//!   ordinary WAT function `$<Struct>.<method>` whose `self` receiver is the
+//!   instance's `i32` base-pointer. A field write through `self` (or any
+//!   struct local/param) is a store through that pointer, so the mutation is
+//!   visible to EVERY binding of the record: Python's reference semantics
+//!   are NATIVE to linear memory — no clone/refuse alias disposition needed
+//!   (the Rust lane must refuse shapes this lane executes exactly). Struct
+//!   `==`/ordering is REFUSED honestly (a struct rides an i32 base-pointer;
+//!   a naive compare would be pointer identity, not Python's structural
+//!   `==`), as are non-`self` receivers and unknown methods.
 //!
 //! ## Semantic posture (replicated from the Rust/PTX lanes)
 //!
@@ -361,10 +376,8 @@ fn align8(n: i32) -> i32 {
 /// posture rather than a silent miscompile.
 fn collect_str_literals(module: &Module) -> Result<StrLiterals, BackendError> {
     let mut contents: Vec<String> = Vec::new();
-    for item in &module.items {
-        if let Item::Function(f) = item {
-            collect_block_literals(&f.body, &mut contents);
-        }
+    for f in module_functions(module) {
+        collect_block_literals(&f.body, &mut contents);
     }
     let mut lits = StrLiterals::default();
     let mut next = LITERAL_BASE;
@@ -426,6 +439,10 @@ fn collect_stmt_literals(s: &Stmt, out: &mut Vec<String>) {
             collect_expr_literals(key, out);
             collect_expr_literals(value, out);
         }
+        // PMAT-1023: a field write's VALUE and a statement-position method
+        // call's ARGS may reference literals (`c.tag(ord("x"))`).
+        Stmt::FieldAssign { value, .. } => collect_expr_literals(value, out),
+        Stmt::SideEffectCall { call } => collect_expr_literals(call, out),
         _ => {}
     }
 }
@@ -484,6 +501,20 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
         Expr::SetLit(elems) => {
             for el in elems {
                 collect_expr_literals(el, out);
+            }
+        }
+        // PMAT-1023: method-call args + struct-literal field values may carry
+        // literals; the receiver/obj is a bare name (nothing to collect) but
+        // recursing is harmless and future-proof.
+        Expr::MethodCall { obj, args, .. } => {
+            collect_expr_literals(obj, out);
+            for a in args {
+                collect_expr_literals(a, out);
+            }
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, v) in fields {
+                collect_expr_literals(v, out);
             }
         }
         _ => {}
@@ -1182,8 +1213,9 @@ impl TargetEmitter for WasmSaxpySpecialistEmitter {
 // ─── WAT emission ───────────────────────────────────────────────────
 
 /// Emit a full `(module …)` for `module`. Only [`Item::Function`]s are
-/// emitted; any other item kind is refused (no struct/enum/const in the
-/// scalar/control subset).
+/// emitted; struct definitions contribute layout + methods (PMAT-996/1023);
+/// any other item kind is refused (no enum/const in the scalar/control
+/// subset).
 pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     let mut out = String::new();
     writeln!(out, "(module").expect("write to String");
@@ -1224,6 +1256,10 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // PMAT-996 (slice 4): the module's struct layout registry (name → fields),
     // built once; non-scalar-field structs are refused here (honest early error).
     let structs = build_struct_registry(module)?;
+    // PMAT-1023: the module's method + associated-fn signature registries
+    // (struct.method / Struct::__init__ → param/result WAT types), built once
+    // so call sites can type their args + result.
+    let (methods, assoc_fns) = build_method_registry(module)?;
     let needs_str_eq = module_needs_str_eq(module) || dict_str_keys;
     if module_uses_list_param(module) || needs_heap || !literals.is_empty() || needs_str_eq {
         writeln!(
@@ -1288,7 +1324,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     for item in &module.items {
         match item {
             Item::Function(f) => {
-                let f_wat = emit_function(f, &literals, &structs)?;
+                let f_wat = emit_function(f, &literals, &structs, &methods, &assoc_fns, &f.name)?;
                 out.push_str(&f_wat);
             }
             Item::Const { name, .. } => {
@@ -1296,11 +1332,36 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
                     "module-level const `{name}` (only scalar/control functions are in the WASM subset)"
                 )));
             }
-            // PMAT-996 (slice 4): a struct DEFINITION emits no WAT — it is pure
-            // layout (recorded in `structs`); its instances are lowered at their
-            // `StructLit`/`FieldAccess` use sites. Non-scalar-field structs were
-            // already refused by `build_struct_registry`.
-            Item::Struct { .. } => {}
+            // PMAT-996 (slice 4): a struct DEFINITION emits no WAT of its own —
+            // it is pure layout (recorded in `structs`). PMAT-1023: its METHODS
+            // now DO emit, each as an ordinary WAT function `$<Struct>.<method>`
+            // whose `self` receiver is the instance's i32 base-pointer (the
+            // struct-param path emit_function already handles). A self-mutating
+            // method stores through that pointer, so the mutation is visible to
+            // every binding of the record — Python reference semantics, native.
+            Item::Struct {
+                name, methods: ms, ..
+            } => {
+                for m in ms {
+                    let has_self = m.params.first().is_some_and(
+                        |p| matches!((&p.name, &p.ty), (n, Type::Struct(s)) if n == "self" && s == name),
+                    );
+                    // Instance methods mangle `<Struct>.<method>`; associated
+                    // fns (the desugared explicit `__init__`) mangle
+                    // `<Struct>::<method>` — the EXACT callee string their
+                    // `Expr::Call` sites carry, so the generic `call $<callee>`
+                    // emission resolves without a rename map. Both `.` and `:`
+                    // are legal WAT id characters.
+                    let wat_name = if has_self {
+                        format!("{name}.{}", m.name)
+                    } else {
+                        format!("{name}::{}", m.name)
+                    };
+                    let m_wat =
+                        emit_function(m, &literals, &structs, &methods, &assoc_fns, &wat_name)?;
+                    out.push_str(&m_wat);
+                }
+            }
             Item::Enum { name, .. } => {
                 return Err(unsupported(&format!(
                     "enum `{name}` (outside the WASM scalar/control subset)"
@@ -1317,14 +1378,28 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
 /// (PMAT-966 for lists, PMAT-986 for strings). Both ride an `i32`
 /// base-pointer into that linear memory under the same length-prefixed ABI.
 fn module_uses_list_param(module: &Module) -> bool {
-    module.items.iter().any(|item| match item {
-        Item::Function(f) => f
-            .params
+    module_functions(module).any(|f| {
+        f.params
             .iter()
             // PMAT-996: a struct param is also an i32 base-pointer into linear
             // memory, so it likewise needs the `(memory …)` declaration.
-            .any(|p| matches!(p.ty, Type::List(_) | Type::Str | Type::Struct(_))),
-        _ => false,
+            // (PMAT-1023: this scan covers struct METHODS too — their `self`
+            // receiver is a struct param, so any module with a method gets
+            // the `(memory …)` its field loads/stores need.)
+            .any(|p| matches!(p.ty, Type::List(_) | Type::Str | Type::Struct(_)))
+    })
+}
+
+/// PMAT-1023: every lowered function in `module` — the free `Item::Function`s
+/// AND each `Item::Struct`'s methods (which emit as ordinary WAT functions
+/// named `$<Struct>.<method>`). Module-level scans (literals, heap ops, dict
+/// kinds, str-eq) MUST use this so a construct inside a METHOD body pulls in
+/// the same helpers/memory it would in a free function.
+fn module_functions(module: &Module) -> impl Iterator<Item = &Function> {
+    module.items.iter().flat_map(|item| match item {
+        Item::Function(f) => std::slice::from_ref(f).iter(),
+        Item::Struct { methods, .. } => methods.iter(),
+        _ => [].iter(),
     })
 }
 
@@ -1337,10 +1412,8 @@ fn module_uses_list_param(module: &Module) -> bool {
 fn module_needs_heap(module: &Module) -> bool {
     let (di, ds) = module_dict_key_kinds(module);
     di || ds
-        || module.items.iter().any(|item| match item {
-            Item::Function(f) => matches!(f.return_type, Type::Str) || block_has_heap_op(&f.body),
-            _ => false,
-        })
+        || module_functions(module)
+            .any(|f| matches!(f.return_type, Type::Str) || block_has_heap_op(&f.body))
 }
 
 /// PMAT-995 (slice 3b): which dict/set KEY kinds the module uses — `(needs_int,
@@ -1356,10 +1429,8 @@ fn module_needs_heap(module: &Module) -> bool {
 fn module_dict_key_kinds(module: &Module) -> (bool, bool) {
     let mut need_int = false;
     let mut need_str = false;
-    for item in &module.items {
-        if let Item::Function(f) = item {
-            scan_block_dict_kinds(&f.body, &mut need_int, &mut need_str);
-        }
+    for f in module_functions(module) {
+        scan_block_dict_kinds(&f.body, &mut need_int, &mut need_str);
     }
     (need_int, need_str)
 }
@@ -1405,17 +1476,14 @@ fn scan_stmts_dict_kinds(stmts: &[Stmt], need_int: &mut bool, need_str: &mut boo
 /// or a `Chr`) needs the content-compare helper. The str-param set is computed
 /// per-function so `str_param == str_param` (the common case) is detected.
 fn module_needs_str_eq(module: &Module) -> bool {
-    module.items.iter().any(|item| match item {
-        Item::Function(f) => {
-            let str_params: Vec<&str> = f
-                .params
-                .iter()
-                .filter(|p| matches!(p.ty, Type::Str))
-                .map(|p| p.name.as_str())
-                .collect();
-            block_has_str_eq(&f.body, &str_params)
-        }
-        _ => false,
+    module_functions(module).any(|f| {
+        let str_params: Vec<&str> = f
+            .params
+            .iter()
+            .filter(|p| matches!(p.ty, Type::Str))
+            .map(|p| p.name.as_str())
+            .collect();
+        block_has_str_eq(&f.body, &str_params)
     })
 }
 
@@ -1441,6 +1509,9 @@ fn stmt_has_str_eq(s: &Stmt, str_params: &[&str]) -> bool {
             expr_has_str_eq(cond, str_params) || body.iter().any(|s| stmt_has_str_eq(s, str_params))
         }
         Stmt::IndexAssign { value, .. } => expr_has_str_eq(value, str_params),
+        // PMAT-1023: field-write values and statement method-call args.
+        Stmt::FieldAssign { value, .. } => expr_has_str_eq(value, str_params),
+        Stmt::SideEffectCall { call } => expr_has_str_eq(call, str_params),
         _ => false,
     }
 }
@@ -1480,6 +1551,10 @@ fn expr_has_str_eq(e: &Expr, str_params: &[&str]) -> bool {
         Expr::StrCharAt { string, index } => {
             expr_has_str_eq(string, str_params) || expr_has_str_eq(index, str_params)
         }
+        // PMAT-1023: method-call args may carry a string equality.
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_str_eq(obj, str_params) || args.iter().any(|a| expr_has_str_eq(a, str_params))
+        }
         _ => false,
     }
 }
@@ -1514,6 +1589,10 @@ fn stmt_has_heap_op(s: &Stmt) -> bool {
         }
         Stmt::While { cond, body } => expr_has_heap_op(cond) || body.iter().any(stmt_has_heap_op),
         Stmt::IndexAssign { value, .. } => expr_has_heap_op(value),
+        // PMAT-1023: a field write's value / a statement method-call's args may
+        // materialise (e.g. `c.label = "a" + s`, `c.set(Point(1, 2))`).
+        Stmt::FieldAssign { value, .. } => expr_has_heap_op(value),
+        Stmt::SideEffectCall { call } => expr_has_heap_op(call),
         Stmt::Break | Stmt::Continue => false,
         _ => false,
     }
@@ -1557,6 +1636,12 @@ fn expr_has_heap_op(e: &Expr) -> bool {
             }
             other => expr_has_heap_op(other),
         },
+        // PMAT-1023: a method CALL allocates nothing at the call site (the
+        // called body is scanned separately via `module_functions`), but its
+        // args may (`c.set(Point(1, 2))`).
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_heap_op(obj) || args.iter().any(expr_has_heap_op)
+        }
         _ => false,
     }
 }
@@ -1725,6 +1810,15 @@ struct Scope<'a> {
     /// or PARAM. The name itself is an `i32` base-pointer (in [`Scope::locals`]);
     /// this records which struct's layout drives its `obj.field` reads.
     struct_locals: Vec<(String, String)>,
+    /// PMAT-1023: the module's method-signature registry (struct.method →
+    /// non-self param WAT types + result), shared across every function so
+    /// `obj.method(args)` call sites type their args and result.
+    methods: &'a MethodRegistry,
+    /// PMAT-1023: the module's associated-fn registry (`<Struct>::<name>` →
+    /// param WAT types + result) — the frontend's desugared explicit
+    /// `__init__` constructors land here, so `Counter(0)` call sites
+    /// (`Expr::Call { callee: "Counter::__init__" }`) type exactly.
+    assoc_fns: &'a AssocFnRegistry,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -1751,6 +1845,24 @@ impl Scope<'_> {
             .rev()
             .find(|(n, _)| n == name)
             .map(|(_, s)| s.clone())
+    }
+
+    /// PMAT-1023: the call signature — (non-self param WAT types, result;
+    /// `None` result = unit/void) — of `sname.mname`, if the module defines it.
+    fn method_sig(&self, sname: &str, mname: &str) -> Option<(&[WatTy], Option<WatTy>)> {
+        self.methods
+            .iter()
+            .find(|(s, m, _, _)| s == sname && m == mname)
+            .map(|(_, _, p, r)| (p.as_slice(), *r))
+    }
+
+    /// PMAT-1023: the call signature of the associated fn registered under
+    /// the exact callee string `key` (e.g. `"Counter::__init__"`), if any.
+    fn assoc_sig(&self, key: &str) -> Option<(&[WatTy], Option<WatTy>)> {
+        self.assoc_fns
+            .iter()
+            .find(|(k, _, _)| k == key)
+            .map(|(_, p, r)| (p.as_slice(), *r))
     }
 
     fn ty_of(&self, name: &str) -> Result<WatTy, BackendError> {
@@ -1795,11 +1907,17 @@ impl Scope<'_> {
     }
 }
 
-/// Emit one `(func …)` for `f`.
+/// Emit one `(func …)` for `f`. `wat_name` is the WAT symbol + export name —
+/// `f.name` for a free function, `<Struct>.<method>` for a struct method
+/// (PMAT-1023; both are legal WAT id characters, and Python identifiers can
+/// never collide with the dotted form).
 fn emit_function(
     f: &Function,
     literals: &StrLiterals,
     structs: &StructRegistry,
+    methods: &MethodRegistry,
+    assoc_fns: &AssocFnRegistry,
+    wat_name: &str,
 ) -> Result<String, BackendError> {
     // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
     // base-pointer of the newly-materialised length-prefixed string in linear
@@ -1816,6 +1934,13 @@ fn emit_function(
     } else if ret_is_str {
         // A str result rides an i32 base-pointer (the heap-allocated string).
         WatTy::I32
+    } else if matches!(f.return_type, Type::Struct(_)) {
+        // PMAT-1023: a struct result rides an i32 base-pointer (the heap
+        // record) — required by the desugared explicit `__init__` ctor
+        // (`-> Self { Self { … } }`), and it upgrades the PMAT-996 posture
+        // for free functions too (`def make(): return Point(1, 2)` lowers;
+        // the trailing `StructLit` leaves exactly this pointer).
+        WatTy::I32
     } else {
         map_type(&f.return_type)?
     };
@@ -1827,6 +1952,8 @@ fn emit_function(
         heap_maps: Vec::new(),
         structs,
         struct_locals: Vec::new(),
+        methods,
+        assoc_fns,
         literals,
         ret,
         ret_is_unit,
@@ -1885,7 +2012,7 @@ fn emit_function(
 
     // Now assemble the (func) header with signature + local decls.
     let mut out = String::new();
-    write!(out, "  (func ${} ", f.name).expect("write");
+    write!(out, "  (func ${wat_name} ").expect("write");
     for Param { name, ty, .. } in &f.params {
         let wt = param_wat_type(ty)?;
         write!(out, "(param ${} {}) ", name, wt.keyword()).expect("write");
@@ -1945,7 +2072,7 @@ fn emit_function(
 
     out.push_str(&body);
     writeln!(out, "  )").expect("write");
-    writeln!(out, "  (export \"{}\" (func ${}))", f.name, f.name).expect("write");
+    writeln!(out, "  (export \"{wat_name}\" (func ${wat_name}))").expect("write");
     Ok(out)
 }
 
@@ -2010,10 +2137,15 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             // PMAT-995: `d[k] = v` (DictSet) and `s.add(e)` (SetAdd) mutate an
             // existing dict/set in place — no new local (the dict/set base
             // local was declared by its `Let`).
+            // PMAT-1023: `obj.field = v` writes an EXISTING record's field and
+            // a statement method call mutates through an existing pointer —
+            // neither introduces a new local.
             Stmt::Assign { .. }
             | Stmt::IndexAssign { .. }
             | Stmt::DictSet { .. }
             | Stmt::SetAdd { .. }
+            | Stmt::FieldAssign { .. }
+            | Stmt::SideEffectCall { .. }
             | Stmt::Return(_)
             | Stmt::Break
             | Stmt::Continue => {}
@@ -2046,6 +2178,8 @@ fn stmt_kind(s: &Stmt) -> &'static str {
         Stmt::Continue => "Continue",
         Stmt::Print { .. } => "Print",
         Stmt::IndexAssign { .. } => "IndexAssign",
+        Stmt::FieldAssign { .. } => "FieldAssign",
+        Stmt::SideEffectCall { .. } => "SideEffectCall",
         _ => "<container/aggregate statement>",
     }
 }
@@ -2099,6 +2233,30 @@ fn emit_stmt(
         // PMAT-995 (slice 3b): `s.add(e)` — insert into a set local (a keys-only
         // dict; the `set` helper is shared, with a 0 sentinel value).
         Stmt::SetAdd { set_name, elem } => emit_set_add(set_name, elem, scope, out, depth),
+        // PMAT-1023: `obj.field = value` — store through the struct
+        // local/param's base-pointer (the OOP mutation primitive).
+        Stmt::FieldAssign { obj, field, value } => {
+            emit_field_assign(obj, field, value, scope, out, depth)
+        }
+        // PMAT-1023: a statement-position call evaluated for its side effect —
+        // `c.incr()` / `acc.add(5)`. STRUCT METHOD calls only: their result
+        // type is known from the registry, so a unit method leaves nothing and
+        // a value-returning method's result is dropped (Python's statement-
+        // position discard). A bare function-call statement is refused (a free
+        // `Expr::Call`'s result type is not carried in the meta-HIR node).
+        Stmt::SideEffectCall { call } => {
+            let Expr::MethodCall { obj, method, args } = call else {
+                return Err(unsupported(
+                    "statement-position call that is not a struct method call — \
+                     the WASM subset lowers `obj.method(…)` statements only",
+                ));
+            };
+            if emit_method_call(obj, method, args, scope, out, depth)?.is_some() {
+                indent(out, depth);
+                writeln!(out, "drop").expect("write");
+            }
+            Ok(())
+        }
         Stmt::Return(e) => {
             if scope.ret_is_unit {
                 if !matches!(e, Expr::Unit) {
@@ -2277,6 +2435,32 @@ fn emit_expr(
             Ok(then_ty)
         }
         Expr::Call { callee, args } => {
+            // PMAT-1023: a call to a REGISTERED associated fn (the frontend's
+            // desugared explicit `__init__`: `Counter(0)` lowers to
+            // `Call { callee: "Counter::__init__" }`) types exactly — each
+            // arg against its declared param, the result from the registry
+            // (an i32 heap pointer for a ctor). The WAT symbol IS the callee
+            // string (`::` is a legal WAT id character).
+            if let Some((ptys, ret)) = scope.assoc_sig(callee) {
+                if ptys.len() != args.len() {
+                    return Err(unsupported(&format!(
+                        "`{callee}` takes {} argument(s) but the call passes {}",
+                        ptys.len(),
+                        args.len()
+                    )));
+                }
+                for (a, pt) in args.iter().zip(ptys.iter()) {
+                    emit_expr_typed(a, scope, out, depth, *pt)?;
+                }
+                indent(out, depth);
+                writeln!(out, "call ${callee}").expect("write");
+                return ret.ok_or_else(|| {
+                    unsupported(&format!(
+                        "`{callee}` returns no value (unit) — its call cannot be \
+                         used in a value position"
+                    ))
+                });
+            }
             // Direct intra-module call — args left-to-right, then `call $f`.
             // The result type is not carried in the meta-HIR Call node, so
             // we cannot statically know it; default to the function's
@@ -2367,6 +2551,16 @@ fn emit_expr(
         Expr::StructLit { name, fields } => emit_struct_lit(name, fields, scope, out, depth),
         // PMAT-996 (slice 4): `obj.field` — load a field from a struct local/param.
         Expr::FieldAccess { obj, field } => emit_field_access(obj, field, scope, out, depth),
+        // PMAT-1023: `obj.method(args)` in a VALUE position — the method must
+        // return a value (a unit method's "result" cannot feed an expression).
+        Expr::MethodCall { obj, method, args } => {
+            emit_method_call(obj, method, args, scope, out, depth)?.ok_or_else(|| {
+                unsupported(&format!(
+                    "method `.{method}(…)` returns no value (Python `-> None`) — \
+                     a unit method call cannot be used in a value position"
+                ))
+            })
+        }
         // PMAT-995: a `DictLit`/`SetLit` needs its K/V from the binding's
         // declared type; it is materialised by the dict/set `Let` path
         // (`emit_heap_map_bind`), never standalone. Reaching here means a
@@ -3258,6 +3452,82 @@ fn build_struct_registry(module: &Module) -> Result<StructRegistry, BackendError
     Ok(reg)
 }
 
+/// PMAT-1023: the module's struct-METHOD signature registry — one entry per
+/// `self`-receiver method: `(struct_name, method_name, non-self param WAT
+/// types, result)`. A `None` result is a unit/void method (Python `->
+/// None`). Built once by [`build_method_registry`]; carried in
+/// [`Scope::methods`] so call sites type their args + result.
+type MethodRegistry = Vec<(String, String, Vec<WatTy>, Option<WatTy>)>;
+
+/// PMAT-1023: the module's ASSOCIATED-function registry — struct methods
+/// WITHOUT a `self` receiver, keyed by the exact `Expr::Call` callee string
+/// the frontend produces (`"<Struct>::<name>"`, e.g. the PMAT-1016B explicit
+/// constructor `Counter::__init__`, which returns the struct's i32
+/// base-pointer). Entries: `(call_key, param WAT types, result)`. Lets the
+/// generic `Call` lowering type these calls exactly instead of assuming the
+/// conservative i64 default.
+type AssocFnRegistry = Vec<(String, Vec<WatTy>, Option<WatTy>)>;
+
+/// The WAT result shape of a method/assoc-fn return type. `Unit` is `None`;
+/// a `str` OR `Struct` return rides an i32 base-pointer (heap string /
+/// heap record).
+fn callable_ret(owner: &str, mname: &str, ret: &Type) -> Result<Option<WatTy>, BackendError> {
+    match ret {
+        Type::Unit => Ok(None),
+        Type::Str => Ok(Some(WatTy::I32)),
+        Type::Struct(_) => Ok(Some(WatTy::I32)),
+        other => map_type(other).map(Some).map_err(|e| {
+            unsupported(&format!(
+                "struct `{owner}` method `{mname}` return type: {e}"
+            ))
+        }),
+    }
+}
+
+/// Build the module's method + associated-fn registries. A method whose
+/// first param is a `self: <Struct>` receiver registers as an instance
+/// method (`<Struct>.<name>`); a method WITHOUT one (the frontend's
+/// desugared explicit `__init__` constructor, static methods) registers as
+/// an associated function under the call key `<Struct>::<name>`. Params
+/// must map to WAT types; unsupported shapes refuse with the offender named.
+fn build_method_registry(
+    module: &Module,
+) -> Result<(MethodRegistry, AssocFnRegistry), BackendError> {
+    let mut reg = MethodRegistry::new();
+    let mut assoc = AssocFnRegistry::new();
+    for item in &module.items {
+        if let Item::Struct { name, methods, .. } = item {
+            for m in methods {
+                let has_self = m.params.first().is_some_and(
+                    |p| matches!((&p.name, &p.ty), (n, Type::Struct(s)) if n == "self" && s == name),
+                );
+                let value_params = if has_self {
+                    &m.params[1..]
+                } else {
+                    &m.params[..]
+                };
+                let ptys = value_params
+                    .iter()
+                    .map(|p| param_wat_type(&p.ty))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| {
+                        unsupported(&format!(
+                            "struct `{name}` method `{mname}` parameter: {e}",
+                            mname = m.name
+                        ))
+                    })?;
+                let ret = callable_ret(name, &m.name, &m.return_type)?;
+                if has_self {
+                    reg.push((name.clone(), m.name.clone(), ptys, ret));
+                } else {
+                    assoc.push((format!("{name}::{}", m.name), ptys, ret));
+                }
+            }
+        }
+    }
+    Ok((reg, assoc))
+}
+
 /// Look up a struct's field layout by name.
 fn struct_layout<'r>(
     reg: &'r StructRegistry,
@@ -3363,6 +3633,103 @@ fn emit_field_access(
     )
     .expect("write");
     Ok(*fty)
+}
+
+/// PMAT-1023: lower a `Stmt::FieldAssign` (`obj.field = value`) — a
+/// `*.store` at the field's 8-byte-slot offset through the struct local/
+/// param's base-pointer. This is the WASM OOP mutation primitive:
+/// `self.count = self.count + 1` inside a method and `p.x = 99` outside
+/// both lower here, and because every binding of the record holds the SAME
+/// i32 base-pointer, the write is visible through every alias — Python's
+/// reference semantics are native to linear memory (no clone/refuse
+/// disposition; the Rust lane must refuse shapes this lane executes
+/// exactly). The value is typed against the field's declared WAT type (an
+/// int value into a float field is an honest type-mismatch refusal, not a
+/// silent widening).
+fn emit_field_assign(
+    obj: &str,
+    field: &str,
+    value: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let sname = scope.struct_of(obj).ok_or_else(|| {
+        unsupported(&format!(
+            "field assignment over `{obj}` which is not a struct local/param in \
+             the WASM subset"
+        ))
+    })?;
+    let layout = struct_layout(scope.structs, &sname)?;
+    let (idx, fty) = layout
+        .iter()
+        .enumerate()
+        .find(|(_, (fn_, _))| fn_ == field)
+        .map(|(i, (_, t))| (i, *t))
+        .ok_or_else(|| unsupported(&format!("struct `{sname}` has no field `{field}`")))?;
+    indent(out, depth);
+    writeln!(out, "local.get ${obj}").expect("write");
+    emit_expr_typed(value, scope, out, depth, fty)?;
+    indent(out, depth);
+    writeln!(
+        out,
+        "{}.store offset={}",
+        fty.keyword(),
+        idx as i32 * STRUCT_FIELD_SIZE
+    )
+    .expect("write");
+    Ok(())
+}
+
+/// PMAT-1023: lower an `Expr::MethodCall` (`obj.method(args)`) — push the
+/// receiver's base-pointer, the args (each typed against the method's
+/// declared param), and `call $<Struct>.<method>`. Returns the method's
+/// result WAT type, or `None` for a unit/void method (the caller decides
+/// whether `None` is legal in its position: a value position refuses it, a
+/// statement position emits nothing to drop).
+fn emit_method_call(
+    obj: &Expr,
+    method: &str,
+    args: &[Expr],
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<Option<WatTy>, BackendError> {
+    let Expr::Ident(oname) = obj else {
+        return Err(unsupported(&format!(
+            "method call `.{method}(…)` over a non-name receiver — the WASM \
+             subset calls methods on a struct LOCAL/PARAM only (no chained or \
+             temporary receivers)"
+        )));
+    };
+    let Some(sname) = scope.struct_of(oname) else {
+        return Err(unsupported(&format!(
+            "method call `.{method}(…)` over `{oname}` which is not a struct \
+             local/param — non-struct method receivers are outside the WASM \
+             subset"
+        )));
+    };
+    let Some((ptys, ret)) = scope.method_sig(&sname, method) else {
+        return Err(unsupported(&format!(
+            "struct `{sname}` has no method `{method}` in this module (the WASM \
+             subset lowers a method only alongside its class definition)"
+        )));
+    };
+    if ptys.len() != args.len() {
+        return Err(unsupported(&format!(
+            "method `{sname}.{method}` takes {} argument(s) but the call passes {}",
+            ptys.len(),
+            args.len()
+        )));
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${oname}").expect("write");
+    for (a, pt) in args.iter().zip(ptys.iter()) {
+        emit_expr_typed(a, scope, out, depth, *pt)?;
+    }
+    indent(out, depth);
+    writeln!(out, "call ${sname}.{method}").expect("write");
+    Ok(ret)
 }
 
 /// PMAT-993: lower `chr(n)` (`Expr::Chr`) — materialise a new 1-byte string
@@ -3607,6 +3974,19 @@ fn binop_operand_is_string(e: &Expr, scope: &Scope) -> bool {
     }
 }
 
+/// PMAT-1023: `true` if `e` is a STRUCT-valued binop operand — a struct
+/// local/param `Ident` or a `StructLit`. A struct rides an i32 base-pointer,
+/// indistinguishable from a bool i32 in the opcode table, so a naive `p == q`
+/// would silently compare POINTERS — while Python `==` over dataclasses is
+/// STRUCTURAL (and identity `is` is not modeled). Refused honestly.
+fn binop_operand_is_struct(e: &Expr, scope: &Scope) -> bool {
+    match e {
+        Expr::Ident(name) => scope.struct_of(name).is_some(),
+        Expr::StructLit { .. } => true,
+        _ => false,
+    }
+}
+
 fn emit_binop(
     op: BinOp,
     lhs: &Expr,
@@ -3665,6 +4045,19 @@ fn emit_binop(
              read-only `len(s)` + `ord(s[i])` + heap `Concat`/`chr`/`s[i]` + \
              content equality `==`/`!=`); ordering needs lexicographic logic \
              not yet wired, refused honestly rather than comparing base-pointers"
+        )));
+    }
+
+    // PMAT-1023: a struct operand rides an i32 base-pointer — every binop
+    // over one is refused (equality would be pointer identity, not Python's
+    // structural `==`; ordering/arithmetic over pointers is meaningless).
+    if binop_operand_is_struct(lhs, scope) || binop_operand_is_struct(rhs, scope) {
+        return Err(unsupported(&format!(
+            "binary op {op:?} over struct operand(s) — a struct rides an i32 \
+             base-pointer, so a naive compare would be POINTER identity while \
+             Python `==` over classes/dataclasses is structural (and `is` \
+             identity is not modeled). Struct equality/ordering is refused \
+             honestly; compare individual scalar fields instead"
         )));
     }
 
@@ -3844,6 +4237,7 @@ fn expr_kind(e: &Expr) -> &'static str {
         Expr::Len(_) => "Len",
         Expr::Index { .. } => "Index",
         Expr::StructLit { .. } => "StructLit",
+        Expr::MethodCall { .. } => "MethodCall",
         Expr::Block(_) => "Block",
         _ => "<container/aggregate/builtin expression>",
     }

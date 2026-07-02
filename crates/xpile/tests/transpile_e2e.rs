@@ -17541,3 +17541,71 @@ fn self_field_alias_is_rejected() {
         "names the alias pair:\n{stderr}"
     );
 }
+
+// ─── PMAT-1023: Python OOP → WASM, full pipeline ───────────────────────────
+
+/// PMAT-1023: a real Python class — explicit `__init__` ctor, a self-MUTATING
+/// method, a getter — transpiles to native WAT through the FULL pipeline
+/// (depyler-frontend → meta-HIR → xpile-wasm-codegen) and, when WABT is on
+/// the host, EXECUTES value-matching CPython (`run()` = 2). The ctor emits
+/// as the associated fn `$Counter::__init__` (an i32 heap-record pointer),
+/// methods as `$Counter.<name>` with the `self` receiver as that pointer.
+#[test]
+fn transpile_counter_oop_py_to_wasm_executes() {
+    let py = fixture("counter_oop.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed: stderr={stderr} stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("(func $Counter::__init__ (param $count i64) (result i32)"),
+        "explicit __init__ emits as an associated ctor returning the record \
+         pointer:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("(func $Counter.incr (param $self i32)")
+            && stdout.contains("(func $Counter.get (param $self i32) (result i64)"),
+        "methods emit with the i32 self receiver:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("call $Counter::__init__") && stdout.contains("call $Counter.incr"),
+        "run() drives the ctor + mutating method:\n{stdout}"
+    );
+
+    // EXECUTED half — gated on WABT (mirrors the wasm-codegen witnesses).
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1023: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-oop-wasm-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("counter.wat");
+    let wasm_path = dir.join("counter.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:2"),
+        "executed run() must == CPython 2 (c = Counter(0); c.incr(); c.incr(); \
+         c.get()):\n{interp_out}"
+    );
+}
