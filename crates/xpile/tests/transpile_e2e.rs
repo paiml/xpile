@@ -18866,7 +18866,10 @@ fn main() {
 fn chain_mutator_diagnostic_is_precise() {
     let py = fixture("chain_mutator_diagnostic.py");
     let out = run_xpile(&["transpile", py.to_str().unwrap()]);
-    assert!(!out.status.success(), "deep-chain container mutation must refuse");
+    assert!(
+        !out.status.success(),
+        "deep-chain container mutation must refuse"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("mutates a container through") && !stderr.contains("subprocess.run"),
