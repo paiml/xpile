@@ -363,15 +363,50 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a bool value-matching CPython, including on MULTI-BYTE fixtures ('abé' > 'abz', 'café' > 'cafe')"
       - "the ordering WASM-emitting code carries the WASM citation"
 
+  int_to_str_is_decimal_ascii:
+    # PMAT-1060: `str(int)` / `repr(int)` (Expr::ToStr{of_float: false}) lowers to
+    # $__wasm_int_to_str — the FIRST string op that manufactures a string from a
+    # NON-string value. Works in the UNSIGNED magnitude so i64::MIN converts
+    # without an overflow on the negation; every digit is 1-byte ASCII so the
+    # byte-count header equals the Python CHAR count.
+    formula: |
+      construct(ToStr{value, of_float: false} over an i64 value,
+                BackendConfig{target: Wasm})
+        emits `<value:i64> call $__wasm_int_to_str`, where $__wasm_int_to_str
+        computes neg = value < 0, mag = neg ? (0 - value) : value  [the WRAPPING
+        i64 sub, correct u64 magnitude for i64::MIN], counts the decimal digits
+        of mag (>= 1), $__alloc(8 + digits + neg), stores the i32 BYTE-count
+        header, writes '-' (45) when neg, and fills digits from the
+        least-significant end backward (48 + mag%10 via i64.rem_u/div_u).
+    domain: |
+      A `str(n)` / `repr(n)` (Expr::ToStr{of_float: false}) whose operand lowers
+      to an i64 (Python int). str(float) (of_float: true) is REFUSED, and a bool
+      (i32) / str (pointer) operand is REFUSED by the operand type check (never a
+      wrong conversion).
+    invariants:
+      - "the conversion works in the UNSIGNED magnitude (i64.div_u/rem_u), so i64::MIN = -9223372036854775808 converts exactly where a naive `0 - n` negation would overflow"
+      - "at least one digit is always emitted, so str(0) == '0' (not the empty string)"
+      - "a negative value gets a single leading '-' (45); a non-negative value none"
+      - "every digit is 1-byte ASCII, so the i32 byte-count header EQUALS the Python char count — the result composes with len/Concat/equality/a str RETURN"
+      - "$__wasm_int_to_str calls $__alloc (rides the bump-heap gate); the module carries the allocator + (memory) whenever str(int) is used"
+      - "str(float)/repr(float) and str(bool)/str(str) are REFUSED honestly (no silent miscompile)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the ToStr operand types as int (i64) and of_float is false"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a string value-matching CPython str(n), including str(0)='0', the sign cases, and the i64::MIN/MAX magnitude boundaries"
+      - "the int→str WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
-      construct(slice_stepped | list_slice | str() | fstring | str_method,
+      construct(slice_stepped | list_slice | str(float) | fstring | str_method,
                 BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
       A string op still outside the WASM string subset: a STEPPED string slice
-      or a list slice, str()/repr(), an f-string, a string method. (String
-      ORDERING is now supported — see `string_ordering_is_lexicographic`.)
+      or a list slice, str(float)/repr(float), an f-string, a string method.
+      (String ORDERING is supported — see `string_ordering_is_lexicographic`;
+      str(int)/repr(int) is supported — see `int_to_str_is_decimal_ascii`.)
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
       - "the refusal names the op + the follow-up (honest diagnostic)"
@@ -405,6 +440,11 @@ proof_obligations:
     property: string ordering is a lexicographic byte compare; results match CPython on multi-byte fixtures
     formal: "wasm-interp(construct(a < b)) == CPython(a < b) AND wasm-interp(construct('abé' > 'abz')) == True"
     applies_to: string_ordering_is_lexicographic
+
+  - type: postcondition
+    property: str(int) is a decimal-ASCII heap string; results match CPython incl. zero, sign, and the i64::MIN overflow boundary
+    formal: "wasm-interp(construct(str(n))) == CPython(str(n)) AND wasm-interp(construct(str(-9223372036854775808))) == '-9223372036854775808'"
+    applies_to: int_to_str_is_decimal_ascii
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -604,3 +644,35 @@ falsification_tests:
       - signed_byte_read_misorders_multibyte_lead_byte
       - prefix_shorter_is_less_wrong
       - mixed_str_nonstr_ordering_miscompiled
+
+  - id: FALSIFY-WASM-HEAP-008
+    rule: |
+      PMAT-1060: `str(int)` / `repr(int)` MUST lower to $__wasm_int_to_str — a
+      decimal-ASCII heap string built in the UNSIGNED magnitude (i64.div_u/rem_u
+      over `neg ? (0 - n) : n`), with at least one digit (str(0) == "0"), a
+      single leading '-' for negatives, and an i32 byte-count header equal to the
+      digit count. The executed value MUST match CPython str(n), INCLUDING the
+      i64::MIN boundary where a naive negation would overflow. str(float) and
+      str(bool)/str(str) MUST refuse (never a wrong conversion).
+    prediction: |
+      The executed WABT witness runs 8 sign/zero/boundary cases (0, 7, -5, -42,
+      100, 1000000, i64::MAX, i64::MIN) and each reconstructed string equals the
+      pinned CPython str(n) — incl. i64::MIN = "-9223372036854775808" and the
+      "n=" + str(n) concat composition (header length stays synced with the
+      copied bytes across the re-materialised operand).
+    test: |
+      cargo test -p xpile-wasm-codegen --test int_to_str_witness
+    if_fails: |
+      The magnitude handling (signed vs unsigned division, the i64::MIN wrapping
+      negation), the digit fill (order, the at-least-one-digit case, the sign
+      byte), the header byte count, or the str(float)/str(bool) refusal
+      regressed — the reconstructed decimal string diverges from CPython or a
+      refused operand miscompiles.
+    ship_blocking: true
+    counter_example_classes:
+      - naive_negation_overflows_on_i64_min
+      - signed_division_misconverts_large_magnitude
+      - zero_becomes_empty_string
+      - missing_or_double_sign_byte
+      - header_length_desynced_from_digits
+      - str_float_or_bool_miscompiled_instead_of_refused

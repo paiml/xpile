@@ -362,6 +362,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            // PMAT-1058: statement-form try/except — same no-panic-model refusal.
+            Stmt::TryCatch { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has a `try`/`except` inside a while loop; \
+                     Python exceptions are not supported in the Lean lane",
+                    f.name
+                )));
+            }
             // PMAT-504: a closure binding inside a while loop is unsupported.
             Stmt::ClosureLet { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
@@ -1242,6 +1250,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // the Lean lane — `raise` is refused (use `--target rust`/`ruchy`).
         Stmt::Raise { .. } => Err(LeanCodegenError::Unsupported(
             "Stmt::Raise (Python `raise`) is not lowered by the Lean backend — \
+             exceptions have no total-function encoding; use `--target rust` or `--target ruchy`"
+                .into(),
+        )),
+        // PMAT-1058: statement-form try/except — no panic model in Lean.
+        Stmt::TryCatch { .. } => Err(LeanCodegenError::Unsupported(
+            "Stmt::TryCatch (Python `try`/`except`) is not lowered by the Lean backend — \
              exceptions have no total-function encoding; use `--target rust` or `--target ruchy`"
                 .into(),
         )),

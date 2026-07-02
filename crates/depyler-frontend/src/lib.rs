@@ -6350,7 +6350,17 @@ fn lower_block_stmt(ctx: &mut LoweringCtx, stmt: ast::Stmt) -> Result<Vec<Stmt>,
         // try/except — `try: x = <expr> except [E]: x = <expr>` → a `let`/assign
         // whose value is `Expr::TryCatch` (catch_unwind). The trailing
         // return-form try is handled separately in `lower_function_def`.
-        ast::Stmt::Try(try_stmt) => lower_assignment_try(ctx, try_stmt),
+        // PMAT-1058: a GENERAL statement-form try (arms are side-effecting
+        // statement blocks — `try: risky_call() except E: handle()`) routes to
+        // `lower_statement_try` → `Stmt::TryCatch`; the precise single-assign
+        // shape keeps the better-typed value-form `Expr::TryCatch`.
+        ast::Stmt::Try(try_stmt) => {
+            if is_assignment_try_shape(&try_stmt) {
+                lower_assignment_try(ctx, try_stmt)
+            } else {
+                lower_statement_try(ctx, try_stmt)
+            }
+        }
         other => Err(FrontendError::Lower(format!(
             "function `{}` contains unsupported statement: {:?} — supported: assignment, if/elif/else, while, for-in-range, assert, subprocess.run([...]), then a final `return`",
  ctx.fn_name,
@@ -11008,6 +11018,98 @@ fn lower_subscript_assign_target(
 /// single `except` (catch-all; a named exception type is accepted but not
 /// matched, since Rust panics are untyped) with no bound exception name, no
 /// `else`/`finally`, and exactly one `<name> = <expr>` in each arm.
+/// PMAT-1058: is this `try` the single-assignment value shape
+/// (`try: x = e except [E]: x = e`, same target both arms)? That form lowers
+/// to the better-typed value `Expr::TryCatch` via [`lower_assignment_try`];
+/// everything else (side-effecting statement blocks) routes to the general
+/// [`lower_statement_try`].
+fn is_assignment_try_shape(try_stmt: &ast::StmtTry) -> bool {
+    fn single_name_assign_target(body: &[ast::Stmt]) -> Option<&str> {
+        let [ast::Stmt::Assign(a)] = body else {
+            return None;
+        };
+        if a.targets.len() != 1 {
+            return None;
+        }
+        match &a.targets[0] {
+            ast::Expr::Name(n) => Some(n.id.as_str()),
+            _ => None,
+        }
+    }
+    if try_stmt.handlers.len() != 1 {
+        return false;
+    }
+    let ast::ExceptHandler::ExceptHandler(h) = &try_stmt.handlers[0];
+    match (
+        single_name_assign_target(&try_stmt.body),
+        single_name_assign_target(&h.body),
+    ) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// PMAT-1058: lower a GENERAL statement-form `try`/`except` — arms are
+/// side-effecting statement BLOCKS (`try: risky_call() except E [as e]:
+/// handle()`) — to [`Stmt::TryCatch`] (a `catch_unwind` over xpile's
+/// panic-modeled exceptions). First cut: a single `except`, no `else`/
+/// `finally`. Body/handler statements lower as blocks (Rust `{ }`-scoped);
+/// a name first-bound INSIDE an arm does not leak past the `try` (the
+/// value model can't express Python's leak of a maybe-unset try local —
+/// reading such a name after refuses at lowering, loud, not miscompiled).
+fn lower_statement_try(
+    ctx: &mut LoweringCtx,
+    try_stmt: ast::StmtTry,
+) -> Result<Vec<Stmt>, FrontendError> {
+    if !try_stmt.orelse.is_empty() || !try_stmt.finalbody.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}`'s `try` has an `else`/`finally` clause — v0.2.0 first cut supports `try: <stmts> except [E [as e]]: <stmts>` only",
+            ctx.fn_name
+        )));
+    }
+    if try_stmt.handlers.len() != 1 {
+        return Err(FrontendError::Lower(format!(
+            "function `{}`'s `try` has {} `except` clauses — v0.2.0 first cut supports a single `except`",
+            ctx.fn_name,
+            try_stmt.handlers.len()
+        )));
+    }
+    let ast::ExceptHandler::ExceptHandler(h) = &try_stmt.handlers[0];
+    let bound_name = h.name.as_ref().map(|n| n.to_string());
+    let except_types = except_type_names(h.type_.as_deref());
+    // Lower the try body as a block — locals declared here are scoped to it.
+    let saved_bound = ctx.bound.clone();
+    let saved_types = ctx.name_types.clone();
+    let mut body = Vec::new();
+    for st in &try_stmt.body {
+        body.extend(lower_block_stmt(ctx, st.clone())?);
+    }
+    // Restore so try-body locals don't leak into the enclosing scope (the
+    // emitted Rust block-scopes them; a post-`try` read then refuses, loud).
+    ctx.bound = saved_bound;
+    ctx.name_types = saved_types;
+    // Lower the handler as a block, with `as <name>` (the exception message)
+    // scoped to it (PMAT-817 parity with the value form).
+    let saved_bound_h = ctx.bound.clone();
+    let saved_types_h = ctx.name_types.clone();
+    if let Some(name) = &bound_name {
+        ctx.bound.insert(name.clone());
+        ctx.name_types.insert(name.clone(), Type::Str);
+    }
+    let mut handler = Vec::new();
+    for st in &h.body {
+        handler.extend(lower_block_stmt(ctx, st.clone())?);
+    }
+    ctx.bound = saved_bound_h;
+    ctx.name_types = saved_types_h;
+    Ok(vec![Stmt::TryCatch {
+        body,
+        handler,
+        except_types,
+        bound_name,
+    }])
+}
+
 fn lower_assignment_try(
     ctx: &mut LoweringCtx,
     try_stmt: ast::StmtTry,

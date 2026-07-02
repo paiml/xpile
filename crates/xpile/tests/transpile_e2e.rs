@@ -19220,3 +19220,27 @@ fn main() {
 "#;
     assert_rustc_runs("empty_explicit_init", &rust, driver);
 }
+
+/// PMAT-1058: statement-form `try: <stmts> except E [as e]: <stmts>` via the
+/// new Stmt::TryCatch (the common `try: risky() except: handle` shape neither
+/// arm producing a value). Allowlist re-raise + `as e` binding mirror the
+/// value form. Differentially verified (caught/oob/-1/boom/2/0).
+#[test]
+fn statement_try_except() {
+    let rust = xpile_transpile_to_rust("statement_try_except.py");
+    assert!(
+        rust.contains("catch_unwind") && rust.contains("Ok(_) => {}"),
+        "statement try lowers to a unit-returning catch_unwind:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(catch_specific(), "caught", "except ValueError catches the guard's raise");
+    assert_eq!(catch_index(), "oob", "except IndexError catches an OOB read");
+    assert_eq!(catch_all(), -1, "bare except catches ZeroDivisionError");
+    assert_eq!(bind_message(), "boom", "as e binds the exception message");
+    assert_eq!(multi_statement(), 2, "multi-statement body + handler, pre-bound reassign");
+    assert_eq!(reraise_uncaught(2), 0, "no-exception path runs the body");
+}
+"#;
+    assert_rustc_runs("statement_try_except", &rust, driver);
+}

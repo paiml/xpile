@@ -7,6 +7,22 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Statement-form try/except (PMAT-1058)
+
+- `try: <stmts> except E [as e]: <stmts>` where the arms are side-effecting
+  statement blocks (the ubiquitous `try: risky_call() except E: handle()`) —
+  neither arm producing a value — now lowers via a new meta-HIR
+  `Stmt::TryCatch`. Rust/Ruchy emit a unit-returning
+  `catch_unwind` match with the SAME allowlist re-raise (an unlisted
+  exception propagates, not swallowed — `except ValueError` does not eat a
+  `ZeroDivisionError`) and `as e` message binding as the value form;
+  Lean/WASM refuse. The single-assignment form keeps the better-typed value
+  `Expr::TryCatch`. First-cut limits (precise refusals): a single `except`,
+  no `else`/`finally`; a name first-bound in the try body and read after is
+  E0425 (set it in both arms or pre-declare).
+- 1 e2e test (747 total); differentially verified (caught/oob/-1/boom/2/0),
+  adversarially verified for no-swallow / re-raise / handler-raise / loop-in-try.
+
 ### Invalid emit fixed: empty explicit `__init__` on a const-only class (PMAT-1057)
 
 - `class Config: VERSION: int = 5; def __init__(self): pass` then `Config()` was
