@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.614] — 2026-07-02
+
 ### File I/O — append mode (PMAT-1078)
 
 - `open(path, "a").write(s)` and `with open(path, "a") as f: f.write(s)` now
