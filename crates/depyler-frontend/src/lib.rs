@@ -6048,6 +6048,24 @@ fn try_lower_list_method_call(
                             Ok(e) => e,
                             Err(err) => return Some(Err(err)),
                         };
+                        // PMAT-1047: widen an int/bool elem into a float INNER
+                        // list slot — `d["a"].append(2)` over
+                        // `dict[str, list[float]]`, `xs[i].append(2)` over
+                        // `list[list[float]]` (rustc E0308 otherwise).
+                        let inner_f64 = match ctx.name_types.get(&base_name) {
+                            Some(Type::List(inner)) => {
+                                matches!(inner.as_ref(), Type::List(e) if matches!(e.as_ref(), Type::F64))
+                            }
+                            Some(Type::Dict(_, val)) => {
+                                matches!(val.as_ref(), Type::List(e) if matches!(e.as_ref(), Type::F64))
+                            }
+                            _ => false,
+                        };
+                        let elem = if inner_f64 {
+                            to_f64_operand(ctx, elem)
+                        } else {
+                            elem
+                        };
                         ctx.mutable.insert(base_name.clone());
                         return Some(Ok(Stmt::IndexAppend {
                             base: base_name,
@@ -6606,6 +6624,19 @@ fn try_lower_list_method_call(
     let elem = match lower_expr_in_ctx(ctx, call.args[0].clone()) {
         Ok(e) => e,
         Err(err) => return Some(Err(err)),
+    };
+    // PMAT-1047: widen an int/bool elem into a FLOAT-typed list/set slot —
+    // `xs: list[float]; xs.append(3)` emitted `xs.push(3i64)` (rustc E0308).
+    // Mirrors the subscript-slot widening (PMAT-1040) and the field-append
+    // widening (PMAT-1037 slice D); `s.add(3)` into a `set[float]` too.
+    let widen_f64 = matches!(
+        ctx.name_types.get(receiver_name),
+        Some(Type::List(el) | Type::Set(el)) if matches!(el.as_ref(), Type::F64)
+    );
+    let elem = if widen_f64 {
+        to_f64_operand(ctx, elem)
+    } else {
+        elem
     };
     // PMAT-628: clone a reused non-Copy variable element so `g.append(row);
     // g.append(row)` (or `row` used after) doesn't move-then-use (E0382).

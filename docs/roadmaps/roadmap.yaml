@@ -860,6 +860,21 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).' SHIPPED 2026-07-02: fresh top-level loop-body bindings read after the loop pre-declare `let mut <name>: T = <default>` (RHS probe-typed, for/while both; range targets trivially int; list defaults vec![]); definitely-scalar list-literal embeds no longer edge the alias analysis (the false `aliases i and row` refusal); pre-bound-target + element-mutation refuses precisely (the leak clone silently absorbed the mutation — pre-existing silent bug, now loud). Residual: bindings nested in inner if/loops and dict/set-valued loop locals keep E0425.
+- id: PMAT-1047
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1047: [rust/correctness] invalid emit (E0308) — int/bool appended into a FLOAT list slot not widened (sweep #12). `xs: list[float]; xs.append(3)` (ListAppend) and `d["a"].append(3)` over `dict[str, list[float]]` (IndexAppend) emitted the raw int. FIX: both append paths widen an int/bool elem via to_f64_operand when the (inner) element type is F64 — mirrors the subscript-slot widening (PMAT-1040) and the field-append widening (PMAT-1037 slice D). set[float] add is unaffected (float set keys refuse earlier). REMAINING (filed PMAT-1048): a nested list LITERAL appended into list[list[float]] (`g.append([2, 3])`) still E0308 — needs recursive list-literal element coercion to the target type, a broader gap than scalar widening.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12. Suite 732 green; MATCH 4.5/2.5; int-list append unregressed.'
+- id: PMAT-1048
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1048: [rust/capability] nested list LITERAL appended into a float-of-list target not element-coerced (sweep #12 t23). `g: list[list[float]]; g.append([2, 3])` emits `g.push(vec![2i64, 3i64])` (rustc E0308 — Vec<i64> vs Vec<f64>). The scalar append widening (PMAT-1047) covers `xs.append(3)` but not a list-LITERAL argument whose ELEMENTS need widening. Broader fix: coerce a list-literal expression element-wise to the target container element type (applies to append, subscript store, dict value, return). Deferred — a general list-literal-vs-target coercion pass, not a one-site widen.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
 - id: PMAT-1046
   github_issue: null
   item_type: bug
