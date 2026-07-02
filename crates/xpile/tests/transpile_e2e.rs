@@ -19200,3 +19200,23 @@ fn main() {
 "#;
     assert_rustc_runs("loop_var_leak_range", &rust, driver);
 }
+
+/// PMAT-1057: an explicit empty `def __init__(self): pass` on a const-only /
+/// field-less class now synthesizes as an associated ctor (was emitted as a
+/// `&self` method → E0061 at construction). MATCH 105/"hi".
+#[test]
+fn empty_explicit_init() {
+    let rust = xpile_transpile_to_rust("empty_explicit_init.py");
+    assert!(
+        rust.contains("pub fn __init__() -> Config")
+            || rust.contains("pub fn __init__() -> Greeter"),
+        "an empty explicit __init__ must synthesize an associated ctor:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(const_via_instance(), 105, "instance access of class consts, explicit empty init");
+    assert_eq!(empty_with_method(), "hi", "empty init + a method");
+}
+"#;
+    assert_rustc_runs("empty_explicit_init", &rust, driver);
+}

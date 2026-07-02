@@ -4678,22 +4678,22 @@ fn lower_class_def(
                         Expr::Clone(Box::new(method.body.trailing_return.clone()));
                 }
             }
+            // PMAT-1016B / PMAT-1057: `__init__` is a CONSTRUCTOR, not a regular
+            // method — ALWAYS synthesize it as an associated `pub fn __init__(
+            // params) -> Self` (a StructLit of the lowered field RHSs in
+            // assignment order), even when its body assigns NO fields (an empty
+            // `def __init__(self): pass` on a const-only / field-less class).
+            // The old `body_assigns_self` gate skipped such an __init__ → it
+            // emitted as a `&self` method and the construction
+            // `Config::__init__()` was rustc E0061. Anything fancier (control
+            // flow, self-reads, non-field statements) still refuses precisely
+            // inside `synthesize_explicit_ctor`.
+            if method.name == "__init__" {
+                let ctor = synthesize_explicit_ctor(&name, &fields, method)?;
+                methods.push(ctor);
+                continue;
+            }
             if body_assigns_self(&method.body.stmts) || class_mut_set.contains(&method.name) {
-                if method.name == "__init__" {
-                    // PMAT-1016B: a STRAIGHT-LINE explicit `__init__` (every
-                    // statement `self.<field> = <expr>`, every declared field
-                    // assigned exactly once, no control flow) synthesizes an
-                    // associated constructor `pub fn __init__(params) -> Self`
-                    // returning a StructLit whose field exprs are the lowered
-                    // RHSs in ASSIGNMENT order (Python's evaluation order).
-                    // The construction call site (`Point(3, 4)`) routes to it
-                    // via the `Class::__init__` FnSig the pre-pass registered.
-                    // Anything fancier (control flow, self-reads, non-field
-                    // statements) refuses precisely.
-                    let ctor = synthesize_explicit_ctor(&name, &fields, method)?;
-                    methods.push(ctor);
-                    continue;
-                }
                 if frozen {
                     return Err(FrontendError::Lower(format!(
                         "class `{name}` method `{}` assigns to `self` but the dataclass is FROZEN — Python raises FrozenInstanceError; remove `frozen=True` or the mutation",
