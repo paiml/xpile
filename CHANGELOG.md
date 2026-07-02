@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### File I/O — read whole file (PMAT-1074, first increment)
+
+- `open(path).read()` now reads a whole file to a `str`, emitted inline as
+  `std::fs::read_to_string(path)` with a panic on error (missing file → `xpile:
+  FileNotFoundError`, matching CPython so both raise). Chained str methods work
+  on the result (`.splitlines()`, `.strip()`, `.count(...)`). New meta-HIR
+  `Expr::FileReadAll`; the Lean and WASM lanes refuse it precisely (no
+  effectful file model). Follow-ups: write, `with open() as f`, line iteration.
+- 1 e2e test (753 total); differentially verified (read MATCH, missing-file
+  BOTHRAISE).
+
 ## [0.1.610] — 2026-07-02
 
 ### Context managers / `with` — user context managers (PMAT-1072)

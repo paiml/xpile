@@ -4338,6 +4338,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, inner, mode)?;
             out.push_str(".len() as i64)");
         }
+        // PMAT-1074: `open(path).read()` → inline std::fs::read_to_string with a
+        // panic on error. NotFound → FileNotFoundError (matches CPython's
+        // open()), any other io error → OSError; both make CPython + rustc RAISE.
+        Expr::FileReadAll(path) => {
+            out.push_str("::std::fs::read_to_string(");
+            emit_expr(out, path, mode)?;
+            out.push_str(r##").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) })"##);
+        }
         Expr::IfExpr {
             cond,
             then_expr,

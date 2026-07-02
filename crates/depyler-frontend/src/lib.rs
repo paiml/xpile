@@ -14483,6 +14483,7 @@ fn infer_type(e: &Expr) -> Type {
         // PMAT-459 (v0.2.0 Track 1.B): len(x) always returns Type::I64
         // (Python int).
         Expr::Len(_) => Type::I64,
+        Expr::FileReadAll(_) => Type::Str,
         Expr::BinOp { op, lhs, rhs } => match op {
  BinOp::Add
             | BinOp::Sub
@@ -14897,6 +14898,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         Expr::LitBool(_) => Type::Bool,
         // PMAT-459: len() always returns Type::I64.
         Expr::Len(_) => Type::I64,
+        Expr::FileReadAll(_) => Type::Str,
         Expr::LitInt(_) => {
  if matches!(ctx.fn_return_type, Type::BigInt) {
  Type::BigInt
@@ -15546,6 +15548,25 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
         // `d.get(k, default)` → `Expr::DictGetOr` when `d` is a dict.
         ast::Expr::Call(call) => {
             if let ast::Expr::Attribute(attr) = call.func.as_ref() {
+                // PMAT-1074: `open(<path>).read()` — read a whole file to a str.
+                // The receiver is an `open(<path>)` call (exactly one positional
+                // arg, no keywords); lower to `Expr::FileReadAll(<path>)`. Other
+                // `open(...)` shapes (mode arg, `with open() as f`, `.readlines()`)
+                // are follow-ups — they fall through to the generic method path
+                // and refuse precisely there.
+                if attr.attr.as_str() == "read" && call.args.is_empty() {
+                    if let ast::Expr::Call(open_call) = attr.value.as_ref() {
+                        if let ast::Expr::Name(fname) = open_call.func.as_ref() {
+                            if fname.id.as_str() == "open"
+                                && open_call.args.len() == 1
+                                && open_call.keywords.is_empty()
+                            {
+                                let path = lower_expr_in_ctx(ctx, open_call.args[0].clone())?;
+                                return Ok(Expr::FileReadAll(Box::new(path)));
+                            }
+                        }
+                    }
+                }
                 // PMAT-502ek: `math.<fn>(...)` module functions (`import math`
                 // is accepted + skipped at the top level). The receiver is the
                 // bare module name `math`, not a value.
