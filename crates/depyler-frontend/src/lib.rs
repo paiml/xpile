@@ -691,14 +691,29 @@ fn clone_if_reused_non_copy(ctx: &LoweringCtx, expr: Expr) -> Expr {
 }
 
 fn clone_reused_call_args(ctx: &LoweringCtx, expr: Expr) -> Expr {
-    let Expr::Call { callee, args } = expr else {
-        return expr;
-    };
-    let args = args
-        .into_iter()
-        .map(|a| clone_if_reused_non_copy(ctx, a))
-        .collect();
-    Expr::Call { callee, args }
+    match expr {
+        Expr::Call { callee, args } => {
+            let args = args
+                .into_iter()
+                .map(|a| clone_if_reused_non_copy(ctx, a))
+                .collect();
+            Expr::Call { callee, args }
+        }
+        // PMAT-1037 (g14 witness): METHOD-call args must ride the same
+        // reuse-clone as free-fn args — `c.drain(q); c.drain(q)` moved `q`
+        // into the first call (E0382). The clone alone would silently drop a
+        // callee mutation, so `check_expr_for_alias_mutate` gained the
+        // matching `MethodCall` guard arm in the same change — the pair is
+        // load-bearing: clone-without-guard = silent stale-list divergence.
+        Expr::MethodCall { obj, method, args } => {
+            let args = args
+                .into_iter()
+                .map(|a| clone_if_reused_non_copy(ctx, a))
+                .collect();
+            Expr::MethodCall { obj, method, args }
+        }
+        other => other,
+    }
 }
 
 /// Recursive count: returns a fresh map of `name → count` produced by
@@ -803,6 +818,12 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
             }
             ast::Expr::Subscript(s) => {
                 matches!(s.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == target)
+                    // PMAT-1037: `self.f[i] = v` / nested `self.g[i][j] = v` —
+                    // a subscript store through a FIELD of the target mutates
+                    // the target object (drives &mut self / iter_mut), and a
+                    // nested Name-bottoming chain (`p[0][1] = v`) mutates the
+                    // base the same way at any depth.
+                    || base_is(s.value.as_ref(), target)
             }
             _ => false,
         }
@@ -858,12 +879,26 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
             ast::Expr::IfExp(t) => {
                 expr_has_mutator(&t.body, target) || expr_has_mutator(&t.orelse, target)
             }
+            // PMAT-1037 (found by the g14 witness): a mutator buried in a
+            // SUBSCRIPT — `xs[q.pop(0)]`, `self.counts[q.pop(0)] += v` — or
+            // behind an attribute chain. Without these arms `q.pop(0)` in
+            // index position never marked the function as mutating `q`, the
+            // PMAT-884 caller guard stayed silent, and the emit was E0382
+            // (or, with a caller-side clone, a SILENT stale-list divergence).
+            ast::Expr::Subscript(s) => {
+                expr_has_mutator(&s.value, target) || expr_has_mutator(&s.slice, target)
+            }
+            ast::Expr::Attribute(a) => expr_has_mutator(&a.value, target),
             _ => false,
         }
     }
     stmts.iter().any(|s| match s {
         ast::Stmt::Assign(a) => {
-            a.targets.iter().any(|t| base_is(t, target)) || expr_has_mutator(&a.value, target)
+            a.targets.iter().any(|t| base_is(t, target))
+                || expr_has_mutator(&a.value, target)
+                // PMAT-1037: a mutator embedded in a TARGET's index
+                // (`xs[q.pop(0)] = v`) mutates `q` too.
+                || a.targets.iter().any(|t| expr_has_mutator(t, target))
         }
         // PMAT-1025: `self.f: T = v` (PEP 526) stores a field exactly like the
         // bare Assign form — it must drive `&mut self` the same way.
@@ -873,7 +908,12 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
                     .as_deref()
                     .is_some_and(|v| expr_has_mutator(v, target))
         }
-        ast::Stmt::AugAssign(a) => base_is(&a.target, target) || expr_has_mutator(&a.value, target),
+        ast::Stmt::AugAssign(a) => {
+            base_is(&a.target, target)
+                || expr_has_mutator(&a.value, target)
+                // PMAT-1037: `self.counts[q.pop(0)] += v` mutates `q`.
+                || expr_has_mutator(&a.target, target)
+        }
         ast::Stmt::Return(r) => r
             .value
             .as_deref()
@@ -1554,6 +1594,10 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
                         if let Some(base) = subscript_chain_base_name(t) {
                             out.insert(base);
                         }
+                        // PMAT-1037: `obj.field[i] = v` mutates `obj`.
+                        if let Some(obj) = subscript_chain_attr_base(t) {
+                            out.insert(obj);
+                        }
                     }
                 }
                 ast::Stmt::AugAssign(a) => {
@@ -1564,6 +1608,10 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
                     }
                     if let Some(base) = subscript_chain_base_name(a.target.as_ref()) {
                         out.insert(base);
+                    }
+                    // PMAT-1037: `obj.field[i] <op>= v` mutates `obj`.
+                    if let Some(obj) = subscript_chain_attr_base(a.target.as_ref()) {
+                        out.insert(obj);
                     }
                 }
                 // PMAT-1008-interim: `del xs[i]` / `del d[k]` mutate the base.
@@ -1907,6 +1955,9 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                         if let ast::Expr::Name(n) = attr.value.as_ref() {
                             *counts.entry(n.id.to_string()).or_insert(0) += bump;
                         }
+                    } else if let Some(obj) = subscript_chain_attr_base(&a.targets[0]) {
+                        // PMAT-1037: `obj.field[i] = v` mutates `obj` in place.
+                        *counts.entry(obj).or_insert(0) += bump;
                     }
                 }
             }
@@ -1927,6 +1978,9 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     if let ast::Expr::Name(n) = attr.value.as_ref() {
                         *counts.entry(n.id.to_string()).or_insert(0) += bump;
                     }
+                } else if let Some(obj) = subscript_chain_attr_base(a.target.as_ref()) {
+                    // PMAT-1037: `obj.field[i] <op>= v` mutates `obj` in place.
+                    *counts.entry(obj).or_insert(0) += bump;
                 }
             }
             // PMAT-466: an annotated local binding counts exactly ONCE,
@@ -2359,6 +2413,31 @@ fn subscript_chain_base_name(expr: &ast::Expr) -> Option<String> {
     }
 }
 
+/// PMAT-1037: the RECEIVER name of a subscript chain bottoming at a FIELD
+/// access — `obj.field[i]…[k]` → `obj` (`self.counts[i]` → `self`). The
+/// Name-bottoming twin is [`subscript_chain_base_name`]; a store through
+/// `obj.field[…]` mutates the OBJECT `obj` in place, so the mutability
+/// pre-walk must bind it `mut` and the alias analysis must count it as
+/// object mutation.
+fn subscript_chain_attr_base(expr: &ast::Expr) -> Option<String> {
+    let ast::Expr::Subscript(sub) = expr else {
+        return None;
+    };
+    let mut cur = sub.value.as_ref();
+    loop {
+        match cur {
+            ast::Expr::Attribute(a) => {
+                return match a.value.as_ref() {
+                    ast::Expr::Name(n) => Some(n.id.to_string()),
+                    _ => None,
+                };
+            }
+            ast::Expr::Subscript(inner) => cur = inner.value.as_ref(),
+            _ => return None,
+        }
+    }
+}
+
 fn subscript_assign_base_name(a: &ast::StmtAssign) -> Option<String> {
     if a.targets.len() != 1 {
         return None;
@@ -2782,10 +2861,21 @@ fn check_expr_for_alias_mutate(
     expr: &Expr,
     mutating: &HashMap<String, Vec<bool>>,
 ) -> Result<(), FrontendError> {
-    if let Expr::Call { callee, args } = expr {
+    // PMAT-1037: method calls check the same conjunction with the parameter
+    // index offset by 1 — a method's `params[0]` is `self`, so its i-th
+    // ARGUMENT corresponds to parameter i+1. Without this arm a mutating
+    // method taking a container (`c.drain(q)`) never fired the guard.
+    let (callee, args, param_offset): (&String, &Vec<Expr>, usize) = match expr {
+        Expr::Call { callee, args } => (callee, args, 0),
+        Expr::MethodCall { method, args, .. } => (method, args, 1),
+        _ => {
+            return walk_expr_children(expr, &mut |e| check_expr_for_alias_mutate(e, mutating));
+        }
+    };
+    {
         if let Some(param_mut) = mutating.get(callee) {
             for (i, arg) in args.iter().enumerate() {
-                if !param_mut.get(i).copied().unwrap_or(false) {
+                if !param_mut.get(i + param_offset).copied().unwrap_or(false) {
                     continue;
                 }
                 // PMAT-1022 (d): a struct FIELD passed to a mutating helper
@@ -4011,6 +4101,13 @@ fn foreach_elem_mutated(stmts: &[Stmt], var: &str) -> bool {
         // PMAT-828 (HUNT-V25 #5): a dataclass FIELD assignment `p.x = …` on the
         // loop var mutates the element in place too — `for p in pts: p.x = v`.
         Stmt::FieldAssign { obj, .. } => obj == var,
+        // PMAT-1037: a subscript store THROUGH a field of the loop var
+        // (`for c in cs: c.counts[0] = v`) mutates the element in place —
+        // without `iter_mut()` the write lands on an owned clone (E0596 /
+        // silent drop). A dict-level nested store on the loop var
+        // (`for d in ds: d[a][b] = v`) is the same in-place mutation.
+        Stmt::FieldIndexAssign { obj, .. } => obj == var,
+        Stmt::NestedSubscriptAssign { base, .. } => base == var,
         Stmt::If {
             then_body,
             else_body,
@@ -9461,6 +9558,24 @@ fn lower_subscript_assign_target(
     sub: &ast::ExprSubscript,
     value: Expr,
 ) -> Result<Stmt, FrontendError> {
+    // PMAT-1037: `self.counts[i] = v` / `obj.cells[r][c] = v` — a subscript
+    // store through a struct field. Peeled BEFORE the Name-bottoming paths
+    // (which refuse non-Name bases). Widens an int value into a float leaf
+    // (PMAT-1017 FieldAssign parity).
+    if let Some((obj, field, steps, leaf_ty)) = peel_field_subscript_assign(ctx, sub)? {
+        let value = if matches!(leaf_ty, Type::F64) {
+            to_f64_operand(ctx, value)
+        } else {
+            value
+        };
+        ctx.mutable.insert(obj.clone());
+        return Ok(Stmt::FieldIndexAssign {
+            obj,
+            field,
+            steps,
+            value,
+        });
+    }
     if let Some((receiver, steps)) = peel_nested_subscript_assign(ctx, sub)? {
         return Ok(nested_subscript_write_stmt(ctx, receiver, steps, value));
     }
@@ -9740,6 +9855,103 @@ fn combine_aug(
 /// is_dict)…])`, base→leaf. `is_dict` is the container kind at each level.
 type NestedSubscriptPath = (String, Vec<(Expr, bool)>);
 
+/// PMAT-1037: peel a subscript-assignment target whose chain bottoms at a
+/// STRUCT-FIELD access — `self.counts[i]`, `obj.cells[r][c]`, `self.m[k]` —
+/// to `(obj, field, steps, leaf_elem_ty)`. Returns `Ok(None)` when the chain
+/// bottoms at a plain Name (the `peel_nested_subscript_assign` / single-level
+/// paths own that shape). The field's DECLARED type seeds the per-level
+/// container walk: a `list` level requires an `int` index; a `dict` level
+/// lowers the key (bool→i64-coerced for an int-keyed dict, mirroring the
+/// PMAT-829 single-level `DictSet` coercion). A non-container level, an
+/// unknown field, or a non-struct receiver refuses with a precise message
+/// (never the factually-wrong generic — the PMAT-1027 lesson).
+/// PMAT-1037: a peeled field-subscript-assign path —
+/// `(obj, field, (index, is_dict) steps base→leaf, leaf element type)`.
+type FieldSubscriptPath = (String, String, Vec<(Expr, bool)>, Type);
+
+fn peel_field_subscript_assign(
+    ctx: &mut LoweringCtx,
+    sub: &ast::ExprSubscript,
+) -> Result<Option<FieldSubscriptPath>, FrontendError> {
+    let mut slices: Vec<ast::Expr> = vec![(*sub.slice).clone()];
+    let mut base = (*sub.value).clone();
+    let (obj, field) = loop {
+        match base {
+            ast::Expr::Subscript(inner) => {
+                slices.push((*inner.slice).clone());
+                base = (*inner.value).clone();
+            }
+            ast::Expr::Attribute(a) => match a.value.as_ref() {
+                ast::Expr::Name(n) => break (n.id.to_string(), a.attr.to_string()),
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` subscript-assigns through an attribute chain deeper than `<name>.<field>[…]` — v0.2.0 supports one attribute level",
+                        ctx.fn_name
+                    )));
+                }
+            },
+            _ => return Ok(None),
+        }
+    };
+    slices.reverse();
+    let struct_name = match ctx.name_types.get(&obj) {
+        Some(Type::Struct(s)) => s.clone(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` subscript-assigns `{obj}.{field}[…]` but `{obj}` doesn't type as a class instance — v0.2.0 supports field subscript stores on struct receivers",
+                ctx.fn_name
+            )));
+        }
+    };
+    let Some(field_ty) = ctx
+        .structs
+        .get(&struct_name)
+        .and_then(|fs| fs.iter().find(|(f, _)| *f == field))
+        .map(|(_, t)| t.clone())
+    else {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` subscript-assigns `{obj}.{field}[…]` but class `{struct_name}` has no field `{field}`",
+            ctx.fn_name
+        )));
+    };
+    let mut container_ty = field_ty;
+    let mut steps: Vec<(Expr, bool)> = Vec::with_capacity(slices.len());
+    for s in slices {
+        match container_ty {
+            Type::List(elem) => {
+                let idx = lower_expr_in_ctx(ctx, s)?;
+                if !matches!(infer_type_in_ctx(ctx, &idx), Type::I64) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` subscript-assigns `{obj}.{field}[…]` with a non-int list index — only `int` list indices are supported",
+                        ctx.fn_name
+                    )));
+                }
+                steps.push((idx, false));
+                container_ty = *elem;
+            }
+            Type::Dict(key_ty, val) => {
+                let key = lower_expr_in_ctx(ctx, s)?;
+                let key = if matches!(*key_ty, Type::I64)
+                    && matches!(infer_type_in_ctx(ctx, &key), Type::Bool)
+                {
+                    to_i64_operand(ctx, key)
+                } else {
+                    key
+                };
+                steps.push((key, true));
+                container_ty = *val;
+            }
+            other => {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}` subscript-assigns `{obj}.{field}[…]` but the field types as {other:?} at that level — only `list`/`dict` levels are supported",
+                    ctx.fn_name
+                )));
+            }
+        }
+    }
+    Ok(Some((obj, field, steps, container_ty)))
+}
+
 fn peel_nested_subscript_assign(
     ctx: &mut LoweringCtx,
     sub: &ast::ExprSubscript,
@@ -9955,6 +10167,57 @@ fn lower_aug_assign(
         // `xs[i] += v` — desugar to `d[k] = d[k] <op> v`, reusing the
         // shipped DictGet/Index reads + DictSet/IndexAssign writes.
         ast::Expr::Subscript(sub) => {
+            // PMAT-1037: `self.counts[i] += v` / `obj.m[k] -= v` — augmented
+            // store through a struct field. Desugars to read-combine-write on
+            // `Stmt::FieldIndexAssign`; impure indices bind ONCE (PMAT-755 —
+            // the index appears on both the read and the write side). The
+            // emitter's RHS-first sequencing (PMAT-833) makes the dict-level
+            // read + `get_mut` write borrow-safe, so dict leaves are
+            // supported here (unlike the Name-bottoming nested-aug path).
+            if let Some((obj, field, steps, leaf_ty)) = peel_field_subscript_assign(ctx, sub)? {
+                let mut pre: Vec<Stmt> = Vec::new();
+                let steps: Vec<(Expr, bool)> = steps
+                    .into_iter()
+                    .map(|(i, d)| {
+                        let (let_stmt, idx) = bind_if_impure(ctx, i);
+                        if let Some(s) = let_stmt {
+                            pre.push(s);
+                        }
+                        (idx, d)
+                    })
+                    .collect();
+                let mut current = Expr::FieldAccess {
+                    obj: Box::new(Expr::Ident(obj.clone())),
+                    field: field.clone(),
+                };
+                for (idx, is_dict) in &steps {
+                    current = if *is_dict {
+                        Expr::DictGet {
+                            dict: Box::new(current),
+                            key: Box::new(idx.clone()),
+                        }
+                    } else {
+                        Expr::Index {
+                            collection: Box::new(current),
+                            index: Box::new(idx.clone()),
+                        }
+                    };
+                }
+                let value = combine_aug(ctx, &aug.op, current, rhs)?;
+                let value = if matches!(leaf_ty, Type::F64) {
+                    to_f64_operand(ctx, value)
+                } else {
+                    value
+                };
+                ctx.mutable.insert(obj.clone());
+                pre.push(Stmt::FieldIndexAssign {
+                    obj,
+                    field,
+                    steps,
+                    value,
+                });
+                return Ok(pre);
+            }
             // PMAT-502ea: nested augmented subscript `grid[i][j] += v` →
             // `grid[i][j] = grid[i][j] <op> v`. Peel + validate the index
             // path (shared with plain `= v`), fold the indices into a nested
@@ -13405,11 +13668,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 }
                             }
                         }
-                        return Ok(Expr::MethodCall {
-                            obj: Box::new(recv),
-                            method,
-                            args,
-                        });
+                        // PMAT-1037 (g14/g18 witnesses): method args ride the
+                        // same reuse-clone as free-fn args — `s.score(q) +
+                        // s.score(q)` moved `q` into the first call (E0382).
+                        // The `check_expr_for_alias_mutate` MethodCall arm
+                        // landed with this so a MUTATING callee refuses
+                        // instead of mutating the throwaway clone.
+                        return Ok(clone_reused_call_args(
+                            ctx,
+                            Expr::MethodCall {
+                                obj: Box::new(recv),
+                                method,
+                                args,
+                            },
+                        ));
                     }
                 }
                 // PMAT-502eo: set-algebra methods — `a.union(b)` /

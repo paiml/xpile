@@ -18471,3 +18471,80 @@ fn main() {
 "#;
     assert_rustc_runs("everyday_reuse", &rust, driver);
 }
+
+/// PMAT-1037: subscript stores through struct FIELDS — `self.counts[i] = v`,
+/// `self.m[k] = v`, nested `self.cells[r][c] = v`, local `c.counts[0] = v` —
+/// the dominant remaining class-state refusal ("non-Name subscript-assignment
+/// target"). New `Stmt::FieldIndexAssign` rides the NestedSubscriptAssign
+/// emitter (shared `emit_subscript_write_through`) with base `<obj>.<field>`.
+/// Differentially verified vs CPython (MATCH 14/56/56/4.5/14/6).
+#[test]
+fn oop_field_subscript_stores() {
+    let rust = xpile_transpile_to_rust("oop_field_subscript_stores.py");
+    assert!(
+        rust.contains("pub fn hit(&mut self"),
+        "a field-subscript store must classify the method mutating (&mut self):\n{rust}"
+    );
+    assert!(
+        rust.contains("&mut self.counts"),
+        "the store walks through `&mut self.counts` (shared emitter):\n{rust}"
+    );
+    assert!(
+        rust.contains("for c in cs.iter_mut()"),
+        "a loop-var field-subscript store drives iter_mut (foreach_elem_mutated):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // hit(1)×2 then bump(1,3) ⇒ counts[1]=5; last(9) ⇒ counts[-1]=counts[2]=9.
+    assert_eq!(self_stores(), 14, "list-field plain + aug + negative-index stores");
+    // cells[1][0]=42, grid["r"][1]=5, marks[True]=marks[1]=9 ⇒ 56.
+    assert_eq!(board_stores(), 56, "nested list, dict-of-list, bool-key dict fields");
+    // Local receiver: counts[0]=50, counts[2]+=6 ⇒ 56.
+    assert_eq!(local_store(), 56, "field-subscript stores on a struct local");
+    // int 3 widens into the float leaf: 3.0 + 1.5.
+    assert_eq!(widen_store(), 4.5, "int→float leaf widening (PMAT-1017 parity)");
+    // Both elements written through iter_mut ⇒ 7+7.
+    assert_eq!(loop_elem_store(), 14, "loop-var element store reaches the originals");
+    // score(q)+score(q)+len(q) — method args ride the reuse-clone ⇒ 2+2+2.
+    assert_eq!(method_arg_reuse(), 6, "method-arg reuse clones like free fns");
+}
+"#;
+    assert_rustc_runs("oop_field_subscript_stores", &rust, driver);
+}
+
+/// PMAT-1037 guard: a field-subscript store through one alias while the other
+/// stays observed must REFUSE (Python shares; the value model would clone).
+#[test]
+fn field_subscript_alias_is_rejected() {
+    let py = fixture("field_subscript_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "field-subscript store through a live alias must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("aliases `c` and `c2`"),
+        "the rejection should name the alias pair:\n{stderr}"
+    );
+}
+
+/// PMAT-1037 guard (the g14 witness): a mutating METHOD call whose container
+/// arg is reused must refuse — `q.pop(0)` in the store's INDEX position marks
+/// the method as mutating its parameter (expr_has_mutator's Subscript arm),
+/// and the MethodCall guard arm fires on the reuse-cloned argument. Without
+/// the pair the pop lands on a throwaway clone: len(q) prints 2 vs CPython 1.
+#[test]
+fn method_arg_mutation_is_rejected() {
+    let py = fixture("method_arg_mutation_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "reused arg into a param-mutating METHOD must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`drain` mutates its") && stderr.contains("parameter #1"),
+        "the rejection should name the method and parameter:\n{stderr}"
+    );
+}
