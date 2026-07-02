@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Invalid emit fixed: subscript store index that borrows the base (PMAT-1049)
+
+- `self.xs[self.next_slot()] = v` (index calls a `&mut self` method) and
+  `self.xs[self.xs.pop()] = v` (index pops the same list) emitted the index
+  inside the `&mut base` borrow → rustc E0499. The write-through emitter now
+  binds the RHS and every step index to an owned temp before `&mut base`, so
+  the borrowing index evaluates first. The temp is cloned (universal for
+  xpile's Clone index types), which also subsumes the PMAT-1045 leaf-key
+  clone. Found by adversarial sweep #12.
+- 1 e2e test (733 total); MATCH on both cases; write-through regressions and
+  two exact-string tests updated to the `__sidx` invariant.
+
 ### Invalid emit fixed: int appended into a float list slot (PMAT-1047)
 
 - `xs: list[float]; xs.append(3)` (ListAppend) and `d["a"].append(3)` over
