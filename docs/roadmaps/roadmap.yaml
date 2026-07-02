@@ -646,7 +646,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-1026: [wasm/capability] Free-function STRUCT returns on the WASM lane — sweep #10 finding (2). `def make() -> Counter: return Counter(3)` then `c = make(); c.incr()` refuses "type mismatch — expected WASM i32 but expression lowered to i64" (same for the returns-param identity shape `def pick(c: Counter) -> Counter: return c`). The PMAT-1023 AssocFnRegistry fixed exactly this conservative-i64 mistyping for `Class::__init__` call sites; plain free functions returning Type::Struct still type i64 at their call sites. Fix: thread the FnSig return type into the WASM call-site typing (the registry/FnSig already knows Type::Struct -> i32 base-pointer); factory + identity + chained-call witnesses value-matched vs CPython; the Rust lane is unaffected (already executes factories).'
-  status: pending
+  status: done
   priority: high
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
@@ -655,7 +655,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Filed by PMAT-1025 (sweep #10). Honest today (fail-loud refusal), but the factory-function idiom is core OOP Python; the fix is the same shape PMAT-1023 already proved for ctors.'
+  notes: 'Filed by PMAT-1025 (sweep #10). DONE 2026-07-02: the VALUE-position `Expr::Call` lowering now consults the PMAT-1024 free-function registry after the assoc-fn check — every intra-module call types exactly from its FnSig (Struct/str returns ride the i32 base-pointer; bool/float returns type exactly too, so a bool-returning call in an `if` condition ALSO unblocked). The unresolved-callee fallback is now a precise refusal naming the function (every module fn is registered, so a miss = invalid WAT `call $<callee>` — the old path deferred it to a confusing wat2wasm failure). Registry hardened to FREE functions only: `module_functions` also yields struct methods, whose plain-name entries could shadow a free fn the mangled `$Struct.method` symbol space cannot reach from a plain call. Witnesses: new free_fn_struct_return_witness suite (16th wasm-codegen suite — factory 4, identity 12 through pick(), ctor-arg chain 107, use_flag 1, all EXECUTED == CPython; unknown-callee/arity/unit-in-value-position refusals pinned) + e2e struct_factory.py (BOTH lanes execute, 4112) and struct_pick_alias.py (rust REFUSES naming the pair, wasm EXECUTES 12).'
 - id: PMAT-1027
   github_issue: null
   item_type: task

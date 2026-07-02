@@ -2519,24 +2519,40 @@ fn emit_expr(
                     ))
                 });
             }
-            // Direct intra-module call — args left-to-right, then `call $f`.
-            // The result type is not carried in the meta-HIR Call node, so
-            // we cannot statically know it; default to the function's
-            // declared shape is unavailable here. We refuse a call whose
-            // result type we can't determine UNLESS it is used in a typed
-            // position (emit_expr_typed validates). Push args then call;
-            // report I64 as the conservative default and let the typed
-            // check catch a mismatch.
-            for a in args {
-                emit_expr(a, scope, out, depth)?;
+            // PMAT-1026: a call to a plain FREE module function types exactly
+            // the same way via the PMAT-1024 registry — the FnSig knows a
+            // `Struct`/`str` return rides an i32 base-pointer, so the factory
+            // idiom (`def make() -> Counter`) and the returns-param identity
+            // shape no longer mistype as a conservative i64 (which refused as
+            // an i32/i64 mismatch at every struct-typed use site).
+            if let Some((ptys, ret)) = scope.mod_fn_sig(callee) {
+                if ptys.len() != args.len() {
+                    return Err(unsupported(&format!(
+                        "`{callee}` takes {} argument(s) but the call passes {}",
+                        ptys.len(),
+                        args.len()
+                    )));
+                }
+                for (a, pt) in args.iter().zip(ptys.iter()) {
+                    emit_expr_typed(a, scope, out, depth, *pt)?;
+                }
+                indent(out, depth);
+                writeln!(out, "call ${callee}").expect("write");
+                return ret.ok_or_else(|| {
+                    unsupported(&format!(
+                        "`{callee}` returns no value (unit) — its call cannot be \
+                         used in a value position"
+                    ))
+                });
             }
-            indent(out, depth);
-            writeln!(out, "call ${callee}").expect("write");
-            // The meta-HIR Call carries no result type; intra-module calls
-            // in the scalar subset return i64 (the dominant scalar). A
-            // float/bool-returning call is validated at the typed use site;
-            // if that fails the user gets the honest type-mismatch refusal.
-            Ok(WatTy::I64)
+            // Every module function is in the registry, so an unresolved
+            // callee is NOT defined in this module — `call $<callee>` would
+            // emit invalid WAT (the old conservative-i64 path deferred that
+            // to a confusing wat2wasm failure). Refuse it by name, mirroring
+            // the statement-position lowering.
+            Err(unsupported(&format!(
+                "call to `{callee}` — not a function of this WASM module"
+            )))
         }
         Expr::Index { collection, index } => emit_index(collection, index, scope, out, depth),
         Expr::Len(collection) => emit_len(collection, scope, out, depth),
@@ -3594,8 +3610,16 @@ fn build_method_registry(
 /// `emit_function`, so a function this refuses would refuse at emission
 /// anyway — no new refusal surface.
 fn build_module_fn_registry(module: &Module) -> Result<AssocFnRegistry, BackendError> {
+    // PMAT-1026: FREE functions only. `module_functions` also yields struct
+    // methods, which emit under the mangled `$<Struct>.<name>`/`::` symbols —
+    // a plain-name registry entry for one could shadow (or masquerade as) a
+    // free function the plain `call $<name>` emission cannot actually reach.
     let mut reg = AssocFnRegistry::new();
-    for f in module_functions(module) {
+    let free_fns = module.items.iter().filter_map(|item| match item {
+        Item::Function(f) => Some(f),
+        _ => None,
+    });
+    for f in free_fns {
         let ptys = f
             .params
             .iter()
