@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### File I/O — idiomatic `with open()` (PMAT-1076, third increment)
+
+- `with open(path[, mode]) as f: BODY` now works — the single `f.read()` /
+  `f.write(s)` is substituted with `open(path)` / `open(path, "w")` (PMAT-1074/
+  1075) and the `with` is unwrapped (read_to_string / fs::write each
+  open+op+close, matching a single-op handle). Read, `f.read().splitlines()`,
+  write, and write-then-read round-trip all match CPython. Refuses precisely
+  (would diverge): multiple ops on the handle, `for line in f`, append mode,
+  and any use of `f` other than a single read/write.
+- 1 e2e test (755 total); differentially + adversarially verified.
+
 ## [0.1.611] — 2026-07-02
 
 ### File I/O — write whole file (PMAT-1075, second increment)

@@ -9690,6 +9690,17 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
                     }
                     let rng = w.range;
                     let item = &w.items[0];
+                    // PMAT-1076: `with open(P[, mode]) as f: BODY` — the idiomatic
+                    // file form. Substitute the single `f.read()` / `f.write(s)`
+                    // with `open(P)` / `open(P,"w")` (PMAT-1074/1075 recognize
+                    // those) and UNWRAP the `with` (read_to_string / fs::write each
+                    // open+op+close, matching a single-op handle). Refuses multiple
+                    // ops (truncation/read-once divergence) and any other use of f.
+                    if let Some(sub_body) = try_desugar_with_open(&w)? {
+                        let rewritten = rewrite(sub_body, cms, mut_cms, counter)?;
+                        out.extend(rewritten);
+                        continue;
+                    }
                     let cls = match &item.context_expr {
                         Expr::Call(call) => match call.func.as_ref() {
                             Expr::Name(n) if cms.contains_key(n.id.as_str()) => n.id.to_string(),
@@ -9833,6 +9844,252 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
     let taken = std::mem::take(suite);
     *suite = rewrite(taken, &cms, &mutating_cms, &mut counter)?;
     Ok(())
+}
+
+/// PMAT-1076: desugar `with open(P[, mode]) as f: BODY` (the idiomatic file
+/// form). Returns `Some(body)` with each `f.read()` / `f.write(s)` rewritten to
+/// `open(P)...` / `open(P, "w")...` (which PMAT-1074/1075 lower) and the `with`
+/// UNWRAPPED — `read_to_string` / `fs::write` each open+op+close, matching a
+/// SINGLE-op handle. Returns `None` if the context isn't `open(...)` (fall
+/// through to the user-context-manager path). Refuses (Err): multiple f-ops (a
+/// second read returns "" / a second write truncates — divergence), append
+/// mode, no `as f`, and any use of `f` other than `f.read()`/`f.write()`.
+fn try_desugar_with_open(w: &ast::StmtWith) -> Result<Option<Vec<ast::Stmt>>, FrontendError> {
+    use ast::Expr;
+    if w.items.len() != 1 {
+        return Ok(None);
+    }
+    let item = &w.items[0];
+    // The context must be `open(P[, mode])`.
+    let Expr::Call(open_call) = &item.context_expr else {
+        return Ok(None);
+    };
+    let Expr::Name(fname) = open_call.func.as_ref() else {
+        return Ok(None);
+    };
+    if fname.id.as_str() != "open" || !open_call.keywords.is_empty() {
+        return Ok(None);
+    }
+    // It IS a `with open(...)`. From here, any problem is a precise Err.
+    let Some(vars) = item.optional_vars.as_deref() else {
+        return Err(FrontendError::Lower(
+            "`with open(...):` without an `as f:` binding is not supported at v0.2.0 — bind the handle".into(),
+        ));
+    };
+    let Expr::Name(handle) = vars else {
+        return Err(FrontendError::Lower(
+            "`with open(...) as <target>:` requires a simple name target at v0.2.0".into(),
+        ));
+    };
+    let handle = handle.id.to_string();
+    let path = open_call
+        .args
+        .first()
+        .cloned()
+        .ok_or_else(|| FrontendError::Lower("`with open()` needs a path argument".into()))?;
+    let mode = match open_call.args.get(1) {
+        Some(Expr::Constant(c)) => match &c.value {
+            ast::Constant::Str(s) => s.clone(),
+            _ => String::new(),
+        },
+        None => "r".to_string(),
+        _ => String::new(),
+    };
+    let want = match mode.as_str() {
+        "r" | "rt" | "" => "read",
+        "w" | "wt" => "write",
+        "a" => {
+            return Err(FrontendError::Lower(
+                "`with open(path, \"a\") as f:` (append) is not supported at v0.2.0 — write mode \"w\" (truncate) only".into(),
+            ))
+        }
+        other => {
+            return Err(FrontendError::Lower(format!(
+                "`with open(path, \"{other}\") as f:` — v0.2.0 supports read (\"r\") and write (\"w\") modes"
+            )))
+        }
+    };
+    // Build the `open(P[, "w"])` receiver the op-site substitution uses.
+    let open_recv = |write: bool| -> Expr {
+        let mut args = vec![path.clone()];
+        if write {
+            args.push(Expr::Constant(ast::ExprConstant {
+                range: open_call.range,
+                value: ast::Constant::Str("w".to_string()),
+                kind: None,
+            }));
+        }
+        Expr::Call(ast::ExprCall {
+            range: open_call.range,
+            func: Box::new(Expr::Name(ast::ExprName {
+                range: open_call.range,
+                id: ast::Identifier::new("open"),
+                ctx: ast::ExprContext::Load,
+            })),
+            args,
+            keywords: vec![],
+        })
+    };
+
+    // Substitute f.read()/f.write() receivers with open(...), counting f-ops and
+    // rejecting any other reference to the handle. `count`/`err` thread through
+    // the recursive expr walk.
+    struct Sub<'a> {
+        handle: &'a str,
+        want: &'a str,
+        ops: usize,
+        bad: Option<String>,
+        open_recv: &'a dyn Fn(bool) -> Expr,
+    }
+    impl Sub<'_> {
+        fn expr(&mut self, e: &mut Expr) {
+            match e {
+                Expr::Call(c) => {
+                    // Is this `<handle>.read()/.write(...)`?
+                    if let Expr::Attribute(a) = c.func.as_mut() {
+                        if let Expr::Name(n) = a.value.as_ref() {
+                            if n.id.as_str() == self.handle {
+                                let m = a.attr.as_str();
+                                if (self.want == "read" && m == "read" && c.args.is_empty())
+                                    || (self.want == "write" && m == "write" && c.args.len() == 1)
+                                {
+                                    self.ops += 1;
+                                    *a.value = (self.open_recv)(self.want == "write");
+                                    for arg in c.args.iter_mut() {
+                                        self.expr(arg);
+                                    }
+                                    return;
+                                }
+                                self.bad.get_or_insert_with(|| format!(
+                                    "`with open(...) as {h}:` uses `{h}.{m}(...)` — v0.2.0 supports a single `{h}.{want}(...)` on the handle (matching the mode); `readlines`/`for line in {h}`/re-use are follow-ups",
+                                    h = self.handle, m = m, want = self.want
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                    self.expr(c.func.as_mut());
+                    for arg in c.args.iter_mut() {
+                        self.expr(arg);
+                    }
+                }
+                Expr::Name(n) => {
+                    if n.id.as_str() == self.handle {
+                        self.bad.get_or_insert_with(|| format!(
+                            "`with open(...) as {h}:` uses the handle `{h}` other than as `{h}.{want}(...)` — not supported at v0.2.0",
+                            h = self.handle, want = self.want
+                        ));
+                    }
+                }
+                Expr::BinOp(b) => {
+                    self.expr(&mut b.left);
+                    self.expr(&mut b.right);
+                }
+                Expr::BoolOp(b) => {
+                    for v in b.values.iter_mut() {
+                        self.expr(v);
+                    }
+                }
+                Expr::UnaryOp(u) => self.expr(&mut u.operand),
+                Expr::Compare(cmp) => {
+                    self.expr(&mut cmp.left);
+                    for c in cmp.comparators.iter_mut() {
+                        self.expr(c);
+                    }
+                }
+                Expr::Attribute(a) => self.expr(&mut a.value),
+                Expr::Subscript(s) => {
+                    self.expr(&mut s.value);
+                    self.expr(&mut s.slice);
+                }
+                Expr::IfExp(ie) => {
+                    self.expr(&mut ie.test);
+                    self.expr(&mut ie.body);
+                    self.expr(&mut ie.orelse);
+                }
+                Expr::List(l) => {
+                    for el in l.elts.iter_mut() {
+                        self.expr(el);
+                    }
+                }
+                Expr::Tuple(t) => {
+                    for el in t.elts.iter_mut() {
+                        self.expr(el);
+                    }
+                }
+                Expr::Set(s) => {
+                    for el in s.elts.iter_mut() {
+                        self.expr(el);
+                    }
+                }
+                _ => {}
+            }
+        }
+        fn stmt(&mut self, s: &mut ast::Stmt) {
+            match s {
+                ast::Stmt::Expr(e) => self.expr(&mut e.value),
+                ast::Stmt::Assign(a) => self.expr(&mut a.value),
+                ast::Stmt::AugAssign(a) => self.expr(&mut a.value),
+                ast::Stmt::AnnAssign(a) => {
+                    if let Some(v) = a.value.as_mut() {
+                        self.expr(v);
+                    }
+                }
+                ast::Stmt::Return(r) => {
+                    if let Some(v) = r.value.as_mut() {
+                        self.expr(v);
+                    }
+                }
+                ast::Stmt::If(i) => {
+                    self.expr(&mut i.test);
+                    for st in i.body.iter_mut().chain(i.orelse.iter_mut()) {
+                        self.stmt(st);
+                    }
+                }
+                ast::Stmt::While(wl) => {
+                    self.expr(&mut wl.test);
+                    for st in wl.body.iter_mut() {
+                        self.stmt(st);
+                    }
+                }
+                ast::Stmt::For(fo) => {
+                    self.expr(&mut fo.iter);
+                    for st in fo.body.iter_mut() {
+                        self.stmt(st);
+                    }
+                }
+                ast::Stmt::Assert(a) => self.expr(&mut a.test),
+                _ => {}
+            }
+        }
+    }
+    let orf = open_recv;
+    let mut sub = Sub {
+        handle: &handle,
+        want,
+        ops: 0,
+        bad: None,
+        open_recv: &orf,
+    };
+    let mut body = w.body.clone();
+    for st in body.iter_mut() {
+        sub.stmt(st);
+    }
+    if let Some(msg) = sub.bad {
+        return Err(FrontendError::Lower(msg));
+    }
+    if sub.ops == 0 {
+        return Err(FrontendError::Lower(format!(
+            "`with open(...) as {handle}:` never uses `{handle}.{want}(...)` — the handle is unused; v0.2.0 needs exactly one op on it"
+        )));
+    }
+    if sub.ops > 1 {
+        return Err(FrontendError::Lower(format!(
+            "`with open(...) as {handle}:` uses `{handle}.{want}(...)` {} times — v0.2.0 supports a single op (a second read returns \"\" / a second write truncates, which the reopen model would diverge on)",
+            sub.ops
+        )));
+    }
+    Ok(Some(body))
 }
 
 fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError> {
