@@ -3950,6 +3950,32 @@ fn class_def_signature(
             }
         }
     }
+    // PMAT-1054: CLASS CONSTANTS. A class-body `NAME: T = <literal>` in a
+    // NON-@dataclass class that is NEVER assigned via `self.NAME` (in any method,
+    // any nesting) is a shared class constant (`Config.VERSION`), not a
+    // per-instance field: Python exposes it as a class attribute (read via the
+    // class name OR a read-only `self`/instance access) and it is NOT a
+    // constructor parameter. Drop such names from `fields` (so the synthesized/
+    // explicit ctor no longer demands them — fixing the "`__init__` never assigns
+    // declared field" refusal for a const-beside-instance-fields class, and the
+    // `Config()` no-arg construction arity) while KEEPING their `(name, literal)`
+    // in `field_defaults` — reads of a constant fold to that literal at the
+    // access site (`Config.NAME` / `self.NAME` / `c.NAME`; see the attribute
+    // lowering), behavior-identical to an emitted associated `const` and portable
+    // to every target with no meta-HIR/codegen change. The construction default-
+    // fill guards on `field_names.contains` so a kept-but-not-a-field const entry
+    // is never mis-applied. @dataclass classes are excluded (the decorator makes
+    // every annotated member a ctor-assigned field); a `count: int = 0` mutated
+    // via `self.count += 1` is self-assigned → stays a field.
+    if !class_is_dataclass(c) {
+        let self_assigned = class_self_assigned_fields(c);
+        let const_names: HashSet<&str> = field_defaults
+            .iter()
+            .map(|(f, _)| f.as_str())
+            .filter(|f| !self_assigned.contains(*f))
+            .collect();
+        fields.retain(|(f, _)| !const_names.contains(f.as_str()));
+    }
     Ok((name, fields, method_returns, field_defaults))
 }
 
@@ -3988,6 +4014,83 @@ fn infer_init_field_type(rhs: &ast::Expr, param_types: &HashMap<String, Type>) -
         },
         _ => None,
     }
+}
+
+/// PMAT-1054: true if a class carries a `@dataclass` decorator (bare
+/// `@dataclass` or the call form `@dataclass(...)`). A dataclass turns EVERY
+/// class-body annotated member into a constructor-assigned instance field, so a
+/// `NAME: T = literal` there is a field default — never a class constant. Used
+/// to exclude dataclasses from class-constant detection.
+fn class_is_dataclass(c: &ast::StmtClassDef) -> bool {
+    c.decorator_list.iter().any(|d| match d {
+        ast::Expr::Name(n) => n.id.as_str() == "dataclass",
+        ast::Expr::Call(call) => {
+            matches!(call.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "dataclass")
+        }
+        _ => false,
+    })
+}
+
+/// PMAT-1054: the set of field names assigned via `self.<field>` anywhere in
+/// any method body of the class — recursively into nested `if`/`for`/`while`/
+/// `try` blocks. This is the discriminator between an INSTANCE field (assigned
+/// via `self` somewhere — including the `count: int = 0` + `self.count += 1`
+/// mutable-default idiom) and a CLASS CONSTANT (a class-body `NAME: T = literal`
+/// that is only ever read, never assigned via `self`). Covers plain, augmented,
+/// and annotated self-assignments, including tuple/list-unpack targets. A name
+/// missed here would be MISclassified as a constant (inlined + dropped as a
+/// field), so the walk errs toward completeness across nestings.
+fn class_self_assigned_fields(c: &ast::StmtClassDef) -> HashSet<String> {
+    fn note_target(e: &ast::Expr, set: &mut HashSet<String>) {
+        match e {
+            ast::Expr::Tuple(t) => t.elts.iter().for_each(|el| note_target(el, set)),
+            ast::Expr::List(l) => l.elts.iter().for_each(|el| note_target(el, set)),
+            other => {
+                if let Some(f) = self_field_target(other) {
+                    set.insert(f.to_string());
+                }
+            }
+        }
+    }
+    fn collect(stmts: &[ast::Stmt], set: &mut HashSet<String>) {
+        for stmt in stmts {
+            match stmt {
+                ast::Stmt::Assign(a) => a.targets.iter().for_each(|t| note_target(t, set)),
+                ast::Stmt::AugAssign(a) => note_target(&a.target, set),
+                ast::Stmt::AnnAssign(a) => note_target(&a.target, set),
+                ast::Stmt::If(i) => {
+                    collect(&i.body, set);
+                    collect(&i.orelse, set);
+                }
+                ast::Stmt::While(w) => {
+                    collect(&w.body, set);
+                    collect(&w.orelse, set);
+                }
+                ast::Stmt::For(f) => {
+                    collect(&f.body, set);
+                    collect(&f.orelse, set);
+                }
+                ast::Stmt::With(wi) => collect(&wi.body, set),
+                ast::Stmt::Try(t) => {
+                    collect(&t.body, set);
+                    for handler in &t.handlers {
+                        let ast::ExceptHandler::ExceptHandler(eh) = handler;
+                        collect(&eh.body, set);
+                    }
+                    collect(&t.orelse, set);
+                    collect(&t.finalbody, set);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut set = HashSet::new();
+    for stmt in &c.body {
+        if let ast::Stmt::FunctionDef(m) = stmt {
+            collect(&m.body, &mut set);
+        }
+    }
+    set
 }
 
 /// PMAT-506g (classes epic): true if a class method carries a bare
@@ -15570,6 +15673,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     if values.len() != field_names.len() {
                         if let Some(defaults) = ctx.struct_field_defaults.get(ctor_name) {
                             for (field, default) in defaults {
+                                // PMAT-1054: a class CONSTANT is kept in
+                                // `struct_field_defaults` (for read-site inlining)
+                                // but removed from `field_names` — it is NOT a ctor
+                                // field, so skip it here (applying it would pollute
+                                // `values` and break the arity check below).
+                                if !field_names.contains(field) {
+                                    continue;
+                                }
                                 values
                                     .entry(field.clone())
                                     .or_insert_with(|| default.clone());
@@ -18211,6 +18322,17 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     )));
                 }
             }
+            // PMAT-1054: `ClassName.CONST` — a class-body constant accessed via
+            // the class name (`Config.VERSION`). The receiver is a TYPE, not a
+            // value, so it cannot be lowered as an expression; fold to the
+            // constant's literal. A constant lives in `struct_field_defaults` (its
+            // `= literal`) but was dropped from `structs` (it is not a field), so
+            // `struct_const_value` ("in defaults, not in fields") identifies it.
+            if let ast::Expr::Name(cn) = attr.value.as_ref() {
+                if let Some(val) = struct_const_value(ctx, cn.id.as_str(), attr.attr.as_str()) {
+                    return Ok(val);
+                }
+            }
             let obj = lower_expr_in_ctx(ctx, (*attr.value).clone())?;
             let field = attr.attr.to_string();
             if let Type::Struct(sname) = infer_type_in_ctx(ctx, &obj) {
@@ -18233,6 +18355,16 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     .get(&sname)
                     .and_then(|fs| fs.iter().find(|(f, _)| *f == field).map(|(_, t)| t.clone()));
                 if field_ty.is_none() {
+                    // PMAT-1054: an instance/`self` read of a class CONSTANT
+                    // (`c.LIMIT`, `self.VERSION`) — the name is an associated
+                    // constant, not a field. Inline its literal value. Restricted
+                    // to a plain-binding receiver (`Expr::Ident` — `self`/a local)
+                    // so no side effect in a compound receiver is silently dropped.
+                    if let Expr::Ident(_) = &obj {
+                        if let Some(val) = struct_const_value(ctx, &sname, &field) {
+                            return Ok(val);
+                        }
+                    }
                     return Err(FrontendError::Lower(format!(
                         "function `{}` reads field `{field}` of `{sname}`, which has no such field",
                         ctx.fn_name
@@ -18275,6 +18407,26 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
 /// `int` or `bool` (where Rust `{}` / a `True`/`False` map equals Python's
 /// `repr`). A str field needs quoting, a float its own repr, a nested struct its
 /// own `Display` — those are deferred. Must mirror the codegen eligibility.
+/// PMAT-1054: the literal value of a CLASS CONSTANT `class.name`, if `name` is a
+/// class constant of `class` — a class-body `NAME: T = literal` kept in
+/// `struct_field_defaults` (its value) but dropped from `structs` (it is not a
+/// per-instance field, per [`class_def_signature`]). Returns `None` for a real
+/// field (present in `structs`, even one with a default) or an unknown name, so a
+/// constant read folds to its literal while field access falls through to the
+/// normal path.
+fn struct_const_value(ctx: &LoweringCtx, class: &str, name: &str) -> Option<Expr> {
+    let is_field = ctx
+        .structs
+        .get(class)
+        .is_some_and(|fs| fs.iter().any(|(f, _)| f == name));
+    if is_field {
+        return None;
+    }
+    ctx.struct_field_defaults
+        .get(class)
+        .and_then(|ds| ds.iter().find(|(f, _)| f == name).map(|(_, v)| v.clone()))
+}
+
 fn struct_display_eligible(ctx: &LoweringCtx, name: &str) -> bool {
     // PMAT-776 (HUNT-V17 #2): a struct that defines `__str__` renders via its
     // generated `Display` (delegating to `__str__`) for ANY field types, so it's

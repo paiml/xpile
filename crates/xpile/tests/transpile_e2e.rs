@@ -18933,6 +18933,42 @@ fn field_subscript_append_alias_is_rejected() {
     );
 }
 
+/// PMAT-1054: CLASS CONSTANTS — a class-body `NAME: T = <literal>` never
+/// assigned via `self` in a non-@dataclass class is a shared class constant
+/// (`Config.VERSION`/`Config.MAX`), dropped from the struct's fields (so the
+/// ctor takes only the real field `n`) with reads folding to the literal. Fixes
+/// all three PMAT-1053 shapes: (a) `Config.VERSION` class-name read, (b) `c.MAX`
+/// instance read, (c) a const alongside an instance field. Differentially
+/// verified vs CPython (1.0 / 100 / 300 / 7).
+#[test]
+fn class_constants() {
+    let rust = xpile_transpile_to_rust("class_constants.py");
+    // The constants are NOT struct fields — the struct carries only `n`.
+    assert!(
+        rust.contains("pub struct Config {") && rust.contains("pub n: i64,"),
+        "Config keeps its instance field `n`:\n{rust}"
+    );
+    assert!(
+        !rust.contains("pub VERSION") && !rust.contains("pub MAX"),
+        "class constants VERSION/MAX must NOT be emitted as struct fields:\n{rust}"
+    );
+    // Reads fold to the literal at the access site (class-name + instance + self).
+    assert!(
+        rust.contains("String::from(\"1.0\")") && rust.contains("100i64"),
+        "constant reads fold to their literals:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // (a) ClassName.CONST, (b) instance.CONST, self.CONST, (c) real field.
+    assert_eq!(version(), "1.0", "Config.VERSION class-name read");
+    assert_eq!(instance_max(), 100, "c.MAX instance read of a class const");
+    assert_eq!(scaled_val(), 300, "self.MAX read inside a method (3 * 100)");
+    assert_eq!(field_val(), 7, "the genuine instance field n still round-trips");
+}
+"#;
+    assert_rustc_runs("class_constants", &rust, driver);
+}
+
 /// PMAT-1034: the empty-iterable loop-var-leak guard is threaded by TARGET
 /// CAPABILITY (`LoweringProfile::runtime_abort`). A FRESH loop var read
 /// unconditionally after the loop is an `UnboundLocalError` trap in CPython
