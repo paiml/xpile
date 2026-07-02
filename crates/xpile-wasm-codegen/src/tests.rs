@@ -786,9 +786,10 @@ fn string_inequality_negates_content_compare() {
 }
 
 #[test]
-fn refuses_string_ordering_no_pointer_compare() {
-    // PMAT-994: string ORDERING (`a < b`) is NOT wired (needs lexicographic
-    // logic) — it must be an honest refusal, never a base-pointer compare.
+fn string_ordering_is_lexicographic_cmp_not_pointer_compare() {
+    // PMAT-1059: string ORDERING (`a < b`) lowers to the byte-wise lexicographic
+    // 3-way compare `$__wasm_str_cmp` tested against 0 with a signed op — REAL
+    // string-content logic, NEVER a base-pointer compare on the i32 pointers.
     let f = Function {
         name: "lt".into(),
         params: vec![param("a", Type::Str), param("b", Type::Str)],
@@ -802,13 +803,56 @@ fn refuses_string_ordering_no_pointer_compare() {
             },
         },
     };
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("str < str lowers");
+    // The helper is emitted and the $lt body calls it, comparing the 3-way
+    // result against 0 with i32.lt_s (the compare is on the CMP RESULT, not a
+    // raw base-pointer compare of $a/$b before the call).
+    assert!(
+        wat.contains("(func $__wasm_str_cmp (param $a i32) (param $b i32) (result i32)"),
+        "the lexicographic cmp helper must be emitted:\n{wat}"
+    );
+    let lt_body = wat
+        .split("(func $lt ")
+        .nth(1)
+        .expect("the $lt function is emitted");
+    assert!(
+        lt_body.contains("call $__wasm_str_cmp"),
+        "str < str must call the cmp helper:\n{lt_body}"
+    );
+    assert!(
+        lt_body.contains("i32.const 0") && lt_body.contains("i32.lt_s"),
+        "the cmp result is tested against 0 with i32.lt_s:\n{lt_body}"
+    );
+    // A pure-ordering module reads memory but allocates nothing.
+    assert!(
+        !wat.contains("(func $__alloc"),
+        "a pure ordering module must NOT carry the bump allocator:\n{wat}"
+    );
+}
+
+#[test]
+fn refuses_string_mul_no_pointer_arithmetic() {
+    // PMAT-1059: an unwired string binop (e.g. `s * n` reaching BinOp::Mul over
+    // a str operand) is still an honest refusal, never pointer arithmetic.
+    let f = Function {
+        name: "bad".into(),
+        params: vec![param("a", Type::Str), param("b", Type::Str)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BinOp {
+                op: BinOp::Mul,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(Expr::Ident("b".into())),
+            },
+        },
+    };
     let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("unsupported") && msg.to_lowercase().contains("ordering"),
-        "str < str honestly refused (ordering not wired): {msg}"
+        msg.contains("unsupported") && msg.contains("str"),
+        "str * str honestly refused (not wired): {msg}"
     );
-    assert!(!msg.contains("i32.lt"), "no pointer-compare leaked: {msg}");
 }
 
 #[test]
