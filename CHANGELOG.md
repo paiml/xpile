@@ -7,6 +7,43 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Typed mutation-shape classification + precise receiver diagnostics (PMAT-1027)
+
+- **Sweep #10 finding 4 discharged — the mutator classifier is TYPED, not
+  name-keyed.** `collect_container_mutated` classified any receiver of an
+  `append`/`add`/`pop`/`update`/… call as container-shaped by METHOD NAME
+  alone, so a struct method that happens to share a builtin-mutator name
+  false-refused through an alias on the reference lane (`b.add(5)` refused
+  while the identical `b.plus(5)` executed — and `add` is the natural name
+  for accumulators). Now `collect_struct_type_evidence` gathers per-name type
+  evidence (param/`AnnAssign` annotations incl. `"Bag"` forward-references
+  and `list[int]` subscripts, ctor calls, container literals/comprehensions,
+  `set()`/`dict()`/`list()` builtin calls) and propagates it over the SAME
+  union-find alias classes the PMAT-1020 analysis builds: a class whose
+  evidence UNANIMOUSLY names one struct exempts its module-defined methods
+  (statement position and the expression-position `pop` path) as
+  struct-shaped — in-place stores through the shared base-pointer, exact on
+  the reference lane. Any container evidence or a struct-name conflict
+  POISONS the class, and an evidence-free class stays container-shaped — the
+  dict/set relocation-hazard refusal is never name-exempted. Witness:
+  `struct_mutator_names.py` — the Rust lane keeps REFUSING (naming the
+  pair), the WASM lane EXECUTES `add`/`pop`/`update` through the alias
+  == CPython 1614.
+- **Sweep #10 finding 3 discharged — the wrong `subprocess.run` diagnostic
+  is gone for every receiver the lowering can see.** A statement-position
+  method call on a receiver bound from an UNANNOTATED callable's return
+  (which defaults to Unit) refused with the factually wrong "only
+  `subprocess.run([...])` is recognised at v0.1.0". Now
+  `try_lower_side_effect_call` refuses precisely: a Unit-typed receiver
+  names the receiver and the missing `->` annotation, another non-struct
+  type names that type, and a struct WITHOUT the called method names
+  class + method. Only genuinely unbound names (module receivers like
+  `subprocess`) keep the fallback. Pinned on both lanes.
+- Honest residual: the VALUE lane's `collect_obj_mutated` remains name-keyed
+  — a NON-mutating struct method named `update` still over-refuses through
+  an alias on the Rust lane (genuinely-mutating collision names refuse
+  correctly there via the mutating-methods pass).
+
 ### Sweep #10 + field discovery from `__init__` (PMAT-1025)
 
 - **Adversarial differential sweep #10** hit the day-old WASM OOP/alias lane
