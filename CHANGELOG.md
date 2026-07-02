@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Invalid emit fixed: field/nested dict-store leaf key was moved not cloned (PMAT-1045)
+
+- The shared subscript write-through emitter (FieldIndexAssign /
+  NestedSubscriptAssign) inserted the leaf dict key without `.clone()`, so a
+  non-Copy (str) key reused after the store — `self.m[k] = len(k); return k`,
+  or `self.cells[r] = {}` then `self.cells[r][c] = v` with a reused param `r`
+  — was rustc E0382. Single-level `DictSet` already clones (PMAT-852); the
+  multi-level path now matches. Found by adversarial sweep #12.
+- 1 e2e test (729 total); differentially verified (MATCH 8.0/16).
+
 ### Silent miscompile fixed: as-let fusion reordered intra-arm assignments (PMAT-1044)
 
 - The if-as-let path models each assigned variable independently and emits

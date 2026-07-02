@@ -18745,3 +18745,24 @@ fn main() {
 "#;
     assert_rustc_runs("aslet_seq_hazard", &rust, driver);
 }
+
+/// PMAT-1045 (sweep #12): the leaf dict key in a FieldIndexAssign /
+/// NestedSubscriptAssign store was moved into `.insert`, so a non-Copy key
+/// reused after the store was E0382; the key now clones.
+#[test]
+fn fieldindex_dict_key_reuse() {
+    let rust = xpile_transpile_to_rust("fieldindex_dict_key_reuse.py");
+    assert!(
+        rust.contains(").clone(), __rhs)"),
+        "the leaf dict key must clone in the write-through emitter:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // cells["a"][1]+[2] = 6.0, + 2 outer keys = 8.0; r reused across empty-init + store.
+    assert_eq!(table_sum(), 8.0, "str key reused across empty-init and leaf store");
+    // m["hello"]=5, tag="hello!" len 6, k len 5 ⇒ 16; k reused after the store.
+    assert_eq!(key_reused(), 16, "str key reused after the field dict store");
+}
+"#;
+    assert_rustc_runs("fieldindex_dict_key_reuse", &rust, driver);
+}

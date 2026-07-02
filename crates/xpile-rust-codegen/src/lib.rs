@@ -1623,9 +1623,14 @@ fn emit_subscript_write_through(
     }
     let (leaf_idx, leaf_is_dict) = &steps[n - 1];
     if *leaf_is_dict {
-        write!(out, "__t{}.insert(", n - 1)?;
+        // PMAT-1045: the leaf key is MOVED into `.insert`, so a non-Copy
+        // (str) key reused after the store — `self.m[k] = v; return k` — was
+        // E0382. Clone the parenthesized key (mirrors the single-level
+        // `DictSet` PMAT-852 emission; the parens bind a cast key before
+        // `.clone()`; a Copy key's clone is a no-op rustc accepts).
+        write!(out, "__t{}.insert((", n - 1)?;
         emit_expr(out, leaf_idx, mode)?;
-        out.push_str(", __rhs); }");
+        out.push_str(").clone(), __rhs); }");
     } else {
         write!(out, "let __ll = (")?;
         emit_expr(out, leaf_idx, mode)?;
