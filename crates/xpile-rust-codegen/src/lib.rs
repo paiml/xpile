@@ -1359,7 +1359,28 @@ fn emit_stmt_indented(
             bound_name,
             extra_handlers,
             finally,
+            finally_only,
         } => {
+            // PMAT-1073: `try: B finally: F` with NO except — no handler
+            // dispatch; run body, finally, then propagate.
+            if *finally_only {
+                write!(
+                    out,
+                    "{indent}{{ let __tc_outer = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {{ "
+                )?;
+                for st in body {
+                    emit_stmt_indented(out, st, "", mode)?;
+                }
+                out.push_str(" })); ");
+                for st in finally {
+                    emit_stmt_indented(out, st, "", mode)?;
+                }
+                out.push_str(
+                    "if let Err(__e) = __tc_outer { ::std::panic::resume_unwind(__e); } }",
+                );
+                writeln!(out)?;
+                return Ok(());
+            }
             // PMAT-1070: `finally` wraps the whole try/except in an OUTER
             // catch_unwind so it runs in EVERY exit path (clean, matched
             // handler, handler-raised, or unmatched-propagate).
