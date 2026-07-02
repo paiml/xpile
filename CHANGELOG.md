@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Silent miscompile fixed: as-let fusion reordered intra-arm assignments (PMAT-1044)
+
+- The if-as-let path models each assigned variable independently and emits
+  the per-variable updates grouped by variable, NOT in source order. An arm
+  like `b = a; a = 9` emitted `a = …9` then `b = …a`, so `b` read the
+  UPDATED `a` (9) instead of the original (1): `9*10+9` = 99 vs Python 91.
+  Found by adversarial sweep #12.
+- Fix: extend the PMAT-1042 divert — when every assigned name is pre-bound
+  and any arm has an intra-arm read-after-write dependency, route to the
+  general sequential `Stmt::If` path (exact for pre-bound names).
+  Parity-holding, hazard-free chains keep the as-let emission byte-identical.
+- 1 e2e test (728 total); differentially verified (MATCH 27/91, 22/11).
+
 ### Silent miscompile fixed: same-named method/free-fn guard collision (PMAT-1043)
 
 - The alias-then-mutate guard keyed its per-parameter mutation map by BARE

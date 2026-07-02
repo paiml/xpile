@@ -18728,3 +18728,20 @@ fn method_name_collision_is_rejected() {
         "the rejection should name the mutating parameter:\n{stderr}"
     );
 }
+
+/// PMAT-1044 (sweep #12): as-let fusion miscompiled intra-arm read-after-write
+/// (`b = a; a = 9` read the updated a) — such pre-bound chains now divert to
+/// the general sequential path. Differentially verified (MATCH 27/91, 22/11).
+#[test]
+fn aslet_seq_hazard() {
+    let rust = xpile_transpile_to_rust("aslet_seq_hazard.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(swap_ish(true), 27, "then arm: a=b(2), b=7");
+    assert_eq!(swap_ish(false), 91, "else arm: b=a(1) BEFORE a=9");
+    assert_eq!(chained(true), 22, "a=b(2) then b=a(2)");
+    assert_eq!(chained(false), 11, "b=a(1) then a=b(1)");
+}
+"#;
+    assert_rustc_runs("aslet_seq_hazard", &rust, driver);
+}
