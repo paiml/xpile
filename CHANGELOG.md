@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Int-into-float-slot stores on Name-bottoming paths (PMAT-1040)
+
+- `xs[0] = 3` over `list[float]`, `d["a"] = 3` over `dict[str, float]`, and
+  `g[1][0] = 3` over `list[list[float]]` all emitted the raw int — rustc
+  E0308 INVALID emit. Found probing the PMAT-1037 `FieldIndexAssign` widen
+  (the field path widened; its Name-bottoming siblings didn't). All three
+  sites now widen via `to_f64_operand` (`NestedSubscriptPath` carries the
+  leaf type); bool widens too (`True == 1.0`); aug-assign already widened
+  via `combine_aug`. Known repr edge (the shipped param-coercion class):
+  a DIRECT print of the stored slot shows `3.0` vs CPython's `3`.
+- 1 e2e test (724 total); differentially verified vs CPython.
+
 ### Loop-scope name-model mismatches — body-bound locals leak like Python (PMAT-1038)
 
 - **Body-bound loop locals now leak to function scope** — Python leaks any

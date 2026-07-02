@@ -860,6 +860,14 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).' SHIPPED 2026-07-02: fresh top-level loop-body bindings read after the loop pre-declare `let mut <name>: T = <default>` (RHS probe-typed, for/while both; range targets trivially int; list defaults vec![]); definitely-scalar list-literal embeds no longer edge the alias analysis (the false `aliases i and row` refusal); pre-bound-target + element-mutation refuses precisely (the leak clone silently absorbed the mutation — pre-existing silent bug, now loud). Residual: bindings nested in inner if/loops and dict/set-valued loop locals keep E0425.
+- id: PMAT-1040
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1040: [rust/correctness] int/bool into FLOAT-annotated slots on the Name-bottoming subscript-assign paths — `xs[0] = 3` over `list[float]`, `d["a"] = 3` over `dict[str, float]`, `g[1][0] = 3` over `list[list[float]]` all emitted the raw int (rustc E0308 INVALID emit). Found probing the PMAT-1037 FieldIndexAssign widen: the FIELD path widened, its Name-bottoming siblings did not. Fix: to_f64_operand widen at all three sites (list arm, dict arm, peel-nested plain caller via a leaf-type-carrying NestedSubscriptPath); aug already widened via combine_aug. KNOWN residual (documented class, same as the shipped param coercion): a DIRECT print of the stored slot shows `3.0` where CPython prints `3` — value-correct, repr-divergent on the degenerate print-the-slot case.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Shipped same-day with differential verification (MATCH 4.5/3.25/3.5/2.5 + 7 ad-hoc probes incl. the int-list no-op and the mixed dict-of-list path).'
 - id: PMAT-1039
   github_issue: null
   item_type: task

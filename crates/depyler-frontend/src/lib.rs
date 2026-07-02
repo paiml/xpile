@@ -9822,7 +9822,13 @@ fn lower_subscript_assign_target(
             value,
         });
     }
-    if let Some((receiver, steps)) = peel_nested_subscript_assign(ctx, sub)? {
+    if let Some((receiver, steps, leaf_ty)) = peel_nested_subscript_assign(ctx, sub)? {
+        // PMAT-1040: same float-slot widen as the single-level arms below.
+        let value = if matches!(leaf_ty, Type::F64) {
+            to_f64_operand(ctx, value)
+        } else {
+            value
+        };
         return Ok(nested_subscript_write_stmt(ctx, receiver, steps, value));
     }
     let receiver = match sub.value.as_ref() {
@@ -9831,7 +9837,7 @@ fn lower_subscript_assign_target(
     };
     let single = (*sub.slice).clone();
     match ctx.name_types.get(&receiver).cloned() {
-        Some(Type::List(_)) => {
+        Some(Type::List(elem)) => {
             // PMAT-560/PMAT-863 (HUNT-V30 #3): negative-literal index `xs[-k] = v`
             // is Python from-the-end assignment. Pass the RAW negative literal —
             // the codegen's any-runtime path does the single `len + neg`
@@ -9855,13 +9861,22 @@ fn lower_subscript_assign_target(
  index
             };
  ctx.mutable.insert(receiver.clone());
+            // PMAT-1040: `xs[0] = 3` over `list[float]` emitted `xs[…] = 3i64`
+            // (rustc E0308 invalid emit) — widen into the float slot, the
+            // PMAT-1017/1037 FieldAssign/FieldIndexAssign convention (same
+            // known repr edge: a direct print shows `3.0` vs CPython `3`).
+            let value = if matches!(*elem, Type::F64) {
+                to_f64_operand(ctx, value)
+            } else {
+                value
+            };
  Ok(Stmt::IndexAssign {
  list_name: receiver,
  indices: vec![index],
  value,
             })
         }
-        Some(Type::Dict(key_ty, _)) => {
+        Some(Type::Dict(key_ty, val_ty)) => {
  let key = lower_expr_in_ctx(ctx, single)?;
             // PMAT-829 (HUNT-V25 #4): a bool key into an INT-keyed dict —
             // `d[True] = v` — coerce bool→i64 (Python `True == 1`), mirroring the
@@ -9875,6 +9890,12 @@ fn lower_subscript_assign_target(
  key
             };
  ctx.mutable.insert(receiver.clone());
+            // PMAT-1040: `d["a"] = 3` over `dict[str, float]` — same widen.
+            let value = if matches!(*val_ty, Type::F64) {
+                to_f64_operand(ctx, value)
+            } else {
+                value
+            };
  Ok(Stmt::DictSet {
  dict_name: receiver,
  key,
@@ -10099,7 +10120,9 @@ fn combine_aug(
 /// too-shallow / non-list base / non-int index is a clear error.
 /// PMAT-730: a peeled nested-subscript-assign path — `(receiver, [(index,
 /// is_dict)…])`, base→leaf. `is_dict` is the container kind at each level.
-type NestedSubscriptPath = (String, Vec<(Expr, bool)>);
+/// PMAT-1040: carries the LEAF element type so callers can widen an int
+/// value into a float slot (`g[1][0] = 3` over `list[list[float]]`).
+type NestedSubscriptPath = (String, Vec<(Expr, bool)>, Type);
 
 /// PMAT-1037: peel a subscript-assignment target whose chain bottoms at a
 /// STRUCT-FIELD access — `self.counts[i]`, `obj.cells[r][c]`, `self.m[k]` —
@@ -10258,7 +10281,7 @@ fn peel_nested_subscript_assign(
             }
         }
     }
-    Ok(Some((receiver, steps)))
+    Ok(Some((receiver, steps, container_ty.unwrap_or(Type::Unit))))
 }
 
 /// Build a write [`Stmt`] from a peeled nested-subscript path: all-`list` levels
@@ -10469,7 +10492,7 @@ fn lower_aug_assign(
             // path (shared with plain `= v`), fold the indices into a nested
             // `Expr::Index` read for the current value, combine, then emit a
             // multi-index `IndexAssign`. `None` ⇒ single-level (below).
- if let Some((receiver, steps)) = peel_nested_subscript_assign(ctx, sub)? {
+ if let Some((receiver, steps, _leaf_ty)) = peel_nested_subscript_assign(ctx, sub)? {
                 // PMAT-730: augmented nested assign supports the all-LIST nest
                 // (`grid[i][j] += v`). A dict level in the path needs a read +
                 // get_mut write and is deferred — reject cleanly.
