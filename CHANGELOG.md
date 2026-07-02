@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.610] — 2026-07-02
+
 ### Context managers / `with` — user context managers (PMAT-1072)
 
 - `with ClassName(...) [as x]: BODY` over a class defining `__enter__`/`__exit__`
