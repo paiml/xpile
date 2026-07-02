@@ -17828,3 +17828,143 @@ fn transpile_init_field_discovery_py_both_lanes_execute() {
          full() at the 5 limit):\n{interp_out}"
     );
 }
+
+/// PMAT-1026 (sweep #10 finding 2): free-function STRUCT returns. The factory
+/// idiom (`def make(start) -> Counter`) and the ctor-arg chain (`boost(
+/// Counter(10), 100)` threading + returning records) previously refused
+/// "type mismatch — expected WASM i32 but expression lowered to i64" on the
+/// WASM lane — the PMAT-1023 `AssocFnRegistry` typed only `Class::__init__`
+/// call sites, and plain free-fn calls fell back to a conservative i64. Now
+/// every intra-module call types exactly from the PMAT-1024 free-function
+/// registry. Executes on BOTH lanes, value-matched vs CPython (4112).
+#[test]
+fn transpile_struct_factory_py_both_lanes_execute() {
+    let py = fixture("struct_factory.py");
+
+    // Rust lane: transpiles, compiles, runs == CPython (already worked
+    // before this slice — pinned so the fix stays lane-neutral).
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    let rust_src = String::from_utf8_lossy(&rust_out.stdout);
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_out.status.success(),
+        "xpile --target rust failed on the struct factory: stderr={rust_err}"
+    );
+    assert_rustc_runs(
+        "struct_factory",
+        &rust_src,
+        "fn main() {\n    assert_eq!(run(), 4112, \"CPython ground truth\");\n}",
+    );
+
+    // WASM lane: emits (the previously-refusing half), assembles, executes.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the struct factory: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("call $make") && stdout.contains("call $boost"),
+        "run() drives both struct-returning free fns:\n{stdout}"
+    );
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1026: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-factory-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("factory.wat");
+    let wasm_path = dir.join("factory.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:4112"),
+        "executed run() must == CPython 4112 (make(3)+incr → 4; \
+         boost(Counter(10),100)+incr → 112; 4*1000+112):\n{interp_out}"
+    );
+}
+
+/// PMAT-1026 (sweep #10 finding 2): the returns-param IDENTITY shape through
+/// a free function — `b = pick(a)` makes `b` the SAME object as `a`. The
+/// Rust lane keeps REFUSING (the PMAT-1020 alias-class analysis names the
+/// pair: a param-returning call is an alias edge); the WASM lane EXECUTES
+/// reference semantics across the free-fn call boundary — the call returns
+/// the record's i32 base-pointer (previously mistyped as i64), so two
+/// incr()s through `b` read back through `a` == CPython 12.
+#[test]
+fn transpile_struct_pick_alias_py_wasm_executes_rust_refuses() {
+    let py = fixture("struct_pick_alias.py");
+
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !rust_out.status.success(),
+        "the rust lane must still REFUSE the mutated returns-param alias"
+    );
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_err.contains("aliases `a` and `b`"),
+        "the alias-class refusal names the pair:\n{rust_err}"
+    );
+
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the returns-param identity: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("call $pick") && stdout.contains("call $Counter.incr"),
+        "run() drives the identity fn + mutating method:\n{stdout}"
+    );
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1026: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-pick-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("pick.wat");
+    let wasm_path = dir.join("pick.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:12"),
+        "executed run() must == CPython 12 (b IS a — both incr()s land on \
+         one object; a clone would give 10):\n{interp_out}"
+    );
+}
