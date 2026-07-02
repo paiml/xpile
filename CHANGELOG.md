@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.605] — 2026-07-02
+
 ### Branch parity no longer required for pre-bound names (PMAT-1042)
 
 - `x = 0; y = 0; if flag: x = 1 else: y = 2` refused ("every branch must
