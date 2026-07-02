@@ -18876,3 +18876,20 @@ fn chain_mutator_diagnostic_is_precise() {
         "the refusal must name the container-mutation shape, not subprocess:\n{stderr}"
     );
 }
+
+/// PMAT-1048 (sweep #12): a nested list literal appended into a float-of-list
+/// target (`g.append([2, 3])` over `list[list[float]]`) was E0308; the append
+/// paths now coerce list literals element-wise. MATCH 6.5; int list untouched.
+#[test]
+fn nested_literal_float_coerce() {
+    let rust = xpile_transpile_to_rust("nested_literal_float_coerce.py");
+    let driver = r#"
+fn main() {
+    // [1.5] + [2.0, 3.0]: g[1][0]+g[1][1]+g[0][0] = 2.0+3.0+1.5 = 6.5.
+    assert_eq!(nested_append(), 6.5, "nested int literal widened to float");
+    // list[list[int]] literal is untouched: 2 + 3 = 5.
+    assert_eq!(int_list_untouched(), 5, "int list literal not coerced");
+}
+"#;
+    assert_rustc_runs("nested_literal_float_coerce", &rust, driver);
+}

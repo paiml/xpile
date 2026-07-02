@@ -7,6 +7,18 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Nested list-literal float coercion (PMAT-1048)
+
+- `g: list[list[float]]; g.append([2, 3])` emitted `vec![2i64, 3i64]` →
+  rustc E0308 (Vec<i64> vs Vec<f64>). The scalar append widen (PMAT-1047)
+  covers `xs.append(3)` but not a list-literal argument whose elements need
+  widening. `coerce_expr_to_type` now recurses into list literals
+  element-wise at both append paths. Closes the last sweep-#12 residual.
+  (A heterogeneous literal `[2, 3.5]` still refuses at list-literal lowering
+  — a separate top-down-typing gap; a direct sum of int-valued float slots
+  prints `X.0` vs Python `X`, the documented int-into-float-repr class.)
+- 1 e2e test (736 total); MATCH 6.5; int list literal untouched.
+
 ## [0.1.606] — 2026-07-02
 
 ### Honest diagnostic: container mutation through a deep receiver chain (PMAT-1051)

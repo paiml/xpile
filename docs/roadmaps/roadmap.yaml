@@ -896,9 +896,10 @@ roadmap:
   github_issue: null
   item_type: bug
   title: 'PMAT-1048: [rust/capability] nested list LITERAL appended into a float-of-list target not element-coerced (sweep #12 t23). `g: list[list[float]]; g.append([2, 3])` emits `g.push(vec![2i64, 3i64])` (rustc E0308 — Vec<i64> vs Vec<f64>). The scalar append widening (PMAT-1047) covers `xs.append(3)` but not a list-LITERAL argument whose ELEMENTS need widening. Broader fix: coerce a list-literal expression element-wise to the target container element type (applies to append, subscript store, dict value, return). Deferred — a general list-literal-vs-target coercion pass, not a one-site widen.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
+  notes: 'SHIPPED 2026-07-02: coerce_expr_to_type recurses into list literals element-wise at both append paths; g.append([2, 3]) over list[list[float]] MATCH 6.5. Known residuals (documented classes, not 1048): a heterogeneous literal [2, 3.5] refuses at list-literal lowering (needs top-down expected-type threading); a DIRECT sum of int-valued float slots prints X.0 vs Python X (the int-into-float-repr class shared with 1040/1047).'
 - id: PMAT-1046
   github_issue: null
   item_type: bug
