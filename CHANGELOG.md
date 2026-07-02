@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.608] — 2026-07-02
+
 ### Multiple except clauses (PMAT-1059)
 
 - `try: B except E1: H1 except E2: H2 except: H3` — multiple `except` clauses
