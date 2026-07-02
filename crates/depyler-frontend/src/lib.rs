@@ -838,6 +838,11 @@ fn for_target_mutated_ast(stmts: &[ast::Stmt], target: &str) -> bool {
                     ast::Expr::Attribute(inner) => {
                         matches!(inner.value.as_ref(), ast::Expr::Name(n) if n.id.as_str() == target)
                     }
+                    // PMAT-1052: `self.grid[k].append(x)` — a mutator on a
+                    // SUBSCRIPT of a field of the target mutates the target
+                    // object (drives &mut self for a method that only appends
+                    // through the field, with no direct `self.f = …` store).
+                    ast::Expr::Subscript(s) => base_is(s.value.as_ref(), target),
                     _ => false,
                 };
                 if base_is_target {
@@ -2137,6 +2142,17 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                                     let bump = if in_loop { 2 } else { 1 };
                                     *counts.entry(base.id.to_string()).or_insert(0) += bump;
                                 }
+                                // PMAT-1052: `obj.field[k].append(e)` — a mutator
+                                // on a SUBSCRIPT of a struct FIELD mutates the
+                                // root object binding in place (lowered as an
+                                // `IndexAppend` with base `obj.field`), so `obj`
+                                // must be `let mut` on a local outside a method.
+                                if let ast::Expr::Attribute(fa) = sub.value.as_ref() {
+                                    if let ast::Expr::Name(obj) = fa.value.as_ref() {
+                                        let bump = if in_loop { 2 } else { 1 };
+                                        *counts.entry(obj.id.to_string()).or_insert(0) += bump;
+                                    }
+                                }
                             }
                             // PMAT-1037 slice D: `b.items.append(e)` — an
                             // attribute-CHAIN receiver mutates the root
@@ -3062,9 +3078,58 @@ fn reject_append_then_mutate(fn_name: &str, body: &[ast::Stmt]) -> Result<(), Fr
             _ => {}
         }
     }
+    // PMAT-1052: the receiver container of an embed / subscript-mutation, as a
+    // codegen-shaped string — a Name (`xs`) or a single field (`obj.field`).
+    fn container_str(e: &ast::Expr) -> Option<String> {
+        match e {
+            ast::Expr::Name(n) => Some(n.id.to_string()),
+            ast::Expr::Attribute(a) => match a.value.as_ref() {
+                ast::Expr::Name(o) => Some(format!("{}.{}", o.id, a.attr)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    // The container that RECEIVES a by-reference embed `<container>.append(local)`
+    // / `.insert(_, local)` (a bare-Name arg).
+    fn embedded_container(s: &ast::Stmt) -> Option<String> {
+        if let ast::Stmt::Expr(e) = s {
+            if let ast::Expr::Call(c) = e.value.as_ref() {
+                if let ast::Expr::Attribute(a) = c.func.as_ref() {
+                    let arg = match a.attr.as_str() {
+                        "append" => c.args.first(),
+                        "insert" => c.args.get(1),
+                        _ => None,
+                    };
+                    if matches!(arg, Some(ast::Expr::Name(_))) {
+                        return container_str(a.value.as_ref());
+                    }
+                }
+            }
+        }
+        None
+    }
+    // A container mutated THROUGH a subscript — `<container>[i].<mutator>()`
+    // (PMAT-1052 enabled `obj.field[i].append`, which reaches the SHARED element
+    // an earlier `container.append(local)` embedded).
+    fn subscript_mutated_container(s: &ast::Stmt) -> Option<String> {
+        if let ast::Stmt::Expr(e) = s {
+            if let ast::Expr::Call(c) = e.value.as_ref() {
+                if let ast::Expr::Attribute(a) = c.func.as_ref() {
+                    if is_container_mutator(a.attr.as_str()) {
+                        if let ast::Expr::Subscript(sub) = a.value.as_ref() {
+                            return container_str(sub.value.as_ref());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
     fn walk(
         stmts: &[ast::Stmt],
         embedded: &mut std::collections::HashSet<String>,
+        embed_containers: &mut std::collections::HashSet<String>,
         fn_name: &str,
     ) -> Result<(), FrontendError> {
         for s in stmts {
@@ -3082,6 +3147,21 @@ fn reject_append_then_mutate(fn_name: &str, body: &[ast::Stmt]) -> Result<(), Fr
                     )));
                 }
             }
+            // 1b. PMAT-1052: mutating an embed-holding container THROUGH a
+            //     subscript (`g.rows[0].append(9)` after `g.rows.append(row)`)
+            //     reaches the shared element the value model cloned — silent
+            //     divergence. Refuse.
+            if let Some(cont) = subscript_mutated_container(s) {
+                if embed_containers.contains(&cont) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{fn_name}` appended a local into `{cont}` and then mutates an \
+                         element of `{cont}` in place (`{cont}[i].<mutator>()`) — Python shares \
+                         the appended object, so the mutation is visible through the original \
+                         local, but xpile clones the appended value and would silently drop it. \
+                         Append a copy, or don't observe the local after the append."
+                    )));
+                }
+            }
             // 2. A rebind clears the embed (fresh object).
             let mut rebinds = Vec::new();
             rebound_names(s, &mut rebinds);
@@ -3094,23 +3174,27 @@ fn reject_append_then_mutate(fn_name: &str, body: &[ast::Stmt]) -> Result<(), Fr
             for n in embeds {
                 embedded.insert(n);
             }
+            if let Some(cont) = embedded_container(s) {
+                embed_containers.insert(cont);
+            }
             // 4. Recurse into nested blocks in source order (conservative: an
             //    embed in `then` seen against a mutation in `else` over-refuses,
             //    which is safe).
             match s {
                 ast::Stmt::If(i) => {
-                    walk(&i.body, embedded, fn_name)?;
-                    walk(&i.orelse, embedded, fn_name)?;
+                    walk(&i.body, embedded, embed_containers, fn_name)?;
+                    walk(&i.orelse, embedded, embed_containers, fn_name)?;
                 }
-                ast::Stmt::While(w) => walk(&w.body, embedded, fn_name)?,
-                ast::Stmt::For(f) => walk(&f.body, embedded, fn_name)?,
+                ast::Stmt::While(w) => walk(&w.body, embedded, embed_containers, fn_name)?,
+                ast::Stmt::For(f) => walk(&f.body, embedded, embed_containers, fn_name)?,
                 _ => {}
             }
         }
         Ok(())
     }
     let mut embedded = std::collections::HashSet::new();
-    walk(body, &mut embedded, fn_name)
+    let mut embed_containers = std::collections::HashSet::new();
+    walk(body, &mut embedded, &mut embed_containers, fn_name)
 }
 
 fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
@@ -6002,6 +6086,44 @@ fn try_lower_side_effect_call(
     }
 }
 
+/// PMAT-1052: resolve the base of a subscript-append receiver `<base>[k].append(e)`
+/// to `(codegen_base_string, root_name_to_mark_mut, container_type)`. Accepts a
+/// plain Name (`xs[i]`, `d[k]`) OR a single struct-field access
+/// (`self.rows[i]`, `obj.grid[k]` — the grouping-in-a-class idiom). The codegen
+/// base is interpolated verbatim into `IndexAppend` (`self.grid.get_mut(&k)…`),
+/// so a dotted `obj.field` string emits valid Rust with no meta-HIR change.
+fn resolve_subscript_append_base(
+    ctx: &LoweringCtx,
+    base_expr: &ast::Expr,
+) -> Option<(String, String, Type)> {
+    match base_expr {
+        ast::Expr::Name(n) => {
+            let name = n.id.to_string();
+            let ty = ctx.name_types.get(&name)?.clone();
+            Some((name.clone(), name, ty))
+        }
+        ast::Expr::Attribute(a) => {
+            let obj = match a.value.as_ref() {
+                ast::Expr::Name(o) => o.id.to_string(),
+                _ => return None,
+            };
+            let field = a.attr.to_string();
+            let sname = match ctx.name_types.get(&obj) {
+                Some(Type::Struct(s)) => s.clone(),
+                _ => return None,
+            };
+            let fty = ctx
+                .structs
+                .get(&sname)?
+                .iter()
+                .find(|(f, _)| *f == field)
+                .map(|(_, t)| t.clone())?;
+            Some((format!("{obj}.{field}"), obj, fty))
+        }
+        _ => None,
+    }
+}
+
 fn try_lower_list_method_call(
     ctx: &mut LoweringCtx,
     e: &ast::StmtExpr,
@@ -6018,23 +6140,22 @@ fn try_lower_list_method_call(
     // form is handled below; here the receiver is `<name>[<index>]`.
     if attr.attr.as_str() == "append" {
         if let ast::Expr::Subscript(sub) = attr.value.as_ref() {
-            if let ast::Expr::Name(base) = sub.value.as_ref() {
+            // PMAT-1052: the base may be a plain name (`xs[i]`, `d[k]`) OR a
+            // struct field (`self.rows[i]`, `obj.grid[k]` — grouping in a class).
+            if let Some((cg_base, root, container_ty)) =
+                resolve_subscript_append_base(ctx, sub.value.as_ref())
+            {
                 // A slice receiver (`xs[a:b].append`) is not a place — skip.
                 if !matches!(sub.slice.as_ref(), ast::Expr::Slice(_)) {
-                    let base_name = base.id.to_string();
-                    let base_is_dict = match ctx.name_types.get(&base_name) {
-                        Some(Type::List(inner)) if matches!(inner.as_ref(), Type::List(_)) => {
-                            Some(false)
-                        }
-                        Some(Type::Dict(_, val)) if matches!(val.as_ref(), Type::List(_)) => {
-                            Some(true)
-                        }
+                    let base_is_dict = match &container_ty {
+                        Type::List(inner) if matches!(inner.as_ref(), Type::List(_)) => Some(false),
+                        Type::Dict(_, val) if matches!(val.as_ref(), Type::List(_)) => Some(true),
                         _ => None,
                     };
                     if let Some(base_is_dict) = base_is_dict {
                         if call.args.len() != 1 || !call.keywords.is_empty() {
                             return Some(Err(FrontendError::Lower(format!(
-                                "function `{}` calls `{base_name}[...].append(...)` with {} \
+                                "function `{}` calls `{cg_base}[...].append(...)` with {} \
  positional arg(s); append takes exactly 1",
                                 ctx.fn_name,
                                 call.args.len()
@@ -6052,12 +6173,12 @@ fn try_lower_list_method_call(
                         // element type — `d["a"].append(2)` over
                         // `dict[str, list[float]]`, `xs[i].append([2, 3])` over
                         // `list[list[list[float]]]` (rustc E0308 otherwise).
-                        let inner_elem: Option<Type> = match ctx.name_types.get(&base_name) {
-                            Some(Type::List(inner)) => match inner.as_ref() {
+                        let inner_elem: Option<Type> = match &container_ty {
+                            Type::List(inner) => match inner.as_ref() {
                                 Type::List(e) => Some((**e).clone()),
                                 _ => None,
                             },
-                            Some(Type::Dict(_, val)) => match val.as_ref() {
+                            Type::Dict(_, val) => match val.as_ref() {
                                 Type::List(e) => Some((**e).clone()),
                                 _ => None,
                             },
@@ -6067,9 +6188,9 @@ fn try_lower_list_method_call(
                             Some(t) => coerce_expr_to_type(ctx, elem, &t),
                             None => elem,
                         };
-                        ctx.mutable.insert(base_name.clone());
+                        ctx.mutable.insert(root);
                         return Some(Ok(Stmt::IndexAppend {
-                            base: base_name,
+                            base: cg_base,
                             index,
                             elem,
                             base_is_dict,

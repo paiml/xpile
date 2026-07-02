@@ -868,6 +868,14 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'sweep #12. Suite 732 green; MATCH 4.5/2.5; int-list append unregressed.'
+- id: PMAT-1052
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1052: [rust/capability] `self.<field>[k].append(e)` / `obj.<field>[k].append(e)` — the grouping-in-a-class idiom (found by a feature-INTERACTION probe, not a single-feature sweep). The field analogue of the already-supported `d[k].append(e)` (IndexAppend) was refused (fell to the subprocess recognizer / PMAT-1051 message) because the IndexAppend branch required a plain-Name subscript base. FIX (frontend-only, no meta-HIR change): resolve_subscript_append_base accepts a single struct-field base and emits IndexAppend with a dotted `obj.field` codegen base — both codegens interpolate base as a string, so `self.g.get_mut(&k).unwrap().push(e)` / `self.rows[i as usize].push(e)` is valid Rust. for_target_mutated_ast recognizes `self.field[k].mutator()` (drives &mut self for an append-only method); the mutability pre-walk marks `obj` mut for a local receiver; int→float inner-elem widening via coerce_expr_to_type. PAIRED GUARD (PMAT-1046 extension): enabling `container[i].append` re-exposed a SILENT alias divergence — `g.rows.append(row); g.rows[0].append(9)` clones row into g.rows then mutates the clone (Python shares → row sees [1,9], xpile [1]). The container-embed guard in reject_append_then_mutate now refuses a subscript-mutation of any container that received an append-of-a-local. Caught by the PMAT-1051 test flipping from refuse to DIVERGE — the suite doing its job.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Suite 738 green; MATCH grouping 32 + field-pushes 11.5; alias shape + grouping + list-of-list-field + local-receiver + append-only-method all covered; the deep 2-level chain (o.inner.items.append) stays PMAT-1051-refused.'
 - id: PMAT-1051
   github_issue: null
   item_type: bug
