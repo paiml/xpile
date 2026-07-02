@@ -19466,3 +19466,55 @@ fn main() {
 "#;
     assert_rustc_runs("loop_local_subscript_reuse", &rust, driver);
 }
+
+/// PMAT-1080: reassigning the loop var in a for-body (`for x in xs:
+/// x = x.strip()`) must bind `for mut x` (else rustc E0384); vars never
+/// reassigned stay non-mut (precision — clippy `unused_mut`). Rebinding
+/// does NOT mutate the iterated list (Python semantics == `.cloned()`).
+#[test]
+fn loop_var_reassign() {
+    let rust = xpile_transpile_to_rust("loop_var_reassign.py");
+    assert!(
+        rust.contains("for mut name in"),
+        "directly-reassigned loop var must bind mut:\n{rust}"
+    );
+    assert!(
+        rust.contains("for mut v in"),
+        "loop var reassigned inside if-branches must bind mut:\n{rust}"
+    );
+    assert!(
+        !rust.contains("for mut n in"),
+        "never-reassigned loop var must stay non-mut:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let names = vec!["  alice ".to_string(), "bob".to_string()];
+    assert_eq!(normalize(names.clone()), vec!["alice".to_string(), "bob".to_string()]);
+    assert_eq!(names[0], "  alice ", "rebinding the loop var must NOT mutate the list");
+    assert_eq!(clamp_all(vec![1, 5, 12], 3, 10), vec![3, 5, 10]);
+    assert_eq!(total(vec![1, 2, 3]), 6);
+}
+"#;
+    assert_rustc_runs("loop_var_reassign", &rust, driver);
+}
+
+/// PMAT-1080 (Ruchy lane): same `mut`-binding rule through the Ruchy backend.
+#[test]
+fn loop_var_reassign_ruchy() {
+    let py = fixture("loop_var_reassign.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("for mut name in"),
+        "ruchy: reassigned loop var must bind mut:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("for mut n in"),
+        "ruchy: never-reassigned loop var must stay non-mut:\n{stdout}"
+    );
+}

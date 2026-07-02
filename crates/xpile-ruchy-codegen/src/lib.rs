@@ -465,6 +465,24 @@ fn emit_block(out: &mut String, block: &Block, mode: bool) -> Result<(), RuchyCo
     Ok(())
 }
 
+/// PMAT-1080: does a loop body REASSIGN `name` (so the `for` binding needs
+/// `mut`)? `for x in xs: x = x.strip()` → `for mut x`. Recurses if/while/nested
+/// loops but stops at a nested loop that SHADOWS `name` (rebinds it). Precise
+/// (an over-broad `mut` would trip clippy `unused_mut`).
+fn foreach_var_reassigned(body: &[Stmt], name: &str) -> bool {
+    body.iter().any(|s| match s {
+        Stmt::Assign { name: n, .. } => n == name,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => foreach_var_reassigned(then_body, name) || foreach_var_reassigned(else_body, name),
+        Stmt::While { body, .. } => foreach_var_reassigned(body, name),
+        Stmt::ForEach { var, body, .. } => var != name && foreach_var_reassigned(body, name),
+        _ => false,
+    })
+}
+
 fn emit_stmt(out: &mut String, stmt: &Stmt, mode: bool) -> Result<(), RuchyCodegenError> {
     emit_stmt_indented(out, stmt, "    ", mode)
 }
@@ -686,6 +704,12 @@ fn emit_stmt_indented(
             elem_ty: _,
             mutate_elems,
         } => {
+            // PMAT-1080: `for x in xs: x = …` rebinds the loop var → `for mut x`.
+            let vmut = if foreach_var_reassigned(body, var) {
+                "mut "
+            } else {
+                ""
+            };
             // PMAT-816 (HUNT-V21 #3/4/8): in-place element mutation → bind `var`
             // by `&mut` via `iter_mut()` so the mutation reaches the original
             // collection (mirrors the Rust backend).
@@ -708,7 +732,7 @@ fn emit_stmt_indented(
             // (size-stable) is silent.
             if let Some(g) = dict_guard {
                 writeln!(out, "{indent}{{ let __dg_n0 = {g}.len();")?;
-                write!(out, "{indent}for {var} in ")?;
+                write!(out, "{indent}for {vmut}{var} in ")?;
                 emit_expr(out, iter, mode)?;
                 writeln!(out, ".{method}().cloned() {{")?;
                 let inner = format!("{indent}    ");
@@ -722,7 +746,7 @@ fn emit_stmt_indented(
                 writeln!(out, "{indent}}} }}")?;
                 return Ok(());
             }
-            write!(out, "{indent}for {var} in ")?;
+            write!(out, "{indent}for {vmut}{var} in ")?;
             emit_expr(out, iter, mode)?;
             writeln!(out, ".{method}().cloned() {{")?;
             let inner = format!("{indent}    ");
