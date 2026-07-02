@@ -63,11 +63,16 @@
 //!   1..4 bytes, char-indexed + negative-index-normalised since PMAT-1032);
 //!   and (3) string **content equality** `a == b` / `a != b` lowers to a
 //!   `$__wasm_str_eq` helper (length check + byte-compare loop → i32 bool) —
-//!   REAL content logic, never a base-pointer compare. Still **refused**
-//!   honestly (a hard `BackendError`): string ORDERING (`<` / `>`), slicing,
-//!   `str(x)`/`repr(x)`, f-strings, string methods, and `dict` / `set` /
-//!   `struct` (slice 3b). Char access is O(chars) per read (charlen is
-//!   O(bytes)) — correctness over speed, an honest documented tradeoff.
+//!   REAL content logic, never a base-pointer compare. Since PMAT-1058/1059
+//!   string **slicing** `s[lo:hi]` and **ordering** (`<`/`<=`/`>`/`>=`) are
+//!   supported, and since PMAT-1060 **`str(int)` / `repr(int)`**
+//!   (`Expr::ToStr { of_float: false }`) materialises an i64's decimal-ASCII
+//!   form via `$__wasm_int_to_str` (unsigned-magnitude, so `i64::MIN` is
+//!   exact). Still **refused** honestly (a hard `BackendError`):
+//!   `str(float)`/`repr(float)`, f-strings, string methods, and the composite
+//!   `dict` / `set` value/`in` shapes not yet wired. Char access is O(chars)
+//!   per read (charlen is O(bytes)) — correctness over speed, an honest
+//!   documented tradeoff.
 //! - The FIRST aggregate (PMAT-966 + PMAT-968): a `list[int]`/`list[float]`
 //!   **parameter** lowers to an `i32` base-pointer into WASM **linear
 //!   memory**. As of PMAT-968 the pointed-at region is a length-prefixed
@@ -1389,6 +1394,129 @@ const STR_SLICE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
+/// gate, calls `$__alloc`).
+///
+///   * `$__wasm_int_to_str(n) -> i32` — Python `str(n)` / `repr(n)` over an
+///     `int`: materialise a NEW heap string holding the DECIMAL ASCII form of
+///     the i64 `n`. Sign-aware, and it works in the UNSIGNED magnitude so
+///     `i64::MIN` (`-9223372036854775808`) converts without an overflow on the
+///     negation (`0 - MIN` wraps to the correct u64 bit pattern, then the digit
+///     extraction uses `i64.div_u` / `i64.rem_u`).
+///
+/// Two passes: (1) count the decimal digits of the magnitude (at least 1, so
+/// `0` → `"0"`); (2) `$__alloc(8 + digits + sign)`, store the i32 BYTE-count
+/// header, write a leading `-` when negative, then fill the digits from the
+/// least-significant end backward. Every digit is ASCII (1 byte), so the
+/// byte-count header equals the Python CHAR count — the result composes
+/// uniformly with `len` / `Concat` / equality / a str RETURN like any other
+/// heap string.
+const INT_TO_STR_HELPER: &str = "\
+  ;; PMAT-1060 __wasm_int_to_str(n) = a NEW heap string with the decimal ASCII
+  ;; form of the i64 n (Python str(int)). Unsigned-magnitude so i64::MIN is
+  ;; exact; all digits are 1-byte ASCII so the byte header == the char count.
+  (func $__wasm_int_to_str (param $n i64) (result i32)
+    (local $neg i32)
+    (local $mag i64)
+    (local $t i64)
+    (local $count i32)
+    (local $total i32)
+    (local $p i32)
+    (local $w i32)
+    ;; neg = n < 0
+    local.get $n
+    i64.const 0
+    i64.lt_s
+    local.set $neg
+    ;; mag = neg ? (0 - n) : n   [wrapping sub → correct u64 magnitude for MIN]
+    local.get $neg
+    if (result i64)
+      i64.const 0
+      local.get $n
+      i64.sub
+    else
+      local.get $n
+    end
+    local.set $mag
+    ;; count = number of decimal digits of mag (at least 1)
+    local.get $mag
+    local.set $t
+    i32.const 1
+    local.set $count
+    block $cnt_done
+      loop $cnt
+        local.get $t
+        i64.const 10
+        i64.div_u
+        local.set $t
+        local.get $t
+        i64.eqz
+        br_if $cnt_done
+        local.get $count
+        i32.const 1
+        i32.add
+        local.set $count
+        br $cnt
+      end
+    end
+    ;; total = count + neg
+    local.get $count
+    local.get $neg
+    i32.add
+    local.set $total
+    ;; p = __alloc(8 + total); store the byte-count header
+    i32.const 8
+    local.get $total
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $total
+    i32.store
+    ;; if negative, write '-' (45) at p+8
+    local.get $neg
+    if
+      local.get $p
+      i32.const 8
+      i32.add
+      i32.const 45
+      i32.store8
+    end
+    ;; fill digits backward from w = p + 8 + total - 1
+    local.get $p
+    i32.const 8
+    i32.add
+    local.get $total
+    i32.add
+    i32.const 1
+    i32.sub
+    local.set $w
+    loop $fill
+      local.get $w
+      i32.const 48
+      local.get $mag
+      i64.const 10
+      i64.rem_u
+      i32.wrap_i64
+      i32.add
+      i32.store8
+      local.get $mag
+      i64.const 10
+      i64.div_u
+      local.set $mag
+      local.get $w
+      i32.const 1
+      i32.sub
+      local.set $w
+      local.get $mag
+      i64.eqz
+      i32.eqz
+      br_if $fill
+    end
+    local.get $p
+  )
+";
+
 /// PMAT-993: name of the mutable global holding the bump pointer (the next
 /// free heap address). Initialised to [`HEAP_BASE`]; advanced 8-byte-aligned
 /// by `$__alloc`.
@@ -2340,6 +2468,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
             }
         }
     }
+    // PMAT-1060: emit the int→str helper once, when any function uses
+    // `str(int)`. Allocating (calls `$__alloc`), so it rides `needs_heap` —
+    // a `str(int)` sets the heap gate via `expr_has_heap_op`. Independent of
+    // `module_touches_str` (an int→decimal-string module need not otherwise
+    // touch a str name), so it is emitted on its own gate here.
+    if needs_heap && module_needs_int_to_str(module) {
+        out.push_str(INT_TO_STR_HELPER);
+    }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
     // (the str-key helpers call it).
@@ -2499,7 +2635,10 @@ fn expr_touches_str(e: &Expr) -> bool {
         | Expr::StrCharAt { .. }
         | Expr::StrChars { .. }
         | Expr::Ord { .. }
-        | Expr::StrMethod { .. } => true,
+        | Expr::StrMethod { .. }
+        // PMAT-1060: `str(int)` yields a heap string, so a `len`/`s[i]` over
+        // it needs the CHAR-semantics helpers gated by this predicate.
+        | Expr::ToStr { .. } => true,
         Expr::FieldAccess { obj, .. } => expr_touches_str(obj),
         Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
             expr_touches_str(lhs) || expr_touches_str(rhs)
@@ -2599,6 +2738,89 @@ fn expr_has_str_slice(e: &Expr) -> bool {
             expr_has_str_slice(string) || expr_has_str_slice(index)
         }
         Expr::FieldAccess { obj, .. } => expr_has_str_slice(obj),
+        _ => false,
+    }
+}
+
+/// PMAT-1060: `true` when any function in `module` uses `str(int)` /
+/// `repr(int)` (`Expr::ToStr { of_float: false }`) — the gate for emitting
+/// [`INT_TO_STR_HELPER`]. `str(float)` (`of_float: true`) is refused at
+/// lowering, not counted here, so the helper is emitted only for a module that
+/// actually materialises a decimal int string.
+fn module_needs_int_to_str(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_int_to_str(&f.body))
+}
+
+fn block_has_int_to_str(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_int_to_str) || expr_has_int_to_str(&block.trailing_return)
+}
+
+fn stmt_has_int_to_str(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
+            expr_has_int_to_str(value)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_int_to_str(cond)
+                || then_body.iter().any(stmt_has_int_to_str)
+                || else_body.iter().any(stmt_has_int_to_str)
+        }
+        Stmt::While { cond, body } => {
+            expr_has_int_to_str(cond) || body.iter().any(stmt_has_int_to_str)
+        }
+        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
+            expr_has_int_to_str(value)
+        }
+        Stmt::SideEffectCall { call } => expr_has_int_to_str(call),
+        _ => false,
+    }
+}
+
+fn expr_has_int_to_str(e: &Expr) -> bool {
+    match e {
+        // this node IS a supported int→str — no need to recurse further.
+        Expr::ToStr {
+            of_float: false, ..
+        } => true,
+        // a refused str(float) still gets scanned for a nested str(int).
+        Expr::ToStr { value, .. } => expr_has_int_to_str(value),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => expr_has_int_to_str(lhs) || expr_has_int_to_str(rhs),
+        Expr::UnOp { operand, .. } => expr_has_int_to_str(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_int_to_str(cond)
+                || expr_has_int_to_str(then_expr)
+                || expr_has_int_to_str(else_expr)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_int_to_str),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_int_to_str(obj) || args.iter().any(expr_has_int_to_str)
+        }
+        Expr::Len(c) => expr_has_int_to_str(c),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_int_to_str(value),
+        Expr::StrCharAt { string, index } => {
+            expr_has_int_to_str(string) || expr_has_int_to_str(index)
+        }
+        Expr::Index { collection, index } => {
+            expr_has_int_to_str(collection) || expr_has_int_to_str(index)
+        }
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_has_int_to_str(collection)
+                || lo.as_deref().is_some_and(expr_has_int_to_str)
+                || hi.as_deref().is_some_and(expr_has_int_to_str)
+        }
+        Expr::FieldAccess { obj, .. } => expr_has_int_to_str(obj),
         _ => false,
     }
 }
@@ -2827,6 +3049,10 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
 fn expr_is_str_valued(e: &Expr, scan: &StrEqScan<'_>) -> bool {
     match e {
         Expr::LitStr(_) | Expr::Concat { .. } | Expr::Chr { .. } | Expr::StrCharAt { .. } => true,
+        // PMAT-1060: `str(int)` materialises a decimal-int heap string.
+        Expr::ToStr {
+            of_float: false, ..
+        } => true,
         Expr::Ident(name) => scan.names.contains(&name.as_str()),
         Expr::Call { callee, .. } => scan.rets.keys.iter().any(|k| k == callee),
         Expr::MethodCall { method, .. } => scan.rets.methods.iter().any(|(_, m)| m == method),
@@ -2883,6 +3109,11 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // PMAT-1058: a string slice `s[lo:hi]` materialises a fresh heap
         // substring (calls `$__alloc`), so it pulls in the bump heap.
         Expr::Slice { of_str: true, .. } => true,
+        // PMAT-1060: `str(int)` bump-allocates its decimal-ASCII string, so it
+        // pulls in the allocator + `(memory)` like any materialising op.
+        Expr::ToStr {
+            of_float: false, ..
+        } => true,
         Expr::FieldAccess { obj, .. } => expr_has_heap_op(obj),
         Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
             expr_has_heap_op(lhs) || expr_has_heap_op(rhs)
@@ -4034,6 +4265,14 @@ fn emit_expr(
             emit_str_slice(collection, lo, hi, *of_str, *step, scope, out, depth)?;
             Ok(WatTy::I32)
         }
+        // PMAT-1060: `str(n)` / `repr(n)` over an `int` — materialise a NEW
+        // decimal-ASCII heap string. The result is an i32 (the str pointer).
+        // `str(float)` (`of_float: true`) and any non-int operand are refused
+        // inside `emit_int_to_str` (an honest type mismatch at the typed site).
+        Expr::ToStr { value, of_float } => {
+            emit_int_to_str(value, *of_float, scope, out, depth)?;
+            Ok(WatTy::I32)
+        }
         // PMAT-995 (slice 3b): `d[k]` — keyed dict read; returns the i64 value
         // or TRAPS on an absent key (the Python KeyError analogue).
         Expr::DictGet { dict, key } => emit_dict_get(dict, key, scope, out, depth),
@@ -4446,6 +4685,37 @@ fn emit_ord(
     Ok(WatTy::I64)
 }
 
+/// PMAT-1060: lower `str(n)` / `repr(n)` over an `int` — evaluate the operand
+/// (which must lower to an `i64`), then call `$__wasm_int_to_str`, which
+/// materialises the decimal-ASCII string in the bump heap and leaves its i32
+/// base-pointer.
+///
+/// `str(float)` (`of_float: true`) is refused up front — a float→decimal repr
+/// is a separate, much larger job (Python's shortest-round-trip `repr`), not a
+/// silent `str(int)` reuse. `str(bool)` lowers to an i32 (not an i64) and
+/// `str(str)` to a pointer, so the `emit_expr_typed(_, I64)` type check rejects
+/// them with an honest mismatch rather than a wrong conversion.
+fn emit_int_to_str(
+    value: &Expr,
+    of_float: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if of_float {
+        return Err(unsupported(
+            "str(float) / repr(float) on the WASM lane — a float→decimal repr \
+             (shortest round-trip) is refused; only str(int) is supported",
+        ));
+    }
+    // The operand must be an int (i64). A bool (i32) / float (f64) / str (i32
+    // pointer) operand is a type mismatch here — refused, never mis-converted.
+    emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_int_to_str").expect("write");
+    Ok(())
+}
+
 /// PMAT-1058: lower a string slice `s[lo:hi]` — a char-exact heap substring.
 ///
 /// Pushes the base string's i32 base-pointer (`emit_str_expr` — a param/local/
@@ -4581,6 +4851,14 @@ fn emit_str_expr(
             step,
         } => {
             emit_str_slice(collection, lo, hi, *of_str, *step, scope, out, depth)?;
+            Ok(())
+        }
+        // PMAT-1060: `str(n)` in a string position — materialise the decimal
+        // int string (like `Chr`/`Slice`, a fresh heap string). Re-materialised
+        // per call (a concat operand evaluates it once per length/copy pass, the
+        // same accepted heap-waste pattern the other materialising operands use).
+        Expr::ToStr { value, of_float } => {
+            emit_int_to_str(value, *of_float, scope, out, depth)?;
             Ok(())
         }
         // PMAT-1028: a CALL of a PROVEN str-returning callable (free fn,
@@ -5628,6 +5906,11 @@ fn binop_operand_is_string(e: &Expr, scope: &Scope) -> bool {
     match e {
         Expr::Ident(name) => scope.is_str_name(name),
         Expr::LitStr(_) | Expr::Concat { .. } | Expr::Chr { .. } | Expr::StrCharAt { .. } => true,
+        // PMAT-1060: `str(int)` is an i32 heap-string pointer, not an arithmetic
+        // value — a `==`/`!=` over it routes to the content-compare helper.
+        Expr::ToStr {
+            of_float: false, ..
+        } => true,
         Expr::Call { callee, .. } => scope.call_returns_str(callee),
         Expr::MethodCall { obj, method, .. } => matches!(obj.as_ref(), Expr::Ident(o)
             if scope.struct_of(o).is_some_and(|s| scope.method_returns_str(&s, method))),

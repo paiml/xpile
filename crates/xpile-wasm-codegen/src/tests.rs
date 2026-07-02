@@ -337,6 +337,124 @@ fn str_return_of_non_str_local_is_refused() {
     );
 }
 
+// ─── PMAT-1060: str(int) — i64 → decimal-ASCII heap string ───────────
+
+/// `def to_s(n: int) -> str: return str(n)` — the supported int→str shape.
+fn to_s_fn() -> Function {
+    Function {
+        name: "to_s".into(),
+        params: vec![param("n", Type::I64)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ToStr {
+                value: Box::new(Expr::Ident("n".into())),
+                of_float: false,
+            },
+        },
+    }
+}
+
+#[test]
+fn str_int_emits_helper_call_and_heap() {
+    let wat = emit_module(&module_with(vec![Item::Function(to_s_fn())]))
+        .expect("str(int) program lowers");
+    // The self-contained int→str helper + its call site + the bump allocator
+    // (str(int) materialises a fresh heap string).
+    assert!(
+        wat.contains("(func $__wasm_int_to_str (param $n i64) (result i32)"),
+        "int→str helper emitted:\n{wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_int_to_str"),
+        "$to_s calls the helper:\n{wat}"
+    );
+    assert!(wat.contains("(func $__alloc"), "bump heap present:\n{wat}");
+    assert!(
+        wat.contains("(func $to_s (param $n i64) (result i32)"),
+        "str return → i32 heap pointer:\n{wat}"
+    );
+}
+
+#[test]
+fn str_int_binds_a_str_local_and_returns_it() {
+    // `def f(n: int) -> str: s = str(n); return s` — str(int) feeding a str
+    // local, then returned. Exercises the str-Let path (emit_str_expr over
+    // ToStr) plus the str-name registration.
+    let f = Function {
+        name: "f".into(),
+        params: vec![param("n", Type::I64)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "s".into(),
+                ty: Type::Str,
+                value: Expr::ToStr {
+                    value: Box::new(Expr::Ident("n".into())),
+                    of_float: false,
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Ident("s".into()),
+        },
+    };
+    let wat =
+        emit_module(&module_with(vec![Item::Function(f)])).expect("s = str(n); return s lowers");
+    assert!(
+        wat.contains("call $__wasm_int_to_str"),
+        "helper call:\n{wat}"
+    );
+    assert!(wat.contains("local.set $s"), "str local bound:\n{wat}");
+}
+
+#[test]
+fn str_float_is_refused() {
+    // `str(x)` over a FLOAT is refused — a float→decimal repr (shortest
+    // round-trip) is a separate, larger job, never a silent str(int) reuse.
+    let f = Function {
+        name: "g".into(),
+        params: vec![param("x", Type::F64)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ToStr {
+                value: Box::new(Expr::Ident("x".into())),
+                of_float: true,
+            },
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    assert!(
+        err.to_string().contains("str(float)"),
+        "str(float) is refused honestly: {err}"
+    );
+}
+
+#[test]
+fn str_of_bool_operand_is_refused_as_type_mismatch() {
+    // `str(b)` where `b` is a bool (i32) — a bool lowers to i32, not the i64
+    // the int→str helper needs, so the operand type check refuses it rather
+    // than converting a 0/1 as if it were an int (Python str(bool) is
+    // "True"/"False", a distinct desugar this lane does not implement).
+    let f = Function {
+        name: "h".into(),
+        params: vec![param("b", Type::Bool)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ToStr {
+                value: Box::new(Expr::Ident("b".into())),
+                of_float: false,
+            },
+        },
+    };
+    let err = emit_module(&module_with(vec![Item::Function(f)])).unwrap_err();
+    assert!(
+        err.to_string().contains("type mismatch"),
+        "str(bool) is refused as a type mismatch: {err}"
+    );
+}
+
 // ─── PMAT-986: str param + len(s) + ord(s[i]) ───────────────────────
 
 /// `def code_sum(s: str) -> int:
