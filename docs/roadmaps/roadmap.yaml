@@ -642,6 +642,34 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Sweep cadence honored (5 slices since sweep #9; the fresh PMAT-1023/1024 surface was the target — same day-old-surface pattern that made sweep #8 productive). The core result is a CONFIDENCE upgrade: the reference-semantics execution model itself held on every adversarial shape tried; every gap found was an over-refusal, not a lie. Field discovery was the right first response — it unblocks the idiom EVERY future OOP fixture/user program will write and retro-unlocks the whole PMAT-1016..1024 surface for real-world Python. Follow-ups filed: PMAT-1026 (free-fn struct-return i32 typing on the WASM lane), PMAT-1027 (typed mutation-shape classification + the wrong subprocess diagnostic).'
+- id: PMAT-1028
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1028: [wasm/capability] str LOCALS + reassignment on the WASM lane — the string-ACCUMULATOR idiom. Before this slice the WASM string subset carried str PARAMS, string LITERALS, and heap-constructed Concat/Chr/s[i] results but NO str locals: `out: str = ""` refused at map_type, killing the most common real-Python string shape (`out = out + chr(...)` in a loop), the alias/content-eq pair, and the factory composition `s: str = build(5)`. Fix: (1) str-annotated Lets register in the scope str-name set (same length-prefixed i32 base-pointer ABI as params — every read path len/ord/concat/eq/s[i] shared); (2) str-name Let/Assign values route through emit_str_expr, NOT the generic i32-typed path (a bool is i32 too — the typed path could silently bind 0/1 as a "pointer"); (3) a new StrReturners registry admits calls of PROVEN str-returning callables (free/assoc fns + methods) into string positions — the gate is the registry, never the ambiguous i32 result; (4) the $__wasm_str_eq pre-scan + binop_operand_is_string see str-returning calls (an under-detection there is a missing helper = hard wat2wasm failure). Reassignment is CPython-exact by construction: strings are immutable, so rebinding to the fresh Concat pointer IS the Python rebind — no alias disposition needed (unlike lists/structs).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - 'EXECUTED vs CPython on the wasm lane: the accumulator loop (569), alias/content equality over a fresh heap copy (1 — a pointer compare would give 0), factory composition (104), str-returning method (66), direct call-operand equality with no str name in scope (1). Refusals pinned: non-str-returning call in a string position, non-str name in a string position. e2e str_accum_locals.py executes on BOTH lanes (1077). No regression across the 17 wasm-codegen suites + 709 e2e.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The next PMAT-986-epic increment after the PMAT-1023..1026 OOP surface: str locals were the last missing leg of the scalar string runtime (params/literals/heap results existed since PMAT-993/994). emit_function''s registries bundled into a Registries struct (the 7-arg signature was at the clippy threshold; PMAT-1028 adds StrReturners). Unannotated locals work too — the frontend infers Type::Str for `prefix = "hi "`. Follow-up filed: PMAT-1029 (rust-lane str-alias MOVE invalid emit, found while building the both-lanes fixture).'
+- id: PMAT-1029
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1029: [rust/correctness] str-local ALIAS emits non-compiling Rust (E0382) — invalid-emit class. `b: str = s` lowers to `let b: String = s;` which MOVES `s`; a later use of `s` (e.g. `c: str = s + ""` or `ord(s[4])`) fails rustc "borrow of moved value". Valid Python (strings are immutable — aliasing is always safe), so this is the campaign''s worst category: an invalid emit, not a refusal. Found while building the PMAT-1028 both-lanes fixture (the WASM lane executes the same program correctly — pointer copy IS reference semantics for immutable strings). Candidate fixes: clone-on-alias for String locals (strings are clone-safe by immutability — the PMAT-1008/1020 alias-class machinery already classifies clone dispositions for containers; a String alias is the TRIVIALLY clone-safe case), or borrow where flow allows. Repro: def run(): s = build(5); b = s; c = s + ""; return len(c).'
+  status: pending
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - 'The alias/content-eq shape (b = s; c = s + ""; b == c) transpiles on the rust lane, rustc-compiles, and runs == CPython; the WASM-lane witness for the same program keeps passing; no regression on the existing str e2e corpus.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-1028 (2026-07-02). The str_accum_locals.py e2e fixture deliberately EXCLUDES the alias pair so both lanes execute; the alias pair is proven wasm-side in str_local_witness. When this lands, extend the fixture back to the full 1177 shape.'
 - id: PMAT-1026
   github_issue: null
   item_type: task

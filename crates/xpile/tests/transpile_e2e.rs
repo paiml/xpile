@@ -17968,3 +17968,81 @@ fn transpile_struct_pick_alias_py_wasm_executes_rust_refuses() {
          one object; a clone would give 10):\n{interp_out}"
     );
 }
+
+/// PMAT-1028: str LOCALS + reassignment on the WASM lane — the string
+/// ACCUMULATOR idiom (`out = out + chr(…)` in a loop), str-literal locals,
+/// concat of locals, CONTENT equality over a fresh heap copy (`c = s + ""`;
+/// a pointer compare would miss), and the factory composition (`s: str =
+/// build(5)` — a str local bound to a str-returning call, gated on the
+/// PMAT-1028 StrReturners registry, never the ambiguous i32 result).
+/// Previously every one of these refused "type Str (the WASM emit subset is
+/// i64/i32/f64/f32/bool only)". Executes on BOTH lanes == CPython 1077
+/// (1000 content-eq on the concat + len("id-ABCDE")=8 + ord('E')=69).
+/// The alias/content-eq pair (`b = s; c = s + ""; b == c`) is proven in the
+/// str_local_witness suite on the WASM lane only — the RUST lane currently
+/// emits non-compiling code for it (`let b: String = s;` MOVES `s`, E0382
+/// at the later `s + ""` — an invalid-emit gap filed as a follow-up).
+#[test]
+fn transpile_str_accum_locals_py_both_lanes_execute() {
+    let py = fixture("str_accum_locals.py");
+
+    // Rust lane: transpiles, compiles, runs == CPython (already worked
+    // before this slice — pinned so the WASM fix stays lane-neutral).
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    let rust_src = String::from_utf8_lossy(&rust_out.stdout);
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_out.status.success(),
+        "xpile --target rust failed on the str accumulator: stderr={rust_err}"
+    );
+    assert_rustc_runs(
+        "str_accum_locals",
+        &rust_src,
+        "fn main() {\n    assert_eq!(run(), 1077, \"CPython ground truth\");\n}",
+    );
+
+    // WASM lane: emits (the previously-refusing half), assembles, executes.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the str accumulator: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("(local $out i32)") && stdout.contains("call $__wasm_str_eq"),
+        "str locals are i32 pointer slots and equality is a content compare:\n{stdout}"
+    );
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1028: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-straccum-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("straccum.wat");
+    let wasm_path = dir.join("straccum.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:1077"),
+        "executed run() must == CPython 1077 (1000 content-eq + len 8 + \
+         ord('E') 69):\n{interp_out}"
+    );
+}
