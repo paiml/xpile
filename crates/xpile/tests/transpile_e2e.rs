@@ -18687,3 +18687,25 @@ fn main() {
 "#;
     assert_rustc_runs("empty_literal_stores", &rust, driver);
 }
+
+/// PMAT-1042: assignment-only if/elif/else arms over PRE-BOUND names no
+/// longer require branch parity — the general Stmt::If reassigns
+/// scope-safely; parity still guards fresh bindings (as-let path).
+/// Differentially verified vs CPython (MATCH 10/20/21/20).
+#[test]
+fn branch_parity_prebound() {
+    let rust = xpile_transpile_to_rust("branch_parity_prebound.py");
+    let driver = r#"
+fn main() {
+    // then-arm sets x=1, y stays 0 ⇒ 10.
+    assert_eq!(one_side_each(), 10, "different name per arm, both pre-bound");
+    // n=5 hits the elif: b=2 ⇒ 20.
+    assert_eq!(elif_chain(), 20, "three-way chain, one name per arm");
+    // n=7: lo=7, hi=14 ⇒ 21.
+    assert_eq!(uneven_arms(), 21, "uneven arm sizes");
+    // parity-holding fresh binding keeps the as-let path ⇒ 20.
+    assert_eq!(parity_fresh_still_as_let(), 20, "as-let unchanged");
+}
+"#;
+    assert_rustc_runs("branch_parity_prebound", &rust, driver);
+}

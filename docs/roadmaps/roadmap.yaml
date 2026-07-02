@@ -860,6 +860,14 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).' SHIPPED 2026-07-02: fresh top-level loop-body bindings read after the loop pre-declare `let mut <name>: T = <default>` (RHS probe-typed, for/while both; range targets trivially int; list defaults vec![]); definitely-scalar list-literal embeds no longer edge the alias analysis (the false `aliases i and row` refusal); pre-bound-target + element-mutation refuses precisely (the leak clone silently absorbed the mutation — pre-existing silent bug, now loud). Residual: bindings nested in inner if/loops and dict/set-valued loop locals keep E0425.
+- id: PMAT-1042
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1042: [rust/capability] branch-parity over-refusal on PRE-BOUND names (sweep-#10 residual filed under PMAT-1039) — assignment-only if/elif/else arms assigning DIFFERENT names refused ("every branch must assign the same names") even when every assigned name was already bound: `x = 0; y = 0; if flag: x = 1 else: y = 2` reassigns scope-safely, so the general Stmt::If lowers it exactly. FIX: the lower_if_stmt dispatch diverts ONLY the would-refuse case (branch_name_sets_differ + all names in ctx.bound) to the general path; parity-holding chains keep the as-let emission byte-identical, and any chain touching a FRESH name keeps the precise parity refusal (the as-let rule exists because each fresh name needs a value from every arm).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Shipped same-day with differential verification (MATCH 10/20/21/20 + probes: elif chains, uneven arm sizes, fresh-in-arm keeps refusal, parity-fresh keeps as-let). PMAT-1039 residuals remaining: math.fabs, per-param launder precision.'
 - id: PMAT-1041
   github_issue: null
   item_type: task

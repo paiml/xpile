@@ -7,6 +7,19 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Branch parity no longer required for pre-bound names (PMAT-1042)
+
+- `x = 0; y = 0; if flag: x = 1 else: y = 2` refused ("every branch must
+  assign the same names") though every assigned name was pre-bound —
+  reassignment through `Stmt::If` arms is scope-safe; the as-let parity
+  rule exists for FRESH bindings (each name needs a value from every arm).
+  The dispatch now diverts exactly the would-refuse case (name sets differ
+  AND all names pre-bound) to the general path: parity-holding chains keep
+  the as-let emission byte-identical, fresh-name chains keep the precise
+  refusal. Covers elif chains and uneven arm sizes.
+- 1 e2e test (726 total); differentially verified vs CPython
+  (MATCH 10/20/21/20).
+
 ### Empty-literal subscript stores — the grouping idiom lands (PMAT-1041)
 
 - `d[k] = []` (the if-not-in-then-init grouping idiom), `d[k] = {}`,

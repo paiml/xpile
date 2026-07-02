@@ -8253,6 +8253,58 @@ fn is_simple_name_assign(s: &ast::Stmt) -> bool {
 /// statement in every branch is `name = expr`, with a final `else`.
 /// Otherwise (side-effecting branches — subscript assigns, `.append`,
 /// dict mutation, …) the if/else lowers to a general [`Stmt::If`].
+/// PMAT-1042: every single-name assignment target across the whole
+/// `if`/`elif*`/`else` chain, leniently (callers have already verified the
+/// as-let SHAPE, so every statement is a simple `name = expr`).
+fn branch_assigned_names(if_stmt: &ast::StmtIf, out: &mut Vec<String>) {
+    fn arm(body: &[ast::Stmt], out: &mut Vec<String>) {
+        for s in body {
+            if let ast::Stmt::Assign(a) = s {
+                if let [ast::Expr::Name(n)] = a.targets.as_slice() {
+                    out.push(n.id.to_string());
+                }
+            }
+        }
+    }
+    arm(&if_stmt.body, out);
+    match if_stmt.orelse.as_slice() {
+        [ast::Stmt::If(nested)] => branch_assigned_names(nested, out),
+        rest => arm(rest, out),
+    }
+}
+
+/// PMAT-1042: does any arm of the chain assign a DIFFERENT name set than the
+/// then-arm? (The lenient twin of `validate_branch_name_sets` — a predicate,
+/// not an error.) Only meaningful once the as-let shape matched.
+fn branch_name_sets_differ(if_stmt: &ast::StmtIf) -> bool {
+    fn arm_set(body: &[ast::Stmt]) -> Vec<String> {
+        let mut v: Vec<String> = body
+            .iter()
+            .filter_map(|s| match s {
+                ast::Stmt::Assign(a) => match a.targets.as_slice() {
+                    [ast::Expr::Name(n)] => Some(n.id.to_string()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        v.sort_unstable();
+        v
+    }
+    let expected = arm_set(&if_stmt.body);
+    let mut current: &[ast::Stmt] = &if_stmt.orelse;
+    loop {
+        if let [ast::Stmt::If(nested)] = current {
+            if arm_set(&nested.body) != expected {
+                return true;
+            }
+            current = &nested.orelse;
+            continue;
+        }
+        return arm_set(current) != expected;
+    }
+}
+
 fn is_if_as_let_shape(if_stmt: &ast::StmtIf) -> bool {
     if if_stmt.body.is_empty() || !if_stmt.body.iter().all(is_simple_name_assign) {
         return false;
@@ -8730,7 +8782,22 @@ fn lower_if_stmt(
         return Ok(out);
     }
     if is_if_as_let_shape(&if_stmt) {
-        return lower_if_stmt_as_lets(ctx, if_stmt);
+        // PMAT-1042 (sweep-#10 branch-parity residual): `x = 0; y = 0;
+        // if flag: x = 1 else: y = 2` — assignment-only arms over names that
+        // are ALL pre-bound reassign scope-safely, so the general `Stmt::If`
+        // lowers them exactly; the as-let parity rule exists for FRESH
+        // bindings (each name needs a value from every arm). Divert ONLY the
+        // would-refuse case (parity fails + all pre-bound): parity-holding
+        // chains keep the as-let emission byte-identical, and a chain
+        // touching any fresh name keeps the precise parity refusal.
+        let divert = branch_name_sets_differ(&if_stmt) && {
+            let mut names = Vec::new();
+            branch_assigned_names(&if_stmt, &mut names);
+            !names.is_empty() && names.iter().all(|n| ctx.bound.contains(n))
+        };
+        if !divert {
+            return lower_if_stmt_as_lets(ctx, if_stmt);
+        }
     }
     let cond = truthy_condition(ctx, lower_test_in_ctx(ctx, (*if_stmt.test).clone())?);
     if !matches!(infer_type_in_ctx(ctx, &cond), Type::Bool) {
