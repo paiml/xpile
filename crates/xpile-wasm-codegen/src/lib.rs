@@ -26,18 +26,19 @@
 //!   lowers to an `i32` base-pointer into WASM **linear memory**, mirroring
 //!   the `list[scalar]` ABI exactly — an `i32` UTF-8 **byte count** at
 //!   `base+0`, then the raw UTF-8 bytes from `base+8` (the same 8-byte
-//!   header offset the list layout uses). This length header unlocks two
-//!   read-only string operations: (1) **`len(s)`** over a str param lowers
-//!   to the SAME header `i32.load` + `i64`-extend the list `len(xs)` uses —
-//!   ASCII-restricted (for ASCII the byte count equals the Python `len`
-//!   char count; the emitter cannot cheaply distinguish a multi-byte UTF-8
-//!   string, so a non-ASCII string would report a byte count that is NOT
-//!   the Python char count — the honest posture is that callers pass ASCII,
-//!   documented on the lowering); and (2) **`ord(s[i])`** (`Expr::Ord` over
-//!   an `Expr::StrCharAt` of a str param) lowers to a bounds-checked
-//!   `i32.load8_u` of the `i`-th byte — the per-byte code point, the same
-//!   bounds-guard shape (`i < 0 || i >= byte_count → unreachable`) the list
-//!   index path uses, then zero-extended to the `i64` Python-int domain.
+//!   header offset the list layout uses). As of **PMAT-1032** every
+//!   Python-VISIBLE string read is **CHAR-oriented (code points)** over that
+//!   byte-oriented ABI — sweep #11 (PMAT-1031 finding 2) confirmed the old
+//!   byte-oriented reads SILENTLY diverged on non-ASCII input: (1)
+//!   **`len(s)`** lowers to `$__wasm_str_charlen` (a non-continuation-byte
+//!   count — `len("héllo")` is 5, matching CPython, where the header holds
+//!   6 bytes); and (2) **`ord(s[i])`** (`Expr::Ord` over an `Expr::StrCharAt`
+//!   of a str name) lowers to `$__wasm_str_ord_at` — a CHAR-indexed walk +
+//!   1..4-byte UTF-8 decode, with Python NEGATIVE-index normalisation
+//!   (`s[-1]` reads from the end) and the bounds trap (`unreachable`, the
+//!   `IndexError` analogue) inside the helper. `ord(ch)` over a 1-char str
+//!   name guards `charlen != 1 → unreachable` (the `TypeError` analogue) —
+//!   the CHAR count, so `ord("é")` decodes to 233 exactly.
 //!   As of **PMAT-993 (slice 2)** string-RETURNING ops are unblocked by a
 //!   linear-memory **bump allocator** (`(global $__heap_ptr (mut i32))` past
 //!   the static `(data)` region plus `$__alloc(n)`, 8-byte-aligned, bump-only
@@ -45,23 +46,28 @@
 //!   **string concatenation `a + b`** (`Expr::Concat`) does `alloc(8 + Σ
 //!   len(opᵢ))`, writes the count header, `memory.copy`s each operand's bytes,
 //!   and returns the new base-pointer (left-nested `(a+b)+c` flattens to ONE
-//!   alloc with N copies); and **`chr(n)`** (`Expr::Chr`) does `alloc(9)`, a
-//!   count-1 header, then an `i32.store8` of `n & 0xFF` (ASCII-bounded, the
-//!   `ord` mirror). A function RETURNING a `str` now works (the result is the
-//!   new string's `i32` heap pointer). As of **PMAT-994 (slice 3a)** string
-//!   support is substantially complete: (1) string **LITERALS** (`Expr::LitStr`,
+//!   alloc with N copies) — concat/copy/equality stay BYTE ops (byte equality
+//!   IS char equality for UTF-8); and **`chr(n)`** (`Expr::Chr`) lowers to
+//!   `$__wasm_chr` — the full 1..4-byte UTF-8 encoding of code point `n`,
+//!   trapping outside `0..=0x10FFFF` (the `ValueError` analogue; the
+//!   pre-PMAT-1032 lowering masked `n & 0xFF`, silently wrong for n > 127).
+//!   A function RETURNING a `str` works (the result is the new string's
+//!   `i32` heap pointer). As of **PMAT-994 (slice 3a)** string support is
+//!   substantially complete: (1) string **LITERALS** (`Expr::LitStr`,
 //!   e.g. `"Hello, "`) are materialised at emit time into static `(data …)`
 //!   segments in `[LITERAL_BASE, HEAP_BASE)` (length-prefixed, the same ABI),
 //!   and a `LitStr` lowers to a constant `i32.const <base>` — so `"Hi " +
 //!   name`, `return "done"`, and literal args all work; (2) **`s[i]` as a
 //!   1-char string** (`Expr::StrCharAt` outside `ord`) materialises a new
-//!   1-char heap string (the `chr` mirror, copying byte `i` of the
-//!   string-valued base, bounds-checked); and (3) string **content equality**
-//!   `a == b` / `a != b` lowers to a `$__wasm_str_eq` helper (length check +
-//!   byte-compare loop → i32 bool) — REAL content logic, never a base-pointer
-//!   compare. Still **refused** honestly (a hard `BackendError`): string
-//!   ORDERING (`<` / `>`), slicing, `str(x)`/`repr(x)`, f-strings, string
-//!   methods, and `dict` / `set` / `struct` (slice 3b).
+//!   1-char heap string via `$__wasm_str_char_at` (the full encoded char,
+//!   1..4 bytes, char-indexed + negative-index-normalised since PMAT-1032);
+//!   and (3) string **content equality** `a == b` / `a != b` lowers to a
+//!   `$__wasm_str_eq` helper (length check + byte-compare loop → i32 bool) —
+//!   REAL content logic, never a base-pointer compare. Still **refused**
+//!   honestly (a hard `BackendError`): string ORDERING (`<` / `>`), slicing,
+//!   `str(x)`/`repr(x)`, f-strings, string methods, and `dict` / `set` /
+//!   `struct` (slice 3b). Char access is O(chars) per read (charlen is
+//!   O(bytes)) — correctness over speed, an honest documented tradeoff.
 //! - The FIRST aggregate (PMAT-966 + PMAT-968): a `list[int]`/`list[float]`
 //!   **parameter** lowers to an `i32` base-pointer into WASM **linear
 //!   memory**. As of PMAT-968 the pointed-at region is a length-prefixed
@@ -637,6 +643,468 @@ const STR_EQ_HELPER: &str = "\
       )
     )
     i32.const 1
+  )
+";
+
+/// PMAT-1032: the CHAR-semantics helper family (non-allocating half).
+///
+/// CPython strings are sequences of Unicode CODE POINTS; the WASM str ABI is
+/// length-prefixed UTF-8 BYTES (i32 byte count @ base+0, bytes @ base+8).
+/// Sweep #11 (PMAT-1031 finding 2) confirmed the byte-oriented reads SILENTLY
+/// diverge on non-ASCII input: `len("héllo")` returned 6 (bytes) not 5
+/// (chars), `for ch in "abé"` iterated 4 times not 3, `ord("é")` trapped, and
+/// `s[-1]` trapped where Python indexes from the end. These helpers make every
+/// Python-VISIBLE string read char-oriented while the ABI header stays a byte
+/// count (concat/eq/copy remain byte operations — byte equality IS char
+/// equality for UTF-8).
+///
+///   * `$__wasm_str_charlen(s) -> i32` — the code-point count: one pass over
+///     the payload counting non-continuation bytes (`(b & 0xC0) != 0x80`).
+///     Python `len(s)`. O(bytes) per call — correctness over speed, documented.
+///   * `$__wasm_str_char_width(b) -> i32` — the encoded width from a LEAD
+///     byte: `<0x80 → 1`, `<0xE0 → 2`, `<0xF0 → 3`, else `4`.
+///   * `$__wasm_str_char_addr(s, i) -> i32` — the absolute address of the
+///     lead byte of char `i`, with Python NEGATIVE-index normalisation
+///     (`i < 0 → i += charlen`) and the bounds trap (`unreachable`, the
+///     `IndexError` analogue). O(i) walk from the payload start.
+///   * `$__wasm_str_ord_at(s, i) -> i64` — the code point of char `i`
+///     (Python `ord(s[i])`): `char_addr` + a 1..4-byte UTF-8 decode.
+///
+/// Emitted whenever the module touches strings ([`module_touches_str`]); none
+/// of these allocate, so they are valid without the bump heap. The allocating
+/// half ([`STR_CHAR_ALLOC_HELPERS`]) is additionally gated on the heap.
+const STR_CHAR_HELPERS: &str = "\
+  ;; PMAT-1032 char-semantics helpers: Python-visible string reads are
+  ;; CHAR-oriented (code points) over the byte-oriented UTF-8 ABI.
+  ;; __wasm_str_charlen(s) = code-point count (Python len(s)).
+  (func $__wasm_str_charlen (param $s i32) (result i32)
+    (local $p i32)
+    (local $end i32)
+    (local $c i32)
+    local.get $s
+    i32.const 8
+    i32.add
+    local.set $p
+    local.get $p
+    local.get $s
+    i32.load
+    i32.add
+    local.set $end
+    i32.const 0
+    local.set $c
+    (block $done
+      (loop $next
+        local.get $p
+        local.get $end
+        i32.ge_u
+        br_if $done
+        ;; count the byte unless it is a continuation byte (b & 0xC0) == 0x80
+        local.get $p
+        i32.load8_u
+        i32.const 192
+        i32.and
+        i32.const 128
+        i32.ne
+        if
+          local.get $c
+          i32.const 1
+          i32.add
+          local.set $c
+        end
+        local.get $p
+        i32.const 1
+        i32.add
+        local.set $p
+        br $next
+      )
+    )
+    local.get $c
+  )
+  ;; __wasm_str_char_width(b) = UTF-8 width from the LEAD byte b.
+  (func $__wasm_str_char_width (param $b i32) (result i32)
+    local.get $b
+    i32.const 128
+    i32.lt_u
+    if
+      i32.const 1
+      return
+    end
+    local.get $b
+    i32.const 224
+    i32.lt_u
+    if
+      i32.const 2
+      return
+    end
+    local.get $b
+    i32.const 240
+    i32.lt_u
+    if
+      i32.const 3
+      return
+    end
+    i32.const 4
+  )
+  ;; __wasm_str_char_addr(s, i) = address of the lead byte of char i.
+  ;; Negative i is normalised Python-style (i += charlen); out-of-range
+  ;; traps (the IndexError analogue).
+  (func $__wasm_str_char_addr (param $s i32) (param $i i64) (result i32)
+    (local $cl i64)
+    (local $k i64)
+    (local $p i32)
+    local.get $s
+    call $__wasm_str_charlen
+    i64.extend_i32_u
+    local.set $cl
+    local.get $i
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $i
+      local.get $cl
+      i64.add
+      local.set $i
+    end
+    local.get $i
+    i64.const 0
+    i64.lt_s
+    local.get $i
+    local.get $cl
+    i64.ge_s
+    i32.or
+    if
+      unreachable ;; string index out of range (Python IndexError)
+    end
+    local.get $s
+    i32.const 8
+    i32.add
+    local.set $p
+    i64.const 0
+    local.set $k
+    (block $done
+      (loop $next
+        local.get $k
+        local.get $i
+        i64.ge_s
+        br_if $done
+        local.get $p
+        local.get $p
+        i32.load8_u
+        call $__wasm_str_char_width
+        i32.add
+        local.set $p
+        local.get $k
+        i64.const 1
+        i64.add
+        local.set $k
+        br $next
+      )
+    )
+    local.get $p
+  )
+  ;; __wasm_str_ord_at(s, i) = code point of char i (Python ord(s[i])).
+  (func $__wasm_str_ord_at (param $s i32) (param $i i64) (result i64)
+    (local $p i32)
+    (local $b0 i32)
+    local.get $s
+    local.get $i
+    call $__wasm_str_char_addr
+    local.set $p
+    local.get $p
+    i32.load8_u
+    local.set $b0
+    local.get $b0
+    i32.const 128
+    i32.lt_u
+    if
+      local.get $b0
+      i64.extend_i32_u
+      return
+    end
+    local.get $b0
+    i32.const 224
+    i32.lt_u
+    if
+      ;; 2-byte: ((b0 & 0x1F) << 6) | (p[1] & 0x3F)
+      local.get $b0
+      i32.const 31
+      i32.and
+      i32.const 6
+      i32.shl
+      local.get $p
+      i32.load8_u offset=1
+      i32.const 63
+      i32.and
+      i32.or
+      i64.extend_i32_u
+      return
+    end
+    local.get $b0
+    i32.const 240
+    i32.lt_u
+    if
+      ;; 3-byte: ((b0 & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F)
+      local.get $b0
+      i32.const 15
+      i32.and
+      i32.const 12
+      i32.shl
+      local.get $p
+      i32.load8_u offset=1
+      i32.const 63
+      i32.and
+      i32.const 6
+      i32.shl
+      i32.or
+      local.get $p
+      i32.load8_u offset=2
+      i32.const 63
+      i32.and
+      i32.or
+      i64.extend_i32_u
+      return
+    end
+    ;; 4-byte: ((b0 & 0x07) << 18) | ((p[1] & 0x3F) << 12)
+    ;;         | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F)
+    local.get $b0
+    i32.const 7
+    i32.and
+    i32.const 18
+    i32.shl
+    local.get $p
+    i32.load8_u offset=1
+    i32.const 63
+    i32.and
+    i32.const 12
+    i32.shl
+    i32.or
+    local.get $p
+    i32.load8_u offset=2
+    i32.const 63
+    i32.and
+    i32.const 6
+    i32.shl
+    i32.or
+    local.get $p
+    i32.load8_u offset=3
+    i32.const 63
+    i32.and
+    i32.or
+    i64.extend_i32_u
+  )
+";
+
+/// PMAT-1032: the CHAR-semantics helper family (allocating half) — gated on
+/// the bump heap (both call `$__alloc`), emitted after [`STR_CHAR_HELPERS`].
+///
+///   * `$__wasm_str_char_at(s, i) -> i32` — Python `s[i]`: a NEW heap string
+///     holding char `i` of `s` — the full 1..4-byte encoded char, never a
+///     lone byte (the pre-PMAT-1032 lowering copied ONE byte, shredding
+///     multi-byte chars). Negative indexing + bounds trap via `char_addr`.
+///   * `$__wasm_chr(n) -> i32` — Python `chr(n)`: a NEW heap string holding
+///     the UTF-8 encoding of code point `n` (1..4 bytes — the pre-PMAT-1032
+///     lowering masked `n & 0xFF` into a single byte, SILENTLY wrong for
+///     every n > 127 and not valid UTF-8 for 128..255). `n` outside
+///     `0..=0x10FFFF` traps (the Python `ValueError` analogue). Surrogates
+///     encode via the generic 3-byte pattern (WTF-8), matching `ord`'s
+///     decoder — CPython also allows lone surrogates in `chr`.
+const STR_CHAR_ALLOC_HELPERS: &str = "\
+  ;; __wasm_str_char_at(s, i) = a NEW heap string holding char i of s
+  ;; (Python s[i] — one CHAR, 1..4 bytes).
+  (func $__wasm_str_char_at (param $s i32) (param $i i64) (result i32)
+    (local $p i32)
+    (local $w i32)
+    (local $dst i32)
+    (local $k i32)
+    local.get $s
+    local.get $i
+    call $__wasm_str_char_addr
+    local.set $p
+    local.get $p
+    i32.load8_u
+    call $__wasm_str_char_width
+    local.set $w
+    local.get $w
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $w
+    i32.store
+    i32.const 0
+    local.set $k
+    (block $done
+      (loop $next
+        local.get $k
+        local.get $w
+        i32.ge_s
+        br_if $done
+        local.get $dst
+        i32.const 8
+        i32.add
+        local.get $k
+        i32.add
+        local.get $p
+        local.get $k
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $k
+        i32.const 1
+        i32.add
+        local.set $k
+        br $next
+      )
+    )
+    local.get $dst
+  )
+  ;; __wasm_chr(n) = a NEW heap string holding the UTF-8 encoding of code
+  ;; point n (Python chr(n)); n outside 0..=0x10FFFF traps (ValueError).
+  (func $__wasm_chr (param $n i64) (result i32)
+    (local $c i32)
+    (local $w i32)
+    (local $dst i32)
+    local.get $n
+    i64.const 0
+    i64.lt_s
+    local.get $n
+    i64.const 1114111
+    i64.gt_s
+    i32.or
+    if
+      unreachable ;; chr() arg not in range(0x110000) (Python ValueError)
+    end
+    local.get $n
+    i32.wrap_i64
+    local.set $c
+    i32.const 1
+    local.set $w
+    local.get $c
+    i32.const 128
+    i32.ge_u
+    if
+      i32.const 2
+      local.set $w
+    end
+    local.get $c
+    i32.const 2048
+    i32.ge_u
+    if
+      i32.const 3
+      local.set $w
+    end
+    local.get $c
+    i32.const 65536
+    i32.ge_u
+    if
+      i32.const 4
+      local.set $w
+    end
+    local.get $w
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $w
+    i32.store
+    local.get $w
+    i32.const 1
+    i32.eq
+    if
+      local.get $dst
+      local.get $c
+      i32.store8 offset=8
+    end
+    local.get $w
+    i32.const 2
+    i32.eq
+    if
+      ;; 0xC0 | (c >> 6), 0x80 | (c & 0x3F)
+      local.get $dst
+      local.get $c
+      i32.const 6
+      i32.shr_u
+      i32.const 192
+      i32.or
+      i32.store8 offset=8
+      local.get $dst
+      local.get $c
+      i32.const 63
+      i32.and
+      i32.const 128
+      i32.or
+      i32.store8 offset=9
+    end
+    local.get $w
+    i32.const 3
+    i32.eq
+    if
+      ;; 0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F)
+      local.get $dst
+      local.get $c
+      i32.const 12
+      i32.shr_u
+      i32.const 224
+      i32.or
+      i32.store8 offset=8
+      local.get $dst
+      local.get $c
+      i32.const 6
+      i32.shr_u
+      i32.const 63
+      i32.and
+      i32.const 128
+      i32.or
+      i32.store8 offset=9
+      local.get $dst
+      local.get $c
+      i32.const 63
+      i32.and
+      i32.const 128
+      i32.or
+      i32.store8 offset=10
+    end
+    local.get $w
+    i32.const 4
+    i32.eq
+    if
+      ;; 0xF0 | (c >> 18), then three 0x80 | six-bit groups
+      local.get $dst
+      local.get $c
+      i32.const 18
+      i32.shr_u
+      i32.const 240
+      i32.or
+      i32.store8 offset=8
+      local.get $dst
+      local.get $c
+      i32.const 12
+      i32.shr_u
+      i32.const 63
+      i32.and
+      i32.const 128
+      i32.or
+      i32.store8 offset=9
+      local.get $dst
+      local.get $c
+      i32.const 6
+      i32.shr_u
+      i32.const 63
+      i32.and
+      i32.const 128
+      i32.or
+      i32.store8 offset=10
+      local.get $dst
+      local.get $c
+      i32.const 63
+      i32.and
+      i32.const 128
+      i32.or
+      i32.store8 offset=11
+    end
+    local.get $dst
   )
 ";
 
@@ -1254,8 +1722,9 @@ impl TargetEmitter for WasmSaxpySpecialistEmitter {
 /// increment-last desugar would skip it and loop forever. With the
 /// increment first, `continue` sees the already-advanced index and `break`
 /// simply exits — both CPython-exact. `len(<src>)` is re-read each
-/// iteration (the header load is two instructions; mutation during
-/// iteration is refused upstream, PMAT-1013). The synthetic
+/// iteration (a header load for lists; a PMAT-1032 `$__wasm_str_charlen`
+/// walk for strings — O(bytes) per iteration, correctness over speed;
+/// mutation during iteration is refused upstream, PMAT-1013). The synthetic
 /// `__wasm_fe_*_<k>` names follow the `__wasm_*` scratch-local convention
 /// (`IDX_SCRATCH`); `<k>` is a per-function counter so nested and
 /// sequential loops never share an index slot.
@@ -1556,6 +2025,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if needs_str_eq {
         out.push_str(STR_EQ_HELPER);
     }
+    // PMAT-1032: emit the CHAR-semantics helper family once, when any function
+    // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
+    // (code points) over the byte-oriented UTF-8 ABI. The non-allocating half
+    // (charlen/width/char_addr/ord_at) suffices for read-only str modules; the
+    // allocating half (char_at/chr) calls `$__alloc` so it rides the heap gate
+    // (any materialising `s[i]`/`chr(n)` already sets `needs_heap`).
+    if module_touches_str(module) {
+        out.push_str(STR_CHAR_HELPERS);
+        if needs_heap {
+            out.push_str(STR_CHAR_ALLOC_HELPERS);
+        }
+    }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
     // (the str-key helpers call it).
@@ -1662,6 +2143,80 @@ fn module_needs_heap(module: &Module) -> bool {
     di || ds
         || module_functions(module)
             .any(|f| matches!(f.return_type, Type::Str) || block_has_heap_op(&f.body))
+}
+
+/// PMAT-1032: `true` when any function in `module` TOUCHES strings — a `str`
+/// param/return/local, or any string-carrying expression (`LitStr`, `Concat`,
+/// `Chr`, `StrCharAt`, `StrChars`, `Ord`, `StrMethod`). Gates the emission of
+/// the CHAR-semantics helper family ([`STR_CHAR_HELPERS`]): every VALID
+/// str-touching module also declares the `(memory …)` (a str name is a param
+/// — memory via the param scan — or a local fed by a literal/heap-op/
+/// str-returning call, each of which pulls the memory in), so the helpers'
+/// loads always validate. An INVALID use (e.g. `ord` of an int name) refuses
+/// during function emission and the module is never returned.
+fn module_touches_str(module: &Module) -> bool {
+    module_functions(module).any(|f| {
+        matches!(f.return_type, Type::Str)
+            || f.params.iter().any(|p| matches!(p.ty, Type::Str))
+            || block_touches_str(&f.body)
+    })
+}
+
+fn block_touches_str(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_touches_str) || expr_touches_str(&block.trailing_return)
+}
+
+fn stmt_touches_str(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { ty, value, .. } => matches!(ty, Type::Str) || expr_touches_str(value),
+        Stmt::Assign { value, .. } => expr_touches_str(value),
+        Stmt::Return(e) => expr_touches_str(e),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_touches_str(cond)
+                || then_body.iter().any(stmt_touches_str)
+                || else_body.iter().any(stmt_touches_str)
+        }
+        Stmt::While { cond, body } => expr_touches_str(cond) || body.iter().any(stmt_touches_str),
+        Stmt::IndexAssign { value, .. } => expr_touches_str(value),
+        Stmt::FieldAssign { value, .. } => expr_touches_str(value),
+        Stmt::SideEffectCall { call } => expr_touches_str(call),
+        _ => false,
+    }
+}
+
+fn expr_touches_str(e: &Expr) -> bool {
+    match e {
+        Expr::LitStr(_)
+        | Expr::Concat { .. }
+        | Expr::Chr { .. }
+        | Expr::StrCharAt { .. }
+        | Expr::StrChars { .. }
+        | Expr::Ord { .. }
+        | Expr::StrMethod { .. } => true,
+        Expr::FieldAccess { obj, .. } => expr_touches_str(obj),
+        Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
+            expr_touches_str(lhs) || expr_touches_str(rhs)
+        }
+        Expr::UnOp { operand, .. } => expr_touches_str(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => expr_touches_str(cond) || expr_touches_str(then_expr) || expr_touches_str(else_expr),
+        Expr::Call { args, .. } => args.iter().any(expr_touches_str),
+        Expr::Index { collection, index } => {
+            expr_touches_str(collection) || expr_touches_str(index)
+        }
+        Expr::Len(c) => expr_touches_str(c),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_touches_str(obj) || args.iter().any(expr_touches_str)
+        }
+        _ => false,
+    }
 }
 
 /// PMAT-995 (slice 3b): which dict/set KEY kinds the module uses — `(needs_int,
@@ -2974,10 +3529,10 @@ fn emit_expr(
         Expr::Len(collection) => emit_len(collection, scope, out, depth),
         // PMAT-1003: `len(s)` over a str is synthesized by the frontend as
         // StrMethod(CharCount) (Python counts Unicode code points, so a str len
-        // must NOT reuse Expr::Len = byte length). The WASM str subset is
-        // ASCII-only (byte count == code-point count), so this is exactly the
-        // byte-count header read emit_len already does for a str param. Other
-        // string methods (upper/lower/strip/split/…) are refused honestly.
+        // must NOT reuse Expr::Len = byte length). Since PMAT-1032 emit_len
+        // lowers a str name to the `$__wasm_str_charlen` helper — the REAL
+        // code-point count, exact for non-ASCII input too. Other string
+        // methods (upper/lower/strip/split/…) are refused honestly.
         Expr::StrMethod {
             recv,
             op: StrMethodOp::CharCount,
@@ -3324,9 +3879,22 @@ fn emit_len(
              i32 count header at base+0 in the WASM subset"
         )));
     }
-    // PMAT-995: len = (i32 header at base+0) zero-extended to i64. Identical for
-    // a list (element count), a str (byte count), AND a dict/set (live-entry
-    // count) — all three share the `+0` i32 count header.
+    // PMAT-1032: a STR name's len is its CHAR count (Python counts code
+    // points), computed by the `$__wasm_str_charlen` helper — the byte-count
+    // header is the ABI, not the Python-visible length ("héllo" is 6 bytes
+    // but len 5). O(bytes) per call, correctness over speed.
+    if scope.is_str_name(name) {
+        indent(out, depth);
+        writeln!(out, "local.get ${name}").expect("write");
+        indent(out, depth);
+        writeln!(out, "call $__wasm_str_charlen").expect("write");
+        indent(out, depth);
+        writeln!(out, "i64.extend_i32_u").expect("write");
+        return Ok(WatTy::I64);
+    }
+    // PMAT-995: list/dict/set len = (i32 header at base+0) zero-extended to
+    // i64 — an element count (list) or live-entry count (dict/set); both share
+    // the `+0` i32 count header.
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
     indent(out, depth);
@@ -3336,26 +3904,26 @@ fn emit_len(
     Ok(WatTy::I64)
 }
 
-/// Emit `ord(s[i])` over a `str` parameter (PMAT-986) — the one
-/// string-reading op slice 1 supports that returns an `int` (a code point)
-/// rather than a new string. The meta-HIR shape is `Expr::Ord { value:
-/// Expr::StrCharAt { string: Ident(s), index } }`: the frontend lowers
-/// Python `ord(s[i])` to exactly that, and lowering the `StrCharAt` here
-/// (instead of materialising a 1-char string) avoids any allocation.
+/// Emit `ord(…)` over the WASM str subset (PMAT-986, char-exact since
+/// PMAT-1032) — the string-reading op that returns an `int` (a code point)
+/// rather than a new string.
 ///
-/// Lowers to a bounds-checked `i32.load8_u` of the `i`-th UTF-8 byte:
-///   1. evaluate `i` once into the scratch `i64` `$__wasm_idx`;
-///   2. bounds guard — `i < 0 || i >= byte_count → unreachable` — the
-///      Python `IndexError` analogue, reusing the SAME header read the list
-///      index path uses (`byte_count` is the i32 header at `base+0`);
-///   3. `addr = base + LIST_ELEMS_OFFSET + (i as i32)` (byte stride 1);
-///   4. `i32.load8_u` the byte, then `i64.extend_i32_u` to the Python-int
-///      domain (a byte is 0..=255; for ASCII this is the code point, exactly
-///      CPython's `ord`).
+/// Two accepted shapes, both lowered through `$__wasm_str_ord_at` (a
+/// CHAR-indexed walk + 1..4-byte UTF-8 decode — see [`STR_CHAR_HELPERS`]):
+///   * `ord(s[i])` — `Expr::Ord { value: Expr::StrCharAt { Ident(s), index } }`,
+///     the frontend's lowering of Python `ord(s[i])`. Consuming the
+///     `StrCharAt` here avoids materialising the 1-char string. Negative
+///     indices normalise Python-style and out-of-range traps (`IndexError`
+///     analogue), both inside the helper.
+///   * `ord(ch)` over a bare str NAME (PMAT-1030) — the for-loop desugar
+///     binds the loop var as a 1-char str local, making this the natural
+///     checksum shape. Python's `ord` raises TypeError unless the string has
+///     length exactly 1, so guard `charlen(s) != 1 → unreachable` — the CHAR
+///     count, so `ord("é")` (1 char, 2 bytes) decodes to 233 exactly where
+///     the pre-PMAT-1032 byte guard wrongly trapped.
 ///
-/// Any other `ord` operand is refused: `ord` of a non-`StrCharAt` (e.g.
-/// `ord(chr(n))`, `ord` of a whole-string `Ident`) needs a materialised
-/// char and is outside slice 1; an `s[i]` whose base is not a str param is
+/// Any other `ord` operand is refused: `ord(chr(n))` / `ord` of a literal
+/// needs a materialised char; an `s[i]` whose base is not a str name is
 /// likewise refused.
 fn emit_ord(
     value: &Expr,
@@ -3363,12 +3931,6 @@ fn emit_ord(
     out: &mut String,
     depth: usize,
 ) -> Result<WatTy, BackendError> {
-    // PMAT-1030: `ord(ch)` over a bare str NAME — the for-loop desugar binds
-    // the loop var as a 1-char str local, making this the natural checksum /
-    // char-arithmetic shape (`for ch in s: t += ord(ch)`). Python's `ord`
-    // raises TypeError unless the string has length exactly 1, so guard the
-    // header at runtime (`byte_count != 1 → unreachable`) and load byte 0 —
-    // never silently take the first byte of a longer string.
     if let Expr::Ident(name) = value {
         if !scope.is_str_name(name) {
             return Err(unsupported(&format!(
@@ -3380,7 +3942,7 @@ fn emit_ord(
         indent(out, depth);
         writeln!(out, "local.get ${name}").expect("write");
         indent(out, depth);
-        writeln!(out, "i32.load").expect("write"); // header byte count
+        writeln!(out, "call $__wasm_str_charlen").expect("write");
         indent(out, depth);
         writeln!(out, "i32.const 1").expect("write");
         indent(out, depth);
@@ -3398,16 +3960,16 @@ fn emit_ord(
         indent(out, depth);
         writeln!(out, "local.get ${name}").expect("write");
         indent(out, depth);
-        writeln!(out, "i32.load8_u offset={LIST_ELEMS_OFFSET}").expect("write");
+        writeln!(out, "i64.const 0").expect("write");
         indent(out, depth);
-        writeln!(out, "i64.extend_i32_u").expect("write");
+        writeln!(out, "call $__wasm_str_ord_at").expect("write");
         return Ok(WatTy::I64);
     }
     let Expr::StrCharAt { string, index } = value else {
         return Err(unsupported(
             "ord() of a non-`s[i]`/non-name operand — the WASM subset lowers \
-             `ord(s[i])` over a `str` name to a bounds-checked i32.load8_u of \
-             byte i, and `ord(ch)` over a 1-char str name to its byte 0; \
+             `ord(s[i])` over a `str` name to a char-indexed UTF-8 decode, \
+             and `ord(ch)` over a 1-char str name to its code point; \
              ord() of `chr(n)` or of a literal is refused",
         ));
     };
@@ -3421,83 +3983,18 @@ fn emit_ord(
         return Err(unsupported(&format!(
             "ord({name}[i]) where `{name}` is not a `str` param or local — \
              only a str name (i32 base-pointer into linear memory) supports \
-             per-byte ord() in the WASM subset"
+             indexed ord() in the WASM subset"
         )));
     }
-    // Bounds-checked byte address: base + 8 + (i as i32)*1, with the
-    // `i < 0 || i >= byte_count → unreachable` guard. Reuse the shared
-    // list-element address helper with a synthetic 1-byte stride: the i32
-    // path multiplies by `elem.byte_size()`, so a single-byte stride needs a
-    // dedicated emit (we cannot pass a 1-byte `WatTy`). Emit it inline here,
-    // mirroring `emit_list_elem_addr` but with stride 1 and a load8.
-    emit_str_byte_addr(name, index, scope, out, depth)?;
+    // Stack discipline: push the base pointer (i32), then the CHAR index
+    // (i64), then call — the helper owns the negative-index normalisation,
+    // the bounds trap, and the UTF-8 decode.
     indent(out, depth);
-    writeln!(out, "i32.load8_u").expect("write");
-    indent(out, depth);
-    writeln!(out, "i64.extend_i32_u").expect("write");
-    Ok(WatTy::I64)
-}
-
-/// Emit the bounds-checked linear-memory ADDRESS of the `index`-th UTF-8
-/// byte of the `str` parameter `name` onto the WASM stack (PMAT-986).
-///
-/// The str-byte sibling of [`emit_list_elem_addr`]: identical bounds-guard
-/// shape (`i < 0 || i >= byte_count → unreachable`, the Python `IndexError`
-/// analogue), but a **byte** stride of 1 (no `*size` multiply) and reading
-/// the count header as a UTF-8 byte count. Leaves `addr = base +
-/// LIST_ELEMS_OFFSET + (i as i32)` on the stack for an `i32.load8_u`.
-fn emit_str_byte_addr(
-    name: &str,
-    index: &Expr,
-    scope: &Scope,
-    out: &mut String,
-    depth: usize,
-) -> Result<(), BackendError> {
-    // Evaluate the index once into the per-function scratch i64.
+    writeln!(out, "local.get ${name}").expect("write");
     emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
-    writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
-
-    // Bounds guard: if (i < 0) | (i >= byte_count) { unreachable }.
-    indent(out, depth);
-    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i64.const 0").expect("write");
-    indent(out, depth);
-    writeln!(out, "i64.lt_s").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.get ${name}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.load").expect("write"); // header byte count
-    indent(out, depth);
-    writeln!(out, "i64.extend_i32_u").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i64.le_s").expect("write"); // byte_count <= i  ⇔  i >= byte_count
-    indent(out, depth);
-    writeln!(out, "i32.or").expect("write");
-    indent(out, depth);
-    writeln!(out, "if").expect("write");
-    indent(out, depth + 1);
-    writeln!(out, "unreachable").expect("write");
-    indent(out, depth);
-    writeln!(out, "end").expect("write");
-
-    // addr = base + LIST_ELEMS_OFFSET + (index as i32)  (byte stride 1).
-    indent(out, depth);
-    writeln!(out, "local.get ${name}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.add").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.wrap_i64").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.add").expect("write");
-    Ok(())
+    writeln!(out, "call $__wasm_str_ord_at").expect("write");
+    Ok(WatTy::I64)
 }
 
 /// PMAT-993: emit a string-VALUED expression, leaving its `i32` base-pointer
@@ -4481,62 +4978,35 @@ fn emit_chr(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
-    // dst = __alloc(8 + 1) = a 1-byte string region.
-    indent(out, depth);
-    writeln!(out, "i32.const {}", LIST_ELEMS_OFFSET + 1).expect("write");
-    indent(out, depth);
-    writeln!(out, "call $__alloc").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.set ${STR_DST_SCRATCH}").expect("write");
-    // header: count = 1 at dst+0.
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const 1").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.store").expect("write");
-    // byte: (n & 0xFF) at dst+8 via i32.store8. The code point `n` is an i64
-    // Python int; narrow to i32 and mask the low byte.
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.add").expect("write");
+    // PMAT-1032: `chr(n)` delegates to the `$__wasm_chr` helper — a NEW heap
+    // string holding the full 1..4-byte UTF-8 encoding of code point `n`,
+    // with the `0..=0x10FFFF` range trap (the Python ValueError analogue).
+    // The pre-PMAT-1032 lowering masked `n & 0xFF` into a single byte:
+    // SILENTLY wrong for every n > 127 (chr(233) was the bare byte 0xE9 —
+    // not even valid UTF-8, internally inconsistent with the 2-byte literal
+    // encoding of "é"). No scratch local: the helper owns its state.
     emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
-    writeln!(out, "i32.wrap_i64").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const 255").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.and").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.store8").expect("write");
-    // result = dst.
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    writeln!(out, "call $__wasm_chr").expect("write");
     Ok(())
 }
 
-/// PMAT-994 (slice 3a): lower `s[i]` used AS a 1-char string
-/// (`Expr::StrCharAt` outside an `ord`) — materialise a NEW 1-char heap string
-/// holding byte `i` of the string-valued base, and leave its `i32`
-/// base-pointer on the stack.
+/// PMAT-994 (slice 3a, char-exact since PMAT-1032): lower `s[i]` used AS a
+/// 1-char string (`Expr::StrCharAt` outside an `ord`) — materialise a NEW
+/// heap string holding CHAR `i` of the string-valued base (its full 1..4-byte
+/// UTF-8 encoding), and leave its `i32` base-pointer on the stack.
 ///
-/// The `chr` mirror, but the byte comes from `s[i]` (bounds-checked) rather
-/// than a masked int. Works over ANY string-valued base — a str param, a
-/// string literal, or a heap string — since all share the length-prefixed ABI.
-/// The base pointer is evaluated once into [`STR_LA_SCRATCH`] (reused here as
-/// the source base-pointer scratch), the index once into [`IDX_SCRATCH`], then:
-///   1. bounds guard `i < 0 || i >= byte_count → unreachable` (Python
-///      `IndexError`), reading the source header count;
-///   2. `dst = __alloc(9)`, count-1 header at `dst+0`;
-///   3. copy `src[8 + i]` to `dst+8` via `i32.load8_u` / `i32.store8`;
-///   4. leave `dst`.
+/// Delegates to `$__wasm_str_char_at` (see [`STR_CHAR_ALLOC_HELPERS`]), which
+/// owns the Python negative-index normalisation (`s[-1]` indexes from the
+/// end), the bounds trap (`IndexError` analogue), and the char walk. Works
+/// over ANY string-valued base — a str param/local, a string literal, or a
+/// heap string — since all share the length-prefixed ABI. The pre-PMAT-1032
+/// lowering copied one BYTE (char-correct only for ASCII, shredding
+/// multi-byte chars) and trapped on negative indices.
 ///
-/// ASCII-faithful: a 1-BYTE copy is the char only for ASCII (the slice-1/2
-/// honest restriction the whole str path carries); a multi-byte UTF-8 char
-/// would copy one byte. Callers pass ASCII (documented).
+/// Stack discipline replaces the old scratch-local dance: the base pointer
+/// stays ON the WASM stack while the index evaluates (a stack value cannot be
+/// clobbered by a nested string op the way [`STR_LA_SCRATCH`] could).
 fn emit_str_char_at(
     string: &Expr,
     index: &Expr,
@@ -4544,83 +5014,10 @@ fn emit_str_char_at(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
-    // src = the string-valued base pointer, evaluated once into STR_LA_SCRATCH.
     emit_str_expr(string, scope, out, depth)?;
-    indent(out, depth);
-    writeln!(out, "local.set ${STR_LA_SCRATCH}").expect("write");
-    // i = the index, evaluated once into IDX_SCRATCH (i64).
     emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
-    writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
-
-    // Bounds guard: if (i < 0) | (i >= byte_count) { unreachable }.
-    indent(out, depth);
-    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i64.const 0").expect("write");
-    indent(out, depth);
-    writeln!(out, "i64.lt_s").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_LA_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.load").expect("write"); // header byte count
-    indent(out, depth);
-    writeln!(out, "i64.extend_i32_u").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i64.le_s").expect("write"); // byte_count <= i  ⇔  i >= byte_count
-    indent(out, depth);
-    writeln!(out, "i32.or").expect("write");
-    indent(out, depth);
-    writeln!(out, "if").expect("write");
-    indent(out, depth + 1);
-    writeln!(out, "unreachable").expect("write");
-    indent(out, depth);
-    writeln!(out, "end").expect("write");
-
-    // dst = __alloc(8 + 1) = a 1-byte string region.
-    indent(out, depth);
-    writeln!(out, "i32.const {}", LIST_ELEMS_OFFSET + 1).expect("write");
-    indent(out, depth);
-    writeln!(out, "call $__alloc").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.set ${STR_DST_SCRATCH}").expect("write");
-    // header: count = 1 at dst+0.
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const 1").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.store").expect("write");
-    // dst[8] = src[8 + i]. Store consumes (addr, value): push dst+8, then the
-    // source byte (load8_u of src + 8 + i), then i32.store8.
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.add").expect("write");
-    // source byte addr = src + LIST_ELEMS_OFFSET + (i as i32).
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_LA_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.add").expect("write");
-    indent(out, depth);
-    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.wrap_i64").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.add").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.load8_u").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.store8").expect("write");
-    // result = dst.
-    indent(out, depth);
-    writeln!(out, "local.get ${STR_DST_SCRATCH}").expect("write");
+    writeln!(out, "call $__wasm_str_char_at").expect("write");
     Ok(())
 }
 

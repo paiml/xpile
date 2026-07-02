@@ -412,31 +412,37 @@ fn str_param_lowers_to_i32_base_pointer_and_memory() {
 }
 
 #[test]
-fn len_over_str_param_reads_header() {
+fn len_over_str_param_counts_chars() {
     let wat = emit_module(&code_sum_module()).expect("str-param program lowers");
-    // len(s) is the SAME header read as len(xs): i32.load of base+0 then
-    // zero-extend to i64.
+    // PMAT-1032: len(s) over a STR is the CHAR count (Python counts code
+    // points) via the charlen helper — NOT the byte-count header read a
+    // list/dict len does ("héllo" is 6 bytes but len 5).
     assert!(
-        wat.contains("i32.load") && wat.contains("i64.extend_i32_u"),
-        "len(s) → header i32.load + i64 extend: {wat}"
+        wat.contains("call $__wasm_str_charlen") && wat.contains("i64.extend_i32_u"),
+        "len(s) → charlen helper + i64 extend: {wat}"
+    );
+    assert!(
+        wat.contains("(func $__wasm_str_charlen"),
+        "the charlen helper is emitted for a str-touching module: {wat}"
     );
 }
 
 #[test]
-fn ord_str_index_uses_load8_and_bounds_guard() {
+fn ord_str_index_decodes_char_with_bounds_guard() {
     let wat = emit_module(&code_sum_module()).expect("str-param program lowers");
+    // PMAT-1032: ord(s[i]) is a CHAR-indexed UTF-8 decode via the ord_at
+    // helper (negative-index normalisation + bounds trap live inside it).
     assert!(
-        wat.contains("i32.load8_u"),
-        "ord(s[i]) → per-byte i32.load8_u: {wat}"
+        wat.contains("call $__wasm_str_ord_at"),
+        "ord(s[i]) → char-indexed decode helper: {wat}"
     );
     assert!(
-        wat.contains("unreachable"),
-        "ord(s[i]) carries the PMAT-986 bounds guard (i<0 || i>=len → trap): {wat}"
+        wat.contains("(func $__wasm_str_ord_at") && wat.contains("i32.load8_u"),
+        "the ord_at helper decodes UTF-8 bytes: {wat}"
     );
-    // The byte stride is 1 (no *size multiply) — the address is base+8+i.
     assert!(
-        wat.contains(&format!("i32.const {LIST_ELEMS_OFFSET}")),
-        "byte address uses the base+8 offset: {wat}"
+        wat.contains("unreachable ;; string index out of range"),
+        "char indexing carries the bounds trap (Python IndexError): {wat}"
     );
 }
 
@@ -480,10 +486,11 @@ fn strcharat_as_string_materialises_one_char() {
 
 #[test]
 fn chr_returns_a_new_one_char_string() {
-    // PMAT-993 (slice 2): `chr(n)` materialises a NEW 1-char string in the
-    // bump heap and returns its i32 base-pointer. A `def to_char(n) -> str:
-    // return chr(n)` lowers to alloc(9) + a count-1 header + an i32.store8 of
-    // the masked byte.
+    // PMAT-993 (slice 2), char-exact since PMAT-1032: `chr(n)` materialises a
+    // NEW 1-char string in the bump heap — the full 1..4-byte UTF-8 encoding
+    // via the `$__wasm_chr` helper, range-guarded to Python's
+    // `0..=0x10FFFF` (the pre-PMAT-1032 lowering masked `n & 0xFF` into a
+    // single byte, silently wrong for every n > 127).
     let f = Function {
         name: "to_char".into(),
         params: vec![param("n", Type::I64)],
@@ -497,16 +504,21 @@ fn chr_returns_a_new_one_char_string() {
     };
     let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("chr(n) -> str lowers");
     assert!(
-        wat.contains("call $__alloc"),
-        "chr allocates via the bump heap:\n{wat}"
+        wat.contains("call $__wasm_chr"),
+        "chr(n) delegates to the char-exact helper:\n{wat}"
     );
     assert!(
-        wat.contains("i32.store8"),
-        "chr writes the single byte via i32.store8:\n{wat}"
+        wat.contains("call $__alloc") && wat.contains("i32.store8"),
+        "the chr helper allocates and writes UTF-8 bytes:\n{wat}"
     );
     assert!(
-        wat.contains("i32.const 255") && wat.contains("i32.and"),
-        "chr masks the low byte (n & 0xFF):\n{wat}"
+        wat.contains("i64.const 1114111")
+            && wat.contains("unreachable ;; chr() arg not in range(0x110000)"),
+        "chr carries the 0..=0x10FFFF range trap (Python ValueError):\n{wat}"
+    );
+    assert!(
+        !wat.contains("i32.const 255"),
+        "the old n & 0xFF single-byte mask must be gone:\n{wat}"
     );
     assert!(
         wat.contains("(func $to_char (param $n i64) (result i32)"),
@@ -603,13 +615,20 @@ fn concat_of_three_str_params_is_single_pass() {
         },
     };
     let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("3-way concat lowers");
+    // Count within the FUNCTION body only — the PMAT-1032 char helpers
+    // ($__wasm_str_char_at / $__wasm_chr) legitimately carry their own
+    // `call $__alloc`, so a module-wide count would see those too.
+    let body_start = wat.find("(func $join3").expect("join3 emitted");
+    let body = &wat[body_start..];
+    let body_end = body.find("(export").unwrap_or(body.len());
+    let body = &body[..body_end];
     assert_eq!(
-        wat.matches("call $__alloc").count(),
+        body.matches("call $__alloc").count(),
         1,
         "3-way concat allocates ONCE (single pass), not per nesting:\n{wat}"
     );
     assert_eq!(
-        wat.matches("memory.copy").count(),
+        body.matches("memory.copy").count(),
         3,
         "3-way concat copies each of the 3 operands' bytes:\n{wat}"
     );

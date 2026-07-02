@@ -18368,3 +18368,86 @@ fn transpile_list_local_scan_py_both_lanes_execute() {
         "executed run() must == CPython 16 (scan 12 + index-write + len 4):\n{interp_out}"
     );
 }
+
+// ─── PMAT-1032: CHAR-oriented string semantics on the WASM lane ─────────────
+
+/// PMAT-1032: the sweep-#11 non-ASCII divergence cluster (finding 2) executes
+/// on BOTH lanes == CPython 902. Before this slice the WASM str runtime was
+/// BYTE-oriented where CPython is CHAR-oriented: `len("héllo")` SILENTLY read
+/// 6 (bytes) not 5, `for ch in s` stepped BYTES (4 iterations over "abé", and
+/// ord trapped on the split 2-byte char), `ord("é")` trapped on the
+/// byte-count!=1 guard, `s[-k]` trapped where Python indexes from the end,
+/// and `chr(n)` masked `n & 0xFF` into a single byte — silently wrong for
+/// every n > 127 and not even valid UTF-8 for 128..255. Now every
+/// Python-VISIBLE read (len/iteration/indexing/ord/chr) is code-point-exact
+/// via the `$__wasm_str_*` char-helper family while the ABI header stays a
+/// byte count (concat/eq/copy are byte ops — byte equality IS char equality
+/// for UTF-8). The Rust lane was already char-exact (PMAT-1005/1021) and is
+/// pinned here so the fix stays lane-neutral.
+#[test]
+fn transpile_str_char_semantics_py_both_lanes_execute() {
+    let py = fixture("str_char_semantics.py");
+
+    // Rust lane: unchanged — still executes == CPython.
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    let rust_src = String::from_utf8_lossy(&rust_out.stdout);
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_out.status.success(),
+        "xpile --target rust failed on the char-semantics fixture: stderr={rust_err}"
+    );
+    assert_rustc_runs(
+        "str_char_semantics",
+        &rust_src,
+        "fn main() {\n    assert_eq!(run(), 902, \"CPython ground truth\");\n}",
+    );
+
+    // WASM lane: the PMAT-1032 fix — emits the char-helper family and (with
+    // WABT) executes == CPython.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the char-semantics fixture: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("call $__wasm_str_charlen")
+            && stdout.contains("call $__wasm_str_ord_at")
+            && stdout.contains("call $__wasm_chr"),
+        "len/ord/chr route through the PMAT-1032 char-helper family:\n{stdout}"
+    );
+
+    // EXECUTED half — gated on WABT (mirrors the wasm-codegen witnesses).
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1032: skipping EXECUTED half — WABT absent (emit asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-strchar-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("strchar.wat");
+    let wasm_path = dir.join("strchar.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:902"),
+        "executed run() must == CPython 902 (664 checksum + 233 neg-index + 5 len):\n{interp_out}"
+    );
+}
