@@ -868,6 +868,14 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'sweep #12. Suite 732 green; MATCH 4.5/2.5; int-list append unregressed.'
+- id: PMAT-1049
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1049: [rust/correctness] invalid emit (E0499/E0502) — subscript store whose INDEX borrows the base (sweep #12). `self.xs[self.next_slot()] = v` (next_slot() needs &mut self) and `self.xs[self.xs.pop()] = v` (pop needs &mut self.xs) emitted the index expression INSIDE the `&mut base` borrow → rustc E0499 (two mutable borrows). FIX: emit_subscript_write_through (rust + ruchy) now binds the RHS and then EVERY step index to an OWNED temp (`let __sidxN = (<idx>).clone();`) BEFORE `let __t0 = &mut base` — the borrowing index evaluates before the mutable base borrow. The `.clone()` (universal — every xpile index/key type is Clone; a Copy index clone is a no-op) also prevents moving a non-Copy (str) key out of a caller binding reused in a later store (subsumes the PMAT-1045 leaf-key clone). RHS-first preserves Python value-before-target order.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12. Suite 733 green; MATCH on p11 (index method call) + p18 (self-pop same list); write-through regressions (plain/neg-index/nested/dict-of-list/key-reuse) all pass; 2 exact-string tests updated to the __sidx invariant.'
 - id: PMAT-1048
   github_issue: null
   item_type: bug

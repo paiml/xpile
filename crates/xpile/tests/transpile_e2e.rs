@@ -12556,7 +12556,9 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
 fn nested_dict_assign_emitted_rust_matches_cpython() {
     let rust = xpile_transpile_to_rust("nested_dict_assign.py");
     assert!(
-        rust.contains("get_mut(&(String::from(\"a\"))).unwrap()"),
+        // PMAT-1049: step indices bind to `__sidx` temps before `&mut base`,
+        // so the dict-level navigation is `get_mut(&__sidxN)`.
+        rust.contains("get_mut(&__sidx0).unwrap()"),
         "expected get_mut navigation for the dict level, got:\n{rust}"
     );
     let driver = r#"
@@ -18753,8 +18755,8 @@ fn main() {
 fn fieldindex_dict_key_reuse() {
     let rust = xpile_transpile_to_rust("fieldindex_dict_key_reuse.py");
     assert!(
-        rust.contains(").clone(), __rhs)"),
-        "the leaf dict key must clone in the write-through emitter:\n{rust}"
+        rust.contains(").clone(); "),
+        "the write-through emitter must bind cloned index temps:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -18815,4 +18817,24 @@ fn main() {
 }
 "#;
     assert_rustc_runs("append_float_widen", &rust, driver);
+}
+
+/// PMAT-1049 (sweep #12): a subscript store whose index borrows the base
+/// (`self.xs[self.next_slot()] = v`) was rustc E0499 — the write-through
+/// emitter now binds step indices to temps before `&mut base`. MATCH 56 + pos.
+#[test]
+fn writethrough_impure_index() {
+    let rust = xpile_transpile_to_rust("writethrough_impure_index.py");
+    assert!(
+        rust.contains("__sidx0"),
+        "the step index must bind to a temp before &mut base:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // push(5)->pos1 xs[1]=5; push(6)->pos2 xs[2]=6 ⇒ xs=[0,5,6], pos=2.
+    // 0*100 + 5*10 + 6 + 2 = 58.
+    assert_eq!(ring_result(), 58, "index method call under the &mut base borrow");
+}
+"#;
+    assert_rustc_runs("writethrough_impure_index", &rust, driver);
 }
