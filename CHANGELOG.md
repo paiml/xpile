@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.613] — 2026-07-02
+
 ### File I/O — line iteration (PMAT-1077, fourth increment)
 
 - `for line in open(path)` and `with open(path) as f: for line in f:` now
