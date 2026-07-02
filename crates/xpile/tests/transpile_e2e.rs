@@ -18148,3 +18148,76 @@ fn transpile_str_accum_locals_py_both_lanes_execute() {
          alias/content-eq + len 8 + ord('E') 69):\n{interp_out}"
     );
 }
+
+/// PMAT-1030: `for x in xs` / `for ch in s` on the WASM lane — the backend
+/// desugars `Stmt::ForEach` into its Let+While+`Index`/`StrCharAt` subset
+/// (index increment BEFORE the body so `continue` advances; `ord(ch)` over
+/// the 1-char loop var guarded `len==1 → trap`, Python's TypeError
+/// analogue). The fixture packs the six canonical shapes — count-with-if,
+/// string ACCUMULATOR through the loop var, `continue`, `break`, NESTED
+/// loops, and an `ord` checksum — into one zero-arg `run()`; both lanes
+/// execute == CPython 563252.
+#[test]
+fn transpile_for_iter_str_py_both_lanes_execute() {
+    let py = fixture("for_iter_str.py");
+
+    // Rust lane: transpiles, compiles, runs == CPython (worked before this
+    // slice — pinned so the WASM desugar stays lane-neutral).
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    let rust_src = String::from_utf8_lossy(&rust_out.stdout);
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_out.status.success(),
+        "xpile --target rust failed on the for-iteration fixture: stderr={rust_err}"
+    );
+    assert_rustc_runs(
+        "for_iter_str",
+        &rust_src,
+        "fn main() {\n    assert_eq!(run(), 563252, \"CPython ground truth\");\n}",
+    );
+
+    // WASM lane: emits (the previously-refusing half), assembles, executes.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the for-iteration fixture: stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("(local $__wasm_fe_i_0 i64)"),
+        "for-loops desugar to synthetic index locals:\n{stdout}"
+    );
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1030: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-foriter-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("foriter.wat");
+    let wasm_path = dir.join("foriter.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:563252"),
+        "executed run() must == CPython 563252 (vowels 5 / accum len 6 / \
+         continue 3 / break 2 / nested pairs 5 / ord checksum 2):\n{interp_out}"
+    );
+}

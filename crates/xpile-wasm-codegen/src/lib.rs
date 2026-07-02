@@ -1213,6 +1213,201 @@ impl TargetEmitter for WasmSaxpySpecialistEmitter {
     }
 }
 
+// ─── PMAT-1030: for-loop desugar ────────────────────────────────────
+
+/// PMAT-1030: desugar every [`Stmt::ForEach`] — Python `for x in xs` over a
+/// `list[scalar]` name and `for ch in s` over a string
+/// ([`Expr::StrChars`]) — into the Let+While+`Index`/`StrCharAt` subset the
+/// rest of this backend already lowers, BEFORE any scan or emit pass runs.
+/// Every later pass (literal collection, heap/str-eq detection, locals
+/// collection, per-function emission) then sees only statements it already
+/// handles, so the bounds guards, typed element loads, and the PMAT-1028
+/// str-local machinery are reused verbatim rather than re-implemented.
+///
+/// `for var in <iterable>: body` becomes
+///
+/// ```text
+/// let __wasm_fe_s_<k>: str = <iterable>   ;; str case only, skipped when
+///                                         ;; the iterable is already a name
+/// let __wasm_fe_i_<k>: int = 0
+/// while __wasm_fe_i_<k> < len(<src>):
+///     let var: <elem_ty> = <src>[__wasm_fe_i_<k>]
+///     __wasm_fe_i_<k> = __wasm_fe_i_<k> + 1
+///     <body>
+/// ```
+///
+/// The index increment sits BEFORE the body deliberately: `continue` lowers
+/// to `br $cont` (straight back to the `while` condition), so an
+/// increment-last desugar would skip it and loop forever. With the
+/// increment first, `continue` sees the already-advanced index and `break`
+/// simply exits — both CPython-exact. `len(<src>)` is re-read each
+/// iteration (the header load is two instructions; mutation during
+/// iteration is refused upstream, PMAT-1013). The synthetic
+/// `__wasm_fe_*_<k>` names follow the `__wasm_*` scratch-local convention
+/// (`IDX_SCRATCH`); `<k>` is a per-function counter so nested and
+/// sequential loops never share an index slot.
+///
+/// Honest scope: the loop VAR is a WAT function-scoped local, so a
+/// post-loop read sees the last element (CPython-exact for a non-empty
+/// iterable); the empty-iterable + post-loop-read degenerate case yields
+/// the zero default where Python raises `NameError` — the same PMAT-838
+/// tradeoff the Rust lane documents. Dict iteration (`over_keys`), in-place
+/// element mutation (`mutate_elems`), and non-name/non-str iterables
+/// (list literals, `enumerate`/`zip` — those are `ForEachPair`) refuse with
+/// precise messages.
+fn desugar_module_foreach(module: &Module) -> Result<Module, BackendError> {
+    let mut m = module.clone();
+    for item in &mut m.items {
+        match item {
+            Item::Function(f) => {
+                let mut next = 0usize;
+                f.body.stmts = desugar_foreach_stmts(&f.body.stmts, &mut next)?;
+            }
+            Item::Struct { methods, .. } => {
+                for f in methods {
+                    let mut next = 0usize;
+                    f.body.stmts = desugar_foreach_stmts(&f.body.stmts, &mut next)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(m)
+}
+
+/// The recursive statement rewrite behind [`desugar_module_foreach`].
+/// `next` numbers the synthetic locals within one function.
+fn desugar_foreach_stmts(stmts: &[Stmt], next: &mut usize) -> Result<Vec<Stmt>, BackendError> {
+    let mut out = Vec::with_capacity(stmts.len());
+    for s in stmts {
+        match s {
+            Stmt::ForEach {
+                var,
+                iter,
+                elem_ty,
+                body,
+                over_keys,
+                dict_guard,
+                mutate_elems,
+            } => {
+                if *over_keys || dict_guard.is_some() {
+                    return Err(unsupported(
+                        "for-loop over a dict — dict iteration is not in the \
+                         WASM subset (HashMap-order + heap-relocation \
+                         semantics are unresolved; iterate a list or str)",
+                    ));
+                }
+                if *mutate_elems {
+                    return Err(unsupported(
+                        "for-loop mutating its elements in place — the WASM \
+                         list subset holds scalars (copies), so an in-place \
+                         element mutation cannot propagate; refused honestly",
+                    ));
+                }
+                let body = desugar_foreach_stmts(body, next)?;
+                let k = *next;
+                *next += 1;
+                let idx = format!("__wasm_fe_i_{k}");
+                // Resolve the iteration SOURCE to a name + the per-element
+                // read expression.
+                let (setup, src): (Option<Stmt>, String) = match iter {
+                    // `for ch in s` — the frontend wraps a str iterable in
+                    // StrChars. Reuse the name when the operand is already
+                    // one; otherwise bind the string ONCE into a synthetic
+                    // PMAT-1028 str local (a literal, concat, or proven
+                    // str-returning call all lower there).
+                    Expr::StrChars { string } => match string.as_ref() {
+                        Expr::Ident(n) => (None, n.clone()),
+                        other => {
+                            let s_name = format!("__wasm_fe_s_{k}");
+                            (
+                                Some(Stmt::Let {
+                                    name: s_name.clone(),
+                                    ty: Type::Str,
+                                    value: other.clone(),
+                                    mutable: false,
+                                }),
+                                s_name,
+                            )
+                        }
+                    },
+                    // `for x in xs` — a named list[scalar]; `len(xs)` and
+                    // `xs[i]` refuse precisely downstream if it is not.
+                    Expr::Ident(n) => (None, n.clone()),
+                    other => {
+                        return Err(unsupported(&format!(
+                            "for-loop over {} — the WASM subset iterates a \
+                             named `list[scalar]` param or a string \
+                             (name/literal/concat/str-returning call); bind \
+                             the iterable to a name first",
+                            expr_kind(other)
+                        )));
+                    }
+                };
+                let elem_read = if matches!(iter, Expr::StrChars { .. }) {
+                    Expr::StrCharAt {
+                        string: Box::new(Expr::Ident(src.clone())),
+                        index: Box::new(Expr::Ident(idx.clone())),
+                    }
+                } else {
+                    Expr::Index {
+                        collection: Box::new(Expr::Ident(src.clone())),
+                        index: Box::new(Expr::Ident(idx.clone())),
+                    }
+                };
+                let mut wbody = Vec::with_capacity(body.len() + 2);
+                wbody.push(Stmt::Let {
+                    name: var.clone(),
+                    ty: elem_ty.clone(),
+                    value: elem_read,
+                    mutable: false,
+                });
+                wbody.push(Stmt::Assign {
+                    name: idx.clone(),
+                    value: Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Ident(idx.clone())),
+                        rhs: Box::new(Expr::LitInt(1)),
+                    },
+                });
+                wbody.extend(body);
+                if let Some(setup) = setup {
+                    out.push(setup);
+                }
+                out.push(Stmt::Let {
+                    name: idx.clone(),
+                    ty: Type::I64,
+                    value: Expr::LitInt(0),
+                    mutable: true,
+                });
+                out.push(Stmt::While {
+                    cond: Expr::BinOp {
+                        op: BinOp::Lt,
+                        lhs: Box::new(Expr::Ident(idx.clone())),
+                        rhs: Box::new(Expr::Len(Box::new(Expr::Ident(src)))),
+                    },
+                    body: wbody,
+                });
+            }
+            Stmt::While { cond, body } => out.push(Stmt::While {
+                cond: cond.clone(),
+                body: desugar_foreach_stmts(body, next)?,
+            }),
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => out.push(Stmt::If {
+                cond: cond.clone(),
+                then_body: desugar_foreach_stmts(then_body, next)?,
+                else_body: desugar_foreach_stmts(else_body, next)?,
+            }),
+            other => out.push(other.clone()),
+        }
+    }
+    Ok(out)
+}
+
 // ─── WAT emission ───────────────────────────────────────────────────
 
 /// Emit a full `(module …)` for `module`. Only [`Item::Function`]s are
@@ -1220,6 +1415,11 @@ impl TargetEmitter for WasmSaxpySpecialistEmitter {
 /// any other item kind is refused (no enum/const in the scalar/control
 /// subset).
 pub fn emit_module(module: &Module) -> Result<String, BackendError> {
+    // PMAT-1030: rewrite `for x in xs` / `for ch in s` into the
+    // Let+While+Index/StrCharAt subset FIRST, so every scan pass below and
+    // the per-function emission see only statements they already handle.
+    let desugared = desugar_module_foreach(module)?;
+    let module = &desugared;
     let mut out = String::new();
     writeln!(out, "(module").expect("write to String");
     writeln!(
@@ -3077,11 +3277,52 @@ fn emit_ord(
     out: &mut String,
     depth: usize,
 ) -> Result<WatTy, BackendError> {
+    // PMAT-1030: `ord(ch)` over a bare str NAME — the for-loop desugar binds
+    // the loop var as a 1-char str local, making this the natural checksum /
+    // char-arithmetic shape (`for ch in s: t += ord(ch)`). Python's `ord`
+    // raises TypeError unless the string has length exactly 1, so guard the
+    // header at runtime (`byte_count != 1 → unreachable`) and load byte 0 —
+    // never silently take the first byte of a longer string.
+    if let Expr::Ident(name) = value {
+        if !scope.is_str_name(name) {
+            return Err(unsupported(&format!(
+                "ord({name}) where `{name}` is not a `str` param or local — \
+                 only a str name (i32 base-pointer into linear memory) \
+                 supports ord() in the WASM subset"
+            )));
+        }
+        indent(out, depth);
+        writeln!(out, "local.get ${name}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.load").expect("write"); // header byte count
+        indent(out, depth);
+        writeln!(out, "i32.const 1").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.ne").expect("write");
+        indent(out, depth);
+        writeln!(out, "if").expect("write");
+        indent(out, depth + 1);
+        writeln!(
+            out,
+            "unreachable ;; ord() of a non-1-char string (Python TypeError)"
+        )
+        .expect("write");
+        indent(out, depth);
+        writeln!(out, "end").expect("write");
+        indent(out, depth);
+        writeln!(out, "local.get ${name}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.load8_u offset={LIST_ELEMS_OFFSET}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i64.extend_i32_u").expect("write");
+        return Ok(WatTy::I64);
+    }
     let Expr::StrCharAt { string, index } = value else {
         return Err(unsupported(
-            "ord() of a non-`s[i]` operand — the WASM subset lowers `ord(s[i])` \
-             over a `str` PARAMETER to a bounds-checked i32.load8_u of byte i; \
-             ord() of a whole string, of `chr(n)`, or of a literal is refused",
+            "ord() of a non-`s[i]`/non-name operand — the WASM subset lowers \
+             `ord(s[i])` over a `str` name to a bounds-checked i32.load8_u of \
+             byte i, and `ord(ch)` over a 1-char str name to its byte 0; \
+             ord() of `chr(n)` or of a literal is refused",
         ));
     };
     let Expr::Ident(name) = string.as_ref() else {
