@@ -18451,3 +18451,23 @@ fn transpile_str_char_semantics_py_both_lanes_execute() {
         "executed run() must == CPython 902 (664 checksum + 233 neg-index + 5 len):\n{interp_out}"
     );
 }
+
+/// PMAT-1023 (sweep #10, the realistic-idiom sweep): the UNDER-CLONE class —
+/// count_name_reads now sees f-string interiors and counts loop bodies
+/// twice; reassignment RHS and chained-comparison temps clone-if-reused.
+/// The everyday compute-then-reuse / track-best-key / call-in-loop /
+/// range-comparison-then-reuse shapes all compile and value-match CPython
+/// (10 sweep findings, one counter root cause).
+#[test]
+fn everyday_reuse() {
+    let rust = xpile_transpile_to_rust("everyday_reuse.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(stats_report(), "20.80/2.30/3", "f-string helper calls + reuse");
+    assert_eq!(best_key(), "bob", "reassignment from loop String");
+    assert_eq!(loop_calls(), 21, "read-only helper called every iteration (6*3+0+1+2)");
+    assert_eq!(shift_lower("abz!".to_string()), "bca!", "chained cmp + ch reuse");
+}
+"#;
+    assert_rustc_runs("everyday_reuse", &rust, driver);
+}
