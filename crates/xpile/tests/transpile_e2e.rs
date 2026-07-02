@@ -18798,3 +18798,21 @@ fn main() {
 "#;
     assert_rustc_runs("build_then_append_ok", &rust, driver);
 }
+
+/// PMAT-1047 (sweep #12): int appended into a float list slot (ListAppend and
+/// IndexAppend) was rustc E0308; both paths now widen. MATCH 4.5/2.5.
+#[test]
+fn append_float_widen() {
+    let rust = xpile_transpile_to_rust("append_float_widen.py");
+    assert!(
+        rust.contains("as f64"),
+        "the appended int must widen:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(plain_append(), 4.5, "int into list[float] via append");
+    assert_eq!(dict_inner_append(), 2.5, "int into dict[str, list[float]] inner append");
+}
+"#;
+    assert_rustc_runs("append_float_widen", &rust, driver);
+}

@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Invalid emit fixed: int appended into a float list slot (PMAT-1047)
+
+- `xs: list[float]; xs.append(3)` (ListAppend) and `d["a"].append(3)` over
+  `dict[str, list[float]]` (IndexAppend) emitted the raw int → rustc E0308.
+  Both append paths now widen an int/bool elem via `to_f64_operand` when the
+  (inner) element type is float, mirroring the subscript-slot (PMAT-1040) and
+  field-append (PMAT-1037 slice D) widening. Found by adversarial sweep #12.
+  (A nested list-LITERAL append `g.append([2, 3])` over `list[list[float]]`
+  remains E0308 — filed PMAT-1048, needs recursive literal coercion.)
+- 1 e2e test (732 total); differentially verified (MATCH 4.5/2.5).
+
 ### Silent miscompile fixed: append-then-mutate the appended local (PMAT-1046)
 
 - `container.append(local); local.append(3)` — Python appends a reference, so
