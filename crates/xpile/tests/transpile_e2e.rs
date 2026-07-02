@@ -18597,3 +18597,48 @@ fn attr_chain_alias_append_is_rejected() {
         "the rejection should name the alias pair:\n{stderr}"
     );
 }
+
+/// PMAT-1038: loop-scope name-model mismatches — body-bound loop locals leak
+/// to function scope in Python; fresh top-level body bindings read after the
+/// loop are pre-declared `let mut <name>: T = <default>` so the reuse
+/// (`for row in grid:` after a builder loop) stops being rustc E0425. Also:
+/// definitely-scalar list-literal embeds no longer edge the alias analysis.
+/// Differentially verified vs CPython (MATCH 1/"ccc!ccc!"/15/6).
+#[test]
+fn loop_body_local_leak() {
+    let rust = xpile_transpile_to_rust("loop_body_local_leak.py");
+    assert!(
+        rust.contains("let mut row: Vec<i64> = vec![];"),
+        "the body-bound builder local must be hoisted with a type-default:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // rows [0,0],[1,1] rebuilt then summed by row[0] ⇒ 0+1.
+    assert_eq!(rebuilt_rows(), 1, "builder local reused as a later for-target");
+    // cand leaks out of the collection loop: best="ccc!", cand="ccc!".
+    assert_eq!(leak_after_collection_loop(), "ccc!ccc!", "collection-loop body local leaks");
+    // sq leaks out of the while loop: 9+4+1 total, sq ends 1.
+    assert_eq!(leak_after_while(), 15, "while-body local leaks");
+    // scalar embeds don't poison the alias analysis: 0+2+4.
+    assert_eq!(scalar_embed_matrix(), 6, "range counter embedded in row literals");
+}
+"#;
+    assert_rustc_runs("loop_body_local_leak", &rust, driver);
+}
+
+/// PMAT-1038 guard (h6/h10 witness): pre-bound loop target + in-place element
+/// mutation must REFUSE — the leak clone silently absorbs the mutation.
+#[test]
+fn prebound_iter_mutation_is_rejected() {
+    let py = fixture("prebound_iter_mutation_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "pre-bound target + element mutation must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("PRE-BOUND loop var `row`") && stderr.contains("iter_mut"),
+        "the rejection should name the variable and the mechanism:\n{stderr}"
+    );
+}
