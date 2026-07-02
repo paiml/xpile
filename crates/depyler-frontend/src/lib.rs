@@ -8500,6 +8500,38 @@ fn lower_if_stmt_as_lets(
 }
 
 /// True for a simple `name = expr` statement (the if-as-let branch shape).
+/// PMAT-1050: rewrite every `name: T = value` (AnnAssign, simple-Name target,
+/// with a value) inside an `if`/`elif*`/`else` chain to the plain `name =
+/// value` Assign form, so a mixed annotated/plain chain matches the as-let
+/// shape and lowers uniformly. The value expression is preserved verbatim;
+/// only the annotation (redundant with the value's inferred type for the
+/// as-let `let`) is dropped. Non-Name AnnAssign targets (`obj.f: T = v`,
+/// subscript) are left as-is (they are not as-let arms anyway).
+fn normalize_annotated_if_arms(if_stmt: &mut ast::StmtIf) {
+    fn norm_body(body: &mut Vec<ast::Stmt>) {
+        for s in body.iter_mut() {
+            if let ast::Stmt::AnnAssign(a) = s {
+                if let (ast::Expr::Name(_), Some(v)) = (a.target.as_ref(), a.value.as_ref()) {
+                    let target = (*a.target).clone();
+                    let value = (**v).clone();
+                    *s = ast::Stmt::Assign(ast::StmtAssign {
+                        range: a.range,
+                        targets: vec![target],
+                        value: Box::new(value),
+                        type_comment: None,
+                    });
+                }
+            }
+        }
+        // Recurse the else-if chain (a single nested `if`) for annotated arms.
+        if let [ast::Stmt::If(nested)] = body.as_mut_slice() {
+            normalize_annotated_if_arms(nested);
+        }
+    }
+    norm_body(&mut if_stmt.body);
+    norm_body(&mut if_stmt.orelse);
+}
+
 fn is_simple_name_assign(s: &ast::Stmt) -> bool {
     matches!(s, ast::Stmt::Assign(a)
         if a.targets.len() == 1 && matches!(a.targets[0], ast::Expr::Name(_)))
@@ -9104,6 +9136,15 @@ fn lower_if_stmt(
     ctx: &mut LoweringCtx,
     mut if_stmt: ast::StmtIf,
 ) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-1050 (sweep #12): an if-arm that ANNOTATES its target
+    // (`if flag: y: int = 10 else: y = 20`) used the AnnAssign statement form,
+    // which the as-let shape check (`is_simple_name_assign`, plain-Assign
+    // only) rejected — so a FRESH `y` fell to the general path and emitted a
+    // bare `y = …` with no prior `let` (rustc E0425). Normalize a
+    // simple-Name `name: T = value` arm to `name = value` (the value's
+    // inferred type drives the as-let `let`, matching the unannotated arm) so
+    // the mixed-form chain lowers uniformly. Recurses the elif chain.
+    normalize_annotated_if_arms(&mut if_stmt);
     // PMAT-688: hoist any walrus `(t := E)` in the condition to `let mut t = E;`
     // before the `if` (Python leaks `t` to the enclosing scope). The if-as-let
     // shape has no condition-walrus support, so only the general path hoists.

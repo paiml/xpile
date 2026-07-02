@@ -868,6 +868,14 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'sweep #12. Suite 732 green; MATCH 4.5/2.5; int-list append unregressed.'
+- id: PMAT-1050
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1050: [rust/capability] invalid emit (E0425) — annotated fresh if-arm target broke the as-let shape detection (sweep #12). `if flag: y: int = 10 else: y = 20` used the AnnAssign statement form, which `is_simple_name_assign` (plain-Assign only) rejected, so a FRESH `y` fell to the general Stmt::If path and emitted a bare `y = …` with no prior `let`. FIX: `normalize_annotated_if_arms` rewrites every simple-Name `name: T = value` arm to `name = value` at the top of lower_if_stmt (value verbatim; the annotation is redundant with the value''s inferred type for the as-let `let`), so a mixed annotated/plain chain matches the as-let shape and lowers uniformly (recurses the elif chain). Known first-cut edge: `y: float = 3` (annotated-wider-than-value) infers int from the value — the general as-let int/float-branch limitation, not new.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12. Suite 734 green; MATCH p15/p15c/elif-chain; fresh+prebound-mismatch still refuses; unannotated as-let + side-effect-if regressions pass.'
 - id: PMAT-1049
   github_issue: null
   item_type: bug

@@ -18838,3 +18838,23 @@ fn main() {
 "#;
     assert_rustc_runs("writethrough_impure_index", &rust, driver);
 }
+
+/// PMAT-1050 (sweep #12): an annotated fresh if-arm target (`y: int = 10`)
+/// broke the as-let shape detection → general path → E0425. Annotated arms
+/// are now normalized to plain assignment. MATCH 10/20, 3/4, elif chain.
+#[test]
+fn fresh_parity_annotated() {
+    let rust = xpile_transpile_to_rust("fresh_parity_annotated.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(one_annotated(true), 10);
+    assert_eq!(one_annotated(false), 20);
+    assert_eq!(both_annotated(true), 3);
+    assert_eq!(both_annotated(false), 4);
+    assert_eq!(elif_annotated(5), 2);
+    assert_eq!(elif_annotated(1), 1);
+    assert_eq!(elif_annotated(99), 3);
+}
+"#;
+    assert_rustc_runs("fresh_parity_annotated", &rust, driver);
+}
