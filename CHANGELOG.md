@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.611] — 2026-07-02
+
 ### File I/O — write whole file (PMAT-1075, second increment)
 
 - `open(path, "w").write(content)` as a statement now writes a whole str to a
