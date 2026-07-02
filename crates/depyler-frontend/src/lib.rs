@@ -1393,9 +1393,90 @@ fn alias_class_analysis(
             }
         }
     }
+    // PMAT-1038 (h6 witness): names that are DEFINITELY scalars — a
+    // `range(…)` for-target, or a name only ever assigned literal /
+    // arithmetic / comparison forms. Embedding a scalar in a list literal
+    // is a Python VALUE COPY (ints/floats/bools have no observable
+    // identity), so `row = [i, i * 2]` must NOT edge `i`~`row` — the false
+    // edge unioned the loop counter into the row/grid class and refused
+    // the everyday matrix-building idiom with a factually wrong "aliases
+    // `i` and `row`" message. QUALIFYING forms are Constant / BinOp /
+    // UnaryOp / Compare / BoolOp only; ANY other assignment (a Name copy,
+    // a call, a subscript read, a container literal…) disqualifies the
+    // name — conservative in the safe direction.
+    fn definitely_scalar_names(stmts: &[ast::Stmt]) -> HashSet<String> {
+        fn scalar_expr(e: &ast::Expr) -> bool {
+            matches!(
+                e,
+                ast::Expr::Constant(_)
+                    | ast::Expr::BinOp(_)
+                    | ast::Expr::UnaryOp(_)
+                    | ast::Expr::Compare(_)
+                    | ast::Expr::BoolOp(_)
+            )
+        }
+        fn walk(
+            stmts: &[ast::Stmt],
+            range_targets: &mut HashSet<String>,
+            disq: &mut HashSet<String>,
+        ) {
+            for s in stmts {
+                match s {
+                    ast::Stmt::For(f) => {
+                        if let ast::Expr::Name(t) = f.target.as_ref() {
+                            let is_range = matches!(f.iter.as_ref(), ast::Expr::Call(c)
+                                if matches!(&*c.func, ast::Expr::Name(n) if n.id.as_str() == "range"));
+                            if is_range {
+                                range_targets.insert(t.id.to_string());
+                            } else {
+                                disq.insert(t.id.to_string());
+                            }
+                        }
+                        walk(&f.body, range_targets, disq);
+                        walk(&f.orelse, range_targets, disq);
+                    }
+                    ast::Stmt::Assign(a) => {
+                        for t in &a.targets {
+                            if let ast::Expr::Name(n) = t {
+                                if scalar_expr(a.value.as_ref()) {
+                                    range_targets.insert(n.id.to_string());
+                                } else {
+                                    disq.insert(n.id.to_string());
+                                }
+                            }
+                        }
+                    }
+                    ast::Stmt::AnnAssign(aa) => {
+                        if let ast::Expr::Name(n) = aa.target.as_ref() {
+                            match aa.value.as_deref() {
+                                Some(v) if scalar_expr(v) => {
+                                    range_targets.insert(n.id.to_string());
+                                }
+                                _ => {
+                                    disq.insert(n.id.to_string());
+                                }
+                            }
+                        }
+                    }
+                    ast::Stmt::If(i) => {
+                        walk(&i.body, range_targets, disq);
+                        walk(&i.orelse, range_targets, disq);
+                    }
+                    ast::Stmt::While(w) => walk(&w.body, range_targets, disq),
+                    _ => {}
+                }
+            }
+        }
+        let mut qual = HashSet::new();
+        let mut disq = HashSet::new();
+        walk(stmts, &mut qual, &mut disq);
+        qual.retain(|n| !disq.contains(n));
+        qual
+    }
     // Also alias LIST-LITERAL container embeds: `grid = [row]` / `[x, y]` —
     // Python stores the SAME object; a nested write through the grid is
     // visible through the element name. Edge grid~each bare-Name element.
+    // PMAT-1038: definitely-scalar elements are skipped (value copies).
     fn walk_list_embeds(stmts: &[ast::Stmt], edges: &mut Vec<(String, String)>) {
         for s in stmts {
             match s {
@@ -1436,7 +1517,11 @@ fn alias_class_analysis(
     }
     let mut edges: Vec<(String, String)> = Vec::new();
     walk(body, &mut edges, signatures, structs);
-    walk_list_embeds(body, &mut edges);
+    let mut embed_edges: Vec<(String, String)> = Vec::new();
+    walk_list_embeds(body, &mut embed_edges);
+    let scalars = definitely_scalar_names(body);
+    embed_edges.retain(|(_, el)| !scalars.contains(el));
+    edges.extend(embed_edges);
     if edges.is_empty() {
         return (None, HashSet::new());
     }
@@ -4781,6 +4866,113 @@ fn lower_function_def(
                 }
             }
         }
+        // PMAT-1038: pre-declare BODY-BOUND loop locals read after the loop.
+        // Python leaks any name assigned in a loop body to function scope
+        // (`for i in range(2): row = [i, i]` … then `for row in grid:`
+        // reuses the SAME `row`), but the emitted Rust `let` inside the
+        // loop block dies at the block end — the later read/reassign was
+        // rustc E0425. For each name whose FIRST binding is a TOP-LEVEL
+        // `<name> = <expr>` / `<name>: T = <expr>` in the body of a
+        // top-level `for`/`while`, fresh at loop entry and READ after the
+        // loop: probe the RHS type (with the for-target temporarily
+        // registered so `row = [i, i]` can see `i`; a `range(…)` target is
+        // trivially `int`) and pre-declare `let mut <name>: T = <default>`
+        // — the body binding then lowers as a plain reassignment. Same
+        // PMAT-838/1015 empty-iterable tradeoff (the default survives where
+        // Python raises NameError). First cut: top-level body statements
+        // (a binding nested in an inner `if`/loop keeps today's behavior);
+        // list/primitive types (dict/set-valued loop locals keep E0425).
+        {
+            // (body, optional temp for-target registration)
+            type LoopScan<'a> = (&'a Vec<ast::Stmt>, Option<(String, Type)>);
+            let loop_scan: Option<LoopScan> = match stmt {
+                ast::Stmt::For(f) if f.orelse.is_empty() => {
+                    let temp = match f.target.as_ref() {
+                        ast::Expr::Name(t) if !ctx.bound.contains(t.id.as_str()) => {
+                            match f.iter.as_ref() {
+                                ast::Expr::Call(c) if matches!(&*c.func, ast::Expr::Name(n) if n.id.as_str() == "range") => {
+                                    Some((t.id.to_string(), Type::I64))
+                                }
+                                other => lower_expr_in_ctx(&ctx, other.clone())
+                                    .ok()
+                                    .map(|p| infer_type_in_ctx(&ctx, &p))
+                                    .and_then(|ty| match ty {
+                                        Type::List(el) => Some((t.id.to_string(), *el)),
+                                        Type::Str => Some((t.id.to_string(), Type::Str)),
+                                        _ => None,
+                                    }),
+                            }
+                        }
+                        _ => None,
+                    };
+                    Some((&f.body, temp))
+                }
+                ast::Stmt::While(w) if w.orelse.is_empty() => Some((&w.body, None)),
+                _ => None,
+            };
+            if let Some((body, temp)) = loop_scan {
+                let mut after = HashMap::new();
+                for s in &leading[i + 1..] {
+                    count_reads_stmt(s, &mut after);
+                }
+                count_reads_stmt(last, &mut after);
+                let temp_inserted = match &temp {
+                    Some((tname, tty)) if !ctx.bound.contains(tname) => {
+                        ctx.bound.insert(tname.clone());
+                        ctx.name_types.insert(tname.clone(), tty.clone());
+                        true
+                    }
+                    _ => false,
+                };
+                for bs in body {
+                    let (name, value_ast) = match bs {
+                        ast::Stmt::Assign(a) if a.targets.len() == 1 => match &a.targets[0] {
+                            ast::Expr::Name(n) => (n.id.to_string(), a.value.as_ref()),
+                            _ => continue,
+                        },
+                        ast::Stmt::AnnAssign(aa) => match (aa.target.as_ref(), aa.value.as_deref())
+                        {
+                            (ast::Expr::Name(n), Some(v)) => (n.id.to_string(), v),
+                            _ => continue,
+                        },
+                        _ => continue,
+                    };
+                    if ctx.bound.contains(&name)
+                        || ctx.loop_scoped.contains(&name)
+                        || after.get(&name).copied().unwrap_or(0) == 0
+                    {
+                        continue;
+                    }
+                    let Some(ty) = lower_expr_in_ctx(&ctx, value_ast.clone())
+                        .ok()
+                        .map(|p| infer_type_in_ctx(&ctx, &p))
+                    else {
+                        continue;
+                    };
+                    let default = match &ty {
+                        Type::List(_) => Some(Expr::ListLit(vec![])),
+                        other => primitive_default(other),
+                    };
+                    let Some(default) = default else {
+                        continue;
+                    };
+                    stmts.push(Stmt::Let {
+                        name: name.clone(),
+                        ty: ty.clone(),
+                        value: default,
+                        mutable: true,
+                    });
+                    ctx.bound.insert(name.clone());
+                    ctx.name_types.insert(name.clone(), ty);
+                }
+                if temp_inserted {
+                    if let Some((tname, _)) = &temp {
+                        ctx.bound.remove(tname);
+                        ctx.name_types.remove(tname);
+                    }
+                }
+            }
+        }
         // A single Python statement may lower to multiple meta-HIR
         // statements — most notably a multi-assignment `if/else`, where
         // each assigned name gets its own `Let` with an `IfExpr` value
@@ -7346,6 +7538,27 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             if let Expr::Ident(base) = &iter_expr {
                 ctx.mutable.insert(base.clone());
             }
+        }
+        // PMAT-1038 (h6 witness): a PRE-BOUND loop target whose body mutates
+        // the element in place — `row = …` before `for row in grid:
+        // row.append(x)` — needs BOTH `iter_mut` (so the mutation reaches
+        // `grid`) and the leak's clone-assign to the outer name (so a
+        // post-loop read sees the last element), which the emit shapes
+        // cannot express together: the leak clone received the mutation and
+        // the original rows silently didn't (rust panic / wrong value vs
+        // CPython 27 on the witness). Pre-existing for genuinely pre-bound
+        // names; the PMAT-1038 hoist makes builder locals pre-bound BY
+        // DESIGN, so the refusal keeps the newly-reachable shape loud.
+        if leak_to_outer
+            && matches!(elem_ty, Type::List(_) | Type::Struct(_))
+            // In the leak path `loop_var` is the fresh `__feN` temp; the body
+            // names the OUTER `target_name` (which the leak assigns a clone).
+            && foreach_elem_mutated(&body, &target_name)
+        {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` iterates with PRE-BOUND loop var `{target_name}` and mutates the element in place — the value model cannot both propagate the mutation (iter_mut) and leak the last element to the outer `{target_name}`; use a fresh loop-var name or collect into a new list instead of mutating in place",
+                ctx.fn_name
+            )));
         }
         // PMAT-1013 (sweep #7): MUTATION-DURING-ITERATION — the body mutates
         // the very list the loop iterates (`for x in xs: xs.append(99)`).

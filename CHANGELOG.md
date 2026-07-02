@@ -7,6 +7,35 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Loop-scope name-model mismatches — body-bound locals leak like Python (PMAT-1038)
+
+- **Body-bound loop locals now leak to function scope** — Python leaks any
+  name assigned in a loop body (`for i in range(2): row = [i, i]` … then
+  `for row in grid:` reuses the SAME `row`), but the emitted `let` died at
+  the loop block (rustc E0425 on the everyday builder-then-iterate shape).
+  Fresh TOP-LEVEL body bindings read after the loop are pre-declared
+  `let mut <name>: T = <default>` (RHS probe-typed with the for-target
+  registered; `range` targets are trivially `int`; `for` and `while` both) —
+  the body binding lowers as a plain reassignment. Same PMAT-838/1015
+  empty-iterable tradeoff (the default survives where Python raises
+  NameError). Bindings nested in inner `if`/loops and dict/set-valued
+  locals keep today's behavior (E0425) — first cut.
+- **Definitely-scalar embeds no longer poison the alias analysis** —
+  `row = [i, i * 2]` edged `i`~`row` and refused the matrix-building idiom
+  with a factually wrong "aliases `i` and `row`" (ints are Python value
+  copies). A conservative definitely-scalar classifier (range targets +
+  literal/arithmetic-only assignments; ANY other binding disqualifies)
+  filters embed edges. Real container embeds (`grid = [row, row]`) keep
+  their shared-inner-row refusal.
+- **Pre-bound target + in-place element mutation refuses precisely** (h6/h10
+  witnesses): the value model cannot both propagate the mutation
+  (`iter_mut`) and leak the last element into the outer name — the leak
+  clone silently absorbed the append (rust panic / wrong value vs CPython).
+  Pre-existing SILENT bug for genuinely pre-bound names; the hoist makes
+  builder locals pre-bound by design, so the refusal keeps it loud.
+- 2 e2e tests (723 total): the 4-function differential fixture
+  (MATCH 1/"ccc!ccc!"/15/6) and the pre-bound-mutation refusal.
+
 ### Attribute-chain field appends on struct locals — the PMAT-1037 epic completes (slice D)
 
 - **`b.items.append(x)` outside methods lands** — the PMAT-1022
