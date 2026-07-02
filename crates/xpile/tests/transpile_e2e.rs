@@ -19448,3 +19448,21 @@ fn main() {
 "#;
     assert_rustc_runs("file_append", &rust, driver);
 }
+
+/// PMAT-1079: a var assigned from a loop-local subscript (`job = parts[2]`)
+/// and reused as a for-target must hoist typed `str`, not `i64`. MATCH.
+#[test]
+fn loop_local_subscript_reuse() {
+    let rust = xpile_transpile_to_rust("loop_local_subscript_reuse.py");
+    assert!(
+        !rust.contains("let mut job: i64"),
+        "job (assigned parts[2], a str) must not hoist as i64:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let rows = vec!["alice,30,eng".to_string(), "bob,25,art".to_string(), "carol,35,eng".to_string()];
+    assert_eq!(group_by_last(rows), "art:bob;eng:alice;", "grouped by 3rd col, sorted keys");
+}
+"#;
+    assert_rustc_runs("loop_local_subscript_reuse", &rust, driver);
+}
