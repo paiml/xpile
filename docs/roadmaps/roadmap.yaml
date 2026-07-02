@@ -860,6 +860,14 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).' SHIPPED 2026-07-02: fresh top-level loop-body bindings read after the loop pre-declare `let mut <name>: T = <default>` (RHS probe-typed, for/while both; range targets trivially int; list defaults vec![]); definitely-scalar list-literal embeds no longer edge the alias analysis (the false `aliases i and row` refusal); pre-bound-target + element-mutation refuses precisely (the leak clone silently absorbed the mutation — pre-existing silent bug, now loud). Residual: bindings nested in inner if/loops and dict/set-valued loop locals keep E0425.
+- id: PMAT-1046
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1046: [rust/correctness] SILENT miscompile — `container.append(local)` then mutate `local` drops the shared mutation (sweep #12). Python appends a REFERENCE, so `grid.append(row); row.append(3)` leaves `grid[0] == [1,2,3]`; xpile clones the appended value (the clone is NEEDED so a read-only-reused local survives — PMAT-1037 slice D g19) which silently drops the later mutation (`grid[0]` stays `[1,2]` — a DIVERGE). Introduced when slice D enabled attr-chain field appends on locals. FIX: `reject_append_then_mutate`, a flow-sensitive AST pre-check. POSITION-sensitive by design — the common build-then-append idiom (`row = []; row.append(x); grid.append(row)`) mutates BEFORE the embed and MUST stay valid, so `ctx.obj_mutated` (position-insensitive) would over-refuse it. Forward-scans source order: an `append`/`insert(_, local)` embed marks the local live; a subsequent object-mutation (mutator-method receiver or subscript-write base — container ops only, so an embedded scalar never trips) of a live local is the violation; a rebind clears it. Refuses (Rc<RefCell> reference model is the deferred strategic fix).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 finding, the last silent divergence of the batch. Suite 731 green; A/B/D build-then-append MATCH, C/insert-variant/p12 REFUSE, scalar-embed no false-positive.'
 - id: PMAT-1045
   github_issue: null
   item_type: bug

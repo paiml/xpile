@@ -7,6 +7,21 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Silent miscompile fixed: append-then-mutate the appended local (PMAT-1046)
+
+- `container.append(local); local.append(3)` — Python appends a reference, so
+  the mutation shows through the container (`grid[0] == [1,2,3]`), but xpile
+  clones the appended value (needed so a read-only-reused local survives) and
+  silently dropped the mutation (`grid[0] == [1,2]`). Exposed when slice D
+  enabled attr-chain field appends on locals. Found by adversarial sweep #12.
+- Fix: `reject_append_then_mutate`, a flow-sensitive AST pre-check — an
+  `append`/`insert(_, local)` embed marks the local live; a subsequent
+  in-place mutation of a live local refuses. POSITION-sensitive so the common
+  build-then-append idiom (mutate before embedding) stays valid; an embedded
+  scalar (value copy) never trips it. Refuses rather than miscompiles (the
+  Rc<RefCell> reference model remains the deferred strategic fix).
+- 2 e2e tests (731 total): the refusal and the build-then-append regression.
+
 ### Invalid emit fixed: field/nested dict-store leaf key was moved not cloned (PMAT-1045)
 
 - The shared subscript write-through emitter (FieldIndexAssign /
