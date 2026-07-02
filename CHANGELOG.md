@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### File I/O — write whole file (PMAT-1075, second increment)
+
+- `open(path, "w").write(content)` as a statement now writes a whole str to a
+  file (truncating), emitted inline as `std::fs::write(&(path), &(content))`
+  (args borrowed via AsRef so a variable path/content isn't moved) with a
+  FileNotFoundError/OSError panic. New meta-HIR `Stmt::FileWrite`; Lean and WASM
+  refuse it. Mode `"w"` only; `"a"` (append) refuses precisely. Round-trips
+  with `open(path).read()` — basic file I/O (read + write) is now complete.
+- 1 e2e test (754 total); differentially verified (write-then-read, truncation).
+
 ### File I/O — read whole file (PMAT-1074, first increment)
 
 - `open(path).read()` now reads a whole file to a `str`, emitted inline as

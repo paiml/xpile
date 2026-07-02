@@ -406,6 +406,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-039: see rust-codegen's twin arm — shell commands
             // carry no BigInt operands.
             Stmt::Cmd { .. } => false,
+            Stmt::FileWrite { .. } => false,
             // PMAT-041: see rust-codegen's twin arm.
             Stmt::Pipeline { .. } => false,
             // PMAT-048: see rust-codegen's twin arm.
@@ -1247,6 +1248,18 @@ fn emit_stmt_indented(
         // matching arm. Ruchy compiles to Rust and inherits Rust's
         // disposition — no Ruchy-level translation of `Stmt::Cmd`
         // exists.
+        Stmt::FileWrite { path, content } => {
+            // PMAT-1075: `open(p, "w").write(s)` → inline std::fs::write (truncate).
+            // Borrow path + content (`&(...)`) via AsRef so a variable path/content
+            // isn't moved (it may be read again after the write) — E0382 otherwise.
+            write!(out, "{indent}::std::fs::write(&(")?;
+            emit_expr(out, path, mode)?;
+            out.push_str("), &(");
+            emit_expr(out, content, mode)?;
+            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) });"##);
+            writeln!(out)?;
+            Ok(())
+        }
         Stmt::Cmd { program, args } => Err(RuchyCodegenError::Unsupported(format!(
             "Ruchy backend does not lower Stmt::Cmd (`{program}` with {} arg(s)) — \
              contract C-BASHRS-POSIX-IDEMPOTENCE governs this construct; \

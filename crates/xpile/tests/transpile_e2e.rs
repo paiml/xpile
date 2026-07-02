@@ -19369,3 +19369,22 @@ fn main() {
 "#;
     assert_rustc_runs("file_read", &rust, driver);
 }
+
+/// PMAT-1075: `open(p, "w").write(s)` → inline `std::fs::write`. Round-trips
+/// with read; truncation verified. MATCH.
+#[test]
+fn file_write() {
+    let rust = xpile_transpile_to_rust("file_write.py");
+    assert!(
+        rust.contains("std :: fs :: write") || rust.contains("std::fs::write"),
+        "open(p, \"w\").write(s) lowers to std::fs::write:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let p = "/tmp/xpile_e2e_file_write.txt".to_string();
+    assert_eq!(write_then_read(p.clone(), "payload".to_string()), 7, "write then read len");
+    assert_eq!(overwrite(p.clone()), "second", "second write truncates the first");
+}
+"#;
+    assert_rustc_runs("file_write", &rust, driver);
+}
