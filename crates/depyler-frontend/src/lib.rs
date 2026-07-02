@@ -2928,6 +2928,191 @@ impl Frontend for PythonFrontend {
 ///
 /// A call into a non-mutating helper (e.g. `helper(xs) + helper(xs)` in
 /// `call_arg_reuse.py`) leaves `Param::mutable == false`, so it is untouched.
+/// PMAT-1046 (sweep #12): flow-sensitive rejection of `container.append(local)`
+/// followed by an in-place mutation of `local`. Python's `append` stores a
+/// REFERENCE, so `grid.append(row); row.append(3)` leaves `grid[0]` == `[…,3]`;
+/// xpile clones the appended value (needed so a read-only-reused `local`
+/// survives), which silently DROPS that shared mutation (`grid[0]` stays the
+/// pre-mutation copy — a DIVERGE). Refuse instead.
+///
+/// Position-SENSITIVE by design: the common build-then-append idiom
+/// (`row = []; row.append(x); grid.append(row)`) mutates `local` BEFORE the
+/// embed and must stay valid, so a position-insensitive check (`ctx.obj_mutated`)
+/// would over-refuse it. This forward-scans in source order: an embed marks
+/// `local` live; a subsequent object-mutation of a live `local` is the
+/// violation; a rebind (`local = …`) clears it (a fresh object — e.g. a loop
+/// re-init). Only unambiguous CONTAINER mutations (mutator-method receivers,
+/// subscript-write bases) count — so an embedded scalar (a value copy) never
+/// trips it, and no type information is needed.
+fn reject_append_then_mutate(fn_name: &str, body: &[ast::Stmt]) -> Result<(), FrontendError> {
+    fn is_container_mutator(attr: &str) -> bool {
+        matches!(
+            attr,
+            "append"
+                | "extend"
+                | "insert"
+                | "remove"
+                | "sort"
+                | "reverse"
+                | "clear"
+                | "pop"
+                | "add"
+                | "update"
+                | "discard"
+        )
+    }
+    // The bare-Name objects a statement mutates IN PLACE (container ops only —
+    // never a rebind). Scans value expressions too (`x = local.pop()`).
+    fn mutated_objects(s: &ast::Stmt, out: &mut Vec<String>) {
+        fn expr_recv(e: &ast::Expr, out: &mut Vec<String>) {
+            if let ast::Expr::Call(c) = e {
+                if let ast::Expr::Attribute(a) = c.func.as_ref() {
+                    if is_container_mutator(a.attr.as_str()) {
+                        // `local.append(...)` / `local[i].append(...)`.
+                        match a.value.as_ref() {
+                            ast::Expr::Name(n) => out.push(n.id.to_string()),
+                            ast::Expr::Subscript(sub) => {
+                                if let ast::Expr::Name(n) = sub.value.as_ref() {
+                                    out.push(n.id.to_string());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    expr_recv(a.value.as_ref(), out);
+                }
+                for arg in &c.args {
+                    expr_recv(arg, out);
+                }
+            }
+        }
+        match s {
+            ast::Stmt::Expr(e) => expr_recv(&e.value, out),
+            ast::Stmt::Assign(a) => {
+                expr_recv(&a.value, out);
+                // `local[i] = v` mutates `local` in place.
+                for t in &a.targets {
+                    if let Some(base) = subscript_chain_base_name(t) {
+                        out.push(base);
+                    }
+                }
+            }
+            ast::Stmt::AugAssign(a) => {
+                expr_recv(&a.value, out);
+                if let Some(base) = subscript_chain_base_name(a.target.as_ref()) {
+                    out.push(base);
+                }
+            }
+            ast::Stmt::Return(r) => {
+                if let Some(v) = r.value.as_deref() {
+                    expr_recv(v, out);
+                }
+            }
+            ast::Stmt::Delete(d) => {
+                for t in &d.targets {
+                    if let Some(base) = subscript_chain_base_name(t) {
+                        out.push(base);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // The bare-Name argument objects a statement EMBEDS by reference —
+    // `X.append(local)` / `X.insert(i, local)`. `extend` copies elements (not
+    // the list object), so it is NOT an embed.
+    fn embedded_objects(s: &ast::Stmt, out: &mut Vec<String>) {
+        if let ast::Stmt::Expr(e) = s {
+            if let ast::Expr::Call(c) = e.value.as_ref() {
+                if let ast::Expr::Attribute(a) = c.func.as_ref() {
+                    let arg = match a.attr.as_str() {
+                        "append" => c.args.first(),
+                        "insert" => c.args.get(1),
+                        _ => None,
+                    };
+                    if let Some(ast::Expr::Name(n)) = arg {
+                        out.push(n.id.to_string());
+                    }
+                }
+            }
+        }
+    }
+    // Names a statement REBINDS to a fresh object (clears any embed).
+    fn rebound_names(s: &ast::Stmt, out: &mut Vec<String>) {
+        match s {
+            ast::Stmt::Assign(a) => {
+                for t in &a.targets {
+                    if let ast::Expr::Name(n) = t {
+                        out.push(n.id.to_string());
+                    }
+                }
+            }
+            ast::Stmt::AugAssign(a) => {
+                // Treat `local += …` as a rebind (clear): a scalar `n += 1`
+                // must not be read as a container mutation (no type info here).
+                if let ast::Expr::Name(n) = a.target.as_ref() {
+                    out.push(n.id.to_string());
+                }
+            }
+            ast::Stmt::AnnAssign(a) => {
+                if let ast::Expr::Name(n) = a.target.as_ref() {
+                    out.push(n.id.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    fn walk(
+        stmts: &[ast::Stmt],
+        embedded: &mut std::collections::HashSet<String>,
+        fn_name: &str,
+    ) -> Result<(), FrontendError> {
+        for s in stmts {
+            // 1. A mutation of an already-embedded object is the violation.
+            let mut muts = Vec::new();
+            mutated_objects(s, &mut muts);
+            for n in &muts {
+                if embedded.contains(n) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{fn_name}` appends `{n}` into a container and then mutates \
+                         `{n}` in place — Python appends a REFERENCE, so the mutation is visible \
+                         through the container, but xpile's value semantics clone the appended \
+                         value and would silently drop it. Mutate `{n}` BEFORE appending it, or \
+                         append a copy (`{n}[:]`) if the container should not see later changes."
+                    )));
+                }
+            }
+            // 2. A rebind clears the embed (fresh object).
+            let mut rebinds = Vec::new();
+            rebound_names(s, &mut rebinds);
+            for n in &rebinds {
+                embedded.remove(n);
+            }
+            // 3. New embeds go live.
+            let mut embeds = Vec::new();
+            embedded_objects(s, &mut embeds);
+            for n in embeds {
+                embedded.insert(n);
+            }
+            // 4. Recurse into nested blocks in source order (conservative: an
+            //    embed in `then` seen against a mutation in `else` over-refuses,
+            //    which is safe).
+            match s {
+                ast::Stmt::If(i) => {
+                    walk(&i.body, embedded, fn_name)?;
+                    walk(&i.orelse, embedded, fn_name)?;
+                }
+                ast::Stmt::While(w) => walk(&w.body, embedded, fn_name)?,
+                ast::Stmt::For(f) => walk(&f.body, embedded, fn_name)?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    let mut embedded = std::collections::HashSet::new();
+    walk(body, &mut embedded, fn_name)
+}
+
 fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
     // PMAT-1043: free functions and methods live in SEPARATE name maps. A
     // single bare-name HashMap let a non-mutating same-named sibling MASK a
@@ -4547,6 +4732,13 @@ fn lower_function_def(
             f.name
         )));
     }
+
+    // PMAT-1046 (sweep #12): reject `container.append(local); local.<mutate>()`
+    // — Python appends a REFERENCE, so a later mutation of `local` is visible
+    // through the container; xpile clones the appended value, silently
+    // dropping that shared mutation. Flow-sensitive AST pre-check (mutation
+    // AFTER the embed only — build-then-append stays valid).
+    reject_append_then_mutate(&f.name, &f.body)?;
 
     // PMAT-741 (HUNT-V12 V12-9/10/11): capture each param's default AST before
     // the args are consumed below, so a mutable-collection default mutated in the

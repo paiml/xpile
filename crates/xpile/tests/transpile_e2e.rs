@@ -18766,3 +18766,35 @@ fn main() {
 "#;
     assert_rustc_runs("fieldindex_dict_key_reuse", &rust, driver);
 }
+
+/// PMAT-1046 (sweep #12): `container.append(local); local.mutate()` silently
+/// dropped the shared mutation (clone detached the appended value) — now
+/// REFUSED via a flow-sensitive append-then-mutate check.
+#[test]
+fn append_then_mutate_is_rejected() {
+    let py = fixture("append_then_mutate_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "append-then-mutate-the-appended-local must be REFUSED, not silently miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("appends `row`") && stderr.contains("mutates"),
+        "the rejection should name the embedded local:\n{stderr}"
+    );
+}
+
+/// PMAT-1046 companion: build-then-append (mutate BEFORE embedding) stays
+/// valid — the guard is position-sensitive.
+#[test]
+fn build_then_append_ok() {
+    let rust = xpile_transpile_to_rust("build_then_append_ok.py");
+    let driver = r#"
+fn main() {
+    // grid[2] = [2, 4], len 3 ⇒ 2 + 4 + 3 = 9.
+    assert_eq!(build_rows(), 9, "build-then-append must still compile and run");
+}
+"#;
+    assert_rustc_runs("build_then_append_ok", &rust, driver);
+}
