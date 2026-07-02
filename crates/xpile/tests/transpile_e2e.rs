@@ -12556,7 +12556,9 @@ fn transpile_python_subprocess_run_with_non_list_arg_fails_with_clear_error() {
 fn nested_dict_assign_emitted_rust_matches_cpython() {
     let rust = xpile_transpile_to_rust("nested_dict_assign.py");
     assert!(
-        rust.contains("get_mut(&(String::from(\"a\"))).unwrap()"),
+        // PMAT-1049: step indices bind to `__sidx` temps before `&mut base`,
+        // so the dict-level navigation is `get_mut(&__sidxN)`.
+        rust.contains("get_mut(&__sidx0).unwrap()"),
         "expected get_mut navigation for the dict level, got:\n{rust}"
     );
     let driver = r#"
@@ -18470,4 +18472,463 @@ fn main() {
 }
 "#;
     assert_rustc_runs("everyday_reuse", &rust, driver);
+}
+
+/// PMAT-1037: subscript stores through struct FIELDS — `self.counts[i] = v`,
+/// `self.m[k] = v`, nested `self.cells[r][c] = v`, local `c.counts[0] = v` —
+/// the dominant remaining class-state refusal ("non-Name subscript-assignment
+/// target"). New `Stmt::FieldIndexAssign` rides the NestedSubscriptAssign
+/// emitter (shared `emit_subscript_write_through`) with base `<obj>.<field>`.
+/// Differentially verified vs CPython (MATCH 14/56/56/4.5/14/6).
+#[test]
+fn oop_field_subscript_stores() {
+    let rust = xpile_transpile_to_rust("oop_field_subscript_stores.py");
+    assert!(
+        rust.contains("pub fn hit(&mut self"),
+        "a field-subscript store must classify the method mutating (&mut self):\n{rust}"
+    );
+    assert!(
+        rust.contains("&mut self.counts"),
+        "the store walks through `&mut self.counts` (shared emitter):\n{rust}"
+    );
+    assert!(
+        rust.contains("for c in cs.iter_mut()"),
+        "a loop-var field-subscript store drives iter_mut (foreach_elem_mutated):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // hit(1)×2 then bump(1,3) ⇒ counts[1]=5; last(9) ⇒ counts[-1]=counts[2]=9.
+    assert_eq!(self_stores(), 14, "list-field plain + aug + negative-index stores");
+    // cells[1][0]=42, grid["r"][1]=5, marks[True]=marks[1]=9 ⇒ 56.
+    assert_eq!(board_stores(), 56, "nested list, dict-of-list, bool-key dict fields");
+    // Local receiver: counts[0]=50, counts[2]+=6 ⇒ 56.
+    assert_eq!(local_store(), 56, "field-subscript stores on a struct local");
+    // int 3 widens into the float leaf: 3.0 + 1.5.
+    assert_eq!(widen_store(), 4.5, "int→float leaf widening (PMAT-1017 parity)");
+    // Both elements written through iter_mut ⇒ 7+7.
+    assert_eq!(loop_elem_store(), 14, "loop-var element store reaches the originals");
+    // score(q)+score(q)+len(q) — method args ride the reuse-clone ⇒ 2+2+2.
+    assert_eq!(method_arg_reuse(), 6, "method-arg reuse clones like free fns");
+}
+"#;
+    assert_rustc_runs("oop_field_subscript_stores", &rust, driver);
+}
+
+/// PMAT-1037 guard: a field-subscript store through one alias while the other
+/// stays observed must REFUSE (Python shares; the value model would clone).
+#[test]
+fn field_subscript_alias_is_rejected() {
+    let py = fixture("field_subscript_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "field-subscript store through a live alias must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("aliases `c` and `c2`"),
+        "the rejection should name the alias pair:\n{stderr}"
+    );
+}
+
+/// PMAT-1037 guard (the g14 witness): a mutating METHOD call whose container
+/// arg is reused must refuse — `q.pop(0)` in the store's INDEX position marks
+/// the method as mutating its parameter (expr_has_mutator's Subscript arm),
+/// and the MethodCall guard arm fires on the reuse-cloned argument. Without
+/// the pair the pop lands on a throwaway clone: len(q) prints 2 vs CPython 1.
+#[test]
+fn method_arg_mutation_is_rejected() {
+    let py = fixture("method_arg_mutation_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "reused arg into a param-mutating METHOD must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`drain` mutates its") && stderr.contains("parameter #1"),
+        "the rejection should name the method and parameter:\n{stderr}"
+    );
+}
+
+/// PMAT-1037 slice D: attribute-chain container mutators on struct LOCALS —
+/// `b.items.append(x)` outside methods (the PMAT-1022 branch generalized from
+/// `self` to any struct-typed Name receiver). Pushed values ride the
+/// ListAppend reuse-clone; the pre-walk marks the root binding `let mut`.
+/// Differentially verified vs CPython (MATCH 11/9/2.5/4).
+#[test]
+fn attr_chain_field_append() {
+    let rust = xpile_transpile_to_rust("attr_chain_field_append.py");
+    assert!(
+        rust.contains("let mut a: Acc"),
+        "the pre-walk must mark the appended-through local mut:\n{rust}"
+    );
+    assert!(
+        rust.contains("((a).vals).push("),
+        "the chain lowers to a push on the FieldAccess:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // size()=2 after two appends, vals[1]=9 ⇒ 11.
+    assert_eq!(append_outside_methods(), 11, "appends through a struct local");
+    // 0,1,4,9 appended in the loop ⇒ vals[3]=9.
+    assert_eq!(append_in_loop(), 9, "loop-body appends (pre-walk mut)");
+    // int 2 widens into the float-list field: 0.5 + 2.0.
+    assert_eq!(append_widens(), 2.5, "pushed value widens to the elem type");
+    // w pushed twice (reuse-cloned) and still readable ⇒ 2 + 2.
+    assert_eq!(append_reused_value(), 4, "reused pushed value rides the clone");
+}
+"#;
+    assert_rustc_runs("attr_chain_field_append", &rust, driver);
+}
+
+/// PMAT-1037 slice D guard (the d5 witness): the chain-append through a live
+/// alias must REFUSE — before slice D the append itself refused, masking the
+/// collect_obj_mutated gap; a clone here silently drops the shared mutation.
+#[test]
+fn attr_chain_alias_append_is_rejected() {
+    let py = fixture("attr_chain_alias_append_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "chain-append through a live alias must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("aliases `b` and `b2`"),
+        "the rejection should name the alias pair:\n{stderr}"
+    );
+}
+
+/// PMAT-1038: loop-scope name-model mismatches — body-bound loop locals leak
+/// to function scope in Python; fresh top-level body bindings read after the
+/// loop are pre-declared `let mut <name>: T = <default>` so the reuse
+/// (`for row in grid:` after a builder loop) stops being rustc E0425. Also:
+/// definitely-scalar list-literal embeds no longer edge the alias analysis.
+/// Differentially verified vs CPython (MATCH 1/"ccc!ccc!"/15/6).
+#[test]
+fn loop_body_local_leak() {
+    let rust = xpile_transpile_to_rust("loop_body_local_leak.py");
+    assert!(
+        rust.contains("let mut row: Vec<i64> = vec![];"),
+        "the body-bound builder local must be hoisted with a type-default:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // rows [0,0],[1,1] rebuilt then summed by row[0] ⇒ 0+1.
+    assert_eq!(rebuilt_rows(), 1, "builder local reused as a later for-target");
+    // cand leaks out of the collection loop: best="ccc!", cand="ccc!".
+    assert_eq!(leak_after_collection_loop(), "ccc!ccc!", "collection-loop body local leaks");
+    // sq leaks out of the while loop: 9+4+1 total, sq ends 1.
+    assert_eq!(leak_after_while(), 15, "while-body local leaks");
+    // scalar embeds don't poison the alias analysis: 0+2+4.
+    assert_eq!(scalar_embed_matrix(), 6, "range counter embedded in row literals");
+}
+"#;
+    assert_rustc_runs("loop_body_local_leak", &rust, driver);
+}
+
+/// PMAT-1038 guard (h6/h10 witness): pre-bound loop target + in-place element
+/// mutation must REFUSE — the leak clone silently absorbs the mutation.
+#[test]
+fn prebound_iter_mutation_is_rejected() {
+    let py = fixture("prebound_iter_mutation_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "pre-bound target + element mutation must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("PRE-BOUND loop var `row`") && stderr.contains("iter_mut"),
+        "the rejection should name the variable and the mechanism:\n{stderr}"
+    );
+}
+
+/// PMAT-1040: int/bool stored into a float-annotated slot on the
+/// Name-bottoming subscript-assign paths (list / dict / nested) — was rustc
+/// E0308 invalid emit; now widened (FieldAssign/FieldIndexAssign
+/// convention). Differentially verified vs CPython (MATCH 4.5/3.25/3.5/2.5).
+#[test]
+fn float_slot_stores() {
+    let rust = xpile_transpile_to_rust("float_slot_stores.py");
+    assert!(
+        rust.contains("as f64"),
+        "the int value must widen into the float slot:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(list_slot(), 4.5, "int into list[float] slot");
+    assert_eq!(dict_slot(), 3.25, "int into dict[str, float] value");
+    assert_eq!(nested_slot(), 3.5, "int into list[list[float]] leaf");
+    assert_eq!(bool_slot(), 2.5, "bool into a float slot (True == 1.0)");
+}
+"#;
+    assert_rustc_runs("float_slot_stores", &rust, driver);
+}
+
+/// PMAT-1041: empty container literals stored into subscript slots —
+/// `d[k] = []` (the grouping idiom), `d[k] = {}`, `g[0] = []`, and the field
+/// path — were refused ("requires a type annotation") though the slot's
+/// declared type determines everything; the emitted insert site types the
+/// inference-friendly empty literal. MATCH 23/2/19/2 vs CPython.
+#[test]
+fn empty_literal_stores() {
+    let rust = xpile_transpile_to_rust("empty_literal_stores.py");
+    let driver = r#"
+fn main() {
+    // "bb","cc" land in d[2] (2 entries), d has 3 keys ⇒ 23.
+    assert_eq!(group_by_len(), 23, "if-not-in-then-init grouping idiom");
+    // {} then two inserts ⇒ 2.
+    assert_eq!(dict_into_dict(), 2, "empty dict into a dict-of-dict slot");
+    // [1,2,3] reset to [] then one append ⇒ len 1, elem 9 ⇒ 19.
+    assert_eq!(reset_slot(), 19, "reset an existing slot to empty");
+    // two ensured keys through the self-field path ⇒ 2.
+    assert_eq!(field_slot(), 2, "empty literal through self.groups[k]");
+}
+"#;
+    assert_rustc_runs("empty_literal_stores", &rust, driver);
+}
+
+/// PMAT-1042: assignment-only if/elif/else arms over PRE-BOUND names no
+/// longer require branch parity — the general Stmt::If reassigns
+/// scope-safely; parity still guards fresh bindings (as-let path).
+/// Differentially verified vs CPython (MATCH 10/20/21/20).
+#[test]
+fn branch_parity_prebound() {
+    let rust = xpile_transpile_to_rust("branch_parity_prebound.py");
+    let driver = r#"
+fn main() {
+    // then-arm sets x=1, y stays 0 ⇒ 10.
+    assert_eq!(one_side_each(), 10, "different name per arm, both pre-bound");
+    // n=5 hits the elif: b=2 ⇒ 20.
+    assert_eq!(elif_chain(), 20, "three-way chain, one name per arm");
+    // n=7: lo=7, hi=14 ⇒ 21.
+    assert_eq!(uneven_arms(), 21, "uneven arm sizes");
+    // parity-holding fresh binding keeps the as-let path ⇒ 20.
+    assert_eq!(parity_fresh_still_as_let(), 20, "as-let unchanged");
+}
+"#;
+    assert_rustc_runs("branch_parity_prebound", &rust, driver);
+}
+
+/// PMAT-1043 (sweep #12): a same-named method across two classes (one mutates
+/// its param, one doesn't) collided in the guard's bare-name map — the
+/// non-mutating sibling masked the mutating one and the reuse-clone silently
+/// dropped the mutation. Now the shape REFUSES loudly.
+#[test]
+fn method_name_collision_is_rejected() {
+    let py = fixture("method_name_collision_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "reused arg into a same-named param-mutating method must be REFUSED, not silently miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("mutates its") && stderr.contains("parameter #1"),
+        "the rejection should name the mutating parameter:\n{stderr}"
+    );
+}
+
+/// PMAT-1044 (sweep #12): as-let fusion miscompiled intra-arm read-after-write
+/// (`b = a; a = 9` read the updated a) — such pre-bound chains now divert to
+/// the general sequential path. Differentially verified (MATCH 27/91, 22/11).
+#[test]
+fn aslet_seq_hazard() {
+    let rust = xpile_transpile_to_rust("aslet_seq_hazard.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(swap_ish(true), 27, "then arm: a=b(2), b=7");
+    assert_eq!(swap_ish(false), 91, "else arm: b=a(1) BEFORE a=9");
+    assert_eq!(chained(true), 22, "a=b(2) then b=a(2)");
+    assert_eq!(chained(false), 11, "b=a(1) then a=b(1)");
+}
+"#;
+    assert_rustc_runs("aslet_seq_hazard", &rust, driver);
+}
+
+/// PMAT-1045 (sweep #12): the leaf dict key in a FieldIndexAssign /
+/// NestedSubscriptAssign store was moved into `.insert`, so a non-Copy key
+/// reused after the store was E0382; the key now clones.
+#[test]
+fn fieldindex_dict_key_reuse() {
+    let rust = xpile_transpile_to_rust("fieldindex_dict_key_reuse.py");
+    assert!(
+        rust.contains(").clone(); "),
+        "the write-through emitter must bind cloned index temps:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // cells["a"][1]+[2] = 6.0, + 2 outer keys = 8.0; r reused across empty-init + store.
+    assert_eq!(table_sum(), 8.0, "str key reused across empty-init and leaf store");
+    // m["hello"]=5, tag="hello!" len 6, k len 5 ⇒ 16; k reused after the store.
+    assert_eq!(key_reused(), 16, "str key reused after the field dict store");
+}
+"#;
+    assert_rustc_runs("fieldindex_dict_key_reuse", &rust, driver);
+}
+
+/// PMAT-1046 (sweep #12): `container.append(local); local.mutate()` silently
+/// dropped the shared mutation (clone detached the appended value) — now
+/// REFUSED via a flow-sensitive append-then-mutate check.
+#[test]
+fn append_then_mutate_is_rejected() {
+    let py = fixture("append_then_mutate_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "append-then-mutate-the-appended-local must be REFUSED, not silently miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("appends `row`") && stderr.contains("mutates"),
+        "the rejection should name the embedded local:\n{stderr}"
+    );
+}
+
+/// PMAT-1046 companion: build-then-append (mutate BEFORE embedding) stays
+/// valid — the guard is position-sensitive.
+#[test]
+fn build_then_append_ok() {
+    let rust = xpile_transpile_to_rust("build_then_append_ok.py");
+    let driver = r#"
+fn main() {
+    // grid[2] = [2, 4], len 3 ⇒ 2 + 4 + 3 = 9.
+    assert_eq!(build_rows(), 9, "build-then-append must still compile and run");
+}
+"#;
+    assert_rustc_runs("build_then_append_ok", &rust, driver);
+}
+
+/// PMAT-1047 (sweep #12): int appended into a float list slot (ListAppend and
+/// IndexAppend) was rustc E0308; both paths now widen. MATCH 4.5/2.5.
+#[test]
+fn append_float_widen() {
+    let rust = xpile_transpile_to_rust("append_float_widen.py");
+    assert!(
+        rust.contains("as f64"),
+        "the appended int must widen:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(plain_append(), 4.5, "int into list[float] via append");
+    assert_eq!(dict_inner_append(), 2.5, "int into dict[str, list[float]] inner append");
+}
+"#;
+    assert_rustc_runs("append_float_widen", &rust, driver);
+}
+
+/// PMAT-1049 (sweep #12): a subscript store whose index borrows the base
+/// (`self.xs[self.next_slot()] = v`) was rustc E0499 — the write-through
+/// emitter now binds step indices to temps before `&mut base`. MATCH 56 + pos.
+#[test]
+fn writethrough_impure_index() {
+    let rust = xpile_transpile_to_rust("writethrough_impure_index.py");
+    assert!(
+        rust.contains("__sidx0"),
+        "the step index must bind to a temp before &mut base:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // push(5)->pos1 xs[1]=5; push(6)->pos2 xs[2]=6 ⇒ xs=[0,5,6], pos=2.
+    // 0*100 + 5*10 + 6 + 2 = 58.
+    assert_eq!(ring_result(), 58, "index method call under the &mut base borrow");
+}
+"#;
+    assert_rustc_runs("writethrough_impure_index", &rust, driver);
+}
+
+/// PMAT-1050 (sweep #12): an annotated fresh if-arm target (`y: int = 10`)
+/// broke the as-let shape detection → general path → E0425. Annotated arms
+/// are now normalized to plain assignment. MATCH 10/20, 3/4, elif chain.
+#[test]
+fn fresh_parity_annotated() {
+    let rust = xpile_transpile_to_rust("fresh_parity_annotated.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(one_annotated(true), 10);
+    assert_eq!(one_annotated(false), 20);
+    assert_eq!(both_annotated(true), 3);
+    assert_eq!(both_annotated(false), 4);
+    assert_eq!(elif_annotated(5), 2);
+    assert_eq!(elif_annotated(1), 1);
+    assert_eq!(elif_annotated(99), 3);
+}
+"#;
+    assert_rustc_runs("fresh_parity_annotated", &rust, driver);
+}
+
+/// PMAT-1051 (sweep #12): a container mutator through a deep receiver chain
+/// (`g.rows[0].append(9)`) refused with the wrong "only subprocess.run" msg;
+/// it now names the actual unsupported receiver shape.
+#[test]
+fn chain_mutator_diagnostic_is_precise() {
+    let py = fixture("chain_mutator_diagnostic.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "deep-chain container mutation must refuse"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("mutates a container through") && !stderr.contains("subprocess.run"),
+        "the refusal must name the container-mutation shape, not subprocess:\n{stderr}"
+    );
+}
+
+/// PMAT-1048 (sweep #12): a nested list literal appended into a float-of-list
+/// target (`g.append([2, 3])` over `list[list[float]]`) was E0308; the append
+/// paths now coerce list literals element-wise. MATCH 6.5; int list untouched.
+#[test]
+fn nested_literal_float_coerce() {
+    let rust = xpile_transpile_to_rust("nested_literal_float_coerce.py");
+    let driver = r#"
+fn main() {
+    // [1.5] + [2.0, 3.0]: g[1][0]+g[1][1]+g[0][0] = 2.0+3.0+1.5 = 6.5.
+    assert_eq!(nested_append(), 6.5, "nested int literal widened to float");
+    // list[list[int]] literal is untouched: 2 + 3 = 5.
+    assert_eq!(int_list_untouched(), 5, "int list literal not coerced");
+}
+"#;
+    assert_rustc_runs("nested_literal_float_coerce", &rust, driver);
+}
+
+/// PMAT-1052: `self.<field>[k].append(e)` — the grouping-in-a-class idiom (the
+/// field analogue of `d[k].append(e)`). resolve_subscript_append_base accepts
+/// a struct-field base; IndexAppend emits a dotted codegen base. MATCH 24/13.5.
+#[test]
+fn field_subscript_append() {
+    let rust = xpile_transpile_to_rust("field_subscript_append.py");
+    assert!(
+        rust.contains("self.g.get_mut(&") || rust.contains("self.g . get_mut"),
+        "the dict-field grouping append lowers to get_mut on the field:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // "bb","cc","dd" → g[2] has 3, g has 2 keys (1 and 2) ⇒ 3*10 + 2 = 32.
+    assert_eq!(grouping(), 32, "dict-field grouping idiom");
+    // rows[0]=[1,9] → rows[0][1]=9; scores["a"]=[0.5, 2.0] ⇒ 9.0+0.5+2.0 = 11.5.
+    assert_eq!(field_pushes(), 11.5, "list-of-list + dict-of-float field pushes");
+}
+"#;
+    assert_rustc_runs("field_subscript_append", &rust, driver);
+}
+
+/// PMAT-1052 guard: appending a local then mutating a container element
+/// through a subscript must REFUSE (the value model cloned the appended local;
+/// mutating the container copy would silently diverge from the shared local).
+#[test]
+fn field_subscript_append_alias_is_rejected() {
+    let py = fixture("field_subscript_append_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "append-local-then-mutate-container-element must refuse"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("appended a local into") && stderr.contains("mutates an element"),
+        "the refusal should name the container-element mutation:\n{stderr}"
+    );
 }

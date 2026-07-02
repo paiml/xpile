@@ -488,6 +488,8 @@ fn function_bigint_mode(f: &Function) -> bool {
             Stmt::IndexAssign { .. } => false,
             // PMAT-730: nested subscript assign carries no Type::Let.
             Stmt::NestedSubscriptAssign { .. } => false,
+            // PMAT-1037: field subscript store carries no Type::Let.
+            Stmt::FieldIndexAssign { .. } => false,
             // PMAT-533: subscript-receiver append carries no Type::Let.
             Stmt::IndexAppend { .. } => false,
             // PMAT-727: setdefault-append carries no Type::Let.
@@ -1177,40 +1179,18 @@ fn emit_stmt_indented(
         // (`.insert(k, v)` for dict / `t[idx] = v` for list). KeyError-on-absent
         // (dict) and Python negative-index wrap (list) are preserved.
         Stmt::NestedSubscriptAssign { base, steps, value } => {
-            let n = steps.len();
-            // PMAT-833 (HUNT-V26 #3): evaluate the RHS into a temp BEFORE taking
-            // `&mut base`. A read-modify-write on a nested dict cell
-            // (`d["a"]["x"] = d["a"]["x"] + 5`) reads `base` immutably in the RHS
-            // while the `&mut base` borrow is still live → rustc E0502. Binding
-            // `__rhs` first ends the RHS's immutable borrow before the mutable
-            // walk begins (the single-level `DictSet` and nested-list paths
-            // already sequence the value first; this mirrors them).
-            write!(out, "{indent}{{ let __rhs = ")?;
-            emit_expr(out, value, mode)?;
-            write!(out, "; let __t0 = &mut {base}; ")?;
-            for (i, (idx, is_dict)) in steps[..n - 1].iter().enumerate() {
-                if *is_dict {
-                    write!(out, "let __t{} = __t{i}.get_mut(&(", i + 1)?;
-                    emit_expr(out, idx, mode)?;
-                    out.push_str(")).unwrap(); ");
-                } else {
-                    write!(out, "let __li{i} = (")?;
-                    emit_expr(out, idx, mode)?;
-                    write!(out, ") as i64; let __lx{i} = if __li{i} < 0 {{ __t{i}.len() as i64 + __li{i} }} else {{ __li{i} }}; let __t{} = &mut __t{i}[__lx{i} as usize]; ", i + 1)?;
-                }
-            }
-            let (leaf_idx, leaf_is_dict) = &steps[n - 1];
-            if *leaf_is_dict {
-                write!(out, "__t{}.insert(", n - 1)?;
-                emit_expr(out, leaf_idx, mode)?;
-                out.push_str(", __rhs); }");
-            } else {
-                write!(out, "let __ll = (")?;
-                emit_expr(out, leaf_idx, mode)?;
-                write!(out, ") as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = __rhs; }}", n - 1, n - 1)?;
-            }
-            writeln!(out)?;
-            Ok(())
+            emit_subscript_write_through(out, indent, base, steps, value, mode)
+        }
+        // PMAT-1037: subscript store through a struct field — same progressive
+        // `&mut` walk with base `<obj>.<field>` (`self.counts[i] = v`,
+        // `c.cells[r][c2] = v`); a single step lands here too.
+        Stmt::FieldIndexAssign {
+            obj,
+            field,
+            steps,
+            value,
+        } => {
+            emit_subscript_write_through(out, indent, &format!("{obj}.{field}"), steps, value, mode)
         }
         // PMAT-466 (v0.2.0 Track 1.C): Python `d[k] = v` → Rust
         // `{ let __v = v; d.insert(k.clone(), __v); }`. Present-key
@@ -1604,6 +1584,68 @@ fn expr_mentions_ident(e: &Expr, name: &str) -> bool {
         }
         _ => false,
     }
+}
+
+/// PMAT-730/PMAT-1037: the shared writer for a subscript store through `base`
+/// — [`Stmt::NestedSubscriptAssign`] (plain-Name base, `len >= 2`) and
+/// [`Stmt::FieldIndexAssign`] (`<obj>.<field>` base, `len >= 1`) emit the
+/// same shape.
+///
+/// PMAT-833 (HUNT-V26 #3): evaluate the RHS into a temp BEFORE taking
+/// `&mut base`. A read-modify-write on a nested dict cell
+/// (`d["a"]["x"] = d["a"]["x"] + 5`) reads `base` immutably in the RHS
+/// while the `&mut base` borrow is still live → rustc E0502. Binding
+/// `__rhs` first ends the RHS's immutable borrow before the mutable
+/// walk begins (the single-level `DictSet` and nested-list paths
+/// already sequence the value first; this mirrors them).
+fn emit_subscript_write_through(
+    out: &mut String,
+    indent: &str,
+    base: &str,
+    steps: &[(Expr, bool)],
+    value: &Expr,
+    mode: bool,
+) -> Result<(), CodegenError> {
+    let n = steps.len();
+    // PMAT-1049: bind the RHS and then EVERY step index to an OWNED temp
+    // BEFORE `&mut base`. An index that itself borrows `base` —
+    // `self.xs[self.pop()]` (pop needs &mut self.xs), `self.xs[self.next_slot()]`
+    // (a &mut self method) — must be evaluated before the mutable base borrow,
+    // else rustc E0499/E0502. The temp is `.clone()`d (every xpile index/key
+    // type is `Clone`; a Copy index's clone is a no-op) so a non-Copy (str)
+    // key is NOT moved out of a caller binding reused in a later store
+    // (`self.cells[r] = {}` then `self.cells[r][c] = v` — PMAT-1045). RHS-first
+    // preserves Python value-before-target order (PMAT-833); the base is a
+    // plain place, so evaluating indices before it is observably identical.
+    write!(out, "{indent}{{ let __rhs = ")?;
+    emit_expr(out, value, mode)?;
+    out.push_str("; ");
+    for (i, (idx, _)) in steps.iter().enumerate() {
+        write!(out, "let __sidx{i} = (")?;
+        emit_expr(out, idx, mode)?;
+        out.push_str(").clone(); ");
+    }
+    write!(out, "let __t0 = &mut {base}; ")?;
+    for (i, (_, is_dict)) in steps[..n - 1].iter().enumerate() {
+        if *is_dict {
+            write!(
+                out,
+                "let __t{} = __t{i}.get_mut(&__sidx{i}).unwrap(); ",
+                i + 1
+            )?;
+        } else {
+            write!(out, "let __li{i} = __sidx{i} as i64; let __lx{i} = if __li{i} < 0 {{ __t{i}.len() as i64 + __li{i} }} else {{ __li{i} }}; let __t{} = &mut __t{i}[__lx{i} as usize]; ", i + 1)?;
+        }
+    }
+    let (_, leaf_is_dict) = &steps[n - 1];
+    if *leaf_is_dict {
+        // The owned leaf key temp moves into `.insert` (already an owned clone).
+        write!(out, "__t{}.insert(__sidx{}, __rhs); }}", n - 1, n - 1)?;
+    } else {
+        write!(out, "let __ll = __sidx{} as i64; let __lx = if __ll < 0 {{ __t{}.len() as i64 + __ll }} else {{ __ll }}; __t{}[__lx as usize] = __rhs; }}", n - 1, n - 1, n - 1)?;
+    }
+    writeln!(out)?;
+    Ok(())
 }
 
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {

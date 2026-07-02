@@ -836,7 +836,7 @@ roadmap:
   github_issue: null
   item_type: epic
   title: 'PMAT-1037: [rust/capability/EPIC] PEP-526 fields + __init__ field discovery — sweep #10 found the single most common typed-class idiom REFUSED through every door (7+ findings, incl. 9 unverified class-state claims on the same theme): (a) `self.rows: int = rows` (annotated attribute assignment — THE standard mypy/pyright way to declare fields in __init__) is refused as a "non-Name annotated-assignment target"; (b) unannotated `self.name = name` without a class-level annotation is refused ("no such field" — fields are discovered ONLY from class-level annotations); (c) empty-collection fields `self.items: list[str] = []` are impossible through all three doors (annotated form refused; unannotated cannot infer; class-level `items: list[str] = []` mutable-default…); (d) `self.counts[i] = v` subscript STORES through a self attribute refused ("non-Name subscript-assignment target"); (e) `b.items.append(x)` attribute-chain mutators OUTSIDE methods hit the subprocess recognizer with a wrong diagnostic. SLICES: (A) accept `self.<field>: T = value` in __init__ AND methods — register the field from the annotation in class_def_signature (scan __init__ AnnAssigns), lower as FieldAssign with the declared-type coercion; empty collections get their type from the annotation (the lower_ann_assign machinery exists for locals). (B) field DISCOVERY from unannotated `self.f = <param>` in __init__ (type from the param annotation). (C) subscript stores through self.<field> (extend lower_subscript_assign_target to Attribute-of-self bases → a FieldIndexAssign or reuse NestedSubscriptAssign with a self path). (D) attribute-chain container mutators on struct-typed LOCALS outside methods (extend the PMAT-1022 statement path from self to any struct-typed name).'
-  status: planned
+  status: done
   priority: high
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
@@ -845,12 +845,12 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'RECONCILED 2026-07-02 after the cron/REPL parallel-stream merge: the CRON''s PMAT-1025 (PR #1640) already shipped slices A+B+empty-collections — probed on main: unannotated `self.name = name`, PEP-526 `self.rows: int = rows`, and `self.items: list[str] = []` ALL MATCH. REMAINING open slices, re-probed still refusing: (C) `self.counts[i] = v` / `self.cells[r][c] = v` subscript stores through self ("non-Name subscript-assignment target"); (D) `b.items.append(x)` attribute-chain mutators OUTSIDE methods (subprocess-recognizer diagnostic). THE dominant usability gap: class-state had 48/74 refusals — working-Python class code is largely locked out. The 9 unverified class-state claims (agent session limit) are almost certainly this same cluster; re-verify with the corpus re-run. Filed by PMAT-1036 (the REPL realistic-idiom sweep).'
+  notes: 'RECONCILED 2026-07-02 after the cron/REPL parallel-stream merge: the CRON''s PMAT-1025 (PR #1640) already shipped slices A+B+empty-collections — probed on main: unannotated `self.name = name`, PEP-526 `self.rows: int = rows`, and `self.items: list[str] = []` ALL MATCH. SLICE C SHIPPED 2026-07-02 (this repo's `Stmt::FieldIndexAssign`): `self.counts[i] = v`, `self.m[k] = v`, nested `self.cells[r][c]`, mixed dict-of-list, aug `+=` (dict leaves included), LOCAL struct receivers `c.counts[0] = v`, neg-index wrap, float-leaf widening — plus the blast-radius fixes it forced (foreach_elem_mutated FieldIndexAssign/NestedSubscriptAssign arms; expr_has_mutator Subscript/Attribute arms → the PMAT-884 guard now sees `q.pop(0)` in index position; method-call args ride clone_reused_call_args + the check_expr_for_alias_mutate MethodCall arm — the pair is load-bearing, clone-without-guard = silent stale-container divergence). SLICE D SHIPPED 2026-07-02 (same day): the PMAT-1022 branch generalized from `self` to ANY struct-typed Name receiver — `b.items.append(x)` on locals lowers to MethodCall{push}; pre-walk marks the root `let mut`; pushed values ride clone_if_reused_non_copy (ListAppend parity, was E0382); collect_obj_mutated's expr_mutator_receiver gained the attribute-CHAIN arm (the d5 witness: the removed refusal had MASKED a silent alias-clone divergence, rust 1 vs CPython 2 — now a precise alias refusal). EPIC COMPLETE: all five refusal doors (a)-(e) now lower or refuse precisely; non-append field mutators (sort/extend/…) remain the PMAT-1022 first-cut refusal. THE dominant usability gap: class-state had 48/74 refusals — working-Python class code is largely locked out. The 9 unverified class-state claims (agent session limit) are almost certainly this same cluster; re-verify with the corpus re-run. Filed by PMAT-1036 (the REPL realistic-idiom sweep).'
 - id: PMAT-1038
   github_issue: null
   item_type: task
   title: 'PMAT-1038: [rust/correctness] Loop-scope name-model mismatches (sweep #10): (a) `row` built as a local then `for row in grid:` later in the SAME function — the loop var collides with the fn-scoped `let mut row` (E0382/shadow confusion in the emitted while-desugar); (b) a name first bound INSIDE a loop body (Rust block scope) then used as a `for` target later (`level` in two sequential loops) — the second loop''s leak-rename references a binding that died with the first block. Fix direction: the PMAT-784/838 leak machinery needs a per-function name-generation pass that renames REUSED loop targets (or hoists first-loop locals) so Python function-scope semantics survive Rust block scoping.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
   acceptance_criteria:
@@ -859,7 +859,118 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).'
+  notes: 'Fail-loud (E0382) but on everyday shapes. Filed by PMAT-1036 (the REPL realistic-idiom sweep).' SHIPPED 2026-07-02: fresh top-level loop-body bindings read after the loop pre-declare `let mut <name>: T = <default>` (RHS probe-typed, for/while both; range targets trivially int; list defaults vec![]); definitely-scalar list-literal embeds no longer edge the alias analysis (the false `aliases i and row` refusal); pre-bound-target + element-mutation refuses precisely (the leak clone silently absorbed the mutation — pre-existing silent bug, now loud). Residual: bindings nested in inner if/loops and dict/set-valued loop locals keep E0425.
+- id: PMAT-1047
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1047: [rust/correctness] invalid emit (E0308) — int/bool appended into a FLOAT list slot not widened (sweep #12). `xs: list[float]; xs.append(3)` (ListAppend) and `d["a"].append(3)` over `dict[str, list[float]]` (IndexAppend) emitted the raw int. FIX: both append paths widen an int/bool elem via to_f64_operand when the (inner) element type is F64 — mirrors the subscript-slot widening (PMAT-1040) and the field-append widening (PMAT-1037 slice D). set[float] add is unaffected (float set keys refuse earlier). REMAINING (filed PMAT-1048): a nested list LITERAL appended into list[list[float]] (`g.append([2, 3])`) still E0308 — needs recursive list-literal element coercion to the target type, a broader gap than scalar widening.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12. Suite 732 green; MATCH 4.5/2.5; int-list append unregressed.'
+- id: PMAT-1052
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1052: [rust/capability] `self.<field>[k].append(e)` / `obj.<field>[k].append(e)` — the grouping-in-a-class idiom (found by a feature-INTERACTION probe, not a single-feature sweep). The field analogue of the already-supported `d[k].append(e)` (IndexAppend) was refused (fell to the subprocess recognizer / PMAT-1051 message) because the IndexAppend branch required a plain-Name subscript base. FIX (frontend-only, no meta-HIR change): resolve_subscript_append_base accepts a single struct-field base and emits IndexAppend with a dotted `obj.field` codegen base — both codegens interpolate base as a string, so `self.g.get_mut(&k).unwrap().push(e)` / `self.rows[i as usize].push(e)` is valid Rust. for_target_mutated_ast recognizes `self.field[k].mutator()` (drives &mut self for an append-only method); the mutability pre-walk marks `obj` mut for a local receiver; int→float inner-elem widening via coerce_expr_to_type. PAIRED GUARD (PMAT-1046 extension): enabling `container[i].append` re-exposed a SILENT alias divergence — `g.rows.append(row); g.rows[0].append(9)` clones row into g.rows then mutates the clone (Python shares → row sees [1,9], xpile [1]). The container-embed guard in reject_append_then_mutate now refuses a subscript-mutation of any container that received an append-of-a-local. Caught by the PMAT-1051 test flipping from refuse to DIVERGE — the suite doing its job.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Suite 738 green; MATCH grouping 32 + field-pushes 11.5; alias shape + grouping + list-of-list-field + local-receiver + append-only-method all covered; the deep 2-level chain (o.inner.items.append) stays PMAT-1051-refused.'
+- id: PMAT-1053
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1053: [rust/capability] CLASS CONSTANTS — a class-body `NAME: T = <literal>` used as a shared class attribute (`Config.VERSION`, `self.LIMIT` for read-only, `Config.MAX`), NOT a per-instance field. Found by an advanced-OOP interaction probe. Three failing shapes: (a) `Config.VERSION` (read via the CLASS NAME) → "reads attribute of a non-struct value" (the class name is not a struct instance); (b) `c.VERSION` (instance read of a class const) → E0061 (VERSION is treated as an instance field, so `Config()` mismatches the synthesized ctor arity); (c) a class const alongside instance fields (`LIMIT: int = 10` + `n: int`) → "__init__ never assigns declared field LIMIT" (xpile requires every class-body-annotated field to be assigned in __init__). ROOT: xpile treats EVERY class-body annotated name as an instance struct field; a `NAME: T = <literal>` with a default that is (i) never assigned via `self.NAME = …` in any __init__/method AND (ii) read via `ClassName.NAME` or as a read-only `self.NAME` is a CLASS CONSTANT → should emit as an associated `const NAME: T = <literal>;` in the impl block and resolve `ClassName.NAME` / `self.NAME` to `Self::NAME`. SEMANTIC SUBTLETY (why filed, not rushed): must NOT regress the dataclass/instance-field-with-default case (`count: int = 0` then `self.count += 1` — an instance field, PMAT k11 passes) — the distinguisher is "assigned via self anywhere" (instance field) vs "only read + accessed via ClassName" (constant); needs whole-class analysis. Module-level constants + @property + @staticmethod + @classmethod + __eq__/__str__/__len__/__lt__/__getitem__ + @dataclass ALL WORK (probed); inheritance correctly refuses.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+- id: PMAT-1051
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1051: [diagnostics] wrong refusal message — container mutator through a deep receiver chain emitted the "only subprocess.run([...]) is recognised" fall-through (sweep #12). `g.rows[0].append(9)` (mutation through a subscript of a field), `bag[0].items.append(x)` (a struct in a list element) fell through try_lower_list_method_call + try_lower_side_effect_call to lower_expr_stmt_as_cmd and refused with a factually WRONG subprocess message (the PMAT-989/1027 honest-diagnostics class). FIX: lower_expr_stmt_as_cmd detects a container-mutator method (`append`/`extend`/…) on a non-simple-Name receiver and refuses with a precise message naming the actual unsupported receiver shape. The refusal is CORRECT (Python shares the element; the value model cannot express it — Rc<RefCell> deferred); only the message improved.'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 final finding. Suite 735 green; precise message verified; real subprocess.run + self.field.append unregressed.'
+- id: PMAT-1050
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1050: [rust/capability] invalid emit (E0425) — annotated fresh if-arm target broke the as-let shape detection (sweep #12). `if flag: y: int = 10 else: y = 20` used the AnnAssign statement form, which `is_simple_name_assign` (plain-Assign only) rejected, so a FRESH `y` fell to the general Stmt::If path and emitted a bare `y = …` with no prior `let`. FIX: `normalize_annotated_if_arms` rewrites every simple-Name `name: T = value` arm to `name = value` at the top of lower_if_stmt (value verbatim; the annotation is redundant with the value''s inferred type for the as-let `let`), so a mixed annotated/plain chain matches the as-let shape and lowers uniformly (recurses the elif chain). Known first-cut edge: `y: float = 3` (annotated-wider-than-value) infers int from the value — the general as-let int/float-branch limitation, not new.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12. Suite 734 green; MATCH p15/p15c/elif-chain; fresh+prebound-mismatch still refuses; unannotated as-let + side-effect-if regressions pass.'
+- id: PMAT-1049
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1049: [rust/correctness] invalid emit (E0499/E0502) — subscript store whose INDEX borrows the base (sweep #12). `self.xs[self.next_slot()] = v` (next_slot() needs &mut self) and `self.xs[self.xs.pop()] = v` (pop needs &mut self.xs) emitted the index expression INSIDE the `&mut base` borrow → rustc E0499 (two mutable borrows). FIX: emit_subscript_write_through (rust + ruchy) now binds the RHS and then EVERY step index to an OWNED temp (`let __sidxN = (<idx>).clone();`) BEFORE `let __t0 = &mut base` — the borrowing index evaluates before the mutable base borrow. The `.clone()` (universal — every xpile index/key type is Clone; a Copy index clone is a no-op) also prevents moving a non-Copy (str) key out of a caller binding reused in a later store (subsumes the PMAT-1045 leaf-key clone). RHS-first preserves Python value-before-target order.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12. Suite 733 green; MATCH on p11 (index method call) + p18 (self-pop same list); write-through regressions (plain/neg-index/nested/dict-of-list/key-reuse) all pass; 2 exact-string tests updated to the __sidx invariant.'
+- id: PMAT-1048
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1048: [rust/capability] nested list LITERAL appended into a float-of-list target not element-coerced (sweep #12 t23). `g: list[list[float]]; g.append([2, 3])` emits `g.push(vec![2i64, 3i64])` (rustc E0308 — Vec<i64> vs Vec<f64>). The scalar append widening (PMAT-1047) covers `xs.append(3)` but not a list-LITERAL argument whose ELEMENTS need widening. Broader fix: coerce a list-literal expression element-wise to the target container element type (applies to append, subscript store, dict value, return). Deferred — a general list-literal-vs-target coercion pass, not a one-site widen.'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  notes: 'SHIPPED 2026-07-02: coerce_expr_to_type recurses into list literals element-wise at both append paths; g.append([2, 3]) over list[list[float]] MATCH 6.5. Known residuals (documented classes, not 1048): a heterogeneous literal [2, 3.5] refuses at list-literal lowering (needs top-down expected-type threading); a DIRECT sum of int-valued float slots prints X.0 vs Python X (the int-into-float-repr class shared with 1040/1047).'
+- id: PMAT-1046
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1046: [rust/correctness] SILENT miscompile — `container.append(local)` then mutate `local` drops the shared mutation (sweep #12). Python appends a REFERENCE, so `grid.append(row); row.append(3)` leaves `grid[0] == [1,2,3]`; xpile clones the appended value (the clone is NEEDED so a read-only-reused local survives — PMAT-1037 slice D g19) which silently drops the later mutation (`grid[0]` stays `[1,2]` — a DIVERGE). Introduced when slice D enabled attr-chain field appends on locals. FIX: `reject_append_then_mutate`, a flow-sensitive AST pre-check. POSITION-sensitive by design — the common build-then-append idiom (`row = []; row.append(x); grid.append(row)`) mutates BEFORE the embed and MUST stay valid, so `ctx.obj_mutated` (position-insensitive) would over-refuse it. Forward-scans source order: an `append`/`insert(_, local)` embed marks the local live; a subsequent object-mutation (mutator-method receiver or subscript-write base — container ops only, so an embedded scalar never trips) of a live local is the violation; a rebind clears it. Refuses (Rc<RefCell> reference model is the deferred strategic fix).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 finding, the last silent divergence of the batch. Suite 731 green; A/B/D build-then-append MATCH, C/insert-variant/p12 REFUSE, scalar-embed no false-positive.'
+- id: PMAT-1045
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1045: [rust/correctness] invalid emit (E0382) — FieldIndexAssign/NestedSubscriptAssign leaf dict key MOVED not cloned (sweep #12). The shared write-through emitter `insert`ed the leaf key WITHOUT `.clone()`, so a non-Copy (str) key reused after the store — `self.m[k] = len(k); return k`, or `self.cells[r] = {}` then `self.cells[r][c] = v` with `r` a reused param — was rustc E0382 (borrow of moved value). The single-level DictSet already clones the key (PMAT-852); the multi-level write-through path did not. FIX: clone the parenthesized leaf key in emit_subscript_write_through (both rust + ruchy codegen); a Copy key`s clone is a no-op rustc accepts. Intermediate levels use `get_mut(&(k))` (borrow) — unaffected.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 finding. Suite 729 green; MATCH 8.0/16; nested-dict + int-key-clone regressions verified.'
+- id: PMAT-1044
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1044: [rust/correctness] SILENT miscompile — as-let fusion reorders intra-arm read-after-write (sweep #12). The if-as-let path models each assigned variable INDEPENDENTLY (`a = if c {..} else {..}`) and emits the per-variable updates in a FIXED (grouped-by-variable) order, not source order. An arm like `b = a; a = 9` (else) emitted `a = ..9` then `b = ..a`, so b read the UPDATED a (9) instead of the original (1): `9*10+9` = 99 vs Python `9*10+1` = 91. FIX: extend the PMAT-1042 divert — when every assigned name is PRE-BOUND and any arm has an intra-arm dependency (a RHS reads a name also assigned in the same arm, coarse order-insensitive intersection), route to the general SEQUENTIAL Stmt::If path (which lowers statements in source order and is exact for pre-bound names). Parity-holding, hazard-free chains keep the as-let emission byte-identical; fresh-name chains keep the parity refusal.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 finding, adversarially reproduced main-loop. Suite 728 green; MATCH 27/91 (swap) + 22/11 (chained dependency); PMAT-1042 divert + parity-fresh as-let both unregressed.'
+- id: PMAT-1043
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1043: [rust/correctness] SILENT miscompile — same-named method/free-fn collision in the alias-then-mutate guard (sweep #12). The guard`s `mutating` map was keyed by BARE function name, so two classes with a method of the same name (or a free fn + method same name) collided: a non-mutating sibling registered last MASKED a mutating one. Result: `a.f(q)` where `A.f` appends to its param and `q` is reused after never fired the guard (it read `B.f`s non-mutating flags), and the unconditional reuse-clone shipped a detached copy — the append silently dropped (rust len 1 vs CPython 2). Confirmed on three shapes (two-classes-same-method, free-fn-shadowed-by-method, method-shadowed-by-free-fn). FIX: split into `mutating_fns` (free, by name) + `mutating_methods` (by name, per-position OR-union across same-named methods since the lowered MethodCall carries no receiver class); Call→fns, MethodCall→methods. Conservative (may refuse a call into a genuinely non-mutating sibling — loud), never miscompiles. These shapes now REFUSE loudly (the established reused-arg-into-param-mutating posture).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 finding, adversarially reproduced main-loop (the workflow verify wave died on credit exhaustion; findings re-verified by hand). Full suite 727 green; differentially confirmed the 4 collision shapes now refuse.'
+- id: PMAT-1042
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1042: [rust/capability] branch-parity over-refusal on PRE-BOUND names (sweep-#10 residual filed under PMAT-1039) — assignment-only if/elif/else arms assigning DIFFERENT names refused ("every branch must assign the same names") even when every assigned name was already bound: `x = 0; y = 0; if flag: x = 1 else: y = 2` reassigns scope-safely, so the general Stmt::If lowers it exactly. FIX: the lower_if_stmt dispatch diverts ONLY the would-refuse case (branch_name_sets_differ + all names in ctx.bound) to the general path; parity-holding chains keep the as-let emission byte-identical, and any chain touching a FRESH name keeps the precise parity refusal (the as-let rule exists because each fresh name needs a value from every arm).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Shipped same-day with differential verification (MATCH 10/20/21/20 + probes: elif chains, uneven arm sizes, fresh-in-arm keeps refusal, parity-fresh keeps as-let). PMAT-1039 residuals remaining: math.fabs, per-param launder precision.'
+- id: PMAT-1041
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1041: [rust/capability] EMPTY container literals stored into subscript slots — `d[k] = []` (THE grouping idiom''s init step, sweep-#10 residual filed under PMAT-1039), `d[k] = {}`, `g[0] = []`, and the field path `self.groups[k] = []` — all refused at lower_expr_in_ctx ("empty list literal requires a type annotation") though the SLOT''s declared type fully determines the element type. FIX: the Subscript-target arm of lower_assign lowers empty List/Dict literals directly to ListLit(vec![])/DictLit(vec![]) — both emitters are inference-friendly (`vec![]` / `IndexMap::new()`) and the emitted insert/assign site supplies the concrete type. The setdefault grouping alternative already worked; this closes the if-not-in-then-init cluster.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Shipped same-day with differential verification (MATCH 23/2/19/2 + 5 ad-hoc probes incl. reset-then-refill and dict-into-dict). Remaining PMAT-1039 residuals: branch-parity (different names per if-arm), math.fabs, per-param launder precision.'
+- id: PMAT-1040
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1040: [rust/correctness] int/bool into FLOAT-annotated slots on the Name-bottoming subscript-assign paths — `xs[0] = 3` over `list[float]`, `d["a"] = 3` over `dict[str, float]`, `g[1][0] = 3` over `list[list[float]]` all emitted the raw int (rustc E0308 INVALID emit). Found probing the PMAT-1037 FieldIndexAssign widen: the FIELD path widened, its Name-bottoming siblings did not. Fix: to_f64_operand widen at all three sites (list arm, dict arm, peel-nested plain caller via a leaf-type-carrying NestedSubscriptPath); aug already widened via combine_aug. KNOWN residual (documented class, same as the shipped param coercion): a DIRECT print of the stored slot shows `3.0` where CPython prints `3` — value-correct, repr-divergent on the degenerate print-the-slot case.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Shipped same-day with differential verification (MATCH 4.5/3.25/3.5/2.5 + 7 ad-hoc probes incl. the int-list no-op and the mixed dict-of-list path).'
 - id: PMAT-1039
   github_issue: null
   item_type: task

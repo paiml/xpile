@@ -7,6 +7,268 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.607] — 2026-07-02
+
+### Grouping-in-a-class: `self.field[k].append(e)` (PMAT-1052)
+
+- `self.g[k].append(w)` / `obj.field[k].append(e)` — the grouping idiom
+  through a struct field (the field analogue of `d[k].append(e)`) — was
+  refused. `resolve_subscript_append_base` now accepts a single struct-field
+  base and emits `IndexAppend` with a dotted codegen base (both codegens
+  interpolate it as a string, so the emitted Rust is valid — no meta-HIR
+  change). `for_target_mutated_ast` recognizes `self.field[k].mutator()` for
+  the `&mut self` classification; the mutability pre-walk marks a local
+  receiver `mut`; int→float inner-element widening applies. Found by a
+  feature-INTERACTION probe.
+- Paired guard: enabling `container[i].append` re-exposed a SILENT alias
+  divergence (`g.rows.append(row); g.rows[0].append(9)` clones `row` into
+  `g.rows` then mutates the clone — Python shares it). The 1046 append-alias
+  guard now refuses a subscript-mutation of any container that received an
+  append-of-a-local. (Caught by the PMAT-1051 test flipping refuse→DIVERGE.)
+- 4 e2e tests (738 total): grouping + field pushes MATCH (32, 11.5); the
+  alias-interaction refusal; the deep 2-level chain stays PMAT-1051-refused.
+
+### Nested list-literal float coercion (PMAT-1048)
+
+- `g: list[list[float]]; g.append([2, 3])` emitted `vec![2i64, 3i64]` →
+  rustc E0308 (Vec<i64> vs Vec<f64>). The scalar append widen (PMAT-1047)
+  covers `xs.append(3)` but not a list-literal argument whose elements need
+  widening. `coerce_expr_to_type` now recurses into list literals
+  element-wise at both append paths. Closes the last sweep-#12 residual.
+  (A heterogeneous literal `[2, 3.5]` still refuses at list-literal lowering
+  — a separate top-down-typing gap; a direct sum of int-valued float slots
+  prints `X.0` vs Python `X`, the documented int-into-float-repr class.)
+- 1 e2e test (736 total); MATCH 6.5; int list literal untouched.
+
+## [0.1.606] — 2026-07-02
+
+### Honest diagnostic: container mutation through a deep receiver chain (PMAT-1051)
+
+- `g.rows[0].append(9)` (mutation through a subscript of a field) and
+  `bag[0].items.append(x)` (a struct in a list element) refused with the
+  factually wrong "only `subprocess.run([...])` is recognised" fall-through.
+  They now refuse with a precise message naming the actual unsupported
+  receiver shape. The refusal itself is correct (Python shares the element;
+  the value model cannot express it). Found by adversarial sweep #12.
+- 1 refusal test (735 total).
+
+### Invalid emit fixed: annotated fresh if-arm target (PMAT-1050)
+
+- `if flag: y: int = 10 else: y = 20` — the annotated (AnnAssign) arm broke
+  the as-let shape detection, so a fresh `y` fell to the general path and
+  emitted a bare `y = …` with no prior `let` (rustc E0425). Annotated
+  simple-Name `name: T = value` arms are now normalized to the plain
+  `name = value` form at the top of `lower_if_stmt`, so a mixed
+  annotated/plain chain lowers as-let uniformly (elif chains included).
+  Found by adversarial sweep #12.
+- 1 e2e test (734 total); MATCH 10/20, 3/4, and the elif chain.
+
+### Invalid emit fixed: subscript store index that borrows the base (PMAT-1049)
+
+- `self.xs[self.next_slot()] = v` (index calls a `&mut self` method) and
+  `self.xs[self.xs.pop()] = v` (index pops the same list) emitted the index
+  inside the `&mut base` borrow → rustc E0499. The write-through emitter now
+  binds the RHS and every step index to an owned temp before `&mut base`, so
+  the borrowing index evaluates first. The temp is cloned (universal for
+  xpile's Clone index types), which also subsumes the PMAT-1045 leaf-key
+  clone. Found by adversarial sweep #12.
+- 1 e2e test (733 total); MATCH on both cases; write-through regressions and
+  two exact-string tests updated to the `__sidx` invariant.
+
+### Invalid emit fixed: int appended into a float list slot (PMAT-1047)
+
+- `xs: list[float]; xs.append(3)` (ListAppend) and `d["a"].append(3)` over
+  `dict[str, list[float]]` (IndexAppend) emitted the raw int → rustc E0308.
+  Both append paths now widen an int/bool elem via `to_f64_operand` when the
+  (inner) element type is float, mirroring the subscript-slot (PMAT-1040) and
+  field-append (PMAT-1037 slice D) widening. Found by adversarial sweep #12.
+  (A nested list-LITERAL append `g.append([2, 3])` over `list[list[float]]`
+  remains E0308 — filed PMAT-1048, needs recursive literal coercion.)
+- 1 e2e test (732 total); differentially verified (MATCH 4.5/2.5).
+
+### Silent miscompile fixed: append-then-mutate the appended local (PMAT-1046)
+
+- `container.append(local); local.append(3)` — Python appends a reference, so
+  the mutation shows through the container (`grid[0] == [1,2,3]`), but xpile
+  clones the appended value (needed so a read-only-reused local survives) and
+  silently dropped the mutation (`grid[0] == [1,2]`). Exposed when slice D
+  enabled attr-chain field appends on locals. Found by adversarial sweep #12.
+- Fix: `reject_append_then_mutate`, a flow-sensitive AST pre-check — an
+  `append`/`insert(_, local)` embed marks the local live; a subsequent
+  in-place mutation of a live local refuses. POSITION-sensitive so the common
+  build-then-append idiom (mutate before embedding) stays valid; an embedded
+  scalar (value copy) never trips it. Refuses rather than miscompiles (the
+  Rc<RefCell> reference model remains the deferred strategic fix).
+- 2 e2e tests (731 total): the refusal and the build-then-append regression.
+
+### Invalid emit fixed: field/nested dict-store leaf key was moved not cloned (PMAT-1045)
+
+- The shared subscript write-through emitter (FieldIndexAssign /
+  NestedSubscriptAssign) inserted the leaf dict key without `.clone()`, so a
+  non-Copy (str) key reused after the store — `self.m[k] = len(k); return k`,
+  or `self.cells[r] = {}` then `self.cells[r][c] = v` with a reused param `r`
+  — was rustc E0382. Single-level `DictSet` already clones (PMAT-852); the
+  multi-level path now matches. Found by adversarial sweep #12.
+- 1 e2e test (729 total); differentially verified (MATCH 8.0/16).
+
+### Silent miscompile fixed: as-let fusion reordered intra-arm assignments (PMAT-1044)
+
+- The if-as-let path models each assigned variable independently and emits
+  the per-variable updates grouped by variable, NOT in source order. An arm
+  like `b = a; a = 9` emitted `a = …9` then `b = …a`, so `b` read the
+  UPDATED `a` (9) instead of the original (1): `9*10+9` = 99 vs Python 91.
+  Found by adversarial sweep #12.
+- Fix: extend the PMAT-1042 divert — when every assigned name is pre-bound
+  and any arm has an intra-arm read-after-write dependency, route to the
+  general sequential `Stmt::If` path (exact for pre-bound names).
+  Parity-holding, hazard-free chains keep the as-let emission byte-identical.
+- 1 e2e test (728 total); differentially verified (MATCH 27/91, 22/11).
+
+### Silent miscompile fixed: same-named method/free-fn guard collision (PMAT-1043)
+
+- The alias-then-mutate guard keyed its per-parameter mutation map by BARE
+  function name, so two classes with a same-named method (or a free fn and a
+  method sharing a name) collided — a non-mutating sibling registered last
+  masked a mutating one. `a.f(q)` where `A.f` appends to its param and `q` is
+  reused after never fired the guard (it read the sibling's non-mutating
+  flags) and the reuse-clone shipped a detached copy: the append silently
+  dropped (rust len 1 vs CPython 2). Found by adversarial sweep #12.
+- Fix: separate `mutating_fns` (free functions) and `mutating_methods` maps;
+  same-named methods union their per-position flags (the lowered `MethodCall`
+  carries no receiver class, so a position counts as mutating if any
+  same-named method mutates it — conservative, may refuse a call into a
+  genuinely non-mutating sibling, never miscompiles). These shapes now
+  REFUSE loudly (the established reused-arg-into-param-mutating posture).
+- 1 refusal test (727 total).
+
+## [0.1.605] — 2026-07-02
+
+### Branch parity no longer required for pre-bound names (PMAT-1042)
+
+- `x = 0; y = 0; if flag: x = 1 else: y = 2` refused ("every branch must
+  assign the same names") though every assigned name was pre-bound —
+  reassignment through `Stmt::If` arms is scope-safe; the as-let parity
+  rule exists for FRESH bindings (each name needs a value from every arm).
+  The dispatch now diverts exactly the would-refuse case (name sets differ
+  AND all names pre-bound) to the general path: parity-holding chains keep
+  the as-let emission byte-identical, fresh-name chains keep the precise
+  refusal. Covers elif chains and uneven arm sizes.
+- 1 e2e test (726 total); differentially verified vs CPython
+  (MATCH 10/20/21/20).
+
+### Empty-literal subscript stores — the grouping idiom lands (PMAT-1041)
+
+- `d[k] = []` (the if-not-in-then-init grouping idiom), `d[k] = {}`,
+  `g[0] = []`, and the field path `self.groups[k] = []` were all refused
+  ("empty list literal requires a type annotation") though the slot's
+  declared type fully determines the element type. The Subscript-target arm
+  of `lower_assign` now lowers empty List/Dict literals directly — both
+  emitters are inference-friendly (`vec![]` / `IndexMap::new()`), typed by
+  the emitted insert/assign site. The `setdefault` alternative already
+  worked; this closes the sweep-#10 grouping cluster.
+- 1 e2e test (725 total); differentially verified vs CPython
+  (MATCH 23/2/19/2).
+
+### Int-into-float-slot stores on Name-bottoming paths (PMAT-1040)
+
+- `xs[0] = 3` over `list[float]`, `d["a"] = 3` over `dict[str, float]`, and
+  `g[1][0] = 3` over `list[list[float]]` all emitted the raw int — rustc
+  E0308 INVALID emit. Found probing the PMAT-1037 `FieldIndexAssign` widen
+  (the field path widened; its Name-bottoming siblings didn't). All three
+  sites now widen via `to_f64_operand` (`NestedSubscriptPath` carries the
+  leaf type); bool widens too (`True == 1.0`); aug-assign already widened
+  via `combine_aug`. Known repr edge (the shipped param-coercion class):
+  a DIRECT print of the stored slot shows `3.0` vs CPython's `3`.
+- 1 e2e test (724 total); differentially verified vs CPython.
+
+### Loop-scope name-model mismatches — body-bound locals leak like Python (PMAT-1038)
+
+- **Body-bound loop locals now leak to function scope** — Python leaks any
+  name assigned in a loop body (`for i in range(2): row = [i, i]` … then
+  `for row in grid:` reuses the SAME `row`), but the emitted `let` died at
+  the loop block (rustc E0425 on the everyday builder-then-iterate shape).
+  Fresh TOP-LEVEL body bindings read after the loop are pre-declared
+  `let mut <name>: T = <default>` (RHS probe-typed with the for-target
+  registered; `range` targets are trivially `int`; `for` and `while` both) —
+  the body binding lowers as a plain reassignment. Same PMAT-838/1015
+  empty-iterable tradeoff (the default survives where Python raises
+  NameError). Bindings nested in inner `if`/loops and dict/set-valued
+  locals keep today's behavior (E0425) — first cut.
+- **Definitely-scalar embeds no longer poison the alias analysis** —
+  `row = [i, i * 2]` edged `i`~`row` and refused the matrix-building idiom
+  with a factually wrong "aliases `i` and `row`" (ints are Python value
+  copies). A conservative definitely-scalar classifier (range targets +
+  literal/arithmetic-only assignments; ANY other binding disqualifies)
+  filters embed edges. Real container embeds (`grid = [row, row]`) keep
+  their shared-inner-row refusal.
+- **Pre-bound target + in-place element mutation refuses precisely** (h6/h10
+  witnesses): the value model cannot both propagate the mutation
+  (`iter_mut`) and leak the last element into the outer name — the leak
+  clone silently absorbed the append (rust panic / wrong value vs CPython).
+  Pre-existing SILENT bug for genuinely pre-bound names; the hoist makes
+  builder locals pre-bound by design, so the refusal keeps it loud.
+- 2 e2e tests (723 total): the 4-function differential fixture
+  (MATCH 1/"ccc!ccc!"/15/6) and the pre-bound-mutation refusal.
+
+### Attribute-chain field appends on struct locals — the PMAT-1037 epic completes (slice D)
+
+- **`b.items.append(x)` outside methods lands** — the PMAT-1022
+  statement-position field-mutator branch generalized from `self` to ANY
+  struct-typed Name receiver (`self` is just the method case). The chain
+  lowers to `MethodCall{push}` on the FieldAccess; the mutability pre-walk
+  marks the root binding `let mut`; the pushed value rides
+  `clone_if_reused_non_copy` (ListAppend parity — a reused `w` appended
+  twice was E0382); int→float widening applies to the pushed value.
+  Non-append field mutators (`sort`/`extend`/…) keep the precise
+  PMAT-1022 first-cut refusal, now naming the actual receiver.
+- **Silent-divergence guard the generalization exposed (d5 witness)**:
+  `collect_obj_mutated`'s `expr_mutator_receiver` only saw Name receivers,
+  so `b2.items.append(9)` never counted as object mutation of `b2` — the
+  alias disposition CLONED the alias and the shared mutation silently
+  dropped (rust 1 vs CPython 2). The refusal that slice D removed had been
+  MASKING the gap. The attribute-chain arm now routes the shape to the
+  precise alias refusal.
+- With slices A–C (cron stream #1640 + #1651), every door of the PMAT-1037
+  PEP-526/field epic now lowers or refuses precisely; the epic is done.
+- 2 e2e tests (721 total): the 4-function differential fixture
+  (MATCH 11/9/2.5/4) and the live-alias chain-append refusal.
+
+### Field subscript stores — `self.counts[i] = v` lands (PMAT-1037 slice C)
+
+- **New meta-HIR `Stmt::FieldIndexAssign { obj, field, steps, value }`** —
+  subscript stores through a struct FIELD, the dominant remaining
+  class-state refusal ("non-Name subscript-assignment target", sweep-#10
+  cluster). Covers `self.counts[i] = v`, dict fields `self.m[k] = v`
+  (insert-or-overwrite, bool→i64 key coercion), nested
+  `self.cells[r][c] = v`, mixed dict-of-list `self.grid[k][i] = v`,
+  augmented `+=` (dict leaves included — the RHS-first sequencing makes the
+  read + `get_mut` write borrow-safe), LOCAL struct receivers
+  (`c.counts[0] = v`), negative-index wrap, and int→float leaf widening
+  (PMAT-1017 parity). Rust/Ruchy reuse the NestedSubscriptAssign emitter
+  (extracted `emit_subscript_write_through`, byte-identical for the old
+  variant) with base `<obj>.<field>`; Lean/WASM refuse precisely.
+- **Blast-radius fixes the new shape forced** (each caught by an in-slice
+  adversarial witness, all differentially verified vs CPython):
+  `for c in cs: c.counts[0] = v` now drives `iter_mut()`
+  (`foreach_elem_mutated` gained FieldIndexAssign + NestedSubscriptAssign
+  arms — the write previously landed on an owned clone, E0596);
+  `expr_has_mutator` gained Subscript/Attribute arms so `q.pop(0)` buried
+  in a store's INDEX marks the callee as mutating that param (the PMAT-884
+  guard was silent on `xs[q.pop(0)] = v` shapes); METHOD-call args now ride
+  `clone_reused_call_args` like free-fn args (`g.score(q) + g.score(q)` was
+  E0382) **paired with** the `check_expr_for_alias_mutate` MethodCall arm
+  (param index offset by the `self` slot) — the pair is load-bearing:
+  clone-without-guard would turn the loud E0382 into a silent
+  stale-container divergence (`c.drain(q); len(q)` → 2 vs CPython 1).
+- Known residuals (pre-existing classes, observed while probing): int
+  stored into a float-annotated slot prints `3.0` vs CPython `3` (the
+  shipped param-coercion convention, same class as `f(3)` for
+  `f(x: float)`); the LOCAL-list sibling `xs[i] = 3` over `list[float]`
+  emits E0308 invalid Rust (no leaf widening on the Name-bottoming path).
+- 3 e2e tests (719 total): the 6-function differential fixture
+  (MATCH 14/56/56/4.5/14/6), the live-alias store refusal, and the
+  reused-arg mutating-method refusal.
+
 ### Sweep #11 + reassignments routed through the alias-disposition suite (PMAT-1031)
 
 - **Adversarial differential sweep #11** hit the day-old PMAT-1026..1030
