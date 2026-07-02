@@ -89,7 +89,10 @@
 //!   `list[scalar]` param (bounds-checked `*.store`), and as of **PMAT-1023**
 //!   `obj.field = v` (`FieldAssign` — a `*.store` at the field's 8-byte-slot
 //!   offset) plus statement-position method calls (`SideEffectCall` over an
-//!   `Expr::MethodCall`, dropping a discarded result).
+//!   `Expr::MethodCall`, dropping a discarded result) and, as of PMAT-1024,
+//!   statement-position PLAIN function calls (`SideEffectCall` over an
+//!   `Expr::Call` — the `bump(c)` mutating-helper idiom the reference-aware
+//!   frontend passes through as a bare heap pointer).
 //! - Expressions: `Ident` (→ `local.get`), `LitInt`/`LitFloat`/`LitBool`,
 //!   `BinOp` (arith/bitwise/shift + comparisons), `FloatBinOp`, `UnOp`,
 //!   `IfExpr`, `Index` over a `list[scalar]` param (bounds-checked `*.load`),
@@ -1260,6 +1263,11 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (struct.method / Struct::__init__ → param/result WAT types), built once
     // so call sites can type their args + result.
     let (methods, assoc_fns) = build_method_registry(module)?;
+    // PMAT-1024: the module's FREE-function signature registry — statement-
+    // position plain calls (`bump(c)`, the mutating-helper idiom the
+    // reference-semantics frontend passes through) need the callee's return
+    // shape to know whether a result must be dropped.
+    let mod_fns = build_module_fn_registry(module)?;
     let needs_str_eq = module_needs_str_eq(module) || dict_str_keys;
     if module_uses_list_param(module) || needs_heap || !literals.is_empty() || needs_str_eq {
         writeln!(
@@ -1324,7 +1332,9 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     for item in &module.items {
         match item {
             Item::Function(f) => {
-                let f_wat = emit_function(f, &literals, &structs, &methods, &assoc_fns, &f.name)?;
+                let f_wat = emit_function(
+                    f, &literals, &structs, &methods, &assoc_fns, &mod_fns, &f.name,
+                )?;
                 out.push_str(&f_wat);
             }
             Item::Const { name, .. } => {
@@ -1357,8 +1367,9 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
                     } else {
                         format!("{name}::{}", m.name)
                     };
-                    let m_wat =
-                        emit_function(m, &literals, &structs, &methods, &assoc_fns, &wat_name)?;
+                    let m_wat = emit_function(
+                        m, &literals, &structs, &methods, &assoc_fns, &mod_fns, &wat_name,
+                    )?;
                     out.push_str(&m_wat);
                 }
             }
@@ -1819,6 +1830,10 @@ struct Scope<'a> {
     /// `__init__` constructors land here, so `Counter(0)` call sites
     /// (`Expr::Call { callee: "Counter::__init__" }`) type exactly.
     assoc_fns: &'a AssocFnRegistry,
+    /// PMAT-1024: the module's FREE-function registry (same tuple shape,
+    /// keyed by the plain fn name) — statement-position calls (`bump(c)`)
+    /// type their args and know whether a result needs dropping.
+    mod_fns: &'a AssocFnRegistry,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -1860,6 +1875,14 @@ impl Scope<'_> {
     /// the exact callee string `key` (e.g. `"Counter::__init__"`), if any.
     fn assoc_sig(&self, key: &str) -> Option<(&[WatTy], Option<WatTy>)> {
         self.assoc_fns
+            .iter()
+            .find(|(k, _, _)| k == key)
+            .map(|(_, p, r)| (p.as_slice(), *r))
+    }
+
+    /// PMAT-1024: a FREE module function's signature, by plain name.
+    fn mod_fn_sig(&self, key: &str) -> Option<(&[WatTy], Option<WatTy>)> {
+        self.mod_fns
             .iter()
             .find(|(k, _, _)| k == key)
             .map(|(_, p, r)| (p.as_slice(), *r))
@@ -1911,12 +1934,14 @@ impl Scope<'_> {
 /// `f.name` for a free function, `<Struct>.<method>` for a struct method
 /// (PMAT-1023; both are legal WAT id characters, and Python identifiers can
 /// never collide with the dotted form).
+#[allow(clippy::too_many_arguments)]
 fn emit_function(
     f: &Function,
     literals: &StrLiterals,
     structs: &StructRegistry,
     methods: &MethodRegistry,
     assoc_fns: &AssocFnRegistry,
+    mod_fns: &AssocFnRegistry,
     wat_name: &str,
 ) -> Result<String, BackendError> {
     // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
@@ -1954,6 +1979,7 @@ fn emit_function(
         struct_locals: Vec::new(),
         methods,
         assoc_fns,
+        mod_fns,
         literals,
         ret,
         ret_is_unit,
@@ -2239,21 +2265,53 @@ fn emit_stmt(
             emit_field_assign(obj, field, value, scope, out, depth)
         }
         // PMAT-1023: a statement-position call evaluated for its side effect —
-        // `c.incr()` / `acc.add(5)`. STRUCT METHOD calls only: their result
-        // type is known from the registry, so a unit method leaves nothing and
+        // `c.incr()` / `acc.add(5)`. A STRUCT METHOD call's result type is
+        // known from the method registry, so a unit method leaves nothing and
         // a value-returning method's result is dropped (Python's statement-
-        // position discard). A bare function-call statement is refused (a free
-        // `Expr::Call`'s result type is not carried in the meta-HIR node).
+        // position discard). PMAT-1024: a PLAIN function-call statement
+        // (`bump(c)` — the mutating-helper idiom the reference-semantics
+        // frontend passes through as a bare heap pointer) resolves the same
+        // way via the free-function registry.
         Stmt::SideEffectCall { call } => {
-            let Expr::MethodCall { obj, method, args } = call else {
-                return Err(unsupported(
-                    "statement-position call that is not a struct method call — \
-                     the WASM subset lowers `obj.method(…)` statements only",
-                ));
-            };
-            if emit_method_call(obj, method, args, scope, out, depth)?.is_some() {
-                indent(out, depth);
-                writeln!(out, "drop").expect("write");
+            match call {
+                Expr::MethodCall { obj, method, args } => {
+                    if emit_method_call(obj, method, args, scope, out, depth)?.is_some() {
+                        indent(out, depth);
+                        writeln!(out, "drop").expect("write");
+                    }
+                }
+                Expr::Call { callee, args } => {
+                    let Some((ptys, ret)) = scope.mod_fn_sig(callee).map(|(p, r)| (p.to_vec(), r))
+                    else {
+                        return Err(unsupported(&format!(
+                            "statement-position call to `{callee}` — not a module \
+                             function of this WASM module"
+                        )));
+                    };
+                    if ptys.len() != args.len() {
+                        return Err(unsupported(&format!(
+                            "`{callee}` takes {} argument(s) but the call passes {}",
+                            ptys.len(),
+                            args.len()
+                        )));
+                    }
+                    for (a, pt) in args.iter().zip(ptys.iter()) {
+                        emit_expr_typed(a, scope, out, depth, *pt)?;
+                    }
+                    indent(out, depth);
+                    writeln!(out, "call ${callee}").expect("write");
+                    if ret.is_some() {
+                        indent(out, depth);
+                        writeln!(out, "drop").expect("write");
+                    }
+                }
+                other => {
+                    return Err(unsupported(&format!(
+                        "statement-position {} — the WASM subset lowers \
+                         `obj.method(…)` and `helper(…)` statements only",
+                        expr_kind(other)
+                    )));
+                }
             }
             Ok(())
         }
@@ -3526,6 +3584,35 @@ fn build_method_registry(
         }
     }
     Ok((reg, assoc))
+}
+
+/// PMAT-1024: build the FREE-function signature registry (plain fn name →
+/// param WAT types + result shape). Statement-position plain calls
+/// (`Stmt::SideEffectCall { call: Expr::Call }` — the `bump(c)`
+/// mutating-helper idiom) consult it to type args and to know whether the
+/// callee leaves a result to drop. Uses the same type mappings as
+/// `emit_function`, so a function this refuses would refuse at emission
+/// anyway — no new refusal surface.
+fn build_module_fn_registry(module: &Module) -> Result<AssocFnRegistry, BackendError> {
+    let mut reg = AssocFnRegistry::new();
+    for f in module_functions(module) {
+        let ptys = f
+            .params
+            .iter()
+            .map(|p| param_wat_type(&p.ty))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| unsupported(&format!("function `{}` parameter: {e}", f.name)))?;
+        let ret = match &f.return_type {
+            Type::Unit => None,
+            Type::Str | Type::Struct(_) => Some(WatTy::I32),
+            other => Some(
+                map_type(other)
+                    .map_err(|e| unsupported(&format!("function `{}` return type: {e}", f.name)))?,
+            ),
+        };
+        reg.push((f.name.clone(), ptys, ret));
+    }
+    Ok(reg)
 }
 
 /// Look up a struct's field layout by name.

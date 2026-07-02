@@ -27,6 +27,10 @@ xpile-ffi-manifest = { workspace = true }
 # PMAT-902 (Sprint Day 3): `xpile hybrid --verify` differential-checks the
 # executed hybrid artifact against the CPython reference (ctypes-bound C).
 xpile-oracle       = { workspace = true }
+# PMAT-1024: `transpile` resolves the target BEFORE lowering and passes the
+# target's AliasSemantics to the frontend (reference-semantics targets skip
+# the value-semantics alias dispositions).
+xpile-frontend     = { workspace = true }
 anyhow         = { workspace = true }
 clap           = { version = "4", features = ["derive"] }
 

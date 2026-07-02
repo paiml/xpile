@@ -29,7 +29,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
-use xpile_frontend::{Frontend, FrontendError};
+use xpile_frontend::{AliasSemantics, Frontend, FrontendError};
 use xpile_meta_hir::{
     collect_block_idents, BinOp, Block, DictViewKind, Expr, FfiBoundary, FloatOp, Function, Item,
     ListMutateOp, ListQueryOp, Module, NumBuiltinOp, PairIterKind, Param, Radix, SetOp, SetPredOp,
@@ -223,6 +223,11 @@ struct LoweringCtx {
     /// the body resolves `cls` to this class name (so it reuses the existing
     /// struct-construction / static-call dispatch). `None` everywhere else.
     cls_name: Option<String>,
+    /// PMAT-1024: the TARGET's binding model. `Reference` (WASM linear
+    /// memory) natively shares heap objects across bindings, so the
+    /// value-semantics alias dispositions are skipped for pointer-stable
+    /// types (see [`reference_native`]).
+    alias_semantics: AliasSemantics,
 }
 
 impl LoweringCtx {
@@ -350,6 +355,7 @@ impl LoweringCtx {
         frozen_structs: Rc<HashSet<String>>,
         enums: Rc<HashMap<String, Vec<(String, i64)>>>,
         mutating_methods: Rc<HashSet<String>>,
+        alias_semantics: AliasSemantics,
     ) -> Self {
         // PMAT-502bj: module-level constants are visible (and immutably
         // bound) in every function body; a same-named param shadows the
@@ -413,6 +419,7 @@ impl LoweringCtx {
             loop_pure_vars: HashSet::new(),
             loop_scoped: HashSet::new(),
             cls_name: None,
+            alias_semantics,
         }
     }
 }
@@ -637,6 +644,17 @@ fn count_reads_expr(e: &ast::Expr, counts: &mut HashMap<String, usize>) {
 /// previously-correct code.
 fn clone_if_reused_non_copy(ctx: &LoweringCtx, expr: Expr) -> Expr {
     if let Expr::Ident(name) = &expr {
+        // PMAT-1024: on a reference-semantics target a pointer copy never
+        // MOVES — reuse after the call is fine, and the clone this fn would
+        // insert both refuses at the WASM backend and (for a mutating
+        // callee) would drop the mutation Python expects to share.
+        if ctx
+            .name_types
+            .get(name)
+            .is_some_and(|t| reference_native(ctx.alias_semantics, t))
+        {
+            return expr;
+        }
         let reused = ctx.read_counts.get(name).copied().unwrap_or(0) > 1;
         let non_copy = ctx
             .name_types
@@ -1183,6 +1201,7 @@ fn alias_class_analysis(
     mutating_methods: &HashSet<String>,
     signatures: &HashMap<String, FnSig>,
     structs: &HashMap<String, Vec<(String, Type)>>,
+    alias_semantics: AliasSemantics,
 ) -> (Option<(String, String)>, HashSet<String>) {
     // --- tiny union-find over interned names ---
     fn find(parent: &mut [usize], mut i: usize) -> usize {
@@ -1363,6 +1382,15 @@ fn alias_class_analysis(
         union(&mut parent, ia, ib);
     }
     let obj_mutated = collect_obj_mutated(body, mutating_methods);
+    // PMAT-1024: on a reference-semantics target only CONTAINER-shaped
+    // mutation keeps the refusal (see `collect_container_mutated`) — a
+    // struct-shaped mutation is an in-place store through the shared
+    // base-pointer, executable exactly.
+    let container_mutated = if alias_semantics.is_reference() {
+        collect_container_mutated(body)
+    } else {
+        HashSet::new()
+    };
     let reads = count_name_reads(body);
     let param_names: HashSet<&str> = params.iter().map(|p| p.name.as_str()).collect();
     // Group members per class root.
@@ -1377,7 +1405,13 @@ fn alias_class_analysis(
         if members.len() < 2 {
             continue;
         }
-        let mutated = members.iter().any(|&i| obj_mutated.contains(&names[i]));
+        let mutated = if alias_semantics.is_reference() {
+            members
+                .iter()
+                .any(|&i| container_mutated.contains(&names[i]))
+        } else {
+            members.iter().any(|&i| obj_mutated.contains(&names[i]))
+        };
         if !mutated {
             continue;
         }
@@ -1495,6 +1529,89 @@ fn collect_obj_mutated(stmts: &[ast::Stmt], mutating: &HashSet<String>) -> HashS
     out.extend(counts.into_keys());
     // PMAT-1008-interim: expression-position builtin mutators (`x = xs.pop()`,
     // `d.setdefault(k, v)` in value position) — reuse the PMAT-502as walker.
+    let mut pop_counts = HashMap::new();
+    for s in stmts {
+        count_pop_receivers_in_stmt(s, &mut pop_counts, 1);
+    }
+    out.extend(pop_counts.into_keys());
+    out
+}
+
+/// PMAT-1024: the CONTAINER-shaped subset of [`collect_obj_mutated`] — names
+/// mutated via a subscript-chain write (`d[k] = v`, `xs[i] += v`, `del d[k]`)
+/// or a builtin-container mutator (`.append`/`.add`/`.pop`/…, statement or
+/// expression position). EXCLUDES the struct-shaped mutations (field writes
+/// `c.f = v`, user-class mutating-method receivers): on a reference-semantics
+/// target those are plain in-place stores through the shared base-pointer,
+/// while a container INSERT can RELOCATE (the PMAT-999 dict/set grow updates
+/// only the receiver's local), so only container-shaped mutation keeps the
+/// alias-class refusal there. Type-blind like its parent: a user method that
+/// happens to share a builtin-mutator name over-taints (benign — refusal is
+/// conservative).
+fn collect_container_mutated(stmts: &[ast::Stmt]) -> HashSet<String> {
+    fn expr_mutator_receiver(e: &ast::Expr, out: &mut HashSet<String>) {
+        if let ast::Expr::Call(c) = e {
+            if let ast::Expr::Attribute(attr) = c.func.as_ref() {
+                if matches!(
+                    attr.attr.as_str(),
+                    "append"
+                        | "extend"
+                        | "insert"
+                        | "remove"
+                        | "sort"
+                        | "reverse"
+                        | "clear"
+                        | "pop"
+                        | "add"
+                        | "update"
+                        | "discard"
+                        | "setdefault"
+                ) {
+                    if let ast::Expr::Name(n) = attr.value.as_ref() {
+                        out.insert(n.id.to_string());
+                    }
+                }
+            }
+        }
+    }
+    fn walk(stmts: &[ast::Stmt], out: &mut HashSet<String>) {
+        for s in stmts {
+            match s {
+                ast::Stmt::Assign(a) => {
+                    for t in &a.targets {
+                        if let Some(base) = subscript_chain_base_name(t) {
+                            out.insert(base);
+                        }
+                    }
+                }
+                ast::Stmt::AugAssign(a) => {
+                    if let Some(base) = subscript_chain_base_name(a.target.as_ref()) {
+                        out.insert(base);
+                    }
+                }
+                ast::Stmt::Delete(d) => {
+                    for t in &d.targets {
+                        if let Some(base) = subscript_chain_base_name(t) {
+                            out.insert(base);
+                        }
+                    }
+                }
+                ast::Stmt::Expr(e) => expr_mutator_receiver(&e.value, out),
+                ast::Stmt::If(i) => {
+                    walk(&i.body, out);
+                    walk(&i.orelse, out);
+                }
+                ast::Stmt::While(w) => walk(&w.body, out),
+                ast::Stmt::For(f) => {
+                    walk(&f.body, out);
+                    walk(&f.orelse, out);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = HashSet::new();
+    walk(stmts, &mut out);
     let mut pop_counts = HashMap::new();
     for s in stmts {
         count_pop_receivers_in_stmt(s, &mut pop_counts, 1);
@@ -2030,6 +2147,20 @@ impl Frontend for PythonFrontend {
     }
 
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError> {
+        self.parse_and_lower_for(path, source, AliasSemantics::Value)
+    }
+
+    /// PMAT-1024: target-aware lowering. `AliasSemantics::Reference`
+    /// (WASM) skips the value-semantics alias dispositions for
+    /// pointer-stable types (see [`reference_native`]) — Python object
+    /// sharing is native to linear memory, so the shapes the Rust lane
+    /// must clone/move/refuse execute exactly there.
+    fn parse_and_lower_for(
+        &self,
+        path: &Path,
+        source: &str,
+        semantics: AliasSemantics,
+    ) -> Result<Module, FrontendError> {
         let module_name = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -2322,6 +2453,7 @@ impl Frontend for PythonFrontend {
                 frozen_structs.clone(),
                 enums.clone(),
                 mutating_methods.clone(),
+                semantics,
             )?;
             items.push(item);
         }
@@ -2330,7 +2462,14 @@ impl Frontend for PythonFrontend {
         // mutation object-reference miscompile before it reaches a backend. The
         // full Rc<RefCell> reference layer is architectural (out of scope); this
         // pass catches the single clearest *silent* miscompile and refuses it.
-        reject_alias_then_mutate(&items)?;
+        // PMAT-1024: skipped for a reference-semantics target — args pass as
+        // heap base-pointers there (no clone is inserted to drop the mutation),
+        // so the callee mutates the CALLER's object exactly like CPython; the
+        // shapes whose pointer-passing the WASM runtime cannot yet honor
+        // (dict/set params, list growth) refuse at the backend instead.
+        if !semantics.is_reference() {
+            reject_alias_then_mutate(&items)?;
+        }
 
         Ok(Module {
             name: module_name,
@@ -2791,6 +2930,7 @@ fn lower_top_level_stmt(
     frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     mutating_methods: Rc<HashSet<String>>,
+    alias_semantics: AliasSemantics,
 ) -> Result<Item, FrontendError> {
     // PMAT-502bj: a module-level `NAME = <int/bool/float-literal>` is a
     // constant item (recognised before the `def`-only fallback).
@@ -2811,6 +2951,7 @@ fn lower_top_level_stmt(
  None,
  None,
  mutating_methods,
+ alias_semantics,
         )
         .map(Item::Function),
         // PMAT-513: a `class C(Enum):` → an `Item::Enum` (handled before the
@@ -2829,6 +2970,7 @@ fn lower_top_level_stmt(
  frozen_structs,
  enums,
  mutating_methods,
+ alias_semantics,
         ),
         // A top-level assignment that wasn't a recognised constant.
         ast::Stmt::Assign(_) | ast::Stmt::AnnAssign(_) => Err(FrontendError::Lower(
@@ -3289,6 +3431,7 @@ fn lower_class_def(
     frozen_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     mutating_methods: Rc<HashSet<String>>,
+    alias_semantics: AliasSemantics,
 ) -> Result<Item, FrontendError> {
     let (name, fields, _, _) = class_def_signature(&c)?;
     // PMAT-592/648: record `@dataclass(frozen=True)`/`(order=True)` before
@@ -3327,6 +3470,7 @@ fn lower_class_def(
                     None,
                     None,
                     mutating_methods.clone(),
+                    alias_semantics,
                 )?;
                 methods.push(method);
                 continue;
@@ -3351,6 +3495,7 @@ fn lower_class_def(
                     Some(self_ty.clone()),
                     None,
                     mutating_methods.clone(),
+                    alias_semantics,
                 )?;
                 if body_assigns_self(&method.body.stmts) {
                     return Err(FrontendError::Lower(format!(
@@ -3393,6 +3538,7 @@ fn lower_class_def(
                     None,
                     Some(name.clone()),
                     mutating_methods.clone(),
+                    alias_semantics,
                 )?;
                 methods.push(method);
                 continue;
@@ -3422,6 +3568,7 @@ fn lower_class_def(
                 Some(self_ty.clone()),
                 None,
                 mutating_methods.clone(),
+                alias_semantics,
             )?;
             // PMAT-1016A: a SELF-MUTATING method (`self.field = v` /
             // `self.field += v` anywhere in the body) now lowers with a
@@ -3812,6 +3959,9 @@ fn lower_function_def(
     // (AST-derived incl. the transitive fixpoint) — receivers of these calls
     // bind `mut` in the mutability pre-walk.
     mutating_methods: Rc<HashSet<String>>,
+    // PMAT-1024: the target's binding model (reference targets skip the
+    // value-semantics alias dispositions for pointer-stable types).
+    alias_semantics: AliasSemantics,
 ) -> Result<Function, FrontendError> {
     if !f.decorator_list.is_empty() {
         return Err(FrontendError::Lower(format!(
@@ -3962,6 +4112,7 @@ fn lower_function_def(
         frozen_structs,
         enums,
         mutating_methods,
+        alias_semantics,
     );
 
     // PMAT-1020: function-local transitive alias-CLASS analysis (sweep #9's
@@ -3978,6 +4129,7 @@ fn lower_function_def(
             &__mm_for_alias,
             &ctx.signatures,
             &ctx.structs,
+            alias_semantics,
         );
         for p in params_to_mark {
             ctx.mutable.insert(p);
@@ -8393,12 +8545,42 @@ fn element_read_base(value: &Expr) -> Option<&str> {
     }
 }
 
+/// PMAT-1024: true when the target's binding model natively expresses Python
+/// object sharing for `ty` — the alias dispositions (clone/move/refuse) are
+/// then skipped and a binding lowers as a plain pointer copy.
+///
+/// TYPE-SCOPED on purpose. Sound in the WASM runtime for:
+/// - `Struct(_)` — fixed-size records, never relocate; every field write is a
+///   store through the shared base-pointer (the PMAT-1023 witness shape);
+/// - `List(_)` — the supported list surface is in-place (index read/write +
+///   `len`); growth (`append`) REFUSES at the backend, so a shared pointer
+///   cannot go stale;
+/// - `Str` — Python strings are immutable (concat allocates fresh), sharing
+///   is unobservable.
+///
+/// NOT sound for `Dict`/`Set`: `$__wasm_dict_set` GROWS by relocating the
+/// record and `local.set`s the returned pointer into the RECEIVER's local
+/// only (PMAT-999) — an alias would keep the stale pre-growth pointer and
+/// silently diverge. Those types keep the full value-semantics dispositions
+/// (whose inserted `Expr::Clone` / refusals stay honest: the WASM backend
+/// refuses `Clone`).
+fn reference_native(semantics: AliasSemantics, ty: &Type) -> bool {
+    semantics.is_reference() && matches!(ty, Type::Struct(_) | Type::List(_) | Type::Str)
+}
+
 fn apply_alias_dispositions(
     ctx: &LoweringCtx,
     name: &str,
     value: Expr,
     ty: &Type,
 ) -> Result<Expr, FrontendError> {
+    // PMAT-1024: a reference-semantics target shares heap objects across
+    // bindings natively — the whole disposition suite below exists to
+    // reconcile Rust VALUE semantics with Python sharing and would only
+    // break (clone) or block (refuse) shapes the target executes exactly.
+    if reference_native(ctx.alias_semantics, ty) {
+        return Ok(value);
+    }
     // PMAT-1016C: STRUCT alias `c2 = c` — Python shares the object (a
     // mutation through either name is seen by both), which value
     // semantics cannot express. Three-way disposition, function-wide
@@ -21037,6 +21219,105 @@ mod tests {
         PythonFrontend
             .parse_and_lower(&PathBuf::from("fixture.py"), src)
             .expect("parse should succeed")
+    }
+
+    /// PMAT-1024: lower FOR a reference-semantics target (WASM).
+    fn parse_for_reference(src: &str) -> Result<Module, FrontendError> {
+        PythonFrontend.parse_and_lower_for(
+            &PathBuf::from("fixture.py"),
+            src,
+            AliasSemantics::Reference,
+        )
+    }
+
+    /// PMAT-1024 fixtures: a mutated struct alias — the Rust lane's
+    /// canonical refusal shape (PMAT-1016C/1020).
+    const ALIAS_OOP: &str = "class Counter:\n    count: int\n\n    def __init__(self, count: int) -> None:\n        self.count = count\n\n    def incr(self) -> None:\n        self.count = self.count + 1\n\n    def get(self) -> int:\n        return self.count\n\ndef run() -> int:\n    a = Counter(0)\n    b = a\n    b.incr()\n    b.incr()\n    a.incr()\n    return a.get() + b.get()\n";
+
+    /// PMAT-1024: value-semantics lowering (the default) keeps refusing the
+    /// mutated struct alias; reference-semantics lowering accepts it and
+    /// binds the alias as a PLAIN pointer copy (no `Expr::Clone` — the WASM
+    /// backend refuses `Clone`, and linear memory shares natively).
+    #[test]
+    fn reference_semantics_accepts_mutated_struct_alias() {
+        let err = PythonFrontend
+            .parse_and_lower(&PathBuf::from("fixture.py"), ALIAS_OOP)
+            .expect_err("value lane must refuse the mutated alias");
+        assert!(
+            format!("{err}").contains("aliases `a` and `b`"),
+            "value-lane refusal names the pair: {err}"
+        );
+
+        let m = parse_for_reference(ALIAS_OOP).expect("reference lane accepts the alias");
+        let run = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "run" => Some(f),
+                _ => None,
+            })
+            .expect("run() lowered");
+        let alias_value = run
+            .body
+            .stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::Let { name, value, .. } if name == "b" => Some(value),
+                _ => None,
+            })
+            .expect("`b = a` lowered as a Let");
+        assert!(
+            matches!(alias_value, Expr::Ident(n) if n == "a"),
+            "the alias binds as a bare pointer copy, not a Clone: {alias_value:?}"
+        );
+    }
+
+    /// PMAT-1024: the reference-mode skip is TYPE-SCOPED — dict/set growth
+    /// RELOCATES the record and rebinds only the receiver's local
+    /// (PMAT-999), so an alias would go silently stale. A mutated dict
+    /// alias keeps refusing even for the reference lane.
+    #[test]
+    fn reference_semantics_still_refuses_mutated_dict_alias() {
+        let src = "def f() -> int:\n    d = {1: 2}\n    e = d\n    e[3] = 4\n    return len(d)\n";
+        let err = parse_for_reference(src).expect_err("dict alias must keep refusing");
+        assert!(
+            format!("{err}").contains("aliases"),
+            "refusal is the alias disposition: {err}"
+        );
+    }
+
+    /// PMAT-1024: reference mode skips the PMAT-588 call-arg clone for
+    /// pointer-stable types — a struct passed to a helper and re-read after
+    /// stays a bare pointer (a clone would refuse at the WASM backend and,
+    /// for a mutating callee, drop the mutation Python shares).
+    #[test]
+    fn reference_semantics_passes_struct_args_unclonewrapped() {
+        let src = "class Counter:\n    count: int\n\n    def __init__(self, count: int) -> None:\n        self.count = count\n\n    def incr(self) -> None:\n        self.count = self.count + 1\n\n    def get(self) -> int:\n        return self.count\n\ndef bump(c: Counter) -> None:\n    c.incr()\n\ndef run() -> int:\n    c = Counter(0)\n    bump(c)\n    bump(c)\n    return c.get()\n";
+        let m = parse_for_reference(src).expect("reference lane accepts the mutating helper");
+        let run = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "run" => Some(f),
+                _ => None,
+            })
+            .expect("run() lowered");
+        let mut saw_bare_arg = false;
+        for s in &run.body.stmts {
+            if let Stmt::SideEffectCall {
+                call: Expr::Call { callee, args },
+            } = s
+            {
+                if callee == "bump" {
+                    assert!(
+                        matches!(&args[0], Expr::Ident(n) if n == "c"),
+                        "arg passes as a bare pointer, not Clone: {args:?}"
+                    );
+                    saw_bare_arg = true;
+                }
+            }
+        }
+        assert!(saw_bare_arg, "expected a lowered bump(c) call");
     }
 
     #[test]

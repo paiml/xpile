@@ -25,11 +25,12 @@
 //! expresses it for free. The aliasing witness below executes the exact
 //! shape the Rust lane must REFUSE and value-matches CPython.
 //!
-//! (Honest scope note: the shared Python FRONTEND still applies its
-//! target-blind alias-class refusals, so a Python-source aliasing program
-//! does not yet reach this backend — the witness drives the backend at the
-//! meta-HIR level, like every other witness in this suite. Target-aware
-//! alias disposition is a filed follow-up.)
+//! (Scope note, DISCHARGED by PMAT-1024: the frontend's alias dispositions
+//! are now TARGET-AWARE — lowering for `Target::Wasm` runs with
+//! `AliasSemantics::Reference`, which skips the clone/move/refuse suite for
+//! pointer-stable types, so Python-SOURCE aliasing programs reach this
+//! backend through the real CLI. See `transpile_alias_oop_py_wasm_executes_
+//! rust_refuses` in the xpile e2e suite for the full-pipeline witness.)
 //!
 //! ## Witness shape
 //!
@@ -494,7 +495,10 @@ fn struct_equality_is_refused_not_pointer_compared() {
 
 #[test]
 fn non_method_side_effect_call_is_refused() {
-    // A bare function-call statement (not a struct method) stays refused.
+    // PMAT-1024: a statement-position PLAIN call now lowers via the
+    // free-function registry — but a callee that is NOT a module function
+    // stays an honest refusal naming it (was the blanket "not a struct
+    // method call" refusal of PMAT-1023).
     let m = module(
         "bad",
         vec![
@@ -518,8 +522,8 @@ fn non_method_side_effect_call_is_refused() {
     );
     let err = emit_module(&m).unwrap_err().to_string();
     assert!(
-        err.contains("not a struct method call"),
-        "bare call statements refuse honestly: {err}"
+        err.contains("`free_fn`") && err.contains("not a module function"),
+        "unknown-callee statements refuse honestly, naming the callee: {err}"
     );
 }
 
