@@ -993,6 +993,14 @@ roadmap:
   priority: medium
   created: 2026-07-02T00:00:00Z
   notes: 'high-water re-checked (1077) before allocating 1078. Suite 757 green; MATCH append-accumulates-ABC/create-if-absent/loop-append/with-open-append; "w" still truncates (regr). File I/O now: read + write(w) + append(a) + with-open + line iteration.'
+- id: PMAT-1079
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1079: [rust/correctness] loop-local SUBSCRIPT reused as for-target mistyped I64 (E0308). Found by a DIFFERENTIAL HUNT (realistic CSV-grouping program): `job = parts[2]` (parts a list[str] from split, inside a loop) reused as a later for-target hoisted to function scope typed I64 (default) instead of str → invalid Rust; cascaded to `job not in groups` mis-emitting `if true`. ROOT: the PMAT-1038 pre-declare scan probed `job = parts[2]`s type but `parts` (not read AFTER the loop) was never registered, so the subscript probe fell to the I64 default. FIX (2 parts): (1) register each body-local`s inferred type as SCRATCH during the scan (removed after) so later assignments resolve; (2) recognize `for line in open(P)` in the for-target temp-probe (FileReadLines→list[str]) so a file-loop body`s `parts = line.split()` types too.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  notes: 'Found by the post-completion differential hunt (9 realistic mini-programs — word-freq/CSV-parse/file-generator-stats/report/dict-of-lists; 8 MATCH, this 1 diverged). Suite 758 green; the CSV-group program + minimal repro MATCH; 8 sibling programs unregressed. Validates the "realistic-program hunt catches integration bugs single-feature probes miss" discipline.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

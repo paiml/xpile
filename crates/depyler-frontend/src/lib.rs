@@ -5646,14 +5646,19 @@ fn lower_function_def(
                                 ast::Expr::Call(c) if matches!(&*c.func, ast::Expr::Name(n) if n.id.as_str() == "range") => {
                                     Some((t.id.to_string(), Type::I64))
                                 }
-                                other => lower_expr_in_ctx(&ctx, other.clone())
-                                    .ok()
-                                    .map(|p| infer_type_in_ctx(&ctx, &p))
-                                    .and_then(|ty| match ty {
-                                        Type::List(el) => Some((t.id.to_string(), *el)),
-                                        Type::Str => Some((t.id.to_string(), Type::Str)),
-                                        _ => None,
-                                    }),
+                                // PMAT-1079: recognize `for line in open(P)` so
+                                // `line` types as str (FileReadLines → list[str]),
+                                // letting a body `parts = line.split(...)` resolve.
+                                other => match try_lower_open_lines(&ctx, other) {
+                                    Ok(Some(fre)) => Some(fre),
+                                    _ => lower_expr_in_ctx(&ctx, other.clone()).ok(),
+                                }
+                                .map(|p| infer_type_in_ctx(&ctx, &p))
+                                .and_then(|ty| match ty {
+                                    Type::List(el) => Some((t.id.to_string(), *el)),
+                                    Type::Str => Some((t.id.to_string(), Type::Str)),
+                                    _ => None,
+                                }),
                             }
                         }
                         _ => None,
@@ -5677,6 +5682,13 @@ fn lower_function_def(
                     }
                     _ => false,
                 };
+                // PMAT-1079: register each preceding body-local's inferred type
+                // as SCRATCH so a later body assignment can resolve it — `parts =
+                // row.split(","); job = parts[2]` mistyped `job` as I64 because
+                // `parts` (not read after the loop) was never registered, so the
+                // `parts[2]` probe fell to the default. Scratch entries are for
+                // inference only and removed after the scan.
+                let mut scratch: Vec<String> = Vec::new();
                 for bs in body {
                     let (name, value_ast) = match bs {
                         ast::Stmt::Assign(a) if a.targets.len() == 1 => match &a.targets[0] {
@@ -5690,10 +5702,7 @@ fn lower_function_def(
                         },
                         _ => continue,
                     };
-                    if ctx.bound.contains(&name)
-                        || ctx.loop_scoped.contains(&name)
-                        || after.get(&name).copied().unwrap_or(0) == 0
-                    {
+                    if ctx.bound.contains(&name) || ctx.loop_scoped.contains(&name) {
                         continue;
                     }
                     let Some(ty) = lower_expr_in_ctx(&ctx, value_ast.clone())
@@ -5702,21 +5711,35 @@ fn lower_function_def(
                     else {
                         continue;
                     };
+                    // A body-local read AFTER the loop is pre-declared (leaks to
+                    // function scope); one that isn't is registered scratch-only
+                    // so subsequent assignments (`job = parts[2]`) resolve.
+                    let read_after = after.get(&name).copied().unwrap_or(0) > 0;
                     let default = match &ty {
                         Type::List(_) => Some(Expr::ListLit(vec![])),
                         other => primitive_default(other),
                     };
-                    let Some(default) = default else {
-                        continue;
-                    };
-                    stmts.push(Stmt::Let {
-                        name: name.clone(),
-                        ty: ty.clone(),
-                        value: default,
-                        mutable: true,
-                    });
-                    ctx.bound.insert(name.clone());
-                    ctx.name_types.insert(name.clone(), ty);
+                    if read_after {
+                        if let Some(default) = default {
+                            stmts.push(Stmt::Let {
+                                name: name.clone(),
+                                ty: ty.clone(),
+                                value: default,
+                                mutable: true,
+                            });
+                            ctx.bound.insert(name.clone());
+                            ctx.name_types.insert(name.clone(), ty);
+                            continue;
+                        }
+                    }
+                    // Not pre-declared — register scratch for later inference only.
+                    if !ctx.name_types.contains_key(&name) {
+                        ctx.name_types.insert(name.clone(), ty);
+                        scratch.push(name);
+                    }
+                }
+                for n in &scratch {
+                    ctx.name_types.remove(n);
                 }
                 if temp_inserted {
                     if let Some((tname, _)) = &temp {

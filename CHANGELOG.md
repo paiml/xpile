@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Correctness — loop-local subscript reused as for-target (PMAT-1079)
+
+- Fixed: a variable assigned from a loop-local subscript (`job = parts[2]`,
+  where `parts` is a `list[str]` from split) and reused as a for-target in a
+  later loop was hoisted typed `i64` instead of `str` (rustc E0308), which also
+  made `job not in groups` mis-emit as `if true`. The pre-declare scan now
+  registers each body-local's inferred type as scratch so later assignments
+  resolve, and recognizes `for line in open(P)` in the for-target probe. Found
+  by a differential hunt over realistic mini-programs (CSV grouping).
+- 1 e2e test (758 total).
+
 ## [0.1.614] — 2026-07-02
 
 ### File I/O — append mode (PMAT-1078)
