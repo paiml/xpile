@@ -7,6 +7,37 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Verification — adversarial skeptic pass #2 + file-I/O correctness batch (PMAT-1081)
+
+- Ran the every-5-8-slices adversarial-verify discipline over the ~15 slices
+  shipped since PMAT-1055: 5 independent refutation agents (exceptions,
+  generators + context managers, file I/O, loop-var fixes, WASM strings),
+  ~100 differential probes vs CPython, plus full-suite regression
+  (`cargo test --workspace`, `lake build`). Survived: WASM string
+  slice/ordering, PMAT-1079, PMAT-1080's core, file I/O's LF-ASCII core, the
+  context-manager lifecycle, multi-except ordering. Refuted findings filed as
+  PMAT-1082..1088 (top: `return` in a try body silently returns the wrong
+  value; eager generators diverge on side effects/partial consumption).
+- Fixed in-slice (the file-I/O batch, rust + ruchy codegens):
+  - **Universal newlines**: `open(P).read()` and line iteration now translate
+    `\r\n` and lone `\r` to `\n` (CPython text mode). A CRLF file was a
+    SILENT miscompile — `len()`/line counts diverged — falsifying the
+    PMAT-1077 "matches CPython text-mode iteration EXACTLY" claim.
+  - **Path borrow**: both read lanes take `&(path)` — a variable path was
+    MOVED (E0382 on the natural read-then-reuse idiom); write already
+    borrowed.
+  - **PermissionError**: `ErrorKind::PermissionDenied` now tags
+    `xpile: PermissionError:` (was flattened to OSError, so
+    `except PermissionError` could never catch).
+  - **OSError hierarchy**: `except OSError:` expands to
+    {OSError, FileNotFoundError, PermissionError} in `expand_exc_name` —
+    a missing-file FileNotFoundError silently re-raised past an
+    `except OSError:` handler before; `except IOError:` (Python-3 alias)
+    matched a tag nothing emits, i.e. never caught anything.
+- e2e: CRLF/lone-CR differentials on `file_read` + `file_lines`,
+  `read_then_reuse` borrow guard, new `except_oserror_hierarchy` fixture.
+  All 5 originally-failing skeptic probes re-verified MATCH.
+
 ## [0.1.615] — 2026-07-03
 
 ### Correctness — loop-var reassignment needs a `mut` for-binding (PMAT-1080)

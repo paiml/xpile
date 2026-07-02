@@ -19351,12 +19351,20 @@ fn main() {
 
 /// PMAT-1074: `open(path).read()` → inline `std::fs::read_to_string`. The
 /// driver writes a temp file, then asserts the transpiled readers. MATCH.
+/// PMAT-1081 (skeptic-pass finds): CRLF and lone-CR files read with CPython's
+/// universal newlines (text mode translates both to `\n` — previously the raw
+/// bytes leaked through, a SILENT divergence on any Windows-produced file);
+/// the path variable survives the read (borrowed, not moved — E0382 before).
 #[test]
 fn file_read() {
     let rust = xpile_transpile_to_rust("file_read.py");
     assert!(
         rust.contains("read_to_string") && rust.contains("FileNotFoundError"),
         "open().read() lowers to std::fs::read_to_string with a FileNotFoundError panic:\n{rust}"
+    );
+    assert!(
+        rust.contains("PermissionError"),
+        "PermissionDenied io errors tag as PermissionError (PMAT-1081):\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -19365,6 +19373,14 @@ fn main() {
     assert_eq!(read_all(path.to_string()), "alpha\nbeta\ngamma\n", "whole-file read");
     assert_eq!(line_count(path.to_string()), 3, "splitlines count");
     assert_eq!(char_count(path.to_string()), 17, "byte/char count");
+    assert_eq!(read_then_reuse(path.to_string()), 45, "path reusable after read: 17 + len(path) 28");
+    let crlf = "/tmp/xpile_e2e_file_read_crlf.txt";
+    ::std::fs::write(crlf, "a\r\nb\r\n").unwrap();
+    assert_eq!(read_all(crlf.to_string()), "a\nb\n", "universal newlines: CRLF reads as LF");
+    assert_eq!(char_count(crlf.to_string()), 4, "CPython len() of a CRLF file's text");
+    let cr = "/tmp/xpile_e2e_file_read_cr.txt";
+    ::std::fs::write(cr, "a\rb\r").unwrap();
+    assert_eq!(read_all(cr.to_string()), "a\nb\n", "universal newlines: lone CR reads as LF");
 }
 "#;
     assert_rustc_runs("file_read", &rust, driver);
@@ -19426,9 +19442,44 @@ fn main() {
     assert_eq!(count_lines(p.clone()), 3, "3 lines");
     assert_eq!(total_chars_with_newlines(p.clone()), 17, "keepends: 6+5+6 incl newlines");
     assert_eq!(count_via_with(p.clone()), 3, "with open: for line in f");
+    let crlf = "/tmp/xpile_e2e_file_lines_crlf.txt".to_string();
+    ::std::fs::write(&crlf, "x\r\ny\r\n").unwrap();
+    assert_eq!(count_lines(crlf.clone()), 2, "PMAT-1081: CRLF file iterates as 2 lines");
+    assert_eq!(total_chars_with_newlines(crlf.clone()), 4, "PMAT-1081: CRLF lines are LF-terminated (2+2)");
+    let cr = "/tmp/xpile_e2e_file_lines_cr.txt".to_string();
+    ::std::fs::write(&cr, "x\ry\r").unwrap();
+    assert_eq!(count_lines(cr.clone()), 2, "PMAT-1081: lone-CR file iterates as 2 lines");
+    assert_eq!(total_chars_with_newlines(cr.clone()), 4, "PMAT-1081: lone-CR lines are LF-terminated");
 }
 "#;
     assert_rustc_runs("file_lines", &rust, driver);
+}
+
+/// PMAT-1081 (skeptic-pass find): `except OSError:` catches the tagged
+/// subclasses — a missing-file FileNotFoundError IS an OSError in CPython's
+/// hierarchy, but the old leaf expansion matched only the generic
+/// `xpile: OSError:` tag and silently re-raised past the handler. `IOError`
+/// (Python-3 alias) expanded to a tag nothing emits — it never caught.
+#[test]
+fn except_oserror_hierarchy() {
+    let rust = xpile_transpile_to_rust("except_oserror_hierarchy.py");
+    assert!(
+        rust.contains(r#"starts_with("xpile: OSError: ")"#)
+            && rust.contains(r#"starts_with("xpile: FileNotFoundError: ")"#)
+            && rust.contains(r#"starts_with("xpile: PermissionError: ")"#),
+        "except OSError expands to its three tagged members:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let missing = "/tmp/xpile_e2e_no_such_file_pmat1081.txt";
+    assert_eq!(read_or_default(missing.to_string()), "fallback", "except OSError catches FileNotFoundError (subclass)");
+    assert_eq!(read_or_default_io(missing.to_string()), "fallback", "except IOError (alias of OSError) catches too");
+    let p = "/tmp/xpile_e2e_oserr_hier.txt";
+    ::std::fs::write(p, "content").unwrap();
+    assert_eq!(read_or_default(p.to_string()), "content", "clean path returns the read");
+}
+"#;
+    assert_rustc_runs("except_oserror_hierarchy", &rust, driver);
 }
 
 /// PMAT-1078: append mode — `open(P, "a").write(S)` accumulates (create if

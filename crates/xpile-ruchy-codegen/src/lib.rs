@@ -1282,7 +1282,7 @@ fn emit_stmt_indented(
                 // via OpenOptions + write_all (std::fs::write only truncates).
                 write!(out, "{indent}{{ use ::std::io::Write as _; let mut __wf = ::std::fs::OpenOptions::new().create(true).append(true).open(&(")?;
                 emit_expr(out, path, mode)?;
-                out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }); __wf.write_all((&("##);
+                out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!("xpile: PermissionError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }); __wf.write_all((&("##);
                 emit_expr(out, content, mode)?;
                 out.push_str(r##")).as_bytes()).unwrap_or_else(|__e| panic!("xpile: OSError: {}", __e)); }"##);
                 writeln!(out)?;
@@ -1295,7 +1295,7 @@ fn emit_stmt_indented(
             emit_expr(out, path, mode)?;
             out.push_str("), &(");
             emit_expr(out, content, mode)?;
-            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) });"##);
+            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!("xpile: PermissionError: {}", __e) } else { panic!("xpile: OSError: {}", __e) });"##);
             writeln!(out)?;
             Ok(())
         }
@@ -3565,15 +3565,18 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         // PMAT-1074: `open(path).read()` → inline std::fs::read_to_string.
+        // PMAT-1081: borrowed path (no move on a variable path) + universal-
+        // newline normalization (CRLF then lone CR — CPython text mode) +
+        // PermissionDenied → PermissionError. Mirrors the rust codegen.
         Expr::FileReadLines(path) => {
-            out.push_str("::std::fs::read_to_string(");
+            out.push_str("::std::fs::read_to_string(&(");
             emit_expr(out, path, mode)?;
-            out.push_str(").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!(\"xpile: FileNotFoundError: {}\", __e) } else { panic!(\"xpile: OSError: {}\", __e) }).split_inclusive('\\n').map(|__l| __l.to_string()).collect::<Vec<String>>()");
+            out.push_str(")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!(\"xpile: FileNotFoundError: {}\", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!(\"xpile: PermissionError: {}\", __e) } else { panic!(\"xpile: OSError: {}\", __e) }).replace(\"\\r\\n\", \"\\n\").replace('\\r', \"\\n\").split_inclusive('\\n').map(|__l| __l.to_string()).collect::<Vec<String>>()");
         }
         Expr::FileReadAll(path) => {
-            out.push_str("::std::fs::read_to_string(");
+            out.push_str("::std::fs::read_to_string(&(");
             emit_expr(out, path, mode)?;
-            out.push_str(").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!(\"xpile: FileNotFoundError: {}\", __e) } else { panic!(\"xpile: OSError: {}\", __e) })");
+            out.push_str(")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!(\"xpile: FileNotFoundError: {}\", __e) } else if __e.kind() == ::std::io::ErrorKind::PermissionDenied { panic!(\"xpile: PermissionError: {}\", __e) } else { panic!(\"xpile: OSError: {}\", __e) }).replace(\"\\r\\n\", \"\\n\").replace('\\r', \"\\n\")");
         }
         Expr::Len(inner) => {
             // PMAT-761 (HUNT-V16 CFD-3): parenthesize the cast so `len(x) < N`

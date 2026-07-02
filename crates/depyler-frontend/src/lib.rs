@@ -10338,6 +10338,21 @@ fn expand_exc_name(n: &ast::ExprName) -> Option<Vec<String>> {
             "ZeroDivisionError".to_string(),
             "OverflowError".to_string(),
         ]),
+        // PMAT-1081 (skeptic-pass find): unlike LookupError/ArithmeticError,
+        // OSError is BOTH a base class AND a tag in its own right (untyped io
+        // errors panic `xpile: OSError: …`), so it expands to itself PLUS the
+        // tagged subclasses — `except OSError:` must catch a missing-file
+        // FileNotFoundError and a perm-denied PermissionError (CPython
+        // subclass semantics), which `starts_with("xpile: OSError: ")` alone
+        // never did. `IOError` is a Python-3 alias of OSError (same set —
+        // previously it expanded to the leaf "IOError", a tag nothing emits,
+        // so it silently never caught). Grow this set when file-I/O emit
+        // gains more ErrorKind tags (IsADirectoryError, FileExistsError, …).
+        "OSError" | "IOError" => Some(vec![
+            "OSError".to_string(),
+            "FileNotFoundError".to_string(),
+            "PermissionError".to_string(),
+        ]),
         _ => Some(vec![name]),
     }
 }

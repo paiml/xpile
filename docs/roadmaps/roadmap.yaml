@@ -1009,6 +1009,70 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'Found by the post-completion differential hunt (9 realistic mini-programs — word-freq/CSV-parse/file-generator-stats/report/dict-of-lists; 8 MATCH, this 1 diverged). Suite 758 green; the CSV-group program + minimal repro MATCH; 8 sibling programs unregressed. Validates the "realistic-program hunt catches integration bugs single-feature probes miss" discipline.'
+- id: PMAT-1081
+  github_issue: null
+  item_type: verification
+  title: 'PMAT-1081: [verify/adversarial] skeptic pass #2 — 5 independent refutation agents over the ~15 slices since PMAT-1055 (exceptions 1058/1065/1070/1073, eager generators 1071, context managers 1072, file I/O 1074..1078, loop-var pair 1079/1080, WASM strings) + full-suite regression (`cargo test --workspace`, `lake build` — Lean green; spirv-codegen lib SIGSEGVs headlessly, filed PMAT-1088). ~100 differential probes vs CPython. SURVIVED: WASM string slice/ordering (22/25 exact, 3 misses = one pre-existing frontend defect, filed PMAT-1086), PMAT-1079 fully, PMAT-1080 core, file I/O LF-ASCII core, CM lifecycle/exception-path, multi-except ordering + allowlist non-swallowing. REFUTED (filed PMAT-1082..1087): return-in-try silently returns wrong value + continue-in-handler hangs (1082); eager generators diverge on side-effects/partial-consumption/late-raise/infinite (1083); CM suppression + exc-args silently wrong (1084); loop-var scan misses try/pair-loop bodies + shadow scoping model wrong (1085); lone-surrogate literals mangled (1086); file-I/O refusal imprecision (1087). FIXED IN-SLICE (the file-I/O correctness batch): (a) UNIVERSAL NEWLINES — read()/line-iteration now normalize \r\n and lone \r to \n (CPython text mode; CRLF files were a SILENT miscompile falsifying the PMAT-1077 "EXACTLY" claim); (b) read lanes BORROW the path (`&(p)`) so read-then-reuse-path compiles (was E0382); (c) PermissionDenied tags `xpile: PermissionError:` (was flattened to OSError so `except PermissionError` never caught); (d) frontend `expand_exc_name`: OSError/IOError expand to {OSError, FileNotFoundError, PermissionError} — `except OSError` now catches a missing-file FileNotFoundError per CPython hierarchy (silently re-raised before), `except IOError` matched NOTHING. Both rust + ruchy codegens; all 5 originally-failing probes re-verified MATCH.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Every ~5-8-slices adversarial-verify discipline (feedback-ultracode-adversarial-verify); previous pass PMAT-1055. e2e coverage added: CRLF/lone-CR read + line-iteration differentials, read_then_reuse (borrow), except_oserror_hierarchy fixture (OSError catches subclass, IOError alias, clean path). Agents artifacts under /tmp/pmat1081-*.'
+- id: PMAT-1082
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1082: [rust/correctness/exceptions] statement-form try control-flow — 2 CRITICAL silent miscompiles + 2 loud, from the PMAT-1081 skeptic pass. (1) SILENT: `return` inside a multi-statement try BODY returns from the catch_unwind CLOSURE, not the function — `try: _=risky(); return 5 except: pass; return 0` prints 0, CPython 5. (2) SILENT: `continue` in an except HANDLER inside `for i in range(n)` hangs forever — the range-for lowers to a while with the increment at body-END and the continue-increment rewrite does not recurse into TryCatch handler blocks (plain continue IS rewritten). (3) LOUD E0267: break/continue in a try BODY (closure). (4) LOUD invalid Rust: catch-all `except Exception:` in NON-final position (valid Python — only bare `except:` is syntax-required last) emits a bare block then a dangling `else if`. Fix order: recurse the continue-increment rewrite into handler bodies (real fix for 2); REFUSE return/break/continue inside try bodies precisely (honest for 1/3 — value-form `try: return X except: return Y` stays supported); emit non-final catch-all as `else { }` chain-terminator absorbing later arms or refuse. Also F3 (medium): `as e` message shapes diverge — KeyError leaks `key not found`, int() leaks `ParseIntError {..}` debug repr vs CPython `invalid literal for int() with base 10: ''abc''`; KeyError str() is repr-quoted (`''mk''`). Map payloads at the panic site. NOTE the existing fixture try_assign_bound_exc.py MASKS the int() case via `len(f"{e}") * 0` — unmask when fixing.'
+  status: planned
+  priority: critical
+  created: 2026-07-03T00:00:00Z
+  notes: 'Probes: /tmp/pmat1081-except/p26 (return-in-try), p05 (continue hang), p04/p24 (E0267), p09 (non-final catch-all), p12/p17/p19 (as-e shapes). 14 sibling probes MATCH (finally every-exit-path claim survives on all exception paths).'
+- id: PMAT-1083
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1083: [rust/correctness/generators] eager-generator honesty refusals — PMAT-1071''s "the common finite `for x in g()` case is faithful" is FALSIFIED (skeptic pass PMAT-1081): eager list-materialization silently diverges on (a) side-effect INTERLEAVING (`print` between yields runs all-before-consumption: side,side2,1,2 vs CPython side,1,side2,2), (b) PARTIAL consumption (`break` after first item still executes post-break generator code CPython never runs), (c) mid-generation raise AFTER a break-consumed yield (clean CPython run → Rust crash exit 101 before any output), (d) infinite `while True` generators (CPython terminates via break; Rust hangs materializing — the roadmap title planned "refuse unbounded" but NO while-True detection shipped). Plus (e) LOUD: `next(g)` emits a free-fn call → E0425. FIX = tighten the refusal set to make eager semantics sound: refuse yield-fns whose body contains a call/print statement (side effects), a raise, or any while-loop; refuse next() on a generator precisely. Pure for/if-structured finite builders (the actually-faithful class, probes p3/p4 MATCH) stay supported.'
+  status: planned
+  priority: critical
+  created: 2026-07-03T00:00:00Z
+  notes: 'Probes: /tmp/pmat1081-gen/p1-interleave, p2-partial, p10-gen-lateraise, p2b-infinite, p12-next. Shipped syntactic refusals (unannotated/yield-from/value-return) verified precise but exclude none of the semantic danger zone.'
+- id: PMAT-1084
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1084: [rust/correctness/context-managers] two unguarded silent-miscompile holes in PMAT-1072 (skeptic pass PMAT-1081): (a) `__exit__` returning True must SUPPRESS the exception (CPython continues after the with; Rust always resume_unwinds — the desugar at depyler-frontend transpile_with_statements emits `__exit__` as a discarded Stmt::Expr in a finally-only try and never inspects the return annotation) — exit 101 vs CPython''s clean continue; (b) `__exit__(self, a, b, c)` params are fabricated ZEROS (zero_arg dummies) vs CPython''s None/exc-triple — the standard `if exc_type is None` idiom silently takes the wrong branch. CHEAP HONEST FIX per the skeptic: refuse `__exit__` with a non-None return annotation; refuse `__exit__` bodies that READ their exc params (annotation-check exists; use-check does not). Core lifecycle, exception-path __exit__-then-propagate, and non-self __enter__ binding all verified SOUND (p5/p6/p9 MATCH).'
+  status: planned
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Probes: /tmp/pmat1081-gen/p7-cm-suppress, p8-cm-args.'
+- id: PMAT-1085
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1085: [rust+ruchy/correctness/loop-var] PMAT-1080 boundary findings (skeptic pass PMAT-1081): (a) WORST — the "stop at a nested loop that SHADOWS the name" scan design encodes RUST scoping, not Python''s single function-scope: `for x in xs: (for x in ys: x=x+1); print(x)` compiles and silently prints the inner-loop value (CPython: outer iteration''s). Pre-existing family (the no-reassign control p3b diverges identically pre-fix) but the fix CONVERTED its reassignment variants from loud E0384 to silent wrong output. Honest fix: REFUSE same-name nested for-loops (the faithful fix — one function-scoped binding — is a deeper for-lowering change). (b) `foreach_var_reassigned` catch-all `_ => false` misses Stmt::TryCatch bodies → loud E0594 on reassign-inside-try-in-loop. (c) Pair-loops entirely outside the fix: outer var reassigned inside `for k,v in d.items()` body → E0384 (scan not wired into ForEachPair/ForEachZip3 emission), and the pair-loop''s OWN tuple bindings got no mut gating (`k = k+"!"` → E0384). Direct/if/while/nested-different-var/augmented/self-assign/dict-guard all verified precise (mut exactly where claimed, -D unused_mut clean, ruchy lane consistent).'
+  status: planned
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Probes: /tmp/pmat1081-loopvar/p3(+p3b control)/p9/p10 (shadow silent), p14 (try E0594), p15/p16 (pair-loop E0384). PMAT-1079 fully HOLDS (p6/p7 incl. the not-in-dict cascade and CSV combo).'
+- id: PMAT-1086
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1086: [frontend/correctness/cross-target] lone-surrogate string literals are LOSSILY decoded to U+FFFD by the rustpython-parser 0.4 escape decode (Rust String cannot hold surrogates), so every downstream op silently diverges in EVERY target: `"\ud800" < ""` → CPython True / emitted False; `"\ud800" == "�"` → CPython False / emitted True. INTERNALLY INCONSISTENT with wasm chr(): PMAT-1032''s $__wasm_chr deliberately encodes lone surrogates (ED A0 80, CPython-tolerant) while the literal path emits EF BF BD — `chr(55296) == "\ud800"` diverges. FIX: REFUSE lone-surrogate literals loudly at the frontend (the UTF-8 ABI + Rust String cannot represent them); detection needs the RAW source escape (post-decode the U+FFFD is indistinguishable from a genuine one) or a rustpython lexer-level check. Found by the PMAT-1081 WASM skeptic (the ONLY failing class in 25 value probes — both audited WASM slices otherwise SURVIVE).'
+  status: planned
+  priority: medium
+  created: 2026-07-03T00:00:00Z
+  notes: 'Probes: /tmp/pmat1081-wasm/ord_surrogate.wat line 10 (data segment shows EF BF BD). Also verified: negative slice bounds are SUPPORTED and CPython-exact (undocumented capability — update the WASM-surface memory note).'
+- id: PMAT-1087
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1087: [diagnostics/file-io] refusal-precision polish from the PMAT-1081 skeptic pass, all currently loud-but-misleading: `open(P, "r").read()` (the EXPLICIT-"r" spelling of a SUPPORTED op) falls through to the generic "method calls not supported at v0.1.0" instead of working or refusing precisely; same generic refusal for `open(P,"a").read()` and handle-in-var `f = open(P)`; `open(P,"r").write(s)` refuses with a bizarre "receiver isn''t a simple `subprocess` Name" message. Route mode-bearing open() through the file-I/O recognizers: accept explicit "r" (trivial), give mode-mismatch ops a precise FileIo refusal.'
+  status: planned
+  priority: medium
+  created: 2026-07-03T00:00:00Z
+  notes: 'Probes: /tmp/pmat1081-fileio/p17, p6d, p6e, p12. The claimed with-form refusals (two f-ops, write-in-r, r+, print(f)) ARE precise.'
+- id: PMAT-1088
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1088: [test-infra/gpu] `cargo test -p xpile-spirv-codegen --lib` crashes SIGSEGV (or hangs >5min) in a HEADLESS environment (no XDG_RUNTIME_DIR — the sprint cron env): the Vulkan ICD dies during instance/device init, repeated "error: XDG_RUNTIME_DIR not set in the environment" then signal 11. CI passes (main green) so this is environment-conditional, but it makes the local full-workspace gate unrunnable headlessly and can MASK real failures (found because the PMAT-1081 regression check hit it; the failure itself was ALSO masked by a `| tail` pipe eating the exit code — see feedback-pipe-masks-exit-code). FIX: gate GPU-instance tests behind a graceful skip when no usable Vulkan runtime (probe adapters with a timeout / check XDG_RUNTIME_DIR+DISPLAY, print a loud skip warning like the diff_exec have_python_and_rustc pattern).'
+  status: planned
+  priority: medium
+  created: 2026-07-03T00:00:00Z
+  notes: 'Reproduced twice on noah-Lambda-Vector (RTX 4090, nvcc 12.8 present but session headless). Suspect wgpu instance enumeration in the witness tests.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
