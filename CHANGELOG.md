@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.612] — 2026-07-02
+
 ### File I/O — idiomatic `with open()` (PMAT-1076, third increment)
 
 - `with open(path[, mode]) as f: BODY` now works — the single `f.read()` /
