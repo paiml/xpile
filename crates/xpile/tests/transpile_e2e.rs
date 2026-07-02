@@ -19388,3 +19388,24 @@ fn main() {
 "#;
     assert_rustc_runs("file_write", &rust, driver);
 }
+
+/// PMAT-1076: `with open(P) as f:` — substituted to open(P)... and unwrapped.
+/// Read, splitlines, and write-then-read round-trip. MATCH.
+#[test]
+fn with_open() {
+    let rust = xpile_transpile_to_rust("with_open.py");
+    assert!(
+        rust.contains("read_to_string") && rust.contains("std::fs::write"),
+        "with open() lowers f.read()/f.write() to std::fs ops:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let p = "/tmp/xpile_e2e_with_open.txt".to_string();
+    ::std::fs::write(&p, "aa\nbb\ncc\n").unwrap();
+    assert_eq!(read_len(p.clone()), 9, "with open: whole-file read");
+    assert_eq!(read_lines(p.clone()), 3, "with open: f.read().splitlines()");
+    assert_eq!(write_then_read(p.clone(), "payload".to_string()), "payload", "with open write then read");
+}
+"#;
+    assert_rustc_runs("with_open", &rust, driver);
+}

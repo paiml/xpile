@@ -969,6 +969,14 @@ roadmap:
   priority: medium
   created: 2026-07-02T00:00:00Z
   notes: 'high-water re-checked (1074) before allocating 1075. Suite 754 green; MATCH write-then-read/overwrite-truncate/loop-write/variable-path; append-mode + bad-dir refuse/BOTHRAISE; borrow fix (E0382) verified. Read+write = basic file I/O COMPLETE.'
+- id: PMAT-1076
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1076: [rust/capability/domain] FILE I/O 3rd increment — the IDIOMATIC `with open(P[, mode]) as f: BODY`. Substitutes the single f.read()/f.write(s) with open(P)/open(P,"w") (PMAT-1074/1075 lower those) and UNWRAPS the with (read_to_string / fs::write each open+op+close = a single-op handle, matching CPython). Frontend-only (try_desugar_with_open, a recursive expr-walk substitution). Read + write + splitlines + write-then-read round-trip MATCH. Refuses PRECISELY (would diverge): multiple f-ops (2nd read returns "" / 2nd write truncates), `for line in f`, f used other than as read/write receiver, append mode "a", no `as f`. REMAINING file-I/O follow-ups (increasingly niche): line iteration (for line in open(p)/f), append mode, write-count expr form (n = f.write(s)).'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  notes: 'high-water re-checked (1075) before allocating 1076. Suite 755 green; MATCH read/splitlines/write/round-trip, missing-file BOTHRAISE; multiple-op/for-line/append/no-as REFUSE precisely (adversarial divergence guards). Idiomatic file-I/O form COMPLETE.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
