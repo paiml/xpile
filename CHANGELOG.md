@@ -7,6 +7,16 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Honest diagnostic: container mutation through a deep receiver chain (PMAT-1051)
+
+- `g.rows[0].append(9)` (mutation through a subscript of a field) and
+  `bag[0].items.append(x)` (a struct in a list element) refused with the
+  factually wrong "only `subprocess.run([...])` is recognised" fall-through.
+  They now refuse with a precise message naming the actual unsupported
+  receiver shape. The refusal itself is correct (Python shares the element;
+  the value model cannot express it). Found by adversarial sweep #12.
+- 1 refusal test (735 total).
+
 ### Invalid emit fixed: annotated fresh if-arm target (PMAT-1050)
 
 - `if flag: y: int = 10 else: y = 20` — the annotated (AnnAssign) arm broke

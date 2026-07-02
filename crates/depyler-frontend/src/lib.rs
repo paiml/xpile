@@ -6778,6 +6778,42 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
  ctx.fn_name
         )));
     };
+    // PMAT-1051 (sweep #12): a CONTAINER-MUTATOR method call
+    // (`.append`/`.extend`/…) that reached here has a receiver shape the
+    // earlier `try_lower_list_method_call` / `try_lower_side_effect_call`
+    // passes didn't recognise — e.g. `g.rows[0].append(x)` (mutation through a
+    // subscript of a field) or `bag[0].items.append(x)` (a struct in a list
+    // element). The generic fall-through emitted the factually WRONG
+    // "only `subprocess.run([...])` is recognised" message (the PMAT-989/1027
+    // honest-diagnostics posture). Refuse with a precise message naming the
+    // actual unsupported shape instead.
+    if let ast::Expr::Attribute(a) = call.func.as_ref() {
+        if matches!(
+            a.attr.as_str(),
+            "append"
+                | "extend"
+                | "insert"
+                | "remove"
+                | "sort"
+                | "reverse"
+                | "clear"
+                | "pop"
+                | "add"
+                | "update"
+                | "discard"
+        ) && !matches!(a.value.as_ref(), ast::Expr::Name(_))
+        {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` mutates a container through `<...>.{}(...)` where the \
+                 receiver is not a simple name, a `self.<field>` / `<local>.<field>`, \
+                 or a `<name>[i]` — v0.2.0 does not lower container mutation through a \
+                 deeper receiver chain (`obj[i].field.append(...)`, `a.b.c.append(...)`). \
+                 Bind the receiver to a local first, mutate it, and store it back.",
+                ctx.fn_name,
+                a.attr.as_str()
+            )));
+        }
+    }
     // Callee must be `subprocess.run` (Attribute(Name("subprocess"), "run")).
     let ast::Expr::Attribute(attr) = call.func.as_ref() else {
         return Err(FrontendError::Lower(format!(
