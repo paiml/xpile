@@ -4886,9 +4886,7 @@ fn leak_read_class(s: &ast::Stmt, name: &str) -> LeakReadClass {
         // Assignment: the value always evaluates; a NON-name target's
         // interior (subscript index / attribute base) also loads before the
         // store. A plain-Name target is a rebind → caught by `Mentions`.
-        S::Assign(a) => {
-            reads(&[&a.value]) || a.targets.iter().any(|t| reads(&[t]))
-        }
+        S::Assign(a) => reads(&[&a.value]) || a.targets.iter().any(|t| reads(&[t])),
         S::AnnAssign(aa) => aa.value.as_deref().map(|v| reads(&[v])).unwrap_or(false),
         // `x <op>= e` LOADS `x` before anything else (CPython raises there
         // even if `e` would too), and `e` always evaluates.
@@ -5259,18 +5257,15 @@ fn lower_function_def(
                         unreachable!("matched Name above")
                     };
                     let name = tgt.id.to_string();
-                    if name != "_"
-                        && !ctx.bound.contains(&name)
-                        && !ctx.loop_scoped.contains(&name)
+                    if name != "_" && !ctx.bound.contains(&name) && !ctx.loop_scoped.contains(&name)
                     {
-                        leak_guard_scan(&leading[i + 1..], last, &name)
-                            .map(|pos| {
-                                let pos = match pos {
-                                    LeakGuardPos::Leading(k) => LeakGuardPos::Leading(i + 1 + k),
-                                    LeakGuardPos::Trailing => LeakGuardPos::Trailing,
-                                };
-                                (ctx.fresh_leak_flag(), name, pos)
-                            })
+                        leak_guard_scan(&leading[i + 1..], last, &name).map(|pos| {
+                            let pos = match pos {
+                                LeakGuardPos::Leading(k) => LeakGuardPos::Leading(i + 1 + k),
+                                LeakGuardPos::Trailing => LeakGuardPos::Trailing,
+                            };
+                            (ctx.fresh_leak_flag(), name, pos)
+                        })
                     } else {
                         None
                     }
