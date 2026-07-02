@@ -18642,3 +18642,25 @@ fn prebound_iter_mutation_is_rejected() {
         "the rejection should name the variable and the mechanism:\n{stderr}"
     );
 }
+
+/// PMAT-1040: int/bool stored into a float-annotated slot on the
+/// Name-bottoming subscript-assign paths (list / dict / nested) — was rustc
+/// E0308 invalid emit; now widened (FieldAssign/FieldIndexAssign
+/// convention). Differentially verified vs CPython (MATCH 4.5/3.25/3.5/2.5).
+#[test]
+fn float_slot_stores() {
+    let rust = xpile_transpile_to_rust("float_slot_stores.py");
+    assert!(
+        rust.contains("as f64"),
+        "the int value must widen into the float slot:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(list_slot(), 4.5, "int into list[float] slot");
+    assert_eq!(dict_slot(), 3.25, "int into dict[str, float] value");
+    assert_eq!(nested_slot(), 3.5, "int into list[list[float]] leaf");
+    assert_eq!(bool_slot(), 2.5, "bool into a float slot (True == 1.0)");
+}
+"#;
+    assert_rustc_runs("float_slot_stores", &rust, driver);
+}
