@@ -9100,11 +9100,20 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
         // (`Type::List` → `Stmt::IndexAssign`, `Type::Dict` →
         // `Stmt::DictSet`). Either way the receiver is marked mutable.
         ast::Expr::Subscript(sub) => {
-            // PMAT-559: delegate to the shared subscript-target lowering (also
-            // used by the tuple-unpack/swap path). It handles nested chains
-            // (`grid[i][j] = v` → `IndexAssign`), single list / dict targets,
-            // and PMAT-560 negative-literal indices (`xs[-k] = v`).
-            let value = lower_expr_in_ctx(ctx, *asn.value)?;
+            // PMAT-1041: an EMPTY container literal stored into a subscript
+            // slot — `d[k] = []` (the grouping idiom's init step), `d[k] = {}`,
+            // `g[0] = []` — refused at lower_expr_in_ctx ("requires a type
+            // annotation") though the SLOT's declared type fully determines
+            // it. Lower directly to the empty ListLit/DictLit: both emitters
+            // are inference-friendly (`vec![]` / `IndexMap::new()`), and the
+            // insert/assign site supplies the concrete type in the emitted
+            // Rust. Non-empty literals and every other value keep the
+            // ordinary context-aware lowering.
+            let value = match asn.value.as_ref() {
+                ast::Expr::List(l) if l.elts.is_empty() => Expr::ListLit(Vec::new()),
+                ast::Expr::Dict(d) if d.keys.is_empty() => Expr::DictLit(Vec::new()),
+                _ => lower_expr_in_ctx(ctx, *asn.value)?,
+            };
             return lower_subscript_assign_target(ctx, &sub, value);
         }
         // PMAT-506c (classes epic): struct field assignment `obj.field = value`.
