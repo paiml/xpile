@@ -504,7 +504,7 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
         // tokens) — no arithmetic operands.
         Stmt::Cmd { .. } => false,
-        Stmt::FileWrite { path, content } => {
+        Stmt::FileWrite { path, content, .. } => {
             expr_has_int_arith(path) || expr_has_int_arith(content)
         }
         // PMAT-041: pipelines compose Cmds — recurse into each stage
@@ -1389,7 +1389,15 @@ pub enum Stmt {
     /// CPython's write-mode open — a missing DIR / permission error raises in
     /// both). Second file-I/O increment after `Expr::FileReadAll` (PMAT-1074).
     /// Mode `"w"` only; `"a"` (append) refuses in the frontend.
-    FileWrite { path: Expr, content: Expr },
+    FileWrite {
+        path: Expr,
+        content: Expr,
+        /// PMAT-1078: `true` for `open(P, "a").write(S)` (append) — emit
+        /// `OpenOptions::new().create(true).append(true)` instead of the
+        /// truncating `std::fs::write`. `#[serde(default)]` keeps prior IR.
+        #[serde(default)]
+        append: bool,
+    },
     /// `cmd1 | cmd2 | cmd3 …` — POSIX pipeline composition. PMAT-041 /
     /// XPILE-BASHRS-MERGER-001 Layer B (second variant). Each stage
     /// is a `Stmt` so the variant composes (in principle) with the
@@ -3770,7 +3778,7 @@ fn escape_stmt(s: &mut Stmt) {
                 escape_expr(a);
             }
         }
-        Stmt::FileWrite { path, content } => {
+        Stmt::FileWrite { path, content, .. } => {
             escape_expr(path);
             escape_expr(content);
         }
@@ -4326,7 +4334,7 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
                 collect_idents_expr(a, acc);
             }
         }
-        Stmt::FileWrite { path, content } => {
+        Stmt::FileWrite { path, content, .. } => {
             collect_idents_expr(path, acc);
             collect_idents_expr(content, acc);
         }

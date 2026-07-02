@@ -985,6 +985,14 @@ roadmap:
   priority: medium
   created: 2026-07-02T00:00:00Z
   notes: 'high-water re-checked (1076) before allocating 1077. Suite 756 green; MATCH count/keepends-total-len-17/no-trailing-newline/empty-file/with-open-for-line; wasm/lean refuse. KEEPENDS correct (total incl newlines). Bug found+fixed: the emit raw-string newline escape (Python heredoc converted the char-n to a literal newline byte → rustc "character constant must be escaped"). Practical file I/O COMPLETE.'
+- id: PMAT-1078
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1078: [rust/capability/domain] FILE I/O — APPEND mode. `open(P, "a").write(S)` and `with open(P, "a") as f: f.write(S)` append (create-if-absent) instead of truncating. Stmt::FileWrite gains an `append: bool` (#[serde(default)]); the emit branches to `OpenOptions::new().create(true).append(true).open(&(P))…write_all((&(S)).as_bytes())` (vs the truncating std::fs::write). Statement + with-open recognition both allow mode "a". REMAINING file-I/O follow-up (rare): write-count expr form (n = f.write(s)).'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  notes: 'high-water re-checked (1077) before allocating 1078. Suite 757 green; MATCH append-accumulates-ABC/create-if-absent/loop-append/with-open-append; "w" still truncates (regr). File I/O now: read + write(w) + append(a) + with-open + line iteration.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

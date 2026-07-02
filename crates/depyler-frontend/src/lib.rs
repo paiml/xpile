@@ -7402,16 +7402,15 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
                             None => "r".to_string(),
                             _ => String::new(),
                         };
-                        if open_call.args.len() == 2 && mode == "w" {
+                        if open_call.args.len() == 2 && (mode == "w" || mode == "a") {
+                            // PMAT-1075/1078: "w" truncates, "a" appends.
                             let path = lower_expr_in_ctx(ctx, open_call.args[0].clone())?;
                             let content = lower_expr_in_ctx(ctx, call.args[0].clone())?;
-                            return Ok(Stmt::FileWrite { path, content });
-                        }
-                        if open_call.args.len() == 2 && mode == "a" {
-                            return Err(FrontendError::Lower(format!(
-                                "function `{}` uses `open(path, \"a\").write(...)` (append) — v0.2.0 first cut supports write mode `\"w\"` (truncate) only; append needs OpenOptions",
-                                ctx.fn_name
-                            )));
+                            return Ok(Stmt::FileWrite {
+                                path,
+                                content,
+                                append: mode == "a",
+                            });
                         }
                     }
                 }
@@ -9904,11 +9903,8 @@ fn try_desugar_with_open(w: &ast::StmtWith) -> Result<Option<Vec<ast::Stmt>>, Fr
     let want = match mode.as_str() {
         "r" | "rt" | "" => "read",
         "w" | "wt" => "write",
-        "a" => {
-            return Err(FrontendError::Lower(
-                "`with open(path, \"a\") as f:` (append) is not supported at v0.2.0 — write mode \"w\" (truncate) only".into(),
-            ))
-        }
+        "a" => "write", // PMAT-1078: append — a write-mode op, distinguished below
+
         other => {
             return Err(FrontendError::Lower(format!(
                 "`with open(path, \"{other}\") as f:` — v0.2.0 supports read (\"r\") and write (\"w\") modes"
@@ -9916,12 +9912,13 @@ fn try_desugar_with_open(w: &ast::StmtWith) -> Result<Option<Vec<ast::Stmt>>, Fr
         }
     };
     // Build the `open(P[, "w"])` receiver the op-site substitution uses.
+    let is_append = mode == "a";
     let open_recv = |write: bool| -> Expr {
         let mut args = vec![path.clone()];
         if write {
             args.push(Expr::Constant(ast::ExprConstant {
                 range: open_call.range,
-                value: ast::Constant::Str("w".to_string()),
+                value: ast::Constant::Str(if is_append { "a" } else { "w" }.to_string()),
                 kind: None,
             }));
         }

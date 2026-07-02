@@ -7,6 +7,15 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### File I/O — append mode (PMAT-1078)
+
+- `open(path, "a").write(s)` and `with open(path, "a") as f: f.write(s)` now
+  append (create-if-absent) instead of truncating. `Stmt::FileWrite` gains an
+  `append` flag; the emit branches to `OpenOptions::new().create(true)
+  .append(true)...write_all(...)` (mode `"w"` still truncates via std::fs::write).
+- 1 e2e test (757 total); differentially verified (append accumulates, `"w"`
+  truncates).
+
 ## [0.1.613] — 2026-07-02
 
 ### File I/O — line iteration (PMAT-1077, fourth increment)

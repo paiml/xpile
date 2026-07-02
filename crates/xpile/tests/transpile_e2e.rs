@@ -19430,3 +19430,21 @@ fn main() {
 "#;
     assert_rustc_runs("file_lines", &rust, driver);
 }
+
+/// PMAT-1078: append mode — `open(P, "a").write(S)` accumulates (create if
+/// absent) rather than truncating. MATCH "ABC".
+#[test]
+fn file_append() {
+    let rust = xpile_transpile_to_rust("file_append.py");
+    assert!(
+        rust.contains("append(true)") && rust.contains("OpenOptions"),
+        "append mode uses OpenOptions().append(true):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    let p = "/tmp/xpile_e2e_file_append.txt".to_string();
+    assert_eq!(build_log(p.clone()), "ABC", "append accumulates across ops");
+}
+"#;
+    assert_rustc_runs("file_append", &rust, driver);
+}
