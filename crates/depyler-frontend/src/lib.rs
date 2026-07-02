@@ -8782,6 +8782,17 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
     // `Stmt::Assign` (the backend will write `name = value;` and the
     // earlier `Let` will be `let mut`). Otherwise, fresh `Let`.
     if ctx.bound.contains(&name) {
+        // PMAT-1031 (sweep #11): a REASSIGNMENT skipped the whole alias-
+        // disposition suite — only the fresh-`Let` path below ran it, so
+        // `b = s` (str) and `b = xs` (container) over an already-bound `b`
+        // emitted bare MOVES (rustc E0382 on any later source read: an
+        // INVALID EMIT on valid Python — strings/read-only containers alias
+        // safely), and `r = m[0]` re-bound from an element silently CLONED
+        // where Python shares the row (`r.append(9)` invisible through `m`:
+        // a confirmed silent diverge). Same dispositions as the Let path,
+        // keyed on the same inferred RHS type; runs BEFORE the Optional
+        // wrap so the arms see the raw value shape.
+        let value = apply_alias_dispositions(ctx, &name, value, &ty)?;
         // PMAT-690: reassigning a bare `T` to an `Optional[T]`-typed variable
         // wraps the value in `Some(..)` (`result = x` where `result:
         // Optional[int]` → `result = Some(x)`), mirroring the Optional-return
@@ -21806,6 +21817,90 @@ mod tests {
         assert!(
             matches!(alias_value, Expr::Ident(n) if n == "s"),
             "a dead-source str alias moves (no wasted clone): {alias_value:?}"
+        );
+    }
+
+    /// PMAT-1031 (sweep #11): a str alias bound by REASSIGNMENT of an
+    /// existing name (`b: str = ""` … `b = s`) skipped the disposition suite
+    /// entirely — the bare move was the same E0382 INVALID EMIT PMAT-1029
+    /// fixed for the fresh-binding paths. The Stmt::Assign value must clone
+    /// while the source stays live.
+    #[test]
+    fn str_reassignment_alias_clones_while_source_stays_live() {
+        let m = parse(
+            "def f() -> int:\n    s: str = \"seed\"\n    b: str = \"\"\n    b = s\n    return len(b) + len(s)\n",
+        );
+        let f = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "f" => Some(f),
+                _ => None,
+            })
+            .expect("f() lowered");
+        let reassign_value = f
+            .body
+            .stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::Assign { name, value } if name == "b" => Some(value),
+                _ => None,
+            })
+            .expect("`b = s` lowered as a reassignment");
+        assert!(
+            matches!(reassign_value, Expr::Clone(inner) if matches!(inner.as_ref(), Expr::Ident(n) if n == "s")),
+            "a live-source str reassignment alias clones (the move was E0382): {reassign_value:?}"
+        );
+    }
+
+    /// PMAT-1031 (sweep #11): a READ-ONLY container alias bound by
+    /// reassignment (`b: list[int] = []` … `b = xs` with both names only
+    /// read after) clones — observationally identical to Python's sharing;
+    /// the bare move was E0382 at the later `len(xs)`.
+    #[test]
+    fn container_reassignment_alias_clones_when_read_only() {
+        let m = parse(
+            "def f() -> int:\n    xs: list[int] = [1, 2, 3]\n    b: list[int] = []\n    b = xs\n    return len(b) + len(xs)\n",
+        );
+        let f = m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "f" => Some(f),
+                _ => None,
+            })
+            .expect("f() lowered");
+        let reassign_value = f
+            .body
+            .stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::Assign { name, value } if name == "b" => Some(value),
+                _ => None,
+            })
+            .expect("`b = xs` lowered as a reassignment");
+        assert!(
+            matches!(reassign_value, Expr::Clone(inner) if matches!(inner.as_ref(), Expr::Ident(n) if n == "xs")),
+            "a read-only container reassignment alias clones: {reassign_value:?}"
+        );
+    }
+
+    /// PMAT-1031 (sweep #11): re-binding an existing name from an ELEMENT
+    /// read (`r = m[0]`) and mutating the shared row was a CONFIRMED SILENT
+    /// DIVERGE (the PMAT-1022 typed element-read guard only ran on fresh
+    /// bindings, so the append landed on a clone: rust 2 vs CPython 3). The
+    /// reassignment path must refuse with the same precise message.
+    #[test]
+    fn element_read_reassignment_with_mutation_refuses() {
+        let err = PythonFrontend
+            .parse_and_lower(
+                &PathBuf::from("fixture.py"),
+                "def run() -> int:\n    m: list[list[int]] = [[1, 2], [3, 4]]\n    r: list[int] = []\n    r = m[0]\n    r.append(9)\n    return len(m[0])\n",
+            )
+            .expect_err("the shared-element mutation must refuse, not silently clone");
+        assert!(
+            format!("{err}").contains("binds `r` from an element of `m`"),
+            "refusal names the element-read pair: {err}"
         );
     }
 

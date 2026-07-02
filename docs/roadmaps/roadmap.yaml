@@ -188,6 +188,64 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1031
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1031: [discipline/sweep-11 + rust/correctness] Adversarial differential sweep #11 on the day-old loop/str/classifier surface (PMAT-1026..1030) + FIRST RESPONSE: REASSIGNMENTS routed through the alias-disposition suite. THE SWEEP (35 adversarial programs + 7 sharpening probes through the real CLI, all THREE lanes value-matched vs CPython): for-loop family (continue/break/nested/var-leak/shadow/live-mutation/for-else), str locals/alias (rebind, chains, branch/loop-body aliases, non-ASCII, negative index), typed mutation classifier (struct methods named append/add/pop across two classes), free-fn factories (loop/nested/conditional), OOP+loop interplay. HELD: 20 executed rust-lane cases + 12 wasm-lane cases value-match; the live-list-mutation-in-for refusal, PMAT-1020/1027 alias+classifier guards, and both empty-index IndexError analogues all held; c02 two-structs-same-method-name executed both lanes. REFUTATION-GRADE FINDINGS: (1) FIXED HERE — `lower_assign`''s already-bound branch emitted `Stmt::Assign` with the RAW value, skipping apply_alias_dispositions entirely: `b = s` (str) and `b = xs` (container) REASSIGNMENT aliases were bare moves = rustc E0382 INVALID EMIT on valid Python (top-level, if-arm, and while-body forms all confirmed), and `r = m[0]; r.append(9)` re-bound from an element SILENTLY CLONED where Python shares the row (rust 2 vs CPython 3 — the worst class). One-call-site fix: route the reassignment value through apply_alias_dispositions (same inferred-RHS-type keying as the Let path, BEFORE the PMAT-690 Optional wrap) — str/read-only-container aliases now clone (E0382 closed), the element-read mutation now hits the precise PMAT-1022 refusal. (2) FILED PMAT-1032 — the WASM str runtime is BYTE-oriented where CPython is char-oriented: len("héllo") = 6 vs 5 and for-ch iteration = 4 vs 3 on "abé" (SILENT diverges); ord("é") traps (the PMAT-1030 "TypeError analogue" claim is WRONG for multi-byte single CHARS — ord("é") = 233 in Python); s[-1] traps where Python indexes from the end; chr(233) len 1 vs the 2-byte literal encoding (internally inconsistent). (3) FILED PMAT-1033 — list[int] LOCALS and list LITERALS are outside the WASM subset, so the PMAT-1030 "scan/filter/checksum family unblocked" claim only holds end-to-end for str/range iteration; `for x in xs` is unwitnessable vs CPython on the wasm lane (11 battery programs refuse on the List gate). (4) FILED PMAT-1034 — rust-lane for-var leak over an EMPTY iterable executes the 0-default where CPython raises UnboundLocalError (the non-empty leak a06 matches exactly).'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - 'SWEEP: 35 programs × 3 lanes; post-fix battery has ZERO rust-lane invalid emits and zero NEW divergences; every wasm refusal names its gate precisely.'
+  - 'FIX EXECUTED both lanes: str_alias_branch.py (if-arm reassignment alias, source re-read) rustc-runs == 77 == CPython AND wat2wasm+wasm-interp => i64:77. Frontend units pin all three reassignment dispositions: live-source str reassignment clones, read-only container reassignment clones, element-read reassignment with mutation refuses naming the pair.'
+  - 'Zero regressions: depyler-frontend 32 (29+3) unit tests, xpile e2e 713 (712+1), all wasm-codegen suites green.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Sweep cadence honored (5 slices since sweep #10; the PMAT-1026..1030 loop/str surface was day-old — same pattern that made sweeps #8..#10 productive). The load-bearing lesson generalizes PMAT-1019''s: the disposition suite is a DATAFLOW property and every BINDING PATH (fresh Let, AnnAssign, tuple-unpack, REASSIGNMENT) must route through it — reassignment was the one path nobody had probed because every prior fixture bound aliases fresh. The three filed findings are ranked: PMAT-1033 (wasm list locals — unblocks the whole for-loop scan family end-to-end, EV item 2 heap-runtime work), PMAT-1032 (wasm str char semantics — silent-divergence class), PMAT-1034 (empty-iterable leak — divergence-on-error corner).'
+- id: PMAT-1032
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1032: [wasm/correctness] WASM str runtime is BYTE-oriented where CPython is CHAR-oriented — the non-ASCII divergence cluster (sweep #11 finding 2). CONFIRMED vs CPython: len("héllo") returns 6 (byte count) not 5 (SILENT diverge); `for ch in "abé"` iterates 4 times not 3 (SILENT diverge — the PMAT-1030 desugar steps bytes); ord("é") traps via the byte_count!=1 guard where Python returns 233 (the PMAT-1030 "Python TypeError analogue" framing is factually wrong for multi-byte single CHARS — it only holds for multi-CHAR strings); s[-1] traps where Python indexes from the end (valid input, loud wrong behavior); chr(233) emits a 1-byte string (len 1 — matches Python by accident but is NOT valid UTF-8, internally inconsistent with the emitter''s 2-byte literal encoding of the same char). DECISION NEEDED (design, not just code): either (a) full UTF-8 char semantics in the WASM str runtime — char-count len, char-stepping iteration/indexing (the rust lane''s PMAT-1021 posture), UTF-8-encoding chr — or (b) an honest ASCII-only gate: refuse non-ASCII string LITERALS at the wasm boundary AND make chr trap for args > 127 until (a) lands. Option (b) is the cheap honest increment (concat/eq/ord/len are all exact over pure ASCII, which is closed under every currently-emittable operation); option (a) is the real HEAP/STRING runtime work (EV item 2). Negative indexing is separable and cheap: lower s[-k] to len-k with the existing bounds guard on both wasm paths (rust lane already exact).'
+  status: planned
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - 'Either lane-exact non-ASCII semantics (len/iter/index/ord/chr all == CPython on a mixed ASCII/2-byte/3-byte battery) OR a refusal that names every non-ASCII literal + a chr range trap — NO silent byte-length reads survive. s[-1] executes == CPython on the wasm lane either way. The b07/b08/b09/b05 sweep-#11 shapes become fixtures.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-1031 (sweep #11). The rust lane is unaffected (PMAT-1005/1021 generated-ranges machinery is char-exact — all four shapes MATCH there). The wasm-codegen str ABI is length-prefixed BYTES (PMAT-993/994/1028); every downstream op (len, StrCharAt, the ForEach desugar, ord, eq) reads byte offsets, so option (a) touches the whole family — budget a full slice, port to WGSL/PTX later per the heap-runtime plan.'
+- id: PMAT-1033
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1033: [wasm/capability] list[int] LOCALS + list LITERALS on the WASM lane — the for-loop scan family is currently unwitnessable end-to-end (sweep #11 finding 3). `xs: list[int] = [1, 2, 3]` refuses at map_type ("type List(I64) — the WASM emit subset") and a list literal in ANY position (even a call argument: `scan([2, 4, 6])`) refuses as ListLit-outside-subset, so `for x in xs` (the PMAT-1030 ForEach desugar) can only execute when a list arrives as a PARAM — which wasm-interp cannot supply (scalar args only). Net: PMAT-1030''s "scan/filter/checksum family unblocked" holds end-to-end ONLY for str/range iteration; 11 of sweep #11''s 35 programs refuse on this one gate (basic sum, continue/break, nested loops, var-leak, shadow, index-write, method-with-loop shapes — all of which the RUST lane executes == CPython). FIX (the PMAT-1028 recipe, list edition): (1) list-annotated Lets register as i32 base-pointer heap allocations (the PMAT-996/999 array runtime already lays out [len][elem0..] records for params — reuse the layout + bounds-guarded Index/IndexAssign paths verbatim); (2) ListLit lowers to alloc + per-element i64.store (element exprs type through the existing scalar paths); (3) len()/for-desugar/subscript read+write over the new locals ride the existing param machinery unchanged; (4) append/growth stays REFUSED honestly (the PMAT-999 relocation-hazard posture) until the heap gets a grow story — fixed-size literals + reads + index writes are the value here. Unblocks: the whole sweep-#11 a-series as both-lane fixtures, real scan/filter/checksum differential witnesses on the wasm lane, and the aliasing follow-on (a list alias is a pointer copy = Python sharing, same as structs — the PMAT-1024 reference_native skip already covers List).'
+  status: planned
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - 'The sweep-#11 a01/a03/a04/a05/a13/a15 shapes (sum, multi-continue, break, nested, shadow, index-write) EXECUTE on the wasm lane == CPython through the real CLI + wat2wasm + wasm-interp, as committed fixtures. append in a loop keeps a precise growth refusal. No regression across the wasm-codegen suites.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-1031 (sweep #11). This is EV item 2 (heap runtime) work and the highest-value capability gap the sweep surfaced: the rust lane executes ALL of these shapes, so every one becomes a both-lanes differential witness the moment list locals exist. The var-leak shapes (a06/a10) need the leak semantics check vs PMAT-1034 first.'
+- id: PMAT-1034
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1034: [rust/semantics-edge] for-loop var leak over an EMPTY iterable executes the type-default where CPython raises UnboundLocalError (sweep #11 finding 4). `for x in xs: …` then a post-loop read of `x`: the rust lane hoists `let mut x = <default>` so the NON-empty leak matches CPython exactly (a06: 1331 == 1331, a10 break-var: 15 == 15, e03 method-scope: 12 == 12 — the leak support is real and correct), but when the iterable is EMPTY at runtime CPython raises UnboundLocalError and the rust lane silently returns the 0-default (a07: rust 0, py raises). Emptiness is dynamic, so a static refusal would kill the correct non-empty idiom. HONEST OPTIONS: (a) a was-set runtime flag when (and only when) the loop var is read post-loop AND the iterable is not provably non-empty — panic "UnboundLocalError analogue" on the unset read (exact, costs one bool local); (b) refuse post-loop loop-var reads unless the iterable is a non-empty literal (over-refuses a06/a10/e03 — NOT acceptable, they currently match); (c) document as a known divergence-on-error corner (Python errors, xpile executes — the same class as the OverflowError-vs-wrap family already documented). Option (a) is the correct fix; its cost is scoped to functions that actually leak-read.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - 'a07 (empty-list leak-read) diverge closed: the rust lane panics with an UnboundLocalError-naming message where CPython raises, while a06/a10/e03 (non-empty leak, break-var, method-scope) keep executing == CPython with zero new refusals. The flag emits ONLY when a post-loop read exists.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Filed by PMAT-1031 (sweep #11). Same divergence-on-error class as the documented int-overflow family, but cheaply closable — prefer closing it. Applies to range loops too (`for i in range(0)`).'
 - id: PMAT-991
   github_issue: null
   item_type: task
