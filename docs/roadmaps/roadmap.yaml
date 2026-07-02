@@ -626,6 +626,21 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'The loop-var-leak idiom is COMMON Python. Key lesson: PROBE the existing machinery before writing new — the fix was a 1-expression generalization (Name-lookup → probe-lower) of an existing pre-pass, not new hoisting logic. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1023
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1023: [wasm/capability] WASM OOP surface — struct METHODS (incl. self-mutating), FieldAssign, MethodCall, SideEffectCall, explicit-__init__ ctors, struct returns. Ports the Rust lane''s PMAT-1016/1022 OOP capability to the WASM heap runtime: each Item::Struct method emits as an ordinary WAT function ($<Struct>.<method>, self = the instance''s i32 base-pointer), the desugared explicit __init__ emits as the associated fn $<Struct>::__init__ returning the record pointer (its Expr::Call sites type exactly via a new AssocFnRegistry — no more conservative-i64 mistyping), obj.field = v stores at the field''s 8-byte-slot offset, and statement-position method calls drop a discarded result. Struct RETURNS upgrade from the PMAT-996 refusal to an i32 heap pointer. THE HEADLINE: Python reference semantics are NATIVE to linear memory — every binding holds the SAME base-pointer, so b = a; b.x = 99; a.x == 99 EXECUTES exactly (witnessed vs CPython), the shape the Rust lane must REFUSE via its whole alias-disposition machinery. Guarded honestly: struct ==/ordering REFUSES (a naive lowering would be pointer identity, not Python''s structural ==), unknown methods / arity mismatches / unit-method-in-value-position / non-method call statements all refuse with precise messages.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "EXECUTED witness (WABT): 6 zero-arg probes value-match CPython — incr_twice→2 (statement unit-method calls mutate), add_args→22 (method args + value-position call), dist2→25 (read-only method), field_write→103 (bare FieldAssign), alias_mutate→99 and alias_method→2 (ALIASED mutation visible through the original name — the Rust-lane-refused shape). FULL-PIPELINE e2e: counter_oop.py (class + explicit __init__ + mutating method) transpiles via the real CLI --target wasm, wat2wasm assembles, wasm-interp runs run()→2 == CPython."
+  - "Refusals verified: p == q over structs refuses naming the pointer-identity hazard (was a would-be silent i32.eq); unknown method / arity / unit-in-value-position / bare-call statements refuse precisely. Module-level scans (literals/heap/dict/str-eq) now walk METHOD bodies via module_functions so a construct inside a method pulls in its helpers."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The heap/string/dict/struct runtime lane (PMAT-986 epic: 993/994/995/996) closes its OOP gap. Python reference semantics — the Rust lane''s HARDEST problem (PMAT-1008/1020 alias classes, clone/move/refuse dispositions) — are FREE here: a struct local is an i32 pointer, aliasing IS sharing. RESIDUAL (honest): the shared FRONTEND applies its alias-class refusals target-blind, so a Python-source aliasing program refuses before reaching this backend (the witness drives meta-HIR directly, like every witness in the suite); making the frontend disposition TARGET-AWARE (reference-semantics targets skip the refusal) is the natural follow-up. Also residual: int-literal-into-float-field FieldAssign refuses (honest type mismatch, no silent widening); method-returns-self bodies refuse at Expr::Clone. Next lane step per the EV ranking: port the heap runtime to WGSL/PTX.'
 - id: PMAT-1019
   github_issue: null
   item_type: task

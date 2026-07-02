@@ -256,8 +256,11 @@ fn non_scalar_field_struct_is_refused() {
 }
 
 #[test]
-fn struct_return_is_refused() {
-    // A function RETURNING a struct is refused in this slice (honest, not wrong).
+fn struct_return_lowers_as_heap_pointer() {
+    // PMAT-996 REFUSED a struct return; PMAT-1023 upgrades it — the record
+    // rides an i32 base-pointer (required by the desugared explicit
+    // `__init__` ctor, and free `def make(): return Point(1, 2)` gets it
+    // for free: the trailing StructLit leaves exactly that pointer).
     let m = module(
         "ret",
         vec![
@@ -274,8 +277,11 @@ fn struct_return_is_refused() {
             ),
         ],
     );
-    let err = emit_module(&m).unwrap_err().to_string();
-    assert!(err.contains("unsupported"), "struct return refused: {err}");
+    let wat = emit_module(&m).expect("struct return lowers (PMAT-1023)");
+    assert!(
+        wat.contains("(func $make (result i32)"),
+        "a struct return is an i32 heap pointer:\n{wat}"
+    );
 }
 
 // ---- EXECUTED witnesses (gated on WABT) ------------------------------------
