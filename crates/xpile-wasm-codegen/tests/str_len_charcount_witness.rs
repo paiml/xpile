@@ -6,10 +6,10 @@
 //! byte length). The PMAT-986 witness built `Expr::Len` DIRECTLY, so it proved
 //! the backend byte-count read but NOT the frontend→WASM str-len path a user
 //! hits — which REFUSED end-to-end. This witness builds `StrMethod(CharCount)`
-//! (the frontend's real node) + a str param, and confirms it now lowers to the
-//! byte-count header read (char count == byte count for the lane's documented
-//! ASCII str subset) and executes to the correct length; and that a non-len
-//! string method still refuses honestly.
+//! (the frontend's real node) + a str param, and confirms it lowers to a REAL
+//! code-point count (the `$__wasm_str_charlen` helper since PMAT-1032 — exact
+//! for non-ASCII too, see str_char_semantics_witness.rs) and executes to the
+//! correct length; and that a non-len string method still refuses honestly.
 //!
 //! (The full frontend→CLI path was also verified by hand:
 //! `xpile transpile 'def f(s:str)->int: return len(s)' --target wasm` now emits
@@ -55,8 +55,9 @@ fn str_len_charcount_lowers_to_header_read() {
     // generic refusal) — to the SAME byte-count header read `Expr::Len` uses.
     let wat = emit_module(&str_kernel("f", charcount("s"))).expect("len(s) via CharCount lowers");
     assert!(
-        wat.contains("(func $f (param $s i32) (result i64)") && wat.contains("i32.load"),
-        "str len reads the i32 count header:\n{wat}"
+        wat.contains("(func $f (param $s i32) (result i64)")
+            && wat.contains("call $__wasm_str_charlen"),
+        "str len counts code points via the PMAT-1032 charlen helper:\n{wat}"
     );
     // A non-len string method is still refused honestly.
     let err = emit_module(&str_kernel(

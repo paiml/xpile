@@ -155,9 +155,12 @@ fn run_bool(name: &str, wat: &str) -> Option<bool> {
 
 #[test]
 fn concat_dst_is_distinct_from_operand_scratch() {
-    // CONSTRUCT (no WABT needed): the concat of two chr operands must declare the
-    // DEDICATED concat-dst local AND still emit the str-dst local the chr
-    // operands use — proving they are two different locals.
+    // CONSTRUCT (no WABT needed): the concat of two chr operands must declare
+    // the DEDICATED concat-dst local, and the chr operands must lower through
+    // the PMAT-1032 `$__wasm_chr` HELPER — whose locals live in the helper's
+    // own frame, so the operand-clobbers-destination hazard this test
+    // originally pinned (a chr operand overwriting the concat scratch) is now
+    // structurally impossible: no function-level operand scratch exists.
     let m = Module {
         name: "cc".into(),
         source_lang: SourceLang::Rust,
@@ -170,8 +173,8 @@ fn concat_dst_is_distinct_from_operand_scratch() {
         "the concat must use a DEDICATED destination local:\n{wat}"
     );
     assert!(
-        wat.contains("(local $__wasm_str_dst i32)"),
-        "the chr operands still use the str-dst scratch (must be distinct):\n{wat}"
+        wat.contains("call $__wasm_chr"),
+        "chr operands lower via the per-call helper frame (clobber-free):\n{wat}"
     );
 }
 
