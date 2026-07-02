@@ -18969,6 +18969,57 @@ fn main() {
     assert_rustc_runs("class_constants", &rust, driver);
 }
 
+/// PMAT-1055 (adversarial-verify): a SINGLE class that COMBINES the recent OOP
+/// codegen slices in one differential fixture — the interaction the per-slice
+/// fixtures (class_constants.py / field_subscript_append.py /
+/// oop_field_subscript_stores.py) never exercise together. Independent
+/// skeptic pass on PMAT-1037/1052/1054: class-constant folding (str `BASE` +
+/// int `WEIGHT`/`HOT`) beside real instance fields, an empty-dict field grown
+/// by `self.buckets[k].append(v)` grouping, a parallel insertion-order list
+/// proving dict iteration order == insertion order (indexmap parity with
+/// CPython dict), a class-constant threshold read in a nested loop, a
+/// negative-index field read-back, and a class constant in overflow-checked
+/// multiplication. Differentially verified vs CPython (MATCH Hzam/2/6/m) —
+/// the recent OOP lane is SOUND, no defect; this banks the combination so it
+/// cannot silently regress.
+#[test]
+fn oop_capability_combo() {
+    let rust = xpile_transpile_to_rust("oop_capability_combo.py");
+    // The three class constants are NOT struct fields — the struct carries
+    // only the real instance fields `buckets` + `keys_seen`.
+    assert!(
+        rust.contains("pub buckets:") && rust.contains("pub keys_seen:"),
+        "Histo keeps its instance fields:\n{rust}"
+    );
+    assert!(
+        !rust.contains("pub BASE") && !rust.contains("pub WEIGHT") && !rust.contains("pub HOT"),
+        "class constants BASE/WEIGHT/HOT must NOT be emitted as struct fields:\n{rust}"
+    );
+    // Constant reads fold to their literals at the access site.
+    assert!(
+        rust.contains("String::from(\"H\")") && rust.contains("3i64") && rust.contains("10i64"),
+        "constant reads fold to their literals:\n{rust}"
+    );
+    // Empty-dict field is seeded from the class-body K/V annotation.
+    assert!(
+        rust.contains("indexmap::IndexMap::new()"),
+        "empty dict field seeds an IndexMap:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // Iteration order == insertion order (z,a,m), prefixed by the str const.
+    assert_eq!(combo_trail(), "Hzam", "dict iteration order == insertion order (indexmap)");
+    // HOT=10 threshold read in a nested loop: only the values 20 and 15 exceed.
+    assert_eq!(combo_hot(), 2, "class-constant threshold folded in a nested loop");
+    // WEIGHT=3 in an overflow-checked multiplication: len(bucket z)=2 * 3.
+    assert_eq!(combo_weighted(), 6, "class constant in overflow-checked mul");
+    // Negative-index read-back through the parallel order field.
+    assert_eq!(combo_newest(), "m", "keys_seen[-1] negative-index field read");
+}
+"#;
+    assert_rustc_runs("oop_capability_combo", &rust, driver);
+}
+
 /// PMAT-1034: the empty-iterable loop-var-leak guard is threaded by TARGET
 /// CAPABILITY (`LoweringProfile::runtime_abort`). A FRESH loop var read
 /// unconditionally after the loop is an `UnboundLocalError` trap in CPython
