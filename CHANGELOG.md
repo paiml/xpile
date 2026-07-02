@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.606] — 2026-07-02
+
 ### Honest diagnostic: container mutation through a deep receiver chain (PMAT-1051)
 
 - `g.rows[0].append(9)` (mutation through a subscript of a field) and
