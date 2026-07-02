@@ -7,6 +7,20 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Generators / `yield` — eager materialization (PMAT-1071)
+
+- `def g() -> T: … yield e …` used as `for x in g()` / `list(g())` / `sum(g())`
+  now works. A yield-bearing function is rewritten (AST pre-transform, before
+  the signature pre-pass) into a list-building function: `__gen_result: list[T]
+  = []`, each `yield e` → `__gen_result.append(e)`, trailing
+  `return __gen_result`, return type `T` → `list[T]` — so consumption rides the
+  existing list machinery with no other change. Covers straight-line, loop,
+  conditional, nested, and stateful (fib) generators, plus early bare `return`.
+  Yield type from `-> T` or `-> Iterator[T]`/`Iterable[T]`/`Generator[T, …]`.
+  Eager = finite generators only (documented); refuses unannotated / bare
+  `yield` / `yield from` / value-`return` precisely.
+- 1 e2e test (750 total); differentially + adversarially verified.
+
 ## [0.1.609] — 2026-07-02
 
 ### try/except/finally (PMAT-1070)

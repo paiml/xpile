@@ -2672,8 +2672,15 @@ impl Frontend for PythonFrontend {
             .to_string();
 
         let source_name = path.to_string_lossy().to_string();
-        let suite = ast::Suite::parse(source, &source_name)
+        let mut suite = ast::Suite::parse(source, &source_name)
             .map_err(|e| FrontendError::Parse(format!("{}: {}", source_name, e)))?;
+
+        // PMAT-1071: EAGER generator lowering — rewrite each `def g() -> T:
+        // … yield e …` (a function containing `yield`) into a list-BUILDING
+        // function BEFORE the sig pre-pass + lowering, so everything
+        // downstream (return type list[T], call sites `for x in g()`) is
+        // handled by the existing list machinery with no other change.
+        transform_generators(&mut suite)?;
 
         // PMAT-471 (R2) + PMAT-474 (R5): pre-pass — record every
         // top-level function's declared return type (so cross-function
@@ -9349,6 +9356,180 @@ fn is_if_as_let_shape(if_stmt: &ast::StmtIf) -> bool {
 /// optionally negated); the **last** case must be the wildcard `case _:` (so the
 /// chain is exhaustive); no guards, captures, singletons (`True`/`False`/`None`),
 /// or class/sequence/mapping/or-patterns yet.
+/// PMAT-1071: does a statement block contain a `yield` (recursively)? A
+/// function with any `yield` is a GENERATOR.
+fn body_has_yield(body: &[ast::Stmt]) -> bool {
+    fn expr_is_yield(e: &ast::Expr) -> bool {
+        matches!(e, ast::Expr::Yield(_) | ast::Expr::YieldFrom(_))
+    }
+    body.iter().any(|s| match s {
+        ast::Stmt::Expr(e) => expr_is_yield(&e.value),
+        ast::Stmt::If(i) => body_has_yield(&i.body) || body_has_yield(&i.orelse),
+        ast::Stmt::While(w) => body_has_yield(&w.body) || body_has_yield(&w.orelse),
+        ast::Stmt::For(f) => body_has_yield(&f.body) || body_has_yield(&f.orelse),
+        ast::Stmt::With(w) => body_has_yield(&w.body),
+        ast::Stmt::Try(t) => {
+            body_has_yield(&t.body)
+                || body_has_yield(&t.orelse)
+                || body_has_yield(&t.finalbody)
+                || t.handlers.iter().any(|h| {
+                    let ast::ExceptHandler::ExceptHandler(h) = h;
+                    body_has_yield(&h.body)
+                })
+        }
+        _ => false,
+    })
+}
+
+/// PMAT-1071: rewrite a generator function into a list-BUILDING one. Each
+/// `yield e` becomes `__gen_result.append(e)`; the body is prefixed with
+/// `__gen_result: list[T] = []` and suffixed with `return __gen_result`; the
+/// return annotation `T` becomes `list[T]`. Refuses the shapes the eager
+/// model can't express (bare `yield` / `yield from` / a value-`return`).
+fn transform_generators(suite: &mut [ast::Stmt]) -> Result<(), FrontendError> {
+    use ast::{Expr, ExprContext as Ctx, Stmt};
+    const RES: &str = "__gen_result";
+
+    fn name(range: ast::text_size::TextRange, id: &str, ctx: Ctx) -> Expr {
+        Expr::Name(ast::ExprName {
+            range,
+            id: ast::Identifier::new(id),
+            ctx,
+        })
+    }
+
+    // Replace `yield e` statements with `__gen_result.append(e)`; recurse into
+    // nested blocks. A bare `yield` / `yield from` / value-return refuses.
+    fn rewrite(body: &mut [ast::Stmt], fname: &str) -> Result<(), FrontendError> {
+        for s in body.iter_mut() {
+            match s {
+                Stmt::Expr(e) => {
+                    let rng = e.range;
+                    match e.value.as_ref() {
+                        Expr::Yield(y) => {
+                            let Some(val) = y.value.as_ref() else {
+                                return Err(FrontendError::Lower(format!(
+                                    "generator `{fname}` uses a bare `yield` (no value) — v0.2.0 first cut requires `yield <expr>`"
+                                )));
+                            };
+                            let arg = (**val).clone();
+                            *s = Stmt::Expr(ast::StmtExpr {
+                                range: rng,
+                                value: Box::new(Expr::Call(ast::ExprCall {
+                                    range: rng,
+                                    func: Box::new(Expr::Attribute(ast::ExprAttribute {
+                                        range: rng,
+                                        value: Box::new(name(rng, RES, Ctx::Load)),
+                                        attr: ast::Identifier::new("append"),
+                                        ctx: Ctx::Load,
+                                    })),
+                                    args: vec![arg],
+                                    keywords: vec![],
+                                })),
+                            });
+                        }
+                        Expr::YieldFrom(_) => {
+                            return Err(FrontendError::Lower(format!(
+                                "generator `{fname}` uses `yield from` — v0.2.0 first cut supports plain `yield <expr>` only"
+                            )));
+                        }
+                        _ => {}
+                    }
+                }
+                Stmt::Return(r) => {
+                    if r.value.is_some() {
+                        return Err(FrontendError::Lower(format!(
+                            "generator `{fname}` has a value `return` — a generator's `return` sets StopIteration.value (not expressible in the eager list model); use a bare `return` to stop early"
+                        )));
+                    }
+                    // Bare `return` — stop early: `return __gen_result`.
+                    r.value = Some(Box::new(name(r.range, RES, Ctx::Load)));
+                }
+                Stmt::If(i) => {
+                    rewrite(&mut i.body, fname)?;
+                    rewrite(&mut i.orelse, fname)?;
+                }
+                Stmt::While(w) => rewrite(&mut w.body, fname)?,
+                Stmt::For(f) => rewrite(&mut f.body, fname)?,
+                Stmt::With(w) => rewrite(&mut w.body, fname)?,
+                Stmt::Try(t) => {
+                    rewrite(&mut t.body, fname)?;
+                    rewrite(&mut t.finalbody, fname)?;
+                    for h in &mut t.handlers {
+                        let ast::ExceptHandler::ExceptHandler(h) = h;
+                        rewrite(&mut h.body, fname)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    for stmt in suite.iter_mut() {
+        let ast::Stmt::FunctionDef(f) = stmt else {
+            continue;
+        };
+        if !body_has_yield(&f.body) {
+            continue;
+        }
+        let rng = f.range;
+        // The yield type T is the return annotation (`-> int`), or the element
+        // of `Iterator[T]` / `Iterable[T]` / `Generator[T, …]`. Unannotated
+        // generators refuse (the eager model needs a concrete element type).
+        let Some(ret_ann) = f.returns.as_ref() else {
+            return Err(FrontendError::Lower(format!(
+                "generator `{}` has no return annotation — annotate the yielded type (`-> int` / `-> Iterator[int]`) at v0.2.0",
+                f.name
+            )));
+        };
+        let elem_ann: Expr = match ret_ann.as_ref() {
+            Expr::Subscript(sub) => match sub.value.as_ref() {
+                Expr::Name(n) if matches!(n.id.as_str(), "Iterator" | "Iterable" | "Generator") => {
+                    match sub.slice.as_ref() {
+                        Expr::Tuple(t) if !t.elts.is_empty() => t.elts[0].clone(),
+                        other => other.clone(),
+                    }
+                }
+                // A `-> list[int]` etc. annotation on a generator is unusual;
+                // treat the whole thing as the element type (list-of-list).
+                _ => (**ret_ann).clone(),
+            },
+            other => other.clone(),
+        };
+        // list[T] annotation for the rewritten return + the result init.
+        let list_of_t = Expr::Subscript(ast::ExprSubscript {
+            range: rng,
+            value: Box::new(name(rng, "list", Ctx::Load)),
+            slice: Box::new(elem_ann),
+            ctx: Ctx::Load,
+        });
+        // Rewrite yields (may refuse).
+        rewrite(&mut f.body, f.name.as_str())?;
+        // Prepend `__gen_result: list[T] = []`.
+        let init = ast::Stmt::AnnAssign(ast::StmtAnnAssign {
+            range: rng,
+            target: Box::new(name(rng, RES, Ctx::Store)),
+            annotation: Box::new(list_of_t.clone()),
+            value: Some(Box::new(Expr::List(ast::ExprList {
+                range: rng,
+                elts: vec![],
+                ctx: Ctx::Load,
+            }))),
+            simple: true,
+        });
+        f.body.insert(0, init);
+        // Append `return __gen_result` (the eager result).
+        f.body.push(ast::Stmt::Return(ast::StmtReturn {
+            range: rng,
+            value: Some(Box::new(name(rng, RES, Ctx::Load))),
+        }));
+        // Retype `-> T` to `-> list[T]`.
+        f.returns = Some(Box::new(list_of_t));
+    }
+    Ok(())
+}
+
 fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError> {
     let ast::Expr::Name(subject) = m.subject.as_ref() else {
         return Err(FrontendError::Lower(

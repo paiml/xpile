@@ -19288,3 +19288,25 @@ fn main() {
 "#;
     assert_rustc_runs("try_finally", &rust, driver);
 }
+
+/// PMAT-1071: eager generators — a `yield`-bearing function is rewritten into
+/// a list-building function (`__gen_result.append` per yield), so `for x in
+/// g()` / `list(g())` / `sum(g())` work. Covers straight-line, loop,
+/// conditional, stateful (fib), and early-return. MATCH 14/3/8/4.
+#[test]
+fn generators_eager() {
+    let rust = xpile_transpile_to_rust("generators_eager.py");
+    assert!(
+        rust.contains("__gen_result"),
+        "a generator lowers to a list-building function:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_of_squares(4), 14, "sum(squares(4)) = 0+1+4+9");
+    assert_eq!(evens_list(6), 3, "list(evens_upto(6)) = [0,2,4]");
+    assert_eq!(fib_seventh(), 8, "fib(7)[6] — stateful generator");
+    assert_eq!(early_stop_count(), 4, "upto(4) stops at the bare return");
+}
+"#;
+    assert_rustc_runs("generators_eager", &rust, driver);
+}

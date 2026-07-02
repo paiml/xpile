@@ -933,9 +933,10 @@ roadmap:
   github_issue: null
   item_type: capability
   title: 'PMAT-1071: [rust/capability] GENERATORS / `yield` — `def gen(): yield 1; yield 2` used as a lazy iterator (`for x in gen()`). Found by a fresh-area probe (all other collection/string/functional/numeric surfaces MATCH; this + context managers are the two remaining BIG gaps). A generator is a state machine: each `yield` suspends and resumes. Rust has no direct coroutine in stable; the tractable lowerings are (a) EAGER materialization — collect all yields into a Vec and iterate that (loses laziness/infinite generators but covers the common finite `for x in gen()` case), or (b) a hand-rolled state-machine struct impl Iterator (faithful but a large per-generator codegen). Start with (a) EAGER for finite generators with simple control flow (straight-line yields, yields in a bounded for/while), refuse unbounded/`yield from`/generator-expressions-as-values. Multi-slice; NOT a rush-at-depth item — filed for a focused session.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
+  notes: 'SHIPPED 2026-07-02 (approach a EAGER): AST pre-transform rewrites a yield-bearing fn into a list builder before the sig pre-pass — for/list/sum/max consumption ride the list machinery with zero downstream change. Verified: straight-line, for/while loop, conditional, nested-for, stateful fib [0,1,1,2,3,5,8], early bare-return, str/int yields, empty gen []. Refuses (precise): unannotated, bare yield, yield from, value-return. Eager = FINITE generators only (unbounded would not terminate) — documented. Suite 750 green.'
 - id: PMAT-1072
   github_issue: null
   item_type: capability
