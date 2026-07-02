@@ -7,6 +7,33 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Target-aware alias disposition — Python aliasing EXECUTES on WASM (PMAT-1024)
+
+- **The PMAT-1023 residual discharged**: the frontend's value-semantics alias
+  dispositions (clone/move/refuse — PMAT-884/1008/1016C/1018/1019/1020) are
+  now TARGET-AWARE. `Frontend::parse_and_lower_for(path, src, AliasSemantics)`
+  (an additive trait method; default = the old target-blind lowering) lets the
+  CLI resolve the target FIRST and lower `--target wasm` with
+  `AliasSemantics::Reference`: linear memory holds every container/struct
+  local as an i32 base-pointer, so a binding copy IS Python's object sharing.
+- **TYPE-SCOPED soundness line**: the skip applies to pointer-stable types
+  only — `Struct` (fixed-size records, in-place field stores), `List` (the
+  supported WASM surface is in-place; growth refuses at the backend), `Str`
+  (immutable). `Dict`/`Set` KEEP the full value dispositions: the PMAT-999
+  grow RELOCATES the record and rebinds only the receiver's local, so an
+  alias would go silently stale. The PMAT-1020 alias-class analysis gates on
+  mutation SHAPE for reference targets (container-shaped mutations — subscript
+  writes, builtin mutators — keep the refusal; struct-shaped ones execute).
+- **Executed asymmetry witnesses** (full pipeline, value-matched vs CPython):
+  `alias_oop.py` (`b = a`; 3 incr()s through both names → 6, where a clone
+  would give 3) and `bump_helper.py` (`def bump(c): c.incr()` → 2) both
+  REFUSE for `--target rust` and EXECUTE for `--target wasm`.
+- **WASM backend**: statement-position PLAIN function calls
+  (`SideEffectCall { call: Expr::Call }`) now lower via a new free-function
+  signature registry (typed args; unit callees leave nothing, value results
+  drop) — the mutating-helper idiom needs them. Unknown callees refuse
+  naming the function.
+
 ## [0.1.604] — 2026-07-02
 
 The sweep-#9 response (4 commits, PMAT-1019/1020/1021/1022). Sweep #9 hit the

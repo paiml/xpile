@@ -17609,3 +17609,145 @@ fn transpile_counter_oop_py_to_wasm_executes() {
          c.get()):\n{interp_out}"
     );
 }
+
+/// PMAT-1024: TARGET-AWARE alias disposition — the PMAT-1023 residual
+/// discharged. Python OOP ALIASING (`b = a`, mutations through both names)
+/// REFUSES for `--target rust` (the PMAT-1020 alias-class analysis: value
+/// semantics cannot express the sharing) but EXECUTES for `--target wasm`:
+/// the frontend lowers with `AliasSemantics::Reference`, skipping the
+/// clone/move/refuse suite for pointer-stable types, and linear memory makes
+/// every binding of the record the SAME i32 base-pointer. Executed
+/// value-match vs CPython: `a is b` → three `incr()`s hit ONE object →
+/// `a.get() + b.get()` == 6 (a per-binding clone would give 1 + 2 = 3 — the
+/// silent divergence the Rust-lane refusal exists to prevent).
+#[test]
+fn transpile_alias_oop_py_wasm_executes_rust_refuses() {
+    let py = fixture("alias_oop.py");
+
+    // The SAME source must keep refusing on the value-semantics lane.
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !rust_out.status.success(),
+        "the rust lane must still REFUSE the mutated alias"
+    );
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_err.contains("aliases `a` and `b`"),
+        "the alias-class refusal names the pair:\n{rust_err}"
+    );
+
+    // The reference-semantics lane transpiles it.
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the aliasing program: stderr={stderr} stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("call $Counter.incr") && stdout.contains("call $Counter::__init__"),
+        "run() drives the ctor + mutating method through the alias:\n{stdout}"
+    );
+
+    // EXECUTED half — gated on WABT (mirrors the wasm-codegen witnesses).
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1024: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-alias-wasm-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("alias.wat");
+    let wasm_path = dir.join("alias.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:6"),
+        "executed run() must == CPython 6 (a is b — the mutation is shared; \
+         a clone would give 3):\n{interp_out}"
+    );
+}
+
+/// PMAT-1024: the MUTATING-HELPER idiom — `def bump(c): c.incr()` called as a
+/// statement. The Rust lane REFUSES it (PMAT-884: the ownership clone would
+/// silently drop the mutation); the WASM lane skips the arg clone
+/// (`clone_if_reused_non_copy` is reference-aware) and passes the record's
+/// i32 base-pointer, and the new statement-position plain-call lowering
+/// (`SideEffectCall { call: Expr::Call }` via the free-function registry)
+/// emits `call $bump`. Executed: two bump()s on one object == CPython 2.
+#[test]
+fn transpile_bump_helper_py_wasm_executes_rust_refuses() {
+    let py = fixture("bump_helper.py");
+
+    let rust_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !rust_out.status.success(),
+        "the rust lane must still REFUSE the mutating helper"
+    );
+    let rust_err = String::from_utf8_lossy(&rust_out.stderr);
+    assert!(
+        rust_err.contains("`bump` mutates its parameter"),
+        "the PMAT-884 refusal names the callee:\n{rust_err}"
+    );
+
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "xpile --target wasm failed on the mutating helper: stderr={stderr} stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("call $bump"),
+        "run() drives the helper as a statement-position plain call:\n{stdout}"
+    );
+
+    let wabt = Command::new("wat2wasm").arg("--version").output();
+    if wabt.is_err() {
+        eprintln!("PMAT-1024: skipping EXECUTED half — WABT absent (emit shape asserted above)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-bump-wasm-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("bump.wat");
+    let wasm_path = dir.join("bump.wasm");
+    std::fs::write(&wat_path, stdout.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the emitted module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let interp_out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        interp_out.contains("run() => i64:2"),
+        "executed run() must == CPython 2 (the helper mutates the caller's \
+         object through the shared pointer):\n{interp_out}"
+    );
+}

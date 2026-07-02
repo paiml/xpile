@@ -23,6 +23,7 @@ use xpile_core::TranspileSession;
 use xpile_ffi_manifest::{
     defining_function, resolve_boundary_to_langs, retype_float_ffi_sites, FfiEntry, FfiManifest,
 };
+use xpile_frontend::AliasSemantics;
 use xpile_meta_hir::{Module, SourceLang, Type};
 use xpile_oracle::{capture_cpython_hybrid_ref, diff_stdout, ComparisonResult, CtypesBinding};
 
@@ -599,11 +600,15 @@ fn transpile(
             format!("no frontend handles {ext_label}; known extensions: {known:?}")
         })?;
 
+    // PMAT-1024: resolve the target BEFORE lowering — the frontend's alias
+    // dispositions are target-aware (a reference-semantics target executes
+    // Python object sharing natively, so the clone/move/refuse suite is
+    // skipped for pointer-stable types there).
+    let target = parse_target(target_str)?;
     let module = frontend
-        .parse_and_lower(input, &source)
+        .parse_and_lower_for(input, &source, alias_semantics_for(target))
         .with_context(|| format!("parse_and_lower failed for {}", input.display()))?;
 
-    let target = parse_target(target_str)?;
     let backend = session
         .backends
         .iter()
@@ -636,6 +641,17 @@ fn transpile(
         None => print!("{}", artifact.primary),
     }
     Ok(())
+}
+
+/// PMAT-1024: which binding model the target's data layout gives bindings.
+/// WASM linear memory holds container/struct locals as i32 base-pointers, so
+/// a binding copy IS Python's object sharing (`AliasSemantics::Reference`);
+/// every other target keeps the value-semantics dispositions.
+fn alias_semantics_for(target: Target) -> AliasSemantics {
+    match target {
+        Target::Wasm => AliasSemantics::Reference,
+        _ => AliasSemantics::Value,
+    }
 }
 
 fn parse_target(s: &str) -> Result<Target> {

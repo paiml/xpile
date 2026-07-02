@@ -626,6 +626,21 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: 'The loop-var-leak idiom is COMMON Python. Key lesson: PROBE the existing machinery before writing new — the fix was a 1-expression generalization (Name-lookup → probe-lower) of an existing pre-pass, not new hoisting logic. Filed by PMAT-1011 sweep #7 (control-flow finder).'
+- id: PMAT-1024
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1024: [wasm/capability] TARGET-AWARE alias disposition — the PMAT-1023 residual discharged. The frontend''s value-semantics alias suite (PMAT-884 arg guard, PMAT-588 arg clones, apply_alias_dispositions, PMAT-1020 alias-class analysis) is now threaded with the TARGET''s binding model: `Frontend::parse_and_lower_for(path, src, AliasSemantics)` (additive trait method, default = target-blind) + the CLI resolving the target BEFORE lowering, so `--target wasm` lowers with AliasSemantics::Reference — linear memory holds container/struct locals as i32 base-pointers, a binding copy IS Python object sharing. TYPE-SCOPED soundness (reference_native): skip only for Struct (fixed-size, in-place stores) / List (in-place surface; growth refuses at backend) / Str (immutable); Dict/Set KEEP full value dispositions because the PMAT-999 grow RELOCATES and rebinds only the receiver local (an alias would go silently stale). The PMAT-1020 class analysis gates on mutation SHAPE for reference targets (collect_container_mutated: subscript writes + builtin mutators keep the refusal; struct-shaped mutations execute). WASM backend: statement-position PLAIN calls (SideEffectCall{Expr::Call}) lower via a new free-function registry (typed args, drop-if-value; unknown callee refuses by name) — the mutating-helper idiom needs them.'
+  status: done
+  priority: high
+  created: 2026-07-02T00:00:00Z
+  acceptance_criteria:
+  - "EXECUTED asymmetry witnesses through the REAL CLI, value-matched vs CPython: alias_oop.py (b = a; three incr()s through both names -> run()=6, where a per-binding clone would give 3) and bump_helper.py (def bump(c): c.incr(); two statement calls -> run()=2) both REFUSE for --target rust (PMAT-1020 names the pair / PMAT-884 names the callee) and EXECUTE for --target wasm (wat2wasm + wasm-interp). Unit tests: reference lane binds the alias as a bare Ident (no Expr::Clone), struct args pass unclonewrapped; a mutated DICT alias keeps refusing on the reference lane (the relocation-hazard lock)."
+  - "Zero value-lane regressions: 705 e2e green, depyler-frontend 19 unit tests green, all 15 wasm-codegen suites green (the PMAT-1023 unknown-callee refusal re-pinned to the new precise message)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'The headline shape the whole Rust-lane alias-disposition machinery exists to REFUSE now EXECUTES exactly on the WASM lane from real Python source — reference semantics are native to linear memory. RESIDUALS (honest): list-element-write aliasing over-refuses at the class level on the reference lane (list/dict indistinguishable in the type-blind AST pass — a typed refinement would unlock it); dict/set aliasing stays refused until the heap runtime pins aliases across grow (e.g. a handle indirection or in-place growth); other value-semantics Clone sites (list-literal embeds, return-self, method-returns-field) still emit Clone and refuse honestly at the backend if reached. Filed by PMAT-1023''s scope note.'
 - id: PMAT-1023
   github_issue: null
   item_type: task
