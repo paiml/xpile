@@ -8306,6 +8306,82 @@ fn branch_assigned_names(if_stmt: &ast::StmtIf, out: &mut Vec<String>) {
     }
 }
 
+/// PMAT-1044 (sweep #12): does ANY arm of the chain have an intra-arm
+/// dependency — an assignment whose RHS reads a name that is ALSO assigned
+/// somewhere in the SAME arm? The as-let lowering models each variable
+/// INDEPENDENTLY (`a = if c {..} else {..}`) and emits the per-variable
+/// updates in a fixed order, NOT source order — so an arm like
+/// `b = a; a = 9` (else) miscompiles: as-let emits `a = ..9` then
+/// `b = ..a`, and b reads the UPDATED a (9) instead of the original (1)
+/// → `9*10+9` vs Python `9*10+1`. Coarse/conservative (order-insensitive
+/// intersection): flagging a hazard-free arm merely routes it to the
+/// correct sequential general path, so over-flagging is harmless.
+fn any_arm_seq_hazard(if_stmt: &ast::StmtIf) -> bool {
+    fn reads(e: &ast::Expr, out: &mut std::collections::HashSet<String>) {
+        use ast::Expr as E;
+        match e {
+            E::Name(n) => {
+                out.insert(n.id.to_string());
+            }
+            E::BinOp(b) => {
+                reads(&b.left, out);
+                reads(&b.right, out);
+            }
+            E::UnaryOp(u) => reads(&u.operand, out),
+            E::BoolOp(b) => b.values.iter().for_each(|v| reads(v, out)),
+            E::Compare(c) => {
+                reads(&c.left, out);
+                c.comparators.iter().for_each(|x| reads(x, out));
+            }
+            E::Call(c) => {
+                reads(&c.func, out);
+                c.args.iter().for_each(|a| reads(a, out));
+                c.keywords.iter().for_each(|k| reads(&k.value, out));
+            }
+            E::Subscript(s) => {
+                reads(&s.value, out);
+                reads(&s.slice, out);
+            }
+            E::Attribute(a) => reads(&a.value, out),
+            E::IfExp(t) => {
+                reads(&t.test, out);
+                reads(&t.body, out);
+                reads(&t.orelse, out);
+            }
+            E::Tuple(t) => t.elts.iter().for_each(|x| reads(x, out)),
+            E::List(l) => l.elts.iter().for_each(|x| reads(x, out)),
+            _ => {}
+        }
+    }
+    fn arm_hazard(body: &[ast::Stmt]) -> bool {
+        let mut assigned: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut read: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for s in body {
+            if let ast::Stmt::Assign(a) = s {
+                reads(&a.value, &mut read);
+                if let [ast::Expr::Name(n)] = a.targets.as_slice() {
+                    assigned.insert(n.id.to_string());
+                }
+            }
+        }
+        assigned.intersection(&read).next().is_some()
+    }
+    if arm_hazard(&if_stmt.body) {
+        return true;
+    }
+    let mut current: &[ast::Stmt] = &if_stmt.orelse;
+    loop {
+        if let [ast::Stmt::If(nested)] = current {
+            if arm_hazard(&nested.body) {
+                return true;
+            }
+            current = &nested.orelse;
+            continue;
+        }
+        return arm_hazard(current);
+    }
+}
+
 /// PMAT-1042: does any arm of the chain assign a DIFFERENT name set than the
 /// then-arm? (The lenient twin of `validate_branch_name_sets` — a predicate,
 /// not an error.) Only meaningful once the as-let shape matched.
@@ -8823,11 +8899,19 @@ fn lower_if_stmt(
         // would-refuse case (parity fails + all pre-bound): parity-holding
         // chains keep the as-let emission byte-identical, and a chain
         // touching any fresh name keeps the precise parity refusal.
-        let divert = branch_name_sets_differ(&if_stmt) && {
-            let mut names = Vec::new();
-            branch_assigned_names(&if_stmt, &mut names);
-            !names.is_empty() && names.iter().all(|n| ctx.bound.contains(n))
-        };
+        // Divert to the general (sequential) `Stmt::If` path when it is both
+        // NECESSARY and SAFE. Necessary = the as-let independent-variable
+        // model would either refuse (name sets differ, PMAT-1042) or
+        // MISCOMPILE (an intra-arm read-after-write hazard, PMAT-1044).
+        // Safe = every assigned name is already bound, so the general path's
+        // in-place reassignments persist correctly (a fresh name needs the
+        // as-let `let x = if …` binding). Parity-holding, hazard-free chains
+        // keep the as-let emission byte-identical.
+        let mut names = Vec::new();
+        branch_assigned_names(&if_stmt, &mut names);
+        let all_prebound = !names.is_empty() && names.iter().all(|n| ctx.bound.contains(n));
+        let divert =
+            all_prebound && (branch_name_sets_differ(&if_stmt) || any_arm_seq_hazard(&if_stmt));
         if !divert {
             return lower_if_stmt_as_lets(ctx, if_stmt);
         }
