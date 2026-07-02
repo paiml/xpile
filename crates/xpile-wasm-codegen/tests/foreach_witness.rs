@@ -500,7 +500,42 @@ fn elementwise_mutation_loop_is_refused() {
 }
 
 #[test]
-fn non_name_list_iterable_is_refused() {
+fn list_literal_iterable_desugars_to_synthetic_list_local() {
+    // PMAT-1033: `for x in [1, 2]` binds the literal ONCE into a synthetic
+    // list local (`__wasm_fe_l_<k>`) and iterates the name — no longer the
+    // "bind the iterable to a name" refusal.
+    let m = module(
+        "lit_iter",
+        vec![func(
+            "f",
+            Type::I64,
+            vec![],
+            vec![
+                let_ty("t", Type::I64, lit_i(0)),
+                Stmt::ForEach {
+                    var: "x".into(),
+                    iter: Expr::ListLit(vec![lit_i(1), lit_i(2)]),
+                    elem_ty: Type::I64,
+                    body: vec![assign("t", add(ident("t"), ident("x")))],
+                    over_keys: false,
+                    dict_guard: None,
+                    mutate_elems: false,
+                },
+            ],
+            ident("t"),
+        )],
+    );
+    let wat = emit_module(&m).expect("a list-literal iterable lowers");
+    assert!(
+        wat.contains("(local $__wasm_fe_l_0 i32)") && wat.contains("call $__alloc"),
+        "the literal binds a synthetic heap-allocated list source local:\n{wat}"
+    );
+}
+
+#[test]
+fn non_name_call_iterable_is_refused() {
+    // A list-RETURNING call iterable stays refused with the how-to-fix
+    // message (no list-valued call results in the WASM subset).
     let m = module(
         "bad",
         vec![func(
@@ -509,7 +544,10 @@ fn non_name_list_iterable_is_refused() {
             vec![],
             vec![Stmt::ForEach {
                 var: "x".into(),
-                iter: Expr::ListLit(vec![lit_i(1), lit_i(2)]),
+                iter: Expr::Call {
+                    callee: "make".into(),
+                    args: vec![],
+                },
                 elem_ty: Type::I64,
                 body: vec![],
                 over_keys: false,
@@ -522,7 +560,7 @@ fn non_name_list_iterable_is_refused() {
     let err = emit_module(&m).unwrap_err().to_string();
     assert!(
         err.contains("bind the iterable to a name"),
-        "a list-literal iterable refuses with the how-to-fix message: {err}"
+        "a call iterable refuses with the how-to-fix message: {err}"
     );
 }
 
