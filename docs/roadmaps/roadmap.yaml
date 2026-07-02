@@ -993,6 +993,14 @@ roadmap:
   priority: medium
   created: 2026-07-02T00:00:00Z
   notes: 'high-water re-checked (1077) before allocating 1078. Suite 757 green; MATCH append-accumulates-ABC/create-if-absent/loop-append/with-open-append; "w" still truncates (regr). File I/O now: read + write(w) + append(a) + with-open + line iteration.'
+- id: PMAT-1080
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1080: [rust+ruchy/correctness] loop-var REASSIGNMENT in a for-body (`for x in xs: x = x.strip()`) emitted `for x in ...cloned()` without `mut` → rustc E0384 "cannot assign twice to immutable variable" (valid Python, invalid Rust). FIX: a precise reassignment scan (`foreach_var_reassigned`) over the body — recursing if/while/nested loops, stopping at a nested loop that SHADOWS the name — gates a `mut ` on the for-binding in BOTH the rust and ruchy codegens (the two `.cloned()` emission sites incl. the dict-guard path; the `iter_mut` elements-mutation path is a distinct case and unchanged). Precision matters: an over-broad `mut` trips clippy unused_mut on generated code. Rebinding the loop var does NOT mutate the iterated list in Python — matching the `.cloned()` owned-value posture, so semantics were already right; only the binding mutability was wrong.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Correctness-hunt fill (for-loop family, sibling of the PMAT-1079 for-target hunt). 2 e2e tests (760 total): rustc compile+RUN differential (normalize/strip via direct reassign, clamp via if-branch reassign, list-not-mutated witness, non-reassigned var stays non-mut) + ruchy textual lane.'
 - id: PMAT-1079
   github_issue: null
   item_type: correctness

@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Correctness — loop-var reassignment needs a `mut` for-binding (PMAT-1080)
+
+- Fixed: reassigning the loop variable inside a for-body (`for x in xs:
+  x = x.strip()`) emitted `for x in ...cloned()` without `mut` — rustc E0384
+  on valid Python. A precise reassignment scan (recursing if/while/nested
+  loops, stopping at a shadowing nested loop) now gates `for mut x` in both
+  the Rust and Ruchy codegens; never-reassigned loop vars stay non-mut
+  (clippy `unused_mut` clean). Rebinding does not mutate the iterated list in
+  Python, matching the `.cloned()` posture — only the binding was wrong.
+- 2 e2e tests (760 total); compile+run differential vs CPython.
+
 ### Correctness — loop-local subscript reused as for-target (PMAT-1079)
 
 - Fixed: a variable assigned from a loop-local subscript (`job = parts[2]`,
