@@ -784,6 +784,7 @@ fn expr_has_int_arith(e: &Expr) -> bool {
         // itself arithmetic; recurse defensively into the inner expr.
         Expr::Len(inner) => expr_has_int_arith(inner),
         Expr::FileReadAll(inner) => expr_has_int_arith(inner),
+        Expr::FileReadLines(inner) => expr_has_int_arith(inner),
         // PMAT-045: shell-variable references same disposition.
         Expr::ShellVar(_) => false,
         // PMAT-055: shell special parameters same disposition.
@@ -1773,6 +1774,13 @@ pub enum Expr {
     /// increment of the file-I/O domain; write / `with open()` / line iteration
     /// are the follow-ups (see roadmap PMAT-1074).
     FileReadAll(Box<Expr>),
+    /// PMAT-1077: `for line in open(<path>)` / `for line in f` (with-open) —
+    /// the file's lines WITH their trailing `\n` (keepends), as a `list[str]`.
+    /// Emitted inline as `std::fs::read_to_string(<path>)…split_inclusive('\n')
+    /// .map(str::to_string).collect::<Vec<String>>()` — split_inclusive matches
+    /// CPython text-mode file iteration exactly ("a\nb\n" → ["a\n","b\n"],
+    /// "" → []). Same FileNotFoundError panic as FileReadAll.
+    FileReadLines(Box<Expr>),
     /// List indexed access — Python `xs[i]`. PMAT-457, v0.2.0 Track 1.B.
     ///
     /// At v0.2.0 first cut the `index` expression is treated as a
@@ -3674,6 +3682,7 @@ fn escape_expr(e: &mut Expr) {
         Expr::DictView { dict, .. } => escape_expr(dict),
         Expr::Len(inner) => escape_expr(inner),
         Expr::FileReadAll(inner) => escape_expr(inner),
+        Expr::FileReadLines(inner) => escape_expr(inner),
         Expr::CommandSubstitution(inner) => escape_stmt(inner),
     }
 }
@@ -4235,6 +4244,7 @@ fn collect_idents_expr(e: &Expr, acc: &mut std::collections::HashSet<String>) {
         Expr::DictView { dict, .. } => collect_idents_expr(dict, acc),
         Expr::Len(inner) => collect_idents_expr(inner, acc),
         Expr::FileReadAll(inner) => collect_idents_expr(inner, acc),
+        Expr::FileReadLines(inner) => collect_idents_expr(inner, acc),
         Expr::CommandSubstitution(inner) => collect_idents_stmt(inner, acc),
     }
 }

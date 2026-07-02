@@ -4359,6 +4359,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             emit_expr(out, path, mode)?;
             out.push_str(r##").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) })"##);
         }
+        // PMAT-1077: file lines WITH keepends (split_inclusive matches CPython).
+        Expr::FileReadLines(path) => {
+            out.push_str("::std::fs::read_to_string(");
+            emit_expr(out, path, mode)?;
+            out.push_str(r##").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) }).split_inclusive('\n').map(|__l| __l.to_string()).collect::<Vec<String>>()"##);
+        }
         Expr::IfExpr {
             cond,
             then_expr,

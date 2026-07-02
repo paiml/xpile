@@ -977,6 +977,14 @@ roadmap:
   priority: medium
   created: 2026-07-02T00:00:00Z
   notes: 'high-water re-checked (1075) before allocating 1076. Suite 755 green; MATCH read/splitlines/write/round-trip, missing-file BOTHRAISE; multiple-op/for-line/append/no-as REFUSE precisely (adversarial divergence guards). Idiomatic file-I/O form COMPLETE.'
+- id: PMAT-1077
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1077: [rust/capability/domain] FILE I/O 4th increment — LINE ITERATION `for line in open(P)` and `with open(P) as f: for line in f:`. Completes PRACTICAL file I/O (read-all 1074 + write 1075 + with-open 1076 + line-iter). New Expr::FileReadLines (full Expr-drill: enum + 3 meta-hir walkers + rust/ruchy inline emit + lean/wasm refuse + List(Str) type-inference) emitting read_to_string(P)…split_inclusive(char-n).map(to_string).collect — split_inclusive matches CPython text-mode iteration EXACTLY including keepends (the trailing newline is kept: "a\nb\n"→["a\n","b\n"], no-trailing→last bare, ""→[]). Recognized for-iter-CONTEXTUALLY (try_lower_open_lines at the general for-loop iter lowering; bare open(P) elsewhere stays a handle). with-open form: try_desugar_with_open substitutes `for line in f` → `for line in open(P)`. REMAINING file-I/O follow-ups (niche): append mode (OpenOptions), write-count expr form.'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  notes: 'high-water re-checked (1076) before allocating 1077. Suite 756 green; MATCH count/keepends-total-len-17/no-trailing-newline/empty-file/with-open-for-line; wasm/lean refuse. KEEPENDS correct (total incl newlines). Bug found+fixed: the emit raw-string newline escape (Python heredoc converted the char-n to a literal newline byte → rustc "character constant must be escaped"). Practical file I/O COMPLETE.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

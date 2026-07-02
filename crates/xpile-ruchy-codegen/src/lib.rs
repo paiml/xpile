@@ -3526,6 +3526,11 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         }
         // PMAT-459 (v0.2.0 Track 1.B): Ruchy → Rust → `.len() as i64`.
         // PMAT-1074: `open(path).read()` → inline std::fs::read_to_string.
+        Expr::FileReadLines(path) => {
+            out.push_str("::std::fs::read_to_string(");
+            emit_expr(out, path, mode)?;
+            out.push_str(").unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!(\"xpile: FileNotFoundError: {}\", __e) } else { panic!(\"xpile: OSError: {}\", __e) }).split_inclusive('\\n').map(|__l| __l.to_string()).collect::<Vec<String>>()");
+        }
         Expr::FileReadAll(path) => {
             out.push_str("::std::fs::read_to_string(");
             emit_expr(out, path, mode)?;

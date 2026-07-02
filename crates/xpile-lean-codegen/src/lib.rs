@@ -831,6 +831,7 @@ fn collect_idents(e: &Expr, out: &mut Vec<String>) {
         // PMAT-459: len(x) — recurse into inner.
         Expr::Len(inner) => collect_idents(inner, out),
         Expr::FileReadAll(inner) => collect_idents(inner, out),
+        Expr::FileReadLines(inner) => collect_idents(inner, out),
         Expr::UnOp { operand, .. } => collect_idents(operand, out),
         Expr::IfExpr {
             cond,
@@ -1862,6 +1863,11 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::FileReadAll(_) => {
             return Err(LeanCodegenError::Unsupported(
                 "Lean backend does not lower file I/O (`open(path).read()`, Expr::FileReadAll) — it has no effectful file model".into(),
+            ));
+        }
+        Expr::FileReadLines(_) => {
+            return Err(LeanCodegenError::Unsupported(
+                "Lean backend does not lower file I/O (`for line in open(path)`, Expr::FileReadLines) — it has no effectful file model".into(),
             ));
         }
         // coerce to Int via `(... : Int)` ascription.

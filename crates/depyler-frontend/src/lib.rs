@@ -8295,7 +8295,13 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
     //     lower the iter and emit a `Stmt::ForEach`. PMAT-502ck generalised
     //     this from "non-call only" to "non-range-like".
     if !is_range_like_call(&f.iter) {
-        let iter_expr = lower_expr_in_ctx(ctx, (*f.iter).clone())?;
+        // PMAT-1077: `for line in open(P[, mode])` iterates the file's lines
+        // (with keepends) — recognize the open() iterable → Expr::FileReadLines
+        // (a list[str]); the standard list-iteration path handles the rest.
+        let iter_expr = match try_lower_open_lines(ctx, &f.iter)? {
+            Some(fre) => fre,
+            None => lower_expr_in_ctx(ctx, (*f.iter).clone())?,
+        };
         let iter_ty = infer_type_in_ctx(ctx, &iter_expr);
         // PMAT-472 (R3): a dict iterates its keys (`for k in d:`), so
         // bind `target` to the key type and flag `over_keys`.
@@ -10053,7 +10059,17 @@ fn try_desugar_with_open(w: &ast::StmtWith) -> Result<Option<Vec<ast::Stmt>>, Fr
                     }
                 }
                 ast::Stmt::For(fo) => {
-                    self.expr(&mut fo.iter);
+                    // PMAT-1077: `for line in f:` (read handle) — substitute the
+                    // iterable `f` with `open(P)` so the for-loop lowering reads
+                    // the file's lines (keepends). Counts as the single op.
+                    if self.want == "read"
+                        && matches!(fo.iter.as_ref(), Expr::Name(n) if n.id.as_str() == self.handle)
+                    {
+                        self.ops += 1;
+                        *fo.iter = (self.open_recv)(false);
+                    } else {
+                        self.expr(&mut fo.iter);
+                    }
                     for st in fo.body.iter_mut() {
                         self.stmt(st);
                     }
@@ -10090,6 +10106,37 @@ fn try_desugar_with_open(w: &ast::StmtWith) -> Result<Option<Vec<ast::Stmt>>, Fr
         )));
     }
     Ok(Some(body))
+}
+
+/// PMAT-1077: if `iter` is `open(P[, "r"])` (a for-loop iterable → the file's
+/// lines with keepends), lower it to `Expr::FileReadLines(P)`. Returns `None`
+/// for any other iterable (fall through to the normal iterable lowering).
+/// Write/other modes on a for-iterable refuse via the normal open()-handle
+/// paths, not here.
+fn try_lower_open_lines(
+    ctx: &LoweringCtx,
+    iter: &ast::Expr,
+) -> Result<Option<Expr>, FrontendError> {
+    let ast::Expr::Call(call) = iter else {
+        return Ok(None);
+    };
+    let ast::Expr::Name(n) = call.func.as_ref() else {
+        return Ok(None);
+    };
+    if n.id.as_str() != "open" || call.args.is_empty() || !call.keywords.is_empty() {
+        return Ok(None);
+    }
+    // A read-ish mode only (default "r"); a "w"/"a" open isn't iterable in
+    // Python either — leave those to refuse elsewhere.
+    if let Some(ast::Expr::Constant(c)) = call.args.get(1) {
+        if let ast::Constant::Str(m) = &c.value {
+            if !matches!(m.as_str(), "r" | "rt" | "") {
+                return Ok(None);
+            }
+        }
+    }
+    let path = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+    Ok(Some(Expr::FileReadLines(Box::new(path))))
 }
 
 fn desugar_match_to_if(m: &ast::StmtMatch) -> Result<ast::StmtIf, FrontendError> {
@@ -14776,6 +14823,7 @@ fn infer_type(e: &Expr) -> Type {
         // (Python int).
         Expr::Len(_) => Type::I64,
         Expr::FileReadAll(_) => Type::Str,
+        Expr::FileReadLines(_) => Type::List(Box::new(Type::Str)),
         Expr::BinOp { op, lhs, rhs } => match op {
  BinOp::Add
             | BinOp::Sub
@@ -15191,6 +15239,7 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
         // PMAT-459: len() always returns Type::I64.
         Expr::Len(_) => Type::I64,
         Expr::FileReadAll(_) => Type::Str,
+        Expr::FileReadLines(_) => Type::List(Box::new(Type::Str)),
         Expr::LitInt(_) => {
  if matches!(ctx.fn_return_type, Type::BigInt) {
  Type::BigInt
