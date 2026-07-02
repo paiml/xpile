@@ -504,6 +504,9 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
         // not `C-PY-INT-ARITH`. The args are `Vec<String>` (literal
         // tokens) — no arithmetic operands.
         Stmt::Cmd { .. } => false,
+        Stmt::FileWrite { path, content } => {
+            expr_has_int_arith(path) || expr_has_int_arith(content)
+        }
         // PMAT-041: pipelines compose Cmds — recurse into each stage
         // for completeness (currently every stage is a Cmd, so this is
         // always false in practice).
@@ -1379,6 +1382,13 @@ pub enum Stmt {
     ///
     /// `Stmt::Pipeline { stages: Vec<Stmt::Cmd> }` shipped in PMAT-041.
     Cmd { program: String, args: Vec<Expr> },
+    /// PMAT-1075: `open(<path>, "w").write(<content>)` as a statement — write a
+    /// whole str to a file (truncating). Emitted inline as
+    /// `std::fs::write(<path>, <content>)` with a panic on error (matching
+    /// CPython's write-mode open — a missing DIR / permission error raises in
+    /// both). Second file-I/O increment after `Expr::FileReadAll` (PMAT-1074).
+    /// Mode `"w"` only; `"a"` (append) refuses in the frontend.
+    FileWrite { path: Expr, content: Expr },
     /// `cmd1 | cmd2 | cmd3 …` — POSIX pipeline composition. PMAT-041 /
     /// XPILE-BASHRS-MERGER-001 Layer B (second variant). Each stage
     /// is a `Stmt` so the variant composes (in principle) with the
@@ -3751,6 +3761,10 @@ fn escape_stmt(s: &mut Stmt) {
                 escape_expr(a);
             }
         }
+        Stmt::FileWrite { path, content } => {
+            escape_expr(path);
+            escape_expr(content);
+        }
         Stmt::ForEach {
             var,
             iter,
@@ -4302,6 +4316,10 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
                 collect_idents_expr(a, acc);
             }
         }
+        Stmt::FileWrite { path, content } => {
+            collect_idents_expr(path, acc);
+            collect_idents_expr(content, acc);
+        }
         Stmt::ForEach {
             var, iter, body, ..
         } => {
@@ -4636,6 +4654,7 @@ fn retype_stmt(
                 }
             }
         }
+        Stmt::FileWrite { .. } => {}
         // `let r: float = c_call()` mistyped its annotation to the I64 default
         // (rustc E0308). Re-type the binding so it emits `let r: f64`, and record
         // the name so a later `print(r)` takes the float-repr arm.

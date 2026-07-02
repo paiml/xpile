@@ -7383,6 +7383,41 @@ fn lower_expr_stmt_as_cmd(ctx: &LoweringCtx, e: ast::StmtExpr) -> Result<Stmt, F
  ctx.fn_name
         )));
     };
+    // PMAT-1075: `open(<path>, "w").write(<content>)` as a statement — write a
+    // whole str to a file (truncating). The receiver is `open(<path>, "w")`
+    // (two args, mode `"w"`); lower to `Stmt::FileWrite`. Mode `"a"` (append)
+    // refuses precisely; the expr form `n = open(...).write(s)` (the char count)
+    // is a follow-up.
+    if let ast::Expr::Attribute(wa) = call.func.as_ref() {
+        if wa.attr.as_str() == "write" && call.args.len() == 1 {
+            if let ast::Expr::Call(open_call) = wa.value.as_ref() {
+                if let ast::Expr::Name(fname) = open_call.func.as_ref() {
+                    if fname.id.as_str() == "open" && open_call.keywords.is_empty() {
+                        // Mode is the optional 2nd positional arg (default "r").
+                        let mode = match open_call.args.get(1) {
+                            Some(ast::Expr::Constant(c)) => match &c.value {
+                                ast::Constant::Str(s) => s.clone(),
+                                _ => String::new(),
+                            },
+                            None => "r".to_string(),
+                            _ => String::new(),
+                        };
+                        if open_call.args.len() == 2 && mode == "w" {
+                            let path = lower_expr_in_ctx(ctx, open_call.args[0].clone())?;
+                            let content = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                            return Ok(Stmt::FileWrite { path, content });
+                        }
+                        if open_call.args.len() == 2 && mode == "a" {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{}` uses `open(path, \"a\").write(...)` (append) — v0.2.0 first cut supports write mode `\"w\"` (truncate) only; append needs OpenOptions",
+                                ctx.fn_name
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+    }
     // PMAT-1051 (sweep #12): a CONTAINER-MUTATOR method call
     // (`.append`/`.extend`/…) that reached here has a receiver shape the
     // earlier `try_lower_list_method_call` / `try_lower_side_effect_call`

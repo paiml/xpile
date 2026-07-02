@@ -961,6 +961,14 @@ roadmap:
   priority: medium
   created: 2026-07-02T00:00:00Z
   notes: 'READ increment SHIPPED 2026-07-02: `open(path).read()` → Expr::FileReadAll → inline std::fs::read_to_string with FileNotFoundError/OSError panic (full Expr-variant drill: enum + 3 meta-hir walkers + rust/ruchy inline emit + lean/wasm refuse + Str type-inference + frontend open().read() recognition). Verified: read+len/count/splitlines/strip MATCH, missing-file BOTHRAISE, path-from-var; wasm/lean refuse (no silent-wrong). Suite 753. REMAINING follow-ups: write (with open(p,"w") as f: f.write(s) → std::fs::write, needs the with-handle desugar + a Stmt), `with open() as f:` handle-tracking, `for line in open(p)` iteration.'
+- id: PMAT-1075
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1075: [rust/capability/domain] FILE I/O 2nd increment — `open(path, "w").write(content)` as a STATEMENT writes a whole str to a file (truncating). Completes BASIC file I/O (read PMAT-1074 + write). New meta-HIR Stmt::FileWrite { path, content } (full Stmt-variant drill: enum + 4 walkers + rust/ruchy inline emit + lean/wasm refuse + statement-position recognition). Emitted inline as `std::fs::write(&(path), &(content))` — args BORROWED via AsRef so a variable path/content is not moved (may be read again after the write; E0382 otherwise) — with a NotFound→FileNotFoundError / else OSError panic. Mode "w" only; "a" (append) refuses precisely (needs OpenOptions). REMAINING file-I/O follow-ups: the write-count EXPR form (n = open(p,"w").write(s)), `with open() as f:` handle-tracking, `for line in open(p)` iteration, append mode.'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  notes: 'high-water re-checked (1074) before allocating 1075. Suite 754 green; MATCH write-then-read/overwrite-truncate/loop-write/variable-path; append-mode + bad-dir refuse/BOTHRAISE; borrow fix (E0382) verified. Read+write = basic file I/O COMPLETE.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

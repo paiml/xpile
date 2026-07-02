@@ -232,6 +232,12 @@ fn emit_function_with_while_helpers(
             // Function containing both a while loop AND a Cmd
             // (impossible from bashrs-frontend, which produces flat
             // command sequences without loops; defensive arm).
+            Stmt::FileWrite { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has file I/O (Stmt::FileWrite) inside a while loop; the Lean lane has no effectful file model",
+                    f.name
+                )));
+            }
             Stmt::Cmd { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
                     "function `{}` has Stmt::Cmd inside a while loop; \
@@ -1264,6 +1270,9 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         // notion of shell-command invocation. `C-BASHRS-POSIX-IDEMPOTENCE`
         // governs `Stmt::Cmd`; any cross-domain refinement would lower
         // via the bashrs domain, not the Lean one.
+        Stmt::FileWrite { .. } => Err(LeanCodegenError::Unsupported(
+            "Lean backend does not lower file I/O (`open(p, \"w\").write(...)`, Stmt::FileWrite) — it has no effectful file model".into(),
+        )),
         Stmt::Cmd { program, args } => Err(LeanCodegenError::Unsupported(format!(
             "Lean backend does not lower Stmt::Cmd (`{program}` with {} arg(s)) — \
              contract C-BASHRS-POSIX-IDEMPOTENCE governs shell commands; \

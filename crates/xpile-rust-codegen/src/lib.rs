@@ -511,6 +511,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // backend declines at emit_stmt), but exhaustive match
             // keeps the dispatch boundary explicit.
             Stmt::Cmd { .. } => false,
+            Stmt::FileWrite { .. } => false,
             // PMAT-041: same disposition as Cmd — Pipeline composes
             // Cmd stages; no BigInt operand reachable.
             Stmt::Pipeline { .. } => false,
@@ -1508,6 +1509,18 @@ fn emit_stmt_indented(
         // `Stmt::Cmd` would still be lowered via Rust's
         // `std::process::Command` API — that's separate machinery, not
         // a generic Cmd-to-Rust translation.)
+        Stmt::FileWrite { path, content } => {
+            // PMAT-1075: `open(p, "w").write(s)` → inline std::fs::write (truncate).
+            // Borrow path + content (`&(...)`) via AsRef so a variable path/content
+            // isn't moved (it may be read again after the write) — E0382 otherwise.
+            write!(out, "{indent}::std::fs::write(&(")?;
+            emit_expr(out, path, mode)?;
+            out.push_str("), &(");
+            emit_expr(out, content, mode)?;
+            out.push_str(r##")).unwrap_or_else(|__e| if __e.kind() == ::std::io::ErrorKind::NotFound { panic!("xpile: FileNotFoundError: {}", __e) } else { panic!("xpile: OSError: {}", __e) });"##);
+            writeln!(out)?;
+            Ok(())
+        }
         Stmt::Cmd { program, args } => Err(CodegenError::Unsupported(format!(
             "Rust backend does not lower Stmt::Cmd (`{program}` with {} arg(s)) — \
              contract C-BASHRS-POSIX-IDEMPOTENCE governs this construct; \
