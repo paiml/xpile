@@ -7,6 +7,8 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.615] — 2026-07-03
+
 ### Correctness — loop-var reassignment needs a `mut` for-binding (PMAT-1080)
 
 - Fixed: reassigning the loop variable inside a for-body (`for x in xs:
