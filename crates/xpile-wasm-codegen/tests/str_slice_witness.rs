@@ -262,3 +262,129 @@ fn real_slice_program_executes_in_wasm_and_matches_cpython() {
     );
     eprintln!("--- emitted mid WAT (emit_module over meta-HIR) ---\n{kernel_wat}");
 }
+
+// ─── PMAT-1058: EXECUTED clamp / negative / open-bound / empty edge cases ────
+//
+// The headline witness proves the char-walk + alloc + copy path on `s[1:4]`.
+// The Python CLAMP semantics — negative-bound normalise, out-of-range clamp
+// (NEVER trap), `hi = max(hi, lo)` (empty slice), and the missing-bound
+// defaults — are exactly where a slice-helper bug hides, so each is executed on
+// silicon and value-matched to CPython (adversarial-verify discipline, not
+// just asserted from the emit text).
+
+/// Build `def f(s: str) -> str: return s[lo:hi]` for the given optional bounds.
+fn slice_module(lo: Option<i64>, hi: Option<i64>) -> Module {
+    let body = Expr::Slice {
+        collection: Box::new(Expr::Ident("s".into())),
+        lo: lo.map(|v| Box::new(Expr::LitInt(v))),
+        hi: hi.map(|v| Box::new(Expr::LitInt(v))),
+        of_str: true,
+        step: None,
+    };
+    let f = Function {
+        name: "mid".into(),
+        params: vec![Param {
+            name: "s".into(),
+            ty: Type::Str,
+            mutable: false,
+        }],
+        return_type: Type::Str,
+        body: Block {
+            stmts: vec![],
+            trailing_return: body,
+        },
+    };
+    Module {
+        name: "slice_program".into(),
+        source_lang: SourceLang::Rust,
+        items: vec![Item::Function(f)],
+        ffi_boundaries: Vec::new(),
+    }
+}
+
+/// Lower `s[lo:hi]` over `FIX_S`, run it in WABT, and reconstruct the substring.
+/// Returns `None` when WABT is absent (the caller skips the value assertion).
+fn exec_slice(lo: Option<i64>, hi: Option<i64>, expected: &str) -> Option<String> {
+    let kernel_wat = emit_module(&slice_module(lo, hi)).expect("slice program lowers");
+    if !wasm_runtime_available() {
+        return None;
+    }
+    let n_out = expected.len();
+    let wat = build_witness_wat(&kernel_wat, n_out);
+    let dir = std::env::temp_dir().join(format!(
+        "xpile-wasm-str-slice-edge-{}-{lo:?}-{hi:?}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).expect("create work dir");
+    let wat_path = dir.join("s.wat");
+    let wasm_path = dir.join("s.wasm");
+    std::fs::write(&wat_path, &wat).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm failed for s[{lo:?}:{hi:?}]:\n{}\n---WAT---\n{wat}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success(),
+        "wasm-interp run failed for s[{lo:?}:{hi:?}]: stdout={stdout:?} stderr={:?}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let got_len = parse_i32_export(&stdout, "run_len");
+    assert_eq!(
+        got_len as usize, n_out,
+        "s[{lo:?}:{hi:?}] byte length: WASM={got_len} CPython={n_out}"
+    );
+    let mut bytes = Vec::with_capacity(n_out);
+    for i in 0..n_out {
+        bytes.push(parse_i32_export(&stdout, &format!("run_byte_{i}")) as u8);
+    }
+    Some(String::from_utf8(bytes).expect("valid UTF-8"))
+}
+
+#[test]
+fn slice_clamp_negative_open_empty_edges_match_cpython() {
+    // (lo, hi, CPython s[lo:hi] over "abécd") — pinned to python3 ground truth.
+    let cases: &[(Option<i64>, Option<i64>, &str)] = &[
+        (Some(2), None, "écd"),       // open hi (missing → charlen)
+        (None, Some(2), "ab"),        // open lo (missing → 0)
+        (Some(-2), None, "cd"),       // negative lo normalised (+= charlen)
+        (Some(1), Some(100), "bécd"), // over-range hi CLAMPS, never traps
+        (Some(3), Some(1), ""),       // hi < lo → empty, never negative length
+        (None, None, "abécd"),        // s[:] → the whole string
+    ];
+    for &(lo, hi, expected) in cases {
+        // CONSTRUCT: every form lowers through the production emitter.
+        let wat = emit_module(&slice_module(lo, hi)).expect("edge slice lowers");
+        assert!(wat.contains("call $__wasm_str_slice"));
+        // EXECUTE (when WABT present): value-match CPython.
+        match exec_slice(lo, hi, expected) {
+            Some(got) => assert_eq!(
+                got, expected,
+                "executed s[{lo:?}:{hi:?}] = {got:?} but CPython = {expected:?}"
+            ),
+            None => {
+                eprintln!(
+                    "PMAT-1058: WABT absent — skipped executing s[{lo:?}:{hi:?}] \
+                     (expected {expected:?}); emit path asserted."
+                );
+                return;
+            }
+        }
+    }
+    eprintln!(
+        "PMAT-1058: all 6 clamp/negative/open/empty edge cases executed in WABT \
+         and value-matched CPython over the multi-byte fixture {FIX_S:?}."
+    );
+}
