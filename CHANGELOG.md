@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Invalid emit fixed: annotated fresh if-arm target (PMAT-1050)
+
+- `if flag: y: int = 10 else: y = 20` — the annotated (AnnAssign) arm broke
+  the as-let shape detection, so a fresh `y` fell to the general path and
+  emitted a bare `y = …` with no prior `let` (rustc E0425). Annotated
+  simple-Name `name: T = value` arms are now normalized to the plain
+  `name = value` form at the top of `lower_if_stmt`, so a mixed
+  annotated/plain chain lowers as-let uniformly (elif chains included).
+  Found by adversarial sweep #12.
+- 1 e2e test (734 total); MATCH 10/20, 3/4, and the elif chain.
+
 ### Invalid emit fixed: subscript store index that borrows the base (PMAT-1049)
 
 - `self.xs[self.next_slot()] = v` (index calls a `&mut self` method) and
