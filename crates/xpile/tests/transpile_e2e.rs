@@ -18893,3 +18893,42 @@ fn main() {
 "#;
     assert_rustc_runs("nested_literal_float_coerce", &rust, driver);
 }
+
+/// PMAT-1052: `self.<field>[k].append(e)` — the grouping-in-a-class idiom (the
+/// field analogue of `d[k].append(e)`). resolve_subscript_append_base accepts
+/// a struct-field base; IndexAppend emits a dotted codegen base. MATCH 24/13.5.
+#[test]
+fn field_subscript_append() {
+    let rust = xpile_transpile_to_rust("field_subscript_append.py");
+    assert!(
+        rust.contains("self.g.get_mut(&") || rust.contains("self.g . get_mut"),
+        "the dict-field grouping append lowers to get_mut on the field:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // "bb","cc","dd" → g[2] has 3, g has 2 keys (1 and 2) ⇒ 3*10 + 2 = 32.
+    assert_eq!(grouping(), 32, "dict-field grouping idiom");
+    // rows[0]=[1,9] → rows[0][1]=9; scores["a"]=[0.5, 2.0] ⇒ 9.0+0.5+2.0 = 11.5.
+    assert_eq!(field_pushes(), 11.5, "list-of-list + dict-of-float field pushes");
+}
+"#;
+    assert_rustc_runs("field_subscript_append", &rust, driver);
+}
+
+/// PMAT-1052 guard: appending a local then mutating a container element
+/// through a subscript must REFUSE (the value model cloned the appended local;
+/// mutating the container copy would silently diverge from the shared local).
+#[test]
+fn field_subscript_append_alias_is_rejected() {
+    let py = fixture("field_subscript_append_alias_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "append-local-then-mutate-container-element must refuse"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("appended a local into") && stderr.contains("mutates an element"),
+        "the refusal should name the container-element mutation:\n{stderr}"
+    );
+}

@@ -7,6 +7,25 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Grouping-in-a-class: `self.field[k].append(e)` (PMAT-1052)
+
+- `self.g[k].append(w)` / `obj.field[k].append(e)` — the grouping idiom
+  through a struct field (the field analogue of `d[k].append(e)`) — was
+  refused. `resolve_subscript_append_base` now accepts a single struct-field
+  base and emits `IndexAppend` with a dotted codegen base (both codegens
+  interpolate it as a string, so the emitted Rust is valid — no meta-HIR
+  change). `for_target_mutated_ast` recognizes `self.field[k].mutator()` for
+  the `&mut self` classification; the mutability pre-walk marks a local
+  receiver `mut`; int→float inner-element widening applies. Found by a
+  feature-INTERACTION probe.
+- Paired guard: enabling `container[i].append` re-exposed a SILENT alias
+  divergence (`g.rows.append(row); g.rows[0].append(9)` clones `row` into
+  `g.rows` then mutates the clone — Python shares it). The 1046 append-alias
+  guard now refuses a subscript-mutation of any container that received an
+  append-of-a-local. (Caught by the PMAT-1051 test flipping refuse→DIVERGE.)
+- 4 e2e tests (738 total): grouping + field pushes MATCH (32, 11.5); the
+  alias-interaction refusal; the deep 2-level chain stays PMAT-1051-refused.
+
 ### Nested list-literal float coercion (PMAT-1048)
 
 - `g: list[list[float]]; g.append([2, 3])` emitted `vec![2i64, 3i64]` →
