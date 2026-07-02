@@ -18548,3 +18548,52 @@ fn method_arg_mutation_is_rejected() {
         "the rejection should name the method and parameter:\n{stderr}"
     );
 }
+
+/// PMAT-1037 slice D: attribute-chain container mutators on struct LOCALS —
+/// `b.items.append(x)` outside methods (the PMAT-1022 branch generalized from
+/// `self` to any struct-typed Name receiver). Pushed values ride the
+/// ListAppend reuse-clone; the pre-walk marks the root binding `let mut`.
+/// Differentially verified vs CPython (MATCH 11/9/2.5/4).
+#[test]
+fn attr_chain_field_append() {
+    let rust = xpile_transpile_to_rust("attr_chain_field_append.py");
+    assert!(
+        rust.contains("let mut a: Acc"),
+        "the pre-walk must mark the appended-through local mut:\n{rust}"
+    );
+    assert!(
+        rust.contains("((a).vals).push("),
+        "the chain lowers to a push on the FieldAccess:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // size()=2 after two appends, vals[1]=9 ⇒ 11.
+    assert_eq!(append_outside_methods(), 11, "appends through a struct local");
+    // 0,1,4,9 appended in the loop ⇒ vals[3]=9.
+    assert_eq!(append_in_loop(), 9, "loop-body appends (pre-walk mut)");
+    // int 2 widens into the float-list field: 0.5 + 2.0.
+    assert_eq!(append_widens(), 2.5, "pushed value widens to the elem type");
+    // w pushed twice (reuse-cloned) and still readable ⇒ 2 + 2.
+    assert_eq!(append_reused_value(), 4, "reused pushed value rides the clone");
+}
+"#;
+    assert_rustc_runs("attr_chain_field_append", &rust, driver);
+}
+
+/// PMAT-1037 slice D guard (the d5 witness): the chain-append through a live
+/// alias must REFUSE — before slice D the append itself refused, masking the
+/// collect_obj_mutated gap; a clone here silently drops the shared mutation.
+#[test]
+fn attr_chain_alias_append_is_rejected() {
+    let py = fixture("attr_chain_alias_append_reject.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "chain-append through a live alias must be REFUSED"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("aliases `b` and `b2`"),
+        "the rejection should name the alias pair:\n{stderr}"
+    );
+}
