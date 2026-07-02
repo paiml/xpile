@@ -953,6 +953,13 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'high-water re-checked (1072) before allocating 1073. Suite 751 green; MATCH body-t-clean/399; adversarially verified — cleanup-on-clean, cleanup-then-propagate (BOTHRAISE), does-NOT-swallow (vs except:pass swallows), multi-statement cleanup; try/except/finally unregressed.'
+- id: PMAT-1074
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1074: [rust/capability/domain] FILE I/O — `open(path).read()` / `with open(path) as f: … f.read()` / `f.write(s)` / `for line in open(path)`. The LAST remaining Python-surface gap after both filed big-gaps closed (generators PMAT-1071 + context managers PMAT-1072); a fresh-area probe found ALL of collection/string/functional/numeric/OOP/exception/generator surfaces MATCH — only file I/O refuses. A DOMAIN (multi-slice), NOT a rush-at-depth item. Design: xpile emits INLINE (no runtime-prelude), so `open(P).read()` lowers to `std::fs::read_to_string(<P>).unwrap_or_else(|e| panic!("xpile: FileNotFoundError: {e}"))` (missing file → both CPython + rustc RAISE = BOTHRAISE agreement; the exception model already maps). Touchpoints: (1) a new meta-HIR `Expr::FileReadAll(Box<Expr>)` [+ full Expr-walker drill: escape/collect_idents/retype/has_int_arith + rust/ruchy emit inline fs + lean/wasm refuse] typing as Str; (2) frontend recognizes `open(P).read()` and `open(P).read().splitlines()`; (3) WRITE is a Stmt — `with open(P,"w") as f: f.write(S)` → `std::fs::write(<P>, <S>)…` (a new `Stmt::FileWrite` or a side-effect-call arm); (4) `with open(P) as f:` handle-tracking desugar (f bound to the open() so f.read()/f.write() resolve — more entangled, do AFTER the no-with forms); (5) `for line in open(P)` → BufReader lines. FIRST CUT: read-whole-file (`open(P).read()`, no-with, the cleanest single-expression form), then write-all, then the with-integration + line iteration. Error-model care: encoding (assume UTF-8), modes ("r"/"w"/"a"), FileNotFoundError vs PermissionError. Adversarially verify: existing-file read MATCH, missing-file BOTHRAISE, round-trip write-then-read.'
+  status: planned
+  priority: medium
+  created: 2026-07-02T00:00:00Z
 - id: PMAT-1065
   github_issue: null
   item_type: capability
