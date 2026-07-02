@@ -868,6 +868,14 @@ roadmap:
   priority: high
   created: 2026-07-02T00:00:00Z
   notes: 'sweep #12. Suite 732 green; MATCH 4.5/2.5; int-list append unregressed.'
+- id: PMAT-1051
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1051: [diagnostics] wrong refusal message — container mutator through a deep receiver chain emitted the "only subprocess.run([...]) is recognised" fall-through (sweep #12). `g.rows[0].append(9)` (mutation through a subscript of a field), `bag[0].items.append(x)` (a struct in a list element) fell through try_lower_list_method_call + try_lower_side_effect_call to lower_expr_stmt_as_cmd and refused with a factually WRONG subprocess message (the PMAT-989/1027 honest-diagnostics class). FIX: lower_expr_stmt_as_cmd detects a container-mutator method (`append`/`extend`/…) on a non-simple-Name receiver and refuses with a precise message naming the actual unsupported receiver shape. The refusal is CORRECT (Python shares the element; the value model cannot express it — Rc<RefCell> deferred); only the message improved.'
+  status: done
+  priority: medium
+  created: 2026-07-02T00:00:00Z
+  notes: 'sweep #12 final finding. Suite 735 green; precise message verified; real subprocess.run + self.field.append unregressed.'
 - id: PMAT-1050
   github_issue: null
   item_type: bug

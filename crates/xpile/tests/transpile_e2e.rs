@@ -18858,3 +18858,21 @@ fn main() {
 "#;
     assert_rustc_runs("fresh_parity_annotated", &rust, driver);
 }
+
+/// PMAT-1051 (sweep #12): a container mutator through a deep receiver chain
+/// (`g.rows[0].append(9)`) refused with the wrong "only subprocess.run" msg;
+/// it now names the actual unsupported receiver shape.
+#[test]
+fn chain_mutator_diagnostic_is_precise() {
+    let py = fixture("chain_mutator_diagnostic.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "deep-chain container mutation must refuse"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("mutates a container through") && !stderr.contains("subprocess.run"),
+        "the refusal must name the container-mutation shape, not subprocess:\n{stderr}"
+    );
+}
