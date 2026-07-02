@@ -18932,3 +18932,116 @@ fn field_subscript_append_alias_is_rejected() {
         "the refusal should name the container-element mutation:\n{stderr}"
     );
 }
+
+/// PMAT-1034: the empty-iterable loop-var-leak guard is threaded by TARGET
+/// CAPABILITY (`LoweringProfile::runtime_abort`). A FRESH loop var read
+/// unconditionally after the loop is an `UnboundLocalError` trap in CPython
+/// when the iterable is empty. The SAME source diverges only by the target's
+/// abort capability:
+///   • `--target wasm` → emits an `unreachable` trap guard (WASM's abort)
+///   • `--target wgsl` → transpiles CLEAN with NO guard (no portable abort;
+///     emitting one would over-refuse a program WGSL executes exactly on every
+///     non-empty input).
+/// A `range(n)` loop keeps both lanes inside their scalar/control subset, so
+/// the guard is the ONLY difference. (The Rust `panic!` half is `loop_var_leak`.)
+#[test]
+fn transpile_loop_var_leak_range_wasm_traps_wgsl_clean() {
+    let py = fixture("loop_var_leak_range.py");
+
+    // WASM: the runtime-abort lane emits the `unreachable` trap guard.
+    let wasm = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    let wat = String::from_utf8_lossy(&wasm.stdout);
+    assert!(
+        wasm.status.success(),
+        "wasm transpile failed: {}",
+        String::from_utf8_lossy(&wasm.stderr)
+    );
+    assert!(
+        wat.contains("unreachable ;; raise (Python exception analogue)"),
+        "WASM must emit the `unreachable` trap for the empty-iterable leak:\n{wat}"
+    );
+
+    // WGSL: no portable abort → NO guard emitted, yet the program STILL
+    // transpiles (a `range(n)` loop is inside the WGSL scalar/control subset).
+    let wgsl = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wgsl"]);
+    let wgsl_src = String::from_utf8_lossy(&wgsl.stdout);
+    assert!(
+        wgsl.status.success(),
+        "WGSL must transpile the range-loop (no over-refusal): {}",
+        String::from_utf8_lossy(&wgsl.stderr)
+    );
+    assert!(
+        !wgsl_src.contains("unreachable") && !wgsl_src.contains("UnboundLocal"),
+        "WGSL must NOT emit the leak guard (no portable abort):\n{wgsl_src}"
+    );
+    assert!(
+        wgsl_src.contains("fn last_i(") && wgsl_src.contains("loop {"),
+        "WGSL still emits the real scalar loop (a genuine transpile, not a \
+         masked refusal):\n{wgsl_src}"
+    );
+
+    // Executed half — assemble the guarded WAT if WABT is present, proving the
+    // emitted module (guard included) is valid WebAssembly.
+    if Command::new("wat2wasm").arg("--version").output().is_err() {
+        eprintln!("PMAT-1034: skipping WAT assembly — WABT absent (emit shape asserted)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("xpile-e2e-leak-range-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("work dir");
+    let wat_path = dir.join("leak_range.wat");
+    let wasm_path = dir.join("leak_range.wasm");
+    std::fs::write(&wat_path, wat.as_bytes()).expect("write wat");
+    let assemble = Command::new("wat2wasm")
+        .arg(&wat_path)
+        .arg("-o")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        assemble.status.success(),
+        "wat2wasm rejected the guarded module:\n{}",
+        String::from_utf8_lossy(&assemble.stderr)
+    );
+}
+
+/// PMAT-1034 (Rust lane, the acceptance-criteria core): a FRESH loop var read
+/// after the loop LEAKS the last iteration exactly like CPython on a non-empty
+/// iterable, and PANICS with an `UnboundLocalError`-naming message on an empty
+/// one — where CPython raises. Both paths executed through rustc: `last_i(3)`
+/// leaks 2 (== CPython), `last_i(0)` (empty `range(0)`) panics. This closes the
+/// sweep-#11 a07 divergence (silent 0-default → named panic) with zero new
+/// refusals on the non-empty idiom.
+#[test]
+fn loop_var_leak_range_rust_panics_on_empty_leaks_on_nonempty() {
+    let rust = xpile_transpile_to_rust("loop_var_leak_range.py");
+    assert!(
+        rust.contains("let mut __feset0: bool = false;")
+            && rust.contains("UnboundLocalError: local variable 'x'"),
+        "the fresh-var leak must emit a was-set flag + UnboundLocalError guard:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // Non-empty: the loop-var leak matches CPython (range(3) leaves x == 2).
+    assert_eq!(last_i(3), 2);
+    // Empty: CPython raises UnboundLocalError; the guard must panic here rather
+    // than silently returning the i64 default (the a07 divergence PMAT-1034 closes).
+    std::panic::set_hook(Box::new(|_| {}));
+    let empty = std::panic::catch_unwind(|| last_i(0));
+    assert!(
+        empty.is_err(),
+        "last_i(0) must panic: empty range(0) never binds x (UnboundLocalError analogue)"
+    );
+    let payload = empty.unwrap_err();
+    let msg = payload
+        .downcast_ref::<String>()
+        .map(|s| s.as_str())
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or("");
+    assert!(
+        msg.contains("UnboundLocalError"),
+        "the panic must name UnboundLocalError, got: {msg}"
+    );
+}
+"#;
+    assert_rustc_runs("loop_var_leak_range", &rust, driver);
+}
