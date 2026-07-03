@@ -2021,3 +2021,335 @@ fn removeprefix_removesuffix_execute_in_wabt() {
         );
     }
 }
+
+// ─── PMAT-1159: `s.replace(old, new)` — the allocating substring-replace on the
+// native-WASM string lane ─────────────────────────────────────────────────────
+//
+// RETURNS a NEW heap string with EVERY non-overlapping `old` replaced by `new`,
+// scanned left to right. Non-empty `old` is two byte passes (count, then
+// copy-with-substitution): a byte-substring match IS a code-point-substring match
+// for valid UTF-8 (`old[0]` is a LEAD byte, so a match starts on a char boundary
+// and — `old` being whole code points — spans whole chars), so the byte machinery
+// is char-exact. Empty `old` is the ONE code-point-aware regime: Python
+// interleaves `new` between every code point and at both ends
+// (`"ab".replace("", "-")` == `"-a-b-"`), walked via `$__wasm_str_char_width`.
+// Trapping on empty `old` would be WRONG (Python never raises there — a trap would
+// be a silent divergence, not a ValueError analogue), so it is implemented.
+
+/// `def f() -> str: return <s>.replace(<old>, <new>)` — a zero-arg str-returning
+/// function whose body is a single replace over three literals. Used by the emit
+/// assertions and (wrapped in per-byte f64 drivers) the executed WABT witness.
+fn str_replace_fn(s: &str, old: &str, new: &str) -> Function {
+    Function {
+        name: "f".into(),
+        params: Vec::new(),
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::StrMethod {
+                recv: Box::new(Expr::LitStr(s.into())),
+                op: StrMethodOp::Replace,
+                args: vec![Expr::LitStr(old.into()), Expr::LitStr(new.into())],
+            },
+        },
+    }
+}
+
+#[test]
+fn replace_emit_helper_call_and_allocator() {
+    // PMAT-1159: the replace op emits its allocating helper + a call to it, and —
+    // since it MATERIALISES a fresh heap string — pulls in the bump allocator, the
+    // exported memory, and (for the empty-`old` interleave) the char helpers
+    // (`$__wasm_str_charlen` sizes the output, `$__wasm_str_char_width` walks it).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(str_replace_fn("banana", "a", "AA"))]),
+            &wasm_config(),
+        )
+        .expect("replace lowers")
+        .primary;
+    for needle in [
+        "(func $__wasm_str_replace (param $s i32) (param $old i32) (param $new i32) (result i32)",
+        "call $__wasm_str_replace",
+        "(func $__alloc",
+        "(memory (export \"mem\")",
+        "(func $__wasm_str_charlen",
+        "(func $__wasm_str_char_width",
+    ] {
+        assert!(
+            wat.contains(needle),
+            "the replace module must contain {needle:?}:\n{wat}"
+        );
+    }
+}
+
+#[test]
+fn replace_only_module_carries_no_dead_helpers() {
+    // PMAT-1159: no-dead-helper discipline — a replace-only module emits the
+    // replace helper but NEITHER the removeprefix/removesuffix helpers NOR the
+    // string-repeat helper (each string op is gated separately on its own use).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(str_replace_fn("abcabc", "b", "X"))]),
+            &wasm_config(),
+        )
+        .expect("replace lowers")
+        .primary;
+    assert!(
+        wat.contains("$__wasm_str_replace"),
+        "replace helper present:\n{wat}"
+    );
+    for absent in [
+        "$__wasm_str_removeprefix",
+        "$__wasm_str_removesuffix",
+        "$__wasm_str_repeat",
+    ] {
+        assert!(
+            !wat.contains(absent),
+            "no dead {absent} helper in a replace-only module:\n{wat}"
+        );
+    }
+}
+
+#[test]
+fn three_arg_replace_still_refused() {
+    // PMAT-1159: a `.replace(old, new, count)` (bounded-count) form is NOT wired on
+    // the WASM lane — it must refuse HONESTLY (never emit a wrong UNBOUNDED replace).
+    // Both dispatch arms gate on `args.len() == 2`, so a 3-arg call falls through to
+    // the string-position refusal. This is the honesty guard the new op preserves.
+    let f = Function {
+        name: "bad".into(),
+        params: Vec::new(),
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::StrMethod {
+                recv: Box::new(Expr::LitStr("aaaa".into())),
+                op: StrMethodOp::Replace,
+                args: vec![
+                    Expr::LitStr("a".into()),
+                    Expr::LitStr("b".into()),
+                    Expr::LitInt(1),
+                ],
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .expect_err("a 3-arg replace must be refused, not miscompiled");
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("string position"),
+        "the 3-arg refusal must be an honest string-position refusal: {msg}"
+    );
+}
+
+/// One `(s, old, new)` replace fixture. The expected result is Rust's
+/// `str::replace`, which equals CPython's `str.replace` for EVERY valid-UTF-8
+/// triple — including the empty-`old` interleave (`"ab".replace("", "-")` ==
+/// `"-a-b-"`), asserted in `cpython_replace_pins_match_rust`.
+struct ReplaceCase {
+    s: &'static str,
+    old: &'static str,
+    new: &'static str,
+}
+
+/// The witness fixtures: basic single/multi match, deletion (empty `new`),
+/// GROWTH (`new` longer than `old`), non-overlapping (`"aaaa".replace("aa","b")`
+/// == `"bb"`, NOT `"b"`), absent / longer-than-`s` old (→ a fresh copy), the
+/// empty-`old` interleave, and MULTI-BYTE fixtures where a byte-blind replace
+/// could split a char or false-positive on a shared continuation byte
+/// (`"héllo".replace("l", "LL")`, `"🎉a🎉".replace("🎉", "!")`,
+/// `"café".replace("é", "e")`).
+const REPLACE_CASES: &[ReplaceCase] = &[
+    ReplaceCase {
+        s: "banana",
+        old: "a",
+        new: "AA",
+    },
+    ReplaceCase {
+        s: "hello world",
+        old: "o",
+        new: "0",
+    },
+    ReplaceCase {
+        s: "aaaa",
+        old: "aa",
+        new: "b",
+    },
+    ReplaceCase {
+        s: "aXbXc",
+        old: "X",
+        new: "",
+    },
+    ReplaceCase {
+        s: "mississippi",
+        old: "iss",
+        new: "X",
+    },
+    ReplaceCase {
+        s: "xyz",
+        old: "q",
+        new: "Q",
+    },
+    ReplaceCase {
+        s: "ab",
+        old: "abc",
+        new: "x",
+    },
+    ReplaceCase {
+        s: "",
+        old: "a",
+        new: "b",
+    },
+    ReplaceCase {
+        s: "ab",
+        old: "",
+        new: "-",
+    },
+    ReplaceCase {
+        s: "",
+        old: "",
+        new: "-",
+    },
+    ReplaceCase {
+        s: "aaa",
+        old: "a",
+        new: "aa",
+    },
+    ReplaceCase {
+        s: "héllo",
+        old: "l",
+        new: "LL",
+    },
+    ReplaceCase {
+        s: "café",
+        old: "é",
+        new: "e",
+    },
+    ReplaceCase {
+        s: "🎉a🎉",
+        old: "🎉",
+        new: "!",
+    },
+];
+
+#[test]
+fn cpython_replace_pins_match_rust() {
+    // Rust `str::replace` operates on the byte sequence of valid UTF-8 and equals
+    // Python's code-point `str.replace` for every triple — the ground truth the
+    // executed witness diffs against. Assert at least one MULTI-BYTE fixture and
+    // one EMPTY-`old` fixture are present, so the char-exactness + interleave claims
+    // are genuinely exercised (a witness over ASCII-only / non-empty-old would not
+    // test them).
+    assert!(
+        REPLACE_CASES
+            .iter()
+            .any(|c| !c.s.is_ascii() || !c.old.is_ascii()),
+        "a multi-byte fixture must be present"
+    );
+    assert!(
+        REPLACE_CASES.iter().any(|c| c.old.is_empty()),
+        "an empty-`old` interleave fixture must be present"
+    );
+    // The interleave pin is the corner most likely to diverge — assert it directly.
+    assert_eq!("ab".replace("", "-"), "-a-b-");
+    assert_eq!("".replace("", "-"), "-");
+}
+
+#[test]
+fn replace_executes_in_wabt_and_matches_cpython() {
+    // PMAT-1159 EXECUTED WITNESS — assemble + run the REAL-emitted `replace` in WABT
+    // and assert the produced heap string's byte LENGTH and EVERY payload byte match
+    // Rust's `str::replace` (== CPython). Prove the emit path lowers first (holds
+    // without WABT), then — with WABT — drive it for real.
+    for c in REPLACE_CASES {
+        WasmBackend::new()
+            .lower(
+                &module_with(vec![Item::Function(str_replace_fn(c.s, c.old, c.new))]),
+                &wasm_config(),
+            )
+            .unwrap_or_else(|e| panic!("replace({:?},{:?},{:?}) lowers: {e:?}", c.s, c.old, c.new));
+    }
+
+    if !wasm_runtime_available() {
+        eprintln!(
+            "PMAT-1159: skipping EXECUTED replace witness — WABT (wat2wasm / \
+             wasm-interp) absent. All {} fixtures lowered through the production \
+             emitter above; a box with WABT also runs each and byte-matches \
+             CPython (== Rust str::replace). Free CI skips execution and stays green.",
+            REPLACE_CASES.len()
+        );
+        return;
+    }
+
+    eprintln!("PMAT-1159: running EXECUTED replace witness via WABT");
+    let engine = WasmDiffExecEngine::new();
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    let mut checked = 0usize;
+    for c in REPLACE_CASES {
+        let expected = c.s.replace(c.old, c.new);
+        let exp_bytes = expected.as_bytes();
+        let f_wat = WasmBackend::new()
+            .lower(
+                &module_with(vec![Item::Function(str_replace_fn(c.s, c.old, c.new))]),
+                &wasm_config(),
+            )
+            .unwrap_or_else(|e| panic!("replace lowers: {e:?}"))
+            .primary;
+        assert!(
+            f_wat.contains(mem_line),
+            "emitted replace module declares the exported memory:\n{f_wat}"
+        );
+        // Zero-arg f64 drivers: e0 = the i32 byte-count header; eK = payload byte
+        // K-1. Reading EVERY byte (not just first/last) makes the witness catch a
+        // corrupted middle. Each `call $f` re-materialises the (identical) result —
+        // fine under the bump allocator (no free); we only read, never alias.
+        let mut driver = String::from(
+            "  (func (export \"e0\") (result f64)\n    call $f\n    i32.load\n    f64.convert_i32_s)\n",
+        );
+        for k in 0..exp_bytes.len() {
+            let addr = 8 + k as i32;
+            driver.push_str(&format!(
+                "  (func (export \"e{}\") (result f64)\n    call $f\n    i32.const {addr}\n    \
+                 i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n",
+                k + 1
+            ));
+        }
+        let witness_wat = f_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+        let out = engine
+            .assemble_run_parse(&witness_wat, &format!("replace_{checked}"))
+            .unwrap_or_else(|e| panic!("assemble+run replace witness for {:?}: {e}", c.s));
+        // wasm-interp emits the exports in definition order: e0 (len), then e1.. .
+        let mut want: Vec<f64> = vec![exp_bytes.len() as f64];
+        want.extend(exp_bytes.iter().map(|&b| f64::from(b)));
+        assert_eq!(
+            out.len(),
+            want.len(),
+            "replace({:?},{:?},{:?}) exports e0..e{}: got {out:?}",
+            c.s,
+            c.old,
+            c.new,
+            exp_bytes.len()
+        );
+        for (i, (g, e)) in out.iter().zip(want.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1.0e-9,
+                "replace({:?},{:?},{:?}) → {expected:?}: e{i} executed {g}, expected {e}",
+                c.s,
+                c.old,
+                c.new
+            );
+        }
+        checked += 1;
+    }
+    eprintln!(
+        "PMAT-1159: EXECUTED replace witness PASSED — {checked} fixtures lowered \
+         through emit_module and executed in WABT, each byte-matching CPython (== \
+         Rust str::replace), including the empty-`old` interleave \
+         (\"ab\".replace(\"\",\"-\")==\"-a-b-\"), deletion, growth (\"a\"→\"aa\"), \
+         non-overlapping (\"aaaa\".replace(\"aa\",\"b\")==\"bb\"), and the MULTI-BYTE \
+         fixtures (\"héllo\".replace(\"l\",\"LL\"), \"🎉a🎉\".replace(\"🎉\",\"!\")) — \
+         byte substring replace == code-point replace, proven on silicon."
+    );
+}
