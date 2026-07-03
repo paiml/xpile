@@ -7,6 +7,43 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Correctness — statement-form try control flow (PMAT-1082)
+
+Top finding of the PMAT-1081 skeptic pass, now fixed (rust + ruchy lanes):
+
+- **`continue` in an `except` handler hung forever** (SILENT, probe p05):
+  `for i in range(n)` desugars to a while with its counter-increment at
+  body-END, and the PMAT-799 continue-increment rewrite did not recurse into
+  `TryCatch` blocks — so `try: … except: continue` re-entered the loop
+  without incrementing. The rewrite (and its `body_has_top_level_continue`
+  gate) now descends handler / extra-handler / `finally` blocks, which are
+  all emitted at loop scope. `continue` in a `finally` (legal since Python
+  3.8) also works and matches CPython's swallow-on-continue semantics.
+  Differentially verified (8 / 331).
+- **`return` in a try BODY silently returned the wrong value** (probe p26):
+  the statement-form try body compiles to a `catch_unwind` closure, so
+  `return 5` returned from the CLOSURE (value discarded by `Ok(_)`) — the
+  function fell through to its trailing return, printing 0 where CPython
+  prints 5. Now REFUSED at lowering with a message naming the closure
+  boundary; the value form `try: return X except: return Y` is unaffected.
+- **`break`/`continue` in a try BODY** (probes p04/p24): same closure, no
+  enclosing loop — was rustc E0267 far downstream; now the same precise
+  lowering refusal. With a `finally`, the PMAT-1070 every-exit-path wrap
+  puts HANDLERS inside the outer closure too, so handler `return`/`break`/
+  `continue` under a finally refuses likewise (without a finally, handlers
+  run at loop scope and are supported).
+- **Non-final catch-all emitted invalid Rust** (probe p09): `except
+  Exception:` before other arms (legal Python — only bare `except:` is
+  syntax-required last) emitted a bare block then a dangling `else if`. The
+  catch-all now terminates the if/else-if chain and DROPS the later arms —
+  unreachable in CPython too. Differentially verified (any / any / clean).
+- The `as e` message-shape divergences from the same pass (KeyError's
+  `key not found`, int()'s `ParseIntError` debug repr) split out to
+  PMAT-1089.
+- e2e: `try_handler_continue` (+ Ruchy lane), `except_nonfinal_catchall`,
+  and three refusal fixtures (`try_return_body_rejected`,
+  `try_break_body_rejected`, `try_finally_handler_continue_rejected`).
+
 ### Verification — adversarial skeptic pass #2 + file-I/O correctness batch (PMAT-1081)
 
 - Ran the every-5-8-slices adversarial-verify discipline over the ~15 slices

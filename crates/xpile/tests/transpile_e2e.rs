@@ -19569,3 +19569,114 @@ fn loop_var_reassign_ruchy() {
         "ruchy: never-reassigned loop var must stay non-mut:\n{stdout}"
     );
 }
+
+/// PMAT-1082 (skeptic-pass PMAT-1081 probe p05): `continue` in an `except`
+/// HANDLER inside `for i in range(n)` hung forever — the continue-increment
+/// rewrite (PMAT-799) now recurses into TryCatch handler/finally blocks so
+/// the desugared while's tail increment still runs. Also covers `continue`
+/// in a FINALLY block (probe p11 shape). Differentially verified (8 / 331).
+#[test]
+fn try_handler_continue() {
+    let rust = xpile_transpile_to_rust("try_handler_continue.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(skip_bad(5), 8, "continue in handler must increment the loop counter (0+1+3+4)");
+    assert_eq!(finally_continue(4), 331, "continue in finally must increment and swallow per CPython");
+}
+"#;
+    assert_rustc_runs("try_handler_continue", &rust, driver);
+}
+
+/// PMAT-1082 (probe p09): a catch-all `except Exception:` in NON-final
+/// position (legal Python) emitted a dangling `else if` (invalid Rust). It
+/// now terminates the chain and drops the later — CPython-unreachable —
+/// arms. Differentially verified (any / any / clean).
+#[test]
+fn except_nonfinal_catchall() {
+    let rust = xpile_transpile_to_rust("except_nonfinal_catchall.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(classify(0), "any", "non-final catch-all catches ValueError");
+    assert_eq!(classify(1), "any", "non-final catch-all catches KeyError");
+    assert_eq!(classify(2), "clean", "no exception leaves the default");
+}
+"#;
+    assert_rustc_runs("except_nonfinal_catchall", &rust, driver);
+}
+
+/// PMAT-1082 (probe p26): `return` inside a statement-form try BODY returned
+/// from the catch_unwind CLOSURE, not the function — a SILENT miscompile
+/// (printed 0 where CPython prints 5). Must refuse at lowering, naming the
+/// closure boundary.
+#[test]
+fn try_return_body_rejected() {
+    let py = fixture("try_return_body_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "`return` in a try body must be refused, not silently miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("catch_unwind closure") && stderr.contains("`return`"),
+        "the rejection should name the closure boundary:\n{stderr}"
+    );
+}
+
+/// PMAT-1082 (probes p04/p24): `break`/`continue` in a try BODY has no loop
+/// inside the closure (was rustc E0267, loud but far downstream). Must
+/// refuse at lowering.
+#[test]
+fn try_break_body_rejected() {
+    let py = fixture("try_break_body_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "`break` in a try body must be refused, not emitted as rustc E0267"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("catch_unwind closure") && stderr.contains("`break`"),
+        "the rejection should name the closure boundary:\n{stderr}"
+    );
+}
+
+/// PMAT-1082: with a `finally`, the PMAT-1070 every-exit-path wrap puts the
+/// HANDLER inside the outer closure too — handler `continue` must refuse
+/// (without a finally it is supported; see try_handler_continue).
+#[test]
+fn try_finally_handler_continue_rejected() {
+    let py = fixture("try_finally_handler_continue_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "handler `continue` under a finally wrap must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("finally") && stderr.contains("`continue`"),
+        "the rejection should name the finally wrap:\n{stderr}"
+    );
+}
+
+/// PMAT-1082 (Ruchy lane): the handler-continue increment fix and the
+/// non-final catch-all chain terminator apply to the Ruchy emitter too.
+#[test]
+fn try_handler_continue_ruchy() {
+    let py = fixture("try_handler_continue.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let handler_arm = stdout
+        .split("Err(__xpile_e)")
+        .nth(1)
+        .expect("a catch_unwind Err arm");
+    assert!(
+        handler_arm.contains("__forc") && handler_arm.contains("continue"),
+        "ruchy: handler continue must carry the injected counter increment:\n{stdout}"
+    );
+}

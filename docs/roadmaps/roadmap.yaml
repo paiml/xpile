@@ -1021,10 +1021,18 @@ roadmap:
   github_issue: null
   item_type: correctness
   title: 'PMAT-1082: [rust/correctness/exceptions] statement-form try control-flow — 2 CRITICAL silent miscompiles + 2 loud, from the PMAT-1081 skeptic pass. (1) SILENT: `return` inside a multi-statement try BODY returns from the catch_unwind CLOSURE, not the function — `try: _=risky(); return 5 except: pass; return 0` prints 0, CPython 5. (2) SILENT: `continue` in an except HANDLER inside `for i in range(n)` hangs forever — the range-for lowers to a while with the increment at body-END and the continue-increment rewrite does not recurse into TryCatch handler blocks (plain continue IS rewritten). (3) LOUD E0267: break/continue in a try BODY (closure). (4) LOUD invalid Rust: catch-all `except Exception:` in NON-final position (valid Python — only bare `except:` is syntax-required last) emits a bare block then a dangling `else if`. Fix order: recurse the continue-increment rewrite into handler bodies (real fix for 2); REFUSE return/break/continue inside try bodies precisely (honest for 1/3 — value-form `try: return X except: return Y` stays supported); emit non-final catch-all as `else { }` chain-terminator absorbing later arms or refuse. Also F3 (medium): `as e` message shapes diverge — KeyError leaks `key not found`, int() leaks `ParseIntError {..}` debug repr vs CPython `invalid literal for int() with base 10: ''abc''`; KeyError str() is repr-quoted (`''mk''`). Map payloads at the panic site. NOTE the existing fixture try_assign_bound_exc.py MASKS the int() case via `len(f"{e}") * 0` — unmask when fixing.'
-  status: planned
+  status: done
   priority: critical
   created: 2026-07-03T00:00:00Z
-  notes: 'Probes: /tmp/pmat1081-except/p26 (return-in-try), p05 (continue hang), p04/p24 (E0267), p09 (non-final catch-all), p12/p17/p19 (as-e shapes). 14 sibling probes MATCH (finally every-exit-path claim survives on all exception paths).'
+  notes: 'SHIPPED (control-flow items 1-4; F3 as-e message shapes split to PMAT-1089): (2) inject_continue_increment + body_has_top_level_continue recurse into TryCatch handler/extra-handler/finally blocks (all loop-scope) — p05 terminates, MATCH 8; continue-in-finally MATCH 331. (1/3) lower_statement_try refuses return/break/continue whose control flow would cross the catch_unwind closure (try_block_closure_escape scan: return at ANY depth, break/continue at loop-top-level; nested loops own theirs) — value-form terminal try untouched; with a finally, HANDLERS sit in the outer closure so the same refusal applies to them. (4) both rust+ruchy multi-handler chains: a catch-all arm now breaks the chain, absorbing later (CPython-unreachable) arms — p09 MATCH any/any/clean. e2e: try_handler_continue (+ruchy), except_nonfinal_catchall, 3 refusal fixtures. Original probes: /tmp/pmat1081-except/p26, p05, p04/p24, p09.'
+- id: PMAT-1089
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1089: [rust+ruchy/correctness/exceptions] `as e` exception-MESSAGE shapes diverge from CPython (F3 of the PMAT-1081 skeptic pass, split from PMAT-1082): KeyError binds `key not found` (CPython str(e) is the repr-quoted key, e.g. missing key `mk` gives ''mk'' WITH quotes); int(str) failure leaks Rust''s `ParseIntError {{ .. }}` debug repr vs CPython `invalid literal for int() with base 10: ''abc''`. Fix at the PANIC SITE: make each raising lane''s payload carry the CPython-shaped message (dict-miss panics with the repr-quoted key; the int() lane formats the invalid-literal message with the offending string) so the PMAT-817 strip-prefix binding needs no per-type knowledge. NOTE: the existing fixture try_assign_bound_exc.py MASKS the int() case via `len(f"{{e}}") * 0` — unmask it when fixing, and add a differential fixture asserting the exact CPython strings.'
+  status: planned
+  priority: medium
+  created: 2026-07-03T00:00:00Z
+  notes: 'Probes: /tmp/pmat1081-except/p12/p17/p19. Scope is message TEXT only — catch/dispatch semantics are correct (allowlist re-raise + hierarchy expansion shipped in PMAT-1081/1082).'
 - id: PMAT-1083
   github_issue: null
   item_type: correctness
