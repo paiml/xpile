@@ -1806,3 +1806,218 @@ fn general_witness_executed_wat_came_from_emit_module() {
     eprintln!("--- executed output (wasm-interp) ---\n{executed:?}");
     eprintln!("--- CPython-equivalent 2*x+1 expected ---\n{expected:?}");
 }
+
+// ─── PMAT-1153: `s.removeprefix(p)` / `s.removesuffix(p)` — the allocating
+// "strip a fixed prefix/suffix" pair on the native-WASM string lane ───────────
+//
+// Both RETURN a new heap string (`s` with a leading / trailing `p` removed when
+// present, else a fresh copy of `s`). Byte-level: the prefix/suffix test is a
+// byte compare and the retained range starts/ends on a code-point boundary
+// (Python `p` is whole code points), so the pure byte copy is char-exact for any
+// valid UTF-8 — no byte→code-point conversion (unlike find/rfind). Each wraps the
+// matching predicate helper (`removeprefix` FORCES `$__wasm_str_startswith`,
+// `removesuffix` FORCES `$__wasm_str_endswith`) and the bump allocator.
+
+/// `def f() -> str: return <base>.<op>(<fix>)` — a zero-arg str-returning
+/// function whose body is a single removeprefix/removesuffix over two literals.
+/// Used both by the emit assertions and (wrapped in an f64 driver) the executed
+/// WABT witness.
+fn str_remove_fn(base: &str, op: StrMethodOp, fix: &str) -> Function {
+    Function {
+        name: "f".into(),
+        params: Vec::new(),
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::StrMethod {
+                recv: Box::new(Expr::LitStr(base.into())),
+                op,
+                args: vec![Expr::LitStr(fix.into())],
+            },
+        },
+    }
+}
+
+#[test]
+fn removeprefix_removesuffix_emit_helper_call_and_forced_predicate() {
+    // PMAT-1153: each remove op emits its allocating helper + a call to it, FORCES
+    // the matching byte-predicate helper it wraps, and pulls in the bump allocator
+    // (it materialises a fresh heap string — unlike the non-allocating predicates).
+    for (op, helper, forced_pred) in [
+        (
+            StrMethodOp::RemovePrefix,
+            "$__wasm_str_removeprefix",
+            "$__wasm_str_startswith",
+        ),
+        (
+            StrMethodOp::RemoveSuffix,
+            "$__wasm_str_removesuffix",
+            "$__wasm_str_endswith",
+        ),
+    ] {
+        let wat = emit_module(&module_with(vec![Item::Function(str_remove_fn(
+            "unhappy", op, "un",
+        ))]))
+        .unwrap_or_else(|e| panic!("s.{op:?}(p) lowers: {e:?}"));
+        assert!(
+            wat.contains(&format!(
+                "(func {helper} (param $s i32) (param $p i32) (result i32)"
+            )),
+            "the {helper} helper is emitted for {op:?}:\n{wat}"
+        );
+        let body = wat
+            .split("(func $f ")
+            .nth(1)
+            .expect("the $f function is emitted");
+        assert!(
+            body.contains(&format!("call {helper}")),
+            "$f calls {helper} for {op:?}:\n{body}"
+        );
+        // The remove helper wraps its predicate — so the predicate helper MUST be
+        // co-emitted even though the module never calls it directly (the
+        // needs_removeprefix ⇒ needs_startswith fold, mirroring index ⇒ find).
+        assert!(
+            wat.contains(&format!("(func {forced_pred} ")),
+            "{op:?} forces the {forced_pred} helper:\n{wat}"
+        );
+        // An allocating op → the bump allocator is present (the helper calls it).
+        assert!(
+            wat.contains("(func $__alloc"),
+            "a materialising remove op pulls in the bump allocator:\n{wat}"
+        );
+        assert!(
+            wat.contains("(memory"),
+            "str bytes → memory declared:\n{wat}"
+        );
+    }
+}
+
+#[test]
+fn removeprefix_only_module_carries_no_removesuffix_helper() {
+    // PMAT-1153: no-dead-helper discipline — a removeprefix-only module emits the
+    // removeprefix helper + its forced startswith predicate, but NEITHER the
+    // removesuffix helper NOR a dead endswith predicate.
+    let wat = emit_module(&module_with(vec![Item::Function(str_remove_fn(
+        "unhappy",
+        StrMethodOp::RemovePrefix,
+        "un",
+    ))]))
+    .expect("removeprefix lowers");
+    assert!(
+        wat.contains("$__wasm_str_removeprefix") && wat.contains("$__wasm_str_startswith"),
+        "removeprefix + its forced startswith present:\n{wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_str_removesuffix"),
+        "no dead removesuffix helper in a removeprefix-only module:\n{wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_str_endswith"),
+        "no dead endswith helper in a removeprefix-only module:\n{wat}"
+    );
+}
+
+#[test]
+fn removesuffix_only_module_carries_no_removeprefix_helper() {
+    // PMAT-1153: the mirror gating check for removesuffix.
+    let wat = emit_module(&module_with(vec![Item::Function(str_remove_fn(
+        "happiness",
+        StrMethodOp::RemoveSuffix,
+        "ness",
+    ))]))
+    .expect("removesuffix lowers");
+    assert!(
+        wat.contains("$__wasm_str_removesuffix") && wat.contains("$__wasm_str_endswith"),
+        "removesuffix + its forced endswith present:\n{wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_str_removeprefix"),
+        "no dead removeprefix helper in a removesuffix-only module:\n{wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_str_startswith"),
+        "no dead startswith helper in a removesuffix-only module:\n{wat}"
+    );
+}
+
+/// PMAT-1153 EXECUTED WITNESS — assemble + run the REAL-emitted `removeprefix` /
+/// `removesuffix` in WABT and assert the produced heap string's byte length AND
+/// its first/last payload bytes match CPython.
+///
+/// `wasm-interp --run-all-exports` runs only zero-arg exports and parses `f64`
+/// results, so we wrap the REAL-emitted str-returning `$f` (which leaves an i32
+/// base-pointer to the fresh heap string) in three zero-arg f64 drivers:
+///   * `e0` — `f64.convert_i32_s` of the i32 byte-count header at `ptr+0`,
+///   * `e1` — the first payload byte (`ptr+8`),
+///   * `e2` — the last payload byte (`ptr+8+len-1`).
+///
+/// The three f64s are diffed against the CPython-equivalent
+/// (`"unhappy".removeprefix("un")` == `"happy"` → len 5, `'h'`=104, `'y'`=121;
+/// `"happiness".removesuffix("ness")` == `"happi"` → len 5, `'h'`=104, `'i'`=105).
+/// Gated on `wasm_runtime_available()` — a clean skip on a host without WABT.
+#[test]
+fn removeprefix_removesuffix_execute_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP removeprefix_removesuffix_execute_in_wabt: WABT not installed");
+        return;
+    }
+    // (op, base, fix, expected result string) — each result is 5 ASCII bytes, so
+    // byte length == char length and the header read IS the visible len.
+    let cases = [
+        (StrMethodOp::RemovePrefix, "unhappy", "un", "happy"),
+        (StrMethodOp::RemoveSuffix, "happiness", "ness", "happi"),
+    ];
+    let engine = WasmDiffExecEngine::new();
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    for (op, base, fix, expected) in cases {
+        let f_wat = WasmBackend::new()
+            .lower(
+                &module_with(vec![Item::Function(str_remove_fn(base, op, fix))]),
+                &wasm_config(),
+            )
+            .unwrap_or_else(|e| panic!("{op:?} lowers: {e:?}"))
+            .primary;
+        assert!(
+            f_wat.contains(mem_line),
+            "emitted {op:?} module declares the exported memory:\n{f_wat}"
+        );
+        let exp_bytes = expected.as_bytes();
+        let last_addr = 8 + (exp_bytes.len() as i32 - 1);
+        // Three zero-arg f64 drivers reading the heap string $f produces. Each
+        // `call $f` re-materialises the (identical) result — fine under the
+        // bump allocator (no free); we only read, never alias across calls.
+        let driver = format!(
+            "  (func (export \"e0\") (result f64)\n    \
+             call $f\n    i32.load\n    f64.convert_i32_s)\n  \
+             (func (export \"e1\") (result f64)\n    \
+             call $f\n    i32.const 8\n    i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n  \
+             (func (export \"e2\") (result f64)\n    \
+             call $f\n    i32.const {last_addr}\n    i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n"
+        );
+        let witness_wat = f_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+        let out = engine
+            .assemble_run_parse(&witness_wat, &format!("remove_{op:?}"))
+            .unwrap_or_else(|e| panic!("assemble+run {op:?} witness: {e}"));
+        let expected_vec = [
+            exp_bytes.len() as f64,
+            f64::from(exp_bytes[0]),
+            f64::from(exp_bytes[exp_bytes.len() - 1]),
+        ];
+        assert_eq!(
+            out.len(),
+            expected_vec.len(),
+            "{op:?} witness exports e0/e1/e2: {out:?}"
+        );
+        for (i, (g, e)) in out.iter().zip(expected_vec.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1.0e-9,
+                "{op:?}(\"{base}\", \"{fix}\") e{i}: executed {g}, expected (CPython, result \"{expected}\") {e}"
+            );
+        }
+        eprintln!(
+            "=== PMAT-1153 executed witness: {op:?}(\"{base}\",\"{fix}\") → \"{expected}\" \
+             [len={}, first={}, last={}] ===",
+            expected_vec[0], expected_vec[1], expected_vec[2]
+        );
+    }
+}
