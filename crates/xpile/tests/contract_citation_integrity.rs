@@ -138,6 +138,9 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         // PMAT-1135 (R6): whole-file I/O is now wired + cited (a FileReadAll/
         // FileReadLines/FileWrite body cites C-PY-FILE-IO-ROUNDTRIP, proved 1124).
         "C-PY-FILE-IO-ROUNDTRIP",
+        // PMAT-1137 (R6): context managers now wired + cited (a body invoking
+        // __enter__/__exit__ cites C-PY-CONTEXT-MANAGER-EXIT, proved 1131).
+        "C-PY-CONTEXT-MANAGER-EXIT",
     ] {
         assert!(
             cited.contains(required),
