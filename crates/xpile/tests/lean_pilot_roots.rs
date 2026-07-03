@@ -270,6 +270,9 @@ const EXPECTED_PILOT: &[&str] = &[
     // NEW contract, so the pilot grows 27 → 28; the entire `contracts/lean/`
     // substrate stays machine-checked.
     "WasmHeap",
+    // PMAT-1120: C-PY-EXCEPT-ALLOWLIST — the try/except dispatch contract.
+    // Core-only allowlist structure-extensionality + no-swallow re-raise.
+    "PyExceptAllowlist",
 ];
 
 #[test]
