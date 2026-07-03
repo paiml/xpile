@@ -9,7 +9,7 @@
 use super::*;
 use xpile_backend::{BackendConfig, Profile};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp, Type,
+    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp, Type, UnOp,
 };
 
 fn module_with(items: Vec<Item>) -> Module {
@@ -3212,6 +3212,209 @@ fn bare_fstring_lone_int_executes_in_wabt() {
         }
         eprintln!(
             "=== PMAT-1167 executed witness: bare int f-string → \"{expected}\" \
+             [len={}, first={}, last={}] ===",
+            expected_vec[0], expected_vec[1], expected_vec[2]
+        );
+    }
+}
+
+// ─── PMAT-1169: inline unary-neg / bitwise-not int f-string `f"{-n}"` ──────────
+//
+// PMAT-1167 folded a bare int f-string `f"{n}"` (a `FormatSpec{rust_spec:"",
+// of_float:false}`), but its classifier `concat_operand_is_int` had no `UnOp`
+// arm, so a UNARY-op field — `f"{-n}"` (`UnOp::Neg`) or `f"{~n}"`
+// (`UnOp::BitNot`) — stayed refused even though `-x` / `~x` over an int is
+// itself an int and `$__wasm_int_to_str` already renders the sign. The
+// classifier now recurses: `Neg`/`BitNot` over an int-classified operand is
+// int (so `f"{-n}"`, `f"{~n}"`, `f"{-(a+b)}"` fold to `str(int)`), while a
+// float operand (`-3.0`) or a logical `not` (bool) stays unwrapped → the honest
+// refusal at `emit_str_expr`. No new runtime, no gate hole (the injected
+// `ToStr` is seen by the existing `expr_has_int_to_str` / `expr_has_heap_op`
+// walkers, which already recurse through `UnOp`).
+
+/// `def f(n: I64) -> str: return <FormatSpec{UnOp{op, Ident("n")}, "", false}>`
+/// — the realistic `f"{-n}"` shape whose operand classifies as int via ctx.
+fn fstr_unop_ident_fn(op: UnOp) -> Function {
+    Function {
+        name: "f".into(),
+        params: vec![param("n", Type::I64)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::FormatSpec {
+                value: Box::new(Expr::UnOp {
+                    op,
+                    operand: Box::new(Expr::Ident("n".into())),
+                }),
+                rust_spec: String::new(),
+                of_float: false,
+            },
+        },
+    }
+}
+
+#[test]
+fn inline_neg_fstring_formatspec_lowers_and_gates_helpers() {
+    // `f"{-n}"` (Neg over an I64 param), `f"{~n}"` (BitNot), and `f"{-(7+5)}"`
+    // (Neg over an int-arith BinOp) all fold to `str(int)`: the int→str helper
+    // + bump allocator are gated, and — with WABT — each assembles clean (no
+    // undeclared-helper gate hole).
+    let fns: [Function; 3] = [
+        fstr_unop_ident_fn(UnOp::Neg),
+        fstr_unop_ident_fn(UnOp::BitNot),
+        fstr_formatspec_fn(
+            Expr::UnOp {
+                op: UnOp::Neg,
+                operand: Box::new(Expr::BinOp {
+                    op: BinOp::Add,
+                    lhs: Box::new(Expr::LitInt(7)),
+                    rhs: Box::new(Expr::LitInt(5)),
+                }),
+            },
+            "",
+            false,
+        ),
+    ];
+    for f in fns {
+        let wat = emit_module(&module_with(vec![Item::Function(f)]))
+            .unwrap_or_else(|e| panic!("PMAT-1169: inline-neg FormatSpec lowers: {e:?}"));
+        assert!(
+            wat.contains("$__wasm_int_to_str"),
+            "the int→str helper is emitted for an inline-neg f-string:\n{wat}"
+        );
+        assert!(
+            wat.contains("(func $__alloc "),
+            "the bump allocator is declared (str(int) materialises a heap string):\n{wat}"
+        );
+        if wasm_runtime_available() {
+            WasmDiffExecEngine::new()
+                .assemble(&wat, "fstr_inline_neg_gate")
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "PMAT-1169 GATE HOLE: inline-neg f-string module rejected by \
+                         wat2wasm:\n{e}\n\n--- emitted module ---\n{wat}"
+                    )
+                });
+        }
+    }
+}
+
+#[test]
+fn inline_neg_fstring_over_float_still_refuses() {
+    // Neg over a FLOAT operand (`f"{-3.0}"`) is NOT int — the classifier
+    // recurses into the `LitFloat` operand, declines, and the FormatSpec stays
+    // unfolded → the honest refusal at `emit_str_expr` (str(float) unmodelled).
+    // The empty-spec, non-float FormatSpec framing (of_float:false) proves the
+    // refusal comes from the OPERAND classification, not the outer float guard.
+    let neg_float = emit_module(&module_with(vec![Item::Function(fstr_formatspec_fn(
+        Expr::UnOp {
+            op: UnOp::Neg,
+            operand: Box::new(Expr::LitFloat(3.0)),
+        },
+        "",
+        false,
+    ))]));
+    assert!(
+        neg_float.is_err(),
+        "a unary-neg over a float (`f\"{{-3.0}}\"`) still refuses on the WASM lane"
+    );
+    // A REAL spec over an inline-neg field (`f"{-n:>5}"`) also stays refused —
+    // the fold is empty-spec-only.
+    let neg_spec = emit_module(&module_with(vec![Item::Function(fstr_formatspec_fn(
+        Expr::UnOp {
+            op: UnOp::Neg,
+            operand: Box::new(Expr::LitInt(7)),
+        },
+        ">5",
+        false,
+    ))]));
+    assert!(
+        neg_spec.is_err(),
+        "a width/alignment spec over an inline-neg field still refuses"
+    );
+}
+
+/// PMAT-1169 EXECUTED WITNESS — assemble + run an inline-neg / bitwise-not int
+/// f-string in WABT and assert the produced heap string's byte-count header AND
+/// first/last payload bytes equal CPython's `str(<value>)`. Mirrors the
+/// PMAT-1167 lone-int witness recipe. Uses genuine `UnOp` nodes (built directly,
+/// not constant-folded) so the sign-aware `$__wasm_int_to_str` path is executed.
+#[test]
+fn inline_neg_fstring_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP inline_neg_fstring_executes_in_wabt: WABT not installed");
+        return;
+    }
+    // (value expr, CPython `str(value)`):
+    //   -42        → "-42"    (Neg over a literal)
+    //   ~5 == -6   → "-6"     (BitNot: Python ~x == -(x+1))
+    //   -(7+5)     → "-12"    (Neg over an int-arith BinOp)
+    let cases: [(Expr, &str); 3] = [
+        (
+            Expr::UnOp {
+                op: UnOp::Neg,
+                operand: Box::new(Expr::LitInt(42)),
+            },
+            "-42",
+        ),
+        (
+            Expr::UnOp {
+                op: UnOp::BitNot,
+                operand: Box::new(Expr::LitInt(5)),
+            },
+            "-6",
+        ),
+        (
+            Expr::UnOp {
+                op: UnOp::Neg,
+                operand: Box::new(Expr::BinOp {
+                    op: BinOp::Add,
+                    lhs: Box::new(Expr::LitInt(7)),
+                    rhs: Box::new(Expr::LitInt(5)),
+                }),
+            },
+            "-12",
+        ),
+    ];
+    let engine = WasmDiffExecEngine::new();
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    for (value, expected) in cases {
+        let f_wat = emit_module(&module_with(vec![Item::Function(fstr_formatspec_fn(
+            value, "", false,
+        ))]))
+        .unwrap_or_else(|e| panic!("PMAT-1169: inline-neg FormatSpec lowers: {e:?}"));
+        let exp_bytes = expected.as_bytes();
+        let last_addr = 8 + (exp_bytes.len() as i32 - 1);
+        let driver = format!(
+            "  (func (export \"e0\") (result f64)\n    \
+             call $f\n    i32.load\n    f64.convert_i32_s)\n  \
+             (func (export \"e1\") (result f64)\n    \
+             call $f\n    i32.const 8\n    i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n  \
+             (func (export \"e2\") (result f64)\n    \
+             call $f\n    i32.const {last_addr}\n    i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n"
+        );
+        let witness_wat = f_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+        let out = engine
+            .assemble_run_parse(&witness_wat, "fstr_inline_neg_exec")
+            .unwrap_or_else(|e| panic!("assemble+run inline-neg witness: {e}"));
+        let expected_vec = [
+            exp_bytes.len() as f64,
+            f64::from(exp_bytes[0]),
+            f64::from(exp_bytes[exp_bytes.len() - 1]),
+        ];
+        assert_eq!(
+            out.len(),
+            expected_vec.len(),
+            "inline-neg witness exports e0/e1/e2: {out:?}"
+        );
+        for (i, (g, e)) in out.iter().zip(expected_vec.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1.0e-9,
+                "inline-neg f-string → \"{expected}\" e{i}: executed {g}, expected (CPython) {e}"
+            );
+        }
+        eprintln!(
+            "=== PMAT-1169 executed witness: inline-neg f-string → \"{expected}\" \
              [len={}, first={}, last={}] ===",
             expected_vec[0], expected_vec[1], expected_vec[2]
         );
