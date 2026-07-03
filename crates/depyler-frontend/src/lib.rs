@@ -9382,6 +9382,21 @@ fn lower_raise_stmt(ctx: &mut LoweringCtx, r: ast::StmtRaise) -> Result<Stmt, Fr
                     ctx.fn_name
                 )));
             }
+            // PMAT-1090 (skeptic pass #3, finding A-F1): Python's
+            // `KeyError.__str__` is `repr(arg)`, not `str(arg)` —
+            // `str(KeyError("second"))` is `'second'`. The dict/set/del miss
+            // lanes already repr-key (PMAT-1089), but the raise lane emitted
+            // the message UNQUOTED, so `except KeyError as e: str(e)`
+            // silently diverged from CPython in both the rust and ruchy
+            // lanes. Wrap the message in `ReprStr` for KeyError only — every
+            // other builtin's `__str__` is the plain message.
+            let msg = if type_name == "KeyError" {
+                Expr::ReprStr {
+                    value: Box::new(msg),
+                }
+            } else {
+                msg
+            };
             Expr::Concat {
                 lhs: Box::new(Expr::LitStr(format!("xpile: {type_name}: "))),
                 rhs: Box::new(msg),

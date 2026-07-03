@@ -7,6 +7,40 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Verification — adversarial skeptic pass #3 (PMAT-1090)
+
+Five independent refutation agents over the seven slices since PMAT-1081
+(try control-flow 1082, eager generators 1083, context managers 1084,
+loop-var mut-gating 1085, lone-surrogates 1086, GPU headless guard 1088,
+exception payloads 1089) + full regression (`cargo test --workspace`
+true-exit green, 122 suites; `lake build` green). ~130 differential probes
+vs CPython; every filed finding independently re-reproduced first.
+
+- **SURVIVED outright**: PMAT-1086 (12 lone-surrogate refusal spellings ×
+  3 lanes, zero over-refusals) and PMAT-1088 (headless skip loud+fast;
+  `XPILE_FORCE_GPU_PROBE=1` genuinely executes the RTX 4090 witnesses,
+  `max_abs_diff=0`; gate set closed over every instance-creation site;
+  the run.sh XDG export follow-up confirmed done).
+- **REFUTED as stated** (the shipped fixes themselves held; the gaps are
+  adjacent): 1082/1089 → filed PMAT-1091/1092/1097; 1084 narrowly →
+  PMAT-1093/1094; 1085 blanket-precision → PMAT-1092/1095.
+- **REFUTED decisively**: 1083 — the eager-generator refusal net is porous
+  on 8 confirmed divergences (assign/yield/iter-position side effects,
+  huge-`range` hang, genexp creation-time materialization, double-consume
+  exhaustion, with-in-generator `__exit__` timing) → PMAT-1093 (critical).
+- Adjacent finds: runtime `chr()` surrogate/overflow divergences with a
+  factually false ValueError payload (PMAT-1096).
+
+**Fixed in-slice — raise-lane KeyError repr-keying (finding A-F1)**:
+CPython's `KeyError.__str__` is `repr(arg)`, so `except KeyError as e:
+str(e)` yields `'second'` WITH quotes; the raise lane emitted the message
+unquoted in both rust and ruchy lanes (the dict/set/del miss sites were
+already repr-keyed per PMAT-1089). `lower_raise_stmt` now wraps the
+KeyError message in `Expr::ReprStr` (frontend-level, so every lane), for
+literal AND dynamic messages, with quote-switch + control-char escapes.
+Other builtins keep the plain message. e2e: `raise_keyerror_repr` (4
+CPython-ground-truthed assertions); `raise_typed_payload` updated.
+
 ### Correctness — eager-generator honesty refusals (PMAT-1083)
 
 The PMAT-1081 skeptic pass FALSIFIED PMAT-1071's claim that "the common
