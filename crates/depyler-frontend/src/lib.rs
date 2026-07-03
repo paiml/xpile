@@ -2999,6 +2999,13 @@ impl Frontend for PythonFrontend {
         // (dict/set params, list growth) refuse at the backend instead.
         if !semantics.is_reference() {
             reject_alias_then_mutate(&items)?;
+            // PMAT-1085: a nested `for` that rebinds an ENCLOSING loop's
+            // variable silently reads the wrong binding in scoped-binding
+            // targets (Rust/Ruchy emit a fresh `for` binding per loop; Python
+            // has ONE function-scoped name). The reference lane (WASM) binds
+            // function-scoped locals — differentially verified Python-faithful
+            // on the probe shape — so it stays allowed there.
+            reject_same_name_nested_loops(&items)?;
         }
 
         Ok(Module {
@@ -3337,6 +3344,112 @@ fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
             check_block_children(body, &mut |e| {
                 check_expr_for_alias_mutate(e, &mutating_fns, &mutating_methods)
             })?;
+        }
+    }
+    Ok(())
+}
+
+/// PMAT-1085 (skeptic-pass PMAT-1081, finding a): REFUSE a nested loop that
+/// rebinds an ENCLOSING loop's variable (`for x in xs: for x in ys: …`).
+/// Python has ONE function-scoped binding — after the inner loop, `x` holds
+/// the inner loop's last value — but the emitted Rust `for` introduces a NEW
+/// scoped binding, so any read after the inner loop silently sees the OUTER
+/// iteration's value (wrong output, not an error; the PMAT-1080 mut-gating
+/// converted this family's reassignment variants from loud E0384 to silent).
+/// The faithful fix — one function-scoped binding per name — is a deeper
+/// for-lowering change; until then the shape is refused. `_` is exempt
+/// (`for _ in …: for _ in …` is a common count-only idiom and `_` cannot be
+/// read). Sibling (non-nested) same-name loops stay supported. Value-semantics
+/// lanes only — the WASM reference lane binds function-scoped locals and is
+/// Python-faithful on this shape.
+fn reject_same_name_nested_loops(items: &[Item]) -> Result<(), FrontendError> {
+    /// Loop-binding names introduced by `s`, or `None` for a non-loop stmt.
+    fn loop_bindings(s: &Stmt) -> Option<Vec<&str>> {
+        match s {
+            Stmt::ForEach { var, .. } => Some(vec![var.as_str()]),
+            Stmt::ForEachPair { first, second, .. } => Some(vec![first.as_str(), second.as_str()]),
+            Stmt::ForEachZip3 {
+                first,
+                second,
+                third,
+                ..
+            } => Some(vec![first.as_str(), second.as_str(), third.as_str()]),
+            _ => None,
+        }
+    }
+    /// Walk `stmts` with the enclosing loops' bound names in `active`.
+    fn walk(stmts: &[Stmt], active: &mut Vec<String>) -> Result<(), FrontendError> {
+        for s in stmts {
+            if let Some(bound) = loop_bindings(s) {
+                for name in &bound {
+                    if *name != "_" && active.iter().any(|a| a == name) {
+                        return Err(FrontendError::Lower(format!(
+                            "same-name nested loops are not supported at v0.1.0 — the inner \
+ `for` rebinds the enclosing loop's variable `{name}`. Python keeps ONE \
+ function-scoped binding (after the inner loop `{name}` holds the inner \
+ loop's last value), but the emitted Rust `for` introduces a new scoped \
+ binding, so reads after the inner loop would silently see the outer \
+ iteration's value. Rename the inner loop variable (PMAT-1085)"
+                        )));
+                    }
+                }
+                let n = bound.len();
+                for name in bound {
+                    active.push(name.to_string());
+                }
+                walk(stmt_loop_body(s), active)?;
+                active.truncate(active.len() - n);
+                continue;
+            }
+            match s {
+                Stmt::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    walk(then_body, active)?;
+                    walk(else_body, active)?;
+                }
+                Stmt::While { body, .. } => walk(body, active)?,
+                Stmt::TryCatch {
+                    body,
+                    handler,
+                    extra_handlers,
+                    finally,
+                    ..
+                } => {
+                    walk(body, active)?;
+                    walk(handler, active)?;
+                    for h in extra_handlers {
+                        walk(&h.body, active)?;
+                    }
+                    walk(finally, active)?;
+                }
+                // A nested fn is its OWN scope — an inner `for x` there does
+                // not clash with an enclosing loop's `x`.
+                Stmt::NestedFn { body, .. } => walk(&body.stmts, &mut Vec::new())?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    /// The body of a loop stmt (only called on loop variants).
+    fn stmt_loop_body(s: &Stmt) -> &[Stmt] {
+        match s {
+            Stmt::ForEach { body, .. }
+            | Stmt::ForEachPair { body, .. }
+            | Stmt::ForEachZip3 { body, .. } => body,
+            _ => &[],
+        }
+    }
+    for item in items {
+        let bodies: Vec<&Block> = match item {
+            Item::Function(f) => vec![&f.body],
+            Item::Struct { methods, .. } => methods.iter().map(|m| &m.body).collect(),
+            Item::Const { .. } | Item::Enum { .. } => Vec::new(),
+        };
+        for body in bodies {
+            walk(&body.stmts, &mut Vec::new())?;
         }
     }
     Ok(())

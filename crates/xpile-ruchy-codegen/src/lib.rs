@@ -467,8 +467,13 @@ fn emit_block(out: &mut String, block: &Block, mode: bool) -> Result<(), RuchyCo
 
 /// PMAT-1080: does a loop body REASSIGN `name` (so the `for` binding needs
 /// `mut`)? `for x in xs: x = x.strip()` → `for mut x`. Recurses if/while/nested
-/// loops but stops at a nested loop that SHADOWS `name` (rebinds it). Precise
-/// (an over-broad `mut` would trip clippy `unused_mut`).
+/// loops but stops at a nested loop that SHADOWS `name` (rebinds it — refused
+/// at the frontend for depyler input since PMAT-1085, kept defensively).
+/// Precise (an over-broad `mut` would trip clippy `unused_mut`).
+/// PMAT-1085 (skeptic findings b/c): also recurses try/except/finally blocks
+/// (a reassign buried in a `try:` was rustc E0594) and pair-loops (an outer
+/// var reassigned inside `for k, v in …` was E0384). An `as e` handler binding
+/// shadows `name` within that handler, like a nested loop binding does.
 fn foreach_var_reassigned(body: &[Stmt], name: &str) -> bool {
     body.iter().any(|s| match s {
         Stmt::Assign { name: n, .. } => n == name,
@@ -479,6 +484,34 @@ fn foreach_var_reassigned(body: &[Stmt], name: &str) -> bool {
         } => foreach_var_reassigned(then_body, name) || foreach_var_reassigned(else_body, name),
         Stmt::While { body, .. } => foreach_var_reassigned(body, name),
         Stmt::ForEach { var, body, .. } => var != name && foreach_var_reassigned(body, name),
+        Stmt::ForEachPair {
+            first,
+            second,
+            body,
+            ..
+        } => first != name && second != name && foreach_var_reassigned(body, name),
+        Stmt::ForEachZip3 {
+            first,
+            second,
+            third,
+            body,
+            ..
+        } => first != name && second != name && third != name && foreach_var_reassigned(body, name),
+        Stmt::TryCatch {
+            body,
+            handler,
+            bound_name,
+            extra_handlers,
+            finally,
+            ..
+        } => {
+            foreach_var_reassigned(body, name)
+                || (bound_name.as_deref() != Some(name) && foreach_var_reassigned(handler, name))
+                || extra_handlers.iter().any(|h| {
+                    h.bound_name.as_deref() != Some(name) && foreach_var_reassigned(&h.body, name)
+                })
+                || foreach_var_reassigned(finally, name)
+        }
         _ => false,
     })
 }
@@ -764,7 +797,19 @@ fn emit_stmt_indented(
             kind,
             body,
         } => {
-            write!(out, "{indent}for ({first}, {second}) in ")?;
+            // PMAT-1085 (c): reassigned pair-loop tuple bindings need `mut`
+            // (mirrors the Rust backend; was E0384).
+            let m1 = if foreach_var_reassigned(body, first) {
+                "mut "
+            } else {
+                ""
+            };
+            let m2 = if foreach_var_reassigned(body, second) {
+                "mut "
+            } else {
+                ""
+            };
+            write!(out, "{indent}for ({m1}{first}, {m2}{second}) in ")?;
             emit_expr(out, iter, mode)?;
             match kind {
                 xpile_meta_hir::PairIterKind::Enumerate { start } => {
@@ -809,7 +854,26 @@ fn emit_stmt_indented(
             iter3,
             body,
         } => {
-            write!(out, "{indent}for (({first}, {second}), {third}) in ")?;
+            // PMAT-1085 (c): reassigned zip3 tuple bindings need `mut` too.
+            let m1 = if foreach_var_reassigned(body, first) {
+                "mut "
+            } else {
+                ""
+            };
+            let m2 = if foreach_var_reassigned(body, second) {
+                "mut "
+            } else {
+                ""
+            };
+            let m3 = if foreach_var_reassigned(body, third) {
+                "mut "
+            } else {
+                ""
+            };
+            write!(
+                out,
+                "{indent}for (({m1}{first}, {m2}{second}), {m3}{third}) in "
+            )?;
             emit_expr(out, iter1, mode)?;
             out.push_str(".iter().cloned().zip(");
             emit_expr(out, iter2, mode)?;

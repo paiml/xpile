@@ -19811,3 +19811,96 @@ fn try_handler_continue_ruchy() {
         "ruchy: handler continue must carry the injected counter increment:\n{stdout}"
     );
 }
+
+/// PMAT-1085 (skeptic-pass PMAT-1081, finding a): a nested `for` rebinding an
+/// ENCLOSING loop's variable silently read the wrong binding (Rust printed 96
+/// where CPython prints 150 — the PMAT-1080 mut-gating had converted this
+/// family from loud E0384 to silent). REFUSED on the value-semantics lanes;
+/// the WASM reference lane (function-scoped locals, Python-faithful — verified
+/// 150 via wasm-interp) stays allowed.
+#[test]
+fn loop_nested_same_name_rejected() {
+    let py = fixture("loop_nested_same_name_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a nested for rebinding the enclosing loop var must be refused, not \
+         silently miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("same-name nested loops") && stderr.contains("`x`"),
+        "the rejection should name the rebound variable:\n{stderr}"
+    );
+
+    // The reference lane stays ALLOWED (locals are function-scoped there).
+    let wasm_out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "wasm"]);
+    assert!(
+        wasm_out.status.success(),
+        "the WASM reference lane is Python-faithful on this shape and must \
+         not be refused: stderr={}",
+        String::from_utf8_lossy(&wasm_out.stderr)
+    );
+}
+
+/// PMAT-1085 (finding b): a loop-var reassignment buried in a try/except body
+/// missed the PMAT-1080 `for mut x` gating (the scan's catch-all skipped
+/// Stmt::TryCatch) — rustc E0594. Also locks the refusal's precision:
+/// SIBLING same-name loops and nested `_` loops stay supported. Differential
+/// vs CPython (60 / 14).
+#[test]
+fn loop_var_reassign_try() {
+    let rust = xpile_transpile_to_rust("loop_var_reassign_try.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(try_scale(), 60, "reassign inside try must bind `for mut x` (10+20+30)");
+    assert_eq!(siblings_ok(), 14, "sibling same-name loops + nested `_` loops stay supported");
+}
+"#;
+    assert_rustc_runs("loop_var_reassign_try", &rust, driver);
+}
+
+/// PMAT-1085 (finding c): pair-loops were entirely outside the PMAT-1080
+/// mut-gating — an outer var reassigned inside a `for k, v in …` body (scan
+/// had no ForEachPair/ForEachZip3 arms) and the pair-loop's OWN tuple
+/// bindings (no gating at the emission site) were both rustc E0384.
+/// Differential vs CPython (39 / 36 / 41).
+#[test]
+fn pair_loop_var_reassign() {
+    let rust = xpile_transpile_to_rust("pair_loop_var_reassign.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(outer_in_pair(), 39, "outer var reassigned inside a pair-loop body needs `for mut x`");
+    assert_eq!(pair_binding(), 36, "a reassigned pair binding needs `for (i, mut y)`");
+    assert_eq!(zip3_binding(), 41, "a reassigned zip3 binding needs `mut` too");
+}
+"#;
+    assert_rustc_runs("pair_loop_var_reassign", &rust, driver);
+}
+
+/// PMAT-1085 (Ruchy lane): the pair-loop mut-gating mirrors, and stays
+/// PRECISE — `mut` exactly on the reassigned binding (an over-broad `mut`
+/// trips clippy `unused_mut` on generated code).
+#[test]
+fn pair_loop_var_reassign_ruchy() {
+    let py = fixture("pair_loop_var_reassign.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("for (i, mut y) in"),
+        "ruchy: reassigned pair binding must bind mut:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("mut i"),
+        "ruchy: never-reassigned index binding must stay non-mut:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("((a, mut b), c)"),
+        "ruchy: reassigned zip3 binding must bind mut (and only it):\n{stdout}"
+    );
+}
