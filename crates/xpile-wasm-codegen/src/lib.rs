@@ -4540,6 +4540,20 @@ fn normalize_expr_fstring_ints(e: &mut Expr, ctx: &HashMap<String, Type>) {
                 normalize_expr_fstring_ints(a, ctx);
             }
         }
+        // PMAT-1166: a `str.format` / `%`-format template reaches the WASM lane
+        // as a raw `Expr::StrFormat { fmt, args }` (the frontend only folds an
+        // f-string's literal text into a `Concat`; `.format(...)` / `% (...)`
+        // stay templated). Fold the SIMPLE bare-`{}` case into the same
+        // left-nested `Concat` the lane already lowers, then re-run this pass so
+        // int operands auto-stringify (PMAT-1164). A spec / positional /
+        // named field, or an arg-count mismatch, leaves the `StrFormat` intact
+        // for the honest refusal at `emit_str_expr`.
+        Expr::StrFormat { fmt, args } => {
+            if let Some(folded) = try_fold_strformat_to_concat(fmt, args) {
+                *e = folded;
+                normalize_expr_fstring_ints(e, ctx);
+            }
+        }
         _ => {}
     }
 }
@@ -4613,6 +4627,89 @@ fn concat_binop_is_int(op: BinOp) -> bool {
             | BinOp::Shr
             | BinOp::Pow
     )
+}
+
+/// PMAT-1166: fold a bare-`{}` `str.format` / `%`-format template into the
+/// left-nested `Expr::Concat` the WASM string lane already lowers, or return
+/// `None` (leaving the `StrFormat` for the honest refusal) for anything the
+/// simple fold does not cover.
+///
+/// The `fmt` field is the frontend's RUST-format template (`"{}={}"` for
+/// `"%s=%d" % (a, b)`; `"{}-{}"` for `"{}-{}".format(x, y)`), with `{{` / `}}`
+/// escapes for literal braces. The fold accepts ONLY automatic `{}` fields:
+///   * `{{` → literal `{`, `}}` → literal `}`;
+///   * `{}` → the next positional argument (in encounter order);
+///   * ANY other `{…}` field (`{:spec}`, `{0}`, `{name}`) → `None`, so a
+///     width / precision / alignment / positional / keyword template still
+///     refuses honestly (their formatting is not modelled on the WASM lane).
+///
+/// The number of `{}` fields must EXACTLY equal `args.len()` (Rust `format!`
+/// already requires this; the check guards a malformed template).
+///
+/// The produced `Concat` interleaves the literal chunks (`Expr::LitStr`) with
+/// the argument expressions; the caller re-runs `normalize_expr_fstring_ints`
+/// so an int arg auto-stringifies via `str(int)` (PMAT-1164) and `emit_concat`
+/// lowers the rest. A non-str/int arg still refuses honestly at
+/// `emit_str_expr` (never a crash).
+fn try_fold_strformat_to_concat(fmt: &str, args: &[Expr]) -> Option<Expr> {
+    // Interleaved pieces, in template order.
+    enum Piece {
+        Lit(String),
+        Arg(usize),
+    }
+    let mut pieces: Vec<Piece> = Vec::new();
+    let mut lit = String::new();
+    let mut next_arg = 0usize;
+    let mut chars = fmt.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' => match chars.peek() {
+                Some('{') => {
+                    chars.next();
+                    lit.push('{');
+                }
+                Some('}') => {
+                    chars.next();
+                    if !lit.is_empty() {
+                        pieces.push(Piece::Lit(std::mem::take(&mut lit)));
+                    }
+                    pieces.push(Piece::Arg(next_arg));
+                    next_arg += 1;
+                }
+                // `{:spec}`, `{0}`, `{name}` — a non-bare field. Refuse the fold.
+                _ => return None,
+            },
+            '}' => {
+                // A lone `}` is only valid as the `}}` escape in a Rust template.
+                if chars.peek() == Some(&'}') {
+                    chars.next();
+                    lit.push('}');
+                } else {
+                    return None;
+                }
+            }
+            other => lit.push(other),
+        }
+    }
+    if !lit.is_empty() {
+        pieces.push(Piece::Lit(lit));
+    }
+    if next_arg != args.len() {
+        return None;
+    }
+    // Fold the pieces left-associatively (the frontend's `Concat` shape).
+    let mut it = pieces.into_iter().map(|p| match p {
+        Piece::Lit(s) => Expr::LitStr(s),
+        Piece::Arg(i) => args[i].clone(),
+    });
+    let mut acc = it.next()?;
+    for e in it {
+        acc = Expr::Concat {
+            lhs: Box::new(acc),
+            rhs: Box::new(e),
+        };
+    }
+    Some(acc)
 }
 
 // ─── WAT emission ───────────────────────────────────────────────────
@@ -8450,18 +8547,21 @@ fn emit_str_expr(
             emit_str_replace(recv, &args[0], &args[1], Some(&args[2]), scope, out, depth)?;
             Ok(())
         }
-        // PMAT-1164: a raw `StrFormat` reaches the WASM lane from a multi-field
-        // `str.format` / `%`-format (`"{}-{}".format(x, y)`) — the frontend folds
-        // an f-string's literal-text fields into a `Concat` (handled above, its
-        // int operands auto-stringified via str(int)) but leaves `str.format` /
-        // `%` as a `StrFormat` template. Folding that template is a separate
-        // increment; refused honestly for now.
+        // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
+        // `try_fold_strformat_to_concat` declined — a template carrying a
+        // format spec (`"{:>5}".format(x)`), a positional (`"{0}"`), a named
+        // field (`"{k}"`), or an arg-count mismatch. The simple bare-`{}` case
+        // (`"{}-{}".format(x, y)`, `"%s=%d" % (a, b)`) already folded to a
+        // `Concat` in the pre-pass; alignment / width / precision / positional /
+        // keyword formatting is not modelled on the WASM lane.
         Expr::StrFormat { .. } => Err(unsupported(
-            "a `str.format` / `%`-format template (`\"{}-{}\".format(x, y)`) on \
-             the WASM lane — an f-string with literal text folds to a `Concat` \
-             (whose int operands auto-stringify via str(int), PMAT-1164), but a \
-             `str.format` / `%` template is not yet folded; build the string with \
-             an f-string or `+ str(x)` concatenation",
+            "a `str.format` / `%`-format template with a format spec, positional \
+             (`{0}`), or named (`{k}`) field on the WASM lane — the simple \
+             bare-`{}` case (`\"{}-{}\".format(x, y)`, `\"%s=%d\" % (a, b)`) folds \
+             to a `Concat` (its int operands auto-stringified via str(int), \
+             PMAT-1164/1166), but a spec / positional / keyword template is not \
+             modelled; drop the spec or build the string with an f-string / `+ \
+             str(x)` concatenation",
         )),
         // PMAT-1164: a bare single-interpolation f-string (`f"{x}"`) or one
         // carrying a format spec (`f"{x:>5}"`) lowers to a `FormatSpec` — there
