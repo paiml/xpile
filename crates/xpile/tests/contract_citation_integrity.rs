@@ -198,6 +198,19 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
                 "C-XLATE-PY-STR-TO-RUST-STRING",
             ],
         ),
+        // PMAT-1140 (R6-slice5, skeptic-pass #5): the four newest R6 loops
+        // (PMAT-1133/1135/1137/1139) were closed with only a (b) CORPUS-WIDE
+        // required-cited entry — the weaker guarantee. C-PY-EXCEPT-ALLOWLIST is
+        // emitted by 36 fixtures, C-PY-FILE-IO-ROUNDTRIP by 5, and
+        // C-PY-CONTEXT-MANAGER-EXIT by 2, so any ONE could sever its citation and
+        // (b) would still be satisfied by another fixture — exactly the hole (c)
+        // exists to close. Pin a canonical witness for each so severing THAT
+        // fixture's citation FAILS. (C-PY-GENERATOR-EAGER has a single fixture
+        // today, but pinning it future-proofs against a second generator fixture.)
+        ("except_allowlist.py", &["C-PY-EXCEPT-ALLOWLIST"]),
+        ("file_read.py", &["C-PY-FILE-IO-ROUNDTRIP"]),
+        ("context_managers.py", &["C-PY-CONTEXT-MANAGER-EXIT"]),
+        ("generators_eager.py", &["C-PY-GENERATOR-EAGER"]),
     ];
     let mut missing_expected: Vec<String> = Vec::new();
     for (fixture, required_ids) in EXPECTED {
