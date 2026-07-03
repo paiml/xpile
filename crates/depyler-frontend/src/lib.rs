@@ -13091,6 +13091,32 @@ fn lower_subscript_assign_target(
         }
         Some(Type::Dict(key_ty, val_ty)) => {
  let key = lower_expr_in_ctx(ctx, single)?;
+            // PMAT-1102 (acceptance-honesty): a statically-certain key-type
+            // mismatch — `d[5] = 1` over `dict[str, int]` (an int LITERAL key into
+            // a str-keyed dict, or a str literal into an int-keyed dict). Python
+            // allows mixed key types at runtime (it just adds the int key), but a
+            // Rust `HashMap<K, V>` needs a uniform key type, so the emission was a
+            // rustc E0308 NON-COMPILING artifact instead of an honest
+            // transpile-time refusal (the no-non-compiling-artifact meta-invariant).
+            // Only LITERAL keys are checked — a loosely-typed key variable
+            // (I64-default) must not false-refuse. `d[True]` into a `dict[int,_]`
+            // is the sanctioned bool->i64 coercion below, not a mismatch.
+            let lit_key_ty = match &key {
+                Expr::LitInt(_) => Some(Type::I64),
+                Expr::LitStr(_) | Expr::QuotedString { .. } => Some(Type::Str),
+                Expr::LitBool(_) => Some(Type::Bool),
+                Expr::LitFloat(_) => Some(Type::F64),
+                _ => None,
+            };
+            if let Some(lt) = lit_key_ty {
+                let bool_into_int = matches!(lt, Type::Bool) && matches!(*key_ty, Type::I64);
+                if lt != *key_ty && !bool_into_int {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` assigns `{receiver}[<{lt:?} literal>] = …` but `{receiver}` is `dict[{key_ty:?}, _]` — the key type doesn't match its declared type. Python allows mixed key types at runtime, but a Rust HashMap needs a uniform key type; use a key matching the dict's declared key type.",
+                        ctx.fn_name
+                    )));
+                }
+            }
             // PMAT-829 (HUNT-V25 #4): a bool key into an INT-keyed dict —
             // `d[True] = v` — coerce bool→i64 (Python `True == 1`), mirroring the
             // already-shipped get-path coercion (PMAT-751). Without it the insert
@@ -26710,6 +26736,23 @@ mod tests {
         assert!(
             format!("{err}").contains("must agree"),
             "names the conflict: {err}"
+        );
+    }
+
+    /// PMAT-1102 (acceptance-honesty): a statically-certain dict key-type
+    /// mismatch (`d[5] = 1` over `dict[str, int]`) must REFUSE at transpile time,
+    /// not emit a non-compiling `HashMap<String, _>.insert(5i64, …)` (E0308).
+    #[test]
+    fn dict_literal_key_type_mismatch_refuses() {
+        let err = PythonFrontend
+            .parse_and_lower(
+                &PathBuf::from("fixture.py"),
+                "def main() -> None:\n    d: dict[str, int] = {}\n    d[5] = 1\n",
+            )
+            .expect_err("an int literal key into a str-keyed dict must refuse");
+        assert!(
+            format!("{err}").contains("key type doesn't match"),
+            "honest key-type-mismatch refusal: {err}"
         );
     }
 
