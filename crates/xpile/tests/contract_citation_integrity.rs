@@ -132,6 +132,9 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         "C-XLATE-PY-OPTIONAL-TO-OPTION",
         // PMAT-935 (R6): pure-bool translation is now wired + cited.
         "C-XLATE-PY-BOOL-TO-RUST-BOOL",
+        // PMAT-1133 (R6): try/except dispatch is now wired + cited (a body with
+        // a Stmt::TryCatch cites C-PY-EXCEPT-ALLOWLIST, proved core-Lean 1120).
+        "C-PY-EXCEPT-ALLOWLIST",
     ] {
         assert!(
             cited.contains(required),
