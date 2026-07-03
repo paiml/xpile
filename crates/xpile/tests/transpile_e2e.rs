@@ -1147,6 +1147,69 @@ fn dataclass_eq_still_lowers_and_matches() {
     );
 }
 
+/// PMAT-1166: the PMAT-1165 identity-vs-structural divergence reached
+/// TRANSITIVELY through a container. `[Obj(1)] == [Obj(1)]` over a plain class
+/// compares elements by IDENTITY in Python (False for distinct objects) but the
+/// derived structural `Vec == Vec` returns true — a silent divergence. Refused at
+/// the frontend (SKIP-EMIT, confirmed via the differential harness).
+#[test]
+fn plain_class_container_eq_is_refused() {
+    let py = fixture("oop_eq_container_refused.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "`==` between two lists of plain-class instances must be refused (element \
+         identity vs structural silent divergence), not emitted"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("container of") && stderr.contains("Obj") && stderr.contains("IDENTITY"),
+        "the refusal should name the container element-identity reason and class:\n{stderr}"
+    );
+}
+
+/// PMAT-1166: membership `x in <container>` tests via `==` against the
+/// container's elements, so `Obj(1) in [Obj(1)]` over a plain class is False in
+/// CPython but the structural `Vec::contains` returns true. Refused fail-loud.
+#[test]
+fn plain_class_container_membership_is_refused() {
+    let py = fixture("oop_in_container_refused.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "`in` over a list of plain-class instances must be refused (element \
+         identity vs structural silent divergence), not emitted"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("not in")
+            && stderr.contains("container of")
+            && stderr.contains("Obj")
+            && stderr.contains("IDENTITY"),
+        "the refusal should name the membership element-identity reason and class:\n{stderr}"
+    );
+}
+
+/// PMAT-1166 (counterpart): the container refusal must NOT be too broad. A
+/// `@dataclass` gets Python's auto-generated STRUCTURAL `__eq__`, so container
+/// `==`, tuple `==`, and membership `in` over dataclass instances still lower AND
+/// agree with CPython; primitive-element containers are likewise unaffected. The
+/// emitted Rust runs with all comparisons true.
+#[test]
+fn dataclass_container_eq_still_lowers_and_matches() {
+    let rust = xpile_transpile_to_rust("oop_eq_container_dataclass_ok.py");
+    assert!(
+        rust.contains("struct P"),
+        "expected the dataclass struct in:\n{rust}"
+    );
+    assert_rustc_runs(
+        "oop_eq_container_dataclass_ok",
+        &rust,
+        "fn main() { assert!(list_eq()); assert!(tuple_eq()); assert!(membership()); \
+         assert!(primitive_list_eq()); assert!(primitive_membership()); }",
+    );
+}
+
 /// PMAT-466 regression (adversarial review #11): the Ruchy backend
 /// emits the same IndexMap pipeline as Rust (Ruchy compiles to Rust),
 /// including the temp-let DictSet form.

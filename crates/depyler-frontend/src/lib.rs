@@ -4843,6 +4843,26 @@ fn class_defines_eq_or_ne(c: &ast::StmtClassDef) -> bool {
     })
 }
 
+/// PMAT-1166: returns the name of a plain identity-eq class (a member of
+/// `identity_eq_structs`) that a structural `==` on `ty` would compare — either
+/// directly (a bare struct), or TRANSITIVELY as a list/set/optional element, a
+/// tuple position, or a dict key/value. Python compares those inner objects by
+/// object IDENTITY (default `==`), so a derived structural equality over the
+/// container silently diverges (`[Obj(1)] == [Obj(1)]` is `True` in Rust, `False`
+/// in CPython). `@dataclass` / explicit-`__eq__`/`__ne__` classes and enums are
+/// NOT in the set, so they return `None` (structural is correct there). Used by
+/// `lower_compare_in_ctx` (container `==`/`!=`) and the membership (`in`) lowering
+/// to refuse the comparison fail-loud rather than emit the silently-wrong compare.
+fn identity_eq_in_type(ty: &Type, ids: &HashSet<String>) -> Option<String> {
+    match ty {
+        Type::Struct(n) => ids.contains(n).then(|| n.clone()),
+        Type::List(e) | Type::Set(e) | Type::Optional(e) => identity_eq_in_type(e, ids),
+        Type::Tuple(ts) => ts.iter().find_map(|t| identity_eq_in_type(t, ids)),
+        Type::Dict(k, v) => identity_eq_in_type(k, ids).or_else(|| identity_eq_in_type(v, ids)),
+        _ => None,
+    }
+}
+
 /// PMAT-1054: the set of field names assigned via `self.<field>` anywhere in
 /// any method body of the class — recursively into nested `if`/`for`/`while`/
 /// `try` blocks. This is the discriminator between an INSTANCE field (assigned
@@ -20795,6 +20815,33 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
                 let rhs = lower_expr_in_ctx(ctx, c.comparators[0].clone())?;
+                // PMAT-1166: `x in <container>` / `not in` tests membership via
+                // `==` against the container's elements (a dict tests its KEYS), so
+                // a container of a plain identity-eq class silently gives structural
+                // membership where Python compares element IDENTITY (`Obj(1) in
+                // [Obj(1)]` is `True` in Rust, `False` in CPython). Refuse. Dict
+                // VALUES are never compared by `in`, so only the key type is
+                // inspected for dicts; a `__contains__`-defining struct RHS (handled
+                // below) is not a container and is unaffected.
+                {
+                    let rhs_ty = infer_type_in_ctx(ctx, &rhs);
+                    let hit = match &rhs_ty {
+                        Type::List(e) | Type::Set(e) => {
+                            identity_eq_in_type(e, &ctx.identity_eq_structs)
+                        }
+                        Type::Dict(k, _) => identity_eq_in_type(k, &ctx.identity_eq_structs),
+                        Type::Tuple(ts) => ts
+                            .iter()
+                            .find_map(|t| identity_eq_in_type(t, &ctx.identity_eq_structs)),
+                        _ => None,
+                    };
+                    if let Some(cls) = hit {
+                        return Err(FrontendError::Lower(format!(
+                            "function `{}`: `in`/`not in` over a container of `{cls}` compares element IDENTITY in Python (no `__eq__`, not `@dataclass`) — xpile's value model would silently give structural membership. Define `__eq__` or use `@dataclass` for structural equality.",
+                            ctx.fn_name
+                        )));
+                    }
+                }
                 if let Type::Dict(key_ty, _) = infer_type_in_ctx(ctx, &rhs) {
                     let key = lower_expr_in_ctx(ctx, (*c.left).clone())?;
                     // PMAT-802 (HUNT-V19 CHAIN-2): `x in d` where `x`'s type can
@@ -25764,6 +25811,37 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
                         ctx.fn_name
                     )));
                 }
+            }
+        }
+    }
+
+    // PMAT-1166: the SAME identity-vs-structural divergence reached TRANSITIVELY
+    // through a container — `[Obj(1)] == [Obj(1)]`, `(Obj(1),) == (Obj(2),)`,
+    // `dict[int, Obj] == …` — where Python compares the inner objects by IDENTITY
+    // but the derived structural `==` on the Vec/tuple/HashMap compares them
+    // field-wise. Refuse when either operand's type transitively contains a plain
+    // identity-eq class (list/set element, tuple position, dict key/value). The
+    // bare top-level struct is handled by the loop above with a clearer message —
+    // skip it here. Different-arity tuples are already `False` by length in Python
+    // (no element compare) and xpile folds them to a constant below, so they are
+    // NOT refused.
+    for (i, op) in c.ops.iter().enumerate() {
+        if !matches!(op, ast::CmpOp::Eq | ast::CmpOp::NotEq) {
+            continue;
+        }
+        let (lt, rt) = (&op_types[i], &op_types[i + 1]);
+        if matches!((lt, rt), (Type::Tuple(a), Type::Tuple(b)) if a.len() != b.len()) {
+            continue;
+        }
+        for t in [lt, rt] {
+            if matches!(t, Type::Struct(_)) {
+                continue; // bare top-level struct: handled by the loop above
+            }
+            if let Some(cls) = identity_eq_in_type(t, &ctx.identity_eq_structs) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}`: `==`/`!=` over a container of `{cls}` compares element IDENTITY in Python (no `__eq__`, not `@dataclass`) — xpile's value model would silently give structural equality. Define `__eq__` or use `@dataclass` for structural equality.",
+                    ctx.fn_name
+                )));
             }
         }
     }
