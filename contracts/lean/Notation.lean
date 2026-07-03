@@ -585,33 +585,75 @@ structure LeanPointerSilver where
   stub_reason : ProofStubReason
 deriving DecidableEq
 
-/-- Silver-tier lowering: proof env → lean pointer. status reflects
-    the typed reason (Omitted/TODO/XXX/Sorry → "stub"; None →
-    "claimed"); body_leaked false by construction; stub_reason
-    preserved verbatim. -/
-def lower_proof_env_silver (p : ProofEnvSilver) : LeanPointerSilver :=
+/-- Fidelity of a proof-env EMITTER. A *faithful* emitter emits only
+    a POINTER to the proof (the body stays in the Lean lane); a
+    *body-pasting* emitter inlines the proof body TEXT into the emitted
+    `EquationsBlock`, leaking it into the LaTeX/equation lane. -/
+structure ProofEmitter where
+  pastes_body : Bool
+deriving DecidableEq
+
+/-- xpile's ACTUAL proof-env emitter: faithful — pointer-only. -/
+def xpileProofEmitter : ProofEmitter := { pastes_body := false }
+
+/-- Silver-tier lowering: proof env → lean pointer, parameterized by
+    emitter fidelity. `status` reflects the typed reason
+    (Omitted/TODO/XXX/Sorry → "stub"; None → "claimed"); `stub_reason`
+    is preserved verbatim; `body_leaked` is TRUE iff the emitter pastes
+    the body AND the proof env actually HAS a body — so the `body`
+    input is now LOAD-BEARING (an empty body has nothing to leak; a
+    pointer-only emitter leaks nothing regardless).
+
+    PMAT-1177: pre-fix this hardcoded `body_leaked := false` and
+    DISCARDED `p.body`, so `proof_body_does_not_leak_silver` reduced to
+    `false = false` and certified nothing — a body-pasting emitter
+    satisfied it too (the PMAT-1141/1176 vacuity class). -/
+def lower_proof_env_silver (e : ProofEmitter) (p : ProofEnvSilver) : LeanPointerSilver :=
   { status := match p.stub_reason with
       | ProofStubReason.none => "claimed"
       | _ => "stub"
-    body_leaked := false
+    body_leaked := e.pastes_body && !p.body.isEmpty
     stub_reason := p.stub_reason }
 
 /-- **Silver-tier refinement theorem** — stub reason preserved
-    verbatim through lowering. Bronze proved binary stub/claimed
-    classification; Silver captures the SPECIFIC reason. An
-    emitter that collapses all stub kinds into a single category
-    (or invents a new category) is caught at the enum level. -/
-theorem proof_stub_reason_preserved_silver (p : ProofEnvSilver) :
-    (lower_proof_env_silver p).stub_reason = p.stub_reason := by
+    verbatim through lowering, for ANY emitter fidelity. Bronze proved
+    binary stub/claimed classification; Silver captures the SPECIFIC
+    reason. An emitter that collapses all stub kinds into a single
+    category (or invents a new category) is caught at the enum level. -/
+theorem proof_stub_reason_preserved_silver (e : ProofEmitter) (p : ProofEnvSilver) :
+    (lower_proof_env_silver e p).stub_reason = p.stub_reason := by
   rfl
 
-/-- **Silver-tier refinement theorem** — body never leaks into
-    the EquationsBlock. Companion to the Bronze
-    `proof_env_to_lean_pointer` claim, lifted to the Silver
-    typed model. -/
+/-- **Silver-tier refinement theorem (the "pin")** — the proof body
+    never leaks into the `EquationsBlock` under xpile's ACTUAL
+    (faithful, pointer-only) emitter, for ANY proof env. It holds
+    PRECISELY because `xpileProofEmitter.pastes_body = false`; it is
+    NON-vacuous by the two duals below (analog of PMAT-1176's
+    `faithful_lowering_matches_baseline`). -/
 theorem proof_body_does_not_leak_silver (p : ProofEnvSilver) :
-    (lower_proof_env_silver p).body_leaked = false := by
+    (lower_proof_env_silver xpileProofEmitter p).body_leaked = false := by
   rfl
+
+/-- **Falsifiability dual (non-vacuity lock #1)** — a body-PASTING
+    emitter DOES leak a nonempty proof body. Proves the Silver model
+    can EXPRESS the exact defect the `body_leaked = false` invariant
+    forbids; without this the pin is vacuous. -/
+theorem body_pasting_emitter_leaks_body :
+    (lower_proof_env_silver { pastes_body := true }
+      { body := "x", stub_reason := ProofStubReason.none }).body_leaked = true := by
+  decide
+
+/-- **Falsifiability dual (non-vacuity lock #2)** — on a real
+    (nonempty) proof body the faithful emitter and the body-pasting
+    emitter DIVERGE on `body_leaked`: the exact differential a
+    lane-separation check exists to catch. Analog of PMAT-1176's
+    `refcount_leak_lowering_diverges`. -/
+theorem faithful_vs_pasting_emitter_diverges :
+    (lower_proof_env_silver xpileProofEmitter
+      { body := "x", stub_reason := ProofStubReason.none }).body_leaked
+    ≠ (lower_proof_env_silver { pastes_body := true }
+      { body := "x", stub_reason := ProofStubReason.none }).body_leaked := by
+  decide
 
 /-! ## PMAT-181 — Final Silver expansion: definition_env +
     remark_env + citation_preservation

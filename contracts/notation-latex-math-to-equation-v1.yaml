@@ -257,6 +257,7 @@ equations:
     invariants:
       - "stub reason is a typed enum, not a single Bool — captures WHICH stub pattern matched (Omitted vs TODO vs XXX vs Sorry)"
       - "the body-never-leaks invariant is preserved in the Silver model (companion theorem proof_body_does_not_leak_silver)"
+      - "PMAT-1177: proof_body_does_not_leak_silver is now NON-vacuous — lower_proof_env_silver is parameterized by a ProofEmitter fidelity and body_leaked = pastes_body && !body.isEmpty (body is load-bearing); the pin holds over xpile's faithful pointer-only emitter, and duals body_pasting_emitter_leaks_body / faithful_vs_pasting_emitter_diverges witness that a body-pasting emitter leaks and diverges"
     preconditions:
       - "the proof environment is well-formed"
     postconditions:
