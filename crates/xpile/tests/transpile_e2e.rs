@@ -20021,6 +20021,105 @@ fn try_handler_continue_ruchy() {
     );
 }
 
+/// PMAT-1092 (skeptic pass PMAT-1090): the SUPPORTED try-scoping patterns the
+/// new refusals must not catch — bind-before-the-try with a mid-body raise
+/// (partial assignment preserved exactly like CPython), and one `as e` name
+/// re-used across two sequential trys with handler-only reads (no live
+/// collision at either `except`). MATCH 2/-1/firstsecond/second/"".
+#[test]
+fn try_scoping_workaround() {
+    let rust = xpile_transpile_to_rust("try_scoping_workaround.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(flagged(1), 2, "clean path: both body assigns apply");
+    assert_eq!(flagged(-1), -1, "raise mid-body: partial assign then handler overwrite");
+    assert_eq!(seq_as_reuse(-1, -1), "firstsecond", "as-name reused across sequential trys");
+    assert_eq!(seq_as_reuse(1, -1), "second", "only the second handler runs");
+    assert_eq!(seq_as_reuse(1, 1), "", "no exception: neither handler runs");
+}
+"#;
+    assert_rustc_runs("try_scoping_workaround", &rust, driver);
+}
+
+/// PMAT-1092 (skeptic pass PMAT-1090, A-F4): a name FIRST-bound inside the
+/// try body/handler and read after the `try` was rustc E0425 far from the
+/// cause (valid CPython prints 3). Must refuse at lowering with the scoping
+/// truth and the bind-before-the-try workaround.
+#[test]
+fn try_body_binding_read_after_rejected() {
+    let py = fixture("try_body_binding_read_after.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a post-try read of a try-body binding must be refused, not emitted as E0425"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("first bound inside the `try` body") && stderr.contains("before the `try`"),
+        "the rejection should state the arm and the workaround:\n{stderr}"
+    );
+}
+
+/// PMAT-1092 (skeptic pass PMAT-1090, A-F5): `except ... as e` colliding with
+/// a pre-existing binding SILENTLY let the old value survive the handler
+/// (returned "old"; CPython deletes `e` at handler exit → UnboundLocalError,
+/// exit 1). Must refuse at lowering.
+#[test]
+fn try_as_prebound_collision_rejected() {
+    let py = fixture("try_as_prebound_collision.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an `as` name colliding with a live binding must be refused, not silently miscompiled"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("collides with an existing binding")
+            && stderr.contains("deletes an `except as` name"),
+        "the rejection should state the CPython deletion semantics:\n{stderr}"
+    );
+}
+
+/// PMAT-1092 (skeptic pass PMAT-1090, A-p13): an `as e` name read AFTER its
+/// handler (no prior binding) — CPython deletes it at handler exit; the old
+/// behavior was a MISLEADING type-inference refusal. Must refuse with the
+/// deletion truth.
+#[test]
+fn try_as_read_after_rejected() {
+    let py = fixture("try_as_read_after.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a post-handler read of an `as` name must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("read after its handler") && stderr.contains("deletes an `except as`"),
+        "the rejection should state the handler-exit deletion:\n{stderr}"
+    );
+}
+
+/// PMAT-1092 (skeptic pass PMAT-1090, C-F1 — the worst shape): `except ... as
+/// x` colliding with the enclosing LOOP variable let the for-binding show
+/// through post-handler (value + exit 0 where CPython raises
+/// UnboundLocalError) — the PMAT-1085 family, closed for `except as`. Must
+/// refuse via the same collision check.
+#[test]
+fn try_as_loopvar_collision_rejected() {
+    let py = fixture("try_as_loopvar_collision.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an `as` name colliding with the enclosing loop var must be refused, not \
+         silently read the for-binding"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`except ... as x` collides with an existing binding"),
+        "the rejection should name the collision:\n{stderr}"
+    );
+}
+
 /// PMAT-1085 (skeptic-pass PMAT-1081, finding a): a nested `for` rebinding an
 /// ENCLOSING loop's variable silently read the wrong binding (Rust printed 96
 /// where CPython prints 150 — the PMAT-1080 mut-gating had converted this
