@@ -83,10 +83,13 @@
 //!   `s.count(p)` (non-overlapping byte occurrence count → i64), the substring
 //!   test `p in s` (`Expr::StrContains`, a sliding byte search → i32 bool), and
 //!   (PMAT-1136/1143) `s.find(p)` / `s.rfind(p)` (the CODE-POINT index of the
-//!   first / last occurrence → i64, or -1) are supported — each a non-allocating
-//!   helper. Still **refused** honestly (a hard `BackendError`):
-//!   `str(float)`/`repr(float)`, f-strings,
-//!   the OTHER string methods (upper/lower/strip/split/replace/index/rindex/…), and the
+//!   first / last occurrence → i64, or -1), and (PMAT-1144) `s.index(p)` /
+//!   `s.rindex(p)` (the TRAPPING siblings — same CODE-POINT index, but an ABSENT
+//!   needle is Python `ValueError`, lowered to a WASM `unreachable` trap) are
+//!   supported — each a non-allocating helper. Still **refused** honestly (a hard
+//!   `BackendError`): `str(float)`/`repr(float)`, f-strings,
+//!   the OTHER string methods (upper/lower/strip/split/replace/…), the 2-3-arg
+//!   start/end search forms (`s.find(p, i)` / `s.index(p, i, j)`), and the
 //!   composite `dict` / `set` value/`in` shapes not yet wired. Char access is O(chars)
 //!   per read (charlen is O(bytes)) — correctness over speed, an honest
 //!   documented tradeoff.
@@ -1577,6 +1580,77 @@ const STR_RFIND_HELPER: &str = "\
     )
     ;; no match → -1
     i64.const -1
+  )
+";
+
+/// PMAT-1144: `$__wasm_str_index(h, n) -> i64` — Python `h.index(n)` (the
+/// CODE-POINT index of the FIRST occurrence of `n` in `h`).
+///
+/// The TRAPPING sibling of [`STR_FIND_HELPER`]: `str.index` is `str.find` except
+/// that a MISSING needle raises `ValueError` in CPython instead of returning
+/// `-1`. We lower that `ValueError` to a WASM `unreachable` (a trap) — the honest
+/// WASM analogue of a Python exception on this no-exception ABI. So the helper is
+/// a thin wrapper: call `$__wasm_str_find`, and if it returned `-1` (absent),
+/// `unreachable`; otherwise return its (already char-indexed) result unchanged.
+/// Every present-needle answer is therefore byte-for-byte identical to `find`
+/// (same CODE-POINT index, same empty-needle `0`, same multi-byte correctness);
+/// the ONLY observable difference is the absent case (trap vs `-1`). Gated on
+/// [`module_uses_str_method`] for `StrIndex`, which also forces `STR_FIND_HELPER`
+/// (the wrapper calls it). Allocates nothing.
+const STR_INDEX_HELPER: &str = "\
+  ;; __wasm_str_index(h, n) = Python h.index(n)  (i64: CODE-POINT index of the
+  ;; FIRST occurrence). The TRAPPING sibling of $__wasm_str_find: identical to
+  ;; find on a present needle, but an ABSENT needle (find → -1) is Python
+  ;; ValueError, lowered here to `unreachable` (a WASM trap) rather than -1.
+  ;; Allocates nothing.
+  (func $__wasm_str_index (param $h i32) (param $n i32) (result i64)
+    (local $r i64)
+    local.get $h
+    local.get $n
+    call $__wasm_str_find
+    local.set $r
+    ;; find returned -1 (needle absent) → Python raises ValueError → trap
+    local.get $r
+    i64.const -1
+    i64.eq
+    if
+      unreachable
+    end
+    local.get $r
+  )
+";
+
+/// PMAT-1144: `$__wasm_str_rindex(h, n) -> i64` — Python `h.rindex(n)` (the
+/// CODE-POINT index of the LAST occurrence of `n` in `h`).
+///
+/// The TRAPPING sibling of [`STR_RFIND_HELPER`], exactly as `$__wasm_str_index`
+/// is to `$__wasm_str_find`: `str.rindex` is `str.rfind` except a MISSING needle
+/// raises `ValueError` instead of returning `-1`. Wrapper: call
+/// `$__wasm_str_rfind`, `unreachable` on `-1`, else return unchanged. Note the
+/// EMPTY-needle answer inherits rfind's `charlen(h)` (found at the END), NOT `0`
+/// — so `"abc".rindex("")` == 3, matching CPython (the empty string is never a
+/// `ValueError`). Gated on [`module_uses_str_method`] for `RIndex`, which forces
+/// `STR_RFIND_HELPER`. Allocates nothing.
+const STR_RINDEX_HELPER: &str = "\
+  ;; __wasm_str_rindex(h, n) = Python h.rindex(n)  (i64: CODE-POINT index of the
+  ;; LAST occurrence). The TRAPPING sibling of $__wasm_str_rfind: identical to
+  ;; rfind on a present needle (empty needle → charlen(h), found at the END), but
+  ;; an ABSENT needle (rfind → -1) is Python ValueError, lowered here to
+  ;; `unreachable` (a WASM trap). Allocates nothing.
+  (func $__wasm_str_rindex (param $h i32) (param $n i32) (result i64)
+    (local $r i64)
+    local.get $h
+    local.get $n
+    call $__wasm_str_rfind
+    local.set $r
+    ;; rfind returned -1 (needle absent) → Python raises ValueError → trap
+    local.get $r
+    i64.const -1
+    i64.eq
+    if
+      unreachable
+    end
+    local.get $r
   )
 ";
 
@@ -3340,6 +3414,20 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // nothing (its empty-needle answer calls `$__wasm_str_charlen`, co-emitted by
     // `module_touches_str`).
     let needs_rfind = module_uses_str_method(module, StrMethodOp::Rfind);
+    // PMAT-1144: `s.index(p)` / `s.rindex(p)` over strings (`Expr::StrMethod`, ops
+    // `StrIndex` / `RIndex`) — the TRAPPING siblings of `find` / `rfind`: identical
+    // on a present needle, but an ABSENT needle is Python `ValueError`, lowered to a
+    // WASM `unreachable`. Each wrapper (`$__wasm_str_index` / `$__wasm_str_rindex`)
+    // calls the matching search helper, so `index` FORCES `$__wasm_str_find` and
+    // `rindex` FORCES `$__wasm_str_rfind` (folded into `needs_find`/`needs_rfind`
+    // below). Reads the two str payloads, allocates nothing.
+    let needs_index = module_uses_str_method(module, StrMethodOp::StrIndex);
+    let needs_rindex = module_uses_str_method(module, StrMethodOp::RIndex);
+    // `$__wasm_str_index` wraps `$__wasm_str_find`, `$__wasm_str_rindex` wraps
+    // `$__wasm_str_rfind` — so pull the search helper in whenever its trapping
+    // sibling is used, even if the module never calls the plain search directly.
+    let needs_find = needs_find || needs_index;
+    let needs_rfind = needs_rfind || needs_rindex;
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -3451,6 +3539,20 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // Reads memory, allocates nothing (a Python int, not a new string).
     if needs_rfind {
         out.push_str(STR_RFIND_HELPER);
+    }
+    // PMAT-1144: emit the string INDEX / RINDEX helpers once, when any function
+    // uses `s.index(p)` / `s.rindex(p)` (`Expr::StrMethod`, ops `StrIndex` /
+    // `RIndex`). Each is a thin TRAPPING wrapper over the matching search helper
+    // (`$__wasm_str_find` / `$__wasm_str_rfind`, already emitted above via the
+    // `needs_find |= needs_index` / `needs_rfind |= needs_rindex` fold): identical
+    // to find/rfind on a present needle, but an absent needle (search → -1) is
+    // Python `ValueError`, lowered to `unreachable`. Reads memory (through the
+    // wrapped helper), allocates nothing.
+    if needs_index {
+        out.push_str(STR_INDEX_HELPER);
+    }
+    if needs_rindex {
+        out.push_str(STR_RINDEX_HELPER);
     }
     // PMAT-1032: emit the CHAR-semantics helper family once, when any function
     // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
@@ -5633,11 +5735,43 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_rfind").expect("write");
             Ok(WatTy::I64)
         }
+        // PMAT-1144: `s.index(p)` / `s.rindex(p)` — the TRAPPING siblings of
+        // `.find(p)` / `.rfind(p)`: an int (i64) result, the CODE-POINT index of the
+        // first / last occurrence of `p` in `s`, but a MISSING needle raises Python
+        // `ValueError` — lowered here to a WASM trap inside the wrapper. Both
+        // operands lower to i32 base-pointers (`emit_str_expr`), then
+        // `$__wasm_str_index` / `$__wasm_str_rindex` (each `unreachable`s when its
+        // wrapped search returns -1). Single-arg only, mirroring find/rfind; a
+        // `.index(p, start[, end])` form falls through to the honest refusal below
+        // (WASM has no start/end search yet). Allocates nothing.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::StrIndex,
+            args,
+        } if args.len() == 1 => {
+            emit_str_expr(recv, scope, out, depth)?;
+            emit_str_expr(&args[0], scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_index").expect("write");
+            Ok(WatTy::I64)
+        }
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::RIndex,
+            args,
+        } if args.len() == 1 => {
+            emit_str_expr(recv, scope, out, depth)?;
+            emit_str_expr(&args[0], scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_rindex").expect("write");
+            Ok(WatTy::I64)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
-             `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, and \
-             `.rfind(p)` are supported; upper/lower/strip/split/replace/… are \
-             refused"
+             `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
+             `.rfind(p)`, `.index(p)`, and `.rindex(p)` (each single-arg) are \
+             supported; upper/lower/strip/split/replace/… and the 2-3-arg \
+             start/end search forms are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
