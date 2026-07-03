@@ -8,7 +8,9 @@
 
 use super::*;
 use xpile_backend::{BackendConfig, Profile};
-use xpile_meta_hir::{BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, Type};
+use xpile_meta_hir::{
+    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp, Type,
+};
 
 fn module_with(items: Vec<Item>) -> Module {
     Module {
@@ -945,6 +947,83 @@ fn string_ordering_is_lexicographic_cmp_not_pointer_compare() {
     assert!(
         !wat.contains("(func $__alloc"),
         "a pure ordering module must NOT carry the bump allocator:\n{wat}"
+    );
+}
+
+#[test]
+fn startswith_endswith_emit_helper_and_call_no_alloc() {
+    // PMAT-1126: `s.startswith(p)` / `s.endswith(p)` lower to the non-allocating
+    // byte prefix/suffix helper + call — a bool (i32) result, NEVER a
+    // base-pointer compare, and NO bump allocator (a predicate allocates nothing).
+    for (op, helper) in [
+        (StrMethodOp::StartsWith, "$__wasm_str_startswith"),
+        (StrMethodOp::EndsWith, "$__wasm_str_endswith"),
+    ] {
+        let f = Function {
+            name: "pred".into(),
+            params: vec![param("s", Type::Str), param("p", Type::Str)],
+            return_type: Type::Bool,
+            body: Block {
+                stmts: Vec::new(),
+                trailing_return: Expr::StrMethod {
+                    recv: Box::new(Expr::Ident("s".into())),
+                    op,
+                    args: vec![Expr::Ident("p".into())],
+                },
+            },
+        };
+        let wat = emit_module(&module_with(vec![Item::Function(f)]))
+            .unwrap_or_else(|e| panic!("s.{op:?}(p) lowers: {e:?}"));
+        assert!(
+            wat.contains(&format!(
+                "(func {helper} (param $s i32) (param $p i32) (result i32)"
+            )),
+            "the {helper} helper is emitted for {op:?}:\n{wat}"
+        );
+        let body = wat
+            .split("(func $pred ")
+            .nth(1)
+            .expect("the $pred function is emitted");
+        assert!(
+            body.contains(&format!("call {helper}")),
+            "$pred calls {helper} for {op:?}:\n{body}"
+        );
+        assert!(
+            wat.contains("(memory"),
+            "the predicate reads str bytes → memory declared:\n{wat}"
+        );
+        assert!(
+            !wat.contains("(func $__alloc"),
+            "a pure predicate module carries no bump allocator:\n{wat}"
+        );
+    }
+}
+
+#[test]
+fn startswith_only_module_carries_no_endswith_helper() {
+    // PMAT-1126: each helper is gated separately — a startswith-only module
+    // must NOT carry a dead endswith helper (the "no dead helper" discipline).
+    let f = Function {
+        name: "pred".into(),
+        params: vec![param("s", Type::Str), param("p", Type::Str)],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::StrMethod {
+                recv: Box::new(Expr::Ident("s".into())),
+                op: StrMethodOp::StartsWith,
+                args: vec![Expr::Ident("p".into())],
+            },
+        },
+    };
+    let wat = emit_module(&module_with(vec![Item::Function(f)])).expect("startswith lowers");
+    assert!(
+        wat.contains("$__wasm_str_startswith"),
+        "startswith helper present:\n{wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_str_endswith"),
+        "no dead endswith helper in a startswith-only module:\n{wat}"
     );
 }
 

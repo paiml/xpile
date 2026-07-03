@@ -1227,6 +1227,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Worktree-isolated (cron concurrently on Python-surface lane). lake build green (31 modules), pv lint 0 errors, all provability gates pass. provability/mathlib answered conclusively: 31 pilot modules core-only, zero needing Mathlib.'
+- id: PMAT-1126
+  github_issue: null
+  item_type: capability
+  title: 'PMAT-1126: [wasm/capability/strings] the FIRST two string METHODS on the native WASM emit lane — s.startswith(p) / s.endswith(p) (Expr::StrMethod, op StartsWith / EndsWith). Each lowers to a non-allocating BYTE prefix/suffix compare ($__wasm_str_startswith / $__wasm_str_endswith): a len-guarded i32.load8_u loop over the length-prefixed UTF-8 payload (i32 byte-count header @ base+0, bytes @ base+8), returning an i32 bool. Byte prefix/suffix == code-point prefix/suffix for valid UTF-8 (the needle first byte is a LEAD byte, so a byte match lands on a char boundary — no split multi-byte char, no false positive on a SHARED continuation byte), mirroring the $__wasm_str_cmp "byte order == code-point order" rationale; like it, allocates NOTHING (a bool, not a new string). Single-crate (xpile-wasm-codegen): 2 WAT helper consts + a generic module_uses_str_method(op) gate scan (each helper gated separately, no dead helper) + 3 emit_expr dispatch arms (StartsWith/EndsWith wired, other methods still refused). Advances the ★ HEAP/STRING/DICT-runtime EV lane (step 4b #2): the WASM string surface now covers len/ord/chr/s[i]/concat/slice/==/!=/ordering/str(int) AND startswith/endswith.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Feature branch feat/wasm-str-startswith-endswith (NOT worktree — disjoint crate from the cron Python-surface lane; xpile-wasm-codegen is cron-cold). Contract C-WASM-HEAP extended: new equation string_startswith_endswith_is_byte_prefix + proof-obligation + FALSIFY-WASM-HEAP-009 + compile_targets provenance. EXECUTED WABT witness (tests/str_prefix_witness.rs): 34 (case × op) pairs — ASCII (prefix/suffix/equal/longer-than-haystack/empty-needle) + MULTI-BYTE é/© fixtures — assemble via wat2wasm and run via wasm-interp value-matching CPython, incl. "héllo".startswith("h©")=False on a shared 0xA9 continuation byte and "héllo".endswith("éllo")=True on a char-boundary suffix offset. pv lint 0 errors, cargo test -p xpile-wasm-codegen green.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
