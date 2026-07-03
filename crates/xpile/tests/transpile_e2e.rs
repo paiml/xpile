@@ -3676,7 +3676,7 @@ fn main() {
     assert_eq!(extend_range(vec![1, 2]), 6);   // was E0425
     assert_eq!(extend_tuple(vec![1, 2]), 27);  // was E0599
     assert_eq!(extend_self(vec![1, 2, 3]), 12); // was E0502
-    let s: std::collections::HashSet<i64> = [10, 20].into_iter().collect();
+    let s: indexmap::IndexSet<i64> = [10, 20].into_iter().collect();
     assert_eq!(extend_set(vec![1, 2], s), 33);  // bonus: set extend
     assert_eq!(extend_list_regression(vec![1, 2], vec![3, 4]), 10);
 }
@@ -3954,8 +3954,8 @@ fn main() {
 }
 
 /// PMAT-615: augmented set assignment `s -= / |= / &= / ^= other`. Previously
-/// fell through to a numeric/bitwise BinOp — `HashSet::checked_sub` (E0599) for
-/// `-=` and owned-value `|`/`&`/`^` on `HashSet` (E0369) for the others:
+/// fell through to a numeric/bitwise BinOp — `IndexSet::checked_sub` (E0599) for
+/// `-=` and owned-value `|`/`&`/`^` on `IndexSet` (E0369) for the others:
 /// transpile succeeded but emitted invalid Rust. Now reuses the binop `SetOp`
 /// path. Cross-checked vs python3 ({1,2,3} op {3,4,5}).
 #[test]
@@ -3983,35 +3983,40 @@ fn main() {
 
 /// PMAT-502av (Tranche 2): set element removal `s.remove(x)` →
 /// `assert!(s.remove(&(x)), "…");` (KeyError if absent) and
-/// `s.discard(x)` → `s.remove(&(x));` (silent no-op).
+/// `s.discard(x)` → `s.shift_remove(&(x));` (silent no-op).
 #[test]
 fn set_remove() {
     let rust = xpile_transpile_to_rust("set_remove.py");
     assert!(
-        rust.contains("{ let __k = &(x); if !s.remove(__k) { panic!(\"xpile: KeyError: {}\","),
+        rust.contains(
+            "{ let __k = &(x); if !s.shift_remove(__k) { panic!(\"xpile: KeyError: {}\","
+        ),
         "remove (KeyError, repr-keyed payload PMAT-1089):\n{rust}"
     );
-    assert!(rust.contains("s.remove(&(x));"), "discard (no-op):\n{rust}");
     assert!(
-        rust.contains("drop(mut s: std::collections::HashSet"),
+        rust.contains("s.shift_remove(&(x));"),
+        "discard (no-op):\n{rust}"
+    );
+    assert!(
+        rust.contains("drop(mut s: indexmap::IndexSet"),
         "mut param:\n{rust}"
     );
     assert!(
-        rust.contains("let mut s: std::collections::HashSet"),
+        rust.contains("let mut s: indexmap::IndexSet"),
         "mut local:\n{rust}"
     );
     let driver = r#"
 fn main() {
     std::panic::set_hook(Box::new(|_| {}));
-    let mut s = std::collections::HashSet::new();
+    let mut s = indexmap::IndexSet::new();
     s.insert(1); s.insert(2); s.insert(3);
     assert_eq!(drop(s, 2), 2);
-    let mut s2 = std::collections::HashSet::new();
+    let mut s2 = indexmap::IndexSet::new();
     s2.insert(1);
     assert_eq!(disc(s2, 99), 1);
     assert_eq!(drop_local(), 2);
     // remove of an absent element panics (KeyError).
-    let mut s3 = std::collections::HashSet::new();
+    let mut s3 = indexmap::IndexSet::new();
     s3.insert(1);
     assert!(std::panic::catch_unwind(move || drop(s3, 99)).is_err());
 }
@@ -4020,17 +4025,17 @@ fn main() {
 }
 
 /// PMAT-598: a mutable empty `set()` infers its element type from the later
-/// `.add(...)`. It previously defaulted to `HashSet<i64>`, so `s = set();
+/// `.add(...)`. It previously defaulted to `IndexSet<i64>`, so `s = set();
 /// s.add(Coord(..))` was an i64-vs-struct mismatch (E0308). The element-type
 /// annotation is now suppressed so rustc infers from the insert. Cross-checked
 /// vs python3: each builder dedupes to 2.
 #[test]
 fn empty_set_add() {
     let rust = xpile_transpile_to_rust("empty_set_add.py");
-    // No `HashSet<i64>` annotation pins the empty set; bare new() infers.
+    // No `IndexSet<i64>` annotation pins the empty set; bare new() infers.
     assert!(
-        rust.contains("let mut s = std::collections::HashSet::new();")
-            && !rust.contains("let mut s: std::collections::HashSet<i64>"),
+        rust.contains("let mut s = indexmap::IndexSet::new();")
+            && !rust.contains("let mut s: indexmap::IndexSet<i64>"),
         "empty set() must infer its element type:\n{rust}"
     );
     let driver = r#"
@@ -6256,12 +6261,12 @@ fn main() {
     assert_rustc_runs("int_radix", &rust, driver);
 }
 
-/// PMAT-502cw (Tranche 2): `set(xs)` materialises a list into a HashSet.
+/// PMAT-502cw (Tranche 2): `set(xs)` materialises a list into a IndexSet.
 #[test]
 fn set_from_list() {
     let rust = xpile_transpile_to_rust("set_from_list.py");
     assert!(
-        rust.contains(".iter().cloned().collect::<std::collections::HashSet<_>>()"),
+        rust.contains(".iter().cloned().collect::<indexmap::IndexSet<_>>()"),
         "set(xs):\n{rust}"
     );
     let driver = r#"
@@ -6456,7 +6461,7 @@ fn main() {
 }
 
 /// PMAT-708: a bare dict (or set) interpolated in an f-string emitted
-/// `format!("{}", hashmap)` → E0277 (IndexMap/HashSet have no Display). It is now
+/// `format!("{}", hashmap)` → E0277 (IndexMap/IndexSet have no Display). It is now
 /// rejected at lowering — parity with `str()`/`print()`/`.format()`/`%` over a
 /// dict/set; iteration order is also non-deterministic (PMAT-537). (HUNT-V8 V8-10.)
 #[test]
@@ -6806,7 +6811,7 @@ fn main() {
 /// PMAT-592 (classes epic): a `@dataclass(frozen=True)` is hashable in Python,
 /// so it may be a set element or dict key. The struct must derive `Eq + Hash`
 /// (a bare `#[derive(Clone, Debug, PartialEq)]` struct is rejected as a
-/// `HashSet` element / `IndexMap` key — E0277/E0599). Derived only when every
+/// `IndexSet` element / `IndexMap` key — E0277/E0599). Derived only when every
 /// field is itself Eq+Hash-capable (`i64`/`bool`/`String`). Cross-checked vs
 /// python3: `count_unique()==2` (Coord(1,2) dedupes), `dict_key_lookup()==100`.
 #[test]
@@ -7346,7 +7351,7 @@ fn main() {
 }
 
 /// PMAT-519 (Tranche 2 — correctness): `frozenset(iterable)` — Rust has no
-/// frozen set, so it maps to a `HashSet` (an immutable set is one that's never
+/// frozen set, so it maps to a `IndexSet` (an immutable set is one that's never
 /// mutated), routed through the same `SetFromList` path as `set(...)`. Previously
 /// a silent miscompile (emitted an undefined `frozenset(...)` call). Cross-checked
 /// vs python3 (unique_count 3, has_member true/false, vowels_present 3).
@@ -7354,8 +7359,8 @@ fn main() {
 fn frozenset_basic() {
     let rust = xpile_transpile_to_rust("frozenset_basic.py");
     assert!(
-        !rust.contains("frozenset(") && rust.contains("collect::<std::collections::HashSet<_>>"),
-        "frozenset should lower to a HashSet, not an undefined `frozenset(...)` call:\n{rust}"
+        !rust.contains("frozenset(") && rust.contains("collect::<indexmap::IndexSet<_>>"),
+        "frozenset should lower to a IndexSet, not an undefined `frozenset(...)` call:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -7380,7 +7385,7 @@ fn list_sorted_of_set() {
         !rust.contains("list(set(")
             && !rust.contains("sorted(set(")
             && rust.contains(
-                ".collect::<std::collections::HashSet<_>>().iter().cloned().collect::<Vec<_>>()"
+                ".collect::<indexmap::IndexSet<_>>().iter().cloned().collect::<Vec<_>>()"
             ),
         "list/sorted of a set should materialise to a Vec, not emit undefined calls:\n{rust}"
     );
@@ -7756,9 +7761,9 @@ fn main() {
 /// `s.clear()` / `d.clear()`. `set.update` was rejected even though `dict.update`
 /// worked (an asymmetry); `set.clear`/`dict.clear` were rejected even though
 /// `list.clear` worked. All three reuse existing IR — `set.update` → the
-/// `ListExtend` stmt (`s.extend((other).iter().cloned())`, valid for `HashSet`),
+/// `ListExtend` stmt (`s.extend((other).iter().cloned())`, valid for `IndexSet`),
 /// and the clears → `ListMutate { Clear }` (`name.clear();`, valid for
-/// `HashSet`/`IndexMap`). No new IR/codegen. Cross-checked vs python3 (5, 4, 0, 0).
+/// `IndexSet`/`IndexMap`). No new IR/codegen. Cross-checked vs python3 (5, 4, 0, 0).
 #[test]
 fn set_dict_mutators() {
     let rust = xpile_transpile_to_rust("set_dict_mutators.py");
@@ -7768,11 +7773,11 @@ fn set_dict_mutators() {
     );
     let driver = r#"
 fn main() {
-    let s: std::collections::HashSet<i64> = [1, 2, 3].into_iter().collect();
-    let t: std::collections::HashSet<i64> = [3, 4, 5].into_iter().collect();
+    let s: indexmap::IndexSet<i64> = [1, 2, 3].into_iter().collect();
+    let t: indexmap::IndexSet<i64> = [3, 4, 5].into_iter().collect();
     assert_eq!(merge(s, t), 5);
     assert_eq!(update_literal(), 4);
-    let s2: std::collections::HashSet<i64> = [1, 2, 3].into_iter().collect();
+    let s2: indexmap::IndexSet<i64> = [1, 2, 3].into_iter().collect();
     assert_eq!(wipe_set(s2), 0);
     let mut d = indexmap::IndexMap::new();
     d.insert(String::from("a"), 1i64);
@@ -8637,7 +8642,7 @@ fn main() {
 /// loops inserting/adding to the accumulator (mirrors the list 2-gen slice via a
 /// shared `desugar_comp_2gen` helper). Per-generator `if` filters wrap their own
 /// loop. Cross-checked vs python3 (driver sorts the collected entries since
-/// IndexMap/HashSet iteration order is nondeterministic).
+/// IndexMap/IndexSet iteration order is nondeterministic).
 #[test]
 fn comp_2gen_dict_set() {
     let rust = xpile_transpile_to_rust("comp_2gen_dict_set.py");
@@ -8719,7 +8724,7 @@ fn main() {
 /// PMAT-502et (Tranche 2): set splat literals — `{*a, *b}`, `{*a, x}`. A set
 /// literal containing `*`-splat elements is a union: each `*e` contributes the
 /// set `e`, each plain `x` a singleton `{x}`, folded through `Expr::SetOp{Union}`
-/// (a fresh `HashSet`). A lone `{*a}` is wrapped in `Expr::Clone` (shallow
+/// (a fresh `IndexSet`). A lone `{*a}` is wrapped in `Expr::Clone` (shallow
 /// copy, not a move). Parallels the list-splat handling. Cross-checked vs python3.
 #[test]
 fn set_spread() {
@@ -8729,7 +8734,7 @@ fn set_spread() {
         "set splat should fold to SetOp::Union (+ Clone for a lone splat):\n{rust}"
     );
     let driver = r#"
-fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn s(xs: &[i64]) -> indexmap::IndexSet<i64> { xs.iter().copied().collect() }
 fn main() {
     assert_eq!(union_splat(s(&[1, 2]), s(&[2, 3])), 3);
     assert_eq!(splat_with_elem(s(&[1, 2])), 3);
@@ -8836,20 +8841,20 @@ fn main() {
 /// PMAT-502ep (Tranche 2): set predicates — the methods `a.issubset(b)` /
 /// `a.issuperset(b)` / `a.isdisjoint(b)` AND the operators `a <= b` / `a < b` /
 /// `a >= b` / `a > b` over two sets. The operators were a silent miscompile
-/// (they lowered to a plain ordering `BinOp` → `a <= b` on `HashSet`, which
+/// (they lowered to a plain ordering `BinOp` → `a <= b` on `IndexSet`, which
 /// rustc rejects). All now lower to a bool-returning `Expr::SetPred`
 /// (`is_subset`/`is_superset`/`is_disjoint`; proper variants add `&& a != b`).
-/// `==`/`!=` on sets keep the plain `BinOp` (HashSet `PartialEq`).
+/// `==`/`!=` on sets keep the plain `BinOp` (IndexSet `PartialEq`).
 /// Cross-checked vs python3.
 #[test]
 fn set_predicates() {
     let rust = xpile_transpile_to_rust("set_predicates.py");
     assert!(
         rust.contains("is_subset(") && rust.contains("is_disjoint("),
-        "set predicates should emit HashSet query methods:\n{rust}"
+        "set predicates should emit IndexSet query methods:\n{rust}"
     );
     let driver = r#"
-fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn s(xs: &[i64]) -> indexmap::IndexSet<i64> { xs.iter().copied().collect() }
 fn main() {
     assert!(is_subset(s(&[1, 2]), s(&[1, 2, 3])));
     assert!(!is_subset(s(&[1, 9]), s(&[1, 2, 3])));
@@ -8878,7 +8883,7 @@ fn set_predicates_no_move() {
         "set predicates must bind operands by reference:\n{rust}"
     );
     let driver = r#"
-fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn s(xs: &[i64]) -> indexmap::IndexSet<i64> { xs.iter().copied().collect() }
 fn main() {
     assert_eq!(subset_then_reuse(s(&[1, 2]), s(&[1, 2, 3])), 3); // was E0382
     assert_eq!(disjoint_self(s(&[1, 2])), 0);                    // was E0382
@@ -8902,7 +8907,7 @@ fn set_methods() {
         "set methods should lower to SetOp:\n{rust}"
     );
     let driver = r#"
-fn s(xs: &[i64]) -> std::collections::HashSet<i64> { xs.iter().copied().collect() }
+fn s(xs: &[i64]) -> indexmap::IndexSet<i64> { xs.iter().copied().collect() }
 fn main() {
     assert_eq!(union_size(s(&[1, 2, 3]), s(&[2, 3, 4])), 4);
     assert_eq!(intersection_size(s(&[1, 2, 3]), s(&[2, 3, 4])), 2);
@@ -9527,7 +9532,7 @@ fn main() {
 
 /// PMAT-587 (Tranche 2): **correctness** — a class/enum named after a Rust
 /// prelude type that xpile emits (`Vec`/`String`/`Option`/`Some`/`None`/
-/// `IndexMap`/`HashSet`) emits a `struct <Name>` that collides with the prelude:
+/// `IndexMap`/`IndexSet`) emits a `struct <Name>` that collides with the prelude:
 /// a bare unit struct shadows it, but once the module also uses the generic form
 /// (a `list[int]` → `Vec<i64>`) rustc rejects it (E0107) — a transpile-success →
 /// invalid-Rust break. Now rejected cleanly at lowering with a rename hint,
@@ -9548,7 +9553,7 @@ fn prelude_type_name_rejected() {
     );
 }
 
-/// PMAT-696: a float set element / dict key lowers to `HashSet<f64>` /
+/// PMAT-696: a float set element / dict key lowers to `IndexSet<f64>` /
 /// `IndexMap<f64, _>`, which is invalid Rust (`f64: !Eq`, `!Hash` → E0277) — a
 /// transpile success that fails `rustc`. It is now rejected at lowering with a
 /// clear message instead of emitting uncompilable Rust. (HUNT-V7 item V7-7.)
@@ -9558,7 +9563,7 @@ fn float_hashed_key_rejected() {
     let out = run_xpile(&["transpile", py.to_str().unwrap()]);
     assert!(
         !out.status.success(),
-        "a `set[float]` must be refused (HashSet<f64> is E0277), not emitted"
+        "a `set[float]` must be refused (IndexSet<f64> is E0277), not emitted"
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -10875,7 +10880,7 @@ fn main() {
 fn set_dict_comp_expr() {
     let rust = xpile_transpile_to_rust("set_dict_comp_expr.py");
     assert!(
-        rust.contains("HashSet<_>>().len()") && rust.contains("IndexMap<_, _>>().len()"),
+        rust.contains("IndexSet<_>>().len()") && rust.contains("IndexMap<_, _>>().len()"),
         "set/dict comp expr:\n{rust}"
     );
     let driver = r#"
@@ -11688,27 +11693,27 @@ fn set_ops_algebra() {
         "expected set-algebra method emission, got:\n{rust}"
     );
     let driver = r#"
-use std::collections::HashSet;
+use indexmap::IndexSet;
 fn main() {
-    let a: HashSet<i64> = [1, 2, 3].into_iter().collect();
-    let b: HashSet<i64> = [2, 3, 4].into_iter().collect();
-    assert_eq!(union_op(a.clone(), b.clone()), [1, 2, 3, 4].into_iter().collect::<HashSet<i64>>());
-    assert_eq!(intersect_op(a.clone(), b.clone()), [2, 3].into_iter().collect::<HashSet<i64>>());
-    assert_eq!(diff_op(a.clone(), b.clone()), [1].into_iter().collect::<HashSet<i64>>());
-    assert_eq!(symdiff_op(a.clone(), b.clone()), [1, 4].into_iter().collect::<HashSet<i64>>());
+    let a: IndexSet<i64> = [1, 2, 3].into_iter().collect();
+    let b: IndexSet<i64> = [2, 3, 4].into_iter().collect();
+    assert_eq!(union_op(a.clone(), b.clone()), [1, 2, 3, 4].into_iter().collect::<IndexSet<i64>>());
+    assert_eq!(intersect_op(a.clone(), b.clone()), [2, 3].into_iter().collect::<IndexSet<i64>>());
+    assert_eq!(diff_op(a.clone(), b.clone()), [1].into_iter().collect::<IndexSet<i64>>());
+    assert_eq!(symdiff_op(a.clone(), b.clone()), [1, 4].into_iter().collect::<IndexSet<i64>>());
 }
 "#;
     assert_rustc_runs("set_ops", &rust, driver);
 }
 
 /// PMAT-502i (Tranche 2): empty collection constructors `set()` / `dict()` /
-/// `list()` → empty `HashSet::new()` / `IndexMap::new()` / `vec![]`, typed by
+/// `list()` → empty `IndexSet::new()` / `IndexMap::new()` / `vec![]`, typed by
 /// a binding annotation or a subsequent `.add()`/`.append()`.
 #[test]
 fn empty_constructors() {
     let rust = xpile_transpile_to_rust("empty_constructors.py");
     assert!(
-        rust.contains("std::collections::HashSet::new()")
+        rust.contains("indexmap::IndexSet::new()")
             && rust.contains("indexmap::IndexMap::new()")
             && rust.contains("Vec<i64> = vec![]"),
         "expected empty-constructor emission, got:\n{rust}"
@@ -11789,14 +11794,14 @@ fn main() {
     assert_rustc_runs("dict_comp_key_reuse", &rust, driver);
 }
 
-/// PMAT-500 (Tranche 2): sets — literal `{a, b, c}` → `HashSet`-init block,
+/// PMAT-500 (Tranche 2): sets — literal `{a, b, c}` → `IndexSet`-init block,
 /// `x in s` / `x not in s` → `s.contains(&(x))`.
 #[test]
 fn sets_literal_and_membership() {
     let rust = xpile_transpile_to_rust("sets.py");
     assert!(
-        rust.contains("HashSet") && rust.contains(".contains(&("),
-        "expected HashSet literal + membership, got:\n{rust}"
+        rust.contains("IndexSet") && rust.contains(".contains(&("),
+        "expected IndexSet literal + membership, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -13845,25 +13850,25 @@ fn main() {
 
 /// PMAT-719 (HUNT-V9 V9-13): set algebra over dict key views — `a.keys() & b.keys()`
 /// (and `|`/`-`/`^`, plus a key-view against a plain set) now transpiles to a Rust
-/// `HashSet` set operation instead of `Vec & Vec` (E0369). The result agrees with
+/// `IndexSet` set operation instead of `Vec & Vec` (E0369). The result agrees with
 /// CPython (the views are materialized as sets, then intersected / unioned / etc.).
 #[test]
 fn dict_view_setops_emitted_rust_matches_cpython() {
     let rust = xpile_transpile_to_rust("dict_view_setops.py");
     assert!(
         rust.contains(".intersection(") && rust.contains(".union("),
-        "expected HashSet set ops, got:\n{rust}"
+        "expected IndexSet set ops, got:\n{rust}"
     );
     let driver = r#"
 use indexmap::IndexMap;
-    use std::collections::HashSet;
+    use indexmap::IndexSet;
 fn d(p: &[(&str, i64)]) -> IndexMap<String, i64> {
     p.iter().map(|(k, v)| (k.to_string(), *v)).collect()
 }
 fn main() {
     let a = d(&[("x", 1), ("y", 2), ("z", 3)]);
     let b = d(&[("y", 3), ("z", 4), ("w", 5)]);
-    let s: HashSet<String> = ["x", "w"].iter().map(|x| x.to_string()).collect();
+    let s: IndexSet<String> = ["x", "w"].iter().map(|x| x.to_string()).collect();
     assert_eq!(inter(a.clone(), b.clone()), 2);
     assert_eq!(uni(a.clone(), b.clone()), 4);
     assert_eq!(diff(a.clone(), b.clone()), 1);
@@ -16119,7 +16124,7 @@ fn main() {
 }
 
 /// PMAT-804 (HUNT-V20 SET-BOOL-MEMBERSHIP): a bool needle in an int set (`True
-/// in {1,2,3}`) emitted `s.contains(&true)` over a `HashSet<i64>` → E0308, where
+/// in {1,2,3}`) emitted `s.contains(&true)` over a `IndexSet<i64>` → E0308, where
 /// Python's bool is an int subtype (True==1). The needle is now coerced to i64.
 /// Cross-checked vs python3.
 #[test]
@@ -16912,7 +16917,7 @@ fn set_update_str_tuple() {
 fn main() {
     assert_eq!(from_str(), 4);                 // {x,a,b,c}
     assert_eq!(from_tuple(), 4);               // {1,2,3,4}
-    let mut o = std::collections::HashSet::new(); o.insert(3); o.insert(4);
+    let mut o = indexmap::IndexSet::new(); o.insert(3); o.insert(4);
     assert_eq!(from_set(o), 4);                // {1,2,3,4}
     assert_eq!(from_list(), 4);                // {1,2,5,6}
 }
@@ -16939,14 +16944,14 @@ fn main() {
 
 /// PMAT-847 (HUNT-V27 #12): a for-loop over a set or tuple was clean-rejected
 /// though both are everyday Python iterables. A set iterates its elements
-/// (HashSet .iter().cloned()); a homogeneous tuple materializes to a list.
+/// (IndexSet .iter().cloned()); a homogeneous tuple materializes to a list.
 /// Cross-checked vs python3.
 #[test]
 fn for_over_set_tuple() {
     let rust = xpile_transpile_to_rust("for_over_set_tuple.py");
     let driver = r#"
 fn main() {
-    let mut s = std::collections::HashSet::new();
+    let mut s = indexmap::IndexSet::new();
     s.insert(1); s.insert(2); s.insert(3);
     assert_eq!(over_set(s), 6);
     assert_eq!(over_tuple(), 60);
@@ -16965,7 +16970,7 @@ fn comp_over_set_tuple() {
     let rust = xpile_transpile_to_rust("comp_over_set_tuple.py");
     let driver = r#"
 fn main() {
-    let mut s = std::collections::HashSet::new();
+    let mut s = indexmap::IndexSet::new();
     s.insert(1); s.insert(2); s.insert(3);
     assert_eq!(comp_set(s.clone()), 12);
     assert_eq!(comp_tuple(), 18);
@@ -20787,4 +20792,25 @@ fn main() {
 }
 "#;
     assert_rustc_runs("cm_unannotated_enter", &rust, driver);
+}
+
+/// PMAT-1152: sets lower to indexmap::IndexSet (deterministic iteration), not
+/// HashSet (per-process RandomState → flapping). Order-independent ops MATCH.
+#[test]
+fn set_deterministic() {
+    let rust = xpile_transpile_to_rust("set_deterministic.py");
+    assert!(
+        rust.contains("IndexSet")
+            && !rust.contains("collections :: HashSet")
+            && !rust.contains("collections::HashSet"),
+        "sets use indexmap::IndexSet, not std HashSet:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(dedup_count(vec![1, 1, 2, 2, 3]), 3, "set dedup");
+    assert_eq!(union_size(vec![1, 2, 3], vec![2, 3, 4]), 4, "union size");
+    assert!(membership(5) && !membership(9), "membership");
+}
+"#;
+    assert_rustc_runs("set_deterministic", &rust, driver);
 }
