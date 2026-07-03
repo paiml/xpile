@@ -157,6 +157,16 @@ equations:
     # contracts/lean/CompileRustToPtxMma.lean for the proof.
     # FIRST Layer-5 (compile-time / IR) contract to receive a
     # refinement theorem.
+    # PMAT-1179 (skeptic pass #8): DE-VACUIFIED. The prior Bronze
+    # statement `(lower_kernel_to_ptx k).emitted = k.marker` was
+    # `rfl` for ANY emitter — the sm_70 scalar-fma fallback (the
+    # `scalar_mad_fallback` counter-example of FALSIFY-COMPILE-PTX-001)
+    # satisfied it, so it certified nothing. Now modelled over an
+    # emitted `InstrClass` + a load-bearing `PtxEmitter.emitsMma`
+    # fidelity witness: `mma_emission_for_gemm_kernel` holds PRECISELY
+    # because a faithful emitter selects `mma`, with duals
+    # `scalar_fallback_emits_scalar_fma` (the fallback emits scalarFma)
+    # + `scalar_fma_is_not_mma` (≠) locking falsifiability.
     lean_theorem: "XpileContracts.CCompileRustToPtxMma.mma_emission_for_gemm_kernel"
     lean_file: "contracts/lean/CompileRustToPtxMma.lean"
     # PMAT-075: Kani harness completes the §14.4 quorum and

@@ -48,6 +48,18 @@
 namespace XpileContracts.CCompileRustToPtxMma
 
 /--
+  The instruction class an emitter selects for a GEMM kernel
+  body. `mma` uses `mma.sync.aligned` tensor-core instructions;
+  `scalarFma` is the sm_70 legalisation fallback — `fma.rn`
+  chains that DROP every `mma.sync`, the `scalar_mad_fallback`
+  counter-example class of FALSIFY-COMPILE-PTX-001.
+-/
+inductive InstrClass where
+  | mma
+  | scalarFma
+deriving DecidableEq
+
+/--
   Abstract model of a Rust kernel input as seen by
   xpile-ptx-codegen. At v0.1.0 we represent it as a byte array
   carrying a kernel-marker payload (in real codegen this would
@@ -61,81 +73,157 @@ structure KernelInput where
 deriving DecidableEq
 
 /--
-  Abstract model of emitted PTX text. v0.1.0 model — same
-  byte-array shape as `KernelInput`, locking in the marker-
-  preservation claim at the byte level. Silver-tier refinement
-  replaces this with a typed PTX AST (instructions, registers,
-  shared-memory directives).
+  A PTX emitter's lowering strategy for an `#[gpu_kernel(mma)]`
+  kernel. `emitsMma = true` is the faithful tensor-core path;
+  `false` is the sm_70 scalar fallback. This is the load-bearing
+  witness the pre-PMAT-1179 byte-identity model was missing —
+  without it, marker preservation held for the scalar fallback
+  too, so `mma_emission_for_gemm_kernel` certified nothing.
 -/
-structure PtxOutput where
-  emitted : Array UInt8
+structure PtxEmitter where
+  emitsMma : Bool
 deriving DecidableEq
 
 /--
-  Lowering function: Rust kernel → PTX text. v0.1.0 model:
-  byte-identity on the marker payload. The Bronze-tier
-  placeholder captures the load-bearing property — the
-  `#[gpu_kernel(mma)]` marker is faithfully carried into the
-  emitted PTX preamble — without committing to a specific PTX
-  generation strategy.
-
-  Real xpile-ptx-codegen does much more: parses the kernel
-  body, schedules tiles, emits `mma.sync.aligned`,
-  `cp.async`, shared-memory directives. The Bronze-tier model
-  abstracts away the body shape and focuses on the marker
-  preservation property that every more elaborate refinement
-  must continue to satisfy.
+  Abstract model of emitted PTX text. PMAT-1179 refines the
+  opaque byte payload with the `instrClass` actually emitted, so
+  a scalar legalisation is DISTINGUISHABLE from a tensor-core
+  emission (the byte marker alone could not tell them apart).
+  Silver-tier refinement replaces this with a typed PTX AST
+  (instructions, registers, shared-memory directives).
 -/
-def lower_kernel_to_ptx (k : KernelInput) : PtxOutput :=
-  { emitted := k.marker }
+structure PtxOutput where
+  emitted : Array UInt8
+  instrClass : InstrClass
+deriving DecidableEq
+
+/--
+  Lowering function: Rust kernel → PTX text, parameterised by the
+  emitter strategy `e`. The marker payload is preserved (as at
+  v0.1.0) AND the instruction class is now recorded: a faithful
+  emitter selects the `mma` tensor-core path; the sm_70 fallback
+  preserves the marker but DROPS `mma.sync`, selecting `scalarFma`.
+
+  Real xpile-ptx-codegen does much more: parses the kernel body,
+  schedules tiles, emits `mma.sync.aligned`, `cp.async`,
+  shared-memory directives. The Bronze-tier model abstracts away
+  the body shape and focuses on the instruction-class / marker
+  preservation property every refinement must continue to satisfy.
+-/
+def lower_kernel_to_ptx (e : PtxEmitter) (k : KernelInput) : PtxOutput :=
+  { emitted := k.marker
+    instrClass := if e.emitsMma then InstrClass.mma else InstrClass.scalarFma }
+
+/--
+  The concrete xpile-ptx-codegen emitter for `#[gpu_kernel(mma)]`
+  kernels: it emits the tensor-core path (`emitsMma := true`).
+-/
+def xpileMmaEmitter : PtxEmitter := { emitsMma := true }
+
+/--
+  Bronze shared-memory model: `lower_smem clamps requested budget`
+  is the realised static shared-memory byte count. A budget-aware
+  emitter (`clamps = true`) clamps the request to the target
+  budget; an unfaithful one passes the raw request through — the
+  over-budget bug the smem obligation catches.
+-/
+def lower_smem : Bool → Nat → Nat → Nat
+  | true, requested, budget => min requested budget
+  | false, requested, _ => requested
 
 /--
   **Refinement theorem** for `mma_emission_for_gemm_kernel`
   (the load-bearing claim from the contract YAML's equation
-  block).
+  block and proof-obligation `∃ instr ∈ tokens(emitted_ptx) :
+  instr matches /mma\.sync\.aligned\./`).
 
-  Lowering a Rust kernel marked `#[gpu_kernel(mma)]` to PTX
-  preserves the kernel marker in the emitted output. Proof is
-  `rfl` by our v0.1.0 modelling choice (byte identity on the
-  marker payload).
+  A FAITHFUL emitter of a `#[gpu_kernel(mma)]` kernel emits the
+  tensor-core instruction class. The `h : e.emitsMma = true`
+  hypothesis is load-bearing — it is exactly the emitter
+  faithfulness the contract requires, and the theorem is FALSE
+  without it (see `scalar_fallback_emits_scalar_fma`).
 
-  Documentary value: any future xpile-ptx-codegen impl whose
-  emission drops the `#[gpu_kernel(mma)]` marker silently
-  (e.g., legalizing to scalar `fma.rn` instructions instead of
-  `mma.sync.aligned`) must either preserve `rfl`-equivalence
-  under this model OR invalidate the theorem (and
-  `refinement_proofs.rs`'s citation gate fires).
+  Non-vacuity (PMAT-1179, skeptic pass #8): the pre-PMAT-1179
+  Bronze statement `(lower_kernel_to_ptx k).emitted = k.marker`
+  was `rfl` for ANY emitter — including the sm_70 scalar fallback
+  the contract's FALSIFY-COMPILE-PTX-001 rule is meant to forbid
+  (counter-example class `scalar_mad_fallback`) — so it certified
+  nothing: a backend that dropped every `mma.sync.aligned` in
+  favour of `fma.rn` chains satisfied `.emitted = k.marker` just
+  as well. Restated over the emitted instruction class plus a
+  load-bearing emitter-fidelity witness.
 
-  Falsification: an emitter that targets sm_70 fallback paths
-  for mma-marked kernels — emitting `fma.rn` chains rather
-  than `mma.sync.aligned` — would falsify the
-  marker-preservation claim once Silver-tier refinement
-  introduces typed instruction nodes.
-
-  Status: **discharged at v0.1.0 (PMAT-074)**. Tier: Bronze.
+  Status: **discharged at v0.1.0 (PMAT-074), de-vacuified at
+  PMAT-1179**. Tier: Bronze.
 
   This is the **first Layer-5 contract** to receive a Lean
   refinement theorem. The compile-time / IR layer has been the
   hardest to formalise because its claims are about emitted
   hardware-targeting text (PTX, WGSL, SPIR-V), not about
-  source-language semantics. Bronze tier captures the
-  "marker preservation" invariant — the hardware-aware version
-  is XPILE-REFINE-COMPILE-PTX-001 future work.
+  source-language semantics.
 -/
-theorem mma_emission_for_gemm_kernel (k : KernelInput) :
-    (lower_kernel_to_ptx k).emitted = k.marker := by
-  rfl
+theorem mma_emission_for_gemm_kernel (e : PtxEmitter) (k : KernelInput)
+    (h : e.emitsMma = true) :
+    (lower_kernel_to_ptx e k).instrClass = InstrClass.mma := by
+  simp [lower_kernel_to_ptx, h]
 
 /--
-  **Shared memory budget** auxiliary claim — Bronze-tier
-  placeholder. At Bronze tier this reduces to `rfl` because the
-  byte-array model doesn't track shared-memory directives
-  separately. The Silver-tier refinement below introduces a
-  typed `smem_bytes` field and a hardware-bound inequality.
+  **Falsification dual** (non-vacuity witness): the sm_70 scalar
+  fallback (`emitsMma = false`) emits `scalarFma`, not `mma`. A
+  backend that silently legalises an mma-marked kernel to `fma.rn`
+  chains therefore VIOLATES `mma_emission_for_gemm_kernel` — the
+  `scalar_mad_fallback` counter-example of FALSIFY-COMPILE-PTX-001.
+  Its existence is what makes the theorem non-vacuous: a plausible
+  emitter FALSIFIES the mma claim.
 -/
-theorem shared_memory_budget (k : KernelInput) :
-    (lower_kernel_to_ptx k).emitted = k.marker := by
-  rfl
+theorem scalar_fallback_emits_scalar_fma (e : PtxEmitter) (k : KernelInput)
+    (h : e.emitsMma = false) :
+    (lower_kernel_to_ptx e k).instrClass = InstrClass.scalarFma := by
+  simp [lower_kernel_to_ptx, h]
+
+/-- The scalar fallback class is DISTINCT from the tensor-core
+    class — dropping `mma.sync` is observable, so the two lowerings
+    genuinely diverge. -/
+theorem scalar_fma_is_not_mma : InstrClass.scalarFma ≠ InstrClass.mma := by
+  decide
+
+/-- **Pin**: the concrete xpile emitter discharges the mma
+    emission claim with no free hypothesis. -/
+theorem xpile_emitter_emits_mma (k : KernelInput) :
+    (lower_kernel_to_ptx xpileMmaEmitter k).instrClass = InstrClass.mma := by
+  simp [lower_kernel_to_ptx, xpileMmaEmitter]
+
+/--
+  **Shared memory budget** auxiliary claim — Bronze tier.
+
+  A budget-clamping emitter's realised static shared memory never
+  exceeds the target budget, for ANY budget. The `clamps = true`
+  premise is load-bearing: dropped, the claim is FALSE (see
+  `unclamped_smem_can_exceed_budget`).
+
+  Non-vacuity (PMAT-1179): the pre-PMAT-1179 statement
+  `(lower_kernel_to_ptx k).emitted = k.marker` was `rfl` for any
+  emitter and said nothing about shared memory. Restated over the
+  Bronze `lower_smem` clamp model so the budget bound is genuine.
+  (The Silver `shared_memory_budget_silver` below specialises this
+  to the concrete sm_80 48 KiB ceiling.)
+-/
+theorem shared_memory_budget (requested budget : Nat) :
+    lower_smem true requested budget ≤ budget := by
+  simp only [lower_smem]
+  exact Nat.min_le_right requested budget
+
+/--
+  **Falsification dual** (non-vacuity witness): an emitter that
+  does NOT clamp (`clamps = false`) emits the raw request, which
+  for an over-budget kernel EXCEEDS the budget — the over-budget
+  bug the smem obligation catches. Its existence is what makes
+  `shared_memory_budget` non-vacuous.
+-/
+theorem unclamped_smem_can_exceed_budget (budget : Nat) :
+    ¬ (lower_smem false (budget + 1) budget ≤ budget) := by
+  simp only [lower_smem]
+  omega
 
 /-! ## PMAT-161 — Silver-tier refinement for `shared_memory_budget`
     (XPILE-REFINE-COMPILE-PTX-002).
