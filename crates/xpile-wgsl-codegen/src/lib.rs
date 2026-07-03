@@ -31,7 +31,7 @@ use xpile_meta_hir::Module;
 mod wgpu_diffexec;
 pub use wgpu_diffexec::{
     gpu_probe_env_usable, kernel_module, real_emitted_compute_wgsl, vulkan_adapter_available,
-    wgpu_adapter_available, WgpuWgslDiffExecEngine, FIXTURE_INPUT,
+    vulkan_loader_guard, wgpu_adapter_available, WgpuWgslDiffExecEngine, FIXTURE_INPUT,
 };
 
 mod wgsl_emit;

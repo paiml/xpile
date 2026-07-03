@@ -7,6 +7,57 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Fixed — GPU witness suite: Vulkan loader race serialized (PMAT-1098)
+
+`cargo test -p xpile-spirv-codegen --lib` SIGSEGV'd ~40% of parallel runs
+on a GPU-present box (2/5 full-workspace runs): the three GPU-executing
+tests (both PMAT-988 witness tests + the lib.rs multi-emitter witness)
+raced concurrent `wgpu::Instance::new`/`request_adapter` calls into the
+Vulkan ICD — the GPU-present sibling of the headless enumeration crash
+gated by PMAT-1088, and equally unsurvivable in-process. Found by this
+pass's regression re-run because the first run's exit code was
+pipe-masked (feedback-pipe-masks-exit-code, again). Fix: a process-wide,
+poison-tolerant `vulkan_loader_guard()` in `xpile-wgsl-codegen`
+(re-exported), taken at every loader touchpoint in both GPU crates
+(`wgpu_adapter_available`, both `acquire_device` paths, spirv
+`vulkan_adapter_available`). Witness *setup* serializes; execution is
+untouched. 0/10 failures post-fix (2/5 pre); full workspace suite
+true-exit green, 122 suites; `lake build` green.
+
+### Verification — adversarial skeptic pass #4 (PMAT-1098)
+
+Five independent refutation agents over the seven slices since PMAT-1090
+(KeyError repr 1091, try-scoping 1092, eager generators 1093, CM dunder
+signatures 1094, loop-var boundary 1095, chr() 1096, message precision
+1097) + full regression. ~300 differential probes vs CPython 3.10; every
+filed finding independently re-reproduced first-hand before filing.
+
+- **SURVIVED outright**: PMAT-1096 (28 chr() probes: OverflowError/
+  ValueError bands byte-exact incl. dynamic non-constant-fold paths;
+  honest surrogate panic; zero silent u32 wraps) and PMAT-1097a
+  (`%`/`//`-by-zero 9/9 exact incl. negative operands). PMAT-1092's
+  literal scoping claims survived 34 probes (zero E0425/hoist/as-name
+  miscompiles).
+- **Survived on the shipped core, gaps one step out**: 1091 exact to
+  tuple arity 3 across 22 escape/quote-flip probes (arity-4 `Debug`
+  cliff + the already-documented Cn honest-gap → PMAT-1100); 1094
+  vararg refusal + arity rationales + ANNOTATED keep-green (unannotated
+  `__enter__` E0308 miscompile family → PMAT-1103); 1095 flat/plain-Name
+  core (nested-dup last-wins REVERSED silent divergence + comprehension-
+  target E0416 → PMAT-1104); 1097b named digit classes (No/Nl message
+  falsehood → PMAT-1101).
+- **Refuted decisively again**: 1093 — the call-purity gate misses
+  2-clause genexp bodies, if-filters, and `key=`; `any()` over
+  `range(10**11)` is accepted and aborts on an 800 GB allocation where
+  CPython short-circuits instantly (→ PMAT-1099).
+- **New adjacent findings**: handler-DISPATCH silent divergences — non-leaf
+  `except ArithmeticError`/`LookupError` miss the class itself, and the
+  `except Exception` catch-all wrongly catches `SystemExit` AND xpile's
+  own honesty panics, silently defeating the C-PY-INT-ARITH loud-refusal
+  guarantee (→ PMAT-1105); acceptance-honesty pair — key-type-mismatched
+  dict subscript and `def main() -> int` both accepted into
+  non-compiling artifacts (→ PMAT-1102).
+
 ### Fixed — KeyError payload repr remainder: composite keys + non-printable escapes (PMAT-1091)
 
 Skeptic pass PMAT-1090 (A-F2/A-F3) filed two SILENT payload divergences

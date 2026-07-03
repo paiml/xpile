@@ -298,6 +298,10 @@ pub fn vulkan_adapter_available() -> bool {
     if !xpile_wgsl_codegen::gpu_probe_env_usable() {
         return false;
     }
+    // PMAT-1098: loader entry is serialized process-wide — concurrent
+    // enumeration from parallel test threads intermittently SIGSEGVs
+    // the ICD even in a usable session.
+    let _loader = xpile_wgsl_codegen::vulkan_loader_guard();
     let instance = witness_instance();
     pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
@@ -321,7 +325,9 @@ impl SpirvDiffExecEngine {
     /// Acquire a Vulkan adapter + device for the witness. `Err` (not a
     /// skip) — the caller only reaches here after [`vulkan_adapter_available`]
     /// gated the engine in, so a failure here is a genuine broken-GPU fault.
+    /// Loader entry is serialized (PMAT-1098).
     fn acquire_device() -> Result<(wgpu::Device, wgpu::Queue, String), String> {
+        let _loader = xpile_wgsl_codegen::vulkan_loader_guard();
         let instance = witness_instance();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
