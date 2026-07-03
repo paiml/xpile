@@ -2010,6 +2010,44 @@ fn emit_subscript_write_through(
     Ok(())
 }
 
+/// PMAT-1099: emit a range as a LAZY iterator (`(a..b)` / negative-step rev
+/// form) WITHOUT the trailing `.collect::<Vec<i64>>()`. `RangeList` wraps this
+/// with the collect for its list semantics; a short-circuiting genexp reducer
+/// (`any`/`all` over `range(...)`) uses the bare iterator so it never
+/// materializes — `any(p for x in range(10**11))` must short-circuit, not
+/// attempt an 800GB allocation (CPython stops at the first hit).
+fn emit_range_iter(
+    out: &mut String,
+    start: &Expr,
+    stop: &Expr,
+    step: i64,
+    mode: bool,
+) -> Result<(), CodegenError> {
+    if step > 0 {
+        out.push('(');
+        emit_expr(out, start, mode)?;
+        out.push_str("..");
+        emit_expr(out, stop, mode)?;
+        out.push(')');
+        if step != 1 {
+            write!(out, ".step_by({step}usize)")?;
+        }
+    } else {
+        // PMAT-523: negative-step range — Python `range(start, stop, step<0)` =
+        // `((stop)+1 ..= (start)).rev().step_by(|step|)`.
+        out.push_str("(((");
+        emit_expr(out, stop, mode)?;
+        out.push_str(") + 1)..=(");
+        emit_expr(out, start, mode)?;
+        out.push_str(")).rev()");
+        let abs = -step;
+        if abs != 1 {
+            write!(out, ".step_by({abs}usize)")?;
+        }
+    }
+    Ok(())
+}
+
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {
     match e {
         // PMAT-502bl: the unit value (void function trailing return).
@@ -3447,15 +3485,56 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 },
             ) = (*short_circuit, &**list)
             {
-                emit_expr(out, inner, mode)?;
                 let method = if *is_all { "all" } else { "any" };
-                write!(
-                    out,
-                    ".iter().cloned().{method}(|__k| {{ let {} = __k.clone(); ",
-                    lambda.param
-                )?;
-                emit_expr(out, &lambda.body, mode)?;
-                out.push_str(" })");
+                // PMAT-1099: a genexp over `range(...)` — emit the LAZY range
+                // iterator (no `.collect::<Vec>()`, no `.iter().cloned()`) so
+                // `any`/`all` short-circuit without materializing. The prior
+                // `(0..N).collect::<Vec>().iter().cloned().any(..)` collected the
+                // whole range first — `any(p for x in range(10**11))` attempted an
+                // 800GB alloc where CPython stops at the first hit. Also covers a
+                // FILTER clause (`… if cond`): the genexp lowers to `Map` over a
+                // `Filter`, which double-materialized (range → Vec, filtered →
+                // Vec); a lazy `.filter(..).any(..)` on the raw range short-circuits.
+                // A non-range source (list/other) keeps `.iter().cloned()`
+                // (already in memory).
+                if let Expr::RangeList { start, stop, step } = &**inner {
+                    emit_range_iter(out, start, stop, *step, mode)?;
+                    write!(out, ".{method}(|__k| {{ let {} = __k; ", lambda.param)?;
+                    emit_expr(out, &lambda.body, mode)?;
+                    out.push_str(" })");
+                } else if let Expr::Filter {
+                    list: flist,
+                    lambda: flambda,
+                } = &**inner
+                {
+                    if let Expr::RangeList { start, stop, step } = &**flist {
+                        emit_range_iter(out, start, stop, *step, mode)?;
+                        // `.filter` takes `&Item`; deref for the Copy element type.
+                        write!(out, ".filter(|__k| {{ let {} = *__k; ", flambda.param)?;
+                        emit_expr(out, &flambda.body, mode)?;
+                        write!(out, " }}).{method}(|__k| {{ let {} = __k; ", lambda.param)?;
+                        emit_expr(out, &lambda.body, mode)?;
+                        out.push_str(" })");
+                    } else {
+                        emit_expr(out, inner, mode)?;
+                        write!(
+                            out,
+                            ".iter().cloned().{method}(|__k| {{ let {} = __k.clone(); ",
+                            lambda.param
+                        )?;
+                        emit_expr(out, &lambda.body, mode)?;
+                        out.push_str(" })");
+                    }
+                } else {
+                    emit_expr(out, inner, mode)?;
+                    write!(
+                        out,
+                        ".iter().cloned().{method}(|__k| {{ let {} = __k.clone(); ",
+                        lambda.param
+                    )?;
+                    emit_expr(out, &lambda.body, mode)?;
+                    out.push_str(" })");
+                }
             } else {
                 emit_expr(out, list, mode)?;
                 out.push_str(if *is_all {
@@ -4100,28 +4179,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         }
         // PMAT-502cj: `list(range(start, stop, step))` → a collected i64 range.
         Expr::RangeList { start, stop, step } => {
-            if *step > 0 {
-                out.push('(');
-                emit_expr(out, start, mode)?;
-                out.push_str("..");
-                emit_expr(out, stop, mode)?;
-                out.push(')');
-                if *step != 1 {
-                    write!(out, ".step_by({step}usize)")?;
-                }
-            } else {
-                // PMAT-523: negative-step range — Python `range(start, stop,
-                // step<0)` = `((stop)+1 ..= (start)).rev().step_by(|step|)`.
-                out.push_str("(((");
-                emit_expr(out, stop, mode)?;
-                out.push_str(") + 1)..=(");
-                emit_expr(out, start, mode)?;
-                out.push_str(")).rev()");
-                let abs = -*step;
-                if abs != 1 {
-                    write!(out, ".step_by({abs}usize)")?;
-                }
-            }
+            emit_range_iter(out, start, stop, *step, mode)?;
             out.push_str(".collect::<Vec<i64>>()");
         }
         // PMAT-502cw: `set(xs)` → collect the list into a HashSet.
