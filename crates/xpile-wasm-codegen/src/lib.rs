@@ -168,6 +168,7 @@
 
 use std::fmt::Write as _;
 
+use std::collections::HashMap;
 use xpile_backend::{
     Artifact, Backend, BackendConfig, BackendError, EmittedText, MultiEmitterBackend, QuorumPolicy,
     QuorumStatus, Target, TargetEmitter,
@@ -4139,6 +4140,215 @@ fn desugar_foreach_stmts(stmts: &[Stmt], next: &mut usize) -> Result<Vec<Stmt>, 
     Ok(out)
 }
 
+// ─── PMAT-1164: f-string / format int-operand auto-stringification ──────────
+//
+// A Python f-string / `str.format` / `%`-format with literal text AROUND an
+// interpolated value lowers (in the shared frontend) to a left-nested
+// `Expr::Concat` whose operands are the literal chunks (`LitStr`) interleaved
+// with the interpolated expressions — e.g. `f"count={n}"` becomes
+// `Concat(LitStr("count="), n)`. For a STRING interpolation the operand is
+// already string-valued and the existing `emit_concat` handles it; for an INT
+// interpolation the operand is a raw `i64` expression. The Rust backend relies
+// on `format!`'s `Display` there, but the WASM lane has no `Display` — it must
+// materialise the decimal string explicitly.
+//
+// This pre-pass rewrites every int-valued `Concat` operand into an explicit
+// `str(int)` (`Expr::ToStr { of_float: false }`) BEFORE any gate scan or
+// emission runs, so:
+//   * `module_needs_int_to_str` sees the injected `ToStr` (it recurses through
+//     `Concat` and matches `ToStr { of_float: false }`) and emits the
+//     `$__wasm_int_to_str` helper — no called-but-undeclared gate hole, and
+//   * `emit_concat` sees an ordinary string-valued operand (a `ToStr`, which it
+//     already lowers via `emit_int_to_str`).
+//
+// It is FAIL-SAFE: an operand shape the classifier does not POSITIVELY type as
+// int is left untouched, so a genuinely-string operand is never mis-wrapped and
+// an unsupported operand still refuses honestly at `emit_str_expr`. A bare
+// single-interpolation f-string (`f"{n}"`, no surrounding literal → a raw
+// `StrFormat`, not a `Concat`) and any format spec (`f"{x:>5}"`) stay refused.
+fn normalize_module_fstring_ints(module: &Module) -> Module {
+    let mut m = module.clone();
+    for item in &mut m.items {
+        match item {
+            Item::Function(f) => normalize_fn_fstring_ints(f),
+            Item::Struct { methods, .. } => {
+                for f in methods {
+                    normalize_fn_fstring_ints(f);
+                }
+            }
+            _ => {}
+        }
+    }
+    m
+}
+
+fn normalize_fn_fstring_ints(f: &mut Function) {
+    // name → declared type, from params + every `let` in the body (a shadowing
+    // `let` overrides the param binding). Only the int (`I64`/`CLong`) entries
+    // matter to the classifier, but collecting all keeps the check one lookup.
+    let mut ctx: HashMap<String, Type> = HashMap::new();
+    for p in &f.params {
+        ctx.insert(p.name.clone(), p.ty.clone());
+    }
+    collect_let_types(&f.body.stmts, &mut ctx);
+    normalize_stmts_fstring_ints(&mut f.body.stmts, &ctx);
+    normalize_expr_fstring_ints(&mut f.body.trailing_return, &ctx);
+}
+
+/// Collect `let`-binding names → types, recursing into `if`/`while` bodies.
+fn collect_let_types(stmts: &[Stmt], ctx: &mut HashMap<String, Type>) {
+    for s in stmts {
+        match s {
+            Stmt::Let { name, ty, .. } => {
+                ctx.insert(name.clone(), ty.clone());
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_let_types(then_body, ctx);
+                collect_let_types(else_body, ctx);
+            }
+            Stmt::While { body, .. } => collect_let_types(body, ctx),
+            _ => {}
+        }
+    }
+}
+
+/// Walk the statement Exprs that can carry a string-building `Concat` (a
+/// returned value, a `let`/reassignment value, an `if`/`while` guard) and
+/// normalise their int operands. Recurse into nested `if`/`while` bodies.
+fn normalize_stmts_fstring_ints(stmts: &mut [Stmt], ctx: &HashMap<String, Type>) {
+    for s in stmts {
+        match s {
+            Stmt::Return(e) => normalize_expr_fstring_ints(e, ctx),
+            Stmt::Let { value, .. } | Stmt::Assign { value, .. } => {
+                normalize_expr_fstring_ints(value, ctx)
+            }
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
+                normalize_expr_fstring_ints(cond, ctx);
+                normalize_stmts_fstring_ints(then_body, ctx);
+                normalize_stmts_fstring_ints(else_body, ctx);
+            }
+            Stmt::While { cond, body } => {
+                normalize_expr_fstring_ints(cond, ctx);
+                normalize_stmts_fstring_ints(body, ctx);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Recurse into the Expr containers where a `Concat` can appear as a string
+/// value, rewriting its int operands. Not exhaustive over every Expr variant —
+/// an un-recursed nesting just leaves the operand raw, which refuses honestly
+/// downstream (never a crash).
+fn normalize_expr_fstring_ints(e: &mut Expr, ctx: &HashMap<String, Type>) {
+    match e {
+        Expr::Concat { lhs, rhs } => {
+            normalize_concat_operand_fstring_int(lhs, ctx);
+            normalize_concat_operand_fstring_int(rhs, ctx);
+        }
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            normalize_expr_fstring_ints(cond, ctx);
+            normalize_expr_fstring_ints(then_expr, ctx);
+            normalize_expr_fstring_ints(else_expr, ctx);
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                normalize_expr_fstring_ints(a, ctx);
+            }
+        }
+        Expr::MethodCall { obj, args, .. } => {
+            normalize_expr_fstring_ints(obj, ctx);
+            for a in args {
+                normalize_expr_fstring_ints(a, ctx);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Rewrite one `Concat` operand: a nested `Concat` recurses (its own operands
+/// get rewritten); an int-valued operand is wrapped in `str(int)`; anything
+/// else recurses in case it nests a `Concat` (e.g. a str-valued `IfExpr`
+/// branch). A str-valued operand is left untouched — the classifier only
+/// matches positively-int shapes, so it is never mis-wrapped.
+fn normalize_concat_operand_fstring_int(op: &mut Expr, ctx: &HashMap<String, Type>) {
+    if matches!(op, Expr::Concat { .. }) {
+        normalize_expr_fstring_ints(op, ctx);
+        return;
+    }
+    if concat_operand_is_int(op, ctx) {
+        let taken = std::mem::replace(op, Expr::Unit);
+        *op = Expr::ToStr {
+            value: Box::new(taken),
+            of_float: false,
+        };
+        return;
+    }
+    normalize_expr_fstring_ints(op, ctx);
+}
+
+/// `true` if `e` is a value the WASM lane emits as an `i64` (so `str(e)` is the
+/// supported int→decimal materialisation). Conservative: only positively-int
+/// shapes — an int literal, an `I64`/`CLong`-typed name, a `len(...)` /
+/// `ord(...)` (both yield an int count / code point), or an integer-arithmetic
+/// `BinOp` (whose result is `i64` by construction; comparison / logical ops are
+/// excluded — those are `bool`, which the frontend has already lowered to a
+/// str-valued `IfExpr` in a format position). Everything else returns `false`
+/// and is left for `emit_str_expr` (str-valued → handled; otherwise refused).
+fn concat_operand_is_int(e: &Expr, ctx: &HashMap<String, Type>) -> bool {
+    match e {
+        Expr::LitInt(_) => true,
+        Expr::Ident(n) => matches!(ctx.get(n), Some(Type::I64) | Some(Type::CLong)),
+        Expr::Len(_) | Expr::Ord { .. } => true,
+        Expr::BinOp { op, .. } => concat_binop_is_int(*op),
+        // The int-VALUED string methods the WASM lane already emits as `i64`:
+        // `len(s)` (`CharCount`, PMAT-1148) and the search family (`find` /
+        // `rfind` / `count` / `index` / `rindex`). Str-, bool-, and list-valued
+        // methods (upper / startswith / split …) are NOT int and stay unwrapped.
+        Expr::StrMethod { op, .. } => matches!(
+            op,
+            StrMethodOp::CharCount
+                | StrMethodOp::Find
+                | StrMethodOp::Rfind
+                | StrMethodOp::Count
+                | StrMethodOp::StrIndex
+                | StrMethodOp::RIndex
+        ),
+        _ => false,
+    }
+}
+
+/// The integer-arithmetic `BinOp`s whose result is `i64` (mirrors meta-HIR's
+/// own `binop_is_int_arith`, kept local so the meta-HIR API stays unchanged).
+fn concat_binop_is_int(op: BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::FloorDiv
+            | BinOp::Mod
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr
+            | BinOp::Pow
+    )
+}
+
 // ─── WAT emission ───────────────────────────────────────────────────
 
 /// Emit a full `(module …)` for `module`. Only [`Item::Function`]s are
@@ -4150,7 +4360,11 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // Let+While+Index/StrCharAt subset FIRST, so every scan pass below and
     // the per-function emission see only statements they already handle.
     let desugared = desugar_module_foreach(module)?;
-    let module = &desugared;
+    // PMAT-1164: auto-stringify int operands of a format `Concat` (`f"n={n}"`)
+    // into `str(int)` BEFORE the gate scans + emission, so the int→str helper
+    // gates and `emit_concat` see ordinary string-valued operands.
+    let normalized = normalize_module_fstring_ints(&desugared);
+    let module = &normalized;
     let mut out = String::new();
     writeln!(out, "(module").expect("write to String");
     writeln!(
@@ -7903,13 +8117,38 @@ fn emit_str_expr(
             emit_str_replace(recv, &args[0], &args[1], Some(&args[2]), scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1164: a raw `StrFormat` reaches the WASM lane from a multi-field
+        // `str.format` / `%`-format (`"{}-{}".format(x, y)`) — the frontend folds
+        // an f-string's literal-text fields into a `Concat` (handled above, its
+        // int operands auto-stringified via str(int)) but leaves `str.format` /
+        // `%` as a `StrFormat` template. Folding that template is a separate
+        // increment; refused honestly for now.
+        Expr::StrFormat { .. } => Err(unsupported(
+            "a `str.format` / `%`-format template (`\"{}-{}\".format(x, y)`) on \
+             the WASM lane — an f-string with literal text folds to a `Concat` \
+             (whose int operands auto-stringify via str(int), PMAT-1164), but a \
+             `str.format` / `%` template is not yet folded; build the string with \
+             an f-string or `+ str(x)` concatenation",
+        )),
+        // PMAT-1164: a bare single-interpolation f-string (`f"{x}"`) or one
+        // carrying a format spec (`f"{x:>5}"`) lowers to a `FormatSpec` — there
+        // is no surrounding literal to anchor a `Concat` fold, and a real spec
+        // (alignment / width / precision) is not modelled on the WASM lane.
+        Expr::FormatSpec { .. } => Err(unsupported(
+            "a bare single-interpolation f-string (`f\"{x}\"`, no surrounding \
+             literal) or a format spec (`f\"{x:>5}\"`) on the WASM lane — a \
+             spec-less bare interpolation has no literal to anchor the str(int) \
+             fold (PMAT-1164) and alignment / width / precision specs are not \
+             modelled; use `str(x)` or add surrounding literal text",
+        )),
         other => Err(unsupported(&format!(
             "expression {} in a string position — the WASM string subset \
              returns a `str` name (param/local), a string literal, a `Concat` \
-             (a + b), a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/\
-             `else`, `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, \
-             new[, count])`, or a str-returning call; stepped slicing / str() / \
-             f-strings are refused",
+             (a + b, incl. format int operands auto-stringified via str(int)), \
+             a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
+             `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
+             count])`, or a str-returning call; stepped slicing / str(float) / \
+             bare f-strings are refused",
             expr_kind(other)
         ))),
     }
