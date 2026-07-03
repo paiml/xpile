@@ -3458,12 +3458,34 @@ fn main() {
     std::panic::set_hook(Box::new(|_| {}));
     // raised exceptions carry their type in the payload, and differ by type.
     assert_eq!(payload(std::panic::catch_unwind(|| raise_value(-1))), "xpile: ValueError: neg");
-    assert_eq!(payload(std::panic::catch_unwind(|| raise_key(-1))), "xpile: KeyError: missing");
+    // PMAT-1090: KeyError payloads are repr-keyed (CPython `KeyError.__str__`
+    // is `repr(arg)`), so the raised message carries quotes.
+    assert_eq!(payload(std::panic::catch_unwind(|| raise_key(-1))), "xpile: KeyError: 'missing'");
     // the non-raising path returns normally.
     assert_eq!(raise_value(5), 5);
 }
 "#;
     assert_rustc_runs("raise_typed_payload", &rust, driver);
+}
+
+/// PMAT-1090 (skeptic pass #3, finding A-F1): `raise KeyError(m)` repr-keys
+/// the payload message — CPython's `KeyError.__str__` is `repr(arg)`, so
+/// `except KeyError as e: str(e)` yields `'second'`, quote-switched for
+/// embedded quotes and escaped for control chars, for literal AND dynamic
+/// messages. Other builtins (`ValueError`) keep the plain message. MATCH
+/// CPython: `'second'` / `"it's"` / `'a\tb'` / `plain`.
+#[test]
+fn raise_keyerror_repr() {
+    let rust = xpile_transpile_to_rust("raise_keyerror_repr.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(caught_literal(), "'second'", "literal KeyError message is repr-keyed");
+    assert_eq!(caught_dynamic(String::from("it's")), "\"it's\"", "repr quote-switches on embedded single quote");
+    assert_eq!(caught_dynamic(String::from("a\tb")), "'a\\tb'", "repr escapes control chars");
+    assert_eq!(value_error_stays_plain(), "plain", "non-KeyError messages stay unquoted");
+}
+"#;
+    assert_rustc_runs("raise_keyerror_repr", &rust, driver);
 }
 
 /// PMAT-502ao (Tranche 2): `assert cond, msg` → `assert!(cond, "{}", msg)`;
