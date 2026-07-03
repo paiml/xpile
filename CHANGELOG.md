@@ -7,6 +7,42 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Fixed — eager-generator refusal net closed to the provably-faithful core (PMAT-1093)
+
+Skeptic pass PMAT-1090 refuted the PMAT-1083 net decisively: 8 confirmed
+divergences where the eager (list-materializing) generator lowering
+silently diverged from CPython's lazy iterator protocol. Rather than
+whack-a-mole scan hardening, the accepted surface SHRINKS to the
+provably-faithful core, per the filed fix direction:
+
+- **Generator bodies must be call-pure** (`depyler-frontend`
+  `eager_unsound_construct`): ANY call anywhere in the body now refuses
+  unless the callee is a provably-pure builtin (`range`/`len`/`abs`) or
+  another generator. Closes B-F1 (assign-position `v = noisy(x)`), B-F2
+  (`yield noisy(x)`), B-F3 (iter-position `for x in src()`) — all of
+  which evaded the old statement-position-only scan. `with` blocks in
+  generator bodies refuse outright (B-F9: desugared `__enter__`/`__exit__`
+  effects run at materialization time; `__exit__` timing relative to the
+  consumer differs).
+- **Generator values are single-use, immediately consumed** (new
+  `enforce_generator_value_consumption`, module-wide): a generator call or
+  genexp is accepted ONLY as the direct iterable of a full-consumption
+  `for` (no `break`-of-that-loop / `return` / `raise` in the body — the
+  huge-`range` hang class B-F5, closed principledly: every accepted
+  consumption now does the same work as CPython) or as a direct argument
+  of a fully-consuming builtin (`sum`/`min`/`max`/`any`/`all`/`list`/
+  `sorted`/`set`). Bindings (B-F7 double-consume exhaustion `sum(g);
+  sum(g)` = 14/0 vs 14/14, B-F6 post-creation mutation visibility 28 vs
+  14, B-F8 creation-vs-first-next timing), returns, and user-function
+  arguments (iterator vs `Vec`: `consume_twice(gen(3))` = 3 vs 6) all
+  refuse with a pointer to `list(...)` as the honest materialization.
+- 8 new rejection fixtures with CPython-verified divergence numbers;
+  the 3 pre-existing rejection fixtures updated to trip their target nets
+  in isolation (full-`sum` drivers / `list(...)`-materialized `next`).
+- The positive surface (`generators_eager.py`: pure `range`-structured
+  builders under `sum`/`list`/`for`) is unchanged; full e2e corpus
+  (790 tests) green with zero over-refusals.
+
 ### Verification — adversarial skeptic pass #3 (PMAT-1090)
 
 Five independent refutation agents over the seven slices since PMAT-1081

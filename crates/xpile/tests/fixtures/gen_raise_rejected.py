@@ -10,9 +10,8 @@ def risky(n: int) -> int:
         yield i
 
 
+# NOTE (PMAT-1093): the driver consumes FULLY (sum) so the body-level `raise`
+# net is what fires — a partial (`break`) consumer now refuses earlier at the
+# consumer-side partial-consumption net.
 def entry() -> int:
-    total: int = 0
-    for x in risky(5):
-        total = total + x
-        break
-    return total
+    return sum(risky(5))

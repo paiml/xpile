@@ -7,6 +7,9 @@ def gen(n: int) -> int:
         yield i
 
 
+# NOTE (PMAT-1093): the generator is materialized honestly via list(...) —
+# binding the raw generator now refuses earlier at the consumption net; this
+# fixture tests the `next()` net in isolation.
 def entry() -> int:
-    it = gen(3)
+    it = list(gen(3))
     return next(it)

@@ -9,10 +9,8 @@ def naturals() -> int:
         i = i + 1
 
 
+# NOTE (PMAT-1093): the driver consumes FULLY (sum) so the body-level `while`
+# net is what fires — a partial (`break`) consumer now refuses earlier at the
+# consumer-side partial-consumption net.
 def entry() -> int:
-    total: int = 0
-    for x in naturals():
-        if x > 3:
-            break
-        total = total + x
-    return total
+    return sum(naturals())
