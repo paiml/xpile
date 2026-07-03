@@ -289,6 +289,7 @@ equations:
     invariants:
       - "rejection reason preserved as typed enum (not collapsed to single category)"
       - "rejection is total — companion theorem heterogeneous_always_rejected_silver"
+      - "PMAT-1178: heterogeneous_always_rejected_silver is now NON-vacuous — lower_heterogeneous_list_silver is parameterized by a HeteroEmitter fidelity and rejected = !boxes_into_dyn_any && (element_types.size ≥ 2) (both emitter and element_types load-bearing); the totality theorem holds over xpile's faithful non-boxing emitter for a genuinely heterogeneous list, and duals boxing_emitter_accepts_heterogeneous / faithful_vs_boxing_emitter_diverges witness that a Vec<Box<dyn Any>> boxing emitter accepts and diverges"
     preconditions:
       - "the list has multiple distinct types"
     postconditions:

@@ -425,29 +425,90 @@ structure HeteroResultSilver where
   reason : Option RejectionReason
 deriving DecidableEq
 
-/-- Silver lowering: always rejected, reason preserved. -/
-def lower_heterogeneous_list_silver (l : HeterogeneousListSilver) :
+/-- Fidelity of a heterogeneous-list EMITTER. A *faithful* emitter
+    REFUSES a heterogeneous list (the contract-compliant behavior — the
+    Python frontend raises rather than lowering). A *boxing* emitter
+    silently ACCEPTS it by erasing every element type into
+    `Vec<Box<dyn Any>>` — the exact defect the contract's
+    `heterogeneous_list_rejected` postcondition forbids. -/
+structure HeteroEmitter where
+  boxes_into_dyn_any : Bool
+deriving DecidableEq
+
+/-- xpile's ACTUAL heterogeneous-list emitter: faithful — it REFUSES
+    (never boxes into `Vec<Box<dyn Any>>`). -/
+def xpileHeteroEmitter : HeteroEmitter := { boxes_into_dyn_any := false }
+
+/-- Silver lowering: heterogeneous list → rejection result,
+    parameterized by emitter fidelity. `reason` is preserved verbatim
+    for ANY emitter. `rejected` is TRUE iff the emitter does NOT box
+    into dyn-Any AND the list is genuinely heterogeneous (≥2 distinct
+    element types) — so BOTH the emitter fidelity AND the
+    `element_types` input are now LOAD-BEARING: a boxing emitter
+    accepts (`rejected = false`); a degenerate single-type list has
+    nothing to reject.
+
+    PMAT-1178: pre-fix this hardcoded `rejected := true` and DISCARDED
+    the emitter, using `l` only for `reason`, so
+    `heterogeneous_always_rejected_silver` reduced to `true = true` and
+    certified NOTHING — a `Vec<Box<dyn Any>>` boxing emitter (which
+    ACCEPTS the list, defeating the type contract) satisfied it too
+    (the PMAT-1141/1176/1177 vacuity class). -/
+def lower_heterogeneous_list_silver
+    (e : HeteroEmitter) (l : HeterogeneousListSilver) :
     HeteroResultSilver :=
-  { rejected := true, reason := some l.reason }
+  { rejected := !e.boxes_into_dyn_any && decide (2 ≤ l.element_types.size)
+    reason := some l.reason }
 
 /-- **Silver-tier refinement theorem** — rejection reason
-    preserved through lowering. Bronze proved binary
-    rejected/accepted; Silver captures WHY the rejection
-    happened. An emitter that collapses all rejection reasons
-    into one category (or auto-coerces to Box<dyn Any>) would
-    falsify this. -/
+    preserved through lowering, for ANY emitter fidelity. Bronze
+    proved binary rejected/accepted; Silver captures WHY the rejection
+    happened. An emitter that collapses all rejection reasons into one
+    category would falsify this. (YAML-wired `lean_theorem`; name
+    preserved — it gained the emitter arg but stays `rfl`.) -/
 theorem heterogeneous_rejection_reason_preserved_silver
-    (l : HeterogeneousListSilver) :
-    (lower_heterogeneous_list_silver l).reason = some l.reason := by
+    (e : HeteroEmitter) (l : HeterogeneousListSilver) :
+    (lower_heterogeneous_list_silver e l).reason = some l.reason := by
   rfl
 
-/-- **Silver-tier refinement theorem** — rejection is total
-    (always rejected, never silently accepted with implicit
-    casts). -/
+/-- **Silver-tier refinement theorem** — a genuinely heterogeneous
+    list (≥2 distinct element types) is REJECTED by xpile's ACTUAL
+    (faithful, non-boxing) emitter. Holds PRECISELY because
+    `xpileHeteroEmitter.boxes_into_dyn_any = false`; NON-vacuous by the
+    two duals below (analog of PMAT-1176/1177's faithful-pin +
+    divergence pair). -/
 theorem heterogeneous_always_rejected_silver
-    (l : HeterogeneousListSilver) :
-    (lower_heterogeneous_list_silver l).rejected = true := by
-  rfl
+    (l : HeterogeneousListSilver) (h : 2 ≤ l.element_types.size) :
+    (lower_heterogeneous_list_silver xpileHeteroEmitter l).rejected = true := by
+  unfold lower_heterogeneous_list_silver xpileHeteroEmitter
+  simp only [Bool.not_false, Bool.true_and, decide_eq_true_eq]
+  exact h
+
+/-- **Falsifiability dual (non-vacuity lock #1)** — a `Vec<Box<dyn
+    Any>>` boxing emitter ACCEPTS a genuinely heterogeneous list (does
+    NOT reject it). Proves the Silver model can EXPRESS the exact
+    defect the `rejected = true` invariant forbids; without this the
+    theorem above is vacuous. -/
+theorem boxing_emitter_accepts_heterogeneous :
+    (lower_heterogeneous_list_silver { boxes_into_dyn_any := true }
+      { reason := RejectionReason.mixedNumericNonNumeric
+        element_types := #["int", "str"] }).rejected = false := by
+  decide
+
+/-- **Falsifiability dual (non-vacuity lock #2)** — on a genuinely
+    heterogeneous list the faithful (non-boxing) emitter and the
+    boxing emitter DIVERGE on `rejected`: the exact differential a
+    type-safety check exists to catch. Analog of PMAT-1176's
+    `refcount_leak_lowering_diverges` / PMAT-1177's
+    `faithful_vs_pasting_emitter_diverges`. -/
+theorem faithful_vs_boxing_emitter_diverges :
+    (lower_heterogeneous_list_silver xpileHeteroEmitter
+      { reason := RejectionReason.mixedNumericNonNumeric
+        element_types := #["int", "str"] }).rejected
+    ≠ (lower_heterogeneous_list_silver { boxes_into_dyn_any := true }
+        { reason := RejectionReason.mixedNumericNonNumeric
+          element_types := #["int", "str"] }).rejected := by
+  decide
 
 /--
   Silver-tier model of an alias graph. Bronze captured a single
