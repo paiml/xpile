@@ -272,6 +272,18 @@ struct LoweringCtx {
     /// truth. A later rebinding re-enters `bound` and naturally un-poisons
     /// (the read check only fires for names not currently bound).
     try_dead: HashMap<String, TryDead>,
+    /// PMAT-1160: first-use element/K-V type for every local initialised with an
+    /// EMPTY collection (`name = []` / `{}` / `list()` / `dict()` / `set()`).
+    /// Computed by a pre-pass ([`collect_empty_collection_types`]) that scans the
+    /// body for the first LITERAL element-revealing use (`name.append("a")` →
+    /// `List(Str)`, `d[1]="a"` → `Dict(I64, Str)`, `s.add(1)` → `Set(I64)`). Only
+    /// definite, homogeneous, literal-typed uses land here — an ambiguous /
+    /// heterogeneous / non-literal / unused init leaves NO entry, so the
+    /// assignment keeps its honest refusal (the type model never claims a type it
+    /// cannot prove). Consulted at the assignment site so the FRONTEND type model
+    /// records the real element type (drives repr quoting + every type-dependent
+    /// path), not a `[]`-refusal or the old `dict()` → `dict[Str, _]` guess.
+    empty_coll_types: HashMap<String, Type>,
 }
 
 /// PMAT-1092: why a name in [`LoweringCtx::try_dead`] does not survive its
@@ -470,6 +482,10 @@ impl LoweringCtx {
         let obj_mutated = collect_obj_mutated(body, &mutating_methods);
         let nested_mutated = collect_nested_mutated(body);
         let read_counts = count_name_reads(body);
+        // PMAT-1160: infer element/K-V types for empty-collection locals from
+        // their first literal element-revealing use (see the field doc).
+        let empty_coll_types =
+            collect_empty_collection_types(body, matches!(fn_return_type, Type::BigInt));
         Self {
             fn_name: fn_name.to_string(),
             fn_return_type,
@@ -501,6 +517,7 @@ impl LoweringCtx {
             pending_leak_flag: None,
             leak_flag_consumed: false,
             try_dead: HashMap::new(),
+            empty_coll_types,
         }
     }
 }
@@ -2094,6 +2111,250 @@ fn collect_struct_type_evidence(
         }
     }
     walk(body, structs, out);
+}
+
+/// PMAT-1160: the kind of an EMPTY-collection initialiser. `[]` / `list()` →
+/// `List`, `{}` / `dict()` → `Dict`, `set()` → `Set`. (Python has no empty set
+/// literal — `{}` is an empty DICT — so a `Set` only arises from `set()`.)
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EmptyCollKind {
+    List,
+    Dict,
+    Set,
+}
+
+/// PMAT-1160: classify a value expression as an empty-collection initialiser,
+/// or `None` if it is anything else (a non-empty literal, a `list(xs)` copy, a
+/// comprehension, a call with args, …).
+fn empty_collection_init_kind(v: &ast::Expr) -> Option<EmptyCollKind> {
+    match v {
+        ast::Expr::List(l) if l.elts.is_empty() => Some(EmptyCollKind::List),
+        ast::Expr::Dict(d) if d.keys.is_empty() => Some(EmptyCollKind::Dict),
+        ast::Expr::Call(c) if c.args.is_empty() && c.keywords.is_empty() => {
+            if let ast::Expr::Name(f) = c.func.as_ref() {
+                match f.id.as_str() {
+                    "list" => Some(EmptyCollKind::List),
+                    "dict" => Some(EmptyCollKind::Dict),
+                    "set" => Some(EmptyCollKind::Set),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// PMAT-1160: the meta-HIR empty literal matching an inferred container type.
+/// Only `List`/`Dict`/`Set` types are ever passed (the pre-pass records nothing
+/// else); any other is a caller bug and falls back to an empty list.
+fn empty_literal_for_type(ty: &Type) -> Expr {
+    match ty {
+        Type::List(_) => Expr::ListLit(Vec::new()),
+        Type::Set(_) => Expr::SetLit(Vec::new()),
+        Type::Dict(_, _) => Expr::DictLit(Vec::new()),
+        _ => Expr::ListLit(Vec::new()),
+    }
+}
+
+/// PMAT-1160: the literal-only type of an AST value, matching what
+/// `infer_type_in_ctx` yields for the same lowered literal (int → `I64`/`BigInt`
+/// in a BigInt function, str → `Str`, float → `F64`, bool → `Bool`, negated
+/// numeric literal → the numeric type). Returns `None` for ANYTHING non-literal
+/// (a name, call, nested collection, comprehension) — first-use inference stays
+/// conservative: a value it cannot type contributes NO evidence, so the
+/// assignment keeps its honest refusal rather than guessing.
+fn literal_value_type(v: &ast::Expr, bigint: bool) -> Option<Type> {
+    let int_ty = || {
+        if bigint {
+            Type::BigInt
+        } else {
+            Type::I64
+        }
+    };
+    match v {
+        ast::Expr::Constant(c) => match &c.value {
+            // Bool BEFORE Int — `True`/`False` are `Constant::Bool`, and a
+            // Python bool is an int subtype but types as `Bool` here.
+            ast::Constant::Bool(_) => Some(Type::Bool),
+            ast::Constant::Int(_) => Some(int_ty()),
+            ast::Constant::Float(_) => Some(Type::F64),
+            ast::Constant::Str(_) => Some(Type::Str),
+            _ => None,
+        },
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => match u.operand.as_ref() {
+            ast::Expr::Constant(c) => match &c.value {
+                ast::Constant::Int(_) => Some(int_ty()),
+                ast::Constant::Float(_) => Some(Type::F64),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// PMAT-1160: record each local's empty-collection initialiser kind, walking
+/// `if`/`while`/`for` bodies (mirrors [`collect_struct_type_evidence`]'s walk).
+/// A name initialised with two DIFFERENT kinds is poisoned (`None`) so no bogus
+/// type is inferred for it.
+fn collect_empty_init_kinds(stmts: &[ast::Stmt], out: &mut HashMap<String, Option<EmptyCollKind>>) {
+    for s in stmts {
+        match s {
+            ast::Stmt::Assign(a) if a.targets.len() == 1 => {
+                if let ast::Expr::Name(n) = &a.targets[0] {
+                    if let Some(kind) = empty_collection_init_kind(&a.value) {
+                        out.entry(n.id.to_string())
+                            .and_modify(|e| {
+                                if *e != Some(kind) {
+                                    *e = None; // conflicting kinds → poison
+                                }
+                            })
+                            .or_insert(Some(kind));
+                    }
+                }
+            }
+            ast::Stmt::If(i) => {
+                collect_empty_init_kinds(&i.body, out);
+                collect_empty_init_kinds(&i.orelse, out);
+            }
+            ast::Stmt::While(w) => collect_empty_init_kinds(&w.body, out),
+            ast::Stmt::For(f) => {
+                collect_empty_init_kinds(&f.body, out);
+                collect_empty_init_kinds(&f.orelse, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// PMAT-1160: collect the LITERAL element/key/value types from `name`'s
+/// element-revealing uses, walking nested blocks. For a `List`/`Set` init:
+/// `name.append(v)` / `name.extend([v, …])` / `name.add(v)` and (list only)
+/// `name[i] = v` contribute `v`'s literal type as the element. For a `Dict`
+/// init: `name[k] = v` contributes `k`'s literal type as the key and `v`'s as
+/// the value. Non-literal keys/values contribute nothing (kept conservative).
+fn collect_element_uses(
+    stmts: &[ast::Stmt],
+    name: &str,
+    kind: EmptyCollKind,
+    bigint: bool,
+    elem_tys: &mut Vec<Type>,
+    key_tys: &mut Vec<Type>,
+) {
+    for s in stmts {
+        match s {
+            // `name.append(v)` / `name.extend([..])` / `name.add(v)` — a
+            // mutating-method call in statement position.
+            ast::Stmt::Expr(e) => {
+                if let ast::Expr::Call(c) = e.value.as_ref() {
+                    if let ast::Expr::Attribute(attr) = c.func.as_ref() {
+                        if let ast::Expr::Name(recv) = attr.value.as_ref() {
+                            if recv.id.as_str() == name && c.keywords.is_empty() {
+                                match (kind, attr.attr.as_str(), c.args.as_slice()) {
+                                    (EmptyCollKind::List, "append", [v])
+                                    | (EmptyCollKind::Set, "add", [v]) => {
+                                        if let Some(t) = literal_value_type(v, bigint) {
+                                            elem_tys.push(t);
+                                        }
+                                    }
+                                    // `extend([lit, …])` → the list literal's
+                                    // element type (a non-literal iterable
+                                    // argument matches no arm → contributes
+                                    // nothing, keeping inference conservative).
+                                    (EmptyCollKind::List, "extend", [ast::Expr::List(l)]) => {
+                                        if let Some(t) = l
+                                            .elts
+                                            .first()
+                                            .and_then(|e| literal_value_type(e, bigint))
+                                        {
+                                            elem_tys.push(t);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // `name[k] = v` — a subscript store.
+            ast::Stmt::Assign(a) if a.targets.len() == 1 => {
+                if let ast::Expr::Subscript(sub) = &a.targets[0] {
+                    if let ast::Expr::Name(recv) = sub.value.as_ref() {
+                        if recv.id.as_str() == name {
+                            match kind {
+                                EmptyCollKind::Dict => {
+                                    if let Some(kt) = literal_value_type(sub.slice.as_ref(), bigint)
+                                    {
+                                        key_tys.push(kt);
+                                    }
+                                    if let Some(vt) = literal_value_type(a.value.as_ref(), bigint) {
+                                        elem_tys.push(vt);
+                                    }
+                                }
+                                EmptyCollKind::List => {
+                                    if let Some(vt) = literal_value_type(a.value.as_ref(), bigint) {
+                                        elem_tys.push(vt);
+                                    }
+                                }
+                                EmptyCollKind::Set => {}
+                            }
+                        }
+                    }
+                }
+            }
+            ast::Stmt::If(i) => {
+                collect_element_uses(&i.body, name, kind, bigint, elem_tys, key_tys);
+                collect_element_uses(&i.orelse, name, kind, bigint, elem_tys, key_tys);
+            }
+            ast::Stmt::While(w) => {
+                collect_element_uses(&w.body, name, kind, bigint, elem_tys, key_tys)
+            }
+            ast::Stmt::For(f) => {
+                collect_element_uses(&f.body, name, kind, bigint, elem_tys, key_tys);
+                collect_element_uses(&f.orelse, name, kind, bigint, elem_tys, key_tys);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// PMAT-1160: pre-pass — infer a concrete container type for every empty-
+/// collection local from its first LITERAL element-revealing use. A name lands
+/// in the result ONLY when its literal uses are homogeneous and sufficient
+/// (a `Dict` needs both a literal key AND a literal value); otherwise it is
+/// omitted and the assignment keeps its honest refusal / default.
+fn collect_empty_collection_types(body: &[ast::Stmt], bigint: bool) -> HashMap<String, Type> {
+    let mut kinds: HashMap<String, Option<EmptyCollKind>> = HashMap::new();
+    collect_empty_init_kinds(body, &mut kinds);
+
+    // All collected literal types must agree (and at least one must exist).
+    fn unique(tys: &[Type]) -> Option<Type> {
+        let first = tys.first()?.clone();
+        tys.iter().all(|t| *t == first).then_some(first)
+    }
+
+    let mut out: HashMap<String, Type> = HashMap::new();
+    for (name, kind_opt) in &kinds {
+        let Some(kind) = kind_opt else { continue };
+        let mut elem_tys: Vec<Type> = Vec::new();
+        let mut key_tys: Vec<Type> = Vec::new();
+        collect_element_uses(body, name, *kind, bigint, &mut elem_tys, &mut key_tys);
+        let ty = match kind {
+            EmptyCollKind::List => unique(&elem_tys).map(|t| Type::List(Box::new(t))),
+            EmptyCollKind::Set => unique(&elem_tys).map(|t| Type::Set(Box::new(t))),
+            EmptyCollKind::Dict => match (unique(&key_tys), unique(&elem_tys)) {
+                (Some(k), Some(v)) => Some(Type::Dict(Box::new(k), Box::new(v))),
+                _ => None,
+            },
+        };
+        if let Some(ty) = ty {
+            out.insert(name.clone(), ty);
+        }
+    }
+    out
 }
 
 /// PMAT-1095 (skeptic pass PMAT-1090, C-F4): bump a plain-Name STORE toward
@@ -12382,11 +12643,31 @@ fn lower_assign(ctx: &mut LoweringCtx, asn: ast::StmtAssign) -> Result<Stmt, Fro
             ctx.fn_name
         )));
     }
-    // PMAT-466: route the RHS through the context-aware path so a
-    // dict op on the right of a plain `name = ...` (e.g.
-    // `result = table.get(k, 0)`) lowers correctly.
-    let value = lower_expr_in_ctx(ctx, *asn.value)?;
-    let ty = infer_type_in_ctx(ctx, &value);
+    // PMAT-1160: empty-collection first-use element inference. When the
+    // pre-pass proved a definite element / K-V type for `name` from its first
+    // LITERAL element-revealing use (`name.append("a")` → `List(Str)`, `d[1]="a"`
+    // → `Dict(I64, Str)`, `s.add(1)` → `Set(I64)`), bind the typed empty literal
+    // DIRECTLY, taking the type from the pre-pass rather than from the empty
+    // literal's own (uninformative) self-inference. This types the VARIABLE
+    // correctly in the frontend type model — which propagates to repr quoting
+    // (`['a', 'b']`, not `[a, b]`) and every type-dependent path — instead of
+    // the bare-`[]`/`{}` refusal or the old `dict()` → `dict[Str, _]` guess
+    // (which tripped the PMAT-1102 key-mismatch check on `d[1]=…`). Names
+    // WITHOUT a proven type (ambiguous / heterogeneous / non-literal / unused)
+    // fall through to the normal path, keeping the honest refusal / default.
+    let (value, ty) = match empty_collection_init_kind(asn.value.as_ref())
+        .and_then(|_| ctx.empty_coll_types.get(&name).cloned())
+    {
+        Some(inferred) => (empty_literal_for_type(&inferred), inferred),
+        None => {
+            // PMAT-466: route the RHS through the context-aware path so a
+            // dict op on the right of a plain `name = ...` (e.g.
+            // `result = table.get(k, 0)`) lowers correctly.
+            let value = lower_expr_in_ctx(ctx, *asn.value)?;
+            let ty = infer_type_in_ctx(ctx, &value);
+            (value, ty)
+        }
+    };
     // If the name is already bound, this is a reassignment — emit
     // `Stmt::Assign` (the backend will write `name = value;` and the
     // earlier `Let` will be `let mut`). Otherwise, fresh `Let`.

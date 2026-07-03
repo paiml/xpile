@@ -20868,3 +20868,53 @@ fn main() {
 "#;
     assert_rustc_runs("lazy_sum_genexp", &rust, driver);
 }
+
+/// PMAT-1160: empty-collection first-use element inference. `xs = []` / `d = {}`
+/// (and the `list()`/`dict()`/`set()` ctor forms) infer their element / K-V
+/// type from the first LITERAL element-revealing use, TYPING THE VARIABLE in the
+/// frontend type model. The str-list case is the "trap": a codegen-only
+/// band-aid would compile but leave the model typed `List[int]`, stripping repr
+/// quotes and silently diverging — so we assert the emitted Rust carries the
+/// real `Vec<String>` / `IndexMap<i64, String>` / `IndexMap<String, i64>` types,
+/// then compile + run to confirm the values.
+#[test]
+fn empty_collection_first_use_inference() {
+    let rust = xpile_transpile_to_rust("empty_collection_infer.py");
+    // Type-model assertions (the anti-band-aid guard): the VARIABLE is typed,
+    // not just the rustc-inferred `vec![]`.
+    assert!(
+        rust.contains("let mut xs: Vec<i64> = vec![]"),
+        "int list must type as Vec<i64>:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut xs: Vec<String> = vec![]"),
+        "THE TRAP: str list must type as Vec<String> in the type model, not List[int]:\n{rust}"
+    );
+    assert!(
+        rust.contains("indexmap::IndexMap<i64, String>"),
+        "int-key dict must type as IndexMap<i64, String>:\n{rust}"
+    );
+    assert!(
+        rust.contains("indexmap::IndexMap<String, i64>"),
+        "str-key dict must type as IndexMap<String, i64>:\n{rust}"
+    );
+    // Runtime correctness: compile + run and assert the built collections. The
+    // str-list `==` against `Vec<String>` only type-checks if the element type
+    // really is `String`.
+    let driver = r#"
+fn main() {
+    assert_eq!(build_int_list(), vec![3i64, 4i64]);
+    assert_eq!(
+        build_str_list(),
+        vec![String::from("a"), String::from("b")]
+    );
+    let di = build_int_dict();
+    assert_eq!(di.get(&1i64), Some(&String::from("a")));
+    assert_eq!(di.get(&2i64), Some(&String::from("b")));
+    let ds = build_str_dict();
+    assert_eq!(ds.get("x"), Some(&1i64));
+    assert_eq!(ds.get("y"), Some(&2i64));
+}
+"#;
+    assert_rustc_runs("empty_collection_infer", &rust, driver);
+}
