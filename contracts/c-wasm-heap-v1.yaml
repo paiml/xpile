@@ -225,6 +225,34 @@ compile_targets:
     # heap-constructed needle pulls in the allocator (the shared StrMethod
     # collect_expr_literals / expr_has_heap_op arms). Refused honestly: find over a
     # non-str operand, and any OTHER string method.
+    #
+    # PMAT-1143 (2026-07-03): Python's `s.rfind(p)` (Expr::StrMethod, op Rfind)
+    # over str operands — the REVERSE-SCAN sibling of $__wasm_str_find. Lowers to a
+    # non-allocating byte search ($__wasm_str_rfind): the SAME naive byte match and
+    # the SAME byte-offset→code-point-index conversion as find, but the outer slide
+    # runs from the LAST candidate start offset (len(h)-len(n)) DOWN to 0, so the
+    # FIRST match it finds is the RIGHTMOST (last) occurrence — Python str.rfind.
+    # rfind genuinely DIFFERS from find on strings with >1 occurrence
+    # ("hello".rfind("l")=3 vs find=2; "banana".rfind("ana")=3 vs 1;
+    # "mississippi".rfind("ss")=5 vs 2) — not an aliased rename. The ONE place it
+    # also diverges from find beyond direction: the EMPTY needle returns charlen(h)
+    # in CODE POINTS (the empty string is found at the END, so "abc".rfind("")=3
+    # and "héllo".rfind("")=5 — the char length, NOT the byte length 6), via
+    # $__wasm_str_charlen — whereas find's empty-needle answer is 0 (the start).
+    # Char-indexed like find ("héllo".rfind("l")=3 though the last l is at byte
+    # offset 4). An absent needle, or a needle LONGER than the haystack, returns
+    # -1. Allocates NOTHING (a Python int). The emitted WAT is genuine: the
+    # PMAT-1143 slice ran it through WABT — 24 cases (ASCII last-occurrence
+    # diverging from find, single-occurrence, absent/too-long/equal -> -1/0,
+    # empty-needle-as-charlen incl. the multi-byte "héllo".rfind("")=5, MULTI-BYTE
+    # é fixtures incl. "héllo".rfind("l")=3 at byte offset 4 and "abécdé".rfind("é")=5,
+    # and the shared-0xA9 negative "café".rfind("©")=-1) execute value-matching
+    # CPython. See the `str_rfind_witness` integration test. Gated on
+    # module_uses_str_method(Rfind) (no dead helper); a literal needle lays out its
+    # (data) segment and a heap-constructed needle pulls in the allocator (the
+    # shared StrMethod arms); the empty-needle $__wasm_str_charlen call rides the
+    # module_touches_str co-emission (any StrMethod sets it). Refused honestly:
+    # rfind over a non-str operand, and any OTHER string method.
 
 equations:
   wasm_heap_alloc_structure_extensionality_diamond:
@@ -662,23 +690,65 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a heap string byte-matching CPython, INCLUDING the NEGATIVE-count clamp ('ab' * -2 == ''), the empty source/count cases, and the MULTI-BYTE repeats ('é' * 3 == 'ééé' = 6 bytes, '🎉' * 2 = 8 bytes)"
       - "the repeat WASM-emitting code carries the WASM citation"
 
+  string_rfind_is_byte_search_codepoint_index:
+    # PMAT-1143: `s.rfind(p)` over strings (Expr::StrMethod, op Rfind) lowers to
+    # $__wasm_str_rfind — a non-allocating byte SEARCH returning the CODE-POINT
+    # index of the LAST occurrence (or -1), the reverse-scan sibling of
+    # $__wasm_str_find (same byte match + byte→char conversion, but the outer slide
+    # runs from the last candidate offset DOWN to 0). Returns an i64. Like
+    # $__wasm_str_find it reads linear memory and allocates nothing. The empty
+    # needle returns charlen(h) in CODE POINTS (found at the END) — the ONE place
+    # rfind diverges from find beyond direction.
+    formula: |
+      construct(StrMethod{recv, op: Rfind, args: [p]} over str operands,
+                BackendConfig{target: Wasm})
+        emits `<recv> <p> call $__wasm_str_rfind`, where the helper loads both i32
+        byte-count headers; returns charlen(recv) if len(p) == 0 (the empty string
+        is found at the END, in code points); returns -1 if len(p) > len(recv);
+        else slides p over recv from start = len(recv)-len(p) DOWN to 0, comparing
+        len(p) bytes at each — the FIRST full match returns the CODE-POINT index of
+        that byte offset (count of non-continuation bytes in recv[0..start]),
+        exhausting all starts returns -1. The result is an i64. NEVER a
+        base-pointer compare.
+    domain: |
+      A Python string reverse search `s.rfind(p)` (Expr::StrMethod, op Rfind,
+      exactly one arg) over two string-valued operands (a str-name Ident, a LitStr,
+      a Concat / Chr / bare StrCharAt / slice / str-returning call). A non-str
+      operand is REFUSED by emit_str_expr (an honest type mismatch). The 2/3-arg
+      `rfind(p, start[, end])` form and rindex stay REFUSED.
+    invariants:
+      - "the returned index is the CODE-POINT index of the LAST (rightmost) occurrence, NOT a byte offset — 'héllo'.rfind('l') == 3 (code points), though the last 'l' is at byte offset 4 (é being 2 bytes); the helper counts non-continuation bytes in recv[0..start] to convert"
+      - "rfind genuinely differs from find on strings with more than one occurrence: 'hello'.rfind('l')==3 vs find==2, 'banana'.rfind('ana')==3 vs 1, 'mississippi'.rfind('ss')==5 vs 2 — the outer slide runs from the last candidate offset DOWN, returning the RIGHTMOST match, not an aliased find"
+      - "the byte→char conversion is exact because p[0] is a LEAD byte, so any match lands on a char boundary in recv (no split multi-byte char, no false positive on a SHARED continuation byte — 'café'.rfind('©')==-1 on a shared 0xA9)"
+      - "an EMPTY needle returns charlen(recv) in CODE POINTS (the empty string is found at the END) — 'abc'.rfind('')==3, ''.rfind('')==0, and 'héllo'.rfind('')==5 (the char length, NOT the byte length 6, via $__wasm_str_charlen); this is the ONE place rfind diverges from find beyond direction (find's empty-needle answer is 0, the start)"
+      - "an ABSENT needle, or a needle LONGER than the haystack, returns -1 (the i64 -1, printed by wasm-interp as the unsigned u64::MAX 18446744073709551615)"
+      - "the result is an i64, NEVER a base-pointer compare of the two str pointers"
+      - "$__wasm_str_rfind reads linear memory but allocates NOTHING (independent of the bump-heap gate; a pure param-rfind module carries no $__alloc); it is gated on module_uses_str_method(Rfind) (no dead helper) — a heap-constructed operand still pulls in the allocator + its literals' (data) segments via the shared heap/literal gates; the empty-needle $__wasm_str_charlen call rides module_touches_str (any StrMethod sets it)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the receiver and needle both type as str"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to an i64 value-matching CPython, INCLUDING the LAST-occurrence fixtures where rfind diverges from find ('hello'.rfind('l')==3, 'banana'.rfind('ana')==3, 'mississippi'.rfind('ss')==5), the CODE-POINT-index fixtures where a byte index would diverge ('héllo'.rfind('l')==3 at byte offset 4, 'abécdé'.rfind('é')==5), the -1 absent/too-long/shared-0xA9 cases, and the empty-needle charlen answer ('héllo'.rfind('')==5, the code-point length, NOT the byte length 6)"
+      - "the rfind WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
       construct(slice_stepped | list_slice | list_repeat | str(float) | fstring |
-                str_method∉{CharCount,StartsWith,EndsWith,Count,Find},
+                str_method∉{CharCount,StartsWith,EndsWith,Count,Find,Rfind},
                 BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
       A string / sequence op still outside the WASM subset: a STEPPED string
       slice or a list slice, a LIST repeat (`[…] * n`, Expr::Repeat of_str:false),
       str(float)/repr(float), an f-string, a string method OTHER than len
-      (CharCount) / startswith / endswith / count / find. (String ORDERING is
-      supported — see `string_ordering_is_lexicographic`; str(int)/repr(int) is
+      (CharCount) / startswith / endswith / count / find / rfind. (String ORDERING
+      is supported — see `string_ordering_is_lexicographic`; str(int)/repr(int) is
       supported — see `int_to_str_is_decimal_ascii`; startswith/endswith are
       supported — see `string_startswith_endswith_is_byte_prefix`; the substring
       test `p in s` via `string_contains_is_byte_substring_search`; count via
       `string_count_is_byte_occurrence_search`; find via
-      `string_find_is_byte_search_codepoint_index`; STRING repeat `s * n` via
+      `string_find_is_byte_search_codepoint_index`; rfind via
+      `string_rfind_is_byte_search_codepoint_index`; STRING repeat `s * n` via
       `string_repeat_is_byte_replication` — only the LIST repeat stays refused.)
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
@@ -738,6 +808,11 @@ proof_obligations:
     property: string repeat is a byte replication (char-exact for UTF-8); results match CPython incl. the negative-count clamp and multi-byte repeats
     formal: "wasm-interp(construct(s * n)) == CPython(s * n) AND wasm-interp(construct('é' * 3)) == 'ééé' AND wasm-interp(construct('ab' * -2)) == ''"
     applies_to: string_repeat_is_byte_replication
+
+  - type: postcondition
+    property: string rfind is a reverse byte search returning the CODE-POINT index of the LAST match (or -1); results match CPython where it diverges from find and where a byte index would diverge
+    formal: "wasm-interp(construct(s.rfind(p))) == CPython AND wasm-interp(construct('hello'.rfind('l'))) == 3 AND wasm-interp(construct('héllo'.rfind(''))) == 5"
+    applies_to: string_rfind_is_byte_search_codepoint_index
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -1117,3 +1192,46 @@ falsification_tests:
       - negative_count_trapped_or_produced_garbage_instead_of_empty
       - wrong_result_length_header
       - list_repeat_miscompiled_instead_of_refused
+
+  - id: FALSIFY-WASM-HEAP-013
+    rule: |
+      PMAT-1143: `s.rfind(p)` MUST lower to a non-allocating REVERSE byte SEARCH
+      ($__wasm_str_rfind) — the reverse-scan sibling of $__wasm_str_find —
+      returning an i64, NEVER a base-pointer compare. It MUST return the CODE-POINT
+      index of the LAST (rightmost) occurrence, so on a string with >1 occurrence
+      it MUST differ from find: 'hello'.rfind('l') == 3 (find == 2). The index MUST
+      be a code-point index, NOT a byte offset: 'héllo'.rfind('l') == 3 though the
+      last 'l' is at byte offset 4. The EMPTY needle MUST return charlen(recv) in
+      code points (found at the END): 'héllo'.rfind('') == 5 (NOT the byte length
+      6). An ABSENT needle, or a needle longer than the haystack, MUST return -1.
+      Any OTHER string method MUST refuse.
+    prediction: |
+      The executed WABT witness runs every case and each equals the pinned CPython
+      int — the LAST-occurrence fixtures diverging from find ('hello'.rfind('l')=3,
+      'banana'.rfind('ana')=3, 'banana'.rfind('na')=4, 'mississippi'.rfind('ss')=5,
+      'aaa'.rfind('a')=2, 'abcabc'.rfind('bc')=4), the single-occurrence /
+      at-start / at-end cases, the CODE-POINT-index fixtures where a byte index
+      would diverge ('héllo'.rfind('l')=3 at byte offset 4, 'abécdé'.rfind('é')=5),
+      the -1 cases ('hello'.rfind('z')=-1, 'hello'.rfind('helloo')=-1,
+      'café'.rfind('©')=-1 on a shared 0xA9), and the empty-needle charlen answer
+      ('héllo'.rfind('')=5 in code points, NOT byte length 6). A pure-rfind module
+      carries no $__alloc; a literal needle lays out its (data) segment and a
+      heap-constructed needle pulls in the allocator (the shared StrMethod
+      gate-walker arms).
+    test: |
+      cargo test -p xpile-wasm-codegen --test str_rfind_witness
+    if_fails: |
+      The reverse search (the scan direction, the byte→code-point conversion, the
+      empty-needle charlen answer, the absent/longer -1), the helper gate, or the
+      non-str-operand refusal regressed — a first-occurrence returned instead of
+      the last (an aliased find), a byte offset instead of a char index, the
+      empty-needle byte length instead of charlen, a wrong sentinel, a base-pointer
+      compare, or a crash on a literal/heap arg. The int diverges from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - first_occurrence_returned_instead_of_last_aliased_find
+      - byte_offset_returned_instead_of_codepoint_index
+      - empty_needle_byte_length_instead_of_charlen
+      - wrong_absent_sentinel_instead_of_minus_one
+      - base_pointer_compare_passed_off_as_rfind
+      - other_str_method_miscompiled_instead_of_refused
