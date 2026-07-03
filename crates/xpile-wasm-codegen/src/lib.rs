@@ -480,12 +480,26 @@ fn collect_stmt_literals(s: &Stmt, out: &mut Vec<String>) {
                 collect_stmt_literals(s, out);
             }
         }
-        Stmt::IndexAssign { value, .. } => collect_expr_literals(value, out),
+        // PMAT-1151: the INDEX of `xs[i] = v` (not just the value) can carry a
+        // str literal (`xs["ab".find("b")] = v`, `xs[len("hi")] = v`) — lay the
+        // indices out too, matching the widened `stmt_has_*` scans.
+        Stmt::IndexAssign { indices, value, .. } => {
+            for i in indices {
+                collect_expr_literals(i, out);
+            }
+            collect_expr_literals(value, out);
+        }
         // PMAT-995: `d[k] = v` — a str KEY literal must be laid out too.
         Stmt::DictSet { key, value, .. } => {
             collect_expr_literals(key, out);
             collect_expr_literals(value, out);
         }
+        // PMAT-1151: `s.add(e)` (`Stmt::SetAdd`) — its ELEM can carry a str
+        // literal (`q.add("xabx"[1:3])`) that must be laid out into a (data)
+        // segment; the collector previously skipped SetAdd entirely, so the
+        // literal was "not laid out — internal layout error". The WRITE-side
+        // sibling of the DictSet layout arm above.
+        Stmt::SetAdd { elem, .. } => collect_expr_literals(elem, out),
         // PMAT-1023: a field write's VALUE and a statement-position method
         // call's ARGS may reference literals (`c.tag(ord("x"))`).
         Stmt::FieldAssign { value, .. } => collect_expr_literals(value, out),
@@ -3732,8 +3746,17 @@ fn stmt_touches_str(s: &Stmt) -> bool {
                 || else_body.iter().any(stmt_touches_str)
         }
         Stmt::While { cond, body } => expr_touches_str(cond) || body.iter().any(stmt_touches_str),
-        Stmt::IndexAssign { value, .. } => expr_touches_str(value),
         Stmt::FieldAssign { value, .. } => expr_touches_str(value),
+        // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — a
+        // DictSet/SetAdd key/value/elem (`d[chr(n)] = v` over a str-keyed dict)
+        // or an index can be the SOLE str-touching site in a function, gating
+        // the char-helper family + `(memory)`; scan them so the helpers' loads
+        // always validate.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_touches_str) || expr_touches_str(value)
+        }
+        Stmt::DictSet { key, value, .. } => expr_touches_str(key) || expr_touches_str(value),
+        Stmt::SetAdd { elem, .. } => expr_touches_str(elem),
         Stmt::SideEffectCall { call } => expr_touches_str(call),
         _ => false,
     }
@@ -3826,9 +3849,15 @@ fn stmt_has_str_slice(s: &Stmt) -> bool {
         Stmt::While { cond, body } => {
             expr_has_str_slice(cond) || body.iter().any(stmt_has_str_slice)
         }
-        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
-            expr_has_str_slice(value)
+        Stmt::FieldAssign { value, .. } => expr_has_str_slice(value),
+        // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — an
+        // index (`xs[len(s[1:4])] = v`) and a DictSet/SetAdd key/elem
+        // (`d[s[1:4]] = v`, `q.add(s[1:4])`) can host the slice helper.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_str_slice) || expr_has_str_slice(value)
         }
+        Stmt::DictSet { key, value, .. } => expr_has_str_slice(key) || expr_has_str_slice(value),
+        Stmt::SetAdd { elem, .. } => expr_has_str_slice(elem),
         Stmt::SideEffectCall { call } => expr_has_str_slice(call),
         _ => false,
     }
@@ -3946,9 +3975,25 @@ fn stmt_has_int_to_str(s: &Stmt) -> bool {
         Stmt::While { cond, body } => {
             expr_has_int_to_str(cond) || body.iter().any(stmt_has_int_to_str)
         }
-        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
-            expr_has_int_to_str(value)
+        Stmt::FieldAssign { value, .. } => expr_has_int_to_str(value),
+        // PMAT-1151: the INDEX of `xs[i] = v` (not only the value) can host a
+        // str-materialising subexpr (`xs[len(str(n))] = v` — the index is
+        // `len(str(n))`, whose `str(n)` emits `call $__wasm_int_to_str`) — scan
+        // the indices too.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_int_to_str) || expr_has_int_to_str(value)
         }
+        // PMAT-1151: `d[k] = v` (`Stmt::DictSet`) and `s.add(e)` (`Stmt::SetAdd`)
+        // are LOWERED by the WASM lane — `emit_dict_set` / `emit_set_add` route a
+        // str key/elem through `emit_dict_key` → `emit_str_expr`, whose `ToStr`
+        // arm emits `call $__wasm_int_to_str`. These two STATEMENT forms are the
+        // WRITE-side siblings of PMAT-1150's DictGet/DictContains/SetContains
+        // read-side EXPR arms, and NO helper-gate stmt-walker scanned them: a
+        // str-keyed `d[str(n)] = 5` left `$__wasm_int_to_str` called-but-
+        // UNDECLARED (a hard wat2wasm failure the value-only scan never caught).
+        // Scan both the key and value, and the elem.
+        Stmt::DictSet { key, value, .. } => expr_has_int_to_str(key) || expr_has_int_to_str(value),
+        Stmt::SetAdd { elem, .. } => expr_has_int_to_str(elem),
         Stmt::SideEffectCall { call } => expr_has_int_to_str(call),
         _ => false,
     }
@@ -4165,9 +4210,17 @@ fn stmt_uses_str_method(s: &Stmt, op: StrMethodOp) -> bool {
         Stmt::While { cond, body } => {
             expr_uses_str_method(cond, op) || body.iter().any(|s| stmt_uses_str_method(s, op))
         }
-        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
-            expr_uses_str_method(value, op)
+        Stmt::FieldAssign { value, .. } => expr_uses_str_method(value, op),
+        // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — a
+        // DictSet/SetAdd key/value/elem (`d[k] = s.count("x")`) or an index can
+        // host a str-method call, keeping the gate exhaustive.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(|i| expr_uses_str_method(i, op)) || expr_uses_str_method(value, op)
         }
+        Stmt::DictSet { key, value, .. } => {
+            expr_uses_str_method(key, op) || expr_uses_str_method(value, op)
+        }
+        Stmt::SetAdd { elem, .. } => expr_uses_str_method(elem, op),
         Stmt::SideEffectCall { call } => expr_uses_str_method(call, op),
         _ => false,
     }
@@ -4274,9 +4327,17 @@ fn stmt_has_str_contains(s: &Stmt) -> bool {
         Stmt::While { cond, body } => {
             expr_has_str_contains(cond) || body.iter().any(stmt_has_str_contains)
         }
-        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
-            expr_has_str_contains(value)
+        Stmt::FieldAssign { value, .. } => expr_has_str_contains(value),
+        // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — a
+        // DictSet/SetAdd key/value/elem or an index can host `x in s` (e.g.
+        // `d[k] = 1 if "a" in s else 0`), keeping the gate exhaustive.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_str_contains) || expr_has_str_contains(value)
         }
+        Stmt::DictSet { key, value, .. } => {
+            expr_has_str_contains(key) || expr_has_str_contains(value)
+        }
+        Stmt::SetAdd { elem, .. } => expr_has_str_contains(elem),
         Stmt::SideEffectCall { call } => expr_has_str_contains(call),
         _ => false,
     }
@@ -4377,9 +4438,15 @@ fn stmt_has_str_repeat(s: &Stmt) -> bool {
         Stmt::While { cond, body } => {
             expr_has_str_repeat(cond) || body.iter().any(stmt_has_str_repeat)
         }
-        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
-            expr_has_str_repeat(value)
+        Stmt::FieldAssign { value, .. } => expr_has_str_repeat(value),
+        // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — a
+        // DictSet/SetAdd key/value/elem (`d[s * n] = v`) or an index can host a
+        // str repeat, keeping the gate exhaustive.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_str_repeat) || expr_has_str_repeat(value)
         }
+        Stmt::DictSet { key, value, .. } => expr_has_str_repeat(key) || expr_has_str_repeat(value),
+        Stmt::SetAdd { elem, .. } => expr_has_str_repeat(elem),
         Stmt::SideEffectCall { call } => expr_has_str_repeat(call),
         _ => false,
     }
@@ -4504,9 +4571,18 @@ fn stmt_has_str_eq(s: &Stmt, scan: &StrEqScan<'_>) -> bool {
         Stmt::While { cond, body } => {
             expr_has_str_eq(cond, scan) || body.iter().any(|s| stmt_has_str_eq(s, scan))
         }
-        Stmt::IndexAssign { value, .. } => expr_has_str_eq(value, scan),
         // PMAT-1023: field-write values and statement method-call args.
         Stmt::FieldAssign { value, .. } => expr_has_str_eq(value, scan),
+        // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — a
+        // DictSet/SetAdd key/value/elem (`d[k] = 1 if a == b else 2`) or an
+        // index can host a str comparison, keeping the eq/cmp gate exhaustive.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(|i| expr_has_str_eq(i, scan)) || expr_has_str_eq(value, scan)
+        }
+        Stmt::DictSet { key, value, .. } => {
+            expr_has_str_eq(key, scan) || expr_has_str_eq(value, scan)
+        }
+        Stmt::SetAdd { elem, .. } => expr_has_str_eq(elem, scan),
         Stmt::SideEffectCall { call } => expr_has_str_eq(call, scan),
         _ => false,
     }
@@ -4632,10 +4708,18 @@ fn stmt_has_heap_op(s: &Stmt) -> bool {
                 || else_body.iter().any(stmt_has_heap_op)
         }
         Stmt::While { cond, body } => expr_has_heap_op(cond) || body.iter().any(stmt_has_heap_op),
-        Stmt::IndexAssign { value, .. } => expr_has_heap_op(value),
         // PMAT-1023: a field write's value / a statement method-call's args may
         // materialise (e.g. `c.label = "a" + s`, `c.set(Point(1, 2))`).
         Stmt::FieldAssign { value, .. } => expr_has_heap_op(value),
+        // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — a
+        // DictSet/SetAdd key/value/elem (`d["a" + s] = v`, `q.add(chr(n))`) or an
+        // index can heap-construct, pulling in `$__alloc`; scan them so the
+        // allocator + `(memory)` stay gated.
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_heap_op) || expr_has_heap_op(value)
+        }
+        Stmt::DictSet { key, value, .. } => expr_has_heap_op(key) || expr_has_heap_op(value),
+        Stmt::SetAdd { elem, .. } => expr_has_heap_op(elem),
         Stmt::SideEffectCall { call } => expr_has_heap_op(call),
         Stmt::Break | Stmt::Continue => false,
         _ => false,
