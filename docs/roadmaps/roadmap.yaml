@@ -1253,6 +1253,15 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Feature branch feat/wasm-str-count (NOT worktree — disjoint crate from the cron Python-surface lane; xpile-wasm-codegen is cron-cold). Contract C-WASM-HEAP extended: new equation string_count_is_byte_occurrence_search + proof-obligation + FALSIFY-WASM-HEAP-010 + SUPPORTED-ops narrative; unwired_string_op_is_refused updated to str_method∉{CharCount,StartsWith,EndsWith,Count}. EXECUTED WABT witness (tests/str_count_witness.rs): 21 cases — ASCII (single/absent/equal/longer-than), NON-OVERLAPPING fixtures ("aaa".count("aa")=1, "banana".count("ana")=1, "aaaa".count("aa")=2), empty-needle CODE-POINT counts ("hello"/"héllo"/"abc"), and MULTI-BYTE é fixtures ("héllo".count("l")=2 past a multi-byte char, "café".count("©")=0 on a shared 0xA9) — assemble via wat2wasm, run via wasm-interp value-matching CPython (cross-checked vs Rust str::matches().count()). Plus a literal-arg construct test (s.count("l") lays out the (data) segment) and a heap-arg construct test (s.count("l"+"o") pulls the allocator) proving the two new StrMethod gate-walker arms. pv lint 0 errors, cargo test -p xpile-wasm-codegen green.'
+
+- id: PMAT-1131
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1131: [provability/R6/mathlib] NEW contract C-PY-CONTEXT-MANAGER-EXIT for user context managers (PMAT-1072, shipped uncontracted). Core-Lean PyContextManagerExit.lean: WithLowering two-phase structure-extensionality Diamond (depth-1) + the FINALLY GUARANTEE exit_runs_always (∀ Outcome, exitRuns = true — __exit__ runs on both the ok and err body paths, the reason the desugar uses a finally-only try not a plain enter;BODY;exit). provability/mathlib: a control-flow guarantee reduces to a finite case analysis over a 2-constructor Outcome, closed by decide over CORE Lean 4 — NO Mathlib/sorry/axiom. Pilot 31→32. FOURTH proof-lane contract this REPL session — the four major capabilities shipped (exceptions/generators/file-io/context-managers) now all under proven core-Lean contracts.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Worktree-isolated (cron concurrently on Python-surface/WASM lanes, at ~PMAT-1127). lake build green (32 modules), pv lint 0 errors, all provability gates pass.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
