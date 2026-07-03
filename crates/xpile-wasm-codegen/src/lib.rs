@@ -4625,17 +4625,33 @@ fn normalize_concat_operand_fstring_int(op: &mut Expr, ctx: &HashMap<String, Typ
 /// `true` if `e` is a value the WASM lane emits as an `i64` (so `str(e)` is the
 /// supported int→decimal materialisation). Conservative: only positively-int
 /// shapes — an int literal, an `I64`/`CLong`-typed name, a `len(...)` /
-/// `ord(...)` (both yield an int count / code point), or an integer-arithmetic
+/// `ord(...)` (both yield an int count / code point), an integer-arithmetic
 /// `BinOp` (whose result is `i64` by construction; comparison / logical ops are
 /// excluded — those are `bool`, which the frontend has already lowered to a
-/// str-valued `IfExpr` in a format position). Everything else returns `false`
-/// and is left for `emit_str_expr` (str-valued → handled; otherwise refused).
+/// str-valued `IfExpr` in a format position), or an int-valued UNARY op
+/// (`UnOp::Neg` / `UnOp::BitNot`) over an operand that itself classifies as int
+/// (PMAT-1169 — `f"{-n}"` / `f"{~n}"`). Everything else returns `false` and is
+/// left for `emit_str_expr` (str-valued → handled; otherwise refused).
 fn concat_operand_is_int(e: &Expr, ctx: &HashMap<String, Type>) -> bool {
     match e {
         Expr::LitInt(_) => true,
         Expr::Ident(n) => matches!(ctx.get(n), Some(Type::I64) | Some(Type::CLong)),
         Expr::Len(_) | Expr::Ord { .. } => true,
         Expr::BinOp { op, .. } => concat_binop_is_int(*op),
+        // PMAT-1169: an int-valued UNARY operator over an int operand is itself
+        // int — Python `-x` (`UnOp::Neg`) and `~x` (`UnOp::BitNot`) are both
+        // `I64 -> I64`, so `f"{-n}"` / `f"{~n}"` / `f"{-(a+b)}"` are `str(int)`
+        // (the `$__wasm_int_to_str` helper is sign-aware, PMAT-1060, so the
+        // leading `-` is rendered — `-42` -> "-42", `~5` == `-6` -> "-6"). The
+        // operand MUST itself classify as int (recurse), so `-3.0` (a float
+        // `LitFloat` operand) and any non-int shape stay unwrapped -> the honest
+        // refusal at `emit_str_expr`. `UnOp::Not` (logical `not x`, `Bool ->
+        // Bool`) is EXCLUDED — a bool in a format position is not int (the
+        // frontend already lowers it to a str-valued `IfExpr`), so it must not
+        // be mis-wrapped in `str(int)`.
+        Expr::UnOp { op, operand } => {
+            matches!(op, UnOp::Neg | UnOp::BitNot) && concat_operand_is_int(operand, ctx)
+        }
         // The int-VALUED string methods the WASM lane already emits as `i64`:
         // `len(s)` (`CharCount`, PMAT-1148) and the search family (`find` /
         // `rfind` / `count` / `index` / `rindex`). Str-, bool-, and list-valued
