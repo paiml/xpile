@@ -68,9 +68,14 @@
 //!   supported, and since PMAT-1060 **`str(int)` / `repr(int)`**
 //!   (`Expr::ToStr { of_float: false }`) materialises an i64's decimal-ASCII
 //!   form via `$__wasm_int_to_str` (unsigned-magnitude, so `i64::MIN` is
-//!   exact). Still **refused** honestly (a hard `BackendError`):
-//!   `str(float)`/`repr(float)`, f-strings, string methods, and the composite
-//!   `dict` / `set` value/`in` shapes not yet wired. Char access is O(chars)
+//!   exact). Since PMAT-1126/1127/1128 the string **methods**
+//!   `s.startswith(p)` / `s.endswith(p)` (byte prefix/suffix → i32 bool),
+//!   `s.count(p)` (non-overlapping byte occurrence count → i64), and the
+//!   substring test `p in s` (`Expr::StrContains`, a sliding byte search →
+//!   i32 bool) are supported — each a non-allocating helper. Still **refused**
+//!   honestly (a hard `BackendError`): `str(float)`/`repr(float)`, f-strings,
+//!   the OTHER string methods (upper/lower/strip/split/replace/find/…), and the
+//!   composite `dict` / `set` value/`in` shapes not yet wired. Char access is O(chars)
 //!   per read (charlen is O(bytes)) — correctness over speed, an honest
 //!   documented tradeoff.
 //! - The FIRST aggregate (PMAT-966 + PMAT-968): a `list[int]`/`list[float]`
@@ -564,6 +569,18 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
             collect_expr_literals(haystack, out);
             collect_expr_literals(needle, out);
         }
+        // PMAT-1128: a string METHOD's receiver AND args may be LITERALS
+        // (`s.count("l")`, `"banana".count(p)`) — both lower via `emit_str_expr`,
+        // which needs each literal laid out as a `(data)` segment. (Before this
+        // arm, a literal method arg fell through to `_ => {}` and `emit_str_expr`
+        // found no address — the same latent gap the startswith/endswith
+        // witnesses missed by only ever passing str PARAMS.)
+        Expr::StrMethod { recv, args, .. } => {
+            collect_expr_literals(recv, out);
+            for a in args {
+                collect_expr_literals(a, out);
+            }
+        }
         _ => {}
     }
 }
@@ -1047,6 +1064,152 @@ const STR_CONTAINS_HELPER: &str = "\
       )
     )
     i32.const 0
+  )
+";
+
+/// PMAT-1128: `$__wasm_str_count(h, n) -> i64` — Python `h.count(n)` (the count
+/// of NON-OVERLAPPING occurrences of `n` in `h`) over two length-prefixed UTF-8
+/// strings, returning an `i64` (a Python `int`).
+///
+/// The counting generalisation of [`STR_CONTAINS_HELPER`]: same byte slide, but
+/// instead of returning at the first match it COUNTS matches and, on each,
+/// advances the start cursor by `len(n)` (non-overlapping, exactly like Python's
+/// `str.count` and Rust's `str::matches().count()`), returning the total. Two
+/// special cases, both pinned to CPython:
+///   * an EMPTY needle → `charlen(h) + 1` (Python `"abc".count("")` is 4,
+///     `"".count("")` is 1). This is the CODE-POINT count + 1, NOT the byte
+///     count + 1 — so it calls `$__wasm_str_charlen` (always emitted for a
+///     str-touching module) rather than reading the byte header, keeping the
+///     empty-needle answer char-exact for non-ASCII (`"héllo".count("")` is 6,
+///     not the byte-derived 7).
+///   * a needle LONGER than the haystack → 0.
+///
+/// For a non-empty needle the count is a pure number of matches, IDENTICAL in
+/// byte- or code-point-space (a byte-substring match IS a code-point-substring
+/// match for valid UTF-8 — `n[0]` is a LEAD byte, so every match lands on a char
+/// boundary in `h`), so the byte slide reproduces CPython EXACTLY. Like
+/// `$__wasm_str_contains` it reads linear memory and allocates NOTHING (an int,
+/// not a new string). Emitted once per module (gated on [`module_uses_str_method`]
+/// for `Count`).
+const STR_COUNT_HELPER: &str = "\
+  ;; __wasm_str_count(h, n) = Python h.count(n)  (i64: non-overlapping occurrences)
+  ;; h, n are i32 base-pointers to length-prefixed regions (i32 byte count @
+  ;; base+0, UTF-8 bytes @ base+8). Same byte slide as $__wasm_str_contains, but
+  ;; counts matches, advancing start by len(n) on each (non-overlapping). Empty
+  ;; needle → charlen(h)+1 (CODE points, char-exact). Byte-count == code-point
+  ;; count for a non-empty needle (n[0] is a lead byte). Allocates nothing.
+  (func $__wasm_str_count (param $h i32) (param $n i32) (result i64)
+    (local $hn i32)
+    (local $nn i32)
+    (local $start i32)
+    (local $last i32)
+    (local $j i32)
+    (local $match i32)
+    (local $count i32)
+    ;; hn = len(h); nn = len(n)
+    local.get $h
+    i32.load
+    local.set $hn
+    local.get $n
+    i32.load
+    local.set $nn
+    ;; empty needle: Python h.count(\"\") == charlen(h) + 1 (CODE points, not bytes)
+    local.get $nn
+    i32.eqz
+    if
+      local.get $h
+      call $__wasm_str_charlen
+      i32.const 1
+      i32.add
+      i64.extend_i32_u
+      return
+    end
+    ;; a needle longer than the haystack can never occur
+    local.get $nn
+    local.get $hn
+    i32.gt_s
+    if
+      i64.const 0
+      return
+    end
+    ;; last = hn - nn  (inclusive last start offset; >= 0, guarded above)
+    local.get $hn
+    local.get $nn
+    i32.sub
+    local.set $last
+    ;; count = 0; start = 0; while start <= last: match at start → count++, start += nn; else start++
+    i32.const 0
+    local.set $count
+    i32.const 0
+    local.set $start
+    (block $done
+      (loop $next_start
+        local.get $start
+        local.get $last
+        i32.gt_s
+        br_if $done
+        ;; match = 1; j = 0; while j < nn: if h[8+start+j] != n[8+j] fail
+        i32.const 1
+        local.set $match
+        i32.const 0
+        local.set $j
+        (block $stop
+          (loop $next_char
+            local.get $j
+            local.get $nn
+            i32.ge_s
+            br_if $stop
+            ;; h byte start+j
+            local.get $h
+            i32.const 8
+            i32.add
+            local.get $start
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            ;; n byte j
+            local.get $n
+            i32.const 8
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            i32.ne
+            if
+              i32.const 0
+              local.set $match
+              br $stop
+            end
+            local.get $j
+            i32.const 1
+            i32.add
+            local.set $j
+            br $next_char
+          )
+        )
+        ;; a full-length match → count++, advance start by nn (non-overlapping)
+        local.get $match
+        if
+          local.get $count
+          i32.const 1
+          i32.add
+          local.set $count
+          local.get $start
+          local.get $nn
+          i32.add
+          local.set $start
+        else
+          local.get $start
+          i32.const 1
+          i32.add
+          local.set $start
+        end
+        br $next_start
+      )
+    )
+    local.get $count
+    i64.extend_i32_u
   )
 ";
 
@@ -2695,6 +2858,11 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // byte SUBSTRING search (`$__wasm_str_contains`), the sliding generalisation
     // of `$__wasm_str_startswith`. Reads the two str payloads, allocates nothing.
     let needs_contains = module_uses_str_contains(module);
+    // PMAT-1128: `s.count(p)` over strings (`Expr::StrMethod`, op `Count`) — a
+    // non-allocating byte OCCURRENCE count (`$__wasm_str_count`), the counting
+    // generalisation of `$__wasm_str_contains`. Reads the two str payloads,
+    // allocates nothing; like the prefix/suffix ops it forces the `(memory …)`.
+    let needs_count = module_uses_str_method(module, StrMethodOp::Count);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -2703,6 +2871,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_startswith
         || needs_endswith
         || needs_contains
+        || needs_count
     {
         writeln!(
             out,
@@ -2773,6 +2942,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // nothing (independent of the bump-heap gate, like `$__wasm_str_startswith`).
     if needs_contains {
         out.push_str(STR_CONTAINS_HELPER);
+    }
+    // PMAT-1128: emit the string OCCURRENCE-count helper once, when any function
+    // uses `s.count(p)` over strings (`Expr::StrMethod`, op `Count`). Same byte
+    // slide as `$__wasm_str_contains` but counts non-overlapping matches; the
+    // empty-needle case calls `$__wasm_str_charlen` (emitted below via
+    // `module_touches_str`, which a `StrMethod` always sets). Reads memory,
+    // allocates nothing (a Python int, not a new string).
+    if needs_count {
+        out.push_str(STR_COUNT_HELPER);
     }
     // PMAT-1032: emit the CHAR-semantics helper family once, when any function
     // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
@@ -3670,6 +3848,15 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // heap-constructed operand (`("a" + b) in s`) pulls in the allocator.
         Expr::StrContains { haystack, needle } => {
             expr_has_heap_op(haystack) || expr_has_heap_op(needle)
+        }
+        // PMAT-1128: a WASM-lane string METHOD (CharCount/StartsWith/EndsWith/
+        // Count) allocates nothing itself (a len/bool/int), but a heap-constructed
+        // receiver or arg (`s.count("a" + b)`) pulls in the allocator — so recurse
+        // into both. (Before this arm a heap method arg fell through to `_ =>
+        // false`, so `$__alloc` would be emitted against an undeclared allocator —
+        // a hard wat2wasm failure the param-only witnesses never triggered.)
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_heap_op(recv) || args.iter().any(expr_has_heap_op)
         }
         _ => false,
     }
@@ -4770,9 +4957,26 @@ fn emit_expr(
             op: StrMethodOp::EndsWith,
             args,
         } if args.len() == 1 => emit_str_prefix_op(recv, &args[0], "endswith", scope, out, depth),
+        // PMAT-1128: `s.count(p)` — an int (i64) result: the count of
+        // NON-OVERLAPPING occurrences of `p` in `s`. Both operands lower to i32
+        // base-pointers (`emit_str_expr`), then `$__wasm_str_count` (the counting
+        // generalisation of `$__wasm_str_contains`). A byte occurrence count IS a
+        // code-point occurrence count for valid UTF-8 (`p[0]` is a lead byte); the
+        // empty-needle case is charlen(s)+1 inside the helper. Allocates nothing.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Count,
+            args,
+        } if args.len() == 1 => {
+            emit_str_expr(recv, scope, out, depth)?;
+            emit_str_expr(&args[0], scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_count").expect("write");
+            Ok(WatTy::I64)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
-             `.startswith(p)`, and `.endswith(p)` are supported; \
+             `.startswith(p)`, `.endswith(p)`, and `.count(p)` are supported; \
              upper/lower/strip/split/replace/find/… are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
