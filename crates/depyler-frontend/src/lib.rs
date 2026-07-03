@@ -9511,11 +9511,57 @@ fn body_has_yield(body: &[ast::Stmt]) -> bool {
     })
 }
 
+/// PMAT-1083 (skeptic pass PMAT-1081): find a construct in a generator body
+/// whose EAGER lowering observably diverges from CPython's LAZY generator
+/// protocol. A side-effect call statement interleaves with consumption lazily
+/// but runs all-before-consumption eagerly (side,1,side2,2 vs side,side2,1,2);
+/// a `raise` fires at CALL time eagerly even when a partially-consuming caller
+/// (`break`) never reaches it lazily (clean CPython run vs exit-101 crash);
+/// a `while` loop may be unbounded (a lazy consumer `break`s out of an
+/// infinite generator — eager materialization hangs). Pure for/if-structured
+/// finite builders return None and stay supported (the verified-faithful
+/// class).
+fn eager_unsound_construct(body: &[ast::Stmt]) -> Option<&'static str> {
+    body.iter().find_map(|s| match s {
+        ast::Stmt::While(_) => Some(
+            "a `while` loop (possibly unbounded — a lazy consumer can stop early; \
+             eager materialization runs the whole loop or hangs)",
+        ),
+        ast::Stmt::Raise(_) => Some(
+            "a `raise` (lazily it fires at the consuming iteration, which a partial \
+             consumer may never reach; eagerly it fires at call time)",
+        ),
+        ast::Stmt::Expr(e) if matches!(e.value.as_ref(), ast::Expr::Call(_)) => Some(
+            "a side-effect call statement (lazily interleaved with consumption; \
+             eagerly it all runs before the first item is consumed)",
+        ),
+        ast::Stmt::If(i) => {
+            eager_unsound_construct(&i.body).or_else(|| eager_unsound_construct(&i.orelse))
+        }
+        ast::Stmt::For(f) => {
+            eager_unsound_construct(&f.body).or_else(|| eager_unsound_construct(&f.orelse))
+        }
+        ast::Stmt::With(w) => eager_unsound_construct(&w.body),
+        ast::Stmt::Try(t) => eager_unsound_construct(&t.body)
+            .or_else(|| eager_unsound_construct(&t.orelse))
+            .or_else(|| eager_unsound_construct(&t.finalbody))
+            .or_else(|| {
+                t.handlers.iter().find_map(|h| {
+                    let ast::ExceptHandler::ExceptHandler(h) = h;
+                    eager_unsound_construct(&h.body)
+                })
+            }),
+        _ => None,
+    })
+}
+
 /// PMAT-1071: rewrite a generator function into a list-BUILDING one. Each
 /// `yield e` becomes `__gen_result.append(e)`; the body is prefixed with
 /// `__gen_result: list[T] = []` and suffixed with `return __gen_result`; the
 /// return annotation `T` becomes `list[T]`. Refuses the shapes the eager
-/// model can't express (bare `yield` / `yield from` / a value-`return`).
+/// model can't express (bare `yield` / `yield from` / a value-`return`),
+/// plus the PMAT-1083 semantic danger zone (side-effect statements, `raise`,
+/// `while`) where eager materialization silently diverges from lazy CPython.
 fn transform_generators(suite: &mut [ast::Stmt]) -> Result<(), FrontendError> {
     use ast::{Expr, ExprContext as Ctx, Stmt};
     const RES: &str = "__gen_result";
@@ -9602,6 +9648,17 @@ fn transform_generators(suite: &mut [ast::Stmt]) -> Result<(), FrontendError> {
         };
         if !body_has_yield(&f.body) {
             continue;
+        }
+        // PMAT-1083: eager materialization is only faithful for PURE finite
+        // builders — refuse the shapes where it observably diverges (scanned
+        // on the ORIGINAL body, before yields become append call statements).
+        if let Some(what) = eager_unsound_construct(&f.body) {
+            return Err(FrontendError::Lower(format!(
+                "generator `{}` contains {what} — the eager (list-materializing) lowering \
+                 diverges from CPython's lazy generator protocol here; only pure \
+                 for/if-structured finite generators are supported",
+                f.name
+            )));
         }
         let rng = f.range;
         // The yield type T is the return annotation (`-> int`), or the element
@@ -18786,6 +18843,20 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             // `len` is too, but exclude it defensively and let `lower_call` own it).
             if let ast::Expr::Name(n) = call.func.as_ref() {
                 let callee = n.id.to_string();
+                // PMAT-1083: builtin `next(g)` needs the iterator protocol —
+                // the eager generator model materializes the whole list at
+                // call time and has no per-item cursor. Refuse precisely (was
+                // rustc E0425 far downstream) unless the user defined their
+                // own `next` function, which shadows the builtin.
+                if callee == "next" && !ctx.signatures.contains_key("next") {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` calls builtin `next()` — generators lower EAGERLY \
+                         (the whole sequence materializes at call time; there is no \
+                         iterator protocol / per-item cursor), so `next()` is not \
+                         supported; iterate with `for` or index the materialized list",
+                        ctx.fn_name
+                    )));
+                }
                 // PMAT-770 (HUNT-V16 DD-06): a call whose callee is a VARIABLE
                 // typing as a user class that defines `__call__` is Python's
                 // callable-instance protocol — `a(x)` is `a.__call__(x)`. Without

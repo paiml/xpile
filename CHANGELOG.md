@@ -7,6 +7,41 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Correctness — eager-generator honesty refusals (PMAT-1083)
+
+The PMAT-1081 skeptic pass FALSIFIED PMAT-1071's claim that "the common
+finite `for x in g()` case is faithful": eager list-materialization is only
+faithful for PURE finite builders. The refusal set is now tightened to
+exactly that class (frontend-level `transform_generators`, so it covers
+every target):
+
+- **Side-effect call statements refuse** (probes p1/p2): a `print` (or any
+  bare call statement) between yields is lazily INTERLEAVED with consumption
+  (CPython: side,1,side2,2) but ran all-before-consumption eagerly
+  (side,side2,1,2) — a SILENT reordering, worse under partial consumption
+  (`break` skips the tail lazily; eager runs it all). The scan runs on the
+  ORIGINAL body, before yields become `__gen_result.append(...)` call
+  statements, and recurses if/for/with/try (incl. handlers). Scope note:
+  this is the skeptic-sanctioned syntactic fix over call STATEMENTS — a
+  side-effecting call in assignment position is not scanned.
+- **`raise` refuses** (probe p10): lazily it fires at the consuming
+  iteration, which a `break`-ing consumer never reaches (clean CPython run);
+  eagerly it fired at call time (exit-101 crash before any output).
+- **Any `while` loop refuses** (probe p2b): `while True` generators
+  terminate lazily via the consumer's `break`; eager materialization hangs
+  forever. Boundedness isn't syntactically decidable, so any `while`
+  refuses (the PMAT-1071 roadmap planned this detection but it never
+  shipped).
+- **`next(g)` refuses precisely** (probe p12): the eager model has no
+  iterator protocol / per-item cursor; previously emitted a free `next(it)`
+  call (rustc E0425 far downstream). A user-defined `next` function still
+  shadows the builtin and works.
+- Pure for/if-structured finite builders (the verified-faithful class:
+  straight-line, loops over `range`, conditional yields, stateful fib,
+  early bare `return`) transpile exactly as before (probes p3/p4 +
+  `generators_eager.py` re-verified). e2e: `gen_side_effect_rejected`,
+  `gen_raise_rejected`, `gen_while_rejected`, `gen_next_rejected`.
+
 ### Correctness — statement-form try control flow (PMAT-1082)
 
 Top finding of the PMAT-1081 skeptic pass, now fixed (rust + ruchy lanes):
