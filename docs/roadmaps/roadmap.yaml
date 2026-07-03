@@ -1202,6 +1202,14 @@ roadmap:
   status: open
   priority: high
   created: 2026-07-03T00:00:00Z
+- id: PMAT-1120
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1120: [provability/R6/mathlib] NEW contract C-PY-EXCEPT-ALLOWLIST for the try/except lane (shipped uncontracted this session — PMAT-1058/1059/1065/1070/1073). Core-Lean module PyExceptAllowlist.lean: ExceptHandler ALLOWLIST structure-extensionality Diamond (depth-1) + 3 semantic theorems — empty_allowlist_catches_all (bare except: is the only catch-all), matched_type_is_caught, and unmatched_type_propagates (the PMAT-789 NO-SWALLOW invariant: a non-matching type in a non-empty allowlist re-raises, so except ValueError does not swallow ZeroDivisionError). provability/mathlib DECISION reaffirmed: the dispatch predicate is a DECIDABLE Boolean (allowlist.isEmpty || allowlist.contains type), discharged entirely over CORE Lean 4 (Bool.or_true/or_false + structural cases) — NO Mathlib/sorry/axiom; the purity invariant holds for the control-flow tier. Pilot 28→29. Citation wiring (applicable_contracts) DEFERRED (meta-hir is the cron''s hot serial area — proof-ahead-of-citation, citation-integrity gate stays green).'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Done in an isolated git worktree (the OS cron is concurrently hammering depyler-frontend, PMAT-1080..1105). lake build green (29 modules), pv lint 0 errors, lean_pilot_roots count-sync + diamond_coverage(26) + refinement_proofs(3) + contract_citation_integrity(3) all pass. Answers the provability/mathlib strategic question: 28→29 modules proven core-only, zero cases needing Mathlib.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
