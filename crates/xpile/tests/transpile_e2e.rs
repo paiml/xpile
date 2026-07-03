@@ -1101,6 +1101,52 @@ fn tuple_call_is_rejected_not_miscompiled() {
     );
 }
 
+/// PMAT-1165: `==`/`!=` between two instances of a PLAIN class (not `@dataclass`,
+/// no `__eq__`/`__ne__`) compares object IDENTITY in Python — `Obj(5) == Obj(5)`
+/// is `False` (distinct objects) — but xpile derives a structural `PartialEq`, so
+/// the emitted `a == b` returns `true`: a SILENT divergence. xpile's value/clone
+/// model cannot express object identity, so the comparison is refused at the
+/// frontend (fail-loud) rather than transpiled to the silently-wrong structural
+/// compare. Confirmed via the differential harness (SKIP-EMIT, not DIVERGE True).
+#[test]
+fn plain_class_eq_compares_identity_is_refused() {
+    let py = fixture("oop_eq_identity_refused.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "rust"]);
+    assert!(
+        !out.status.success(),
+        "`==` between two plain-class instances must be refused (identity vs \
+         structural silent divergence), not emitted"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("IDENTITY") && stderr.contains("Obj"),
+        "the refusal should name the identity-equality reason and the class:\n{stderr}"
+    );
+}
+
+/// PMAT-1165 (counterpart): the refusal must NOT be too broad — a `@dataclass`
+/// gets Python's auto-generated STRUCTURAL `__eq__`, which matches the derived
+/// Rust `PartialEq`, so `==`/`!=` between dataclass instances still lowers AND
+/// agrees with CPython. Transpile succeeds, emits a real comparison, and the
+/// emitted Rust runs with `P(5) == P(5)` true / `P(5) != P(6)` true.
+#[test]
+fn dataclass_eq_still_lowers_and_matches() {
+    let rust = xpile_transpile_to_rust("oop_eq_dataclass_ok.py");
+    assert!(
+        rust.contains("struct P"),
+        "expected the dataclass struct in:\n{rust}"
+    );
+    assert!(
+        rust.contains("PartialEq"),
+        "the dataclass struct should still derive structural PartialEq:\n{rust}"
+    );
+    assert_rustc_runs(
+        "oop_eq_dataclass_ok",
+        &rust,
+        "fn main() { assert!(eq()); assert!(ne()); }",
+    );
+}
+
 /// PMAT-466 regression (adversarial review #11): the Ruchy backend
 /// emits the same IndexMap pipeline as Rust (Ruchy compiles to Rust),
 /// including the temp-let DictSet form.

@@ -162,6 +162,19 @@ struct LoweringCtx {
     /// `frozen_instance.field = v` is rejected (Python raises
     /// `FrozenInstanceError`); without this it compiled and silently mutated.
     frozen_structs: Rc<HashSet<String>>,
+    /// PMAT-1165: set of PLAIN user-class names whose `==`/`!=` compares Python
+    /// object IDENTITY — i.e. the class is NOT a `@dataclass` AND defines neither
+    /// `__eq__` nor `__ne__`. Two distinct instances of such a class are NEVER
+    /// equal in CPython (default identity `==`), but xpile's value/clone model
+    /// `#[derive(PartialEq)]`s the struct, giving STRUCTURAL equality — a silent
+    /// divergence (`Obj(5) == Obj(5)` is `True` in Rust, `False` in Python).
+    /// Built in the same pre-pass as `structs`; consulted in `lower_compare_in_ctx`
+    /// to REFUSE `==`/`!=` between two operands of the same such class (fail-loud
+    /// instead of emitting the silently-wrong structural compare). `@dataclass`
+    /// (Python auto-generates a structural `__eq__` — matches) and classes with an
+    /// explicit `__eq__`/`__ne__` (codegen emits a delegating `impl PartialEq`,
+    /// PMAT-762/777) are excluded, so their `==`/`!=` still lowers.
+    identity_eq_structs: Rc<HashSet<String>>,
     /// PMAT-513 (Tranche 2): module-level enum table — `enum name →
     /// [(variant, discriminant)]`, built in the pre-pass. Consulted to lower a
     /// member access `C.NAME` → [`Expr::EnumVariant`] and `C.NAME.value` → the
@@ -432,6 +445,7 @@ impl LoweringCtx {
         struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
         struct_properties: Rc<HashMap<String, Vec<String>>>,
         frozen_structs: Rc<HashSet<String>>,
+        identity_eq_structs: Rc<HashSet<String>>,
         enums: Rc<HashMap<String, Vec<(String, i64)>>>,
         mutating_methods: Rc<HashSet<String>>,
         profile: LoweringProfile,
@@ -499,6 +513,7 @@ impl LoweringCtx {
             struct_field_defaults,
             struct_properties,
             frozen_structs,
+            identity_eq_structs,
             enums,
             closure_returns: HashMap::new(),
             underscore_counter: 0,
@@ -3406,6 +3421,12 @@ impl Frontend for PythonFrontend {
         // a `frozen_instance.field = v` can be rejected (Python raises
         // `FrozenInstanceError`) instead of compiling + silently mutating.
         let mut frozen_set: HashSet<String> = HashSet::new();
+        // PMAT-1165: names of PLAIN classes (NOT `@dataclass`, defining NEITHER
+        // `__eq__` NOR `__ne__`) — their default `==` is object IDENTITY in
+        // Python, but xpile derives structural `PartialEq`, so `==`/`!=` between
+        // two distinct instances silently diverges. Consulted in
+        // `lower_compare_in_ctx` to refuse those comparisons fail-loud.
+        let mut identity_eq_set: HashSet<String> = HashSet::new();
         let mut mutating_method_set: HashSet<String> = HashSet::new();
         // PMAT-513: per-enum `(variant, discriminant)` list, so member access
         // `C.NAME` / `C.NAME.value` in function bodies type/lower correctly.
@@ -3432,6 +3453,17 @@ impl Frontend for PythonFrontend {
                     if class_is_frozen(c) {
                         frozen_set.insert(name.clone());
                     }
+                    // PMAT-1165: a plain class (not `@dataclass`) that defines
+                    // no custom equality dunder gets a STRUCTURAL derived
+                    // `PartialEq`, which contradicts Python's default IDENTITY
+                    // `==`. Record it so `==`/`!=` between two of its instances
+                    // is refused rather than emitted silently-wrong. Classes with
+                    // `__eq__`/`__ne__` (codegen delegates via `impl PartialEq`,
+                    // PMAT-762/777) and dataclasses (structural `__eq__` matches
+                    // CPython) are excluded.
+                    if !class_is_dataclass(c) && !class_defines_eq_or_ne(c) {
+                        identity_eq_set.insert(name.clone());
+                    }
                     struct_map.insert(name.clone(), fields);
                     struct_method_map.insert(name.clone(), method_returns);
                     struct_default_map.insert(name.clone(), field_defaults);
@@ -3448,6 +3480,7 @@ impl Frontend for PythonFrontend {
         let struct_field_defaults = Rc::new(struct_default_map);
         let struct_properties = Rc::new(struct_property_map);
         let frozen_structs = Rc::new(frozen_set);
+        let identity_eq_structs = Rc::new(identity_eq_set);
         let enums = Rc::new(enum_map);
         let mutating_methods = Rc::new(mutating_method_set);
 
@@ -3476,6 +3509,7 @@ impl Frontend for PythonFrontend {
                 struct_field_defaults.clone(),
                 struct_properties.clone(),
                 frozen_structs.clone(),
+                identity_eq_structs.clone(),
                 enums.clone(),
                 mutating_methods.clone(),
                 profile,
@@ -4431,6 +4465,7 @@ fn lower_top_level_stmt(
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
     frozen_structs: Rc<HashSet<String>>,
+    identity_eq_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     mutating_methods: Rc<HashSet<String>>,
     profile: LoweringProfile,
@@ -4450,6 +4485,7 @@ fn lower_top_level_stmt(
  struct_field_defaults,
  struct_properties,
  frozen_structs,
+ identity_eq_structs,
  enums,
  None,
  None,
@@ -4471,6 +4507,7 @@ fn lower_top_level_stmt(
  struct_field_defaults,
  struct_properties,
  frozen_structs,
+ identity_eq_structs,
  enums,
  mutating_methods,
  profile,
@@ -4790,6 +4827,19 @@ fn class_is_dataclass(c: &ast::StmtClassDef) -> bool {
             matches!(call.func.as_ref(), ast::Expr::Name(n) if n.id.as_str() == "dataclass")
         }
         _ => false,
+    })
+}
+
+/// PMAT-1165: true if a class defines an explicit `__eq__` or `__ne__` method.
+/// Such a class carries user-defined equality semantics: the Rust codegen emits a
+/// delegating `impl PartialEq` (PMAT-762/777) instead of a structural derive, so
+/// `==`/`!=` reflects the user's method rather than silently comparing all fields.
+/// A plain class defining NEITHER falls back to Python's default IDENTITY `==`,
+/// which the derived structural `PartialEq` contradicts — the divergence
+/// `identity_eq_structs` records so `lower_compare_in_ctx` can refuse it.
+fn class_defines_eq_or_ne(c: &ast::StmtClassDef) -> bool {
+    c.body.iter().any(|s| {
+        matches!(s, ast::Stmt::FunctionDef(f) if f.name.as_str() == "__eq__" || f.name.as_str() == "__ne__")
     })
 }
 
@@ -5205,6 +5255,7 @@ fn lower_class_def(
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
     frozen_structs: Rc<HashSet<String>>,
+    identity_eq_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     mutating_methods: Rc<HashSet<String>>,
     profile: LoweringProfile,
@@ -5252,6 +5303,7 @@ fn lower_class_def(
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
                     frozen_structs.clone(),
+                    identity_eq_structs.clone(),
                     enums.clone(),
                     None,
                     None,
@@ -5277,6 +5329,7 @@ fn lower_class_def(
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
                     frozen_structs.clone(),
+                    identity_eq_structs.clone(),
                     enums.clone(),
                     Some(self_ty.clone()),
                     None,
@@ -5320,6 +5373,7 @@ fn lower_class_def(
                     struct_field_defaults.clone(),
                     struct_properties.clone(),
                     frozen_structs.clone(),
+                    identity_eq_structs.clone(),
                     enums.clone(),
                     None,
                     Some(name.clone()),
@@ -5350,6 +5404,7 @@ fn lower_class_def(
                 struct_field_defaults.clone(),
                 struct_properties.clone(),
                 frozen_structs.clone(),
+                identity_eq_structs.clone(),
                 enums.clone(),
                 Some(self_ty.clone()),
                 None,
@@ -5896,6 +5951,7 @@ fn lower_function_def(
     struct_field_defaults: Rc<HashMap<String, Vec<(String, Expr)>>>,
     struct_properties: Rc<HashMap<String, Vec<String>>>,
     frozen_structs: Rc<HashSet<String>>,
+    identity_eq_structs: Rc<HashSet<String>>,
     enums: Rc<HashMap<String, Vec<(String, i64)>>>,
     // PMAT-506d: when lowering a method, the type of the `self` receiver (the
     // enclosing struct). `None` for a top-level function. Decorators are
@@ -6069,6 +6125,7 @@ fn lower_function_def(
         struct_field_defaults,
         struct_properties,
         frozen_structs,
+        identity_eq_structs,
         enums,
         mutating_methods,
         profile,
@@ -25686,6 +25743,30 @@ fn lower_compare_in_ctx(ctx: &LoweringCtx, c: ast::ExprCompare) -> Result<Expr, 
     // operand's type so the chained path (which references temps, not the
     // originals) doesn't need to re-infer for the Set / float-promotion logic.
     let op_types: Vec<Type> = operands.iter().map(|o| infer_type_in_ctx(ctx, o)).collect();
+
+    // PMAT-1165: refuse `==`/`!=` between two operands of the SAME plain user
+    // class (not `@dataclass`, defining neither `__eq__` nor `__ne__`). Python's
+    // default `==` on such a class compares object IDENTITY — two distinct
+    // instances are NEVER equal — but xpile derives structural `PartialEq`, so the
+    // emitted `a == b` silently returns `true` where CPython returns `False`
+    // (`Obj(5) == Obj(5)`). xpile's value/clone model cannot express object
+    // identity, so fail loud rather than diverge. `@dataclass` (auto structural
+    // `__eq__` matches CPython) and classes with an explicit `__eq__`/`__ne__`
+    // (codegen emits a delegating `impl PartialEq`, PMAT-762/777) are excluded —
+    // their `==`/`!=` still lowers. Scans every adjacent pair so a chained
+    // `a == b == c` is caught too.
+    for (i, op) in c.ops.iter().enumerate() {
+        if matches!(op, ast::CmpOp::Eq | ast::CmpOp::NotEq) {
+            if let (Type::Struct(l), Type::Struct(r)) = (&op_types[i], &op_types[i + 1]) {
+                if l == r && ctx.identity_eq_structs.contains(l) {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}`: `==`/`!=` on `{l}` compares object IDENTITY in Python (no `__eq__`, not `@dataclass`) — two distinct instances are never equal, which xpile's value model cannot express (the derived structural equality would silently diverge). Define `__eq__` or use `@dataclass` for structural equality.",
+                        ctx.fn_name
+                    )));
+                }
+            }
+        }
+    }
 
     // A single comparison shares no operand between sub-comparisons, so emit it
     // directly (the overwhelmingly common path — keep it a plain `BinOp`).
