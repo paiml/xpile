@@ -9717,26 +9717,201 @@ fn transform_generators(suite: &mut [ast::Stmt]) -> Result<(), FrontendError> {
     Ok(())
 }
 
+/// PMAT-1084: does any statement in `stmts` return a VALUE — a `return <expr>`
+/// whose expr is not the literal `None`? A truthy `__exit__` return SUPPRESSES
+/// the in-flight exception in CPython; the desugared finally-only call site
+/// discards the return value, so a value-returning `__exit__` must refuse
+/// (the annotation alone is not enough: `-> None` with `return True` in the
+/// body still suppresses in CPython).
+fn ast_body_returns_value(stmts: &[ast::Stmt]) -> bool {
+    stmts.iter().any(|s| match s {
+        ast::Stmt::Return(r) => match r.value.as_deref() {
+            None => false,
+            Some(ast::Expr::Constant(c)) if matches!(c.value, ast::Constant::None) => false,
+            Some(_) => true,
+        },
+        ast::Stmt::If(i) => ast_body_returns_value(&i.body) || ast_body_returns_value(&i.orelse),
+        ast::Stmt::While(w) => ast_body_returns_value(&w.body) || ast_body_returns_value(&w.orelse),
+        ast::Stmt::For(f) => ast_body_returns_value(&f.body) || ast_body_returns_value(&f.orelse),
+        ast::Stmt::With(w) => ast_body_returns_value(&w.body),
+        ast::Stmt::Try(t) => {
+            ast_body_returns_value(&t.body)
+                || ast_body_returns_value(&t.orelse)
+                || ast_body_returns_value(&t.finalbody)
+                || t.handlers.iter().any(|h| {
+                    let ast::ExceptHandler::ExceptHandler(h) = h;
+                    ast_body_returns_value(&h.body)
+                })
+        }
+        _ => false,
+    })
+}
+
+/// PMAT-1084: conservative "does `name` appear anywhere in these statements"
+/// AST scan, used to refuse `__exit__` bodies that USE their exc params — the
+/// desugar fabricates zero-values for them (CPython passes `None` on the clean
+/// path / the exc triple on the exception path), so any read silently takes
+/// the wrong branch. Over-matching (a shadowing comprehension target, a store
+/// without a read) leads to a refusal, never a miscompile, so shadowing is
+/// deliberately NOT modeled.
+fn ast_stmts_mention_name(stmts: &[ast::Stmt], name: &str) -> bool {
+    fn expr_mentions(e: &ast::Expr, name: &str) -> bool {
+        let any = |es: &[ast::Expr]| es.iter().any(|x| expr_mentions(x, name));
+        match e {
+            ast::Expr::Name(n) => n.id.as_str() == name,
+            ast::Expr::BoolOp(b) => any(&b.values),
+            ast::Expr::NamedExpr(n) => {
+                expr_mentions(&n.target, name) || expr_mentions(&n.value, name)
+            }
+            ast::Expr::BinOp(b) => expr_mentions(&b.left, name) || expr_mentions(&b.right, name),
+            ast::Expr::UnaryOp(u) => expr_mentions(&u.operand, name),
+            ast::Expr::Lambda(l) => expr_mentions(&l.body, name),
+            ast::Expr::IfExp(t) => {
+                expr_mentions(&t.test, name)
+                    || expr_mentions(&t.body, name)
+                    || expr_mentions(&t.orelse, name)
+            }
+            ast::Expr::Dict(d) => {
+                d.keys.iter().flatten().any(|k| expr_mentions(k, name)) || any(&d.values)
+            }
+            ast::Expr::Set(s) => any(&s.elts),
+            ast::Expr::List(l) => any(&l.elts),
+            ast::Expr::Tuple(t) => any(&t.elts),
+            ast::Expr::ListComp(c) => {
+                expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name)
+            }
+            ast::Expr::SetComp(c) => {
+                expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name)
+            }
+            ast::Expr::DictComp(c) => {
+                expr_mentions(&c.key, name)
+                    || expr_mentions(&c.value, name)
+                    || comp_mentions(&c.generators, name)
+            }
+            ast::Expr::GeneratorExp(c) => {
+                expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name)
+            }
+            ast::Expr::Compare(c) => expr_mentions(&c.left, name) || any(&c.comparators),
+            ast::Expr::Call(c) => {
+                expr_mentions(&c.func, name)
+                    || any(&c.args)
+                    || c.keywords.iter().any(|k| expr_mentions(&k.value, name))
+            }
+            ast::Expr::FormattedValue(f) => {
+                expr_mentions(&f.value, name)
+                    || f.format_spec
+                        .as_deref()
+                        .is_some_and(|s| expr_mentions(s, name))
+            }
+            ast::Expr::JoinedStr(j) => any(&j.values),
+            ast::Expr::Attribute(a) => expr_mentions(&a.value, name),
+            ast::Expr::Subscript(s) => {
+                expr_mentions(&s.value, name) || expr_mentions(&s.slice, name)
+            }
+            ast::Expr::Starred(s) => expr_mentions(&s.value, name),
+            ast::Expr::Slice(s) => [&s.lower, &s.upper, &s.step]
+                .into_iter()
+                .flatten()
+                .any(|x| expr_mentions(x, name)),
+            ast::Expr::Await(a) => expr_mentions(&a.value, name),
+            ast::Expr::Yield(y) => y.value.as_deref().is_some_and(|v| expr_mentions(v, name)),
+            ast::Expr::YieldFrom(y) => expr_mentions(&y.value, name),
+            _ => false,
+        }
+    }
+    fn comp_mentions(gens: &[ast::Comprehension], name: &str) -> bool {
+        gens.iter().any(|g| {
+            expr_mentions(&g.target, name)
+                || expr_mentions(&g.iter, name)
+                || g.ifs.iter().any(|i| expr_mentions(i, name))
+        })
+    }
+    stmts.iter().any(|s| match s {
+        ast::Stmt::Expr(e) => expr_mentions(&e.value, name),
+        ast::Stmt::Return(r) => r.value.as_deref().is_some_and(|v| expr_mentions(v, name)),
+        ast::Stmt::Assign(a) => {
+            a.targets.iter().any(|t| expr_mentions(t, name)) || expr_mentions(&a.value, name)
+        }
+        ast::Stmt::AugAssign(a) => expr_mentions(&a.target, name) || expr_mentions(&a.value, name),
+        ast::Stmt::AnnAssign(a) => {
+            expr_mentions(&a.target, name)
+                || a.value.as_deref().is_some_and(|v| expr_mentions(v, name))
+        }
+        ast::Stmt::Delete(d) => d.targets.iter().any(|t| expr_mentions(t, name)),
+        ast::Stmt::If(i) => {
+            expr_mentions(&i.test, name)
+                || ast_stmts_mention_name(&i.body, name)
+                || ast_stmts_mention_name(&i.orelse, name)
+        }
+        ast::Stmt::While(w) => {
+            expr_mentions(&w.test, name)
+                || ast_stmts_mention_name(&w.body, name)
+                || ast_stmts_mention_name(&w.orelse, name)
+        }
+        ast::Stmt::For(f) => {
+            expr_mentions(&f.target, name)
+                || expr_mentions(&f.iter, name)
+                || ast_stmts_mention_name(&f.body, name)
+                || ast_stmts_mention_name(&f.orelse, name)
+        }
+        ast::Stmt::With(w) => {
+            w.items.iter().any(|i| {
+                expr_mentions(&i.context_expr, name)
+                    || i.optional_vars
+                        .as_deref()
+                        .is_some_and(|v| expr_mentions(v, name))
+            }) || ast_stmts_mention_name(&w.body, name)
+        }
+        ast::Stmt::Raise(r) => {
+            r.exc.as_deref().is_some_and(|e| expr_mentions(e, name))
+                || r.cause.as_deref().is_some_and(|e| expr_mentions(e, name))
+        }
+        ast::Stmt::Try(t) => {
+            ast_stmts_mention_name(&t.body, name)
+                || ast_stmts_mention_name(&t.orelse, name)
+                || ast_stmts_mention_name(&t.finalbody, name)
+                || t.handlers.iter().any(|h| {
+                    let ast::ExceptHandler::ExceptHandler(h) = h;
+                    h.type_.as_deref().is_some_and(|e| expr_mentions(e, name))
+                        || ast_stmts_mention_name(&h.body, name)
+                })
+        }
+        ast::Stmt::Assert(a) => {
+            expr_mentions(&a.test, name) || a.msg.as_deref().is_some_and(|m| expr_mentions(m, name))
+        }
+        ast::Stmt::FunctionDef(f) => ast_stmts_mention_name(&f.body, name),
+        ast::Stmt::ClassDef(c) => ast_stmts_mention_name(&c.body, name),
+        _ => false,
+    })
+}
+
 /// PMAT-1072: desugar `with` statements over USER context managers into an
 /// `__enter__` / finally-only-`__exit__` sequence. Only `with ClassName(...)
 /// [as x]: BODY` over a class defining `__enter__` and `__exit__` is supported
 /// (the class is resolved from the constructor call so `__exit__`'s parameter
 /// types are known). `with open(...)`, a non-constructor context expr, and
-/// multi-item `with a, b:` refuse precisely.
+/// multi-item `with a, b:` refuse precisely. PMAT-1084 (skeptic pass
+/// PMAT-1081): an `__exit__` that RETURNS A VALUE (suppression protocol — a
+/// truthy return suppresses the in-flight exception; the desugar discards the
+/// return) or that USES its exc params (fabricated zero-values vs CPython's
+/// None/exc-triple) also refuses precisely at the `with` site.
 fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendError> {
     use ast::{Expr, ExprContext as Ctx, Stmt};
 
     let mut cms: HashMap<String, Vec<Option<ast::Expr>>> = HashMap::new();
     let mut mutating_cms: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut unsound_exit_cms: HashMap<String, String> = HashMap::new();
     for s in suite.iter() {
         if let Stmt::ClassDef(c) = s {
             let mut has_enter = false;
             let mut exit_params: Option<Vec<Option<ast::Expr>>> = None;
+            let mut exit_fn: Option<&ast::StmtFunctionDef> = None;
             for m in &c.body {
                 if let Stmt::FunctionDef(f) = m {
                     match f.name.as_str() {
                         "__enter__" => has_enter = true,
                         "__exit__" => {
+                            exit_fn = Some(f);
                             exit_params = Some(
                                 f.args
                                     .args
@@ -9749,6 +9924,51 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
                         _ => {}
                     }
                 }
+            }
+            // PMAT-1084 (skeptic pass PMAT-1081): two silent-miscompile holes
+            // in the PMAT-1072 desugar. (a) SUPPRESSION — a truthy `__exit__`
+            // return suppresses the in-flight exception in CPython, but the
+            // desugared finally-only `__exit__` call DISCARDS the return value
+            // (the exception propagates anyway). Refuse an `__exit__` that can
+            // return a value: non-`None` return annotation OR a `return
+            // <value>` anywhere in its body (`-> None` with `return True`
+            // still suppresses in CPython — the annotation alone is not
+            // enough). (b) EXC PARAMS — the desugar fabricates zero-values
+            // for the exc params (CPython passes None / the exc triple), so
+            // an `__exit__` that USES them silently takes the wrong branch
+            // (`if exc_type is None`). Refuse at the `with` site, not here:
+            // a class never used in a `with` stays transpilable.
+            if let Some(xf) = exit_fn {
+                let non_none_ret = xf.returns.as_deref().is_some_and(|r| {
+                    !matches!(r, ast::Expr::Constant(c) if matches!(c.value, ast::Constant::None))
+                });
+                if non_none_ret || ast_body_returns_value(&xf.body) {
+                    unsound_exit_cms.insert(
+                        c.name.to_string(),
+                        format!(
+                            "`{}.__exit__` returns a value — a truthy `__exit__` return SUPPRESSES the in-flight exception in CPython, but the desugared finally-only `__exit__` call discards the return value, so the exception would propagate anyway (silent divergence on the suppression path). Supported at v0.2.0: `__exit__` returning nothing / `None`",
+                            c.name
+                        ),
+                    );
+                } else if let Some(p) = xf
+                    .args
+                    .args
+                    .iter()
+                    .skip(1)
+                    .map(|a| a.def.arg.as_str())
+                    .find(|p| ast_stmts_mention_name(&xf.body, p))
+                {
+                    unsound_exit_cms.insert(
+                        c.name.to_string(),
+                        format!(
+                            "`{}.__exit__` uses its exception parameter `{p}` — the desugar passes fabricated zero-values (CPython passes `None` on the clean path / the exc triple on the exception path), so idioms like `if exc_type is None` silently take the wrong branch. Supported at v0.2.0: `__exit__` bodies that IGNORE their exc params",
+                            c.name
+                        ),
+                    );
+                }
+            }
+            if unsound_exit_cms.contains_key(c.name.as_str()) {
+                continue;
             }
             if has_enter {
                 if let Some(ep) = exit_params {
@@ -9810,6 +10030,7 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
         body: Vec<ast::Stmt>,
         cms: &HashMap<String, Vec<Option<ast::Expr>>>,
         mut_cms: &std::collections::HashSet<String>,
+        unsound_cms: &HashMap<String, String>,
         counter: &mut usize,
     ) -> Result<Vec<ast::Stmt>, FrontendError> {
         let mut out: Vec<ast::Stmt> = Vec::with_capacity(body.len());
@@ -9830,13 +10051,24 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
                     // open+op+close, matching a single-op handle). Refuses multiple
                     // ops (truncation/read-once divergence) and any other use of f.
                     if let Some(sub_body) = try_desugar_with_open(&w)? {
-                        let rewritten = rewrite(sub_body, cms, mut_cms, counter)?;
+                        let rewritten = rewrite(sub_body, cms, mut_cms, unsound_cms, counter)?;
                         out.extend(rewritten);
                         continue;
                     }
                     let cls = match &item.context_expr {
                         Expr::Call(call) => match call.func.as_ref() {
                             Expr::Name(n) if cms.contains_key(n.id.as_str()) => n.id.to_string(),
+                            // PMAT-1084: an `__exit__` with unsound semantics
+                            // under the desugar (value-returning / exc-param-
+                            // reading) refuses precisely, not via the generic
+                            // "not a context manager" arm below.
+                            Expr::Name(n) if unsound_cms.contains_key(n.id.as_str()) => {
+                                return Err(FrontendError::Lower(format!(
+                                    "`with {}(...)` — {}",
+                                    n.id,
+                                    unsound_cms[n.id.as_str()]
+                                )));
+                            }
                             Expr::Name(n) if mut_cms.contains(n.id.as_str()) => {
                                 return Err(FrontendError::Lower(format!(
                                     "`with {}(...)` — `{}` is a MUTATING context manager (its `__enter__`/`__exit__` mutates `self`); a captured mutable object would be cloned and the mutation silently dropped (the Rc<RefCell> reference-model gap). Supported: pure / side-effect-only (print/return) context managers at v0.2.0",
@@ -9912,7 +10144,7 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
                             }));
                         }
                     }
-                    let inner = rewrite(w.body, cms, mut_cms, counter)?;
+                    let inner = rewrite(w.body, cms, mut_cms, unsound_cms, counter)?;
                     let exit_params = &cms[&cls];
                     let mut exit_args = Vec::with_capacity(exit_params.len());
                     for p in exit_params {
@@ -9930,7 +10162,7 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
                         finalbody: vec![exit_stmt],
                     }));
                 }
-                other => out.push(rewrite_nested(other, cms, mut_cms, counter)?),
+                other => out.push(rewrite_nested(other, cms, mut_cms, unsound_cms, counter)?),
             }
         }
         Ok(out)
@@ -9940,32 +10172,85 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
         mut s: ast::Stmt,
         cms: &HashMap<String, Vec<Option<ast::Expr>>>,
         mut_cms: &std::collections::HashSet<String>,
+        unsound_cms: &HashMap<String, String>,
         counter: &mut usize,
     ) -> Result<ast::Stmt, FrontendError> {
         match &mut s {
             Stmt::FunctionDef(f) => {
-                f.body = rewrite(std::mem::take(&mut f.body), cms, mut_cms, counter)?
+                f.body = rewrite(
+                    std::mem::take(&mut f.body),
+                    cms,
+                    mut_cms,
+                    unsound_cms,
+                    counter,
+                )?
             }
             Stmt::ClassDef(c) => {
                 let taken = std::mem::take(&mut c.body);
                 let mut nb = Vec::with_capacity(taken.len());
                 for m in taken {
-                    nb.push(rewrite_nested(m, cms, mut_cms, counter)?);
+                    nb.push(rewrite_nested(m, cms, mut_cms, unsound_cms, counter)?);
                 }
                 c.body = nb;
             }
             Stmt::If(i) => {
-                i.body = rewrite(std::mem::take(&mut i.body), cms, mut_cms, counter)?;
-                i.orelse = rewrite(std::mem::take(&mut i.orelse), cms, mut_cms, counter)?;
+                i.body = rewrite(
+                    std::mem::take(&mut i.body),
+                    cms,
+                    mut_cms,
+                    unsound_cms,
+                    counter,
+                )?;
+                i.orelse = rewrite(
+                    std::mem::take(&mut i.orelse),
+                    cms,
+                    mut_cms,
+                    unsound_cms,
+                    counter,
+                )?;
             }
-            Stmt::While(w) => w.body = rewrite(std::mem::take(&mut w.body), cms, mut_cms, counter)?,
-            Stmt::For(f) => f.body = rewrite(std::mem::take(&mut f.body), cms, mut_cms, counter)?,
+            Stmt::While(w) => {
+                w.body = rewrite(
+                    std::mem::take(&mut w.body),
+                    cms,
+                    mut_cms,
+                    unsound_cms,
+                    counter,
+                )?
+            }
+            Stmt::For(f) => {
+                f.body = rewrite(
+                    std::mem::take(&mut f.body),
+                    cms,
+                    mut_cms,
+                    unsound_cms,
+                    counter,
+                )?
+            }
             Stmt::Try(t) => {
-                t.body = rewrite(std::mem::take(&mut t.body), cms, mut_cms, counter)?;
-                t.finalbody = rewrite(std::mem::take(&mut t.finalbody), cms, mut_cms, counter)?;
+                t.body = rewrite(
+                    std::mem::take(&mut t.body),
+                    cms,
+                    mut_cms,
+                    unsound_cms,
+                    counter,
+                )?;
+                t.finalbody = rewrite(
+                    std::mem::take(&mut t.finalbody),
+                    cms,
+                    mut_cms,
+                    unsound_cms,
+                    counter,
+                )?;
                 for h in &mut t.handlers {
                     let ast::ExceptHandler::ExceptHandler(h) = h;
-                    h.body = rewrite(std::mem::take(&mut h.body), cms, mut_cms, counter)?;
+                    h.body = rewrite(
+                        std::mem::take(&mut h.body),
+                        cms,
+                        mut_cms,
+                        unsound_cms,
+                        counter,
+                    )?;
                 }
             }
             _ => {}
@@ -9975,7 +10260,7 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
 
     let mut counter = 0usize;
     let taken = std::mem::take(suite);
-    *suite = rewrite(taken, &cms, &mutating_cms, &mut counter)?;
+    *suite = rewrite(taken, &cms, &mutating_cms, &unsound_exit_cms, &mut counter)?;
     Ok(())
 }
 
