@@ -165,6 +165,23 @@ compile_targets:
     # offset. See the `str_prefix_witness` integration test. Each helper is gated
     # separately (no dead helper). Refused honestly: any OTHER string method
     # (upper/lower/strip/split/replace/find/…) and a non-str operand.
+    #
+    # PMAT-1127 (2026-07-03): Python's SUBSTRING test `needle in haystack`
+    # (Expr::StrContains) over str operands. Lowers to a non-allocating byte
+    # search ($__wasm_str_contains): the sliding generalisation of
+    # $__wasm_str_startswith — for each start offset 0..=(len(h)-len(n)), a
+    # len(n)-byte i32.load8_u compare; the first full match returns 1, exhausting
+    # all starts returns 0. Byte-substring == code-point-substring for valid UTF-8
+    # (the needle's first byte is a LEAD byte, so ANY byte match lands on a char
+    # boundary in the haystack — no split char, no false positive from a shared
+    # continuation byte). Allocates NOTHING (a bool). The emitted WAT is genuine:
+    # the PMAT-1127 slice ran it through WABT — 21 cases (ASCII start/middle/end/
+    # absent/longer-than/empty/equal, SLIDE fixtures "ana" in "banana"=True at
+    # offset 1, and MULTI-BYTE é/© fixtures incl. "©" in "héllo"=False on a shared
+    # 0xA9) execute value-matching CPython. See the `str_contains_witness`
+    # integration test. Gated on `module_uses_str_contains` (no dead helper); a
+    # heap-constructed operand ("l"+"o") pulls in the allocator + its literals'
+    # (data) segments. Refused honestly: `in` over a non-str operand.
 
 equations:
   wasm_heap_alloc_structure_extensionality_diamond:
@@ -451,6 +468,43 @@ equations:
     postconditions:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a bool value-matching CPython, INCLUDING MULTI-BYTE fixtures ('héllo'.startswith('hé')==True, 'héllo'.startswith('h©')==False on a shared 0xA9, 'héllo'.endswith('éllo')==True)"
       - "the startswith/endswith WASM-emitting code carries the WASM citation"
+
+  string_contains_is_byte_substring_search:
+    # PMAT-1127: `needle in haystack` over strings (Expr::StrContains) lowers to
+    # $__wasm_str_contains — a non-allocating byte SUBSTRING search, the sliding
+    # generalisation of $__wasm_str_startswith. Like $__wasm_str_cmp it reads
+    # linear memory but allocates nothing. A byte substring search IS a code-point
+    # substring search for valid UTF-8, so it reproduces CPython's `in` EXACTLY.
+    formula: |
+      construct(StrContains{haystack, needle} over str operands,
+                BackendConfig{target: Wasm})
+        emits `<haystack> <needle> call $__wasm_str_contains`, where the helper
+        loads both i32 byte-count headers; returns 1 if len(needle) == 0 (the
+        empty needle is contained in everything); returns 0 if len(needle) >
+        len(haystack); else slides the needle over the haystack at every start
+        offset 0..=(len(haystack)-len(needle)), comparing len(needle) bytes at
+        each — the first full match returns 1, exhausting all starts returns 0.
+        The result is an i32 bool. NEVER a base-pointer compare.
+    domain: |
+      A Python string substring test `needle in haystack` (Expr::StrContains)
+      over two string-valued operands (a str-name Ident, a LitStr, a Concat /
+      Chr / bare StrCharAt / slice / str-returning call). A non-str operand is
+      REFUSED by emit_str_expr (an honest type mismatch). The `in` operator over
+      a list/set/dict is a DIFFERENT node (ListContains / SetContains /
+      DictContains), unaffected by this clause.
+    invariants:
+      - "the search is byte-wise (i32.load8_u) over the length-prefixed payload — byte substring == code-point substring for valid UTF-8 (needle[0] is a LEAD byte, so ANY byte match lands on a char boundary in the haystack: no split multi-byte char, no false positive from a SHARED continuation byte straddling a boundary)"
+      - "an EMPTY needle returns 1 ('' in s == True) — the outer loop never runs (last = len(haystack) >= 0, but the nn==0 short-circuit fires first)"
+      - "a needle LONGER than the haystack returns 0 immediately (len(needle) > len(haystack) short-circuit)"
+      - "the search SLIDES: a match at an interior offset ('ana' in 'banana' at offset 1) is found, unlike a one-offset prefix/suffix compare"
+      - "the result is an i32 bool, NEVER a base-pointer compare of the two str pointers"
+      - "$__wasm_str_contains reads linear memory but allocates NOTHING (independent of the bump-heap gate; a pure param-predicate module carries no $__alloc); it is gated on module_uses_str_contains (no dead helper) — a heap-constructed operand still pulls in the allocator + its literals' (data) segments via the shared heap/literal gates"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the haystack and needle both type as str"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a bool value-matching CPython, INCLUDING the SLIDE fixture ('ana' in 'banana'==True at offset 1) and MULTI-BYTE fixtures ('é' in 'héllo'==True, '©' in 'héllo'==False on a shared 0xA9)"
+      - "the contains WASM-emitting code carries the WASM citation"
 
   unwired_string_op_is_refused:
     formula: |
