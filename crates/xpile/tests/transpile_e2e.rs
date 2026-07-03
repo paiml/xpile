@@ -19928,6 +19928,104 @@ fn cm_exit_reads_exc_param_rejected() {
     );
 }
 
+/// PMAT-1094 (skeptic-pass PMAT-1090, B-F10): a vararg on `__exit__` escapes
+/// the PMAT-1084 param scans — the desugar's zero-arg call against the
+/// lowered `args: Vec<i64>` parameter is rustc E0061 far from the cause, and
+/// the vararg RECEIVES the exc triple in CPython. Must refuse at the `with`
+/// site, naming the class.
+#[test]
+fn cm_exit_vararg_rejected() {
+    let py = fixture("cm_exit_vararg_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a vararg __exit__ must refuse, not surface a downstream E0061"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`CM.__exit__` takes a vararg") && stderr.contains("exception triple"),
+        "the rejection should name the vararg and the exc triple:\n{stderr}"
+    );
+}
+
+/// PMAT-1094 adjacent: a vararg on `__enter__` lowers to a required Vec
+/// parameter the desugared zero-arg call cannot supply (E0061 today, valid
+/// CPython — the vararg receives `()`). Must refuse at the `with` site.
+#[test]
+fn cm_enter_vararg_rejected() {
+    let py = fixture("cm_enter_vararg_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a vararg __enter__ must refuse, not surface a downstream E0061"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`CM.__enter__` takes a vararg or required parameters"),
+        "the rejection should name __enter__'s signature rule:\n{stderr}"
+    );
+}
+
+/// PMAT-1094 adjacent (silent divergence): a zero-param `__exit__` raises
+/// TypeError at the first `with` exit in CPython (it cannot bind the exc
+/// triple), but the fabricated-zeros desugar matches the declared arity and
+/// runs happily. Must refuse, naming the arity rule.
+#[test]
+fn cm_exit_arity_rejected() {
+    let py = fixture("cm_exit_arity_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an __exit__ arity that cannot bind the exc triple must refuse, not run happily"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`CM.__exit__` declares 0 positional parameter(s)")
+            && stderr.contains("silent divergence"),
+        "the rejection should state the arity and the divergence:\n{stderr}"
+    );
+}
+
+/// PMAT-1094 adjacent (silent divergence): a REQUIRED 4th `__exit__` param
+/// is `TypeError: missing 1 required positional argument` in CPython; the
+/// desugar passes 4 fabricated zeros and runs. Must refuse. The DEFAULTED
+/// counterpart stays accepted — see `cm_defaulted_params`.
+#[test]
+fn cm_exit_required_extra_rejected() {
+    let py = fixture("cm_exit_required_extra_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a required 4th __exit__ param must refuse, not run past CPython's TypeError"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(
+            "`CM.__exit__` declares 4 positional parameter(s) besides `self` (4 required)"
+        ),
+        "the rejection should state the arity counts:\n{stderr}"
+    );
+}
+
+/// PMAT-1094 keep-green boundary: DEFAULTED dunder params stay accepted.
+/// `__enter__(self, lvl=3)` fills the default at the call site; a defaulted
+/// 4th `__exit__` param is unread-unobservable under the fabricated zeros
+/// (reads refuse via the PMAT-1084 scan). CPython-verified: 42. MATCH.
+#[test]
+fn cm_defaulted_params() {
+    let rust = xpile_transpile_to_rust("cm_defaulted_params.py");
+    assert!(
+        rust.contains("__enter__(3i64)"),
+        "the defaulted __enter__ param is filled at the call site:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(doubled_via_cm(), 42, "with Gate(21) as g under defaulted dunder params");
+}
+"#;
+    assert_rustc_runs("cm_defaulted_params", &rust, driver);
+}
+
 /// PMAT-1074: `open(path).read()` → inline `std::fs::read_to_string`. The
 /// driver writes a temp file, then asserts the transpiled readers. MATCH.
 /// PMAT-1081 (skeptic-pass finds): CRLF and lone-CR files read with CPython's
