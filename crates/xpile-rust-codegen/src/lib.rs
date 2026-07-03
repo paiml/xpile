@@ -2546,9 +2546,20 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 _ => "",
             };
             out.push_str(prefix_strip);
-            out.push_str("let __rc = format!(\"{}{}\", __rsgn, __rb.replace('_', \"\")); i64::from_str_radix(&__rc, ");
+            // PMAT-1097 (skeptic pass PMAT-1090, A-F7): same three-way
+            // classification as the base-10 `int(s)` path. A body whose every
+            // char is a valid base-{radix} digit (`to_digit({radix})`) is
+            // well-formed, so a `from_str_radix` failure there is i64 overflow
+            // — CPython returns a bigint (`int("ffffffffffffffffff", 16)`) —
+            // panic with the honest bigint-posture message, not a fake
+            // ValueError. An all-numeric body with non-ASCII chars is CPython's
+            // Unicode-decimal-digit acceptance → honest refusal. Everything
+            // else keeps the exact CPython invalid-literal message.
+            out.push_str(
+                "let __rd = __rb.replace('_', \"\"); let __rc = format!(\"{}{}\", __rsgn, __rd); ",
+            );
             out.push_str(&format!(
-                "{radix}).unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr})) }}",
+                "if !__rd.is_empty() && __rd.chars().all(|__c| __c.to_digit({radix}).is_some()) {{ i64::from_str_radix(&__rc, {radix}).unwrap_or_else(|_| panic!(\"xpile: int() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")) }} else if !__rd.is_empty() && __rd.chars().all(|__c| __c.is_numeric()) {{ panic!(\"xpile: int() with non-ASCII digits: CPython accepts Unicode decimal digits; not yet implemented\") }} else {{ i64::from_str_radix(&__rc, {radix}).unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr})) }} }}",
                 repr = py_str_repr_block("__ri")
             ));
         }
@@ -3495,11 +3506,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // formats via `unwrap_or_else` (a bare `.expect` appended
                 // ParseIntError's Debug repr to the payload, which `as e`
                 // handlers then printed).
+                // PMAT-1097 (skeptic pass PMAT-1090, A-F7): a parse failure is
+                // NOT always an invalid literal — claiming so asserts falsely
+                // for two CPython-VALID classes. Classify the (sign-stripped,
+                // underscore-stripped) body first:
+                //   1. all-ASCII-digits → well-formed decimal, so the only way
+                //      `parse::<i64>` fails is i64 overflow — CPython returns a
+                //      bigint (`int("99999999999999999999")`), so panic with the
+                //      honest i64-range/bigint-posture message (same text as the
+                //      `int(huge_float)` path), NOT a fake ValueError.
+                //   2. all-numeric with a non-ASCII char → CPython accepts
+                //      Unicode decimal digits (Nd): int("\u{661}\u{662}") == 12.
+                //      Refuse honestly (unsupported digit class). Deliberately
+                //      NOT tagged ValueError — `except ValueError` must not
+                //      catch a refusal. Over-refuses No/Nl numerics ("²", "Ⅻ")
+                //      that CPython rejects — honest-loud beats a false claim.
+                //   3. anything else → CPython genuinely raises, keep the exact
+                //      invalid-literal message.
                 out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
                 out.push_str(&py_str_repr_block("__pf"));
-                out.push_str("); } __ps.replace('_', \"\").parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
+                out.push_str("); } let __pc = __ps.replace('_', \"\"); let __pd = __pb.replace('_', \"\"); if !__pd.is_empty() && __pd.chars().all(|__c| __c.is_ascii_digit()) { __pc.parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: int() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")) } else if !__pd.is_empty() && __pd.chars().all(|__c| __c.is_numeric()) { panic!(\"xpile: int() with non-ASCII digits: CPython accepts Unicode decimal digits; not yet implemented\") } else { __pc.parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
                 out.push_str(&py_str_repr_block("__pf"));
-                out.push_str(")) }");
+                out.push_str(")) } }");
             } else if !*to_float && *from_float {
                 // PMAT-586/589: `int(float_x)` — Python raises `OverflowError`
                 // for `int(inf)` and `ValueError` for `int(nan)`, and returns an
@@ -5041,7 +5069,7 @@ fn emit_floor_mod(
         emit_expr(out, rhs, mode)?;
         write!(
             out,
-            ") as i128; if __md == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+            ") as i128; if __md == 0 {{ panic!(\"xpile: ZeroDivisionError: integer division or modulo by zero\"); }} \
              let __r = __mm % __md; \
              (if __r != 0 && (__r < 0) != (__md < 0) {{ __r + __md }} else {{ __r }}) as i64 }}"
         )?;
@@ -5063,9 +5091,15 @@ fn emit_floor_mod(
     // (non-zero-divisor) input, so the floor correction below stays exact and no
     // valid Python modulo can spuriously panic. (Floor-div `i64::MIN // -1` DOES
     // genuinely overflow i64 → `2**63`, so `emit_floor_div` keeps its panic.)
+    // PMAT-1097 (skeptic pass PMAT-1090, A-F6): the message is pinned to the
+    // CPython 3.10 differential-oracle ground truth — "integer division or
+    // modulo by zero" for BOTH `//` and `%` (3.12 split them into
+    // "integer division by zero" / "integer modulo by zero"; the old text here
+    // was the 3.12 modulo variant while floor-div used the 3.10 one, an
+    // internally inconsistent version target).
     write!(
         out,
-        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer division or modulo by zero\"); }} \
          let __r = __fa.wrapping_rem(__fb); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;
@@ -6051,10 +6085,17 @@ mod tests {
             !rust.contains("modulo overflow"),
             "modulo must NOT keep the spurious bigint-overflow panic for `i64::MIN % -1`: {rust}"
         );
-        // The genuine divide-by-zero guard must remain.
+        // The genuine divide-by-zero guard must remain — with the CPython 3.10
+        // (local-oracle) message, same as floor-div (PMAT-1097: the old
+        // "integer modulo by zero" was the 3.12 variant, inconsistent with the
+        // 3.10-shaped floor-div message).
         assert!(
-            rust.contains("ZeroDivisionError: integer modulo by zero"),
+            rust.contains("ZeroDivisionError: integer division or modulo by zero"),
             "modulo must still guard the zero divisor: {rust}"
+        );
+        assert!(
+            !rust.contains("ZeroDivisionError: integer modulo by zero"),
+            "modulo must not keep the CPython-3.12-flavored message: {rust}"
         );
         // The sign-aware floor correction must remain intact.
         assert!(
