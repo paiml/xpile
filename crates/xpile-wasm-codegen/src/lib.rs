@@ -3780,6 +3780,18 @@ fn expr_touches_str(e: &Expr) -> bool {
         Expr::Repeat { seq, n, of_str } => {
             *of_str || expr_touches_str(seq) || expr_touches_str(n)
         }
+        // PMAT-1150: a str-keyed dict/set op (`d["hello"[1:4]]`, `s[0:2] in q`)
+        // materialises a string in its KEY/elem — so the CHAR-semantics helper
+        // family (and, via `module_uses_str_slice` beneath this gate, the SLICE
+        // helper) must be emitted. This is the OUTER gate hole behind the
+        // per-helper scan holes: with no str NAME to short-circuit
+        // `module_touches_str`, a literal-collection slice used as a dict/set key
+        // (`"hello"[1:4]`) left `$__wasm_str_slice` undeclared even after the
+        // per-helper scans gained their DictGet arms. Recurse into both operands.
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_touches_str(dict) || expr_touches_str(key)
+        }
+        Expr::SetContains { set, elem } => expr_touches_str(set) || expr_touches_str(elem),
         _ => false,
     }
 }
@@ -3854,6 +3866,16 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => {
             expr_has_str_slice(obj) || args.iter().any(expr_has_str_slice)
         }
+        // PMAT-1150: a str slice can be the KEY of a str-keyed dict subscript
+        // (`d[s[1:4]]`), whose key is lowered via `emit_str_expr` — the SOLE
+        // slice site in a module. The MISS here was a latent gate hole (the
+        // sibling walkers `expr_has_int_to_str` / `expr_uses_str_method` /
+        // `_str_repeat` / `_str_contains` all carry this Index arm): a
+        // subscript-hosted `s[1:4]` this gate skips leaves `$__wasm_str_slice`
+        // UNDECLARED (a hard wat2wasm failure). Recurse into both operands.
+        Expr::Index { collection, index } => {
+            expr_has_str_slice(collection) || expr_has_str_slice(index)
+        }
         // PMAT-1148: `len(<str temporary>)` synthesises `StrMethod{CharCount,
         // recv}` (Python len is a CODE-POINT count), so a slice inside the recv
         // (`len(s[1:4] + t)`) reaches the slice helper only by recursing here —
@@ -3867,6 +3889,12 @@ fn expr_has_str_slice(e: &Expr) -> bool {
             expr_has_str_slice(string) || expr_has_str_slice(index)
         }
         Expr::FieldAccess { obj, .. } => expr_has_str_slice(obj),
+        // PMAT-1150: `str(...)` / `repr(...)` wraps its arg in `Expr::ToStr`,
+        // whose value can host a slice reached only by an intermediate node
+        // (`str(len(s[1:4]))` is ToStr→Len→Slice) — the ToStr arm was the other
+        // half of this gate hole, so the walk stopped at ToStr and never reached
+        // the Len→Slice below it. Recurse into the wrapped value.
+        Expr::ToStr { value, .. } => expr_has_str_slice(value),
         // PMAT-1127: `x in s` — a slice operand (`s[1:4] in t`) needs the slice
         // helper gated here.
         Expr::StrContains { haystack, needle } => {
@@ -3874,6 +3902,16 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         }
         // PMAT-1142: a repeat operand (`s[1:4] * n`) needs the slice helper.
         Expr::Repeat { seq, n, .. } => expr_has_str_slice(seq) || expr_has_str_slice(n),
+        // PMAT-1150: a str slice can be the computed KEY of a str-keyed dict/set
+        // op (`d[s[1:3]]`, `s[0:2] in q`). The subscript lowers to `DictGet` /
+        // `DictContains` / `SetContains` (NOT `Expr::Index`), whose key/elem is
+        // materialised via `emit_str_expr` → `call $__wasm_str_slice`. No walker
+        // recursed into these dict/set nodes, so the slice helper stayed
+        // UNDECLARED (a hard wat2wasm failure). Recurse into both operands.
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_str_slice(dict) || expr_has_str_slice(key)
+        }
+        Expr::SetContains { set, elem } => expr_has_str_slice(set) || expr_has_str_slice(elem),
         _ => false,
     }
 }
@@ -3976,6 +4014,14 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
         // a repeat-hosted `str(n)` that this gate skips leaves the helper
         // UNDECLARED (a hard wat2wasm failure). Recurse into both operands.
         Expr::Repeat { seq, n, .. } => expr_has_int_to_str(seq) || expr_has_int_to_str(n),
+        // PMAT-1150: `str(n)` can be the computed KEY of a str-keyed dict/set op
+        // (`d[str(n)]`, `str(n) in q`) — lowered to `DictGet`/`DictContains`/
+        // `SetContains`, whose key rides `emit_str_expr` → `call
+        // $__wasm_int_to_str`. Recurse so the helper is declared.
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_int_to_str(dict) || expr_has_int_to_str(key)
+        }
+        Expr::SetContains { set, elem } => expr_has_int_to_str(set) || expr_has_int_to_str(elem),
         _ => false,
     }
 }
@@ -4183,6 +4229,15 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
         // PMAT-1142: a repeat operand can host a nested method call
         // (`(s.count("x") ...) `) — recurse to keep the gate exhaustive.
         Expr::Repeat { seq, n, .. } => expr_uses_str_method(seq, op) || expr_uses_str_method(n, op),
+        // PMAT-1150: a str-keyed dict/set op (`DictGet`/`DictContains`/
+        // `SetContains`) can host a method call in its key/elem — recurse so the
+        // method helper stays gated (over-approximate, exhaustive).
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_uses_str_method(dict, op) || expr_uses_str_method(key, op)
+        }
+        Expr::SetContains { set, elem } => {
+            expr_uses_str_method(set, op) || expr_uses_str_method(elem, op)
+        }
         _ => false,
     }
 }
@@ -4275,6 +4330,14 @@ fn expr_has_str_contains(e: &Expr) -> bool {
         // str-valued `if` cond) — recurse so the contains helper is declared.
         Expr::StrMethod { recv, args, .. } => {
             expr_has_str_contains(recv) || args.iter().any(expr_has_str_contains)
+        }
+        // PMAT-1150: a str-keyed dict/set op can host `x in s` in its key/elem —
+        // recurse so `$__wasm_str_contains` stays gated (exhaustive).
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_str_contains(dict) || expr_has_str_contains(key)
+        }
+        Expr::SetContains { set, elem } => {
+            expr_has_str_contains(set) || expr_has_str_contains(elem)
         }
         _ => false,
     }
@@ -4369,6 +4432,14 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
         }
         Expr::FieldAccess { obj, .. } => expr_has_str_repeat(obj),
         Expr::ToStr { value, .. } => expr_has_str_repeat(value),
+        // PMAT-1150: a str-keyed dict/set op can host `s * n` in its key/elem
+        // (`d[s * 2]`) — the subscript lowers to `DictGet`/`DictContains`/
+        // `SetContains`, whose key rides `emit_str_expr` → `call
+        // $__wasm_str_repeat`. Recurse so the helper is declared.
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_str_repeat(dict) || expr_has_str_repeat(key)
+        }
+        Expr::SetContains { set, elem } => expr_has_str_repeat(set) || expr_has_str_repeat(elem),
         _ => false,
     }
 }
@@ -4488,6 +4559,34 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         // else "b")`) — recurse so `$__wasm_str_eq` is declared.
         Expr::StrMethod { recv, args, .. } => {
             expr_has_str_eq(recv, scan) || args.iter().any(|a| expr_has_str_eq(a, scan))
+        }
+        // PMAT-1150: three latent gate holes in this shared eq/cmp walker (it
+        // gates BOTH `$__wasm_str_eq` for `[Eq, NotEq]` and `$__wasm_str_cmp` for
+        // `[Lt, LtEq, Gt, GtEq]`). A str comparison can hide under:
+        //   • `Expr::ToStr` — `str(1 if a == b else 2)` is ToStr→IfExpr→BinOp;
+        //   • `Expr::Slice`  — `s[1 if a < b else 0:]` puts it in a slice bound;
+        //   • `Expr::FieldAccess` — `(p1 if a == b else p2).x` in the receiver.
+        // Each was terminating at `_ => false`, leaving `$__wasm_str_eq` /
+        // `$__wasm_str_cmp` called-but-undeclared (a hard wat2wasm failure).
+        // Recurse through all three, matching the exhaustiveness of the sibling
+        // helper walkers.
+        Expr::ToStr { value, .. } => expr_has_str_eq(value, scan),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_has_str_eq(collection, scan)
+                || lo.as_deref().is_some_and(|e| expr_has_str_eq(e, scan))
+                || hi.as_deref().is_some_and(|e| expr_has_str_eq(e, scan))
+        }
+        Expr::FieldAccess { obj, .. } => expr_has_str_eq(obj, scan),
+        // PMAT-1150: a str-keyed dict/set op can host a string comparison inside
+        // its key/elem (e.g. `d[str(1 if a == b else 2)]`) — recurse so
+        // `$__wasm_str_eq` / `$__wasm_str_cmp` stays gated (exhaustive).
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_str_eq(dict, scan) || expr_has_str_eq(key, scan)
+        }
+        Expr::SetContains { set, elem } => {
+            expr_has_str_eq(set, scan) || expr_has_str_eq(elem, scan)
         }
         _ => false,
     }
@@ -4618,6 +4717,13 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // at lowering; recurse into its operands regardless (a heap-constructed
         // `seq`/`n` still pulls in the allocator).
         Expr::Repeat { seq, n, of_str } => *of_str || expr_has_heap_op(seq) || expr_has_heap_op(n),
+        // PMAT-1150: a str-keyed dict/set op allocates nothing itself, but a
+        // heap-constructed key/elem (`d["a" + s]`, `s[0:2] in q`) pulls in the
+        // allocator — recurse into both operands so `$__alloc` stays gated.
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_heap_op(dict) || expr_has_heap_op(key)
+        }
+        Expr::SetContains { set, elem } => expr_has_heap_op(set) || expr_has_heap_op(elem),
         _ => false,
     }
 }
