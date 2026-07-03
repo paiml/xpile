@@ -20814,3 +20814,17 @@ fn main() {
 "#;
     assert_rustc_runs("set_deterministic", &rust, driver);
 }
+
+/// PMAT-1104: a for-target name bound at multiple nesting levels (`(x,y), x`)
+/// must be last-wins (Python left-to-right), not first-wins. MATCH.
+#[test]
+fn nested_dup_loop_target() {
+    let rust = xpile_transpile_to_rust("nested_dup_loop_target.py");
+    let driver = r#"
+fn main() {
+    // rows = [((1,2),3), ((4,5),6)] → x=3,y=2 then x=6,y=5 → 302 + 605 = 907
+    assert_eq!(last_wins(), 907, "last (top-level) x wins: 3*100+2 + 6*100+5");
+}
+"#;
+    assert_rustc_runs("nested_dup_loop_target", &rust, driver);
+}
