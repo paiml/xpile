@@ -1278,6 +1278,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Follow-up to PMAT-1133 (exceptions). Now BOTH cleanly-detectable session capabilities (exceptions + file-io) have their full R6 loop closed (proven + cited). Generators/context-managers stay proof-ahead-of-citation (erased by the frontend rewrite — need a preserved marker). Gates: e2e 812, citation-integrity 3, clippy 0, pv lint PASS. Worktree-isolated.'
+- id: PMAT-1137
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1137: [provability/R6] CLOSE the citation loop for context managers — wire C-PY-CONTEXT-MANAGER-EXIT (proved core-Lean PMAT-1131) into Function::applicable_contracts. The with cm as x: desugar (PMAT-1072) emits __cm.__enter__() + a finally __cm.__exit__(); a body invoking the __enter__/__exit__ protocol now cites it. Detects Expr::MethodCall{method: __enter__|__exit__} anywhere in the body, recursing into the TryCatch FINALLY (where __exit__ lives) via stmt_has_ctx_call + expr_has_ctx_call. Added to citation-integrity required-cited. Verified: a with-statement program emits `// xpile-contract: C-PY-CONTEXT-MANAGER-EXIT`; e2e 812 green. THREE of the four session capabilities (exceptions/file-io/context-managers) now have the full R6 loop closed (proven + cited); only generators remains proof-ahead-of-citation (erased by the eager rewrite — no clean meta-HIR marker).'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Third citation loop closed (after 1133 exceptions, 1135 file-io). Gates: e2e 812, citation-integrity 3, clippy 0, pv lint PASS. Worktree-isolated.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

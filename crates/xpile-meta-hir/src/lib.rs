@@ -270,6 +270,14 @@ impl Function {
         if self.uses_file_io() {
             ids.push("C-PY-FILE-IO-ROUNDTRIP");
         }
+        // PMAT-1137 (R6): cite the context-manager contract when the body invokes
+        // the `__enter__`/`__exit__` protocol — the `with cm as x:` desugar
+        // (PMAT-1072) emits `__cm.__enter__()` + a finally `__cm.__exit__(…)`.
+        // `C-PY-CONTEXT-MANAGER-EXIT` (proved core-Lean, PMAT-1131) governs the
+        // finally guarantee (__exit__ runs on every path).
+        if self.uses_context_manager() {
+            ids.push("C-PY-CONTEXT-MANAGER-EXIT");
+        }
         ids
     }
 
@@ -302,6 +310,14 @@ impl Function {
     pub fn uses_file_io(&self) -> bool {
         self.body.stmts.iter().any(stmt_has_file_io)
             || expr_has_file_read(&self.body.trailing_return)
+    }
+
+    /// PMAT-1137 (R6): true if the body invokes the context-manager protocol
+    /// (`__enter__`/`__exit__`), the signature of the `with cm as x:` desugar.
+    /// Drives the `C-PY-CONTEXT-MANAGER-EXIT` citation.
+    pub fn uses_context_manager(&self) -> bool {
+        self.body.stmts.iter().any(stmt_has_ctx_call)
+            || expr_has_ctx_call(&self.body.trailing_return)
     }
 }
 
@@ -353,6 +369,62 @@ fn expr_has_file_read(e: &Expr) -> bool {
                 || expr_has_file_read(then_expr)
                 || expr_has_file_read(else_expr)
         }
+        _ => false,
+    }
+}
+
+/// PMAT-1137: does a statement invoke the context-manager protocol
+/// (`__enter__`/`__exit__`)? The `with cm as x:` desugar emits
+/// `x = __cm.__enter__()` and a finally `__cm.__exit__(…)`; recurse through
+/// blocks INCLUDING a TryCatch's finally (where __exit__ lives).
+fn stmt_has_ctx_call(s: &Stmt) -> bool {
+    match s {
+        Stmt::SideEffectCall { call } => expr_has_ctx_call(call),
+        Stmt::Return(e) => expr_has_ctx_call(e),
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_ctx_call(value),
+        Stmt::Print { args, .. } => args.iter().any(expr_has_ctx_call),
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => then_body.iter().any(stmt_has_ctx_call) || else_body.iter().any(stmt_has_ctx_call),
+        Stmt::While { body, .. } => body.iter().any(stmt_has_ctx_call),
+        Stmt::ForEach { body, .. } => body.iter().any(stmt_has_ctx_call),
+        Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_ctx_call),
+        Stmt::ForEachZip3 { body, .. } => body.iter().any(stmt_has_ctx_call),
+        Stmt::NestedFn { body, .. } => body.stmts.iter().any(stmt_has_ctx_call),
+        Stmt::TryCatch {
+            body,
+            handler,
+            extra_handlers,
+            finally,
+            ..
+        } => {
+            body.iter().any(stmt_has_ctx_call)
+                || handler.iter().any(stmt_has_ctx_call)
+                || extra_handlers
+                    .iter()
+                    .any(|h| h.body.iter().any(stmt_has_ctx_call))
+                || finally.iter().any(stmt_has_ctx_call)
+        }
+        _ => false,
+    }
+}
+
+/// PMAT-1137: does an expression call `__enter__`/`__exit__` on some object?
+fn expr_has_ctx_call(e: &Expr) -> bool {
+    match e {
+        Expr::MethodCall { obj, method, args } => {
+            method == "__enter__"
+                || method == "__exit__"
+                || expr_has_ctx_call(obj)
+                || args.iter().any(expr_has_ctx_call)
+        }
+        Expr::Len(inner) => expr_has_ctx_call(inner),
+        Expr::Concat { lhs, rhs } | Expr::BinOp { lhs, rhs, .. } => {
+            expr_has_ctx_call(lhs) || expr_has_ctx_call(rhs)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_ctx_call),
         _ => false,
     }
 }
