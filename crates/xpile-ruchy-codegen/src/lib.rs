@@ -435,6 +435,19 @@ fn py_str_repr_block(accessor: &str) -> String {
     tmpl.replace("__ACC__", accessor)
 }
 
+/// PMAT-1089: the CPython-shaped `KeyError` panic over a pre-bound key
+/// reference `__k` — mirrors the Rust backend's `key_error_panic` (Ruchy
+/// compiles to Rust): `str(KeyError(k))` is `repr(k)`, so a string key carries
+/// the quote-switched repr, a bool key Python's `True`/`False` casing, and any
+/// other key type falls back to `{:?}`.
+fn key_error_panic() -> String {
+    format!(
+        "panic!(\"xpile: KeyError: {{}}\", {{ let __ka: &dyn ::std::any::Any = __k; if let Some(__s) = __ka.downcast_ref::<String>() {{ {} }} else if let Some(__s) = __ka.downcast_ref::<&str>() {{ {} }} else if let Some(__b) = __ka.downcast_ref::<bool>() {{ String::from(if *__b {{ \"True\" }} else {{ \"False\" }}) }} else {{ format!(\"{{:?}}\", __k) }} }})",
+        py_str_repr_block("__s"),
+        py_str_repr_block("__s"),
+    )
+}
+
 /// PMAT-011: same `// xpile-contract: <ID>` form as the Rust backend.
 /// Ruchy compiles to Rust, so it shares the comment-citation convention.
 fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), RuchyCodegenError> {
@@ -909,11 +922,14 @@ fn emit_stmt_indented(
             error_if_absent,
         } => {
             if *error_if_absent {
-                write!(out, "{indent}assert!({set_name}.remove(&(")?;
+                // PMAT-1089: CPython-shaped payload — `str(KeyError(x))` is
+                // `repr(x)`, not a fixed "x not in set" text.
+                write!(out, "{indent}{{ let __k = &(")?;
                 emit_expr(out, elem, mode)?;
                 writeln!(
                     out,
-                    ")), \"xpile: KeyError: set.remove(x): x not in set\");"
+                    "); if !{set_name}.remove(__k) {{ {} }} }}",
+                    key_error_panic()
                 )?;
             } else {
                 write!(out, "{indent}{set_name}.remove(&(")?;
@@ -1140,11 +1156,13 @@ fn emit_stmt_indented(
         Stmt::DelItem { name, key, is_dict } => {
             if *is_dict {
                 // PMAT-709: `del d[k]` raises KeyError on an absent key (mirror rust).
-                write!(out, "{indent}assert!({name}.shift_remove(&(")?;
+                // PMAT-1089: CPython-shaped payload — `str(KeyError(k))` is `repr(k)`.
+                write!(out, "{indent}{{ let __k = &(")?;
                 emit_expr(out, key, mode)?;
                 writeln!(
                     out,
-                    ")).is_some(), \"xpile: KeyError: del d[k]: key not in dict\");"
+                    "); if {name}.shift_remove(__k).is_none() {{ {} }} }}",
+                    key_error_panic()
                 )?;
             } else if expr_mentions_ident(key, name) {
                 // PMAT-570: `del xs[-k]` index references `xs` — bind before remove.
@@ -2044,8 +2062,12 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             // trailing, or doubled underscore. Check runs on the post-sign, pre-prefix
             // string so a legal underscore after the base prefix (`int("0x_ff", 16)`)
             // survives. Mirrors the Rust backend.
+            // PMAT-1089: both radix panics quote the ORIGINAL (untrimmed)
+            // argument like CPython, and the parse failure formats via
+            // `unwrap_or_else` (mirror rust).
             out.push_str(&format!(
-                "if __rb.starts_with('_') || __rb.ends_with('_') || __rb.contains(\"__\") {{ panic!(\"xpile: ValueError: invalid literal for int() with base {radix}\"); }} "
+                "if __rb.starts_with('_') || __rb.ends_with('_') || __rb.contains(\"__\") {{ panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr}); }} ",
+                repr = py_str_repr_block("__ri")
             ));
             let prefix_strip = match radix {
                 16 => "let __rb = __rb.strip_prefix(\"0x\").or_else(|| __rb.strip_prefix(\"0X\")).unwrap_or(__rb); ",
@@ -2056,7 +2078,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(prefix_strip);
             out.push_str("let __rc = format!(\"{}{}\", __rsgn, __rb.replace('_', \"\")); i64::from_str_radix(&__rc, ");
             out.push_str(&format!(
-                "{radix}).expect(\"xpile: ValueError: invalid literal for int() with base {radix}\") }}"
+                "{radix}).unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr})) }}",
+                repr = py_str_repr_block("__ri")
             ));
         }
         // PMAT-492/493b: Python string methods (Ruchy → Rust). No-arg
@@ -2775,14 +2798,27 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 // operand survives the block via lifetime extension (E0716).
                 out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str("); let __ps = __pf.trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float\"); } __ps.replace('_', \"\").parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\") }");
+                // PMAT-1089: both panics quote the ORIGINAL (untrimmed)
+                // argument like CPython, and the parse failure formats via
+                // `unwrap_or_else` (mirror rust).
+                out.push_str("); let __ps = __pf.trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str("); } __ps.replace('_', \"\").parse::<f64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: could not convert string to float: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str(")) }");
             } else if *from_str {
                 // PMAT-610: int(s) accepts PEP 515 underscores between digits
                 // (matches the Rust backend). Bind a reference so a temporary
                 // operand survives the block via lifetime extension (E0716).
                 out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int()\"); } __ps.replace('_', \"\").parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\") }");
+                // PMAT-1089: CPython message shape `invalid literal for int()
+                // with base 10: '<orig>'` on both panics (mirror rust).
+                out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str("); } __ps.replace('_', \"\").parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str(")) }");
             } else if !*to_float && *from_float {
                 // PMAT-586: `int(float_x)` guards a non-finite source (see Rust twin).
                 out.push_str("{ let __ic = ");
@@ -2998,11 +3034,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     // PMAT-797 (HUNT-V19 ND-01): `d[k].pop()` mutates the stored
                     // list in place via get_mut (the dict read clones); mirror of
                     // the Rust backend.
-                    out.push('(');
-                    emit_expr(out, dict, mode)?;
-                    out.push_str(").get_mut(&(");
+                    // PMAT-1089: bind the key first so the miss panic carries
+                    // the CPython-shaped `repr(k)` payload.
+                    out.push_str("{ let __k = &(");
                     emit_expr(out, key, mode)?;
-                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\")).pop().expect(\"xpile: IndexError: pop from empty list\")");
+                    out.push_str("); (");
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").get_mut(__k).unwrap_or_else(|| ");
+                    out.push_str(&key_error_panic());
+                    out.push_str(").pop().expect(\"xpile: IndexError: pop from empty list\") }");
                 } else if let Some((base, idx)) = lvalue_base {
                     out.push_str("{ let __pi = (");
                     emit_expr(out, idx, mode)?;
@@ -3037,16 +3077,24 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         },
         // PMAT-502au: `d.pop(k)` / `d.pop(k, def)`, matching the Rust backend.
         Expr::DictPop { dict, key, default } => {
-            out.push('(');
-            emit_expr(out, dict, mode)?;
-            out.push_str(").shift_remove(&(");
-            emit_expr(out, key, mode)?;
             match default {
                 // PMAT-747 (HUNT-V14 #2): tag the absent-key dict-pop panic.
+                // PMAT-1089: bind the key first so the panic carries the
+                // CPython-shaped `repr(k)` payload (mirror rust).
                 None => {
-                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))")
+                    out.push_str("{ let __k = &(");
+                    emit_expr(out, key, mode)?;
+                    out.push_str("); (");
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").shift_remove(__k).unwrap_or_else(|| ");
+                    out.push_str(&key_error_panic());
+                    out.push_str(") }");
                 }
                 Some(d) => {
+                    out.push('(');
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").shift_remove(&(");
+                    emit_expr(out, key, mode)?;
                     out.push_str(")).unwrap_or(");
                     emit_expr(out, d, mode)?;
                     out.push(')');
@@ -3368,13 +3416,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             // PMAT-747 (HUNT-V14 #2): tag an absent-key dict-index miss with
             // `xpile: KeyError:` so typed-`except` discrimination works (mirrors
             // the rust backend); HashMap's native `Index` panic was untagged.
-            out.push('(');
-            emit_expr(out, dict, mode)?;
-            out.push_str(").get(&(");
+            // PMAT-1089: the key binds first (`__k`, a reference — no move) so
+            // the miss panic carries the CPython-shaped `repr(k)` payload.
+            out.push_str("{ let __k = &(");
             emit_expr(out, key, mode)?;
-            out.push_str(
-                ")).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))",
-            );
+            out.push_str("); (");
+            emit_expr(out, dict, mode)?;
+            out.push_str(").get(__k).cloned().unwrap_or_else(|| ");
+            out.push_str(&key_error_panic());
+            out.push_str(") }");
         }
         Expr::DictGetOr { dict, key, default } => {
             emit_expr(out, dict, mode)?;

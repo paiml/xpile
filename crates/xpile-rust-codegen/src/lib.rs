@@ -578,6 +578,26 @@ fn py_str_repr_block(accessor: &str) -> String {
     tmpl.replace("__ACC__", accessor)
 }
 
+/// PMAT-1089: the CPython-shaped `KeyError` panic over a pre-bound key
+/// reference `__k` — Python's `str(KeyError(k))` is `repr(k)`, so a string key
+/// carries the quote-switched repr ([`py_str_repr_block`]; `d["mk"]` miss →
+/// payload `xpile: KeyError: 'mk'`) and any other key type falls back to `{:?}`
+/// (i64 `Debug` == Python int repr). The dispatch is at RUNTIME via `Any`
+/// (mirroring the PMAT-817 payload downcast) because `emit_expr` has no static
+/// key type here. Callers emit `let __k = &(<key>);` first — a reference, not a
+/// move, so a reused key variable stays live (same idiom as the int() lane's
+/// `__pf`). A bool key (bool-keyed dicts are supported) maps to Python's
+/// `True`/`False` casing, which `{:?}` would lowercase. Replaces the fixed
+/// `key not found` text the PMAT-1081 skeptic refuted (`print(e)` diverged
+/// from CPython).
+fn key_error_panic() -> String {
+    format!(
+        "panic!(\"xpile: KeyError: {{}}\", {{ let __ka: &dyn ::std::any::Any = __k; if let Some(__s) = __ka.downcast_ref::<String>() {{ {} }} else if let Some(__s) = __ka.downcast_ref::<&str>() {{ {} }} else if let Some(__b) = __ka.downcast_ref::<bool>() {{ String::from(if *__b {{ \"True\" }} else {{ \"False\" }}) }} else {{ format!(\"{{:?}}\", __k) }} }})",
+        py_str_repr_block("__s"),
+        py_str_repr_block("__s"),
+    )
+}
+
 /// PMAT-011: emit one `// xpile-contract: <ID>` comment line per
 /// contract that governs this function. Matches the mdBook convention
 /// from `sub/contract-frontend-trait.md`'s citation grid — same prefix
@@ -1100,11 +1120,15 @@ fn emit_stmt_indented(
             error_if_absent,
         } => {
             if *error_if_absent {
-                write!(out, "{indent}assert!({set_name}.remove(&(")?;
+                // PMAT-1089: on a missing element the panic payload carries the
+                // CPython-shaped message — `str(KeyError(x))` is `repr(x)`, not
+                // a fixed "x not in set" text.
+                write!(out, "{indent}{{ let __k = &(")?;
                 emit_expr(out, elem, mode)?;
                 writeln!(
                     out,
-                    ")), \"xpile: KeyError: set.remove(x): x not in set\");"
+                    "); if !{set_name}.remove(__k) {{ {} }} }}",
+                    key_error_panic()
                 )?;
             } else {
                 write!(out, "{indent}{set_name}.remove(&(")?;
@@ -1380,11 +1404,14 @@ fn emit_stmt_indented(
         // `Stmt::SetRemove` KeyError assert.
         Stmt::DelItem { name, key, is_dict } => {
             if *is_dict {
-                write!(out, "{indent}assert!({name}.shift_remove(&(")?;
+                // PMAT-1089: CPython-shaped payload — `str(KeyError(k))` is
+                // `repr(k)`, not a fixed "key not in dict" text.
+                write!(out, "{indent}{{ let __k = &(")?;
                 emit_expr(out, key, mode)?;
                 writeln!(
                     out,
-                    ")).is_some(), \"xpile: KeyError: del d[k]: key not in dict\");"
+                    "); if {name}.shift_remove(__k).is_none() {{ {} }} }}",
+                    key_error_panic()
                 )?;
             } else if expr_mentions_ident(key, name) {
                 // PMAT-570: `del xs[-k]` → `xs.remove(len(xs) - k)`; the index
@@ -2472,8 +2499,14 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             // returned a (wrong) value. The check runs on the post-sign, PRE-prefix
             // string so a legal underscore right after the base prefix
             // (`int("0x_ff", 16)` → 255) is preserved (it never starts with `_`).
+            // PMAT-1089: both radix panics quote the ORIGINAL (untrimmed)
+            // argument like CPython — `int("zz", 16)` → `invalid literal for
+            // int() with base 16: 'zz'` — and the parse failure formats via
+            // `unwrap_or_else` (a bare `.expect` appended ParseIntError's
+            // Debug repr to the payload).
             out.push_str(&format!(
-                "if __rb.starts_with('_') || __rb.ends_with('_') || __rb.contains(\"__\") {{ panic!(\"xpile: ValueError: invalid literal for int() with base {radix}\"); }} "
+                "if __rb.starts_with('_') || __rb.ends_with('_') || __rb.contains(\"__\") {{ panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr}); }} ",
+                repr = py_str_repr_block("__ri")
             ));
             let prefix_strip = match radix {
                 16 => "let __rb = __rb.strip_prefix(\"0x\").or_else(|| __rb.strip_prefix(\"0X\")).unwrap_or(__rb); ",
@@ -2484,7 +2517,8 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             out.push_str(prefix_strip);
             out.push_str("let __rc = format!(\"{}{}\", __rsgn, __rb.replace('_', \"\")); i64::from_str_radix(&__rc, ");
             out.push_str(&format!(
-                "{radix}).expect(\"xpile: ValueError: invalid literal for int() with base {radix}\") }}"
+                "{radix}).unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr})) }}",
+                repr = py_str_repr_block("__ri")
             ));
         }
         // PMAT-492/493b: Python string methods. No-arg transforms emit a
@@ -3401,7 +3435,16 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // extension, and a reused variable operand is not moved (E0716).
                 out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str("); let __ps = __pf.trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float\"); } __ps.replace('_', \"\").parse::<f64>().expect(\"xpile: ValueError: could not convert string to float\") }");
+                // PMAT-1089: both panics quote the ORIGINAL (untrimmed) argument
+                // like CPython — `float("abc")` → `could not convert string to
+                // float: 'abc'` — and the parse failure formats via
+                // `unwrap_or_else` (a bare `.expect` appended ParseFloatError's
+                // Debug repr to the payload).
+                out.push_str("); let __ps = __pf.trim(); let __pe = __ps.as_bytes(); if !__ps.bytes().enumerate().all(|(__k, __c)| __c != b'_' || (__k > 0 && __pe[__k - 1].is_ascii_digit() && __k + 1 < __pe.len() && __pe[__k + 1].is_ascii_digit())) { panic!(\"xpile: ValueError: could not convert string to float: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str("); } __ps.replace('_', \"\").parse::<f64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: could not convert string to float: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str(")) }");
             } else if *from_str {
                 // PMAT-610: `int(s)` accepts PEP 515 underscore digit separators
                 // (`int(\"1_000\") == 1000`), which Rust's `parse::<i64>()` rejects
@@ -3415,7 +3458,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // extension, and a reused variable operand is not moved (E0716).
                 out.push_str("{ let __pf = &(");
                 emit_expr(out, value, mode)?;
-                out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int()\"); } __ps.replace('_', \"\").parse::<i64>().expect(\"xpile: ValueError: invalid literal for int()\") }");
+                // PMAT-1089: both panics carry the CPython message — `invalid
+                // literal for int() with base 10: '<orig>'` with the ORIGINAL
+                // (untrimmed) argument repr-quoted — and the parse failure
+                // formats via `unwrap_or_else` (a bare `.expect` appended
+                // ParseIntError's Debug repr to the payload, which `as e`
+                // handlers then printed).
+                out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str("); } __ps.replace('_', \"\").parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
+                out.push_str(&py_str_repr_block("__pf"));
+                out.push_str(")) }");
             } else if !*to_float && *from_float {
                 // PMAT-586/589: `int(float_x)` — Python raises `OverflowError`
                 // for `int(inf)` and `ValueError` for `int(nan)`, and returns an
@@ -3688,11 +3741,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     // mutably via `get_mut(&k)` instead (the dict base is marked
                     // `mut` by `count_pop_receivers`); a missing key still raises
                     // the tagged KeyError, an empty list the tagged IndexError.
-                    out.push('(');
-                    emit_expr(out, dict, mode)?;
-                    out.push_str(").get_mut(&(");
+                    // PMAT-1089: bind the key first so the miss panic carries
+                    // the CPython-shaped `repr(k)` payload.
+                    out.push_str("{ let __k = &(");
                     emit_expr(out, key, mode)?;
-                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\")).pop().expect(\"xpile: IndexError: pop from empty list\")");
+                    out.push_str("); (");
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").get_mut(__k).unwrap_or_else(|| ");
+                    out.push_str(&key_error_panic());
+                    out.push_str(").pop().expect(\"xpile: IndexError: pop from empty list\") }");
                 } else if let Some((base, idx)) = lvalue_base {
                     out.push_str("{ let __pi = (");
                     emit_expr(out, idx, mode)?;
@@ -3735,18 +3792,26 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // (panics if absent, matching Python `KeyError`); `d.pop(k, def)`
         // → `(<dict>).remove(&(<key>)).unwrap_or(<default>)`.
         Expr::DictPop { dict, key, default } => {
-            out.push('(');
-            emit_expr(out, dict, mode)?;
-            out.push_str(").shift_remove(&(");
-            emit_expr(out, key, mode)?;
             match default {
                 // PMAT-747 (HUNT-V14 #2): `d.pop(k)` on an absent key raises
                 // Python KeyError — tag the panic so a typed `except`
                 // discriminates it (the untagged native `unwrap` was swallowed).
+                // PMAT-1089: bind the key first so the panic carries the
+                // CPython-shaped `repr(k)` payload.
                 None => {
-                    out.push_str(")).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))")
+                    out.push_str("{ let __k = &(");
+                    emit_expr(out, key, mode)?;
+                    out.push_str("); (");
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").shift_remove(__k).unwrap_or_else(|| ");
+                    out.push_str(&key_error_panic());
+                    out.push_str(") }");
                 }
                 Some(d) => {
+                    out.push('(');
+                    emit_expr(out, dict, mode)?;
+                    out.push_str(").shift_remove(&(");
+                    emit_expr(out, key, mode)?;
                     out.push_str(")).unwrap_or(");
                     emit_expr(out, d, mode)?;
                     out.push(')');
@@ -4157,14 +4222,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
         // + a tagged `unwrap_or_else` panic so `except KeyError` catches it and
         // every other typed `except` re-raises it. `.cloned()` keeps the owned
         // value (v0.2.0 owned-only posture).
+        // PMAT-1089: the key binds first (`__k`, a reference — no move) so the
+        // miss panic carries the CPython-shaped `repr(k)` payload; a fixed
+        // "key not found" text made `except KeyError as e: print(e)` diverge.
         Expr::DictGet { dict, key } => {
-            out.push('(');
-            emit_expr(out, dict, mode)?;
-            out.push_str(").get(&(");
+            out.push_str("{ let __k = &(");
             emit_expr(out, key, mode)?;
-            out.push_str(
-                ")).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))",
-            );
+            out.push_str("); (");
+            emit_expr(out, dict, mode)?;
+            out.push_str(").get(__k).cloned().unwrap_or_else(|| ");
+            out.push_str(&key_error_panic());
+            out.push_str(") }");
         }
         // PMAT-466: Python `d.get(k, default)` → Rust
         // `d.get(&(k)).cloned().unwrap_or(default)`. Total: never
