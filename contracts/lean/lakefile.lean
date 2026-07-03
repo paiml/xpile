@@ -321,5 +321,11 @@ lean_lib «XpileContractsPilot» where
     -- proved sorry-free over core Lean (no Mathlib — the dispatch predicate is
     -- a decidable Boolean). Pilot 28 → 29; the entire substrate stays
     -- machine-checked.
-    `PyExceptAllowlist              -- C-PY-EXCEPT-ALLOWLIST       (PMAT-1120)
+    `PyExceptAllowlist,             -- C-PY-EXCEPT-ALLOWLIST       (PMAT-1120)
+    -- PMAT-1122 (R6 contract-integrity): NEW contract for the EAGER generator
+    -- lowering (PMAT-1071). Core-only FAITHFULNESS proof — the materialized list
+    -- (foldl snoc from []) equals the yield sequence exactly (values/order/
+    -- length), a genuine structural induction (foldl_snoc_prefix), proved over
+    -- core Lean (List.foldl/append_assoc) with NO Mathlib. Pilot 29 → 30.
+    `PyGeneratorEager              -- C-PY-GENERATOR-EAGER        (PMAT-1122)
   ]
