@@ -8237,6 +8237,17 @@ fn synth_named_callable_body(
     lower_expr_in_ctx(&sub, synth)
 }
 
+/// PMAT-1104: collect the plain-Name bindings of a (possibly nested) tuple
+/// target, in left-to-right source order (recursing into nested tuples). Lets
+/// the for-target rewrite detect a name bound at multiple nesting levels.
+fn collect_target_names(e: &ast::Expr, out: &mut Vec<String>) {
+    match e {
+        ast::Expr::Name(n) => out.push(n.id.to_string()),
+        ast::Expr::Tuple(t) => t.elts.iter().for_each(|el| collect_target_names(el, out)),
+        _ => {}
+    }
+}
+
 fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt>, FrontendError> {
     // PMAT-705: desugar a nested-tuple pair target (`for i, (a, b) in
     // enumerate(xs)`, `for k, (a, b) in d.items()`) — the pair-loop below needs
@@ -8247,10 +8258,29 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
     if let ast::Expr::Tuple(tgt) = f.target.as_ref() {
         if tgt.elts.len() == 2 && tgt.elts.iter().any(|e| matches!(e, ast::Expr::Tuple(_))) {
             let rng = tgt.range;
+            // PMAT-1104: does a name appear at MULTIPLE positions of the target
+            // (spanning nesting levels — e.g. `(x, y), x`)? Python binds
+            // left-to-right so the LAST occurrence wins; the default rewrite
+            // (top-level names in the header, nested unpacks PREPENDED to the
+            // body) would run the nested destructure AFTER the top-level bind →
+            // first-wins → SILENT divergence. When a dup is present, rewrite EVERY
+            // element to a fresh temp and prepend its real binding in SOURCE
+            // ORDER, so the last source occurrence wins (correct). No dup keeps
+            // the narrower nested-only rewrite (unchanged leak behaviour).
+            let mut seen = std::collections::HashSet::new();
+            let mut names = Vec::new();
+            for elt in &tgt.elts {
+                collect_target_names(elt, &mut names);
+            }
+            let has_dup = names.iter().any(|n| !seen.insert(n.clone()));
+
             let mut new_elts: Vec<ast::Expr> = Vec::with_capacity(2);
             let mut prepends: Vec<ast::Stmt> = Vec::new();
             for (idx, elt) in tgt.elts.iter().enumerate() {
-                if matches!(elt, ast::Expr::Tuple(_)) {
+                // Rewrite a NESTED element always; a top-level Name only when a
+                // cross-nesting dup forces source-order binding.
+                let rewrite = matches!(elt, ast::Expr::Tuple(_)) || has_dup;
+                if rewrite {
                     let fresh = format!("__xpile_pair{idx}");
                     prepends.push(ast::Stmt::Assign(ast::StmtAssign {
                         range: rng,
