@@ -312,5 +312,14 @@ lean_lib «XpileContractsPilot» where
     -- WABT witness READS the constructed string back and value-matches CPython.
     -- A strict extension of C-COMPILE-RUST-TO-WASM. NEW contract, so the pilot
     -- grows 27 → 28; the entire substrate stays machine-checked.
-    `WasmHeap                       -- C-WASM-HEAP                 (PMAT-993)
+    `WasmHeap,                      -- C-WASM-HEAP                 (PMAT-993)
+    -- PMAT-1120 (R6 contract-integrity): NEW contract for the try/except lane
+    -- shipped this session (statement-form try/except, multiple except,
+    -- try/except/finally, finally-only). Core-only STRUCTURE EXTENSIONALITY on
+    -- the handler ALLOWLIST + the no-swallow re-raise invariant (a non-matching
+    -- non-empty allowlist propagates, not swallows — the PMAT-789 property),
+    -- proved sorry-free over core Lean (no Mathlib — the dispatch predicate is
+    -- a decidable Boolean). Pilot 28 → 29; the entire substrate stays
+    -- machine-checked.
+    `PyExceptAllowlist              -- C-PY-EXCEPT-ALLOWLIST       (PMAT-1120)
   ]

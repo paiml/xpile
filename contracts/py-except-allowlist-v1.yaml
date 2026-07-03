@@ -1,0 +1,176 @@
+metadata:
+  id: C-PY-EXCEPT-ALLOWLIST
+  version: "1.0.0"
+  created: "2026-07-03"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Semantic contract: how xpile lowers Python `try/except[/finally]` exception
+    dispatch. Python exceptions are modelled as Rust panics carrying an
+    `xpile: <Type>: <msg>` payload; a handler decides to CATCH by matching the
+    payload's TYPE name against its `except_types` ALLOWLIST. This contract pins
+    the dispatch predicate — the load-bearing correctness property being the
+    PMAT-789 allowlist re-raise: a payload whose type is NOT in a non-empty
+    allowlist is re-raised (`resume_unwind`), NOT swallowed.
+
+    The try/except lane this governs (shipped 2026-07-01/02): statement-form
+    `try: … except E [as e]: …` (PMAT-1058), multiple `except` clauses as an
+    ordered first-match chain (PMAT-1059/1065), `try/except/finally` with the
+    finally running in every exit path via an outer `catch_unwind` wrap
+    (PMAT-1070), and finally-only try (PMAT-1073).
+
+    Two load-bearing boundaries:
+      1. No-swallow re-raise — a bare `except:` (empty allowlist) is the only
+         catch-all; `except (A, B):` catches iff the payload type is A or B,
+         and ANY other type propagates (`resume_unwind`). An emitter that
+         treated a non-matching type as caught would silently swallow an
+         unrelated exception (`except ValueError` eating a `ZeroDivisionError`).
+      2. Ordered first-match — a multi-`except` chain tries clauses in source
+         order; the first whose allowlist matches wins; a trailing bare
+         `except:` (Python-required last) is the catch-all `else`, otherwise the
+         chain ends in `resume_unwind`.
+
+    provability/mathlib note: the dispatch predicate is a DECIDABLE Boolean
+    property (`allowlist.isEmpty || allowlist.contains type`), so the Lean
+    refinement proof is discharged entirely over CORE Lean 4 — NO Mathlib, no
+    `sorry`, no `axiom` (mirroring the whole 28-module pilot; the purity
+    invariant holds). Registered at depth-1 under the R6-grandfathered Diamond
+    gate (PMAT-475a).
+
+    Layer 3 of the xpile contract taxonomy (semantic / control-flow).
+  references:
+    - "Python Language Reference §8.4 (The try statement — except-clause type matching; the implicit re-raise when no clause matches)"
+    - "Rust std::panic::catch_unwind / resume_unwind (the emit-lane panic model)"
+    - "contracts/xlate-py-bool-to-rust-bool-v1.yaml (sibling contract; structural-Diamond template)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift — the try/except lane shipped uncontracted; this closes the exception-dispatch gap)"
+  depends_on: []
+
+equations:
+  no_swallow_reraise:
+    formula: |
+      catches(handler, exc) == (handler.types == [] ∨ exc ∈ handler.types)
+      ⟹  handler.types ≠ [] ∧ exc ∉ handler.types  ⟹  ¬ catches(handler, exc)
+    domain: |
+      Any `try: B except (A₁, …, Aₙ) [as e]: H` where the raised exception's
+      type name is `exc`. `handler.types` is the allowlist (`[]` = bare
+      `except:` catch-all).
+    invariants:
+      - "a bare `except:` (empty allowlist) is the only catch-all"
+      - "a non-matching type in a NON-EMPTY allowlist is NOT caught — it re-raises (resume_unwind)"
+      - "`except ValueError:` does not swallow a `ZeroDivisionError`"
+    preconditions:
+      - "the exception is modelled as a panic with an `xpile: <Type>: <msg>` payload"
+    postconditions:
+      - "the emitted handler runs iff the payload type is in the allowlist (or the allowlist is empty); otherwise resume_unwind"
+      - "an emitter that caught a non-matching type would silently swallow an unrelated exception — falsified here"
+
+  ordered_first_match:
+    formula: |
+      dispatch([h₁, …, hₖ], exc) == first hᵢ with catches(hᵢ, exc)
+      (source order; trailing empty-allowlist clause is the final else, else resume_unwind)
+    domain: |
+      A multi-`except` chain `try: B except A₁: H₁ … except Aₖ: Hₖ`.
+    invariants:
+      - "clauses are tried in source order; the first matching allowlist wins"
+      - "a trailing bare `except:` is the catch-all else; otherwise the chain ends in resume_unwind"
+    preconditions:
+      - "the chain is lowered as an ordered if/else-if over the payload type (PMAT-1059)"
+    postconditions:
+      - "at most one handler body runs; an unmatched exception propagates past the whole chain"
+
+  except_handler_structure_extensionality_diamond:
+    # PMAT-1120: FIRST (tier-defining) Diamond equation — registers
+    # C-PY-EXCEPT-ALLOWLIST at depth-1 under the R6-grandfathered Diamond gate
+    # (PMAT-475a), mirroring the str/list/dict/set/tuple/Optional/bool structural
+    # Diamonds. A handler's dispatch is fully determined by its allowlist.
+    lean_theorem: "XpileContracts.CPyExceptAllowlist.except_handler_structure_extensionality_diamond"
+    lean_file: "contracts/lean/PyExceptAllowlist.lean"
+    formula: |
+      ∀ a b : ExceptHandler.
+        a.types = b.types → a = b
+      (a handler's dispatch is determined by its allowlist of exception-type names)
+    domain: |
+      Any `except` handler. xpile lowers dispatch to an allowlist membership
+      test over the panic payload's type name; the Diamond captures
+      structure-extensionality of the allowlist model.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-PY-EXCEPT-ALLOWLIST (registers it at depth-1)"
+      - "structure extensionality on the allowlist model (sorry-free, core-Lean, no Mathlib)"
+      - "the no-swallow / ordered-first-match semantic tiers proved as sibling theorems (empty_allowlist_catches_all, matched_type_is_caught, unmatched_type_propagates)"
+    preconditions:
+      - "the construct is a `try/except` handler (not a plain call / assignment)"
+    postconditions:
+      - "the emitted handler chain matches the payload type against the allowlist; a non-match propagates"
+
+proof_obligations:
+  - type: precondition
+    property: meta-HIR carries a TryCatch with an except_types allowlist
+    formal: "stmt == TryCatch { except_types, .. }"
+    applies_to: no_swallow_reraise
+  - type: postcondition
+    property: a non-matching non-empty allowlist re-raises (resume_unwind)
+    formal: "types ≠ [] ∧ exc ∉ types ⟹ emit == resume_unwind"
+    applies_to: no_swallow_reraise
+  - type: frame
+    property: no mutation of the meta-HIR module during dispatch lowering
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-EXCEPT-ALLOWLIST-001
+    rule: |
+      A non-matching type in a NON-EMPTY `except` allowlist MUST propagate
+      (resume_unwind), never be swallowed.
+    prediction: |
+      `try: raise ZeroDivisionError except ValueError: …` re-raises the
+      ZeroDivisionError (both CPython and the transpiled Rust RAISE = BOTHRAISE).
+    test: |
+      cargo test -p xpile --test transpile_e2e multiple_except
+    if_fails: |
+      A handler swallowed a non-matching exception — the allowlist re-raise broke.
+    ship_blocking: true
+    counter_example_classes:
+      - unrelated_exception_swallowed
+      - allowlist_membership_flip
+
+  - id: FALSIFY-EXCEPT-ALLOWLIST-002
+    rule: |
+      A multi-`except` chain MUST try clauses in source order and run at most one
+      handler body.
+    prediction: |
+      `except ValueError … except KeyError` over a KeyError runs the KeyError
+      body only, matching CPython.
+    test: |
+      cargo test -p xpile --test transpile_e2e multiple_except
+    if_fails: |
+      The first-match ordering broke — the wrong (or multiple) handlers ran.
+    ship_blocking: true
+    counter_example_classes:
+      - out_of_order_dispatch
+
+  - id: FALSIFY-EXCEPT-ALLOWLIST-003
+    rule: |
+      The Lean allowlist model MUST elaborate sorry-free over core Lean 4 (no
+      Mathlib), proving structure extensionality + the no-swallow invariant.
+    prediction: |
+      `lake build` elaborates PyExceptAllowlist with zero `sorry`/`axiom`, and
+      `unmatched_type_propagates` proves a non-matching non-empty allowlist does
+      not catch.
+    test: |
+      cargo test -p xpile --test lean_pilot_roots inventory_pilot_count_in_sync_with_lakefile
+    if_fails: |
+      The proof-lane model regressed or the pilot roots drifted from the inventory.
+    ship_blocking: true
+    counter_example_classes:
+      - non_elaborating_module
+      - pilot_roots_drift
+
+qa_gate:
+  id: QA-PY-EXCEPT-ALLOWLIST
+  name: "Python try/except allowlist dispatch contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - multiple_except
+    - inventory_pilot_count_in_sync_with_lakefile
