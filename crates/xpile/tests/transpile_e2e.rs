@@ -19422,6 +19422,64 @@ fn main() {
     assert_rustc_runs("context_managers", &rust, driver);
 }
 
+/// PMAT-1084 (skeptic-pass PMAT-1081 hole a): an `__exit__` returning a value
+/// participates in CPython's SUPPRESSION protocol (truthy return swallows the
+/// in-flight exception — `run()` returns "after"); the desugared finally-only
+/// `__exit__` call discards the return, so the transpiled code would crash
+/// instead. Must refuse at the `with` site, naming the class.
+#[test]
+fn cm_exit_suppress_rejected() {
+    let py = fixture("cm_exit_suppress_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a value-returning __exit__ must refuse, not silently drop suppression"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`Guard.__exit__` returns a value") && stderr.contains("SUPPRESSES"),
+        "the rejection should name the class and the suppression protocol:\n{stderr}"
+    );
+}
+
+/// PMAT-1084 (hole a, annotation-lie variant): `-> None` annotation with
+/// `return True` in the body — CPython ignores the annotation and still
+/// suppresses. The body scan, not the annotation, must drive the refusal.
+#[test]
+fn cm_exit_annlie_return_rejected() {
+    let py = fixture("cm_exit_annlie_return_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a `-> None` __exit__ with `return True` in the body must still refuse"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`Sneaky.__exit__` returns a value"),
+        "the rejection should fire from the body scan despite the -> None annotation:\n{stderr}"
+    );
+}
+
+/// PMAT-1084 (skeptic-pass PMAT-1081 hole b): `__exit__`'s exc params are
+/// fabricated zero-values (CPython passes None / the exc triple), so a body
+/// reading them silently takes the wrong branch (`a == 0` is True for the
+/// fabricated 0, False for CPython's None). Must refuse, naming the param.
+#[test]
+fn cm_exit_reads_exc_param_rejected() {
+    let py = fixture("cm_exit_reads_exc_param_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an __exit__ that reads its exc params must refuse, not take the wrong branch"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`Check.__exit__` uses its exception parameter `a`")
+            && stderr.contains("fabricated zero-values"),
+        "the rejection should name the class and the offending param:\n{stderr}"
+    );
+}
+
 /// PMAT-1074: `open(path).read()` → inline `std::fs::read_to_string`. The
 /// driver writes a temp file, then asserts the transpiled readers. MATCH.
 /// PMAT-1081 (skeptic-pass finds): CRLF and lone-CR files read with CPython's

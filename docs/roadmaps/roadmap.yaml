@@ -1045,10 +1045,10 @@ roadmap:
   github_issue: null
   item_type: correctness
   title: 'PMAT-1084: [rust/correctness/context-managers] two unguarded silent-miscompile holes in PMAT-1072 (skeptic pass PMAT-1081): (a) `__exit__` returning True must SUPPRESS the exception (CPython continues after the with; Rust always resume_unwinds — the desugar at depyler-frontend transpile_with_statements emits `__exit__` as a discarded Stmt::Expr in a finally-only try and never inspects the return annotation) — exit 101 vs CPython''s clean continue; (b) `__exit__(self, a, b, c)` params are fabricated ZEROS (zero_arg dummies) vs CPython''s None/exc-triple — the standard `if exc_type is None` idiom silently takes the wrong branch. CHEAP HONEST FIX per the skeptic: refuse `__exit__` with a non-None return annotation; refuse `__exit__` bodies that READ their exc params (annotation-check exists; use-check does not). Core lifecycle, exception-path __exit__-then-propagate, and non-self __enter__ binding all verified SOUND (p5/p6/p9 MATCH).'
-  status: planned
+  status: done
   priority: high
   created: 2026-07-03T00:00:00Z
-  notes: 'Probes: /tmp/pmat1081-gen/p7-cm-suppress, p8-cm-args.'
+  notes: 'SHIPPED: both holes now refuse precisely at the `with` site (class named, cause explained), via a scan at transform_with_statements class-collection. (a) SUPPRESSION — refuse when `__exit__` has a non-None return annotation OR a `return <value>` anywhere in its body (the body scan catches the `-> None`-annotated `return True` lie CPython still honors; `return None`/bare return stay fine). (b) EXC PARAMS — refuse when the body mentions any exc param name (new conservative `ast_stmts_mention_name` AST walk incl. f-strings/comprehensions; over-match refuses, never miscompiles). Both target lanes covered (shared pre-pass). A class with an unsound `__exit__` NOT used in a `with` still transpiles. Pre-fix divergences confirmed: suppress → exit 101 vs CPython "after"; param-read → "clean" vs CPython "exc". e2e: cm_exit_suppress_rejected, cm_exit_annlie_return_rejected, cm_exit_reads_exc_param_rejected; context_managers fixture unchanged-green. Probes: /tmp/pmat1084-cm/pa,pb,pc,pd.'
 - id: PMAT-1085
   github_issue: null
   item_type: correctness
