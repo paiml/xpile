@@ -21748,7 +21748,7 @@ fn apply_nonempty_format_spec(
     // `f"{97:c}"` -> "a", `f"{0x1F600:c}"` -> "😀", `f"{8364:c}"` -> "€". This is
     // exactly Python's `chr(n)` (CPython's `int.__format__` for code `c`
     // delegates to chr), so reuse the existing `Expr::Chr` lowering
-    // (`char::from_u32(n as u32).expect(..).to_string()`) — NO new IR node, every
+    // (the PMAT-1096 range-checked `char::from_u32` block) — NO new IR node, every
     // codegen / meta-hir / ruchy / Lean lane already handles `Chr`. A bool reaches
     // here as i64 (the PMAT-831 coercion above), so `f"{True:c}"` -> "\x01"
     // matches `chr(1)`. `:c` is an INT-ONLY spec in Python (a float or str `:c` is

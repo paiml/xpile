@@ -1855,10 +1855,15 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 "); let mut __oc = __os.chars(); let __c0 = __oc.next().expect(\"xpile: ord() expected a character, got an empty string (TypeError)\"); if __oc.next().is_some() { panic!(\"xpile: ord() expected a character (TypeError)\"); } __c0 as i64 })",
             );
         }
+        // PMAT-1096: range-check before the cast — OverflowError outside C-int,
+        // ValueError outside range(0x110000), honest UNTYPED surrogate panic
+        // (CPython succeeds there; Rust `char` can't). Mirrors the rust backend.
         Expr::Chr { value } => {
-            out.push_str("char::from_u32((");
+            out.push_str("({ let __chn: i64 = (");
             emit_expr(out, value, mode)?;
-            out.push_str(") as u32).expect(\"xpile: chr() arg not in range(0x110000) (ValueError)\").to_string()");
+            out.push_str(
+                "); if __chn < -2147483648 || __chn > 2147483647 { panic!(\"xpile: OverflowError: Python int too large to convert to C int\"); } if __chn < 0 || __chn > 1114111 { panic!(\"xpile: ValueError: chr() arg not in range(0x110000)\"); } if (55296..=57343).contains(&__chn) { panic!(\"xpile: chr({}): surrogate code point (U+D800..U+DFFF) is unrepresentable as a Rust char — CPython chr() succeeds here; ruchy-lane limitation\", __chn); } char::from_u32(__chn as u32).expect(\"unreachable: chr() operand range-checked\").to_string() })",
+            );
         }
         // PMAT-502cv: hex/oct/bin → radix string (see the Rust backend).
         Expr::IntRadixStr {

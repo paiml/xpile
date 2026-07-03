@@ -5788,6 +5788,84 @@ fn main() {
     assert_rustc_runs("ord_chr", &rust, driver);
 }
 
+/// PMAT-1096 (skeptic pass PMAT-1090 D-1/D-2): `chr(n)` range semantics. The
+/// old `(<n>) as u32` cast WRAPPED — `chr(-4294967295)` silently returned
+/// "\x01" where CPython raises OverflowError — and the panic payload claimed
+/// "not in range(0x110000)" for surrogate code points that ARE in range
+/// (CPython `chr(0xD800)` succeeds; only Rust `char` excludes the band). Now:
+/// outside C-int `[-2^31, 2^31-1]` → typed OverflowError panic; in-C-int but
+/// outside `range(0x110000)` → typed ValueError panic (both exact CPython
+/// messages, catchable — the old `(ValueError)` SUFFIX shape never matched
+/// the `xpile: <T>: ` except allowlist); surrogates → an UNTYPED panic with
+/// an honest lane-limitation payload that a typed except must NOT eat.
+/// Every expected message below is CPython 3.10 ground truth (via python3).
+#[test]
+fn chr_range_semantics() {
+    let rust = xpile_transpile_to_rust("chr_range_semantics.py");
+    assert!(
+        rust.contains("xpile: OverflowError: Python int too large to convert to C int")
+            && rust.contains("xpile: ValueError: chr() arg not in range(0x110000)"),
+        "chr must carry typed CPython-shaped range panics:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(chr_ok(65), "A");
+    assert_eq!(chr_ok(128512), "😀");
+    // in-C-int, out of range(0x110000): catchable ValueError, exact message.
+    assert_eq!(chr_val_msg(-1), "chr() arg not in range(0x110000)");
+    assert_eq!(chr_val_msg(1114112), "chr() arg not in range(0x110000)");
+    assert_eq!(chr_val_msg(2147483647), "chr() arg not in range(0x110000)");
+    assert_eq!(chr_val_msg(-2147483648), "chr() arg not in range(0x110000)");
+    // outside C-int: catchable OverflowError. The negative case is the
+    // skeptic's silent-wrap witness (`as u32` wrapped it to 1 -> "\x01").
+    assert_eq!(chr_ovf_msg(2147483648), "Python int too large to convert to C int");
+    assert_eq!(chr_ovf_msg(-4294967295), "Python int too large to convert to C int");
+    // `except ValueError` must NOT catch the OverflowError (re-raise).
+    assert!(std::panic::catch_unwind(|| chr_val_msg(2147483648)).is_err());
+    // surrogate band: CPython succeeds; the rust lane panics UNTYPED with an
+    // honest payload naming the actual limitation, not a false range claim.
+    let sur = std::panic::catch_unwind(|| chr_ok(55296)).expect_err("surrogate must panic");
+    let m = sur.downcast_ref::<String>().map(|s| s.as_str()).unwrap_or("");
+    assert!(
+        m.contains("chr(55296)") && m.contains("surrogate"),
+        "surrogate payload must be honest, got: {m}"
+    );
+    assert!(
+        !m.contains("not in range"),
+        "surrogate payload must not claim a false range error: {m}"
+    );
+    // ...and a typed except must not eat it (no Python exception corresponds).
+    assert!(std::panic::catch_unwind(|| chr_val_msg(55296)).is_err());
+}
+"#;
+    assert_rustc_runs("chr_range_semantics", &rust, driver);
+}
+
+/// PMAT-1096: the ruchy lane mirrors the rust backend's range-checked chr —
+/// typed OverflowError/ValueError panics + the honest untyped surrogate panic
+/// (the pre-fix lane shared the identical silent-wrap `as u32` emit).
+#[test]
+fn chr_range_semantics_ruchy() {
+    let py = fixture("chr_range_semantics.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("xpile: OverflowError: Python int too large to convert to C int")
+            && stdout.contains("xpile: ValueError: chr() arg not in range(0x110000)")
+            && stdout.contains("surrogate code point"),
+        "ruchy chr must carry the PMAT-1096 range checks:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains(") as u32).expect("),
+        "the unchecked wrap cast must be gone from the ruchy lane:\n{stdout}"
+    );
+}
+
 /// PMAT-702: `ord()` requires exactly one character — `ord("ab")` / `ord("")` is
 /// a Python TypeError, NOT the first char's code point. xpile now asserts a
 /// single char (was: silently returned the first). The lowering is a parenthesized
