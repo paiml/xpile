@@ -6586,6 +6586,33 @@ fn main() {
     assert_rustc_runs("fstring_dict_get_ok", &rust, driver);
 }
 
+/// PMAT-1170: a literal `None` interpolated in an f-string renders the string
+/// "None" (CPython `str(None)` == `repr(None)` == "None"). A bare `None` lowered
+/// to `Expr::OptionExpr(None)`, whose inner type is un-inferable — the #1765
+/// Optional path desugared it to `(None).unwrap()`, and the dead `else` still
+/// type-checks → rustc E0282 (accept-then-fail: transpile-success → invalid Rust).
+/// Distinct from #1765 (PMAT-1168), which renders an Optional-VALUE-typed field.
+#[test]
+fn fstring_none_literal_renders_none() {
+    let rust = xpile_transpile_to_rust("fstring_none.py");
+    assert!(
+        rust.contains("String::from(\"None\")"),
+        "a `None` literal in an f-string must render the string \"None\":\n{rust}"
+    );
+    assert!(
+        !rust.contains(".unwrap()") && !rust.contains(", None)"),
+        "no bare `None` may reach `.unwrap()`/a `format!` arg (would be E0282/E0277):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(none_mid(), "xNoney");
+    assert_eq!(none_labeled(5), "val=None n=5");
+    assert_eq!(none_lone(), "None");
+}
+"#;
+    assert_rustc_runs("fstring_none", &rust, driver);
+}
+
 /// PMAT-708: a bare dict (or set) interpolated in an f-string emitted
 /// `format!("{}", hashmap)` → E0277 (IndexMap/IndexSet have no Display). It is now
 /// rejected at lowering — parity with `str()`/`print()`/`.format()`/`%` over a
