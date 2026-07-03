@@ -8842,6 +8842,24 @@ fn body_has_top_level_continue(stmts: &[Stmt]) -> bool {
             else_body,
             ..
         } => body_has_top_level_continue(then_body) || body_has_top_level_continue(else_body),
+        // PMAT-1082 (skeptic-pass find): a `continue` in an `except` HANDLER
+        // (or a `finally`) belongs to this loop — both blocks are emitted at
+        // loop scope, so skipping them left the tail increment unrun (an
+        // INFINITE `for i in range(n): try: … except: continue`). Descend
+        // them. The try BODY is a catch_unwind closure and can't contain a
+        // top-level `continue` at all (refused in `lower_statement_try`).
+        Stmt::TryCatch {
+            handler,
+            extra_handlers,
+            finally,
+            ..
+        } => {
+            body_has_top_level_continue(handler)
+                || extra_handlers
+                    .iter()
+                    .any(|h| body_has_top_level_continue(&h.body))
+                || body_has_top_level_continue(finally)
+        }
         // Nested loops own their own `continue`/`break`; don't descend.
         _ => false,
     })
@@ -8851,8 +8869,9 @@ fn body_has_top_level_continue(stmts: &[Stmt]) -> bool {
 /// `range(...)` loop into `{ <counter> = <counter> + <step>; continue }`, so the
 /// tail counter-increment (which a bare `continue` would skip → infinite loop)
 /// still runs before re-entering the loop. Mirrors `body_has_top_level_continue`
-/// traversal: descends `if` arms but NOT nested loops (a `continue` there belongs
-/// to that inner loop, whose own increment it must not perturb).
+/// traversal: descends `if` arms and `try` handler/finally blocks (PMAT-1082)
+/// but NOT nested loops (a `continue` there belongs to that inner loop, whose
+/// own increment it must not perturb).
 fn inject_continue_increment(stmts: Vec<Stmt>, counter: &str, step: &Expr) -> Vec<Stmt> {
     let mut out = Vec::with_capacity(stmts.len());
     for s in stmts {
@@ -8876,6 +8895,35 @@ fn inject_continue_increment(stmts: Vec<Stmt>, counter: &str, step: &Expr) -> Ve
                 cond,
                 then_body: inject_continue_increment(then_body, counter, step),
                 else_body: inject_continue_increment(else_body, counter, step),
+            }),
+            // PMAT-1082: `except` handlers and `finally` blocks are emitted at
+            // loop scope — a `continue` there belongs to this loop and must
+            // carry the increment (it hung forever before). The try BODY is a
+            // catch_unwind closure; a top-level `continue` there is refused at
+            // lowering, and one inside a nested loop belongs to that loop —
+            // either way, don't rewrite it.
+            Stmt::TryCatch {
+                body,
+                handler,
+                except_types,
+                bound_name,
+                extra_handlers,
+                finally,
+                finally_only,
+            } => out.push(Stmt::TryCatch {
+                body,
+                handler: inject_continue_increment(handler, counter, step),
+                except_types,
+                bound_name,
+                extra_handlers: extra_handlers
+                    .into_iter()
+                    .map(|h| TryHandler {
+                        body: inject_continue_increment(h.body, counter, step),
+                        ..h
+                    })
+                    .collect(),
+                finally: inject_continue_increment(finally, counter, step),
+                finally_only,
             }),
             other => out.push(other),
         }
@@ -11879,6 +11927,55 @@ fn is_assignment_try_shape(try_stmt: &ast::StmtTry) -> bool {
     }
 }
 
+/// PMAT-1082 (skeptic-pass find): statement-form try BODIES compile to a
+/// `catch_unwind` CLOSURE, so Rust function-level control flow cannot cross
+/// them — a `return` returns from the CLOSURE (its value is discarded by
+/// `Ok(_)`, so `try: …; return 5 except: pass; return 0` SILENTLY returned 0
+/// where CPython returns 5), and `break`/`continue` have no enclosing loop
+/// inside the closure (rustc E0267, loud but late). Scan a lowered block for
+/// the first such escape and refuse at lowering with a precise message.
+/// `break`/`continue` inside a loop that is itself part of the block belong
+/// to that inner loop (the closure contains the whole loop) — fine, don't
+/// descend `in_loop`-off. `return` is wrong at ANY depth: a closure never
+/// returns from the enclosing function. Nested `TryCatch` blocks are all
+/// emitted within the outer closure, so descend every arm of them. The
+/// value-form `try: return X except: return Y` (a terminal `Expr::TryCatch`)
+/// never reaches the statement path and stays supported.
+fn try_block_closure_escape(stmts: &[Stmt], in_loop: bool) -> Option<&'static str> {
+    stmts.iter().find_map(|s| match s {
+        Stmt::Return(_) => Some("return"),
+        Stmt::Break if !in_loop => Some("break"),
+        Stmt::Continue if !in_loop => Some("continue"),
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => try_block_closure_escape(then_body, in_loop)
+            .or_else(|| try_block_closure_escape(else_body, in_loop)),
+        // Loops inside the block own their break/continue; only `return`
+        // still escapes (scan their bodies with in_loop = true).
+        Stmt::While { body, .. }
+        | Stmt::ForEach { body, .. }
+        | Stmt::ForEachPair { body, .. }
+        | Stmt::ForEachZip3 { body, .. } => try_block_closure_escape(body, true),
+        Stmt::TryCatch {
+            body,
+            handler,
+            extra_handlers,
+            finally,
+            ..
+        } => try_block_closure_escape(body, in_loop)
+            .or_else(|| try_block_closure_escape(handler, in_loop))
+            .or_else(|| {
+                extra_handlers
+                    .iter()
+                    .find_map(|h| try_block_closure_escape(&h.body, in_loop))
+            })
+            .or_else(|| try_block_closure_escape(finally, in_loop)),
+        _ => None,
+    })
+}
+
 /// PMAT-1058: lower a GENERAL statement-form `try`/`except` — arms are
 /// side-effecting statement BLOCKS (`try: risky_call() except E [as e]:
 /// handle()`) — to [`Stmt::TryCatch`] (a `catch_unwind` over xpile's
@@ -11971,6 +12068,38 @@ fn lower_statement_try(
     }
     ctx.bound = saved_b_f;
     ctx.name_types = saved_t_f;
+    // PMAT-1082: the try BODY always runs inside a catch_unwind closure —
+    // refuse function-level control flow that cannot cross it (a `return`
+    // SILENTLY returned from the closure; `break`/`continue` were rustc
+    // E0267). With a `finally`, the HANDLER blocks are wrapped in the OUTER
+    // closure too (PMAT-1070's every-exit-path wrap), so the same applies to
+    // them; without one, handlers run at function scope and all three are
+    // fine there. The `finally` block itself always runs at function scope.
+    if let Some(kw) = try_block_closure_escape(&body, false) {
+        return Err(FrontendError::Lower(format!(
+            "function `{}`: `{kw}` inside a `try` BODY is not supported — the body compiles to a catch_unwind closure, so `{kw}` cannot reach the enclosing {}. Move the `{kw}` after the `try` (e.g. set a flag in the arms), or use the value form `try: return <expr> except: return <expr>`",
+            ctx.fn_name,
+            if kw == "return" {
+                "function (it would silently return from the closure instead)"
+            } else {
+                "loop"
+            },
+        )));
+    }
+    if !finally.is_empty() {
+        let handler_escape = try_block_closure_escape(&handler, false).or_else(|| {
+            extra_handlers
+                .iter()
+                .find_map(|h| try_block_closure_escape(&h.body, false))
+        });
+        if let Some(kw) = handler_escape {
+            return Err(FrontendError::Lower(format!(
+                "function `{}`: `{kw}` inside an `except` handler of a try with `finally` is not supported — the finally wrap compiles the handler into a catch_unwind closure, so `{kw}` cannot reach the enclosing {}. Drop the `finally` or move the `{kw}` out of the handler",
+                ctx.fn_name,
+                if kw == "return" { "function" } else { "loop" },
+            )));
+        }
+    }
     Ok(vec![Stmt::TryCatch {
         body,
         handler,

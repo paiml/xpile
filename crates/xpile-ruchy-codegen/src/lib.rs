@@ -1213,8 +1213,11 @@ fn emit_stmt_indented(
             } else {
                 // PMAT-1059: multiple `except` clauses — an ordered
                 // if/else-if chain over [first] ++ extra_handlers; a catch-all
-                // (empty types, Python-required last) is the final `else`,
+                // (empty types) terminates the chain as the final `else`,
                 // otherwise the chain ends in `resume_unwind` (propagate).
+                // PMAT-1082: a catch-all in NON-final position terminates the
+                // chain and DROPS the later arms (unreachable in CPython too);
+                // emitting them produced a dangling `else if` (invalid code).
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
                 let all: Vec<(&Vec<String>, &Option<String>, &Vec<Stmt>)> =
                     std::iter::once((except_types, bound_name, handler))
@@ -1249,6 +1252,9 @@ fn emit_stmt_indented(
                         emit_stmt_indented(out, st, "", mode)?;
                     }
                     out.push_str(" }");
+                    if catch_all_seen {
+                        break;
+                    }
                 }
                 if !catch_all_seen {
                     out.push_str(" else { ::std::panic::resume_unwind(__xpile_e) }");
