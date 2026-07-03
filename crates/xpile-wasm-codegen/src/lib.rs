@@ -2555,12 +2555,15 @@ const STR_REMOVESUFFIX_HELPER: &str = "\
 /// str-touching module via `module_touches_str`, which a str-returning replace
 /// always satisfies).
 const STR_REPLACE_HELPER: &str = "\
-  ;; PMAT-1159 __wasm_str_replace(s, old, new) = Python s.replace(old, new) — a
-  ;; NEW heap string with every non-overlapping `old` replaced by `new`, left to
-  ;; right. Non-empty old: two byte passes (count, then copy-with-substitution),
-  ;; char-exact for valid UTF-8 (old[0] is a lead byte). Empty old: Python
-  ;; interleaves new between every code point and at both ends (a char walk).
-  (func $__wasm_str_replace (param $s i32) (param $old i32) (param $new i32) (result i32)
+  ;; PMAT-1159/1161 __wasm_str_replace(s, old, new, count) = Python
+  ;; s.replace(old, new[, count]) — a NEW heap string with the first `count`
+  ;; non-overlapping `old` replaced by `new`, left to right. count < 0 means
+  ;; UNLIMITED (the 2-arg form passes -1, exactly reproducing replace-all); the
+  ;; cap bounds BOTH regimes. Non-empty old: two byte passes (count, then
+  ;; copy-with-substitution), char-exact for valid UTF-8 (old[0] is a lead byte).
+  ;; Empty old: Python interleaves new between every code point and at both ends
+  ;; (a char walk); count caps how many of the charlen+1 gaps get `new`.
+  (func $__wasm_str_replace (param $s i32) (param $old i32) (param $new i32) (param $count i64) (result i32)
     (local $slen i32)
     (local $olen i32)
     (local $nlen i32)
@@ -2575,6 +2578,11 @@ const STR_REPLACE_HELPER: &str = "\
     (local $p i32)
     (local $end i32)
     (local $w i32)
+    (local $cap i32)
+    (local $made i32)
+    (local $k i32)
+    (local $cl i32)
+    (local $gi i32)
     local.get $s
     i32.load
     local.set $slen
@@ -2588,12 +2596,38 @@ const STR_REPLACE_HELPER: &str = "\
     local.get $olen
     i32.eqz
     if
-      ;; out = nlen*(charlen(s)+1) + slen
-      local.get $nlen
+      ;; cl = charlen(s); k = number of the (cl+1) gaps that get `new`.
+      ;; count < 0 → all cl+1 gaps (unlimited); else min(count, cl+1).
       local.get $s
       call $__wasm_str_charlen
-      i32.const 1
-      i32.add
+      local.set $cl
+      local.get $count
+      i64.const 0
+      i64.lt_s
+      if (result i32)
+        local.get $cl
+        i32.const 1
+        i32.add
+      else
+        local.get $count
+        local.get $cl
+        i32.const 1
+        i32.add
+        i64.extend_i32_s
+        i64.ge_s
+        if (result i32)
+          local.get $cl
+          i32.const 1
+          i32.add
+        else
+          local.get $count
+          i32.wrap_i64
+        end
+      end
+      local.set $k
+      ;; out = nlen*k + slen
+      local.get $nlen
+      local.get $k
       i32.mul
       local.get $slen
       i32.add
@@ -2611,17 +2645,28 @@ const STR_REPLACE_HELPER: &str = "\
       i32.const 8
       i32.add
       local.set $d
-      ;; copy the leading `new`, then advance d
-      local.get $d
-      local.get $new
-      i32.const 8
+      ;; gi = 0 (gap index); leading gap (before char 0): emit `new` iff gi < k
+      i32.const 0
+      local.set $gi
+      local.get $gi
+      local.get $k
+      i32.lt_s
+      if
+        local.get $d
+        local.get $new
+        i32.const 8
+        i32.add
+        local.get $nlen
+        memory.copy
+        local.get $d
+        local.get $nlen
+        i32.add
+        local.set $d
+      end
+      local.get $gi
+      i32.const 1
       i32.add
-      local.get $nlen
-      memory.copy
-      local.get $d
-      local.get $nlen
-      i32.add
-      local.set $d
+      local.set $gi
       ;; walk chars: p = s+8; end = s+8+slen
       local.get $s
       i32.const 8
@@ -2655,17 +2700,26 @@ const STR_REPLACE_HELPER: &str = "\
           local.get $w
           i32.add
           local.set $p
-          ;; copy `new` after the char, advance d
-          local.get $d
-          local.get $new
-          i32.const 8
+          ;; gap after this char: emit `new` iff gi < k, then gi++
+          local.get $gi
+          local.get $k
+          i32.lt_s
+          if
+            local.get $d
+            local.get $new
+            i32.const 8
+            i32.add
+            local.get $nlen
+            memory.copy
+            local.get $d
+            local.get $nlen
+            i32.add
+            local.set $d
+          end
+          local.get $gi
+          i32.const 1
           i32.add
-          local.get $nlen
-          memory.copy
-          local.get $d
-          local.get $nlen
-          i32.add
-          local.set $d
+          local.set $gi
           br $cnext
         )
       )
@@ -2680,6 +2734,32 @@ const STR_REPLACE_HELPER: &str = "\
     local.get $olen
     i32.sub
     local.set $last
+    ;; cap = max substitutions: count < 0 → slen+1 (>= any possible match count =
+    ;; unlimited); else min(count, slen+1). Bounds PASS 1 so cnt = min(matches, cap).
+    local.get $count
+    i64.const 0
+    i64.lt_s
+    if (result i32)
+      local.get $slen
+      i32.const 1
+      i32.add
+    else
+      local.get $count
+      local.get $slen
+      i32.const 1
+      i32.add
+      i64.extend_i32_s
+      i64.ge_s
+      if (result i32)
+        local.get $slen
+        i32.const 1
+        i32.add
+      else
+        local.get $count
+        i32.wrap_i64
+      end
+    end
+    local.set $cap
     i32.const 0
     local.set $start
     (block $done1
@@ -2687,6 +2767,12 @@ const STR_REPLACE_HELPER: &str = "\
         local.get $start
         local.get $last
         i32.gt_s
+        br_if $done1
+        ;; cap reached (checked at the TOP so cap == 0 counts nothing) → stop;
+        ;; further matches are copied verbatim in PASS 2, so cnt = min(matches, cap).
+        local.get $cnt
+        local.get $cap
+        i32.ge_s
         br_if $done1
         ;; match = 1; j = 0; while j < olen: if s[8+start+j] != old[8+j] fail
         i32.const 1
@@ -2767,10 +2853,19 @@ const STR_REPLACE_HELPER: &str = "\
     i32.add
     local.set $d
     ;; ── PASS 2 — copy with substitution (same match logic as PASS 1) ─────────
+    ;; `made` tracks substitutions; once it reaches `cnt` (the capped count) the
+    ;; loop stops and the trailing-tail copy emits the rest of `s` verbatim — any
+    ;; beyond-cap `old` occurrences are left untouched, exactly as Python does.
     i32.const 0
     local.set $start
+    i32.const 0
+    local.set $made
     (block $done2
       (loop $next2
+        local.get $made
+        local.get $cnt
+        i32.ge_s
+        br_if $done2
         local.get $start
         local.get $last
         i32.gt_s
@@ -2829,6 +2924,11 @@ const STR_REPLACE_HELPER: &str = "\
           local.get $olen
           i32.add
           local.set $start
+          ;; one substitution done — count it against the cap
+          local.get $made
+          i32.const 1
+          i32.add
+          local.set $made
         else
           ;; copy the single literal byte s[8+start], advance d and start by 1
           local.get $d
@@ -3925,7 +4025,11 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // calls `$__wasm_str_charlen` / `$__wasm_str_char_width` (co-emitted for any
     // str-touching module), so — unlike removeprefix (which FORCES a predicate) —
     // it forces no extra helper: the char family is already present.
-    let needs_replace = module_uses_str_method(module, StrMethodOp::Replace);
+    // PMAT-1161: the 3-arg `.replace(old, new, count)` (op `ReplaceN`) shares the
+    // SAME `$__wasm_str_replace` helper (count -1 = the 2-arg replace-all), so
+    // either op present must emit it.
+    let needs_replace = module_uses_str_method(module, StrMethodOp::Replace)
+        || module_uses_str_method(module, StrMethodOp::ReplaceN);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5307,12 +5411,19 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // a heap-constructed recv/arg. A miss here would emit `$__wasm_str_remove*`
         // against an undeclared `$__alloc` (a hard wat2wasm failure), the exact
         // gate-hole class the string-op scans keep closing.
-        // PMAT-1159: `s.replace(old, new)` (op `Replace`) likewise allocates its
-        // (substituted) result, so it too sets the heap gate on the op itself.
+        // PMAT-1159/1161: `s.replace(old, new[, count])` (ops `Replace` /
+        // `ReplaceN`) likewise allocates its (substituted) result, so each sets
+        // the heap gate on the op itself — a miss would emit `$__wasm_str_replace`
+        // against an undeclared `$__alloc` (hard wat2wasm fail, the gate-hole
+        // class). `ReplaceN`'s count arg is an int (never heap), but the recurse
+        // into `args` covers a heap-constructed old/new either way.
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
-                StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix | StrMethodOp::Replace
+                StrMethodOp::RemovePrefix
+                    | StrMethodOp::RemoveSuffix
+                    | StrMethodOp::Replace
+                    | StrMethodOp::ReplaceN
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -6304,6 +6415,7 @@ fn emit_str_replace(
     recv: &Expr,
     old: &Expr,
     new: &Expr,
+    count: Option<&Expr>,
     scope: &Scope,
     out: &mut String,
     depth: usize,
@@ -6311,6 +6423,17 @@ fn emit_str_replace(
     emit_str_expr(recv, scope, out, depth)?;
     emit_str_expr(old, scope, out, depth)?;
     emit_str_expr(new, scope, out, depth)?;
+    // PMAT-1161: the 4th (i64) helper param is the replacement cap. The 2-arg
+    // `.replace(old, new)` passes -1 (unlimited → replace-all, the prior
+    // behaviour); the 3-arg `.replace(old, new, count)` passes the lowered count
+    // expr (typed i64 in the frontend), coerced onto the stack as i64.
+    match count {
+        Some(c) => emit_expr_typed(c, scope, out, depth, WatTy::I64)?,
+        None => {
+            indent(out, depth);
+            writeln!(out, "i64.const -1").expect("write");
+        }
+    }
     indent(out, depth);
     writeln!(out, "call $__wasm_str_replace").expect("write");
     Ok(WatTy::I32)
@@ -6574,22 +6697,32 @@ fn emit_expr(
             args,
         } if args.len() == 1 => emit_str_remove(recv, &args[0], "removesuffix", scope, out, depth),
         // PMAT-1159: `s.replace(old, new)` — a NEW heap string (i32 base-pointer)
-        // with every non-overlapping `old` replaced by `new`. Exactly 2 args; a
-        // 3-arg `.replace(old, new, count)` form falls through to the refusal
-        // below (the WASM lane has no bounded-count replace yet).
+        // with every non-overlapping `old` replaced by `new` (unlimited → the
+        // helper's count = -1).
         Expr::StrMethod {
             recv,
             op: StrMethodOp::Replace,
             args,
-        } if args.len() == 2 => emit_str_replace(recv, &args[0], &args[1], scope, out, depth),
+        } if args.len() == 2 => emit_str_replace(recv, &args[0], &args[1], None, scope, out, depth),
+        // PMAT-1161: `s.replace(old, new, count)` — the bounded form: only the
+        // first `count` non-overlapping occurrences are replaced (count < 0 →
+        // unlimited, matching Python). `args[2]` is the i64 cap threaded to the
+        // helper's 4th param.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::ReplaceN,
+            args,
+        } if args.len() == 3 => {
+            emit_str_replace(recv, &args[0], &args[1], Some(&args[2]), scope, out, depth)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
              `.rfind(p)`, `.index(p)`, `.rindex(p)`, `.removeprefix(p)`, \
-             `.removesuffix(p)` (each single-arg), and `.replace(old, new)` \
-             (2-arg) are supported; upper/lower/strip/split/… , the 3-arg \
-             `.replace(old, new, count)`, and the 2-3-arg start/end search \
-             forms are refused"
+             `.removesuffix(p)` (each single-arg), `.replace(old, new)` (2-arg), \
+             and `.replace(old, new, count)` (3-arg) are supported; \
+             upper/lower/strip/split/… and the 2-3-arg start/end search forms \
+             are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
@@ -7367,14 +7500,24 @@ fn emit_str_expr(
         }
         // PMAT-1159: `s.replace(old, new)` in a string position — a fresh heap
         // string (like Concat/Slice/Repeat/removeprefix), materialised by the
-        // allocating `$__wasm_str_replace` helper. Exactly 2 args; a 3-arg form
-        // falls through to the honest refusal below.
+        // allocating `$__wasm_str_replace` helper. The unlimited form → count -1.
         Expr::StrMethod {
             recv,
             op: StrMethodOp::Replace,
             args,
         } if args.len() == 2 => {
-            emit_str_replace(recv, &args[0], &args[1], scope, out, depth)?;
+            emit_str_replace(recv, &args[0], &args[1], None, scope, out, depth)?;
+            Ok(())
+        }
+        // PMAT-1161: `s.replace(old, new, count)` in a string position — the same
+        // fresh heap string, but only the first `count` occurrences replaced
+        // (count < 0 → unlimited). `args[2]` is the i64 cap.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::ReplaceN,
+            args,
+        } if args.len() == 3 => {
+            emit_str_replace(recv, &args[0], &args[1], Some(&args[2]), scope, out, depth)?;
             Ok(())
         }
         other => Err(unsupported(&format!(
@@ -7382,8 +7525,8 @@ fn emit_str_expr(
              returns a `str` name (param/local), a string literal, a `Concat` \
              (a + b), a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/\
              `else`, `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, \
-             new)`, or a str-returning call; stepped slicing / str() / f-strings \
-             are refused",
+             new[, count])`, or a str-returning call; stepped slicing / str() / \
+             f-strings are refused",
             expr_kind(other)
         ))),
     }

@@ -2069,7 +2069,7 @@ fn replace_emit_helper_call_and_allocator() {
         .expect("replace lowers")
         .primary;
     for needle in [
-        "(func $__wasm_str_replace (param $s i32) (param $old i32) (param $new i32) (result i32)",
+        "(func $__wasm_str_replace (param $s i32) (param $old i32) (param $new i32) (param $count i64) (result i32)",
         "call $__wasm_str_replace",
         "(func $__alloc",
         "(memory (export \"mem\")",
@@ -2112,12 +2112,40 @@ fn replace_only_module_carries_no_dead_helpers() {
 }
 
 #[test]
-fn three_arg_replace_still_refused() {
-    // PMAT-1159: a `.replace(old, new, count)` (bounded-count) form is NOT wired on
-    // the WASM lane — it must refuse HONESTLY (never emit a wrong UNBOUNDED replace).
-    // Both dispatch arms gate on `args.len() == 2`, so a 3-arg call falls through to
-    // the string-position refusal. This is the honesty guard the new op preserves.
-    let f = Function {
+fn replace_n_lowers_and_malformed_arity_refused() {
+    // PMAT-1161: the bounded `.replace(old, new, count)` form (op `ReplaceN`, the
+    // node the frontend produces for a 3-arg call) is now WIRED — it lowers through
+    // the SAME `$__wasm_str_replace` helper (the count rides its 4th i64 param).
+    let ok = Function {
+        name: "f".into(),
+        params: Vec::new(),
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::StrMethod {
+                recv: Box::new(Expr::LitStr("aaaa".into())),
+                op: StrMethodOp::ReplaceN,
+                args: vec![
+                    Expr::LitStr("a".into()),
+                    Expr::LitStr("b".into()),
+                    Expr::LitInt(1),
+                ],
+            },
+        },
+    };
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(ok)]), &wasm_config())
+        .expect("a 3-arg ReplaceN lowers via the shared helper")
+        .primary;
+    assert!(
+        wat.contains("call $__wasm_str_replace") && wat.contains("(func $__wasm_str_replace"),
+        "ReplaceN reuses the replace helper:\n{wat}"
+    );
+
+    // Arity guard: a malformed `Replace` op carrying 3 args (which the frontend
+    // never emits — it produces `ReplaceN`) still refuses honestly, never silently
+    // dropping the extra arg into a wrong unbounded replace.
+    let bad = Function {
         name: "bad".into(),
         params: Vec::new(),
         return_type: Type::Str,
@@ -2135,12 +2163,12 @@ fn three_arg_replace_still_refused() {
         },
     };
     let err = WasmBackend::new()
-        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
-        .expect_err("a 3-arg replace must be refused, not miscompiled");
+        .lower(&module_with(vec![Item::Function(bad)]), &wasm_config())
+        .expect_err("a malformed 3-arg Replace must be refused, not miscompiled");
     let msg = format!("{err:?}");
     assert!(
         msg.contains("string position"),
-        "the 3-arg refusal must be an honest string-position refusal: {msg}"
+        "the malformed-arity refusal must be an honest string-position refusal: {msg}"
     );
 }
 
@@ -2351,5 +2379,365 @@ fn replace_executes_in_wabt_and_matches_cpython() {
          non-overlapping (\"aaaa\".replace(\"aa\",\"b\")==\"bb\"), and the MULTI-BYTE \
          fixtures (\"héllo\".replace(\"l\",\"LL\"), \"🎉a🎉\".replace(\"🎉\",\"!\")) — \
          byte substring replace == code-point replace, proven on silicon."
+    );
+}
+
+// ─── PMAT-1161: `s.replace(old, new, count)` — the BOUNDED substring-replace ────
+//
+// The 3-arg form (op `ReplaceN`) replaces only the first `count` non-overlapping
+// occurrences, left to right (count < 0 → unlimited, matching Python). It reuses
+// the SAME `$__wasm_str_replace` helper — the count rides its 4th i64 param, and
+// the 2-arg `.replace` passes -1 (so replace-all is `count == -1`). The cap bounds
+// BOTH regimes: non-empty `old` (PASS 1 counts min(matches, cap), PASS 2 stops
+// substituting at the cap and copies the rest verbatim) and empty `old` (only the
+// first `count` of the `charlen+1` interleave gaps get `new`).
+
+/// `def f() -> str: return <s>.replace(<old>, <new>, <count>)` — the ReplaceN
+/// node the frontend produces for a 3-arg call, over three literals + an int cap.
+fn str_replace_n_fn(s: &str, old: &str, new: &str, count: i64) -> Function {
+    Function {
+        name: "f".into(),
+        params: Vec::new(),
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::StrMethod {
+                recv: Box::new(Expr::LitStr(s.into())),
+                op: StrMethodOp::ReplaceN,
+                args: vec![
+                    Expr::LitStr(old.into()),
+                    Expr::LitStr(new.into()),
+                    Expr::LitInt(count),
+                ],
+            },
+        },
+    }
+}
+
+/// The CPython `str.replace(old, new, count)` ground truth: for `count >= 0`,
+/// Rust's `str::replacen` (first `count` non-overlapping matches); for `count <
+/// 0`, unlimited (`str::replace`). Verified byte-identical to CPython over every
+/// fixture below (and the empty-`old` interleave) in `cpython_replace_n_pins`.
+fn py_replacen(s: &str, old: &str, new: &str, count: i64) -> String {
+    if count < 0 {
+        s.replace(old, new)
+    } else {
+        s.replacen(old, new, count as usize)
+    }
+}
+
+/// One `(s, old, new, count)` bounded-replace fixture.
+struct ReplaceNCase {
+    s: &'static str,
+    old: &'static str,
+    new: &'static str,
+    count: i64,
+}
+
+/// Fixtures spanning the cap regimes: count 0 (no-op copy), count 1 / 2 over a
+/// multi-match string (only the first N replaced, the rest kept), count >= matches
+/// and count < 0 (== unlimited), deletion / growth / non-overlapping UNDER a cap,
+/// the empty-`old` interleave capped to k gaps (`"ab".replace("","-",2)`=="-a-b"),
+/// and MULTI-BYTE fixtures where a cap must not split a char (`"héllo".replace("l",
+/// "LL",1)`=="héLLlo", `"🎉a🎉".replace("🎉","!",1)`=="!a🎉").
+const REPLACE_N_CASES: &[ReplaceNCase] = &[
+    // ── non-empty old, count cap over a multi-match string ──────────────────
+    ReplaceNCase {
+        s: "banana",
+        old: "a",
+        new: "AA",
+        count: 0,
+    }, // no-op copy
+    ReplaceNCase {
+        s: "banana",
+        old: "a",
+        new: "AA",
+        count: 1,
+    }, // first only
+    ReplaceNCase {
+        s: "banana",
+        old: "a",
+        new: "AA",
+        count: 2,
+    }, // first two
+    ReplaceNCase {
+        s: "banana",
+        old: "a",
+        new: "AA",
+        count: 3,
+    }, // == all
+    ReplaceNCase {
+        s: "banana",
+        old: "a",
+        new: "AA",
+        count: 9,
+    }, // cap > matches
+    ReplaceNCase {
+        s: "banana",
+        old: "a",
+        new: "AA",
+        count: -1,
+    }, // unlimited
+    // ── deletion / growth / non-overlapping under a cap ─────────────────────
+    ReplaceNCase {
+        s: "aXbXcX",
+        old: "X",
+        new: "",
+        count: 2,
+    }, // delete first 2
+    ReplaceNCase {
+        s: "aaa",
+        old: "a",
+        new: "aa",
+        count: 2,
+    }, // growth, first 2
+    ReplaceNCase {
+        s: "aaaa",
+        old: "aa",
+        new: "b",
+        count: 1,
+    }, // non-overlap, 1
+    ReplaceNCase {
+        s: "aaaa",
+        old: "aa",
+        new: "b",
+        count: 2,
+    }, // non-overlap, 2
+    ReplaceNCase {
+        s: "mississippi",
+        old: "iss",
+        new: "X",
+        count: 1,
+    },
+    ReplaceNCase {
+        s: "mississippi",
+        old: "iss",
+        new: "X",
+        count: 2,
+    },
+    // ── absent / longer-than-s old (a fresh copy regardless of count) ────────
+    ReplaceNCase {
+        s: "xyz",
+        old: "q",
+        new: "Q",
+        count: 3,
+    },
+    ReplaceNCase {
+        s: "ab",
+        old: "abc",
+        new: "x",
+        count: 2,
+    },
+    // ── empty old — interleave capped to the first `count` of charlen+1 gaps ─
+    ReplaceNCase {
+        s: "ab",
+        old: "",
+        new: "-",
+        count: 0,
+    }, // no gaps → "ab"
+    ReplaceNCase {
+        s: "ab",
+        old: "",
+        new: "-",
+        count: 1,
+    }, // "-ab"
+    ReplaceNCase {
+        s: "ab",
+        old: "",
+        new: "-",
+        count: 2,
+    }, // "-a-b"
+    ReplaceNCase {
+        s: "ab",
+        old: "",
+        new: "-",
+        count: 3,
+    }, // "-a-b-"
+    ReplaceNCase {
+        s: "ab",
+        old: "",
+        new: "-",
+        count: 9,
+    }, // capped at 3
+    ReplaceNCase {
+        s: "ab",
+        old: "",
+        new: "-",
+        count: -1,
+    }, // all gaps
+    ReplaceNCase {
+        s: "",
+        old: "",
+        new: "-",
+        count: 1,
+    }, // "-"
+    ReplaceNCase {
+        s: "",
+        old: "",
+        new: "-",
+        count: 0,
+    }, // ""
+    // ── multi-byte: a cap must land on a char boundary, never split a char ───
+    ReplaceNCase {
+        s: "héllo",
+        old: "l",
+        new: "LL",
+        count: 1,
+    }, // "héLLlo"
+    ReplaceNCase {
+        s: "héllo",
+        old: "l",
+        new: "LL",
+        count: -1,
+    }, // "héLLLLo"
+    ReplaceNCase {
+        s: "café",
+        old: "é",
+        new: "e",
+        count: 1,
+    },
+    ReplaceNCase {
+        s: "🎉a🎉",
+        old: "🎉",
+        new: "!",
+        count: 1,
+    }, // "!a🎉"
+    ReplaceNCase {
+        s: "abécdé",
+        old: "é",
+        new: "E",
+        count: 1,
+    }, // first é only
+];
+
+#[test]
+fn cpython_replace_n_pins() {
+    // Pin the corner cases most likely to diverge directly against hand-verified
+    // CPython outputs (each also cross-checked live with python3): the empty-`old`
+    // interleave under a cap, a multi-match cap, a multi-byte cap, and the count<0
+    // == unlimited equivalence. These pin that `py_replacen` (the witness oracle)
+    // IS CPython's `str.replace(old, new, count)`.
+    assert_eq!(py_replacen("ab", "", "-", 1), "-ab");
+    assert_eq!(py_replacen("ab", "", "-", 2), "-a-b");
+    assert_eq!(py_replacen("ab", "", "-", 0), "ab");
+    assert_eq!(py_replacen("ab", "", "-", 9), "-a-b-");
+    assert_eq!(py_replacen("banana", "a", "AA", 2), "bAAnAAna");
+    assert_eq!(py_replacen("banana", "a", "AA", -1), "bAAnAAnAA");
+    assert_eq!(py_replacen("aaaa", "aa", "b", 1), "baa");
+    assert_eq!(py_replacen("héllo", "l", "LL", 1), "héLLlo");
+    assert_eq!(py_replacen("🎉a🎉", "🎉", "!", 1), "!a🎉");
+    // count < 0 is exactly the unbounded 2-arg replace.
+    for (s, o, n) in [("banana", "a", "AA"), ("héllo", "l", "LL"), ("ab", "", "-")] {
+        assert_eq!(py_replacen(s, o, n, -1), s.replace(o, n));
+    }
+    // At least one empty-`old` and one multi-byte capped fixture must be present.
+    assert!(REPLACE_N_CASES
+        .iter()
+        .any(|c| c.old.is_empty() && c.count >= 0));
+    assert!(REPLACE_N_CASES
+        .iter()
+        .any(|c| !c.s.is_ascii() && c.count >= 0));
+}
+
+#[test]
+fn replace_n_executes_in_wabt_and_matches_cpython() {
+    // PMAT-1161 EXECUTED WITNESS — assemble + run the REAL-emitted bounded
+    // `replace(old, new, count)` in WABT and assert the produced heap string's byte
+    // LENGTH and EVERY payload byte match CPython (== `py_replacen`). Prove the emit
+    // path lowers first (holds without WABT), then — with WABT — drive it for real.
+    for c in REPLACE_N_CASES {
+        WasmBackend::new()
+            .lower(
+                &module_with(vec![Item::Function(str_replace_n_fn(
+                    c.s, c.old, c.new, c.count,
+                ))]),
+                &wasm_config(),
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "replace({:?},{:?},{:?},{}) lowers: {e:?}",
+                    c.s, c.old, c.new, c.count
+                )
+            });
+    }
+
+    if !wasm_runtime_available() {
+        eprintln!(
+            "PMAT-1161: skipping EXECUTED bounded-replace witness — WABT absent. All \
+             {} fixtures lowered through the production emitter above; a box with \
+             WABT also runs each and byte-matches CPython (== Rust str::replacen). \
+             Free CI skips execution and stays green.",
+            REPLACE_N_CASES.len()
+        );
+        return;
+    }
+
+    eprintln!("PMAT-1161: running EXECUTED bounded-replace witness via WABT");
+    let engine = WasmDiffExecEngine::new();
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    let mut checked = 0usize;
+    for c in REPLACE_N_CASES {
+        let expected = py_replacen(c.s, c.old, c.new, c.count);
+        let exp_bytes = expected.as_bytes();
+        let f_wat = WasmBackend::new()
+            .lower(
+                &module_with(vec![Item::Function(str_replace_n_fn(
+                    c.s, c.old, c.new, c.count,
+                ))]),
+                &wasm_config(),
+            )
+            .unwrap_or_else(|e| panic!("replace_n lowers: {e:?}"))
+            .primary;
+        assert!(
+            f_wat.contains(mem_line),
+            "emitted replace_n module declares the exported memory:\n{f_wat}"
+        );
+        let mut driver = String::from(
+            "  (func (export \"e0\") (result f64)\n    call $f\n    i32.load\n    f64.convert_i32_s)\n",
+        );
+        for k in 0..exp_bytes.len() {
+            let addr = 8 + k as i32;
+            driver.push_str(&format!(
+                "  (func (export \"e{}\") (result f64)\n    call $f\n    i32.const {addr}\n    \
+                 i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n",
+                k + 1
+            ));
+        }
+        let witness_wat = f_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+        let out = engine
+            .assemble_run_parse(&witness_wat, &format!("replace_n_{checked}"))
+            .unwrap_or_else(|e| panic!("assemble+run replace_n witness for {:?}: {e}", c.s));
+        let mut want: Vec<f64> = vec![exp_bytes.len() as f64];
+        want.extend(exp_bytes.iter().map(|&b| f64::from(b)));
+        assert_eq!(
+            out.len(),
+            want.len(),
+            "replace({:?},{:?},{:?},{}) exports e0..e{}: got {out:?}",
+            c.s,
+            c.old,
+            c.new,
+            c.count,
+            exp_bytes.len()
+        );
+        for (i, (g, e)) in out.iter().zip(want.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1.0e-9,
+                "replace({:?},{:?},{:?},{}) → {expected:?}: e{i} executed {g}, expected {e}",
+                c.s,
+                c.old,
+                c.new,
+                c.count
+            );
+        }
+        checked += 1;
+    }
+    eprintln!(
+        "PMAT-1161: EXECUTED bounded-replace witness PASSED — {checked} fixtures \
+         lowered through emit_module and executed in WABT, each byte-matching CPython \
+         (== Rust str::replacen): count 0 / 1 / 2 / >=matches / <0, deletion / growth \
+         / non-overlapping under a cap, the empty-`old` interleave capped to k gaps \
+         (\"ab\".replace(\"\",\"-\",2)==\"-a-b\"), and MULTI-BYTE caps that land on a \
+         char boundary (\"héllo\".replace(\"l\",\"LL\",1)==\"héLLlo\") — bounded byte \
+         replace == bounded code-point replace, proven on silicon."
     );
 }
