@@ -2522,6 +2522,350 @@ const STR_REMOVESUFFIX_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1159: `$__wasm_str_replace(s, old, new) -> i32` — Python
+/// `s.replace(old, new)`: a NEW heap string with EVERY non-overlapping
+/// occurrence of `old` replaced by `new`, scanned left to right. Allocating
+/// (rides the `needs_heap` gate, calls `$__alloc`).
+///
+/// Two regimes, both pinned to CPython:
+///   * NON-EMPTY `old` — a byte substring replace. PASS 1 counts non-overlapping
+///     matches (the same byte slide as `$__wasm_str_count`); PASS 2 re-walks `s`
+///     copying literal bytes and, at each match, the `new` bytes (advancing the
+///     source by `len(old)`), then copies the trailing `len(old)-1` bytes that
+///     cannot host a match. Output size is exactly `slen + cnt*(nlen - olen)`
+///     (the delta may be negative when `new` is shorter — plain i32 arithmetic).
+///     Byte search == code-point search for valid UTF-8: `old[0]` is a LEAD byte
+///     (never a `0x80..0xBF` continuation), so a match starts on a char boundary
+///     and — `old` being whole code points — spans whole chars; the literal
+///     single-byte copies only ever move bytes WITHIN a non-replaced char, so the
+///     pure byte machinery is char-exact (no split multibyte char, no false
+///     positive on a shared continuation byte).
+///   * EMPTY `old` — Python interleaves `new` between every code point and at
+///     both ends (`"ab".replace("", "-")` == `"-a-b-"`, `"".replace("", "-")` ==
+///     `"-"`). This is the ONE regime that must be CODE-POINT aware: it emits
+///     `new`, then for each char (walked via `$__wasm_str_char_width`) the char's
+///     bytes followed by `new`. Output size is `nlen*(charlen(s)+1) + slen`.
+///     Trapping here (like `index`/`rindex`) would be WRONG — Python never raises
+///     on an empty pattern, so a trap would be a silent divergence, not a
+///     ValueError analogue.
+///
+/// Empty `new` is a deletion (`memory.copy` of 0 bytes is a nop). `old` longer
+/// than `s`, or absent, yields a fresh copy of `s` (`last < 0` / `cnt = 0`).
+/// Calls `$__wasm_str_charlen` / `$__wasm_str_char_width` (co-emitted for any
+/// str-touching module via `module_touches_str`, which a str-returning replace
+/// always satisfies).
+const STR_REPLACE_HELPER: &str = "\
+  ;; PMAT-1159 __wasm_str_replace(s, old, new) = Python s.replace(old, new) — a
+  ;; NEW heap string with every non-overlapping `old` replaced by `new`, left to
+  ;; right. Non-empty old: two byte passes (count, then copy-with-substitution),
+  ;; char-exact for valid UTF-8 (old[0] is a lead byte). Empty old: Python
+  ;; interleaves new between every code point and at both ends (a char walk).
+  (func $__wasm_str_replace (param $s i32) (param $old i32) (param $new i32) (result i32)
+    (local $slen i32)
+    (local $olen i32)
+    (local $nlen i32)
+    (local $cnt i32)
+    (local $start i32)
+    (local $last i32)
+    (local $j i32)
+    (local $match i32)
+    (local $out i32)
+    (local $dst i32)
+    (local $d i32)
+    (local $p i32)
+    (local $end i32)
+    (local $w i32)
+    local.get $s
+    i32.load
+    local.set $slen
+    local.get $old
+    i32.load
+    local.set $olen
+    local.get $new
+    i32.load
+    local.set $nlen
+    ;; ── empty `old`: interleave `new` between every code point + at both ends ──
+    local.get $olen
+    i32.eqz
+    if
+      ;; out = nlen*(charlen(s)+1) + slen
+      local.get $nlen
+      local.get $s
+      call $__wasm_str_charlen
+      i32.const 1
+      i32.add
+      i32.mul
+      local.get $slen
+      i32.add
+      local.set $out
+      ;; dst = alloc(8 + out); header = out; d = dst+8
+      local.get $out
+      i32.const 8
+      i32.add
+      call $__alloc
+      local.set $dst
+      local.get $dst
+      local.get $out
+      i32.store
+      local.get $dst
+      i32.const 8
+      i32.add
+      local.set $d
+      ;; copy the leading `new`, then advance d
+      local.get $d
+      local.get $new
+      i32.const 8
+      i32.add
+      local.get $nlen
+      memory.copy
+      local.get $d
+      local.get $nlen
+      i32.add
+      local.set $d
+      ;; walk chars: p = s+8; end = s+8+slen
+      local.get $s
+      i32.const 8
+      i32.add
+      local.set $p
+      local.get $p
+      local.get $slen
+      i32.add
+      local.set $end
+      (block $cdone
+        (loop $cnext
+          local.get $p
+          local.get $end
+          i32.ge_u
+          br_if $cdone
+          ;; w = char_width(lead byte at p)
+          local.get $p
+          i32.load8_u
+          call $__wasm_str_char_width
+          local.set $w
+          ;; copy the char's w bytes, then advance d and p by w
+          local.get $d
+          local.get $p
+          local.get $w
+          memory.copy
+          local.get $d
+          local.get $w
+          i32.add
+          local.set $d
+          local.get $p
+          local.get $w
+          i32.add
+          local.set $p
+          ;; copy `new` after the char, advance d
+          local.get $d
+          local.get $new
+          i32.const 8
+          i32.add
+          local.get $nlen
+          memory.copy
+          local.get $d
+          local.get $nlen
+          i32.add
+          local.set $d
+          br $cnext
+        )
+      )
+      local.get $dst
+      return
+    end
+    ;; ── non-empty `old`: PASS 1 — count non-overlapping matches ──────────────
+    i32.const 0
+    local.set $cnt
+    ;; last = slen - olen (inclusive last candidate start; may be < 0 → no match)
+    local.get $slen
+    local.get $olen
+    i32.sub
+    local.set $last
+    i32.const 0
+    local.set $start
+    (block $done1
+      (loop $next1
+        local.get $start
+        local.get $last
+        i32.gt_s
+        br_if $done1
+        ;; match = 1; j = 0; while j < olen: if s[8+start+j] != old[8+j] fail
+        i32.const 1
+        local.set $match
+        i32.const 0
+        local.set $j
+        (block $stop1
+          (loop $nc1
+            local.get $j
+            local.get $olen
+            i32.ge_s
+            br_if $stop1
+            local.get $s
+            i32.const 8
+            i32.add
+            local.get $start
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            local.get $old
+            i32.const 8
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            i32.ne
+            if
+              i32.const 0
+              local.set $match
+              br $stop1
+            end
+            local.get $j
+            i32.const 1
+            i32.add
+            local.set $j
+            br $nc1
+          )
+        )
+        local.get $match
+        if
+          local.get $cnt
+          i32.const 1
+          i32.add
+          local.set $cnt
+          local.get $start
+          local.get $olen
+          i32.add
+          local.set $start
+        else
+          local.get $start
+          i32.const 1
+          i32.add
+          local.set $start
+        end
+        br $next1
+      )
+    )
+    ;; out = slen + cnt*(nlen - olen); dst = alloc(8+out); header; d = dst+8
+    local.get $slen
+    local.get $cnt
+    local.get $nlen
+    local.get $olen
+    i32.sub
+    i32.mul
+    i32.add
+    local.set $out
+    local.get $out
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $out
+    i32.store
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.set $d
+    ;; ── PASS 2 — copy with substitution (same match logic as PASS 1) ─────────
+    i32.const 0
+    local.set $start
+    (block $done2
+      (loop $next2
+        local.get $start
+        local.get $last
+        i32.gt_s
+        br_if $done2
+        i32.const 1
+        local.set $match
+        i32.const 0
+        local.set $j
+        (block $stop2
+          (loop $nc2
+            local.get $j
+            local.get $olen
+            i32.ge_s
+            br_if $stop2
+            local.get $s
+            i32.const 8
+            i32.add
+            local.get $start
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            local.get $old
+            i32.const 8
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            i32.ne
+            if
+              i32.const 0
+              local.set $match
+              br $stop2
+            end
+            local.get $j
+            i32.const 1
+            i32.add
+            local.set $j
+            br $nc2
+          )
+        )
+        local.get $match
+        if
+          ;; copy `new`, advance d by nlen, advance start by olen (non-overlapping)
+          local.get $d
+          local.get $new
+          i32.const 8
+          i32.add
+          local.get $nlen
+          memory.copy
+          local.get $d
+          local.get $nlen
+          i32.add
+          local.set $d
+          local.get $start
+          local.get $olen
+          i32.add
+          local.set $start
+        else
+          ;; copy the single literal byte s[8+start], advance d and start by 1
+          local.get $d
+          local.get $s
+          i32.const 8
+          i32.add
+          local.get $start
+          i32.add
+          i32.const 1
+          memory.copy
+          local.get $d
+          i32.const 1
+          i32.add
+          local.set $d
+          local.get $start
+          i32.const 1
+          i32.add
+          local.set $start
+        end
+        br $next2
+      )
+    )
+    ;; copy the trailing tail s[start..slen] (bytes past the last candidate start)
+    local.get $d
+    local.get $s
+    i32.const 8
+    i32.add
+    local.get $start
+    i32.add
+    local.get $slen
+    local.get $start
+    i32.sub
+    memory.copy
+    local.get $dst
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -3574,6 +3918,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     let needs_removesuffix = module_uses_str_method(module, StrMethodOp::RemoveSuffix);
     let needs_startswith = needs_startswith || needs_removeprefix;
     let needs_endswith = needs_endswith || needs_removesuffix;
+    // PMAT-1159: `s.replace(old, new)` (`Expr::StrMethod`, op `Replace`) — an
+    // allocating string-RETURNING op (a fresh heap string with every
+    // non-overlapping `old` replaced by `new`). Rides `needs_heap` (set via
+    // `expr_has_heap_op`, like removeprefix/removesuffix). Its empty-`old` regime
+    // calls `$__wasm_str_charlen` / `$__wasm_str_char_width` (co-emitted for any
+    // str-touching module), so — unlike removeprefix (which FORCES a predicate) —
+    // it forces no extra helper: the char family is already present.
+    let needs_replace = module_uses_str_method(module, StrMethodOp::Replace);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -3748,6 +4100,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     }
     if needs_heap && needs_removesuffix {
         out.push_str(STR_REMOVESUFFIX_HELPER);
+    }
+    // PMAT-1159: emit the string REPLACE helper once, when any function uses
+    // `s.replace(old, new)` (`Expr::StrMethod`, op `Replace`). Allocating (calls
+    // `$__alloc` + `memory.copy`), so it rides `needs_heap` — a replace sets the
+    // heap gate via `expr_has_heap_op`. Its empty-`old` regime uses the char
+    // helpers (`$__wasm_str_charlen` / `$__wasm_str_char_width`) emitted above via
+    // `module_touches_str`. Gated on an actual use so an unrelated heap-string
+    // module carries no dead helper.
+    if needs_heap && needs_replace {
+        out.push_str(STR_REPLACE_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -4945,9 +5307,13 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // a heap-constructed recv/arg. A miss here would emit `$__wasm_str_remove*`
         // against an undeclared `$__alloc` (a hard wat2wasm failure), the exact
         // gate-hole class the string-op scans keep closing.
+        // PMAT-1159: `s.replace(old, new)` (op `Replace`) likewise allocates its
+        // (substituted) result, so it too sets the heap gate on the op itself.
         Expr::StrMethod { recv, args, op } => {
-            matches!(op, StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix)
-                || expr_has_heap_op(recv)
+            matches!(
+                op,
+                StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix | StrMethodOp::Replace
+            ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
         // PMAT-1142: a STRING repeat `s * n` bump-allocates its replicated
@@ -5928,6 +6294,28 @@ fn emit_str_remove(
     Ok(WatTy::I32)
 }
 
+/// PMAT-1159: lower `s.replace(old, new)` — a materialising op leaving the i32
+/// base-pointer of a fresh heap string. All three operands are string-valued
+/// (`emit_str_expr`, which refuses a non-str operand honestly); the allocating
+/// `$__wasm_str_replace` helper does the two-pass (or empty-`old` interleave)
+/// substitution. A heap-constructed operand (`("a"+b).replace(x, y)`) already
+/// pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_replace(
+    recv: &Expr,
+    old: &Expr,
+    new: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    emit_str_expr(old, scope, out, depth)?;
+    emit_str_expr(new, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_replace").expect("write");
+    Ok(WatTy::I32)
+}
+
 fn emit_expr(
     e: &Expr,
     scope: &Scope,
@@ -6185,12 +6573,22 @@ fn emit_expr(
             op: StrMethodOp::RemoveSuffix,
             args,
         } if args.len() == 1 => emit_str_remove(recv, &args[0], "removesuffix", scope, out, depth),
+        // PMAT-1159: `s.replace(old, new)` — a NEW heap string (i32 base-pointer)
+        // with every non-overlapping `old` replaced by `new`. Exactly 2 args; a
+        // 3-arg `.replace(old, new, count)` form falls through to the refusal
+        // below (the WASM lane has no bounded-count replace yet).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Replace,
+            args,
+        } if args.len() == 2 => emit_str_replace(recv, &args[0], &args[1], scope, out, depth),
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
-             `.rfind(p)`, `.index(p)`, `.rindex(p)`, `.removeprefix(p)`, and \
-             `.removesuffix(p)` (each single-arg) are supported; \
-             upper/lower/strip/split/replace/… and the 2-3-arg start/end search \
+             `.rfind(p)`, `.index(p)`, `.rindex(p)`, `.removeprefix(p)`, \
+             `.removesuffix(p)` (each single-arg), and `.replace(old, new)` \
+             (2-arg) are supported; upper/lower/strip/split/… , the 3-arg \
+             `.replace(old, new, count)`, and the 2-3-arg start/end search \
              forms are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
@@ -6967,12 +7365,25 @@ fn emit_str_expr(
             emit_str_remove(recv, &args[0], which, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1159: `s.replace(old, new)` in a string position — a fresh heap
+        // string (like Concat/Slice/Repeat/removeprefix), materialised by the
+        // allocating `$__wasm_str_replace` helper. Exactly 2 args; a 3-arg form
+        // falls through to the honest refusal below.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Replace,
+            args,
+        } if args.len() == 2 => {
+            emit_str_replace(recv, &args[0], &args[1], scope, out, depth)?;
+            Ok(())
+        }
         other => Err(unsupported(&format!(
             "expression {} in a string position — the WASM string subset \
              returns a `str` name (param/local), a string literal, a `Concat` \
              (a + b), a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/\
-             `else`, `.removeprefix(p)` / `.removesuffix(p)`, or a str-returning \
-             call; stepped slicing / str() / f-strings are refused",
+             `else`, `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, \
+             new)`, or a str-returning call; stepped slicing / str() / f-strings \
+             are refused",
             expr_kind(other)
         ))),
     }
