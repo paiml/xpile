@@ -182,6 +182,26 @@ compile_targets:
     # integration test. Gated on `module_uses_str_contains` (no dead helper); a
     # heap-constructed operand ("l"+"o") pulls in the allocator + its literals'
     # (data) segments. Refused honestly: `in` over a non-str operand.
+    #
+    # PMAT-1128 (2026-07-03): Python's occurrence count `s.count(p)`
+    # (Expr::StrMethod, op Count) over str operands. Lowers to a non-allocating
+    # byte count ($__wasm_str_count): the counting generalisation of
+    # $__wasm_str_contains — the same byte slide, but it counts NON-OVERLAPPING
+    # matches (advancing the start cursor by len(p) on each) and returns the total
+    # as an i64. A non-empty needle's count is byte-space == code-point-space; the
+    # EMPTY needle returns charlen(s)+1 (the CODE-POINT count + 1, so
+    # "héllo".count("")=6, not the byte-derived 7 — via $__wasm_str_charlen).
+    # Allocates NOTHING (a Python int). The emitted WAT is genuine: the PMAT-1128
+    # slice ran it through WABT — 21 cases (ASCII single/absent/equal/longer-than,
+    # NON-OVERLAPPING "aaa".count("aa")=1 / "banana".count("ana")=1, empty-needle
+    # code-point counts, and MULTI-BYTE é fixtures incl. "héllo".count("l")=2 past
+    # a multi-byte char and "café".count("©")=0 on a shared 0xA9) execute
+    # value-matching CPython. See the `str_count_witness` integration test. Gated
+    # on `module_uses_str_method(Count)` (no dead helper); a literal needle lays
+    # out its (data) segment and a heap-constructed needle pulls in the allocator
+    # (the PMAT-1128 collect_expr_literals / expr_has_heap_op StrMethod arms, which
+    # also retro-fix startswith/endswith with literal/heap args). Refused honestly:
+    # count over a non-str operand, and any OTHER string method.
 
 equations:
   wasm_heap_alloc_structure_extensionality_diamond:
@@ -506,20 +526,59 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a bool value-matching CPython, INCLUDING the SLIDE fixture ('ana' in 'banana'==True at offset 1) and MULTI-BYTE fixtures ('é' in 'héllo'==True, '©' in 'héllo'==False on a shared 0xA9)"
       - "the contains WASM-emitting code carries the WASM citation"
 
+  string_count_is_byte_occurrence_search:
+    # PMAT-1128: `s.count(p)` over strings (Expr::StrMethod, op Count) lowers to
+    # $__wasm_str_count — a non-allocating byte OCCURRENCE count, the counting
+    # generalisation of $__wasm_str_contains (same byte slide, but it counts
+    # non-overlapping matches instead of returning at the first). Returns an i64
+    # (a Python int). Like $__wasm_str_contains it reads linear memory and
+    # allocates nothing. The count reproduces CPython's str.count EXACTLY.
+    formula: |
+      construct(StrMethod{recv, op: Count, args: [p]} over str operands,
+                BackendConfig{target: Wasm})
+        emits `<recv> <p> call $__wasm_str_count`, where the helper loads both
+        i32 byte-count headers; returns charlen(recv)+1 if len(p) == 0 (the empty
+        needle occurs once per code-point position PLUS the end); returns 0 if
+        len(p) > len(recv); else slides p over recv counting NON-OVERLAPPING
+        matches (on each match, advance the start cursor by len(p)), returning the
+        total. The result is an i64. NEVER a base-pointer compare.
+    domain: |
+      A Python string occurrence count `s.count(p)` (Expr::StrMethod, op Count,
+      exactly one arg) over two string-valued operands (a str-name Ident, a
+      LitStr, a Concat / Chr / bare StrCharAt / slice / str-returning call). A
+      non-str operand is REFUSED by emit_str_expr (an honest type mismatch). This
+      is the count of NON-overlapping occurrences, matching CPython (and Rust
+      str::matches().count()).
+    invariants:
+      - "the count is NON-OVERLAPPING left-to-right: on a match the cursor advances by len(p), so 'aaa'.count('aa') == 1 and 'banana'.count('ana') == 1 (NOT 2)"
+      - "for a NON-EMPTY needle the count is byte-space == code-point-space (a pure number of matches; p[0] is a LEAD byte so every match lands on a char boundary — no split multi-byte char, no false positive on a SHARED continuation byte)"
+      - "an EMPTY needle returns charlen(recv)+1 — the CODE-POINT count + 1, so 'héllo'.count('') == 6, NOT the byte-derived 7 (the helper calls $__wasm_str_charlen, not the byte header, for this case)"
+      - "a needle LONGER than the haystack returns 0 immediately (len(p) > len(recv) short-circuit)"
+      - "the result is an i64 (a Python int), NEVER a base-pointer compare of the two str pointers"
+      - "$__wasm_str_count reads linear memory but allocates NOTHING (independent of the bump-heap gate; a pure param-count module carries no $__alloc); it is gated on module_uses_str_method(Count) (no dead helper) — a heap-constructed operand still pulls in the allocator + its literals' (data) segments via the shared heap/literal gates (the PMAT-1128 collect_expr_literals / expr_has_heap_op StrMethod arms)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the receiver and needle both type as str"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to an i64 value-matching CPython, INCLUDING the NON-OVERLAPPING fixtures ('aaa'.count('aa')==1, 'banana'.count('ana')==1), the CODE-POINT empty-needle count ('héllo'.count('')==6), and the count-past-a-multi-byte-char fixture ('héllo'.count('l')==2)"
+      - "the count WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
       construct(slice_stepped | list_slice | str(float) | fstring |
-                str_method∉{CharCount,StartsWith,EndsWith},
+                str_method∉{CharCount,StartsWith,EndsWith,Count},
                 BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
       A string op still outside the WASM string subset: a STEPPED string slice
       or a list slice, str(float)/repr(float), an f-string, a string method
-      OTHER than len (CharCount) / startswith / endswith.
+      OTHER than len (CharCount) / startswith / endswith / count.
       (String ORDERING is supported — see `string_ordering_is_lexicographic`;
       str(int)/repr(int) is supported — see `int_to_str_is_decimal_ascii`;
       startswith/endswith are supported — see
-      `string_startswith_endswith_is_byte_prefix`.)
+      `string_startswith_endswith_is_byte_prefix`; the substring test `p in s`
+      via `string_contains_is_byte_substring_search`; count via
+      `string_count_is_byte_occurrence_search`.)
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
       - "the refusal names the op + the follow-up (honest diagnostic)"
@@ -563,6 +622,11 @@ proof_obligations:
     property: string startswith/endswith are byte prefix/suffix compares; results match CPython on multi-byte fixtures
     formal: "wasm-interp(construct(s.startswith(p))) == CPython AND wasm-interp(construct('héllo'.startswith('h©'))) == False"
     applies_to: string_startswith_endswith_is_byte_prefix
+
+  - type: postcondition
+    property: string count is a non-overlapping byte occurrence count; results match CPython incl. overlap and the code-point empty-needle case
+    formal: "wasm-interp(construct(s.count(p))) == CPython AND wasm-interp(construct('aaa'.count('aa'))) == 1 AND wasm-interp(construct('héllo'.count(''))) == 6"
+    applies_to: string_count_is_byte_occurrence_search
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -830,4 +894,46 @@ falsification_tests:
       - wrong_endswith_suffix_offset
       - longer_needle_not_short_circuited
       - empty_needle_wrong_result
+      - other_str_method_miscompiled_instead_of_refused
+
+  - id: FALSIFY-WASM-HEAP-010
+    rule: |
+      PMAT-1128: `s.count(p)` MUST lower to a non-allocating byte OCCURRENCE
+      count ($__wasm_str_count) — the counting generalisation of
+      $__wasm_str_contains — returning an i64 (a Python int), NEVER a base-pointer
+      compare. The count MUST be NON-OVERLAPPING (advance the start cursor by
+      len(p) on each match), so 'aaa'.count('aa') == 1 (a naive re-scan from
+      start+1 would return 2). The EMPTY needle MUST return charlen(s)+1 — the
+      CODE-POINT count, so 'héllo'.count('') == 6, NOT the byte-derived 7 (the
+      helper calls $__wasm_str_charlen for this case). A needle longer than the
+      haystack MUST return 0. Byte occurrence count == code-point occurrence count
+      for a non-empty needle (p[0] is a LEAD byte). Any OTHER string method MUST
+      refuse.
+    prediction: |
+      The executed WABT witness runs every case and each equals the pinned CPython
+      int — the single/absent/equal cases, the NON-OVERLAPPING fixtures
+      ('aaa'.count('aa')=1, 'banana'.count('ana')=1, 'aaaa'.count('aa')=2), the
+      empty-needle CODE-POINT counts ('hello'.count('')=6, 'héllo'.count('')=6,
+      'abc'.count('')=4), the longer-than needle ('hello'.count('helloo')=0), and
+      the MULTI-BYTE fixtures ('héllo'.count('é')=1, 'héllo'.count('l')=2 past the
+      multi-byte char, 'café'.count('©')=0 on a shared 0xA9). A pure-count module
+      carries no $__alloc; a literal needle lays out its (data) segment and a
+      heap-constructed needle pulls in the allocator (the PMAT-1128
+      collect_expr_literals / expr_has_heap_op StrMethod arms).
+    test: |
+      cargo test -p xpile-wasm-codegen --test str_count_witness
+    if_fails: |
+      The occurrence count (the non-overlapping advance-by-len(p), the empty-needle
+      charlen+1 code-point case, the longer-needle short-circuit, the byte-vs-char
+      boundary), the helper gate, the StrMethod literal/heap-arg walkers, or the
+      non-str-operand refusal regressed — an overlapping over-count, a byte-derived
+      empty-needle count, a base-pointer compare, or a crash on a literal/heap arg.
+      The int diverges from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - overlapping_recount_overcounts
+      - empty_needle_byte_count_instead_of_charlen
+      - base_pointer_compare_passed_off_as_count
+      - longer_needle_not_short_circuited
+      - literal_or_heap_method_arg_not_gated
       - other_str_method_miscompiled_instead_of_refused
