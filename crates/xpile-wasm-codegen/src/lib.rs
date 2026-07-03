@@ -3619,6 +3619,126 @@ const STR_ZFILL_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1185: `$__wasm_str_upper_lower(s, up) -> i32` — Python `s.upper()` (`up`
+/// = 1) / `s.lower()` (`up` = 0): a NEW heap string with every ASCII letter
+/// case-flipped. Allocating (rides the `needs_heap` gate, calls `$__alloc`).
+///
+/// **ASCII-only, with an honest runtime boundary.** Python's `str.upper()` /
+/// `str.lower()` do FULL Unicode case folding (`"café".upper() == "CAFÉ"`), which
+/// needs a case table this scalar lane does not carry. So the helper case-flips
+/// only the ASCII letters (`A`–`Z` ↔ `a`–`z`) and, on the FIRST byte `>= 0x80`
+/// (any byte of a non-ASCII code point in valid UTF-8), executes `unreachable` —
+/// a TRAP, exactly like the `index` / `rindex` ValueError siblings. It NEVER
+/// passes a non-ASCII byte through unchanged, so it never silently diverges from
+/// CPython: for a pure-ASCII `s` the result is char-exact, and for any non-ASCII
+/// `s` it traps rather than returning a wrong (un-folded) string. Because every
+/// surviving byte is 1-byte ASCII, byte length == code-point length == the result
+/// length, so `len` / `Concat` / equality / a str RETURN compose uniformly.
+///
+/// One byte-parallel pass: `$__alloc(8 + slen)`, store the i32 BYTE-count header
+/// (= `slen`, unchanged by case flipping), then for each payload byte: trap if
+/// `>= 0x80`, else conditionally add/subtract `0x20` when it is in the flipped
+/// range, and store it. A zero-length `s` writes no payload (the loop guard is
+/// `i < slen`) and returns an empty heap string.
+const STR_UPPER_LOWER_HELPER: &str = "\
+  ;; PMAT-1185 __wasm_str_upper_lower(s, up) = Python s.upper() (up=1) / s.lower()
+  ;; (up=0) — a NEW heap string with every ASCII letter case-flipped. ASCII-only:
+  ;; a byte >= 0x80 (non-ASCII code point) TRAPS (unreachable), never a silent
+  ;; un-folded pass-through, so the result is char-exact for ASCII or aborts.
+  (func $__wasm_str_upper_lower (param $s i32) (param $up i32) (result i32)
+    (local $slen i32)
+    (local $dst i32)
+    (local $i i32)
+    (local $c i32)
+    ;; slen = byte length of s (unchanged by case flipping — all survivors ASCII).
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; dst = alloc(8 + slen) ; store the i32 header = slen.
+    local.get $slen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $slen
+    i32.store
+    ;; for i in 0..slen: c = s[8+i]; trap if non-ASCII; case-flip; dst[8+i] = c.
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte -> honest trap (needs a Unicode case table we don't carry)
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; up != 0 (upper): 'a'(0x61)..'z'(0x7a) -> c - 0x20
+        local.get $up
+        if
+          local.get $c
+          i32.const 0x61
+          i32.ge_u
+          local.get $c
+          i32.const 0x7a
+          i32.le_u
+          i32.and
+          if
+            local.get $c
+            i32.const 0x20
+            i32.sub
+            local.set $c
+          end
+        else
+          ;; up == 0 (lower): 'A'(0x41)..'Z'(0x5a) -> c + 0x20
+          local.get $c
+          i32.const 0x41
+          i32.ge_u
+          local.get $c
+          i32.const 0x5a
+          i32.le_u
+          i32.and
+          if
+            local.get $c
+            i32.const 0x20
+            i32.add
+            local.set $c
+          end
+        end
+        ;; dst[8 + i] = c
+        local.get $dst
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        local.get $c
+        i32.store8
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    local.get $dst
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5076,6 +5196,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (co-emitted for any str-touching module via `module_touches_str`), so — like
     // replace — it forces no extra helper beyond the always-present char family.
     let needs_zfill = module_uses_str_method(module, StrMethodOp::ZFill);
+    // PMAT-1185: `s.upper()` / `s.lower()` (`Expr::StrMethod`, ops `Upper` /
+    // `Lower`) — allocating string-RETURNING ops (a fresh heap string with every
+    // ASCII letter case-flipped). Both share the single `$__wasm_str_upper_lower`
+    // helper (an `up` i32 flag selects the direction), so either op present must
+    // emit it. Rides `needs_heap` (set via `expr_has_heap_op`, like
+    // removeprefix/replace/zfill). Byte-parallel (no charlen math — all survivors
+    // are 1-byte ASCII, non-ASCII bytes trap), so it forces no extra helper.
+    let needs_upper_lower = module_uses_str_method(module, StrMethodOp::Upper)
+        || module_uses_str_method(module, StrMethodOp::Lower);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5292,6 +5421,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // actual use so an unrelated heap-string module carries no dead helper.
     if needs_heap && needs_zfill {
         out.push_str(STR_ZFILL_HELPER);
+    }
+    // PMAT-1185: emit the string UPPER/LOWER helper once, when any function uses
+    // `s.upper()` or `s.lower()` (`Expr::StrMethod`, ops `Upper` / `Lower`). The
+    // single `$__wasm_str_upper_lower` helper serves both (an `up` i32 flag picks
+    // the direction). Allocating (calls `$__alloc` + `i32.store8`), so it rides
+    // `needs_heap` — an upper/lower sets the heap gate via `expr_has_heap_op`.
+    // Byte-parallel (no char helper — a non-ASCII byte traps rather than folding).
+    // Gated on an actual use so an unrelated heap-string module carries no dead
+    // helper.
+    if needs_heap && needs_upper_lower {
+        out.push_str(STR_UPPER_LOWER_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -6634,6 +6774,11 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // wat2wasm failure, the recurring gate-hole class). Its width arg is an
         // int (never heap), but the recurse into `args` covers a heap-constructed
         // receiver either way.
+        // PMAT-1185: `s.upper()` / `s.lower()` (ops `Upper` / `Lower`) LIKEWISE
+        // bump-allocate their case-flipped result, so the op ITSELF sets the heap
+        // gate — a miss would emit `$__wasm_str_upper_lower` against an undeclared
+        // `$__alloc` (the same hard wat2wasm gate-hole). They take no args, so the
+        // recurse only ever fires on a heap-constructed receiver.
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -6642,6 +6787,8 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::Replace
                     | StrMethodOp::ReplaceN
                     | StrMethodOp::ZFill
+                    | StrMethodOp::Upper
+                    | StrMethodOp::Lower
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -7675,6 +7822,29 @@ fn emit_str_zfill(
     emit_expr_typed(width, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_str_zfill").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1185: lower `s.upper()` (`up` = 1) / `s.lower()` (`up` = 0) — a
+/// materialising op leaving the i32 base-pointer of a fresh case-flipped heap
+/// string. The receiver is string-valued (`emit_str_expr`, which refuses a
+/// non-str recv honestly); the `up` direction flag is an immediate i32 const.
+/// The allocating `$__wasm_str_upper_lower` helper case-flips the ASCII letters
+/// and TRAPS on a non-ASCII byte (the honest ASCII-only boundary — never a silent
+/// un-folded pass-through). A heap-constructed receiver (`(a + b).upper()`)
+/// already pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_case(
+    recv: &Expr,
+    up: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(up)).expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_upper_lower").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -8816,6 +8986,21 @@ fn emit_str_expr(
             emit_str_zfill(recv, &args[0], scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1185: `s.upper()` / `s.lower()` in a string position — a fresh heap
+        // string (like Concat/Slice/Repeat/zfill, a materialising op) with every
+        // ASCII letter case-flipped. Both are 0-arg; the allocating
+        // `$__wasm_str_upper_lower` helper does the flip and TRAPS on a non-ASCII
+        // byte (the honest ASCII-only boundary — full Unicode case folding needs a
+        // case table this scalar lane does not carry, so it refuses at runtime
+        // rather than silently returning an un-folded string).
+        Expr::StrMethod {
+            recv,
+            op: op @ (StrMethodOp::Upper | StrMethodOp::Lower),
+            args,
+        } if args.is_empty() => {
+            emit_str_case(recv, matches!(op, StrMethodOp::Upper), scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
         // `try_fold_strformat_to_concat` declined — a template carrying a
         // format spec (`"{:>5}".format(x)`), a positional (`"{0}"`), a named
@@ -8849,7 +9034,8 @@ fn emit_str_expr(
              (a + b, incl. format int operands auto-stringified via str(int)), \
              a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
-             count])`, `.zfill(width)`, or a str-returning call; stepped slicing \
+             count])`, `.zfill(width)`, `.upper()` / `.lower()` (ASCII-only — a \
+             non-ASCII byte traps), or a str-returning call; stepped slicing \
              / str(float) / bare f-strings are refused",
             expr_kind(other)
         ))),
