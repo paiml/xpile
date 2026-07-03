@@ -207,15 +207,17 @@ impl WasmDiffExecEngine {
         Self { work_dir }
     }
 
-    /// Assemble `wat_src` into `name.wasm`, execute every export with
-    /// `wasm-interp --run-all-exports`, and parse the printed `f64`
-    /// vector (one value per exported `e0`..`eN`, in export order).
+    /// Assemble `wat_src` into `name.wasm` with `wat2wasm`, returning the
+    /// output path. This is the pure ASSEMBLE step — it validates the module
+    /// (every `call $fn` must resolve to a declared function, so a gate-hole
+    /// that emits a call against an undeclared helper/`$__alloc` fails HERE,
+    /// with no need to run it).
     ///
-    /// `pub(crate)` so an in-crate executed witness (e.g. the PMAT-978
-    /// list-write witness in `tests`) can reuse the exact same WABT
-    /// assemble+run+parse path the DiffExec engine uses — keeping the WABT
-    /// invocation single-sourced.
-    pub(crate) fn assemble_run_parse(&self, wat_src: &str, name: &str) -> Result<Vec<f64>, String> {
+    /// `pub(crate)` so an in-crate gate-exhaustiveness witness (PMAT-1162) can
+    /// assemble-check the real-emitted module without also running it — many
+    /// emitted str-returning `$f` bodies leave an `i32` pointer, not the
+    /// zero-arg `f64` `eN` exports [`assemble_run_parse`] parses.
+    pub(crate) fn assemble(&self, wat_src: &str, name: &str) -> Result<PathBuf, String> {
         std::fs::create_dir_all(&self.work_dir).map_err(|e| format!("create work dir: {e}"))?;
         let wat_path = self.work_dir.join(format!("{name}.wat"));
         let wasm_path = self.work_dir.join(format!("{name}.wasm"));
@@ -233,6 +235,19 @@ impl WasmDiffExecEngine {
                 String::from_utf8_lossy(&assemble.stderr)
             ));
         }
+        Ok(wasm_path)
+    }
+
+    /// Assemble `wat_src` into `name.wasm`, execute every export with
+    /// `wasm-interp --run-all-exports`, and parse the printed `f64`
+    /// vector (one value per exported `e0`..`eN`, in export order).
+    ///
+    /// `pub(crate)` so an in-crate executed witness (e.g. the PMAT-978
+    /// list-write witness in `tests`) can reuse the exact same WABT
+    /// assemble+run+parse path the DiffExec engine uses — keeping the WABT
+    /// invocation single-sourced.
+    pub(crate) fn assemble_run_parse(&self, wat_src: &str, name: &str) -> Result<Vec<f64>, String> {
+        let wasm_path = self.assemble(wat_src, name)?;
 
         let run = Command::new("wasm-interp")
             .arg("--run-all-exports")

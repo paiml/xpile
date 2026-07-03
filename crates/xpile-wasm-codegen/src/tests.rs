@@ -2741,3 +2741,312 @@ fn replace_n_executes_in_wabt_and_matches_cpython() {
          replace == bounded code-point replace, proven on silicon."
     );
 }
+
+// ─── PMAT-1162: gate-exhaustiveness matrix — an ALLOCATING str op in EVERY
+// emittable compound position, adversarially locking the recurring gate-hole
+// class shut ─────────────────────────────────────────────────────────────────
+//
+// The per-op witnesses above each drive the newest allocating string ops
+// (`Replace` / `ReplaceN` / `RemovePrefix` / `RemoveSuffix`) in the SIMPLEST
+// position — a bare `return <op>`. But the recurring gate-hole (PMAT-1128 /
+// 1148 / 1149 / 1150 / 1151) lives in the COMPOUND positions: an op nested in a
+// concat / ternary / repeat / nested-recv / method-arg / `in`-haystack, or bound
+// to a `let`. If a `stmt_uses_str_method` / `expr_has_heap_op` walker fails to
+// recurse into one of those, the backend still EMITS the `call
+// $__wasm_str_replace` / `call $__alloc` — but never DECLARES the helper /
+// allocator, a hole the bare-return witnesses cannot see. That emits a `.wat`
+// wat2wasm REJECTS ("undefined function") — the exact class three consecutive
+// slices kept re-finding one position at a time. This matrix probes ALL of them
+// at once: every (op × position) pair must (a) lower, (b) declare `$__alloc` +
+// the op's helper, and (c) — with WABT — assemble under wat2wasm. Adding a new
+// allocating str op (or a new compound Expr node) without threading it through
+// the gate walkers now fails HERE, not in the field.
+
+/// A fresh allocating-str-op `Expr` for `op` over string literals — the node
+/// whose helper + `$__alloc` every gate walker must detect in any position.
+fn alloc_str_op(op: StrMethodOp) -> Expr {
+    let recv = Box::new(Expr::LitStr("banana".into()));
+    match op {
+        StrMethodOp::Replace => Expr::StrMethod {
+            recv,
+            op,
+            args: vec![Expr::LitStr("a".into()), Expr::LitStr("o".into())],
+        },
+        StrMethodOp::ReplaceN => Expr::StrMethod {
+            recv,
+            op,
+            args: vec![
+                Expr::LitStr("a".into()),
+                Expr::LitStr("o".into()),
+                Expr::LitInt(1),
+            ],
+        },
+        StrMethodOp::RemovePrefix => Expr::StrMethod {
+            recv,
+            op,
+            args: vec![Expr::LitStr("ba".into())],
+        },
+        StrMethodOp::RemoveSuffix => Expr::StrMethod {
+            recv,
+            op,
+            args: vec![Expr::LitStr("na".into())],
+        },
+        other => unreachable!("gate matrix covers the 4 allocating str ops, not {other:?}"),
+    }
+}
+
+/// The declared helper name for an allocating str op (the 2- and 3-arg replace
+/// share `$__wasm_str_replace`).
+fn alloc_str_op_helper(op: StrMethodOp) -> &'static str {
+    match op {
+        StrMethodOp::Replace | StrMethodOp::ReplaceN => "$__wasm_str_replace",
+        StrMethodOp::RemovePrefix => "$__wasm_str_removeprefix",
+        StrMethodOp::RemoveSuffix => "$__wasm_str_removesuffix",
+        other => unreachable!("not an allocating str op: {other:?}"),
+    }
+}
+
+/// A `Fn(inner) -> (return_type, stmts, trailing_return)` that drops the inner
+/// allocating op into one compound emittable position.
+type GatePos = fn(Expr) -> (Type, Vec<Stmt>, Expr);
+
+/// Every compound position a str-typed (or, for `in`, bool-typed) allocating op
+/// can legally sit in and still lower — the surface the gate walkers must cover.
+fn gate_positions() -> Vec<(&'static str, GatePos)> {
+    vec![
+        // Baseline: bare `return <op>` (what the per-op witnesses already drive).
+        ("bare_return", |i| (Type::Str, Vec::new(), i)),
+        // `let x = <op>; return x` — the Stmt::Let value arm.
+        ("let_binding", |i| {
+            (
+                Type::Str,
+                vec![Stmt::Let {
+                    name: "x".into(),
+                    ty: Type::Str,
+                    value: i,
+                    mutable: false,
+                }],
+                Expr::Ident("x".into()),
+            )
+        }),
+        // `return "z" + <op>` / `return <op> + "z"` — both Concat operands.
+        ("concat_rhs", |i| {
+            (
+                Type::Str,
+                Vec::new(),
+                Expr::Concat {
+                    lhs: Box::new(Expr::LitStr("z".into())),
+                    rhs: Box::new(i),
+                },
+            )
+        }),
+        ("concat_lhs", |i| {
+            (
+                Type::Str,
+                Vec::new(),
+                Expr::Concat {
+                    lhs: Box::new(i),
+                    rhs: Box::new(Expr::LitStr("z".into())),
+                },
+            )
+        }),
+        // `return <op> if c else "z"` / `return "z" if c else <op>` — both IfExpr arms.
+        ("ternary_then", |i| {
+            (
+                Type::Str,
+                Vec::new(),
+                Expr::IfExpr {
+                    cond: Box::new(Expr::LitBool(true)),
+                    then_expr: Box::new(i),
+                    else_expr: Box::new(Expr::LitStr("z".into())),
+                },
+            )
+        }),
+        ("ternary_else", |i| {
+            (
+                Type::Str,
+                Vec::new(),
+                Expr::IfExpr {
+                    cond: Box::new(Expr::LitBool(false)),
+                    then_expr: Box::new(Expr::LitStr("z".into())),
+                    else_expr: Box::new(i),
+                },
+            )
+        }),
+        // `return <op> * 2` — the Repeat seq (string repeat, of_str: true).
+        ("repeat_seq", |i| {
+            (
+                Type::Str,
+                Vec::new(),
+                Expr::Repeat {
+                    seq: Box::new(i),
+                    n: Box::new(Expr::LitInt(2)),
+                    of_str: true,
+                },
+            )
+        }),
+        // `return <op>.replace("z","w")` — the op as a NESTED StrMethod recv.
+        ("nested_recv", |i| {
+            (
+                Type::Str,
+                Vec::new(),
+                Expr::StrMethod {
+                    recv: Box::new(i),
+                    op: StrMethodOp::Replace,
+                    args: vec![Expr::LitStr("z".into()), Expr::LitStr("w".into())],
+                },
+            )
+        }),
+        // `return "banana".replace(<op>, "z")` — the op as a heap-constructed arg.
+        ("method_arg", |i| {
+            (
+                Type::Str,
+                Vec::new(),
+                Expr::StrMethod {
+                    recv: Box::new(Expr::LitStr("banana".into())),
+                    op: StrMethodOp::Replace,
+                    args: vec![i, Expr::LitStr("z".into())],
+                },
+            )
+        }),
+        // `return "o" in <op>` — the op as the StrContains haystack (bool result).
+        ("strcontains_haystack", |i| {
+            (
+                Type::Bool,
+                Vec::new(),
+                Expr::StrContains {
+                    haystack: Box::new(i),
+                    needle: Box::new(Expr::LitStr("o".into())),
+                },
+            )
+        }),
+    ]
+}
+
+#[test]
+fn allocating_str_op_in_every_position_declares_alloc_and_helper() {
+    // PMAT-1162: the DECLARATION half of the matrix — runs with or without WABT.
+    // Every (op × position) must lower AND declare both `$__alloc` (heap gate,
+    // `expr_has_heap_op`) and the op's helper (str-method gate,
+    // `module_uses_str_method`). A walker that fails to recurse into a position
+    // emits the call but omits the declaration → this catches it.
+    let ops = [
+        StrMethodOp::Replace,
+        StrMethodOp::ReplaceN,
+        StrMethodOp::RemovePrefix,
+        StrMethodOp::RemoveSuffix,
+    ];
+    let positions = gate_positions();
+    let mut checked = 0usize;
+    for op in ops {
+        let helper = alloc_str_op_helper(op);
+        for (pname, build) in &positions {
+            let (ret, stmts, trailing) = build(alloc_str_op(op));
+            let f = Function {
+                name: "f".into(),
+                params: Vec::new(),
+                return_type: ret,
+                body: Block {
+                    stmts,
+                    trailing_return: trailing,
+                },
+            };
+            let wat = emit_module(&module_with(vec![Item::Function(f)])).unwrap_or_else(|e| {
+                panic!("gate matrix: {op:?} in position `{pname}` must lower, got: {e:?}")
+            });
+            assert!(
+                wat.contains("(func $__alloc"),
+                "gate matrix: {op:?} @ `{pname}` emits an allocating op → `$__alloc` must be \
+                 DECLARED (else a `call $__alloc` against an undeclared allocator = a wat2wasm \
+                 hole):\n{wat}"
+            );
+            assert!(
+                wat.contains(&format!("(func {helper} ")),
+                "gate matrix: {op:?} @ `{pname}` → its helper {helper} must be DECLARED (the \
+                 module_uses_str_method walker must recurse into this position):\n{wat}"
+            );
+            // The body must actually CALL what we just proved is declared — otherwise
+            // the assertions above pass vacuously on a dead declaration.
+            let body = wat
+                .split("(func $f ")
+                .nth(1)
+                .expect("the $f function is emitted");
+            assert!(
+                body.contains(&format!("call {helper}")),
+                "gate matrix: {op:?} @ `{pname}` → `$f` must CALL {helper}:\n{body}"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(
+        checked,
+        ops.len() * positions.len(),
+        "every (op × position) pair is checked"
+    );
+    eprintln!(
+        "PMAT-1162: gate-exhaustiveness DECLARATION matrix PASSED — {checked} (op × position) \
+         pairs ({} allocating ops × {} compound positions), each declaring `$__alloc` + its \
+         helper and calling it.",
+        ops.len(),
+        positions.len()
+    );
+}
+
+#[test]
+fn allocating_str_op_in_every_position_assembles_under_wat2wasm() {
+    // PMAT-1162: the ASSEMBLE half — the DECISIVE gate-hole catch. Each
+    // real-emitted module is fed to wat2wasm; a `call` against an undeclared
+    // helper/`$__alloc` (the recurring hole) is a HARD assembly error here. This
+    // is exactly the failure the bare-return per-op witnesses cannot surface,
+    // and the class PMAT-1149/1150/1151 kept re-finding one position at a time.
+    if !wasm_runtime_available() {
+        eprintln!(
+            "PMAT-1162: skipping wat2wasm gate-matrix assemble — WABT absent. The \
+             DECLARATION matrix (allocating_str_op_in_every_position_declares_alloc_and_helper) \
+             ran WITHOUT WABT and already catches a missing `$__alloc`/helper declaration; a \
+             box with WABT also assembles every (op × position) module. Free CI stays green."
+        );
+        return;
+    }
+    let ops = [
+        StrMethodOp::Replace,
+        StrMethodOp::ReplaceN,
+        StrMethodOp::RemovePrefix,
+        StrMethodOp::RemoveSuffix,
+    ];
+    let positions = gate_positions();
+    let engine = WasmDiffExecEngine::new();
+    let mut assembled = 0usize;
+    for op in ops {
+        for (pname, build) in &positions {
+            let (ret, stmts, trailing) = build(alloc_str_op(op));
+            let f = Function {
+                name: "f".into(),
+                params: Vec::new(),
+                return_type: ret,
+                body: Block {
+                    stmts,
+                    trailing_return: trailing,
+                },
+            };
+            let wat = emit_module(&module_with(vec![Item::Function(f)]))
+                .unwrap_or_else(|e| panic!("gate matrix: {op:?} @ `{pname}` lowers: {e:?}"));
+            engine
+                .assemble(&wat, &format!("gate_{op:?}_{pname}"))
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "PMAT-1162 GATE HOLE: {op:?} in position `{pname}` emitted a `.wat` \
+                         wat2wasm REJECTED — an emitted call against an undeclared \
+                         helper/`$__alloc` (the recurring gate-hole class). wat2wasm said:\n{e}\
+                         \n\n--- emitted module ---\n{wat}"
+                    )
+                });
+            assembled += 1;
+        }
+    }
+    eprintln!(
+        "PMAT-1162: gate-exhaustiveness ASSEMBLE matrix PASSED — {assembled} (op × position) \
+         modules real-emitted and accepted by wat2wasm; no undeclared-helper hole in any \
+         compound position for Replace / ReplaceN / RemovePrefix / RemoveSuffix."
+    );
+}
