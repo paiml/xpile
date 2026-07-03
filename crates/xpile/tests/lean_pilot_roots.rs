@@ -282,6 +282,10 @@ const EXPECTED_PILOT: &[&str] = &[
     // PMAT-1131: C-PY-CONTEXT-MANAGER-EXIT — the with-statement finally
     // guarantee (__exit__ runs on every outcome; core-Lean decide).
     "PyContextManagerExit",
+    // PMAT-1145/1146: the last two module-level constructs (const + enum)
+    // translation contracts — closes Pillar A's "every construct cited" gap.
+    "ConstTranslation",
+    "EnumTranslation",
 ];
 
 #[test]

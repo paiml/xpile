@@ -342,5 +342,13 @@ lean_lib «XpileContractsPilot» where
     -- the lowering (was a vacuous `fun _ => true`), so plain_sequence_skips_exit
     -- _on_err makes the guarantee FALSIFIABLE. NO Mathlib. Pilot 31 → 32; the
     -- four capabilities (exceptions/generators/file-io/context-managers) proven.
-    `PyContextManagerExit         -- C-PY-CONTEXT-MANAGER-EXIT   (PMAT-1131)
+    `PyContextManagerExit,        -- C-PY-CONTEXT-MANAGER-EXIT   (PMAT-1131)
+    -- PMAT-1145/1146 (R6): the LAST TWO uncited module-level constructs get
+    -- their on-disk contracts. ConstTranslation = (name,type,value)-triple
+    -- structure-extensionality; EnumTranslation = variant ORDER + COUNT
+    -- preservation (map Prod.fst + List.length_map). Both core-Lean, no Mathlib.
+    -- Pilot 32 → 34; closes the north-star "every construct under a cited
+    -- contract" claim UNCONDITIONALLY.
+    `ConstTranslation,            -- C-CONST-TRANSLATION         (PMAT-1145)
+    `EnumTranslation              -- C-ENUM-TRANSLATION          (PMAT-1146)
   ]

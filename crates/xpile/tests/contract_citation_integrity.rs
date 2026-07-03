@@ -144,6 +144,10 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         // PMAT-1139 (R6): eager generators now wired + cited (a __gen_result
         // accumulator body cites C-PY-GENERATOR-EAGER, proved 1122).
         "C-PY-GENERATOR-EAGER",
+        // PMAT-1145/1146 (R6): the last two module-level constructs — const +
+        // enum — now cite their translation contracts (Item::applicable_contracts).
+        "C-CONST-TRANSLATION",
+        "C-ENUM-TRANSLATION",
     ] {
         assert!(
             cited.contains(required),
