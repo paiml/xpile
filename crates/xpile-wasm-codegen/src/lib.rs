@@ -557,6 +557,13 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
                 collect_expr_literals(v, out);
             }
         }
+        // PMAT-1127: `x in s` — both string operands may be LITERALS (`"lo" in
+        // "hello"`), so lay their `(data)` segments out (else `emit_str_expr`
+        // fails to find a literal address).
+        Expr::StrContains { haystack, needle } => {
+            collect_expr_literals(haystack, out);
+            collect_expr_literals(needle, out);
+        }
         _ => {}
     }
 }
@@ -916,6 +923,130 @@ const STR_ENDSWITH_HELPER: &str = "\
       )
     )
     i32.const 1
+  )
+";
+
+/// PMAT-1127: `$__wasm_str_contains(h, n)` — Python `n in h` (substring test)
+/// over two length-prefixed UTF-8 strings, returning an `i32` boolean (1 = `n`
+/// is a substring of `h`, 0 = not).
+///
+/// A naive BYTE substring search: slide `n` over `h` at every start offset
+/// `0..=(len(h)-len(n))`, comparing `len(n)` bytes at each; the first full match
+/// yields 1, exhausting all starts yields 0. A byte-substring match IS a
+/// CODE-POINT-substring match for valid UTF-8: `n` is a valid UTF-8 string, so
+/// `n[0]` is a LEAD byte (never a `0x80..0xBF` continuation), which means ANY
+/// byte match forces the compare to begin on a char boundary in `h` — so a
+/// `len(n)`-byte match is exactly an `n`-code-point match (no split char, no
+/// false positive from a shared continuation byte straddling a boundary). This
+/// mirrors the `$__wasm_str_startswith` rationale (a prefix test is the special
+/// case `start == 0`) and, like it, allocates NOTHING — it reads linear memory
+/// and returns a bool. The empty needle yields 1 (`"" in "abc"` is True) since
+/// the outer/inner loops short-circuit. Emitted once per module (gated on
+/// [`module_uses_str_contains`]).
+const STR_CONTAINS_HELPER: &str = "\
+  ;; __wasm_str_contains(h, n) = Python (n in h)  (i32 bool)
+  ;; h, n are i32 base-pointers to length-prefixed regions (i32 byte count @
+  ;; base+0, UTF-8 bytes @ base+8). Naive byte substring search: slide n over h
+  ;; at each start 0..=(hn-nn). Byte-substring == code-point-substring for valid
+  ;; UTF-8 (n[0] is a lead byte → any byte match lands on a char boundary in h).
+  ;; Empty needle → 1. Allocates nothing.
+  (func $__wasm_str_contains (param $h i32) (param $n i32) (result i32)
+    (local $hn i32)
+    (local $nn i32)
+    (local $start i32)
+    (local $last i32)
+    (local $j i32)
+    (local $match i32)
+    ;; hn = len(h); nn = len(n)
+    local.get $h
+    i32.load
+    local.set $hn
+    local.get $n
+    i32.load
+    local.set $nn
+    ;; the empty needle is contained in every string (Python `\"\" in s` is True)
+    local.get $nn
+    i32.eqz
+    if
+      i32.const 1
+      return
+    end
+    ;; a needle longer than the haystack can never be a substring
+    local.get $nn
+    local.get $hn
+    i32.gt_s
+    if
+      i32.const 0
+      return
+    end
+    ;; last = hn - nn  (inclusive last start offset; >= 0, guarded above)
+    local.get $hn
+    local.get $nn
+    i32.sub
+    local.set $last
+    ;; start = 0; while start <= last: try a len(n)-byte match at offset start
+    i32.const 0
+    local.set $start
+    (block $done
+      (loop $next_start
+        local.get $start
+        local.get $last
+        i32.gt_s
+        br_if $done
+        ;; match = 1; j = 0; while j < nn: if h[8+start+j] != n[8+j] fail
+        i32.const 1
+        local.set $match
+        i32.const 0
+        local.set $j
+        (block $stop
+          (loop $next_char
+            local.get $j
+            local.get $nn
+            i32.ge_s
+            br_if $stop
+            ;; h byte start+j
+            local.get $h
+            i32.const 8
+            i32.add
+            local.get $start
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            ;; n byte j
+            local.get $n
+            i32.const 8
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            i32.ne
+            if
+              i32.const 0
+              local.set $match
+              br $stop
+            end
+            local.get $j
+            i32.const 1
+            i32.add
+            local.set $j
+            br $next_char
+          )
+        )
+        ;; a full-length match at this start → contained
+        local.get $match
+        if
+          i32.const 1
+          return
+        end
+        local.get $start
+        i32.const 1
+        i32.add
+        local.set $start
+        br $next_start
+      )
+    )
+    i32.const 0
   )
 ";
 
@@ -2560,6 +2691,10 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // `needs_str_cmp`).
     let needs_startswith = module_uses_str_method(module, StrMethodOp::StartsWith);
     let needs_endswith = module_uses_str_method(module, StrMethodOp::EndsWith);
+    // PMAT-1127: `x in s` over strings (`Expr::StrContains`) — a non-allocating
+    // byte SUBSTRING search (`$__wasm_str_contains`), the sliding generalisation
+    // of `$__wasm_str_startswith`. Reads the two str payloads, allocates nothing.
+    let needs_contains = module_uses_str_contains(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -2567,6 +2702,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_str_cmp
         || needs_startswith
         || needs_endswith
+        || needs_contains
     {
         writeln!(
             out,
@@ -2630,6 +2766,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     }
     if needs_endswith {
         out.push_str(STR_ENDSWITH_HELPER);
+    }
+    // PMAT-1127: emit the string SUBSTRING-search helper once, when any function
+    // uses `x in s` over strings (`Expr::StrContains`). A byte substring search
+    // == a code-point substring search for valid UTF-8 — reads memory, allocates
+    // nothing (independent of the bump-heap gate, like `$__wasm_str_startswith`).
+    if needs_contains {
+        out.push_str(STR_CONTAINS_HELPER);
     }
     // PMAT-1032: emit the CHAR-semantics helper family once, when any function
     // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
@@ -2839,6 +2982,11 @@ fn expr_touches_str(e: &Expr) -> bool {
             expr_touches_str(obj) || args.iter().any(expr_touches_str)
         }
         Expr::Slice { collection, .. } => expr_touches_str(collection),
+        // PMAT-1127: `x in s` — a heap-string operand (Concat / Chr / s[i] /
+        // slice / str(int)) needs the CHAR-semantics helper family gated here.
+        Expr::StrContains { haystack, needle } => {
+            expr_touches_str(haystack) || expr_touches_str(needle)
+        }
         _ => false,
     }
 }
@@ -2919,6 +3067,11 @@ fn expr_has_str_slice(e: &Expr) -> bool {
             expr_has_str_slice(string) || expr_has_str_slice(index)
         }
         Expr::FieldAccess { obj, .. } => expr_has_str_slice(obj),
+        // PMAT-1127: `x in s` — a slice operand (`s[1:4] in t`) needs the slice
+        // helper gated here.
+        Expr::StrContains { haystack, needle } => {
+            expr_has_str_slice(haystack) || expr_has_str_slice(needle)
+        }
         _ => false,
     }
 }
@@ -3002,6 +3155,11 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
                 || hi.as_deref().is_some_and(expr_has_int_to_str)
         }
         Expr::FieldAccess { obj, .. } => expr_has_int_to_str(obj),
+        // PMAT-1127: `x in s` — a `str(int)` operand (`str(n) in s`) needs the
+        // int→str helper gated here.
+        Expr::StrContains { haystack, needle } => {
+            expr_has_int_to_str(haystack) || expr_has_int_to_str(needle)
+        }
         _ => false,
     }
 }
@@ -3200,6 +3358,96 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
         }
         Expr::ToStr { value, .. } => expr_uses_str_method(value, op),
         Expr::FieldAccess { obj, .. } => expr_uses_str_method(obj, op),
+        // PMAT-1127: `x in s` — its str operands can host a nested method call
+        // (`("a" + b).startswith(c) in s` is degenerate, but recursing keeps the
+        // gate exhaustive and future-proof).
+        Expr::StrContains { haystack, needle } => {
+            expr_uses_str_method(haystack, op) || expr_uses_str_method(needle, op)
+        }
+        _ => false,
+    }
+}
+
+/// PMAT-1127: `true` when any function in `module` uses `x in s` over strings
+/// (`Expr::StrContains`) — gates [`STR_CONTAINS_HELPER`] and the `(memory …)`
+/// declaration its byte loads need. A MISS here emits a `call
+/// $__wasm_str_contains` against a helper never declared (a hard wat2wasm
+/// failure), so the walk recurses through every compound node that can host the
+/// expression; the executed WABT witness (`str_contains_witness`) is the
+/// backstop. Mirrors [`module_uses_str_slice`]'s shape.
+fn module_uses_str_contains(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_str_contains(&f.body))
+}
+
+fn block_has_str_contains(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_str_contains) || expr_has_str_contains(&block.trailing_return)
+}
+
+fn stmt_has_str_contains(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
+            expr_has_str_contains(value)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_str_contains(cond)
+                || then_body.iter().any(stmt_has_str_contains)
+                || else_body.iter().any(stmt_has_str_contains)
+        }
+        Stmt::While { cond, body } => {
+            expr_has_str_contains(cond) || body.iter().any(stmt_has_str_contains)
+        }
+        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
+            expr_has_str_contains(value)
+        }
+        Stmt::SideEffectCall { call } => expr_has_str_contains(call),
+        _ => false,
+    }
+}
+
+fn expr_has_str_contains(e: &Expr) -> bool {
+    match e {
+        // this node IS the `x in s` we gate — no need to recurse further.
+        Expr::StrContains { .. } => true,
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => {
+            expr_has_str_contains(lhs) || expr_has_str_contains(rhs)
+        }
+        Expr::UnOp { operand, .. } => expr_has_str_contains(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_str_contains(cond)
+                || expr_has_str_contains(then_expr)
+                || expr_has_str_contains(else_expr)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_str_contains),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_str_contains(obj) || args.iter().any(expr_has_str_contains)
+        }
+        Expr::Index { collection, index } => {
+            expr_has_str_contains(collection) || expr_has_str_contains(index)
+        }
+        Expr::Len(c) => expr_has_str_contains(c),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_contains(value),
+        Expr::StrCharAt { string, index } => {
+            expr_has_str_contains(string) || expr_has_str_contains(index)
+        }
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_has_str_contains(collection)
+                || lo.as_deref().is_some_and(expr_has_str_contains)
+                || hi.as_deref().is_some_and(expr_has_str_contains)
+        }
+        Expr::FieldAccess { obj, .. } => expr_has_str_contains(obj),
+        Expr::ToStr { value, .. } => expr_has_str_contains(value),
         _ => false,
     }
 }
@@ -3417,6 +3665,11 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // args may (`c.set(Point(1, 2))`).
         Expr::MethodCall { obj, args, .. } => {
             expr_has_heap_op(obj) || args.iter().any(expr_has_heap_op)
+        }
+        // PMAT-1127: `x in s` allocates nothing itself (a bool), but a
+        // heap-constructed operand (`("a" + b) in s`) pulls in the allocator.
+        Expr::StrContains { haystack, needle } => {
+            expr_has_heap_op(haystack) || expr_has_heap_op(needle)
         }
         _ => false,
     }
@@ -4592,6 +4845,21 @@ fn emit_expr(
         // PMAT-995 (slice 3b): `k in d` / `x in s` — i32 bool membership.
         Expr::DictContains { dict, key } => emit_dict_contains(dict, key, scope, out, depth),
         Expr::SetContains { set, elem } => emit_dict_contains(set, elem, scope, out, depth),
+        // PMAT-1127: `needle in haystack` over strings — an i32 bool substring
+        // test via a non-allocating byte search. Both operands lower to i32
+        // base-pointers (`emit_str_expr`); `$__wasm_str_contains` slides the
+        // needle over the haystack. A byte-substring match IS a code-point
+        // substring match for valid UTF-8 (the needle's lead byte forces the
+        // compare onto a char boundary), so this IS Python's `in` — nothing is
+        // allocated (a bool, not a new string). A non-str operand is refused by
+        // `emit_str_expr` (an honest type mismatch).
+        Expr::StrContains { haystack, needle } => {
+            emit_str_expr(haystack, scope, out, depth)?;
+            emit_str_expr(needle, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_contains").expect("write");
+            Ok(WatTy::I32)
+        }
         // PMAT-996 (slice 4): `Name(f=v, …)` — allocate + populate a plain-data
         // struct on the bump heap; leaves the instance's i32 base-pointer.
         Expr::StructLit { name, fields } => emit_struct_lit(name, fields, scope, out, depth),
