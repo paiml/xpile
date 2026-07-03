@@ -63,7 +63,11 @@
 //!   1..4 bytes, char-indexed + negative-index-normalised since PMAT-1032);
 //!   and (3) string **content equality** `a == b` / `a != b` lowers to a
 //!   `$__wasm_str_eq` helper (length check + byte-compare loop → i32 bool) —
-//!   REAL content logic, never a base-pointer compare. Since PMAT-1058/1059
+//!   REAL content logic, never a base-pointer compare. Since PMAT-1136
+//!   `s.find(p)` is supported (the CODE-POINT index of the first occurrence of
+//!   `p` in `s`, or -1 → i64) — a non-allocating byte search converting the
+//!   match's byte offset to a char index (Python find is char-indexed). Since
+//!   PMAT-1058/1059
 //!   string **slicing** `s[lo:hi]` and **ordering** (`<`/`<=`/`>`/`>=`) are
 //!   supported, and since PMAT-1060 **`str(int)` / `repr(int)`**
 //!   (`Expr::ToStr { of_float: false }`) materialises an i64's decimal-ASCII
@@ -74,7 +78,7 @@
 //!   substring test `p in s` (`Expr::StrContains`, a sliding byte search →
 //!   i32 bool) are supported — each a non-allocating helper. Still **refused**
 //!   honestly (a hard `BackendError`): `str(float)`/`repr(float)`, f-strings,
-//!   the OTHER string methods (upper/lower/strip/split/replace/find/…), and the
+//!   the OTHER string methods (upper/lower/strip/split/replace/rfind/…), and the
 //!   composite `dict` / `set` value/`in` shapes not yet wired. Char access is O(chars)
 //!   per read (charlen is O(bytes)) — correctness over speed, an honest
 //!   documented tradeoff.
@@ -1210,6 +1214,177 @@ const STR_COUNT_HELPER: &str = "\
     )
     local.get $count
     i64.extend_i32_u
+  )
+";
+
+/// PMAT-1136: `$__wasm_str_find(h, n) -> i64` — Python `h.find(n)` (the CODE-POINT
+/// index of the FIRST occurrence of `n` in `h`, or `-1` if absent) over two
+/// length-prefixed UTF-8 strings, returning an `i64` (a Python `int`).
+///
+/// The index-returning sibling of [`STR_CONTAINS_HELPER`]: the SAME naive byte
+/// slide, but instead of a bool it returns WHERE the first match starts — and,
+/// crucially, as a **code-point** index (Python `str.find` returns the position
+/// in code points, NOT bytes). So on a match at byte offset `start` it converts
+/// `start` to a code-point index by counting the non-continuation bytes in
+/// `h[0..start]` (`(b & 0xC0) != 0x80`) — the ONE place `find` must diverge from
+/// the byte-oriented `contains`/`count`, whose answers (a bool / a match count)
+/// are byte/code-point identical. The conversion is exact because `n[0]` is a
+/// LEAD byte, so every match lands on a char boundary in `h`; the prefix
+/// `h[0..start]` is therefore a whole number of code points.
+///
+///   * an EMPTY needle → `0` (Python `"abc".find("")` and `"".find("")` are both
+///     `0` — the empty string is found at the start). No char walk needed.
+///   * a needle LONGER than the haystack → `-1`.
+///   * absent → `-1`.
+///
+/// For non-ASCII input this is char-exact where a byte index would silently
+/// diverge (`"héllo".find("llo")` == 2, not the byte offset 4). Like
+/// `$__wasm_str_contains` it reads linear memory and allocates NOTHING (an int,
+/// not a new string). Emitted once per module (gated on [`module_uses_str_method`]
+/// for `Find`).
+const STR_FIND_HELPER: &str = "\
+  ;; __wasm_str_find(h, n) = Python h.find(n)  (i64: CODE-POINT index of first
+  ;; occurrence, or -1). h, n are i32 base-pointers to length-prefixed regions
+  ;; (i32 byte count @ base+0, UTF-8 bytes @ base+8). Same byte slide as
+  ;; $__wasm_str_contains, but returns the match position converted to a CODE
+  ;; POINT index (count non-continuation bytes in h[0..start]) — Python find is
+  ;; char-indexed, not byte-indexed. Empty needle → 0. Allocates nothing.
+  (func $__wasm_str_find (param $h i32) (param $n i32) (result i64)
+    (local $hn i32)
+    (local $nn i32)
+    (local $start i32)
+    (local $last i32)
+    (local $j i32)
+    (local $match i32)
+    (local $ci i32)
+    (local $p i32)
+    ;; hn = len(h); nn = len(n)
+    local.get $h
+    i32.load
+    local.set $hn
+    local.get $n
+    i32.load
+    local.set $nn
+    ;; empty needle: Python h.find(\"\") == 0 (found at the start)
+    local.get $nn
+    i32.eqz
+    if
+      i64.const 0
+      return
+    end
+    ;; a needle longer than the haystack can never occur → -1
+    local.get $nn
+    local.get $hn
+    i32.gt_s
+    if
+      i64.const -1
+      return
+    end
+    ;; last = hn - nn  (inclusive last start offset; >= 0, guarded above)
+    local.get $hn
+    local.get $nn
+    i32.sub
+    local.set $last
+    ;; start = 0; while start <= last: try a len(n)-byte match at offset start
+    i32.const 0
+    local.set $start
+    (block $done
+      (loop $next_start
+        local.get $start
+        local.get $last
+        i32.gt_s
+        br_if $done
+        ;; match = 1; j = 0; while j < nn: if h[8+start+j] != n[8+j] fail
+        i32.const 1
+        local.set $match
+        i32.const 0
+        local.set $j
+        (block $stop
+          (loop $next_char
+            local.get $j
+            local.get $nn
+            i32.ge_s
+            br_if $stop
+            ;; h byte start+j
+            local.get $h
+            i32.const 8
+            i32.add
+            local.get $start
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            ;; n byte j
+            local.get $n
+            i32.const 8
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            i32.ne
+            if
+              i32.const 0
+              local.set $match
+              br $stop
+            end
+            local.get $j
+            i32.const 1
+            i32.add
+            local.set $j
+            br $next_char
+          )
+        )
+        ;; a full-length match at byte offset $start → convert to a CODE-POINT
+        ;; index: count non-continuation bytes in h[0..start], return it.
+        local.get $match
+        if
+          i32.const 0
+          local.set $ci
+          i32.const 0
+          local.set $p
+          (block $cdone
+            (loop $cnext
+              local.get $p
+              local.get $start
+              i32.ge_s
+              br_if $cdone
+              ;; if (h[8+p] & 0xC0) != 0x80  → ci++ (a lead / single byte)
+              local.get $h
+              i32.const 8
+              i32.add
+              local.get $p
+              i32.add
+              i32.load8_u
+              i32.const 0xC0
+              i32.and
+              i32.const 0x80
+              i32.ne
+              if
+                local.get $ci
+                i32.const 1
+                i32.add
+                local.set $ci
+              end
+              local.get $p
+              i32.const 1
+              i32.add
+              local.set $p
+              br $cnext
+            )
+          )
+          local.get $ci
+          i64.extend_i32_s
+          return
+        end
+        local.get $start
+        i32.const 1
+        i32.add
+        local.set $start
+        br $next_start
+      )
+    )
+    ;; no match → -1
+    i64.const -1
   )
 ";
 
@@ -2863,6 +3038,11 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // generalisation of `$__wasm_str_contains`. Reads the two str payloads,
     // allocates nothing; like the prefix/suffix ops it forces the `(memory …)`.
     let needs_count = module_uses_str_method(module, StrMethodOp::Count);
+    // PMAT-1136: `s.find(p)` over strings (`Expr::StrMethod`, op `Find`) — a
+    // non-allocating byte SEARCH returning the CODE-POINT index of the first
+    // match (`$__wasm_str_find`), the index-returning sibling of
+    // `$__wasm_str_contains`. Reads the two str payloads, allocates nothing.
+    let needs_find = module_uses_str_method(module, StrMethodOp::Find);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -2872,6 +3052,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_endswith
         || needs_contains
         || needs_count
+        || needs_find
     {
         writeln!(
             out,
@@ -2951,6 +3132,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // allocates nothing (a Python int, not a new string).
     if needs_count {
         out.push_str(STR_COUNT_HELPER);
+    }
+    // PMAT-1136: emit the string FIND helper once, when any function uses
+    // `s.find(p)` over strings (`Expr::StrMethod`, op `Find`). Same byte slide as
+    // `$__wasm_str_contains` but returns the CODE-POINT index of the first match
+    // (or -1) — the ONE search op that must convert the byte offset to a char
+    // index (Python find is char-indexed). The conversion counts non-continuation
+    // bytes in `h[0..start]`; the empty-needle answer is 0 (no char walk). Reads
+    // memory, allocates nothing (a Python int, not a new string).
+    if needs_find {
+        out.push_str(STR_FIND_HELPER);
     }
     // PMAT-1032: emit the CHAR-semantics helper family once, when any function
     // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
@@ -4974,10 +5165,27 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_count").expect("write");
             Ok(WatTy::I64)
         }
+        // PMAT-1136: `s.find(p)` — an int (i64) result: the CODE-POINT index of
+        // the first occurrence of `p` in `s`, or -1 if absent. Both operands lower
+        // to i32 base-pointers (`emit_str_expr`), then `$__wasm_str_find` (the
+        // index-returning sibling of `$__wasm_str_contains`, converting the byte
+        // offset to a char index since Python `find` is char-indexed). Allocates
+        // nothing.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Find,
+            args,
+        } if args.len() == 1 => {
+            emit_str_expr(recv, scope, out, depth)?;
+            emit_str_expr(&args[0], scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_find").expect("write");
+            Ok(WatTy::I64)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
-             `.startswith(p)`, `.endswith(p)`, and `.count(p)` are supported; \
-             upper/lower/strip/split/replace/find/… are refused"
+             `.startswith(p)`, `.endswith(p)`, `.count(p)`, and `.find(p)` are \
+             supported; upper/lower/strip/split/replace/rfind/… are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
