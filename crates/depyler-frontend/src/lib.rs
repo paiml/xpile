@@ -22327,8 +22327,40 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
                 .into(),
         ));
     }
-    let is_repr = fv.conversion == ast::ConversionFlag::Repr;
     let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
+    // PMAT-1170: a LITERAL `None` interpolated in an f-string renders the string
+    // "None" (CPython: `str(None)` == `repr(None)` == "None", so `f"{None}"`,
+    // `f"{None!s}"`, `f"{None!r}"`, `f"{None=}"` are all "None"). A bare `None`
+    // lowered to `Expr::OptionExpr(None)`, whose inner type is un-inferable — main's
+    // #1765 Optional path desugared it to `if (None).is_none() { "None" } else {
+    // format!("{}", (None).unwrap()) }`, and the dead `else` still type-checks:
+    // `(None).unwrap()` has no known `T`, so rustc rejected it with E0282
+    // (accept-then-fail: transpile-success → INVALID Rust). FIRST, a literal `None`
+    // WITH a format spec is a CPython *runtime TypeError* (`format(None, ">6")` →
+    // "unsupported format string passed to NoneType.__format__"), so there is no
+    // correct static rendering — refuse it (same posture #1765 takes for an
+    // Optional field WITH a spec). An empty spec `f"{None:}"` is also conservatively
+    // refused here (it is `format(None, "")` == "None" in CPython, but the
+    // fail-loud reject is not a divergence). THEN substitute the literal string
+    // "None" for the no-spec forms and neutralize the repr flag (`repr(None)` ==
+    // "None", NOT "'None'" — a naive `pyrepr_of` over the substituted `LitStr` would
+    // wrongly quote it). DISTINCT from PMAT-1168 (#1765), which renders an
+    // Optional-VALUE-typed field like `str(x)`; this handles the bare `None` literal.
+    if matches!(value, Expr::OptionExpr(None)) && fv.format_spec.is_some() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` interpolates a literal `None` with a format spec in an f-string — \
+ Python's `format(None, spec)` is a TypeError, so there is no correct rendering; a plain \
+ `f\"{{None}}\"` renders \"None\"",
+            ctx.fn_name
+        )));
+    }
+    let none_literal = matches!(value, Expr::OptionExpr(None));
+    let value = if none_literal {
+        Expr::LitStr("None".to_string())
+    } else {
+        value
+    };
+    let is_repr = fv.conversion == ast::ConversionFlag::Repr && !none_literal;
     // PMAT-1168: an Optional field WITH a format spec (or an `!r` conversion) is
     // refused — Python's `format(None, "<spec>")` / `repr(None)`-then-spec paths
     // have no single correct static rendering (present → the value, absent →
