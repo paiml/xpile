@@ -80,11 +80,13 @@
 //!   form via `$__wasm_int_to_str` (unsigned-magnitude, so `i64::MIN` is
 //!   exact). Since PMAT-1126/1127/1128 the string **methods**
 //!   `s.startswith(p)` / `s.endswith(p)` (byte prefix/suffix → i32 bool),
-//!   `s.count(p)` (non-overlapping byte occurrence count → i64), and the
-//!   substring test `p in s` (`Expr::StrContains`, a sliding byte search →
-//!   i32 bool) are supported — each a non-allocating helper. Still **refused**
-//!   honestly (a hard `BackendError`): `str(float)`/`repr(float)`, f-strings,
-//!   the OTHER string methods (upper/lower/strip/split/replace/rfind/…), and the
+//!   `s.count(p)` (non-overlapping byte occurrence count → i64), the substring
+//!   test `p in s` (`Expr::StrContains`, a sliding byte search → i32 bool), and
+//!   (PMAT-1136/1143) `s.find(p)` / `s.rfind(p)` (the CODE-POINT index of the
+//!   first / last occurrence → i64, or -1) are supported — each a non-allocating
+//!   helper. Still **refused** honestly (a hard `BackendError`):
+//!   `str(float)`/`repr(float)`, f-strings,
+//!   the OTHER string methods (upper/lower/strip/split/replace/index/rindex/…), and the
 //!   composite `dict` / `set` value/`in` shapes not yet wired. Char access is O(chars)
 //!   per read (charlen is O(bytes)) — correctness over speed, an honest
 //!   documented tradeoff.
@@ -1393,6 +1395,182 @@ const STR_FIND_HELPER: &str = "\
         local.get $start
         i32.const 1
         i32.add
+        local.set $start
+        br $next_start
+      )
+    )
+    ;; no match → -1
+    i64.const -1
+  )
+";
+
+/// PMAT-1143: `$__wasm_str_rfind(h, n) -> i64` — Python `h.rfind(n)` (the
+/// CODE-POINT index of the LAST occurrence of `n` in `h`, or `-1` if absent)
+/// over two length-prefixed UTF-8 strings, returning an `i64` (a Python `int`).
+///
+/// The reverse-scan sibling of [`STR_FIND_HELPER`]: the SAME naive byte match
+/// and the SAME byte-offset → code-point-index conversion (count the
+/// non-continuation bytes in `h[0..start]`, `(b & 0xC0) != 0x80`), but the outer
+/// slide runs from the LAST candidate start offset (`hn - nn`) DOWN to `0`, so
+/// the FIRST match it finds is the RIGHTMOST (last) occurrence — exactly Python
+/// `str.rfind`. The conversion is exact because `n[0]` is a LEAD byte, so every
+/// match lands on a char boundary; the prefix `h[0..start]` is a whole number of
+/// code points.
+///
+///   * an EMPTY needle → the code-point length of `h` (`$__wasm_str_charlen`):
+///     Python `"abc".rfind("")` == 3 and `"".rfind("")` == 0 (the empty string
+///     is found at the END). This is the ONE place `rfind` diverges from `find`
+///     (whose empty-needle answer is `0`, the START).
+///   * a needle LONGER than the haystack → `-1`.
+///   * absent → `-1`.
+///
+/// For non-ASCII input this is char-exact where a byte index would silently
+/// diverge (`"héllo".rfind("l")` == 3, not the byte offset 4). Like
+/// `$__wasm_str_find` it reads linear memory and allocates NOTHING (an int, not a
+/// new string). Emitted once per module (gated on [`module_uses_str_method`] for
+/// `Rfind`); its empty-needle `$__wasm_str_charlen` call rides
+/// [`module_touches_str`], which any `StrMethod` sets.
+const STR_RFIND_HELPER: &str = "\
+  ;; __wasm_str_rfind(h, n) = Python h.rfind(n)  (i64: CODE-POINT index of the
+  ;; LAST occurrence, or -1). h, n are i32 base-pointers to length-prefixed
+  ;; regions (i32 byte count @ base+0, UTF-8 bytes @ base+8). The reverse-scan
+  ;; sibling of $__wasm_str_find: SAME naive byte match + byte→code-point index
+  ;; conversion, but the outer slide runs from the LAST candidate offset DOWN to
+  ;; 0 (the first match found is the last occurrence). Empty needle → charlen(h)
+  ;; in CODE POINTS (found at the END). Allocates nothing.
+  (func $__wasm_str_rfind (param $h i32) (param $n i32) (result i64)
+    (local $hn i32)
+    (local $nn i32)
+    (local $start i32)
+    (local $last i32)
+    (local $j i32)
+    (local $match i32)
+    (local $ci i32)
+    (local $p i32)
+    ;; hn = len(h); nn = len(n)
+    local.get $h
+    i32.load
+    local.set $hn
+    local.get $n
+    i32.load
+    local.set $nn
+    ;; empty needle: Python h.rfind(\"\") == len(h) in CODE POINTS (found at the end)
+    local.get $nn
+    i32.eqz
+    if
+      local.get $h
+      call $__wasm_str_charlen
+      i64.extend_i32_s
+      return
+    end
+    ;; a needle longer than the haystack can never occur → -1
+    local.get $nn
+    local.get $hn
+    i32.gt_s
+    if
+      i64.const -1
+      return
+    end
+    ;; last = hn - nn  (inclusive last start offset; >= 0, guarded above)
+    local.get $hn
+    local.get $nn
+    i32.sub
+    local.set $last
+    ;; start = last; while start >= 0: try a len(n)-byte match at offset start,
+    ;; scanning DOWN so the FIRST match is the LAST (rightmost) occurrence
+    local.get $last
+    local.set $start
+    (block $done
+      (loop $next_start
+        local.get $start
+        i32.const 0
+        i32.lt_s
+        br_if $done
+        ;; match = 1; j = 0; while j < nn: if h[8+start+j] != n[8+j] fail
+        i32.const 1
+        local.set $match
+        i32.const 0
+        local.set $j
+        (block $stop
+          (loop $next_char
+            local.get $j
+            local.get $nn
+            i32.ge_s
+            br_if $stop
+            ;; h byte start+j
+            local.get $h
+            i32.const 8
+            i32.add
+            local.get $start
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            ;; n byte j
+            local.get $n
+            i32.const 8
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            i32.ne
+            if
+              i32.const 0
+              local.set $match
+              br $stop
+            end
+            local.get $j
+            i32.const 1
+            i32.add
+            local.set $j
+            br $next_char
+          )
+        )
+        ;; a full-length match at byte offset $start → convert to a CODE-POINT
+        ;; index: count non-continuation bytes in h[0..start], return it.
+        local.get $match
+        if
+          i32.const 0
+          local.set $ci
+          i32.const 0
+          local.set $p
+          (block $cdone
+            (loop $cnext
+              local.get $p
+              local.get $start
+              i32.ge_s
+              br_if $cdone
+              ;; if (h[8+p] & 0xC0) != 0x80  → ci++ (a lead / single byte)
+              local.get $h
+              i32.const 8
+              i32.add
+              local.get $p
+              i32.add
+              i32.load8_u
+              i32.const 0xC0
+              i32.and
+              i32.const 0x80
+              i32.ne
+              if
+                local.get $ci
+                i32.const 1
+                i32.add
+                local.set $ci
+              end
+              local.get $p
+              i32.const 1
+              i32.add
+              local.set $p
+              br $cnext
+            )
+          )
+          local.get $ci
+          i64.extend_i32_s
+          return
+        end
+        local.get $start
+        i32.const 1
+        i32.sub
         local.set $start
         br $next_start
       )
@@ -3156,6 +3334,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // match (`$__wasm_str_find`), the index-returning sibling of
     // `$__wasm_str_contains`. Reads the two str payloads, allocates nothing.
     let needs_find = module_uses_str_method(module, StrMethodOp::Find);
+    // PMAT-1143: `s.rfind(p)` over strings (`Expr::StrMethod`, op `Rfind`) — the
+    // reverse-scan sibling of `find`, returning the CODE-POINT index of the LAST
+    // match (`$__wasm_str_rfind`), or -1. Reads the two str payloads, allocates
+    // nothing (its empty-needle answer calls `$__wasm_str_charlen`, co-emitted by
+    // `module_touches_str`).
+    let needs_rfind = module_uses_str_method(module, StrMethodOp::Rfind);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -3166,6 +3350,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_contains
         || needs_count
         || needs_find
+        || needs_rfind
     {
         writeln!(
             out,
@@ -3255,6 +3440,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // memory, allocates nothing (a Python int, not a new string).
     if needs_find {
         out.push_str(STR_FIND_HELPER);
+    }
+    // PMAT-1143: emit the string RFIND helper once, when any function uses
+    // `s.rfind(p)` over strings (`Expr::StrMethod`, op `Rfind`). The reverse-scan
+    // sibling of `$__wasm_str_find`: same byte match + byte→char-index conversion,
+    // but the outer slide runs from the last candidate offset DOWN to 0 (first
+    // match = last occurrence). The empty-needle answer is charlen(h) — the code
+    // point length (Python `"abc".rfind("")` == 3), calling `$__wasm_str_charlen`
+    // (emitted below via `module_touches_str`, which a `StrMethod` always sets).
+    // Reads memory, allocates nothing (a Python int, not a new string).
+    if needs_rfind {
+        out.push_str(STR_RFIND_HELPER);
     }
     // PMAT-1032: emit the CHAR-semantics helper family once, when any function
     // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
@@ -5420,10 +5616,28 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_find").expect("write");
             Ok(WatTy::I64)
         }
+        // PMAT-1143: `s.rfind(p)` — an int (i64) result: the CODE-POINT index of
+        // the LAST occurrence of `p` in `s`, or -1 if absent. The reverse-scan
+        // sibling of `.find(p)`: both operands lower to i32 base-pointers
+        // (`emit_str_expr`), then `$__wasm_str_rfind` (which scans candidate
+        // offsets from the right and converts the byte offset to a char index,
+        // since Python `rfind` is char-indexed). Allocates nothing.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Rfind,
+            args,
+        } if args.len() == 1 => {
+            emit_str_expr(recv, scope, out, depth)?;
+            emit_str_expr(&args[0], scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_rfind").expect("write");
+            Ok(WatTy::I64)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
-             `.startswith(p)`, `.endswith(p)`, `.count(p)`, and `.find(p)` are \
-             supported; upper/lower/strip/split/replace/rfind/… are refused"
+             `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, and \
+             `.rfind(p)` are supported; upper/lower/strip/split/replace/… are \
+             refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
