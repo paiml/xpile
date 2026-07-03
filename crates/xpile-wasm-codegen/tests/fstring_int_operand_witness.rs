@@ -365,16 +365,18 @@ fn str_only_concat_is_untouched_by_the_pre_pass() {
 
 #[test]
 fn strformat_and_formatspec_refused_honestly() {
-    // A multi-field `str.format` template reaches the WASM lane as a `StrFormat`.
+    // PMAT-1166: a bare-`{}` template now FOLDS (see `str_format_fold_witness`);
+    // a template carrying a FORMAT SPEC still refuses (its width / alignment is
+    // not modelled on the WASM lane).
     let strfmt = str_fn_module(
         "sf",
-        vec![int_param("x"), int_param("y")],
+        vec![int_param("x")],
         Expr::StrFormat {
-            fmt: "{}-{}".into(),
-            args: vec![Expr::Ident("x".into()), Expr::Ident("y".into())],
+            fmt: "v={:>5}".into(),
+            args: vec![Expr::Ident("x".into())],
         },
     );
-    let err = emit_module(&strfmt).expect_err("a StrFormat template must refuse");
+    let err = emit_module(&strfmt).expect_err("a spec'd StrFormat template must refuse");
     assert!(
         format!("{err}").contains("str.format"),
         "StrFormat refusal must name the unfolded template:\n{err}"
