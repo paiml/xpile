@@ -6471,11 +6471,40 @@ fn emit_str_expr(
             emit_expr_typed(e, scope, out, depth, WatTy::I32)?;
             Ok(())
         }
+        // PMAT-1147: a string-valued conditional `x if c else y` in a string
+        // position — a WASM `(if (result i32) <cond> (then <ptr>) (else <ptr>))`
+        // choosing between the two arms' i32 base-pointers. This is precisely the
+        // shape the frontend's `str(bool)` desugar produces (`"True" if b else
+        // "False"`, PMAT-502ae), and any string-valued ternary. Both arms lower
+        // via `emit_str_expr`, so each is an already-correct pointer to a
+        // length-prefixed UTF-8 string — no byte/code-point reasoning is needed
+        // here (unlike the byte-search ops), and a non-string arm refuses
+        // honestly through the recursion (never a silent miscompile). The arm
+        // literals were laid out by `collect_expr_literals` (it recurses into
+        // `IfExpr`), so the `then`/`else` pointers resolve. `cond` is an i32
+        // bool (a Python `bool` lowers to i32).
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            emit_expr_typed(cond, scope, out, depth, WatTy::I32)?;
+            indent(out, depth);
+            writeln!(out, "if (result i32)").expect("write");
+            emit_str_expr(then_expr, scope, out, depth + 1)?;
+            indent(out, depth);
+            writeln!(out, "else").expect("write");
+            emit_str_expr(else_expr, scope, out, depth + 1)?;
+            indent(out, depth);
+            writeln!(out, "end").expect("write");
+            Ok(())
+        }
         other => Err(unsupported(&format!(
             "expression {} in a string position — the WASM string subset \
              returns a `str` name (param/local), a string literal, a `Concat` \
-             (a + b), a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, or a str-returning \
-             call; stepped slicing / str() / f-strings are refused",
+             (a + b), a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/\
+             `else`, or a str-returning call; stepped slicing / str() / \
+             f-strings are refused",
             expr_kind(other)
         ))),
     }
