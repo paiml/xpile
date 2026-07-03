@@ -262,6 +262,14 @@ impl Function {
         if self.uses_exception_handling() {
             ids.push("C-PY-EXCEPT-ALLOWLIST");
         }
+        // PMAT-1135 (R6): cite the whole-file-I/O contract when the body reads or
+        // writes a file (`Expr::FileReadAll`/`FileReadLines` or `Stmt::FileWrite`,
+        // PMAT-1074/1075/1076/1078). File I/O shipped with NO `// xpile-contract:`
+        // line; `C-PY-FILE-IO-ROUNDTRIP` (proved core-Lean, PMAT-1124) governs the
+        // read-after-write / truncate / append semantics.
+        if self.uses_file_io() {
+            ids.push("C-PY-FILE-IO-ROUNDTRIP");
+        }
         ids
     }
 
@@ -285,6 +293,67 @@ impl Function {
     pub fn uses_exception_handling(&self) -> bool {
         self.body.stmts.iter().any(stmt_has_trycatch)
             || matches!(self.body.trailing_return, Expr::TryCatch { .. })
+    }
+
+    /// PMAT-1135 (R6): true if the body reads or writes a file — a
+    /// `Stmt::FileWrite` (any nesting) or an `Expr::FileReadAll`/`FileReadLines`
+    /// (possibly wrapped in `len(...)` / a str method / a for-iterable). Drives
+    /// the `C-PY-FILE-IO-ROUNDTRIP` citation.
+    pub fn uses_file_io(&self) -> bool {
+        self.body.stmts.iter().any(stmt_has_file_io)
+            || expr_has_file_read(&self.body.trailing_return)
+    }
+}
+
+/// PMAT-1135: does a statement read/write a file? `Stmt::FileWrite` directly,
+/// or an `Expr::FileReadAll`/`FileReadLines` in a value / for-iterable position
+/// (recursing through the block-bearing variants).
+fn stmt_has_file_io(s: &Stmt) -> bool {
+    match s {
+        Stmt::FileWrite { .. } => true,
+        Stmt::Return(e) => expr_has_file_read(e),
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => expr_has_file_read(value),
+        Stmt::Print { args, .. } => args.iter().any(expr_has_file_read),
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => then_body.iter().any(stmt_has_file_io) || else_body.iter().any(stmt_has_file_io),
+        Stmt::While { cond, body } => expr_has_file_read(cond) || body.iter().any(stmt_has_file_io),
+        Stmt::ForEach { iter, body, .. } => {
+            expr_has_file_read(iter) || body.iter().any(stmt_has_file_io)
+        }
+        Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_file_io),
+        Stmt::ForEachZip3 { body, .. } => body.iter().any(stmt_has_file_io),
+        Stmt::NestedFn { body, .. } => body.stmts.iter().any(stmt_has_file_io),
+        _ => false,
+    }
+}
+
+/// PMAT-1135: does an expression contain a file READ (`Expr::FileReadAll` /
+/// `FileReadLines`), possibly wrapped in `len(...)` / a str method / concat /
+/// a call / a conditional? Covers the positions the file-I/O lowering emits.
+fn expr_has_file_read(e: &Expr) -> bool {
+    match e {
+        Expr::FileReadAll(_) | Expr::FileReadLines(_) => true,
+        Expr::Len(inner) => expr_has_file_read(inner),
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_file_read(recv) || args.iter().any(expr_has_file_read)
+        }
+        Expr::Concat { lhs, rhs } | Expr::BinOp { lhs, rhs, .. } => {
+            expr_has_file_read(lhs) || expr_has_file_read(rhs)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_file_read),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_file_read(cond)
+                || expr_has_file_read(then_expr)
+                || expr_has_file_read(else_expr)
+        }
+        _ => false,
     }
 }
 

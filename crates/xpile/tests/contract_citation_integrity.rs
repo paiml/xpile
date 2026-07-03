@@ -135,6 +135,9 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         // PMAT-1133 (R6): try/except dispatch is now wired + cited (a body with
         // a Stmt::TryCatch cites C-PY-EXCEPT-ALLOWLIST, proved core-Lean 1120).
         "C-PY-EXCEPT-ALLOWLIST",
+        // PMAT-1135 (R6): whole-file I/O is now wired + cited (a FileReadAll/
+        // FileReadLines/FileWrite body cites C-PY-FILE-IO-ROUNDTRIP, proved 1124).
+        "C-PY-FILE-IO-ROUNDTRIP",
     ] {
         assert!(
             cited.contains(required),
