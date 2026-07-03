@@ -522,7 +522,10 @@ impl Item {
             Item::Struct { .. } => vec!["C-XLATE-PY-CLASS-TO-STRUCT"],
             // No governing const/enum translation contract on disk yet
             // (follow-up). Empty so the derived gate stays honest.
-            Item::Const { .. } | Item::Enum { .. } => Vec::new(),
+            // PMAT-1145/1146 (R6): the last two uncited module-level constructs
+            // now have on-disk contracts (const-translation-v1 / enum-translation-v1).
+            Item::Const { .. } => vec!["C-CONST-TRANSLATION"],
+            Item::Enum { .. } => vec!["C-ENUM-TRANSLATION"],
         }
     }
 }

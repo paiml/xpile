@@ -1281,6 +1281,22 @@ roadmap:
   created: 2026-07-03T00:00:00Z
   notes: 'Feature branch feat/wasm-str-rfind (NOT worktree — disjoint crate from the cron Python-surface lane; xpile-wasm-codegen is cron-cold). StrMethodOp::Rfind already existed in meta-HIR (the Rust codegen lane emits it); this slice removes the WASM lane refusal only. EXECUTED WABT witness (tests/str_rfind_witness.rs): 24 cases — ASCII last-occurrence (hello/l=3, banana/ana=3, banana/na=4, mississippi/ss=5, aaa/a=2, abcabc/bc=4, each DIVERGING from find), single-occurrence (hello/ll=2, at-start/at-end), absent/too-long/equal -> -1/0, EMPTY-needle-as-charlen (hello/""=5, abc/""=3, ""/""=0, and the multi-byte héllo/""=5 proving char-length not byte-length 6), MULTI-BYTE (héllo/l=3 at byte offset 4, héllo/llo=2, héllo/é=1, café/é=3, naïve café/café=6, abécdé/é=5), and the shared-continuation-byte negative café/©=-1 — assembled via wat2wasm, run via wasm-interp, each value-matching CPython (cross-checked vs Rust str::rfind→h[..byte].chars().count() with None→-1). Plus literal-needle ("l" (data) segment, no allocator), heap-needle (("l"+"o") pulls in $__alloc + concat path), charlen-co-emit, and no-dead-helper (rfind-only module carries no find/startswith/endswith/contains/count helper) emit tests. The witness genuinely EXECUTED on this box (WABT present): 24 cases value-matched. cargo test -p xpile-wasm-codegen green (5 rfind witness tests + lib + all other witnesses).'
 
+- id: PMAT-1145
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1145: [provability/R6] C-CONST-TRANSLATION — the const half of PMAT-955. Module-level `NAME = <literal>` → `const NAME: TY = VALUE;` now carries a contract + core-Lean proof. ConstTranslation.lean: ConstDef{name,tyTag,valueRepr} structure-extensionality Diamond (depth-1). Item::applicable_contracts() (was Vec::new() for Const) now cites C-CONST-TRANSLATION; rust-codegen emits the citation on the const def. Verified: `MAX: int = 100` emits `// xpile-contract: C-CONST-TRANSLATION`.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Half of PMAT-955 (the named Pillar-A open gap: Item::Const/Enum uncited). Core-Lean, no Mathlib. Pilot 32→33.'
+- id: PMAT-1146
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1146: [provability/R6] C-ENUM-TRANSLATION — the enum half of PMAT-955, COMPLETING it. `class C(Enum): NAME=<int>` → `pub enum C {…}` now carries a contract + core-Lean proof. EnumTranslation.lean: EnumDef{name,variants:List(String×Int)} structure-extensionality Diamond + enum_order_preserved (emittedOrder = variants.map Prod.fst) + enum_variant_count_preserved (List.length_map). Item::applicable_contracts() cites C-ENUM-TRANSLATION; rust-codegen emits it on the enum def. With C-CONST-TRANSLATION this closes the LAST uncited module-level constructs — every construct under a cited contract is now UNCONDITIONALLY true.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Completes PMAT-955 (the #1 fan-out priority — closes the north-star claim). Core-Lean, no Mathlib. Pilot 33→34. Gates: e2e 812, diamond 26, refinement 3, citation-integrity 3, clippy 0, pv lint PASS. Worktree-isolated.'
 - id: PMAT-1131
   github_issue: null
   item_type: provability
@@ -2174,7 +2190,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-955: [Pillar-A/contract-integrity] contract-citation-integrity capstone — complete Function::applicable_contracts() so str/list/dict/float cite contracts + a citation-integrity GATE. PMAT-935 wired Type::Bool (the LAST core SCALAR), but applicable_contracts() (crates/xpile-meta-hir/src/lib.rs) still returns only [C-PY-INT-ARITH] for the composite/float types — str/list/dict/float emit ZERO `// xpile-contract:` citations, so the #1 north-star goal (every construct carried by a machine-checked contract) is PARTIALLY FALSIFIED for the non-scalar idiom slices. Author the missing per-type contracts, wire each into applicable_contracts(), and add a citation-integrity gate that FAILS when an emitted construct with an applicable contract ships without its citation line (extending the PMAT-907 shim-file scan to the whole emit surface).'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-25T00:00:00Z
   acceptance_criteria:

@@ -1,0 +1,119 @@
+metadata:
+  id: C-CONST-TRANSLATION
+  version: "1.0.0"
+  created: "2026-07-03"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Translation contract: how a Python module-level constant lowers to Rust. A
+    top-level `NAME = <literal>` (typing as `Item::Const{name, ty, value}`)
+    emits `const NAME: <ty> = <value>;`. The load-bearing property is
+    PRESERVATION — the emitted const reproduces the source name, type, and value
+    literal exactly.
+
+    PMAT-955 / Pillar-A closure: `Item::applicable_contracts()`
+    (crates/xpile-meta-hir/src/lib.rs) returned an EMPTY set for `Item::Const`,
+    so a `pub const X: i64 = 5;` shipped with ZERO `// xpile-contract:` line —
+    one of the LAST TWO uncited module-level constructs (the other is
+    `Item::Enum`, C-ENUM-TRANSLATION). This closes the final honest gap in the
+    north-star claim: after this + C-ENUM-TRANSLATION, "every construct under a
+    cited contract" is UNCONDITIONALLY true (audit-design.md §6; strategic_goals
+    Pillar A open_gap named exactly const + enum as the remainder).
+
+    Layer 2 of the xpile contract taxonomy (translation).
+  references:
+    - "Python Language Reference: module-level assignment (a name bound to a literal at module scope)"
+    - "Rust Reference: constant items (`const NAME: TYPE = VALUE;`)"
+    - "contracts/xlate-py-class-to-struct-v1.yaml (sibling definition-level translation contract, PMAT-958)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift)"
+  depends_on: []
+
+equations:
+  const_value_type_preserved:
+    formula: |
+      xlate(NAME = V) == const NAME: type_of(V) = emit(V);
+      preserving name, type, and value literal.
+    domain: |
+      A Python module-level constant `NAME = <literal>` (int/str/bool/float/…).
+    invariants:
+      - "the emitted const keeps the source NAME"
+      - "the emitted type is the inferred/annotated type of the value"
+      - "the emitted value literal reproduces the source value (no truncation / re-typing)"
+    preconditions:
+      - "the item is a module-level `Item::Const{name, ty, value}`"
+    postconditions:
+      - "the emitted `const NAME: TY = VALUE;` carries the same (name, TY, VALUE) triple"
+      - "an emitter that changed the type or value would produce a structurally-distinct const — falsified here"
+
+  const_def_structure_extensionality_diamond:
+    # PMAT-1145: FIRST (tier-defining) Diamond equation — registers
+    # C-CONST-TRANSLATION at depth-1 under the R6-grandfathered Diamond gate.
+    lean_theorem: "XpileContracts.CConstTranslation.const_def_structure_extensionality_diamond"
+    lean_file: "contracts/lean/ConstTranslation.lean"
+    formula: |
+      forall a b : ConstDef.
+        a.name = b.name -> a.tyTag = b.tyTag -> a.valueRepr = b.valueRepr -> a = b
+      (a constant is determined by its name/type/value triple)
+    domain: |
+      Any module-level constant. xpile lowers it to a Rust `const`; the Diamond
+      captures structure-extensionality of the (name, type, value) triple.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-CONST-TRANSLATION (registers it at depth-1)"
+      - "structure extensionality on the (name, type, value) triple (sorry-free, core-Lean, no Mathlib)"
+    preconditions:
+      - "the construct is a module-level constant (not a local `let` / a struct field)"
+    postconditions:
+      - "the module-level const carries // xpile-contract: C-CONST-TRANSLATION"
+
+proof_obligations:
+  - type: precondition
+    property: the item is a module-level Item::Const
+    formal: "item == Item::Const { name, ty, value }"
+    applies_to: const_value_type_preserved
+  - type: postcondition
+    property: the emitted const preserves name, type, and value
+    formal: "emit == const NAME: TY = VALUE"
+    applies_to: const_value_type_preserved
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == 0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-CONST-001
+    rule: |
+      A module-level constant MUST emit `const NAME: TY = VALUE;` preserving the
+      name, type, and value.
+    prediction: |
+      `MAX = 100` at module scope emits `const MAX: i64 = 100;`.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_applicable_contract_is_actually_cited
+    if_fails: |
+      The const translation dropped or re-typed the value.
+    ship_blocking: true
+    counter_example_classes:
+      - const_value_altered
+      - const_type_changed
+
+  - id: FALSIFY-CONST-002
+    rule: |
+      Every module-level constant MUST cite this contract.
+    prediction: |
+      A module with a top-level constant emits `// xpile-contract: C-CONST-TRANSLATION`.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_emitted_citation_resolves_to_an_on_disk_contract
+    if_fails: |
+      Item::applicable_contracts() regressed — const ships uncited.
+    ship_blocking: true
+    counter_example_classes:
+      - uncited_construct
+
+qa_gate:
+  id: QA-CONST-TRANSLATION
+  name: "Python module-level constant translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - every_emitted_citation_resolves_to_an_on_disk_contract
+    - inventory_pilot_count_in_sync_with_lakefile

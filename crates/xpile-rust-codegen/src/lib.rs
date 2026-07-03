@@ -111,6 +111,8 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
             }
             // PMAT-502bj: module-level constant → `const NAME: TY = VALUE;`.
             Item::Const { name, ty, value } => {
+                // PMAT-1145 (R6): cite C-CONST-TRANSLATION on the const def.
+                emit_item_contract_citations(&mut out, item)?;
                 write!(out, "const {name}: ")?;
                 emit_type(&mut out, ty)?;
                 out.push_str(" = ");
@@ -397,6 +399,8 @@ pub fn emit_module(module: &Module) -> Result<String, CodegenError> {
             // are tracked in the IR but `C.NAME.value` lowers to its literal at
             // the frontend, so the emitted enum needs no explicit `= disc`.
             Item::Enum { name, variants } => {
+                // PMAT-1146 (R6): cite C-ENUM-TRANSLATION on the enum def.
+                emit_item_contract_citations(&mut out, item)?;
                 out.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
                 writeln!(out, "pub enum {name} {{")?;
                 for (variant, _disc) in variants {

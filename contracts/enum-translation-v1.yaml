@@ -1,0 +1,123 @@
+metadata:
+  id: C-ENUM-TRANSLATION
+  version: "1.0.0"
+  created: "2026-07-03"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Translation contract: how a Python enum lowers to Rust (PMAT-513). A
+    `class C(Enum): NAME = <int literal> …` (typing as `Item::Enum{name,
+    variants}`, `variants : (name, discriminant)` in declaration order) emits
+    `#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum C { NAME, … }`. The
+    load-bearing property is ORDER + MEMBERSHIP preservation — the emitted
+    variant list reproduces the source variants in DECLARATION ORDER, none
+    dropped or duplicated, so `C.NAME` member access and the compile-time
+    `C.NAME.value` discriminant lowering stay correct.
+
+    PMAT-955 / Pillar-A closure: `Item::applicable_contracts()` returned an
+    EMPTY set for `Item::Enum`, so a `pub enum Color { … }` shipped with ZERO
+    `// xpile-contract:` line — the SECOND of the last two uncited module-level
+    constructs (the other is `Item::Const`, C-CONST-TRANSLATION). With both
+    authored + wired, "every construct under a cited contract" is
+    UNCONDITIONALLY true.
+
+    Layer 2 of the xpile contract taxonomy (translation).
+  references:
+    - "Python Language Reference: enum.Enum (members in declaration order; member.value)"
+    - "Rust Reference: enumerations (variant order defines discriminant order)"
+    - "contracts/const-translation-v1.yaml (sibling module-level translation contract, same slice)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift)"
+  depends_on: []
+
+equations:
+  enum_order_membership_preserved:
+    formula: |
+      emittedOrder(C) == map fst (variants(C))
+      preserving variant declaration ORDER and COUNT.
+    domain: |
+      A Python `class C(Enum): NAME = <int literal> …` with int-literal members.
+    invariants:
+      - "the emitted variant order is the source declaration order"
+      - "the emitted variant count equals the source count (none dropped/duplicated)"
+      - "each variant keeps its discriminant (C.NAME.value lowers to that literal)"
+    preconditions:
+      - "the item is a module-level `Item::Enum{name, variants}`"
+    postconditions:
+      - "the emitted `pub enum C { … }` lists the same variants in the same order"
+      - "an emitter that reordered variants would break the discriminant order / member access — falsified here"
+
+  enum_def_structure_extensionality_diamond:
+    # PMAT-1146: FIRST (tier-defining) Diamond equation — registers
+    # C-ENUM-TRANSLATION at depth-1 under the R6-grandfathered Diamond gate.
+    lean_theorem: "XpileContracts.CEnumTranslation.enum_def_structure_extensionality_diamond"
+    lean_file: "contracts/lean/EnumTranslation.lean"
+    formula: |
+      forall a b : EnumDef.
+        a.name = b.name -> a.variants = b.variants -> a = b
+      (an enum is determined by its name + ordered variants)
+    domain: |
+      Any Python enum. xpile lowers it to a Rust `enum`; the Diamond captures
+      structure-extensionality of the (name, ordered-variants) model, and the
+      sibling `enum_order_preserved` / `enum_variant_count_preserved` theorems
+      pin the order + count preservation.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-ENUM-TRANSLATION (registers it at depth-1)"
+      - "order preservation via map Prod.fst (sorry-free, core-Lean, no Mathlib)"
+      - "count preservation via List.length_map"
+    preconditions:
+      - "the construct is a module-level enum (not a struct / a plain class)"
+    postconditions:
+      - "the module-level enum carries // xpile-contract: C-ENUM-TRANSLATION"
+
+proof_obligations:
+  - type: precondition
+    property: the item is a module-level Item::Enum
+    formal: "item == Item::Enum { name, variants }"
+    applies_to: enum_order_membership_preserved
+  - type: postcondition
+    property: the emitted enum preserves variant order + count
+    formal: "emittedOrder == map fst variants"
+    applies_to: enum_order_membership_preserved
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == 0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-ENUM-001
+    rule: |
+      A Python enum MUST emit its variants in declaration order, none dropped.
+    prediction: |
+      `class Color(Enum): RED=1; GREEN=2; BLUE=3` emits `pub enum Color { RED,
+      GREEN, BLUE }` in that order.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_applicable_contract_is_actually_cited
+    if_fails: |
+      The enum translation reordered or dropped a variant.
+    ship_blocking: true
+    counter_example_classes:
+      - variant_reordered
+      - variant_dropped
+
+  - id: FALSIFY-ENUM-002
+    rule: |
+      Every module-level enum MUST cite this contract.
+    prediction: |
+      A module with an enum emits `// xpile-contract: C-ENUM-TRANSLATION`.
+    test: |
+      cargo test -p xpile --test contract_citation_integrity every_emitted_citation_resolves_to_an_on_disk_contract
+    if_fails: |
+      Item::applicable_contracts() regressed — enum ships uncited.
+    ship_blocking: true
+    counter_example_classes:
+      - uncited_construct
+
+qa_gate:
+  id: QA-ENUM-TRANSLATION
+  name: "Python enum translation contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - every_emitted_citation_resolves_to_an_on_disk_contract
+    - inventory_pilot_count_in_sync_with_lakefile
