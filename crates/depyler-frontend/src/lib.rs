@@ -19001,6 +19001,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             let of_float = args
                                 .first()
                                 .is_some_and(|a| infer_type_in_ctx(ctx, a) == Type::F64);
+                            // PMAT-1171: a non-Copy (`str`) operand that is READ
+                            // AGAIN later in the function must be CLONED, not moved.
+                            // Codegen lowers `min`/`max` to `.min()`/`.max()`, which
+                            // CONSUME their operands (`String: Ord`, taken by value),
+                            // so a bare `min(a, b)` moved `a`/`b` and a later
+                            // `print(a)` was rustc E0382 (accept-then-fail — invalid
+                            // Rust). Reuse the canonical clone-if-reused helper
+                            // (PMAT-588/628): it is a NO-OP for Copy operands
+                            // (`int`/`float`/`bool`) and for single-use bindings, so
+                            // numeric min/max and the single-use `print(min(a, b))`
+                            // form stay byte-identical — the clone fires only on code
+                            // that would otherwise fail to compile.
+                            let args = args
+                                .into_iter()
+                                .map(|a| clone_if_reused_non_copy(ctx, a))
+                                .collect::<Vec<_>>();
                             return Ok(Expr::NumBuiltin { op, args, of_float });
                         }
                     }
@@ -22311,9 +22327,23 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
                 .into(),
         ));
     }
-    let is_repr = fv.conversion == ast::ConversionFlag::Repr;
     let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
-    // PMAT-1168: an Optional field WITH a format spec (or an `!r` conversion) is
+    // PMAT-1170: a literal `None` interpolated in an f-string renders the string
+    // "None" (CPython: `str(None)` == `repr(None)` == "None", so `f"{None}"` is
+    // "None"). A bare `None` lowered to `Expr::OptionExpr(None)` — Rust `None`,
+    // which has no `Display` — so `format!("{}", None)` was rustc E0277
+    // (accept-then-fail: invalid Rust). Substitute the literal string "None" and
+    // treat it as a plain string for any `!r`/`!s` conversion (both yield "None",
+    // no repr-quoting) and any static format spec (`f"{None:>6}"` pads "None").
+    // Done before the Optional guard below so a literal `None` never reaches it.
+    let none_literal = matches!(value, Expr::OptionExpr(None));
+    let value = if none_literal {
+        Expr::LitStr("None".to_string())
+    } else {
+        value
+    };
+    let is_repr = fv.conversion == ast::ConversionFlag::Repr && !none_literal;
+    // PMAT-1168 (#1765): an Optional field WITH a format spec (or an `!r` conversion) is
     // refused — Python's `format(None, "<spec>")` / `repr(None)`-then-spec paths
     // have no single correct static rendering (present → the value, absent →
     // "None" or a TypeError), so emitting one would silently diverge. A plain
