@@ -1252,6 +1252,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Worktree-isolated (cron concurrently on Python-surface/WASM lanes, at ~PMAT-1127). lake build green (32 modules), pv lint 0 errors, all provability gates pass.'
+- id: PMAT-1133
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1133: [provability/R6] CLOSE the citation loop for the exception lane — wire C-PY-EXCEPT-ALLOWLIST (proved core-Lean PMAT-1120) into Function::applicable_contracts. The try/except lane (PMAT-1058/1059/1065/1070/1073) shipped with NO xpile-contract line (capability-vs-contract drift, audit-design.md §6); now a function whose body contains a try/except cites it. Detects BOTH forms: statement-form (Stmt::TryCatch, incl. nested in if/loop/handler/finally via stmt_has_trycatch) AND value-form (Expr::TryCatch from `try: return e`/`try: x = e`, a direct Return/Assign/Let/trailing value). Added to the citation-integrity required-cited list. Verified: both forms emit `// xpile-contract: C-PY-EXCEPT-ALLOWLIST`; e2e 812 green (citation lines break no exact-output asserts).'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Worktree-isolated; applicable_contracts is NOT a current cron hotspot (cron on WASM-strings/frontend). Gates: e2e 812, contract_citation_integrity 3, clippy 0, pv lint PASS. R6 loop CLOSED for exceptions (proven 1120 + now cited). File-io citation (needs deeper Expr::FileReadAll scan) is the follow-up.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

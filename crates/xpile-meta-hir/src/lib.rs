@@ -252,6 +252,16 @@ impl Function {
         {
             ids.push("C-XLATE-PY-BOOL-TO-RUST-BOOL");
         }
+        // PMAT-1133 (R6): cite the exception-dispatch contract when the function
+        // body contains a `try/except[/finally]` (`Stmt::TryCatch`). The
+        // try/except lane (PMAT-1058/1059/1065/1070/1073) shipped with NO
+        // `// xpile-contract:` line — a fresh capability-vs-contract gap
+        // (audit-design.md §6). `C-PY-EXCEPT-ALLOWLIST` (proved core-Lean,
+        // PMAT-1120) governs the allowlist no-swallow re-raise; wiring it here
+        // closes the citation loop so exception code ships cited.
+        if self.uses_exception_handling() {
+            ids.push("C-PY-EXCEPT-ALLOWLIST");
+        }
         ids
     }
 
@@ -266,6 +276,42 @@ impl Function {
             }
         }
         expr_has_int_arith(&self.body.trailing_return)
+    }
+
+    /// PMAT-1133 (R6): true if the body contains a `try/except[/finally]`
+    /// (`Stmt::TryCatch`, possibly nested in an if/loop/handler/finally). Drives
+    /// the `C-PY-EXCEPT-ALLOWLIST` citation. The trailing-return is an
+    /// expression (no statements), so only the statement list is scanned.
+    pub fn uses_exception_handling(&self) -> bool {
+        self.body.stmts.iter().any(stmt_has_trycatch)
+            || matches!(self.body.trailing_return, Expr::TryCatch { .. })
+    }
+}
+
+/// PMAT-1133: does a statement contain a `try/except` (`Stmt::TryCatch`),
+/// recursing through the block-bearing variants (if/while/for/nested-fn and a
+/// TryCatch's own body/handlers/finally)? Any nested TryCatch triggers the
+/// citation.
+fn stmt_has_trycatch(s: &Stmt) -> bool {
+    match s {
+        Stmt::TryCatch { .. } => true,
+        // The VALUE form `Expr::TryCatch` (`try: x = e except: x = e` /
+        // `try: return e …`) is emitted only as a direct Return/Assign/Let value.
+        Stmt::Return(e) => matches!(e, Expr::TryCatch { .. }),
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => {
+            matches!(value, Expr::TryCatch { .. })
+        }
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => then_body.iter().any(stmt_has_trycatch) || else_body.iter().any(stmt_has_trycatch),
+        Stmt::While { body, .. } => body.iter().any(stmt_has_trycatch),
+        Stmt::ForEach { body, .. } => body.iter().any(stmt_has_trycatch),
+        Stmt::ForEachPair { body, .. } => body.iter().any(stmt_has_trycatch),
+        Stmt::ForEachZip3 { body, .. } => body.iter().any(stmt_has_trycatch),
+        Stmt::NestedFn { body, .. } => body.stmts.iter().any(stmt_has_trycatch),
+        _ => false,
     }
 }
 
