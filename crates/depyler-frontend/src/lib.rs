@@ -10640,7 +10640,12 @@ fn ast_stmts_mention_name(stmts: &[ast::Stmt], name: &str) -> bool {
 /// PMAT-1081): an `__exit__` that RETURNS A VALUE (suppression protocol — a
 /// truthy return suppresses the in-flight exception; the desugar discards the
 /// return) or that USES its exc params (fabricated zero-values vs CPython's
-/// None/exc-triple) also refuses precisely at the `with` site.
+/// None/exc-triple) also refuses precisely at the `with` site. PMAT-1094
+/// (skeptic pass PMAT-1090): so do SIGNATURE shapes the desugar cannot call
+/// faithfully — a vararg on either dunder, an `__exit__` arity that cannot
+/// bind CPython's exc triple (TypeError in CPython, runs happily here), and
+/// required `__enter__` params; defaulted params on both dunders stay
+/// accepted (call-site default filling is faithful).
 fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendError> {
     use ast::{Expr, ExprContext as Ctx, Stmt};
 
@@ -10652,10 +10657,14 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
             let mut has_enter = false;
             let mut exit_params: Option<Vec<Option<ast::Expr>>> = None;
             let mut exit_fn: Option<&ast::StmtFunctionDef> = None;
+            let mut enter_fn: Option<&ast::StmtFunctionDef> = None;
             for m in &c.body {
                 if let Stmt::FunctionDef(f) = m {
                     match f.name.as_str() {
-                        "__enter__" => has_enter = true,
+                        "__enter__" => {
+                            has_enter = true;
+                            enter_fn = Some(f);
+                        }
                         "__exit__" => {
                             exit_fn = Some(f);
                             exit_params = Some(
@@ -10711,6 +10720,68 @@ fn transform_with_statements(suite: &mut Vec<ast::Stmt>) -> Result<(), FrontendE
                             c.name
                         ),
                     );
+                } else if xf.args.vararg.is_some() {
+                    // PMAT-1094 (skeptic pass PMAT-1090): a vararg escapes both
+                    // scans above (they read `args.args` only) — `def
+                    // __exit__(self, *args)` lowered to `fn __exit__(&self,
+                    // args: Vec<i64>)` is called with ZERO args by the desugar
+                    // (rustc E0061 far from the cause). The vararg RECEIVES the
+                    // exc triple in CPython ((None, None, None) on the clean
+                    // path), so fabricating it would be hole (b) again.
+                    unsound_exit_cms.insert(
+                        c.name.to_string(),
+                        format!(
+                            "`{}.__exit__` takes a vararg — CPython passes the exception triple into it (`(None, None, None)` on the clean path), which the desugar cannot fabricate faithfully. Supported at v0.2.0: exactly three ignored positional exc params",
+                            c.name
+                        ),
+                    );
+                } else {
+                    // PMAT-1094 adjacent (found first-hand): an arity that
+                    // cannot BIND `__exit__(exc_type, exc_val, exc_tb)` raises
+                    // TypeError at the first `with` exit in CPython, but the
+                    // fabricated-zeros call matches whatever arity was declared
+                    // and runs happily — a SILENT divergence (probes: arity
+                    // 0/1 and a 4th required param all print `exit` where
+                    // CPython raises). Extra DEFAULTED params stay accepted:
+                    // CPython binds their defaults, the fabricated zeros are
+                    // unread-unobservable (reads refuse via the scan above).
+                    let ps = || xf.args.args.iter().skip(1);
+                    let total = ps().count();
+                    let required = ps().filter(|a| a.default.is_none()).count();
+                    if total < 3 || required > 3 {
+                        unsound_exit_cms.insert(
+                            c.name.to_string(),
+                            format!(
+                                "`{}.__exit__` declares {} positional parameter(s) besides `self` ({} required) — CPython calls `__exit__(exc_type, exc_val, exc_tb)` with exactly three, so this program raises `TypeError` at the first `with` exit; the desugared call would run it happily (silent divergence). Supported at v0.2.0: exactly three ignored positional exc params",
+                                c.name, total, required
+                            ),
+                        );
+                    }
+                }
+            }
+            // PMAT-1094 adjacent: CPython calls `__enter__()` with ZERO
+            // arguments. A vararg or a required positional lowers to a fn
+            // parameter the desugared zero-arg call cannot supply (rustc
+            // E0061 far from the cause). DEFAULTED params stay accepted —
+            // call-site default filling supplies them faithfully.
+            if !unsound_exit_cms.contains_key(c.name.as_str()) {
+                if let Some(ef) = enter_fn {
+                    let required = ef
+                        .args
+                        .args
+                        .iter()
+                        .skip(1)
+                        .filter(|a| a.default.is_none())
+                        .count();
+                    if ef.args.vararg.is_some() || required > 0 {
+                        unsound_exit_cms.insert(
+                            c.name.to_string(),
+                            format!(
+                                "`{}.__enter__` takes a vararg or required parameters — CPython calls `__enter__()` with no arguments, and the lowered signature would demand them (a vararg becomes a required list parameter). Supported at v0.2.0: `self` plus defaulted parameters only",
+                                c.name
+                            ),
+                        );
+                    }
                 }
             }
             if unsound_exit_cms.contains_key(c.name.as_str()) {

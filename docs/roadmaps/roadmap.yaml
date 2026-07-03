@@ -1117,10 +1117,10 @@ roadmap:
   github_issue: null
   item_type: correctness
   title: 'PMAT-1094: [frontend/correctness/context-managers] `def __exit__(self, *args)` escapes the PMAT-1084 refusal boundary into a LOUD downstream rustc error (skeptic pass PMAT-1090, B-F10): exit_params is built from args.args only (misses the vararg), so the with-desugar calls __exit__() with zero args against a lowered fn __exit__(&self, args: Vec<i64>) — E0061 far from the cause, the exact failure mode PMAT-1083 fixed for next(). FIX: treat a vararg on __exit__ as exc-param-shaped — refuse precisely at the with site (the vararg RECEIVES the exc triple in CPython, so accepting it silently would be the PMAT-1084 hole again).'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-03T00:00:00Z
-  notes: 'Probe: /tmp/skeptic-b/cm7_star_exit.py, re-verified first-hand (E0061). The two shipped PMAT-1084 refusals themselves held every direct probe; posonly __exit__ refuses honestly (incidentally via no-self).'
+  notes: 'Probe: /tmp/skeptic-b/cm7_star_exit.py, re-verified first-hand (E0061). The two shipped PMAT-1084 refusals themselves held every direct probe; posonly __exit__ refuses honestly (incidentally via no-self). SHIPPED 2026-07-03: vararg on __exit__ refuses at the with site (receives the exc triple — fabricating it is the 1084 hole). ADJACENTS (found first-hand while probing, WORSE than the filed loud E0061 — all SILENT divergences): (1) __exit__ arity that cannot bind CPython''s 3-arg call — arity 0/1 and a required 4th param all raise TypeError at the first with-exit in CPython (3.10-verified, exit never prints, code 1) while the fabricated-zeros desugar matches the DECLARED arity and runs happily printing exit; now refuses when total non-self positionals < 3 OR required > 3. (2) __enter__ vararg / required params — zero-arg desugar call vs lowered required param, E0061 loud; now refuses. KEEP-GREEN boundary pinned from both sides: defaulted params on BOTH dunders stay accepted — __enter__(self, lvl=3) fills the default at the call site (emits __enter__(3i64), CPython-faithful), a defaulted 4th __exit__ param is unread-unobservable under fabricated zeros (reads refuse via the 1084 scan); cm_defaulted_params runs 42 == CPython. 4 rejection + 1 accepted fixtures, all CPython-verified; e2e 807 green, frontend suite green.'
 - id: PMAT-1095
   github_issue: null
   item_type: correctness
