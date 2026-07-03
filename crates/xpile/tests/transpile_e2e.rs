@@ -20898,6 +20898,17 @@ fn empty_collection_first_use_inference() {
         rust.contains("indexmap::IndexMap<String, i64>"),
         "str-key dict must type as IndexMap<String, i64>:\n{rust}"
     );
+    // Loop accumulators with COMPUTED values: the element type is typed from the
+    // appended expression with the loop var in scope. `str(i)` → the str-in-loop
+    // trap — the returned `Vec<String>` type is the anti-band-aid guard again.
+    assert!(
+        rust.contains("pub fn build_str_loop() -> Vec<String>"),
+        "THE STR-IN-LOOP TRAP: str(i) in a loop must type the list as Vec<String>:\n{rust}"
+    );
+    assert!(
+        rust.contains("pub fn build_computed_int_loop() -> Vec<i64>"),
+        "computed i*i loop must type as Vec<i64>:\n{rust}"
+    );
     // Runtime correctness: compile + run and assert the built collections. The
     // str-list `==` against `Vec<String>` only type-checks if the element type
     // really is `String`.
@@ -20914,6 +20925,15 @@ fn main() {
     let ds = build_str_dict();
     assert_eq!(ds.get("x"), Some(&1i64));
     assert_eq!(ds.get("y"), Some(&2i64));
+    // Loop accumulators (computed values).
+    assert_eq!(
+        build_str_loop(),
+        vec![String::from("0"), String::from("1"), String::from("2")]
+    );
+    assert_eq!(build_computed_int_loop(), vec![0i64, 1i64, 4i64]);
+    let dl = build_computed_dict_loop();
+    assert_eq!(dl.get(&2i64), Some(&4i64));
+    assert_eq!(build_from_param(5), vec![5i64]);
 }
 "#;
     assert_rustc_runs("empty_collection_infer", &rust, driver);

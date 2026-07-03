@@ -482,10 +482,6 @@ impl LoweringCtx {
         let obj_mutated = collect_obj_mutated(body, &mutating_methods);
         let nested_mutated = collect_nested_mutated(body);
         let read_counts = count_name_reads(body);
-        // PMAT-1160: infer element/K-V types for empty-collection locals from
-        // their first literal element-revealing use (see the field doc).
-        let empty_coll_types =
-            collect_empty_collection_types(body, matches!(fn_return_type, Type::BigInt));
         Self {
             fn_name: fn_name.to_string(),
             fn_return_type,
@@ -517,7 +513,9 @@ impl LoweringCtx {
             pending_leak_flag: None,
             leak_flag_consumed: false,
             try_dead: HashMap::new(),
-            empty_coll_types,
+            // PMAT-1160: populated after construction by a forward scan that needs
+            // the fully-built ctx as its type oracle (see `lower_function_def`).
+            empty_coll_types: HashMap::new(),
         }
     }
 }
@@ -2158,43 +2156,6 @@ fn empty_literal_for_type(ty: &Type) -> Expr {
     }
 }
 
-/// PMAT-1160: the literal-only type of an AST value, matching what
-/// `infer_type_in_ctx` yields for the same lowered literal (int → `I64`/`BigInt`
-/// in a BigInt function, str → `Str`, float → `F64`, bool → `Bool`, negated
-/// numeric literal → the numeric type). Returns `None` for ANYTHING non-literal
-/// (a name, call, nested collection, comprehension) — first-use inference stays
-/// conservative: a value it cannot type contributes NO evidence, so the
-/// assignment keeps its honest refusal rather than guessing.
-fn literal_value_type(v: &ast::Expr, bigint: bool) -> Option<Type> {
-    let int_ty = || {
-        if bigint {
-            Type::BigInt
-        } else {
-            Type::I64
-        }
-    };
-    match v {
-        ast::Expr::Constant(c) => match &c.value {
-            // Bool BEFORE Int — `True`/`False` are `Constant::Bool`, and a
-            // Python bool is an int subtype but types as `Bool` here.
-            ast::Constant::Bool(_) => Some(Type::Bool),
-            ast::Constant::Int(_) => Some(int_ty()),
-            ast::Constant::Float(_) => Some(Type::F64),
-            ast::Constant::Str(_) => Some(Type::Str),
-            _ => None,
-        },
-        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::USub) => match u.operand.as_ref() {
-            ast::Expr::Constant(c) => match &c.value {
-                ast::Constant::Int(_) => Some(int_ty()),
-                ast::Constant::Float(_) => Some(Type::F64),
-                _ => None,
-            },
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 /// PMAT-1160: record each local's empty-collection initialiser kind, walking
 /// `if`/`while`/`for` bodies (mirrors [`collect_struct_type_evidence`]'s walk).
 /// A name initialised with two DIFFERENT kinds is poisoned (`None`) so no bogus
@@ -2229,123 +2190,323 @@ fn collect_empty_init_kinds(stmts: &[ast::Stmt], out: &mut HashMap<String, Optio
     }
 }
 
-/// PMAT-1160: collect the LITERAL element/key/value types from `name`'s
-/// element-revealing uses, walking nested blocks. For a `List`/`Set` init:
-/// `name.append(v)` / `name.extend([v, …])` / `name.add(v)` and (list only)
-/// `name[i] = v` contribute `v`'s literal type as the element. For a `Dict`
-/// init: `name[k] = v` contributes `k`'s literal type as the key and `v`'s as
-/// the value. Non-literal keys/values contribute nothing (kept conservative).
-fn collect_element_uses(
+/// PMAT-1160: builtin/type callables whose result type `infer_type_in_ctx` knows
+/// (they lower to specific typed nodes). A call to one of these types soundly
+/// through the real oracle; an UNKNOWN callee is refused by
+/// [`ast_expr_names_all_known`] (so `infer_type_in_ctx`'s I64 call-fallback can
+/// never silently mistype a computed append value).
+const KNOWN_BUILTIN_CALLABLES: &[&str] = &[
+    "len", "abs", "min", "max", "sum", "round", "ord", "chr", "str", "int", "float", "bool",
+    "sorted", "list", "dict", "set", "tuple", "repr", "hex", "oct", "bin", "pow", "range",
+];
+
+/// PMAT-1160: whether `name` in call position resolves to a callable whose result
+/// `infer_type_in_ctx` types correctly — a module function (`signatures`), a local
+/// closure (`closure_returns`), or a known builtin. Anything else is unknown.
+fn is_known_callable(name: &str, ctx: &LoweringCtx) -> bool {
+    ctx.signatures.contains_key(name)
+        || ctx.closure_returns.contains_key(name)
+        || KNOWN_BUILTIN_CALLABLES.contains(&name)
+}
+
+/// PMAT-1160: SOUNDNESS GATE for computed-value inference. Returns `true` only
+/// when EVERY value-load name in `e` is one whose type the scan already tracks
+/// (a param / prior `let` / in-scope loop target / module const), and every call
+/// callee is a known callable. REFUSES (returns `false`) on any AST shape not
+/// explicitly whitelisted — so `infer_type_in_ctx` is only ever trusted on an
+/// expression all of whose inputs are known (its unknown-Ident/unknown-callee
+/// I64 fallbacks can never fire on a name we failed to track).
+fn ast_expr_names_all_known(e: &ast::Expr, ctx: &LoweringCtx) -> bool {
+    let all = |xs: &[ast::Expr]| xs.iter().all(|x| ast_expr_names_all_known(x, ctx));
+    match e {
+        ast::Expr::Constant(_) => true,
+        ast::Expr::Name(n) => ctx.name_types.contains_key(n.id.as_str()),
+        ast::Expr::BinOp(b) => {
+            ast_expr_names_all_known(&b.left, ctx) && ast_expr_names_all_known(&b.right, ctx)
+        }
+        ast::Expr::UnaryOp(u) => ast_expr_names_all_known(&u.operand, ctx),
+        ast::Expr::BoolOp(b) => all(&b.values),
+        ast::Expr::Compare(c) => ast_expr_names_all_known(&c.left, ctx) && all(&c.comparators),
+        ast::Expr::Call(c) => {
+            let callee_ok = match c.func.as_ref() {
+                // A bare-name callee must be a known callable (builtin / module fn /
+                // closure); a local var of that name calling it is covered by
+                // closure_returns, else it is unknown → refuse.
+                ast::Expr::Name(f) => is_known_callable(f.id.as_str(), ctx),
+                // A method / attribute callee (`obj.m(...)`) — the receiver's names
+                // must be known; the method result type comes from the oracle.
+                other => ast_expr_names_all_known(other, ctx),
+            };
+            callee_ok
+                && all(&c.args)
+                && c.keywords
+                    .iter()
+                    .all(|k| ast_expr_names_all_known(&k.value, ctx))
+        }
+        ast::Expr::Attribute(a) => ast_expr_names_all_known(&a.value, ctx),
+        ast::Expr::Subscript(s) => {
+            ast_expr_names_all_known(&s.value, ctx) && ast_expr_names_all_known(&s.slice, ctx)
+        }
+        ast::Expr::List(l) => all(&l.elts),
+        ast::Expr::Tuple(t) => all(&t.elts),
+        ast::Expr::Set(s) => all(&s.elts),
+        ast::Expr::Dict(d) => {
+            d.keys
+                .iter()
+                .flatten()
+                .all(|x| ast_expr_names_all_known(x, ctx))
+                && all(&d.values)
+        }
+        ast::Expr::IfExp(i) => {
+            ast_expr_names_all_known(&i.test, ctx)
+                && ast_expr_names_all_known(&i.body, ctx)
+                && ast_expr_names_all_known(&i.orelse, ctx)
+        }
+        ast::Expr::JoinedStr(j) => all(&j.values),
+        ast::Expr::FormattedValue(f) => ast_expr_names_all_known(&f.value, ctx),
+        ast::Expr::Starred(s) => ast_expr_names_all_known(&s.value, ctx),
+        // Any other shape (comprehension, lambda, walrus, await, …) → refuse.
+        _ => false,
+    }
+}
+
+/// PMAT-1160: type an AST value expression through the REAL oracle
+/// (`lower_expr_in_ctx` + `infer_type_in_ctx`) used everywhere else — so the
+/// recorded element type stays consistent with the eventual lowering of the same
+/// expression. Gated by [`ast_expr_names_all_known`]: `None` (→ refuse the use)
+/// whenever an input name is untracked, the shape is unhandled, or lowering
+/// fails. A bare `None` literal is refused (no sound element type).
+fn scan_value_type(scan: &LoweringCtx, e: &ast::Expr) -> Option<Type> {
+    if let ast::Expr::Constant(c) = e {
+        if matches!(c.value, ast::Constant::None) {
+            return None;
+        }
+    }
+    if !ast_expr_names_all_known(e, scan) {
+        return None;
+    }
+    let lowered = lower_expr_in_ctx(scan, e.clone()).ok()?;
+    Some(infer_type_in_ctx(scan, &lowered))
+}
+
+/// PMAT-1160: element type a `for <var> in <iter>` binds to `<var>` — `range(...)`
+/// → `I64`, else the iterable's `List`/`Set` element, `Dict` key, or `Str` char.
+/// `None` when the iterable can't be soundly typed (→ the target is dropped from
+/// the scan, so uses referencing it refuse).
+fn for_iter_elem_type(scan: &LoweringCtx, iter: &ast::Expr) -> Option<Type> {
+    if let ast::Expr::Call(c) = iter {
+        if let ast::Expr::Name(f) = c.func.as_ref() {
+            if f.id.as_str() == "range" {
+                return Some(Type::I64);
+            }
+        }
+    }
+    match scan_value_type(scan, iter)? {
+        Type::List(e) | Type::Set(e) => Some(*e),
+        Type::Dict(k, _) => Some(*k),
+        Type::Str => Some(Type::Str),
+        _ => None,
+    }
+}
+
+/// PMAT-1160: bind a `for` loop's target name(s) in the scan's `name_types` for
+/// the duration of its body, returning the prior bindings to restore. A single
+/// Name target takes the iterable's element type (or is dropped if untypeable); a
+/// tuple target's names are dropped (uses referencing them refuse). Only affects
+/// the throwaway scan clone.
+fn enter_for_target(scan: &mut LoweringCtx, f: &ast::StmtFor) -> Vec<(String, Option<Type>)> {
+    let mut saved = Vec::new();
+    let mut bind = |scan: &mut LoweringCtx, name: &str, ty: Option<Type>| {
+        saved.push((name.to_string(), scan.name_types.get(name).cloned()));
+        match ty {
+            Some(t) => {
+                scan.name_types.insert(name.to_string(), t);
+            }
+            None => {
+                scan.name_types.remove(name);
+            }
+        }
+    };
+    match f.target.as_ref() {
+        ast::Expr::Name(n) => {
+            let elem = for_iter_elem_type(scan, &f.iter);
+            bind(scan, n.id.as_str(), elem);
+        }
+        ast::Expr::Tuple(t) => {
+            for el in &t.elts {
+                if let ast::Expr::Name(n) = el {
+                    bind(scan, n.id.as_str(), None);
+                }
+            }
+        }
+        _ => {}
+    }
+    saved
+}
+
+/// PMAT-1160: FORWARD type-propagation scan collecting per-target element/key
+/// evidence. `scan` is a throwaway ctx clone whose `name_types` is extended with
+/// intervening `let`s and loop targets as the body is walked in order — so a
+/// COMPUTED append value (`xs.append(i*i)`, `d[i] = str(i)`) is typed with the
+/// same `name_types` the real lowering will have at that point. Each evidence
+/// entry is `Some(ty)` (a soundly-typed use) or `None` (an un-typeable use → the
+/// caller refuses the whole target).
+fn scan_element_uses(
     stmts: &[ast::Stmt],
-    name: &str,
-    kind: EmptyCollKind,
-    bigint: bool,
-    elem_tys: &mut Vec<Type>,
-    key_tys: &mut Vec<Type>,
+    kinds: &HashMap<String, EmptyCollKind>,
+    scan: &mut LoweringCtx,
+    elem_ev: &mut HashMap<String, Vec<Option<Type>>>,
+    key_ev: &mut HashMap<String, Vec<Option<Type>>>,
 ) {
     for s in stmts {
         match s {
-            // `name.append(v)` / `name.extend([..])` / `name.add(v)` — a
-            // mutating-method call in statement position.
-            ast::Stmt::Expr(e) => {
-                if let ast::Expr::Call(c) = e.value.as_ref() {
-                    if let ast::Expr::Attribute(attr) = c.func.as_ref() {
-                        if let ast::Expr::Name(recv) = attr.value.as_ref() {
-                            if recv.id.as_str() == name && c.keywords.is_empty() {
-                                match (kind, attr.attr.as_str(), c.args.as_slice()) {
-                                    (EmptyCollKind::List, "append", [v])
-                                    | (EmptyCollKind::Set, "add", [v]) => {
-                                        if let Some(t) = literal_value_type(v, bigint) {
-                                            elem_tys.push(t);
-                                        }
-                                    }
-                                    // `extend([lit, …])` → the list literal's
-                                    // element type (a non-literal iterable
-                                    // argument matches no arm → contributes
-                                    // nothing, keeping inference conservative).
-                                    (EmptyCollKind::List, "extend", [ast::Expr::List(l)]) => {
-                                        if let Some(t) = l
-                                            .elts
-                                            .first()
-                                            .and_then(|e| literal_value_type(e, bigint))
-                                        {
-                                            elem_tys.push(t);
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // `name[k] = v` — a subscript store.
-            ast::Stmt::Assign(a) if a.targets.len() == 1 => {
-                if let ast::Expr::Subscript(sub) = &a.targets[0] {
+            ast::Stmt::Assign(a) if a.targets.len() == 1 => match &a.targets[0] {
+                // `name[k] = v` — a subscript store (dict set / list index store).
+                ast::Expr::Subscript(sub) => {
                     if let ast::Expr::Name(recv) = sub.value.as_ref() {
-                        if recv.id.as_str() == name {
+                        if let Some(kind) = kinds.get(recv.id.as_str()) {
                             match kind {
                                 EmptyCollKind::Dict => {
-                                    if let Some(kt) = literal_value_type(sub.slice.as_ref(), bigint)
-                                    {
-                                        key_tys.push(kt);
-                                    }
-                                    if let Some(vt) = literal_value_type(a.value.as_ref(), bigint) {
-                                        elem_tys.push(vt);
-                                    }
+                                    key_ev
+                                        .entry(recv.id.to_string())
+                                        .or_default()
+                                        .push(scan_value_type(scan, sub.slice.as_ref()));
+                                    elem_ev
+                                        .entry(recv.id.to_string())
+                                        .or_default()
+                                        .push(scan_value_type(scan, a.value.as_ref()));
                                 }
                                 EmptyCollKind::List => {
-                                    if let Some(vt) = literal_value_type(a.value.as_ref(), bigint) {
-                                        elem_tys.push(vt);
-                                    }
+                                    elem_ev
+                                        .entry(recv.id.to_string())
+                                        .or_default()
+                                        .push(scan_value_type(scan, a.value.as_ref()));
                                 }
                                 EmptyCollKind::Set => {}
                             }
                         }
                     }
                 }
-            }
-            ast::Stmt::If(i) => {
-                collect_element_uses(&i.body, name, kind, bigint, elem_tys, key_tys);
-                collect_element_uses(&i.orelse, name, kind, bigint, elem_tys, key_tys);
-            }
-            ast::Stmt::While(w) => {
-                collect_element_uses(&w.body, name, kind, bigint, elem_tys, key_tys)
+                // A plain rebind `n = expr` — track `n`'s type so later uses that
+                // reference it type correctly. An empty-coll init (or any value we
+                // can't type) drops `n` (a later ref then refuses).
+                ast::Expr::Name(n) => {
+                    let ty = scan_value_type(scan, a.value.as_ref());
+                    match ty {
+                        Some(t) => {
+                            scan.name_types.insert(n.id.to_string(), t);
+                        }
+                        None => {
+                            scan.name_types.remove(n.id.as_str());
+                        }
+                    }
+                }
+                _ => {}
+            },
+            // `name.append(v)` / `name.extend([..])` / `name.add(v)`.
+            ast::Stmt::Expr(e) => {
+                if let ast::Expr::Call(c) = e.value.as_ref() {
+                    if let ast::Expr::Attribute(attr) = c.func.as_ref() {
+                        if let ast::Expr::Name(recv) = attr.value.as_ref() {
+                            if let Some(kind) = kinds.get(recv.id.as_str()) {
+                                if c.keywords.is_empty() {
+                                    match (kind, attr.attr.as_str(), c.args.as_slice()) {
+                                        (EmptyCollKind::List, "append", [v])
+                                        | (EmptyCollKind::Set, "add", [v]) => {
+                                            elem_ev
+                                                .entry(recv.id.to_string())
+                                                .or_default()
+                                                .push(scan_value_type(scan, v));
+                                        }
+                                        (EmptyCollKind::List, "extend", [v]) => {
+                                            // `extend(it)` → `it`'s element type.
+                                            let t =
+                                                scan_value_type(scan, v).and_then(|ty| match ty {
+                                                    Type::List(e) | Type::Set(e) => Some(*e),
+                                                    _ => None,
+                                                });
+                                            elem_ev.entry(recv.id.to_string()).or_default().push(t);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             ast::Stmt::For(f) => {
-                collect_element_uses(&f.body, name, kind, bigint, elem_tys, key_tys);
-                collect_element_uses(&f.orelse, name, kind, bigint, elem_tys, key_tys);
+                let saved = enter_for_target(scan, f);
+                scan_element_uses(&f.body, kinds, scan, elem_ev, key_ev);
+                scan_element_uses(&f.orelse, kinds, scan, elem_ev, key_ev);
+                for (name, old) in saved {
+                    match old {
+                        Some(t) => {
+                            scan.name_types.insert(name, t);
+                        }
+                        None => {
+                            scan.name_types.remove(&name);
+                        }
+                    }
+                }
+            }
+            ast::Stmt::If(i) => {
+                scan_element_uses(&i.body, kinds, scan, elem_ev, key_ev);
+                scan_element_uses(&i.orelse, kinds, scan, elem_ev, key_ev);
+            }
+            ast::Stmt::While(w) => {
+                scan_element_uses(&w.body, kinds, scan, elem_ev, key_ev);
             }
             _ => {}
         }
     }
 }
 
-/// PMAT-1160: pre-pass — infer a concrete container type for every empty-
-/// collection local from its first LITERAL element-revealing use. A name lands
-/// in the result ONLY when its literal uses are homogeneous and sufficient
-/// (a `Dict` needs both a literal key AND a literal value); otherwise it is
-/// omitted and the assignment keeps its honest refusal / default.
-fn collect_empty_collection_types(body: &[ast::Stmt], bigint: bool) -> HashMap<String, Type> {
-    let mut kinds: HashMap<String, Option<EmptyCollKind>> = HashMap::new();
-    collect_empty_init_kinds(body, &mut kinds);
+/// PMAT-1160: infer a concrete container type for every empty-collection local
+/// from a FORWARD type-propagation scan of the body (see [`scan_element_uses`]).
+/// `ctx` supplies the real type oracle; a throwaway clone tracks intervening
+/// bindings so COMPUTED element values (`xs.append(i*i)`, `d[i]=str(i)`, an
+/// appended param) type through the SAME `infer_type_in_ctx` the lowering uses —
+/// no silent divergence. A name lands in the result ONLY when its evidence is
+/// non-empty, homogeneous, and every use was soundly typed (a `Dict` needs both a
+/// key AND a value); otherwise it is omitted and the assignment keeps its honest
+/// refusal / default.
+fn infer_empty_collection_types(ctx: &LoweringCtx, body: &[ast::Stmt]) -> HashMap<String, Type> {
+    let mut raw: HashMap<String, Option<EmptyCollKind>> = HashMap::new();
+    collect_empty_init_kinds(body, &mut raw);
+    let kinds: HashMap<String, EmptyCollKind> = raw
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|kind| (k, kind)))
+        .collect();
+    if kinds.is_empty() {
+        return HashMap::new();
+    }
 
-    // All collected literal types must agree (and at least one must exist).
-    fn unique(tys: &[Type]) -> Option<Type> {
-        let first = tys.first()?.clone();
-        tys.iter().all(|t| *t == first).then_some(first)
+    let mut scan = ctx.clone();
+    let mut elem_ev: HashMap<String, Vec<Option<Type>>> = HashMap::new();
+    let mut key_ev: HashMap<String, Vec<Option<Type>>> = HashMap::new();
+    scan_element_uses(body, &kinds, &mut scan, &mut elem_ev, &mut key_ev);
+
+    // Non-empty, homogeneous, EVERY use soundly typed (any `None` → refuse).
+    fn resolve(ev: Option<&Vec<Option<Type>>>) -> Option<Type> {
+        let v = ev?;
+        let mut it = v.iter();
+        let first = it.next()?.clone()?;
+        for t in it {
+            match t {
+                Some(t) if *t == first => {}
+                _ => return None,
+            }
+        }
+        Some(first)
     }
 
     let mut out: HashMap<String, Type> = HashMap::new();
-    for (name, kind_opt) in &kinds {
-        let Some(kind) = kind_opt else { continue };
-        let mut elem_tys: Vec<Type> = Vec::new();
-        let mut key_tys: Vec<Type> = Vec::new();
-        collect_element_uses(body, name, *kind, bigint, &mut elem_tys, &mut key_tys);
+    for (name, kind) in &kinds {
         let ty = match kind {
-            EmptyCollKind::List => unique(&elem_tys).map(|t| Type::List(Box::new(t))),
-            EmptyCollKind::Set => unique(&elem_tys).map(|t| Type::Set(Box::new(t))),
-            EmptyCollKind::Dict => match (unique(&key_tys), unique(&elem_tys)) {
+            EmptyCollKind::List => resolve(elem_ev.get(name)).map(|t| Type::List(Box::new(t))),
+            EmptyCollKind::Set => resolve(elem_ev.get(name)).map(|t| Type::Set(Box::new(t))),
+            EmptyCollKind::Dict => match (resolve(key_ev.get(name)), resolve(elem_ev.get(name))) {
                 (Some(k), Some(v)) => Some(Type::Dict(Box::new(k), Box::new(v))),
                 _ => None,
             },
@@ -5946,6 +6107,12 @@ fn lower_function_def(
     }
 
     ctx.cls_name = cls_name;
+
+    // PMAT-1160: empty-collection first-use element inference. Runs AFTER the ctx
+    // is built (params/consts typed, signatures/structs available) so the forward
+    // scan can type COMPUTED append values through the real oracle. `cls_name` is
+    // already set so a `@classmethod` body's `cls(...)` resolves during the scan.
+    ctx.empty_coll_types = infer_empty_collection_types(&ctx, &body_stmts);
 
     // PMAT-741 (HUNT-V12 V12-9/10/11): reject a mutable-collection-literal default
     // (`[..]` / `{k: v}` / `{..}`) on a param that is MUTATED in the body. Python
