@@ -1061,10 +1061,10 @@ roadmap:
   github_issue: null
   item_type: correctness
   title: 'PMAT-1086: [frontend/correctness/cross-target] lone-surrogate string literals are LOSSILY decoded to U+FFFD by the rustpython-parser 0.4 escape decode (Rust String cannot hold surrogates), so every downstream op silently diverges in EVERY target: `"\ud800" < ""` → CPython True / emitted False; `"\ud800" == "�"` → CPython False / emitted True. INTERNALLY INCONSISTENT with wasm chr(): PMAT-1032''s $__wasm_chr deliberately encodes lone surrogates (ED A0 80, CPython-tolerant) while the literal path emits EF BF BD — `chr(55296) == "\ud800"` diverges. FIX: REFUSE lone-surrogate literals loudly at the frontend (the UTF-8 ABI + Rust String cannot represent them); detection needs the RAW source escape (post-decode the U+FFFD is indistinguishable from a genuine one) or a rustpython lexer-level check. Found by the PMAT-1081 WASM skeptic (the ONLY failing class in 25 value probes — both audited WASM slices otherwise SURVIVE).'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-03T00:00:00Z
-  notes: 'Probes: /tmp/pmat1081-wasm/ord_surrogate.wat line 10 (data segment shows EF BF BD). Also verified: negative slice bounds are SUPPORTED and CPython-exact (undocumented capability — update the WASM-surface memory note).'
+  notes: 'SHIPPED: reject_lone_surrogate_literals in depyler-frontend, called right after Suite::parse for EVERY lane (wasm/ruchy/rust all refuse — the WASM data segment is equally lossy, NOT gated like the alias scans). Post-decode the U+FFFD is indistinguishable from a genuine one, so detection RE-LEXES the raw source (rustpython lexer keeps escapes verbatim in Tok::String.value) and scans only non-raw non-bytes string tokens with escape-PAIR walking — comments, r-strings, escaped backslashes, genuine U+FFFD, and the D7FF/E000 boundary escapes all stay allowed (differentially verified CPython-exact: 1/6/6/true). Catches \u 4-digit + \U0000 8-digit spellings + f-strings. NOTE the title''s `"\ud800" < ""` second literal holds an INVISIBLE U+E000 — CPython True via D800<E000, emitted-would-be False via FFFD>E000. Unit: lone_surrogate_literal_rejected_all_spellings_and_lanes + scan_precision; e2e: lone_surrogate_rejected (3 lanes) + allowed_neighbors. Probes: /tmp/pmat1086/p1..p7. Also verified (skeptic note): negative slice bounds are SUPPORTED and CPython-exact. Original probe: /tmp/pmat1081-wasm/ord_surrogate.wat line 10.'
 - id: PMAT-1087
   github_issue: null
   item_type: bug

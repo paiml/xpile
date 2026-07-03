@@ -19904,3 +19904,49 @@ fn pair_loop_var_reassign_ruchy() {
         "ruchy: reassigned zip3 binding must bind mut (and only it):\n{stdout}"
     );
 }
+
+/// PMAT-1086 (skeptic-pass PMAT-1081, WASM finding): a lone-surrogate string
+/// literal (`"\ud800"`) decodes lossily to U+FFFD, so `"\ud800" < ""`
+/// silently flips CPython True → emitted False in EVERY target. Refused
+/// loudly in every lane — including WASM (its data segment held EF BF BD,
+/// internally inconsistent with `$__wasm_chr`'s surrogate-tolerant bytes).
+#[test]
+fn lone_surrogate_rejected() {
+    let py = fixture("lone_surrogate_rejected.py");
+    for target_args in [
+        &["transpile", py.to_str().unwrap()][..],
+        &["transpile", py.to_str().unwrap(), "--target", "wasm"][..],
+        &["transpile", py.to_str().unwrap(), "--target", "ruchy"][..],
+    ] {
+        let out = run_xpile(target_args);
+        assert!(
+            !out.status.success(),
+            "a lone-surrogate literal must be refused, not silently \
+             decoded to U+FFFD ({target_args:?})"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("lone-surrogate") && stderr.contains("\\ud800"),
+            "the rejection should name the surrogate escape ({target_args:?}):\n{stderr}"
+        );
+    }
+}
+
+/// PMAT-1086 precision: the refused shape's neighbors stay allowed and
+/// CPython-exact — a genuine U+FFFD literal, `r"\ud800"` (backslash text),
+/// `"\\ud800"` (escaped backslash), a comment mentioning `\ud800`, and the
+/// `퟿`/`` boundary escapes. Differential vs CPython (1 / 6 / 6 /
+/// True).
+#[test]
+fn lone_surrogate_allowed_neighbors() {
+    let rust = xpile_transpile_to_rust("lone_surrogate_allowed_neighbors.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(genuine_fffd(), 1, "a genuine U+FFFD literal stays allowed");
+    assert_eq!(raw_text(), 6, "r-string keeps 6 chars of backslash text");
+    assert_eq!(escaped_backslash(), 6, "escaped backslash is not a surrogate escape");
+    assert!(boundary(), "\\ud7ff < \\ue000 — boundary escapes stay allowed and exact");
+}
+"#;
+    assert_rustc_runs("lone_surrogate_allowed_neighbors", &rust, driver);
+}
