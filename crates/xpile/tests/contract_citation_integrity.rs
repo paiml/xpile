@@ -141,6 +141,9 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         // PMAT-1137 (R6): context managers now wired + cited (a body invoking
         // __enter__/__exit__ cites C-PY-CONTEXT-MANAGER-EXIT, proved 1131).
         "C-PY-CONTEXT-MANAGER-EXIT",
+        // PMAT-1139 (R6): eager generators now wired + cited (a __gen_result
+        // accumulator body cites C-PY-GENERATOR-EAGER, proved 1122).
+        "C-PY-GENERATOR-EAGER",
     ] {
         assert!(
             cited.contains(required),

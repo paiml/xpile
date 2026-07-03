@@ -278,6 +278,15 @@ impl Function {
         if self.uses_context_manager() {
             ids.push("C-PY-CONTEXT-MANAGER-EXIT");
         }
+        // PMAT-1139 (R6): cite the eager-generator contract when the body is a
+        // materialized generator. The eager rewrite (PMAT-1071) erases the
+        // generator-ness (the fn becomes a list-builder), but leaves a synthetic
+        // `__gen_result: list[T] = []` accumulator + `return __gen_result` — a
+        // private name no user code binds. `C-PY-GENERATOR-EAGER` (proved
+        // core-Lean, PMAT-1122) governs the materialization faithfulness.
+        if self.uses_generator() {
+            ids.push("C-PY-GENERATOR-EAGER");
+        }
         ids
     }
 
@@ -318,6 +327,23 @@ impl Function {
     pub fn uses_context_manager(&self) -> bool {
         self.body.stmts.iter().any(stmt_has_ctx_call)
             || expr_has_ctx_call(&self.body.trailing_return)
+    }
+
+    /// PMAT-1139 (R6): true if this function is a materialized (eager) generator
+    /// — the eager rewrite inserts a synthetic `__gen_result` accumulator that
+    /// no user code binds. Drives the `C-PY-GENERATOR-EAGER` citation.
+    pub fn uses_generator(&self) -> bool {
+        self.body.stmts.iter().any(stmt_binds_gen_result)
+    }
+}
+
+/// PMAT-1139: does a statement bind the synthetic generator accumulator
+/// `__gen_result` (the eager-rewrite marker), recursing into nested fns?
+fn stmt_binds_gen_result(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { name, .. } | Stmt::Assign { name, .. } => name == "__gen_result",
+        Stmt::NestedFn { body, .. } => body.stmts.iter().any(stmt_binds_gen_result),
+        _ => false,
     }
 }
 
