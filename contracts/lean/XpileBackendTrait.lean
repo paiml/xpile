@@ -62,36 +62,112 @@ deriving DecidableEq
 def lower (module : Array UInt8) (config : Array UInt8) : Artifact :=
   { bytes := module ++ config }
 
+/-! ## PMAT-1181 — non-vacuous `lower_idempotency` (skeptic follow-up).
+
+    The original `lower_idempotency` was `lower module config = lower
+    module config` — reflexivity, TRUE FOR ANY `def`. Its docstring
+    claimed to catch a backend that holds mutable state across lower
+    calls or embeds timestamps in `Artifact.primary`, but a `= f x`
+    reflexivity stub certifies nothing: a state-leaking backend
+    satisfies `f x = f x` just as trivially as a pure one. (Same
+    vacuity class as PMAT-1141/1176/1177/1178/1179/1180 — see
+    `PROVABILITY-INVENTORY.md`. Backend-side mirror of PMAT-1180's
+    Frontend `parse_idempotency` fix.)
+
+    The real determinism claim is STATE-INDEPENDENCE: `lower`'s output
+    depends only on `(module, config)`, not on any ambient mutable
+    state a non-pure impl might read (an emit counter, a cached codegen
+    table, a wall-clock timestamp). We model that explicitly so the
+    faithfulness of the backend is LOAD-BEARING and the theorem is
+    FALSIFIABLE (the `≠` dual below exhibits a state-leaking backend
+    that breaks it). -/
+
+/-- Ambient mutable state a non-pure backend might read across lower
+    calls (an emit counter, a cached codegen table snapshot, a
+    wall-clock timestamp folded into a `// generated at …` header). A
+    FAITHFUL backend ignores it; a state-leaking one folds it into the
+    emitted `Artifact`. -/
+structure BackendState where
+  bytes : Array UInt8
+deriving DecidableEq
+
+/-- A backend model carrying whether its `lower` implementation leaks
+    ambient `BackendState` into the emitted artifact. -/
+structure StatefulBackend where
+  leaks_state : Bool
+deriving DecidableEq
+
+/-- Stateful `lower`. A faithful backend (`leaks_state = false`) emits
+    `module ++ config` regardless of the ambient state; a leaking one
+    appends the state bytes, so its output varies with hidden state it
+    should not observe (e.g. a timestamp header changing between two
+    otherwise-identical emit runs). -/
+def lower_stateful (b : StatefulBackend) (st : BackendState)
+    (module config : Array UInt8) : Artifact :=
+  if b.leaks_state then
+    { bytes := module ++ config ++ st.bytes }
+  else
+    { bytes := module ++ config }
+
+/-- The canonical faithful xpile backend — pure, ignores ambient state. -/
+def xpileBackend : StatefulBackend := { leaks_state := false }
+
+/-- A deliberately-broken backend that leaks ambient state — the
+    witness that makes `lower_idempotency` non-vacuous. -/
+def leakyBackend : StatefulBackend := { leaks_state := true }
+
 /--
   **Refinement theorem** for `lower_idempotency` (the load-bearing
-  claim from the contract YAML's equation block).
+  claim from the contract YAML's equation block), restated
+  NON-VACUOUSLY (PMAT-1181).
 
-  `lower` is deterministic: invoking it twice on the same
-  `(module, config)` produces a byte-identical `Artifact`. Proof
-  is `rfl` by our v0.1.0 modelling choice (pure-function
-  semantics).
-
-  Documentary value: any future Backend impl that holds mutable
-  state across lower calls, embeds timestamps in
-  `Artifact.primary`, or whose `Artifact.sidecars` iteration
-  order leaks into emit output *must* either preserve
-  `rfl`-equivalence under this model OR invalidate the theorem
-  (and `refinement_proofs.rs`'s citation gate fires).
+  Determinism as STATE-INDEPENDENCE: for the faithful xpile backend,
+  `lower` yields the same `Artifact` for a fixed `(module, config)`
+  regardless of ambient mutable state `st₁`/`st₂`. This is `rfl` ONLY
+  because `xpileBackend.leaks_state = false` — the faithfulness of
+  `xpileBackend` is load-bearing (flip it to `true` and the theorem
+  becomes FALSE, as `leaky_backend_nondeterministic` witnesses).
 
   Falsification: a backend that injects a `// generated at
-  2026-05-17T21:33:00Z` comment into emitted Rust would falsify
-  this theorem on consecutive calls. The fallback at Silver tier
-  is to require canonical-equivalence (after stripping
-  whitelisted dynamic regions) rather than byte-equality; that
-  refinement is XPILE-REFINE-BACKEND-TRAIT-001.
+  2026-05-17T21:33:00Z` comment into emitted Rust — folding a
+  wall-clock/counter into the artifact — falsifies this on consecutive
+  calls; that is exactly `leakyBackend`. The Silver-tier refinement
+  (`target_consistency_silver`) carries the typed field claims; this
+  Bronze theorem now carries a real determinism claim rather than a
+  reflexivity tautology.
 
-  Status: **discharged at v0.1.0 (PMAT-064)**. Tier: Bronze.
+  Status: **discharged at v0.1.0 (PMAT-064), de-vacuoused (PMAT-1181)**.
+  Tier: Bronze.
 
-  Pairs with `XpileFrontendTrait.lean`'s `parse_idempotency` to
-  close both ends of the meta-HIR pipeline.
+  Pairs with `XpileFrontendTrait.lean`'s `parse_idempotency` (also
+  de-vacuoused, PMAT-1180) to close both ends of the meta-HIR pipeline.
 -/
-theorem lower_idempotency (module config : Array UInt8) :
-    lower module config = lower module config := by
+theorem lower_idempotency
+    (module config : Array UInt8) (st₁ st₂ : BackendState) :
+    lower_stateful xpileBackend st₁ module config
+      = lower_stateful xpileBackend st₂ module config := by
+  rfl
+
+/-- **`≠` DUAL** locking `lower_idempotency` non-vacuous: a
+    state-leaking backend is NON-deterministic — there exist two
+    ambient states producing different artifacts for the same
+    `(module, config)`. If `lower_idempotency` were a `= f x`
+    reflexivity stub this would be UNPROVABLE. -/
+theorem leaky_backend_nondeterministic :
+    ∃ (module config : Array UInt8) (st₁ st₂ : BackendState),
+      lower_stateful leakyBackend st₁ module config
+        ≠ lower_stateful leakyBackend st₂ module config := by
+  refine ⟨#[], #[], { bytes := #[] }, { bytes := #[7] }, ?_⟩
+  decide
+
+/-- **Pin**: the faithful backend's output coincides with the pure
+    `lower` baseline for every ambient state — the positive companion
+    to the divergence dual, keeping the original pure model
+    load-bearing. -/
+theorem faithful_backend_matches_pure
+    (st : BackendState) (module config : Array UInt8) :
+    lower_stateful xpileBackend st module config
+      = lower module config := by
   rfl
 
 /--
