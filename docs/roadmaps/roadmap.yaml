@@ -1270,6 +1270,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Worktree-isolated; applicable_contracts is NOT a current cron hotspot (cron on WASM-strings/frontend). Gates: e2e 812, contract_citation_integrity 3, clippy 0, pv lint PASS. R6 loop CLOSED for exceptions (proven 1120 + now cited). File-io citation (needs deeper Expr::FileReadAll scan) is the follow-up.'
+- id: PMAT-1135
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1135: [provability/R6] CLOSE the citation loop for whole-file I/O — wire C-PY-FILE-IO-ROUNDTRIP (proved core-Lean PMAT-1124) into Function::applicable_contracts. File I/O (PMAT-1074/1075/1076/1078) shipped uncited; now a body that reads/writes a file cites it. Detects Stmt::FileWrite (direct) + Expr::FileReadAll/FileReadLines wrapped in len(...)/str-method/concat/call/for-iterable (uses_file_io + stmt_has_file_io + expr_has_file_read, mirroring the exhaustive traversal). Added to citation-integrity required-cited. Verified: read-in-len / write / for-line all emit `// xpile-contract: C-PY-FILE-IO-ROUNDTRIP`; e2e 812 green.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Follow-up to PMAT-1133 (exceptions). Now BOTH cleanly-detectable session capabilities (exceptions + file-io) have their full R6 loop closed (proven + cited). Generators/context-managers stay proof-ahead-of-citation (erased by the frontend rewrite — need a preserved marker). Gates: e2e 812, citation-integrity 3, clippy 0, pv lint PASS. Worktree-isolated.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
