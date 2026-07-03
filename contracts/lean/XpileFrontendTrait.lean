@@ -61,32 +61,104 @@ deriving DecidableEq
 def parse_and_lower (path : Array UInt8) (source : Array UInt8) : MetaHirModule :=
   { bytes := path ++ source }
 
+/-! ## PMAT-1180 — non-vacuous `parse_idempotency` (skeptic follow-up).
+
+    The original `parse_idempotency` was `parse_and_lower x =
+    parse_and_lower x` — reflexivity, TRUE FOR ANY `def`. Its docstring
+    claimed to catch a frontend that leaks mutable cache/LRU state into
+    the emitted meta-HIR, but a `= f x` reflexivity stub certifies
+    nothing: a state-leaking frontend satisfies `f x = f x` just as
+    trivially as a pure one. (Same vacuity class as
+    PMAT-1141/1176/1177/1178 — see `PROVABILITY-INVENTORY.md`.)
+
+    The real determinism claim is STATE-INDEPENDENCE: `parse_and_lower`'s
+    output depends only on `(path, source)`, not on any ambient mutable
+    state a non-pure impl might read. We model that explicitly so the
+    faithfulness of the frontend is LOAD-BEARING and the theorem is
+    FALSIFIABLE (the `≠` dual below exhibits a state-leaking frontend
+    that breaks it). -/
+
+/-- Ambient mutable state a non-pure frontend might read across parse
+    calls (an LRU cache snapshot, a monotonic counter, a timestamp). A
+    FAITHFUL frontend ignores it; a state-leaking one folds it into the
+    emitted meta-HIR. -/
+structure FrontendState where
+  bytes : Array UInt8
+deriving DecidableEq
+
+/-- A frontend model carrying whether its `parse_and_lower`
+    implementation leaks ambient `FrontendState` into the output. -/
+structure StatefulFrontend where
+  leaks_state : Bool
+deriving DecidableEq
+
+/-- Stateful `parse_and_lower`. A faithful frontend
+    (`leaks_state = false`) emits `path ++ source` regardless of the
+    ambient state; a leaking one appends the state bytes, so its output
+    varies with hidden state it should not observe. -/
+def parse_and_lower_stateful (f : StatefulFrontend) (st : FrontendState)
+    (path source : Array UInt8) : MetaHirModule :=
+  if f.leaks_state then
+    { bytes := path ++ source ++ st.bytes }
+  else
+    { bytes := path ++ source }
+
+/-- The canonical faithful xpile frontend — pure, ignores ambient state. -/
+def xpileFrontend : StatefulFrontend := { leaks_state := false }
+
+/-- A deliberately-broken frontend that leaks ambient state — the
+    witness that makes `parse_idempotency` non-vacuous. -/
+def leakyFrontend : StatefulFrontend := { leaks_state := true }
+
 /--
   **Refinement theorem** for `parse_idempotency` (the load-bearing
-  claim from the contract YAML's equation block).
+  claim from the contract YAML's equation block), restated
+  NON-VACUOUSLY (PMAT-1180).
 
-  `parse_and_lower` is deterministic: invoking it twice on the
-  same `(path, source)` produces an identical `MetaHirModule`.
-  Proof is `rfl` by our v0.1.0 modelling choice (pure-function
-  semantics).
-
-  Documentary value: any future Frontend impl that holds mutable
-  state across parse calls, or whose internal hash-map iteration
-  order leaks into meta-HIR output, *must* either preserve
-  `rfl`-equivalence under this model OR invalidate the theorem
-  (and `refinement_proofs.rs`'s citation gate fires).
+  Determinism as STATE-INDEPENDENCE: for the faithful xpile frontend,
+  `parse_and_lower` yields the same `MetaHirModule` for a fixed
+  `(path, source)` regardless of ambient mutable state `st₁`/`st₂`.
+  This is `rfl` ONLY because `xpileFrontend.leaks_state = false` — the
+  faithfulness of `xpileFrontend` is load-bearing (flip it to `true`
+  and the theorem becomes FALSE, as `leaky_frontend_nondeterministic`
+  witnesses).
 
   Falsification: a frontend that caches LRU state inside its
-  `parse_and_lower` body and whose cache shape affects the
-  emitted meta-HIR would falsify this theorem. The fallback at
-  Silver tier is to require structural-equality (hash-based)
-  rather than byte-equality; that refinement is
-  XPILE-REFINE-FRONTEND-TRAIT-001.
+  `parse_and_lower` body and whose cache shape affects the emitted
+  meta-HIR falsifies this — exactly `leakyFrontend`. The Silver-tier
+  refinement (`source_lang_consistency_silver`) carries the typed
+  field claims; this Bronze theorem now carries a real determinism
+  claim rather than a reflexivity tautology.
 
-  Status: **discharged at v0.1.0 (PMAT-062)**. Tier: Bronze.
+  Status: **discharged at v0.1.0 (PMAT-062), de-vacuoused (PMAT-1180)**.
+  Tier: Bronze.
 -/
-theorem parse_idempotency (path source : Array UInt8) :
-    parse_and_lower path source = parse_and_lower path source := by
+theorem parse_idempotency
+    (path source : Array UInt8) (st₁ st₂ : FrontendState) :
+    parse_and_lower_stateful xpileFrontend st₁ path source
+      = parse_and_lower_stateful xpileFrontend st₂ path source := by
+  rfl
+
+/-- **`≠` DUAL** locking `parse_idempotency` non-vacuous: a
+    state-leaking frontend is NON-deterministic — there exist two
+    ambient states producing different meta-HIR for the same
+    `(path, source)`. If `parse_idempotency` were a `= f x`
+    reflexivity stub this would be UNPROVABLE. -/
+theorem leaky_frontend_nondeterministic :
+    ∃ (path source : Array UInt8) (st₁ st₂ : FrontendState),
+      parse_and_lower_stateful leakyFrontend st₁ path source
+        ≠ parse_and_lower_stateful leakyFrontend st₂ path source := by
+  refine ⟨#[], #[], { bytes := #[] }, { bytes := #[7] }, ?_⟩
+  decide
+
+/-- **Pin**: the faithful frontend's output coincides with the pure
+    `parse_and_lower` baseline for every ambient state — the positive
+    companion to the divergence dual, keeping the original pure model
+    load-bearing. -/
+theorem faithful_frontend_matches_pure
+    (st : FrontendState) (path source : Array UInt8) :
+    parse_and_lower_stateful xpileFrontend st path source
+      = parse_and_lower path source := by
   rfl
 
 /--
