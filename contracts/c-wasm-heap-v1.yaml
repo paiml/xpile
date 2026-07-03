@@ -731,17 +731,65 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to an i64 value-matching CPython, INCLUDING the LAST-occurrence fixtures where rfind diverges from find ('hello'.rfind('l')==3, 'banana'.rfind('ana')==3, 'mississippi'.rfind('ss')==5), the CODE-POINT-index fixtures where a byte index would diverge ('héllo'.rfind('l')==3 at byte offset 4, 'abécdé'.rfind('é')==5), the -1 absent/too-long/shared-0xA9 cases, and the empty-needle charlen answer ('héllo'.rfind('')==5, the code-point length, NOT the byte length 6)"
       - "the rfind WASM-emitting code carries the WASM citation"
 
+  # PMAT-1153: `s.removeprefix(p)` / `s.removesuffix(p)` (Expr::StrMethod, ops
+  # RemovePrefix / RemoveSuffix) lower to $__wasm_str_removeprefix /
+  # $__wasm_str_removesuffix — the first NON-search string METHODS that RETURN a
+  # new heap string. Each ALLOCATES (calls $__alloc + memory.copy), so unlike the
+  # predicate/search ops it rides the bump-heap gate; each wraps the matching byte
+  # test ($__wasm_str_startswith / $__wasm_str_endswith), force-pulled via
+  # needs_removeprefix ⇒ needs_startswith / needs_removesuffix ⇒ needs_endswith.
+  # KEY: the retained byte range (removeprefix: s[len(p):]; removesuffix:
+  # s[:len(s)-len(p)]) starts/ends on a CODE-POINT boundary (Python p is whole
+  # code points, so len(p) bytes land on a char boundary), so a PURE byte copy is
+  # char-exact for any valid UTF-8 — NO byte→code-point conversion (unlike find).
+  string_removeprefix_removesuffix_is_byte_strip:
+    formula: |
+      construct(StrMethod{recv, op: RemovePrefix|RemoveSuffix, args: [p]} over str
+                operands, BackendConfig{target: Wasm})
+        emits `<recv> <p> call $__wasm_str_<removeprefix|removesuffix>`, where the
+        helper reads both i32 byte-count headers, computes the retained byte length
+        rlen (removeprefix: len(recv)-len(p) when recv startswith p, else len(recv);
+        removesuffix: len(recv)-len(p) when recv endswith p, else len(recv)),
+        allocates 8+rlen via $__alloc, stores rlen as the header, and memory.copy's
+        the rlen retained bytes (removeprefix: from recv+8+len(p); removesuffix:
+        from recv+8) into the new region. Returns an i32 base-pointer to the fresh
+        length-prefixed heap string. A whole-copy default (empty p, non-matching p,
+        or p longer than recv) is char-exact too (rlen == len(recv)).
+    domain: |
+      A Python prefix/suffix strip `s.removeprefix(p)` / `s.removesuffix(p)`
+      (Expr::StrMethod, op RemovePrefix/RemoveSuffix, exactly one arg) over two
+      string-valued operands (a str-name Ident, a LitStr, a Concat / Chr / bare
+      StrCharAt / slice / str-returning call). A non-str operand is REFUSED by
+      emit_str_expr (an honest type mismatch). There is no 2-arg form in Python.
+    invariants:
+      - "removeprefix returns recv with a leading p removed IFF recv starts with p (byte compare); else a fresh copy of recv — 'unhappy'.removeprefix('un')=='happy', 'hello'.removeprefix('xyz')=='hello'"
+      - "removesuffix returns recv with a trailing p removed IFF recv ends with p (byte compare); else a fresh copy — 'happiness'.removesuffix('ness')=='happi', 'hello'.removesuffix('xyz')=='hello'"
+      - "an EMPTY p yields a fresh copy of recv (startswith/endswith('') is true but len(p)==0, so the retained range is all of recv) — 'abc'.removeprefix('')=='abc', 'abc'.removesuffix('')=='abc'"
+      - "a p that equals recv yields the empty string; a p LONGER than recv (never a prefix/suffix) yields a whole copy — 'abc'.removeprefix('abc')=='', 'ab'.removeprefix('abcd')=='ab'"
+      - "the byte copy is char-exact because the retained range starts/ends on a code-point boundary (p is whole code points): 'ötext'.removeprefix('ö')=='text' (ö is 2 bytes, off=2), 'textö'.removesuffix('ö')=='text'"
+      - "the result is a fresh length-prefixed heap string (i32 base-pointer), composing with len / Concat / equality / a str return like any other heap string — NEVER the receiver's own pointer, NEVER a base-pointer trick"
+      - "each helper ALLOCATES (calls $__alloc), so the op ITSELF sets needs_heap via the expr_has_heap_op RemovePrefix/RemoveSuffix arm (not only a heap-constructed recv/arg); it is gated on module_uses_str_method(RemovePrefix|RemoveSuffix) (no dead helper), and force-pulls its byte-predicate helper ($__wasm_str_startswith / $__wasm_str_endswith)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the receiver and stripped operand both type as str"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a heap string whose byte-length header and payload bytes value-match CPython, INCLUDING the present-prefix/suffix strip ('unhappy'.removeprefix('un')=='happy', 'happiness'.removesuffix('ness')=='happi'), the whole-copy defaults (absent/empty/longer p), and the multi-byte boundary fixtures ('ötext'.removeprefix('ö')=='text')"
+      - "the removeprefix/removesuffix WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
       construct(slice_stepped | list_slice | list_repeat | str(float) | fstring |
-                str_method∉{CharCount,StartsWith,EndsWith,Count,Find,Rfind},
+                str_method∉{CharCount,StartsWith,EndsWith,Count,Find,Rfind,
+                            StrIndex,RIndex,RemovePrefix,RemoveSuffix},
                 BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
       A string / sequence op still outside the WASM subset: a STEPPED string
       slice or a list slice, a LIST repeat (`[…] * n`, Expr::Repeat of_str:false),
       str(float)/repr(float), an f-string, a string method OTHER than len
-      (CharCount) / startswith / endswith / count / find / rfind. (String ORDERING
+      (CharCount) / startswith / endswith / count / find / rfind / index / rindex /
+      removeprefix / removesuffix (upper/lower/strip/split/replace/… and the
+      2-3-arg start/end search forms stay refused). (String ORDERING
       is supported — see `string_ordering_is_lexicographic`; str(int)/repr(int) is
       supported — see `int_to_str_is_decimal_ascii`; startswith/endswith are
       supported — see `string_startswith_endswith_is_byte_prefix`; the substring
@@ -749,7 +797,11 @@ equations:
       `string_count_is_byte_occurrence_search`; find via
       `string_find_is_byte_search_codepoint_index`; rfind via
       `string_rfind_is_byte_search_codepoint_index`; STRING repeat `s * n` via
-      `string_repeat_is_byte_replication` — only the LIST repeat stays refused.)
+      `string_repeat_is_byte_replication`; index/rindex are the trapping siblings of
+      find/rfind (PMAT-1144); removeprefix/removesuffix strip a fixed byte
+      prefix/suffix, allocating a fresh heap string — see
+      `string_removeprefix_removesuffix_is_byte_strip` (PMAT-1153); only the LIST
+      repeat stays refused.)
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
       - "the refusal names the op + the follow-up (honest diagnostic)"
@@ -813,6 +865,11 @@ proof_obligations:
     property: string rfind is a reverse byte search returning the CODE-POINT index of the LAST match (or -1); results match CPython where it diverges from find and where a byte index would diverge
     formal: "wasm-interp(construct(s.rfind(p))) == CPython AND wasm-interp(construct('hello'.rfind('l'))) == 3 AND wasm-interp(construct('héllo'.rfind(''))) == 5"
     applies_to: string_rfind_is_byte_search_codepoint_index
+
+  - type: postcondition
+    property: string removeprefix/removesuffix strip a fixed byte prefix/suffix into a fresh heap string (char-exact for UTF-8); results match CPython incl. absent/empty/longer p and multi-byte boundaries
+    formal: "wasm-interp(construct(s.removeprefix(p))) == CPython AND wasm-interp(construct('unhappy'.removeprefix('un'))) == 'happy' AND wasm-interp(construct('ötext'.removeprefix('ö'))) == 'text' AND wasm-interp(construct('happiness'.removesuffix('ness'))) == 'happi'"
+    applies_to: string_removeprefix_removesuffix_is_byte_strip
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled

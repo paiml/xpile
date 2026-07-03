@@ -2402,6 +2402,126 @@ const STR_REPEAT_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1153: `$__wasm_str_removeprefix(s, p) -> i32` — Python `s.removeprefix(p)`:
+/// a NEW heap string equal to `s` with a leading `p` removed if (and only if)
+/// `s` starts with `p`, else a fresh copy of `s`. Allocating (rides the
+/// `needs_heap` gate, calls `$__alloc`), and FORCES `$__wasm_str_startswith`
+/// (`needs_removeprefix` folds into `needs_startswith`). The prefix test is a
+/// byte compare and the retained tail `s[len(p)..]` starts on a code-point
+/// boundary (Python `p` is whole code points, so `len(p)` bytes end on a char
+/// boundary) — so the pure byte copy IS char-exact for any valid UTF-8, no
+/// byte→code-point reasoning needed (unlike find/rfind). Empty `p` → a copy of
+/// `s` (startswith("") is true but `len(p)` = 0, off = 0); a `p` longer than `s`
+/// or not a prefix → off = 0 → a whole copy. `memory.copy` of 0 bytes is a nop.
+const STR_REMOVEPREFIX_HELPER: &str = "\
+  ;; PMAT-1153 __wasm_str_removeprefix(s, p) = Python s.removeprefix(p) — a NEW
+  ;; heap string = s[len(p):] when s starts with p (byte compare), else a copy of
+  ;; s. Byte copy is char-exact (the tail starts on a code-point boundary).
+  (func $__wasm_str_removeprefix (param $s i32) (param $p i32) (result i32)
+    (local $slen i32)
+    (local $off i32)
+    (local $rlen i32)
+    (local $dst i32)
+    ;; slen = len(s); off = 0
+    local.get $s
+    i32.load
+    local.set $slen
+    i32.const 0
+    local.set $off
+    ;; if s.startswith(p): off = len(p)
+    local.get $s
+    local.get $p
+    call $__wasm_str_startswith
+    if
+      local.get $p
+      i32.load
+      local.set $off
+    end
+    ;; rlen = slen - off
+    local.get $slen
+    local.get $off
+    i32.sub
+    local.set $rlen
+    ;; dst = alloc(8 + rlen); store the i32 byte-count header = rlen.
+    local.get $rlen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $rlen
+    i32.store
+    ;; memory.copy dst+8 <- s+8+off, rlen bytes.
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.get $s
+    i32.const 8
+    i32.add
+    local.get $off
+    i32.add
+    local.get $rlen
+    memory.copy
+    local.get $dst
+  )
+";
+
+/// PMAT-1153: `$__wasm_str_removesuffix(s, p) -> i32` — Python `s.removesuffix(p)`:
+/// the suffix mirror of [`STR_REMOVEPREFIX_HELPER`]. A NEW heap string equal to
+/// `s` with a trailing `p` removed if (and only if) `s` ends with `p`, else a
+/// fresh copy of `s`. Allocating; FORCES `$__wasm_str_endswith`
+/// (`needs_removesuffix` folds into `needs_endswith`). Retains the FIRST
+/// `rlen = len(s) - len(p)` bytes (or all of `s` when `p` is not a suffix); that
+/// cut lands on a code-point boundary (Python `p` is whole code points), so the
+/// byte copy is char-exact. Empty `p` → endswith("") is true but `len(p)` = 0, so
+/// `rlen` = `slen` → a whole copy (Python `\"abc\".removesuffix(\"\")` == `\"abc\"`).
+const STR_REMOVESUFFIX_HELPER: &str = "\
+  ;; PMAT-1153 __wasm_str_removesuffix(s, p) = Python s.removesuffix(p) — a NEW
+  ;; heap string = s[:len(s)-len(p)] when s ends with p (byte compare), else a
+  ;; copy of s. Byte copy is char-exact (the cut lands on a code-point boundary).
+  (func $__wasm_str_removesuffix (param $s i32) (param $p i32) (result i32)
+    (local $slen i32)
+    (local $rlen i32)
+    (local $dst i32)
+    ;; slen = len(s); rlen = slen (the not-a-suffix / copy default)
+    local.get $s
+    i32.load
+    local.set $slen
+    local.get $slen
+    local.set $rlen
+    ;; if s.endswith(p): rlen = slen - len(p)
+    local.get $s
+    local.get $p
+    call $__wasm_str_endswith
+    if
+      local.get $slen
+      local.get $p
+      i32.load
+      i32.sub
+      local.set $rlen
+    end
+    ;; dst = alloc(8 + rlen); store the i32 byte-count header = rlen.
+    local.get $rlen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $rlen
+    i32.store
+    ;; memory.copy dst+8 <- s+8, first rlen bytes (the retained prefix).
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.get $s
+    i32.const 8
+    i32.add
+    local.get $rlen
+    memory.copy
+    local.get $dst
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -3442,6 +3562,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // sibling is used, even if the module never calls the plain search directly.
     let needs_find = needs_find || needs_index;
     let needs_rfind = needs_rfind || needs_rindex;
+    // PMAT-1153: `s.removeprefix(p)` / `s.removesuffix(p)` (`Expr::StrMethod`, ops
+    // `RemovePrefix` / `RemoveSuffix`) — allocating string-RETURNING ops that copy
+    // the retained byte range into a fresh heap string. Each wraps the matching
+    // byte prefix/suffix test: `$__wasm_str_removeprefix` calls
+    // `$__wasm_str_startswith` and `$__wasm_str_removesuffix` calls
+    // `$__wasm_str_endswith`, so `removeprefix` FORCES `$__wasm_str_startswith`
+    // and `removesuffix` FORCES `$__wasm_str_endswith` (folded below), just as
+    // `index`/`rindex` force `find`/`rfind`.
+    let needs_removeprefix = module_uses_str_method(module, StrMethodOp::RemovePrefix);
+    let needs_removesuffix = module_uses_str_method(module, StrMethodOp::RemoveSuffix);
+    let needs_startswith = needs_startswith || needs_removeprefix;
+    let needs_endswith = needs_endswith || needs_removesuffix;
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -3601,6 +3733,21 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // use so a heap-string module with no repeat carries no dead helper.
     if needs_heap && module_uses_str_repeat(module) {
         out.push_str(STR_REPEAT_HELPER);
+    }
+    // PMAT-1153: emit the string REMOVEPREFIX / REMOVESUFFIX helpers once, when any
+    // function uses `s.removeprefix(p)` / `s.removesuffix(p)` (`Expr::StrMethod`, ops
+    // `RemovePrefix` / `RemoveSuffix`). Allocating (call `$__alloc` + `memory.copy`),
+    // so each rides `needs_heap` — a remove op sets the heap gate via
+    // `expr_has_heap_op`. Each also calls the matching byte prefix/suffix test
+    // (`$__wasm_str_startswith` / `$__wasm_str_endswith`), already emitted above via
+    // the `needs_startswith |= needs_removeprefix` / `needs_endswith |=
+    // needs_removesuffix` fold. Gated on an actual use so an unrelated heap-string
+    // module carries no dead helper.
+    if needs_heap && needs_removeprefix {
+        out.push_str(STR_REMOVEPREFIX_HELPER);
+    }
+    if needs_heap && needs_removesuffix {
+        out.push_str(STR_REMOVESUFFIX_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -4792,8 +4939,16 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // into both. (Before this arm a heap method arg fell through to `_ =>
         // false`, so `$__alloc` would be emitted against an undeclared allocator —
         // a hard wat2wasm failure the param-only witnesses never triggered.)
-        Expr::StrMethod { recv, args, .. } => {
-            expr_has_heap_op(recv) || args.iter().any(expr_has_heap_op)
+        // PMAT-1153: `s.removeprefix(p)` / `s.removesuffix(p)` (ops `RemovePrefix` /
+        // `RemoveSuffix`) THEMSELVES bump-allocate a fresh heap string (copy the
+        // retained byte range), so the op ITSELF pulls in the allocator — not only
+        // a heap-constructed recv/arg. A miss here would emit `$__wasm_str_remove*`
+        // against an undeclared `$__alloc` (a hard wat2wasm failure), the exact
+        // gate-hole class the string-op scans keep closing.
+        Expr::StrMethod { recv, args, op } => {
+            matches!(op, StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix)
+                || expr_has_heap_op(recv)
+                || args.iter().any(expr_has_heap_op)
         }
         // PMAT-1142: a STRING repeat `s * n` bump-allocates its replicated
         // result (calls `$__alloc`), so it pulls in the allocator + `(memory)`
@@ -5749,6 +5904,30 @@ fn emit_str_prefix_op(
     Ok(WatTy::I32)
 }
 
+/// PMAT-1153: lower `s.removeprefix(p)` / `s.removesuffix(p)` to a NEW heap
+/// string (`i32` base-pointer). Both `recv` and `arg` are string-valued, so each
+/// lowers to an `i32` base-pointer via [`emit_str_expr`] (which refuses a
+/// non-str operand — an honest type mismatch at the typed site), then
+/// `$__wasm_str_<which>` (`which` = `"removeprefix"` / `"removesuffix"`) copies
+/// the retained byte range into a fresh allocation. The result is the new str
+/// pointer (`WatTy::I32`), so it composes with `len` / `Concat` / equality / a
+/// str return like any other heap string. The helper is emitted once per module
+/// (gated by the caller on `needs_removeprefix` / `needs_removesuffix`).
+fn emit_str_remove(
+    recv: &Expr,
+    arg: &Expr,
+    which: &str,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    emit_str_expr(arg, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_{which}").expect("write");
+    Ok(WatTy::I32)
+}
+
 fn emit_expr(
     e: &Expr,
     scope: &Scope,
@@ -5989,12 +6168,30 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_rindex").expect("write");
             Ok(WatTy::I64)
         }
+        // PMAT-1153: `s.removeprefix(p)` / `s.removesuffix(p)` — a NEW heap string
+        // (i32 base-pointer): `s` with a leading / trailing `p` removed when
+        // present, else a fresh copy of `s`. Both operands lower to i32
+        // base-pointers (`emit_str_expr`), then the allocating helper copies the
+        // retained byte range (which starts/ends on a code-point boundary, so the
+        // byte copy is char-exact). Single-arg only; a 2-arg form (there is none in
+        // Python) would fall through to the refusal below.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::RemovePrefix,
+            args,
+        } if args.len() == 1 => emit_str_remove(recv, &args[0], "removeprefix", scope, out, depth),
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::RemoveSuffix,
+            args,
+        } if args.len() == 1 => emit_str_remove(recv, &args[0], "removesuffix", scope, out, depth),
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
-             `.rfind(p)`, `.index(p)`, and `.rindex(p)` (each single-arg) are \
-             supported; upper/lower/strip/split/replace/… and the 2-3-arg \
-             start/end search forms are refused"
+             `.rfind(p)`, `.index(p)`, `.rindex(p)`, `.removeprefix(p)`, and \
+             `.removesuffix(p)` (each single-arg) are supported; \
+             upper/lower/strip/split/replace/… and the 2-3-arg start/end search \
+             forms are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
@@ -6752,12 +6949,30 @@ fn emit_str_expr(
             writeln!(out, "end").expect("write");
             Ok(())
         }
+        // PMAT-1153: `s.removeprefix(p)` / `s.removesuffix(p)` in a string position
+        // — a fresh heap string (like `Concat`/`Slice`/`Repeat`, a materialising
+        // op), so it belongs here alongside the other string-RETURNING ops. Both
+        // operands lower via `emit_str_expr`; the allocating helper copies the
+        // retained byte range. A non-1-arg form (there is none in Python) falls
+        // through to the honest refusal below.
+        Expr::StrMethod {
+            recv,
+            op: op @ (StrMethodOp::RemovePrefix | StrMethodOp::RemoveSuffix),
+            args,
+        } if args.len() == 1 => {
+            let which = match op {
+                StrMethodOp::RemovePrefix => "removeprefix",
+                _ => "removesuffix",
+            };
+            emit_str_remove(recv, &args[0], which, scope, out, depth)?;
+            Ok(())
+        }
         other => Err(unsupported(&format!(
             "expression {} in a string position — the WASM string subset \
              returns a `str` name (param/local), a string literal, a `Concat` \
              (a + b), a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/\
-             `else`, or a str-returning call; stepped slicing / str() / \
-             f-strings are refused",
+             `else`, `.removeprefix(p)` / `.removesuffix(p)`, or a str-returning \
+             call; stepped slicing / str() / f-strings are refused",
             expr_kind(other)
         ))),
     }
