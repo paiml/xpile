@@ -2084,9 +2084,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 _ => "",
             };
             out.push_str(prefix_strip);
-            out.push_str("let __rc = format!(\"{}{}\", __rsgn, __rb.replace('_', \"\")); i64::from_str_radix(&__rc, ");
+            // PMAT-1097: three-way from_str_radix failure classification
+            // (mirror rust) — well-formed base-{radix} digits that fail parse
+            // are i64 overflow (CPython bigint) → honest range message;
+            // all-numeric non-ASCII is CPython's Unicode-decimal acceptance →
+            // honest digit-class refusal; the rest keeps the exact CPython
+            // invalid-literal message.
+            out.push_str(
+                "let __rd = __rb.replace('_', \"\"); let __rc = format!(\"{}{}\", __rsgn, __rd); ",
+            );
             out.push_str(&format!(
-                "{radix}).unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr})) }}",
+                "if !__rd.is_empty() && __rd.chars().all(|__c| __c.to_digit({radix}).is_some()) {{ i64::from_str_radix(&__rc, {radix}).unwrap_or_else(|_| panic!(\"xpile: int() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")) }} else if !__rd.is_empty() && __rd.chars().all(|__c| __c.is_numeric()) {{ panic!(\"xpile: int() with non-ASCII digits: CPython accepts Unicode decimal digits; not yet implemented\") }} else {{ i64::from_str_radix(&__rc, {radix}).unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base {radix}: {{}}\", {repr})) }} }}",
                 repr = py_str_repr_block("__ri")
             ));
         }
@@ -2822,11 +2830,17 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 emit_expr(out, value, mode)?;
                 // PMAT-1089: CPython message shape `invalid literal for int()
                 // with base 10: '<orig>'` on both panics (mirror rust).
+                // PMAT-1097: three-way parse-failure classification (mirror
+                // rust) — all-ASCII-digit body that fails parse is i64 overflow
+                // (CPython bigint) → honest range message; all-numeric body
+                // with non-ASCII chars is CPython's Unicode-decimal acceptance
+                // → honest digit-class refusal; only the rest is a genuine
+                // CPython ValueError with the exact invalid-literal message.
                 out.push_str("); let __ps = __pf.trim(); let __pb = __ps.strip_prefix('-').or_else(|| __ps.strip_prefix('+')).unwrap_or(__ps); if __pb.starts_with('_') || __pb.ends_with('_') || __pb.contains(\"__\") { panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
                 out.push_str(&py_str_repr_block("__pf"));
-                out.push_str("); } __ps.replace('_', \"\").parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
+                out.push_str("); } let __pc = __ps.replace('_', \"\"); let __pd = __pb.replace('_', \"\"); if !__pd.is_empty() && __pd.chars().all(|__c| __c.is_ascii_digit()) { __pc.parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: int() out of i64 range; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\")) } else if !__pd.is_empty() && __pd.chars().all(|__c| __c.is_numeric()) { panic!(\"xpile: int() with non-ASCII digits: CPython accepts Unicode decimal digits; not yet implemented\") } else { __pc.parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\", ");
                 out.push_str(&py_str_repr_block("__pf"));
-                out.push_str(")) }");
+                out.push_str(")) } }");
             } else if !*to_float && *from_float {
                 // PMAT-586: `int(float_x)` guards a non-finite source (see Rust twin).
                 out.push_str("{ let __ic = ");
@@ -4084,7 +4098,7 @@ fn emit_floor_mod(
         emit_expr(out, rhs, mode)?;
         write!(
             out,
-            ") as i128; if __md == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+            ") as i128; if __md == 0 {{ panic!(\"xpile: ZeroDivisionError: integer division or modulo by zero\"); }} \
              let __r = __mm % __md; \
              (if __r != 0 && (__r < 0) != (__md < 0) {{ __r + __md }} else {{ __r }}) as i64 }}"
         )?;
@@ -4095,9 +4109,11 @@ fn emit_floor_mod(
     write!(out, "; let __fb = ")?;
     emit_expr(out, rhs, mode)?;
     // PMAT-728: zero-divisor → ZeroDivisionError before checked_rem (mirrors rust).
+    // PMAT-1097: message pinned to the CPython 3.10 oracle ground truth —
+    // "integer division or modulo by zero" for both `//` and `%` (mirrors rust).
     write!(
         out,
-        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer modulo by zero\"); }} \
+        "; if __fb == 0 {{ panic!(\"xpile: ZeroDivisionError: integer division or modulo by zero\"); }} \
          let __r = __fa.checked_rem(__fb).expect(\"{panic_msg}\"); \
          if __r != 0 && (__r < 0) != (__fb < 0) {{ __r + __fb }} else {{ __r }} }}"
     )?;

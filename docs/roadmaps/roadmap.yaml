@@ -1141,10 +1141,10 @@ roadmap:
   github_issue: null
   item_type: bug
   title: 'PMAT-1097: [rust+ruchy/diagnostics/payload-precision] exception-message precision adjacents (skeptic pass PMAT-1090, A-F6/A-F7): (a) `7 % 0` panics "integer modulo by zero" — matches CPython 3.12+ but NOT the local 3.10 ground truth ("integer division or modulo by zero"), while `7 // 0` matches 3.10 — the pair is internally inconsistent as a version target: PICK a CPython version and match both; (b) int() rejects CPython-VALID literals with the PMAT-1089 "exact" invalid-literal message, asserting falsely: int("(Unicode digits U+0661 U+0662)") is 12 in CPython (str.isdigit Unicode-decimal acceptance) and int("99999999999999999999") is a valid bigint (known i64 posture — but the message should say i64-range/unsupported-digit-class, not "invalid literal").'
-  status: planned
+  status: done
   priority: low
   created: 2026-07-03T00:00:00Z
-  notes: 'Probes: /tmp/skeptic-a/p31.py, p23u.py, p44.py. Everything else in the int()/float() message battery verified exact vs 3.10 (underscores, whitespace, sign, 0x prefix, base-16).'
+  notes: 'Probes: /tmp/skeptic-a/p31.py, p23u.py, p44.py. Everything else in the int()/float() message battery verified exact vs 3.10 (underscores, whitespace, sign, 0x prefix, base-16). SHIPPED 2026-07-03: (a) `%`-by-zero pinned to the 3.10 oracle text "integer division or modulo by zero" (both codegens, both mod paths incl. the i128-widened mul-mod); (b) int(s)/int(s, base) parse failures three-way classified in both codegens — all-valid-digit body that fails parse = i64 overflow (honest bigint-posture panic, CPython returns a bigint), all-numeric non-ASCII body = honest Unicode-digit-class refusal (CPython Nd acceptance; deliberately NOT ValueError-tagged so except cannot catch a refusal; over-refuses No/Nl numerics like "²" — honest-loud), rest keeps the exact CPython invalid-literal message. New e2e int_parse_honesty (runtime payload asserts incl. base-16 overflow + empty string).'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

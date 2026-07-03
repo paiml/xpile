@@ -4441,9 +4441,18 @@ fn str_parse() {
     // PMAT-610: int(s) now validates + strips PEP 515 underscores before parse.
     // PMAT-1089: the parse failure formats the CPython invalid-literal message
     // via unwrap_or_else (a bare .expect leaked ParseIntError's Debug repr).
+    // PMAT-1097: parse failures are classified — an all-ASCII-digit body that
+    // fails is i64 overflow (honest bigint-posture panic), an all-numeric
+    // non-ASCII body is CPython's Unicode-decimal acceptance (honest refusal),
+    // and only the rest claims the CPython invalid-literal ValueError.
     assert!(
-        rust.contains(".replace('_', \"\").parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\","),
-        "int(s):\n{rust}"
+        rust.contains("__pc.parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\","),
+        "int(s) exact-message fallback:\n{rust}"
+    );
+    assert!(
+        rust.contains("xpile: int() out of i64 range")
+            && rust.contains("xpile: int() with non-ASCII digits"),
+        "int(s) honest overflow/digit-class branches:\n{rust}"
     );
     // PMAT-611: float(s) now validates + strips PEP 515 underscores before parse.
     assert!(
@@ -4478,7 +4487,7 @@ fn main() {
 fn int_str_underscore() {
     let rust = xpile_transpile_to_rust("int_str_underscore.py");
     assert!(
-        rust.contains(".replace('_', \"\").parse::<i64>()")
+        rust.contains("let __pc = __ps.replace('_', \"\")")
             && rust.contains(r#"__pb.contains("__")"#),
         "int(s) must validate + strip underscores:\n{rust}"
     );
@@ -13378,13 +13387,16 @@ fn main() {
 /// misleading `i64 floor-div overflow` — `checked_div`/`checked_rem` return None
 /// for both a zero divisor and the `i64::MIN/-1` overflow, so the divisor is now
 /// guarded first. (Prerequisite for `except ZeroDivisionError:` discrimination.)
+/// PMAT-1097: BOTH `//` and `%` now carry the CPython 3.10 (local-oracle)
+/// message "integer division or modulo by zero" — the `%` guard previously used
+/// the 3.12 "integer modulo by zero" variant, an inconsistent version target.
 #[test]
 fn int_div_zero_emitted_rust_matches_cpython() {
     let rust = xpile_transpile_to_rust("int_div_zero.py");
     assert!(
         rust.contains("ZeroDivisionError: integer division or modulo by zero")
-            && rust.contains("ZeroDivisionError: integer modulo by zero"),
-        "expected ZeroDivisionError guards, got:\n{rust}"
+            && !rust.contains("ZeroDivisionError: integer modulo by zero"),
+        "expected 3.10-shaped ZeroDivisionError guards on both // and %, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -13412,6 +13424,63 @@ fn main() {
 }
 "#;
     assert_rustc_runs("int_div_zero", &rust, driver);
+}
+
+/// PMAT-1097 (skeptic pass PMAT-1090, A-F6/A-F7): exception-message precision.
+/// (a) `%` by zero carries the CPython 3.10 (local differential oracle) text
+/// "integer division or modulo by zero" — same as `//` — instead of the 3.12
+/// "integer modulo by zero" variant (the pair was internally inconsistent as a
+/// version target, and `except ... as e` handlers observe the text). (b) int()
+/// parse failures no longer claim "invalid literal" for two CPython-VALID
+/// classes: an all-digit body that overflows i64 (CPython bigint —
+/// `int("99999999999999999999")`) panics with the honest bigint-posture range
+/// message, and a Unicode-decimal-digit body (CPython: int("١٢") == 12)
+/// panics with an honest digit-class refusal; neither is tagged ValueError, so
+/// `except ValueError` cannot catch a refusal. Genuinely invalid literals keep
+/// the exact CPython message. All expectations cross-checked vs python3.10.
+#[test]
+fn int_parse_honesty_emitted_rust_matches_cpython() {
+    let rust = xpile_transpile_to_rust("int_parse_honesty.py");
+    assert!(
+        rust.contains("__c.to_digit(16)"),
+        "int(s, 16) must classify well-formed base-16 bodies:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    let payload = |r: std::thread::Result<i64>| -> String {
+        let e = r.expect_err("expected a panic");
+        e.downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| e.downcast_ref::<String>().cloned())
+            .unwrap_or_default()
+    };
+    // Catchable lanes (cross-checked vs python3 3.10.12).
+    assert_eq!(mod_msg(7, 3), "1");
+    assert_eq!(mod_msg(7, 0), "err: integer division or modulo by zero");
+    assert_eq!(parse10("42".to_string()), 42);
+    assert_eq!(parse10("  -7 ".to_string()), -7);
+    assert_eq!(parse16("ff".to_string()), 255);
+    // Honest i64-overflow refusal: CPython returns a bigint for all three.
+    let m = payload(std::panic::catch_unwind(|| parse10("99999999999999999999".to_string())));
+    assert!(m.starts_with("xpile: int() out of i64 range"), "got: {m}");
+    let m = payload(std::panic::catch_unwind(|| parse10("-99999999999999999999".to_string())));
+    assert!(m.starts_with("xpile: int() out of i64 range"), "got: {m}");
+    let m = payload(std::panic::catch_unwind(|| parse16("ffffffffffffffffff".to_string())));
+    assert!(m.starts_with("xpile: int() out of i64 range"), "got: {m}");
+    // Honest Unicode-digit-class refusal: CPython int("\u{661}\u{662}") == 12.
+    let m = payload(std::panic::catch_unwind(|| parse10("\u{661}\u{662}".to_string())));
+    assert!(m.starts_with("xpile: int() with non-ASCII digits"), "got: {m}");
+    // Genuinely invalid literals keep the exact CPython ValueError message.
+    let m = payload(std::panic::catch_unwind(|| parse10("abc".to_string())));
+    assert_eq!(m, "xpile: ValueError: invalid literal for int() with base 10: 'abc'");
+    let m = payload(std::panic::catch_unwind(|| parse16("zz".to_string())));
+    assert_eq!(m, "xpile: ValueError: invalid literal for int() with base 16: 'zz'");
+    let m = payload(std::panic::catch_unwind(|| parse10("".to_string())));
+    assert_eq!(m, "xpile: ValueError: invalid literal for int() with base 10: ''");
+}
+"#;
+    assert_rustc_runs("int_parse_honesty", &rust, driver);
 }
 
 /// PMAT-727 (HUNT-V10 V10-8): the grouping idiom `d.setdefault(k, []).append(v)`
