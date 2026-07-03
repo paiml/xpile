@@ -161,19 +161,18 @@ theorem faithful_frontend_matches_pure
       = parse_and_lower path source := by
   rfl
 
-/--
-  **Source language consistency** auxiliary claim — Bronze-tier
-  placeholder. At Bronze tier this is trivially `rfl` because the
-  model doesn't carry a `source_lang` field separate from the byte
-  payload. The Silver-tier refinement below introduces a real
-  `SourceLang` tag.
+/-! ## `source_lang_consistency` — auxiliary consistency claim.
 
-  Listed here for the citation gate; the load-bearing claim lives
-  in `source_lang_consistency_silver` below.
--/
-theorem source_lang_consistency (path source : Array UInt8) :
-    parse_and_lower path source = parse_and_lower path source := by
-  rfl
+    De-vacuoused in PMAT-1184. The original stub was `parse_and_lower x =
+    parse_and_lower x` (reflexivity, TRUE FOR ANY `def`) — hollow: it claimed
+    to catch a frontend that auto-detects the language from content, but a
+    content-sniffing frontend satisfies `f x = f x` just as trivially as a
+    faithful one. The load-bearing, FALSIFIABLE statement now lives just after
+    `parse_and_lower_silver` below: it needs the Silver `MetaHirModuleSilver`'s
+    typed `source_lang` field to say anything (the flat Bronze byte model has
+    no language tag to be consistent about). See the relocated
+    `source_lang_consistency` theorem + its `sniffing_frontend_mistags` `≠`
+    dual in the PMAT-1184 block. -/
 
 /-! ## PMAT-156 — Silver-tier refinement for `source_lang_consistency`
     (XPILE-REFINE-FRONTEND-TRAIT-001).
@@ -225,6 +224,107 @@ deriving DecidableEq
 def parse_and_lower_silver (f : Frontend) (path source : Array UInt8) :
     MetaHirModuleSilver :=
   { bytes := path ++ source, source_lang := f.declared_lang }
+
+/-! ## PMAT-1184 — non-vacuous `source_lang_consistency` (skeptic follow-up).
+
+    Relocated here (needs the Silver `source_lang` field) and de-vacuoused. The
+    original was `parse_and_lower x = parse_and_lower x` — reflexivity, TRUE
+    FOR ANY `def`. Its docstring claimed to catch a frontend that auto-detects
+    the source language from content (e.g. a Python frontend that sniffs a `#!`
+    shebang and stamps `SourceLang.shell`), but a `= f x` reflexivity stub
+    certifies nothing: a content-sniffing frontend satisfies `f x = f x` just
+    as trivially as a faithful one. (Same vacuity class as
+    PMAT-1141/1176/1177/1178/1180..1183 — see `PROVABILITY-INVENTORY.md`; this
+    is the FIRST of the four SECONDARY `f x = f x` auxiliary stubs, each with a
+    real non-vacuous `*_silver` companion.)
+
+    The real consistency claim is that the emitted module's `source_lang`
+    equals the FRONTEND's `declared_lang` — NOT a language re-detected from
+    source content. Like `source_lang_consistency_silver` this uses the Silver
+    model, but adds the load-bearing FALSIFIABILITY the Silver lacks: an
+    explicit content-sniffing frontend model whose mis-tagging the `≠` dual
+    EXHIBITS. The faithfulness of the frontend is load-bearing (a sniffing
+    frontend breaks the theorem) and the claim is FALSIFIABLE. -/
+
+/-- A frontend model that MAY override its declared language with one
+    re-detected from source content (a `detects_from_content` misfeature —
+    e.g. sniffing a `#!` shebang). A FAITHFUL frontend never overrides; a
+    content-sniffing one substitutes the detected tag, breaking
+    `source_lang == declared_lang`. -/
+structure TaggingFrontend where
+  declared_lang : SourceLang
+  detects_from_content : Bool
+deriving DecidableEq
+
+/-- Content-aware lowering. `detected` is the language a content sniffer would
+    infer from `source`. A faithful frontend (`detects_from_content = false`)
+    ignores it and stamps `declared_lang`; a sniffing one stamps `detected`, so
+    its `source_lang` varies with content it should not re-classify. -/
+def parse_and_lower_tagged (f : TaggingFrontend) (detected : SourceLang)
+    (path source : Array UInt8) : MetaHirModuleSilver :=
+  if f.detects_from_content then
+    { bytes := path ++ source, source_lang := detected }
+  else
+    { bytes := path ++ source, source_lang := f.declared_lang }
+
+/-- The canonical faithful xpile frontend — stamps its declared language,
+    never re-detects from content. -/
+def xpileTaggingFrontend (l : SourceLang) : TaggingFrontend :=
+  { declared_lang := l, detects_from_content := false }
+
+/-- A deliberately-broken content-sniffing frontend — the witness that makes
+    `source_lang_consistency` non-vacuous. -/
+def sniffingFrontend (l : SourceLang) : TaggingFrontend :=
+  { declared_lang := l, detects_from_content := true }
+
+/--
+  **Refinement theorem** for `source_lang_consistency` (the auxiliary claim
+  from the contract YAML's equation block), restated NON-VACUOUSLY (PMAT-1184).
+
+  Consistency as DECLARED-LANG FIDELITY: for the faithful xpile frontend, the
+  emitted module's `source_lang` equals the frontend's `declared_lang` for a
+  fixed `(path, source)`, regardless of what language `detected` a content
+  sniffer would infer. This is `rfl` ONLY because
+  `(xpileTaggingFrontend l).detects_from_content = false` — the faithfulness of
+  `xpileTaggingFrontend` is load-bearing (flip it to `true` and the theorem
+  becomes FALSE, as `sniffing_frontend_mistags` witnesses).
+
+  Falsification: a Python frontend that auto-detects shell scripts (a `#!`
+  shebang) and stamps `SourceLang.shell` regardless of `declared_lang`
+  falsifies this — exactly `sniffingFrontend`. The Silver-tier
+  `source_lang_consistency_silver` proves the same field equality; this
+  auxiliary theorem now carries a real, EXHIBITED falsification (the sniffing
+  witness) rather than a reflexivity tautology.
+
+  Status: **discharged at v0.1.0 (PMAT-156), de-vacuoused (PMAT-1184)**.
+  Tier: Bronze auxiliary. -/
+theorem source_lang_consistency
+    (l detected : SourceLang) (path source : Array UInt8) :
+    (parse_and_lower_tagged (xpileTaggingFrontend l) detected path source).source_lang
+      = l := by
+  rfl
+
+/-- **`≠` DUAL** locking `source_lang_consistency` non-vacuous: a
+    content-sniffing frontend MIS-TAGS — there exist a declared language and a
+    (different) detected language for which the emitted `source_lang` differs
+    from `declared_lang`. If `source_lang_consistency` were a `= f x`
+    reflexivity stub this would be UNPROVABLE. -/
+theorem sniffing_frontend_mistags :
+    ∃ (l detected : SourceLang) (path source : Array UInt8),
+      (parse_and_lower_tagged (sniffingFrontend l) detected path source).source_lang
+        ≠ l := by
+  refine ⟨SourceLang.python, SourceLang.shell, #[], #[], ?_⟩
+  decide
+
+/-- **Pin**: the faithful tagged frontend's `source_lang` coincides with the
+    Silver `parse_and_lower_silver` baseline for every detected language — the
+    positive companion to the mis-tagging dual, keeping the Silver model
+    load-bearing. -/
+theorem faithful_tagging_matches_silver
+    (l detected : SourceLang) (path source : Array UInt8) :
+    (parse_and_lower_tagged (xpileTaggingFrontend l) detected path source).source_lang
+      = (parse_and_lower_silver { declared_lang := l } path source).source_lang := by
+  rfl
 
 /--
   **Silver-tier refinement theorem** for `source_lang_consistency`
