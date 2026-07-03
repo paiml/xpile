@@ -301,7 +301,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-988: [spirv/§29] spirv-engine-runs-passed-text — make the SPIR-V DiffExec engine run its PASSED emitter text, not hardcoded constants. CONFIRMED adversarial finding (#2): SpirvDiffExecEngine::execute_and_compare(general_text, specialist_text) only debug_assert!s its args, then runs its OWN module-level hardcoded GENERAL_WGSL/SPECIALIST_WGSL constants (spirv_diffexec.rs) — what is ATTESTED is NOT what EXECUTES. FIX: run the passed text. Touches ONLY crates/xpile-spirv-codegen/. Sibling slice of the adversarial-fix wave (owner: parallel agent).'
-  status: in-progress
+  status: done
   priority: high
   created: 2026-06-25T00:00:00Z
   acceptance_criteria:
@@ -316,7 +316,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-989: [bashrs] bashrs-refuse-control-flow — REFUSE shell control-flow keywords instead of silently shredding them. CONFIRMED adversarial finding (#3): `for i in 1 2 3; do echo $i; done` parses into four bareword Stmt::Cmd nodes (for/do/echo/done) — accepted, NOT refused (crates/bashrs-frontend/src/lib.rs) — silently destroying loops/conditionals. FIX: hard FrontendError refusal for control-flow keywords (for/while/until/do/done/if/then/elif/else/fi/case/esac) — honest-refuse, never silent-mangle — and CORRECT the overstated CLAUDE.md / memory claim that bashrs "handles realistic POSIX shell idioms" (the QUORUM holds for the FLAT-command subset only). Touches ONLY crates/bashrs-frontend/. Sibling slice (owner: parallel agent).'
-  status: in-progress
+  status: done
   priority: high
   created: 2026-06-25T00:00:00Z
   acceptance_criteria:
@@ -332,7 +332,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-990: [wasm/§29] wasm-witness-real-emit — verify/rewire the WASM §29 witness to drive the real emit_module lowering. SUSPECTED-hollow adversarial finding (#4): the WASM witness emitters use a hardcoded saxpy_module() template (lib.rs:246) though emit_module (the real lowering) IS called at lib.rs:207. VERIFY whether the §29 WASM quorum drives the real emit; if hollow, rewire it to lower a real meta-HIR Module via emit_module (what PMAT-976 CLAIMED). Touches ONLY crates/xpile-wasm-codegen/. Sibling slice (owner: parallel agent).'
-  status: in-progress
+  status: done
   priority: high
   created: 2026-06-25T00:00:00Z
   acceptance_criteria:
@@ -957,7 +957,7 @@ roadmap:
   github_issue: null
   item_type: capability
   title: 'PMAT-1074: [rust/capability/domain] FILE I/O — `open(path).read()` / `with open(path) as f: … f.read()` / `f.write(s)` / `for line in open(path)`. The LAST remaining Python-surface gap after both filed big-gaps closed (generators PMAT-1071 + context managers PMAT-1072); a fresh-area probe found ALL of collection/string/functional/numeric/OOP/exception/generator surfaces MATCH — only file I/O refuses. A DOMAIN (multi-slice), NOT a rush-at-depth item. Design: xpile emits INLINE (no runtime-prelude), so `open(P).read()` lowers to `std::fs::read_to_string(<P>).unwrap_or_else(|e| panic!("xpile: FileNotFoundError: {e}"))` (missing file → both CPython + rustc RAISE = BOTHRAISE agreement; the exception model already maps). Touchpoints: (1) a new meta-HIR `Expr::FileReadAll(Box<Expr>)` [+ full Expr-walker drill: escape/collect_idents/retype/has_int_arith + rust/ruchy emit inline fs + lean/wasm refuse] typing as Str; (2) frontend recognizes `open(P).read()` and `open(P).read().splitlines()`; (3) WRITE is a Stmt — `with open(P,"w") as f: f.write(S)` → `std::fs::write(<P>, <S>)…` (a new `Stmt::FileWrite` or a side-effect-call arm); (4) `with open(P) as f:` handle-tracking desugar (f bound to the open() so f.read()/f.write() resolve — more entangled, do AFTER the no-with forms); (5) `for line in open(P)` → BufReader lines. FIRST CUT: read-whole-file (`open(P).read()`, no-with, the cleanest single-expression form), then write-all, then the with-integration + line iteration. Error-model care: encoding (assume UTF-8), modes ("r"/"w"/"a"), FileNotFoundError vs PermissionError. Adversarially verify: existing-file read MATCH, missing-file BOTHRAISE, round-trip write-then-read.'
-  status: in_progress
+  status: done
   priority: medium
   created: 2026-07-02T00:00:00Z
   notes: 'READ increment SHIPPED 2026-07-02: `open(path).read()` → Expr::FileReadAll → inline std::fs::read_to_string with FileNotFoundError/OSError panic (full Expr-variant drill: enum + 3 meta-hir walkers + rust/ruchy inline emit + lean/wasm refuse + Str type-inference + frontend open().read() recognition). Verified: read+len/count/splitlines/strip MATCH, missing-file BOTHRAISE, path-from-var; wasm/lean refuse (no silent-wrong). Suite 753. REMAINING follow-ups: write (with open(p,"w") as f: f.write(s) → std::fs::write, needs the with-handle desugar + a Stmt), `with open() as f:` handle-tracking, `for line in open(p)` iteration.'
@@ -2293,7 +2293,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-470: [R1] Python augmented assignment (x += 1, -= *= //= %= &= |= ^= >>= <<=)'
-  status: planned
+  status: done
   priority: critical
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2304,7 +2304,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-471: [R2] Cross-function return-type inference (module signature table)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2315,7 +2315,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-472: [R3] Dict iteration for k in d: (desugar to d.keys())'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2325,7 +2325,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-473: [R4] List comprehensions [f(x) for x in xs] (desugar to for + append)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2335,7 +2335,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-474: [R5] Keyword arguments f(x=1, y=2) — reorder to positional at lowering'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2345,7 +2345,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-475: [R6] Close contract-integrity gap — author C-C-INT-ARITH + C-XLATE-PY-DICT-TO-HASHMAP + grandfather the depth-13 Diamond gate'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2368,7 +2368,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-477: [R8] Float (Type::F64 + LitFloat) end-to-end + forward-referenced C-PY-FLOAT-ARITH'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2379,7 +2379,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-478: [R9] Stmt::If in meta-HIR + decy/Python (if/else as a statement)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2389,7 +2389,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-479: [R10] Early returns — Block.trailing_return -> Option + Stmt::Return (load-bearing meta-HIR unlock)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -2413,7 +2413,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-481: [Track4] Offline PTX well-formedness gate — structural asserts + ptxas-assembles (free CI, no GPU)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2433,7 +2433,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-483: [Track4] QuorumPolicy::Strict golden-text regression-lock for emitted PTX (free CI)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2452,7 +2452,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-485: [Track4] Real general PTX emitter via nvptx64-nvidia-cuda rustc path (replace ScaffoldPtxEmitter)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2521,7 +2521,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-492: [Sprint] Python string methods (.upper/.lower/.strip/.split/.join/.startswith/.endswith)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2530,7 +2530,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-493: [Sprint] f-strings f"{x}" -> format!'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2539,7 +2539,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-494: [Sprint] Tuples + multiple return + a, b = f() unpacking'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2548,7 +2548,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-495: [Sprint] enumerate() / zip() in for-loops'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2557,7 +2557,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-496: [Sprint] Slicing xs[a:b]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2566,7 +2566,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-497: [Tranche2] Augmented subscript assignment d[k] += v / xs[i] += v'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2575,7 +2575,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-498: [Tranche2] Scalar numeric builtins abs/min/max'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2593,7 +2593,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502: [Tranche2] General Stmt::If with side-effecting branches'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2602,7 +2602,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-500: [Tranche2] Sets — literal + membership (HashSet lane, read-side)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -2611,7 +2611,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-501: [Tranche2] Dict comprehensions {k: v for x in xs}'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3142,7 +3142,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-504: [Tranche2] first-class closures (lambda assigned to local + called)'
-  status: in_progress
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -6995,7 +6995,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-537: [Tranche 2] DEFERRED — dict insertion order not preserved (HashMap)'
-  status: open
+  status: done
   priority: high
   created: 2026-06-14T00:00:00Z
   acceptance_criteria:
@@ -7367,7 +7367,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-466: [P1] Complete the dict[K,V] lane — operations + C-XLATE-PY-DICT-TO-HASHMAP contract'
-  status: planned
+  status: done
   priority: critical
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -7380,7 +7380,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-467: [P2] Decy real C frontend — replace 35-line stub with tree-sitter-c parser + C-C-INT-ARITH'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -7414,7 +7414,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-443: Spec §28 + diamond-taxonomy.md sync to depth-13 UNIVERSAL + 11 UNIVERSAL milestones + 13 recurring templates'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-21T01:00:00Z
   acceptance_criteria:
@@ -7423,7 +7423,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-432: Spec §28 + diamond-taxonomy.md sync to depth-12 UNIVERSAL + 10 UNIVERSAL milestones + 12 recurring templates'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T23:30:00Z
   acceptance_criteria:
@@ -7432,7 +7432,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-421: Spec §28 + diamond-taxonomy.md sync to depth-11 UNIVERSAL + 9 UNIVERSAL milestones + 11 recurring templates'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T22:00:00Z
   acceptance_criteria:
@@ -7441,7 +7441,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-410: Spec §28 + diamond-taxonomy.md sync to depth-10 UNIVERSAL + 8 UNIVERSAL milestones + 10 recurring templates'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T20:00:00Z
   acceptance_criteria:
@@ -7495,7 +7495,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-354: MILESTONE — Diamond depth-5 UNIVERSAL ACROSS ALL 12 CONTRACTS (ContractId struct extensionality on C-XPILE-CONTRACT-BACKEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T04:30:00Z
   acceptance_criteria:
@@ -7504,7 +7504,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-353: Diamond depth-5 BROADENED to C-XPILE-CONTRACT-FRONTEND-TRAIT (EquationsBlock struct extensionality)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T04:00:00Z
   acceptance_criteria:
@@ -7513,7 +7513,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-352: Diamond depth-5 BROADENED to C-XLATE-RUST-FN-TO-LEAN-THM (LeanDefSilver struct extensionality)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T03:30:00Z
   acceptance_criteria:
@@ -7522,7 +7522,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-351: Diamond depth-5 BROADENED to C-XLATE-LEAN-TO-RUST (RustFn body Array.size)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T03:00:00Z
   acceptance_criteria:
@@ -7531,7 +7531,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-350: Diamond depth-5 BROADENED from 7 to 8 contracts (EquationFormula ASCII length on C-NOTATION-LATEX-MATH-TO-EQUATION)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T02:30:00Z
   acceptance_criteria:
@@ -7540,7 +7540,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-349: Diamond depth-5 BROADENED from 6 to 7 contracts (PyListSilver struct extensionality on C-XLATE-PY-LIST-TO-VEC)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T02:00:00Z
   acceptance_criteria:
@@ -7549,7 +7549,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-348: Diamond depth-5 BROADENED from 5 to 6 contracts (ArtifactSilver.bytes Array.size on C-XPILE-BACKEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-20T01:30:00Z
   acceptance_criteria:
@@ -7558,7 +7558,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-347: MILESTONE — Diamond depth-5 ACROSS ALL 5 TAXONOMY LAYERS (SourceLang enum distinctness on C-XPILE-FRONTEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-24T02:00:00Z
   acceptance_criteria:
@@ -7567,7 +7567,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-346: Diamond depth-5 BROADENED from 3 to 4 LAYERS (observable-string-length Nat-structure on C-BASHRS-POSIX-IDEMPOTENCE)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-24T01:30:00Z
   acceptance_criteria:
@@ -7585,7 +7585,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-344: MILESTONE — Diamond depth-4 UNIVERSAL ACROSS ALL 12 CONTRACTS (RustFnSilver body size on C-XLATE-RUST-FN-TO-LEAN-THM)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-24T00:30:00Z
   acceptance_criteria:
@@ -7594,7 +7594,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-343: Diamond depth-4 BROADENED from 10 to 11 contracts (variant_count Nat structure on C-XLATE-LEAN-TO-RUST)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-24T00:00:00Z
   acceptance_criteria:
@@ -7603,7 +7603,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-342: Diamond depth-4 BROADENED from 9 to 10 contracts (LatexDisplayKind enum distinctness on C-NOTATION-LATEX-MATH-TO-EQUATION)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T23:30:00Z
   acceptance_criteria:
@@ -7612,7 +7612,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-341: Diamond depth-4 BROADENED from 8 to 9 contracts (Contract array size on C-XPILE-CONTRACT-BACKEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T23:00:00Z
   acceptance_criteria:
@@ -7621,7 +7621,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-340: Diamond depth-4 BROADENED from 7 to 8 contracts (TranspileSession array size on C-XPILE-CONTRACT-FRONTEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T22:30:00Z
   acceptance_criteria:
@@ -7630,7 +7630,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-339: Diamond depth-4 BROADENED from 6 to 7 contracts (Target enum distinctness on C-XPILE-BACKEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T22:00:00Z
   acceptance_criteria:
@@ -7639,7 +7639,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-338: Diamond depth-4 BROADENED from 5 to 6 contracts (List-reverse-involution on C-XLATE-PY-LIST-TO-VEC)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T21:30:00Z
   acceptance_criteria:
@@ -7657,7 +7657,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-336: MILESTONE — Diamond depth-3 UNIVERSAL ACROSS ALL 12 CONTRACTS (RustFnSilver structure extensionality on C-XLATE-RUST-FN-TO-LEAN-THM)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T20:30:00Z
   acceptance_criteria:
@@ -7666,7 +7666,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-335: Diamond depth-3 BROADENED from 10 to 11 contracts (RustFn structure extensionality on C-XLATE-LEAN-TO-RUST)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T20:00:00Z
   acceptance_criteria:
@@ -7675,7 +7675,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-334: Diamond depth-3 BROADENED from 9 to 10 contracts (EquationFormulaSilver structure extensionality on C-NOTATION-LATEX-MATH-TO-EQUATION)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T19:30:00Z
   acceptance_criteria:
@@ -7684,7 +7684,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-333: Diamond depth-3 BROADENED from 8 to 9 contracts (Contract structure extensionality on C-XPILE-CONTRACT-BACKEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-05-23T19:00:00Z
   acceptance_criteria:
@@ -7693,7 +7693,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-332: Diamond depth-3 BROADENED from 7 to 8 contracts (TranspileSession structure extensionality on C-XPILE-CONTRACT-FRONTEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T18:30:00Z
@@ -7710,7 +7710,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-331: Diamond depth-3 BROADENED from 6 to 7 contracts (ArtifactSilver structure extensionality on C-XPILE-BACKEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T18:00:00Z
@@ -7727,7 +7727,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-330: Diamond depth-4 UNIVERSAL ACROSS ALL 5 TAXONOMY LAYERS (MetaHirModuleSilver structure extensionality on C-XPILE-FRONTEND-TRAIT)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T17:30:00Z
@@ -7744,7 +7744,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-329: Diamond depth-4 ACROSS LAYERS BROADENED to 4 layers (OutcomeSilver structure extensionality on C-BASHRS-POSIX-IDEMPOTENCE)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T17:00:00Z
@@ -7761,7 +7761,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-328: Diamond depth-5 ACROSS LAYERS BROADENED to 3 layers (refcount-delta sign decomposition on C-FFI-CPYTHON-EXT)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T16:30:00Z
@@ -7778,7 +7778,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-327: FIRST Diamond depth-21 in the substrate (Nat-cast order embedding on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T16:00:00Z
@@ -7795,7 +7795,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-326: Diamond depth-20 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-20 via Nat power-monotonicity)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T15:30:00Z
@@ -7812,7 +7812,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-325: FIRST Diamond depth-20 in the substrate (Int.toNat partial inverse on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T15:00:00Z
@@ -7846,7 +7846,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-323: Diamond depth-19 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-19 via Nat truncated subtraction)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T14:00:00Z
@@ -7863,7 +7863,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-322: FIRST Diamond depth-19 in the substrate (negation-order compatibility on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T13:30:00Z
@@ -7880,7 +7880,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-321: Diamond depth-18 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-18 via Nat integral-domain structure)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T13:00:00Z
@@ -7897,7 +7897,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-320: FIRST Diamond depth-18 in the substrate (Int.sign monoid-homomorphism on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T12:30:00Z
@@ -7931,7 +7931,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-318: Diamond depth-17 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-17 via Nat power-monoid)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T11:30:00Z
@@ -7948,7 +7948,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-317: FIRST Diamond depth-17 in the substrate (unit-group `{1, -1} ≅ Z/2Z` on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T11:00:00Z
@@ -7965,7 +7965,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-316: Diamond depth-16 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-16 via Nat GCD monoid)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T10:30:00Z
@@ -7982,7 +7982,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-315: FIRST Diamond depth-16 in the substrate (GCD-monoid + Bézout identity on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T10:00:00Z
@@ -8016,7 +8016,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-313: Diamond depth-15 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-15 via Nat-mod quotient ring homomorphism)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T09:00:00Z
@@ -8033,7 +8033,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-312: FIRST Diamond depth-15 in the substrate (Int-emod quotient ring homomorphism on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T08:30:00Z
@@ -8050,7 +8050,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-311: Diamond depth-14 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-14 via subtype-extensionality axioms)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T08:00:00Z
@@ -8067,7 +8067,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-310: FIRST Diamond depth-14 in the substrate (Nat-cast ring-homomorphism axioms on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T07:30:00Z
@@ -8951,7 +8951,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-256: Refresh pmat tdg . score 95.7 → 95.1 (slight dip from Diamond doc growth)'
-  status: planned
+  status: done
   priority: low
   assigned_to: null
   created: 2026-05-20T20:00:00Z
@@ -8968,7 +8968,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-255: Refresh README workspace-test count 204 → 211 (+7 tests from PMAT-249/251)'
-  status: planned
+  status: done
   priority: low
   assigned_to: null
   created: 2026-05-20T19:30:00Z
@@ -8985,7 +8985,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-254: Add Section 28 (Diamond Taxonomy) to xpile-spec.md TOC + body'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T19:00:00Z
@@ -9002,7 +9002,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-253: Write docs/specifications/sub/diamond-taxonomy.md cataloging all 31+ Diamond categories'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T18:30:00Z
@@ -9019,7 +9019,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-252: Final Diamond program doc sweep — depth-3 UNIVERSAL across layers + depth-4 opened + CI gate + reporter, all reflected across docs'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T18:00:00Z
@@ -9036,7 +9036,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-251: Diamond CI gate test — assert UNIVERSAL depth-2 across 12 contracts'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T17:30:00Z
@@ -9053,7 +9053,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-250: Wire parse_preserves_equivalence_class_diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT — closes TRUE UNIVERSAL Diamond depth-2 (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T17:00:00Z
@@ -9070,7 +9070,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-249: Add `xpile diamond` reporter subcommand for Diamond-tier coverage tracking'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T16:30:00Z
@@ -9087,7 +9087,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-248: FOURTH Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-4) — lattice absorption laws (XPILE-REFINE-COMPILE-PTX-008)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T16:00:00Z
@@ -9104,7 +9104,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-247: FOURTH Diamond on C-PY-INT-ARITH (FIRST DEPTH-4 Diamond in substrate) — power-monoid via Nat-action (XPILE-REFINE-PY-INT-ARITH-011)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T15:30:00Z
@@ -9121,7 +9121,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-246: Doc sweep — UNIVERSAL Diamond depth-3 across all 5 layers milestone (PMAT-241..245) reflected across README, status, audit, kaizen-fleet'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T15:00:00Z
@@ -9138,7 +9138,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-245: THIRD Diamond on C-XPILE-FRONTEND-TRAIT (Layer 3 DEPTH-3) — parse-and-lower function axioms; completes UNIVERSAL Diamond depth-3 across all 5 layers (XPILE-REFINE-FRONTEND-TRAIT-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T14:30:00Z
@@ -9155,7 +9155,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-244: THIRD Diamond on C-XLATE-PY-LIST-TO-VEC (Layer 2 DEPTH-3) — length monoid homomorphism (XPILE-REFINE-XLATE-PY-LIST-007)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T14:00:00Z
@@ -9172,7 +9172,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-243: THIRD Diamond on C-FFI-CPYTHON-EXT (Layer 4 DEPTH-3) — zero-copy pointer-identity functor (XPILE-REFINE-FFI-CPYTHON-012)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T13:30:00Z
@@ -9189,7 +9189,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-242: THIRD Diamond on C-COMPILE-RUST-TO-PTX-MMA (Layer 5 DEPTH-3) — meet-semilattice via min (XPILE-REFINE-COMPILE-PTX-007)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T13:00:00Z
@@ -9206,7 +9206,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-241: THIRD Diamond on C-PY-INT-ARITH (FIRST DEPTH-3 Diamond in substrate) — shift-monoid via exponentiation (XPILE-REFINE-PY-INT-ARITH-010)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T12:30:00Z
@@ -9223,7 +9223,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-240: Doc sweep — UNIVERSAL Diamond depth-2 across ALL 12 CONTRACTS milestone (PMAT-228..239) reflected across README, status, audit, kaizen-fleet'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T12:00:00Z
@@ -9240,7 +9240,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-239: SECOND Diamond on C-XPILE-CONTRACT-BACKEND-TRAIT — contract product-monoid; completes UNIVERSAL Diamond depth-2 across ALL 12 contracts (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T11:30:00Z
@@ -9257,7 +9257,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-238: SECOND Diamond on C-BASHRS-POSIX-IDEMPOTENCE (Layer 1/4 depth-2) — exit-code constant-projection axioms (XPILE-REFINE-BASHRS-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T11:00:00Z
@@ -9274,7 +9274,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-237: SECOND Diamond on C-XLATE-LEAN-TO-RUST (Layer 2 depth-2 alt) — variant-count cardinality-functor axioms (XPILE-REFINE-XLATE-LEAN-TO-RUST-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T10:30:00Z
@@ -9291,7 +9291,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-236: SECOND Diamond on C-XLATE-RUST-FN-TO-LEAN-THM (proof-lane depth-2) — NonEmpty section-retraction axioms (XPILE-REFINE-XLATE-RUST-TO-LEAN-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T10:00:00Z
@@ -9308,7 +9308,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-235: SECOND Diamond on C-XPILE-BACKEND-TRAIT (Layer 3 depth-2) — target constant-projection; closes 2x2 trait matrix at depth-2 (XPILE-REFINE-BACKEND-TRAIT-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T09:30:00Z
@@ -9325,7 +9325,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-234: SECOND Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION — citation product-monoid axioms (XPILE-REFINE-NOTATION-007)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T09:00:00Z
@@ -9342,7 +9342,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-233: Doc sweep — UNIVERSAL Diamond depth-2 milestone (PMAT-228..232) reflected across README, status, audit, kaizen-fleet'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T08:30:00Z
@@ -9359,7 +9359,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-232: SECOND Diamond on C-XPILE-FRONTEND-TRAIT (Layer 3 depth-2) — source-lang CONSTANT-PROJECTION; completes UNIVERSAL Diamond depth-2 milestone (XPILE-REFINE-FRONTEND-TRAIT-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T08:00:00Z
@@ -9376,7 +9376,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-231: SECOND Diamond on C-COMPILE-RUST-TO-PTX-MMA (DIAMOND BREADTH on Layer 5) — join-semilattice via max (XPILE-REFINE-COMPILE-PTX-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T07:30:00Z
@@ -9393,7 +9393,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-230: SECOND Diamond on C-FFI-CPYTHON-EXT (DIAMOND BREADTH on Layer 4) — GIL-invariant preservation axioms (XPILE-REFINE-FFI-CPYTHON-011)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T07:00:00Z
@@ -9410,7 +9410,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-229: SECOND Diamond on C-XLATE-PY-LIST-TO-VEC (DIAMOND BREADTH on Layer 2) — NonEmpty section-retraction axioms (XPILE-REFINE-XLATE-PY-LIST-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T06:30:00Z
@@ -9427,7 +9427,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-228: SECOND Diamond-tier refinement on C-PY-INT-ARITH (DIAMOND BREADTH) — Euclidean-division axioms (XPILE-REFINE-PY-INT-ARITH-009)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: now-shipping
   created: 2026-05-20T06:00:00Z
@@ -9444,7 +9444,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-227: UNIVERSAL Diamond doc sweep — reflect 5-tier UNIVERSAL coverage across README, CURRENT.md, audit-design, kaizen-fleet, INDEX, substrate-completion'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T05:30:00Z
@@ -9461,7 +9461,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-226: TWELFTH Diamond-tier refinement — citation render-monoid on C-XPILE-CONTRACT-BACKEND-TRAIT — UNIVERSAL DIAMOND MILESTONE (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T05:00:00Z
@@ -9478,7 +9478,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-225: ELEVENTH Diamond-tier refinement — target equivalence-class on C-XPILE-BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T04:30:00Z
@@ -9495,7 +9495,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-224: TENTH Diamond-tier refinement — source-lang equivalence-class axioms on C-XPILE-FRONTEND-TRAIT (XPILE-REFINE-FRONTEND-TRAIT-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T04:00:00Z
@@ -9512,7 +9512,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-223: NINTH Diamond-tier refinement — precondition-list-monoid axioms on C-XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T03:30:00Z
@@ -9529,7 +9529,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-222: EIGHTH Diamond-tier refinement — inductive-monoid axioms on C-XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T03:00:00Z
@@ -9546,7 +9546,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-221: SEVENTH Diamond-tier refinement — free list-monoid axioms on C-XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T02:30:00Z
@@ -9563,7 +9563,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-220: Doc sweep — Diamond-tier kickoff (PMAT-214..219) reflected across docs'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T02:00:00Z
@@ -9580,7 +9580,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-219: SIXTH Diamond-tier refinement — string-monoid axioms on C-NOTATION-LATEX-MATH-TO-EQUATION (XPILE-REFINE-NOTATION-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T01:30:00Z
@@ -9597,7 +9597,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-218: FIFTH Diamond-tier refinement — bounded-monoid axioms on C-COMPILE-RUST-TO-PTX-MMA (XPILE-REFINE-COMPILE-PTX-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T01:00:00Z
@@ -9614,7 +9614,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-217: FOURTH Diamond-tier refinement — equivalence-relation axioms on C-XPILE-CONTRACT-FRONTEND-TRAIT (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T00:30:00Z
@@ -9631,7 +9631,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-216: THIRD Diamond-tier refinement — refcount abelian-group axioms on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-010)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T00:00:00Z
@@ -9648,7 +9648,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-215: SECOND Diamond-tier refinement — pure-function axioms on C-BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T23:30:00Z
@@ -9665,7 +9665,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-214: FIRST Diamond-tier refinement — commutative monoid axioms on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-008); opens Diamond tier'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T23:00:00Z
@@ -9682,7 +9682,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-213: Doc sweep — Platinum-universal milestone (PMAT-199..212) reflected across docs'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T22:30:00Z
@@ -9699,7 +9699,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-212: THIRTEENTH Platinum-tier refinement — citation render homomorphism on C-XPILE-CONTRACT-BACKEND-TRAIT (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-003); completes functoriality demonstration'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T22:00:00Z
@@ -9716,7 +9716,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-211: TWELFTH Platinum-tier refinement — target determinism on C-XPILE-BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-003); closes 2×2 trait matrix at Platinum'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T21:30:00Z
@@ -9733,7 +9733,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-210: ELEVENTH Platinum-tier refinement — source-lang determinism on C-XPILE-FRONTEND-TRAIT; SEVENTH Platinum algebraic shape (input-determinism)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T21:00:00Z
@@ -9750,7 +9750,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-209: TENTH Platinum-tier refinement — precondition lift homomorphism on C-XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-004); pattern now LANE-AGNOSTIC'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T20:30:00Z
@@ -9767,7 +9767,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-208: NINTH Platinum-tier refinement — citation composition homomorphism on C-NOTATION-LATEX-MATH-TO-EQUATION (XPILE-REFINE-NOTATION-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T20:00:00Z
@@ -9784,7 +9784,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-207: EIGHTH Platinum-tier refinement — variant arity homomorphism on C-XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T19:30:00Z
@@ -9801,7 +9801,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-206: SEVENTH Platinum-tier refinement — bounded smem sum on C-COMPILE-RUST-TO-PTX-MMA; first PATTERN-COMPOSITION Platinum (XPILE-REFINE-COMPILE-PTX-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T19:00:00Z
@@ -9818,7 +9818,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-205: Doc sweep — Platinum-tier kickoff (PMAT-199..204) reflected across README/spec/audit/status'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T18:30:00Z
@@ -9835,7 +9835,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-204: SIXTH Platinum-tier refinement — refcount additivity on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-009)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T18:00:00Z
@@ -9852,7 +9852,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-203: FIFTH Platinum-tier refinement — frame-safety transitivity on C-XPILE-CONTRACT-FRONTEND-TRAIT (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-003)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T17:30:00Z
@@ -9869,7 +9869,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-202: FOURTH Platinum-tier refinement — functoriality / monoid homomorphism on C-XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T17:00:00Z
@@ -9886,7 +9886,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-201: THIRD Platinum-tier refinement — idempotence on C-BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-003); captures the contract namesake property'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T16:30:00Z
@@ -9903,7 +9903,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-200: SECOND Platinum-tier refinement — slow-path associativity + distributivity on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-007)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T16:00:00Z
@@ -9920,7 +9920,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-199: FIRST Platinum-tier refinement — dispatcher commutativity on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-006); opens Platinum tier'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T15:30:00Z
@@ -9937,7 +9937,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-198: Doc sweep — Gold-universal milestone (PMAT-191..197) reflected across README/spec/audit/status'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T15:00:00Z
@@ -9954,7 +9954,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-197: TWELFTH Gold-tier refinement — CitationCompleteContract on C-XPILE-CONTRACT-BACKEND-TRAIT; Gold-tier coverage now UNIVERSAL (12/12 contracts) (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-002)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T14:30:00Z
@@ -9971,7 +9971,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-196: ELEVENTH Gold-tier refinement — FrameSafeTransition subtype on C-XPILE-CONTRACT-FRONTEND-TRAIT (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-002); fifth Gold pattern variant (frame-safety)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T14:00:00Z
@@ -9988,7 +9988,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-195: TENTH Gold-tier refinement — ConsistentBackendInput subtype on C-XPILE-BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-002); closes 2×2 trait matrix at Gold'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T13:30:00Z
@@ -10005,7 +10005,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-194: NINTH Gold-tier refinement — ConsistentFrontendOutput subtype on C-XPILE-FRONTEND-TRAIT (XPILE-REFINE-FRONTEND-TRAIT-002); first Gold on Layer-3 + fourth Gold pattern variant (cross-field equality)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T13:00:00Z
@@ -10022,7 +10022,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-193: EIGHTH Gold-tier refinement — SuccessfulOutcome subtype on C-BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-002); third Gold pattern variant (equality refinement)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T12:30:00Z
@@ -10039,7 +10039,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-192: SEVENTH Gold-tier refinement — NonEmptyHomogeneousList polymorphic subtype on C-XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-003)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T12:00:00Z
@@ -10056,7 +10056,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-191: SIXTH Gold-tier refinement — NonEmptyPreconditionList subtype on C-XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-003)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T11:30:00Z
@@ -10073,7 +10073,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-190: Doc sweep — Gold-tier kickoff (PMAT-185..189) reflected across README/spec/audit/status'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T11:00:00Z
@@ -10090,7 +10090,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-189: FIFTH Gold-tier refinement — NonEmptyDefinition subtype on C-NOTATION-LATEX-MATH-TO-EQUATION; first Gold using non-empty-list / collection-cardinality subtype pattern (XPILE-REFINE-NOTATION-004)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T10:30:00Z
@@ -10107,7 +10107,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-188: FOURTH Gold-tier refinement — WarningLineCount subtype on C-XLATE-LEAN-TO-RUST axiom_to_extern_fn (XPILE-REFINE-XLATE-LEAN-004); completes Gold demonstration across Layers 1/2/4/5'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T10:00:00Z
@@ -10124,7 +10124,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-187: THIRD Gold-tier refinement — BoundedSmem subtype on C-COMPILE-RUST-TO-PTX-MMA (XPILE-REFINE-COMPILE-PTX-003)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T09:30:00Z
@@ -10141,7 +10141,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-186: SECOND Gold-tier refinement — BoundedRefcountDelta subtype on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-008)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T09:00:00Z
@@ -10158,7 +10158,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-185: FIRST Gold-tier refinement — PyIntFast subtype on C-PY-INT-ARITH addition_no_overflow (XPILE-REFINE-PY-INT-ARITH-005)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T08:30:00Z
@@ -10175,7 +10175,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-184: Doc sweep — Silver-completion milestone (42/42 equations) reflected across README/spec/audit/status'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T08:00:00Z
@@ -10192,7 +10192,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-183: Silver-tier — heap-allocation model for addition_overflow_promotion on C-PY-INT-ARITH, SIXTH and FINAL multi-eq contract at full Silver (every equation in every contract now at Silver tier)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T07:30:00Z
@@ -10209,7 +10209,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-182: Silver-tier — complete C-XLATE-PY-LIST-TO-VEC Silver (6/6), FIFTH contract at full Silver'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T07:00:00Z
@@ -10226,7 +10226,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-181: Silver-tier — complete C-NOTATION-LATEX-MATH-TO-EQUATION Silver (7/7), FOURTH contract at full Silver'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T06:00:00Z
@@ -10243,7 +10243,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-180: Silver-tier — inline_math + theorem_env + proof_env typed enums on C-NOTATION-LATEX-MATH-TO-EQUATION (XPILE-REFINE-NOTATION-002)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T05:30:00Z
@@ -10260,7 +10260,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-179: Silver-tier — complete C-XLATE-RUST-FN-TO-LEAN-THM Silver (5/5), THIRD contract at full Silver'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T05:00:00Z
@@ -10277,7 +10277,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-178: Silver-tier — complete C-XLATE-LEAN-TO-RUST Silver (theorem/instance/axiom/noncomputable/citation), SECOND contract at full Silver (9/9)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T04:30:00Z
@@ -10294,7 +10294,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-177: Silver-tier — partial_def + inductive + structure typed-AST upgrades on C-XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-002)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T04:00:00Z
@@ -10311,7 +10311,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-176: Silver-tier — shl + shr + pow + and dispatchers on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-003), full Silver dispatch coverage'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T03:30:00Z
@@ -10328,7 +10328,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-175: Silver-tier — mul + floor_div + mod dispatchers on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-002), replicates PMAT-169 pattern across 3 more ops'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T03:00:00Z
@@ -10345,7 +10345,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-174: Silver-tier — oracle_endtoend_equivalence on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-007), sixth Silver + completes full Silver coverage'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T02:30:00Z
@@ -10362,7 +10362,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-173: Silver-tier — zero-copy pointer-identity for buffer_protocol_zero_copy on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-006), fifth Silver + performance-cliff wired'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T02:00:00Z
@@ -10379,7 +10379,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-172: Silver-tier — error-path refcount model for refcount_balance_on_error on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-005), fourth Silver + most-common-CPython-bug wired'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T01:30:00Z
@@ -10396,7 +10396,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-171: Silver-tier — GIL-state model for gil_invariant on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-004), third Silver + first wiring of previously-unwired equation'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T01:00:00Z
@@ -10413,7 +10413,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-170: Doc sweep — PMAT-164..169 Silver-bracket expansion to all 6 multi-equation contracts reflected across README/spec/audit/status'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T00:30:00Z
@@ -10430,7 +10430,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-169: Silver-tier — typed-dispatch model for addition_no_overflow on C-PY-INT-ARITH (XPILE-REFINE-PY-INT-ARITH-001), first Silver on substantive Bronze base'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-19T00:00:00Z
@@ -10447,7 +10447,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-168: Silver-tier — structured FFI-call AST for manifest_completeness on C-FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-003), second Silver theorem on a multi-eq contract'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T23:30:00Z
@@ -10464,7 +10464,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-167: Silver-tier — kind-tagged normaliser equivalence for NOTATION-LATEX-MATH-TO-EQUATION (XPILE-REFINE-NOTATION-001), first notation-lane Silver'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T23:00:00Z
@@ -10481,7 +10481,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-166: Silver-tier — name_preserved typed AST for XLATE-RUST-FN-TO-LEAN-THM (XPILE-REFINE-XLATE-RUST-TO-LEAN-001), closes bidirectional Rust ↔ Lean Silver bracket'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T22:30:00Z
@@ -10498,7 +10498,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-165: Silver-tier — name_preserved typed AST for XLATE-LEAN-TO-RUST (XPILE-REFINE-XLATE-LEAN-001), second multi-eq contract Silver upgrade'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T22:00:00Z
@@ -10515,7 +10515,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-164: Silver-tier — iteration_order_preserved polymorphic for XLATE-PY-LIST-TO-VEC (XPILE-REFINE-XLATE-PY-LIST-001), first multi-eq contract Silver upgrade'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T21:00:00Z
@@ -10532,7 +10532,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-163: Silver-bracket doc sweep — spec/audit/status reflect PMAT-156..162 Silver completion'
-  status: planned
+  status: done
   priority: low
   assigned_to: null
   created: 2026-05-18T20:30:00Z
@@ -10549,7 +10549,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-162: Silver-tier — exit_code_consistency for BASHRS-POSIX-IDEMPOTENCE (XPILE-REFINE-BASHRS-001), completes Silver coverage'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T20:00:00Z
@@ -10566,7 +10566,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-161: Silver-tier — shared_memory_budget for COMPILE-RUST-TO-PTX-MMA (XPILE-REFINE-COMPILE-PTX-002), first non-rfl Silver proof'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T19:30:00Z
@@ -10583,7 +10583,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-160: Silver-tier — refcount_balance_on_success for FFI-CPYTHON-EXT (XPILE-REFINE-FFI-CPYTHON-002)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T19:00:00Z
@@ -10600,7 +10600,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-159: Silver-tier — citation_round_trip for CONTRACT-BACKEND-TRAIT, completes trait 2×2 Silver bracket'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T18:30:00Z
@@ -10617,7 +10617,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-158: Silver-tier — equations_only for CONTRACT-FRONTEND-TRAIT (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-001)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T18:30:00Z
@@ -10634,7 +10634,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-157: Silver-tier refinement — target_consistency for BACKEND-TRAIT (XPILE-REFINE-BACKEND-TRAIT-001), mirrors PMAT-156'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T18:00:00Z
@@ -10651,7 +10651,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-156: first Silver-tier refinement — source_lang_consistency for FRONTEND-TRAIT (XPILE-REFINE-FRONTEND-TRAIT-001)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T17:30:00Z
@@ -10668,7 +10668,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-155: README "by the numbers" — 204 tests + 4 backends + TDG A-'
-  status: planned
+  status: done
   priority: low
   assigned_to: null
   created: 2026-05-18T17:30:00Z
@@ -10866,7 +10866,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Extend Python subset: assert statement'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T13:34:32Z
@@ -10914,7 +10914,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Bigint slow path scaffolding: xpile-bigint crate + Type::BigInt + codegen'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T07:02:05Z
@@ -10930,7 +10930,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Implicit BigInt promotion via return-type propagation
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T09:00:19Z
@@ -11250,7 +11250,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-033: unified xpile quorum reporter (§14.4 four-stratum view)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T14:27:18Z
@@ -11282,7 +11282,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-035: refresh audit-design §3/§4 for shipped quorum infrastructure'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-17T14:49:07Z
@@ -11298,7 +11298,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-036: BigInt auto-promotion for diff_exec overflow fixtures (close DIFF-003 gaps)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T14:58:51Z
@@ -11314,7 +11314,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-037: bashrs merger Layer A scaffold — empty bashrs-frontend / bashrs-backend crates + SourceLang::Shell + Target::Shell + dispatch wiring'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T15:17:43Z
@@ -11330,7 +11330,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-038: Frontend::matches_path trait method enables Makefile/Dockerfile routing through bashrs-frontend'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T15:33:29Z
@@ -11346,7 +11346,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-039: Layer B minimum viable demo — Stmt::Cmd variant + bashrs-frontend line parser + bashrs-backend shell emit; other backends Unsupported (C-BASHRS-POSIX-IDEMPOTENCE)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T15:53:10Z
@@ -11362,7 +11362,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-040: depyler-frontend recognises subprocess.run([...]) and lowers to Stmt::Cmd — cross-domain consumer for the v0.3.0 falsifier (C-BASHRS-POSIX-IDEMPOTENCE)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:04:47Z
@@ -11378,7 +11378,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-041: Stmt::Pipeline Layer B variant — bashrs-frontend parses ; bashrs-backend emits POSIX pipelines; other backends Unsupported'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:12:03Z
@@ -11394,7 +11394,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-042: Layer B Expr-side foundation — refactor Stmt::Cmd args to Vec<Expr>; add Expr::LitStr + Expr::QuotedString + QuotingStrategy'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:20:03Z
@@ -11410,7 +11410,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-043: shell-side diff_exec gate — Python subprocess.run output vs bashrs-emitted shell output (promotes C-BASHRS-POSIX-IDEMPOTENCE to PARTIAL on the quorum)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:31:44Z
@@ -11426,7 +11426,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-044: Lean refinement theorem for C-BASHRS-POSIX-IDEMPOTENCE — promotes contract to QUORUM (third stratum)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:39:46Z
@@ -11442,7 +11442,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-045: Expr::ShellVar Layer B variant — bashrs-frontend recognises NAME and {NAME}; bashrs-backend emits as NAME; other backends Unsupported (C-BASHRS-POSIX-IDEMPOTENCE)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:45:41Z
@@ -11458,7 +11458,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-046: Layer B Type::ShellString + Type::ExitCode variants for future bashrs Silver-tier refinement'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:54:39Z
@@ -11474,7 +11474,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-047: Expr::CommandSubstitution Layer B variant — IR shape for shell command substitution; producer/consumer scaffolded at v0.2.0 source fold'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T16:59:00Z
@@ -11490,7 +11490,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-048: Stmt::ShellLoop + enum LoopKind — last Layer B IR variants per sub/bashrs-merger.md table'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:04:46Z
@@ -11506,7 +11506,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-049: bashrs-frontend tokenizer recognises ''single'' and "double" quoted strings — activates Expr::QuotedString end-to-end'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:11:55Z
@@ -11522,7 +11522,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-050: bashrs-frontend tokenizer recognises (cmd) — Expr::CommandSubstitution end-to-end'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:17:04Z
@@ -11538,7 +11538,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-051: Stmt::ShellAssign — bashrs-frontend recognises VAR=value, bashrs-backend emits it; other backends Unsupported'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:22:57Z
@@ -11554,7 +11554,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-052: realistic bashrs end-to-end demo fixture + integration test (LitStr, QuotedString, ShellVar, CommandSubstitution, ShellAssign all composed)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:29:45Z
@@ -11570,7 +11570,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-053: bashrs-frontend tokenizer recognises backtick substitution (cmd)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:33:26Z
@@ -11586,7 +11586,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-054: bashrs-frontend tokenizer strips inline # comments'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:37:53Z
@@ -11602,7 +11602,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-055: Expr::ShellSpecial — recognise POSIX special parameters (1-9, @, *, #, ?, 0, $, !, -)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:43:33Z
@@ -11618,7 +11618,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-056: bashrs-frontend recognises escape sequences in double-quoted strings'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:49:38Z
@@ -11634,7 +11634,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-057: Lean refinement theorem for C-NOTATION-LATEX-MATH-TO-EQUATION — third contract to reach PARTIAL/QUORUM'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T17:56:20Z
@@ -11650,7 +11650,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-058: Kani harness for C-BASHRS-POSIX-IDEMPOTENCE — promotes Symbolic stratum, full four-stratum coverage'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T18:00:48Z
@@ -11666,7 +11666,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-059: Kani harness for C-NOTATION-LATEX-MATH-TO-EQUATION — promotes Symbolic stratum, contract reaches QUORUM'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T19:00:00Z
@@ -11683,7 +11683,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-060: Lean refinement theorem for C-XLATE-PY-LIST-TO-VEC — promotes Semantic stratum, contract reaches PARTIAL'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T20:00:00Z
@@ -11700,7 +11700,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-061: Kani harness for C-XLATE-PY-LIST-TO-VEC — promotes Symbolic stratum, contract reaches QUORUM'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T20:30:00Z
@@ -11717,7 +11717,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-062: Lean refinement theorem for C-XPILE-FRONTEND-TRAIT — promotes Semantic stratum, contract reaches PARTIAL'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T21:00:00Z
@@ -11734,7 +11734,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-063: Kani harness for C-XPILE-FRONTEND-TRAIT — promotes Symbolic stratum, contract reaches QUORUM'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T21:30:00Z
@@ -11751,7 +11751,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-064: Lean refinement theorem for C-XPILE-BACKEND-TRAIT — promotes Semantic stratum, contract reaches PARTIAL'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T22:00:00Z
@@ -11768,7 +11768,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-065: Kani harness for C-XPILE-BACKEND-TRAIT — promotes Symbolic stratum, contract reaches QUORUM (50% of substrate)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T22:30:00Z
@@ -11785,7 +11785,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-066: Lean refinement theorem for C-XPILE-CONTRACT-FRONTEND-TRAIT — promotes Semantic stratum, contract reaches PARTIAL'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T23:00:00Z
@@ -11802,7 +11802,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-067: Kani harness for C-XPILE-CONTRACT-FRONTEND-TRAIT — promotes Symbolic stratum, contract reaches QUORUM'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T23:30:00Z
@@ -11819,7 +11819,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-068: Lean refinement theorem for C-XPILE-CONTRACT-BACKEND-TRAIT — completes the 2×2 trait-determinism matrix'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T00:00:00Z
@@ -11836,7 +11836,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-069: Kani harness for C-XPILE-CONTRACT-BACKEND-TRAIT — closes the 2×2 trait-determinism matrix at full Lean+Kani QUORUM coverage (67% of substrate)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T00:30:00Z
@@ -11853,7 +11853,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-070: Lean refinement theorem for C-XLATE-LEAN-TO-RUST — first post-trait-matrix domain contract, promotes Semantic stratum to PARTIAL'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T01:00:00Z
@@ -11870,7 +11870,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-071: Kani harness for C-XLATE-LEAN-TO-RUST — promotes Symbolic stratum, contract reaches QUORUM (75% of substrate)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T01:30:00Z
@@ -11887,7 +11887,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-072: Lean refinement theorem for C-XLATE-RUST-FN-TO-LEAN-THM — bidirectional partner of PMAT-070, brackets full Rust ↔ Lean translation'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T02:00:00Z
@@ -11904,7 +11904,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-073: Kani harness for C-XLATE-RUST-FN-TO-LEAN-THM — closes Rust ↔ Lean translation bracket at full QUORUM (83% of substrate)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T02:30:00Z
@@ -11921,7 +11921,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-074: Lean refinement theorem for C-COMPILE-RUST-TO-PTX-MMA — FIRST Layer-5 (compile-time) contract refined, ZERO UNVERIFIED contracts remain'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T03:00:00Z
@@ -11938,7 +11938,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-075: Kani harness for C-COMPILE-RUST-TO-PTX-MMA — first Layer-5 contract at QUORUM (92% of substrate)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T03:30:00Z
@@ -11955,7 +11955,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-076: Lean refinement theorem for C-FFI-CPYTHON-EXT — TWELFTH and FINAL contract Lean theorem, completes substrate Semantic coverage'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T04:00:00Z
@@ -11972,7 +11972,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-077: Kani harness for C-FFI-CPYTHON-EXT — TWELFTH and FINAL Kani harness, brings xpile substrate to 100% QUORUM coverage (12 of 12 contracts)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T04:30:00Z
@@ -11989,7 +11989,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-078: README sweep — reflect 12-contract substrate, 27-crate workspace, 100% QUORUM milestone'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T05:00:00Z
@@ -12006,7 +12006,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-079: xpile-spec.md sweep — reflect 12-contract substrate, 27-crate workspace, 100% QUORUM milestone in canonical spec'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T05:30:00Z
@@ -12023,7 +12023,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-080: audit-design.md sweep — reflect 12-of-12 contracts at QUORUM, supersede stale 1-of-11 claim from before substrate completion'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T06:00:00Z
@@ -12040,7 +12040,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-081: sub/provability-roadmap.md sweep — reflect substrate completion in XPILE-QUORUM-005 and PMAT-033 status lines'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T06:30:00Z
@@ -12108,7 +12108,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-085: bashrs param-expansion LitStr passthrough lock-in — document round-trip behavior for ${VAR:-default} and friends at v0.1.0 (sets up XPILE-BASHRS-PARAM-EXPANSION-001 Silver-tier refinement)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T08:30:00Z
@@ -12125,7 +12125,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-086: bashrs line-continuation support — splice POSIX backslash-newline sequences before tokenization'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T09:00:00Z
@@ -12142,7 +12142,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-087: bashrs redirection round-trip lock-in — document that POSIX redirection tokens (>, >>, <, 2>, 2>&1) survive v0.1.0 frontend→backend round-trip via LitStr passthrough'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T09:30:00Z
@@ -12159,7 +12159,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-088: bashrs &&/|| short-circuit round-trip + bugfix — pipeline parser was treating `||` as `| |` (empty-stage error); add line_has_unambiguous_pipe helper to distinguish'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T10:00:00Z
@@ -12176,7 +12176,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-089: bashrs test-bracket [ ... ] round-trip lock-in — document POSIX test-command synonym round-trip via LitStr/QuotedString/ShellVar passthrough'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T10:30:00Z
@@ -12193,7 +12193,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-090: bashrs arithmetic-expansion $((...)) round-trip + tokenizer bugfix — distinguish $(( from $( so arithmetic expressions are recognized as a single Bare token'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T11:00:00Z
@@ -12210,7 +12210,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-091: bashrs subshell (cmd) round-trip lock-in — POSIX subshells round-trip via LitStr passthrough with program="(" and ")" as final arg'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T11:30:00Z
@@ -12227,7 +12227,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-092: bashrs capstone composite round-trip test — single 7-line shell script exercising all PMAT-085..091 idioms simultaneously'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T12:00:00Z
@@ -12533,7 +12533,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-110: sub/hybrid-transpile-flow.md sweep — Python→shell hybrid shipped first at v0.1.0; rename "First demo target" to "Planned demo target" and add shipped-demo section'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T21:00:00Z
@@ -12550,7 +12550,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-111: xpile-spec.md §11+§12 quality-regime sweep — "4 contracts mean=0.58" → "12 contracts mean=0.56"; remove stale claims that pmat tdg / llvm-cov / mutants are CI-enforced'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T21:30:00Z
@@ -12567,7 +12567,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-112: xpile-spec.md §18 CI Pipeline rewrite — replace aspirational 12-step gate list with actual gate / workspace-test / kani job layout (matches PMAT-101 ci-gates.md)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T22:00:00Z
@@ -12584,7 +12584,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-113: sub/pmat-integration.md sweep — Quality gates table claimed pmat tdg / llvm-cov / mutants are mandatory CI (they are not); same fix as PMAT-101'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T22:30:00Z
@@ -12601,7 +12601,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-114: sub/pmat-integration.md TDG-minimum follow-up — annotate "xpile minimum: A-" as target, not enforced; update work-item-driven flow block to remove pmat tdg gate'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T23:00:00Z
@@ -12618,7 +12618,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-115: README fixture/test counts — "5 fixtures" → "11+ fixtures"; "~52 tests" → "~195 tests" + bashrs-frontend coverage'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T23:30:00Z
@@ -12635,7 +12635,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-116: sub/cli.md status sweep — replace "scaffold banner; none implemented; Phase 2-3" with the 5 actually-shipped subcommands (info, transpile, audit, attestations, quorum)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T00:00:00Z
@@ -12652,7 +12652,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-117: branch-protection actual-state sweep — README/CURRENT.md/ci-gates.md claimed "gate + workspace-test required" but actual ruleset only requires `gate`; flip claims to match reality, verifiable via gh api'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T00:30:00Z
@@ -12669,7 +12669,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-118: sub/references.md sweep — xpile "(scaffold)" → real v0.1.0 state; depyler/decy/ruchy/bashrs frontends already in-tree (was "Will be folded")'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T01:00:00Z
@@ -12686,7 +12686,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-119: bashrs ; statement-separator round-trip lock-in — POSIX `;` between commands rounds-trip via LitStr passthrough, completing the v0.1.0 invariant lock-in series'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T01:30:00Z
@@ -12703,7 +12703,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-120: CLAUDE.md bashrs state sweep — merger shipped at v0.1.0 not v0.2.0; remove "crates/bashrs-* don''t exist yet" claim'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T02:00:00Z
@@ -12720,7 +12720,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-121: bashrs-backend capstone emit test — multi-variant Module renders all Layer B variants byte-correctly (PMAT-092 mirror on emission side)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T02:30:00Z
@@ -12737,7 +12737,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-122: substrate-completion session log — append 2026-05-18 entry per docs/status/INDEX.md convention'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T03:00:00Z
@@ -12754,7 +12754,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-123: trait-determinism Runtime witness — Frontend and Backend trait contracts reach full 4-stratum coverage'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T03:30:00Z
@@ -12771,7 +12771,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-124: Runtime witnesses for remaining 8 contracts — substrate reaches §14.4 ceiling (12/12 at full 4-stratum)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T04:00:00Z
@@ -12788,7 +12788,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-125: trait-determinism asserting Runtime test — closes XPILE-TRAIT-DETERMINISM-RUNTIME-001'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T04:30:00Z
@@ -12805,7 +12805,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-126: bashrs CLI determinism Runtime test — extends PMAT-125 pattern to shell domain'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T05:00:00Z
@@ -12822,7 +12822,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-127: notation contract — add real preconditions + postconditions for display_math_to_equation (addresses PV-ENF-001 warnings)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T05:30:00Z
@@ -12839,7 +12839,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-128: notation contract — pre/postconditions for all 6 equations (warnings 16 → 7)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T06:00:00Z
@@ -12856,7 +12856,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-129: xlate-lean-to-rust contract — pre/postconditions for all 9 equations (warnings 22 → 9)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T06:30:00Z
@@ -12873,7 +12873,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-130: py-int-arith contract — pre/postconditions for all 9 equations (warnings 14 → 2)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-19T07:00:00Z
@@ -12890,7 +12890,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-151: py-int-arith Kani fan-out — 8 more harnesses, completes XPILE-QUORUM-006 series'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T15:30:00Z
@@ -12907,7 +12907,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-150: notation-latex-math-to-equation Kani harnesses — 6 more for per-equation Sym coverage'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T15:00:00Z
@@ -12924,7 +12924,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-149: xlate-py-list-to-vec Kani harnesses — 4 more for per-equation Sym coverage'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T14:30:00Z
@@ -12941,7 +12941,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-148: xlate-rust-fn-to-lean-thm Kani harnesses — 4 more for per-equation Sym coverage'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T14:00:00Z
@@ -12958,7 +12958,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-147: xlate-lean-to-rust Kani harnesses — 8 more for per-equation Sym coverage (XPILE-QUORUM-006)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T13:30:00Z
@@ -12975,7 +12975,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-146: qa_gate enforcer test — required_tests must reference real #[test] fns'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-18T13:00:00Z
@@ -13111,7 +13111,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-138: bitwise_and_signed_semantics refinement theorem — closes XPILE-REFINE-005, substrate warnings 1 → 0'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T10:30:00Z
@@ -13128,7 +13128,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-137: qa_gate blocks for all 5 kernel contracts (warnings 6 → 1)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T10:00:00Z
@@ -13145,7 +13145,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-136: xlate-rust-fn-to-lean-thm — Bronze-tier refinement theorems for the 4 remaining equations (warnings 5 → 1)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T09:30:00Z
@@ -13162,7 +13162,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-135: xlate-py-list-to-vec — Bronze-tier refinement theorems for the 4 remaining equations (warnings 5 → 1)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T09:00:00Z
@@ -13179,7 +13179,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-134: notation-latex-math-to-equation — Bronze-tier refinement theorems for the 6 remaining equations (warnings 7 → 1)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T08:30:00Z
@@ -13196,7 +13196,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-133: xlate-lean-to-rust — Bronze-tier refinement theorems for the 8 remaining equations (warnings 9 → 1)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T08:00:00Z
@@ -13213,7 +13213,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-132: xlate-rust-fn-to-lean-thm contract — pre/postconditions for all 5 equations (warnings 12 → 5)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T07:30:00Z
@@ -13918,7 +13918,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-131: xlate-py-list-to-vec contract — pre/postconditions for all 5 equations (warnings 13 → 5)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-18T07:00:00Z
