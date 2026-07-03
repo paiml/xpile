@@ -1421,6 +1421,257 @@ const STR_FIND_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1163: `$__wasm_str_find_from(h, n, startc) -> i64` — Python
+/// `h.find(n, start)` (the CODE-POINT index of the first occurrence of `n` in `h`
+/// AT OR AFTER code-point index `start`, or `-1` if absent) over two
+/// length-prefixed UTF-8 strings, with a Python `int` (i64) start.
+///
+/// The start-bounded generalisation of [`STR_FIND_HELPER`]: the SAME naive byte
+/// slide and the SAME byte-offset → code-point-index conversion, but the slide
+/// begins at the byte offset of the `start`-th code point instead of `0`, and the
+/// returned index is the ABSOLUTE code-point position in `h` (Python's `find` with
+/// a start still reports the position in the ORIGINAL string, not relative to the
+/// start). The full Python start semantics are honoured:
+///
+///   * `start` is a CODE-POINT index (`$__wasm_str_charlen` gives the length).
+///   * a NEGATIVE start counts from the end: `start += charlen`, then clamped up
+///     to `0` (`"abcabc".find("bc", -3)` == 4; `"abc".find("a", -100)` == 0).
+///   * `start > charlen` → `-1` — including the empty needle
+///     (`"abc".find("", 4)` == -1), which is why the `> charlen` guard precedes
+///     the empty-needle branch.
+///   * an EMPTY needle → the clamped `start` (`"abc".find("", 2)` == 2,
+///     `"abc".find("", 3)` == 3) — the empty string is found AT `start`.
+///   * a match on or after `start` → its ABSOLUTE code-point index; none → `-1`.
+///
+/// The byte slide is correct at byte granularity for the same reason
+/// `$__wasm_str_find` is: `n[0]` is a LEAD byte, so a candidate offset that falls
+/// mid-code-point (a continuation byte) can never match. Reads linear memory and
+/// allocates NOTHING (a Python int, not a new string). Its `$__wasm_str_charlen`
+/// call rides [`module_touches_str`], which any `StrMethod` sets; emitted once per
+/// module (gated on [`module_uses_str_find2`], so a plain 1-arg `.find(p)` module
+/// carries no dead helper).
+const STR_FIND_FROM_HELPER: &str = "\
+  ;; __wasm_str_find_from(h, n, startc) = Python h.find(n, start)  (i64: ABSOLUTE
+  ;; CODE-POINT index of the first occurrence of n in h at or after code-point
+  ;; index start, or -1). h, n are i32 base-pointers (i32 byte count @ base+0,
+  ;; UTF-8 bytes @ base+8); startc is the (possibly negative) Python start as i64.
+  ;; Same byte slide + byte->code-point conversion as $__wasm_str_find, begun at
+  ;; the byte offset of the start-th code point. Allocates nothing.
+  (func $__wasm_str_find_from (param $h i32) (param $n i32) (param $startc i64) (result i64)
+    (local $hn i32)      ;; len(h) in BYTES
+    (local $nn i32)      ;; len(n) in BYTES
+    (local $hchars i32)  ;; charlen(h) (code-point count)
+    (local $s i32)       ;; clamped start as a code-point index (0..=hchars)
+    (local $sb i32)      ;; byte offset of the start-th code point
+    (local $cp i32)      ;; code-point counter while converting start->byte
+    (local $off i32)     ;; candidate byte offset in the slide
+    (local $last i32)    ;; inclusive last candidate byte offset
+    (local $j i32)
+    (local $match i32)
+    (local $ci i32)
+    (local $p i32)
+    ;; hn = len(h) bytes; nn = len(n) bytes; hchars = charlen(h)
+    local.get $h
+    i32.load
+    local.set $hn
+    local.get $n
+    i32.load
+    local.set $nn
+    local.get $h
+    call $__wasm_str_charlen
+    local.set $hchars
+    ;; clamp start: if startc < 0 -> startc += hchars; if still < 0 -> 0
+    local.get $startc
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $startc
+      local.get $hchars
+      i64.extend_i32_s
+      i64.add
+      local.set $startc
+      local.get $startc
+      i64.const 0
+      i64.lt_s
+      if
+        i64.const 0
+        local.set $startc
+      end
+    end
+    ;; if startc > hchars -> -1 (covers the empty needle: h.find(\"\", len+1) == -1)
+    local.get $startc
+    local.get $hchars
+    i64.extend_i32_s
+    i64.gt_s
+    if
+      i64.const -1
+      return
+    end
+    ;; 0 <= startc <= hchars now; narrow to i32 (charlen fits i32)
+    local.get $startc
+    i32.wrap_i64
+    local.set $s
+    ;; empty needle: Python h.find(\"\", start) == start (clamped)
+    local.get $nn
+    i32.eqz
+    if
+      local.get $s
+      i64.extend_i32_s
+      return
+    end
+    ;; convert the start code-point index -> byte offset sb: walk s code points
+    i32.const 0
+    local.set $sb
+    i32.const 0
+    local.set $cp
+    (block $sbdone
+      (loop $sbnext
+        local.get $cp
+        local.get $s
+        i32.ge_s
+        br_if $sbdone
+        ;; step past the lead byte
+        local.get $sb
+        i32.const 1
+        i32.add
+        local.set $sb
+        ;; step past continuation bytes: while sb<hn && (h[8+sb]&0xC0)==0x80: sb++
+        (block $contdone
+          (loop $contnext
+            local.get $sb
+            local.get $hn
+            i32.ge_s
+            br_if $contdone
+            local.get $h
+            i32.const 8
+            i32.add
+            local.get $sb
+            i32.add
+            i32.load8_u
+            i32.const 0xC0
+            i32.and
+            i32.const 0x80
+            i32.ne
+            br_if $contdone
+            local.get $sb
+            i32.const 1
+            i32.add
+            local.set $sb
+            br $contnext
+          )
+        )
+        local.get $cp
+        i32.const 1
+        i32.add
+        local.set $cp
+        br $sbnext
+      )
+    )
+    ;; last = hn - nn (inclusive last candidate byte start; may be < sb)
+    local.get $hn
+    local.get $nn
+    i32.sub
+    local.set $last
+    ;; off = sb; while off <= last: try an nn-byte match at off
+    local.get $sb
+    local.set $off
+    (block $done
+      (loop $next_off
+        local.get $off
+        local.get $last
+        i32.gt_s
+        br_if $done
+        ;; match = 1; j = 0; while j < nn: if h[8+off+j] != n[8+j] fail
+        i32.const 1
+        local.set $match
+        i32.const 0
+        local.set $j
+        (block $stop
+          (loop $next_char
+            local.get $j
+            local.get $nn
+            i32.ge_s
+            br_if $stop
+            local.get $h
+            i32.const 8
+            i32.add
+            local.get $off
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            local.get $n
+            i32.const 8
+            i32.add
+            local.get $j
+            i32.add
+            i32.load8_u
+            i32.ne
+            if
+              i32.const 0
+              local.set $match
+              br $stop
+            end
+            local.get $j
+            i32.const 1
+            i32.add
+            local.set $j
+            br $next_char
+          )
+        )
+        ;; a full match at byte offset off -> ABSOLUTE code-point index: count
+        ;; non-continuation bytes in h[0..off].
+        local.get $match
+        if
+          i32.const 0
+          local.set $ci
+          i32.const 0
+          local.set $p
+          (block $cdone
+            (loop $cnext
+              local.get $p
+              local.get $off
+              i32.ge_s
+              br_if $cdone
+              local.get $h
+              i32.const 8
+              i32.add
+              local.get $p
+              i32.add
+              i32.load8_u
+              i32.const 0xC0
+              i32.and
+              i32.const 0x80
+              i32.ne
+              if
+                local.get $ci
+                i32.const 1
+                i32.add
+                local.set $ci
+              end
+              local.get $p
+              i32.const 1
+              i32.add
+              local.set $p
+              br $cnext
+            )
+          )
+          local.get $ci
+          i64.extend_i32_s
+          return
+        end
+        local.get $off
+        i32.const 1
+        i32.add
+        local.set $off
+        br $next_off
+      )
+    )
+    ;; no match at or after start -> -1
+    i64.const -1
+  )
+";
+
 /// PMAT-1143: `$__wasm_str_rfind(h, n) -> i64` — Python `h.rfind(n)` (the
 /// CODE-POINT index of the LAST occurrence of `n` in `h`, or `-1` if absent)
 /// over two length-prefixed UTF-8 strings, returning an `i64` (a Python `int`).
@@ -4131,6 +4382,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if needs_find {
         out.push_str(STR_FIND_HELPER);
     }
+    // PMAT-1163: emit the start-bounded FIND helper once, when any function uses
+    // the 2-arg `s.find(p, start)` form (`Expr::StrMethod`, op `Find`, 2 args).
+    // The start-bounded generalisation of `$__wasm_str_find`: same byte slide +
+    // byte→char-index conversion, begun at the byte offset of the start-th code
+    // point, with Python's negative/overflow start clamp and empty-needle-at-start
+    // semantics. Its empty-needle/clamp path calls `$__wasm_str_charlen` (emitted
+    // below via `module_touches_str`, which a `StrMethod` always sets). Gated on an
+    // ACTUAL 2-arg find so a plain 1-arg `.find(p)` module carries no dead helper.
+    if module_uses_str_find2(module) {
+        out.push_str(STR_FIND_FROM_HELPER);
+    }
     // PMAT-1143: emit the string RFIND helper once, when any function uses
     // `s.rfind(p)` over strings (`Expr::StrMethod`, op `Rfind`). The reverse-scan
     // sibling of `$__wasm_str_find`: same byte match + byte→char-index conversion,
@@ -5120,6 +5382,106 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
             expr_has_str_repeat(dict) || expr_has_str_repeat(key)
         }
         Expr::SetContains { set, elem } => expr_has_str_repeat(set) || expr_has_str_repeat(elem),
+        _ => false,
+    }
+}
+
+/// PMAT-1163: does any function use the TWO-arg `s.find(sub, start)` form
+/// (`Expr::StrMethod`, op `Find`, `args.len() >= 2`)? Gates the emission of
+/// `$__wasm_str_find_from` (the start-bounded search helper) so a plain 1-arg
+/// `.find(p)` module carries no dead helper. Exhaustive over the expr/stmt tree
+/// like the other str-op gate walkers (`expr_has_str_repeat` &c.): a missed
+/// sub-expression would leave `$__wasm_str_find_from` undeclared at the 2-arg
+/// `Find` call site — a hard wat2wasm failure (the recurring gate-hole class).
+fn module_uses_str_find2(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_str_find2(&f.body))
+}
+
+fn block_has_str_find2(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_str_find2) || expr_has_str_find2(&block.trailing_return)
+}
+
+fn stmt_has_str_find2(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
+            expr_has_str_find2(value)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_str_find2(cond)
+                || then_body.iter().any(stmt_has_str_find2)
+                || else_body.iter().any(stmt_has_str_find2)
+        }
+        Stmt::While { cond, body } => {
+            expr_has_str_find2(cond) || body.iter().any(stmt_has_str_find2)
+        }
+        Stmt::FieldAssign { value, .. } => expr_has_str_find2(value),
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_str_find2) || expr_has_str_find2(value)
+        }
+        Stmt::DictSet { key, value, .. } => expr_has_str_find2(key) || expr_has_str_find2(value),
+        Stmt::SetAdd { elem, .. } => expr_has_str_find2(elem),
+        Stmt::SideEffectCall { call } => expr_has_str_find2(call),
+        _ => false,
+    }
+}
+
+fn expr_has_str_find2(e: &Expr) -> bool {
+    match e {
+        // this node IS a 2-arg (or 3-arg — only 2 is lowered) `.find(sub, start)`.
+        Expr::StrMethod {
+            op: StrMethodOp::Find,
+            args,
+            ..
+        } if args.len() >= 2 => true,
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_str_find2(recv) || args.iter().any(expr_has_str_find2)
+        }
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => expr_has_str_find2(lhs) || expr_has_str_find2(rhs),
+        Expr::UnOp { operand, .. } => expr_has_str_find2(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_str_find2(cond)
+                || expr_has_str_find2(then_expr)
+                || expr_has_str_find2(else_expr)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_str_find2),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_str_find2(obj) || args.iter().any(expr_has_str_find2)
+        }
+        Expr::Index { collection, index } => {
+            expr_has_str_find2(collection) || expr_has_str_find2(index)
+        }
+        Expr::Len(c) => expr_has_str_find2(c),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_find2(value),
+        Expr::StrCharAt { string, index } => {
+            expr_has_str_find2(string) || expr_has_str_find2(index)
+        }
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_has_str_find2(collection)
+                || lo.as_deref().is_some_and(expr_has_str_find2)
+                || hi.as_deref().is_some_and(expr_has_str_find2)
+        }
+        Expr::StrContains { haystack, needle } => {
+            expr_has_str_find2(haystack) || expr_has_str_find2(needle)
+        }
+        Expr::FieldAccess { obj, .. } => expr_has_str_find2(obj),
+        Expr::ToStr { value, .. } => expr_has_str_find2(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_str_find2(dict) || expr_has_str_find2(key)
+        }
+        Expr::SetContains { set, elem } => expr_has_str_find2(set) || expr_has_str_find2(elem),
+        Expr::Repeat { seq, n, .. } => expr_has_str_find2(seq) || expr_has_str_find2(n),
         _ => false,
     }
 }
@@ -6631,6 +6993,27 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_find").expect("write");
             Ok(WatTy::I64)
         }
+        // PMAT-1163: `s.find(p, start)` — the start-bounded form: the CODE-POINT
+        // index of the first occurrence of `p` in `s` AT OR AFTER code-point index
+        // `start`, or -1. The two str operands lower to i32 base-pointers
+        // (`emit_str_expr`); `args[1]` (the start, typed `int` in the frontend) is
+        // coerced onto the stack as i64, then `$__wasm_str_find_from` applies the
+        // Python start clamp (negative → from-end, > len → -1, empty-needle → start)
+        // and the byte-offset → char-index conversion. Allocates nothing. A 3-arg
+        // `.find(p, start, end)` still falls through to the honest refusal below (no
+        // end-bounded search yet).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Find,
+            args,
+        } if args.len() == 2 => {
+            emit_str_expr(recv, scope, out, depth)?;
+            emit_str_expr(&args[0], scope, out, depth)?;
+            emit_expr_typed(&args[1], scope, out, depth, WatTy::I64)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_find_from").expect("write");
+            Ok(WatTy::I64)
+        }
         // PMAT-1143: `s.rfind(p)` — an int (i64) result: the CODE-POINT index of
         // the LAST occurrence of `p` in `s`, or -1 if absent. The reverse-scan
         // sibling of `.find(p)`: both operands lower to i32 base-pointers
@@ -6718,11 +7101,11 @@ fn emit_expr(
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
-             `.rfind(p)`, `.index(p)`, `.rindex(p)`, `.removeprefix(p)`, \
-             `.removesuffix(p)` (each single-arg), `.replace(old, new)` (2-arg), \
-             and `.replace(old, new, count)` (3-arg) are supported; \
-             upper/lower/strip/split/… and the 2-3-arg start/end search forms \
-             are refused"
+             `.find(p, start)`, `.rfind(p)`, `.index(p)`, `.rindex(p)`, \
+             `.removeprefix(p)`, `.removesuffix(p)`, `.replace(old, new)`, and \
+             `.replace(old, new, count)` are supported; upper/lower/strip/split/…, \
+             the 3-arg `.find(p, start, end)`, and the start/end forms of \
+             rfind/index/rindex/count are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
