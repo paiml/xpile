@@ -147,6 +147,24 @@ compile_targets:
     # executed (tests/heap_struct_witness.rs): Point(3,4).x+.y=7, reversed
     # Point(y=10,x=3).x=3, Rec(5,2.5).f=2.5, a struct-param p.x+p.y=42 — all ==
     # CPython. Refused honestly: a non-scalar field, a struct RETURN, a method call.
+    #
+    # PMAT-1126 (2026-07-03): the FIRST two string METHODS on the WASM lane —
+    # s.startswith(p) / s.endswith(p) (Expr::StrMethod, op StartsWith / EndsWith).
+    # Each lowers to a non-allocating BYTE prefix/suffix compare
+    # ($__wasm_str_startswith / $__wasm_str_endswith): a len-guarded i32.load8_u
+    # loop over the length-prefixed payload, returning an i32 bool. Byte
+    # prefix/suffix == code-point prefix/suffix for valid UTF-8 (the needle's
+    # first byte is a lead byte, so a byte match lands on a char boundary — no
+    # split multi-byte char, no false positive on a shared continuation byte),
+    # mirroring the $__wasm_str_cmp "byte order == code-point order" rationale;
+    # like it, allocates NOTHING (a bool, not a new string). The emitted WAT is
+    # genuine: the PMAT-1126 slice ran it through WABT — 34 (case × op) pairs
+    # (ASCII + prefix/suffix/equal/longer-than/empty + MULTI-BYTE é/© fixtures)
+    # execute value-matching CPython, incl. "héllo".startswith("h©")=False on a
+    # shared 0xA9 and "héllo".endswith("éllo")=True on a char-boundary suffix
+    # offset. See the `str_prefix_witness` integration test. Each helper is gated
+    # separately (no dead helper). Refused honestly: any OTHER string method
+    # (upper/lower/strip/split/replace/find/…) and a non-str operand.
 
 equations:
   wasm_heap_alloc_structure_extensionality_diamond:
@@ -397,16 +415,57 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a string value-matching CPython str(n), including str(0)='0', the sign cases, and the i64::MIN/MAX magnitude boundaries"
       - "the int→str WASM-emitting code carries the WASM citation"
 
+  string_startswith_endswith_is_byte_prefix:
+    # PMAT-1126: `s.startswith(p)` / `s.endswith(p)` (Expr::StrMethod with op
+    # StartsWith / EndsWith) lower to $__wasm_str_startswith / $__wasm_str_endswith
+    # — non-allocating BYTE prefix/suffix compares. Like $__wasm_str_cmp they read
+    # linear memory but allocate nothing. A byte prefix/suffix compare IS a
+    # code-point prefix/suffix compare for valid UTF-8, so it reproduces CPython's
+    # predicate EXACTLY with no char walk.
+    formula: |
+      construct(StrMethod{recv, op ∈ {StartsWith, EndsWith}, args: [needle]}
+                over str operands, BackendConfig{target: Wasm})
+        emits `<recv> <needle> call $__wasm_str_<startswith|endswith>`, where the
+        helper loads both i32 byte-count headers; returns 0 if len(needle) >
+        len(recv); else compares len(needle) bytes — from recv+8 (startswith) or
+        recv+8+(len(recv)-len(needle)) (endswith) — against needle+8, returning
+        0 on the first mismatch and 1 if all match. The result is an i32 bool.
+        NEVER a base-pointer compare.
+    domain: |
+      A Python string predicate `s.startswith(p)` / `s.endswith(p)`
+      (Expr::StrMethod, op StartsWith / EndsWith, exactly one str arg) over two
+      string-valued operands (a str-name Ident, a LitStr, a Concat / Chr / bare
+      StrCharAt / slice / str-returning call). A non-str operand is REFUSED by
+      emit_str_expr (an honest type mismatch). Any OTHER string method
+      (upper/lower/strip/split/replace/find/…) stays REFUSED.
+    invariants:
+      - "the compare is byte-wise (i32.load8_u) over the length-prefixed payload — byte prefix/suffix == code-point prefix/suffix for valid UTF-8 (needle[0] is a LEAD byte, so a byte match lands on a char boundary in the haystack: no split multi-byte char, no false positive on a SHARED continuation byte)"
+      - "a needle LONGER than the haystack returns 0 immediately (len(p) > len(s) short-circuit); the endswith start offset len(s)-len(p) is therefore >= 0"
+      - "an EMPTY needle returns 1 ('abc'.startswith('')=='abc'.endswith('')==True) — the compare loop never runs"
+      - "the result is an i32 bool, NEVER a base-pointer compare of the two str pointers"
+      - "$__wasm_str_startswith / $__wasm_str_endswith read linear memory but allocate NOTHING (independent of the bump-heap gate; a pure-predicate module carries no $__alloc); each helper is gated separately (a startswith-only module carries no endswith helper)"
+      - "any string method other than CharCount / StartsWith / EndsWith is REFUSED honestly (no silent miscompile)"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the receiver and the single arg both type as str"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a bool value-matching CPython, INCLUDING MULTI-BYTE fixtures ('héllo'.startswith('hé')==True, 'héllo'.startswith('h©')==False on a shared 0xA9, 'héllo'.endswith('éllo')==True)"
+      - "the startswith/endswith WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
-      construct(slice_stepped | list_slice | str(float) | fstring | str_method,
+      construct(slice_stepped | list_slice | str(float) | fstring |
+                str_method∉{CharCount,StartsWith,EndsWith},
                 BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
       A string op still outside the WASM string subset: a STEPPED string slice
-      or a list slice, str(float)/repr(float), an f-string, a string method.
+      or a list slice, str(float)/repr(float), an f-string, a string method
+      OTHER than len (CharCount) / startswith / endswith.
       (String ORDERING is supported — see `string_ordering_is_lexicographic`;
-      str(int)/repr(int) is supported — see `int_to_str_is_decimal_ascii`.)
+      str(int)/repr(int) is supported — see `int_to_str_is_decimal_ascii`;
+      startswith/endswith are supported — see
+      `string_startswith_endswith_is_byte_prefix`.)
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
       - "the refusal names the op + the follow-up (honest diagnostic)"
@@ -445,6 +504,11 @@ proof_obligations:
     property: str(int) is a decimal-ASCII heap string; results match CPython incl. zero, sign, and the i64::MIN overflow boundary
     formal: "wasm-interp(construct(str(n))) == CPython(str(n)) AND wasm-interp(construct(str(-9223372036854775808))) == '-9223372036854775808'"
     applies_to: int_to_str_is_decimal_ascii
+
+  - type: postcondition
+    property: string startswith/endswith are byte prefix/suffix compares; results match CPython on multi-byte fixtures
+    formal: "wasm-interp(construct(s.startswith(p))) == CPython AND wasm-interp(construct('héllo'.startswith('h©'))) == False"
+    applies_to: string_startswith_endswith_is_byte_prefix
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -676,3 +740,40 @@ falsification_tests:
       - missing_or_double_sign_byte
       - header_length_desynced_from_digits
       - str_float_or_bool_miscompiled_instead_of_refused
+
+  - id: FALSIFY-WASM-HEAP-009
+    rule: |
+      PMAT-1126: `s.startswith(p)` / `s.endswith(p)` MUST lower to a
+      non-allocating BYTE prefix/suffix compare ($__wasm_str_startswith /
+      $__wasm_str_endswith) — a len-guarded loop of i32.load8_u compares over the
+      length-prefixed payload — returning an i32 bool, NEVER a base-pointer
+      compare. Byte prefix/suffix == code-point prefix/suffix for valid UTF-8
+      (the needle's first byte is a LEAD byte, so a byte match lands on a char
+      boundary), so the result MUST value-match CPython, INCLUDING multi-byte
+      fixtures where a shared continuation byte could false-positive or a byte
+      offset could split a char. A needle longer than the haystack MUST return 0;
+      an empty needle MUST return 1. Any OTHER string method MUST refuse.
+    prediction: |
+      The executed WABT witness runs every (case × op) pair and each equals the
+      pinned CPython bool — "hello".startswith("he")=True, the same-length
+      differing prefix "hi"=False, the longer-than needle "hi".startswith("hello")
+      =False, the empty needle ""=True, and the MULTI-BYTE "héllo".startswith("hé")
+      =True / "héllo".startswith("h©")=False (shared 0xA9, differing lead byte) /
+      "héllo".endswith("éllo")=True (suffix offset on a char boundary). A
+      pure-predicate module carries no $__alloc.
+    test: |
+      cargo test -p xpile-wasm-codegen --test str_prefix_witness
+    if_fails: |
+      The prefix/suffix compare (the len-guard short-circuit, the endswith start
+      offset len(s)-len(p), the byte-vs-char boundary, the empty-needle case), the
+      per-op helper gate, or the non-str-operand refusal regressed — a base-pointer
+      compare, a false positive on a shared continuation byte, a wrong suffix
+      offset, or a crash on a longer needle. The bool diverges from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - base_pointer_compare_passed_off_as_startswith
+      - shared_continuation_byte_false_positive
+      - wrong_endswith_suffix_offset
+      - longer_needle_not_short_circuited
+      - empty_needle_wrong_result
+      - other_str_method_miscompiled_instead_of_refused

@@ -759,6 +759,166 @@ const STR_CMP_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1126: `$__wasm_str_startswith(s, p)` — Python `s.startswith(p)` over two
+/// length-prefixed UTF-8 strings, returning an `i32` boolean (1 = `s` starts
+/// with `p`, 0 = not).
+///
+/// A pure BYTE-PREFIX compare: if `len(p) > len(s)` return 0; else compare the
+/// first `len(p)` bytes of `s` (from `s+8`) against all of `p` (from `p+8`),
+/// returning 0 on the first mismatch and 1 if all match. A byte-prefix compare
+/// IS a CODE-POINT-prefix compare for valid UTF-8: `p` is a valid UTF-8 string,
+/// so `p[0]` is a LEAD byte (never a `0x80..0xBF` continuation), which means a
+/// byte match forces the compare to start on a char boundary in `s` — so
+/// matching `len(p)` bytes matches exactly `p`'s code points (no split char, no
+/// false positive on a shared continuation byte). This mirrors the `$__wasm_str_cmp`
+/// rationale (byte order == code-point order) and, like it, allocates NOTHING —
+/// it reads linear memory and returns a bool. The empty prefix yields 1
+/// (`"abc".startswith("")` is True) since the loop body never runs. Emitted once
+/// per module (gated on [`module_uses_str_method`] for `StartsWith`).
+const STR_STARTSWITH_HELPER: &str = "\
+  ;; __wasm_str_startswith(s, p) = Python s.startswith(p)  (i32 bool)
+  ;; s, p are i32 base-pointers to length-prefixed regions (i32 byte count @
+  ;; base+0, UTF-8 bytes @ base+8). Byte-prefix compare == code-point-prefix
+  ;; compare for valid UTF-8 (p[0] is a lead byte → byte match lands on a char
+  ;; boundary), so this IS Python startswith. Allocates nothing.
+  (func $__wasm_str_startswith (param $s i32) (param $p i32) (result i32)
+    (local $sn i32)
+    (local $pn i32)
+    (local $i i32)
+    ;; sn = len(s); pn = len(p)
+    local.get $s
+    i32.load
+    local.set $sn
+    local.get $p
+    i32.load
+    local.set $pn
+    ;; if pn > sn return 0 (a longer prefix can never match)
+    local.get $pn
+    local.get $sn
+    i32.gt_s
+    if
+      i32.const 0
+      return
+    end
+    ;; i = 0; while i < pn: if s[8+i] != p[8+i] return 0; i += 1
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $pn
+        i32.ge_s
+        br_if $done
+        ;; s byte i
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        ;; p byte i
+        local.get $p
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.ne
+        if
+          i32.const 0
+          return
+        end
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    i32.const 1
+  )
+";
+
+/// PMAT-1126: `$__wasm_str_endswith(s, p)` — Python `s.endswith(p)`, returning
+/// an `i32` boolean. The suffix mirror of [`STR_STARTSWITH_HELPER`]: if
+/// `len(p) > len(s)` return 0; else compare `p` against the LAST `len(p)` bytes
+/// of `s` — from `s+8 + (len(s) - len(p))`. The `len(s) - len(p)` start offset
+/// is `>= 0` (guarded by the length check) and lands on a char boundary in `s`
+/// for the same reason startswith does (`p[0]` is a lead byte), so a byte-suffix
+/// match IS a code-point-suffix match for valid UTF-8. Allocates nothing.
+/// Emitted once per module (gated on [`module_uses_str_method`] for `EndsWith`).
+const STR_ENDSWITH_HELPER: &str = "\
+  ;; __wasm_str_endswith(s, p) = Python s.endswith(p)  (i32 bool)
+  ;; s, p are i32 base-pointers to length-prefixed regions (i32 byte count @
+  ;; base+0, UTF-8 bytes @ base+8). Compares p against the LAST len(p) bytes of
+  ;; s (offset len(s)-len(p)); byte-suffix == code-point-suffix for valid UTF-8.
+  ;; Allocates nothing.
+  (func $__wasm_str_endswith (param $s i32) (param $p i32) (result i32)
+    (local $sn i32)
+    (local $pn i32)
+    (local $off i32)
+    (local $i i32)
+    ;; sn = len(s); pn = len(p)
+    local.get $s
+    i32.load
+    local.set $sn
+    local.get $p
+    i32.load
+    local.set $pn
+    ;; if pn > sn return 0
+    local.get $pn
+    local.get $sn
+    i32.gt_s
+    if
+      i32.const 0
+      return
+    end
+    ;; off = sn - pn  (>= 0, guarded above) — the byte where the suffix begins
+    local.get $sn
+    local.get $pn
+    i32.sub
+    local.set $off
+    ;; i = 0; while i < pn: if s[8+off+i] != p[8+i] return 0; i += 1
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $pn
+        i32.ge_s
+        br_if $done
+        ;; s byte off+i
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $off
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        ;; p byte i
+        local.get $p
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.ne
+        if
+          i32.const 0
+          return
+        end
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    i32.const 1
+  )
+";
+
 /// PMAT-1032: the CHAR-semantics helper family (non-allocating half).
 ///
 /// CPython strings are sequences of Unicode CODE POINTS; the WASM str ABI is
@@ -2392,11 +2552,21 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // bytes via `$__wasm_str_cmp` — it needs linear memory declared (to load
     // the payload) but NOT the bump allocator (it allocates nothing).
     let needs_str_cmp = module_needs_str_cmp(module, &str_rets);
+    // PMAT-1126: `s.startswith(p)` / `s.endswith(p)` — non-allocating byte
+    // prefix/suffix compares (like `$__wasm_str_cmp`, they read memory but
+    // allocate nothing). Each gates its own helper and pulls in the
+    // `(memory …)` declaration its loads need (a str operand already forces it
+    // via the param/literal/heap gates, but assert it here too, mirroring
+    // `needs_str_cmp`).
+    let needs_startswith = module_uses_str_method(module, StrMethodOp::StartsWith);
+    let needs_endswith = module_uses_str_method(module, StrMethodOp::EndsWith);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
         || needs_str_eq
         || needs_str_cmp
+        || needs_startswith
+        || needs_endswith
     {
         writeln!(
             out,
@@ -2449,6 +2619,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // nothing (independent of the bump-heap gate).
     if needs_str_cmp {
         out.push_str(STR_CMP_HELPER);
+    }
+    // PMAT-1126: emit the string PREFIX/SUFFIX helpers once, when any function
+    // calls `s.startswith(p)` / `s.endswith(p)`. Byte prefix/suffix compare ==
+    // code-point compare for valid UTF-8 — reads memory, allocates nothing
+    // (independent of the bump-heap gate, like `$__wasm_str_cmp`). Each is gated
+    // separately so a module using only one carries no dead helper.
+    if needs_startswith {
+        out.push_str(STR_STARTSWITH_HELPER);
+    }
+    if needs_endswith {
+        out.push_str(STR_ENDSWITH_HELPER);
     }
     // PMAT-1032: emit the CHAR-semantics helper family once, when any function
     // touches strings — Python-visible len/index/ord/chr are CHAR-oriented
@@ -2928,6 +3109,99 @@ fn module_needs_str_cmp(module: &Module, rets: &StrReturners) -> bool {
         };
         block_has_str_eq(&f.body, &scan)
     })
+}
+
+/// PMAT-1126: `true` when any function in `module` calls the string METHOD `op`
+/// — gates the matching non-allocating WAT helper (`$__wasm_str_startswith` /
+/// `$__wasm_str_endswith`). A single generic walk parameterised by `op` (unlike
+/// the per-concept `expr_has_*` scans), since `StartsWith`/`EndsWith` share the
+/// same node shape — an `Expr::StrMethod { op, .. }`. A MISS here would emit a
+/// `call` against a helper never declared (a hard wat2wasm failure), so the
+/// walk recurses through every compound expression that can host the call; the
+/// executed witness (which assembles via WABT) is the backstop.
+fn module_uses_str_method(module: &Module, op: StrMethodOp) -> bool {
+    module_functions(module).any(|f| block_uses_str_method(&f.body, op))
+}
+
+fn block_uses_str_method(block: &Block, op: StrMethodOp) -> bool {
+    block.stmts.iter().any(|s| stmt_uses_str_method(s, op))
+        || expr_uses_str_method(&block.trailing_return, op)
+}
+
+fn stmt_uses_str_method(s: &Stmt, op: StrMethodOp) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
+            expr_uses_str_method(value, op)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_uses_str_method(cond, op)
+                || then_body.iter().any(|s| stmt_uses_str_method(s, op))
+                || else_body.iter().any(|s| stmt_uses_str_method(s, op))
+        }
+        Stmt::While { cond, body } => {
+            expr_uses_str_method(cond, op) || body.iter().any(|s| stmt_uses_str_method(s, op))
+        }
+        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
+            expr_uses_str_method(value, op)
+        }
+        Stmt::SideEffectCall { call } => expr_uses_str_method(call, op),
+        _ => false,
+    }
+}
+
+fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
+    match e {
+        Expr::StrMethod {
+            recv,
+            op: found,
+            args,
+        } => {
+            *found == op
+                || expr_uses_str_method(recv, op)
+                || args.iter().any(|a| expr_uses_str_method(a, op))
+        }
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => {
+            expr_uses_str_method(lhs, op) || expr_uses_str_method(rhs, op)
+        }
+        Expr::UnOp { operand, .. } => expr_uses_str_method(operand, op),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_uses_str_method(cond, op)
+                || expr_uses_str_method(then_expr, op)
+                || expr_uses_str_method(else_expr, op)
+        }
+        Expr::Call { args, .. } => args.iter().any(|a| expr_uses_str_method(a, op)),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_uses_str_method(obj, op) || args.iter().any(|a| expr_uses_str_method(a, op))
+        }
+        Expr::Index { collection, index } => {
+            expr_uses_str_method(collection, op) || expr_uses_str_method(index, op)
+        }
+        Expr::Len(c) => expr_uses_str_method(c, op),
+        Expr::Ord { value } | Expr::Chr { value } => expr_uses_str_method(value, op),
+        Expr::StrCharAt { string, index } => {
+            expr_uses_str_method(string, op) || expr_uses_str_method(index, op)
+        }
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_uses_str_method(collection, op)
+                || lo.as_deref().is_some_and(|e| expr_uses_str_method(e, op))
+                || hi.as_deref().is_some_and(|e| expr_uses_str_method(e, op))
+        }
+        Expr::ToStr { value, .. } => expr_uses_str_method(value, op),
+        Expr::FieldAccess { obj, .. } => expr_uses_str_method(obj, op),
+        _ => false,
+    }
 }
 
 /// PMAT-1028/1059: the per-function context for a string-COMPARISON pre-scan —
@@ -4064,6 +4338,27 @@ fn emit_expr_typed(
 }
 
 /// Emit an expression, returning the WAT type it leaves on the stack.
+/// PMAT-1126: lower `s.startswith(p)` / `s.endswith(p)` to a bool (`i32`)
+/// result. Both `recv` and `arg` are string-valued, so each lowers to an `i32`
+/// base-pointer via [`emit_str_expr`] (which refuses a non-str operand — an
+/// honest type mismatch at the typed site), then `$__wasm_str_<which>` does the
+/// byte prefix/suffix compare. `which` is `"startswith"` or `"endswith"`; the
+/// matching helper is emitted once per module (gated by the caller). No heap.
+fn emit_str_prefix_op(
+    recv: &Expr,
+    arg: &Expr,
+    which: &str,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    emit_str_expr(arg, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_{which}").expect("write");
+    Ok(WatTy::I32)
+}
+
 fn emit_expr(
     e: &Expr,
     scope: &Scope,
@@ -4206,9 +4501,26 @@ fn emit_expr(
             op: StrMethodOp::CharCount,
             args,
         } if args.is_empty() => emit_len(recv, scope, out, depth),
+        // PMAT-1126: `s.startswith(p)` / `s.endswith(p)` — a bool (i32) result
+        // over a byte prefix/suffix compare of two length-prefixed UTF-8 strings.
+        // Both operands lower to i32 base-pointers (`emit_str_expr`), then the
+        // matching non-allocating helper. Byte prefix/suffix == code-point
+        // prefix/suffix for valid UTF-8, so this IS Python's semantics; nothing
+        // is allocated (a bool, not a new string).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::StartsWith,
+            args,
+        } if args.len() == 1 => emit_str_prefix_op(recv, &args[0], "startswith", scope, out, depth),
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::EndsWith,
+            args,
+        } if args.len() == 1 => emit_str_prefix_op(recv, &args[0], "endswith", scope, out, depth),
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
-            "string method {op:?} on the WASM lane — only `len(s)` (CharCount) is \
-             supported; upper/lower/strip/split/replace/find/… are refused"
+            "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
+             `.startswith(p)`, and `.endswith(p)` are supported; \
+             upper/lower/strip/split/replace/find/… are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
