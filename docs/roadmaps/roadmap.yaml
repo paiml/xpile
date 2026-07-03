@@ -1303,6 +1303,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Fourth + final citation loop. Gates: e2e 812, citation-integrity 3, clippy 0, pv lint PASS. Worktree-isolated. This session (2026-07-03): 4 new core-Lean contracts (pilot 28→32) + 4 citation loops = the four session capabilities fully R6-closed, all Mathlib-free.'
+- id: PMAT-1140
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1140: [provability/R6/adversarial] Skeptic-pass #5 find — TIGHTEN the citation-integrity gate to (c) per-fixture pinning for the four newest R6 loops (PMAT-1133/1135/1137/1139). Those loops were closed with ONLY a (b) corpus-wide required-cited entry: (b) merely requires C-PY-EXCEPT-ALLOWLIST / C-PY-FILE-IO-ROUNDTRIP / C-PY-CONTEXT-MANAGER-EXIT / C-PY-GENERATOR-EAGER be cited SOMEWHERE in the corpus. But those contracts are emitted by 36 / 5 / 2 / 1 fixtures respectively, so any single fixture could silently sever its citation and (b) would still pass on another — exactly the hole the (c) per-fixture EXPECTED array exists to close (its own doc-comment names this). Added 4 canonical-witness (c) pins: except_allowlist.py→C-PY-EXCEPT-ALLOWLIST, file_read.py→C-PY-FILE-IO-ROUNDTRIP, context_managers.py→C-PY-CONTEXT-MANAGER-EXIT, generators_eager.py→C-PY-GENERATOR-EAGER, so severing THAT fixture FAILS. Load-bearing proven adversarially: mis-pinning generators_eager.py to C-PY-EXCEPT-ALLOWLIST made (c) FAIL with the exact "must cite ... but did not" diagnostic. Test-only, single-file (crates/xpile/tests/contract_citation_integrity.rs).'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Skeptic-pass #5 (adversarial re-verify, ~12 slices after pass #4 PMAT-1098). CONFIRMED (not refuted) the recent batch first — WASM string ops (find/count/contains/prefix witnesses genuinely EXECUTE in WABT 1.0.27 on this box, 20/21/21/34 cases value-matching CPython; refusals fail-closed via the args.len() guards + catch-all Err(unsupported)); Lean proofs sorry/admit/axiom-free (lake build green, 34 modules); citation gate (a)(b)(c) fail-closed. The ONE real gap found = the (c) coverage lag for the 4 newest R6 loops, now closed. Gates: contract_citation_integrity 3 pass, clippy -p xpile --all-targets 0, pv lint 0 errors, cargo-deny advisories ok, fmt clean. Feature branch feat/r6-citation-perfixture-pin (test-only — disjoint from any cron code lane).'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
