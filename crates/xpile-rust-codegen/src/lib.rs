@@ -703,6 +703,36 @@ fn foreach_var_reassigned(body: &[Stmt], name: &str) -> bool {
     })
 }
 
+/// PMAT-1105 (c) (skeptic pass PMAT-1098, C-F3): the emitted catch-all gate —
+/// TRUE iff the downcast payload `__xpile_m` is a PYTHON exception, i.e.
+/// parses as `xpile: <Class>: …` with an identifier-shaped class token. This
+/// is the payload convention split: Python exceptions panic as
+/// `xpile: <Class>: <msg>`; xpile's own capability/honesty refusals panic
+/// with FREE-TEXT payloads (`xpile: i64 multiplication overflow; bigint
+/// promotion … not yet implemented`) that fail this parse. Every handler —
+/// including a bare `except:` — re-raises what fails it, so a loud refusal
+/// stays loud inside try/except (no exception exists on the Python side at
+/// all; the old unconditional `Err(_)` arm silently DEFEATED the guarantee).
+const IS_PY_EXC_PRED: &str = "__xpile_m.strip_prefix(\"xpile: \").and_then(|__s| __s.split_once(\": \")).map_or(false, |(__c, _)| !__c.is_empty() && __c.chars().all(|__ch| __ch.is_ascii_alphanumeric() || __ch == '_'))";
+
+/// PMAT-1105 (b): the BaseException-only exclusions for the sentinel
+/// `Exception` tag — CPython's SystemExit / KeyboardInterrupt / GeneratorExit
+/// derive BaseException, not Exception, so `except Exception:` must let them
+/// propagate (a bare `except:` / `except BaseException:` still catches them).
+const NOT_BASE_ONLY_PRED: &str = "!__xpile_m.starts_with(\"xpile: SystemExit: \") && !__xpile_m.starts_with(\"xpile: KeyboardInterrupt: \") && !__xpile_m.starts_with(\"xpile: GeneratorExit: \")";
+
+/// PMAT-1105: write the dispatch predicate for one `except` tag. Leaf tags
+/// match their `xpile: <T>: ` prefix; the frontend's sentinel tag `Exception`
+/// matches any Python-exception payload except the BaseException-only three.
+fn write_exc_tag_pred(out: &mut String, tag: &str) -> std::fmt::Result {
+    use std::fmt::Write as _;
+    if tag == "Exception" {
+        write!(out, "{IS_PY_EXC_PRED} && {NOT_BASE_ONLY_PRED}")
+    } else {
+        write!(out, "__xpile_m.starts_with(\"xpile: {tag}: \")")
+    }
+}
+
 fn emit_stmt(out: &mut String, stmt: &Stmt, mode: bool) -> Result<(), CodegenError> {
     emit_stmt_indented(out, stmt, "    ", mode)
 }
@@ -1543,27 +1573,26 @@ fn emit_stmt_indented(
             out.push_str(" })) { Ok(_) => {}, ");
             if extra_handlers.is_empty() {
                 if except_types.is_empty() {
+                    // PMAT-1105 (c): a bare `except:` / `except BaseException:`
+                    // catches every PYTHON exception — but NOT xpile's own
+                    // capability/honesty refusal panics (free-text payloads;
+                    // no exception exists on the Python side), which the old
+                    // unconditional arm silently swallowed. Gate + re-raise.
+                    write!(out, "Err(__xpile_e) => {{ let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if {IS_PY_EXC_PRED} {{ ")?;
                     if let Some(name) = bound_name {
-                        out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
                         bind(out, name)?;
-                        for st in handler {
-                            emit_stmt_indented(out, st, "", mode)?;
-                        }
-                        out.push_str(" }");
-                    } else {
-                        out.push_str("Err(_) => { ");
-                        for st in handler {
-                            emit_stmt_indented(out, st, "", mode)?;
-                        }
-                        out.push_str(" }");
                     }
+                    for st in handler {
+                        emit_stmt_indented(out, st, "", mode)?;
+                    }
+                    out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
                 } else {
                     out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
                     for (i, k) in except_types.iter().enumerate() {
                         if i > 0 {
                             out.push_str(" || ");
                         }
-                        write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                        write_exc_tag_pred(out, k)?;
                     }
                     out.push_str(" { ");
                     if let Some(name) = bound_name {
@@ -1576,15 +1605,20 @@ fn emit_stmt_indented(
                 }
             } else {
                 // PMAT-1059: multiple `except` clauses — an ordered
-                // if/else-if chain over [first] ++ extra_handlers; a catch-all
-                // (empty types) terminates the chain as the final `else`,
-                // otherwise the chain ends in `resume_unwind` (propagate).
-                // PMAT-1082: a catch-all in NON-final position (`except
-                // Exception:` before other arms — legal Python; only bare
-                // `except:` is syntax-required last) still terminates the
-                // chain and DROPS the later arms: it catches everything, so
-                // they are unreachable in CPython too. Emitting them produced
-                // a bare block followed by a dangling `else if` (invalid Rust).
+                // if/else-if chain over [first] ++ extra_handlers; the chain
+                // ends in `resume_unwind` (an unmatched payload PROPAGATES).
+                // PMAT-1082: a catch-all (empty types — bare `except:` /
+                // `except BaseException:`) in NON-final position still
+                // terminates the chain and DROPS the later arms: it catches
+                // every Python exception, so they are unreachable in CPython
+                // too. PMAT-1105: the catch-all arm is now GATED (Python
+                // exceptions only — a capability/honesty refusal re-raises
+                // via the trailing `else`, which is therefore emitted even
+                // when a catch-all is present), and `except Exception:` is no
+                // longer a catch-all at all — the frontend's sentinel tag
+                // makes it an ordinary discriminated arm here, so later arms
+                // stay reachable for the BaseException-only exceptions it
+                // must not catch.
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
                 let all: Vec<(&Vec<String>, &Option<String>, &Vec<Stmt>)> =
                     std::iter::once((except_types, bound_name, handler))
@@ -1600,7 +1634,7 @@ fn emit_stmt_indented(
                         out.push_str(" else ");
                     }
                     if types.is_empty() {
-                        out.push_str("{ ");
+                        write!(out, "if {IS_PY_EXC_PRED} {{ ")?;
                         catch_all_seen = true;
                     } else {
                         out.push_str("if ");
@@ -1608,7 +1642,7 @@ fn emit_stmt_indented(
                             if j > 0 {
                                 out.push_str(" || ");
                             }
-                            write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                            write_exc_tag_pred(out, k)?;
                         }
                         out.push_str(" { ");
                     }
@@ -1623,9 +1657,7 @@ fn emit_stmt_indented(
                         break;
                     }
                 }
-                if !catch_all_seen {
-                    out.push_str(" else { ::std::panic::resume_unwind(__xpile_e) }");
-                }
+                out.push_str(" else { ::std::panic::resume_unwind(__xpile_e) }");
                 out.push_str(" }");
             }
             out.push_str(" }");
@@ -4547,26 +4579,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
             // (RuntimeError, a custom error) and any untagged panic — silently
             // swallowing what Python propagates (`except ValueError:` ate a
             // RuntimeError). Now an unmatched payload propagates, matching CPython.
-            // A catch-all handler (`except_types` empty — a bare `except:` or a
-            // base-class `except Exception:`) keeps `Err(_)` and catches everything.
+            // PMAT-1105 (c): a catch-all handler (`except_types` empty — a
+            // bare `except:` / `except BaseException:`) catches every PYTHON
+            // exception but re-raises xpile's capability/honesty refusal
+            // panics (free-text payloads — no exception exists on the Python
+            // side), which the old unconditional `Err(_)` arm swallowed.
             if except_types.is_empty() {
+                write!(out, "Err(__xpile_e) => {{ let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if {IS_PY_EXC_PRED} {{ ")?;
                 if let Some(name) = bound_name {
-                    // catch-all with `as e` — downcast the payload to a message.
-                    out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
                     bind(out, name)?;
-                    emit_expr(out, handler, mode)?;
-                    out.push_str(" }");
-                } else {
-                    out.push_str("Err(_) => ");
-                    emit_expr(out, handler, mode)?;
                 }
+                emit_expr(out, handler, mode)?;
+                out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
             } else {
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
                 for (i, k) in except_types.iter().enumerate() {
                     if i > 0 {
                         out.push_str(" || ");
                     }
-                    write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                    write_exc_tag_pred(out, k)?;
                 }
                 out.push_str(" { ");
                 if let Some(name) = bound_name {
