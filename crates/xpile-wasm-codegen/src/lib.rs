@@ -3484,6 +3484,141 @@ const STR_REPLACE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1173: `$__wasm_str_zfill(s, w) -> i32` — Python `s.zfill(width)`: a NEW
+/// heap string left-padded with ASCII `'0'` (`0x30`) to `width` CODE POINTS,
+/// **sign-aware** (a leading `'+'` / `'-'` stays first, the zeros go AFTER it).
+/// Allocating (rides the `needs_heap` gate, calls `$__alloc`). Calls
+/// `$__wasm_str_charlen` (co-emitted for any str-touching module) for the width
+/// math.
+///
+/// The pad count is `max(0, width - charlen(s))` — a `width` no larger than the
+/// current code-point length is a plain COPY of `s` (`"42".zfill(1)` == `"42"`,
+/// `"".zfill(0)` == `""`). The `'0'` bytes are pure ASCII inserted at a
+/// code-point boundary (either the very start, or immediately after a 1-byte
+/// `'+'`/`'-'` sign), and the rest of `s` is copied byte-for-byte, so the result
+/// is CHAR-EXACT for any valid UTF-8 (`"café".zfill(6)` == `"00café"`,
+/// `"-é".zfill(4)` == `"-00é"`) — no Unicode fold, no byte↔code-point ambiguity.
+///
+/// The sign test reads `s`'s FIRST payload byte, guarded by `slen > 0` so an
+/// EMPTY `s` never reads past its (zero-length) payload — `"".zfill(3)` == `"000"`
+/// (no sign, three zeros). `memory.fill` of 0 bytes and `memory.copy` of 0 bytes
+/// are both nops, so the `pad == 0` (copy) and `sign, slen == 1` (`"+".zfill(3)`
+/// == `"+00"`) boundaries fall out of the general path with no special case.
+const STR_ZFILL_HELPER: &str = "\
+  ;; PMAT-1173 __wasm_str_zfill(s, w) = Python s.zfill(width) — a NEW heap string
+  ;; left-padded with ASCII '0' to `width` CODE POINTS, sign-aware ('+'/'-' stays
+  ;; first). Pad = max(0, width - charlen(s)); the '0' bytes land on a code-point
+  ;; boundary and the rest is a byte copy, so it is char-exact for any UTF-8.
+  (func $__wasm_str_zfill (param $s i32) (param $w i64) (result i32)
+    (local $slen i32)
+    (local $n i32)
+    (local $pad i32)
+    (local $rlen i32)
+    (local $dst i32)
+    (local $sign i32)
+    (local $wpos i32)
+    (local $c i32)
+    ;; slen = byte length of s; n = code-point count of s.
+    local.get $s
+    i32.load
+    local.set $slen
+    local.get $s
+    call $__wasm_str_charlen
+    local.set $n
+    ;; pad = wrap(w) - n ; clamp to >= 0 (width <= len -> plain copy).
+    local.get $w
+    i32.wrap_i64
+    local.get $n
+    i32.sub
+    local.set $pad
+    local.get $pad
+    i32.const 0
+    i32.lt_s
+    if
+      i32.const 0
+      local.set $pad
+    end
+    ;; sign = 1 iff s is non-empty and s[0] is '+' (0x2B) or '-' (0x2D).
+    i32.const 0
+    local.set $sign
+    local.get $slen
+    i32.const 0
+    i32.gt_s
+    if
+      local.get $s
+      i32.const 8
+      i32.add
+      i32.load8_u
+      local.set $c
+      local.get $c
+      i32.const 0x2b
+      i32.eq
+      local.get $c
+      i32.const 0x2d
+      i32.eq
+      i32.or
+      if
+        i32.const 1
+        local.set $sign
+      end
+    end
+    ;; rlen = slen + pad ; dst = alloc(8 + rlen) ; store the i32 header = rlen.
+    local.get $slen
+    local.get $pad
+    i32.add
+    local.set $rlen
+    local.get $rlen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $rlen
+    i32.store
+    ;; wpos = dst + 8 (payload write cursor).
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.set $wpos
+    ;; if sign: copy the 1 sign byte (s[8]) to wpos; wpos += 1.
+    local.get $sign
+    if
+      local.get $wpos
+      local.get $s
+      i32.const 8
+      i32.add
+      i32.load8_u
+      i32.store8
+      local.get $wpos
+      i32.const 1
+      i32.add
+      local.set $wpos
+    end
+    ;; fill `pad` '0' (0x30) bytes at wpos ; wpos += pad. (nop when pad == 0.)
+    local.get $wpos
+    i32.const 0x30
+    local.get $pad
+    memory.fill
+    local.get $wpos
+    local.get $pad
+    i32.add
+    local.set $wpos
+    ;; copy the source tail (slen - sign bytes from s+8+sign) to wpos. (nop when
+    ;; that length is 0, e.g. \"+\".zfill(3).)
+    local.get $wpos
+    local.get $s
+    i32.const 8
+    i32.add
+    local.get $sign
+    i32.add
+    local.get $slen
+    local.get $sign
+    i32.sub
+    memory.copy
+    local.get $dst
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -4934,6 +5069,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // either op present must emit it.
     let needs_replace = module_uses_str_method(module, StrMethodOp::Replace)
         || module_uses_str_method(module, StrMethodOp::ReplaceN);
+    // PMAT-1173: `s.zfill(width)` (`Expr::StrMethod`, op `ZFill`) — an allocating
+    // string-RETURNING op (a fresh heap string left-padded with `'0'` to `width`
+    // code points). Rides `needs_heap` (set via `expr_has_heap_op`, like
+    // removeprefix/replace). Its width math calls `$__wasm_str_charlen`
+    // (co-emitted for any str-touching module via `module_touches_str`), so — like
+    // replace — it forces no extra helper beyond the always-present char family.
+    let needs_zfill = module_uses_str_method(module, StrMethodOp::ZFill);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5141,6 +5283,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // module carries no dead helper.
     if needs_heap && needs_replace {
         out.push_str(STR_REPLACE_HELPER);
+    }
+    // PMAT-1173: emit the string ZFILL helper once, when any function uses
+    // `s.zfill(width)` (`Expr::StrMethod`, op `ZFill`). Allocating (calls
+    // `$__alloc` + `memory.fill` + `memory.copy`), so it rides `needs_heap` — a
+    // zfill sets the heap gate via `expr_has_heap_op`. Its width math uses
+    // `$__wasm_str_charlen` (emitted above via `module_touches_str`). Gated on an
+    // actual use so an unrelated heap-string module carries no dead helper.
+    if needs_heap && needs_zfill {
+        out.push_str(STR_ZFILL_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -6477,6 +6628,12 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // against an undeclared `$__alloc` (hard wat2wasm fail, the gate-hole
         // class). `ReplaceN`'s count arg is an int (never heap), but the recurse
         // into `args` covers a heap-constructed old/new either way.
+        // PMAT-1173: `s.zfill(width)` (op `ZFill`) THEMSELVES bump-allocate a
+        // fresh padded heap string, so the op ITSELF sets the heap gate — a miss
+        // would emit `$__wasm_str_zfill` against an undeclared `$__alloc` (a hard
+        // wat2wasm failure, the recurring gate-hole class). Its width arg is an
+        // int (never heap), but the recurse into `args` covers a heap-constructed
+        // receiver either way.
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -6484,6 +6641,7 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::RemoveSuffix
                     | StrMethodOp::Replace
                     | StrMethodOp::ReplaceN
+                    | StrMethodOp::ZFill
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -7496,6 +7654,27 @@ fn emit_str_replace(
     }
     indent(out, depth);
     writeln!(out, "call $__wasm_str_replace").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1173: lower `s.zfill(width)` — a materialising op leaving the i32
+/// base-pointer of a fresh heap string. The receiver is string-valued
+/// (`emit_str_expr`, which refuses a non-str recv honestly); the width is the
+/// int arg, coerced onto the stack as i64 (the helper's second param — wrapped
+/// to i32 inside the helper). The allocating `$__wasm_str_zfill` helper does the
+/// sign-aware zero-pad. A heap-constructed receiver (`(a + b).zfill(8)`) already
+/// pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_zfill(
+    recv: &Expr,
+    width: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    emit_expr_typed(width, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_zfill").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -8623,6 +8802,20 @@ fn emit_str_expr(
             emit_str_replace(recv, &args[0], &args[1], Some(&args[2]), scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1173: `s.zfill(width)` in a string position — a fresh heap string
+        // (like Concat/Slice/Repeat/removeprefix/replace, a materialising op),
+        // left-padded with ASCII `'0'` to `width` code points (sign-aware). The
+        // width is the sole int arg; the allocating `$__wasm_str_zfill` helper
+        // does the pad. Char-exact for any UTF-8 (the `'0'` bytes land on a
+        // code-point boundary; the rest is a byte copy).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::ZFill,
+            args,
+        } if args.len() == 1 => {
+            emit_str_zfill(recv, &args[0], scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
         // `try_fold_strformat_to_concat` declined — a template carrying a
         // format spec (`"{:>5}".format(x)`), a positional (`"{0}"`), a named
@@ -8656,8 +8849,8 @@ fn emit_str_expr(
              (a + b, incl. format int operands auto-stringified via str(int)), \
              a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
-             count])`, or a str-returning call; stepped slicing / str(float) / \
-             bare f-strings are refused",
+             count])`, `.zfill(width)`, or a str-returning call; stepped slicing \
+             / str(float) / bare f-strings are refused",
             expr_kind(other)
         ))),
     }
