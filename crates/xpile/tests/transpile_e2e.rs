@@ -3687,6 +3687,29 @@ fn main() {
     assert_rustc_runs("raise_keyerror_repr", &rust, driver);
 }
 
+/// PMAT-1170: `repr(e)` of an `except <Type> as e` binding renders CPython's
+/// `<Type>('<msg>')`, not the bare message string's quoted repr (`'msg'`) — the
+/// bug lost the exception TYPE. The caught type is threaded onto the lowering
+/// ctx (`exc_bindings`) so `repr(e)` emits `"<Type>(" + repr(msg) + ")"`, reusing
+/// the python-string-repr helper for the message (quotes/escapes match CPython:
+/// `it's` → `"it's"`). KeyError's `__str__` is already `repr(arg)` (PMAT-1090),
+/// so its `e` already holds the quoted form — repr'd verbatim, not double-quoted.
+/// `str(e)` stays the plain message. MATCH CPython.
+#[test]
+fn repr_exception_type() {
+    let rust = xpile_transpile_to_rust("repr_exception_type.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(repr_value_error(), "ValueError('msg here')", "repr keeps the exception type");
+    assert_eq!(repr_key_error(), "KeyError('k')", "KeyError repr uses the already-quoted message once");
+    assert_eq!(repr_runtime_error(), "RuntimeError('boom')", "RuntimeError repr");
+    assert_eq!(repr_single_quote(String::from("it's")), "ValueError(\"it's\")", "message repr quote-switches on embedded single quote");
+    assert_eq!(str_stays_plain(), "msg here", "str(e) stays the plain message (unchanged)");
+}
+"#;
+    assert_rustc_runs("repr_exception_type", &rust, driver);
+}
+
 /// PMAT-502ao (Tranche 2): `assert cond, msg` → `assert!(cond, "{}", msg)`;
 /// the bare `assert cond` form is unchanged.
 #[test]
