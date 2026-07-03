@@ -297,6 +297,18 @@ struct LoweringCtx {
     /// records the real element type (drives repr quoting + every type-dependent
     /// path), not a `[]`-refusal or the old `dict()` → `dict[Str, _]` guess.
     empty_coll_types: HashMap<String, Type>,
+    /// PMAT-1171: every currently-in-scope `except … as e` binding — the name
+    /// maps to the caught exception's repr classification (see [`exc_repr_class`]):
+    /// `Some(class)` for a single concrete builtin exception leaf (`repr(e)`
+    /// renders `<class>(<arg repr>)`), or `None` when the caught type is ambiguous
+    /// (catch-all / `Exception` sentinel / a base expanding to several / a tuple),
+    /// where the runtime class name is not statically recoverable so `repr(e)` is
+    /// refused rather than silently mis-rendered. xpile binds `e` to the exception
+    /// MESSAGE string, so the plain Str-repr path would emit the bare `'msg'`
+    /// (missing the `<Class>(…)` wrapper) — a silent divergence from CPython's
+    /// `repr(exc)`. Mere PRESENCE of the key marks the name an exception binding;
+    /// scoped to each handler via the same save/restore as `name_types`.
+    exc_bound: HashMap<String, Option<String>>,
 }
 
 /// PMAT-1092: why a name in [`LoweringCtx::try_dead`] does not survive its
@@ -531,6 +543,8 @@ impl LoweringCtx {
             // PMAT-1160: populated after construction by a forward scan that needs
             // the fully-built ctx as its type oracle (see `lower_function_def`).
             empty_coll_types: HashMap::new(),
+            // PMAT-1171: populated/unwound per `except … as e` handler.
+            exc_bound: HashMap::new(),
         }
     }
 }
@@ -12213,6 +12227,74 @@ fn except_type_names(ty: Option<&ast::Expr>) -> Vec<String> {
     }
 }
 
+/// PMAT-1171: builtin exception leaves whose `repr(exc)` is exactly
+/// `<ClassName>(<repr of the single message arg>)` — i.e. the ordinary
+/// `BaseException.__repr__` shape over one string/scalar arg. Restricted to a
+/// curated allowlist so a user-defined `except MyError as e` (whose class may
+/// override `__repr__`, or which xpile's builtin-only raise machinery can never
+/// actually surface) is NOT silently rendered with a guessed wrapper — it stays
+/// ambiguous and `repr(e)` refuses. Bases that expand to several tags
+/// (LookupError/ArithmeticError/OSError/IOError) never reach here as a single
+/// leaf (they yield a multi-name `except_types`, classified ambiguous below);
+/// `KeyError` is listed but handled specially at the call site (its bound
+/// message is already `repr(key)`, so it is NOT re-repr'd).
+fn is_repr_known_exc(name: &str) -> bool {
+    matches!(
+        name,
+        "ValueError"
+            | "TypeError"
+            | "KeyError"
+            | "IndexError"
+            | "RuntimeError"
+            | "ZeroDivisionError"
+            | "OverflowError"
+            | "AttributeError"
+            | "NotImplementedError"
+            | "AssertionError"
+            | "StopIteration"
+            | "StopAsyncIteration"
+            | "RecursionError"
+            | "FileNotFoundError"
+            | "PermissionError"
+            | "NameError"
+            | "ImportError"
+            | "ModuleNotFoundError"
+            | "UnicodeError"
+            | "UnicodeDecodeError"
+            | "UnicodeEncodeError"
+            | "FloatingPointError"
+            | "EOFError"
+    )
+}
+
+/// PMAT-1171: classify a caught exception's `as` binding for `repr(e)`.
+/// `Some(class)` when the handler catches exactly ONE concrete builtin
+/// exception leaf (so `repr(e)` renders `<class>(<arg repr>)`); `None` when
+/// the caught type is ambiguous — a catch-all (`[]`), the `Exception` sentinel,
+/// a base class that expanded to several tags, or a tuple of types — where the
+/// runtime exception class is not statically knowable. Both dispositions are
+/// stored under the bound name in `exc_bound`; the key's PRESENCE marks the name
+/// an exception binding (a `None` value refuses `repr(e)`, a `Some` renders it).
+fn exc_repr_class(except_types: &[String]) -> Option<String> {
+    match except_types {
+        [only] if only != "Exception" && is_repr_known_exc(only) => Some(only.clone()),
+        _ => None,
+    }
+}
+
+/// PMAT-1171: build `"<open>" + <mid> + "<close>"` as nested string `Concat`s
+/// (all three operands are `str`-typed, so the codegen renders one `format!`).
+/// Used to wrap an exception `repr(e)` as `<Class>(<arg repr>)`.
+fn concat_lit(open: &str, mid: Expr, close: &str) -> Expr {
+    Expr::Concat {
+        lhs: Box::new(Expr::Concat {
+            lhs: Box::new(Expr::LitStr(open.to_string())),
+            rhs: Box::new(mid),
+        }),
+        rhs: Box::new(Expr::LitStr(close.to_string())),
+    }
+}
+
 fn terminal_try_as_expr(
     ctx: &mut LoweringCtx,
     try_stmt: &ast::StmtTry,
@@ -12248,17 +12330,27 @@ fn terminal_try_as_expr(
     // PMAT-817: bind `<name>: str` (the exception message) while lowering the
     // handler, so `str(e)`/`f"{e}"` resolve. Save/restore the binding — `e` is
     // scoped to the handler, not the enclosing function.
+    let except_types = except_type_names(h.type_.as_deref());
     let handler = if let Some(name) = &bound_name {
         let had = ctx.bound.contains(name);
         let prev_ty = ctx.name_types.get(name).cloned();
+        // PMAT-1171: record the exception classification so `repr(e)` in the
+        // handler renders `<Class>(<arg repr>)`; save/restore like `name_types`.
+        let prev_exc = ctx.exc_bound.remove(name);
         ctx.bound.insert(name.clone());
         ctx.name_types.insert(name.clone(), Type::Str);
+        ctx.exc_bound
+            .insert(name.clone(), exc_repr_class(&except_types));
         let lowered = lower_return_value(ctx, h_val);
         if !had {
             ctx.bound.remove(name);
             ctx.name_types.remove(name);
         } else if let Some(t) = prev_ty {
             ctx.name_types.insert(name.clone(), t);
+        }
+        ctx.exc_bound.remove(name);
+        if let Some(pe) = prev_exc {
+            ctx.exc_bound.insert(name.clone(), pe);
         }
         lowered?
     } else {
@@ -12267,7 +12359,7 @@ fn terminal_try_as_expr(
     Ok(Some(Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
-        except_types: except_type_names(h.type_.as_deref()),
+        except_types,
         bound_name,
     }))
 }
@@ -13888,9 +13980,13 @@ fn lower_statement_try(
         }
         let saved_b = ctx.bound.clone();
         let saved_t = ctx.name_types.clone();
+        // PMAT-1171: classify the caught type for `repr(e)`; scoped like `bound`.
+        let saved_exc = ctx.exc_bound.clone();
         if let Some(name) = &bound_name {
             ctx.bound.insert(name.clone());
             ctx.name_types.insert(name.clone(), Type::Str);
+            ctx.exc_bound
+                .insert(name.clone(), exc_repr_class(&except_types));
         }
         let mut hbody = Vec::new();
         for st in &h.body {
@@ -13907,6 +14003,7 @@ fn lower_statement_try(
             .collect();
         ctx.bound = saved_b;
         ctx.name_types = saved_t;
+        ctx.exc_bound = saved_exc;
         for n in handler_new {
             ctx.try_dead
                 .entry(n)
@@ -14046,17 +14143,26 @@ fn lower_assignment_try(
     // PMAT-886: bind `<name>: str` (the exception message) while lowering the
     // handler value, then save/restore — `e` is scoped to the handler, not the
     // enclosing function. Mirrors the terminal-return form's binding.
+    let except_types = except_type_names(h.type_.as_deref());
     let handler = if let Some(name) = &bound_name {
         let had = ctx.bound.contains(name);
         let prev_ty = ctx.name_types.get(name).cloned();
+        // PMAT-1171: classify the caught type for `repr(e)`; save/restore.
+        let prev_exc = ctx.exc_bound.remove(name);
         ctx.bound.insert(name.clone());
         ctx.name_types.insert(name.clone(), Type::Str);
+        ctx.exc_bound
+            .insert(name.clone(), exc_repr_class(&except_types));
         let lowered = lower_expr_in_ctx(ctx, handler_val.clone());
         if !had {
             ctx.bound.remove(name);
             ctx.name_types.remove(name);
         } else if let Some(t) = prev_ty {
             ctx.name_types.insert(name.clone(), t);
+        }
+        ctx.exc_bound.remove(name);
+        if let Some(pe) = prev_exc {
+            ctx.exc_bound.insert(name.clone(), pe);
         }
         lowered?
     } else {
@@ -14065,7 +14171,7 @@ fn lower_assignment_try(
     let value = Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
-        except_types: except_type_names(h.type_.as_deref()),
+        except_types,
         bound_name,
     };
     let ty = infer_type_in_ctx(ctx, &value);
@@ -19687,6 +19793,37 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // (Container `repr` + f-string `{x!r}` are deferred.)
                 if fname.id.as_str() == "repr" && call.keywords.is_empty() && call.args.len() == 1 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    // PMAT-1171: `repr(e)` where `e` is a caught exception. CPython
+                    // renders `repr(exc)` as `<Class>(<repr of args>)` — e.g.
+                    // `repr(ValueError("m"))` == "ValueError('m')" — NOT the bare
+                    // message. xpile binds `e` to the exception MESSAGE string, so
+                    // the Str-repr path below would emit `'m'` (a silent divergence).
+                    // For a single concrete builtin exception type we know the class
+                    // name and wrap it. KeyError is special: its bound message is
+                    // ALREADY `repr(key)` (PMAT-1089), so it is NOT re-repr'd —
+                    // `repr(e)` == "KeyError(" + e + ")".
+                    if let Expr::Ident(name) = &value {
+                        if let Some(classification) = ctx.exc_bound.get(name) {
+                            match classification {
+                                Some(exc_class) if exc_class == "KeyError" => {
+                                    return Ok(concat_lit("KeyError(", value.clone(), ")"));
+                                }
+                                Some(exc_class) => {
+                                    let open = format!("{exc_class}(");
+                                    let inner = Expr::ReprStr {
+                                        value: Box::new(value.clone()),
+                                    };
+                                    return Ok(concat_lit(&open, inner, ")"));
+                                }
+                                None => {
+                                    return Err(FrontendError::Lower(format!(
+                                        "function `{}`: `repr(e)` on a caught exception whose runtime type is ambiguous (a bare `except:`, `except Exception as e`, a base class like `LookupError`/`OSError` that catches several types, or a tuple `except (A, B) as e`) — CPython renders `repr(exc)` with the ACTUAL exception class (`<Class>(<args>)`), which xpile's message-string binding cannot recover statically. Catch a single concrete exception type (e.g. `except ValueError as e`) so the class name is known, or use `str(e)` (the message, which xpile does bind)",
+                                        ctx.fn_name
+                                    )));
+                                }
+                            }
+                        }
+                    }
                     match infer_type_in_ctx(ctx, &value) {
                         Type::I64 => {
                             return Ok(Expr::ToStr {

@@ -21105,3 +21105,58 @@ fn main() {
 "#;
     assert_rustc_runs("min_max_str_reuse", &rust, driver);
 }
+
+/// PMAT-1171: `repr(e)` on a caught exception renders `<Class>(<arg repr>)` —
+/// CPython `repr(ValueError("m"))` == "ValueError('m')", NOT the bare message.
+/// xpile binds `e` to the exception MESSAGE string, so the plain str-repr path
+/// emitted `'m'` (a silent divergence, missing the `<Class>(…)` wrapper). For a
+/// single concrete builtin exception type the class name is known; KeyError is
+/// special — its bound message is already `repr(key)`, so it is NOT re-repr'd.
+/// `str(e)` is unaffected. All values differential-checked vs python3.
+#[test]
+fn repr_exception_wraps_class() {
+    let rust = xpile_transpile_to_rust("repr_exception.py");
+    assert!(
+        rust.contains("String::from(\"ValueError(\")")
+            && rust.contains("String::from(\"KeyError(\")")
+            && rust.contains("String::from(\"IndexError(\")"),
+        "repr(e) must wrap the message with the exception class name:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // python3: repr(ValueError("bad value")) == "ValueError('bad value')"
+    assert_eq!(value_err_repr(), "ValueError('bad value')");
+    // python3: repr(KeyError("missing")) == "KeyError('missing')"
+    //   — KeyError's str(e) is already repr(key), so it is NOT re-repr'd.
+    assert_eq!(key_err_repr(), "KeyError('missing')");
+    // python3: repr(IndexError("list index out of range")) matches exactly.
+    assert_eq!(index_err_repr(), "IndexError('list index out of range')");
+    // python3: a "'" in the message flips repr to double quotes.
+    assert_eq!(value_err_quote_switch(), "ValueError(\"it's bad\")");
+    // str(e) stays the bare message, NOT the class-wrapped repr.
+    assert_eq!(str_e_unaffected(), "plain");
+}
+"#;
+    assert_rustc_runs("repr_exception", &rust, driver);
+}
+
+/// PMAT-1171: `repr(e)` where the caught exception's runtime class is not
+/// statically knowable (`except Exception as e`, a base class, a tuple, or a
+/// bare `except:`) is REFUSED — CPython uses the ACTUAL class for the repr,
+/// which xpile's message-string binding cannot recover, so it fails loud
+/// instead of emitting a guessed/bare repr (honest failure over silent
+/// divergence). `str(e)` on the same shape stays supported.
+#[test]
+fn repr_exception_ambiguous_refused() {
+    let py = fixture("repr_exception_ambiguous.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "repr(e) on an ambiguously-typed caught exception must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("repr(e)") && stderr.contains("ambiguous"),
+        "the refusal should name the ambiguous-type reason:\n{stderr}"
+    );
+}
