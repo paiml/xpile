@@ -1324,6 +1324,15 @@ roadmap:
   created: 2026-07-03T00:00:00Z
   notes: 'Feature branch feat/wasm-len-str-temporary (NOT worktree — xpile-wasm-codegen is disjoint from the cron Python-surface lane / cron-cold). This IS the highest-EV find of an adversarial-verify pass (step 4b #1) over the ~10 rapid WASM string slices since skeptic #5 (PMAT-1141 was provability-lane): an INDEPENDENT end-to-end probe (xpile transpile <prog> --target wasm | wat2wasm | wasm-interp, differential vs live python3) confirmed rfind/find/count/slice/repeat/str(bool)/index-trap all char-exact — but surfaced that `len(<temporary>)` refused, and that LIFTING the refusal exposed the two hard wat2wasm failures len("…"[1:-1]) / len(str(n)) (helper called-but-undeclared) which the fix closes. EXECUTED WABT witness (tests/str_len_temporary_witness.rs, 4 tests): one module with 7 zero-arg exports — len(concat)==6, len(slice "café•λ"[1:-1])==4, len(str(-12345))==6, len("λ"*3)==3, len(chr(955))==1, len("yes" if "b" in "abc" else "n")==3 (StrContains-in-if-cond guard), len("longer" if "hi"=="hi" else "z")==6 (str-==-in-if-cond guard) — assembled via wat2wasm + run via wasm-interp, each output value-matched to the CPython code-point length; a regression-guard test (helpers_are_declared_for_len_of_temporaries) asserts every callee helper ($__wasm_str_slice/int_to_str/repeat/contains/eq) is DEFINED not just CALLED (fails on the pre-fix scans, no WABT needed); a refusal test (len([1,2,3]) still Errs "unsupported … len()"); a cpython_lens_are_pinned drift-guard. Full xpile-wasm-codegen suite green (59 lib + all witnesses incl. 4 new). Verified via CLI on café•λ multi-byte inputs.'
 
+- id: PMAT-1102
+  github_issue: null
+  item_type: correctness
+  title: 'PMAT-1102: [frontend/acceptance-honesty] statically-certain non-compiling artifacts accepted then E0308/E0277 (skeptic pass PMAT-1098). CASE A DONE: a dict key-type MISMATCH — `d[5] = 1` over `dict[str, int]` (an int LITERAL key into a str-keyed dict, or vice-versa) — was accepted and emitted `HashMap<String,_>.insert(5i64,…)` → rustc E0308 (non-compiling artifact), violating the no-non-compiling-artifact meta-invariant. Now REFUSES honestly at transpile time ("key type doesn`t match its declared type; Python allows mixed keys at runtime but Rust HashMap needs uniform keys"). Only LITERAL keys checked (a loosely-typed I64-default key variable must not false-refuse); bool→i64 coercion into an int dict stays sanctioned. CASE B DEFERRED (design question): `def main() -> int` emits `fn main() -> i64` (E0277 — Rust main must return ()/Termination); xpile treats a Python `main` as the Rust entry unconditionally — needs a decision (refuse non-None main, or don`t special-case the name).'
+  status: in_progress
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Case A shipped (dict key-type-mismatch honest refusal). Verified: int-key-on-str-dict + str-key-on-int-dict refuse; matching/variable/bool-coercion keys unaffected; e2e 813 green + 1 refusal unit test. Case B (main->int) is a design decision, left open.'
+
 - id: PMAT-1131
   github_issue: null
   item_type: provability
