@@ -431,6 +431,7 @@ equations:
       - "equality propagates through alias chains, refcounts, AND ndarray views"
       - "the typed OracleObservation triple (output, refcount_delta, exception_kind) survives both lifts — companion theorem oracle_observation_fields_preserved_silver locks in field-level preservation"
       - "the Silver theorem captures the COMPOSITION of PMAT-160/168/171/172/173 — an emitter satisfying each individual Silver claim but breaking their composition falsifies oracle_endtoend_equivalence_silver"
+      - "PMAT-1176 skeptic pass (non-vacuity): transpiled_rust_observation now BRANCHES on a RustLowering fidelity flag, so the equivalence is FALSIFIABLE — refcount_leak_lowering_diverges proves a reference-leaking lowering (refcount_delta off by one) violates it, and faithful_lowering_matches_baseline pins equivalence to faithfulness. The prior model made both sides the identity, so oracle_endtoend_equivalence_silver reduced to input == input and certified nothing"
     preconditions:
       - "fixture is non-empty"
       - "both sides built clean"

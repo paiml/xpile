@@ -883,23 +883,62 @@ def hybrid_python_observation (input_obs : OracleObservation) : OracleObservatio
   input_obs
 
 /--
+  The FIDELITY of the xpile-emitted Rust lowering relative to the
+  CPython+C baseline. A `faithful` lowering reproduces the
+  reference observation on EVERY observed field; an UNfaithful one
+  diverges on at least one — the miscompile a differential FFI
+  oracle exists to catch (canonically a LEAKED reference:
+  `refcount_delta` off by one). Modeled (PMAT-1176 skeptic pass) so
+  the end-to-end equivalence is a real consequence of faithfulness,
+  not a definitional `input = input`.
+-/
+structure RustLowering where
+  faithful : Bool
+  deriving DecidableEq
+
+/--
   Silver-tier model of the transpiled-Rust observation: produced
   by running the xpile-emitted Rust crate on the same fixture
-  input. Mirror image of `hybrid_python_observation` — the
-  Silver claim is that the two lift functions PRODUCE THE SAME
-  OBSERVATION on the same input.
+  input, UNDER a given lowering fidelity. A faithful lowering
+  returns the reference observation; an unfaithful one LEAKS a
+  reference (`refcount_delta + 1`).
+
+  PMAT-1176 (skeptic pass): before this slice the def was the bare
+  identity (`fun input_obs => input_obs`), discarding the lowering,
+  which made `oracle_endtoend_equivalence_silver` reduce to
+  `input = input` — VACUOUS (a miscompiling emitter satisfied it
+  too). It now BRANCHES on the fidelity, so the equivalence is
+  FALSIFIABLE (see `refcount_leak_lowering_diverges`).
 -/
-def transpiled_rust_observation (input_obs : OracleObservation) : OracleObservation :=
-  input_obs
+def transpiled_rust_observation (lowering : RustLowering)
+    (input_obs : OracleObservation) : OracleObservation :=
+  match lowering.faithful with
+  | true => input_obs
+  | false => { input_obs with refcount_delta := input_obs.refcount_delta + 1 }
+
+/--
+  xpile's ACTUAL (contract-honoring) lowering: faithful on every
+  observed field — the transpiled Rust reproduces the CPython+C
+  baseline observation.
+-/
+def xpileLowering : RustLowering := { faithful := true }
+
+/--
+  A BUGGY lowering that LEAKS a reference — `refcount_delta` off by
+  one, the canonical FFI miscompile a differential oracle exists to
+  catch. Modeled so the end-to-end equivalence has a real
+  alternative to be falsified against (it was unmodeled — both
+  sides were the identity — before PMAT-1176).
+-/
+def refcountLeakLowering : RustLowering := { faithful := false }
 
 /--
   **Silver-tier refinement theorem** for `oracle_endtoend_equivalence`.
 
-  When both sides (Python-baseline and Rust-transpiled) receive
-  the same input observation, they produce structurally-equal
-  OracleObservations — output bytes, refcount delta, and
-  exception kind all match. This is the contract's agent exit
-  condition: the end-to-end correctness witness.
+  Under xpile's ACTUAL lowering, the transpiled-Rust observation
+  equals the Python-baseline observation on every field — output
+  bytes, refcount delta, and exception kind. This is the contract's
+  agent exit condition: the end-to-end correctness witness.
 
   Captures the COMPOSITION of the prior Silver theorems
   (PMAT-160/168/171/172/173). An emitter that satisfies each
@@ -908,13 +947,56 @@ def transpiled_rust_observation (input_obs : OracleObservation) : OracleObservat
   sequences) falsifies PMAT-174 without touching the
   individuals.
 
-  Status: discharged at v0.1.0 (PMAT-174). Tier: Silver.
-  COMPLETES Silver coverage on C-FFI-CPYTHON-EXT — first
-  contract in the substrate at full Silver tier.
+  NON-vacuous (PMAT-1176): the equality holds PRECISELY because
+  `xpileLowering.faithful = true`; a reference-leaking lowering
+  makes the SAME statement FALSE (`refcount_leak_lowering_diverges`),
+  so a plausible FFI miscompile is genuinely excluded — not asserted
+  by a definitional `input = input`. The prior model made BOTH sides
+  the identity, so it certified nothing.
+
+  Status: discharged at v0.1.0 (PMAT-174); non-vacuity restored
+  PMAT-1176. Tier: Silver. COMPLETES Silver coverage on
+  C-FFI-CPYTHON-EXT — first contract in the substrate at full
+  Silver tier.
 -/
 theorem oracle_endtoend_equivalence_silver (input_obs : OracleObservation) :
-    hybrid_python_observation input_obs = transpiled_rust_observation input_obs := by
+    transpiled_rust_observation xpileLowering input_obs
+      = hybrid_python_observation input_obs := by
   rfl
+
+/--
+  The DUAL that makes the equivalence NON-vacuous: a
+  reference-LEAKING lowering (`refcount_delta` off by one) DIVERGES
+  from the Python baseline on the refcount field — the exact FFI
+  miscompile the differential oracle exists to catch. Because
+  `transpiled_rust_observation` branches on `lowering.faithful`,
+  this `≠` direction is provable; the prior identity model (both
+  sides `input_obs`) could NOT express a divergence, so the
+  equivalence certified nothing (PMAT-1176).
+-/
+theorem refcount_leak_lowering_diverges (input_obs : OracleObservation) :
+    transpiled_rust_observation refcountLeakLowering input_obs
+      ≠ hybrid_python_observation input_obs := by
+  intro h
+  have hr := congrArg OracleObservation.refcount_delta h
+  simp only [transpiled_rust_observation, refcountLeakLowering,
+    hybrid_python_observation] at hr
+  omega
+
+/--
+  Equivalence is PINNED to lowering faithfulness: ANY faithful
+  lowering reproduces the Python-baseline observation. Together with
+  `refcount_leak_lowering_diverges`, this characterizes the agent
+  exit condition as a real consequence of the lowering's fidelity —
+  the analog of the context-manager exemplar's `exit_on_err_iff_
+  finally`. A constant-identity `transpiled_rust_observation` had no
+  fidelity to pin the guarantee to.
+-/
+theorem faithful_lowering_matches_baseline (lowering : RustLowering)
+    (h : lowering.faithful = true) (input_obs : OracleObservation) :
+    transpiled_rust_observation lowering input_obs
+      = hybrid_python_observation input_obs := by
+  simp only [transpiled_rust_observation, hybrid_python_observation, h]
 
 /--
   **Silver-tier refinement theorem** — every field of the
