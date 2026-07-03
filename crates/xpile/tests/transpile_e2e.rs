@@ -928,6 +928,96 @@ fn annotated_loop_local_is_not_mut() {
     assert_rustc_runs("loop_local_readonly", &rust, driver);
 }
 
+/// PMAT-1095 (skeptic pass PMAT-1090, C-F2): a duplicated plain-Name
+/// component in one tuple `for` target (`for x, x in zip(a, b)`) is valid
+/// CPython — it binds left-to-right, last wins — but emitted `for (x, x)`
+/// (rustc E0416). All-but-last duplicates now rewrite to `_`. Covers the
+/// zip, enumerate, and zip3 tuple paths. Cross-checked vs python3.
+#[test]
+fn loop_dup_tuple_target() {
+    let rust = xpile_transpile_to_rust("loop_dup_tuple_target.py");
+    assert!(
+        rust.contains("for (_, x)"),
+        "duplicated tuple-target component must dedup to `_` (last wins):\n{rust}"
+    );
+    assert!(
+        !rust.contains("for (x, x)"),
+        "must not emit an E0416 double-bound pattern:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(dup_zip(), 6i64);
+    assert_eq!(dup_enumerate(), 30i64);
+    assert_eq!(dup_zip3(), 18i64);
+}
+"#;
+    assert_rustc_runs("loop_dup_tuple_target", &rust, driver);
+}
+
+/// PMAT-1095 (skeptic pass PMAT-1090, C-F3): a comprehension variable
+/// sharing an enclosing loop var's name is valid CPython (comps have their
+/// own scope) but tripped the PMAT-1085 same-name-nested-loop refusal —
+/// an over-refusal. The list/dict/set list-iterable comp paths now rename
+/// the binder to a fresh `__forc{N}` (PMAT-635 hygiene). Also pins that
+/// the comp ITERABLE still reads the ENCLOSING binding (evaluated outside
+/// the comp scope). Cross-checked vs python3.
+#[test]
+fn comp_var_shares_loop_name() {
+    let rust = xpile_transpile_to_rust("comp_var_shares_loop_name.py");
+    assert!(
+        rust.contains("for __forc"),
+        "list-iterable comp binder must be the hygienic `__forc{{N}}` rename:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(listcomp_shares_name(), 31i64);
+    assert_eq!(comp_iter_reads_outer(), 29i64);
+    assert_eq!(dict_set_comp_share(), 31i64);
+}
+"#;
+    assert_rustc_runs("comp_var_shares_loop_name", &rust, driver);
+}
+
+/// PMAT-1095 (skeptic pass PMAT-1090, C-F4): a FRESH binding inside a loop
+/// body re-`let`s per iteration, so it must NOT be `let mut` (the pre-walk
+/// doubled EVERY in-loop store, tripping `clippy -D warnings` unused_mut
+/// on `for i in xs: a = i + 1`). A genuine same-iteration reassignment
+/// stays `mut`. Also covers the adjacent annotated-shadow fix: an
+/// annotated store to the PMAT-1038-hoisted loop local now reassigns the
+/// live binding instead of shadowing it (which returned the hoisted
+/// default instead of CPython's leaked last value). Cross-checked vs
+/// python3.
+#[test]
+fn loop_local_mut_precision() {
+    let rust = xpile_transpile_to_rust("loop_local_mut_precision.py");
+    assert!(
+        rust.contains("let a: i64 = (i).checked_add"),
+        "fresh in-loop scalar binding must NOT be mut:\n{rust}"
+    );
+    assert!(
+        rust.contains("let (a, b) ="),
+        "fresh in-loop tuple binding must NOT be mut:\n{rust}"
+    );
+    assert!(
+        rust.contains("let a: i64 = if"),
+        "branch-bound in-loop binding must NOT be mut:\n{rust}"
+    );
+    assert!(
+        rust.contains("let mut a: i64 = (i).checked_add"),
+        "same-iteration reassigned binding must STAY mut:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(fresh_scalar(vec![1i64, 2]), 5i64);
+    assert_eq!(fresh_tuple(vec![1i64, 2]), 15i64);
+    assert_eq!(fresh_branch(vec![1i64, 2]), 30i64);
+    assert_eq!(reassigned_still_mut(vec![1i64, 2]), 10i64);
+    assert_eq!(annotated_leak(vec![1i64, 2]), 3i64);
+}
+"#;
+    assert_rustc_runs("loop_local_mut_precision", &rust, driver);
+}
+
 /// PMAT-466 regression (2nd adversarial-review round): dict reads in
 /// positions the first fix overlooked — a `range()` bound, a
 /// `list.append()` argument, and a list indexed-assign target index —
@@ -4050,9 +4140,11 @@ fn main() {
 #[test]
 fn list_comp_filter() {
     let rust = xpile_transpile_to_rust("list_comp_filter.py");
-    // The filter becomes an `if` guarding the push.
+    // The filter becomes an `if` guarding the push. The binder is the
+    // PMAT-1095 comprehension-scoped `__forc{N}` rename (PMAT-635 hygiene,
+    // extended from range comps to list-iterable comps).
     assert!(
-        rust.contains("if (x > 0i64) {") && rust.contains("__xpile_comp.push(x);"),
+        rust.contains("if (__forc0 > 0i64) {") && rust.contains("__xpile_comp.push(__forc0);"),
         "filter guards push:\n{rust}"
     );
     let driver = r#"
@@ -4094,9 +4186,10 @@ fn main() {
 #[test]
 fn dict_set_comp_filter() {
     let rust = xpile_transpile_to_rust("dict_set_comp_filter.py");
-    // Both desugarings guard the accumulator with an `if`.
+    // Both desugarings guard the accumulator with an `if` (the binder is the
+    // PMAT-1095/635 comprehension-scoped `__forc{N}` rename).
     assert!(
-        rust.contains("if (x > 0i64) {") && rust.contains("__xpile_comp.insert("),
+        rust.contains("if (__forc0 > 0i64) {") && rust.contains("__xpile_comp.insert("),
         "filter guards insert/add:\n{rust}"
     );
     let driver = r#"
@@ -16202,8 +16295,9 @@ fn main() {
 #[test]
 fn dictcomp_key_reads_binder() {
     let rust = xpile_transpile_to_rust("dictcomp_key_reads_binder.py");
+    // The binder is the PMAT-1095/635 comprehension-scoped `__forc{N}` rename.
     assert!(
-        rust.contains("__xpile_dict_val = (w).clone()"),
+        rust.contains("__xpile_dict_val = (__forc0).clone()"),
         "the bare-binder dict-comp value must be cloned:\n{rust}"
     );
     let driver = r#"

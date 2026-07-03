@@ -2077,6 +2077,27 @@ fn collect_struct_type_evidence(
     walk(body, structs, out);
 }
 
+/// PMAT-1095 (skeptic pass PMAT-1090, C-F4): bump a plain-Name STORE toward
+/// `name`'s assignment count. Outside a loop a store counts 1. Inside a loop,
+/// the FIRST store this scope has seen binds a fresh per-iteration local (the
+/// `let` is emitted inside the body — there is no prior binding to mutate), so
+/// it also counts 1; only a SUBSEQUENT store (a genuine same-iteration
+/// reassignment) keeps the 2× loop bump. The shapes that DO need `mut` still
+/// cross the `> 1` threshold: a name pre-bound BEFORE the loop adds its outer
+/// count (addition-merge, `x = 0; for …: x = i` → 1 + 1), a param adds 1 in
+/// `compute_mutable_names`, and a body local read AFTER the loop is hoisted
+/// `let mut` unconditionally (PMAT-1038), bypassing the count entirely.
+/// Non-Name stores (subscript/attribute bases, augments, method receivers,
+/// pops) keep the unconditional in-loop 2× bump — they mutate an EXISTING
+/// binding. Before this rule ANY fresh in-loop binding emitted `let mut`
+/// (`for i in xs: a = i + 1` → spurious `mut`, rejected by the user-facing
+/// `clippy -D warnings` gate), falsifying the "mut exactly where needed"
+/// claim (PMAT-547 pre-walk imprecision).
+fn bump_name_store(counts: &mut HashMap<String, usize>, name: String, in_loop: bool) {
+    let e = counts.entry(name).or_insert(0);
+    *e += if in_loop && *e > 0 { 2 } else { 1 };
+}
+
 fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for stmt in stmts {
@@ -2095,11 +2116,11 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                 if a.targets.len() > 1 {
                     for t in &a.targets {
                         if let ast::Expr::Name(n) = t {
-                            *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                            bump_name_store(&mut counts, n.id.to_string(), in_loop);
                         }
                     }
                 } else if let Some(name) = simple_assign_target_name(a) {
-                    *counts.entry(name).or_insert(0) += bump;
+                    bump_name_store(&mut counts, name, in_loop);
                 } else if let Some(name) = subscript_assign_base_name(a) {
                     // PMAT-466 (also fixes latent list case): `d[k] = v`
                     // / `xs[i] = v` mutate the base collection in place,
@@ -2113,7 +2134,7 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                     if let ast::Expr::Tuple(t) = &a.targets[0] {
                         for e in &t.elts {
                             if let ast::Expr::Name(n) = e {
-                                *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                                bump_name_store(&mut counts, n.id.to_string(), in_loop);
                             } else if let ast::Expr::Starred(s) = e {
                                 // PMAT-647: the starred target `*rest` in
                                 // `a, *rest = xs` binds `rest` — count it so a
@@ -2121,7 +2142,7 @@ fn walk_counts(stmts: &[ast::Stmt], in_loop: bool) -> HashMap<String, usize> {
                                 // `let mut` (the PMAT-645/646 desugar emits a
                                 // plain `let` whose mutability comes from here).
                                 if let ast::Expr::Name(n) = s.value.as_ref() {
-                                    *counts.entry(n.id.to_string()).or_insert(0) += bump;
+                                    bump_name_store(&mut counts, n.id.to_string(), in_loop);
                                 }
                             } else if let Some(base) = subscript_chain_base_name(e) {
                                 // PMAT-559: `xs[i], xs[j] = …` (subscript-target
@@ -8194,6 +8215,34 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
             }));
             prepends.append(&mut f.body);
             f.body = prepends;
+        }
+    }
+    // PMAT-1095 (skeptic pass PMAT-1090, C-F2): CPython binds a tuple target
+    // left-to-right, so in `for x, x in zip(a, b)` the LAST occurrence wins —
+    // nothing can observe the earlier binding (no code runs between the
+    // element binds, and the post-loop leak sees the same final value). The
+    // emitted Rust pattern `for (x, x)` was instead rustc E0416 ("identifier
+    // bound more than once") on this valid-Python shape. Rewrite every
+    // duplicated plain-Name component except its LAST occurrence to `_`
+    // (repeating `_` in one Rust pattern is legal — it binds nothing) before
+    // any target matching, so every tuple path (enumerate/zip/pairs/zip3/
+    // N-arity) sees the already-faithful deduplicated pattern.
+    if let ast::Expr::Tuple(tgt) = f.target.as_mut() {
+        let names: Vec<Option<String>> = tgt
+            .elts
+            .iter()
+            .map(|e| match e {
+                ast::Expr::Name(n) if n.id.as_str() != "_" => Some(n.id.to_string()),
+                _ => None,
+            })
+            .collect();
+        for i in 0..tgt.elts.len() {
+            let Some(name) = &names[i] else { continue };
+            if names[i + 1..].iter().flatten().any(|later| later == name) {
+                if let ast::Expr::Name(n) = &mut tgt.elts[i] {
+                    n.id = ast::Identifier::new("_");
+                }
+            }
         }
     }
     if !f.orelse.is_empty() {
@@ -14367,13 +14416,31 @@ fn desugar_list_comp(
             )));
         }
     };
+    // PMAT-1095 (skeptic pass PMAT-1090, C-F3): rename the comprehension
+    // variable to a fresh `__forc{N}` — the range path has done this since
+    // PMAT-635, but this list-iterable path bound the RAW name, so (1) the
+    // desugared `ForEach` tripped the PMAT-1085 same-name-nested-loop refusal
+    // when the comp var shared an enclosing loop var's name (an OVER-REFUSAL:
+    // Python 3 comprehensions have their own scope, so `for x in …: ys =
+    // [x * 2 for x in [3, 4]]` is valid, deterministic CPython), and (2) the
+    // user name durably entered `bound`/`name_types` (Python unbinds a comp
+    // var at comprehension exit). Body reads of the original name resolve to
+    // the fresh name via the active rename. A `_` target keeps the raw
+    // binding (emits `for _`, binds nothing, cannot collide — renaming it
+    // would leave an unused NAMED binding).
+    let (comp_var, saved_rename) = if var == "_" {
+        (var.clone(), ctx.active_rename.clone())
+    } else {
+        ctx.enter_comp_var(&var)
+    };
     // Bind the loop var so the element + filter expressions type correctly.
-    ctx.bound.insert(var.clone());
-    ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    ctx.bound.insert(comp_var.clone());
+    ctx.name_types.insert(comp_var.clone(), elem_in_ty.clone());
     // PMAT-502ay / PMAT-563: lower the `if` filter(s), ANDed into one Bool.
     let filter = combine_comp_filters(ctx, &gen.ifs, "list")?;
     reject_intfloat_ternary_comp_elem(ctx, &comp.elt, "list")?;
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+    ctx.exit_loop_var(saved_rename);
     let out_ty = infer_type_in_ctx(ctx, &elem);
     let list_ty = Type::List(Box::new(out_ty));
     // Register the accumulator so later references type as the list.
@@ -14399,7 +14466,7 @@ fn desugar_list_comp(
             mutable: true,
         },
         Stmt::ForEach {
-            var,
+            var: comp_var,
             iter: iter_expr,
             elem_ty: elem_in_ty,
             body,
@@ -14568,8 +14635,16 @@ fn desugar_dict_comp(
             )));
         }
     };
-    ctx.bound.insert(var.clone());
-    ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    // PMAT-1095 (C-F3): fresh comp-var rename, as in the list-comp path —
+    // a dict-comp variable is comprehension-scoped, so binding the raw name
+    // both over-refused (same-name-nested-loop scan) and leaked the name.
+    let (comp_var, saved_rename) = if var == "_" {
+        (var.clone(), ctx.active_rename.clone())
+    } else {
+        ctx.enter_comp_var(&var)
+    };
+    ctx.bound.insert(comp_var.clone());
+    ctx.name_types.insert(comp_var.clone(), elem_in_ty.clone());
     // PMAT-502az: lower the optional `if` filter (must type as Bool).
     let filter = comp_filter(ctx, gen, "dict")?;
     let key = lower_expr_in_ctx(ctx, (*comp.key).clone())?;
@@ -14583,15 +14658,16 @@ fn desugar_dict_comp(
     let value = {
         let v = lower_expr_in_ctx(ctx, (*comp.value).clone())?;
         let binder_non_copy = !matches!(
-            ctx.name_types.get(&var),
+            ctx.name_types.get(&comp_var),
             Some(Type::I64 | Type::F64 | Type::Bool)
         );
-        if binder_non_copy && matches!(&v, Expr::Ident(n) if *n == var) {
+        if binder_non_copy && matches!(&v, Expr::Ident(n) if *n == comp_var) {
             Expr::Clone(Box::new(v))
         } else {
             v
         }
     };
+    ctx.exit_loop_var(saved_rename);
     let k_ty = infer_type_in_ctx(ctx, &key);
     let v_ty = infer_type_in_ctx(ctx, &value);
     let dict_ty = Type::Dict(Box::new(k_ty), Box::new(v_ty));
@@ -14618,7 +14694,7 @@ fn desugar_dict_comp(
             mutable: true,
         },
         Stmt::ForEach {
-            var,
+            var: comp_var,
             iter: iter_expr,
             elem_ty: elem_in_ty,
             body,
@@ -14872,11 +14948,20 @@ fn desugar_set_comp(
             )));
         }
     };
-    ctx.bound.insert(var.clone());
-    ctx.name_types.insert(var.clone(), elem_in_ty.clone());
+    // PMAT-1095 (C-F3): fresh comp-var rename, as in the list-comp path —
+    // a set-comp variable is comprehension-scoped, so binding the raw name
+    // both over-refused (same-name-nested-loop scan) and leaked the name.
+    let (comp_var, saved_rename) = if var == "_" {
+        (var.clone(), ctx.active_rename.clone())
+    } else {
+        ctx.enter_comp_var(&var)
+    };
+    ctx.bound.insert(comp_var.clone());
+    ctx.name_types.insert(comp_var.clone(), elem_in_ty.clone());
     // PMAT-502az: lower the optional `if` filter (must type as Bool).
     let filter = comp_filter(ctx, gen, "set")?;
     let elem = lower_expr_in_ctx(ctx, (*comp.elt).clone())?;
+    ctx.exit_loop_var(saved_rename);
     let out_ty = infer_type_in_ctx(ctx, &elem);
     let set_ty = Type::Set(Box::new(out_ty));
     ctx.bound.insert(target.to_string());
@@ -14901,7 +14986,7 @@ fn desugar_set_comp(
             mutable: true,
         },
         Stmt::ForEach {
-            var,
+            var: comp_var,
             iter: iter_expr,
             elem_ty: elem_in_ty,
             body,
@@ -15987,6 +16072,23 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
     // `[row, row]` / `[…] * n` silently cloned; annotated launder
     // bindings silently detached).
     let value = apply_alias_dispositions(ctx, &name, value, &declared_ty)?;
+    // PMAT-1095 (adjacent, reproduced first-hand while fixing C-F4): an
+    // annotated store to an ALREADY-BOUND same-typed name is a REASSIGNMENT,
+    // exactly like the plain-assign path (Python keeps ONE function-scoped
+    // binding — re-annotation creates no new variable). Emitting a fresh
+    // `let` here SHADOWED the live binding: for a loop-body local
+    // pre-declared by the PMAT-1038 hoist (`for i in xs: a: int = i + 1`
+    // then `return a`), the hoisted `let mut a = 0` never saw the body's
+    // stores — the function returned the DEFAULT 0 vs CPython's leaked last
+    // value (silent wrong-value; loud unused-variable under `-D warnings`).
+    // A bound name re-annotated to a DIFFERENT type keeps the shadow-let
+    // (straight-line rebinding to a new type is Python-valid and Rust
+    // shadowing models it exactly). Clone-if-reused mirrors the plain
+    // reassignment path (PMAT-1023).
+    if ctx.bound.contains(&name) && ctx.name_types.get(&name) == Some(&declared_ty) {
+        let value = clone_if_reused_non_copy(ctx, value);
+        return Ok(Stmt::Assign { name, value });
+    }
     let mutable = ctx.mutable.contains(&name);
     ctx.bound.insert(name.clone());
     ctx.name_types.insert(name.clone(), declared_ty.clone());
