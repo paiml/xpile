@@ -3050,3 +3050,170 @@ fn allocating_str_op_in_every_position_assembles_under_wat2wasm() {
          compound position for Replace / ReplaceN / RemovePrefix / RemoveSuffix."
     );
 }
+
+// ─── PMAT-1167: bare single-interpolation int f-string `f"{n}"` ────────────────
+//
+// A LONE int f-string field `f"{n}"` (no surrounding literal text, no format
+// spec) reaches the WASM lane neither as a `Concat` (there is no literal to
+// anchor one) NOR as a `StrFormat` (that is only `.format(...)` / `%`) — the
+// frontend's `stringify_lone_fstring_field` wraps the int in
+// `Expr::FormatSpec { value, rust_spec: "", of_float: false }` (rendered
+// `format!("{:}", n)`). Before PMAT-1167 the lane refused EVERY `FormatSpec`, so
+// `f"{n}"` / `f"{a+b}"` / `f"{len(s)}"` refused even though each is exactly
+// `str(int)` (already emitted). The `normalize_expr_fstring_ints` FormatSpec arm
+// now rewrites the empty-spec, non-float, int-valued case into
+// `ToStr{of_float:false}`; a real spec (`f"{x:>5}"`) or a float field stays
+// refused. The injected `ToStr` is seen by the return/let-scanning
+// `expr_has_int_to_str` / `expr_has_heap_op` gates, so `$__wasm_int_to_str` +
+// `$__alloc` + `(memory)` stay declared (no gate hole).
+
+/// `def f() -> str: return <FormatSpec{value, rust_spec, of_float}>`.
+fn fstr_formatspec_fn(value: Expr, rust_spec: &str, of_float: bool) -> Function {
+    Function {
+        name: "f".into(),
+        params: Vec::new(),
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::FormatSpec {
+                value: Box::new(value),
+                rust_spec: rust_spec.into(),
+                of_float,
+            },
+        },
+    }
+}
+
+#[test]
+fn bare_fstring_lone_int_formatspec_lowers_and_gates_helpers() {
+    // The lone-int empty-spec `FormatSpec` (`f"{n}"`, `f"{a+b}"`) now lowers (no
+    // refusal), emits the int→str helper + the bump allocator (str(int)
+    // materialises a decimal-ASCII heap string), and — with WABT — assembles
+    // clean (no undeclared-helper gate hole).
+    let cases: [Expr; 2] = [
+        Expr::LitInt(42),
+        Expr::BinOp {
+            op: BinOp::Add,
+            lhs: Box::new(Expr::LitInt(7)),
+            rhs: Box::new(Expr::LitInt(5)),
+        },
+    ];
+    for value in cases {
+        let wat = emit_module(&module_with(vec![Item::Function(fstr_formatspec_fn(
+            value, "", false,
+        ))]))
+        .unwrap_or_else(|e| panic!("PMAT-1167: lone-int FormatSpec lowers: {e:?}"));
+        assert!(
+            wat.contains("$__wasm_int_to_str"),
+            "the int→str helper is emitted for a lone-int f-string:\n{wat}"
+        );
+        assert!(
+            wat.contains("(func $__alloc "),
+            "the bump allocator is declared (str(int) materialises a heap string):\n{wat}"
+        );
+        if wasm_runtime_available() {
+            WasmDiffExecEngine::new()
+                .assemble(&wat, "fstr_lone_int_gate")
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "PMAT-1167 GATE HOLE: lone-int f-string module rejected by \
+                         wat2wasm:\n{e}\n\n--- emitted module ---\n{wat}"
+                    )
+                });
+        }
+    }
+}
+
+#[test]
+fn formatspec_with_real_spec_or_float_still_refuses() {
+    // A REAL format spec (`f"{n:>5}"`) and a FLOAT lone field (`f"{x}"`, whose
+    // Python `nan`/`3.0` vs Rust `NaN`/`3` `Display` disagree) MUST still refuse
+    // — the empty-spec int fold must not widen to formatting the lane does not
+    // model.
+    let spec = emit_module(&module_with(vec![Item::Function(fstr_formatspec_fn(
+        Expr::LitInt(42),
+        ">5",
+        false,
+    ))]));
+    assert!(
+        spec.is_err(),
+        "a real width/alignment spec (`f\"{{n:>5}}\"`) still refuses on the WASM lane"
+    );
+    let float = emit_module(&module_with(vec![Item::Function(fstr_formatspec_fn(
+        Expr::LitFloat(3.0),
+        "",
+        true,
+    ))]));
+    assert!(
+        float.is_err(),
+        "a lone float f-string field (`f\"{{x}}\"`) still refuses (str(float) unsupported)"
+    );
+}
+
+/// PMAT-1167 EXECUTED WITNESS — assemble + run a lone-int f-string in WABT and
+/// assert the produced heap string's byte-count header AND first/last payload
+/// bytes equal CPython's `str(<value>)`. Mirrors the PMAT-1153 removeprefix
+/// witness recipe (three zero-arg f64 drivers reading the str `$f` returns).
+#[test]
+fn bare_fstring_lone_int_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP bare_fstring_lone_int_executes_in_wabt: WABT not installed");
+        return;
+    }
+    // (lone-int value expr, CPython `str(value)`).
+    let cases: [(Expr, &str); 3] = [
+        (Expr::LitInt(42), "42"),
+        (
+            Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(Expr::LitInt(7)),
+                rhs: Box::new(Expr::LitInt(5)),
+            },
+            "12",
+        ),
+        (Expr::LitInt(1_000_000), "1000000"),
+    ];
+    let engine = WasmDiffExecEngine::new();
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    for (value, expected) in cases {
+        let f_wat = emit_module(&module_with(vec![Item::Function(fstr_formatspec_fn(
+            value, "", false,
+        ))]))
+        .unwrap_or_else(|e| panic!("PMAT-1167: lone-int FormatSpec lowers: {e:?}"));
+        let exp_bytes = expected.as_bytes();
+        let last_addr = 8 + (exp_bytes.len() as i32 - 1);
+        let driver = format!(
+            "  (func (export \"e0\") (result f64)\n    \
+             call $f\n    i32.load\n    f64.convert_i32_s)\n  \
+             (func (export \"e1\") (result f64)\n    \
+             call $f\n    i32.const 8\n    i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n  \
+             (func (export \"e2\") (result f64)\n    \
+             call $f\n    i32.const {last_addr}\n    i32.add\n    i32.load8_u\n    f64.convert_i32_u)\n"
+        );
+        let witness_wat = f_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+        let out = engine
+            .assemble_run_parse(&witness_wat, "fstr_lone_int_exec")
+            .unwrap_or_else(|e| panic!("assemble+run lone-int witness: {e}"));
+        let expected_vec = [
+            exp_bytes.len() as f64,
+            f64::from(exp_bytes[0]),
+            f64::from(exp_bytes[exp_bytes.len() - 1]),
+        ];
+        assert_eq!(
+            out.len(),
+            expected_vec.len(),
+            "lone-int witness exports e0/e1/e2: {out:?}"
+        );
+        for (i, (g, e)) in out.iter().zip(expected_vec.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1.0e-9,
+                "lone-int f-string → \"{expected}\" e{i}: executed {g}, expected (CPython) {e}"
+            );
+        }
+        eprintln!(
+            "=== PMAT-1167 executed witness: bare int f-string → \"{expected}\" \
+             [len={}, first={}, last={}] ===",
+            expected_vec[0], expected_vec[1], expected_vec[2]
+        );
+    }
+}

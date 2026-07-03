@@ -364,7 +364,7 @@ fn str_only_concat_is_untouched_by_the_pre_pass() {
 }
 
 #[test]
-fn strformat_and_formatspec_refused_honestly() {
+fn strformat_spec_and_float_formatspec_refused_honestly() {
     // PMAT-1166: a bare-`{}` template now FOLDS (see `str_format_fold_witness`);
     // a template carrying a FORMAT SPEC still refuses (its width / alignment is
     // not modelled on the WASM lane).
@@ -381,7 +381,48 @@ fn strformat_and_formatspec_refused_honestly() {
         format!("{err}").contains("str.format"),
         "StrFormat refusal must name the unfolded template:\n{err}"
     );
-    // A bare single-interpolation f-string lowers to a `FormatSpec`.
+    // PMAT-1167: a bare single-interpolation int f-string (`f"{n}"`) lowers to a
+    // `FormatSpec { rust_spec: "", of_float: false }` and now FOLDS to str(int)
+    // (see `bare_int_formatspec_folds_to_int_to_str`). A REAL format spec still
+    // refuses — its width / alignment is not modelled on the WASM lane.
+    let fspec_spec = str_fn_module(
+        "fs",
+        vec![int_param("n")],
+        Expr::FormatSpec {
+            value: Box::new(Expr::Ident("n".into())),
+            rust_spec: ">5".into(),
+            of_float: false,
+        },
+    );
+    let err = emit_module(&fspec_spec).expect_err("a spec'd FormatSpec must refuse");
+    assert!(
+        format!("{err}").contains("format spec") || format!("{err}").contains("bare"),
+        "spec'd FormatSpec refusal must name the unsupported spec:\n{err}"
+    );
+    // A FLOAT lone field (`f"{x}"`, x: float) still refuses — Python `3.0`/`nan`
+    // vs Rust `3`/`NaN` `Display` disagree (str(float) is unsupported here).
+    let fspec_float = str_fn_module(
+        "ff",
+        vec![Param {
+            name: "x".into(),
+            ty: Type::F64,
+            mutable: false,
+        }],
+        Expr::FormatSpec {
+            value: Box::new(Expr::Ident("x".into())),
+            rust_spec: String::new(),
+            of_float: true,
+        },
+    );
+    emit_module(&fspec_float).expect_err("a lone float FormatSpec must refuse");
+}
+
+#[test]
+fn bare_int_formatspec_folds_to_int_to_str() {
+    // PMAT-1167: the empty-spec, non-float, int-valued lone f-string field
+    // `f"{n}"` folds to `str(int)`, emitting the int→str helper + the bump
+    // allocator (str(int) materialises a decimal-ASCII heap string) — no gate
+    // hole (the injected `ToStr` is seen by the return-scanning helper gates).
     let fspec = str_fn_module(
         "fs",
         vec![int_param("n")],
@@ -391,10 +432,14 @@ fn strformat_and_formatspec_refused_honestly() {
             of_float: false,
         },
     );
-    let err = emit_module(&fspec).expect_err("a bare FormatSpec must refuse");
+    let wat = emit_module(&fspec).expect("a bare int FormatSpec now lowers to str(int)");
     assert!(
-        format!("{err}").contains("bare single-interpolation"),
-        "FormatSpec refusal must name the bare interpolation:\n{err}"
+        wat.contains("call $__wasm_int_to_str"),
+        "the bare int f-string must call the int→str helper:\n{wat}"
+    );
+    assert!(
+        wat.contains("(func $__alloc "),
+        "the bump allocator is declared (str(int) materialises a heap string):\n{wat}"
     );
 }
 
