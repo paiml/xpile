@@ -957,11 +957,11 @@ fn emit_stmt_indented(
                 emit_expr(out, elem, mode)?;
                 writeln!(
                     out,
-                    "); if !{set_name}.remove(__k) {{ {} }} }}",
+                    "); if !{set_name}.shift_remove(__k) {{ {} }} }}",
                     key_error_panic()
                 )?;
             } else {
-                write!(out, "{indent}{set_name}.remove(&(")?;
+                write!(out, "{indent}{set_name}.shift_remove(&(")?;
                 emit_expr(out, elem, mode)?;
                 writeln!(out, "));")?;
             }
@@ -1526,7 +1526,7 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), RuchyCodegenError> {
         }
         // PMAT-500: Ruchy → Rust `HashSet<T>`.
         Type::Set(elem_ty) => {
-            out.push_str("std::collections::HashSet<");
+            out.push_str("indexmap::IndexSet<");
             emit_type(out, elem_ty)?;
             out.push('>');
         }
@@ -3317,7 +3317,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-502cw: `set(xs)` → collect the list into a HashSet.
         Expr::SetFromList { list } => {
             emit_expr(out, list, mode)?;
-            out.push_str(".iter().cloned().collect::<std::collections::HashSet<_>>()");
+            out.push_str(".iter().cloned().collect::<indexmap::IndexSet<_>>()");
         }
         // PMAT-520: `list(<set>)` / `sorted(<set>)` → unique elements as a Vec.
         Expr::SetToList { set } => {
@@ -3507,9 +3507,9 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
         // PMAT-500/501b: Ruchy → Rust set literal (empty → bare new()).
         Expr::SetLit(elems) => {
             if elems.is_empty() {
-                out.push_str("std::collections::HashSet::new()");
+                out.push_str("indexmap::IndexSet::new()");
             } else {
-                out.push_str("{ let mut __xset = std::collections::HashSet::new(); ");
+                out.push_str("{ let mut __xset = indexmap::IndexSet::new(); ");
                 for e in elems {
                     out.push_str("__xset.insert(");
                     emit_expr(out, e, mode)?;
@@ -3554,7 +3554,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str(method);
             out.push_str("(&(");
             emit_expr(out, rhs, mode)?;
-            out.push_str(")).cloned().collect::<std::collections::HashSet<_>>()");
+            out.push_str(")).cloned().collect::<indexmap::IndexSet<_>>()");
         }
         // PMAT-502ep: set predicate — matching the Rust backend.
         Expr::SetPred { lhs, op, rhs } => {
