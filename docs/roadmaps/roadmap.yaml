@@ -1286,6 +1286,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Third citation loop closed (after 1133 exceptions, 1135 file-io). Gates: e2e 812, citation-integrity 3, clippy 0, pv lint PASS. Worktree-isolated.'
+- id: PMAT-1139
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1139: [provability/R6] CLOSE the citation loop for eager generators — wire C-PY-GENERATOR-EAGER (proved core-Lean PMAT-1122) into Function::applicable_contracts. The eager rewrite (PMAT-1071) erases the generator-ness (the fn becomes a list-builder) but leaves a synthetic __gen_result accumulator that no user code binds; uses_generator detects a Let/Assign named __gen_result (recursing into nested fns). Added to citation-integrity required-cited. Verified: a `yield`-bearing fn emits `// xpile-contract: C-PY-GENERATOR-EAGER`; e2e 812 green. COMPLETES the R6 loop for ALL FOUR major capabilities shipped this session — exceptions (1120+1133), file-io (1124+1135), context-managers (1131+1137), generators (1122+1139) are now each PROVEN core-Lean AND CITED.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Fourth + final citation loop. Gates: e2e 812, citation-integrity 3, clippy 0, pv lint PASS. Worktree-isolated. This session (2026-07-03): 4 new core-Lean contracts (pilot 28→32) + 4 citation loops = the four session capabilities fully R6-closed, all Mathlib-free.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
