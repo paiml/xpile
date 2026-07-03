@@ -1093,10 +1093,10 @@ roadmap:
   github_issue: null
   item_type: correctness
   title: 'PMAT-1091: [rust+ruchy/correctness/exceptions] KeyError payload repr remainder (skeptic pass PMAT-1090, A-F2/A-F3): (a) tuple-key misses fall back to Rust `{:?}` Debug which diverges from Python repr whenever the composite contains a string — d[("b", 2)] miss gives payload ("b", 2) with DOUBLE quotes vs CPython (''b'', 2) — the PMAT-1089 "i64 Debug == Python repr" generalization fails for composites; (b) py_str_repr_block escapes only C0/0x7F/C1 — CPython repr escapes ALL non-printables, e.g. a key containing U+2028 emits the raw line-separator vs CPython  . FIX: (a) recursive repr for tuple keys at the key_error_panic Any-dispatch (add a (String,i64)-family downcast or emit a typed repr when the static key type is known at the call site); (b) extend the escape predicate toward unicodedata-printable (at minimum: the Unicode separator/control categories).'
-  status: planned
+  status: done
   priority: medium
   created: 2026-07-03T00:00:00Z
-  notes: 'Probes: /tmp/skeptic-a/p20.py (tuple key), p22.py (U+2028). Both silent divergences, re-verified twice. The 8 PMAT-1089 site-lanes themselves verified exact (quote-switch, bool casing, del/remove/pop, base-16).'
+  notes: 'Probes: /tmp/skeptic-a/p20.py (tuple key), p22.py (U+2028). Both silent divergences, re-verified twice. The 8 PMAT-1089 site-lanes themselves verified exact (quote-switch, bool casing, del/remove/pop, base-16). SHIPPED: (a) went BEYOND the suggested fixed-family downcast — key_error_panic now emits a block-local autoref-specialization dispatch (dtolnay/anyhow-kind idiom, resolved per concrete key type at each miss site): __XpileKeyRepr over i64/bool/String/&str + RECURSIVE 1/2/3-tuple impls (nested tuples compose), Debug fallback keeps every previously-compiling key type compiling (frozen-dataclass struct keys still Debug-shaped — pre-existing, documented). (b) py_str_repr_block predicate extended to the closed non-printable families (Cc + Zl/Zp/Zs + Cf incl. astral + Co + noncharacters) with CPython width-matched \x/\u/\U escapes; repr()/dataclass-Display ride the same block. HONEST GAP: general unassigned Cn (e.g. U+0378) still prints raw — needs per-version unicodedata tables. Both templates mirrored rust<->ruchy. e2e: keyerror_repr_composite (11-assert rustc-run driver) + _ruchy emit-shape. 11/11 differential-identical vs CPython 3.10 first-hand.'
 - id: PMAT-1092
   github_issue: null
   item_type: correctness

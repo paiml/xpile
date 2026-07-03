@@ -5866,6 +5866,71 @@ fn chr_range_semantics_ruchy() {
     );
 }
 
+/// PMAT-1091 (skeptic pass PMAT-1090 A-F2/A-F3): KeyError payload repr
+/// remainder. (a) a COMPOSITE key miss fell to Rust `{:?}` Debug —
+/// `d[("b", 2)]` printed `("b", 2)` (double quotes) vs CPython `('b', 2)`,
+/// and would lowercase bools — now an autoref-specialization block reprs the
+/// tuple family recursively (1/2/3-tuples over i64/bool/String, nested
+/// tuples compose) with a `Debug` fallback so every previously-compiling key
+/// type still compiles. (b) the repr escape predicate only covered
+/// C0/0x7F/C1 — a key containing U+2028 emitted the raw line separator —
+/// now every closed non-printable family escapes width-matched
+/// (`\xNN`/`\uNNNN`/`\UNNNNNNNN`), and `repr()` rides the same block.
+/// Every expected payload is CPython 3.10 ground truth (via python3).
+#[test]
+fn keyerror_repr_composite() {
+    let rust = xpile_transpile_to_rust("keyerror_repr_composite.py");
+    assert!(
+        rust.contains("__XpileKeyRepr") && rust.contains("(&__Xw(__k)).__xkrv()"),
+        "key misses must dispatch through the autoref-specialization repr block:\n{rust}"
+    );
+    assert!(
+        !rust.contains("downcast_ref::<String>() { { let __rs"),
+        "the old runtime-Any key dispatch must be gone:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    // (a) composite keys: recursive CPython repr, not Rust Debug.
+    assert_eq!(miss_tuple_si(), "('b', 2)");
+    assert_eq!(miss_tuple_ss(), "('x', 'y')");
+    assert_eq!(miss_nested_tuple(), "(('b', 3), 4)");
+    assert_eq!(miss_bool_tuple(), "(False, 'z')");
+    assert_eq!(miss_three_tuple(), "('b', 2, False)");
+    assert_eq!(pop_miss_tuple(), "('c', 9)");
+    assert_eq!(set_remove_miss_tuple(), "('b', 2)");
+    // (b) non-printables escape width-matched, incl. inside key payloads.
+    assert_eq!(miss_u2028_key(), "'x\\u2028y'");
+    assert_eq!(miss_nbsp_quote_key(), "\"it's\\xa0ok\"");
+    assert_eq!(repr_separators(), "'a\\u2028b\\xadc\\u200bd'");
+    assert_eq!(repr_astral_private(), "'p\\U000f0001q'");
+}
+"#;
+    assert_rustc_runs("keyerror_repr_composite", &rust, driver);
+}
+
+/// PMAT-1091: the ruchy lane mirrors the rust backend's composite-key repr
+/// block and extended non-printable escape predicate (identical templates —
+/// Ruchy compiles to Rust).
+#[test]
+fn keyerror_repr_composite_ruchy() {
+    let py = fixture("keyerror_repr_composite.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "ruchy"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("__XpileKeyRepr") && stdout.contains("(&__Xw(__k)).__xkrv()"),
+        "ruchy key misses must carry the PMAT-1091 repr block:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("(0x2028..=0x202f).contains(&__u)"),
+        "ruchy repr must carry the extended non-printable escape predicate:\n{stdout}"
+    );
+}
+
 /// PMAT-702: `ord()` requires exactly one character — `ord("ab")` / `ord("")` is
 /// a Python TypeError, NOT the first char's code point. xpile now asserts a
 /// single char (was: silently returned the first). The lowering is a parenthesized
@@ -14655,13 +14720,15 @@ fn main() {
 /// PMAT-778 (HUNT-V17 #6): repr() of a string with non-printable control chars
 /// pushed them raw — silent-wrong; Python escapes them as `\xNN`. The repr
 /// escaper now emits `\xNN` for ASCII controls / DEL / C1. Cross-checked vs
-/// python3.
+/// python3. PMAT-1091 widened the escape arm to all closed non-printable
+/// families with width-matched `\x`/`\u`/`\U` forms — the runtime asserts
+/// below are unchanged (controls still escape as `\xNN`).
 #[test]
 fn repr_control_escape() {
     let rust = xpile_transpile_to_rust("repr_control_escape.py");
     assert!(
-        // the \xNN escape arm is present in the repr lowering.
-        rust.contains("__ro.push('x'); __ro.push_str(&format!(\"{:02x}\", __ec as u32))"),
+        // the width-matched escape arm is present in the repr lowering.
+        rust.contains("__ro.push_str(&format!(\"\\\\x{:02x}\", __u))"),
         "repr must escape control chars as \\xNN:\n{rust}"
     );
     let driver = r#"
