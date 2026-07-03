@@ -6090,6 +6090,57 @@ fn main() {
     assert_rustc_runs("min_max_str", &rust, driver);
 }
 
+/// PMAT-1167: a `str` operand of `min`/`max` that is READ AGAIN later in the
+/// function must be CLONED, not moved — `.min()`/`.max()` consume their operands
+/// (`String: Ord`, by value), so a bare `min(a, b)` moved `a`/`b` and a later
+/// read was rustc E0382 (accept-then-fail: invalid Rust). The clone-if-reused
+/// helper (PMAT-588/628) wraps only reused non-Copy operands; single-use str
+/// min/max (asserted byte-identical by `min_max_str` above) is untouched.
+#[test]
+fn min_max_str_reused_operand_clones() {
+    let rust = xpile_transpile_to_rust("min_max_str_reuse.py");
+    assert!(
+        rust.contains("((a).clone()).min(b)"),
+        "a reused str `min` operand must clone, not move:\n{rust}"
+    );
+    assert!(
+        rust.contains("((a).clone()).max((b).clone())"),
+        "both reused str `max` operands must clone:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(pick_min(String::from("apple"), String::from("banana")), "appleapple");
+    assert_eq!(pick_max(String::from("apple"), String::from("banana")), "bananaapplebanana");
+}
+"#;
+    assert_rustc_runs("min_max_str_reuse", &rust, driver);
+}
+
+/// PMAT-1168: a literal `None` interpolated in an f-string renders the string
+/// "None" (CPython `str(None)` == `repr(None)` == "None"). A bare `None` lowered
+/// to Rust `None` (no `Display`) → `format!("{}", None)` was rustc E0277
+/// (accept-then-fail: invalid Rust). Normal f-strings are unaffected.
+#[test]
+fn fstring_none_literal_renders_none() {
+    let rust = xpile_transpile_to_rust("fstring_none.py");
+    assert!(
+        rust.contains("String::from(\"None\")"),
+        "a `None` literal in an f-string must render the string \"None\":\n{rust}"
+    );
+    assert!(
+        !rust.contains(", None)"),
+        "no bare `None` may reach a `format!` arg (would be E0277):\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(none_mid(), "xNoney");
+    assert_eq!(none_labeled(5), "val=None n=5");
+    assert_eq!(none_lone(), "None");
+}
+"#;
+    assert_rustc_runs("fstring_none", &rust, driver);
+}
+
 /// PMAT-502co (Tranche 2): no-arg `str.split()` → whitespace split.
 /// PMAT-649: the emit now uses a C0-inclusive predicate + empty filter.
 #[test]
