@@ -20849,3 +20849,22 @@ fn main() {
 "#;
     assert_rustc_runs("lazy_genexp_any_all", &rust, driver);
 }
+
+/// PMAT-1099 (sum follow-up): sum() over a range genexp streams lazily
+/// (`(a..b).map(..).fold(..)`) — no `.collect::<Vec<i64>>()` on the range.
+#[test]
+fn lazy_sum_genexp() {
+    let rust = xpile_transpile_to_rust("lazy_sum_genexp.py");
+    assert!(
+        !rust.contains(".collect::<Vec<i64>>().iter().cloned().map"),
+        "sum over range must not materialize the range:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert_eq!(sum_mapped(), 90, "sum(x*2 for x in range(10))");
+    assert_eq!(sum_plain(), 4950, "sum(range(100))");
+    assert_eq!(sum_filtered(), 90, "sum evens in range(20): 0+2+..+18");
+}
+"#;
+    assert_rustc_runs("lazy_sum_genexp", &rust, driver);
+}

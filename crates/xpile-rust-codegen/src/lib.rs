@@ -2048,6 +2048,43 @@ fn emit_range_iter(
     Ok(())
 }
 
+/// PMAT-1099 (sum/join follow-up): try to emit `e` as a LAZY iterator chain
+/// whose base is a `range(...)`, WITHOUT any intermediate `.collect::<Vec>()`.
+/// Returns `Ok(true)` when it emitted a lazy chain (the ultimate source was a
+/// `RangeList`), `Ok(false)` when `e` is not range-sourced (the caller falls
+/// back to the eager `.iter()`-on-a-materialized-Vec form). Recurses through the
+/// `Map`/`Filter` a generator expression lowers to, so `sum(f(x) for x in
+/// range(10**11))` streams instead of collecting the whole range (→ ~800GB).
+/// A `Filter` closure takes `&Item` (deref for the Copy element); `Map` takes
+/// the item by value.
+fn emit_lazy_range_iter(out: &mut String, e: &Expr, mode: bool) -> Result<bool, CodegenError> {
+    match e {
+        Expr::RangeList { start, stop, step } => {
+            emit_range_iter(out, start, stop, *step, mode)?;
+            Ok(true)
+        }
+        Expr::Map { list, lambda } => {
+            if !emit_lazy_range_iter(out, list, mode)? {
+                return Ok(false);
+            }
+            write!(out, ".map(|__k| {{ let {} = __k; ", lambda.param)?;
+            emit_expr(out, &lambda.body, mode)?;
+            out.push_str(" })");
+            Ok(true)
+        }
+        Expr::Filter { list, lambda } => {
+            if !emit_lazy_range_iter(out, list, mode)? {
+                return Ok(false);
+            }
+            write!(out, ".filter(|__k| {{ let {} = *__k; ", lambda.param)?;
+            emit_expr(out, &lambda.body, mode)?;
+            out.push_str(" })");
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError> {
     match e {
         // PMAT-502bl: the unit value (void function trailing return).
@@ -3451,17 +3488,37 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 // with a generic message in debug), bypassing the contract.
                 // Emit a checked fold seeded with `start` (or 0) that fails
                 // loud, folding the start in so the seed is also contract-safe.
+                // PMAT-1099 (sum follow-up): if the source is a `range(...)`
+                // genexp, stream it lazily (`(a..b).map(..).fold(..)`) — the
+                // eager `(0..N).collect::<Vec>()...` OOMed on
+                // `sum(f(x) for x in range(10**11))`. The lazy fold yields the
+                // items by value, so it folds `__x` directly (no `&__x`).
+                let checkpoint = out.len();
                 out.push('(');
-                emit_expr(out, list, mode)?;
-                out.push_str(").iter().fold(");
-                if let Some(start) = start {
-                    out.push('(');
-                    emit_expr(out, start, mode)?;
-                    out.push(')');
+                if emit_lazy_range_iter(out, list, mode)? {
+                    out.push_str(").fold(");
+                    if let Some(start) = start {
+                        out.push('(');
+                        emit_expr(out, start, mode)?;
+                        out.push(')');
+                    } else {
+                        out.push_str("0i64");
+                    }
+                    out.push_str(", |__a, __x| __a.checked_add(__x).expect(\"xpile: i64 addition overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"))");
                 } else {
-                    out.push_str("0i64");
+                    out.truncate(checkpoint);
+                    out.push('(');
+                    emit_expr(out, list, mode)?;
+                    out.push_str(").iter().fold(");
+                    if let Some(start) = start {
+                        out.push('(');
+                        emit_expr(out, start, mode)?;
+                        out.push(')');
+                    } else {
+                        out.push_str("0i64");
+                    }
+                    out.push_str(", |__a, &__x| __a.checked_add(__x).expect(\"xpile: i64 addition overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"))");
                 }
-                out.push_str(", |__a, &__x| __a.checked_add(__x).expect(\"xpile: i64 addition overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented\"))");
             }
         }
         // PMAT-502j: `all(xs)`/`any(xs)` over a bool list.
