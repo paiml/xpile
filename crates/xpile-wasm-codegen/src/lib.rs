@@ -69,7 +69,13 @@
 //!   match's byte offset to a char index (Python find is char-indexed). Since
 //!   PMAT-1058/1059
 //!   string **slicing** `s[lo:hi]` and **ordering** (`<`/`<=`/`>`/`>=`) are
-//!   supported, and since PMAT-1060 **`str(int)` / `repr(int)`**
+//!   supported. As of **PMAT-1142** the sequence repeat **`s * n`**
+//!   (`Expr::Repeat`, of_str) MATERIALISES a new heap string via
+//!   `$__wasm_str_repeat` — a byte replication (`max(n, 0)` copies), char-exact
+//!   for UTF-8 (no code-point transform, so it IS Python `str * int` for any
+//!   string); a LIST repeat (`[…] * n`) is refused. And since PMAT-1136
+//!   `s.find(p)` returns a CODE-POINT index (i64, or -1). Since PMAT-1060
+//!   **`str(int)` / `repr(int)`**
 //!   (`Expr::ToStr { of_float: false }`) materialises an i64's decimal-ASCII
 //!   form via `$__wasm_int_to_str` (unsigned-magnitude, so `i64::MIN` is
 //!   exact). Since PMAT-1126/1127/1128 the string **methods**
@@ -584,6 +590,14 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
             for a in args {
                 collect_expr_literals(a, out);
             }
+        }
+        // PMAT-1142: a string repeat `s * n` — the repeated `seq` may be a
+        // LITERAL (`"ab" * 3`), so lay out its `(data)` segment (else
+        // `emit_str_expr` finds no address for the source string). The count `n`
+        // is an int expr (no str literal), recursed for completeness.
+        Expr::Repeat { seq, n, .. } => {
+            collect_expr_literals(seq, out);
+            collect_expr_literals(n, out);
         }
         _ => {}
     }
@@ -2023,6 +2037,105 @@ const STR_SLICE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1142: the string-REPEAT helper (allocating — rides the `needs_heap`
+/// gate, calls `$__alloc`).
+///
+///   * `$__wasm_str_repeat(s, k) -> i32` — Python `s * n`: materialise a NEW
+///     heap string holding the UTF-8 payload of `s` replicated `max(k, 0)`
+///     times. PURE byte replication — no case/code-point transform — so it is
+///     char-EXACT for any valid UTF-8 (a multi-byte code point is copied whole
+///     each pass), i.e. it IS Python `str * int` for every string, ASCII or not.
+///     A count `k <= 0` clamps to the empty string (Python `"x" * -1 == ""`).
+///
+/// One pass: (1) `reps = max(k, 0)`; (2) `slen = header(s)`;
+/// (3) `total = slen * reps`; (4) `dst = $__alloc(8 + total)`, store the i32
+/// byte-count header `total`; (5) loop `reps` times, each `memory.copy`ing the
+/// `slen` source bytes from `s + 8` to `dst + 8 + off`, advancing `off`. The
+/// byte-count header equals the Python CHAR count of the result iff it does for
+/// `s` — replication multiplies both, so the result composes uniformly with
+/// `len` / `Concat` / equality / a str RETURN like any other heap string.
+const STR_REPEAT_HELPER: &str = "\
+  ;; PMAT-1142 __wasm_str_repeat(s, k) = a NEW heap string = the UTF-8 bytes of s
+  ;; replicated max(k, 0) times (Python s * n). PURE byte replication — char-exact
+  ;; for valid UTF-8, so this IS Python str * int for any string; k <= 0 -> \"\".
+  (func $__wasm_str_repeat (param $s i32) (param $k i64) (result i32)
+    (local $reps i32)
+    (local $slen i32)
+    (local $total i32)
+    (local $dst i32)
+    (local $off i32)
+    (local $i i32)
+    ;; reps = max(k, 0) as i32 — a negative count clamps to the empty string.
+    local.get $k
+    i64.const 0
+    i64.lt_s
+    if
+      i32.const 0
+      local.set $reps
+    else
+      local.get $k
+      i32.wrap_i64
+      local.set $reps
+    end
+    ;; slen = the i32 byte-count header of s.
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; total = slen * reps.
+    local.get $slen
+    local.get $reps
+    i32.mul
+    local.set $total
+    ;; dst = alloc(8 + total); store the i32 byte-count header = total.
+    local.get $total
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $total
+    i32.store
+    ;; loop reps times: memory.copy slen bytes from s+8 to dst+8+off; off += slen.
+    i32.const 0
+    local.set $off
+    i32.const 0
+    local.set $i
+    (block $r_done
+      (loop $r_next
+        local.get $i
+        local.get $reps
+        i32.ge_s
+        br_if $r_done
+        ;; dest = dst + 8 + off
+        local.get $dst
+        i32.const 8
+        i32.add
+        local.get $off
+        i32.add
+        ;; src = s + 8
+        local.get $s
+        i32.const 8
+        i32.add
+        ;; n = slen
+        local.get $slen
+        memory.copy
+        ;; off += slen
+        local.get $off
+        local.get $slen
+        i32.add
+        local.set $off
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $r_next
+      )
+    )
+    local.get $dst
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -3169,6 +3282,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if needs_heap && module_needs_int_to_str(module) {
         out.push_str(INT_TO_STR_HELPER);
     }
+    // PMAT-1142: emit the string-REPEAT helper once, when any function uses
+    // `s * n` over a str (`Expr::Repeat { of_str: true }`). Allocating (calls
+    // `$__alloc` + `memory.copy`), so it rides `needs_heap` — a str repeat sets
+    // the heap gate via `expr_has_heap_op`. Gated further on an actual str-repeat
+    // use so a heap-string module with no repeat carries no dead helper.
+    if needs_heap && module_uses_str_repeat(module) {
+        out.push_str(STR_REPEAT_HELPER);
+    }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
     // (the str-key helpers call it).
@@ -3356,6 +3477,11 @@ fn expr_touches_str(e: &Expr) -> bool {
         Expr::StrContains { haystack, needle } => {
             expr_touches_str(haystack) || expr_touches_str(needle)
         }
+        // PMAT-1142: a STRING repeat `s * n` yields a heap string, so `len` /
+        // `s[i]` over it needs the CHAR-semantics helper family gated here.
+        Expr::Repeat { seq, n, of_str } => {
+            *of_str || expr_touches_str(seq) || expr_touches_str(n)
+        }
         _ => false,
     }
 }
@@ -3441,6 +3567,8 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         Expr::StrContains { haystack, needle } => {
             expr_has_str_slice(haystack) || expr_has_str_slice(needle)
         }
+        // PMAT-1142: a repeat operand (`s[1:4] * n`) needs the slice helper.
+        Expr::Repeat { seq, n, .. } => expr_has_str_slice(seq) || expr_has_str_slice(n),
         _ => false,
     }
 }
@@ -3733,6 +3861,9 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
         Expr::StrContains { haystack, needle } => {
             expr_uses_str_method(haystack, op) || expr_uses_str_method(needle, op)
         }
+        // PMAT-1142: a repeat operand can host a nested method call
+        // (`(s.count("x") ...) `) — recurse to keep the gate exhaustive.
+        Expr::Repeat { seq, n, .. } => expr_uses_str_method(seq, op) || expr_uses_str_method(n, op),
         _ => false,
     }
 }
@@ -3817,6 +3948,102 @@ fn expr_has_str_contains(e: &Expr) -> bool {
         }
         Expr::FieldAccess { obj, .. } => expr_has_str_contains(obj),
         Expr::ToStr { value, .. } => expr_has_str_contains(value),
+        // PMAT-1142: a repeat operand can host `x in s` (`(a in b ...) `) —
+        // recurse to keep the contains gate exhaustive.
+        Expr::Repeat { seq, n, .. } => expr_has_str_contains(seq) || expr_has_str_contains(n),
+        _ => false,
+    }
+}
+
+/// PMAT-1142: `true` when any function in `module` uses a STRING repeat `s * n`
+/// (`Expr::Repeat { of_str: true }`) — the gate for emitting
+/// [`STR_REPEAT_HELPER`]. A LIST repeat (`of_str: false`) is refused at lowering
+/// (not counted here), so the helper is emitted only for a module that actually
+/// materialises a repeated string. A MISS here would emit a `call
+/// $__wasm_str_repeat` against a helper never declared (a hard wat2wasm
+/// failure), so the walk recurses through every compound node that can host the
+/// expression; the executed WABT witness (`str_repeat_witness`) is the backstop.
+/// Mirrors [`module_uses_str_contains`]'s shape.
+fn module_uses_str_repeat(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_str_repeat(&f.body))
+}
+
+fn block_has_str_repeat(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_str_repeat) || expr_has_str_repeat(&block.trailing_return)
+}
+
+fn stmt_has_str_repeat(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
+            expr_has_str_repeat(value)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_str_repeat(cond)
+                || then_body.iter().any(stmt_has_str_repeat)
+                || else_body.iter().any(stmt_has_str_repeat)
+        }
+        Stmt::While { cond, body } => {
+            expr_has_str_repeat(cond) || body.iter().any(stmt_has_str_repeat)
+        }
+        Stmt::IndexAssign { value, .. } | Stmt::FieldAssign { value, .. } => {
+            expr_has_str_repeat(value)
+        }
+        Stmt::SideEffectCall { call } => expr_has_str_repeat(call),
+        _ => false,
+    }
+}
+
+fn expr_has_str_repeat(e: &Expr) -> bool {
+    match e {
+        // this node IS a str repeat we gate — no need to recurse further.
+        Expr::Repeat { of_str: true, .. } => true,
+        // a LIST repeat is refused at lowering; still recurse into its operands
+        // (a str repeat could be nested inside, degenerate but exhaustive).
+        Expr::Repeat { seq, n, .. } => expr_has_str_repeat(seq) || expr_has_str_repeat(n),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => expr_has_str_repeat(lhs) || expr_has_str_repeat(rhs),
+        Expr::UnOp { operand, .. } => expr_has_str_repeat(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_str_repeat(cond)
+                || expr_has_str_repeat(then_expr)
+                || expr_has_str_repeat(else_expr)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_str_repeat),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_str_repeat(obj) || args.iter().any(expr_has_str_repeat)
+        }
+        Expr::Index { collection, index } => {
+            expr_has_str_repeat(collection) || expr_has_str_repeat(index)
+        }
+        Expr::Len(c) => expr_has_str_repeat(c),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_repeat(value),
+        Expr::StrCharAt { string, index } => {
+            expr_has_str_repeat(string) || expr_has_str_repeat(index)
+        }
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_has_str_repeat(collection)
+                || lo.as_deref().is_some_and(expr_has_str_repeat)
+                || hi.as_deref().is_some_and(expr_has_str_repeat)
+        }
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_str_repeat(recv) || args.iter().any(expr_has_str_repeat)
+        }
+        Expr::StrContains { haystack, needle } => {
+            expr_has_str_repeat(haystack) || expr_has_str_repeat(needle)
+        }
+        Expr::FieldAccess { obj, .. } => expr_has_str_repeat(obj),
+        Expr::ToStr { value, .. } => expr_has_str_repeat(value),
         _ => false,
     }
 }
@@ -3929,6 +4156,8 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         Expr::MethodCall { obj, args, .. } => {
             expr_has_str_eq(obj, scan) || args.iter().any(|a| expr_has_str_eq(a, scan))
         }
+        // PMAT-1142: a repeat's operands may host a string equality (exhaustive).
+        Expr::Repeat { seq, n, .. } => expr_has_str_eq(seq, scan) || expr_has_str_eq(n, scan),
         _ => false,
     }
 }
@@ -3944,6 +4173,9 @@ fn expr_is_str_valued(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         Expr::ToStr {
             of_float: false, ..
         } => true,
+        // PMAT-1142: `s * n` (a STRING repeat) materialises a heap string, so
+        // `s * n == t` compares as strings via the content-compare helper.
+        Expr::Repeat { of_str: true, .. } => true,
         Expr::Ident(name) => scan.names.contains(&name.as_str()),
         Expr::Call { callee, .. } => scan.rets.keys.iter().any(|k| k == callee),
         Expr::MethodCall { method, .. } => scan.rets.methods.iter().any(|(_, m)| m == method),
@@ -4049,6 +4281,12 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         Expr::StrMethod { recv, args, .. } => {
             expr_has_heap_op(recv) || args.iter().any(expr_has_heap_op)
         }
+        // PMAT-1142: a STRING repeat `s * n` bump-allocates its replicated
+        // result (calls `$__alloc`), so it pulls in the allocator + `(memory)`
+        // like any materialising op. A list repeat (`of_str: false`) is refused
+        // at lowering; recurse into its operands regardless (a heap-constructed
+        // `seq`/`n` still pulls in the allocator).
+        Expr::Repeat { seq, n, of_str } => *of_str || expr_has_heap_op(seq) || expr_has_heap_op(n),
         _ => false,
     }
 }
@@ -5230,6 +5468,13 @@ fn emit_expr(
             emit_concat(lhs, rhs, scope, out, depth)?;
             Ok(WatTy::I32)
         }
+        // PMAT-1142: `s * n` MATERIALISES a new heap string = the source bytes
+        // replicated max(n, 0) times, leaving its i32 base-pointer. A LIST
+        // repeat (`of_str: false`) is refused inside `emit_repeat`.
+        Expr::Repeat { seq, n, of_str } => {
+            emit_repeat(seq, n, *of_str, scope, out, depth)?;
+            Ok(WatTy::I32)
+        }
         // PMAT-1058: `s[lo:hi]` — a char-exact string slice, materialised as a
         // NEW heap substring. The result is an i32 (the str pointer). A list
         // slice / stepped string slice is refused inside `emit_str_slice`.
@@ -5823,6 +6068,10 @@ fn emit_str_expr(
             emit_concat(lhs, rhs, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1142: `s * n` in a string position — a fresh heap string (like
+        // `Concat`/`Slice`, a materialising op). A list repeat refuses in
+        // `emit_repeat`.
+        Expr::Repeat { seq, n, of_str } => emit_repeat(seq, n, *of_str, scope, out, depth),
         Expr::Chr { value } => {
             emit_chr(value, scope, out, depth)?;
             Ok(())
@@ -6015,6 +6264,41 @@ fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
     } else {
         out.push(e);
     }
+}
+
+/// PMAT-1142: lower a string repeat `s * n` / `n * s` (`Expr::Repeat { of_str:
+/// true }`) — an ALLOCATING op that materialises a NEW heap string = the source
+/// bytes replicated `max(n, 0)` times. The source string pointer is pushed
+/// (`emit_str_expr`, which refuses a non-str `seq`), then the i64 count, then
+/// `$__wasm_str_repeat` does the clamp + alloc + byte-replication loop, leaving
+/// the new string's i32 base-pointer on the stack.
+///
+/// Pure byte replication is char-EXACT for valid UTF-8 (a multi-byte code point
+/// is copied whole each pass), so it IS Python `str * int` for ANY string — no
+/// case/code-point transform, unlike `.upper()`/`.lower()`. A LIST repeat
+/// (`of_str: false`) is REFUSED: the WASM list subset carries fixed-size list
+/// literals/params with no growth/replication op.
+fn emit_repeat(
+    seq: &Expr,
+    n: &Expr,
+    of_str: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if !of_str {
+        return Err(unsupported(
+            "list repeat `[…] * n` (Expr::Repeat, of_str: false) — the WASM list \
+             subset carries fixed-size list literals/params with no growth / \
+             replication op; only STRING repeat `s * n` is supported",
+        ));
+    }
+    // src string base-pointer, then the i64 repeat count, then the helper.
+    emit_str_expr(seq, scope, out, depth)?;
+    emit_expr_typed(n, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_repeat").expect("write");
+    Ok(())
 }
 
 // ─── PMAT-995 (slice 3b): dict / set over the bump heap ──────────────────────
@@ -6904,6 +7188,9 @@ fn binop_operand_is_string(e: &Expr, scope: &Scope) -> bool {
         Expr::ToStr {
             of_float: false, ..
         } => true,
+        // PMAT-1142: `s * n` (a STRING repeat) is an i32 heap-string pointer, so
+        // a `==`/`!=`/ordering over it routes to the content-compare helper.
+        Expr::Repeat { of_str: true, .. } => true,
         Expr::Call { callee, .. } => scope.call_returns_str(callee),
         Expr::MethodCall { obj, method, .. } => matches!(obj.as_ref(), Expr::Ident(o)
             if scope.struct_of(o).is_some_and(|s| scope.method_returns_str(&s, method))),
@@ -7200,6 +7487,7 @@ fn emit_float_binop(
 fn expr_kind(e: &Expr) -> &'static str {
     match e {
         Expr::Concat { .. } => "Concat (string)",
+        Expr::Repeat { .. } => "Repeat (seq * n)",
         Expr::LitStr(_) => "LitStr",
         Expr::ListLit(_) => "ListLit",
         Expr::DictLit(_) => "DictLit",

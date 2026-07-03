@@ -624,23 +624,62 @@ equations:
       - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to an i64 value-matching CPython, INCLUDING the CODE-POINT-index fixtures where a byte find would diverge ('héllo'.find('llo')==2 at byte offset 3, 'café'.find('é')==3, 'naïve café'.find('café')==6), the -1 absent/too-long/shared-0xA9 cases, and the empty-needle 0"
       - "the find WASM-emitting code carries the WASM citation"
 
+  string_repeat_is_byte_replication:
+    # PMAT-1142: a STRING repeat `s * n` / `n * s` (Expr::Repeat, of_str: true)
+    # lowers to $__wasm_str_repeat — an ALLOCATING op that materialises a NEW heap
+    # string = the source UTF-8 payload replicated max(n, 0) times. Unlike
+    # .upper()/.lower() (which need a Unicode case table to match CPython on
+    # non-ASCII), repetition is a PURE byte operation with NO code-point
+    # transform, so byte replication IS code-point replication for valid UTF-8 —
+    # $__wasm_str_repeat is byte-for-byte identical to CPython str * int for ANY
+    # string. A LIST repeat (of_str: false) is REFUSED (no WASM list-growth op).
+    formula: |
+      construct(Repeat{seq, n, of_str: true} over a str seq,
+                BackendConfig{target: Wasm})
+        emits `<seq> <n> call $__wasm_str_repeat`, where the helper reads the i32
+        byte-count header slen of seq, clamps reps = max(n, 0), $__alloc's
+        8 + slen*reps, stores the i32 byte-count header total = slen*reps, then
+        memory.copy's the slen source bytes reps times into the result payload —
+        leaving the new string's i32 base-pointer. n <= 0 yields the empty string.
+    domain: |
+      A Python string repeat `s * n` / `n * s` (Expr::Repeat, of_str: true) where
+      the sequence types as str and the count as int/bool. The source may be a
+      str-name Ident, a LitStr, a Concat / Chr / bare StrCharAt / slice /
+      str-returning call (a heap-constructed source pulls in the allocator + its
+      literals' (data) segments via the shared heap/literal gates). A LIST repeat
+      (Expr::Repeat, of_str: false) is REFUSED by emit_repeat.
+    invariants:
+      - "byte replication IS code-point replication for valid UTF-8: a multi-byte code point is copied whole each pass ('é' * 3 == 'ééé', 6 bytes [0xC3,0xA9]×3; '🎉' * 2 is 8 bytes) — no per-code-point transform, so it matches CPython str * int exactly for any string, ASCII or not"
+      - "a count n <= 0 clamps to the EMPTY string ('ab' * -2 == '', 'ab' * 0 == ''), never a trap or a negative length — the helper does reps = max(n, 0)"
+      - "an empty source yields the empty string ('' * 5 == '')"
+      - "the result is a fresh $__alloc'd length-prefixed heap string (i32 byte-count header @ base+0, UTF-8 bytes @ base+8), composing uniformly with len / Concat / equality / a str RETURN"
+      - "$__wasm_str_repeat is ALLOCATING (calls $__alloc + memory.copy), so it rides the bump-heap gate; it is gated on module_uses_str_repeat (no dead helper) — a str repeat sets needs_heap via the expr_has_heap_op Repeat arm"
+      - "a LIST repeat (of_str: false) is REFUSED honestly (the WASM list subset has no growth/replication op), never a miscompile"
+    preconditions:
+      - "BackendConfig.target == Target::Wasm"
+      - "the repeated sequence types as str"
+    postconditions:
+      - "the emitted WAT assembles (wat2wasm) + executes (wasm-interp) to a heap string byte-matching CPython, INCLUDING the NEGATIVE-count clamp ('ab' * -2 == ''), the empty source/count cases, and the MULTI-BYTE repeats ('é' * 3 == 'ééé' = 6 bytes, '🎉' * 2 = 8 bytes)"
+      - "the repeat WASM-emitting code carries the WASM citation"
+
   unwired_string_op_is_refused:
     formula: |
-      construct(slice_stepped | list_slice | str(float) | fstring |
+      construct(slice_stepped | list_slice | list_repeat | str(float) | fstring |
                 str_method∉{CharCount,StartsWith,EndsWith,Count,Find},
                 BackendConfig{target: Wasm})
         == Err(BackendError::Lower("…"))
     domain: |
-      A string op still outside the WASM string subset: a STEPPED string slice
-      or a list slice, str(float)/repr(float), an f-string, a string method
-      OTHER than len (CharCount) / startswith / endswith / count / find.
-      (String ORDERING is supported — see `string_ordering_is_lexicographic`;
-      str(int)/repr(int) is supported — see `int_to_str_is_decimal_ascii`;
-      startswith/endswith are supported — see
-      `string_startswith_endswith_is_byte_prefix`; the substring test `p in s`
-      via `string_contains_is_byte_substring_search`; count via
+      A string / sequence op still outside the WASM subset: a STEPPED string
+      slice or a list slice, a LIST repeat (`[…] * n`, Expr::Repeat of_str:false),
+      str(float)/repr(float), an f-string, a string method OTHER than len
+      (CharCount) / startswith / endswith / count / find. (String ORDERING is
+      supported — see `string_ordering_is_lexicographic`; str(int)/repr(int) is
+      supported — see `int_to_str_is_decimal_ascii`; startswith/endswith are
+      supported — see `string_startswith_endswith_is_byte_prefix`; the substring
+      test `p in s` via `string_contains_is_byte_substring_search`; count via
       `string_count_is_byte_occurrence_search`; find via
-      `string_find_is_byte_search_codepoint_index`.)
+      `string_find_is_byte_search_codepoint_index`; STRING repeat `s * n` via
+      `string_repeat_is_byte_replication` — only the LIST repeat stays refused.)
     invariants:
       - "an unwired string op yields a hard BackendError, never wrong WAT"
       - "the refusal names the op + the follow-up (honest diagnostic)"
@@ -694,6 +733,11 @@ proof_obligations:
     property: string find is a byte search returning a CODE-POINT index (or -1); results match CPython where a byte index would diverge
     formal: "wasm-interp(construct(s.find(p))) == CPython AND wasm-interp(construct('héllo'.find('llo'))) == 2 AND wasm-interp(construct('hello'.find('z'))) == -1"
     applies_to: string_find_is_byte_search_codepoint_index
+
+  - type: postcondition
+    property: string repeat is a byte replication (char-exact for UTF-8); results match CPython incl. the negative-count clamp and multi-byte repeats
+    formal: "wasm-interp(construct(s * n)) == CPython(s * n) AND wasm-interp(construct('é' * 3)) == 'ééé' AND wasm-interp(construct('ab' * -2)) == ''"
+    applies_to: string_repeat_is_byte_replication
 
   - type: postcondition
     property: unwired string ops are refused, never miscompiled
@@ -1040,3 +1084,36 @@ falsification_tests:
       - empty_needle_not_zero
       - base_pointer_compare_passed_off_as_find
       - other_str_method_miscompiled_instead_of_refused
+
+  - id: FALSIFY-WASM-HEAP-012
+    rule: |
+      PMAT-1142: a STRING repeat `s * n` (Expr::Repeat, of_str: true) MUST lower to
+      $__wasm_str_repeat — an ALLOCATING op that materialises a NEW heap string =
+      the source UTF-8 payload replicated max(n, 0) times. Byte replication IS
+      code-point replication for valid UTF-8 (a multi-byte code point is copied
+      whole each pass), so the result MUST byte-match CPython str * int for any
+      string. A count n <= 0 MUST clamp to the empty string (never a trap or a
+      negative length). A LIST repeat (of_str: false) MUST refuse.
+    prediction: |
+      The executed WABT witness runs every case and each byte-matches the pinned
+      CPython string — the ASCII basic/identity/zero cases ('ab'*3=='ababab'),
+      the NEGATIVE-count clamp ('ab'*-2=='', 'ab'*-1==''), the empty source/count
+      ('' * 5 == '', 'ab' * 0 == ''), and the MULTI-BYTE repeats where a
+      per-code-point transform would be wrong ('é'*3=='ééé' = 6 bytes [0xC3,0xA9]×3,
+      'aé'*2=='aéaé', '🎉'*2 = 8 bytes, 'héllo'*2=='héllohéllo'). A pure param
+      repeat carries $__alloc but no slice/count/find helper; a literal source lays
+      out its (data) segment and a heap-constructed source pulls in the concat path.
+    test: |
+      cargo test -p xpile-wasm-codegen --test str_repeat_witness
+    if_fails: |
+      The replication (the byte copy, the max(0) count clamp, the header length),
+      the helper gate, or the list-repeat refusal regressed — a per-code-point
+      transform corrupted a multi-byte repeat, a negative count trapped or produced
+      garbage, a wrong result length, or a list repeat miscompiled instead of
+      refusing. The result diverges from CPython.
+    ship_blocking: true
+    counter_example_classes:
+      - multibyte_char_corrupted_by_per_codepoint_transform
+      - negative_count_trapped_or_produced_garbage_instead_of_empty
+      - wrong_result_length_header
+      - list_repeat_miscompiled_instead_of_refused
