@@ -828,8 +828,8 @@ fn histogram_dict_ops_roundtrip() {
         "d.get(k, default) should emit get/cloned/unwrap_or:\n{rust}"
     );
     assert!(
-        rust.contains("(table).get(&(key)).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"),
-        "d[k] read should emit indexed clone:\n{rust}"
+        rust.contains("{ let __k = &(key); (table).get(__k).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: {}\","),
+        "d[k] read should emit indexed clone with a repr-keyed KeyError (PMAT-1089):\n{rust}"
     );
     assert!(
         rust.contains("table.contains_key(&(key))"),
@@ -942,9 +942,7 @@ fn dict_ops_edge_positions_roundtrip() {
     // for the mis-dispatch pattern directly rather than the absence of
     // `as usize`.)
     assert!(
-        rust.contains(
-            "(d).get(&(k)).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"
-        ),
+        rust.contains("{ let __k = &(k); (d).get(__k).cloned().unwrap_or_else(|| panic!(\"xpile: KeyError: {}\","),
         "dict reads should lower to keyed access:\n{rust}"
     );
     assert!(
@@ -1738,10 +1736,48 @@ fn main() {
     assert_eq!(safe_div(10, 2), "5");
     assert_eq!(safe_div(10, 0), "err: integer division or modulo by zero");
     assert_eq!(parse_or_zero("42".to_string()), 42);
-    assert_eq!(parse_or_zero("abc".to_string()), 0);  // `e` used in f-string handler
+    // `e` in the f-string handler carries the exact CPython message —
+    // len("invalid literal for int() with base 10: 'abc'") == 45 (PMAT-1089;
+    // was `* 0`-masked, hiding a leaked ParseIntError debug repr).
+    assert_eq!(parse_or_zero("abc".to_string()), 45);
 }
 "#;
     assert_rustc_runs("try_assign_bound_exc", &rust, driver);
+}
+
+/// PMAT-1089 (F3 of the PMAT-1081 skeptic pass): `as e` binds the exception
+/// MESSAGE, so every raising lane's panic payload must carry the CPython-shaped
+/// text. KeyError binds `repr(k)` (quote-switched for a key containing `'`),
+/// int()/int(s, base)/float() bind the exact `invalid literal for int() with
+/// base N: '<orig>'` / `could not convert string to float: '<orig>'` messages
+/// quoting the ORIGINAL (untrimmed) argument. Before: a fixed "key not found"
+/// text and a leaked `ParseIntError {{ kind: InvalidDigit }}` debug repr.
+/// Every expected string below is CPython ground truth (verified via python3).
+#[test]
+fn exc_message_shapes() {
+    let rust = xpile_transpile_to_rust("exc_message_shapes.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(key_msg("a".to_string()), "hit: 1");
+    assert_eq!(key_msg("mk".to_string()), "'mk'");
+    // repr quote-switch: a key containing `'` is double-quoted.
+    assert_eq!(key_msg("it's".to_string()), "\"it's\"");
+    assert_eq!(key_msg_int(1), "hit: 10");
+    assert_eq!(key_msg_int(5), "5");
+    assert_eq!(pop_msg("gone".to_string()), "'gone'");
+    assert_eq!(int_msg("42".to_string()), "ok: 42");
+    assert_eq!(int_msg("abc".to_string()), "invalid literal for int() with base 10: 'abc'");
+    // the ORIGINAL (untrimmed) argument is quoted, like CPython.
+    assert_eq!(int_msg(" 1x ".to_string()), "invalid literal for int() with base 10: ' 1x '");
+    // the PEP-515 underscore-placement refusal shows the original too.
+    assert_eq!(int_msg("1__0".to_string()), "invalid literal for int() with base 10: '1__0'");
+    assert_eq!(int16_msg("ff".to_string()), "ok: 255");
+    assert_eq!(int16_msg("zz".to_string()), "invalid literal for int() with base 16: 'zz'");
+    assert_eq!(float_msg("1.5".to_string()), "ok: 1.5");
+    assert_eq!(float_msg("abc".to_string()), "could not convert string to float: 'abc'");
+}
+"#;
+    assert_rustc_runs("exc_message_shapes", &rust, driver);
 }
 
 /// PMAT-887 (HUNT-V33, invalid-rust→fixed): an `Optional[T]` for-loop variable is
@@ -3693,10 +3729,11 @@ fn del_item() {
         rust.contains("let __di = (0i64) as i64;"),
         "list del (literal) normalized:\n{rust}"
     );
-    // PMAT-709: dict del now asserts the key was present (KeyError parity).
+    // PMAT-709: dict del now panics if the key was absent (KeyError parity);
+    // PMAT-1089: with the CPython-shaped repr(k) payload.
     assert!(
-        rust.contains("assert!(d.shift_remove(&(k)).is_some(), \"xpile: KeyError"),
-        "dict del KeyError assert:\n{rust}"
+        rust.contains("if d.shift_remove(__k).is_none() { panic!(\"xpile: KeyError: {}\","),
+        "dict del KeyError panic:\n{rust}"
     );
     assert!(
         rust.contains("drop_at(mut xs: Vec<i64>"),
@@ -3775,9 +3812,7 @@ fn main() {
 fn dict_pop() {
     let rust = xpile_transpile_to_rust("dict_pop.py");
     assert!(
-        rust.contains(
-            "(d).shift_remove(&(k)).unwrap_or_else(|| panic!(\"xpile: KeyError: key not found\"))"
-        ),
+        rust.contains("{ let __k = &(k); (d).shift_remove(__k).unwrap_or_else(|| panic!(\"xpile: KeyError: {}\","),
         "pop (no default):\n{rust}"
     );
     assert!(
@@ -3841,8 +3876,8 @@ fn main() {
 fn set_remove() {
     let rust = xpile_transpile_to_rust("set_remove.py");
     assert!(
-        rust.contains("assert!(s.remove(&(x)), \"xpile: KeyError: set.remove(x): x not in set\");"),
-        "remove (KeyError):\n{rust}"
+        rust.contains("{ let __k = &(x); if !s.remove(__k) { panic!(\"xpile: KeyError: {}\","),
+        "remove (KeyError, repr-keyed payload PMAT-1089):\n{rust}"
     );
     assert!(rust.contains("s.remove(&(x));"), "discard (no-op):\n{rust}");
     assert!(
@@ -4289,13 +4324,15 @@ fn main() {
 fn str_parse() {
     let rust = xpile_transpile_to_rust("str_parse.py");
     // PMAT-610: int(s) now validates + strips PEP 515 underscores before parse.
+    // PMAT-1089: the parse failure formats the CPython invalid-literal message
+    // via unwrap_or_else (a bare .expect leaked ParseIntError's Debug repr).
     assert!(
-        rust.contains(".replace('_', \"\").parse::<i64>().expect("),
+        rust.contains(".replace('_', \"\").parse::<i64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: invalid literal for int() with base 10: {}\","),
         "int(s):\n{rust}"
     );
     // PMAT-611: float(s) now validates + strips PEP 515 underscores before parse.
     assert!(
-        rust.contains(".replace('_', \"\").parse::<f64>().expect("),
+        rust.contains(".replace('_', \"\").parse::<f64>().unwrap_or_else(|_| panic!(\"xpile: ValueError: could not convert string to float: {}\","),
         "float(s):\n{rust}"
     );
     // PMAT-586: `int(float_x)` now guards a non-finite source (`__ic as i64`).
@@ -13618,7 +13655,7 @@ fn container_panic_typed() {
     let rust = xpile_transpile_to_rust("container_panic_typed.py");
     assert!(
         // dict-index miss is now a tagged KeyError (no bare `d[&(...)]` Index)…
-        rust.contains("panic!(\"xpile: KeyError: key not found\")")
+        rust.contains("panic!(\"xpile: KeyError: {}\",")
             // …and an empty list.pop() is a tagged IndexError.
             && rust.contains("xpile: IndexError: pop from empty list"),
         "container access must panic with an xpile: tag for typed-except discrimination:\n{rust}"
@@ -13738,10 +13775,11 @@ fn main() {
 fn bool_dict_key() {
     let rust = xpile_transpile_to_rust("bool_dict_key.py");
     assert!(
-        // bool key into an int dict is coerced…
-        rust.contains("get(&(((true) as i64)))")
+        // bool key into an int dict is coerced… (PMAT-1089 binds the key
+        // as `__k` before the repr-keyed miss panic)
+        rust.contains("let __k = &(((true) as i64));")
             // …while a bool-keyed dict keeps the bare bool key.
-            && rust.contains("get(&(b))"),
+            && rust.contains("let __k = &(b);"),
         "bool key into an int dict must coerce to i64; a bool-keyed dict must not:\n{rust}"
     );
     let driver = r#"
@@ -14901,7 +14939,9 @@ fn main() {
 fn dict_subscript_pop() {
     let rust = xpile_transpile_to_rust("dict_subscript_pop.py");
     assert!(
-        rust.contains(".get_mut(&(String::from(\"a\")))")
+        // PMAT-1089: the key binds first (`__k`) for the repr-keyed miss panic.
+        rust.contains("{ let __k = &(String::from(\"a\")); (")
+            && rust.contains(".get_mut(__k)")
             && rust.contains(").pop().expect(\"xpile: IndexError:"),
         "d[k].pop() must mutate the stored list via get_mut, not a clone:\n{rust}"
     );

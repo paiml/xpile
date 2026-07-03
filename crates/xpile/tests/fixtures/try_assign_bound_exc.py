@@ -12,6 +12,9 @@ def parse_or_zero(s: str) -> int:
     try:
         n = int(s)
     except ValueError as e:
-        # `e` used inside an f-string in the handler.
-        n = len(f"{e}") * 0
+        # `e` used inside an f-string in the handler. The length pins the
+        # CPython message shape ("invalid literal for int() with base 10:
+        # 'abc'" is 45 chars) — PMAT-1089 unmasked this (a `* 0` used to
+        # discard it, hiding the leaked Rust ParseIntError debug repr).
+        n = len(f"{e}")
     return n
