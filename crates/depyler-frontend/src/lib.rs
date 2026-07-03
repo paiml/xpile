@@ -19583,34 +19583,9 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                         // produces I64"). Consolidates str(None)/str(Optional var)/
                         // str(d.get(...)).
                         Type::Optional(inner) => {
-                            let unwrapped = Expr::OptionUnwrap(Box::new(value.clone()));
-                            let inner_str = match *inner {
-                                Type::I64 => Some(Expr::ToStr {
-                                    value: Box::new(unwrapped),
-                                    of_float: false,
-                                }),
-                                Type::F64 => Some(Expr::ToStr {
-                                    value: Box::new(unwrapped),
-                                    of_float: true,
-                                }),
-                                Type::Bool => Some(bool_to_python_str(unwrapped)),
-                                Type::Str => Some(unwrapped),
-                                Type::Struct(_) => Some(Expr::FormatSpec {
-                                    value: Box::new(unwrapped),
-                                    rust_spec: String::new(),
-                                    of_float: false,
-                                }),
-                                _ => None,
-                            };
-                            if let Some(inner_str) = inner_str {
-                                return Ok(Expr::IfExpr {
-                                    cond: Box::new(Expr::IsNone {
-                                        value: Box::new(value),
-                                        negated: false,
-                                    }),
-                                    then_expr: Box::new(Expr::LitStr(String::from("None"))),
-                                    else_expr: Box::new(inner_str),
-                                });
+                            // PMAT-1168: shared with plain f-string interpolation.
+                            if let Some(rendered) = optional_to_python_str(value, &inner) {
+                                return Ok(rendered);
                             }
                         }
                         _ => {}
@@ -22105,6 +22080,45 @@ fn pystr_of(value: Expr, ty: &Type) -> Result<Expr, FrontendError> {
     }
 }
 
+/// PMAT-1168: desugar `str()` over an `Optional<inner>` value (a no-default
+/// `d.get(k)`, an Optional variable, …) into `if opt.is_none() { "None" } else {
+/// <str of opt.unwrap()> }`, reusing the per-inner-type str conversion. Returns
+/// `None` when the inner type has no str rendering here (the caller then rejects
+/// cleanly). Shared by the `str()` builtin (PMAT-857) and plain f-string
+/// interpolation (`f"{x}"` == `str(x)`, PMAT-1168) so the two stay identical —
+/// before PMAT-1168 the f-string path emitted `format!("{}", Option)` (E0277:
+/// transpile-success → invalid Rust) for an Optional variable and blanket-
+/// rejected `d.get(k)` (PMAT-620), diverging from the `str()` builtin.
+fn optional_to_python_str(value: Expr, inner: &Type) -> Option<Expr> {
+    let unwrapped = Expr::OptionUnwrap(Box::new(value.clone()));
+    let inner_str = match inner {
+        Type::I64 => Expr::ToStr {
+            value: Box::new(unwrapped),
+            of_float: false,
+        },
+        Type::F64 => Expr::ToStr {
+            value: Box::new(unwrapped),
+            of_float: true,
+        },
+        Type::Bool => bool_to_python_str(unwrapped),
+        Type::Str => unwrapped,
+        Type::Struct(_) => Expr::FormatSpec {
+            value: Box::new(unwrapped),
+            rust_spec: String::new(),
+            of_float: false,
+        },
+        _ => return None,
+    };
+    Some(Expr::IfExpr {
+        cond: Box::new(Expr::IsNone {
+            value: Box::new(value),
+            negated: false,
+        }),
+        then_expr: Box::new(Expr::LitStr(String::from("None"))),
+        else_expr: Box::new(inner_str),
+    })
+}
+
 /// PMAT-624: build Python's tuple `repr` — `"(" + repr(e0) + ", " + repr(e1) +
 /// … + ")"`, with the single-element trailing comma (`(42,)`) and `()` for the
 /// empty tuple. Heterogeneous element types (so per-position, not `Map`). The
@@ -22252,17 +22266,24 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
     }
     let is_repr = fv.conversion == ast::ConversionFlag::Repr;
     let value = lower_expr_in_ctx(ctx, (*fv.value).clone())?;
-    // PMAT-620: a no-default `d.get(k)` in an f-string field is `Option<T>`,
-    // which has no `Display` — `f"{d.get(k)}"` emitted `format!("{}", Option)`
-    // (E0308: transpile-success → invalid Rust). `str(d.get(k))` and
-    // `print(d.get(k))` already reject a bare Optional, so reject the f-string
-    // case too (fail-loud, consistent) instead of emitting uncompilable Rust.
-    // Rendering a bare Optional to "None"/value is a deferred Optional sub-track.
-    if matches!(value, Expr::DictGetOpt { .. }) {
+    // PMAT-1168: an Optional field WITH a format spec (or an `!r` conversion) is
+    // refused — Python's `format(None, "<spec>")` / `repr(None)`-then-spec paths
+    // have no single correct static rendering (present → the value, absent →
+    // "None" or a TypeError), so emitting one would silently diverge. A plain
+    // `f"{x}"` / `f"{x!s}"` field (no spec, not `!r`) renders exactly like
+    // `str(x)` — handled in the no-spec match below via `optional_to_python_str`.
+    // This replaces PMAT-620's blanket `d.get(k)` reject: `str(d.get(k))` renders
+    // "None"/value (PMAT-857), so `f"{d.get(k)}"` == `str(d.get(k))` must too,
+    // and an Optional *variable* previously emitted uncompilable `format!("{}",
+    // Option)`. The short-circuit keeps `infer_type_in_ctx` off the common
+    // no-spec path.
+    if (fv.format_spec.is_some() || is_repr)
+        && matches!(infer_type_in_ctx(ctx, &value), Type::Optional(_))
+    {
         return Err(FrontendError::Lower(format!(
-            "function `{}` interpolates a bare `d.get(k)` (an Optional) in an f-string; \
- rendering an Optional is not supported — use `d.get(k, <default>)`, or guard \
- with `k in d` and index `d[k]`",
+            "function `{}` interpolates an Optional in an f-string with a format spec or `!r` \
+ conversion — Python's `format(None, spec)` is a TypeError, so there is no correct \
+ rendering; a plain `f\"{{x}}\"` renders \"None\"/value, or guard with `if x is not None`",
             ctx.fn_name
         )));
     }
@@ -22332,6 +22353,24 @@ fn lower_fstring_part_in_ctx(ctx: &LoweringCtx, part: ast::Expr) -> Result<Expr,
                     ctx.fn_name
                 )));
             }
+            // PMAT-1168: a plain `f"{x}"` / `f"{x!s}"` over an Optional renders
+            // exactly like `str(x)` — "None" for the absent case, else `str(inner)`
+            // — via the shared `optional_to_python_str` desugar (PMAT-857 parity).
+            // Before this an Optional variable fell through `_ => Ok(value)` and
+            // emitted `format!("{}", Option)` (E0277: transpile-success → invalid
+            // Rust), and a bare `d.get(k)` was blanket-rejected (PMAT-620); both
+            // now render consistently with the `str()` builtin.
+            Type::Optional(inner) => match optional_to_python_str(value, &inner) {
+                Some(rendered) => return Ok(rendered),
+                None => {
+                    return Err(FrontendError::Lower(format!(
+                        "function `{}` interpolates an Optional with a non-renderable inner type \
+ in an f-string at v0.2.0 — int/float/bool/str/dataclass inner types render (as `str(x)` \
+ would)",
+                        ctx.fn_name
+                    )))
+                }
+            },
             _ => return Ok(value),
         }
     };

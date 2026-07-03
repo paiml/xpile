@@ -6473,26 +6473,43 @@ fn main() {
     assert_rustc_runs("dict_get_compare", &rust, driver);
 }
 
-/// PMAT-620: a no-default `d.get(k)` in an f-string field is `Option<T>`, which
-/// has no `Display` — `f"{d.get(k)}"` emitted `format!("{}", Option)` (E0308:
-/// transpile-success → invalid Rust). `str(d.get(k))` / `print(d.get(k))` already
-/// reject a bare Optional, so the f-string case now rejects too (fail-loud,
-/// consistent). The supported forms (`d.get(k, default)`, `d[k]`) still work.
-/// Found by differential hunt #7 (H7-9). Cross-checked vs python3.
+/// PMAT-1168: a no-default `d.get(k)` (and an Optional variable) in a plain
+/// f-string field renders exactly like `str(x)` — Python `f"{x}"` == `str(x)`,
+/// which is `"None"` for the absent key and the value otherwise. This replaces
+/// PMAT-620's blanket reject: once `str(d.get(k))` rendered "None"/value
+/// (PMAT-857) the f-string reject was a stale divergence, and an Optional
+/// *variable* emitted uncompilable `format!("{}", Option)` (E0277). Now both
+/// lower to `if opt.is_none() { "None" } else { str(inner) }`. Cross-checked vs
+/// python3: `f({"a":7},"a")=="val=7"`, `f(_,"z")=="val=None"`, `opt_var()=="x=None"`.
 #[test]
-fn fstring_dict_get_optional_rejected() {
-    let py = fixture("fstring_dict_get_rejected.py");
+fn fstring_dict_get_optional_renders() {
+    let rust = xpile_transpile_to_rust("fstring_dict_get_optional.py");
+    let driver = r#"
+fn main() {
+    let mut d = indexmap::IndexMap::new();
+    d.insert(String::from("a"), 7i64);
+    assert_eq!(f(d.clone(), String::from("a")), String::from("val=7"));
+    assert_eq!(f(d.clone(), String::from("z")), String::from("val=None"));
+    assert_eq!(opt_var(), String::from("x=None"));
+}
+"#;
+    assert_rustc_runs("fstring_dict_get_optional", &rust, driver);
+
+    // An Optional WITH a format spec is still refused — Python's
+    // `format(None, ">5")` is a TypeError, so there is no correct rendering.
+    let py = fixture("fstring_optional_spec_rejected.py");
     let out = run_xpile(&["transpile", py.to_str().unwrap()]);
     assert!(
         !out.status.success(),
-        "f-string interpolation of a bare `d.get(k)` (Optional) must be refused"
+        "an Optional f-string field WITH a format spec must be refused"
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("Optional") && stderr.contains("d.get(k, <default>)"),
-        "the rejection should explain the Optional + suggest a default:\n{stderr}"
+        stderr.contains("Optional") && stderr.contains("format spec"),
+        "the rejection should explain the Optional + spec TypeError:\n{stderr}"
     );
-    // The supported forms (`d.get(k, default)`, `d[k]`) still transpile + run.
+
+    // The always-concrete forms (`d.get(k, default)`, `d[k]`) still transpile + run.
     let rust = xpile_transpile_to_rust("fstring_dict_get_ok.py");
     let driver = r#"
 fn main() {
