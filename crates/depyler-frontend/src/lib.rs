@@ -12262,17 +12262,34 @@ fn terminal_try_as_expr(
     // PMAT-817: bind `<name>: str` (the exception message) while lowering the
     // handler, so `str(e)`/`f"{e}"` resolve. Save/restore the binding — `e` is
     // scoped to the handler, not the enclosing function.
+    let except_types = except_type_names(h.type_.as_deref());
     let handler = if let Some(name) = &bound_name {
         let had = ctx.bound.contains(name);
         let prev_ty = ctx.name_types.get(name).cloned();
+        // PMAT-1172: the terminal-return `try` form was NOT covered by PMAT-1170
+        // (#1771), which populated `exc_bindings` only in `lower_statement_try`,
+        // so `repr(e)` in `try: return X except <Type> as e: return repr(e)` still
+        // emitted the bare message string. Record the caught type here too (same
+        // single-concrete guard as #1771), scoped to the handler like `name_types`.
+        let prev_exc = ctx.exc_bindings.remove(name);
         ctx.bound.insert(name.clone());
         ctx.name_types.insert(name.clone(), Type::Str);
+        if except_types.len() == 1
+            && !matches!(except_types[0].as_str(), "Exception" | "BaseException")
+        {
+            ctx.exc_bindings
+                .insert(name.clone(), except_types[0].clone());
+        }
         let lowered = lower_return_value(ctx, h_val);
         if !had {
             ctx.bound.remove(name);
             ctx.name_types.remove(name);
         } else if let Some(t) = prev_ty {
             ctx.name_types.insert(name.clone(), t);
+        }
+        ctx.exc_bindings.remove(name);
+        if let Some(pe) = prev_exc {
+            ctx.exc_bindings.insert(name.clone(), pe);
         }
         lowered?
     } else {
@@ -12281,7 +12298,7 @@ fn terminal_try_as_expr(
     Ok(Some(Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
-        except_types: except_type_names(h.type_.as_deref()),
+        except_types,
         bound_name,
     }))
 }
@@ -14076,17 +14093,32 @@ fn lower_assignment_try(
     // PMAT-886: bind `<name>: str` (the exception message) while lowering the
     // handler value, then save/restore — `e` is scoped to the handler, not the
     // enclosing function. Mirrors the terminal-return form's binding.
+    let except_types = except_type_names(h.type_.as_deref());
     let handler = if let Some(name) = &bound_name {
         let had = ctx.bound.contains(name);
         let prev_ty = ctx.name_types.get(name).cloned();
+        // PMAT-1172: the assign `try` form was also missed by PMAT-1170 (#1771) —
+        // record the caught type so `repr(e)` in `v = <try/except with repr(e)>`
+        // renders `<Type>('<msg>')` too. Same single-concrete guard, scoped.
+        let prev_exc = ctx.exc_bindings.remove(name);
         ctx.bound.insert(name.clone());
         ctx.name_types.insert(name.clone(), Type::Str);
+        if except_types.len() == 1
+            && !matches!(except_types[0].as_str(), "Exception" | "BaseException")
+        {
+            ctx.exc_bindings
+                .insert(name.clone(), except_types[0].clone());
+        }
         let lowered = lower_expr_in_ctx(ctx, handler_val.clone());
         if !had {
             ctx.bound.remove(name);
             ctx.name_types.remove(name);
         } else if let Some(t) = prev_ty {
             ctx.name_types.insert(name.clone(), t);
+        }
+        ctx.exc_bindings.remove(name);
+        if let Some(pe) = prev_exc {
+            ctx.exc_bindings.insert(name.clone(), pe);
         }
         lowered?
     } else {
@@ -14095,7 +14127,7 @@ fn lower_assignment_try(
     let value = Expr::TryCatch {
         body: Box::new(body),
         handler: Box::new(handler),
-        except_types: except_type_names(h.type_.as_deref()),
+        except_types,
         bound_name,
     };
     let ty = infer_type_in_ctx(ctx, &value);
