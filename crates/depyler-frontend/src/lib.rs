@@ -9724,38 +9724,494 @@ fn body_has_yield(body: &[ast::Stmt]) -> bool {
 /// infinite generator — eager materialization hangs). Pure for/if-structured
 /// finite builders return None and stay supported (the verified-faithful
 /// class).
-fn eager_unsound_construct(body: &[ast::Stmt]) -> Option<&'static str> {
+///
+/// PMAT-1093 (skeptic pass PMAT-1090, B-F1/F2/F3/F9): the PMAT-1083 scan
+/// caught side-effect calls only in STATEMENT position — calls in ASSIGN
+/// position (`v = noisy(x)`), inside the YIELD expression (`yield noisy(x)`),
+/// in the for-loop ITER position (`for x in src()`), and inside `with`
+/// machinery (`__enter__`/`__exit__` side effects) all evaded it. Now ANY
+/// call anywhere in the body refuses unless the callee is a provably-pure
+/// builtin (`range`/`len`/`abs` — non-raising on the accepted int surface) or
+/// another generator (whose body passes this same scan; its position is
+/// separately constrained by `enforce_generator_value_consumption`). Purity
+/// of user helpers is not provable here, and even a PURE raising builtin
+/// (`int`, `chr`) moves the raise from consumption time to call time.
+/// `with` blocks refuse outright: their desugared enter/exit effects run at
+/// materialization time and `__exit__` timing relative to the consumer
+/// differs.
+fn eager_unsound_construct(
+    body: &[ast::Stmt],
+    gen_names: &std::collections::HashSet<String>,
+) -> Option<String> {
+    // A call whose callee is neither a pure builtin nor a known generator,
+    // anywhere inside `e`. Returns a short description of the callee.
+    fn impure_call(e: &ast::Expr, gen_names: &std::collections::HashSet<String>) -> Option<String> {
+        const PURE_BUILTINS: [&str; 3] = ["range", "len", "abs"];
+        let any = |es: &[ast::Expr]| es.iter().find_map(|x| impure_call(x, gen_names));
+        match e {
+            ast::Expr::Call(c) => {
+                let callee_ok = matches!(c.func.as_ref(), ast::Expr::Name(n)
+                    if PURE_BUILTINS.contains(&n.id.as_str()) || gen_names.contains(n.id.as_str()));
+                if !callee_ok {
+                    let desc = match c.func.as_ref() {
+                        ast::Expr::Name(n) => format!("`{}(...)`", n.id),
+                        ast::Expr::Attribute(a) => format!("a `.{}(...)` method call", a.attr),
+                        _ => "a computed-callee call".to_string(),
+                    };
+                    return Some(desc);
+                }
+                any(&c.args).or_else(|| {
+                    c.keywords
+                        .iter()
+                        .find_map(|k| impure_call(&k.value, gen_names))
+                })
+            }
+            ast::Expr::BoolOp(b) => any(&b.values),
+            ast::Expr::NamedExpr(n) => impure_call(&n.value, gen_names),
+            ast::Expr::BinOp(b) => {
+                impure_call(&b.left, gen_names).or_else(|| impure_call(&b.right, gen_names))
+            }
+            ast::Expr::UnaryOp(u) => impure_call(&u.operand, gen_names),
+            ast::Expr::Lambda(l) => impure_call(&l.body, gen_names),
+            ast::Expr::IfExp(t) => impure_call(&t.test, gen_names)
+                .or_else(|| impure_call(&t.body, gen_names))
+                .or_else(|| impure_call(&t.orelse, gen_names)),
+            ast::Expr::Dict(d) => d
+                .keys
+                .iter()
+                .flatten()
+                .find_map(|k| impure_call(k, gen_names))
+                .or_else(|| any(&d.values)),
+            ast::Expr::Set(s) => any(&s.elts),
+            ast::Expr::List(l) => any(&l.elts),
+            ast::Expr::Tuple(t) => any(&t.elts),
+            ast::Expr::Compare(c) => {
+                impure_call(&c.left, gen_names).or_else(|| any(&c.comparators))
+            }
+            ast::Expr::ListComp(c) => impure_call(&c.elt, gen_names)
+                .or_else(|| comp_generators_impure_call(&c.generators, gen_names)),
+            ast::Expr::SetComp(c) => impure_call(&c.elt, gen_names)
+                .or_else(|| comp_generators_impure_call(&c.generators, gen_names)),
+            ast::Expr::DictComp(c) => impure_call(&c.key, gen_names)
+                .or_else(|| impure_call(&c.value, gen_names))
+                .or_else(|| comp_generators_impure_call(&c.generators, gen_names)),
+            ast::Expr::GeneratorExp(c) => impure_call(&c.elt, gen_names)
+                .or_else(|| comp_generators_impure_call(&c.generators, gen_names)),
+            ast::Expr::FormattedValue(f) => impure_call(&f.value, gen_names),
+            ast::Expr::JoinedStr(j) => any(&j.values),
+            ast::Expr::Attribute(a) => impure_call(&a.value, gen_names),
+            ast::Expr::Subscript(s) => {
+                impure_call(&s.value, gen_names).or_else(|| impure_call(&s.slice, gen_names))
+            }
+            ast::Expr::Starred(s) => impure_call(&s.value, gen_names),
+            ast::Expr::Slice(s) => [&s.lower, &s.upper, &s.step]
+                .into_iter()
+                .flatten()
+                .find_map(|x| impure_call(x, gen_names)),
+            ast::Expr::Yield(y) => y.value.as_deref().and_then(|v| impure_call(v, gen_names)),
+            _ => None,
+        }
+    }
+    fn comp_generators_impure_call(
+        gens: &[ast::Comprehension],
+        gen_names: &std::collections::HashSet<String>,
+    ) -> Option<String> {
+        gens.iter().find_map(|g| {
+            impure_call(&g.iter, gen_names)
+                .or_else(|| g.ifs.iter().find_map(|i| impure_call(i, gen_names)))
+        })
+    }
+    let in_pos = |e: &ast::Expr, pos: &str| {
+        impure_call(e, gen_names).map(|callee| {
+            format!(
+                "a call {callee} in {pos} position (only pure builtins \
+                 `range`/`len`/`abs` and other generators are allowed — lazily a \
+                 call interleaves with consumption; eagerly it runs at \
+                 materialization time, reordering side effects and raises)"
+            )
+        })
+    };
     body.iter().find_map(|s| match s {
         ast::Stmt::While(_) => Some(
             "a `while` loop (possibly unbounded — a lazy consumer can stop early; \
-             eager materialization runs the whole loop or hangs)",
+             eager materialization runs the whole loop or hangs)"
+                .to_string(),
         ),
         ast::Stmt::Raise(_) => Some(
             "a `raise` (lazily it fires at the consuming iteration, which a partial \
-             consumer may never reach; eagerly it fires at call time)",
+             consumer may never reach; eagerly it fires at call time)"
+                .to_string(),
         ),
-        ast::Stmt::Expr(e) if matches!(e.value.as_ref(), ast::Expr::Call(_)) => Some(
-            "a side-effect call statement (lazily interleaved with consumption; \
-             eagerly it all runs before the first item is consumed)",
+        ast::Stmt::Expr(e) => match e.value.as_ref() {
+            ast::Expr::Call(_) => Some(
+                "a side-effect call statement (lazily interleaved with consumption; \
+                 eagerly it all runs before the first item is consumed)"
+                    .to_string(),
+            ),
+            ast::Expr::Yield(y) => y.value.as_deref().and_then(|v| in_pos(v, "yield")),
+            other => in_pos(other, "expression-statement"),
+        },
+        ast::Stmt::Assign(a) => in_pos(&a.value, "assignment").or_else(|| {
+            a.targets
+                .iter()
+                .find_map(|t| in_pos(t, "assignment-target"))
+        }),
+        ast::Stmt::AnnAssign(a) => a
+            .value
+            .as_deref()
+            .and_then(|v| in_pos(v, "assignment"))
+            .or_else(|| in_pos(&a.target, "assignment-target")),
+        ast::Stmt::AugAssign(a) => {
+            in_pos(&a.value, "assignment").or_else(|| in_pos(&a.target, "assignment-target"))
+        }
+        ast::Stmt::If(i) => in_pos(&i.test, "condition")
+            .or_else(|| eager_unsound_construct(&i.body, gen_names))
+            .or_else(|| eager_unsound_construct(&i.orelse, gen_names)),
+        ast::Stmt::For(f) => in_pos(&f.iter, "for-iterable")
+            .or_else(|| eager_unsound_construct(&f.body, gen_names))
+            .or_else(|| eager_unsound_construct(&f.orelse, gen_names)),
+        ast::Stmt::With(_) => Some(
+            "a `with` block (its `__enter__`/`__exit__` side effects run at \
+             materialization time under the eager lowering, and `__exit__` \
+             timing relative to the consumer differs from CPython's lazy \
+             protocol)"
+                .to_string(),
         ),
-        ast::Stmt::If(i) => {
-            eager_unsound_construct(&i.body).or_else(|| eager_unsound_construct(&i.orelse))
-        }
-        ast::Stmt::For(f) => {
-            eager_unsound_construct(&f.body).or_else(|| eager_unsound_construct(&f.orelse))
-        }
-        ast::Stmt::With(w) => eager_unsound_construct(&w.body),
-        ast::Stmt::Try(t) => eager_unsound_construct(&t.body)
-            .or_else(|| eager_unsound_construct(&t.orelse))
-            .or_else(|| eager_unsound_construct(&t.finalbody))
+        ast::Stmt::Try(t) => eager_unsound_construct(&t.body, gen_names)
+            .or_else(|| eager_unsound_construct(&t.orelse, gen_names))
+            .or_else(|| eager_unsound_construct(&t.finalbody, gen_names))
             .or_else(|| {
                 t.handlers.iter().find_map(|h| {
                     let ast::ExceptHandler::ExceptHandler(h) = h;
-                    eager_unsound_construct(&h.body)
+                    eager_unsound_construct(&h.body, gen_names)
                 })
             }),
         _ => None,
     })
+}
+
+/// PMAT-1093 (skeptic pass PMAT-1090, B-F5/F6/F7/F8): enforce single-use
+/// IMMEDIATE consumption of generator values module-wide. The eager lowering
+/// materializes a plain list, which has no iterator identity — so a BOUND
+/// generator diverges from CPython on double consumption (`sum(g); sum(g)` →
+/// 14/14 vs CPython 14/0 exhaustion), a bound genexp misses post-creation
+/// mutation of its iterable (CPython's genexp reads the iterable lazily and
+/// sees `xs.append(...)` after creation; the materialized list doesn't), and
+/// creation-vs-first-next timing collapses. A generator value (a call to a
+/// generator function, or a generator expression) is therefore accepted ONLY:
+///
+///   * as the DIRECT iterable of a `for` statement whose body has no early
+///     exit (`break` of that loop / `return` / `raise` — a lazy consumer
+///     stops the generator early, the eager model has already materialized
+///     EVERYTHING: the arbitrary-extra-work/hang class the `while` refusal
+///     closed, reproduced by `for x in gen_over_huge_range(): break`), or
+///   * as a DIRECT argument of a fully-consuming builtin (`sum`/`min`/`max`/
+///     `any`/`all`/`list`/`sorted`/`set`).
+///
+/// Everything else — binding it to a name, returning it, passing it to user
+/// code (whose lowered body sees a `Vec` it may consume twice or `len()`,
+/// where CPython's iterator exhausts or raises `TypeError`), nesting it in
+/// arithmetic — refuses with a pointer to `list(...)` as the honest
+/// materialization (CPython's `list(gen())` is equally eager).
+fn enforce_generator_value_consumption(
+    suite: &[ast::Stmt],
+    gen_names: &std::collections::HashSet<String>,
+) -> Result<(), FrontendError> {
+    use std::collections::HashSet;
+    const CONSUMERS: [&str; 8] = ["sum", "min", "max", "any", "all", "list", "sorted", "set"];
+
+    // What the expression IS, if it's a generator value.
+    fn gen_value_desc(e: &ast::Expr, gen_names: &HashSet<String>) -> Option<String> {
+        match e {
+            ast::Expr::Call(c) => match c.func.as_ref() {
+                ast::Expr::Name(n) if gen_names.contains(n.id.as_str()) => {
+                    Some(format!("generator `{}(...)`", n.id))
+                }
+                _ => None,
+            },
+            ast::Expr::GeneratorExp(_) => Some("a generator expression".to_string()),
+            _ => None,
+        }
+    }
+
+    // `allowed`: this exact node may be a generator value (direct for-iter /
+    // direct consumer argument). Children are never allowed unless the
+    // consumer rule re-grants it.
+    fn check_expr(
+        e: &ast::Expr,
+        allowed: bool,
+        fname: &str,
+        gen_names: &HashSet<String>,
+    ) -> Result<(), FrontendError> {
+        if let Some(what) = gen_value_desc(e, gen_names) {
+            if !allowed {
+                return Err(FrontendError::Lower(format!(
+                    "function `{fname}` uses {what} outside a directly-consuming \
+                     position — the eager lowering materializes a plain list with no \
+                     iterator identity (double consumption re-yields items where \
+                     CPython's iterator is exhausted; a bound generator expression \
+                     would see post-creation mutation of its iterable in CPython but \
+                     not here), so binding, returning, or passing it to user code \
+                     diverges; consume it directly (`for x in ...:`, `sum(...)`, \
+                     `list(...)`, `sorted(...)`, ...) or materialize honestly with \
+                     `list(...)`"
+                )));
+            }
+            // Scan INSIDE the generator value with the default (not-allowed)
+            // rule: a genexp's iterable/filters may themselves smuggle a
+            // generator value into a non-consuming slot.
+            match e {
+                ast::Expr::Call(c) => {
+                    for a in &c.args {
+                        check_expr(a, false, fname, gen_names)?;
+                    }
+                    for k in &c.keywords {
+                        check_expr(&k.value, false, fname, gen_names)?;
+                    }
+                }
+                ast::Expr::GeneratorExp(g) => {
+                    check_expr(&g.elt, false, fname, gen_names)?;
+                    for c in &g.generators {
+                        check_expr(&c.iter, false, fname, gen_names)?;
+                        for i in &c.ifs {
+                            check_expr(i, false, fname, gen_names)?;
+                        }
+                    }
+                }
+                _ => unreachable!("gen_value_desc only matches Call/GeneratorExp"),
+            }
+            return Ok(());
+        }
+        // A fully-consuming builtin re-grants `allowed` to its DIRECT args.
+        if let ast::Expr::Call(c) = e {
+            let consumer = matches!(c.func.as_ref(), ast::Expr::Name(n)
+                if CONSUMERS.contains(&n.id.as_str()));
+            check_expr(&c.func, false, fname, gen_names)?;
+            for a in &c.args {
+                check_expr(a, consumer, fname, gen_names)?;
+            }
+            for k in &c.keywords {
+                check_expr(&k.value, false, fname, gen_names)?;
+            }
+            return Ok(());
+        }
+        // Everything else: recurse with allowed=false.
+        let all = |es: &[ast::Expr]| -> Result<(), FrontendError> {
+            es.iter()
+                .try_for_each(|x| check_expr(x, false, fname, gen_names))
+        };
+        match e {
+            ast::Expr::BoolOp(b) => all(&b.values),
+            ast::Expr::NamedExpr(n) => check_expr(&n.value, false, fname, gen_names),
+            ast::Expr::BinOp(b) => {
+                check_expr(&b.left, false, fname, gen_names)?;
+                check_expr(&b.right, false, fname, gen_names)
+            }
+            ast::Expr::UnaryOp(u) => check_expr(&u.operand, false, fname, gen_names),
+            ast::Expr::Lambda(l) => check_expr(&l.body, false, fname, gen_names),
+            ast::Expr::IfExp(t) => {
+                check_expr(&t.test, false, fname, gen_names)?;
+                check_expr(&t.body, false, fname, gen_names)?;
+                check_expr(&t.orelse, false, fname, gen_names)
+            }
+            ast::Expr::Dict(d) => {
+                d.keys
+                    .iter()
+                    .flatten()
+                    .try_for_each(|k| check_expr(k, false, fname, gen_names))?;
+                all(&d.values)
+            }
+            ast::Expr::Set(s) => all(&s.elts),
+            ast::Expr::List(l) => all(&l.elts),
+            ast::Expr::Tuple(t) => all(&t.elts),
+            ast::Expr::Compare(c) => {
+                check_expr(&c.left, false, fname, gen_names)?;
+                all(&c.comparators)
+            }
+            ast::Expr::ListComp(c) => {
+                check_expr(&c.elt, false, fname, gen_names)?;
+                check_comp(&c.generators, fname, gen_names)
+            }
+            ast::Expr::SetComp(c) => {
+                check_expr(&c.elt, false, fname, gen_names)?;
+                check_comp(&c.generators, fname, gen_names)
+            }
+            ast::Expr::DictComp(c) => {
+                check_expr(&c.key, false, fname, gen_names)?;
+                check_expr(&c.value, false, fname, gen_names)?;
+                check_comp(&c.generators, fname, gen_names)
+            }
+            ast::Expr::FormattedValue(f) => check_expr(&f.value, false, fname, gen_names),
+            ast::Expr::JoinedStr(j) => all(&j.values),
+            ast::Expr::Attribute(a) => check_expr(&a.value, false, fname, gen_names),
+            ast::Expr::Subscript(s) => {
+                check_expr(&s.value, false, fname, gen_names)?;
+                check_expr(&s.slice, false, fname, gen_names)
+            }
+            ast::Expr::Starred(s) => check_expr(&s.value, false, fname, gen_names),
+            ast::Expr::Slice(s) => [&s.lower, &s.upper, &s.step]
+                .into_iter()
+                .flatten()
+                .try_for_each(|x| check_expr(x, false, fname, gen_names)),
+            ast::Expr::Yield(y) => y
+                .value
+                .as_deref()
+                .map_or(Ok(()), |v| check_expr(v, false, fname, gen_names)),
+            _ => Ok(()),
+        }
+    }
+    fn check_comp(
+        gens: &[ast::Comprehension],
+        fname: &str,
+        gen_names: &HashSet<String>,
+    ) -> Result<(), FrontendError> {
+        for g in gens {
+            check_expr(&g.iter, false, fname, gen_names)?;
+            for i in &g.ifs {
+                check_expr(i, false, fname, gen_names)?;
+            }
+        }
+        Ok(())
+    }
+
+    // First early exit that would PARTIALLY consume the enclosing `for` over
+    // a generator value: a `break` bound to THAT loop (depth 0), or a
+    // `return`/`raise` at any depth. Inner loops shift `break` binding
+    // (body: depth+1) but a `break` in an inner loop's `else:` clause binds
+    // the OUTER loop again (orelse: same depth).
+    fn early_exit(body: &[ast::Stmt], depth: usize) -> Option<&'static str> {
+        body.iter().find_map(|s| match s {
+            ast::Stmt::Break(_) if depth == 0 => Some("break"),
+            ast::Stmt::Return(_) => Some("return"),
+            ast::Stmt::Raise(_) => Some("raise"),
+            ast::Stmt::If(i) => early_exit(&i.body, depth).or_else(|| early_exit(&i.orelse, depth)),
+            ast::Stmt::For(f) => {
+                early_exit(&f.body, depth + 1).or_else(|| early_exit(&f.orelse, depth))
+            }
+            ast::Stmt::While(w) => {
+                early_exit(&w.body, depth + 1).or_else(|| early_exit(&w.orelse, depth))
+            }
+            ast::Stmt::With(w) => early_exit(&w.body, depth),
+            ast::Stmt::Try(t) => early_exit(&t.body, depth)
+                .or_else(|| early_exit(&t.orelse, depth))
+                .or_else(|| early_exit(&t.finalbody, depth))
+                .or_else(|| {
+                    t.handlers.iter().find_map(|h| {
+                        let ast::ExceptHandler::ExceptHandler(h) = h;
+                        early_exit(&h.body, depth)
+                    })
+                }),
+            _ => None,
+        })
+    }
+
+    fn check_stmts(
+        stmts: &[ast::Stmt],
+        fname: &str,
+        gen_names: &HashSet<String>,
+    ) -> Result<(), FrontendError> {
+        for s in stmts {
+            match s {
+                ast::Stmt::FunctionDef(f) => {
+                    check_stmts(&f.body, f.name.as_str(), gen_names)?;
+                }
+                ast::Stmt::AsyncFunctionDef(f) => {
+                    check_stmts(&f.body, f.name.as_str(), gen_names)?;
+                }
+                ast::Stmt::ClassDef(c) => check_stmts(&c.body, fname, gen_names)?,
+                ast::Stmt::For(f) => {
+                    if let Some(what) = gen_value_desc(&f.iter, gen_names) {
+                        if let Some(exit) = early_exit(&f.body, 0) {
+                            return Err(FrontendError::Lower(format!(
+                                "function `{fname}` `{exit}`s out of a `for` over {what} \
+                                 — CPython stops the generator early (lazy); the eager \
+                                 lowering has already materialized the ENTIRE sequence \
+                                 (arbitrary extra work or a hang on a large generator — \
+                                 the class the `while` refusal closed); consume it fully \
+                                 or materialize with `list(...)` first"
+                            )));
+                        }
+                        check_expr(&f.iter, true, fname, gen_names)?;
+                    } else {
+                        check_expr(&f.iter, false, fname, gen_names)?;
+                    }
+                    check_expr(&f.target, false, fname, gen_names)?;
+                    check_stmts(&f.body, fname, gen_names)?;
+                    check_stmts(&f.orelse, fname, gen_names)?;
+                }
+                ast::Stmt::While(w) => {
+                    check_expr(&w.test, false, fname, gen_names)?;
+                    check_stmts(&w.body, fname, gen_names)?;
+                    check_stmts(&w.orelse, fname, gen_names)?;
+                }
+                ast::Stmt::If(i) => {
+                    check_expr(&i.test, false, fname, gen_names)?;
+                    check_stmts(&i.body, fname, gen_names)?;
+                    check_stmts(&i.orelse, fname, gen_names)?;
+                }
+                ast::Stmt::With(w) => {
+                    for item in &w.items {
+                        check_expr(&item.context_expr, false, fname, gen_names)?;
+                    }
+                    check_stmts(&w.body, fname, gen_names)?;
+                }
+                ast::Stmt::Try(t) => {
+                    check_stmts(&t.body, fname, gen_names)?;
+                    check_stmts(&t.orelse, fname, gen_names)?;
+                    check_stmts(&t.finalbody, fname, gen_names)?;
+                    for h in &t.handlers {
+                        let ast::ExceptHandler::ExceptHandler(h) = h;
+                        check_stmts(&h.body, fname, gen_names)?;
+                    }
+                }
+                ast::Stmt::Assign(a) => {
+                    check_expr(&a.value, false, fname, gen_names)?;
+                    for t in &a.targets {
+                        check_expr(t, false, fname, gen_names)?;
+                    }
+                }
+                ast::Stmt::AnnAssign(a) => {
+                    if let Some(v) = a.value.as_deref() {
+                        check_expr(v, false, fname, gen_names)?;
+                    }
+                    check_expr(&a.target, false, fname, gen_names)?;
+                }
+                ast::Stmt::AugAssign(a) => {
+                    check_expr(&a.value, false, fname, gen_names)?;
+                    check_expr(&a.target, false, fname, gen_names)?;
+                }
+                ast::Stmt::Return(r) => {
+                    if let Some(v) = r.value.as_deref() {
+                        check_expr(v, false, fname, gen_names)?;
+                    }
+                }
+                ast::Stmt::Expr(e) => check_expr(&e.value, false, fname, gen_names)?,
+                ast::Stmt::Assert(a) => {
+                    check_expr(&a.test, false, fname, gen_names)?;
+                    if let Some(m) = a.msg.as_deref() {
+                        check_expr(m, false, fname, gen_names)?;
+                    }
+                }
+                ast::Stmt::Raise(r) => {
+                    if let Some(e) = r.exc.as_deref() {
+                        check_expr(e, false, fname, gen_names)?;
+                    }
+                    if let Some(c) = r.cause.as_deref() {
+                        check_expr(c, false, fname, gen_names)?;
+                    }
+                }
+                ast::Stmt::Delete(d) => {
+                    for t in &d.targets {
+                        check_expr(t, false, fname, gen_names)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    check_stmts(suite, "<module>", gen_names)
 }
 
 /// PMAT-1071: rewrite a generator function into a list-BUILDING one. Each
@@ -9845,6 +10301,18 @@ fn transform_generators(suite: &mut [ast::Stmt]) -> Result<(), FrontendError> {
         Ok(())
     }
 
+    // PMAT-1093: collect every generator's name FIRST (call sites can precede
+    // the def), then enforce single-use immediate consumption module-wide on
+    // the ORIGINAL suite (before yields become `__gen_result.append` calls).
+    let gen_names: std::collections::HashSet<String> = suite
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::FunctionDef(f) if body_has_yield(&f.body) => Some(f.name.to_string()),
+            _ => None,
+        })
+        .collect();
+    enforce_generator_value_consumption(suite, &gen_names)?;
+
     for stmt in suite.iter_mut() {
         let ast::Stmt::FunctionDef(f) = stmt else {
             continue;
@@ -9855,7 +10323,7 @@ fn transform_generators(suite: &mut [ast::Stmt]) -> Result<(), FrontendError> {
         // PMAT-1083: eager materialization is only faithful for PURE finite
         // builders — refuse the shapes where it observably diverges (scanned
         // on the ORIGINAL body, before yields become append call statements).
-        if let Some(what) = eager_unsound_construct(&f.body) {
+        if let Some(what) = eager_unsound_construct(&f.body, &gen_names) {
             return Err(FrontendError::Lower(format!(
                 "generator `{}` contains {what} — the eager (list-materializing) lowering \
                  diverges from CPython's lazy generator protocol here; only pure \

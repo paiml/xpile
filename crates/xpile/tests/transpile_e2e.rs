@@ -19446,6 +19446,153 @@ fn gen_next_rejected() {
     );
 }
 
+/// PMAT-1093 (skeptic-pass PMAT-1090 B-F7): a BOUND generator has iterator
+/// identity — CPython `sum(g) + sum(g)` = 14 (second sum sees exhaustion);
+/// the eager list gives 28 SILENTLY. Bindings must refuse.
+#[test]
+fn gen_binding_rejected() {
+    let py = fixture("gen_binding_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "binding a generator must refuse, not silently drop iterator exhaustion"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("directly-consuming") && stderr.contains("`gen(...)`"),
+        "the rejection should name the position rule and the generator:\n{stderr}"
+    );
+}
+
+/// PMAT-1093 (B-F6): a bound genexp reads its iterable lazily in CPython —
+/// post-creation `xs.append(9)` is visible (28); eager materialization at
+/// creation gives 14 SILENTLY. Genexp bindings must refuse.
+#[test]
+fn genexp_binding_rejected() {
+    let py = fixture("genexp_binding_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "binding a generator expression must refuse, not miss post-creation mutation"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("directly-consuming") && stderr.contains("generator expression"),
+        "the rejection should name the position rule and the genexp:\n{stderr}"
+    );
+}
+
+/// PMAT-1093 (B-F5): `break` out of `for x in gen(HUGE)` — CPython stops the
+/// generator instantly (lazy); the eager lowering materializes 10^11 items
+/// first (the hang class the `while` refusal closed). Must refuse.
+#[test]
+fn gen_partial_break_rejected() {
+    let py = fixture("gen_partial_break_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a `break` out of a for-over-generator must refuse, not materialize everything"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`break`s out of a `for` over generator `squares(...)`")
+            && stderr.contains("ENTIRE"),
+        "the rejection should name the early exit, the generator, and the hang class:\n{stderr}"
+    );
+}
+
+/// PMAT-1093 (B-F1): a side-effect call in ASSIGN position (`v = noisy(i)`)
+/// evaded the statement-position scan — eager runs side,side,1,2 vs CPython
+/// side,1,side,2. Must refuse.
+#[test]
+fn gen_assign_call_rejected() {
+    let py = fixture("gen_assign_call_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an assign-position call in a generator must refuse, not silently reorder"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("assignment position")
+            && stderr.contains("`noisy(...)`")
+            && stderr.contains("`gen`"),
+        "the rejection should name the position, the callee, and the generator:\n{stderr}"
+    );
+}
+
+/// PMAT-1093 (B-F2): a side-effect call inside the YIELD expression
+/// (`yield noisy(i)`) evaded the statement-position scan. Must refuse.
+#[test]
+fn gen_yield_call_rejected() {
+    let py = fixture("gen_yield_call_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a yield-position call in a generator must refuse, not silently reorder"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("yield position") && stderr.contains("`noisy(...)`"),
+        "the rejection should name the yield position and the callee:\n{stderr}"
+    );
+}
+
+/// PMAT-1093 (B-F3): a side-effect call in the for-loop ITER position
+/// (`for x in src()`) evaded the statement-position scan; `range(...)` and
+/// other generators stay accepted there. Must refuse.
+#[test]
+fn gen_iter_call_rejected() {
+    let py = fixture("gen_iter_call_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "an iter-position call in a generator must refuse, not run at materialization time"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("for-iterable position") && stderr.contains("`src(...)`"),
+        "the rejection should name the iter position and the callee:\n{stderr}"
+    );
+}
+
+/// PMAT-1093 (B-F9): a `with` block in a generator body — desugared
+/// `__enter__`/`__exit__` effects run at materialization time and `__exit__`
+/// timing relative to the consumer differs. Must refuse.
+#[test]
+fn gen_with_rejected() {
+    let py = fixture("gen_with_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a `with` block in a generator must refuse, not shift enter/exit timing"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`with` block") && stderr.contains("`gen`"),
+        "the rejection should name the with block and the generator:\n{stderr}"
+    );
+}
+
+/// PMAT-1093 (binding class): passing a generator to USER code — CPython
+/// hands an iterator (consume_twice = 3 via exhaustion); the eager lowering
+/// hands a plain list (6 SILENTLY). Only fully-consuming builtins accept a
+/// generator argument. Must refuse.
+#[test]
+fn gen_user_arg_rejected() {
+    let py = fixture("gen_user_arg_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a generator argument to user code must refuse, not lose iterator exhaustion"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("directly-consuming") && stderr.contains("`gen(...)`"),
+        "the rejection should name the position rule and the generator:\n{stderr}"
+    );
+}
+
 /// PMAT-1073: finally-only try (`try: B finally: F`, no except) runs cleanup
 /// and propagates (does NOT swallow like `except: pass`). MATCH.
 #[test]
