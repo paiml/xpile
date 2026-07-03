@@ -297,6 +297,18 @@ struct LoweringCtx {
     /// records the real element type (drives repr quoting + every type-dependent
     /// path), not a `[]`-refusal or the old `dict()` → `dict[Str, _]` guess.
     empty_coll_types: HashMap<String, Type>,
+    /// PMAT-1170: `except <Type> as e` binding name → the caught exception TYPE
+    /// name (e.g. `"ValueError"`). `e` itself stays typed `Type::Str` (it holds
+    /// the extracted panic message, so `str(e)`/`print(e)`/every string op keep
+    /// working unchanged); this SIDE-CHANNEL is consulted ONLY by the `repr(e)`
+    /// lowering, which — for a name in this map — emits `<Type>('<msg-repr>')` to
+    /// match CPython's `repr(exc)` instead of repr'ing the bare message string.
+    /// Populated only for a SINGLE concrete except type (not a tuple, and not the
+    /// catch-all `Exception`/`BaseException` supertypes, whose concrete runtime
+    /// type xpile discards from the payload prefix — recording those would
+    /// diverge). Scoped to the handler body like `name_types` (snapshot/restore
+    /// around each `except` arm in `lower_try_except_stmt`).
+    exc_bindings: HashMap<String, String>,
 }
 
 /// PMAT-1092: why a name in [`LoweringCtx::try_dead`] does not survive its
@@ -531,6 +543,8 @@ impl LoweringCtx {
             // PMAT-1160: populated after construction by a forward scan that needs
             // the fully-built ctx as its type oracle (see `lower_function_def`).
             empty_coll_types: HashMap::new(),
+            // PMAT-1170: populated per-`except`-arm in `lower_try_except_stmt`.
+            exc_bindings: HashMap::new(),
         }
     }
 }
@@ -13888,9 +13902,24 @@ fn lower_statement_try(
         }
         let saved_b = ctx.bound.clone();
         let saved_t = ctx.name_types.clone();
+        let saved_exc = ctx.exc_bindings.clone();
         if let Some(name) = &bound_name {
             ctx.bound.insert(name.clone());
             ctx.name_types.insert(name.clone(), Type::Str);
+            // PMAT-1170: record the caught type so `repr(e)` inside this handler
+            // renders `<Type>('<msg>')` (CPython) instead of the bare message
+            // string's quoted repr. Only a SINGLE concrete except type qualifies:
+            // a tuple `(A, B)` leaves the runtime type statically unknown, and the
+            // catch-all `Exception`/`BaseException` supertypes catch a concrete
+            // subclass whose real name xpile discards from the panic payload
+            // (recording the supertype name would silently diverge). `e` stays
+            // `Type::Str`, so `str(e)`/`print(e)`/string ops are untouched.
+            if except_types.len() == 1
+                && !matches!(except_types[0].as_str(), "Exception" | "BaseException")
+            {
+                ctx.exc_bindings
+                    .insert(name.clone(), except_types[0].clone());
+            }
         }
         let mut hbody = Vec::new();
         for st in &h.body {
@@ -13907,6 +13936,7 @@ fn lower_statement_try(
             .collect();
         ctx.bound = saved_b;
         ctx.name_types = saved_t;
+        ctx.exc_bindings = saved_exc;
         for n in handler_new {
             ctx.try_dead
                 .entry(n)
@@ -19687,6 +19717,40 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                 // (Container `repr` + f-string `{x!r}` are deferred.)
                 if fname.id.as_str() == "repr" && call.keywords.is_empty() && call.args.len() == 1 {
                     let value = lower_expr_in_ctx(ctx, call.args[0].clone())?;
+                    // PMAT-1170: `repr(e)` where `e` is an `except <Type> as e`
+                    // binding. `e` is typed `Type::Str` (it holds the extracted
+                    // message), so without this it would render the message's
+                    // quoted string repr (`'msg'`) — but CPython's `repr(exc)` is
+                    // `<Type>('<msg>')`. Emit `"<Type>(" + <arg-repr> + ")"`.
+                    // The arg-repr reuses the SAME python-string-repr helper
+                    // (`Expr::ReprStr`) so quotes/escapes match CPython's
+                    // `repr(<the message>)` exactly — EXCEPT KeyError, whose
+                    // `__str__` is already `repr(arg)` (PMAT-1090), so `e` already
+                    // holds the quoted form (`'k'`); repr'ing it again would
+                    // double-quote (`KeyError("'k'")`), so use `e` verbatim there.
+                    // Unwrap a possible ownership `Clone` wrapper to find the name.
+                    let unwrapped = match &value {
+                        Expr::Clone(inner) => inner.as_ref(),
+                        other => other,
+                    };
+                    if let Expr::Ident(binding) = unwrapped {
+                        if let Some(type_name) = ctx.exc_bindings.get(binding).cloned() {
+                            let arg_repr = if type_name == "KeyError" {
+                                value
+                            } else {
+                                Expr::ReprStr {
+                                    value: Box::new(value),
+                                }
+                            };
+                            return Ok(Expr::Concat {
+                                lhs: Box::new(Expr::Concat {
+                                    lhs: Box::new(Expr::LitStr(format!("{type_name}("))),
+                                    rhs: Box::new(arg_repr),
+                                }),
+                                rhs: Box::new(Expr::LitStr(")".to_string())),
+                            });
+                        }
+                    }
                     match infer_type_in_ctx(ctx, &value) {
                         Type::I64 => {
                             return Ok(Expr::ToStr {
