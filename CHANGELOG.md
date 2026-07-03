@@ -7,7 +7,71 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
-### Fixed — GPU witness suite: Vulkan loader race serialized (PMAT-1098)
+### Fixed — provability: context-manager finally guarantee was vacuous (PMAT-1141)
+
+`PyContextManagerExit.lean` modeled `exitRuns : Outcome → Bool := fun _ =>
+true` — a constant that **discarded its argument**. Its three finally
+theorems (`exit_runs_on_ok`/`exit_runs_on_err`/`exit_runs_always`) therefore
+reduced to `true = true` and certified nothing: a buggy plain `enter; BODY;
+exit` lowering (which skips `__exit__` when the body raises, leaking the
+resource) would STILL satisfy them. The module even defined a `WithLowering
+{ hasEnter, hasExitInFinally }` structure but never fed `hasExitInFinally`
+into `exitRuns`, so the docstring's "a no-finally sequence … falsified here"
+claim was itself false. Two independent skeptic agents (pass #5, below)
+converged on this. Fix: `exitRuns (w : WithLowering) : Outcome → Bool` now
+branches on the lowering — `ok ↦ true` (both lowerings run exit on the
+normal path), `err ↦ w.hasExitInFinally` (only the finally desugar runs it
+on a raise). The named theorems now hold over `xpileDesugar` (non-vacuously,
+*because* its `hasExitInFinally = true`), plus two new load-bearing
+theorems make the guarantee falsifiable: `plain_sequence_skips_exit_on_err`
+(`exitRuns plainSequence Outcome.err = false` — the no-finally lowering
+provably leaks) and `exit_on_err_iff_finally` (`exitRuns w Outcome.err =
+w.hasExitInFinally` — a constant `exitRuns` could not prove the `= false`
+direction). `WithLowering` and the tier-defining
+`with_lowering_structure_extensionality_diamond` are unchanged. YAML
+contract, PROVABILITY-INVENTORY, and lakefile comment updated to match.
+`lake build` green (34 modules); `pv lint contracts/` 0 errors; pilot-roots
+(32) + citation-integrity suites green.
+
+### Verification — adversarial skeptic pass #5 (PMAT-1141)
+
+Three independent refutation agents over the 14 slices since skeptic pass #4
+(PMAT-1098) — the WASM string-op broadening (startswith/endswith 1126,
+`in` 1127, count 1128, find 1136) and the four R6 provability contracts +
+their citation loops (except 1120/1133, generator 1122/1139, file-io
+1124/1135, context-manager 1131/1137, per-fixture witnesses 1140). Full
+regression green first-hand: `cargo test --workspace` true-exit 0,
+`lake build` exit 0 (32 modules pre-fix), WABT (`wat2wasm`/`wasm-interp`)
+present so the WASM witnesses genuinely EXECUTE (confirmed: str-find witness
+prints "20 cases … executed in WABT, each value-matching CPython", not a
+skip).
+
+- **SURVIVED — WASM string ops** (agent A, ~60 adversarial inputs vs
+  CPython 3.10 via `wat2wasm`+`wasm-interp`): `count` overlapping/
+  non-overlapping (`"aaaa".count("aa")`=2, `"aaa".count("aa")`=1) + empty
+  needle (4/1) + emoji; `find` code-point-index conversions (`"héllo"
+  .find("llo")`=2 at byte offset 3) + shared-continuation-byte negatives;
+  `in`/`startswith`/`endswith` empty/longer/multi-byte; `s[i]`, slice
+  clamp/reverse/negative, ordering (é > z), `str(int)` incl. `i64::MIN`.
+  Every case matched CPython. The byte-search=code-point-match reasoning
+  (a needle's first byte is a lead byte `0x00–0x7F`/`0xC2–0xF4`, never a
+  continuation byte `0x80–0xBF`) is sound and unbreakable; the `"À"
+  .count("\x80")` attack is not constructible (`"\x80"` is U+0080 =
+  `[0xC2, 0x80]`, a lead byte). Refusals (`len(s[lo:hi])`) are honest
+  `Err`s, not silent wrong answers.
+- **SURVIVED — R6 citation loops** (agent B): all four constructs really
+  emit `// xpile-contract:` end-to-end (verified on the pinned fixtures
+  AND four independent throwaway programs); the four Lean modules are
+  `sorry`/`admit`/`axiom`-free and machine-check; `contract_citation_
+  integrity` is non-tautological (severing any one fixture's citation goes
+  red) and passes 3/3.
+- **CONFIRMED + FIXED IN-SLICE** (agents B and C, independently): the
+  context-manager finally theorems were vacuous — see the Fixed entry
+  above. The other three semantic proofs are substantive (generator does
+  a genuine `foldl_snoc_prefix` induction; except's `unmatched_type_
+  propagates` uses both hypotheses; file-io is thin-but-falsifiable).
+
+
 
 `cargo test -p xpile-spirv-codegen --lib` SIGSEGV'd ~40% of parallel runs
 on a GPU-present box (2/5 full-workspace runs): the three GPU-executing

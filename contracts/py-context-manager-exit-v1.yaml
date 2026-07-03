@@ -42,15 +42,19 @@ metadata:
 equations:
   finally_guarantee:
     formula: |
-      exitRuns(outcome) == true    for outcome ∈ {ok, err}
-      (∀ body outcome, __exit__ runs — it is in a finally, not a plain sequence)
+      exitRuns(xpileDesugar, outcome) == true    for outcome ∈ {ok, err}
+      exitRuns(plainSequence, err) == false        (no-finally lowering skips __exit__ on a raise)
+      exitRuns(w, err) == w.hasExitInFinally        (exit-on-error IFF the finally flag)
+      (∀ body outcome, __exit__ runs under the finally desugar — and PMAT-1141
+       makes this FALSIFIABLE: exitRuns branches on the lowering, so a plain
+       `enter; BODY; exit` sequence provably skips __exit__ on the err path)
     domain: |
       Any `with cm as x: BODY` over a user context manager defining
       `__enter__`/`__exit__` (the non-mutating subset).
     invariants:
-      - "__exit__ runs on the NORMAL path (body completes)"
-      - "__exit__ runs on the EXCEPTION path (body raises) — then the exception re-propagates"
-      - "a lowering emitting `enter; BODY; exit` (no finally) would skip __exit__ on a raise — refused"
+      - "__exit__ runs on the NORMAL path (body completes) — for BOTH lowerings"
+      - "__exit__ runs on the EXCEPTION path (body raises) ONLY under the finally desugar — then the exception re-propagates"
+      - "a lowering emitting `enter; BODY; exit` (no finally) provably skips __exit__ on a raise (plain_sequence_skips_exit_on_err) — this is what makes the guarantee non-vacuous (PMAT-1141)"
     preconditions:
       - "the with-body is wrapped in a finally-only try whose finally calls __exit__ (PMAT-1073)"
     postconditions:
@@ -72,7 +76,7 @@ equations:
       model.
     invariants:
       - "FIRST Diamond-tier theorem of C-PY-CONTEXT-MANAGER-EXIT (registers it at depth-1)"
-      - "the finally guarantee proved as sibling theorems (exit_runs_on_ok, exit_runs_on_err, exit_runs_always)"
+      - "the finally guarantee proved as sibling theorems (exit_runs_on_ok, exit_runs_on_err, exit_runs_always) over xpileDesugar — NON-vacuous since PMAT-1141: exitRuns is a function of the lowering, with plain_sequence_skips_exit_on_err + exit_on_err_iff_finally pinning it"
       - "core-Lean, no Mathlib; the control-flow guarantee is a decidable case analysis"
     preconditions:
       - "the construct is a `with cm as x:` over a user context manager (not `with open(...)` file I/O)"
@@ -115,8 +119,10 @@ falsification_tests:
       The Lean model MUST elaborate sorry-free over core Lean 4 (no Mathlib),
       proving __exit__ runs on every outcome.
     prediction: |
-      `lake build` elaborates PyContextManagerExit with zero `sorry`/`axiom`, and
-      `exit_runs_always` proves `∀ outcome, exitRuns outcome = true`.
+      `lake build` elaborates PyContextManagerExit with zero `sorry`/`axiom`,
+      `exit_runs_always` proves `∀ outcome, exitRuns xpileDesugar outcome = true`,
+      and `plain_sequence_skips_exit_on_err` proves the no-finally lowering skips
+      __exit__ on the err path (so the guarantee is falsifiable, not by fiat).
     test: |
       cargo test -p xpile --test lean_pilot_roots inventory_pilot_count_in_sync_with_lakefile
     if_fails: |

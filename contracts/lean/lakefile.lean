@@ -336,9 +336,11 @@ lean_lib «XpileContractsPilot» where
     `PyFileIoRoundtrip,            -- C-PY-FILE-IO-ROUNDTRIP      (PMAT-1124)
     -- PMAT-1131 (R6 contract-integrity): NEW contract for user context managers
     -- (PMAT-1072). Core-only FINALLY GUARANTEE — __exit__ runs on EVERY body
-    -- outcome (ok | err), a decidable case analysis (exit_runs_always by
-    -- `decide`), plus WithLowering two-phase structure-extensionality. NO
-    -- Mathlib. Pilot 31 → 32; the four capabilities shipped this session
-    -- (exceptions/generators/file-io/context-managers) all now proven.
+    -- outcome (ok | err) under xpileDesugar, a decidable case analysis
+    -- (exit_runs_always by `decide`), plus WithLowering two-phase
+    -- structure-extensionality. PMAT-1141 (skeptic #5): exitRuns now branches on
+    -- the lowering (was a vacuous `fun _ => true`), so plain_sequence_skips_exit
+    -- _on_err makes the guarantee FALSIFIABLE. NO Mathlib. Pilot 31 → 32; the
+    -- four capabilities (exceptions/generators/file-io/context-managers) proven.
     `PyContextManagerExit         -- C-PY-CONTEXT-MANAGER-EXIT   (PMAT-1131)
   ]
