@@ -333,5 +333,12 @@ lean_lib «XpileContractsPilot» where
     -- read-after-write ROUND-TRIP + "w" truncation + "a" append-accumulate,
     -- all core-Lean (structure projection + String.append), NO Mathlib.
     -- Pilot 30 → 31.
-    `PyFileIoRoundtrip             -- C-PY-FILE-IO-ROUNDTRIP      (PMAT-1124)
+    `PyFileIoRoundtrip,            -- C-PY-FILE-IO-ROUNDTRIP      (PMAT-1124)
+    -- PMAT-1131 (R6 contract-integrity): NEW contract for user context managers
+    -- (PMAT-1072). Core-only FINALLY GUARANTEE — __exit__ runs on EVERY body
+    -- outcome (ok | err), a decidable case analysis (exit_runs_always by
+    -- `decide`), plus WithLowering two-phase structure-extensionality. NO
+    -- Mathlib. Pilot 31 → 32; the four capabilities shipped this session
+    -- (exceptions/generators/file-io/context-managers) all now proven.
+    `PyContextManagerExit         -- C-PY-CONTEXT-MANAGER-EXIT   (PMAT-1131)
   ]
