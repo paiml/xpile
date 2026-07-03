@@ -21064,3 +21064,17 @@ fn main() {
 "#;
     assert_rustc_runs("empty_collection_infer", &rust, driver);
 }
+
+/// PMAT-1167: a reused str operand of min()/max() is cloned, not moved (was
+/// E0382). min/max lower to `.min()`/`.max()` which consume by value.
+#[test]
+fn min_max_str_reused_operand_clones() {
+    let rust = xpile_transpile_to_rust("min_max_str_reuse.py");
+    let driver = r#"
+fn main() {
+    // min("apple","banana")="apple"; + a + b = "apple"+"apple"+"banana"
+    assert_eq!(pick(String::from("apple"), String::from("banana")), "appleapplebanana");
+}
+"#;
+    assert_rustc_runs("min_max_str_reuse", &rust, driver);
+}

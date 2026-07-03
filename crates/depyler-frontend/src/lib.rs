@@ -19001,6 +19001,22 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             let of_float = args
                                 .first()
                                 .is_some_and(|a| infer_type_in_ctx(ctx, a) == Type::F64);
+                            // PMAT-1167: a non-Copy (`str`) operand that is READ
+                            // AGAIN later in the function must be CLONED, not moved.
+                            // Codegen lowers `min`/`max` to `.min()`/`.max()`, which
+                            // CONSUME their operands (`String: Ord`, taken by value),
+                            // so a bare `min(a, b)` moved `a`/`b` and a later
+                            // `print(a)` was rustc E0382 (accept-then-fail — invalid
+                            // Rust). Reuse the canonical clone-if-reused helper
+                            // (PMAT-588/628): it is a NO-OP for Copy operands
+                            // (`int`/`float`/`bool`) and for single-use bindings, so
+                            // numeric min/max and the single-use `print(min(a, b))`
+                            // form stay byte-identical — the clone fires only on code
+                            // that would otherwise fail to compile.
+                            let args = args
+                                .into_iter()
+                                .map(|a| clone_if_reused_non_copy(ctx, a))
+                                .collect::<Vec<_>>();
                             return Ok(Expr::NumBuiltin { op, args, of_float });
                         }
                     }
