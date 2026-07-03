@@ -273,6 +273,9 @@ const EXPECTED_PILOT: &[&str] = &[
     // PMAT-1120: C-PY-EXCEPT-ALLOWLIST — the try/except dispatch contract.
     // Core-only allowlist structure-extensionality + no-swallow re-raise.
     "PyExceptAllowlist",
+    // PMAT-1122: C-PY-GENERATOR-EAGER — eager generator materialization
+    // faithfulness (core-Lean foldl induction).
+    "PyGeneratorEager",
 ];
 
 #[test]

@@ -1,0 +1,140 @@
+metadata:
+  id: C-PY-GENERATOR-EAGER
+  version: "1.0.0"
+  created: "2026-07-03"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Semantic contract: how xpile EAGERLY lowers Python generators (PMAT-1071). A
+    `def g() -> T: … yield e …` function is rewritten (AST pre-transform, before
+    the signature pre-pass) into a list-BUILDING function — `__gen_result:
+    list[T] = []`, each `yield e` → `__gen_result.append(e)`, a trailing `return
+    __gen_result` — so `for x in g()` / `list(g())` / `sum(g())` ride the
+    existing list machinery.
+
+    The load-bearing property is FAITHFULNESS: the materialized list is EXACTLY
+    the ordered sequence of yielded values — same values, same order, same
+    length. An emitter that dropped, duplicated, or reordered a yield would
+    produce a different list. This is why the eager lowering is a sound
+    replacement for finite generators.
+
+    Scope boundary: eager = FINITE generators only (an unbounded generator would
+    not terminate — the eager Vec would grow without bound); the common finite
+    `for x in g()` case is faithful. Refused (precise): unannotated generators,
+    bare `yield`, `yield from`, value-`return`.
+
+    provability/mathlib note: faithfulness is `foldl (fun acc v => acc ++ [v])
+    [] yields = yields` — a standard structural induction over `List`,
+    discharged over CORE Lean 4 (`List.foldl`, `List.append_assoc`, structural
+    `induction`) with NO Mathlib, no `sorry`, no `axiom`. Genuine inductive
+    content (not `rfl`) that needs nothing from Mathlib. Registered at depth-1
+    under the R6-grandfathered Diamond gate (PMAT-475a).
+
+    Layer 3 of the xpile contract taxonomy (semantic / lowering).
+  references:
+    - "Python Language Reference §6.2.9 (Yield expressions) and §4.3 (generator-iterator methods)"
+    - "contracts/xlate-py-list-to-vec-v1.yaml (the list machinery the eager result rides)"
+    - "contracts/py-except-allowlist-v1.yaml (sibling semantic contract, same session)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift — generators shipped uncontracted; this closes the eager-materialization gap)"
+  depends_on: []
+
+equations:
+  eager_materialization_faithful:
+    formula: |
+      materialize(yields) == yields
+        WHERE materialize(ys) = foldl (fun acc v => acc ++ [v]) [] ys
+      (the emitted `__gen_result = []`; per `yield v`: `__gen_result.append(v)`;
+       `return __gen_result`)
+    domain: |
+      Any FINITE generator `def g() -> T: … yield e …` consumed by
+      `for x in g()` / `list(g())` / `sum(g())`.
+    invariants:
+      - "the eager list reproduces the yield sequence — no value dropped, duplicated, or reordered"
+      - "len(list(g())) == the number of yields (materialize_length)"
+      - "materializing one more yield v appends v to the end (materialize_append_step)"
+    preconditions:
+      - "the generator is finite (bounded yields); unbounded generators are out of scope (would not terminate)"
+      - "the generator is annotated (`-> T` / `-> Iterator[T]`); unannotated / bare-yield / yield-from / value-return refuse"
+    postconditions:
+      - "the emitted list equals `list(g())` element-for-element in yield order"
+      - "an emitter that dropped/duplicated/reordered a yield would produce a different list — falsified here"
+
+  generator_run_structure_extensionality_diamond:
+    # PMAT-1122: FIRST (tier-defining) Diamond equation — registers
+    # C-PY-GENERATOR-EAGER at depth-1 under the R6-grandfathered Diamond gate.
+    lean_theorem: "XpileContracts.CPyGeneratorEager.generator_run_structure_extensionality_diamond"
+    lean_file: "contracts/lean/PyGeneratorEager.lean"
+    formula: |
+      ∀ a b : GeneratorRun.
+        a.yields = b.yields → a = b
+      (a run's emitted list is determined by its ordered yield sequence)
+    domain: |
+      Any generator run. xpile eagerly materializes the yields to a list; the
+      Diamond captures structure-extensionality of the yield-sequence model.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-PY-GENERATOR-EAGER (registers it at depth-1)"
+      - "faithfulness proved as the sibling theorem materialize_eq_yields (core-Lean induction, no Mathlib)"
+      - "eager = finite generators only; laziness / infinite generators are out of scope"
+    preconditions:
+      - "the construct is a `yield`-bearing function (a generator), not a plain function"
+    postconditions:
+      - "the emitted list-building function returns exactly the yield sequence"
+
+proof_obligations:
+  - type: precondition
+    property: the function contains a value `yield` and is annotated
+    formal: "body contains Stmt::Expr(Expr::Yield(Some(_))) ∧ returns.is_some()"
+    applies_to: eager_materialization_faithful
+  - type: postcondition
+    property: each yield lowers to __gen_result.append, preserving order
+    formal: "emit(yield v) == __gen_result.append(v) ∧ order preserved"
+    applies_to: eager_materialization_faithful
+  - type: frame
+    property: no mutation of the meta-HIR module during the eager rewrite
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-GENERATOR-EAGER-001
+    rule: |
+      The eager list MUST reproduce the yield sequence exactly (values, order,
+      length).
+    prediction: |
+      `list(squares(4))` == [0, 1, 4, 9] and `sum(squares(4))` == 14, matching
+      CPython.
+    test: |
+      cargo test -p xpile --test transpile_e2e generators_eager
+    if_fails: |
+      A yield was dropped, duplicated, or reordered — eager materialization
+      became unfaithful.
+    ship_blocking: true
+    counter_example_classes:
+      - yield_dropped
+      - yield_reordered
+      - yield_duplicated
+
+  - id: FALSIFY-GENERATOR-EAGER-002
+    rule: |
+      The Lean faithfulness model MUST elaborate sorry-free over core Lean 4 (no
+      Mathlib), proving `materialize(yields) == yields` by induction.
+    prediction: |
+      `lake build` elaborates PyGeneratorEager with zero `sorry`/`axiom`, and
+      `materialize_eq_yields` proves the fold equals the yield sequence.
+    test: |
+      cargo test -p xpile --test lean_pilot_roots inventory_pilot_count_in_sync_with_lakefile
+    if_fails: |
+      The proof-lane model regressed or the pilot roots drifted from the inventory.
+    ship_blocking: true
+    counter_example_classes:
+      - non_elaborating_module
+      - pilot_roots_drift
+
+qa_gate:
+  id: QA-PY-GENERATOR-EAGER
+  name: "Python eager generator lowering contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - generators_eager
+    - inventory_pilot_count_in_sync_with_lakefile

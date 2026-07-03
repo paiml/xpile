@@ -1210,6 +1210,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Done in an isolated git worktree (the OS cron is concurrently hammering depyler-frontend, PMAT-1080..1105). lake build green (29 modules), pv lint 0 errors, lean_pilot_roots count-sync + diamond_coverage(26) + refinement_proofs(3) + contract_citation_integrity(3) all pass. Answers the provability/mathlib strategic question: 28→29 modules proven core-only, zero cases needing Mathlib.'
+- id: PMAT-1122
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1122: [provability/R6/mathlib] NEW contract C-PY-GENERATOR-EAGER for the eager generator lowering (PMAT-1071, shipped uncontracted). Core-Lean PyGeneratorEager.lean: GeneratorRun yield-sequence structure-extensionality Diamond (depth-1) + FAITHFULNESS materialize_eq_yields (foldl snoc from [] == yields — no value dropped/duplicated/reordered) via a genuine structural induction foldl_snoc_prefix + materialize_length + materialize_append_step. provability/mathlib: REAL inductive content (not rfl) over CORE Lean 4 (List.foldl/append_assoc/induction) — NO Mathlib/sorry/axiom; eager materialization is a pure list fold. Pilot 29→30. Second proof-lane contract this REPL session (after C-PY-EXCEPT-ALLOWLIST/1120), worktree-isolated, collision-free from the concurrent cron.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Isolated git worktree (cron concurrently on the Python-surface lane). lake build green (30 modules), pv lint 0 errors, lean_pilot_roots + diamond_coverage + refinement_proofs + contract_citation_integrity all pass. Reaffirms provability/mathlib: 30 modules core-only, zero needing Mathlib.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability
