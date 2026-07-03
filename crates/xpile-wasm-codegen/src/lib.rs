@@ -3854,6 +3854,13 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => {
             expr_has_str_slice(obj) || args.iter().any(expr_has_str_slice)
         }
+        // PMAT-1148: `len(<str temporary>)` synthesises `StrMethod{CharCount,
+        // recv}` (Python len is a CODE-POINT count), so a slice inside the recv
+        // (`len(s[1:4] + t)`) reaches the slice helper only by recursing here —
+        // mirrors the `expr_has_heap_op` / `expr_has_str_repeat` StrMethod arms.
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_str_slice(recv) || args.iter().any(expr_has_str_slice)
+        }
         Expr::Len(c) => expr_has_str_slice(c),
         Expr::Ord { value } | Expr::Chr { value } => expr_has_str_slice(value),
         Expr::StrCharAt { string, index } => {
@@ -3933,6 +3940,11 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
         Expr::Call { args, .. } => args.iter().any(expr_has_int_to_str),
         Expr::MethodCall { obj, args, .. } => {
             expr_has_int_to_str(obj) || args.iter().any(expr_has_int_to_str)
+        }
+        // PMAT-1148: `len(str(n))` synthesises `StrMethod{CharCount, recv:
+        // ToStr}`, so the int→str helper is reached only by recursing into recv.
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_int_to_str(recv) || args.iter().any(expr_has_int_to_str)
         }
         Expr::Len(c) => expr_has_int_to_str(c),
         Expr::Ord { value } | Expr::Chr { value } => expr_has_int_to_str(value),
@@ -4249,6 +4261,12 @@ fn expr_has_str_contains(e: &Expr) -> bool {
         // PMAT-1142: a repeat operand can host `x in s` (`(a in b ...) `) —
         // recurse to keep the contains gate exhaustive.
         Expr::Repeat { seq, n, .. } => expr_has_str_contains(seq) || expr_has_str_contains(n),
+        // PMAT-1148: `len(...)` wraps its str arg in `StrMethod{CharCount, recv}`,
+        // whose recv can host `x in s` (e.g. `len("a" if x in s else "b")` via a
+        // str-valued `if` cond) — recurse so the contains helper is declared.
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_str_contains(recv) || args.iter().any(expr_has_str_contains)
+        }
         _ => false,
     }
 }
@@ -4456,6 +4474,12 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         }
         // PMAT-1142: a repeat's operands may host a string equality (exhaustive).
         Expr::Repeat { seq, n, .. } => expr_has_str_eq(seq, scan) || expr_has_str_eq(n, scan),
+        // PMAT-1148: `len(...)` wraps its str arg in `StrMethod{CharCount, recv}`,
+        // whose recv/args may host a string equality (e.g. `len("a" if s == t
+        // else "b")`) — recurse so `$__wasm_str_eq` is declared.
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_str_eq(recv, scan) || args.iter().any(|a| expr_has_str_eq(a, scan))
+        }
         _ => false,
     }
 }
@@ -6126,10 +6150,13 @@ fn emit_index_assign(
 /// string runtime). For an ASCII fixture the executed witness asserts the
 /// value matches CPython `len`.
 ///
-/// `collection` must be an [`Expr::Ident`] naming a list-param OR str-param
-/// base-pointer; `len` over anything else in the WASM subset (a scalar, a
-/// dict, a literal/temporary) is refused — only a length-prefixed list/str
-/// param carries a length header.
+/// `collection` is either an [`Expr::Ident`] naming a list/str/dict/set
+/// base-pointer (its `+0` count header, char-counted for a `str`), OR (PMAT-1148)
+/// a string-VALUED temporary (`Concat` / `s * n` / `s[lo:hi]` / str-valued
+/// `if`/`else` / `chr` / `s[i]` / str-returning call) — lowered via
+/// [`emit_str_expr`] to a length-prefixed pointer, then `$__wasm_str_charlen`.
+/// `len` over anything else (a scalar, a list/dict LITERAL or list temporary
+/// — none of which carry a length header) is refused.
 fn emit_len(
     collection: &Expr,
     scope: &Scope,
@@ -6137,11 +6164,38 @@ fn emit_len(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let Expr::Ident(name) = collection else {
-        return Err(unsupported(
-            "len() of a non-name collection — the WASM subset only takes \
-             len() of a `list[scalar]` param or a `str` name (its i32 length \
-             header); len of a list literal / dict / temporary is refused",
-        ));
+        // PMAT-1148: `len()` of a temporary STRING expression. Every
+        // string-VALUED form (a `Concat`, an `s * n` `Repeat`, a `s[lo:hi]`
+        // `Slice`, a `str`-valued `if`/`else` — the `str(bool)` desugar — a
+        // `Chr`, an `s[i]`, or a str-returning `Call`/`MethodCall`) lowers via
+        // `emit_str_expr` to an i32 base-pointer to a length-prefixed region, so
+        // `len` over it is its CODE-POINT count (`$__wasm_str_charlen`), exactly
+        // as for a `str` NAME. The helper-requirement scans (`module_touches_str`
+        // for charlen, `expr_has_heap_op`/`_str_slice`/`_str_repeat`/
+        // `_int_to_str` for the allocator + op helpers) all recurse into
+        // `Expr::Len`, so the callee helpers are always declared. A NON-string
+        // temporary (a list/dict literal) fails `emit_str_expr` and refuses
+        // honestly — never a silent miscompile. Lower into a scratch buffer so a
+        // mid-lowering refusal leaves `out` untouched.
+        let mut scratch = String::new();
+        return match emit_str_expr(collection, scope, &mut scratch, depth) {
+            Ok(()) => {
+                out.push_str(&scratch);
+                indent(out, depth);
+                writeln!(out, "call $__wasm_str_charlen").expect("write");
+                indent(out, depth);
+                writeln!(out, "i64.extend_i32_u").expect("write");
+                Ok(WatTy::I64)
+            }
+            Err(_) => Err(unsupported(
+                "len() of a non-name collection — the WASM subset takes len() of \
+                 a `list[scalar]`/`str`/`dict`/`set` NAME, or a string-VALUED \
+                 temporary (a `Concat` a+b, an `s * n` repeat, an `s[lo:hi]` \
+                 slice, a str-valued `if`/`else`, a `chr(n)`, an `s[i]`, or a \
+                 str-returning call); len of a list/dict literal or a list \
+                 temporary carries no length header and is refused",
+            )),
+        };
     };
     if scope.list_elem_of(name).is_none()
         && !scope.is_str_name(name)
