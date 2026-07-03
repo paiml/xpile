@@ -128,17 +128,39 @@ pub fn gpu_probe_env_usable() -> bool {
     usable
 }
 
+/// PMAT-1098: process-wide Vulkan-loader serialization. Concurrent
+/// `Instance::new` + `request_adapter` from parallel test threads
+/// intermittently SIGSEGV the ICD stack even in a *usable* session
+/// (2/5 `cargo test --workspace` runs on a GPU-present box, always
+/// inside the loader/enumeration path) — the sibling failure mode of
+/// the headless enumeration crash above, and equally unsurvivable
+/// in-process. Every loader touchpoint in this crate and the SPIR-V
+/// lane takes this lock; witness GPU *setup* is serialized, which
+/// costs nothing (witnesses are one-shot probes).
+static VULKAN_LOADER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquire the process-wide loader lock, surviving poisoning: a
+/// panicking GPU test must not cascade poison-panics into unrelated
+/// tests that merely probe adapter availability.
+pub fn vulkan_loader_guard() -> std::sync::MutexGuard<'static, ()> {
+    VULKAN_LOADER_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// `true` when a real wgpu adapter can be acquired — the gate that
 /// decides whether [`WgpuWgslDiffExecEngine`] should be installed.
 /// Mirrors [`xpile_ptx_codegen::cuda_toolchain_available`] /
 /// the cc-availability graceful-skip pattern: absence is a clean skip
 /// (free CI has no GPU), presence runs the witness (local GPU box).
 /// Guarded by [`gpu_probe_env_usable`] (PMAT-1088): a fully headless
-/// Linux session skips loudly *before* the loader is touched.
+/// Linux session skips loudly *before* the loader is touched; and by
+/// [`vulkan_loader_guard`] (PMAT-1098): loader entry is serialized.
 pub fn wgpu_adapter_available() -> bool {
     if !gpu_probe_env_usable() {
         return false;
     }
+    let _loader = vulkan_loader_guard();
     let instance = witness_instance();
     pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
@@ -272,8 +294,9 @@ impl WgpuWgslDiffExecEngine {
     /// `Err` (not a skip) — the caller only reaches here after
     /// [`wgpu_adapter_available`] gated the engine in, so a failure here
     /// is a genuine broken-GPU fault, per the [`DiffExecEngine`] error
-    /// posture.
+    /// posture. Loader entry is serialized (PMAT-1098).
     fn acquire_device() -> Result<(wgpu::Device, wgpu::Queue, String), String> {
+        let _loader = vulkan_loader_guard();
         let instance = witness_instance();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
