@@ -2162,9 +2162,12 @@ pub enum Expr {
     /// .expect("…") as i64)`. Lean refuses.
     Ord { value: Box<Expr> },
     /// `chr(n)` — the 1-char string for a code point (→ `str`). PMAT-502cm.
-    /// Rust/Ruchy emit `char::from_u32((<n>) as u32).expect("…").to_string()`
-    /// (an out-of-range code point panics, ≈ Python's `ValueError`). Lean
-    /// refuses.
+    /// Rust/Ruchy emit a range-checked block (PMAT-1096): outside C-int
+    /// `[-2^31, 2^31-1]` panics `OverflowError`, outside `range(0x110000)`
+    /// panics `ValueError` (both CPython-shaped and typed-catchable), the
+    /// surrogate band U+D800..U+DFFF panics UNTYPED with an honest
+    /// lane-limitation payload (CPython succeeds there; Rust `char` can't),
+    /// then `char::from_u32(...)`. Lean refuses.
     Chr { value: Box<Expr> },
     /// `hex(n)` / `oct(n)` / `bin(n)` — the radix string of an int (→ `str`).
     /// PMAT-502cv (Tranche 2). Python prefixes `0x`/`0o`/`0b` and puts the
