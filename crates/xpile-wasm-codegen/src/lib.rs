@@ -3967,6 +3967,15 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
         Expr::StrContains { haystack, needle } => {
             expr_has_int_to_str(haystack) || expr_has_int_to_str(needle)
         }
+        // PMAT-1149: a `str(int)` can be the SEQ of a string repeat (`str(n) *
+        // k`), the SOLE int→str site in a module. Every sibling helper walker
+        // (`expr_has_str_slice` / `_str_contains` / `_str_repeat` /
+        // `expr_uses_str_method`) already carries this Repeat arm; the MISS here
+        // was a latent gate hole — `emit_repeat` lowers the seq via
+        // `emit_str_expr`, whose `ToStr` arm emits `call $__wasm_int_to_str`, so
+        // a repeat-hosted `str(n)` that this gate skips leaves the helper
+        // UNDECLARED (a hard wat2wasm failure). Recurse into both operands.
+        Expr::Repeat { seq, n, .. } => expr_has_int_to_str(seq) || expr_has_int_to_str(n),
         _ => false,
     }
 }
