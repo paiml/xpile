@@ -1,0 +1,157 @@
+metadata:
+  id: C-PY-FILE-IO-ROUNDTRIP
+  version: "1.0.0"
+  created: "2026-07-03"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Semantic contract: how xpile lowers whole-file I/O (PMAT-1074/1075/1076/
+    1078). `open(p).read()` → `std::fs::read_to_string(p)`; `open(p, "w").write
+    (s)` → `std::fs::write(p, s)` (TRUNCATE); `open(p, "a").write(s)` →
+    `OpenOptions::new().create(true).append(true)…write_all` (APPEND); the
+    idiomatic `with open(p) as f: … f.read()/f.write()` desugar; and `for line
+    in open(p)` line iteration. A missing file / bad dir raises (NotFound →
+    `xpile: FileNotFoundError`, matching CPython — both RAISE = BOTHRAISE).
+
+    The load-bearing correctness property is the ROUND-TRIP over file CONTENT:
+    reading after a write returns exactly what was written; `"w"` truncates
+    (result independent of prior content); `"a"` accumulates (old ++ new). These
+    are the properties verified empirically this session (write-then-read MATCH;
+    overwrite → truncate; loop-append → accumulate).
+
+    provability/mathlib note: the file model is a pure `String` state; read /
+    write / append are total functions over it, so every theorem is discharged
+    over CORE Lean 4 (structure projection + `String.append`) — NO Mathlib, no
+    `sorry`, no `axiom`. Once the stateful file effect is abstracted to its
+    content, it needs nothing from real-analysis / linear-algebra. Registered at
+    depth-1 under the R6-grandfathered Diamond gate (PMAT-475a).
+
+    Layer 3 of the xpile contract taxonomy (semantic / effect).
+  references:
+    - "Python Language Reference: `open()` built-in (modes 'r'/'w'/'a'); str.read/write"
+    - "Rust std::fs::read_to_string / std::fs::write / std::fs::OpenOptions"
+    - "contracts/py-generator-eager-v1.yaml (sibling semantic contract, same session)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift — file I/O shipped uncontracted; this closes the whole-file round-trip gap)"
+  depends_on: []
+
+equations:
+  read_after_write_roundtrip:
+    formula: |
+      read(write(f, s)) == s          -- "w": read returns exactly what was written
+      write(f, s) == write(g, s)      -- "w": truncates, independent of prior content
+      read(append(f, s)) == f.content ++ s   -- "a": keeps old, appends new
+    domain: |
+      Whole-file operations: `open(p, "w").write(s)` then `open(p).read()`, and
+      `open(p, "a").write(s)`.
+    invariants:
+      - "read-after-write returns the written content exactly (round-trip)"
+      - "`\"w\"` truncates — the result is independent of the prior file content"
+      - "`\"a\"` appends — the result is old content ++ new content, in order"
+    preconditions:
+      - "the path is writable; a missing dir / permission error raises (FileNotFoundError / OSError), matching CPython"
+    postconditions:
+      - "an emitter that failed to truncate on `\"w\"`, or truncated on `\"a\"`, would diverge from CPython — falsified here"
+
+  append_accumulates:
+    formula: |
+      read(append(append(f, a), b)) == f.content ++ a ++ b
+    domain: |
+      The build-a-log idiom: `open(p,"w").write(""); for …: open(p,"a").write(x)`.
+    invariants:
+      - "successive appends concatenate in order (accumulate, not truncate)"
+    preconditions:
+      - "append mode `\"a\"` lowers to OpenOptions().append(true), not std::fs::write"
+    postconditions:
+      - "the final content is the ordered concatenation of all appended writes"
+
+  file_state_structure_extensionality_diamond:
+    # PMAT-1124: FIRST (tier-defining) Diamond equation — registers
+    # C-PY-FILE-IO-ROUNDTRIP at depth-1 under the R6-grandfathered Diamond gate.
+    lean_theorem: "XpileContracts.CPyFileIoRoundtrip.file_state_structure_extensionality_diamond"
+    lean_file: "contracts/lean/PyFileIoRoundtrip.lean"
+    formula: |
+      ∀ a b : FileState.
+        a.content = b.content → a = b
+      (a file's whole-file read is determined by its byte content)
+    domain: |
+      Any file state. xpile's whole-file I/O reads/writes the content; the
+      Diamond captures structure-extensionality of the content model.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-PY-FILE-IO-ROUNDTRIP (registers it at depth-1)"
+      - "round-trip / truncation / append proved as sibling theorems (read_after_write, write_truncates, read_after_append, append_accumulates)"
+      - "core-Lean, no Mathlib; the file effect is abstracted to a String state"
+    preconditions:
+      - "the construct is a whole-file open/read/write (not a network / partial-seek op)"
+    postconditions:
+      - "the emitted std::fs call preserves the read-after-write content semantics"
+
+proof_obligations:
+  - type: precondition
+    property: the meta-HIR carries a FileReadAll / FileWrite (whole-file op)
+    formal: "expr == FileReadAll(_) ∨ stmt == FileWrite { .. }"
+    applies_to: read_after_write_roundtrip
+  - type: postcondition
+    property: mode w maps to truncating std::fs::write; mode a to OpenOptions append
+    formal: "emit(write, w) == std::fs::write and emit(write, a) == OpenOptions.append"
+    applies_to: read_after_write_roundtrip
+  - type: frame
+    property: no mutation of the meta-HIR module during the I/O lowering
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-FILE-IO-001
+    rule: |
+      Reading after a `"w"` write MUST return exactly what was written; `"w"`
+      MUST truncate.
+    prediction: |
+      `open(p,"w").write("payload"); open(p).read()` == "payload", and a second
+      shorter write leaves only the shorter content (truncation).
+    test: |
+      cargo test -p xpile --test transpile_e2e file_write
+    if_fails: |
+      Read-after-write diverged, or `"w"` failed to truncate.
+    ship_blocking: true
+    counter_example_classes:
+      - roundtrip_mismatch
+      - missing_truncation
+
+  - id: FALSIFY-FILE-IO-002
+    rule: |
+      Append mode `"a"` MUST accumulate (old ++ new), never truncate.
+    prediction: |
+      `open(p,"w").write(""); open(p,"a").write("A"); open(p,"a").write("B");
+      open(p).read()` == "AB".
+    test: |
+      cargo test -p xpile --test transpile_e2e file_append
+    if_fails: |
+      Append truncated instead of accumulating (used std::fs::write for "a").
+    ship_blocking: true
+    counter_example_classes:
+      - append_truncated
+
+  - id: FALSIFY-FILE-IO-003
+    rule: |
+      The Lean file model MUST elaborate sorry-free over core Lean 4 (no
+      Mathlib), proving read-after-write / truncation / append-accumulate.
+    prediction: |
+      `lake build` elaborates PyFileIoRoundtrip with zero `sorry`/`axiom`.
+    test: |
+      cargo test -p xpile --test lean_pilot_roots inventory_pilot_count_in_sync_with_lakefile
+    if_fails: |
+      The proof-lane model regressed or the pilot roots drifted from the inventory.
+    ship_blocking: true
+    counter_example_classes:
+      - non_elaborating_module
+      - pilot_roots_drift
+
+qa_gate:
+  id: QA-PY-FILE-IO-ROUNDTRIP
+  name: "Python whole-file I/O round-trip contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - file_write
+    - file_append
+    - inventory_pilot_count_in_sync_with_lakefile

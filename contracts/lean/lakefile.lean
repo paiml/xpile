@@ -327,5 +327,11 @@ lean_lib «XpileContractsPilot» where
     -- (foldl snoc from []) equals the yield sequence exactly (values/order/
     -- length), a genuine structural induction (foldl_snoc_prefix), proved over
     -- core Lean (List.foldl/append_assoc) with NO Mathlib. Pilot 29 → 30.
-    `PyGeneratorEager              -- C-PY-GENERATOR-EAGER        (PMAT-1122)
+    `PyGeneratorEager,             -- C-PY-GENERATOR-EAGER        (PMAT-1122)
+    -- PMAT-1124 (R6 contract-integrity): NEW contract for whole-file I/O
+    -- (PMAT-1074/1075/1076/1078). Core-only FileState (String content) model:
+    -- read-after-write ROUND-TRIP + "w" truncation + "a" append-accumulate,
+    -- all core-Lean (structure projection + String.append), NO Mathlib.
+    -- Pilot 30 → 31.
+    `PyFileIoRoundtrip             -- C-PY-FILE-IO-ROUNDTRIP      (PMAT-1124)
   ]
