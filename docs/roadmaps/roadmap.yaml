@@ -1244,6 +1244,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Feature branch feat/wasm-str-contains (NOT worktree — disjoint crate from the cron Python-surface lane; xpile-wasm-codegen is cron-cold). Contract C-WASM-HEAP extended: new equation string_contains_is_byte_substring_search + SUPPORTED-ops narrative. EXECUTED WABT witness (tests/str_contains_witness.rs): 21 cases — ASCII (start/middle/end/absent/longer-than/empty/equal/single-char), SLIDE fixtures ("ana" in "banana"=True at offset 1, which a one-offset prefix/suffix compare would MISS), and MULTI-BYTE é/© fixtures — assemble via wat2wasm and run via wasm-interp value-matching CPython, incl. "©" in "héllo"=False on a shared 0xA9 continuation byte. Plus a heap-operand construct test (("l"+"o") in s) proving the allocator + literal (data) gating fires. pv lint 0 errors, cargo test -p xpile-wasm-codegen green (59+ unit + all witness tests).'
+- id: PMAT-1131
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1131: [provability/R6/mathlib] NEW contract C-PY-CONTEXT-MANAGER-EXIT for user context managers (PMAT-1072, shipped uncontracted). Core-Lean PyContextManagerExit.lean: WithLowering two-phase structure-extensionality Diamond (depth-1) + the FINALLY GUARANTEE exit_runs_always (∀ Outcome, exitRuns = true — __exit__ runs on both the ok and err body paths, the reason the desugar uses a finally-only try not a plain enter;BODY;exit). provability/mathlib: a control-flow guarantee reduces to a finite case analysis over a 2-constructor Outcome, closed by decide over CORE Lean 4 — NO Mathlib/sorry/axiom. Pilot 31→32. FOURTH proof-lane contract this REPL session — the four major capabilities shipped (exceptions/generators/file-io/context-managers) now all under proven core-Lean contracts.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Worktree-isolated (cron concurrently on Python-surface/WASM lanes, at ~PMAT-1127). lake build green (32 modules), pv lint 0 errors, all provability gates pass.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

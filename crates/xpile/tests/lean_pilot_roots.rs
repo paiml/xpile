@@ -279,6 +279,9 @@ const EXPECTED_PILOT: &[&str] = &[
     // PMAT-1124: C-PY-FILE-IO-ROUNDTRIP — whole-file read/write/append
     // round-trip semantics (core-Lean String-content model).
     "PyFileIoRoundtrip",
+    // PMAT-1131: C-PY-CONTEXT-MANAGER-EXIT — the with-statement finally
+    // guarantee (__exit__ runs on every outcome; core-Lean decide).
+    "PyContextManagerExit",
 ];
 
 #[test]

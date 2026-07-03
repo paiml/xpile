@@ -1,0 +1,136 @@
+metadata:
+  id: C-PY-CONTEXT-MANAGER-EXIT
+  version: "1.0.0"
+  created: "2026-07-03"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Semantic contract: how xpile lowers user context managers (PMAT-1072).
+    `with cm as x: BODY` desugars to `__cm = cm; x = __cm.__enter__(); try: BODY
+    finally: __cm.__exit__(…)`. The load-bearing correctness property is the
+    FINALLY GUARANTEE: because `__exit__` sits in a finally, it runs on EVERY
+    exit path of the body — the normal (body-completes) path AND the exception
+    (body-raises) path.
+
+    This is why the desugar uses a finally-only try (PMAT-1073) instead of a
+    plain `enter; BODY; exit` sequence: the plain sequence would SKIP `__exit__`
+    when the body raises, leaking the acquired resource. Verified empirically
+    this session (acquire → raise → release → caught).
+
+    Scope: the SAFE (non-mutating) context-manager subset. A MUTATING
+    `__enter__`/`__exit__` refuses (the Rc<RefCell> reference-model gap — a
+    captured mutable would clone and silently drop the mutation); `with
+    open(...)` is the file-I/O lane (C-PY-FILE-IO-ROUNDTRIP). This contract pins
+    the CONTROL-FLOW dispatch (exit runs on every path), which holds regardless
+    of the value-semantics subset.
+
+    provability/mathlib note: the finally guarantee is `∀ outcome, exitRuns
+    outcome = true` over a two-constructor `Outcome` (ok | err) — a DECIDABLE
+    property closed by `decide` (a control-flow guarantee reduces to a finite
+    case analysis). Discharged over CORE Lean 4, NO Mathlib/sorry/axiom.
+    Registered at depth-1 under the R6-grandfathered Diamond gate (PMAT-475a).
+
+    Layer 3 of the xpile contract taxonomy (semantic / control-flow).
+  references:
+    - "Python Language Reference §8.5 (The with statement — __enter__/__exit__; __exit__ runs on normal and exceptional exit)"
+    - "contracts/py-except-allowlist-v1.yaml (sibling control-flow contract — the finally-only try this reuses)"
+    - "contracts/py-file-io-roundtrip-v1.yaml (the `with open(...)` file lane)"
+    - "docs/specifications/audit-design.md §6 (Capability-vs-Contract Drift — context managers shipped uncontracted; this closes the with/finally gap)"
+  depends_on: []
+
+equations:
+  finally_guarantee:
+    formula: |
+      exitRuns(outcome) == true    for outcome ∈ {ok, err}
+      (∀ body outcome, __exit__ runs — it is in a finally, not a plain sequence)
+    domain: |
+      Any `with cm as x: BODY` over a user context manager defining
+      `__enter__`/`__exit__` (the non-mutating subset).
+    invariants:
+      - "__exit__ runs on the NORMAL path (body completes)"
+      - "__exit__ runs on the EXCEPTION path (body raises) — then the exception re-propagates"
+      - "a lowering emitting `enter; BODY; exit` (no finally) would skip __exit__ on a raise — refused"
+    preconditions:
+      - "the with-body is wrapped in a finally-only try whose finally calls __exit__ (PMAT-1073)"
+    postconditions:
+      - "__exit__ runs exactly once on every exit path; on the exception path it runs BEFORE the exception reaches an enclosing try"
+      - "an emitter that dropped the finally would leak the resource on a raise — falsified here"
+
+  with_lowering_structure_extensionality_diamond:
+    # PMAT-1131: FIRST (tier-defining) Diamond equation — registers
+    # C-PY-CONTEXT-MANAGER-EXIT at depth-1 under the R6-grandfathered Diamond gate.
+    lean_theorem: "XpileContracts.CPyContextManagerExit.with_lowering_structure_extensionality_diamond"
+    lean_file: "contracts/lean/PyContextManagerExit.lean"
+    formula: |
+      ∀ a b : WithLowering.
+        a.hasEnter = b.hasEnter → a.hasExitInFinally = b.hasExitInFinally → a = b
+      (the with-lowering is determined by its emitted __enter__ / __exit__ phases)
+    domain: |
+      Any `with` lowering. xpile emits __enter__ before the body and __exit__ in
+      a finally; the Diamond captures structure-extensionality of the two-phase
+      model.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-PY-CONTEXT-MANAGER-EXIT (registers it at depth-1)"
+      - "the finally guarantee proved as sibling theorems (exit_runs_on_ok, exit_runs_on_err, exit_runs_always)"
+      - "core-Lean, no Mathlib; the control-flow guarantee is a decidable case analysis"
+    preconditions:
+      - "the construct is a `with cm as x:` over a user context manager (not `with open(...)` file I/O)"
+    postconditions:
+      - "the emitted desugar runs __enter__ then the body then __exit__ (in a finally)"
+
+proof_obligations:
+  - type: precondition
+    property: the meta-HIR carries a with over a user context manager (enter/exit methods)
+    formal: "with_item.context_expr == ClassName(...) ∧ class defines __enter__ ∧ __exit__"
+    applies_to: finally_guarantee
+  - type: postcondition
+    property: __exit__ is emitted in a finally-only try (runs on every path)
+    formal: "emit(with) == enter; try BODY finally exit"
+    applies_to: finally_guarantee
+  - type: frame
+    property: no mutation of the meta-HIR module during the with desugar
+    formal: "modifies() == ∅"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-CONTEXT-MANAGER-001
+    rule: |
+      __exit__ MUST run on the EXCEPTION path (body raises), before the exception
+      re-propagates.
+    prediction: |
+      `with Section("data"): raise ValueError` runs __exit__ (prints the release),
+      then the ValueError propagates and is caught — acquire/release/caught.
+    test: |
+      cargo test -p xpile --test transpile_e2e context_managers
+    if_fails: |
+      __exit__ was skipped on a raise — the finally guarantee broke (resource leak).
+    ship_blocking: true
+    counter_example_classes:
+      - exit_skipped_on_raise
+      - missing_finally
+
+  - id: FALSIFY-CONTEXT-MANAGER-002
+    rule: |
+      The Lean model MUST elaborate sorry-free over core Lean 4 (no Mathlib),
+      proving __exit__ runs on every outcome.
+    prediction: |
+      `lake build` elaborates PyContextManagerExit with zero `sorry`/`axiom`, and
+      `exit_runs_always` proves `∀ outcome, exitRuns outcome = true`.
+    test: |
+      cargo test -p xpile --test lean_pilot_roots inventory_pilot_count_in_sync_with_lakefile
+    if_fails: |
+      The proof-lane model regressed or the pilot roots drifted from the inventory.
+    ship_blocking: true
+    counter_example_classes:
+      - non_elaborating_module
+      - pilot_roots_drift
+
+qa_gate:
+  id: QA-PY-CONTEXT-MANAGER-EXIT
+  name: "Python with-statement finally-guarantee contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - context_managers
+    - inventory_pilot_count_in_sync_with_lakefile
