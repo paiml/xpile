@@ -290,7 +290,14 @@ fn witness_instance() -> wgpu::Instance {
 /// `true` when a real wgpu **Vulkan** adapter can be acquired — the gate
 /// deciding whether [`SpirvDiffExecEngine`] is installed. Absence is a
 /// clean skip (free CI has no GPU); presence runs the witness.
+/// Guarded by [`xpile_wgsl_codegen::gpu_probe_env_usable`] (PMAT-1088):
+/// a fully headless Linux session skips loudly *before* the Vulkan
+/// loader is touched — the ICD enumeration intermittently SIGSEGVs
+/// there, which no in-process probe can survive.
 pub fn vulkan_adapter_available() -> bool {
+    if !xpile_wgsl_codegen::gpu_probe_env_usable() {
+        return false;
+    }
     let instance = witness_instance();
     pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,

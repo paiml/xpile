@@ -79,12 +79,66 @@ fn witness_instance() -> wgpu::Instance {
     wgpu::Instance::new(desc)
 }
 
+/// PMAT-1088: pure decision core for [`gpu_probe_env_usable`] — `true`
+/// when the (Linux) session environment is safe for an in-process Vulkan
+/// loader probe. Empty values count as unset (an empty `DISPLAY` is no
+/// session). A non-empty `force` (XPILE_FORCE_GPU_PROBE) always permits.
+fn probe_env_usable(
+    xdg_runtime_dir: Option<&str>,
+    display: Option<&str>,
+    wayland_display: Option<&str>,
+    force: Option<&str>,
+) -> bool {
+    let set = |v: Option<&str>| v.is_some_and(|s| !s.is_empty());
+    set(force) || set(xdg_runtime_dir) || set(display) || set(wayland_display)
+}
+
+/// PMAT-1088: `true` when it is safe to touch the Vulkan loader at all.
+///
+/// In a fully headless Linux session (`XDG_RUNTIME_DIR`, `DISPLAY`, and
+/// `WAYLAND_DISPLAY` all unset — e.g. a cron-spawned shell) the ICD
+/// enumeration spams "XDG_RUNTIME_DIR not set in the environment." and
+/// **intermittently SIGSEGVs inside instance init**, killing the whole
+/// test process before libtest can report — an in-process probe cannot
+/// defend against that, so the gates refuse to enumerate and record a
+/// loud skip instead. Set `XPILE_FORCE_GPU_PROBE=1` to probe anyway
+/// (e.g. a headless box with a known-good compute-only Vulkan stack, or
+/// export a real `XDG_RUNTIME_DIR`). Non-Linux is always usable: the
+/// XDG/X11/Wayland session concept — and the crashing loader stack — is
+/// Linux-specific, and macOS Metal sessions set none of these vars.
+pub fn gpu_probe_env_usable() -> bool {
+    if !cfg!(target_os = "linux") {
+        return true;
+    }
+    let get = |k: &str| std::env::var(k).ok();
+    let usable = probe_env_usable(
+        get("XDG_RUNTIME_DIR").as_deref(),
+        get("DISPLAY").as_deref(),
+        get("WAYLAND_DISPLAY").as_deref(),
+        get("XPILE_FORCE_GPU_PROBE").as_deref(),
+    );
+    if !usable {
+        eprintln!(
+            "PMAT-1088: skipping GPU adapter probe — fully headless Linux session \
+             (XDG_RUNTIME_DIR, DISPLAY, WAYLAND_DISPLAY all unset): the Vulkan ICD \
+             stack intermittently SIGSEGVs during enumeration in such sessions. \
+             Set XPILE_FORCE_GPU_PROBE=1 (or a real XDG_RUNTIME_DIR) to probe anyway."
+        );
+    }
+    usable
+}
+
 /// `true` when a real wgpu adapter can be acquired — the gate that
 /// decides whether [`WgpuWgslDiffExecEngine`] should be installed.
 /// Mirrors [`xpile_ptx_codegen::cuda_toolchain_available`] /
 /// the cc-availability graceful-skip pattern: absence is a clean skip
 /// (free CI has no GPU), presence runs the witness (local GPU box).
+/// Guarded by [`gpu_probe_env_usable`] (PMAT-1088): a fully headless
+/// Linux session skips loudly *before* the loader is touched.
 pub fn wgpu_adapter_available() -> bool {
+    if !gpu_probe_env_usable() {
+        return false;
+    }
     let instance = witness_instance();
     pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
@@ -508,5 +562,20 @@ mod tests {
     fn vulkan_alias_matches_wgpu_availability() {
         // The two graceful-skip gates agree (one aliases the other).
         assert_eq!(vulkan_adapter_available(), wgpu_adapter_available());
+    }
+
+    #[test]
+    fn probe_env_blocked_only_when_fully_headless() {
+        // PMAT-1088: all three session vars unset (or empty) → blocked.
+        assert!(!probe_env_usable(None, None, None, None));
+        assert!(!probe_env_usable(Some(""), Some(""), Some(""), None));
+        // Any one real session var is enough.
+        assert!(probe_env_usable(Some("/run/user/1000"), None, None, None));
+        assert!(probe_env_usable(None, Some(":0"), None, None));
+        assert!(probe_env_usable(None, None, Some("wayland-0"), None));
+        // The override permits even a fully headless session…
+        assert!(probe_env_usable(None, None, None, Some("1")));
+        // …but an empty override is no override.
+        assert!(!probe_env_usable(None, None, None, Some("")));
     }
 }
