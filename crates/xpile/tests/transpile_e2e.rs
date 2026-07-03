@@ -19311,6 +19311,79 @@ fn main() {
     assert_rustc_runs("generators_eager", &rust, driver);
 }
 
+/// PMAT-1083 (skeptic-pass PMAT-1081 probe p1): a side-effect call statement
+/// in a generator body is lazily interleaved with consumption; eager
+/// materialization silently reorders (side,side2,1,2 vs CPython side,1,side2,2).
+/// Must refuse at the generator transform.
+#[test]
+fn gen_side_effect_rejected() {
+    let py = fixture("gen_side_effect_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a side-effect call statement in a generator must refuse, not silently reorder"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("side-effect call statement") && stderr.contains("`noisy`"),
+        "the rejection should name the construct and the generator:\n{stderr}"
+    );
+}
+
+/// PMAT-1083 (probe p10): a `raise` in a generator body fires eagerly at CALL
+/// time; lazily a partial consumer never reaches it (clean CPython run vs
+/// exit-101 crash). Must refuse at the generator transform.
+#[test]
+fn gen_raise_rejected() {
+    let py = fixture("gen_raise_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a `raise` in a generator must refuse, not crash where CPython runs clean"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`raise`") && stderr.contains("`risky`"),
+        "the rejection should name the construct and the generator:\n{stderr}"
+    );
+}
+
+/// PMAT-1083 (probe p2b): a `while True` generator terminates lazily via the
+/// consumer's `break`; eager materialization hangs forever. Any `while`
+/// refuses (boundedness is not syntactically decidable).
+#[test]
+fn gen_while_rejected() {
+    let py = fixture("gen_while_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a `while` loop in a generator must refuse, not hang materializing"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`while` loop") && stderr.contains("`naturals`"),
+        "the rejection should name the construct and the generator:\n{stderr}"
+    );
+}
+
+/// PMAT-1083 (probe p12): `next(g)` needs the iterator protocol the eager
+/// model doesn't have (was a free `next(it)` call → rustc E0425 far
+/// downstream). Must refuse precisely at lowering.
+#[test]
+fn gen_next_rejected() {
+    let py = fixture("gen_next_rejected.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "`next()` must refuse precisely, not emit a nonexistent free function"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("next()") && stderr.contains("EAGERLY"),
+        "the rejection should name next() and the eager model:\n{stderr}"
+    );
+}
+
 /// PMAT-1073: finally-only try (`try: B finally: F`, no except) runs cleanup
 /// and propagates (does NOT swallow like `except: pass`). MATCH.
 #[test]
