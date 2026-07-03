@@ -2687,6 +2687,13 @@ impl Frontend for PythonFrontend {
         let mut suite = ast::Suite::parse(source, &source_name)
             .map_err(|e| FrontendError::Parse(format!("{}: {}", source_name, e)))?;
 
+        // PMAT-1086: refuse lone-surrogate string literals BEFORE lowering —
+        // rustpython's escape decode has already replaced them with U+FFFD in
+        // the AST (indistinguishable from a genuine U+FFFD literal), so the
+        // detection re-lexes the raw source. Applies to EVERY lane including
+        // the WASM reference profile (its data segments are equally lossy).
+        reject_lone_surrogate_literals(source)?;
+
         // PMAT-1071: EAGER generator lowering — rewrite each `def g() -> T:
         // … yield e …` (a function containing `yield`) into a list-BUILDING
         // function BEFORE the sig pre-pass + lowering, so everything
@@ -3344,6 +3351,74 @@ fn reject_alias_then_mutate(items: &[Item]) -> Result<(), FrontendError> {
             check_block_children(body, &mut |e| {
                 check_expr_for_alias_mutate(e, &mutating_fns, &mutating_methods)
             })?;
+        }
+    }
+    Ok(())
+}
+
+/// PMAT-1086 (skeptic-pass PMAT-1081, WASM finding): REFUSE lone-surrogate
+/// escapes (`"\ud800"`…`"\udfff"`, and the `\U0000D800` 8-digit spelling) in
+/// string literals. rustpython-parser's escape decode replaces them with
+/// U+FFFD (a Rust `String` cannot hold an unpaired surrogate), so EVERY
+/// downstream op silently diverges in EVERY target: `"\ud800" < ""` flips
+/// True→False, `"\ud800" == "�"` flips False→True, and the WASM data segment
+/// carries EF BF BD while `$__wasm_chr` deliberately encodes real surrogate
+/// bytes — `chr(55296) == "\ud800"` disagrees with itself. Post-decode the
+/// U+FFFD is indistinguishable from a genuine one, so this re-lexes the RAW
+/// source and scans only non-raw, non-bytes string-token text (comments and
+/// `r"\ud800"` stay allowed; `b"\ud800"` has no `\u` escape in Python). Lex
+/// errors are ignored here — parse proper already reported them.
+fn reject_lone_surrogate_literals(source: &str) -> Result<(), FrontendError> {
+    use rustpython_parser::lexer::lex;
+    use rustpython_parser::{Mode, StringKind, Tok};
+
+    /// First lone-surrogate escape in raw (undecoded) literal text, if any.
+    /// Walks escape PAIRS so `"\\ud800"` (literal backslash + text) is not
+    /// misread — the hex digits of a real escape cannot start another one.
+    fn find_lone_surrogate_escape(raw: &str) -> Option<String> {
+        let chars: Vec<char> = raw.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] != '\\' {
+                i += 1;
+                continue;
+            }
+            let Some(&esc) = chars.get(i + 1) else { break };
+            let digits = match esc {
+                'u' => 4,
+                'U' => 8,
+                _ => {
+                    i += 2;
+                    continue;
+                }
+            };
+            let hex: String = chars[i + 2..].iter().take(digits).collect();
+            if hex.len() == digits && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                let v = u32::from_str_radix(&hex, 16).expect("checked hex");
+                if (0xD800..=0xDFFF).contains(&v) {
+                    return Some(format!("\\{esc}{hex}"));
+                }
+            }
+            i += 2;
+        }
+        None
+    }
+
+    for spanned in lex(source, Mode::Module) {
+        let Ok((Tok::String { value, kind, .. }, _)) = spanned else {
+            continue;
+        };
+        if kind.is_raw() || matches!(kind, StringKind::Bytes) {
+            continue;
+        }
+        if let Some(esc) = find_lone_surrogate_escape(&value) {
+            return Err(FrontendError::Lower(format!(
+                "lone-surrogate string literal `{esc}` is not supported — a \
+ Rust/UTF-8 string cannot represent an unpaired surrogate, and the parser \
+ decodes it lossily to U+FFFD, so every downstream operation would silently \
+ diverge from CPython in every target. Remove the surrogate escape (a raw \
+ string r\"...\" keeps the backslash text literally) (PMAT-1086)"
+            )));
         }
     }
     Ok(())
@@ -25048,6 +25123,59 @@ mod tests {
             src,
             AliasSemantics::Reference,
         )
+    }
+
+    /// PMAT-1086: every lone-surrogate escape spelling refuses, in every
+    /// lane (the WASM data segment is equally lossy — probe: the emitted
+    /// segment held EF BF BD, not the surrogate's would-be bytes).
+    #[test]
+    fn lone_surrogate_literal_rejected_all_spellings_and_lanes() {
+        let cases = [
+            ("def f() -> str:\n    return \"\\ud800\"\n", "\\ud800"),
+            ("def f() -> str:\n    return \"\\udfff\"\n", "\\udfff"),
+            (
+                "def f() -> str:\n    return \"\\U0000DC00\"\n",
+                "\\U0000DC00",
+            ),
+            (
+                "def f(x: int) -> str:\n    return f\"\\udc00{x}\"\n",
+                "\\udc00",
+            ),
+        ];
+        for (src, esc) in cases {
+            let err = PythonFrontend
+                .parse_and_lower(&PathBuf::from("fixture.py"), src)
+                .expect_err("lone-surrogate literal must refuse");
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("lone-surrogate") && msg.contains(esc),
+                "refusal names the escape {esc}: {msg}"
+            );
+        }
+        // Reference (WASM) lane refuses too — not gated like alias scans.
+        parse_for_reference("def f() -> str:\n    return \"\\ud800\"\n")
+            .expect_err("reference lane must refuse lone surrogates too");
+    }
+
+    /// PMAT-1086 precision: everything NEAR the refused shape stays allowed —
+    /// genuine U+FFFD, raw strings, escaped backslashes, comments, and the
+    /// D7FF/E000 boundary escapes.
+    /// The allowed shapes were differentially verified CPython-exact
+    /// (probes /tmp/pmat1086: `1 6 6 true`).
+    #[test]
+    fn lone_surrogate_scan_precision() {
+        let allowed = [
+            "def f() -> int:\n    return len(\"\u{FFFD}\")\n",
+            "def f() -> int:\n    return len(r\"\\ud800\")\n",
+            "def f() -> int:\n    return len(\"\\\\ud800\")\n",
+            "# a comment mentioning \\ud800 is not a literal\ndef f() -> int:\n    return 7\n",
+            "def f() -> bool:\n    return \"\\ud7ff\" < \"\\ue000\"\n",
+        ];
+        for src in allowed {
+            PythonFrontend
+                .parse_and_lower(&PathBuf::from("fixture.py"), src)
+                .unwrap_or_else(|e| panic!("must stay allowed: {e}\nsource:\n{src}"));
+        }
     }
 
     /// PMAT-1024 fixtures: a mutated struct alias — the Rust lane's
