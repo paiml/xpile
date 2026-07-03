@@ -532,6 +532,32 @@ fn foreach_var_reassigned(body: &[Stmt], name: &str) -> bool {
     })
 }
 
+/// PMAT-1105 (c): the emitted catch-all gate — TRUE iff the downcast payload
+/// `__xpile_m` is a PYTHON exception (`xpile: <Class>: …` with an
+/// identifier-shaped class token). xpile's capability/honesty refusals panic
+/// with FREE-TEXT payloads that fail this parse, so every handler — including
+/// a bare `except:` — re-raises them: a loud refusal stays loud inside
+/// try/except. Mirrors the Rust backend (Ruchy compiles to Rust).
+const IS_PY_EXC_PRED: &str = "__xpile_m.strip_prefix(\"xpile: \").and_then(|__s| __s.split_once(\": \")).map_or(false, |(__c, _)| !__c.is_empty() && __c.chars().all(|__ch| __ch.is_ascii_alphanumeric() || __ch == '_'))";
+
+/// PMAT-1105 (b): the BaseException-only exclusions for the sentinel
+/// `Exception` tag — SystemExit / KeyboardInterrupt / GeneratorExit derive
+/// BaseException, not Exception, so `except Exception:` must let them
+/// propagate. Mirrors the Rust backend.
+const NOT_BASE_ONLY_PRED: &str = "!__xpile_m.starts_with(\"xpile: SystemExit: \") && !__xpile_m.starts_with(\"xpile: KeyboardInterrupt: \") && !__xpile_m.starts_with(\"xpile: GeneratorExit: \")";
+
+/// PMAT-1105: write the dispatch predicate for one `except` tag. Leaf tags
+/// match their `xpile: <T>: ` prefix; the frontend's sentinel tag `Exception`
+/// matches any Python-exception payload except the BaseException-only three.
+fn write_exc_tag_pred(out: &mut String, tag: &str) -> std::fmt::Result {
+    use std::fmt::Write as _;
+    if tag == "Exception" {
+        write!(out, "{IS_PY_EXC_PRED} && {NOT_BASE_ONLY_PRED}")
+    } else {
+        write!(out, "__xpile_m.starts_with(\"xpile: {tag}: \")")
+    }
+}
+
 fn emit_stmt(out: &mut String, stmt: &Stmt, mode: bool) -> Result<(), RuchyCodegenError> {
     emit_stmt_indented(out, stmt, "    ", mode)
 }
@@ -1264,27 +1290,24 @@ fn emit_stmt_indented(
             out.push_str(" })) { Ok(_) => {}, ");
             if extra_handlers.is_empty() {
                 if except_types.is_empty() {
+                    // PMAT-1105 (c): gate the catch-all — Python exceptions
+                    // only; a capability/honesty refusal re-raises (mirrors
+                    // the Rust backend).
+                    write!(out, "Err(__xpile_e) => {{ let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if {IS_PY_EXC_PRED} {{ ")?;
                     if let Some(name) = bound_name {
-                        out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
                         bind(out, name)?;
-                        for st in handler {
-                            emit_stmt_indented(out, st, "", mode)?;
-                        }
-                        out.push_str(" }");
-                    } else {
-                        out.push_str("Err(_) => { ");
-                        for st in handler {
-                            emit_stmt_indented(out, st, "", mode)?;
-                        }
-                        out.push_str(" }");
                     }
+                    for st in handler {
+                        emit_stmt_indented(out, st, "", mode)?;
+                    }
+                    out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
                 } else {
                     out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
                     for (i, k) in except_types.iter().enumerate() {
                         if i > 0 {
                             out.push_str(" || ");
                         }
-                        write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                        write_exc_tag_pred(out, k)?;
                     }
                     out.push_str(" { ");
                     if let Some(name) = bound_name {
@@ -1297,12 +1320,15 @@ fn emit_stmt_indented(
                 }
             } else {
                 // PMAT-1059: multiple `except` clauses — an ordered
-                // if/else-if chain over [first] ++ extra_handlers; a catch-all
-                // (empty types) terminates the chain as the final `else`,
-                // otherwise the chain ends in `resume_unwind` (propagate).
-                // PMAT-1082: a catch-all in NON-final position terminates the
-                // chain and DROPS the later arms (unreachable in CPython too);
-                // emitting them produced a dangling `else if` (invalid code).
+                // if/else-if chain over [first] ++ extra_handlers; the chain
+                // ends in `resume_unwind` (an unmatched payload PROPAGATES).
+                // PMAT-1082: a catch-all (empty types) in NON-final position
+                // still terminates the chain and DROPS the later arms
+                // (unreachable in CPython too). PMAT-1105: the catch-all arm
+                // is GATED (Python exceptions only — a refusal re-raises via
+                // the trailing `else`, now always emitted), and `except
+                // Exception:` is an ordinary discriminated arm via the
+                // frontend's sentinel tag (mirrors the Rust backend).
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
                 let all: Vec<(&Vec<String>, &Option<String>, &Vec<Stmt>)> =
                     std::iter::once((except_types, bound_name, handler))
@@ -1318,7 +1344,7 @@ fn emit_stmt_indented(
                         out.push_str(" else ");
                     }
                     if types.is_empty() {
-                        out.push_str("{ ");
+                        write!(out, "if {IS_PY_EXC_PRED} {{ ")?;
                         catch_all_seen = true;
                     } else {
                         out.push_str("if ");
@@ -1326,7 +1352,7 @@ fn emit_stmt_indented(
                             if j > 0 {
                                 out.push_str(" || ");
                             }
-                            write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                            write_exc_tag_pred(out, k)?;
                         }
                         out.push_str(" { ");
                     }
@@ -1341,9 +1367,7 @@ fn emit_stmt_indented(
                         break;
                     }
                 }
-                if !catch_all_seen {
-                    out.push_str(" else { ::std::panic::resume_unwind(__xpile_e) }");
-                }
+                out.push_str(" else { ::std::panic::resume_unwind(__xpile_e) }");
                 out.push_str(" }");
             }
             out.push_str(" }");
@@ -3678,23 +3702,23 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
             out.push_str("match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| ");
             emit_expr(out, body, mode)?;
             out.push_str(")) { Ok(__xpile_try) => __xpile_try, ");
+            // PMAT-1105 (c): the catch-all is GATED — Python exceptions only;
+            // a capability/honesty refusal re-raises (mirrors the Rust
+            // backend; the old unconditional `Err(_)` arm swallowed them).
             if except_types.is_empty() {
+                write!(out, "Err(__xpile_e) => {{ let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if {IS_PY_EXC_PRED} {{ ")?;
                 if let Some(name) = bound_name {
-                    out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); ");
                     bind(out, name)?;
-                    emit_expr(out, handler, mode)?;
-                    out.push_str(" }");
-                } else {
-                    out.push_str("Err(_) => ");
-                    emit_expr(out, handler, mode)?;
                 }
+                emit_expr(out, handler, mode)?;
+                out.push_str(" } else { ::std::panic::resume_unwind(__xpile_e) } }");
             } else {
                 out.push_str("Err(__xpile_e) => { let __xpile_m: &str = __xpile_e.downcast_ref::<String>().map(|__s| __s.as_str()).or_else(|| __xpile_e.downcast_ref::<&str>().copied()).unwrap_or(\"\"); if ");
                 for (i, k) in except_types.iter().enumerate() {
                     if i > 0 {
                         out.push_str(" || ");
                     }
-                    write!(out, "__xpile_m.starts_with(\"xpile: {k}: \")")?;
+                    write_exc_tag_pred(out, k)?;
                 }
                 out.push_str(" { ");
                 if let Some(name) = bound_name {

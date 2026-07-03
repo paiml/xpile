@@ -6608,9 +6608,15 @@ fn main() {
 #[test]
 fn try_except_catches_panics() {
     let rust = xpile_transpile_to_rust("try_except.py");
+    // PMAT-1105 (c): the bare-`except:` arm is no longer an unconditional
+    // `Err(_)` — it downcasts the payload and catches only what parses as a
+    // Python exception (`xpile: <Class>: …`), re-raising xpile's own
+    // capability/honesty refusal panics.
     assert!(
-        rust.contains("catch_unwind") && rust.contains("Err(_) =>"),
-        "try/except should lower to a catch_unwind match:\n{rust}"
+        rust.contains("catch_unwind")
+            && !rust.contains("Err(_) =>")
+            && rust.contains("split_once(\": \")"),
+        "try/except should lower to a payload-gated catch_unwind match:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -6626,6 +6632,110 @@ fn main() {
 }
 "#;
     assert_rustc_runs("try_except", &rust, driver);
+}
+
+/// PMAT-1105 (a) (skeptic pass PMAT-1098, C-F1): a non-leaf exception class
+/// catches ITSELF, not only its tagged subclasses. `raise
+/// ArithmeticError("direct")` must be caught by `except ArithmeticError:`
+/// (python3 oracle: 55) — the old subclass-only expansion
+/// (ZeroDivisionError|OverflowError) let it ESCAPE its own handler. LookupError
+/// likewise (66). Regression guard: the subclass members stay in the set, so a
+/// ZeroDivisionError is still caught (-3); a normal floor-div returns 3.
+#[test]
+fn except_base_class_catches_itself() {
+    let rust = xpile_transpile_to_rust("except_base_self.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(catch_direct(), 55, "ArithmeticError must catch itself");
+    assert_eq!(catch_lookup(), 66, "LookupError must catch itself");
+    assert_eq!(subclass_still_caught(10, 0), -3, "ZeroDivisionError still in the ArithmeticError set");
+    assert_eq!(subclass_still_caught(10, 3), 3, "normal floor-div path");
+}
+"#;
+    assert_rustc_runs("except_base_self", &rust, driver);
+}
+
+/// PMAT-1105 (b)+(c) (skeptic pass PMAT-1098, C-F2/C-F3): the Exception-vs-
+/// BaseException split and refusal honesty. (b) SystemExit derives
+/// BaseException only, so `except Exception:` must let it PROPAGATE (python3:
+/// SystemExit raised out) while a bare `except:` catches it (r=2); a ValueError
+/// is caught by `except Exception:` (r=3). (c) xpile's own i64-overflow refusal
+/// is NOT a Python exception (CPython has bigint → 92233720368547758000), so NO
+/// handler swallows it — a large `a` PANICS instead of silently returning -1;
+/// small `a` stays green (5000). The driver installs a no-op panic hook so the
+/// expected, caught/propagated panics don't spam stderr.
+#[test]
+fn except_exception_vs_baseexception_split() {
+    let rust = xpile_transpile_to_rust("except_exception_split.py");
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert!(std::panic::catch_unwind(|| exc_no_systemexit()).is_err(),
+        "SystemExit must propagate past `except Exception:`");
+    assert_eq!(bare_catches_systemexit(), 2, "bare `except:` catches SystemExit");
+    assert_eq!(exc_catches_valueerror(), 3, "`except Exception:` catches ValueError");
+    assert_eq!(refusal_not_swallowed(5), 5000, "small a: no overflow, matches CPython");
+    assert_eq!(bare_refusal(5), 5000, "small a: no overflow, matches CPython");
+    assert!(std::panic::catch_unwind(|| refusal_not_swallowed(92233720368547758)).is_err(),
+        "`except Exception:` must re-raise the i64-overflow refusal (not -1)");
+    assert!(std::panic::catch_unwind(|| bare_refusal(92233720368547758)).is_err(),
+        "bare `except:` must re-raise the i64-overflow refusal (not -1)");
+}
+"#;
+    assert_rustc_runs("except_exception_split", &rust, driver);
+}
+
+/// PMAT-1105 (b)+(c) on a multi-`except` chain: `except Exception:` is now an
+/// ordinary discriminated arm (frontend sentinel tag), so a trailing bare
+/// `except:` stays REACHABLE and catches the SystemExit that Exception declines
+/// (python3: chain(2)=="other"; chain(1)=="exc"; chain(3)=="big";
+/// chain(0)=="none"). The gated catch-all re-raises xpile's own refusal past
+/// the WHOLE chain (chain_refusal/expr_bare_refusal PANIC on large `a` instead
+/// of returning -1/-2). Expression-form `try` catch-all catches a real
+/// ZeroDivisionError (-1) but likewise re-raises the refusal. python3 oracle.
+#[test]
+fn except_chain_reachable_arms_and_refusal() {
+    let rust = xpile_transpile_to_rust("except_chain_split.py");
+    let driver = r#"
+fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
+    assert_eq!(chain(0), "none");
+    assert_eq!(chain(1), "exc");
+    assert_eq!(chain(2), "other", "bare `except:` after `except Exception:` catches SystemExit");
+    assert_eq!(chain(3), "big");
+    assert_eq!(chain_refusal(5), 5000);
+    assert!(std::panic::catch_unwind(|| chain_refusal(92233720368547758)).is_err(),
+        "refusal re-raised past the whole except chain");
+    assert_eq!(expr_bare(10, 0), -1, "expr-form catch-all catches ZeroDivisionError");
+    assert_eq!(expr_bare(10, 3), 3);
+    assert_eq!(expr_bare_refusal(5), 5000);
+    assert!(std::panic::catch_unwind(|| expr_bare_refusal(92233720368547758)).is_err(),
+        "expr-form catch-all re-raises the refusal");
+}
+"#;
+    assert_rustc_runs("except_chain_split", &rust, driver);
+}
+
+/// PMAT-1105 (d) (skeptic pass PMAT-1098, C-F4): an `except ... as E` that
+/// collides with a MODULE-LEVEL constant is refused at transpile time with the
+/// GLOBAL scoping rationale (the module `E` is shadowed and survives; `except
+/// as` localizes `E` for the whole function scope, so a post-handler read
+/// raises UnboundLocalError unconditionally) — distinct from the live-local
+/// message whose both assertions are false for this case.
+#[test]
+fn except_as_module_const_refused() {
+    let py = fixture("except_as_module_const.py");
+    let out = run_xpile(&["transpile", py.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "`except ... as E` colliding with a module const must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("module-level constant `E`")
+            && stderr.contains("UnboundLocalError unconditionally"),
+        "expected the module-GLOBAL collision rationale; got: {stderr}"
+    );
 }
 
 /// PMAT-503c (exceptions epic): statement-position **assignment-form**

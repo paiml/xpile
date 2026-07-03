@@ -112,6 +112,15 @@ struct LoweringCtx {
     /// pattern, E0005). Excludes consts that are only read, and consts shadowed
     /// by a same-named param (a normal param reassignment).
     shadowed_consts: HashSet<String>,
+    /// PMAT-1105 (d): module-level constant names visible in this function
+    /// (a same-named param shadows its const and is excluded). Distinguishes
+    /// the module-GLOBAL `except ... as E` collision rationale from the
+    /// live-local one — the two cases have OPPOSITE scoping truths in CPython
+    /// (the handler-exit implicit `del` kills only the function-local; the
+    /// module global survives, and a post-handler read raises
+    /// UnboundLocalError unconditionally because `except as` localizes the
+    /// name for the whole function scope).
+    module_consts: HashSet<String>,
     /// PMAT-588 (ownership cluster): per-name source READ count (number of
     /// `Name`-load occurrences in the function body). A non-Copy value passed
     /// by value to a function call is MOVED; if the same variable is read more
@@ -448,6 +457,15 @@ impl LoweringCtx {
                 .cloned()
                 .collect()
         };
+        // PMAT-1105 (d): consts NOT shadowed by a param — see the field doc.
+        let module_consts: HashSet<String> = {
+            let param_names: HashSet<&str> = params.iter().map(|p| p.name.as_str()).collect();
+            consts
+                .keys()
+                .filter(|c| !param_names.contains(c.as_str()))
+                .cloned()
+                .collect()
+        };
         let mutable = compute_mutable_names(params, body, &mutating_methods);
         let obj_mutated = collect_obj_mutated(body, &mutating_methods);
         let nested_mutated = collect_nested_mutated(body);
@@ -461,6 +479,7 @@ impl LoweringCtx {
             obj_mutated,
             nested_mutated,
             shadowed_consts,
+            module_consts,
             read_counts,
             signatures,
             structs,
@@ -5391,8 +5410,13 @@ fn leak_guard_stmt(flag: &str, var: &str) -> Stmt {
             rhs: Box::new(Expr::LitBool(false)),
         },
         then_body: vec![Stmt::Raise {
+            // PMAT-1105: carry the `xpile: <Class>: ` payload convention —
+            // UnboundLocalError IS a Python exception (a NameError subclass,
+            // caught by bare `except:`/`except Exception:` in CPython), and
+            // the PMAT-1105 gated catch-alls only catch payloads that parse
+            // as one; the old bare payload would have escaped them.
             message: Expr::LitStr(format!(
-                "UnboundLocalError: local variable '{var}' referenced before assignment — \
+                "xpile: UnboundLocalError: local variable '{var}' referenced before assignment — \
                  the `for` loop iterated an EMPTY iterable, so `{var}` was never bound \
                  (CPython raises exactly here)"
             )),
@@ -11527,21 +11551,37 @@ fn terminal_if_as_expr(
 /// A single exception type name, unless it is a base class that should stay a
 /// catch-all (discriminating it would wrongly re-raise a caught subclass).
 /// PMAT-803 (HUNT-V20 EXC-1): expand an `except` type name to the set of
-/// discriminated leaf-exception tags it catches. `Exception`/`BaseException` →
-/// `None` = a TRUE catch-all (catches everything). The two intermediate base
+/// discriminated exception tags it catches. `BaseException` → `None` = the
+/// TRUE Python catch-all (same as a bare `except:`). The two intermediate base
 /// classes whose subclasses xpile actually tags EXPAND to their members so they
-/// catch ONLY those: `LookupError` → KeyError/IndexError, `ArithmeticError` →
-/// ZeroDivisionError/OverflowError. Any other name is a leaf → itself.
+/// catch ONLY those. Any other name is a leaf → itself.
 /// (Previously LookupError/ArithmeticError were lumped with Exception as a
 /// catch-all, so `except LookupError:` silently SWALLOWED a ValueError /
 /// anything else Python would propagate — the allowlist re-raise [PMAT-789] now
 /// makes the expanded member set catch only its own and re-raise the rest.)
+/// PMAT-1105 (skeptic pass PMAT-1098, C-F1/C-F2): two dispatch fixes.
+/// (a) A non-leaf class also catches ITSELF — `raise ArithmeticError("direct")`
+/// panics `xpile: ArithmeticError: …`, and the subclass-only expansion let it
+/// ESCAPE its own handler (CPython catches it; the OSError set below always
+/// self-included). (b) `Exception` is NOT a catch-all: SystemExit /
+/// KeyboardInterrupt / GeneratorExit derive BaseException only, so `except
+/// Exception:` must let them propagate. It lowers to the sentinel tag
+/// `Exception`, which the codegens expand to "any Python-exception payload
+/// except the BaseException-only three" — and which, unlike the old
+/// unconditional arm, re-raises xpile's own capability/honesty refusal panics
+/// (free-text payloads, not Python exceptions).
 fn expand_exc_name(n: &ast::ExprName) -> Option<Vec<String>> {
     let name = n.id.to_string();
     match name.as_str() {
-        "Exception" | "BaseException" => None,
-        "LookupError" => Some(vec!["KeyError".to_string(), "IndexError".to_string()]),
+        "BaseException" => None,
+        "Exception" => Some(vec!["Exception".to_string()]),
+        "LookupError" => Some(vec![
+            "LookupError".to_string(),
+            "KeyError".to_string(),
+            "IndexError".to_string(),
+        ]),
         "ArithmeticError" => Some(vec![
+            "ArithmeticError".to_string(),
             "ZeroDivisionError".to_string(),
             "OverflowError".to_string(),
         ]),
@@ -11574,9 +11614,10 @@ fn expand_exc_name(n: &ast::ExprName) -> Option<Vec<String>> {
 /// everything (the prior bare `Err(_)`).
 fn except_type_names(ty: Option<&ast::Expr>) -> Vec<String> {
     match ty {
-        // `None` (Exception/BaseException) → empty = catch-all; otherwise the
-        // expanded member set (a leaf expands to itself; LookupError /
-        // ArithmeticError to their tagged subclasses — PMAT-803).
+        // `None` (BaseException) → empty = catch-all; otherwise the expanded
+        // member set (a leaf expands to itself; LookupError / ArithmeticError
+        // to themselves + their tagged subclasses — PMAT-803/1105; Exception
+        // to the PMAT-1105 sentinel tag).
         Some(ast::Expr::Name(n)) => expand_exc_name(n).unwrap_or_default(),
         Some(ast::Expr::Tuple(t)) => {
             let mut names = Vec::with_capacity(t.elts.len());
@@ -11586,7 +11627,7 @@ fn except_type_names(ty: Option<&ast::Expr>) -> Vec<String> {
                     return Vec::new();
                 };
                 match expand_exc_name(n) {
-                    // Exception/BaseException in the tuple makes it catch-all.
+                    // BaseException in the tuple makes it catch-all.
                     None => return Vec::new(),
                     Some(mut ns) => names.append(&mut ns),
                 }
@@ -13204,10 +13245,25 @@ fn lower_statement_try(
         // `as` binding and let the OLD value survive: a SILENT divergence.
         if let Some(name) = &bound_name {
             if ctx.bound.contains(name.as_str()) {
-                return Err(FrontendError::Lower(format!(
-                    "function `{}`: `except ... as {name}` collides with an existing binding of `{name}` — CPython deletes an `except as` name when its handler exits, so the pre-existing `{name}` would be destroyed only on the exception path (a later read raises UnboundLocalError only when the handler ran), which the value model cannot express. Rename the except binding (e.g. `as {name}_exc`)",
-                    ctx.fn_name
-                )));
+                // PMAT-1105 (d) (skeptic pass PMAT-1098, C-F4): the module-
+                // GLOBAL collision has the OPPOSITE scoping truth from the
+                // live-local one, so it gets its own rationale — the old
+                // message asserted two falsehoods for a const collision (the
+                // global survives the handler-exit `del`, and the post-read
+                // raises UnboundLocalError UNCONDITIONALLY because `except
+                // as` localizes the name for the whole function scope).
+                let msg = if ctx.module_consts.contains(name.as_str()) {
+                    format!(
+                        "function `{}`: `except ... as {name}` collides with the module-level constant `{name}` — `except as` makes `{name}` function-local for the WHOLE function scope in CPython (the module-level `{name}` is shadowed and survives; the handler-exit implicit `del` kills only that local), and any post-handler read of `{name}` here raises UnboundLocalError unconditionally, handler-run or not — a scope split the const-backed value model cannot express. Rename the except binding (e.g. `as {name}_exc`)",
+                        ctx.fn_name
+                    )
+                } else {
+                    format!(
+                        "function `{}`: `except ... as {name}` collides with an existing binding of `{name}` — CPython deletes an `except as` name when its handler exits, so the pre-existing `{name}` would be destroyed only on the exception path (a later read raises UnboundLocalError only when the handler ran), which the value model cannot express. Rename the except binding (e.g. `as {name}_exc`)",
+                        ctx.fn_name
+                    )
+                };
+                return Err(FrontendError::Lower(msg));
             }
         }
         let saved_b = ctx.bound.clone();
