@@ -1219,6 +1219,14 @@ roadmap:
   priority: high
   created: 2026-07-03T00:00:00Z
   notes: 'Isolated git worktree (cron concurrently on the Python-surface lane). lake build green (30 modules), pv lint 0 errors, lean_pilot_roots + diamond_coverage + refinement_proofs + contract_citation_integrity all pass. Reaffirms provability/mathlib: 30 modules core-only, zero needing Mathlib.'
+- id: PMAT-1124
+  github_issue: null
+  item_type: provability
+  title: 'PMAT-1124: [provability/R6/mathlib] NEW contract C-PY-FILE-IO-ROUNDTRIP for whole-file I/O (PMAT-1074/1075/1076/1078, shipped uncontracted). Core-Lean PyFileIoRoundtrip.lean: FileState (String content) structure-extensionality Diamond (depth-1) + ROUND-TRIP semantics — read_after_write (read(write(f,s))=s), write_truncates ("w" independent of prior content), read_after_append + append_accumulates ("a" concatenates old++new). provability/mathlib: the file effect abstracted to a String state — all theorems rfl/structural over CORE Lean 4 (structure projection + String.append), NO Mathlib/sorry/axiom. Pilot 30→31. THIRD proof-lane contract this REPL session (after 1120 exceptions + 1122 generators) — the three major capabilities shipped this session (exceptions/generators/file-I/O) now all under proven core-Lean contracts.'
+  status: done
+  priority: high
+  created: 2026-07-03T00:00:00Z
+  notes: 'Worktree-isolated (cron concurrently on Python-surface lane). lake build green (31 modules), pv lint 0 errors, all provability gates pass. provability/mathlib answered conclusively: 31 pilot modules core-only, zero needing Mathlib.'
 - id: PMAT-1065
   github_issue: null
   item_type: capability

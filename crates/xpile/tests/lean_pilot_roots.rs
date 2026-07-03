@@ -276,6 +276,9 @@ const EXPECTED_PILOT: &[&str] = &[
     // PMAT-1122: C-PY-GENERATOR-EAGER — eager generator materialization
     // faithfulness (core-Lean foldl induction).
     "PyGeneratorEager",
+    // PMAT-1124: C-PY-FILE-IO-ROUNDTRIP — whole-file read/write/append
+    // round-trip semantics (core-Lean String-content model).
+    "PyFileIoRoundtrip",
 ];
 
 #[test]
