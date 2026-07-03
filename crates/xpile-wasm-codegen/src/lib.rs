@@ -4551,7 +4551,50 @@ fn normalize_expr_fstring_ints(e: &mut Expr, ctx: &HashMap<String, Type>) {
         Expr::StrFormat { fmt, args } => {
             if let Some(folded) = try_fold_strformat_to_concat(fmt, args) {
                 *e = folded;
-                normalize_expr_fstring_ints(e, ctx);
+                // PMAT-1167: the fold yields either a left-nested `Concat` (there
+                // WAS surrounding literal text, e.g. `f"n={n}"`) OR — for a BARE
+                // single interpolation with no literal chunks (`f"{n}"` /
+                // `"{}".format(n)`) — the lone argument itself. Route through the
+                // concat-OPERAND normaliser (not `normalize_expr_fstring_ints`) so
+                // BOTH shapes are covered: a `Concat` recurses into its operands
+                // (int→str per PMAT-1164, unchanged), AND a bare int-valued argument
+                // in string-RETURN position auto-stringifies via `str(int)` instead
+                // of landing as a raw `i64` that refuses at `emit_str_expr`. A bare
+                // STRING argument (`f"{s}"`) is not int-typed, so it is left as-is
+                // and emits directly (already worked). The injected top-level
+                // `ToStr{of_float:false}` is seen by `expr_has_int_to_str` /
+                // `expr_has_heap_op` (both scan `Stmt::Return`), so the int→str
+                // helper + `$__alloc` + `(memory)` stay gated — no gate hole.
+                normalize_concat_operand_fstring_int(e, ctx);
+            }
+        }
+        // PMAT-1167: a BARE single-interpolation int f-string `f"{n}"` does NOT
+        // reach the lane as a `StrFormat` — the frontend's
+        // `stringify_lone_fstring_field` wraps the lone int field in
+        // `Expr::FormatSpec { value, rust_spec: "", of_float: false }` (rendered
+        // `format!("{:}", n)`), an EMPTY spec that is semantically `str(int)`.
+        // Rewrite that empty-spec, non-float, int-valued case into the `ToStr`
+        // the WASM lane already emits — so `f"{n}"` / `f"{a+b}"` / `f"{len(s)}"`
+        // stringify instead of refusing. A NON-empty spec (`f"{x:>5}"` —
+        // width/precision/alignment) or a float field (`of_float`, whose Python
+        // vs Rust `Display` disagree) is left intact for the honest refusal at
+        // `emit_str_expr`. The injected `ToStr{of_float:false}` is seen by the
+        // return/let-scanning `expr_has_int_to_str` / `expr_has_heap_op` gates,
+        // so `$__wasm_int_to_str` + `$__alloc` + `(memory)` stay declared — no
+        // gate hole.
+        Expr::FormatSpec {
+            value,
+            rust_spec,
+            of_float,
+        } => {
+            normalize_expr_fstring_ints(value, ctx);
+            let foldable = rust_spec.is_empty() && !*of_float && concat_operand_is_int(value, ctx);
+            if foldable {
+                let taken = std::mem::replace(value.as_mut(), Expr::Unit);
+                *e = Expr::ToStr {
+                    value: Box::new(taken),
+                    of_float: false,
+                };
             }
         }
         _ => {}
@@ -4668,15 +4711,32 @@ fn try_fold_strformat_to_concat(fmt: &str, args: &[Expr]) -> Option<Expr> {
                     chars.next();
                     lit.push('{');
                 }
-                Some('}') => {
-                    chars.next();
+                // `{}` (automatic field) OR `{:}` (automatic field, EMPTY format
+                // spec). PMAT-1167: a BARE f-string interpolation `f"{n}"` reaches
+                // the WASM lane as `StrFormat { fmt: "{:}", args: [n] }` (the
+                // frontend renders it `format!("{:}", n)`) — the colon introduces an
+                // empty spec that is semantically identical to `{}`. Accept both;
+                // treat as the next positional arg with no formatting.
+                Some('}') | Some(':') => {
+                    // consume the `}` or `:` we peeked.
+                    let had_colon = chars.next() == Some(':');
+                    if had_colon {
+                        // an EMPTY spec (`{:}`) is fine — the next char must be `}`.
+                        // A NON-empty spec (`{:>5}`, `{:03d}`) is real width /
+                        // precision / alignment formatting the WASM lane does not
+                        // model → refuse the fold (fall through to `emit_str_expr`'s
+                        // honest refusal).
+                        if chars.next() != Some('}') {
+                            return None;
+                        }
+                    }
                     if !lit.is_empty() {
                         pieces.push(Piece::Lit(std::mem::take(&mut lit)));
                     }
                     pieces.push(Piece::Arg(next_arg));
                     next_arg += 1;
                 }
-                // `{:spec}`, `{0}`, `{name}` — a non-bare field. Refuse the fold.
+                // `{0}`, `{name}` — a positional / named field. Refuse the fold.
                 _ => return None,
             },
             '}' => {
