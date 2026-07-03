@@ -7,6 +7,43 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Fixed — KeyError payload repr remainder: composite keys + non-printable escapes (PMAT-1091)
+
+Skeptic pass PMAT-1090 (A-F2/A-F3) filed two SILENT payload divergences
+against the PMAT-1089 repr-keyed KeyError lanes, both fixed rust+ruchy
+(identical templates, mirror convention):
+
+- **Composite (tuple) keys repr recursively** (`key_error_panic`, both
+  codegens): a tuple-key miss fell back to Rust `{:?}` Debug, which
+  double-quotes contained strings — `d[("b", 2)]` miss printed
+  `("b", 2)` vs CPython `('b', 2)` — and lowercases bools. The runtime
+  `Any` downcast can't name every tuple shape, so the dispatch is now
+  COMPILE-TIME autoref specialization (the dtolnay/anyhow-kind idiom,
+  resolved per concrete key type at each miss site): a block-local
+  `__XpileKeyRepr` trait covers i64 (Display == int repr), bool
+  (`True`/`False` casing), String/&str (quote-switched repr) and
+  1/2/3-tuples RECURSIVELY (nested tuples compose), while method
+  resolution falls back to a `Debug` impl for any other key type — so
+  everything that compiled before still compiles (frozen-dataclass
+  struct keys keep their pre-existing Debug shape, documented).
+- **Non-printables escape width-matched** (`py_str_repr_block`, both
+  codegens): the escape predicate only covered C0/0x7F/C1, so a key
+  containing U+2028 emitted the raw line separator where CPython
+  escapes every `str.isprintable() == False` char. The predicate now
+  covers the closed non-printable families — Cc, separators Zl/Zp/Zs
+  (space excepted), Cf format chars (incl. astral), Co private use,
+  and the permanent noncharacters — with CPython's width-matched
+  `\xNN`/`\uNNNN`/`\UNNNNNNNN` forms. `repr(str)`, dataclass `Display`
+  str fields, and every KeyError payload ride the same block. HONEST
+  GAP: general unassigned Cn (e.g. U+0378) still prints raw — exact
+  parity needs per-version unicodedata category tables.
+
+e2e: `keyerror_repr_composite` (11-assert rustc-run driver — si/ss/
+nested/bool/3-tuple misses, `d.pop`/`set.remove` lanes, U+2028 and
+NBSP-under-quote-switch payloads, repr of separators + astral Co) +
+`keyerror_repr_composite_ruchy` emit-shape. All 11 differentially
+verified byte-identical vs CPython 3.10 first-hand.
+
 ### Fixed — statement-form `try` scoping honesty refusals (PMAT-1092)
 
 Skeptic pass PMAT-1090 filed a four-shape scoping family

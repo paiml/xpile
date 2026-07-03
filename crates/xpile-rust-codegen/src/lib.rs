@@ -567,35 +567,52 @@ fn py_float_repr_block(accessor: &str) -> String {
 
 /// PMAT-841 (HUNT-V26 #9): the CPython-faithful `repr` of a `str` as a Rust block
 /// over `accessor` — mirrors `Expr::ReprStr`: single-quoted (double if the string
-/// has a `'` but no `"`), with `\\`/quote/`\n`/`\r`/`\t` and control-char `\xNN`
-/// escaping. Raw-string template with `__ACC__` substituted. Used by the dataclass
-/// `Display` generator for a str field — Python's dataclass `repr` quotes them
-/// (`P(name='hi')`).
-/// TODO(DRY): `emit_expr`'s `ReprStr` / `ToStr{of_float}` inline the same logic;
+/// has a `'` but no `"`), with `\\`/quote/`\n`/`\r`/`\t` escaping. Raw-string
+/// template with `__ACC__` substituted. Used by the dataclass `Display` generator
+/// for a str field — Python's dataclass `repr` quotes them (`P(name='hi')`).
+/// PMAT-1091 (skeptic pass PMAT-1090, A-F3): CPython escapes every
+/// NON-PRINTABLE char (`str.isprintable() == False`), not just C0/0x7F/C1 — a
+/// key containing U+2028 emitted the raw line separator. The predicate now
+/// covers the closed non-printable families: Cc, the separators Zl/Zp/Zs
+/// (space itself excepted), the Cf format chars (incl. astral), Co private
+/// use, and the permanently-unassigned noncharacters (U+FDD0..U+FDEF +
+/// U+xFFFE/U+xFFFF of every plane); escapes are width-matched like CPython
+/// (`\xNN` < 0x100, `\uNNNN` < 0x10000, `\UNNNNNNNN` above). Reserved-Cn
+/// codepoints inside swept format ranges (e.g. U+2065) are escaped too —
+/// CPython escapes all Cn. HONEST GAP: general unassigned Cn outside those
+/// ranges (e.g. U+0378) still prints raw; matching it exactly needs the full
+/// per-version unicodedata category table.
+/// TODO(DRY): `emit_expr`'s `ToStr{of_float}` inlines the float twin;
 /// consolidate onto these helpers in a follow-up.
 fn py_str_repr_block(accessor: &str) -> String {
-    let tmpl = r##"{ let __rs = &(__ACC__); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec if (__ec as u32) < 0x20 || (__ec as u32) == 0x7f || ((__ec as u32) >= 0x80 && (__ec as u32) <= 0x9f) => { __ro.push('\\'); __ro.push('x'); __ro.push_str(&format!("{:02x}", __ec as u32)); } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"##;
+    let tmpl = r##"{ let __rs = &(__ACC__); let __q = if __rs.contains('\'') && !__rs.contains('"') { '"' } else { '\'' }; let mut __ro = String::new(); __ro.push(__q); for __rc in __rs.chars() { match __rc { '\\' => { __ro.push('\\'); __ro.push('\\'); } '\n' => { __ro.push('\\'); __ro.push('n'); } '\r' => { __ro.push('\\'); __ro.push('r'); } '\t' => { __ro.push('\\'); __ro.push('t'); } __ec if __ec == __q => { __ro.push('\\'); __ro.push(__ec); } __ec if { let __u = __ec as u32; __u < 0x20 || (0x7f..=0xa0).contains(&__u) || __u == 0xad || (0x600..=0x605).contains(&__u) || __u == 0x61c || __u == 0x6dd || __u == 0x70f || (0x890..=0x891).contains(&__u) || __u == 0x8e2 || __u == 0x1680 || __u == 0x180e || (0x2000..=0x200f).contains(&__u) || (0x2028..=0x202f).contains(&__u) || (0x205f..=0x206f).contains(&__u) || __u == 0x3000 || (0xe000..=0xf8ff).contains(&__u) || (0xfdd0..=0xfdef).contains(&__u) || __u == 0xfeff || (0xfff9..=0xfffb).contains(&__u) || __u == 0x110bd || __u == 0x110cd || (0x13430..=0x1343f).contains(&__u) || (0x1bca0..=0x1bca3).contains(&__u) || (0x1d173..=0x1d17a).contains(&__u) || __u == 0xe0001 || (0xe0020..=0xe007f).contains(&__u) || __u >= 0xf0000 || (__u & 0xfffe) == 0xfffe } => { let __u = __ec as u32; if __u < 0x100 { __ro.push_str(&format!("\\x{:02x}", __u)); } else if __u < 0x10000 { __ro.push_str(&format!("\\u{:04x}", __u)); } else { __ro.push_str(&format!("\\U{:08x}", __u)); } } __ec => __ro.push(__ec) } } __ro.push(__q); __ro }"##;
     tmpl.replace("__ACC__", accessor)
 }
 
 /// PMAT-1089: the CPython-shaped `KeyError` panic over a pre-bound key
 /// reference `__k` — Python's `str(KeyError(k))` is `repr(k)`, so a string key
 /// carries the quote-switched repr ([`py_str_repr_block`]; `d["mk"]` miss →
-/// payload `xpile: KeyError: 'mk'`) and any other key type falls back to `{:?}`
-/// (i64 `Debug` == Python int repr). The dispatch is at RUNTIME via `Any`
-/// (mirroring the PMAT-817 payload downcast) because `emit_expr` has no static
-/// key type here. Callers emit `let __k = &(<key>);` first — a reference, not a
-/// move, so a reused key variable stays live (same idiom as the int() lane's
-/// `__pf`). A bool key (bool-keyed dicts are supported) maps to Python's
-/// `True`/`False` casing, which `{:?}` would lowercase. Replaces the fixed
-/// `key not found` text the PMAT-1081 skeptic refuted (`print(e)` diverged
-/// from CPython).
+/// payload `xpile: KeyError: 'mk'`). Callers emit `let __k = &(<key>);` first —
+/// a reference, not a move, so a reused key variable stays live (same idiom as
+/// the int() lane's `__pf`). Replaces the fixed `key not found` text the
+/// PMAT-1081 skeptic refuted (`print(e)` diverged from CPython).
+/// PMAT-1091 (skeptic pass PMAT-1090, A-F2): a COMPOSITE key containing a
+/// string fell to Rust `{:?}` Debug — `d[("b", 2)]` miss printed `("b", 2)`
+/// (double quotes) vs CPython `('b', 2)`. The runtime `Any` downcast can't
+/// name every tuple shape, so the dispatch is now COMPILE-TIME autoref
+/// specialization (the dtolnay/anyhow-kind idiom, resolved per concrete key
+/// type at each miss site): a block-local `__XpileKeyRepr` trait covers the
+/// hashable key family — i64 (Display == int repr), bool (`True`/`False`
+/// casing), String/&str (quote-switched repr), and 1/2/3-tuples RECURSIVELY
+/// (nested tuples compose) — while `(&__Xw(__k)).__xkrv()` method resolution
+/// prefers the `__XkrVal` impl (wrapper by value, one autoref) and falls back
+/// to `__XkrDbg` on `&__Xw` (two autorefs) for any other `Debug` key type, so
+/// every key type that compiled before still compiles. Known divergence kept:
+/// a frozen-dataclass struct key prints Rust `Debug` (`P { x: 1 }`) vs
+/// Python's dataclass repr (`P(x=1)`) — pre-existing, out of scope here.
 fn key_error_panic() -> String {
-    format!(
-        "panic!(\"xpile: KeyError: {{}}\", {{ let __ka: &dyn ::std::any::Any = __k; if let Some(__s) = __ka.downcast_ref::<String>() {{ {} }} else if let Some(__s) = __ka.downcast_ref::<&str>() {{ {} }} else if let Some(__b) = __ka.downcast_ref::<bool>() {{ String::from(if *__b {{ \"True\" }} else {{ \"False\" }}) }} else {{ format!(\"{{:?}}\", __k) }} }})",
-        py_str_repr_block("__s"),
-        py_str_repr_block("__s"),
-    )
+    let tmpl = r##"panic!("xpile: KeyError: {}", { #[allow(dead_code)] trait __XpileKeyRepr { fn __xkr(&self) -> String; } impl __XpileKeyRepr for i64 { fn __xkr(&self) -> String { format!("{}", self) } } impl __XpileKeyRepr for bool { fn __xkr(&self) -> String { String::from(if *self { "True" } else { "False" }) } } impl __XpileKeyRepr for String { fn __xkr(&self) -> String { __STRREPR__ } } impl __XpileKeyRepr for &str { fn __xkr(&self) -> String { __STRREPR__ } } impl<__A: __XpileKeyRepr> __XpileKeyRepr for (__A,) { fn __xkr(&self) -> String { format!("({},)", self.0.__xkr()) } } impl<__A: __XpileKeyRepr, __B: __XpileKeyRepr> __XpileKeyRepr for (__A, __B) { fn __xkr(&self) -> String { format!("({}, {})", self.0.__xkr(), self.1.__xkr()) } } impl<__A: __XpileKeyRepr, __B: __XpileKeyRepr, __C: __XpileKeyRepr> __XpileKeyRepr for (__A, __B, __C) { fn __xkr(&self) -> String { format!("({}, {}, {})", self.0.__xkr(), self.1.__xkr(), self.2.__xkr()) } } #[allow(dead_code)] struct __Xw<'__x, __T>(&'__x __T); #[allow(dead_code)] trait __XkrVal { fn __xkrv(&self) -> String; } impl<'__x, __T: __XpileKeyRepr> __XkrVal for __Xw<'__x, __T> { fn __xkrv(&self) -> String { self.0.__xkr() } } #[allow(dead_code)] trait __XkrDbg { fn __xkrv(&self) -> String; } impl<'__x, __T: ::std::fmt::Debug> __XkrDbg for &__Xw<'__x, __T> { fn __xkrv(&self) -> String { format!("{:?}", self.0) } } (&__Xw(__k)).__xkrv() })"##;
+    tmpl.replace("__STRREPR__", &py_str_repr_block("self"))
 }
 
 /// PMAT-011: emit one `// xpile-contract: <ID>` comment line per
