@@ -3710,6 +3710,39 @@ fn main() {
     assert_rustc_runs("repr_exception_type", &rust, driver);
 }
 
+/// PMAT-1172: PMAT-1170 (#1771) recorded the caught type in `exc_bindings` ONLY
+/// in `lower_statement_try`, so `repr(e)` in the TERMINAL-RETURN form
+/// (`try: return X except E as e: return repr(e)`) and the ASSIGN form
+/// (`v = <try/except>`) still emitted the bare message string. This extends the
+/// recording to both of those binding sites (same single-concrete guard); the
+/// site-agnostic `repr` consumption from #1771 then wraps `<Type>('<msg>')`.
+/// All values differential-checked vs python3 (compile + run).
+#[test]
+fn repr_exception_terminal_and_assign_forms() {
+    let rust = xpile_transpile_to_rust("repr_exception_forms.py");
+    let driver = r#"
+fn main() {
+    // terminal-return form, no exception raised → the returned value.
+    assert_eq!(terminal_value_err(String::from("42")), "42");
+    // terminal-return form, ValueError from int() → wrapped repr (quote-switch:
+    // the int() message contains 'bad' so repr uses double quotes).
+    assert_eq!(
+        terminal_value_err(String::from("bad")),
+        "ValueError(\"invalid literal for int() with base 10: 'bad'\")"
+    );
+    // terminal-return form, KeyError hit → KeyError('a') is the value, miss wraps.
+    assert_eq!(terminal_key_err(String::from("a")), "x");
+    assert_eq!(terminal_key_err(String::from("zzz")), "KeyError('zzz')");
+    // assign form, ValueError from int() → wrapped repr.
+    assert_eq!(
+        assign_value_err(String::from("bad")),
+        "ValueError(\"invalid literal for int() with base 10: 'bad'\")"
+    );
+}
+"#;
+    assert_rustc_runs("repr_exception_forms", &rust, driver);
+}
+
 /// PMAT-502ao (Tranche 2): `assert cond, msg` → `assert!(cond, "{}", msg)`;
 /// the bare `assert cond` form is unchanged.
 #[test]
