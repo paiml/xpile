@@ -20774,3 +20774,17 @@ fn main() {
 "#;
     assert_rustc_runs("lone_surrogate_allowed_neighbors", &rust, driver);
 }
+
+/// PMAT-1103: an unannotated `__enter__` that `return self` types the with-as
+/// binding as the class (not Unit) — no E0308, and `x.method()`/`x.field` work.
+#[test]
+fn cm_unannotated_enter() {
+    let rust = xpile_transpile_to_rust("cm_unannotated_enter.py");
+    let driver = r#"
+fn main() {
+    assert_eq!(use_method(), 42, "with Gate(21) as x: x.doubled()");
+    assert_eq!(use_field(), 7, "with Gate(7) as x: x.tag");
+}
+"#;
+    assert_rustc_runs("cm_unannotated_enter", &rust, driver);
+}

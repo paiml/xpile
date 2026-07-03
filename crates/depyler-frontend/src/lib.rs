@@ -4169,7 +4169,30 @@ fn class_def_signature(
                     continue;
                 }
                 let ret = match m.returns.as_ref() {
-                    None => Type::Unit,
+                    // PMAT-1103: an unannotated method whose body is `return self`
+                    // returns the CLASS type — the impl lowering emits `-> Class`
+                    // (from `return self`), so registering Type::Unit here mistyped
+                    // every caller. In particular a `with cm as x:` desugar bound
+                    // `let x: () = __cm.__enter__()` while __enter__ returns the CM
+                    // → rustc E0308 (the idiomatic UNANNOTATED __enter__), and a
+                    // later `x.method()`/`x.field` refused as "non-struct". Match
+                    // the impl inference. Other unannotated bodies stay Unit
+                    // (the pre-existing void default).
+                    None => {
+                        // PMAT-1103: narrow to `__enter__` — the with-desugar's
+                        // `x = __cm.__enter__()` is the exposed miscompile, and its
+                        // common usage (read a field / call a const method on x) is
+                        // alias-safe (a mutating context manager already refuses,
+                        // PMAT-1072). A GENERAL self-returning method typed Struct
+                        // would unblock `b = obj.thing(); b.mutate()` where b is a
+                        // clone — the aliasing divergence the untyped-receiver
+                        // refusal deliberately guards (Rc<RefCell> gap, decision B).
+                        if m.name.as_str() == "__enter__" && body_returns_self(&m.body) {
+                            Type::Struct(name.clone())
+                        } else {
+                            Type::Unit
+                        }
+                    }
                     Some(ann) => parse_type_annotation(&name, "<method return>", ann)?,
                 };
                 method_returns.push((m.name.to_string(), ret));
@@ -5230,6 +5253,22 @@ fn default_literal_type(expr: &ast::Expr) -> Option<Type> {
 /// silent-wrong). Everything else keeps the I64 default (matches the existing
 /// behaviour for arithmetic returns). Conservative: only the shapes whose lowered
 /// type is unambiguously `bool` (the signature emission infers the same).
+/// PMAT-1103: does a method body's LAST statement `return self`? The idiomatic
+/// unannotated `def __enter__(self): … return self` — its inferred return is the
+/// enclosing class type (the impl emits `-> Class`), so the method-signature
+/// registry must record `Type::Struct(class)`, not the `Unit` default, or a
+/// `with cm as x:` as-binding (and any `x.method()`/`x.field`) mistypes.
+fn body_returns_self(body: &[ast::Stmt]) -> bool {
+    matches!(
+        body.last(),
+        Some(ast::Stmt::Return(r))
+            if matches!(
+                r.value.as_deref(),
+                Some(ast::Expr::Name(n)) if n.id.as_str() == "self"
+            )
+    )
+}
+
 fn infer_unannotated_return(body: &[ast::Stmt]) -> Type {
     fn returns_bool(e: &ast::Expr) -> bool {
         match e {
