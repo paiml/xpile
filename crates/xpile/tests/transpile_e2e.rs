@@ -20828,3 +20828,24 @@ fn main() {
 "#;
     assert_rustc_runs("nested_dup_loop_target", &rust, driver);
 }
+
+/// PMAT-1099: any()/all() over a range-sourced generator expression is LAZY —
+/// emits `(0..N).any(..)` (no `.collect::<Vec>()`) so it short-circuits instead
+/// of materializing (a huge range would OOM). Correctness + the lazy shape.
+#[test]
+fn lazy_genexp_any_all() {
+    let rust = xpile_transpile_to_rust("lazy_genexp_any_all.py");
+    assert!(
+        !rust.contains(".collect::<Vec<i64>>().iter().cloned().any")
+            && !rust.contains(".collect::<Vec<i64>>().iter().cloned().all"),
+        "any/all over range must not materialize the range:\n{rust}"
+    );
+    let driver = r#"
+fn main() {
+    assert!(any_over_range(), "any x>3 in range(10)");
+    assert!(all_over_range(), "all x>=0 in range(10)");
+    assert!(any_filtered(), "any x>15 in range(20) if even → 16,18");
+}
+"#;
+    assert_rustc_runs("lazy_genexp_any_all", &rust, driver);
+}
