@@ -250,6 +250,31 @@ struct LoweringCtx {
     /// reads-and-resets this after lowering the `for`; only a consumed flag
     /// gets its `let mut flag = false` declaration and post-loop guard.
     leak_flag_consumed: bool,
+    /// PMAT-1092 (skeptic pass PMAT-1090, A-F4/A-F5/A-p13/C-F1): names that
+    /// were first bound inside a statement-form `try`'s arms (body / handler /
+    /// finally) or by an `except ... as e` clause. The emitted arms are
+    /// block-scoped (`catch_unwind` closure / match-arm blocks), so such a
+    /// binding does NOT survive the `try` in the emitted Rust — a later read
+    /// was rustc E0425 (loud, far from the cause) or, worse, a misleading
+    /// type-inference error. CPython's semantics are path-dependent (a
+    /// maybe-unset function-scoped local; `as` names are DELETED at handler
+    /// exit), which the value model cannot express — so a later read of a
+    /// still-unbound poisoned name refuses at lowering with the scoping
+    /// truth. A later rebinding re-enters `bound` and naturally un-poisons
+    /// (the read check only fires for names not currently bound).
+    try_dead: HashMap<String, TryDead>,
+}
+
+/// PMAT-1092: why a name in [`LoweringCtx::try_dead`] does not survive its
+/// `try` — which arm bound it (for the refusal message), or an
+/// `except ... as` binding (CPython deletes those at handler exit).
+#[derive(Clone, Copy)]
+enum TryDead {
+    /// First bound inside this arm ("the `try` body" / "an `except` handler"
+    /// / "the `finally` block").
+    Arm(&'static str),
+    /// Bound by `except ... as <name>` — deleted by CPython at handler exit.
+    AsName,
 }
 
 impl LoweringCtx {
@@ -456,6 +481,7 @@ impl LoweringCtx {
             runtime_abort: profile.runtime_abort,
             pending_leak_flag: None,
             leak_flag_consumed: false,
+            try_dead: HashMap::new(),
         }
     }
 }
@@ -13029,9 +13055,18 @@ fn lower_statement_try(
         body.extend(lower_block_stmt(ctx, st.clone())?);
     }
     // Restore so try-body locals don't leak into the enclosing scope (the
-    // emitted Rust block-scopes them; a post-`try` read then refuses, loud).
+    // emitted Rust block-scopes them). PMAT-1092: names FIRST-bound in the
+    // body are poisoned in `try_dead` — a later read of one while still
+    // unbound refuses with the scoping truth (was rustc E0425, loud but far
+    // from the cause). Pre-bound names aren't in the diff (assigning them in
+    // the body is the supported pattern — the closure mutates the outer
+    // `let mut`).
+    let body_new: Vec<String> = ctx.bound.difference(&saved_bound).cloned().collect();
     ctx.bound = saved_bound;
     ctx.name_types = saved_types;
+    for n in body_new {
+        ctx.try_dead.insert(n, TryDead::Arm("the `try` body"));
+    }
     // PMAT-1058/1059: lower each `except` clause's block, with its `as <name>`
     // (the exception message) scoped to that handler only (PMAT-817 parity).
     let lower_handler = |ctx: &mut LoweringCtx,
@@ -13039,6 +13074,22 @@ fn lower_statement_try(
      -> Result<LoweredHandler, FrontendError> {
         let bound_name = h.name.as_ref().map(|n| n.to_string());
         let except_types = except_type_names(h.type_.as_deref());
+        // PMAT-1092 (skeptic pass PMAT-1090, A-F5/C-F1): an `as` name that
+        // collides with a LIVE binding (a local, a param, or — worst — an
+        // enclosing loop variable) is refused outright. CPython DELETES the
+        // `as` name at handler exit, so the pre-existing binding is destroyed
+        // only on the exception path (a later read raises UnboundLocalError
+        // only when the handler RAN) — path-dependent semantics the value
+        // model cannot express. The emitted Rust instead block-scoped the
+        // `as` binding and let the OLD value survive: a SILENT divergence.
+        if let Some(name) = &bound_name {
+            if ctx.bound.contains(name.as_str()) {
+                return Err(FrontendError::Lower(format!(
+                    "function `{}`: `except ... as {name}` collides with an existing binding of `{name}` — CPython deletes an `except as` name when its handler exits, so the pre-existing `{name}` would be destroyed only on the exception path (a later read raises UnboundLocalError only when the handler ran), which the value model cannot express. Rename the except binding (e.g. `as {name}_exc`)",
+                    ctx.fn_name
+                )));
+            }
+        }
         let saved_b = ctx.bound.clone();
         let saved_t = ctx.name_types.clone();
         if let Some(name) = &bound_name {
@@ -13049,8 +13100,25 @@ fn lower_statement_try(
         for st in &h.body {
             hbody.extend(lower_block_stmt(ctx, st.clone())?);
         }
+        // PMAT-1092: poison handler-scoped bindings like the body's (the
+        // match-arm block-scopes them), and the `as` name itself — CPython
+        // deletes it at handler exit, so a post-`try` read must refuse.
+        let handler_new: Vec<String> = ctx
+            .bound
+            .difference(&saved_b)
+            .filter(|n| bound_name.as_deref() != Some(n.as_str()))
+            .cloned()
+            .collect();
         ctx.bound = saved_b;
         ctx.name_types = saved_t;
+        for n in handler_new {
+            ctx.try_dead
+                .entry(n)
+                .or_insert(TryDead::Arm("an `except` handler"));
+        }
+        if let Some(name) = &bound_name {
+            ctx.try_dead.insert(name.clone(), TryDead::AsName);
+        }
         Ok((except_types, bound_name, hbody))
     };
     let (except_types, bound_name, handler) = if finally_only {
@@ -13073,14 +13141,24 @@ fn lower_statement_try(
     }
     // PMAT-1070: lower the `finally:` block (runs in every exit path). Its
     // locals are block-scoped like the arms (snapshot/restore ctx.bound).
+    // PMAT-1092: poison its fresh bindings too — the emitted finally
+    // statements sit inside the `__tc_outer` block, so they don't survive
+    // the `try` either (CPython's DO function-scope-survive; refusing the
+    // later read is the honest posture until the emission hoists them).
     let saved_b_f = ctx.bound.clone();
     let saved_t_f = ctx.name_types.clone();
     let mut finally = Vec::new();
     for st in &try_stmt.finalbody {
         finally.extend(lower_block_stmt(ctx, st.clone())?);
     }
+    let finally_new: Vec<String> = ctx.bound.difference(&saved_b_f).cloned().collect();
     ctx.bound = saved_b_f;
     ctx.name_types = saved_t_f;
+    for n in finally_new {
+        ctx.try_dead
+            .entry(n)
+            .or_insert(TryDead::Arm("the `finally` block"));
+    }
     // PMAT-1082: the try BODY always runs inside a catch_unwind closure —
     // refuse function-level control flow that cannot cross it (a `return`
     // SILENTLY returned from the closure; `break`/`continue` were rustc
@@ -20536,6 +20614,31 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     .1
                     .clone(),
             ))
+        }
+        // PMAT-1092 (skeptic pass PMAT-1090, A-F4/A-F5/A-p13): a read of a
+        // name that was first bound inside a statement-form `try`'s arms (or
+        // by `except ... as`) and is not CURRENTLY bound — the emitted arms
+        // are block-scoped (catch_unwind closure / match-arm blocks), so the
+        // binding did not survive the `try`. This was rustc E0425 far from
+        // the cause, or a misleading declared-type-vs-I64 inference error.
+        // CPython's semantics are path-dependent (a maybe-unset local; `as`
+        // names are deleted at handler exit), which the value model cannot
+        // express — refuse with the scoping truth. A later REBINDING of the
+        // name re-enters `bound`, so it never reaches this arm (un-poisons).
+        ast::Expr::Name(n)
+            if !ctx.bound.contains(n.id.as_str()) && ctx.try_dead.contains_key(n.id.as_str()) =>
+        {
+            let name = n.id.as_str();
+            Err(match ctx.try_dead[name] {
+                TryDead::Arm(arm) => FrontendError::Lower(format!(
+                    "function `{}`: `{name}` is first bound inside {arm} and read after the `try` — the arms compile to block-scoped catch_unwind blocks, so the binding does not survive them (CPython leaves a path-dependently-set local, which the value model cannot express). Bind `{name}` before the `try` (e.g. `{name} = <default>`) and reassign it inside the arms",
+                    ctx.fn_name
+                )),
+                TryDead::AsName => FrontendError::Lower(format!(
+                    "function `{}`: `{name}` was bound by `except ... as {name}` and read after its handler — CPython deletes an `except as` binding when the handler exits (a later read raises UnboundLocalError), so the name does not survive the handler. Copy it inside the handler (e.g. `msg = {name}`) if the message is needed later",
+                    ctx.fn_name
+                )),
+            })
         }
         // PMAT-502el: `math.<const>` attribute read (`math.pi`/`math.e`/
         // `math.tau`) → a float literal. Non-`math` attribute reads fall

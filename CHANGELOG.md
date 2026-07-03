@@ -7,6 +7,39 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Fixed — statement-form `try` scoping honesty refusals (PMAT-1092)
+
+Skeptic pass PMAT-1090 filed a four-shape scoping family
+(A-F4/A-F5/A-p13/C-F1) against the statement-form `try` lowering: two
+SILENT divergences and two loud-but-misleading failures, all rooted in
+Rust block scoping applied to Python's function-scoped
+(then path-dependently deleted) try locals. Shipped the honest-cheap
+refuse path, frontend-only so it covers the rust AND ruchy lanes:
+
+- **`except ... as e` live-binding collision refuses** (`depyler-frontend`
+  `lower_statement_try`): an `as` name colliding with ANY live binding —
+  a local (A-F5: the emitted Rust let the OLD value survive the handler,
+  returning `"old"` where CPython deletes `e` at handler exit and raises
+  UnboundLocalError) or an enclosing LOOP variable (C-F1, the worst
+  shape: the for-binding showed through post-handler, value + exit 0 vs
+  CPython UnboundLocalError) — now refuses at lowering naming the
+  CPython handler-exit deletion semantics and suggesting a rename.
+- **Try-arm bindings are poison-tracked** (new `LoweringCtx::try_dead`):
+  names FIRST-bound inside a statement-try's body/handler/finally arms,
+  plus `as` names. A later read of a still-unbound poisoned name refuses
+  with the scoping truth and the bind-before-the-`try` workaround —
+  previously rustc E0425 far from the cause (A-F4: `try: x=1; y=2
+  except: x=-1; y=-2` then `print(x+y)`, valid CPython) or a MISLEADING
+  `declared return type Str but body produces I64` inference error
+  (A-p13). A later rebinding re-enters `bound` and naturally un-poisons.
+- The supported patterns stay green and are now differentially pinned:
+  bind-before-the-try with a raise MID-body (partial assignment then
+  handler overwrite, `flagged(-1) = -1`) and one `as e` name reused
+  across two sequential trys with handler-only reads (no false
+  collision). New runnable fixture `try_scoping_workaround` (5
+  CPython-pinned asserts) + 4 rejection fixtures; 795-test e2e suite
+  green with zero over-refusals on the pre-existing 790-fixture corpus.
+
 ### Fixed — eager-generator refusal net closed to the provably-faithful core (PMAT-1093)
 
 Skeptic pass PMAT-1090 refuted the PMAT-1083 net decisively: 8 confirmed

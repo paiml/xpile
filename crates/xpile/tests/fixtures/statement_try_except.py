@@ -6,8 +6,8 @@
 # `match catch_unwind(|| { <body> }) { Ok(_) => {}, Err(...) => { <handler> } }`
 # with the SAME PMAT-789 allowlist re-raise (an unlisted exception propagates,
 # not swallowed) and PMAT-817 `as e` message binding. Lean/WASM refuse.
-# Known first-cut limit: a name FIRST-bound inside the try body and read AFTER
-# the try is E0425 (Rust block-scopes it; the value model can't express
+# A name FIRST-bound inside the try body and read AFTER the try refuses at
+# lowering (PMAT-1092 — was rustc E0425; the value model can't express
 # Python's leak of a maybe-unset try local) — set it in both arms (the
 # assignment-form) or pre-declare it. Verified vs CPython (caught/oob/-1/boom/2/0).
 def guard(n: int) -> int:
