@@ -6960,6 +6960,76 @@ const LIST_MINMAX_FLOAT_HELPER: &str = "\
     local.get $acc)
 ";
 
+/// PMAT-1251: `any(xs)` / `all(xs)` over a `list[bool]` — the THIRD list-reduction
+/// family (after `sum` and `min`/`max`), a non-allocating boolean fold. The list
+/// is a PMAT-968 length-prefixed region whose elements are `i32` 0/1 (the
+/// PMAT-1251 `list[bool]` element type: a 4-byte i32 stride, like `list[f32]`).
+/// The `$is_all` param selects the reduction at the call site (`i32.const 1` for
+/// `all`, `0` for `any`) so ONE helper serves both directions.
+///
+/// Semantics match CPython/the iterator adaptors exactly: `all` short-circuits
+/// **False** (returns 0) on the FIRST falsey element; `any` short-circuits
+/// **True** (returns 1) on the first truthy one; and when the loop is exhausted
+/// with no short-circuit the result is `is_all` itself — so `all([]) == True`
+/// (1) and `any([]) == False` (0) (the empty-list identities) fall straight out,
+/// as does `all([1,1,1]) == 1` / `any([0,0,0]) == 0`. This mirrors the Rust
+/// `.iter().all(|&b| b)` / `.any(|&b| b)` lane. Reads linear memory, allocates
+/// nothing (an i32 bool, not a new object), so it is gated on its OWN
+/// `needs_list_bool_reduce`, NOT `needs_heap`.
+const LIST_BOOL_REDUCE_HELPER: &str = "\
+  ;; __wasm_list_bool_reduce(base, is_all) = all(xs) if is_all else any(xs), list[bool]
+  ;; base → length-prefixed region: i32 count @ base+0, i32 (0/1) elements @ base+8.
+  (func $__wasm_list_bool_reduce (param $base i32) (param $is_all i32) (result i32)
+    (local $i i32)
+    (local $n i32)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        ;; while i < n  (unsigned — count is a non-negative header)
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; x = i32.load(base + 8 + i*4)  — a bool 0/1 (4-byte i32 stride)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        ;; b = (x != 0) — normalise the loaded element to a 0/1 truthiness.
+        i32.const 0
+        i32.ne
+        ;; short-circuit iff (is_all XOR b):
+        ;;   all (is_all=1): break on a FALSEY element (b=0 → 1^0 = 1);
+        ;;   any (is_all=0): break on a TRUTHY element (b=1 → 0^1 = 1).
+        local.get $is_all
+        i32.xor
+        if
+          ;; the decided result: all → 0 (False), any → 1 (True) = !is_all
+          local.get $is_all
+          i32.eqz
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    ;; loop exhausted (incl. the empty list): all → 1, any → 0; both == is_all.
+    local.get $is_all)
+";
+
 /// Native WASM backend. Lowers the meta-HIR scalar/control subset to WAT
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
@@ -8091,6 +8161,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // gate, NOT `needs_heap`, and needs the `(memory …)` its loads read.
     let needs_list_minmax = module_uses_list_minmax(module);
     let needs_list_minmax_float = module_uses_list_minmax_float(module);
+    // PMAT-1251: `any(xs)`/`all(xs)` over a `list[bool]` (`Expr::BoolReduce`,
+    // direct non-generator form) folds the list payload via
+    // `$__wasm_list_bool_reduce` — non-allocating (a payload read, like sum/
+    // minmax), so it rides its OWN gate, NOT `needs_heap`, and needs the
+    // `(memory …)` its i32-element loads read.
+    let needs_list_bool_reduce = module_uses_list_bool_reduce(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -8112,6 +8188,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_sum_float
         || needs_list_minmax
         || needs_list_minmax_float
+        || needs_list_bool_reduce
     {
         writeln!(
             out,
@@ -8486,6 +8563,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // gated on its own `needs_list_minmax_float` (also non-allocating).
     if needs_list_minmax_float {
         out.push_str(LIST_MINMAX_FLOAT_HELPER);
+    }
+    // PMAT-1251: emit the list-BOOL any/all reduction helper once, when any
+    // function uses `any(xs)`/`all(xs)` over a `list[bool]` (`Expr::BoolReduce`,
+    // direct non-generator form). Non-allocating (a payload fold, like sum/
+    // minmax), so gated ONLY on `needs_list_bool_reduce`, NOT `needs_heap`.
+    if needs_list_bool_reduce {
+        out.push_str(LIST_BOOL_REDUCE_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -9604,6 +9688,89 @@ fn expr_has_list_minmax(expr: &Expr, want_float: bool) -> bool {
     }
 }
 
+/// PMAT-1251: does any function reduce a `list[bool]` with `any(xs)`/`all(xs)`
+/// (`Expr::BoolReduce`)? Gates the `$__wasm_list_bool_reduce` helper (and the
+/// `(memory …)` its list-payload i32 loads read). Exhaustive over the same
+/// stmt/expr forms as [`expr_has_list_minmax`]; a missed sub-expression would
+/// leave the helper undeclared at the `call $__wasm_list_bool_reduce` site (a
+/// hard wat2wasm failure — the recurring gate-hole class, where over-detecting is
+/// a harmless unused function but under-detecting is fatal). The detecting arm
+/// returns `true` directly (the gate must fire on ANY `BoolReduce`, regardless of
+/// what nests inside — one helper serves every use).
+fn module_uses_list_bool_reduce(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_bool_reduce(&f.body))
+}
+
+fn block_has_bool_reduce(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_bool_reduce) || expr_has_bool_reduce(&block.trailing_return)
+}
+
+fn stmt_has_bool_reduce(s: &Stmt) -> bool {
+    let e = |x| expr_has_bool_reduce(x);
+    let st = |x| stmt_has_bool_reduce(x);
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_bool_reduce(expr: &Expr) -> bool {
+    let e = |x| expr_has_bool_reduce(x);
+    match expr {
+        // this node IS the bool reduce — the gate must fire (one helper serves
+        // every use, so no need to inspect what nests inside).
+        Expr::BoolReduce { .. } => true,
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
 fn block_has_str_repeat(block: &Block) -> bool {
     block.stmts.iter().any(stmt_has_str_repeat) || expr_has_str_repeat(&block.trailing_return)
 }
@@ -10362,17 +10529,25 @@ fn map_type(ty: &Type) -> Result<WatTy, BackendError> {
 /// Map a `list[T]` parameter to the WAT element type its elements load as
 /// (PMAT-966). The list itself rides an `i32` base-pointer; the element
 /// type must be a supported scalar that has a natural `*.load` —
-/// `i64`/`f64`/`f32`. A `list[bool]` is refused (no WASM bool load width
-/// is honest), as are nested lists, `list[str]`, etc.
+/// `i64`/`f64`/`f32`, or (PMAT-1251) `bool` as an `i32` holding 0/1 (the
+/// canonical WASM boolean encoding, a 4-byte element like `f32`). Nested
+/// lists, `list[str]`, etc. are still refused.
 fn map_list_elem_type(inner: &Type) -> Result<WatTy, BackendError> {
     match inner {
         Type::I64 | Type::CLong => Ok(WatTy::I64),
         Type::F64 => Ok(WatTy::F64),
         Type::F32 => Ok(WatTy::F32),
+        // PMAT-1251: `list[bool]` — the third list element type. A bool has no
+        // WASM type of its own; it rides an `i32` holding 0/1 (a 4-byte element
+        // with a natural `i32.load`/`i32.store`, exactly like `list[f32]`). The
+        // whole list surface (literals/index/index-assign/len/for) is already
+        // parametrised by the element `WatTy` (byte_size/load/store), so this one
+        // line enables it; `any(xs)`/`all(xs)` fold it via `emit_bool_reduce`.
+        Type::Bool => Ok(WatTy::I32),
         other => Err(unsupported(&format!(
             "list element type {other:?} — the WASM list subset supports \
-             list[int]/list[float] only (i64/f64/f32 elements with a natural \
-             *.load); list[bool], list[str], and nested lists are refused"
+             list[int]/list[float]/list[bool] only (i64/f64/f32/i32 elements with \
+             a natural *.load); list[str] and nested lists are refused"
         ))),
     }
 }
@@ -12242,6 +12417,16 @@ fn emit_expr(
              WASM subset materialises a dict/set only at its annotated binding \
              site (it needs the key/value types); a bare literal value is refused",
         )),
+        // PMAT-1251: `any(xs)` / `all(xs)` over a `list[bool]` — an i32 (0/1)
+        // boolean fold. The list NAME lowers to its i32 base-pointer, then
+        // `$__wasm_list_bool_reduce` folds the payload with `is_all` selecting the
+        // direction. Refuses the short-circuiting GENERATOR form and a non-name /
+        // non-bool list honestly (see `emit_bool_reduce`).
+        Expr::BoolReduce {
+            list,
+            is_all,
+            short_circuit,
+        } => emit_bool_reduce(list, *is_all, *short_circuit, scope, out, depth),
         Expr::Unit => Err(unsupported(
             "unit value `()` in a value position (WASM has no unit operand)",
         )),
@@ -12741,6 +12926,82 @@ fn emit_list_minmax(
     indent(out, depth);
     writeln!(out, "call {helper}").expect("write");
     Ok(result)
+}
+
+/// PMAT-1251: emit `any(xs)` / `all(xs)` over a `list[bool]` — leaves the i32
+/// (0/1) boolean result on the stack. The list NAME lowers to its i32
+/// base-pointer (the PMAT-968 list ABI over the PMAT-1251 `list[bool]` element
+/// type: i32 count @ base+0, packed i32 0/1 elements @ base+8, a 4-byte stride),
+/// then `$__wasm_list_bool_reduce` folds the payload with `is_all` pushed as an
+/// i32 immediate (`1` for `all`, `0` for `any`) so one helper serves both
+/// directions. Semantics match CPython/the iterator adaptors: `all([]) == True`,
+/// `any([]) == False`, `all` short-circuits False on the first falsey element,
+/// `any` short-circuits True on the first truthy one — all computed inside the
+/// helper.
+///
+/// Honest scope (each a hard [`BackendError`], never a silent miscompile):
+///   * the SHORT-CIRCUITING generator form (`any(P(x) for x in xs)`, which the
+///     frontend tags `short_circuit` and wraps in an `Expr::Map` mapping each
+///     element through a predicate lambda) is refused — it needs to lower an
+///     arbitrary per-element lambda body (deferred, not half-wired). Only the
+///     direct `list[bool]` reduction (a bare-Ident list) is emitted.
+///   * a non-name list (a list LITERAL / temporary — `all([True, False])`) is
+///     refused; bind it to a name first.
+///   * a name that is not a `list[bool]` — whose elements do not load as i32 —
+///     is refused by the element-type check against [`Scope::list_elem_of`].
+///     (`any`/`all` over a `list[int]`/`list[float]` is lowered by the frontend
+///     as a truthiness map + reduce, whose `Expr::Map` the WASM subset refuses.)
+fn emit_bool_reduce(
+    list: &Expr,
+    is_all: bool,
+    short_circuit: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let op = if is_all { "all" } else { "any" };
+    if short_circuit {
+        return Err(unsupported(&format!(
+            "{op}(<generator>) — the WASM subset folds a materialised `list[bool]` \
+             only; the lazy short-circuiting generator form (a per-element \
+             predicate lambda) is deferred (refused honestly)"
+        )));
+    }
+    let Expr::Ident(name) = list else {
+        return Err(unsupported(&format!(
+            "{op}() of a non-name list — the WASM subset reduces a `list[bool]` NAME \
+             (an i32 base-pointer into linear memory); a list literal / temporary \
+             is refused (bind it to a name first)"
+        )));
+    };
+    match scope.list_elem_of(name) {
+        // A `list[bool]` loads its elements as i32 (0/1) — the truthiness fold.
+        Some(WatTy::I32) => {}
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "{op}() over `{name}` whose elements load as {} — the WASM subset \
+                 folds a `list[bool]` (i32 0/1 elements); `any`/`all` over a \
+                 list[int]/list[float] wraps a per-element truthiness map that the \
+                 subset refuses",
+                other.keyword()
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "{op}() over `{name}` which is not a `list[bool]` param/local — only \
+                 a list (an i32 base-pointer into linear memory) can be reduced in \
+                 the WASM subset"
+            )));
+        }
+    }
+    // Push the list base-pointer + the is_all selector, then fold via the helper.
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_list_bool_reduce").expect("write");
+    Ok(WatTy::I32)
 }
 
 /// Emit `ord(…)` over the WASM str subset (PMAT-986, char-exact since
