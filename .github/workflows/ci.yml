@@ -234,3 +234,36 @@ jobs:
             exit 1
           fi
           echo "OK — the universal .wasm matches CPython byte-for-byte"
+
+  # ── Optional check: lean-models (Mathlib model-proof lane / PMAT-956) ──
+  # The deliberate, walled-off Mathlib lane: elaborates the OLS-uniqueness
+  # certificate in `contracts/lean-models/` against Mathlib (fetched as prebuilt
+  # oleans via `lake exe cache get`). `warningAsError := true` makes a green
+  # build an un-fakeable "no `sorry`" claim.
+  #
+  # SEPARATE from the hermetic core `lake-build` job on purpose: the multi-GB
+  # Mathlib cache must never touch the fast core lane. Advisory / non-required
+  # tier (mirrors kani/lake-build/docs/wasi) — a Mathlib CDN hiccup can't block
+  # an unrelated merge.
+  lean-models:
+    name: lean-models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      # Fetch Mathlib's prebuilt oleans (resolves the pinned deps from
+      # lake-manifest.json first) so the lane builds in minutes, not the hours a
+      # from-source Mathlib compile would take.
+      - name: lake exe cache get (Mathlib oleans)
+        working-directory: contracts/lean-models
+        run: lake exe cache get
+
+      - name: lake build (advisory model-proof lane)
+        working-directory: contracts/lean-models
+        run: lake build
