@@ -9,7 +9,8 @@
 use super::*;
 use xpile_backend::{BackendConfig, Profile};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, Function, Item, Module, Param, SourceLang, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, Function, Item, Module, Param, SortKey, SourceLang, Stmt, StrMethodOp,
+    Type, UnOp,
 };
 
 fn module_with(items: Vec<Item>) -> Module {
@@ -1603,6 +1604,502 @@ fn list_float_sum_executes_in_wabt() {
     eprintln!("--- witness WAT (REAL-emitted $total + data + e0/e1 drivers) ---\n{witness_wat}");
     eprintln!(
         "sum({elems:?}) = {} (CPython {expected_nonempty}); sum([]) = {} (CPython {expected_empty})",
+        out[0], out[1]
+    );
+}
+
+/// `def <name>(xs: list[<elem>]) -> <ret>: return {min|max}(xs)` — the PMAT-1250
+/// list-MIN/MAX fixture. `is_max` selects the direction, `of_float` the element
+/// kind; a mismatch with `elem` is used deliberately by the refusal tests.
+fn named_minmax_fn(name: &str, elem: Type, ret: Type, is_max: bool, of_float: bool) -> Function {
+    Function {
+        name: name.into(),
+        params: vec![param("xs", Type::List(Box::new(elem)))],
+        return_type: ret,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ListMinMax {
+                list: Box::new(Expr::Ident("xs".into())),
+                is_max,
+                of_float,
+                of_struct_cmp: false,
+                key: None,
+                default: None,
+            },
+        },
+    }
+}
+
+fn list_minmax_fn(elem: Type, ret: Type, is_max: bool, of_float: bool) -> Function {
+    named_minmax_fn("m", elem, ret, is_max, of_float)
+}
+
+#[test]
+fn list_int_max_emits_reduction_helper_and_call() {
+    // PMAT-1250: `max(xs)` over a list[int] emits the `$__wasm_list_minmax_i64`
+    // reduction helper, a `call` to it over the list base-pointer with the
+    // `is_max` selector `i32.const 1`, and the exported memory the loads read.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::I64,
+                Type::I64,
+                true,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains(
+            "(func $__wasm_list_minmax_i64 (param $base i32) (param $is_max i32) (result i64)"
+        ),
+        "int reduction helper declared: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_minmax_i64"),
+        "max lowers to the i64 helper call: {wat}"
+    );
+    assert!(
+        wat.contains("i32.const 1\n    call $__wasm_list_minmax_i64"),
+        "max pushes the is_max=1 selector before the call: {wat}"
+    );
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "list payload loads need the exported memory: {wat}"
+    );
+    // The fold compares with signed i64 ops over an 8-byte (i64) stride.
+    assert!(
+        wat.contains("i64.gt_s"),
+        "max uses a signed i64 compare: {wat}"
+    );
+    assert!(wat.contains("i64.load"), "i64 element load: {wat}");
+}
+
+#[test]
+fn list_int_min_emits_selector_zero() {
+    // PMAT-1250: `min(xs)` over the SAME helper pushes the is_max=0 selector, so
+    // one helper serves both directions.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::I64,
+                Type::I64,
+                false,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("i32.const 0\n    call $__wasm_list_minmax_i64"),
+        "min pushes the is_max=0 selector before the call: {wat}"
+    );
+    assert!(
+        wat.contains("i64.lt_s"),
+        "the helper carries the min-side signed compare: {wat}"
+    );
+}
+
+#[test]
+fn list_float_minmax_emits_f64_helper_and_call() {
+    // PMAT-1250: `max(xs)` over a list[float] emits the f64-accumulator twin
+    // `$__wasm_list_minmax_f64` with IEEE-754 `f64.gt`/`f64.lt` compares, and no
+    // dead i64 helper in a float-only module.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::F64,
+                Type::F64,
+                true,
+                true,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains(
+            "(func $__wasm_list_minmax_f64 (param $base i32) (param $is_max i32) (result f64)"
+        ),
+        "float reduction helper declared: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_minmax_f64"),
+        "float max lowers to the f64 helper call: {wat}"
+    );
+    assert!(wat.contains("f64.gt"), "float max IEEE compare: {wat}");
+    assert!(
+        wat.contains("f64.lt"),
+        "float min IEEE compare (both in one helper): {wat}"
+    );
+    assert!(wat.contains("f64.load"), "f64 element load: {wat}");
+    assert!(
+        !wat.contains("$__wasm_list_minmax_i64"),
+        "no dead i64 helper in a float-only module: {wat}"
+    );
+}
+
+#[test]
+fn list_int_minmax_carries_no_dead_float_helper() {
+    // PMAT-1250: an int-only min/max module carries NO f64 helper (each kind gates
+    // only its own — the sum pair's no-dead-helper discipline, mirrored).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::I64,
+                Type::I64,
+                true,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_minmax_f64"),
+        "no dead f64 helper in an int-only module: {wat}"
+    );
+}
+
+#[test]
+fn list_minmax_helper_absent_without_use() {
+    // No `min`/`max` → no dead reduction helper. `list_sum_fn2_index` reads memory
+    // (`xs[0] + xs[1]`) but never reduces via min/max.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn2_index())]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_minmax_i64") && !wat.contains("$__wasm_list_minmax_f64"),
+        "no reduction helper without a min()/max(): {wat}"
+    );
+}
+
+#[test]
+fn list_minmax_kind_mismatch_refused_honestly() {
+    // PMAT-1250: a `list[float]` param reduced as an INT (`of_float: false`) — the
+    // element load width (f64) disagrees with the reduced kind (i64). Refused by
+    // the `list_elem_of` check, never a silent misread of the f64 bits as i64.
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::F64,
+                Type::I64,
+                true,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("elements load as f64") && err.contains("list[i64]"),
+        "float-list int-max mismatch refused honestly: {err}"
+    );
+}
+
+#[test]
+fn list_minmax_with_key_refused_honestly() {
+    // PMAT-1250: `max(xs, key=lambda …)` is refused — the WASM subset reduces by
+    // the element only.
+    let f = Function {
+        name: "m".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ListMinMax {
+                list: Box::new(Expr::Ident("xs".into())),
+                is_max: true,
+                of_float: false,
+                of_struct_cmp: false,
+                key: Some(SortKey {
+                    param: "p".into(),
+                    body: Box::new(Expr::Ident("p".into())),
+                }),
+                default: None,
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("key="), "keyed min/max refused: {err}");
+}
+
+#[test]
+fn list_minmax_with_default_refused_honestly() {
+    // PMAT-1250: `max(xs, default=d)` is refused — the empty case traps.
+    let f = Function {
+        name: "m".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ListMinMax {
+                list: Box::new(Expr::Ident("xs".into())),
+                is_max: false,
+                of_float: false,
+                of_struct_cmp: false,
+                key: None,
+                default: Some(Box::new(Expr::LitInt(0))),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("default="), "defaulted min/max refused: {err}");
+}
+
+#[test]
+fn list_minmax_of_struct_cmp_refused_honestly() {
+    // PMAT-1250: a struct-comparison element (custom `__lt__`) has no i64/f64
+    // payload to fold — refused honestly.
+    let f = Function {
+        name: "m".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ListMinMax {
+                list: Box::new(Expr::Ident("xs".into())),
+                is_max: true,
+                of_float: false,
+                of_struct_cmp: true,
+                key: None,
+                default: None,
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("struct list") || err.contains("__lt__"),
+        "struct-cmp min/max refused: {err}"
+    );
+}
+
+#[test]
+fn list_minmax_of_non_name_refused_honestly() {
+    // PMAT-1250: `max([1, 2, 3])` (a list LITERAL, incl. the variadic `max(a, b)`
+    // form which lowers to a `ListLit`) is refused — bind it to a name first.
+    let f = Function {
+        name: "m".into(),
+        params: Vec::new(),
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::ListMinMax {
+                list: Box::new(Expr::ListLit(vec![
+                    Expr::LitInt(1),
+                    Expr::LitInt(2),
+                    Expr::LitInt(3),
+                ])),
+                is_max: true,
+                of_float: false,
+                of_struct_cmp: false,
+                key: None,
+                default: None,
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("non-name list") || err.contains("bind it to a name"),
+        "list-literal max refused: {err}"
+    );
+}
+
+#[test]
+fn list_minmax_helper_traps_on_empty() {
+    // PMAT-1250: the emitted helper guards the empty list with `i32.eqz` →
+    // `unreachable` (Python `min([])`/`max([])` raises `ValueError`; a trap is the
+    // WASM analogue — never a silent wrong value).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::I64,
+                Type::I64,
+                true,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    let helper = wat
+        .split("$__wasm_list_minmax_i64")
+        .nth(1)
+        .expect("helper body present");
+    assert!(
+        helper.contains("i32.eqz") && helper.contains("unreachable"),
+        "empty-list guard traps: {wat}"
+    );
+}
+
+/// PMAT-1250 EXECUTED WITNESS — assemble + run the REAL-emitted `max(xs)` and
+/// `min(xs)` over a list[int] in WABT and diff both extrema against CPython.
+///
+/// Two REAL-emitted functions (`$mx` = max, `$mn` = min) share the one gated
+/// `$__wasm_list_minmax_i64` helper; the `(data)` segment lays down a non-empty
+/// list at base 0, and two zero-arg exports call each function and convert the
+/// i64 result to f64 (`f64.convert_i64_s`) for the engine's `=> f64:` parser.
+#[test]
+fn list_int_minmax_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!(
+            "SKIP list_int_minmax_executes_in_wabt: WABT (wat2wasm/wasm-interp) not installed"
+        );
+        return;
+    }
+
+    // CPython-equivalent: max([5,-3,10,7,-1]) == 10; min(...) == -3.
+    let elems: [i64; 5] = [5, -3, 10, 7, -1];
+    let expected_max: i64 = *elems.iter().max().unwrap();
+    let expected_min: i64 = *elems.iter().min().unwrap();
+
+    let module_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![
+                Item::Function(named_minmax_fn("mx", Type::I64, Type::I64, true, false)),
+                Item::Function(named_minmax_fn("mn", Type::I64, Type::I64, false, false)),
+            ]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    let mut image = vec![0u8; 128];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        module_wat.contains(mem_line),
+        "emitted module declares memory: {module_wat}"
+    );
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    \
+         i32.const 0\n    call $mx\n    f64.convert_i64_s)\n  \
+         (func (export \"e1\") (result f64)\n    \
+         i32.const 0\n    call $mn\n    f64.convert_i64_s)\n"
+    );
+    let witness_wat = module_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_int_minmax")
+        .expect("assemble+run REAL-emitted list-minmax witness");
+    assert_eq!(out.len(), 2, "two exports (e0 max, e1 min): {out:?}");
+    assert!(
+        (out[0] - expected_max as f64).abs() <= 1.0e-9,
+        "max({elems:?}) executed {}, expected (CPython) {expected_max}",
+        out[0]
+    );
+    assert!(
+        (out[1] - expected_min as f64).abs() <= 1.0e-9,
+        "min({elems:?}) executed {}, expected (CPython) {expected_min}",
+        out[1]
+    );
+
+    eprintln!("=== PMAT-1250 executed witness: REAL xpile min/max(xs: list[int]) emit → run ===");
+    eprintln!("--- witness WAT (REAL-emitted $mx/$mn + data + e0/e1 drivers) ---\n{witness_wat}");
+    eprintln!(
+        "max({elems:?}) = {} (CPython {expected_max}); min = {} (CPython {expected_min})",
+        out[0], out[1]
+    );
+}
+
+/// PMAT-1250 EXECUTED WITNESS — the list[FLOAT] twin. `$mx`/`$mn` already return
+/// f64 (no `f64.convert_i64_s` wrapper), so the exports leave the extremum on the
+/// stack directly. Fractional elements are chosen so an accidental i64 misread of
+/// the f64 bits would produce a wildly different value — the witness fails loudly.
+#[test]
+fn list_float_minmax_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!(
+            "SKIP list_float_minmax_executes_in_wabt: WABT (wat2wasm/wasm-interp) not installed"
+        );
+        return;
+    }
+
+    // CPython-equivalent: max([1.5,-2.5,10.25,0.125]) == 10.25; min(...) == -2.5.
+    let elems: [f64; 4] = [1.5, -2.5, 10.25, 0.125];
+    let expected_max: f64 = elems.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let expected_min: f64 = elems.iter().copied().fold(f64::INFINITY, f64::min);
+
+    let module_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![
+                Item::Function(named_minmax_fn("mx", Type::F64, Type::F64, true, true)),
+                Item::Function(named_minmax_fn("mn", Type::F64, Type::F64, false, true)),
+            ]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    let mut image = vec![0u8; 128];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        module_wat.contains(mem_line),
+        "emitted float module declares memory: {module_wat}"
+    );
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    \
+         i32.const 0\n    call $mx)\n  \
+         (func (export \"e1\") (result f64)\n    \
+         i32.const 0\n    call $mn)\n"
+    );
+    let witness_wat = module_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_float_minmax")
+        .expect("assemble+run REAL-emitted list-float-minmax witness");
+    assert_eq!(out.len(), 2, "two exports (e0 max, e1 min): {out:?}");
+    assert!(
+        (out[0] - expected_max).abs() <= 1.0e-9,
+        "max({elems:?}) executed {}, expected (CPython) {expected_max}",
+        out[0]
+    );
+    assert!(
+        (out[1] - expected_min).abs() <= 1.0e-9,
+        "min({elems:?}) executed {}, expected (CPython) {expected_min}",
+        out[1]
+    );
+
+    eprintln!("=== PMAT-1250 executed witness: REAL xpile min/max(xs: list[float]) emit → run ===");
+    eprintln!("--- witness WAT (REAL-emitted $mx/$mn + data + e0/e1 drivers) ---\n{witness_wat}");
+    eprintln!(
+        "max({elems:?}) = {} (CPython {expected_max}); min = {} (CPython {expected_min})",
         out[0], out[1]
     );
 }

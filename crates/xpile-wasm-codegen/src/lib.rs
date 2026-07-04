@@ -179,7 +179,7 @@ use xpile_backend::{
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
     BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, Param, SetOp, SetPredOp,
-    Stmt, StrMethodOp, Type, UnOp,
+    SortKey, Stmt, StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -6797,6 +6797,169 @@ const LIST_SUM_FLOAT_HELPER: &str = "\
     local.get $acc)
 ";
 
+/// PMAT-1250: the list-INT-MIN/MAX reduction helper — Python `min(xs)` /
+/// `max(xs)` over a `list[int]`. Like the sum helpers it reads the PMAT-968
+/// length-prefixed region (i32 count @ base+0, packed i64 elements @ base+8)
+/// and touches no heap, so it rides its OWN gate (`needs_list_minmax`), NOT
+/// `needs_heap`. The `$is_max` param selects the reduction at the call site
+/// (`i32.const 1` for `max`, `i32.const 0` for `min`) so ONE helper serves both
+/// directions. Semantics match CPython exactly: seed the accumulator with
+/// `xs[0]`, then for `i` in `1..count` replace it ONLY on a STRICT improvement
+/// (`x > acc` for max, `x < acc` for min) — so a tie keeps the FIRST extremal
+/// element, as CPython's `max`/`min` do (for scalar ints ties are
+/// indistinguishable, but the strict compare is the faithful lowering and
+/// matches the Rust `.iter().max()/.min().unwrap()` lane). The EMPTY list traps
+/// (`unreachable`) — Python `min([])`/`max([])` raises `ValueError`, and the
+/// Rust lane's `.unwrap()` panics; a trap is the WASM analogue (never a silent
+/// wrong value). Integer compares are signed (`i64.gt_s`/`i64.lt_s`), the same
+/// signed-i64 posture the scalar subset already carries.
+const LIST_MINMAX_INT_HELPER: &str = "\
+  ;; __wasm_list_minmax_i64(base, is_max) = max(xs) if is_max else min(xs), list[int]
+  ;; base → length-prefixed region: i32 count @ base+0, i64 elements @ base+8.
+  (func $__wasm_list_minmax_i64 (param $base i32) (param $is_max i32) (result i64)
+    (local $i i32)
+    (local $n i32)
+    (local $acc i64)
+    (local $x i64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; empty list → trap (Python min/max of an empty sequence raises ValueError)
+    local.get $n
+    i32.eqz
+    if
+      unreachable
+    end
+    ;; acc = xs[0] (i64.load @ base+8); i = 1
+    local.get $base
+    i32.const 8
+    i32.add
+    i64.load
+    local.set $acc
+    i32.const 1
+    local.set $i
+    (block $done
+      (loop $next
+        ;; while i < n  (unsigned — count is a non-negative header)
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; x = i64.load(base + 8 + i*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        local.set $x
+        ;; keep = is_max ? (x > acc) : (x < acc)  — STRICT, so ties keep the first
+        local.get $is_max
+        if (result i32)
+          local.get $x
+          local.get $acc
+          i64.gt_s
+        else
+          local.get $x
+          local.get $acc
+          i64.lt_s
+        end
+        if
+          local.get $x
+          local.set $acc
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $acc)
+";
+
+/// PMAT-1250: the list-FLOAT-MIN/MAX twin — Python `min(xs)` / `max(xs)` over a
+/// `list[float]`. Structurally identical to [`LIST_MINMAX_INT_HELPER`] but with
+/// an f64 accumulator and IEEE-754 `f64.gt`/`f64.lt` compares (a float list
+/// shares the int list's header + 8-byte stride; only the element `*.load` and
+/// the compare opcode differ). Gated on its OWN `needs_list_minmax_float` (also
+/// non-allocating, so likewise NOT on `needs_heap`). Empty list traps, matching
+/// the int sibling and Python's `ValueError`. Ties keep the first extremal
+/// (strict `f64.gt`/`f64.lt`), matching CPython and the Rust
+/// `.iter().copied().reduce(f64::max/min).unwrap()` lane.
+const LIST_MINMAX_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_minmax_f64(base, is_max) = max(xs) if is_max else min(xs), list[float]
+  ;; base → length-prefixed region: i32 count @ base+0, f64 elements @ base+8.
+  (func $__wasm_list_minmax_f64 (param $base i32) (param $is_max i32) (result f64)
+    (local $i i32)
+    (local $n i32)
+    (local $acc f64)
+    (local $x f64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; empty list → trap (Python min/max of an empty sequence raises ValueError)
+    local.get $n
+    i32.eqz
+    if
+      unreachable
+    end
+    ;; acc = xs[0] (f64.load @ base+8); i = 1
+    local.get $base
+    i32.const 8
+    i32.add
+    f64.load
+    local.set $acc
+    i32.const 1
+    local.set $i
+    (block $done
+      (loop $next
+        ;; while i < n  (unsigned — count is a non-negative header)
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; x = f64.load(base + 8 + i*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        f64.load
+        local.set $x
+        ;; keep = is_max ? (x > acc) : (x < acc)  — STRICT, so ties keep the first
+        local.get $is_max
+        if (result i32)
+          local.get $x
+          local.get $acc
+          f64.gt
+        else
+          local.get $x
+          local.get $acc
+          f64.lt
+        end
+        if
+          local.get $x
+          local.set $acc
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $acc)
+";
+
 /// Native WASM backend. Lowers the meta-HIR scalar/control subset to WAT
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
@@ -7919,6 +8082,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // PMAT-1249: the list[float] sum twin — its own gate/helper, same `(memory)`
     // need as the i64 form (it reads the f64 list payload).
     let needs_list_sum_float = module_uses_list_sum_float(module);
+    // PMAT-1250: `min(xs)` / `max(xs)` over a `list[int]` / `list[float]`
+    // (`Expr::ListMinMax`) folds the list payload via a `$__wasm_list_minmax_*`
+    // helper — non-allocating (a payload read, like sum), so each rides its OWN
+    // gate, NOT `needs_heap`, and needs the `(memory …)` its loads read.
+    let needs_list_minmax = module_uses_list_minmax(module);
+    let needs_list_minmax_float = module_uses_list_minmax_float(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -7938,6 +8107,8 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_isascii
         || needs_list_sum
         || needs_list_sum_float
+        || needs_list_minmax
+        || needs_list_minmax_float
     {
         writeln!(
             out,
@@ -8300,6 +8471,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // non-allocating, so likewise NOT on `needs_heap`).
     if needs_list_sum_float {
         out.push_str(LIST_SUM_FLOAT_HELPER);
+    }
+    // PMAT-1250: emit the list-INT-MIN/MAX reduction helper once when any function
+    // uses `min(xs)`/`max(xs)` over a `list[int]` (`Expr::ListMinMax`). Like the
+    // sum helpers it is non-allocating (a payload fold), so gated ONLY on
+    // `needs_list_minmax`, NOT `needs_heap`.
+    if needs_list_minmax {
+        out.push_str(LIST_MINMAX_INT_HELPER);
+    }
+    // PMAT-1250: the list[float] min/max twin — the f64-accumulator sibling,
+    // gated on its own `needs_list_minmax_float` (also non-allocating).
+    if needs_list_minmax_float {
+        out.push_str(LIST_MINMAX_FLOAT_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -9313,6 +9496,103 @@ fn expr_has_list_sum(expr: &Expr, want_float: bool) -> bool {
         // `call $__wasm_list_sum_*` site (the recurring gate-hole class:
         // over-detecting is harmless — a valid unused WAT function — but
         // under-detecting is a hard wat2wasm failure).
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
+/// PMAT-1250: does any function `min(xs)`/`max(xs)` over a `list[int]`
+/// (`Expr::ListMinMax { of_float: false, .. }`)? Gates the
+/// `$__wasm_list_minmax_i64` reduction helper (and the `(memory …)` its list-
+/// payload loads read). Shares the `want_float`-parametrised walk below with the
+/// float gate — exactly like the sum pair — so each kind emits only its own
+/// helper and no dead one. Exhaustive over the same stmt/expr forms as
+/// [`expr_has_list_sum`]; a missed sub-expression would leave the helper
+/// undeclared at the `call $__wasm_list_minmax_i64` site (a hard wat2wasm
+/// failure — the recurring gate-hole class, where over-detecting is a harmless
+/// unused function but under-detecting is fatal).
+fn module_uses_list_minmax(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_minmax(&f.body, false))
+}
+
+/// PMAT-1250: the twin gate for `min(xs)`/`max(xs)` over a `list[float]`
+/// (`Expr::ListMinMax { of_float: true, .. }`), driving `$__wasm_list_minmax_f64`.
+fn module_uses_list_minmax_float(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_minmax(&f.body, true))
+}
+
+fn block_has_list_minmax(block: &Block, want_float: bool) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(|s| stmt_has_list_minmax(s, want_float))
+        || expr_has_list_minmax(&block.trailing_return, want_float)
+}
+
+fn stmt_has_list_minmax(s: &Stmt, want_float: bool) -> bool {
+    let e = |x| expr_has_list_minmax(x, want_float);
+    let st = |x| stmt_has_list_minmax(x, want_float);
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_minmax(expr: &Expr, want_float: bool) -> bool {
+    let e = |x| expr_has_list_minmax(x, want_float);
+    match expr {
+        // this node IS the list min/max of the kind we gate — the gate must fire
+        // (no need to recurse: the SUPPORTED shape carries a bare-Ident list with
+        // no key/default, so nothing of interest nests).
+        Expr::ListMinMax { of_float, .. } if *of_float == want_float => true,
+        // a min/max of the OTHER kind is a distinct helper; still recurse into its
+        // operands (a supported same-kind min/max could be nested in a `default=`).
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -11911,6 +12191,29 @@ fn emit_expr(
             of_float,
             start,
         } => emit_list_sum(list, *of_float, start.as_deref(), scope, out, depth),
+        // PMAT-1250: `min(xs)` / `max(xs)` over a `list[int]` / `list[float]` — an
+        // i64/f64 reduction. The list NAME lowers to its i32 base-pointer, then
+        // `$__wasm_list_minmax_{i64,f64}` folds the payload, `is_max` selecting the
+        // direction. Refuses a `key=`, a `default=`, a struct-cmp element, and a
+        // non-name list honestly (see `emit_list_minmax`).
+        Expr::ListMinMax {
+            list,
+            is_max,
+            of_float,
+            of_struct_cmp,
+            key,
+            default,
+        } => emit_list_minmax(
+            list,
+            *is_max,
+            *of_float,
+            *of_struct_cmp,
+            key.as_ref(),
+            default.as_deref(),
+            scope,
+            out,
+            depth,
+        ),
         // PMAT-996 (slice 4): `Name(f=v, …)` — allocate + populate a plain-data
         // struct on the bump heap; leaves the instance's i32 base-pointer.
         Expr::StructLit { name, fields } => emit_struct_lit(name, fields, scope, out, depth),
@@ -12331,6 +12634,107 @@ fn emit_list_sum(
     // Push the list base-pointer and fold the payload via the reduction helper.
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call {helper}").expect("write");
+    Ok(result)
+}
+
+/// PMAT-1250: emit `min(xs)` / `max(xs)` over a `list[int]` / `list[float]` —
+/// leaves the i64/f64 extremum on the stack. The list NAME lowers to its i32
+/// base-pointer (the PMAT-968 list ABI: i32 count @ base+0, packed 8-byte
+/// elements @ base+8), then `$__wasm_list_minmax_{i64,f64}` folds the payload,
+/// with `is_max` pushed as an i32 immediate (`1` for `max`, `0` for `min`) so
+/// one helper per element kind serves both directions. CPython semantics: the
+/// first extremal element wins ties (a strict compare in the helper), and an
+/// EMPTY list traps (Python raises `ValueError`; the Rust `.unwrap()` lane
+/// panics) — computed inside the helper.
+///
+/// Honest scope (each a hard [`BackendError`], never a silent miscompile):
+///   * a `key=lambda …` (`min(xs, key=f)`) is refused — the WASM subset reduces
+///     by the ELEMENT only; a key would need to lower an arbitrary lambda body
+///     per element (deferred, not half-wired).
+///   * a `default=` (`min(xs, default=d)`) is refused — the empty case traps
+///     rather than yielding a fallback; wiring a default would also require the
+///     gate walkers to recurse into it (already done defensively) plus a runtime
+///     empty-branch, deferred.
+///   * a struct-comparison element (`of_struct_cmp`) is refused — a struct list
+///     has no native i64/f64 payload to fold; only scalar `list[int]`/`list[float]`.
+///   * a non-name list (a list LITERAL / temporary — `max([1, 2, 3])`, or the
+///     variadic `max(a, b)` which lowers to a `ListLit`) is refused; bind it to a
+///     name first. A name whose element type does not match the reduced kind is
+///     refused by the element-type check against [`Scope::list_elem_of`].
+#[allow(clippy::too_many_arguments)]
+fn emit_list_minmax(
+    list: &Expr,
+    is_max: bool,
+    of_float: bool,
+    of_struct_cmp: bool,
+    key: Option<&SortKey>,
+    default: Option<&Expr>,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    if key.is_some() {
+        return Err(unsupported(
+            "min(xs, key=…) / max(xs, key=…) — the WASM subset reduces a scalar \
+             list by its ELEMENT only; a `key=` lambda is deferred (refused honestly)",
+        ));
+    }
+    if default.is_some() {
+        return Err(unsupported(
+            "min(xs, default=…) / max(xs, default=…) — the WASM subset traps on an \
+             empty list (Python `ValueError`); a `default=` fallback is deferred \
+             (refused honestly)",
+        ));
+    }
+    if of_struct_cmp {
+        return Err(unsupported(
+            "min/max over a struct list with a custom `__lt__` — the WASM subset \
+             reduces only a scalar `list[int]` / `list[float]` (an i64/f64 payload); \
+             a struct element has no native payload to fold (refused honestly)",
+        ));
+    }
+    // The reduced element kind, its reduction helper, and the WAT result type.
+    let (want_elem, helper, result) = if of_float {
+        (WatTy::F64, "$__wasm_list_minmax_f64", WatTy::F64)
+    } else {
+        (WatTy::I64, "$__wasm_list_minmax_i64", WatTy::I64)
+    };
+    let op = if is_max { "max" } else { "min" };
+    let Expr::Ident(name) = list else {
+        return Err(unsupported(&format!(
+            "{op}() of a non-name list — the WASM subset reduces a `list[{}]` NAME \
+             (an i32 base-pointer into linear memory); a list literal / temporary \
+             (incl. the variadic `{op}(a, b)` form) is refused (bind it to a name first)",
+            want_elem.keyword()
+        )));
+    };
+    match scope.list_elem_of(name) {
+        Some(elem) if elem == want_elem => {}
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "{op}() over `{name}` whose elements load as {} — this `{op}` reduces \
+                 a `list[{}]`; the {} form is emitted separately",
+                other.keyword(),
+                want_elem.keyword(),
+                other.keyword(),
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "{op}() over `{name}` which is not a `list[{}]` param/local — only a \
+                 list (an i32 base-pointer into linear memory) can be reduced in the \
+                 WASM subset",
+                want_elem.keyword()
+            )));
+        }
+    }
+    // Push the list base-pointer + the is_max selector, then fold via the helper.
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(is_max)).expect("write");
     indent(out, depth);
     writeln!(out, "call {helper}").expect("write");
     Ok(result)
