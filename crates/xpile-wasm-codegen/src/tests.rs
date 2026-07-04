@@ -5179,3 +5179,330 @@ fn list_float_sorted_executes_in_wabt() {
          asc={asc:?} desc={desc:?}; all four exports match CPython"
     );
 }
+
+// ---------------------------------------------------------------------------
+// PMAT-1253: native-WASM `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over
+// a `list[int]` / `list[float]` — the SECOND allocating list-VALUED op. ONE
+// `$__wasm_list_reversed_i64` helper serves BOTH kinds (reversal moves 8-byte
+// words verbatim, never interpreting them), unlike `sorted`'s two typed helpers.
+// ---------------------------------------------------------------------------
+
+/// PMAT-1253 `reversed(xs)` fixture:
+/// `def r(xs: list[<elem>]) -> <elem>: ys = reversed(xs); return ys[0]`.
+/// The bound `ys` is a `list[<elem>]` local, so `emit_list_expr` sees the
+/// `Expr::Reversed` in list-VALUED position; the trailing `ys[0]` materialises it.
+fn list_reversed_fn(elem: Type) -> Function {
+    Function {
+        name: "r".into(),
+        params: vec![param("xs", Type::List(Box::new(elem.clone())))],
+        return_type: elem.clone(),
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "ys".into(),
+                ty: Type::List(Box::new(elem)),
+                value: Expr::Reversed {
+                    list: Box::new(Expr::Ident("xs".into())),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("ys".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    }
+}
+
+#[test]
+fn list_int_reversed_emits_helper_call_and_heap() {
+    // `reversed(xs)` over a list[int] declares `$__wasm_list_reversed_i64`, calls
+    // it, and — as an allocating list op — ALSO pulls in the bump allocator
+    // (`$__alloc`) + exported memory. The helper takes a SINGLE `base` param (no
+    // direction selector, unlike `sorted`) and moves 8-byte words (i64 ld/st).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_reversed_fn(Type::I64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_reversed_i64 (param $base i32) (result i32)"),
+        "reverse helper declared with a single base param: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_reversed_i64"),
+        "the reverse helper is called: {wat}"
+    );
+    assert!(
+        wat.contains("(func $__alloc"),
+        "an allocating list op forces the bump allocator: {wat}"
+    );
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "the fresh + source list records need the exported memory: {wat}"
+    );
+    assert!(
+        wat.contains("i64.load") && wat.contains("i64.store"),
+        "reversal moves 8-byte words verbatim (i64 load/store): {wat}"
+    );
+}
+
+#[test]
+fn list_float_reversed_reuses_the_same_i64_word_helper() {
+    // `reversed(xs)` over a list[float] emits the VERY SAME
+    // `$__wasm_list_reversed_i64` helper — reversal is a byte-move, so there is NO
+    // `_f64` reverse twin (contrast the two typed `sorted` helpers). This is the
+    // load-bearing "one helper serves both" property.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_reversed_fn(Type::F64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_reversed_i64 (param $base i32) (result i32)"),
+        "a FLOAT list reversal reuses the i64-word helper: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_reversed_i64"),
+        "the float reversal calls the same helper: {wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_list_reversed_f64"),
+        "there is NO dead f64 reverse twin — one helper serves both: {wat}"
+    );
+}
+
+#[test]
+fn list_reversed_helper_absent_without_use() {
+    // A module that never reverses a list carries no reverse helper.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::I64,
+                false,
+                false,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_reversed_i64"),
+        "no reverse helper without a `reversed(...)` use: {wat}"
+    );
+}
+
+#[test]
+fn list_reversed_bool_list_refused_honestly() {
+    // `reversed(xs)` over a list[bool] — the reverse op is int/float (8-byte
+    // stride) only; a bool rides a 4-byte i32, so refuse honestly rather than
+    // move the wrong stride (a distinct-stride helper is deferred).
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_reversed_fn(Type::Bool))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("list[bool]") || err.contains("list[int]` / `list[float]"),
+        "bool-list reversal refused: {err}"
+    );
+}
+
+#[test]
+fn list_reversed_non_name_list_refused_honestly() {
+    // `reversed([3, 1, 2])` — the WASM subset reverses a NAMED list; bind first.
+    let f = Function {
+        name: "r".into(),
+        params: Vec::new(),
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "ys".into(),
+                ty: Type::List(Box::new(Type::I64)),
+                value: Expr::Reversed {
+                    list: Box::new(Expr::ListLit(vec![
+                        Expr::LitInt(3),
+                        Expr::LitInt(1),
+                        Expr::LitInt(2),
+                    ])),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("ys".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("non-name list") || err.contains("bind the list to a name"),
+        "non-name list reversal refused: {err}"
+    );
+}
+
+/// PMAT-1253 EXECUTED WITNESS — assemble + run the REAL-emitted `reversed(xs)`
+/// over a list[int] and diff against CPython. A `(data)` image lays a non-empty
+/// list at base 0 and an empty list (count 0) at base 512; zero-arg exports call
+/// the single `$__wasm_list_reversed_i64` helper and read back chosen reversed
+/// elements (i64→f64 for the engine's `=> f64:` parser). The reversed sequence
+/// and the empty case (`len(list(reversed([]))) == 0`) are value-matched against
+/// CPython. Gated on `wasm_runtime_available()` — a clean skip without WABT.
+#[test]
+fn list_int_reversed_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_int_reversed_executes_in_wabt: WABT not installed");
+        return;
+    }
+    // CPython: list(reversed([5,-3,10,7,-1])) == [-1,7,10,-3,5].
+    let elems: [i64; 5] = [5, -3, 10, 7, -1];
+    let mut rev: Vec<i64> = elems.to_vec();
+    rev.reverse();
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_reversed_fn(Type::I64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    // 520-byte image: non-empty list at base 0, empty list (count 0) at base 512.
+    let mut image = vec![0u8; 520];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "reverse module exports memory: {helper_wat}"
+    );
+    // Read reversed[k]: call the helper on base 0, add 8 + k*8, i64.load → f64.
+    let read = |k: usize| {
+        format!(
+            "i32.const 0\n    call $__wasm_list_reversed_i64\n    \
+             i32.const {}\n    i32.add\n    i64.load\n    f64.convert_i64_s)\n",
+            8 + k * 8
+        )
+    };
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}  \
+         (func (export \"e3\") (result f64)\n    \
+         i32.const 512\n    call $__wasm_list_reversed_i64\n    \
+         i32.load\n    f64.convert_i32_s)\n",
+        read(0),
+        read(2),
+        read(4),
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_int_reversed")
+        .expect("assemble+run REAL-emitted list-int-reversed witness");
+    let expected = [rev[0] as f64, rev[2] as f64, rev[4] as f64, 0.0];
+    assert_eq!(out.len(), expected.len(), "four exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "reversed witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1253 executed witness: REAL reversed(xs: list[int]) emit → run ===\n\
+         rev={rev:?} list(reversed([]))==[] len 0; all four exports match CPython"
+    );
+}
+
+/// PMAT-1253 EXECUTED WITNESS (float) — assemble + run the REAL-emitted
+/// `reversed(xs)` over a list[float] and diff against CPython. Crucially it calls
+/// the VERY SAME `$__wasm_list_reversed_i64` byte-move helper (there is no f64
+/// twin); the driver reads the reversed record's f64 elements directly.
+#[test]
+fn list_float_reversed_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_float_reversed_executes_in_wabt: WABT not installed");
+        return;
+    }
+    let elems: [f64; 4] = [3.5, 1.5, 2.5, -0.5];
+    let mut rev: Vec<f64> = elems.to_vec();
+    rev.reverse();
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_reversed_fn(Type::F64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    // The load-bearing property: a float reversal rides the i64-word helper.
+    assert!(
+        helper_wat.contains("call $__wasm_list_reversed_i64")
+            && !helper_wat.contains("$__wasm_list_reversed_f64"),
+        "float reversal uses the ONE i64-word helper: {helper_wat}"
+    );
+
+    let mut image = vec![0u8; 128];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "float reverse module exports memory: {helper_wat}"
+    );
+    let read = |k: usize| {
+        format!(
+            "i32.const 0\n    call $__wasm_list_reversed_i64\n    \
+             i32.const {}\n    i32.add\n    f64.load)\n",
+            8 + k * 8
+        )
+    };
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}",
+        read(0),
+        read(2),
+        read(3),
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_float_reversed")
+        .expect("assemble+run REAL-emitted list-float-reversed witness");
+    let expected = [rev[0], rev[2], rev[3]];
+    assert_eq!(out.len(), expected.len(), "three exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "float reversed witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1253 executed witness: REAL reversed(xs: list[float]) emit → run ===\n\
+         rev={rev:?}; all three exports match CPython (via the shared i64-word helper)"
+    );
+}

@@ -7351,6 +7351,98 @@ const LIST_SORTED_FLOAT_HELPER: &str = "\
     local.get $r)
 ";
 
+/// PMAT-1253: the list-REVERSE helper — Python `reversed(xs)` /
+/// `list(reversed(xs))` / `xs[::-1]` over a `list[int]` / `list[float]`. Like
+/// [`LIST_SORTED_INT_HELPER`] this is a list-VALUED op that RETURNS a NEW list,
+/// so it ALLOCATES: it bump-allocates a fresh PMAT-968 length-prefixed record
+/// (`$__alloc(8 + n*8)`) and copies the source elements in BACK-TO-FRONT
+/// (`r[i] = base[n-1-i]`), leaving the new base-pointer — the source list is
+/// never mutated (Python's `reversed`/`[::-1]` yields a new sequence). It calls
+/// `$__alloc`, so a module using it forces `needs_heap` (via [`expr_has_heap_op`])
+/// and rides its OWN `needs_list_reversed`.
+///
+/// ONE helper serves BOTH `list[int]` and `list[float]`: reversal MOVES 8-byte
+/// words verbatim and NEVER interprets them, so an f64's bit pattern copied as an
+/// i64 word is lossless (and, unlike an `f64.load`/`f64.store` pair, an
+/// `i64.load`/`i64.store` cannot canonicalise a NaN payload — a strictly safer
+/// move for float data). This is why — unlike [`emit_list_sorted`], which needs
+/// TYPED compares (`i64.gt_s` vs `f64.gt`) and thus two helpers — reversal needs
+/// only one. A `list[bool]` (4-byte i32 stride) is refused at emit for parity
+/// with `sorted` (a distinct-stride helper is deferred). The EMPTY list does NOT
+/// trap: `list(reversed([])) == []`, so `n == 0` allocates an empty record and
+/// returns it.
+const LIST_REVERSED_HELPER: &str = "\
+  ;; __wasm_list_reversed_i64(base) -> a NEW reversed list (8-byte stride)
+  ;; base → length-prefixed region: i32 count @ base+0, 8-byte elements @ base+8.
+  ;; Reversal MOVES 8-byte words verbatim (never interpreting them), so this ONE
+  ;; helper serves BOTH list[int] and list[float]: r[i] = base[n-1-i].
+  (func $__wasm_list_reversed_i64 (param $base i32) (result i32)
+    (local $n i32)
+    (local $r i32)
+    (local $ra i32)
+    (local $ba i32)
+    (local $i i32)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; r = __alloc(8 + n*8); write the i32 count header at r+0
+    local.get $n
+    i32.const 8
+    i32.mul
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $r
+    local.get $r
+    local.get $n
+    i32.store
+    ;; ra = r + 8 (element 0 of the new record); ba = base + 8 (source element 0)
+    local.get $r
+    i32.const 8
+    i32.add
+    local.set $ra
+    local.get $base
+    i32.const 8
+    i32.add
+    local.set $ba
+    ;; copy back-to-front: for i in 0..n: r[i] = base[n-1-i]
+    i32.const 0
+    local.set $i
+    (block $cpd
+      (loop $cp
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $cpd
+        ;; dst = ra + i*8
+        local.get $ra
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; val = i64.load(ba + (n-1-i)*8)  — a verbatim 8-byte word move
+        local.get $ba
+        local.get $n
+        i32.const 1
+        i32.sub
+        local.get $i
+        i32.sub
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cp
+      )
+    )
+    local.get $r)
+";
+
 /// Native WASM backend. Lowers the meta-HIR scalar/control subset to WAT
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
@@ -8503,6 +8595,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // dead f64 helper and vice-versa.
     let needs_list_sorted = module_uses_list_sorted(module);
     let needs_list_sorted_float = module_uses_list_sorted_float(module);
+    // PMAT-1253: `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a
+    // `list[int]` / `list[float]` (`Expr::Reversed`) returns a NEW reversed list
+    // via `$__wasm_list_reversed_i64` — the SECOND list-VALUED op that ALLOCATES,
+    // so (like `sorted`) it ALSO forces `needs_heap` (via `expr_has_heap_op`).
+    // ONE helper serves both int and float (reversal is a verbatim 8-byte-word
+    // move), so a SINGLE gate drives it (no int/float twin, unlike sorted).
+    let needs_list_reversed = module_uses_list_reversed(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -8527,6 +8626,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_bool_reduce
         || needs_list_sorted
         || needs_list_sorted_float
+        || needs_list_reversed
     {
         writeln!(
             out,
@@ -8925,6 +9025,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     }
     if needs_list_sorted_float {
         out.push_str(LIST_SORTED_FLOAT_HELPER);
+    }
+    // PMAT-1253: emit the list-REVERSE helper once, when any function uses
+    // `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a `list[int]` /
+    // `list[float]` (`Expr::Reversed`). It ALLOCATES a fresh reversed record via
+    // `$__alloc` (so the module also carries the bump heap + `(memory)` via
+    // `needs_heap`). ONE helper serves both int and float — reversal moves 8-byte
+    // words verbatim, never interpreting them — so there is no dead-twin problem
+    // (contrast the two typed sort helpers above).
+    if needs_list_reversed {
+        out.push_str(LIST_REVERSED_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -10225,6 +10335,97 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
     }
 }
 
+/// PMAT-1253: does any function reverse a `list[int]` / `list[float]`
+/// (`Expr::Reversed` over a genuine list)? Gates the single
+/// `$__wasm_list_reversed_i64` helper (one helper serves both kinds — reversal is
+/// a verbatim 8-byte-word move, so no `want_float` split unlike the sort gate).
+/// Exhaustive over the same stmt/expr forms as [`expr_has_list_sorted`]; a missed
+/// sub-expression would leave the helper undeclared at the `call
+/// $__wasm_list_reversed_i64` site (a hard wat2wasm failure — the recurring
+/// gate-hole class, where over-detecting is a harmless unused function but
+/// under-detecting is fatal). The `reversed(s)` STR form lowers to
+/// `Reversed(StrChars(s))` (types as `list[str]`, refused at emit — NOT this
+/// helper's job), so it does NOT gate; the detecting arm excludes it.
+fn module_uses_list_reversed(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_reversed(&f.body))
+}
+
+fn block_has_list_reversed(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_reversed) || expr_has_list_reversed(&block.trailing_return)
+}
+
+fn stmt_has_list_reversed(s: &Stmt) -> bool {
+    let e = expr_has_list_reversed;
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            e(cond)
+                || then_body.iter().any(stmt_has_list_reversed)
+                || else_body.iter().any(stmt_has_list_reversed)
+        }
+        Stmt::While { cond, body } => e(cond) || body.iter().any(stmt_has_list_reversed),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_reversed(expr: &Expr) -> bool {
+    let e = expr_has_list_reversed;
+    match expr {
+        // this node IS a genuine list reversal (int/float) — the gate fires. The
+        // `reversed(s)` str form wraps a `StrChars` (types as `list[str]`, refused
+        // at emit, not this helper), so it does NOT gate; recurse into it instead.
+        Expr::Reversed { list } if !matches!(list.as_ref(), Expr::StrChars { .. }) => true,
+        Expr::Reversed { list } => e(list),
+        Expr::Sorted { list, .. } => e(list),
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
 fn block_has_str_repeat(block: &Block) -> bool {
     block.stmts.iter().any(stmt_has_str_repeat) || expr_has_str_repeat(&block.trailing_return)
 }
@@ -10756,6 +10957,15 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // harmless; a miss would emit the sort helper against an undeclared
         // `$__alloc` — a hard wat2wasm failure).
         Expr::Sorted { .. } => true,
+        // PMAT-1253: `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a
+        // list likewise bump-allocates a fresh reversed record (via
+        // `$__wasm_list_reversed_i64` → `$__alloc`), the SECOND list-VALUED
+        // allocating op, so it forces the bump heap + `(memory)`. The supported
+        // shape carries a bare-Ident list (no nested allocation), so returning
+        // `true` directly is correct and safe (over-detection is harmless; a miss
+        // would emit the reverse helper against an undeclared `$__alloc` — a hard
+        // wat2wasm failure).
+        Expr::Reversed { .. } => true,
         // PMAT-1060: `str(int)` bump-allocates its decimal-ASCII string, so it
         // pulls in the allocator + `(memory)` like any materialising op.
         Expr::ToStr {
@@ -15193,11 +15403,18 @@ fn emit_list_expr(
             out,
             depth,
         ),
+        // PMAT-1253: `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a
+        // `list[int]` / `list[float]` — the SECOND allocating list-VALUED op.
+        // `$__wasm_list_reversed_i64(base)` bump-allocates a fresh record and
+        // copies `xs` back-to-front; ONE helper serves both int and float
+        // (reversal moves 8-byte words verbatim, never interpreting them). The
+        // source is never mutated (Python's `reversed`/`[::-1]` yields a new seq).
+        Expr::Reversed { list } => emit_list_reversed(list, elem, scope, out, depth),
         other => Err(unsupported(&format!(
             "binding a list local from {} — the WASM subset materialises a \
-             list LITERAL, shares another named list local/param, or sorts a \
-             named list (`sorted(xs)`); other list-returning calls/slices are \
-             refused",
+             list LITERAL, shares another named list local/param, sorts a \
+             named list (`sorted(xs)`), or reverses one (`reversed(xs)` / \
+             `xs[::-1]`); other list-returning calls/slices are refused",
             expr_kind(other)
         ))),
     }
@@ -15275,6 +15492,66 @@ fn emit_list_sorted(
     writeln!(out, "i32.const {}", i32::from(reverse)).expect("write");
     indent(out, depth);
     writeln!(out, "call ${helper}").expect("write");
+    Ok(())
+}
+
+/// PMAT-1253: lower `reversed(list)` / `list(reversed(list))` / `list[::-1]`
+/// producing a NEW `list[scalar]` on the bump heap. Leaves the fresh record's
+/// `i32` base-pointer on the stack.
+///
+/// `elem` is the DESTINATION list's element type (from the bound name). Reversal
+/// is a verbatim 8-byte-word move that NEVER interprets element values, so ONE
+/// helper (`$__wasm_list_reversed_i64`) serves BOTH `list[int]` (I64) and
+/// `list[float]` (F64) — unlike [`emit_list_sorted`], whose typed compares force
+/// two helpers. A `list[bool]` (I32, 4-byte stride) is refused for parity with
+/// `sorted` (a distinct-stride helper is deferred). The source must be a NAMED
+/// `list[scalar]` of exactly `elem`; the `reversed(s)` STR form
+/// (`Reversed(StrChars(s))`, a `list[str]`) is refused here — it is not a scalar
+/// list and has no supported WASM local.
+fn emit_list_reversed(
+    list: &Expr,
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // Int and float share the one 8-byte-word helper; a bool list (4-byte i32
+    // stride) is refused — a distinct-stride reverse helper is deferred.
+    if !matches!(elem, WatTy::I64 | WatTy::F64) {
+        return Err(unsupported(&format!(
+            "`reversed(xs)` / `xs[::-1]` over a `list[{}]` — the WASM subset \
+             reverses `list[int]` / `list[float]` (8-byte stride) only (a \
+             bool/other-kind list is refused)",
+            elem.keyword()
+        )));
+    }
+    let Expr::Ident(src) = list else {
+        return Err(unsupported(
+            "`reversed(…)` over a non-name list — the WASM subset reverses a \
+             named `list[scalar]` local/param (bind the list to a name first)",
+        ));
+    };
+    let Some(src_elem) = scope.list_elem_of(src) else {
+        return Err(unsupported(&format!(
+            "`reversed({src})` where `{src}` is not a `list[scalar]` local/param \
+             in the WASM subset"
+        )));
+    };
+    if src_elem != elem {
+        return Err(unsupported(&format!(
+            "`reversed({src})` reverses a `list[{}]` into a `list[{}]` — the WASM \
+             subset keeps the element type (reverse a list into a list of the \
+             same element type)",
+            src_elem.keyword(),
+            elem.keyword()
+        )));
+    }
+    // Push the source base-pointer, then call the single 8-byte-word helper; it
+    // leaves the fresh reversed record's i32 base-pointer on the stack.
+    indent(out, depth);
+    writeln!(out, "local.get ${src}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_list_reversed_i64").expect("write");
     Ok(())
 }
 
