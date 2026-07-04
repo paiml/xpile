@@ -566,6 +566,13 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
             collect_expr_literals(dict, out);
             collect_expr_literals(key, out);
         }
+        // PMAT-1223: `d.get(k, default)` also lays out any str literals in its
+        // dict/key/default (e.g. a str key or a str-touching default).
+        Expr::DictGetOr { dict, key, default } => {
+            collect_expr_literals(dict, out);
+            collect_expr_literals(key, out);
+            collect_expr_literals(default, out);
+        }
         Expr::SetContains { set, elem } => {
             collect_expr_literals(set, out);
             collect_expr_literals(elem, out);
@@ -7783,6 +7790,10 @@ fn expr_touches_str(e: &Expr) -> bool {
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_touches_str(dict) || expr_touches_str(key)
         }
+        // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_touches_str(dict) || expr_touches_str(key) || expr_touches_str(default)
+        }
         Expr::SetContains { set, elem } => expr_touches_str(set) || expr_touches_str(elem),
         _ => false,
     }
@@ -7909,6 +7920,10 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_has_str_slice(dict) || expr_has_str_slice(key)
         }
+        // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_str_slice(dict) || expr_has_str_slice(key) || expr_has_str_slice(default)
+        }
         Expr::SetContains { set, elem } => expr_has_str_slice(set) || expr_has_str_slice(elem),
         _ => false,
     }
@@ -8034,6 +8049,11 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
         // $__wasm_int_to_str`. Recurse so the helper is declared.
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_has_int_to_str(dict) || expr_has_int_to_str(key)
+        }
+        // PMAT-1223: `d.get(k, default)` — a str-keyed `d.get(str(n), 0)` (or an
+        // int-to-str-hosting default) must gate `$__wasm_int_to_str`.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_int_to_str(dict) || expr_has_int_to_str(key) || expr_has_int_to_str(default)
         }
         Expr::SetContains { set, elem } => expr_has_int_to_str(set) || expr_has_int_to_str(elem),
         _ => false,
@@ -8257,6 +8277,12 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_uses_str_method(dict, op) || expr_uses_str_method(key, op)
         }
+        // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_uses_str_method(dict, op)
+                || expr_uses_str_method(key, op)
+                || expr_uses_str_method(default, op)
+        }
         Expr::SetContains { set, elem } => {
             expr_uses_str_method(set, op) || expr_uses_str_method(elem, op)
         }
@@ -8366,6 +8392,12 @@ fn expr_has_str_contains(e: &Expr) -> bool {
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_has_str_contains(dict) || expr_has_str_contains(key)
         }
+        // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_str_contains(dict)
+                || expr_has_str_contains(key)
+                || expr_has_str_contains(default)
+        }
         Expr::SetContains { set, elem } => {
             expr_has_str_contains(set) || expr_has_str_contains(elem)
         }
@@ -8474,6 +8506,10 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
         // $__wasm_str_repeat`. Recurse so the helper is declared.
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_has_str_repeat(dict) || expr_has_str_repeat(key)
+        }
+        // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_str_repeat(dict) || expr_has_str_repeat(key) || expr_has_str_repeat(default)
         }
         Expr::SetContains { set, elem } => expr_has_str_repeat(set) || expr_has_str_repeat(elem),
         _ => false,
@@ -8602,6 +8638,12 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
         Expr::ToStr { value, .. } => expr_has_str_method_2arg(value, target),
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_has_str_method_2arg(dict, target) || expr_has_str_method_2arg(key, target)
+        }
+        // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_str_method_2arg(dict, target)
+                || expr_has_str_method_2arg(key, target)
+                || expr_has_str_method_2arg(default, target)
         }
         Expr::SetContains { set, elem } => {
             expr_has_str_method_2arg(set, target) || expr_has_str_method_2arg(elem, target)
@@ -8762,6 +8804,12 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         // `$__wasm_str_eq` / `$__wasm_str_cmp` stays gated (exhaustive).
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_has_str_eq(dict, scan) || expr_has_str_eq(key, scan)
+        }
+        // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_str_eq(dict, scan)
+                || expr_has_str_eq(key, scan)
+                || expr_has_str_eq(default, scan)
         }
         Expr::SetContains { set, elem } => {
             expr_has_str_eq(set, scan) || expr_has_str_eq(elem, scan)
@@ -8979,6 +9027,11 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // allocator — recurse into both operands so `$__alloc` stays gated.
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
             expr_has_heap_op(dict) || expr_has_heap_op(key)
+        }
+        // PMAT-1223: `d.get(k, default)` allocates nothing itself, but a
+        // heap-constructed key/default pulls in the allocator — recurse.
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_heap_op(dict) || expr_has_heap_op(key) || expr_has_heap_op(default)
         }
         Expr::SetContains { set, elem } => expr_has_heap_op(set) || expr_has_heap_op(elem),
         _ => false,
@@ -10757,6 +10810,12 @@ fn emit_expr(
         // PMAT-995 (slice 3b): `d[k]` — keyed dict read; returns the i64 value
         // or TRAPS on an absent key (the Python KeyError analogue).
         Expr::DictGet { dict, key } => emit_dict_get(dict, key, scope, out, depth),
+        // PMAT-1223: `d.get(k, default)` — a TOTAL dict read; `if has(p,k) then
+        // get(p,k) else default`, so an absent key yields the int `default`
+        // instead of trapping (the non-trapping sibling of `d[k]`).
+        Expr::DictGetOr { dict, key, default } => {
+            emit_dict_get_or(dict, key, default, scope, out, depth)
+        }
         // PMAT-995 (slice 3b): `k in d` / `x in s` — i32 bool membership.
         Expr::DictContains { dict, key } => emit_dict_contains(dict, key, scope, out, depth),
         Expr::SetContains { set, elem } => emit_dict_contains(set, elem, scope, out, depth),
@@ -12029,6 +12088,50 @@ fn emit_dict_get(
     emit_dict_key(key, kind, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_get_{}", kind.suffix()).expect("write");
+    Ok(WatTy::I64)
+}
+
+/// PMAT-1223: lower `d.get(k, default)` (`Expr::DictGetOr`) — a TOTAL dict read
+/// that never traps. Emits `if has(p, k) then get(p, k) else default`: the
+/// membership helper (`$__wasm_dict_has_<k>`, i32, never traps) gates the
+/// TRAPPING value helper (`$__wasm_dict_get_<k>`, i64) so `get` runs ONLY when
+/// the key is present; an absent key falls to the int `default` instead of
+/// `unreachable`-trapping, exactly like CPython's `d.get(k, default)` vs the
+/// bare `d[k]` KeyError. Both helpers already exist (shared with
+/// [`emit_dict_get`]/[`emit_dict_contains`]) and are gated on the dict's
+/// declared `Type::Dict` local ([`module_dict_key_kinds`]), so this op declares
+/// no new helper. The WASM dict value type is `i64`, so both `if` arms and the
+/// default lower to `i64`. The key expression is emitted twice (once per helper
+/// call) — cheap and side-effect-free for the literal/ident keys this subset
+/// admits, and it lets `get` reuse the same encoded key `has` just tested.
+fn emit_dict_get_or(
+    dict: &Expr,
+    key: &Expr,
+    default: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let (name, kind) = dict_ident_kind(dict, scope)?;
+    // condition: has(p, k) -> i32 (never traps)
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
+    // if (result i64) get(p, k) else default
+    indent(out, depth);
+    writeln!(out, "if (result i64)").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth + 1)?;
+    indent(out, depth + 1);
+    writeln!(out, "call $__wasm_dict_get_{}", kind.suffix()).expect("write");
+    indent(out, depth);
+    writeln!(out, "else").expect("write");
+    emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
     Ok(WatTy::I64)
 }
 
