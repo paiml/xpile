@@ -3739,6 +3739,128 @@ const STR_UPPER_LOWER_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1187: `$__wasm_str_capitalize(s) -> i32` — Python `s.capitalize()`: a NEW
+/// heap string whose FIRST ASCII letter is upper-cased and every REMAINING ASCII
+/// letter is lower-cased (`"heLLo".capitalize() == "Hello"`, `"".capitalize() ==
+/// ""`). Allocating (rides the `needs_heap` gate, calls `$__alloc`).
+///
+/// **ASCII-only, with the same honest runtime boundary as `$__wasm_str_upper_
+/// lower`.** Python's `str.capitalize()` does FULL Unicode case mapping (title-case
+/// the first, lower-fold the rest), which needs a case table this scalar lane does
+/// not carry. So the helper case-flips only the ASCII letters and, on the FIRST
+/// byte `>= 0x80` (any byte of a non-ASCII code point in valid UTF-8), executes
+/// `unreachable` — a TRAP, exactly like the `upper` / `lower` / `index` siblings.
+/// It NEVER passes a non-ASCII byte through unchanged, so it never silently
+/// diverges: a pure-ASCII `s` is char-exact, any non-ASCII `s` aborts. Because
+/// every surviving byte is 1-byte ASCII, byte length == code-point length == the
+/// result length, so `len` / `Concat` / a str RETURN compose uniformly.
+///
+/// One pass over the payload: `$__alloc(8 + slen)`, store the i32 BYTE-count header
+/// (= `slen`, unchanged by case flipping), then for each byte: trap if `>= 0x80`,
+/// else at `i == 0` upper-flip an `a`–`z` (subtract `0x20`) and at `i > 0` lower-
+/// flip an `A`–`Z` (add `0x20`), and store it. A zero-length `s` writes no payload
+/// (the loop guard is `i < slen`) and returns an empty heap string.
+const STR_CAPITALIZE_HELPER: &str = "\
+  ;; PMAT-1187 __wasm_str_capitalize(s) = Python s.capitalize() — a NEW heap string
+  ;; with the FIRST ASCII letter upper-cased and every REMAINING ASCII letter
+  ;; lower-cased. ASCII-only: a byte >= 0x80 (non-ASCII code point) TRAPS
+  ;; (unreachable), never a silent un-folded pass-through, so the result is
+  ;; char-exact for ASCII or aborts.
+  (func $__wasm_str_capitalize (param $s i32) (result i32)
+    (local $slen i32)
+    (local $dst i32)
+    (local $i i32)
+    (local $c i32)
+    ;; slen = byte length of s (unchanged by case flipping — all survivors ASCII).
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; dst = alloc(8 + slen) ; store the i32 header = slen.
+    local.get $slen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $slen
+    i32.store
+    ;; for i in 0..slen: c = s[8+i]; trap if non-ASCII; case-flip; dst[8+i] = c.
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte -> honest trap (needs a Unicode case table we don't carry)
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; i == 0 (first char): upper-flip 'a'(0x61)..'z'(0x7a) -> c - 0x20
+        local.get $i
+        i32.eqz
+        if
+          local.get $c
+          i32.const 0x61
+          i32.ge_u
+          local.get $c
+          i32.const 0x7a
+          i32.le_u
+          i32.and
+          if
+            local.get $c
+            i32.const 0x20
+            i32.sub
+            local.set $c
+          end
+        else
+          ;; i > 0 (rest): lower-flip 'A'(0x41)..'Z'(0x5a) -> c + 0x20
+          local.get $c
+          i32.const 0x41
+          i32.ge_u
+          local.get $c
+          i32.const 0x5a
+          i32.le_u
+          i32.and
+          if
+            local.get $c
+            i32.const 0x20
+            i32.add
+            local.set $c
+          end
+        end
+        ;; dst[8 + i] = c
+        local.get $dst
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        local.get $c
+        i32.store8
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    local.get $dst
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5205,6 +5327,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // are 1-byte ASCII, non-ASCII bytes trap), so it forces no extra helper.
     let needs_upper_lower = module_uses_str_method(module, StrMethodOp::Upper)
         || module_uses_str_method(module, StrMethodOp::Lower);
+    // PMAT-1187: `s.capitalize()` (`Expr::StrMethod`, op `Capitalize`) — an
+    // allocating string-RETURNING op (a fresh heap string, first ASCII letter
+    // upper-cased, the rest lower-cased). Its own `$__wasm_str_capitalize` helper
+    // (i == 0 upper-flips, i > 0 lower-flips; a non-ASCII byte traps). Rides
+    // `needs_heap` (set via `expr_has_heap_op`, like upper/lower/replace/zfill).
+    // Byte-parallel (no charlen math — all survivors are 1-byte ASCII).
+    let needs_capitalize = module_uses_str_method(module, StrMethodOp::Capitalize);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5432,6 +5561,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // helper.
     if needs_heap && needs_upper_lower {
         out.push_str(STR_UPPER_LOWER_HELPER);
+    }
+    // PMAT-1187: emit the string CAPITALIZE helper once, when any function uses
+    // `s.capitalize()` (`Expr::StrMethod`, op `Capitalize`). The
+    // `$__wasm_str_capitalize` helper upper-flips the first ASCII letter and
+    // lower-flips the rest. Allocating (calls `$__alloc` + `i32.store8`), so it
+    // rides `needs_heap` — a capitalize sets the heap gate via `expr_has_heap_op`.
+    // Byte-parallel (no char helper — a non-ASCII byte traps rather than folding).
+    // Gated on an actual use so an unrelated heap-string module carries no dead
+    // helper.
+    if needs_heap && needs_capitalize {
+        out.push_str(STR_CAPITALIZE_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -6779,6 +6919,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // gate — a miss would emit `$__wasm_str_upper_lower` against an undeclared
         // `$__alloc` (the same hard wat2wasm gate-hole). They take no args, so the
         // recurse only ever fires on a heap-constructed receiver.
+        // PMAT-1187: `s.capitalize()` (op `Capitalize`) bump-allocates its
+        // first-upper/rest-lower result the same way — a miss would emit
+        // `$__wasm_str_capitalize` against an undeclared `$__alloc`.
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -6789,6 +6932,7 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::ZFill
                     | StrMethodOp::Upper
                     | StrMethodOp::Lower
+                    | StrMethodOp::Capitalize
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -7845,6 +7989,26 @@ fn emit_str_case(
     writeln!(out, "i32.const {}", i32::from(up)).expect("write");
     indent(out, depth);
     writeln!(out, "call $__wasm_str_upper_lower").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1187: lower `s.capitalize()` — a materialising op leaving the i32
+/// base-pointer of a fresh heap string whose first ASCII letter is upper-cased
+/// and every remaining ASCII letter is lower-cased. The receiver is string-valued
+/// (`emit_str_expr`, which refuses a non-str recv honestly); the allocating
+/// `$__wasm_str_capitalize` helper does the flip and TRAPS on a non-ASCII byte
+/// (the honest ASCII-only boundary — never a silent un-folded pass-through). A
+/// heap-constructed receiver (`(a + b).capitalize()`) already pulled in the
+/// allocator via `expr_has_heap_op`.
+fn emit_str_capitalize(
+    recv: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_capitalize").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -9001,6 +9165,21 @@ fn emit_str_expr(
             emit_str_case(recv, matches!(op, StrMethodOp::Upper), scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1187: `s.capitalize()` in a string position — a fresh heap string
+        // (like upper/lower, a materialising op) with the first ASCII letter
+        // upper-cased and the rest lower-cased. 0-arg; the allocating
+        // `$__wasm_str_capitalize` helper does the flip and TRAPS on a non-ASCII
+        // byte (the honest ASCII-only boundary — full Unicode case mapping needs a
+        // case table this scalar lane does not carry, so it refuses at runtime
+        // rather than silently returning a wrongly-mapped string).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Capitalize,
+            args,
+        } if args.is_empty() => {
+            emit_str_capitalize(recv, scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
         // `try_fold_strformat_to_concat` declined — a template carrying a
         // format spec (`"{:>5}".format(x)`), a positional (`"{0}"`), a named
@@ -9034,9 +9213,10 @@ fn emit_str_expr(
              (a + b, incl. format int operands auto-stringified via str(int)), \
              a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
-             count])`, `.zfill(width)`, `.upper()` / `.lower()` (ASCII-only — a \
-             non-ASCII byte traps), or a str-returning call; stepped slicing \
-             / str(float) / bare f-strings are refused",
+             count])`, `.zfill(width)`, `.upper()` / `.lower()` / \
+             `.capitalize()` (ASCII-only — a non-ASCII byte traps), or a \
+             str-returning call; stepped slicing / str(float) / bare f-strings \
+             are refused",
             expr_kind(other)
         ))),
     }
