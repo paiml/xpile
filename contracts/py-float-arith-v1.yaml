@@ -42,6 +42,11 @@ equations:
   py_float_structure_extensionality_diamond:
     lean_theorem: "XpileContracts.CPyFloatArith.py_float_structure_extensionality_diamond"
     lean_file: "contracts/lean/PyFloatArith.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1275): Kani BMC over the
+    # primitive emitted Rust type. Non-vacuous (distinctness/projection/
+    # injectivity), verified SUCCESSFUL under Kani 0.67 pre-commit.
+    kani_harness: "py_float_structure_extensionality_diamond"
+    kani_file: "contracts/kani/py_float_arith.rs"
     formula: |
       ∀ a b : PyFloat.
         a.bits = b.bits → a = b
