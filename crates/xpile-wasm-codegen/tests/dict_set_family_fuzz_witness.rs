@@ -38,17 +38,20 @@
 //!   `d.clear()` (`Stmt::ListMutate` Clear)  `d.get(k,-1)` (`Expr::DictGetOr`)
 //!   `len(d)` (`Expr::Len`)
 //! Set (int-keyed AND str-keyed):
-//!   `s.add(e)` (`Stmt::SetAdd`)  `s.clear()`  `e in s` (`Expr::SetContains`)
-//!   `len(s)`
+//!   `s.add(e)` (`Stmt::SetAdd`)  `s.remove(e)` / `s.discard(e)` (`Stmt::SetRemove`)
+//!   `s.clear()`  `e in s` (`Expr::SetContains`)  `len(s)`
 //!
 //! ## Trap-free BY CONSTRUCTION
 //!
-//! `del d[k]` and bare `d.pop(k)` TRAP on an absent key (the CPython `KeyError`
-//! analogue — already witnessed per-op). To keep THIS test an exact-value diff
-//! (not a trap test), the generator maintains a presence model and only emits a
-//! `del` / bare-`pop` on a key it knows is present, so every emitted sequence runs
-//! clean and MUST value-match CPython exactly. A silent divergence — the dangerous
-//! class, not a trap, not a refusal — is what fails here.
+//! `del d[k]`, bare `d.pop(k)`, and `s.remove(e)` TRAP on an absent key/element
+//! (the CPython `KeyError` analogue — already witnessed per-op). To keep THIS test
+//! an exact-value diff (not a trap test), the generator maintains a presence model
+//! and only emits a `del` / bare-`pop` / `s.remove` on a key/element it knows is
+//! present, so every emitted sequence runs clean and MUST value-match CPython
+//! exactly. `s.discard(e)` NEVER traps (an absent element is a silent no-op), so it
+//! is emitted freely on ANY element — including deliberately-absent ones — to
+//! exercise the discard-absent no-op path against the CPython oracle. A silent
+//! divergence — the dangerous class, not a trap, not a refusal — is what fails here.
 //!
 //! ## Gating
 //!
@@ -187,10 +190,14 @@ fn op_py(op: &Op) -> String {
 
 // ---- set ops ----------------------------------------------------------------
 
-/// One set mutation (the set surface has no removal — add / clear only).
+/// One set mutation. `Remove` carries an element the generator has verified
+/// present (it TRAPS on absent, like `del`/bare-`pop`); `Discard` may carry ANY
+/// element (an absent one is a silent no-op, never a trap).
 #[derive(Clone)]
 enum SOp {
     Add(K),
+    Remove(K),  // s.remove(e) — element known present (traps on absent)
+    Discard(K), // s.discard(e) — any element (absent → no-op)
     Clear,
 }
 
@@ -199,6 +206,16 @@ fn sop_stmt(op: &SOp) -> Stmt {
         SOp::Add(k) => Stmt::SetAdd {
             set_name: "s".into(),
             elem: k.expr(),
+        },
+        SOp::Remove(k) => Stmt::SetRemove {
+            set_name: "s".into(),
+            elem: k.expr(),
+            error_if_absent: true,
+        },
+        SOp::Discard(k) => Stmt::SetRemove {
+            set_name: "s".into(),
+            elem: k.expr(),
+            error_if_absent: false,
         },
         SOp::Clear => Stmt::ListMutate {
             list_name: "s".into(),
@@ -211,6 +228,8 @@ fn sop_stmt(op: &SOp) -> Stmt {
 fn sop_py(op: &SOp) -> String {
     match op {
         SOp::Add(k) => format!("s.add({})", k.py()),
+        SOp::Remove(k) => format!("s.remove({})", k.py()),
+        SOp::Discard(k) => format!("s.discard({})", k.py()),
         SOp::Clear => "s.clear()".to_string(),
     }
 }
@@ -336,7 +355,10 @@ fn curated_dicts(tag_prefix: &str, keys: &'static [K]) -> Vec<DictSeq> {
     ]
 }
 
-/// Curated set interaction edges: grow past cap, clear-then-regrow, re-add dup.
+/// Curated set interaction edges: grow past cap, clear-then-regrow, re-add dup,
+/// and (PMAT-1240) removal edges — remove-swap-then-readd, discard-absent no-op,
+/// drain-via-remove-then-regrow — the swap-last-into-hole paths a single-op
+/// witness cannot reach when interleaved with grow/clear.
 fn curated_sets(tag_prefix: &str, keys: &'static [K]) -> Vec<SetSeq> {
     let k = |i: usize| keys[i].clone();
     let keyty = keys[0].ty();
@@ -375,6 +397,46 @@ fn curated_sets(tag_prefix: &str, keys: &'static [K]) -> Vec<SetSeq> {
             "clear_grow",
             vec![k(0), k(1), k(2)],
             vec![SOp::Clear, SOp::Add(k(3)), SOp::Add(k(4)), SOp::Add(k(0))],
+        ),
+        // remove a MIDDLE element (swap-last-into-hole), a bystander survives,
+        // then re-add the swapped element: the re-add must UPDATE in place (no
+        // duplicate), and re-adding the removed element must restore membership.
+        mk(
+            "remove_mid_readd",
+            vec![k(0), k(1), k(2)],
+            vec![
+                SOp::Remove(k(1)),
+                SOp::Add(k(2)), // k(2) was swapped into k(1)'s hole — no double-count
+                SOp::Add(k(1)), // re-add the removed element
+            ],
+        ),
+        // discard a PRESENT then an ABSENT element: the present discard removes,
+        // the absent discard is a pure no-op (len holds) — the CPython-exact
+        // path `remove` cannot show without trapping.
+        mk(
+            "discard_absent_noop",
+            vec![k(0), k(1)],
+            vec![
+                SOp::Discard(k(0)), // present → removed
+                SOp::Discard(k(5)), // absent → no-op
+                SOp::Discard(k(0)), // already gone → no-op
+                SOp::Add(k(3)),     // grow after shrink
+            ],
+        ),
+        // drain the whole set via remove (region → empty), then regrow past the
+        // initial capacity: remove-shrink then grow-relocate from the drained base.
+        mk(
+            "drain_regrow",
+            vec![k(0), k(1), k(2)],
+            vec![
+                SOp::Remove(k(0)),
+                SOp::Remove(k(1)),
+                SOp::Remove(k(2)),
+                SOp::Add(k(5)),
+                SOp::Add(k(4)),
+                SOp::Add(k(3)),
+                SOp::Add(k(0)),
+            ],
         ),
     ]
 }
@@ -458,23 +520,61 @@ fn random_dict(rng: &mut Lcg, tag: String, keys: &'static [K], n_ops: usize) -> 
     }
 }
 
-/// A random set sequence (add / clear only — no removal to model).
+/// A random trap-free set sequence. A presence model gates `remove` (which traps
+/// on absent) to modelled-present elements; `discard` is emitted on ANY element
+/// (an absent one is a silent no-op, so it never traps) to exercise both the
+/// present-remove and absent-no-op paths.
 fn random_set(rng: &mut Lcg, tag: String, keys: &'static [K], n_ops: usize) -> SetSeq {
     let n_init = 1 + rng.below(2);
     let mut init: Vec<K> = Vec::new();
-    let mut seen: BTreeSet<K> = BTreeSet::new();
+    let mut model: BTreeSet<K> = BTreeSet::new();
     while init.len() < n_init {
         let key = keys[rng.below(keys.len())].clone();
-        if seen.insert(key.clone()) {
+        if model.insert(key.clone()) {
             init.push(key);
         }
     }
     let mut ops = Vec::with_capacity(n_ops);
     for _ in 0..n_ops {
-        let op = if rng.below(6) == 0 {
-            SOp::Clear
+        let key = keys[rng.below(keys.len())].clone();
+        // A modelled-present element (for the trap-free `remove`) when one exists.
+        let present = if model.is_empty() {
+            None
         } else {
-            SOp::Add(keys[rng.below(keys.len())].clone())
+            model.iter().nth(rng.below(model.len())).cloned()
+        };
+        let op = match rng.below(8) {
+            0..=2 => {
+                model.insert(key.clone());
+                SOp::Add(key)
+            }
+            // remove: present-only (an absent `remove` would TRAP) — fall back to
+            // add when the set is empty.
+            3 => match present {
+                Some(pk) => {
+                    model.remove(&pk);
+                    SOp::Remove(pk)
+                }
+                None => {
+                    model.insert(key.clone());
+                    SOp::Add(key)
+                }
+            },
+            // discard on ANY random element — absent → no-op (never traps); the
+            // model update (`remove`) is a no-op when the element is absent, so it
+            // stays in lockstep with CPython either way.
+            4 | 5 => {
+                model.remove(&key);
+                SOp::Discard(key)
+            }
+            6 => {
+                model.clear();
+                SOp::Clear
+            }
+            _ => {
+                model.insert(key.clone());
+                SOp::Add(key)
+            }
         };
         ops.push(op);
     }
@@ -852,6 +952,84 @@ fn corpus_is_deterministic_and_exercises_interactions() {
         ops_flat.iter().any(|o| matches!(o, Op::Clear)),
         "no Clear generated"
     );
+
+    // PMAT-1240: the set corpus must exercise the removal interaction edges.
+    let shas = |tag: &str| s1.iter().any(|s| s.tag == tag);
+    assert!(
+        shas("si_remove_mid_readd") && shas("ss_remove_mid_readd"),
+        "set remove-middle-then-readd edge missing"
+    );
+    assert!(
+        shas("si_discard_absent_noop") && shas("ss_discard_absent_noop"),
+        "set discard-absent-no-op edge missing"
+    );
+    assert!(
+        shas("si_drain_regrow") && shas("ss_drain_regrow"),
+        "set drain-via-remove-then-regrow edge missing"
+    );
+
+    // Presence-guarded set generation must never emit a `remove` on an absent
+    // element (which would TRAP); replay each random set sequence's model.
+    for seq in s1.iter().filter(|s| s.tag.contains("_r")) {
+        let mut present: BTreeSet<K> = seq.init.iter().cloned().collect();
+        for op in &seq.ops {
+            match op {
+                SOp::Add(k) => {
+                    present.insert(k.clone());
+                }
+                SOp::Remove(k) => {
+                    assert!(
+                        present.contains(k),
+                        "{}: s.remove on absent element would TRAP — generator guard broke",
+                        seq.tag
+                    );
+                    present.remove(k);
+                }
+                SOp::Discard(k) => {
+                    present.remove(k);
+                }
+                SOp::Clear => present.clear(),
+            }
+        }
+    }
+
+    // The fuzz must churn the set count header via removal in BOTH the trapping
+    // (`remove`) and no-op (`discard`) directions, including at least one discard
+    // on an ABSENT element — the no-op path `remove` cannot reach without trapping.
+    let sops_flat: Vec<&SOp> = s1.iter().flat_map(|s| s.ops.iter()).collect();
+    assert!(
+        sops_flat.iter().any(|o| matches!(o, SOp::Remove(_))),
+        "no set Remove generated"
+    );
+    assert!(
+        sops_flat.iter().any(|o| matches!(o, SOp::Discard(_))),
+        "no set Discard generated"
+    );
+    let discard_absent = s1.iter().any(|seq| {
+        let mut present: BTreeSet<K> = seq.init.iter().cloned().collect();
+        for op in &seq.ops {
+            match op {
+                SOp::Add(k) => {
+                    present.insert(k.clone());
+                }
+                SOp::Remove(k) => {
+                    present.remove(k);
+                }
+                SOp::Discard(k) => {
+                    if !present.contains(k) {
+                        return true;
+                    }
+                    present.remove(k);
+                }
+                SOp::Clear => present.clear(),
+            }
+        }
+        false
+    });
+    assert!(
+        discard_absent,
+        "no discard-on-absent-element (no-op path) in the corpus"
+    );
 }
 
 #[test]
@@ -941,10 +1119,11 @@ fn dict_set_family_matches_cpython_over_random_sequences() {
     );
 
     eprintln!(
-        "PMAT-1238: dict/set sequence fuzz PASSED — {checked} observables across {} dict \
-         + {} set sequences (int- AND str-keyed) executed in WABT and matched live \
+        "PMAT-1238/1240: dict/set sequence fuzz PASSED — {checked} observables across {} \
+         dict + {} set sequences (int- AND str-keyed) executed in WABT and matched live \
          python3. No silent divergence in grow-past-cap, del-swap-then-reinsert, \
-         grow-after-clear, drain-then-rebuild, setdefault-miss/hit, or pop-then-reinsert \
+         grow-after-clear, drain-then-rebuild, setdefault-miss/hit, pop-then-reinsert, or \
+         (set) remove-swap-then-readd / discard-absent-no-op / drain-via-remove-then-regrow \
          interactions.",
         dicts.len(),
         sets.len()
