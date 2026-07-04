@@ -4484,6 +4484,146 @@ const STR_STRIP_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1213: `$__wasm_str_reverse(s) -> i32` — Python `s[::-1]`: a NEW heap string
+/// with the CODE POINTS of `s` in reverse order. Allocating (rides the `needs_heap`
+/// gate, calls `$__alloc`).
+///
+/// **UTF-8-aware and CHAR-EXACT with NO trap arm — strictly stronger than the
+/// case-fold family.** Unlike `upper`/`lower`/`title`/`swapcase` (which need a
+/// Unicode case table and TRAP on a non-ASCII byte), reversing by code point needs
+/// NO table: the UTF-8 lead byte alone gives each code point's byte length (1 for
+/// `< 0x80`, 2 for `0xC0`–`0xDF`, 3 for `0xE0`–`0xEF`, 4 for `>= 0xF0`), so the
+/// helper copies each code point as an INTACT unit to a descending output position.
+/// A multi-byte code point is moved WHOLE (its bytes kept in order), never
+/// byte-reversed — which would corrupt its encoding. So the result is char-exact for
+/// ANY valid UTF-8 (`"café"[::-1] == "éfac"`), matching CPython's code-point reversal
+/// AND the rust / ruchy `.chars().rev().collect::<String>()` lane, with no runtime
+/// refusal. (A stray `0x80`–`0xBF` continuation byte as a lead — which valid UTF-8
+/// never produces — is copied as a 1-byte unit, a defensive no-overrun default.)
+///
+/// Reversal preserves the total byte count (every input byte belongs to exactly one
+/// code point, so Σ lengths == `slen`), so the result header == the input header and
+/// the descending write cursor lands exactly at 0. One pass over the payload:
+/// `$__alloc(8 + slen)`, store the i32 BYTE-count header (= `slen`), then for each
+/// code point (`i` steps by its lead-byte length `l`) `memory.copy` its `l` bytes to
+/// `dst[8 + (outpos -= l)]`. A zero-length `s` writes no payload (the loop guard is
+/// `i < slen`) and returns an empty heap string.
+const STR_REVERSE_HELPER: &str = "\
+  ;; PMAT-1213 __wasm_str_reverse(s) = Python s[::-1] — a NEW heap string with the
+  ;; CODE POINTS of s in reverse order. UTF-8-aware and CHAR-EXACT with NO trap arm:
+  ;; each code point (1-4 bytes, identified by its UTF-8 lead byte) is copied as an
+  ;; intact unit to a descending output position, so a multi-byte code point moves
+  ;; WHOLE (never byte-reversed, which would corrupt its encoding). Reversal preserves
+  ;; the total byte count, so the result header == the input header. Matches CPython's
+  ;; code-point reversal and the rust/ruchy `.chars().rev()` lane on ALL valid UTF-8.
+  (func $__wasm_str_reverse (param $s i32) (result i32)
+    (local $slen i32)
+    (local $dst i32)
+    (local $i i32)
+    (local $outpos i32)
+    (local $b i32)
+    (local $l i32)
+    ;; slen = byte length of s (unchanged by reversal).
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; dst = alloc(8 + slen) ; store the i32 header = slen.
+    local.get $slen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $slen
+    i32.store
+    ;; i = 0 (input read cursor) ; outpos = slen (output write END, descends by l).
+    i32.const 0
+    local.set $i
+    local.get $slen
+    local.set $outpos
+    block $done
+      loop $loop
+        ;; while i < slen
+        local.get $i
+        local.get $slen
+        i32.ge_u
+        br_if $done
+        ;; b = lead byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $b
+        ;; l = UTF-8 code-point byte length from the lead byte b. Default 1 (ASCII
+        ;; b < 0x80 AND any stray 0x80-0xBF continuation byte, which valid UTF-8 never
+        ;; leads with — copying it as 1 byte avoids an overrun on malformed input).
+        i32.const 1
+        local.set $l
+        ;; 0xC0 <= b < 0xE0 -> 2-byte code point
+        local.get $b
+        i32.const 0xc0
+        i32.ge_u
+        local.get $b
+        i32.const 0xe0
+        i32.lt_u
+        i32.and
+        if
+          i32.const 2
+          local.set $l
+        end
+        ;; 0xE0 <= b < 0xF0 -> 3-byte code point
+        local.get $b
+        i32.const 0xe0
+        i32.ge_u
+        local.get $b
+        i32.const 0xf0
+        i32.lt_u
+        i32.and
+        if
+          i32.const 3
+          local.set $l
+        end
+        ;; b >= 0xF0 -> 4-byte code point
+        local.get $b
+        i32.const 0xf0
+        i32.ge_u
+        if
+          i32.const 4
+          local.set $l
+        end
+        ;; outpos -= l
+        local.get $outpos
+        local.get $l
+        i32.sub
+        local.set $outpos
+        ;; copy the l bytes of the code point (kept in order) to dst[8 + outpos ..]:
+        ;;   memory.copy  dest = dst+8+outpos  src = s+8+i  len = l
+        local.get $dst
+        i32.const 8
+        i32.add
+        local.get $outpos
+        i32.add
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        local.get $l
+        memory.copy
+        ;; i += l
+        local.get $i
+        local.get $l
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    local.get $dst
+  )
+";
+
 /// PMAT-1189: `$__wasm_str_isdigit(s) -> i32` — Python `s.isdigit()` as a bool
 /// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is an ASCII decimal
 /// digit `'0'`–`'9'`, else `0`. Non-allocating (a single left-to-right scan of
@@ -6670,6 +6810,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     let needs_pad = module_uses_str_method(module, StrMethodOp::RJust)
         || module_uses_str_method(module, StrMethodOp::LJust)
         || module_uses_str_method(module, StrMethodOp::Center);
+    // PMAT-1213: `s[::-1]` (`Expr::StrMethod`, op `Reverse`) — an allocating
+    // string-RETURNING op (a fresh heap string with the CODE POINTS of `s` in reverse
+    // order). Its own `$__wasm_str_reverse` helper copies each UTF-8 code point as an
+    // intact unit to a descending output position. Rides `needs_heap` (set via
+    // `expr_has_heap_op`, like upper/lower/capitalize/swapcase/title/strip/pad). Unlike
+    // the case-fold ops it needs NO Unicode table (the UTF-8 lead byte gives each code
+    // point's length), so it is char-exact for any valid UTF-8 with NO trap arm —
+    // matching CPython `s[::-1]` and the rust/ruchy `.chars().rev()` lane.
+    let needs_reverse = module_uses_str_method(module, StrMethodOp::Reverse);
     // PMAT-1189: `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`) — a bool (i32)
     // predicate: `1` iff `s` is non-empty and every code point is an ASCII digit.
     // NON-allocating (a single byte scan, no heap), so — unlike the case-fold
@@ -7024,6 +7173,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // heap-string module carries no dead helper.
     if needs_heap && needs_pad {
         out.push_str(STR_PAD_HELPER);
+    }
+    // PMAT-1213: emit the string REVERSE helper once, when any function uses `s[::-1]`
+    // (`Expr::StrMethod`, op `Reverse`). The `$__wasm_str_reverse` helper copies each
+    // UTF-8 code point of `s` as an intact unit into reverse order. Allocating (calls
+    // `$__alloc` + `memory.copy`), so it rides `needs_heap` — a reverse sets the heap
+    // gate via `expr_has_heap_op`. Unlike the case-fold ops it needs NO Unicode table,
+    // so it is char-exact for any valid UTF-8 with NO trap arm. Gated on an actual use
+    // so an unrelated heap-string module carries no dead helper.
+    if needs_heap && needs_reverse {
+        out.push_str(STR_REVERSE_HELPER);
     }
     // PMAT-1189: emit the string ISDIGIT helper once, when any function uses
     // `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`). NON-allocating (a single
@@ -8441,6 +8600,10 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // a miss would emit `$__wasm_str_pad` against an undeclared `$__alloc` (the
         // same hard wat2wasm gate-hole). Their width arg is an int (never heap), but
         // the recurse into `args` covers a heap-constructed receiver either way.
+        // PMAT-1213: `s[::-1]` (op `Reverse`) bump-allocates its code-point-reversed
+        // result the same way — a miss would emit `$__wasm_str_reverse` against an
+        // undeclared `$__alloc` (the same hard wat2wasm gate-hole). 0-arg; the recurse
+        // into `recv` covers a heap-constructed receiver (`(a + b)[::-1]`).
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -8460,6 +8623,7 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::RJust
                     | StrMethodOp::LJust
                     | StrMethodOp::Center
+                    | StrMethodOp::Reverse
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -9579,6 +9743,26 @@ fn emit_str_title(
     emit_str_expr(recv, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_str_title").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1213: lower `s[::-1]` — a materialising op leaving the i32 base-pointer of a
+/// fresh heap string with the CODE POINTS of `s` in reverse order. The receiver is
+/// string-valued (`emit_str_expr`, which refuses a non-str recv honestly); the
+/// allocating `$__wasm_str_reverse` helper copies each UTF-8 code point as an intact
+/// unit, so — unlike the case-fold family — it is char-exact for ANY valid UTF-8 with
+/// NO trap arm (reversing by code point needs no Unicode table; the lead byte gives
+/// each code point's length). A heap-constructed receiver (`(a + b)[::-1]`) already
+/// pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_reverse(
+    recv: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_reverse").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -10996,6 +11180,22 @@ fn emit_str_expr(
             emit_str_title(recv, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1213: `s[::-1]` in a string position — a fresh heap string (like the
+        // case-fold family, a materialising op) with the CODE POINTS of `s` in reverse
+        // order. The frontend lowers the `s[::-1]` reversed-slice to `StrMethod{op:
+        // Reverse}`. 0-arg; the allocating `$__wasm_str_reverse` helper copies each
+        // UTF-8 code point as an intact unit — unlike the case-fold ops it needs NO
+        // Unicode table, so it is char-exact for any valid UTF-8 with NO trap arm
+        // (`"café"[::-1] == "éfac"`), matching CPython and the rust/ruchy
+        // `.chars().rev()` lane.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Reverse,
+            args,
+        } if args.is_empty() => {
+            emit_str_reverse(recv, scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1205: `s.strip()` / `s.lstrip()` / `s.rstrip()` in a string position
         // — a fresh heap string (like the case-fold family, a materialising op) with
         // the leading (`Strip`/`LStrip`) and/or trailing (`Strip`/`RStrip`) run of
@@ -11088,7 +11288,8 @@ fn emit_str_expr(
              a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
              count])`, `.zfill(width)`, `.rjust(w)` / `.ljust(w)` / \
-             `.center(w)` (space-pad, char-exact), `.upper()` / `.lower()` / \
+             `.center(w)` (space-pad, char-exact), `s[::-1]` (reverse, \
+             char-exact), `.upper()` / `.lower()` / \
              `.capitalize()` / `.swapcase()` / `.title()` / `.strip()` / \
              `.lstrip()` / `.rstrip()` (ASCII-only — a non-ASCII byte traps), \
              or a str-returning call; stepped slicing / str(float) / bare \
