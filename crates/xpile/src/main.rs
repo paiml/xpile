@@ -57,6 +57,13 @@ enum Cmd {
         /// runtime (the "universal binary" path). `--target rust` only.
         #[arg(long)]
         emit_crate: Option<PathBuf>,
+        /// Contract-citation emission. `on` (default) annotates every emitted
+        /// construct with its `// xpile-contract:` citations across the
+        /// applicable L1–L5 taxonomy layers; `off` suppresses them for
+        /// annotation-free output. The library counterpart is
+        /// `xpile_backend::strip_contract_citations`.
+        #[arg(long, default_value = "on", value_parser = ["on", "off"])]
+        contracts: String,
     },
     /// Report falsifier F1 (Layer-1 contract citation coverage) for
     /// a corpus. Walks the given path, transpiles every source file
@@ -175,12 +182,14 @@ fn main() -> Result<()> {
             target,
             out,
             emit_crate,
+            contracts,
         } => transpile(
             &session,
             &input,
             &target,
             out.as_deref(),
             emit_crate.as_deref(),
+            &contracts,
         ),
         Cmd::Audit { path, target, json } => audit(&session, &path, &target, json),
         Cmd::Attestations {
@@ -586,6 +595,7 @@ fn transpile(
     target_str: &str,
     out: Option<&Path>,
     emit_crate: Option<&Path>,
+    contracts: &str,
 ) -> Result<()> {
     let source =
         std::fs::read_to_string(input).with_context(|| format!("reading {}", input.display()))?;
@@ -658,21 +668,31 @@ fn transpile(
         .lower(&module, &config)
         .with_context(|| format!("backend `{}` failed", backend.name()))?;
 
+    // `--contracts off`: strip the emitted `xpile-contract` citations for
+    // annotation-free output. Default `on` keeps every citation (every emitted
+    // construct is cited across the applicable L1–L5 taxonomy layers). The
+    // library counterpart is `xpile_backend::strip_contract_citations`.
+    let primary = if contracts == "off" {
+        xpile_backend::strip_contract_citations(&artifact.primary)
+    } else {
+        artifact.primary
+    };
+
     // `--emit-crate`: write a complete, buildable binary crate instead of
     // printing. The crate compiles as-is for the native host AND for
     // `wasm32-wasip1` (a single portable `.wasm` — the universal-binary path).
     // The `--target rust` invariant is validated up front (see above).
     if let Some(dir) = emit_crate {
-        return write_crate(dir, input, &artifact.primary);
+        return write_crate(dir, input, &primary);
     }
 
     match out {
         Some(path) => {
-            std::fs::write(path, &artifact.primary)
+            std::fs::write(path, &primary)
                 .with_context(|| format!("writing {}", path.display()))?;
             eprintln!("xpile: wrote {}", path.display());
         }
-        None => print!("{}", artifact.primary),
+        None => print!("{}", primary),
     }
     Ok(())
 }
