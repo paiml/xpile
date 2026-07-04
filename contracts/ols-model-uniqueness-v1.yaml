@@ -82,6 +82,55 @@ equations:
     postconditions:
       - "no other coefficient vector achieves the same or lower SSE"
 
+  simple_ols_denominator_positive:
+    # PMAT-959: the SYMBOLIC (Kani) stratum. A COMPUTABLE, integer
+    # SURROGATE for ols_minimizer_unique — NOT the deep theorem itself.
+    # For a simple (1-feature) least-squares fit the slope is
+    #   β = Σ(xᵢ−x̄)(yᵢ−ȳ) / D  with  D = Σ(xᵢ−x̄)²,
+    # uniquely defined exactly when the denominator D ≠ 0 (the single
+    # feature column has full rank — the identifiability condition that
+    # ols_minimizer_unique's "full column rank" precondition generalises).
+    # The deep REAL-valued uniqueness is Kani-INEXPRESSIBLE (CBMC has no
+    # reals) and is discharged by the Mathlib ols_unique proof; this
+    # equation discharges only the integer non-degeneracy D > 0 that
+    # uniqueness rests on. Integer-scaling trick: since x̄ = Σx/N is
+    # rational, scale by N² and work with the pure-integer
+    #   S = Σ(N·xᵢ − Σx)² = N²·D  (so S > 0 ⟺ D > 0).
+    # No lean_theorem: this is a Symbolic-only surrogate; the Semantic
+    # stratum for this contract is the core-Lean structural Diamond plus
+    # the Mathlib ols_unique certificate above.
+    formula: |
+      for a simple (1-feature) least-squares fit over x-values x₀..x_{N-1},
+      IF at least two xᵢ differ (the x-column has full rank), THEN the
+      scaled OLS denominator is strictly positive:
+        S = Σᵢ (N·xᵢ − Σx)² = N²·D  >  0     where D = Σᵢ (xᵢ − x̄)²
+      hence D ≠ 0 and the slope β = Σ(xᵢ−x̄)(yᵢ−ȳ) / D is uniquely defined.
+    domain: |
+      A fixed-size array of i64 x-values (Kani harness uses N = 3,
+      |xᵢ| ≤ 100 so the integer arithmetic cannot overflow i64 — the
+      claim is about the math, not about wrapping). The COMPUTABLE
+      non-degeneracy surrogate for ols_minimizer_unique's real-valued
+      full-column-rank uniqueness.
+    invariants:
+      - "S = Σ(N·xᵢ − Σx)² is a sum of squares, hence S ≥ 0 always"
+      - "S = 0 iff every N·xᵢ = Σx iff all xᵢ equal x̄ iff the x-column is degenerate (rank 0)"
+      - "S = N²·D, so S > 0 ⟺ D > 0 (the integer-scaling equivalence — no rationals)"
+      - "a NONZERO denominator ⇒ the normal equations have a unique solution ⇒ the slope is well-defined"
+    preconditions:
+      - "at least two x-values differ (the single feature column is not constant — full rank)"
+      - "operands are bounded (Kani: |xᵢ| ≤ 100) so the integer identity is not confounded by i64 overflow"
+    postconditions:
+      - "S > 0 strictly (a degenerate emitter that divided by a zero/constant column would be caught here)"
+      - "this is the Symbolic SURROGATE — it proves denominator positivity ⇒ unique slope, NOT the full real-valued ols_unique theorem (Mathlib lane covers that)"
+    # PMAT-959 / XPILE-QUORUM: Kani BMC harness (Symbolic stratum). The
+    # `simple_ols_denominator_positive` #[kani::proof] in the file below
+    # proves S > 0 under the non-degeneracy assume via bit-blasted i64
+    # arithmetic. Together with the core-Lean structural Diamond and the
+    # Mathlib ols_unique certificate (Semantic stratum), C-OLS-MODEL-
+    # UNIQUENESS now carries ≥1 Symbolic + ≥1 Semantic vote.
+    kani_harness: "simple_ols_denominator_positive"
+    kani_file: "contracts/kani/ols_model_uniqueness.rs"
+
 proof_obligations:
   - type: precondition
     property: the construct is a fitted linear model over const coefficients
@@ -95,6 +144,10 @@ proof_obligations:
     property: the fitted coefficients are the unique OLS minimiser (Mathlib lane)
     formal: "normal_equations(beta) && full_column_rank -> unique_minimizer(beta)"
     applies_to: ols_minimizer_unique
+  - type: postcondition
+    property: the (scaled) simple-OLS denominator is strictly positive under non-degeneracy (Kani surrogate)
+    formal: "(exists i j, x[i] != x[j]) -> sum_i (N*x[i] - sum(x))^2 > 0"
+    applies_to: simple_ols_denominator_positive
   - type: frame
     property: no mutation of the meta-HIR module during translation
     formal: "modifies() == 0"
