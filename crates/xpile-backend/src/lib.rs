@@ -128,6 +128,70 @@ fn default_quorum_status() -> QuorumStatus {
     }
 }
 
+/// PMAT-956: the comment/annotation forms every backend uses to emit a
+/// `xpile-contract` citation. Rust/Ruchy/PTX/WGSL/SPIR-V use `//`, WAT uses
+/// `;;`, shell/forjar `#`, one lane `--`, and Lean the `@[xpile_contract …]`
+/// attribute. Used by [`strip_contract_citations`].
+const CITATION_MARKERS: &[&str] = &[
+    "// xpile-contract",
+    ";; xpile-contract",
+    "# xpile-contract",
+    "-- xpile-contract",
+    "@[xpile_contract",
+];
+
+/// PMAT-956 (provable-model-as-code / optional contract emission): return
+/// `text` with every emitted `xpile-contract` citation removed — for callers
+/// who want annotation-free output. Contract citation is ON by default (every
+/// emitted construct is cited across the applicable L1–L5 taxonomy layers); this
+/// is the library counterpart of the CLI's `--contracts off`, so BOTH the
+/// library and the binary can optionally suppress citations.
+///
+/// Handles the two shapes emitted across the nine backends:
+///   * a STANDALONE citation line (Rust/Ruchy/Lean/shell/…, e.g.
+///     `// xpile-contract: C-PY-INT-ARITH` or `@[xpile_contract "…"]`) — the
+///     whole line is dropped;
+///   * an INLINE trailing citation (WAT, e.g.
+///     `(func $f (param …) (result i64) ;; xpile-contract: …`) — only the
+///     trailing comment is trimmed, keeping the code before it.
+///
+/// A line whose citation is not at a comment/annotation boundary (i.e. real
+/// content that merely mentions the string) is left untouched.
+pub fn strip_contract_citations(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let trailing_newline = text.ends_with('\n');
+    let mut first = true;
+    for line in text.lines() {
+        // Earliest citation-marker position on this line, if any.
+        let cut = CITATION_MARKERS.iter().filter_map(|m| line.find(m)).min();
+        match cut {
+            // A standalone citation line (only whitespace before the marker):
+            // drop it entirely.
+            Some(idx) if line[..idx].trim().is_empty() => continue,
+            // An inline citation: keep the code before it, trim the comment.
+            Some(idx) => {
+                if !first {
+                    out.push('\n');
+                }
+                out.push_str(line[..idx].trim_end());
+                first = false;
+            }
+            // No citation: keep the line verbatim.
+            None => {
+                if !first {
+                    out.push('\n');
+                }
+                out.push_str(line);
+                first = false;
+            }
+        }
+    }
+    if trailing_newline && !out.is_empty() {
+        out.push('\n');
+    }
+    out
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
     #[error("unsupported target: {0:?}")]
@@ -542,6 +606,53 @@ impl Backend for MultiEmitterBackend {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod strip_citation_tests {
+    use super::strip_contract_citations;
+
+    #[test]
+    fn drops_standalone_comment_citation_lines() {
+        let src = "// xpile-contract: C-PY-INT-ARITH\npub fn f() {}\n";
+        assert_eq!(strip_contract_citations(src), "pub fn f() {}\n");
+    }
+
+    #[test]
+    fn drops_lean_attribute_citation_lines() {
+        let src = "@[xpile_contract \"C-PY-INT-ARITH\"]\ndef f := 1\n";
+        assert_eq!(strip_contract_citations(src), "def f := 1\n");
+    }
+
+    #[test]
+    fn trims_inline_wat_citation_keeping_the_code() {
+        // WAT emits the citation INLINE on the func line — strip must keep the
+        // func declaration and drop only the trailing `;;` comment.
+        let src =
+            "  (func $f (result i64) ;; xpile-contract: C-COMPILE-RUST-TO-WASM\n    i64.const 1)\n";
+        let out = strip_contract_citations(src);
+        assert!(
+            out.contains("(func $f (result i64)"),
+            "keeps the func decl:\n{out}"
+        );
+        assert!(
+            !out.contains("xpile-contract"),
+            "drops the citation:\n{out}"
+        );
+    }
+
+    #[test]
+    fn keeps_content_that_merely_mentions_a_contract() {
+        // A panic message referencing a contract is NOT a citation comment.
+        let src = "    .expect(\"overflow; contract C-PY-INT-ARITH slow path\");\n";
+        assert_eq!(strip_contract_citations(src), src);
+    }
+
+    #[test]
+    fn preserves_uncited_code_verbatim() {
+        let src = "pub fn add(a: i64, b: i64) -> i64 {\n    a + b\n}\n";
+        assert_eq!(strip_contract_citations(src), src);
     }
 }
 

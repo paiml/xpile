@@ -215,10 +215,17 @@ $ xpile transpile factorial.py --target lean  # Python → Lean 4
 $ xpile transpile factorial.py --target wasm  # Python → WebAssembly
 $ xpile transpile script.sh    --target shell # POSIX shell round-trip
 $ xpile transpile model.py --emit-crate ./out # emit a complete, buildable crate
+$ xpile transpile factorial.py --contracts off # suppress the // xpile-contract: citations
 $ xpile hybrid ./project --verify             # cross-language build + differential check
 $ xpile quorum                                # contract oracle-quorum report
 $ xpile diamond                               # Diamond-tier coverage report
 ```
+
+By default, every emitted construct is annotated with its `// xpile-contract:`
+citations across the applicable taxonomy layers (L1 semantics, L2 translation,
+L4 hybrid, L5 compile) — on every backend. Pass `--contracts off` for
+annotation-free output; the library equivalent is
+[`xpile_backend::strip_contract_citations`](crates/xpile-backend/src/lib.rs).
 
 ### Universal binary
 
