@@ -72,6 +72,15 @@ equations:
     # injection of extra flags. The program name is the resolved boundary
     # symbol. This is the load-bearing claim that the Rust caller invokes
     # the SAME command the Python `subprocess.run([sym, *args])` would.
+    #
+    # PMAT-957 (de-vacuity): discharged at the MODEL level (Bronze) — the
+    # faithful shim yields `program == sym AND argv == args`, load-bearing
+    # in its `drops_argv = false` faithfulness (a `≠` non-vacuity dual,
+    # `argv_dropping_shim_violates_passthrough`, exhibits the argv-dropping
+    # emitter that falsifies it). The runtime `shell_diff_exec` oracle is
+    # the deferred kernel tier.
+    lean_theorem: "XpileContracts.CFfiShellSubprocess.argv_passthrough"
+    lean_file: "contracts/lean/FfiShellSubprocess.lean"
     formula: |
       shell_shim(sym, args).command == sym
         AND shell_shim(sym, args).argv == args   (order- and content-preserving)
@@ -97,6 +106,15 @@ equations:
     # exit_code_consistency on the emitted-script side: that contract says
     # the bashrs-emitted script exits as CPython's subprocess.run would;
     # this one says the Rust caller surfaces that exit code faithfully.
+    #
+    # PMAT-957 (de-vacuity): discharged at the MODEL level (Bronze) — the
+    # faithful shim yields `exit_code == subprocess_exit`, load-bearing in
+    # its `swallows_exit = false` faithfulness (a `≠` non-vacuity dual,
+    # `exit_swallowing_shim_violates_propagation`, exhibits the status-0
+    # swallowing emitter that falsifies it). The runtime `shell_diff_exec`
+    # oracle is the deferred kernel tier.
+    lean_theorem: "XpileContracts.CFfiShellSubprocess.exit_code_propagation"
+    lean_file: "contracts/lean/FfiShellSubprocess.lean"
     formula: |
       shell_shim(sym, args).status.code == subprocess_run(sym, args).returncode
     domain: |
