@@ -4328,6 +4328,138 @@ const STR_ISALNUM_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1197: `$__wasm_str_isupper_islower(s, want_upper) -> i32` — Python
+/// `s.isupper()` (`want_upper` = 1) / `s.islower()` (`want_upper` = 0) as a bool
+/// (i32 0/1). The FIFTH/SIXTH `str` `is*` predicates on the WASM lane, and the
+/// first pair whose truth needs STATE across the scan rather than an
+/// "every-char-matches" fold: Python's rule is "at least one CASED char AND no
+/// cased char of the OPPOSITE case". Non-allocating (a single left-to-right scan
+/// of the payload bytes with no heap use — it does NOT ride `needs_heap`). One
+/// helper serves both directions (a `want_upper` i32 flag picks which ASCII
+/// letter range is the "wanted case" and which is the "disqualifier"), exactly
+/// like the `$__wasm_str_upper_lower` case-fold pair.
+///
+/// **No empty guard needed (unlike the isdigit-family predicates).** The result
+/// falls through as `$has_cased`, which starts `0`, so an empty `s` (and any `s`
+/// with no cased char, e.g. `"123"`) returns `0` without a special-case — Python
+/// `"".isupper()` and `"123".isupper()` are both `False`, and uncased ASCII
+/// (digits/space/punctuation) simply doesn't set `$has_cased`.
+///
+/// **ASCII-only, with the honest runtime boundary of the sibling predicates —
+/// short-circuited on a definitive DISQUALIFIER first.** Python's `str.isupper()`
+/// / `str.islower()` also decide over non-ASCII cased Unicode (`"Á".isupper()` is
+/// `True`, `"Áb".isupper()` is `False`), which needs a case table this scalar
+/// lane does not carry. The scan is therefore ordered so a DEFINITIVE `0` never
+/// traps:
+///   * a NON-ASCII byte (`>= 0x80`) is reached only when no opposite-case ASCII
+///     letter has appeared yet — the trailing code point might be a same-case,
+///     opposite-case, or uncased Unicode char, all three of which change the
+///     answer, so it is genuinely undecidable and executes `unreachable` (a TRAP,
+///     like the `isdigit` / `isalpha` / `isspace` / `isalnum` siblings) rather
+///     than returning a wrong bool;
+///   * an OPPOSITE-CASE ASCII letter (a lowercase letter for `isupper`, an
+///     uppercase letter for `islower`) is a definitive disqualifier — it
+///     short-circuits to `0` BEFORE any later non-ASCII byte is examined, so
+///     `"aÁ".isupper()` returns `0` (Python's answer) and never traps.
+///
+/// So a pure-ASCII `s` is answer-exact; a non-ASCII `s` whose ASCII prefix has no
+/// opposite-case letter aborts; a non-ASCII `s` with an earlier opposite-case
+/// ASCII letter returns `0`. It never passes an unmapped non-ASCII byte off as a
+/// wrong bool.
+const STR_ISUPPER_ISLOWER_HELPER: &str = "\
+  ;; PMAT-1197 __wasm_str_isupper_islower(s, want_upper) = Python s.isupper()
+  ;; (want_upper=1) / s.islower() (want_upper=0) (i32 bool). True iff s has at
+  ;; least one ASCII cased letter in the WANTED case and NO ASCII cased letter in
+  ;; the opposite case. No empty guard: $has_cased starts 0, so \"\" / \"123\"
+  ;; fall through to 0 (Python False). ASCII-only honest boundary: a byte >= 0x80
+  ;; reached with no opposite-case letter yet is an undecidable Unicode-cased case
+  ;; (\"\\u00c1b\".isupper() is False, \"\\u00c1\".isupper() is True) -> unreachable
+  ;; (trap); an opposite-case ASCII letter short-circuits to 0 BEFORE any later
+  ;; non-ASCII byte, so \"a\\u00c1\" returns 0 (not a trap), matching Python.
+  (func $__wasm_str_isupper_islower (param $s i32) (param $want_upper i32) (result i32)
+    (local $slen i32)
+    (local $i i32)
+    (local $c i32)
+    (local $is_lower i32)
+    (local $is_upper i32)
+    (local $has_cased i32)
+    ;; slen = byte length of s
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; for i in 0..slen  ($has_cased defaults to 0 -> empty/uncased s returns 0)
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte (no opposite-case letter seen yet) -> undecidable -> trap
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; is_lower = (0x61 <= c) & (c <= 0x7a)
+        local.get $c
+        i32.const 0x61
+        i32.ge_u
+        local.get $c
+        i32.const 0x7a
+        i32.le_u
+        i32.and
+        local.set $is_lower
+        ;; is_upper = (0x41 <= c) & (c <= 0x5a)
+        local.get $c
+        i32.const 0x41
+        i32.ge_u
+        local.get $c
+        i32.const 0x5a
+        i32.le_u
+        i32.and
+        local.set $is_upper
+        ;; disqualifier = want_upper ? is_lower : is_upper -> definitively 0
+        local.get $is_lower
+        local.get $is_upper
+        local.get $want_upper
+        select
+        if
+          i32.const 0
+          return
+        end
+        ;; target = want_upper ? is_upper : is_lower -> a wanted-case cased letter
+        local.get $is_upper
+        local.get $is_lower
+        local.get $want_upper
+        select
+        if
+          i32.const 1
+          local.set $has_cased
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    ;; True iff >= 1 wanted-case cased letter and no opposite-case letter
+    local.get $has_cased
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5833,6 +5965,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // needs the `(memory …)` its payload load reads (pulled in below alongside
     // `needs_isdigit`/`needs_isalpha`/`needs_isspace`).
     let needs_isalnum = module_uses_str_method(module, StrMethodOp::IsAlnum);
+    // PMAT-1197: `s.isupper()` / `s.islower()` (`Expr::StrMethod`, ops `IsUpper` /
+    // `IsLower`) — the fifth/sixth predicates in the `is*` family, and the first
+    // pair whose truth needs STATE across the scan (at least one cased char AND no
+    // opposite-case char) rather than an every-char fold. Both share the single
+    // non-allocating `$__wasm_str_isupper_islower` helper (a `want_upper` i32 flag
+    // picks the wanted/disqualifier ranges), so either op present must emit it.
+    // Like the four sibling predicates it does NOT ride `needs_heap` (a bool from
+    // a byte scan, no allocator); it only needs the `(memory …)` its payload load
+    // reads (folded into the condition below alongside `needs_isdigit`).
+    let needs_isupper_lower = module_uses_str_method(module, StrMethodOp::IsUpper)
+        || module_uses_str_method(module, StrMethodOp::IsLower);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5848,6 +5991,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_isalpha
         || needs_isspace
         || needs_isalnum
+        || needs_isupper_lower
     {
         writeln!(
             out,
@@ -6108,6 +6252,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (`def f(s): return s.isalnum()`) carries no allocator but still needs it.
     if needs_isalnum {
         out.push_str(STR_ISALNUM_HELPER);
+    }
+    // PMAT-1197: emit the shared string ISUPPER/ISLOWER helper once, when any
+    // function uses `s.isupper()` or `s.islower()` (ops `IsUpper` / `IsLower`).
+    // Like isdigit/isalpha/isspace/isalnum it is non-allocating (a single byte
+    // scan returning a bool), so it is gated ONLY on `needs_isupper_lower`, NOT
+    // `needs_heap`: a read-only str module (`def f(s): return s.isupper()`)
+    // carries no allocator but still needs it. One helper serves both directions
+    // (a `want_upper` i32 flag), like the `$__wasm_str_upper_lower` case-fold pair.
+    if needs_isupper_lower {
+        out.push_str(STR_ISUPPER_ISLOWER_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -8548,6 +8702,32 @@ fn emit_str_capitalize(
     Ok(WatTy::I32)
 }
 
+/// PMAT-1197: lower `s.isupper()` (`want_upper` = 1) / `s.islower()`
+/// (`want_upper` = 0) — a NON-allocating bool (i32 0/1) predicate leaving the
+/// result directly (no result string, no heap). The receiver is string-valued
+/// (`emit_str_expr`, which refuses a non-str recv honestly); the `want_upper`
+/// direction flag is an immediate i32 const pushed after the receiver pointer,
+/// exactly like the `$__wasm_str_upper_lower` case-fold pair. The shared
+/// `$__wasm_str_isupper_islower` helper scans the payload bytes: an opposite-case
+/// ASCII letter short-circuits to `0`; a non-ASCII byte reached with no
+/// opposite-case letter yet TRAPS (the honest ASCII-only boundary — Unicode-cased
+/// chars need a case table this lane lacks). A heap-constructed receiver
+/// (`(a + b).isupper()`) already pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_iscase(
+    recv: &Expr,
+    want_upper: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(want_upper)).expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_isupper_islower").expect("write");
+    Ok(WatTy::I32)
+}
+
 fn emit_expr(
     e: &Expr,
     scope: &Scope,
@@ -8938,14 +9118,35 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_isalnum").expect("write");
             Ok(WatTy::I32)
         }
+        // PMAT-1197: `s.isupper()` / `s.islower()` — a bool (i32) predicate: `1`
+        // iff `s` has at least one ASCII cased letter in the wanted case AND no
+        // ASCII cased letter in the opposite case (Python's rule — `"A1".isupper()`
+        // is True, `"".isupper()`/`"123".isupper()` are False). The receiver lowers
+        // to an i32 base-pointer (`emit_str_expr`), then the non-allocating shared
+        // `$__wasm_str_isupper_islower` helper scans the payload bytes with the
+        // `want_upper` flag. ASCII-only honest boundary: a non-ASCII byte reached
+        // with no opposite-case letter yet TRAPS (Unicode-cased chars need a table
+        // this lane lacks), while an opposite-case ASCII letter short-circuits to
+        // `0` first.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsUpper,
+            args,
+        } if args.is_empty() => emit_str_iscase(recv, true, scope, out, depth),
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsLower,
+            args,
+        } if args.is_empty() => emit_str_iscase(recv, false, scope, out, depth),
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
              `.find(p, start)`, `.rfind(p)`, `.rfind(p, start)`, `.index(p)`, \
              `.rindex(p)`, `.removeprefix(p)`, `.removesuffix(p)`, \
              `.replace(old, new)`, `.replace(old, new, count)`, `.isdigit()`, \
-             `.isalpha()`, `.isspace()`, and `.isalnum()` are supported; the other \
-             is* predicates, upper/lower/strip/split/…, the 3-arg \
+             `.isalpha()`, `.isspace()`, `.isalnum()`, `.isupper()`, and \
+             `.islower()` are supported; the other is* predicates (isascii/\
+             isnumeric/…), upper/lower/strip/split/…, the 3-arg \
              `.find`/`.rfind`(p, start, end), and the start/end forms of \
              index/rindex/count are refused"
         ))),
