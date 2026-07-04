@@ -8161,94 +8161,205 @@ fn desugar_foreach_stmts(
                 kind,
                 body,
             } => {
-                let PairIterKind::Enumerate { start } = kind else {
-                    return Err(unsupported(
-                        "for-loop over zip(...) or a list of 2-tuples \
-                         (d.items()) — the WASM subset paired-iterates only \
-                         `enumerate(<named list>)`; the two-source / \
-                         shortest-iterable / tuple-element cases are not yet in \
-                         the lane",
-                    ));
-                };
-                // `enumerate` binds the SECOND target to the element, so the
-                // element type is the iterable's list element type. Resolve it
-                // from the per-function env (ForEachPair carries no elem_ty).
-                let Expr::Ident(src) = iter else {
-                    return Err(unsupported(&format!(
-                        "for-loop over enumerate({}) — the WASM subset iterates \
+                match kind {
+                    PairIterKind::Enumerate { start } => {
+                        // `enumerate` binds the SECOND target to the element, so the
+                        // element type is the iterable's list element type. Resolve it
+                        // from the per-function env (ForEachPair carries no elem_ty).
+                        let Expr::Ident(src) = iter else {
+                            return Err(unsupported(&format!(
+                                "for-loop over enumerate({}) — the WASM subset iterates \
                          a named `list[scalar]`; bind the iterable to a name \
                          first",
-                        expr_kind(iter)
-                    )));
-                };
-                let elem_ty = match env.get(src) {
-                    Some(Type::List(elem)) => (**elem).clone(),
-                    _ => {
-                        return Err(unsupported(&format!(
-                            "for-loop over enumerate(`{src}`) — `{src}` is not a \
+                                expr_kind(iter)
+                            )));
+                        };
+                        let elem_ty = match env.get(src) {
+                            Some(Type::List(elem)) => (**elem).clone(),
+                            _ => {
+                                return Err(unsupported(&format!(
+                                    "for-loop over enumerate(`{src}`) — `{src}` is not a \
                              declared `list[scalar]` in scope; the WASM \
                              enumerate subset needs its element type"
-                        )));
+                                )));
+                            }
+                        };
+                        let body = desugar_foreach_stmts(body, next, env)?;
+                        let k = *next;
+                        *next += 1;
+                        let idx = format!("__wasm_fe_i_{k}");
+                        // The enumerate index: the raw counter, offset by `start` when
+                        // non-zero (`checked` semantics are unnecessary — the WASM lane
+                        // models Python `int` as i64 throughout).
+                        let index_val = if *start == 0 {
+                            Expr::Ident(idx.clone())
+                        } else {
+                            Expr::BinOp {
+                                op: BinOp::Add,
+                                lhs: Box::new(Expr::Ident(idx.clone())),
+                                rhs: Box::new(Expr::LitInt(*start)),
+                            }
+                        };
+                        let mut wbody = Vec::with_capacity(body.len() + 3);
+                        // Both bindings read the counter BEFORE the increment, so the
+                        // index is the current position (CPython-exact) and `continue`
+                        // (→ `br` back to the `while` cond) still sees the advance.
+                        wbody.push(Stmt::Let {
+                            name: first.clone(),
+                            ty: Type::I64,
+                            value: index_val,
+                            mutable: false,
+                        });
+                        wbody.push(Stmt::Let {
+                            name: second.clone(),
+                            ty: elem_ty,
+                            value: Expr::Index {
+                                collection: Box::new(Expr::Ident(src.clone())),
+                                index: Box::new(Expr::Ident(idx.clone())),
+                            },
+                            mutable: false,
+                        });
+                        wbody.push(Stmt::Assign {
+                            name: idx.clone(),
+                            value: Expr::BinOp {
+                                op: BinOp::Add,
+                                lhs: Box::new(Expr::Ident(idx.clone())),
+                                rhs: Box::new(Expr::LitInt(1)),
+                            },
+                        });
+                        wbody.extend(body);
+                        out.push(Stmt::Let {
+                            name: idx.clone(),
+                            ty: Type::I64,
+                            value: Expr::LitInt(0),
+                            mutable: true,
+                        });
+                        out.push(Stmt::While {
+                            cond: Expr::BinOp {
+                                op: BinOp::Lt,
+                                lhs: Box::new(Expr::Ident(idx.clone())),
+                                rhs: Box::new(Expr::Len(Box::new(Expr::Ident(src.clone())))),
+                            },
+                            body: wbody,
+                        });
                     }
-                };
-                let body = desugar_foreach_stmts(body, next, env)?;
-                let k = *next;
-                *next += 1;
-                let idx = format!("__wasm_fe_i_{k}");
-                // The enumerate index: the raw counter, offset by `start` when
-                // non-zero (`checked` semantics are unnecessary — the WASM lane
-                // models Python `int` as i64 throughout).
-                let index_val = if *start == 0 {
-                    Expr::Ident(idx.clone())
-                } else {
-                    Expr::BinOp {
-                        op: BinOp::Add,
-                        lhs: Box::new(Expr::Ident(idx.clone())),
-                        rhs: Box::new(Expr::LitInt(*start)),
+                    // PMAT-1261: `for a, b in zip(xs, ys)` over TWO named
+                    // `list[scalar]` sources. The paired loop desugars into a
+                    // single Let+While driven by a shared counter, with
+                    // SHORTEST-ITERABLE termination — the `while` condition is
+                    // `idx < len(xs) and idx < len(ys)`, so iteration stops at the
+                    // shorter operand exactly as CPython's `zip` does. Each
+                    // binding is the same `Index` read the single-var ForEach uses,
+                    // typed from the per-function env (ForEachPair carries no
+                    // elem_ty). Both operands must be NAMED lists; a non-name
+                    // source (list literal / nested expr) refuses honestly, and a
+                    // 3+-way `zip` never reaches here (the frontend nests it).
+                    PairIterKind::Zip(other) => {
+                        let Expr::Ident(src_a) = iter else {
+                            return Err(unsupported(&format!(
+                                "for-loop over zip({}, ...) — the WASM subset \
+                             zip-iterates two NAMED `list[scalar]` sources; \
+                             bind the first iterable to a name first",
+                                expr_kind(iter)
+                            )));
+                        };
+                        let Expr::Ident(src_b) = other.as_ref() else {
+                            return Err(unsupported(&format!(
+                                "for-loop over zip({src_a}, {}) — the WASM subset \
+                             zip-iterates two NAMED `list[scalar]` sources; \
+                             bind the second iterable to a name first",
+                                expr_kind(other)
+                            )));
+                        };
+                        let elem_a = match env.get(src_a) {
+                            Some(Type::List(elem)) => (**elem).clone(),
+                            _ => {
+                                return Err(unsupported(&format!(
+                                    "for-loop over zip(`{src_a}`, ...) — `{src_a}` \
+                                 is not a declared `list[scalar]` in scope; the \
+                                 WASM zip subset needs its element type"
+                                )));
+                            }
+                        };
+                        let elem_b = match env.get(src_b) {
+                            Some(Type::List(elem)) => (**elem).clone(),
+                            _ => {
+                                return Err(unsupported(&format!(
+                                    "for-loop over zip(..., `{src_b}`) — `{src_b}` \
+                                 is not a declared `list[scalar]` in scope; the \
+                                 WASM zip subset needs its element type"
+                                )));
+                            }
+                        };
+                        let body = desugar_foreach_stmts(body, next, env)?;
+                        let k = *next;
+                        *next += 1;
+                        let idx = format!("__wasm_fe_i_{k}");
+                        let mut wbody = Vec::with_capacity(body.len() + 3);
+                        // Both bindings read the CURRENT counter, then it advances —
+                        // so `continue` (→ `br` to the `while` cond) still sees the
+                        // increment and the shortest-iterable guard re-checks.
+                        wbody.push(Stmt::Let {
+                            name: first.clone(),
+                            ty: elem_a,
+                            value: Expr::Index {
+                                collection: Box::new(Expr::Ident(src_a.clone())),
+                                index: Box::new(Expr::Ident(idx.clone())),
+                            },
+                            mutable: false,
+                        });
+                        wbody.push(Stmt::Let {
+                            name: second.clone(),
+                            ty: elem_b,
+                            value: Expr::Index {
+                                collection: Box::new(Expr::Ident(src_b.clone())),
+                                index: Box::new(Expr::Ident(idx.clone())),
+                            },
+                            mutable: false,
+                        });
+                        wbody.push(Stmt::Assign {
+                            name: idx.clone(),
+                            value: Expr::BinOp {
+                                op: BinOp::Add,
+                                lhs: Box::new(Expr::Ident(idx.clone())),
+                                rhs: Box::new(Expr::LitInt(1)),
+                            },
+                        });
+                        wbody.extend(body);
+                        out.push(Stmt::Let {
+                            name: idx.clone(),
+                            ty: Type::I64,
+                            value: Expr::LitInt(0),
+                            mutable: true,
+                        });
+                        // Shortest-iterable: `idx < len(xs) and idx < len(ys)`.
+                        out.push(Stmt::While {
+                            cond: Expr::BinOp {
+                                op: BinOp::And,
+                                lhs: Box::new(Expr::BinOp {
+                                    op: BinOp::Lt,
+                                    lhs: Box::new(Expr::Ident(idx.clone())),
+                                    rhs: Box::new(Expr::Len(Box::new(Expr::Ident(src_a.clone())))),
+                                }),
+                                rhs: Box::new(Expr::BinOp {
+                                    op: BinOp::Lt,
+                                    lhs: Box::new(Expr::Ident(idx.clone())),
+                                    rhs: Box::new(Expr::Len(Box::new(Expr::Ident(src_b.clone())))),
+                                }),
+                            },
+                            body: wbody,
+                        });
                     }
-                };
-                let mut wbody = Vec::with_capacity(body.len() + 3);
-                // Both bindings read the counter BEFORE the increment, so the
-                // index is the current position (CPython-exact) and `continue`
-                // (→ `br` back to the `while` cond) still sees the advance.
-                wbody.push(Stmt::Let {
-                    name: first.clone(),
-                    ty: Type::I64,
-                    value: index_val,
-                    mutable: false,
-                });
-                wbody.push(Stmt::Let {
-                    name: second.clone(),
-                    ty: elem_ty,
-                    value: Expr::Index {
-                        collection: Box::new(Expr::Ident(src.clone())),
-                        index: Box::new(Expr::Ident(idx.clone())),
-                    },
-                    mutable: false,
-                });
-                wbody.push(Stmt::Assign {
-                    name: idx.clone(),
-                    value: Expr::BinOp {
-                        op: BinOp::Add,
-                        lhs: Box::new(Expr::Ident(idx.clone())),
-                        rhs: Box::new(Expr::LitInt(1)),
-                    },
-                });
-                wbody.extend(body);
-                out.push(Stmt::Let {
-                    name: idx.clone(),
-                    ty: Type::I64,
-                    value: Expr::LitInt(0),
-                    mutable: true,
-                });
-                out.push(Stmt::While {
-                    cond: Expr::BinOp {
-                        op: BinOp::Lt,
-                        lhs: Box::new(Expr::Ident(idx.clone())),
-                        rhs: Box::new(Expr::Len(Box::new(Expr::Ident(src.clone())))),
-                    },
-                    body: wbody,
-                });
+                    PairIterKind::Pairs => {
+                        return Err(unsupported(
+                            "for-loop over a list of 2-tuples (e.g. `d.items()`) — \
+                         the WASM subset paired-iterates only \
+                         `enumerate(<named list>)` and `zip(<named list>, \
+                         <named list>)`; tuple-element destructuring is not yet \
+                         in the lane",
+                        ));
+                    }
+                }
             }
             Stmt::While { cond, body } => out.push(Stmt::While {
                 cond: cond.clone(),
