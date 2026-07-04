@@ -1299,11 +1299,11 @@ fn list_int_sum_nested_in_str_repeat_count_gates_helper() {
 }
 
 #[test]
-fn list_float_sum_refused_honestly() {
-    // PMAT-1248: `sum(xs)` over a list[float] (`Expr::Sum { of_float: true }`)
-    // is refused — the i64 helper would mis-reduce f64 elements. Honest error,
-    // never a silent miscompile.
-    let err = WasmBackend::new()
+fn list_float_sum_emits_reduction_helper_and_call() {
+    // PMAT-1249: `sum(xs)` over a list[float] (`Expr::Sum { of_float: true }`)
+    // now emits the f64-accumulator twin `$__wasm_list_sum_f64`, a `call` to it
+    // over the list base-pointer, and the exported memory the payload loads read.
+    let wat = WasmBackend::new()
         .lower(
             &module_with(vec![Item::Function(list_sum_fn(
                 Type::F64,
@@ -1312,11 +1312,67 @@ fn list_float_sum_refused_honestly() {
             ))]),
             &wasm_config(),
         )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_sum_f64 (param $base i32) (result f64)"),
+        "float reduction helper declared: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_sum_f64"),
+        "float sum lowers to the f64 helper call: {wat}"
+    );
+    // The reduction folds with f64.add over an 8-byte stride (f64 elements).
+    assert!(wat.contains("f64.add"), "f64 accumulation: {wat}");
+    assert!(wat.contains("f64.load"), "f64 element load: {wat}");
+    // No dead i64 helper in a float-only module.
+    assert!(
+        !wat.contains("$__wasm_list_sum_i64"),
+        "float-only sum carries no dead i64 helper: {wat}"
+    );
+}
+
+#[test]
+fn list_int_sum_carries_no_dead_float_helper() {
+    // PMAT-1249: symmetric no-dead-helper — an int-only `sum(xs)` module must
+    // NOT drag in the f64 twin (the two gates are independent).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn(
+                Type::I64,
+                Type::I64,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_sum_f64"),
+        "int-only sum carries no dead f64 helper: {wat}"
+    );
+}
+
+#[test]
+fn list_sum_kind_mismatch_refused_honestly() {
+    // PMAT-1249: a `list[float]` param summed as an INT (`of_float: false`) — the
+    // element load width (f64) disagrees with the summed kind (i64). Refused
+    // honestly by the `list_elem_of` check, never a silent misread of the f64
+    // bits as an i64.
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn(
+                Type::F64,
+                Type::I64,
+                false,
+            ))]),
+            &wasm_config(),
+        )
         .unwrap_err()
         .to_string();
     assert!(
-        err.contains("list[float]") && err.contains("sum"),
-        "float sum refused honestly: {err}"
+        err.contains("elements load as f64") && err.contains("list[i64]"),
+        "float-list int-sum mismatch refused honestly: {err}"
     );
 }
 
@@ -1456,6 +1512,94 @@ fn list_int_sum_executes_in_wabt() {
     );
 
     eprintln!("=== PMAT-1248 executed witness: REAL xpile sum(xs) emit → run ===");
+    eprintln!("--- witness WAT (REAL-emitted $total + data + e0/e1 drivers) ---\n{witness_wat}");
+    eprintln!(
+        "sum({elems:?}) = {} (CPython {expected_nonempty}); sum([]) = {} (CPython {expected_empty})",
+        out[0], out[1]
+    );
+}
+
+/// PMAT-1249 EXECUTED WITNESS — assemble + run the REAL-emitted `sum(xs)` over a
+/// list[FLOAT] in WABT and diff the executed total against CPython's left-to-right
+/// `sum`. The f64 form needs NO `f64.convert_i64_s` wrapper (the i64 witness did):
+/// `$total` already returns f64, so the zero-arg driver exports leave the fold
+/// result directly on the stack for the engine's `=> f64:` parser. The fractional
+/// elements are chosen so an accidental i64 misread of the f64 bits would produce
+/// a wildly different value — the witness fails loudly on a mis-typed reduction.
+#[test]
+fn list_float_sum_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!(
+            "SKIP list_float_sum_executes_in_wabt: WABT (wat2wasm/wasm-interp) not installed"
+        );
+        return;
+    }
+
+    // CPython-equivalent: sum([1.5, -2.5, 10.25, 0.125]) == 9.375; sum([]) == 0.0.
+    // Each element is exactly representable and the running total stays exact, so
+    // the executed f64 fold equals CPython's to the bit (tolerance is generous).
+    let elems: [f64; 4] = [1.5, -2.5, 10.25, 0.125];
+    let expected_nonempty: f64 = elems.iter().sum(); // Rust folds left-to-right too
+    let expected_empty: f64 = 0.0;
+
+    let total_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn(
+                Type::F64,
+                Type::F64,
+                true,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    // Build a 128-byte memory image: a non-empty float list at base 0 (i32 count +
+    // 4 pad + packed f64 elements) and an empty list (count 0) at base 128.
+    let mut image = vec![0u8; 136];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    // base 128: count 0 (already zero from the zero-init) → an empty list.
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        total_wat.contains(mem_line),
+        "emitted float-sum module declares the exported memory: {total_wat}"
+    );
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    \
+         i32.const 0\n    call $total)\n  \
+         (func (export \"e1\") (result f64)\n    \
+         i32.const 128\n    call $total)\n"
+    );
+    let witness_wat = total_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_float_sum")
+        .expect("assemble+run REAL-emitted list-float-sum witness");
+    assert_eq!(
+        out.len(),
+        2,
+        "two exports (e0 non-empty, e1 empty): {out:?}"
+    );
+    assert!(
+        (out[0] - expected_nonempty).abs() <= 1.0e-9,
+        "sum({elems:?}) executed {}, expected (CPython) {expected_nonempty}",
+        out[0]
+    );
+    assert!(
+        (out[1] - expected_empty).abs() <= 1.0e-9,
+        "sum([]) executed {}, expected (CPython) {expected_empty}",
+        out[1]
+    );
+
+    eprintln!("=== PMAT-1249 executed witness: REAL xpile sum(xs: list[float]) emit → run ===");
     eprintln!("--- witness WAT (REAL-emitted $total + data + e0/e1 drivers) ---\n{witness_wat}");
     eprintln!(
         "sum({elems:?}) = {} (CPython {expected_nonempty}); sum([]) = {} (CPython {expected_empty})",
