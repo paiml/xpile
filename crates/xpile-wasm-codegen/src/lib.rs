@@ -3619,6 +3619,154 @@ const STR_ZFILL_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1209: `$__wasm_str_pad(s, w, mode) -> i32` — the shared kernel for Python
+/// `s.rjust(width)` (`mode` = 0), `s.ljust(width)` (`mode` = 1), and
+/// `s.center(width)` (`mode` = 2): a NEW heap string equal to `s` padded with
+/// ASCII space (`0x20`) to `width` CODE POINTS. Allocating (rides `needs_heap`,
+/// calls `$__alloc`). Calls `$__wasm_str_charlen` (co-emitted for any str-touching
+/// module) for the width math.
+///
+/// The total pad is `max(0, width - charlen(s))` — a `width` no larger than the
+/// current code-point length is a plain COPY of `s` (`"ab".rjust(1)` == `"ab"`,
+/// `"".ljust(0)` == `""`); a negative/overflow `width` wraps then clamps, so it
+/// also copies. The pad splits by `mode`: rjust puts it all on the LEFT, ljust all
+/// on the RIGHT, and center splits it with CPython's exact parity bias
+/// `left = pad/2 + (pad & width & 1)` (so `"ab".center(5)` == `"  ab "`, matching
+/// CPython's left-heavy-on-odd-width rule, NOT Rust `{:^}`'s right-bias),
+/// `right = pad - left`.
+///
+/// **Char-exact for ANY valid UTF-8, no trap (like zfill, unlike upper/title).**
+/// The pad bytes are pure 1-byte ASCII spaces inserted at code-point boundaries
+/// (the very start and/or very end), and `s` is copied byte-for-byte, so no payload
+/// byte is ever inspected or folded — `"café".rjust(6)` == `"  café"` and
+/// `"é".center(3)` == `" é "` are byte-exact. `memory.fill` of 0 bytes and
+/// `memory.copy` of 0 bytes are nops, so the `pad == 0` copy and the
+/// empty-`s`/one-sided-pad boundaries fall out of the general path with no special
+/// case.
+const STR_PAD_HELPER: &str = "\
+  ;; PMAT-1209 __wasm_str_pad(s, w, mode) = Python s.rjust(w) (mode 0) /
+  ;; s.ljust(w) (mode 1) / s.center(w) (mode 2) — a NEW heap string padded with
+  ;; ASCII space to `w` CODE POINTS. pad = max(0, w - charlen(s)); the space bytes
+  ;; land on code-point boundaries and s is a byte copy, so it is char-exact for any
+  ;; UTF-8 (no trap). center bias = CPython left = pad/2 + (pad & w & 1).
+  (func $__wasm_str_pad (param $s i32) (param $w i64) (param $mode i32) (result i32)
+    (local $slen i32)
+    (local $n i32)
+    (local $pad i32)
+    (local $lpad i32)
+    (local $rpad i32)
+    (local $rlen i32)
+    (local $dst i32)
+    (local $wpos i32)
+    ;; slen = byte length of s; n = code-point count of s.
+    local.get $s
+    i32.load
+    local.set $slen
+    local.get $s
+    call $__wasm_str_charlen
+    local.set $n
+    ;; pad = wrap(w) - n ; clamp to >= 0 (width <= len -> plain copy).
+    local.get $w
+    i32.wrap_i64
+    local.get $n
+    i32.sub
+    local.set $pad
+    local.get $pad
+    i32.const 0
+    i32.lt_s
+    if
+      i32.const 0
+      local.set $pad
+    end
+    ;; split pad by mode. default lpad = rpad = 0 (the pad == 0 copy).
+    i32.const 0
+    local.set $lpad
+    i32.const 0
+    local.set $rpad
+    ;; mode 0 (rjust): all pad on the LEFT.
+    local.get $mode
+    i32.eqz
+    if
+      local.get $pad
+      local.set $lpad
+    end
+    ;; mode 1 (ljust): all pad on the RIGHT.
+    local.get $mode
+    i32.const 1
+    i32.eq
+    if
+      local.get $pad
+      local.set $rpad
+    end
+    ;; mode 2 (center): lpad = pad/2 + (pad & wrap(w) & 1) ; rpad = pad - lpad.
+    local.get $mode
+    i32.const 2
+    i32.eq
+    if
+      local.get $pad
+      i32.const 1
+      i32.shr_u
+      local.get $pad
+      local.get $w
+      i32.wrap_i64
+      i32.and
+      i32.const 1
+      i32.and
+      i32.add
+      local.set $lpad
+      local.get $pad
+      local.get $lpad
+      i32.sub
+      local.set $rpad
+    end
+    ;; rlen = slen + pad ; dst = alloc(8 + rlen) ; store the i32 header = rlen.
+    local.get $slen
+    local.get $pad
+    i32.add
+    local.set $rlen
+    local.get $rlen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $rlen
+    i32.store
+    ;; wpos = dst + 8 (payload write cursor).
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.set $wpos
+    ;; fill `lpad` ' ' (0x20) bytes at wpos ; wpos += lpad. (nop when lpad == 0.)
+    local.get $wpos
+    i32.const 0x20
+    local.get $lpad
+    memory.fill
+    local.get $wpos
+    local.get $lpad
+    i32.add
+    local.set $wpos
+    ;; copy the `slen` source bytes (from s+8) to wpos ; wpos += slen. (nop when
+    ;; slen == 0.)
+    local.get $wpos
+    local.get $s
+    i32.const 8
+    i32.add
+    local.get $slen
+    memory.copy
+    local.get $wpos
+    local.get $slen
+    i32.add
+    local.set $wpos
+    ;; fill `rpad` ' ' (0x20) bytes at wpos. (nop when rpad == 0.)
+    local.get $wpos
+    i32.const 0x20
+    local.get $rpad
+    memory.fill
+    local.get $dst
+  )
+";
+
 /// PMAT-1185: `$__wasm_str_upper_lower(s, up) -> i32` — Python `s.upper()` (`up`
 /// = 1) / `s.lower()` (`up` = 0): a NEW heap string with every ASCII letter
 /// case-flipped. Allocating (rides the `needs_heap` gate, calls `$__alloc`).
@@ -6508,6 +6656,20 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     let needs_strip = module_uses_str_method(module, StrMethodOp::Strip)
         || module_uses_str_method(module, StrMethodOp::LStrip)
         || module_uses_str_method(module, StrMethodOp::RStrip);
+    // PMAT-1209: `s.rjust(w)` / `s.ljust(w)` / `s.center(w)` (`Expr::StrMethod`,
+    // ops `RJust` / `LJust` / `Center`) — allocating string-RETURNING ops (a fresh
+    // heap string padded with ASCII space to `w` code points). All three share the
+    // single `$__wasm_str_pad` helper (a `mode` i32 flag picks rjust=0 / ljust=1 /
+    // center=2), so any one present must emit it. Rides `needs_heap` (set via
+    // `expr_has_heap_op`, like zfill/upper/lower/strip). Like zfill its width math
+    // calls `$__wasm_str_charlen` (co-emitted for any str-touching module via
+    // `module_touches_str`, which a `StrMethod` always sets), so it forces no extra
+    // helper beyond the always-present char family — and unlike the case-fold ops it
+    // never inspects a payload byte (pad = ASCII space, `s` copied verbatim), so it
+    // is char-exact for any UTF-8 with NO trap arm.
+    let needs_pad = module_uses_str_method(module, StrMethodOp::RJust)
+        || module_uses_str_method(module, StrMethodOp::LJust)
+        || module_uses_str_method(module, StrMethodOp::Center);
     // PMAT-1189: `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`) — a bool (i32)
     // predicate: `1` iff `s` is non-empty and every code point is an ASCII digit.
     // NON-allocating (a single byte scan, no heap), so — unlike the case-fold
@@ -6836,6 +6998,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // no dead helper.
     if needs_heap && needs_strip {
         out.push_str(STR_STRIP_HELPER);
+    }
+    // PMAT-1209: emit the string PAD helper once, when any function uses
+    // `s.rjust(w)` / `s.ljust(w)` / `s.center(w)` (ops `RJust` / `LJust` /
+    // `Center`). The single `$__wasm_str_pad` helper serves all three (a `mode` i32
+    // flag picks rjust=0 / ljust=1 / center=2). Allocating (calls `$__alloc` +
+    // `memory.fill` + `memory.copy`), so it rides `needs_heap` — a pad sets the heap
+    // gate via `expr_has_heap_op`. Its width math uses `$__wasm_str_charlen` (emitted
+    // above via `module_touches_str`). Char-exact for any UTF-8 (pad is ASCII space,
+    // `s` copied verbatim), so no trap arm. Gated on an actual use so an unrelated
+    // heap-string module carries no dead helper.
+    if needs_heap && needs_pad {
+        out.push_str(STR_PAD_HELPER);
     }
     // PMAT-1189: emit the string ISDIGIT helper once, when any function uses
     // `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`). NON-allocating (a single
@@ -8248,6 +8422,11 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // `LStrip` / `RStrip`) bump-allocate their whitespace-trimmed result the same
         // way — a miss would emit `$__wasm_str_strip` against an undeclared
         // `$__alloc` (the same hard wat2wasm gate-hole).
+        // PMAT-1209: `s.rjust(w)` / `s.ljust(w)` / `s.center(w)` (ops `RJust` /
+        // `LJust` / `Center`) bump-allocate their space-padded result the same way —
+        // a miss would emit `$__wasm_str_pad` against an undeclared `$__alloc` (the
+        // same hard wat2wasm gate-hole). Their width arg is an int (never heap), but
+        // the recurse into `args` covers a heap-constructed receiver either way.
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -8264,6 +8443,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::Strip
                     | StrMethodOp::LStrip
                     | StrMethodOp::RStrip
+                    | StrMethodOp::RJust
+                    | StrMethodOp::LJust
+                    | StrMethodOp::Center
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -9413,6 +9595,33 @@ fn emit_str_strip(
     writeln!(out, "i32.const {}", i32::from(right)).expect("write");
     indent(out, depth);
     writeln!(out, "call $__wasm_str_strip").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1209: lower `s.rjust(w)` (`mode` = 0) / `s.ljust(w)` (`mode` = 1) /
+/// `s.center(w)` (`mode` = 2) — a materialising op leaving the i32 base-pointer of
+/// a fresh heap string equal to `s` padded with ASCII space to `w` code points. The
+/// receiver is string-valued (`emit_str_expr`, which refuses a non-str recv
+/// honestly); the width is int-valued (`emit_expr_typed` as `i64`, like zfill); the
+/// `mode` selector is an immediate i32 const pushed last. The allocating
+/// `$__wasm_str_pad` helper does the split-and-copy and — unlike the case-fold ops —
+/// never inspects a payload byte (pad = ASCII space, `s` copied verbatim), so it is
+/// char-exact for any UTF-8 with no trap. A heap-constructed receiver
+/// (`(a + b).rjust(w)`) already pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_pad(
+    recv: &Expr,
+    width: &Expr,
+    mode: i32,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    emit_expr_typed(width, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "i32.const {mode}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_pad").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -10774,6 +10983,43 @@ fn emit_str_expr(
             emit_str_strip(recv, left, right, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1209: `s.rjust(w)` / `s.ljust(w)` / `s.center(w)` in a string position
+        // — a fresh heap string (like zfill, a materialising op) equal to `s` padded
+        // with ASCII space to `w` code points. The 1-arg (default-space) form; the
+        // frontend allows an optional 2-arg fill-char form (`s.rjust(w, "*")`), which
+        // is refused below (a non-space fill needs a variable-width fill byte this
+        // shared space-pad helper does not carry). The allocating `$__wasm_str_pad`
+        // helper splits the pad by `mode` (rjust=0 left / ljust=1 right / center=2
+        // CPython-biased) and — unlike the case-fold ops — never inspects a payload
+        // byte, so it is char-exact for any UTF-8 with NO trap.
+        Expr::StrMethod {
+            recv,
+            op: op @ (StrMethodOp::RJust | StrMethodOp::LJust | StrMethodOp::Center),
+            args,
+        } if args.len() == 1 => {
+            let mode = match op {
+                StrMethodOp::RJust => 0,
+                StrMethodOp::LJust => 1,
+                StrMethodOp::Center => 2,
+                _ => unreachable!("guarded by the arm's op pattern"),
+            };
+            emit_str_pad(recv, &args[0], mode, scope, out, depth)?;
+            Ok(())
+        }
+        // PMAT-1209: the 2-arg fill-char form `s.rjust(w, fill)` / `.ljust` /
+        // `.center` — refused honestly. The shared `$__wasm_str_pad` helper pads with
+        // a fixed ASCII space (a single `memory.fill` byte); a non-space fill char
+        // (which may itself be multi-byte UTF-8) is not modelled on this lane.
+        Expr::StrMethod {
+            op: StrMethodOp::RJust | StrMethodOp::LJust | StrMethodOp::Center,
+            args,
+            ..
+        } if args.len() == 2 => Err(unsupported(
+            "the 2-arg fill-char form of `.rjust(w, fill)` / `.ljust(w, fill)` / \
+             `.center(w, fill)` on the WASM lane — the space-pad helper pads with a \
+             fixed ASCII space; drop the fill char to pad with spaces, or build the \
+             padding explicitly",
+        )),
         // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
         // `try_fold_strformat_to_concat` declined — a template carrying a
         // format spec (`"{:>5}".format(x)`), a positional (`"{0}"`), a named
@@ -10807,7 +11053,8 @@ fn emit_str_expr(
              (a + b, incl. format int operands auto-stringified via str(int)), \
              a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
-             count])`, `.zfill(width)`, `.upper()` / `.lower()` / \
+             count])`, `.zfill(width)`, `.rjust(w)` / `.ljust(w)` / \
+             `.center(w)` (space-pad, char-exact), `.upper()` / `.lower()` / \
              `.capitalize()` / `.swapcase()` / `.title()` / `.strip()` / \
              `.lstrip()` / `.rstrip()` (ASCII-only — a non-ASCII byte traps), \
              or a str-returning call; stepped slicing / str(float) / bare \
