@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1258
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1258: [wasm/verify/list] EXECUTED FULL-PIPELINE + adversarial-edge witness for native-WASM `any(xs)` / `all(xs)` over a `list[bool]` (`Expr::BoolReduce`, PMAT-1251) — the ONE recently-shipped list-family op left uncovered by BOTH the hand-built-HIR happy-path witness (src/tests.rs) AND the PMAT-1257 full-pipeline fuzz (which deliberately scoped itself to the ALLOCATING list-op family sorted/reversed/concat/slice, so the non-allocating bool fold fell through). Closes two genuine gaps: (1) FRONTEND REACHABILITY (the PMAT-1244 guard) — the hand-built witness proves the emit arm but NOT that `any(xs)`/`all(xs)` is reachable from Python; this lowers REAL Python source through the production PythonFrontend with the CLI --target wasm profile (AliasSemantics::Reference + runtime_abort) -> emit_module -> WABT, so a future change that keeps the emit arm but breaks the `any`/`all` -> Expr::BoolReduce frontend->codegen shape wiring fails HERE. (2) THE EMPTY-LIST IDENTITY EDGE — `all([]) == True` / `any([]) == False` are the single most classic Python divergence (a naive fold seeding from xs[0], or reporting the wrong identity on an exhausted loop, gets them backwards); the distinct-element happy-path witness cannot exercise them, nor can a fixed input sweep the short-circuit position. The skeptic pass tried to REFUTE the PMAT-1251 claim three ways and could not — live `xpile transpile --target wasm` on real Python assembles clean AND value-matches CPython on all edges; NOTHING refuted, so the deliverable is the durable guard the family lacked. TEST-ONLY, no product-code change.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open), forward_ev_ranking rank 1 (ADVERSARIAL-VERIFY your own work — memory feedback-ultracode-adversarial-verify). PMAT-1257 banked the frontend-reachability + adversarial fuzz for the ALLOCATING list ops; this closes the ONE remaining list-family op — the non-allocating `any`/`all` bool fold — which had only a hand-built happy-path witness. Highest-EV target: a construct that LOOKS shipped but whose empty-list identity (the classic divergence) and frontend reachability were never executed end-to-end."
+  - "IMPL (one new gated dev-only witness, no product-code change): crates/xpile-wasm-codegen/tests/list_bool_reduce_frontend_witness.rs (3 tests). bool_reduce_pipeline_lowers_and_emits (always runs, no WABT) drives real Python -> PythonFrontend.parse_and_lower_profiled (wasm profile) -> emit_module and asserts both directions declare AND call $__wasm_list_bool_reduce with the right is_all i32 selector — the PMAT-1244 frontend-reachability lock on free CI. Reuses the depyler-frontend + xpile-frontend [dev-dependencies] PMAT-1257 already added (no cycle)."
+  - "COVERAGE: any_all_execute_and_match_cpython (14 EXECUTED cases via wat2wasm + wasm-interp --run-all-exports, gated on wasm_runtime_available) VALUE-MATCH CPython (values verified via python3): the empty-list IDENTITIES all([])==True / any([])==False side by side; the decisive-element short-circuit sweep FIRST/MID/LAST/never for BOTH directions; and single-element (n==1) both directions both values. any_all_unsupported_shapes_refuse pins the honest-refusal boundary — a list[int] truthiness map, a list LITERAL, and the lazy short-circuiting GENERATOR form each collapse the pipeline to Err (never emit-but-wrong). The bool fold is non-allocating but the self-contained probe's list LITERAL is bump-allocated, so the module carries + cites C-WASM-HEAP."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (all witnesses incl. the 3 new; no regression). Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM + C-WASM-HEAP (no new contract/Lean module minted — a verification slice). No product-code touched: PMAT-1251 `any`/`all` was found SOUND on every edge; the deliverable is the frontend-reachability + empty-list-identity guard it lacked. The list-family adversarial-fuzz discipline (memory project-wasm-list-surface) is now fully banked — every shipped list op (sum/min/max/sorted/reversed/any/all/concat/slice) has an executed adversarial + full-pipeline witness."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1257
   github_issue: null
   item_type: task
