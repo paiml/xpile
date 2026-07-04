@@ -4143,6 +4143,199 @@ const STR_TITLE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1205: `$__wasm_str_strip(s, left, right) -> i32` — Python `s.strip()`
+/// (`left`=1, `right`=1) / `s.lstrip()` (`1`,`0`) / `s.rstrip()` (`0`,`1`): a NEW
+/// heap string with the leading (`left`) and/or trailing (`right`) run of ASCII
+/// whitespace removed, the retained byte range copied verbatim. Allocating (rides
+/// the `needs_heap` gate, calls `$__alloc`). One helper serves all three (the
+/// `left` / `right` i32 flags select which ends to trim), exactly like the shared
+/// `$__wasm_str_upper_lower` `up` flag.
+///
+/// **Whitespace set = the isspace-family ASCII set** `(0x09..=0x0D) | (0x1C..=0x20)`
+/// (tab/LF/VT/FF/CR, FS/GS/RS/US, space) — CPython's `str.strip()` and
+/// `str.isspace()` share `Py_UNICODE_ISSPACE`, and the Rust/Ruchy lanes emit the
+/// same set (`char::is_whitespace() || '\u{1c}'..='\u{1f}'`), so this is
+/// byte-exact against CPython for ASCII.
+///
+/// **Boundary-only ASCII trap — MORE capable than the whole-string case-fold
+/// posture.** The scans only ever READ the leading/trailing bytes they are
+/// deciding whitespace-ness for. A read byte `< 0x80` that is NOT whitespace is a
+/// definitive CONTENT boundary — the scan stops (correct). A read byte `>= 0x80`
+/// (any byte of a non-ASCII code point) is UNDECIDABLE — it could be the lead of a
+/// Unicode whitespace char CPython would strip (`" "`) or the lead/tail of a
+/// non-whitespace char it would keep (`"é"`), and this scalar lane carries no
+/// Unicode table — so it executes `unreachable` (a TRAP, like the case-fold
+/// siblings), NEVER a silent wrong answer. INTERIOR bytes are copied verbatim and
+/// never examined, so an interior non-ASCII char with ASCII ends does NOT trap
+/// (`"a€b".strip() == "a€b"` is byte-exact). On any non-trapping run the
+/// result is byte-exact with CPython: every boundary byte read was ASCII, so the
+/// stop points are exactly Python's strip points, and the last retained char is
+/// 1-byte ASCII (a multi-byte trailing char would have trapped) — so byte-len ==
+/// code-point-len over the survivors and len/Concat/equality/a str RETURN compose
+/// uniformly.
+///
+/// `left`/`right` guard their own scan, so `lstrip` never reads the tail (a
+/// trailing non-ASCII byte cannot make `"x€".lstrip() == "x€"` trap) and `rstrip`
+/// never reads the head. An all-whitespace `s` (`"   ".strip()`) yields the empty
+/// string (`start` meets `end`); `memory.copy` of 0 bytes is a nop.
+const STR_STRIP_HELPER: &str = "\
+  ;; PMAT-1205 __wasm_str_strip(s, left, right) = Python s.strip()/.lstrip()/.rstrip()
+  ;; — a NEW heap string with the leading (left) and/or trailing (right) run of ASCII
+  ;; whitespace (0x09-0x0d | 0x1c-0x20) removed, the retained byte range copied
+  ;; verbatim. Boundary-only ASCII: a non-ASCII (>= 0x80) BOUNDARY byte is undecidable
+  ;; (could be Unicode whitespace) -> unreachable (trap); interior bytes are never
+  ;; examined, so ASCII-ended strings with interior non-ASCII are byte-exact.
+  (func $__wasm_str_strip (param $s i32) (param $left i32) (param $right i32) (result i32)
+    (local $slen i32)
+    (local $start i32)
+    (local $end i32)
+    (local $c i32)
+    (local $rlen i32)
+    (local $dst i32)
+    ;; slen = byte length of s ; start = 0 ; end = slen.
+    local.get $s
+    i32.load
+    local.set $slen
+    i32.const 0
+    local.set $start
+    local.get $slen
+    local.set $end
+    ;; if left: advance `start` past the leading ASCII-whitespace run.
+    local.get $left
+    if
+      block $ldone
+        loop $lloop
+          ;; stop if start >= end (empty / all whitespace).
+          local.get $start
+          local.get $end
+          i32.ge_s
+          br_if $ldone
+          ;; c = s[8 + start]
+          local.get $s
+          i32.const 8
+          i32.add
+          local.get $start
+          i32.add
+          i32.load8_u
+          local.set $c
+          ;; non-ASCII boundary byte (>= 0x80) -> undecidable -> trap.
+          local.get $c
+          i32.const 0x80
+          i32.ge_u
+          if
+            unreachable
+          end
+          ;; is_ws = (0x09 <= c <= 0x0d) | (0x1c <= c <= 0x20).
+          local.get $c
+          i32.const 0x09
+          i32.ge_u
+          local.get $c
+          i32.const 0x0d
+          i32.le_u
+          i32.and
+          local.get $c
+          i32.const 0x1c
+          i32.ge_u
+          local.get $c
+          i32.const 0x20
+          i32.le_u
+          i32.and
+          i32.or
+          ;; a definitively non-whitespace ASCII byte -> content boundary -> stop.
+          i32.eqz
+          br_if $ldone
+          ;; whitespace -> start += 1.
+          local.get $start
+          i32.const 1
+          i32.add
+          local.set $start
+          br $lloop
+        end
+      end
+    end
+    ;; if right: retreat `end` past the trailing ASCII-whitespace run.
+    local.get $right
+    if
+      block $rdone
+        loop $rloop
+          ;; stop if end <= start (nothing left to trim).
+          local.get $end
+          local.get $start
+          i32.le_s
+          br_if $rdone
+          ;; c = s[8 + end - 1]
+          local.get $s
+          i32.const 8
+          i32.add
+          local.get $end
+          i32.add
+          i32.const 1
+          i32.sub
+          i32.load8_u
+          local.set $c
+          ;; non-ASCII boundary byte (>= 0x80) -> undecidable -> trap.
+          local.get $c
+          i32.const 0x80
+          i32.ge_u
+          if
+            unreachable
+          end
+          ;; is_ws = (0x09 <= c <= 0x0d) | (0x1c <= c <= 0x20).
+          local.get $c
+          i32.const 0x09
+          i32.ge_u
+          local.get $c
+          i32.const 0x0d
+          i32.le_u
+          i32.and
+          local.get $c
+          i32.const 0x1c
+          i32.ge_u
+          local.get $c
+          i32.const 0x20
+          i32.le_u
+          i32.and
+          i32.or
+          ;; a definitively non-whitespace ASCII byte -> content boundary -> stop.
+          i32.eqz
+          br_if $rdone
+          ;; whitespace -> end -= 1.
+          local.get $end
+          i32.const 1
+          i32.sub
+          local.set $end
+          br $rloop
+        end
+      end
+    end
+    ;; rlen = end - start (>= 0) ; dst = alloc(8 + rlen) ; header = rlen.
+    local.get $end
+    local.get $start
+    i32.sub
+    local.set $rlen
+    local.get $rlen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $rlen
+    i32.store
+    ;; copy rlen bytes from s+8+start to dst+8. (nop when rlen == 0.)
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.get $s
+    i32.const 8
+    i32.add
+    local.get $start
+    i32.add
+    local.get $rlen
+    memory.copy
+    local.get $dst
+  )
+";
+
 /// PMAT-1189: `$__wasm_str_isdigit(s) -> i32` — Python `s.isdigit()` as a bool
 /// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is an ASCII decimal
 /// digit `'0'`–`'9'`, else `0`. Non-allocating (a single left-to-right scan of
@@ -6303,6 +6496,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // upper/lower/capitalize/swapcase/replace/zfill). Byte-parallel storage (no
     // charlen math — all survivors are 1-byte ASCII) but STATEFUL across the scan.
     let needs_title = module_uses_str_method(module, StrMethodOp::Title);
+    // PMAT-1205: `s.strip()` / `s.lstrip()` / `s.rstrip()` (`Expr::StrMethod`, ops
+    // `Strip` / `LStrip` / `RStrip`) — allocating string-RETURNING ops (a fresh
+    // heap string with the leading/trailing ASCII-whitespace run removed, the
+    // retained byte range copied verbatim). All three share the single
+    // `$__wasm_str_strip` helper (`left` / `right` i32 flags select which ends to
+    // trim), so any one present must emit it. Rides `needs_heap` (set via
+    // `expr_has_heap_op`, like upper/lower/capitalize/swapcase/title/replace/zfill).
+    // Byte-parallel storage (no charlen math — the retained bytes are copied
+    // verbatim; a non-ASCII BOUNDARY byte traps rather than being (mis)judged).
+    let needs_strip = module_uses_str_method(module, StrMethodOp::Strip)
+        || module_uses_str_method(module, StrMethodOp::LStrip)
+        || module_uses_str_method(module, StrMethodOp::RStrip);
     // PMAT-1189: `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`) — a bool (i32)
     // predicate: `1` iff `s` is non-empty and every code point is an ASCII digit.
     // NON-allocating (a single byte scan, no heap), so — unlike the case-fold
@@ -6620,6 +6825,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // module carries no dead helper.
     if needs_heap && needs_title {
         out.push_str(STR_TITLE_HELPER);
+    }
+    // PMAT-1205: emit the string STRIP helper once, when any function uses
+    // `s.strip()` / `s.lstrip()` / `s.rstrip()` (ops `Strip` / `LStrip` /
+    // `RStrip`). The single `$__wasm_str_strip` helper serves all three (`left` /
+    // `right` i32 flags pick which ends to trim). Allocating (calls `$__alloc` +
+    // `memory.copy`), so it rides `needs_heap` — a strip sets the heap gate via
+    // `expr_has_heap_op`. A non-ASCII BOUNDARY byte traps (the honest ASCII-only
+    // boundary). Gated on an actual use so an unrelated heap-string module carries
+    // no dead helper.
+    if needs_heap && needs_strip {
+        out.push_str(STR_STRIP_HELPER);
     }
     // PMAT-1189: emit the string ISDIGIT helper once, when any function uses
     // `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`). NON-allocating (a single
@@ -8028,6 +8244,10 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // PMAT-1203: `s.title()` (op `Title`) bump-allocates its title-cased result
         // the same way — a miss would emit `$__wasm_str_title` against an undeclared
         // `$__alloc` (the same hard wat2wasm gate-hole).
+        // PMAT-1205: `s.strip()` / `s.lstrip()` / `s.rstrip()` (ops `Strip` /
+        // `LStrip` / `RStrip`) bump-allocate their whitespace-trimmed result the same
+        // way — a miss would emit `$__wasm_str_strip` against an undeclared
+        // `$__alloc` (the same hard wat2wasm gate-hole).
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -8041,6 +8261,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::Capitalize
                     | StrMethodOp::SwapCase
                     | StrMethodOp::Title
+                    | StrMethodOp::Strip
+                    | StrMethodOp::LStrip
+                    | StrMethodOp::RStrip
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -9160,6 +9383,36 @@ fn emit_str_title(
     emit_str_expr(recv, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_str_title").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1205: lower `s.strip()` (`left`=1, `right`=1) / `s.lstrip()` (`1`,`0`) /
+/// `s.rstrip()` (`0`,`1`) — a materialising op leaving the i32 base-pointer of a
+/// fresh heap string with the leading/trailing ASCII-whitespace run removed. The
+/// receiver is string-valued (`emit_str_expr`, which refuses a non-str recv
+/// honestly); the `left` / `right` direction flags are immediate i32 consts pushed
+/// after the receiver pointer (like the `$__wasm_str_upper_lower` `up` flag). The
+/// allocating `$__wasm_str_strip` helper copies the retained byte range and TRAPS
+/// on a non-ASCII BOUNDARY byte (the honest ASCII-only boundary — the whitespace-ness
+/// of a non-ASCII byte is undecidable without a Unicode table this lane lacks, so it
+/// refuses at runtime rather than silently keeping/dropping the wrong run). A
+/// heap-constructed receiver (`(a + b).strip()`) already pulled in the allocator via
+/// `expr_has_heap_op`.
+fn emit_str_strip(
+    recv: &Expr,
+    left: bool,
+    right: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(left)).expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(right)).expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_strip").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -10500,6 +10753,27 @@ fn emit_str_expr(
             emit_str_title(recv, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1205: `s.strip()` / `s.lstrip()` / `s.rstrip()` in a string position
+        // — a fresh heap string (like the case-fold family, a materialising op) with
+        // the leading (`Strip`/`LStrip`) and/or trailing (`Strip`/`RStrip`) run of
+        // ASCII whitespace removed, the retained byte range copied verbatim. 0-arg
+        // (the no-arg whitespace form; the 1-arg char-set form `s.strip(chars)` is
+        // rejected upstream by the frontend arity check, so it never reaches here).
+        // The allocating `$__wasm_str_strip` helper does the trim and TRAPS on a
+        // non-ASCII BOUNDARY byte (the honest ASCII-only boundary — the
+        // whitespace-ness of a non-ASCII byte is undecidable without a Unicode table
+        // this scalar lane lacks, so it refuses at runtime rather than silently
+        // keeping or dropping the wrong run).
+        Expr::StrMethod {
+            recv,
+            op: op @ (StrMethodOp::Strip | StrMethodOp::LStrip | StrMethodOp::RStrip),
+            args,
+        } if args.is_empty() => {
+            let left = matches!(op, StrMethodOp::Strip | StrMethodOp::LStrip);
+            let right = matches!(op, StrMethodOp::Strip | StrMethodOp::RStrip);
+            emit_str_strip(recv, left, right, scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
         // `try_fold_strformat_to_concat` declined — a template carrying a
         // format spec (`"{:>5}".format(x)`), a positional (`"{0}"`), a named
@@ -10534,9 +10808,10 @@ fn emit_str_expr(
              a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
              count])`, `.zfill(width)`, `.upper()` / `.lower()` / \
-             `.capitalize()` / `.swapcase()` (ASCII-only — a non-ASCII byte \
-             traps), or a str-returning call; stepped slicing / str(float) / \
-             bare f-strings are refused",
+             `.capitalize()` / `.swapcase()` / `.title()` / `.strip()` / \
+             `.lstrip()` / `.rstrip()` (ASCII-only — a non-ASCII byte traps), \
+             or a str-returning call; stepped slicing / str(float) / bare \
+             f-strings are refused",
             expr_kind(other)
         ))),
     }
