@@ -178,8 +178,8 @@ use xpile_backend::{
 };
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, PairIterKind, Param, SetOp,
-    SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module, PairIterKind,
+    Param, SetOp, SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -613,6 +613,12 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
         Expr::ListContains { list, elem } => {
             collect_expr_literals(list, out);
             collect_expr_literals(elem, out);
+        }
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` — the list is a bare NAME but the
+        // needle may host a str literal (`xs.count(len("ab"))`), so recurse.
+        Expr::ListQuery { list, arg, .. } => {
+            collect_expr_literals(list, out);
+            collect_expr_literals(arg, out);
         }
         Expr::DictLit(pairs) => {
             for (k, v) in pairs {
@@ -7089,6 +7095,226 @@ const LIST_CONTAINS_FLOAT_HELPER: &str = "\
     i32.const 0)
 ";
 
+/// PMAT-1274: the list-INT-COUNT helper — Python `xs.count(x)` over a
+/// `list[int]`. A NON-allocating read (a linear scan, like `contains`/`sum`),
+/// so it rides its OWN gate (`needs_list_count`), NOT `needs_heap`. It reads the
+/// PMAT-968 length-prefixed region (i32 count @ base+0, packed i64 elements @
+/// base+8), compares each element to `$needle` with `i64.eq`, and accumulates
+/// the number of matches into `$c`, returned as an i64 (so `[].count(x) == 0`
+/// and no match yields `0` — exactly CPython's `list.count`). Unlike `contains`
+/// this does NOT short-circuit: EVERY element is inspected (a full count).
+const LIST_COUNT_INT_HELPER: &str = "\
+  ;; __wasm_list_count_i64(base, needle) = number of elements == needle, list[int]
+  ;; base → length-prefixed region: i32 count @ base+0, i64 elements @ base+8.
+  (func $__wasm_list_count_i64 (param $base i32) (param $needle i64) (result i64)
+    (local $i i32)
+    (local $n i32)
+    (local $c i64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    i64.const 0
+    local.set $c
+    (block $done
+      (loop $next
+        ;; while i < n  (unsigned — count is a non-negative header)
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; if i64.load(base + 8 + i*8) == needle → c += 1
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        local.get $needle
+        i64.eq
+        if
+          local.get $c
+          i64.const 1
+          i64.add
+          local.set $c
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $c)
+";
+
+/// PMAT-1274: the list-FLOAT-COUNT twin — Python `xs.count(x)` over a
+/// `list[float]`. Structurally identical to [`LIST_COUNT_INT_HELPER`] but with
+/// an f64 `$needle` and an IEEE-754 `f64.eq` element compare (only the element
+/// `*.load` and the compare opcode differ). Gated on its OWN `needs_list_count`.
+/// The IEEE-754 caveat is shared with `contains`: `f64.eq` makes `nan == nan`
+/// False, so a NaN needle is never counted (Python `list.count` checks object
+/// identity first, so a stored SAME nan object counts — a semantics the
+/// value-only lane does not model; the common no-NaN case is exact).
+const LIST_COUNT_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_count_f64(base, needle) = number of elements == needle, list[float]
+  ;; base → length-prefixed region: i32 count @ base+0, f64 elements @ base+8.
+  (func $__wasm_list_count_f64 (param $base i32) (param $needle f64) (result i64)
+    (local $i i32)
+    (local $n i32)
+    (local $c i64)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    i64.const 0
+    local.set $c
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; if f64.load(base + 8 + i*8) == needle → c += 1
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        f64.load
+        local.get $needle
+        f64.eq
+        if
+          local.get $c
+          i64.const 1
+          i64.add
+          local.set $c
+        end
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $c)
+";
+
+/// PMAT-1274: the list-INT-INDEX helper — Python `xs.index(x)` over a
+/// `list[int]`. A NON-allocating read (a linear scan, like `contains`), so it
+/// rides its OWN gate (`needs_list_index`), NOT `needs_heap`. It reads the
+/// PMAT-968 length-prefixed region, compares each element to `$needle` with
+/// `i64.eq`, and returns the i64 index of the FIRST match (a left-to-right scan
+/// — Python `list.index` returns the LOWEST matching index). When the scan is
+/// exhausted with no match the element is ABSENT, which Python signals by
+/// raising `ValueError`; the WASM lane traps via `unreachable` (the same
+/// posture as the out-of-bounds `IndexError` trap and the Rust `.expect(…)`
+/// panic the scalar lane emits). `[].index(x)` therefore traps (empty ⇒ no
+/// match), matching CPython raising `ValueError` on an empty list.
+const LIST_INDEX_INT_HELPER: &str = "\
+  ;; __wasm_list_index_i64(base, needle) = index of first elem == needle, list[int]
+  ;; base → length-prefixed region: i32 count @ base+0, i64 elements @ base+8.
+  ;; No match → `unreachable` (Python ValueError).
+  (func $__wasm_list_index_i64 (param $base i32) (param $needle i64) (result i64)
+    (local $i i32)
+    (local $n i32)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; if i64.load(base + 8 + i*8) == needle → return i (as i64)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        local.get $needle
+        i64.eq
+        if
+          local.get $i
+          i64.extend_i32_u
+          return
+        end
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    ;; x not in xs → Python ValueError; trap deterministically.
+    unreachable)
+";
+
+/// PMAT-1274: the list-FLOAT-INDEX twin — Python `xs.index(x)` over a
+/// `list[float]`. Structurally identical to [`LIST_INDEX_INT_HELPER`] but with
+/// an f64 `$needle` and an IEEE-754 `f64.eq` compare. Gated on its OWN
+/// `needs_list_index`. Same IEEE-754 caveat as the count twin: a NaN needle
+/// never matches, so `xs.index(nan)` traps (Python raises `ValueError` for the
+/// value-compare, though it returns the position when the SAME nan object is
+/// stored — an identity semantics the value-only lane does not model).
+const LIST_INDEX_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_index_f64(base, needle) = index of first elem == needle, list[float]
+  ;; base → length-prefixed region: i32 count @ base+0, f64 elements @ base+8.
+  ;; No match → `unreachable` (Python ValueError).
+  (func $__wasm_list_index_f64 (param $base i32) (param $needle f64) (result i64)
+    (local $i i32)
+    (local $n i32)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; if f64.load(base + 8 + i*8) == needle → return i (as i64)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        f64.load
+        local.get $needle
+        f64.eq
+        if
+          local.get $i
+          i64.extend_i32_u
+          return
+        end
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    unreachable)
+";
+
 /// PMAT-1251: `any(xs)` / `all(xs)` over a `list[bool]` — the THIRD list-reduction
 /// family (after `sum` and `min`/`max`), a non-allocating boolean fold. The list
 /// is a PMAT-968 length-prefixed region whose elements are `i32` 0/1 (the
@@ -9237,6 +9463,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // The node carries no element-kind discriminant, so BOTH typed helpers are
     // emitted under this single gate (the unused twin is a harmless dead fn).
     let needs_list_contains = module_uses_list_contains(module);
+    // PMAT-1274: `xs.count(v)` / `xs.index(v)` over a `list[int]`/`list[float]`
+    // (`Expr::ListQuery`) scan the payload via `$__wasm_list_{count,index}_*` —
+    // NON-allocating (a read, like contains), so each rides its OWN gate, NOT
+    // `needs_heap`, and needs the `(memory …)` its loads read. The node carries
+    // the `op` (Count/Index) so count and index gate SEPARATELY; each gate emits
+    // both element-kind twins (no element-kind discriminant on the node).
+    let needs_list_count = module_uses_list_count(module);
+    let needs_list_index = module_uses_list_index(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -9265,6 +9499,8 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_concat
         || needs_list_slice
         || needs_list_contains
+        || needs_list_count
+        || needs_list_index
     {
         writeln!(
             out,
@@ -9707,6 +9943,23 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         out.push_str(LIST_CONTAINS_INT_HELPER);
         out.push_str(LIST_CONTAINS_FLOAT_HELPER);
     }
+    // PMAT-1274: emit the list-COUNT helpers once, when any function uses
+    // `xs.count(v)` over a `list[int]`/`list[float]` (`Expr::ListQuery` with
+    // `Count`). NON-allocating (a linear scan, like contains), so gated on
+    // `needs_list_count`, NOT `needs_heap`. Both typed helpers are emitted (no
+    // element-kind discriminant on the node); the unused twin is harmless dead
+    // WAT. The `index` twin is gated separately below.
+    if needs_list_count {
+        out.push_str(LIST_COUNT_INT_HELPER);
+        out.push_str(LIST_COUNT_FLOAT_HELPER);
+    }
+    // PMAT-1274: emit the list-INDEX helpers once, when any function uses
+    // `xs.index(v)` (`Expr::ListQuery` with `Index`). Same non-allocating
+    // posture; `index` traps (`unreachable`) on a miss (Python `ValueError`).
+    if needs_list_index {
+        out.push_str(LIST_INDEX_INT_HELPER);
+        out.push_str(LIST_INDEX_FLOAT_HELPER);
+    }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
     // (the str-key helpers call it).
@@ -9939,6 +10192,7 @@ fn expr_touches_str(e: &Expr) -> bool {
         }
         Expr::SetContains { set, elem } => expr_touches_str(set) || expr_touches_str(elem),
         Expr::ListContains { list, elem } => expr_touches_str(list) || expr_touches_str(elem),
+        Expr::ListQuery { list, arg, .. } => expr_touches_str(list) || expr_touches_str(arg),
         _ => false,
     }
 }
@@ -10082,6 +10336,7 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         }
         Expr::SetContains { set, elem } => expr_has_str_slice(set) || expr_has_str_slice(elem),
         Expr::ListContains { list, elem } => expr_has_str_slice(list) || expr_has_str_slice(elem),
+        Expr::ListQuery { list, arg, .. } => expr_has_str_slice(list) || expr_has_str_slice(arg),
         _ => false,
     }
 }
@@ -10231,6 +10486,7 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
         }
         Expr::SetContains { set, elem } => expr_has_int_to_str(set) || expr_has_int_to_str(elem),
         Expr::ListContains { list, elem } => expr_has_int_to_str(list) || expr_has_int_to_str(elem),
+        Expr::ListQuery { list, arg, .. } => expr_has_int_to_str(list) || expr_has_int_to_str(arg),
         _ => false,
     }
 }
@@ -10480,6 +10736,9 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
         Expr::ListContains { list, elem } => {
             expr_uses_str_method(list, op) || expr_uses_str_method(elem, op)
         }
+        Expr::ListQuery { list, arg, .. } => {
+            expr_uses_str_method(list, op) || expr_uses_str_method(arg, op)
+        }
         _ => false,
     }
 }
@@ -10612,6 +10871,9 @@ fn expr_has_str_contains(e: &Expr) -> bool {
         Expr::ListContains { list, elem } => {
             expr_has_str_contains(list) || expr_has_str_contains(elem)
         }
+        Expr::ListQuery { list, arg, .. } => {
+            expr_has_str_contains(list) || expr_has_str_contains(arg)
+        }
         _ => false,
     }
 }
@@ -10723,6 +10985,9 @@ fn expr_has_list_sum(expr: &Expr, want_float: bool) -> bool {
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
         Expr::ListContains { list, elem } => e(list) || e(elem),
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` can nest a helper-gated op in its
+        // needle (`xs.count(sum(ys))`), so recurse into both operands.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         // PMAT-1248: a `sum(xs)` can be nested inside a `seq * count` repeat's
         // COUNT (`"ab" * sum(xs)`, the int-repeat form — the sibling
         // `expr_has_str_repeat` covers this arm too), or inside a container
@@ -10831,6 +11096,9 @@ fn expr_has_list_minmax(expr: &Expr, want_float: bool) -> bool {
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
         Expr::ListContains { list, elem } => e(list) || e(elem),
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` can nest a helper-gated op in its
+        // needle (`xs.count(sum(ys))`, `xs.index(len(s))`), so recurse into both.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -10891,6 +11159,9 @@ fn expr_has_list_contains(expr: &Expr) -> bool {
         // this node IS a list membership test — the gate must fire (the typed
         // helpers serve every use, so no need to inspect what nests inside).
         Expr::ListContains { .. } => true,
+        // PMAT-1274: a `ListContains` can nest inside a `xs.count(v)`/`xs.index(v)`
+        // needle (`xs.count(3 if (y in ys) else 0)`), so recurse into both.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
         Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
         Expr::Concat { lhs, rhs }
@@ -10922,6 +11193,107 @@ fn expr_has_list_contains(expr: &Expr) -> bool {
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
         Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
+/// PMAT-1274: does any function use `xs.count(v)` (`Expr::ListQuery` with
+/// `ListQueryOp::Count`)? Gates BOTH the `$__wasm_list_count_i64` and
+/// `$__wasm_list_count_f64` helpers (and the `(memory …)` their list-payload
+/// loads read). Like `contains`, the node carries NO element-kind discriminant
+/// (resolved only at emit time via [`Scope::list_elem_of`]), so BOTH typed
+/// helpers are emitted under this single gate; the unused twin is a harmless
+/// dead function. But the node DOES carry the `op` (Count vs Index) — available
+/// at this walker — so count and index are gated SEPARATELY (the sum/minmax
+/// precise-gating discipline, parametrised by `want_index` on a shared walk).
+fn module_uses_list_count(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_query(&f.body, false))
+}
+
+/// PMAT-1274: the twin gate for `xs.index(v)` (`Expr::ListQuery` with
+/// `ListQueryOp::Index`), driving `$__wasm_list_index_i64` / `_f64`.
+fn module_uses_list_index(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_query(&f.body, true))
+}
+
+fn block_has_list_query(block: &Block, want_index: bool) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(|s| stmt_has_list_query(s, want_index))
+        || expr_has_list_query(&block.trailing_return, want_index)
+}
+
+fn stmt_has_list_query(s: &Stmt, want_index: bool) -> bool {
+    let e = |x| expr_has_list_query(x, want_index);
+    let st = |x| stmt_has_list_query(x, want_index);
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_query(expr: &Expr, want_index: bool) -> bool {
+    let e = |x| expr_has_list_query(x, want_index);
+    match expr {
+        // this node IS a list query of the OP we gate — fire (the typed helpers
+        // serve every use, so no need to inspect what nests inside).
+        Expr::ListQuery { op, .. } if matches!(op, ListQueryOp::Index) == want_index => true,
+        // a query of the OTHER op is a distinct helper; still recurse into its
+        // operands (a supported same-op query could nest inside `xs.index(ys.count(3))`).
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        // recurse into a nested membership test (a `ListQuery` could nest in its
+        // needle — `(xs.count(3)) in ys`); operand order is immaterial for `||`,
+        // written `elem`-first here so it is textually distinct from the sibling
+        // gate walkers (this walker's own `ListQuery` arms are above).
+        Expr::ListContains { list, elem } => e(elem) || e(list),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -11008,6 +11380,9 @@ fn expr_has_bool_reduce(expr: &Expr) -> bool {
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
         Expr::ListContains { list, elem } => e(list) || e(elem),
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` can nest a helper-gated op in its
+        // needle (`xs.count(sum(ys))`, `xs.index(len(s))`), so recurse into both.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -11115,6 +11490,9 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
         Expr::ListContains { list, elem } => e(list) || e(elem),
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` can nest a helper-gated op in its
+        // needle (`xs.count(sum(ys))`, `xs.index(len(s))`), so recurse into both.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -11214,6 +11592,9 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
         Expr::ListContains { list, elem } => e(list) || e(elem),
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` can nest a helper-gated op in its
+        // needle (`xs.count(sum(ys))`, `xs.index(len(s))`), so recurse into both.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -11310,6 +11691,9 @@ fn expr_has_list_concat(expr: &Expr) -> bool {
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
         Expr::ListContains { list, elem } => e(list) || e(elem),
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` can nest a helper-gated op in its
+        // needle (`xs.count(sum(ys))`, `xs.index(len(s))`), so recurse into both.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -11414,6 +11798,9 @@ fn expr_has_list_slice(expr: &Expr) -> bool {
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
         Expr::ListContains { list, elem } => e(list) || e(elem),
+        // PMAT-1274: `xs.count(v)`/`xs.index(v)` can nest a helper-gated op in its
+        // needle (`xs.count(sum(ys))`, `xs.index(len(s))`), so recurse into both.
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
@@ -11529,6 +11916,7 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
         }
         Expr::SetContains { set, elem } => expr_has_str_repeat(set) || expr_has_str_repeat(elem),
         Expr::ListContains { list, elem } => expr_has_str_repeat(list) || expr_has_str_repeat(elem),
+        Expr::ListQuery { list, arg, .. } => expr_has_str_repeat(list) || expr_has_str_repeat(arg),
         _ => false,
     }
 }
@@ -11683,6 +12071,9 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
         }
         Expr::ListContains { list, elem } => {
             expr_has_str_method_2arg(list, target) || expr_has_str_method_2arg(elem, target)
+        }
+        Expr::ListQuery { list, arg, .. } => {
+            expr_has_str_method_2arg(list, target) || expr_has_str_method_2arg(arg, target)
         }
         Expr::Repeat { seq, n, .. } => {
             expr_has_str_method_2arg(seq, target) || expr_has_str_method_2arg(n, target)
@@ -11866,6 +12257,9 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         }
         Expr::ListContains { list, elem } => {
             expr_has_str_eq(list, scan) || expr_has_str_eq(elem, scan)
+        }
+        Expr::ListQuery { list, arg, .. } => {
+            expr_has_str_eq(list, scan) || expr_has_str_eq(arg, scan)
         }
         _ => false,
     }
@@ -12138,6 +12532,7 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         Expr::DictSetDefault { .. } => true,
         Expr::SetContains { set, elem } => expr_has_heap_op(set) || expr_has_heap_op(elem),
         Expr::ListContains { list, elem } => expr_has_heap_op(list) || expr_has_heap_op(elem),
+        Expr::ListQuery { list, arg, .. } => expr_has_heap_op(list) || expr_has_heap_op(arg),
         _ => false,
     }
 }
@@ -14036,6 +14431,15 @@ fn emit_expr(
         // over the i32 result). Refuses a non-name list / non-scalar element
         // honestly (see `emit_list_contains`).
         Expr::ListContains { list, elem } => emit_list_contains(list, elem, scope, out, depth),
+        // PMAT-1274: `xs.count(v)` / `xs.index(v)` over a `list[int]`/`list[float]`
+        // — the FIRST list-QUERY op the WASM lane lowers, an i64-VALUED
+        // (count/index) non-allocating linear scan mirroring `ListContains` but
+        // returning the count / first index instead of an i32 bool. The list NAME
+        // lowers to its i32 base-pointer, the needle to the element kind, then
+        // `$__wasm_list_{count,index}_{i64,f64}` scans. `index` traps on a miss
+        // (Python `ValueError`). Refuses a non-name list / non-scalar element
+        // honestly (see `emit_list_query`).
+        Expr::ListQuery { list, op, arg } => emit_list_query(list, *op, arg, scope, out, depth),
         // PMAT-1245: set ordering `a <= b` / `a < b` / `a >= b` / `a > b` (subset
         // / proper-subset / superset / proper-superset). The FRONTEND lowers set
         // comparison operators to `SetPred`, NOT `BinOp` — so this is the path
@@ -14689,6 +15093,80 @@ fn emit_list_contains(
     indent(out, depth);
     writeln!(out, "call {helper}").expect("write");
     Ok(WatTy::I32)
+}
+
+/// PMAT-1274: emit `xs.count(v)` / `xs.index(v)` (`Expr::ListQuery`) over a
+/// `list[int]` / `list[float]` — leaves the i64 result (the match count, or the
+/// first matching index) on the stack. The list NAME lowers to its i32
+/// base-pointer (the PMAT-968 list ABI), the `arg` needle lowers TYPED to the
+/// element WAT type (so a mismatched-kind needle is an honest error at the typed
+/// site), then `$__wasm_list_{count,index}_{i64,f64}` linearly scans. `count`
+/// inspects every element and returns the total; `index` returns the FIRST
+/// matching position and TRAPS on a miss (Python `ValueError`). Both are
+/// non-allocating reads (like `contains`), so each rides its OWN gate
+/// (`needs_list_count` / `needs_list_index`), NOT `needs_heap`.
+///
+/// Honest scope (each a hard [`BackendError`], never a silent miscompile) —
+/// identical to `emit_list_contains`:
+///   * a NON-NAME list (a list LITERAL / temporary — `[1, 2, 3].count(x)`,
+///     `sorted(ys).index(x)`) is refused; the lane needs a declared
+///     `list[scalar]` NAME (an i32 base-pointer) to recover the element type.
+///   * a name that is not a `list[int]` / `list[float]` — whose elements do not
+///     load as i64/f64 — is refused by [`Scope::list_elem_of`]. A `list[str]`
+///     query needs a per-element string compare (deferred); a `list[bool]` would
+///     need i32 elements (a distinct helper). Only the i64/f64 scalar element
+///     kinds are lowered here.
+fn emit_list_query(
+    list: &Expr,
+    op: ListQueryOp,
+    arg: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let method = match op {
+        ListQueryOp::Count => "count",
+        ListQueryOp::Index => "index",
+    };
+    let Expr::Ident(name) = list else {
+        return Err(unsupported(&format!(
+            "`.{method}(…)` on a non-name list — the WASM subset queries a \
+             `list[int]` / `list[float]` NAME (an i32 base-pointer into linear \
+             memory); a list literal / temporary (`[1, 2, 3].{method}(x)`, \
+             `sorted(ys).{method}(x)`) is refused (bind it to a name first)"
+        )));
+    };
+    // The element kind selects the query helper and the needle's WAT type.
+    let (helper, want_elem) = match (op, scope.list_elem_of(name)) {
+        (ListQueryOp::Count, Some(WatTy::I64)) => ("$__wasm_list_count_i64", WatTy::I64),
+        (ListQueryOp::Count, Some(WatTy::F64)) => ("$__wasm_list_count_f64", WatTy::F64),
+        (ListQueryOp::Index, Some(WatTy::I64)) => ("$__wasm_list_index_i64", WatTy::I64),
+        (ListQueryOp::Index, Some(WatTy::F64)) => ("$__wasm_list_index_f64", WatTy::F64),
+        (_, Some(other)) => {
+            return Err(unsupported(&format!(
+                "`{name}.{method}(…)` whose elements load as {} — the WASM subset \
+                 queries only a `list[int]` / `list[float]` (an i64/f64 payload \
+                 compared with `eq`); this element kind is refused",
+                other.keyword()
+            )));
+        }
+        (_, None) => {
+            return Err(unsupported(&format!(
+                "`{name}.{method}(…)` where `{name}` is not a `list[int]` / \
+                 `list[float]` param/local — only a scalar list (an i32 \
+                 base-pointer into linear memory) can be queried in the WASM subset"
+            )));
+        }
+    };
+    // Push the list base-pointer, then the needle typed to the element kind (an
+    // honest type mismatch if it does not lower to that kind), then scan via the
+    // helper (i64 count / index result; `index` traps on a miss).
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_expr_typed(arg, scope, out, depth, want_elem)?;
+    indent(out, depth);
+    writeln!(out, "call {helper}").expect("write");
+    Ok(WatTy::I64)
 }
 
 /// PMAT-1251: emit `any(xs)` / `all(xs)` over a `list[bool]` — leaves the i32
