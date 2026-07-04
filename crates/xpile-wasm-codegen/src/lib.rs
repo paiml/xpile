@@ -7560,6 +7560,134 @@ const LIST_CONCAT_HELPER: &str = "\
     local.get $r)
 ";
 
+/// PMAT-1256: the list-SLICE helper (`xs[lo:hi]` over a `list[scalar]`) — the
+/// FOURTH list-VALUED op that ALLOCATES (after `sorted`, `reversed`, and
+/// `concat`). Given a length-prefixed base-pointer and two i64 ELEMENT bounds it
+/// bump-allocates a fresh record holding the sub-list `base[lo:hi]` and returns
+/// the new base. `lo`/`hi` carry FULL Python slice semantics: a negative bound is
+/// normalised (`+= n`), BOTH bounds CLAMP to `[0, n]` (an out-of-range slice bound
+/// never traps — unlike `xs[i]` indexing), and `hi` is raised to `lo` when it
+/// would fall below it (an empty slice, never a negative length). The lowering
+/// passes a missing `lo` as `0` and a missing `hi` as `i64::MAX` (clamped to `n`),
+/// so `xs[:]` / `xs[a:]` / `xs[:b]` all fall out. Slicing MOVES the selected
+/// 8-byte words verbatim (never interpreting them), so — exactly like
+/// [`LIST_REVERSED_HELPER`] / [`LIST_CONCAT_HELPER`] — this ONE helper serves BOTH
+/// `list[int]` and `list[float]` (no int/float twin, unlike the two typed sort
+/// helpers): an f64's bit pattern copied as an i64-word range is lossless and a
+/// `memory.copy` cannot canonicalise a NaN payload. The source is never mutated
+/// (Python's `xs[lo:hi]` yields a fresh list); the empty slice allocates an empty
+/// record and returns it (no trap).
+const LIST_SLICE_HELPER: &str = "\
+  ;; __wasm_list_slice_i64(base, lo, hi) -> a NEW list = base[lo:hi] (8-byte stride)
+  ;; base → length-prefixed region: i32 count @ base+0, 8-byte elements @ base+8.
+  ;; lo/hi are i64 ELEMENT indices with full Python slice semantics (negative
+  ;; normalised += n, both clamp to [0, n], hi raised to lo → never a negative
+  ;; length, out-of-range never traps). Slicing MOVES 8-byte words verbatim (never
+  ;; interpreting them), so this ONE helper serves BOTH list[int] and list[float].
+  (func $__wasm_list_slice_i64 (param $base i32) (param $lo i64) (param $hi i64) (result i32)
+    (local $n i32)
+    (local $nl i64)
+    (local $cnt i32)
+    (local $dst i32)
+    ;; n = element count (i32 header @ base+0); nl = i64 widening for the bounds.
+    local.get $base
+    i32.load
+    local.set $n
+    local.get $n
+    i64.extend_i32_u
+    local.set $nl
+    ;; --- normalise lo: if lo<0 lo+=nl; then clamp to [0, nl] ---
+    local.get $lo
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $lo
+      local.get $nl
+      i64.add
+      local.set $lo
+    end
+    local.get $lo
+    i64.const 0
+    i64.lt_s
+    if
+      i64.const 0
+      local.set $lo
+    end
+    local.get $lo
+    local.get $nl
+    i64.gt_s
+    if
+      local.get $nl
+      local.set $lo
+    end
+    ;; --- normalise hi: if hi<0 hi+=nl; then clamp to [0, nl] ---
+    local.get $hi
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $hi
+      local.get $nl
+      i64.add
+      local.set $hi
+    end
+    local.get $hi
+    i64.const 0
+    i64.lt_s
+    if
+      i64.const 0
+      local.set $hi
+    end
+    local.get $hi
+    local.get $nl
+    i64.gt_s
+    if
+      local.get $nl
+      local.set $hi
+    end
+    ;; hi = max(hi, lo) — an empty slice when hi < lo, never a negative length.
+    local.get $hi
+    local.get $lo
+    i64.lt_s
+    if
+      local.get $lo
+      local.set $hi
+    end
+    ;; cnt = (hi - lo) as i32 — the element count of the sub-list.
+    local.get $hi
+    local.get $lo
+    i64.sub
+    i32.wrap_i64
+    local.set $cnt
+    ;; dst = __alloc(8 + cnt*8); write the i32 count header at dst+0.
+    local.get $cnt
+    i32.const 8
+    i32.mul
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $cnt
+    i32.store
+    ;; memory.copy(dst+8, base + 8 + lo*8, cnt*8) — a verbatim word-range move.
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.get $base
+    i32.const 8
+    i32.add
+    local.get $lo
+    i32.wrap_i64
+    i32.const 8
+    i32.mul
+    i32.add
+    local.get $cnt
+    i32.const 8
+    i32.mul
+    memory.copy
+    local.get $dst)
+";
+
 /// Native WASM backend. Lowers the meta-HIR scalar/control subset to WAT
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
@@ -8725,6 +8853,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // `needs_heap` (via `expr_has_heap_op`). ONE helper serves both int and float
     // (concat moves 8-byte words verbatim), so a SINGLE gate drives it.
     let needs_list_concat = module_uses_list_concat(module);
+    // PMAT-1256: `xs[lo:hi]` over a `list[int]`/`list[float]`
+    // (`Expr::Slice { of_str: false }`) returns a NEW sub-list via
+    // `$__wasm_list_slice_i64` — the FOURTH list-VALUED op that ALLOCATES, so
+    // (like `sorted`/`reversed`/`concat`) it ALSO forces `needs_heap` (via
+    // `expr_has_heap_op`). ONE helper serves both int and float (slicing moves
+    // 8-byte words verbatim), so a SINGLE gate drives it.
+    let needs_list_slice = module_uses_list_slice(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -8751,6 +8886,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_sorted_float
         || needs_list_reversed
         || needs_list_concat
+        || needs_list_slice
     {
         writeln!(
             out,
@@ -9169,6 +9305,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // two typed sort helpers above; this mirrors the single reverse helper).
     if needs_list_concat {
         out.push_str(LIST_CONCAT_HELPER);
+    }
+    // PMAT-1256: emit the list-SLICE helper once, when any function uses
+    // `xs[lo:hi]` over a `list[int]` / `list[float]` (`Expr::Slice { of_str:
+    // false, step: None }`). It ALLOCATES a fresh sub-list record via `$__alloc`
+    // (so the module also carries the bump heap + `(memory)` via `needs_heap`).
+    // ONE helper serves both int and float — slicing moves 8-byte words verbatim,
+    // never interpreting them — so there is no dead-twin problem (like the reverse
+    // and concat helpers; contrast the two typed sort helpers above).
+    if needs_list_slice {
+        out.push_str(LIST_SLICE_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -10649,6 +10795,107 @@ fn expr_has_list_concat(expr: &Expr) -> bool {
     }
 }
 
+/// PMAT-1256: does any function SLICE a list with `xs[lo:hi]`
+/// (`Expr::Slice { of_str: false, step: None }`)? Gates the single
+/// `$__wasm_list_slice_i64` helper (one helper serves both kinds — a list slice
+/// is a verbatim 8-byte-word range move, so no `want_float` split, exactly like
+/// the reverse/concat gates). A STRING slice (`of_str: true`) is the [`STR_SLICE_HELPER`]
+/// gate's business, and a STEPPED list slice (`step: Some`) is refused at emit
+/// (so it must NOT arm this helper), so the detecting arm keys on BOTH
+/// `of_str: false` AND `step: None`. Exhaustive over the same stmt/expr forms as
+/// [`expr_has_list_concat`]; a missed sub-expression would leave the helper
+/// undeclared at the `call $__wasm_list_slice_i64` site (a hard wat2wasm failure —
+/// the recurring gate-hole class, where over-detecting is a harmless unused
+/// function but under-detecting is fatal). The supported slice carries a bare-Ident
+/// `collection`, so no OTHER list-op walker needs a list-`Slice` arm — nothing
+/// supported can nest inside the sliced list (a non-Ident collection refuses at
+/// emit, aborting codegen before any helper mismatch); the bounds are int exprs,
+/// already recursed by every walker's existing `Slice` arm.
+fn module_uses_list_slice(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_slice(&f.body))
+}
+
+fn block_has_list_slice(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_slice) || expr_has_list_slice(&block.trailing_return)
+}
+
+fn stmt_has_list_slice(s: &Stmt) -> bool {
+    let e = expr_has_list_slice;
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            e(cond)
+                || then_body.iter().any(stmt_has_list_slice)
+                || else_body.iter().any(stmt_has_list_slice)
+        }
+        Stmt::While { cond, body } => e(cond) || body.iter().any(stmt_has_list_slice),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_slice(expr: &Expr) -> bool {
+    let e = expr_has_list_slice;
+    match expr {
+        // this node IS a (non-stepped) LIST slice — the gate fires. A string
+        // slice (of_str: true) and a stepped list slice (step: Some, refused at
+        // emit) do NOT arm this helper.
+        Expr::Slice {
+            of_str: false,
+            step: None,
+            ..
+        } => true,
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::ListConcat { lhs, rhs } => e(lhs) || e(rhs),
+        Expr::Reversed { list } => e(list),
+        Expr::Sorted { list, .. } => e(list),
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
 fn block_has_str_repeat(block: &Block) -> bool {
     block.stmts.iter().any(stmt_has_str_repeat) || expr_has_str_repeat(&block.trailing_return)
 }
@@ -11171,7 +11418,14 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         | Expr::ListLit(_) => true,
         // PMAT-1058: a string slice `s[lo:hi]` materialises a fresh heap
         // substring (calls `$__alloc`), so it pulls in the bump heap.
-        Expr::Slice { of_str: true, .. } => true,
+        // PMAT-1256: a LIST slice `xs[lo:hi]` (`of_str: false, step: None`)
+        // likewise bump-allocates a fresh sub-list record via
+        // `$__wasm_list_slice_i64` → `$__alloc` (the FOURTH list-VALUED allocating
+        // op), so it too forces the bump heap + `(memory)`. A stepped list slice
+        // is refused at emit, but over-detecting the heap need is harmless (the
+        // refusal aborts codegen before any module is produced), so ANY `Slice`
+        // node arms the heap gate directly.
+        Expr::Slice { .. } => true,
         // PMAT-1252: `sorted(xs)` bump-allocates a fresh sorted list record (via
         // `$__wasm_list_sorted_*` → `$__alloc`), so it forces the bump heap +
         // `(memory)` — the first list-VALUED op that allocates. The list operand
@@ -14056,10 +14310,15 @@ fn emit_str_slice(
     depth: usize,
 ) -> Result<(), BackendError> {
     if !of_str {
+        // PMAT-1256: a LIST slice IS supported — but only when it is BOUND to a
+        // `list[scalar]` local (`ys = xs[i:j]`, routed through the list-valued
+        // path `emit_list_slice`). Reaching HERE means the slice sits in a
+        // scalar/str value position (e.g. a direct `-> list` return or a str
+        // context), which the WASM list subset does not carry — refuse honestly.
         return Err(unsupported(
-            "a LIST slice `xs[i:j]` — the WASM list subset carries a \
-             `list[scalar]` only as a PARAMETER base-pointer (no list \
-             temporaries / returns to hold a sub-list); refused",
+            "a LIST slice `xs[i:j]` in a scalar/str position — the WASM list \
+             subset materialises `xs[lo:hi]` only when it is BOUND to a \
+             `list[scalar]` local (`ys = xs[i:j]`); refused here",
         ));
     }
     if step.is_some() {
@@ -15648,15 +15907,127 @@ fn emit_list_expr(
         // (concat moves 8-byte words verbatim). Neither operand is mutated
         // (Python's `a + b` yields a new list).
         Expr::ListConcat { lhs, rhs } => emit_list_concat(lhs, rhs, elem, scope, out, depth),
+        // PMAT-1256: `xs[lo:hi]` over a `list[int]`/`list[float]` — the FOURTH
+        // allocating list-VALUED op. `$__wasm_list_slice_i64(base, lo, hi)`
+        // bump-allocates a fresh record holding the sub-list and leaves the new
+        // base-pointer; ONE helper serves both int and float (slicing moves
+        // 8-byte words verbatim). The source is never mutated (Python's
+        // `xs[lo:hi]` yields a new list). A stepped slice / non-name list /
+        // bool-or-mismatched-kind list refuses inside `emit_list_slice`.
+        Expr::Slice {
+            collection,
+            lo,
+            hi,
+            of_str,
+            step,
+        } => emit_list_slice(collection, lo, hi, *of_str, *step, elem, scope, out, depth),
         other => Err(unsupported(&format!(
             "binding a list local from {} — the WASM subset materialises a \
              list LITERAL, shares another named list local/param, sorts a \
              named list (`sorted(xs)`), reverses one (`reversed(xs)` / \
-             `xs[::-1]`), or concatenates two named lists (`a + b`); other \
-             list-returning calls/slices are refused",
+             `xs[::-1]`), concatenates two named lists (`a + b`), or slices one \
+             (`xs[lo:hi]`); other list-returning calls are refused",
             expr_kind(other)
         ))),
     }
+}
+
+/// PMAT-1256: lower `xs[lo:hi]` over a `list[int]`/`list[float]` producing a NEW
+/// `list[scalar]` on the bump heap. Leaves the fresh record's `i32` base-pointer
+/// on the stack.
+///
+/// `elem` is the DESTINATION list's element type (from the bound name); it must be
+/// I64 (int) or F64 (float) — a `list[bool]` (I32 4-byte stride) is REFUSED for
+/// parity with `sorted`/`reversed`/`concat` (the one 8-byte-word helper cannot
+/// serve a 4-byte stride). The source must be a NAMED `list[scalar]` local/param
+/// of exactly `elem` (a non-name list, or a kind mismatch, refuses honestly). A
+/// STEPPED slice (`xs[i:j:k]`, incl. the `xs[::-1]` reverse idiom which lowers via
+/// `Expr::Reversed`, not here) is refused. `of_str` must be false (a string slice
+/// lowers via `emit_str_slice`). A missing `lo` defaults to `0` and a missing `hi`
+/// to `i64::MAX` (the helper clamps both into `[0, n]`), so `xs[:]` / `xs[a:]` /
+/// `xs[:b]` all lower.
+#[allow(clippy::too_many_arguments)]
+fn emit_list_slice(
+    collection: &Expr,
+    lo: &Option<Box<Expr>>,
+    hi: &Option<Box<Expr>>,
+    of_str: bool,
+    step: Option<i64>,
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if of_str {
+        // Defensive: a `str` slice never reaches the list-valued path (it binds a
+        // str local, routed through `emit_str_expr` → `emit_str_slice`). Refuse
+        // rather than emit the list helper against a string base.
+        return Err(unsupported(
+            "a STRING slice bound as a list — internal routing error; a `str` \
+             slice lowers via the string path",
+        ));
+    }
+    if step.is_some() {
+        return Err(unsupported(
+            "a STEPPED list slice `xs[i:j:k]` — the WASM list subset slices \
+             `xs[lo:hi]` (step 1) only; the `xs[::-1]` reverse idiom lowers via \
+             `reversed`, refused here",
+        ));
+    }
+    // The destination element type fixes the (single) helper; a bool list (I32
+    // 4-byte stride) or any non-scalar refuses — never a silent stride misread.
+    if !matches!(elem, WatTy::I64 | WatTy::F64) {
+        return Err(unsupported(&format!(
+            "`xs[lo:hi]` into a `list[{}]` — the WASM subset slices `list[int]` \
+             / `list[float]` (8-byte stride) only (a bool/other-kind list is \
+             refused)",
+            elem.keyword()
+        )));
+    }
+    let Expr::Ident(src) = collection else {
+        return Err(unsupported(
+            "`…[lo:hi]` over a non-name list — the WASM subset slices a named \
+             `list[scalar]` local/param (bind the list to a name first)",
+        ));
+    };
+    let Some(src_elem) = scope.list_elem_of(src) else {
+        return Err(unsupported(&format!(
+            "`{src}[lo:hi]` where `{src}` is not a `list[scalar]` local/param in \
+             the WASM subset"
+        )));
+    };
+    if src_elem != elem {
+        return Err(unsupported(&format!(
+            "`{src}[lo:hi]` slices a `list[{}]` into a `list[{}]` — the WASM \
+             subset keeps the element type (slice a list into a list of the same \
+             element type)",
+            src_elem.keyword(),
+            elem.keyword()
+        )));
+    }
+    // base pointer of the source list.
+    indent(out, depth);
+    writeln!(out, "local.get ${src}").expect("write");
+    // lo (i64 element index) — a missing `lo` defaults to 0.
+    match lo {
+        Some(b) => emit_expr_typed(b, scope, out, depth, WatTy::I64)?,
+        None => {
+            indent(out, depth);
+            writeln!(out, "i64.const 0").expect("write");
+        }
+    }
+    // hi (i64 element index) — a missing `hi` defaults to i64::MAX, which the
+    // helper clamps down to the list's element count.
+    match hi {
+        Some(b) => emit_expr_typed(b, scope, out, depth, WatTy::I64)?,
+        None => {
+            indent(out, depth);
+            writeln!(out, "i64.const 9223372036854775807").expect("write");
+        }
+    }
+    indent(out, depth);
+    writeln!(out, "call $__wasm_list_slice_i64").expect("write");
+    Ok(())
 }
 
 /// PMAT-1252: lower `sorted(list[, reverse])` producing a NEW `list[scalar]`

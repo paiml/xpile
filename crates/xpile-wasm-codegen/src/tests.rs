@@ -5901,3 +5901,520 @@ fn list_float_concat_executes_in_wabt() {
          cat={cat:?}; a+[]==a identity holds; all four exports match CPython (shared i64-word helper)"
     );
 }
+
+// PMAT-1256: native-WASM `xs[lo:hi]` list slice over a `list[int]` /
+// `list[float]` — the FOURTH allocating list-VALUED op (after `sorted`,
+// `reversed`, `concat`). ONE `$__wasm_list_slice_i64` helper serves BOTH kinds
+// (slicing is a verbatim 8-byte-word range move, no int/float twin), reusing the
+// reverse/concat one-helper pattern; full Python slice bounds (negative-normalise,
+// clamp, hi-raised-to-lo, out-of-range never traps).
+
+/// PMAT-1256 `xs[lo:hi]` fixture:
+/// `def sl(xs: list[<elem>]) -> <elem>: ys = xs[lo:hi]; return ys[0]`.
+/// The bound `ys` is a `list[<elem>]` local, so `emit_list_expr` sees the
+/// `Expr::Slice { of_str: false }` in list-VALUED position; the trailing `ys[0]`
+/// materialises it. `lo`/`hi`/`step`/`of_str` are set directly so refusal tests
+/// can drive stepped / mismatched cases. Positive literal bounds keep the WAT-shape
+/// tests simple; the executed witnesses drive the helper directly for the
+/// negative/omitted/clamp paths.
+fn list_slice_fn(
+    elem: Type,
+    lo: Option<i64>,
+    hi: Option<i64>,
+    step: Option<i64>,
+    of_str: bool,
+) -> Function {
+    Function {
+        name: "sl".into(),
+        params: vec![param("xs", Type::List(Box::new(elem.clone())))],
+        return_type: elem.clone(),
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "ys".into(),
+                ty: Type::List(Box::new(elem)),
+                value: Expr::Slice {
+                    collection: Box::new(Expr::Ident("xs".into())),
+                    lo: lo.map(|v| Box::new(Expr::LitInt(v))),
+                    hi: hi.map(|v| Box::new(Expr::LitInt(v))),
+                    of_str,
+                    step,
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("ys".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    }
+}
+
+#[test]
+fn list_int_slice_emits_helper_call_and_heap() {
+    // `xs[1:3]` over a list[int] declares `$__wasm_list_slice_i64`, calls it, and —
+    // as an allocating list op — ALSO pulls in the bump allocator (`$__alloc`) +
+    // exported memory. The two bounds are pushed as i64 element indices.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_slice_fn(
+                Type::I64,
+                Some(1),
+                Some(3),
+                None,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains(
+            "(func $__wasm_list_slice_i64 (param $base i32) (param $lo i64) (param $hi i64) (result i32)"
+        ),
+        "slice helper declared with base + two i64 bounds: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_slice_i64"),
+        "the slice helper is called: {wat}"
+    );
+    assert!(
+        wat.contains("call $__alloc") && wat.contains("(memory (export \"mem\") 1)"),
+        "an allocating list op pulls in the bump heap + exported memory: {wat}"
+    );
+    assert!(
+        wat.contains("memory.copy"),
+        "the slice copies its element word-range via memory.copy: {wat}"
+    );
+}
+
+#[test]
+fn list_float_slice_reuses_the_same_i64_word_helper() {
+    // `xs[1:3]` over a list[float] reuses the VERY SAME `$__wasm_list_slice_i64`
+    // helper — slicing is a byte-move, so there is NO `_f64` slice twin (contrast
+    // the two typed `sorted` helpers; this mirrors reverse/concat).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_slice_fn(
+                Type::F64,
+                Some(1),
+                Some(3),
+                None,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_slice_i64 (param $base i32) (param $lo i64) (param $hi i64) (result i32)"),
+        "a FLOAT list slice reuses the i64-word helper: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_slice_i64"),
+        "the float slice calls the same helper: {wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_list_slice_f64"),
+        "no dead f64 slice twin is emitted (one byte-move helper serves both): {wat}"
+    );
+}
+
+#[test]
+fn list_slice_open_bounds_default_lo_zero_hi_max() {
+    // `xs[:]` (both bounds omitted) lowers `lo` as `i64.const 0` and `hi` as
+    // `i64.const 9223372036854775807` (i64::MAX), which the helper clamps into
+    // `[0, n]` — so `xs[:]` / `xs[a:]` / `xs[:b]` all fall out of the one helper.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_slice_fn(
+                Type::I64,
+                None,
+                None,
+                None,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("i64.const 0") && wat.contains("i64.const 9223372036854775807"),
+        "omitted bounds default to 0 (lo) and i64::MAX (hi): {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_slice_i64"),
+        "the open slice still calls the helper: {wat}"
+    );
+}
+
+#[test]
+fn list_slice_helper_absent_without_use() {
+    // A module that never slices a list carries NO slice helper (gated on
+    // `module_uses_list_slice`, not `needs_heap`) — a plain per-element read fn.
+    let f = Function {
+        name: "g".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("xs".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_slice_i64"),
+        "no slice helper without a list slice: {wat}"
+    );
+}
+
+#[test]
+fn list_slice_bool_list_refused_honestly() {
+    // `xs[1:3]` over a list[bool] — the slice op is int/float (8-byte stride) only;
+    // a bool rides a 4-byte i32, so refuse honestly rather than move the wrong
+    // stride (a distinct-stride helper is deferred, matching sorted/reversed/concat).
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_slice_fn(
+                Type::Bool,
+                Some(1),
+                Some(3),
+                None,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("list[bool]") || err.contains("list[int]` / `list[float]"),
+        "bool-list slice refused: {err}"
+    );
+}
+
+#[test]
+fn list_slice_stepped_refused_honestly() {
+    // `xs[0:4:2]` — the WASM list subset slices step-1 only; a stepped slice is
+    // refused (the `xs[::-1]` reverse idiom lowers via `reversed`, not here).
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_slice_fn(
+                Type::I64,
+                Some(0),
+                Some(4),
+                Some(2),
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("STEPPED list slice") || err.contains("step 1"),
+        "stepped list slice refused: {err}"
+    );
+}
+
+#[test]
+fn list_slice_non_name_collection_refused_honestly() {
+    // `[3, 1, 2][0:2]` — the WASM subset slices a NAMED list; bind the literal
+    // first. The collection is a non-Ident, refused honestly.
+    let f = Function {
+        name: "s".into(),
+        params: vec![],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "ys".into(),
+                ty: Type::List(Box::new(Type::I64)),
+                value: Expr::Slice {
+                    collection: Box::new(Expr::ListLit(vec![
+                        Expr::LitInt(3),
+                        Expr::LitInt(1),
+                        Expr::LitInt(2),
+                    ])),
+                    lo: Some(Box::new(Expr::LitInt(0))),
+                    hi: Some(Box::new(Expr::LitInt(2))),
+                    of_str: false,
+                    step: None,
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("ys".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("non-name list") || err.contains("bind the list to a name"),
+        "non-name-collection slice refused: {err}"
+    );
+}
+
+#[test]
+fn list_slice_mixed_element_type_refused_honestly() {
+    // `ys: list[float] = xs[0:2]` where `xs: list[int]` — the WASM subset keeps the
+    // element type across a slice; a kind mismatch refuses honestly rather than
+    // misread the 8-byte words.
+    let f = Function {
+        name: "s".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::F64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "ys".into(),
+                ty: Type::List(Box::new(Type::F64)),
+                value: Expr::Slice {
+                    collection: Box::new(Expr::Ident("xs".into())),
+                    lo: Some(Box::new(Expr::LitInt(0))),
+                    hi: Some(Box::new(Expr::LitInt(2))),
+                    of_str: false,
+                    step: None,
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("ys".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("same element type") || err.contains("keeps the element type"),
+        "mixed-element slice refused: {err}"
+    );
+}
+
+/// PMAT-1256 EXECUTED WITNESS (int) — assemble + run the REAL-emitted `xs[lo:hi]`
+/// over a `list[int]` and diff against CPython. A `(data)` image lays the list at
+/// base 0 and an EMPTY list (count 0) at base 512; zero-arg exports call the
+/// single `$__wasm_list_slice_i64` helper with a variety of (lo, hi) and read back
+/// the sub-list's count/elements. This pins the correctness-critical bounds paths
+/// a fixed-bound happy-path could not exercise: a plain sub-range, a NEGATIVE `lo`
+/// / NEGATIVE `hi` (Python `+= n` normalisation), the OMITTED-`hi` default
+/// (i64::MAX clamped to n), an OUT-OF-RANGE `hi` (clamped, never a trap), an EMPTY
+/// slice (`hi < lo`, count 0, never a negative length), and an empty SOURCE.
+#[test]
+fn list_int_slice_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_int_slice_executes_in_wabt: WABT not installed");
+        return;
+    }
+    // CPython: xs=[10,20,30,40,50]. xs[1:3]==[20,30]; xs[-2:]==[40,50];
+    // xs[1:-1]==[20,30,40]; xs[3:1]==[]; xs[0:100]==xs; [][0:5]==[].
+    let xs: [i64; 5] = [10, 20, 30, 40, 50];
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_slice_fn(
+                Type::I64,
+                Some(1),
+                Some(3),
+                None,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    // 520-byte image: non-empty list @ base 0, empty list (count 0) @ base 512.
+    let mut image = vec![0u8; 520];
+    image[0..4].copy_from_slice(&(xs.len() as i32).to_le_bytes());
+    for (i, &e) in xs.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    // base 512: empty list (count 0) — already zeroed.
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "slice module exports memory: {helper_wat}"
+    );
+    // Read slice(base, lo, hi)[k] as f64: call helper, + (8 + k*8), i64.load → f64.
+    let elem = |base: i32, lo: i64, hi: i64, k: usize| {
+        format!(
+            "i32.const {base}\n    i64.const {lo}\n    i64.const {hi}\n    \
+             call $__wasm_list_slice_i64\n    i32.const {}\n    i32.add\n    \
+             i64.load\n    f64.convert_i64_s)\n",
+            8 + k * 8
+        )
+    };
+    // Read slice(base, lo, hi)'s element COUNT (i32 header) as f64.
+    let count = |base: i32, lo: i64, hi: i64| {
+        format!(
+            "i32.const {base}\n    i64.const {lo}\n    i64.const {hi}\n    \
+             call $__wasm_list_slice_i64\n    i32.load\n    f64.convert_i32_s)\n"
+        )
+    };
+    let imax = i64::MAX;
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}  \
+         (func (export \"e3\") (result f64)\n    {}  \
+         (func (export \"e4\") (result f64)\n    {}  \
+         (func (export \"e5\") (result f64)\n    {}  \
+         (func (export \"e6\") (result f64)\n    {}  \
+         (func (export \"e7\") (result f64)\n    {}  \
+         (func (export \"e8\") (result f64)\n    {}  \
+         (func (export \"e9\") (result f64)\n    {}  \
+         (func (export \"e10\") (result f64)\n    {}",
+        count(0, 1, 3),       // e0: len(xs[1:3]) == 2
+        elem(0, 1, 3, 0),     // e1: xs[1:3][0] == 20
+        elem(0, 1, 3, 1),     // e2: xs[1:3][1] == 30
+        count(0, -2, imax),   // e3: len(xs[-2:]) == 2
+        elem(0, -2, imax, 0), // e4: xs[-2:][0] == 40
+        count(0, 1, -1),      // e5: len(xs[1:-1]) == 3
+        elem(0, 1, -1, 2),    // e6: xs[1:-1][2] == 40
+        count(0, 3, 1),       // e7: len(xs[3:1]) == 0  (hi < lo → empty)
+        count(0, 0, 100),     // e8: len(xs[0:100]) == 5 (hi clamped to n)
+        elem(0, 0, imax, 4),  // e9: xs[0:][4] == 50
+        count(512, 0, 5),     // e10: len([][0:5]) == 0 (empty source)
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_int_slice")
+        .expect("assemble+run REAL-emitted list-int-slice witness");
+    // CPython oracles (verified via python3).
+    let expected = [
+        2.0,  // e0
+        20.0, // e1
+        30.0, // e2
+        2.0,  // e3
+        40.0, // e4
+        3.0,  // e5
+        40.0, // e6
+        0.0,  // e7
+        5.0,  // e8
+        50.0, // e9
+        0.0,  // e10
+    ];
+    assert_eq!(out.len(), expected.len(), "eleven exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "slice witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1256 executed witness: REAL xs[lo:hi] over list[int] emit → run ===\n\
+         negative/omitted/out-of-range/empty bounds all CPython-exact; eleven exports match"
+    );
+}
+
+/// PMAT-1256 EXECUTED WITNESS (float) — assemble + run the REAL-emitted `xs[lo:hi]`
+/// over a `list[float]` and diff against CPython. Crucially it calls the VERY SAME
+/// `$__wasm_list_slice_i64` byte-move helper (there is no f64 twin); the driver
+/// reads the sub-list's f64 elements directly (`f64.load`), confirming an f64's bit
+/// pattern survives the word-range move intact.
+#[test]
+fn list_float_slice_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_float_slice_executes_in_wabt: WABT not installed");
+        return;
+    }
+    // CPython: ys=[1.5,2.5,3.5,4.5]. ys[1:3]==[2.5,3.5]; ys[:-1]==[1.5,2.5,3.5];
+    // ys[-3:]==[2.5,3.5,4.5].
+    let ys: [f64; 4] = [1.5, 2.5, 3.5, 4.5];
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_slice_fn(
+                Type::F64,
+                Some(1),
+                Some(3),
+                None,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        helper_wat.contains("call $__wasm_list_slice_i64")
+            && !helper_wat.contains("$__wasm_list_slice_f64"),
+        "float slice uses the ONE i64-word helper: {helper_wat}"
+    );
+
+    let mut image = vec![0u8; 520];
+    image[0..4].copy_from_slice(&(ys.len() as i32).to_le_bytes());
+    for (i, &e) in ys.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "float slice module exports memory: {helper_wat}"
+    );
+    // Read slice(base, lo, hi)[k] as f64 directly (elements ARE f64 words).
+    let elem = |base: i32, lo: i64, hi: i64, k: usize| {
+        format!(
+            "i32.const {base}\n    i64.const {lo}\n    i64.const {hi}\n    \
+             call $__wasm_list_slice_i64\n    i32.const {}\n    i32.add\n    f64.load)\n",
+            8 + k * 8
+        )
+    };
+    let count = |base: i32, lo: i64, hi: i64| {
+        format!(
+            "i32.const {base}\n    i64.const {lo}\n    i64.const {hi}\n    \
+             call $__wasm_list_slice_i64\n    i32.load\n    f64.convert_i32_s)\n"
+        )
+    };
+    let imax = i64::MAX;
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}  \
+         (func (export \"e3\") (result f64)\n    {}  \
+         (func (export \"e4\") (result f64)\n    {}  \
+         (func (export \"e5\") (result f64)\n    {}",
+        elem(0, 1, 3, 0),     // e0: ys[1:3][0] == 2.5
+        elem(0, 1, 3, 1),     // e1: ys[1:3][1] == 3.5
+        count(0, 1, 3),       // e2: len(ys[1:3]) == 2
+        elem(0, 0, -1, 0),    // e3: ys[:-1][0] == 1.5
+        elem(0, -3, imax, 0), // e4: ys[-3:][0] == 2.5
+        count(0, -3, imax),   // e5: len(ys[-3:]) == 3
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_float_slice")
+        .expect("assemble+run REAL-emitted list-float-slice witness");
+    let expected = [2.5, 3.5, 2.0, 1.5, 2.5, 3.0];
+    assert_eq!(out.len(), expected.len(), "six exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "float slice witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1256 executed witness: REAL xs[lo:hi] over list[float] emit → run ===\n\
+         f64 words survive the range-move; negative/omitted bounds CPython-exact; six exports match"
+    );
+}
