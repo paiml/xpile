@@ -207,12 +207,28 @@ fn float_enumerate_executes_and_matches_cpython() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn zip_refuses_honestly() {
+fn zip_over_named_lists_now_lowers() {
+    // PMAT-1261 landed `zip(<named list>, <named list>)`; what used to refuse
+    // here now lowers. The EXECUTED value-match lives in `zip_e2e_witness.rs`;
+    // this asserts only that the paired-loop shape reaches emit without error.
     let src = "def go() -> int:\n    xs: list[int] = [1,2,3]\n    ys: list[int] = [4,5,6]\n    acc: int = 0\n    for a, b in zip(xs, ys):\n        acc = acc * 31 + a * 100 + b\n    return acc\n";
-    let err = emit(src).expect_err("zip must refuse in the WASM lane");
     assert!(
-        err.contains("zip"),
-        "zip refusal should name the shape, got: {err}"
+        emit(src).is_ok(),
+        "zip over named lists should lower after PMAT-1261: {:?}",
+        emit(src)
+    );
+}
+
+#[test]
+fn dict_items_pairs_refuses_honestly() {
+    // `for k, v in d.items()` — a `PairIterKind::Pairs` over a list of
+    // 2-tuples. Tuple-element destructuring is not in the WASM lane; refuse
+    // rather than miscompile.
+    let src = "def go() -> int:\n    d: dict[int, int] = {1: 10, 2: 20}\n    acc: int = 0\n    for k, v in d.items():\n        acc = acc * 31 + k * 100 + v\n    return acc\n";
+    let err = emit(src).expect_err("d.items() paired-iteration must refuse in the WASM lane");
+    assert!(
+        !err.is_empty(),
+        "d.items() refusal should carry a message, got empty"
     );
 }
 
