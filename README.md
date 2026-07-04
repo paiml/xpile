@@ -214,10 +214,28 @@ $ xpile transpile factorial.py --target ruchy # Python → Ruchy
 $ xpile transpile factorial.py --target lean  # Python → Lean 4
 $ xpile transpile factorial.py --target wasm  # Python → WebAssembly
 $ xpile transpile script.sh    --target shell # POSIX shell round-trip
+$ xpile transpile model.py --emit-crate ./out # emit a complete, buildable crate
 $ xpile hybrid ./project --verify             # cross-language build + differential check
 $ xpile quorum                                # contract oracle-quorum report
 $ xpile diamond                               # Diamond-tier coverage report
 ```
+
+### Universal binary
+
+`--emit-crate` writes a complete Cargo crate. If the program defines `main()`,
+that crate compiles to a **single portable WebAssembly binary** that runs on any
+OS/arch under a WASI runtime — no libc, architecture, or OS baked in:
+
+```bash
+$ xpile transpile examples/proven-model/model.py --emit-crate /tmp/model
+$ cd /tmp/model && cargo build --release --target wasm32-wasip1
+$ wasmtime run target/wasm32-wasip1/release/model.wasm    # output matches CPython
+```
+
+The emitted function carries its `// xpile-contract:` citation, so the proof
+travels with the code — the delivery vehicle for
+[proven-model-as-code](examples/proven-model/). Drop the `--target` for a native
+binary from the same crate.
 
 The generated Rust is `std`-only **except** for Python `dict`, which lowers to
 [`indexmap::IndexMap`](https://docs.rs/indexmap) to preserve insertion order (a
