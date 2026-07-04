@@ -81,6 +81,20 @@ const CASES: &[(&str, i64, &str)] = &[
     ("x\ty\tz", 3, "x  y  z"),
     ("\ta", 2, "  a"),
     ("a\tb\r\nc\td", 4, "a   b\r\nc   d"), // CRLF resets; a tab on each line
+    // ---- PMAT-1221: adversarial column-reset / negative-tabsize cases the
+    // hand-picked rows above omit. `\v` (0x0b) and `\f` (0x0c) are the two
+    // C0 controls that CPython does NOT treat as column resets — unlike
+    // `\n`/`\r` they count as ONE ordinary column and are copied verbatim, so
+    // a following tab fills to the next multiple RELATIVE to them (a naive
+    // "reset on any control char" would diverge here). A NEGATIVE tabsize
+    // drops tabs exactly like `tabsize == 0` (CPython's `if tabsize > 0` gate).
+    ("a\u{0b}b\tc", 8, "a\u{0b}b     c"), // \v does NOT reset the column
+    ("a\u{0c}b\tc", 8, "a\u{0c}b     c"), // \f does NOT reset the column
+    ("\u{0b}\t", 4, "\u{0b}   "),         // \v is col 1 → tab fills 3
+    ("\u{0c}\t", 4, "\u{0c}   "),         // \f is col 1 → tab fills 3
+    ("a\tb", -1, "ab"),                   // negative tabsize → tab dropped
+    ("ab\t", -5, "ab"),                   // negative tabsize → tab dropped
+    ("é\u{0b}\tx", 4, "é\u{0b}  x"),      // multibyte + \v (2 cols) → tab fills 2
 ];
 
 /// `(input, expected)` — the CPython ground truth for the BARE `s.expandtabs()` form
