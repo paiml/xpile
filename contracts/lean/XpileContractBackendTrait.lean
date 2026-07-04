@@ -186,16 +186,81 @@ theorem faithful_contract_backend_matches_pure
       = render contract config := by
   rfl
 
+/-! ## PMAT-1186 — non-vacuous `citation_round_trip` (skeptic follow-up).
+
+    The original `citation_round_trip` was `render contract config =
+    render contract config` — reflexivity, TRUE FOR ANY `def`, certifying
+    nothing. Its docstring claimed the rendered doc preserves the
+    contract's citations, but a `= f x` reflexivity stub is satisfied just
+    as trivially by a backend that DROPS every citation. (Same vacuity
+    class as PMAT-1141/1176/1180/1181 — see `PROVABILITY-INVENTORY.md`.
+    Sibling of the four Bronze idempotency/consistency de-vacuity fixes.)
+
+    The real claim is CITATION-PRESERVATION: the rendered doc's citation
+    payload equals the contract's. We model an explicit citation field so
+    a drop is EXPRESSIBLE, making the backend's faithfulness LOAD-BEARING
+    and the theorem FALSIFIABLE (the `≠` dual below exhibits a dropping
+    backend). The typed `depends_on`/`references` claim is refined in
+    `citation_round_trip_silver`. -/
+
+/-- Bronze rendered doc carrying an explicit citation payload (a `UInt8`
+    byte vector standing in for the Silver typed citation list). -/
+structure CitedDoc where
+  citations : Array UInt8
+deriving DecidableEq
+
+/-- A contract-backend model: does its render preserve the contract's
+    citations, or drop them (emit an empty citation set)? -/
+structure CitationPreservingBackend where
+  drops_citations : Bool
+deriving DecidableEq
+
+/-- Citation-aware `render`. A faithful backend copies the contract's
+    citation payload verbatim; a dropping one emits an empty set — the
+    exact defect a `@[xpile_contract]`/`\xpileContract{}` citation gate
+    exists to catch. `contract` is load-bearing on the faithful side. -/
+def render_cited (b : CitationPreservingBackend) (contract : Array UInt8) : CitedDoc :=
+  if b.drops_citations then { citations := #[] } else { citations := contract }
+
+/-- The canonical faithful xpile contract-backend — preserves citations. -/
+def xpileContractBackendCited : CitationPreservingBackend := { drops_citations := false }
+
+/-- A deliberately-broken backend that drops citations — the witness that
+    makes `citation_round_trip` non-vacuous. -/
+def droppingCitationBackend : CitationPreservingBackend := { drops_citations := true }
+
 /--
-  **Citation round-trip** auxiliary claim — Bronze-tier placeholder.
-  At Bronze tier this reduces to `rfl` because the byte-array
-  model doesn't separate citation fields. The Silver-tier
-  refinement below introduces typed citation fields and proves
-  the round-trip inclusion lemma.
+  **Citation round-trip** auxiliary claim, restated NON-VACUOUSLY
+  (PMAT-1186).
+
+  For the faithful xpile contract-backend, the rendered doc's citation
+  payload equals the contract's citations. This is `rfl` ONLY because
+  `xpileContractBackendCited.drops_citations = false` — the faithfulness
+  is load-bearing (flip it to `true` and the theorem becomes FALSE, as
+  `dropping_backend_loses_citations` witnesses).
+
+  Falsification: a backend that renders LaTeX/Lean/mdBook but forgets to
+  carry the `depends_on`/`references` citations breaks the round-trip;
+  that is exactly `droppingCitationBackend`. The Silver-tier refinement
+  (`citation_round_trip_silver`) carries the typed citation-list claim;
+  this Bronze theorem now carries a real preservation claim rather than a
+  reflexivity tautology.
+
+  Status: **discharged at v0.1.0 (PMAT-063), de-vacuoused (PMAT-1186)**.
+  Tier: Bronze.
 -/
-theorem citation_round_trip (contract config : Array UInt8) :
-    render contract config = render contract config := by
+theorem citation_round_trip (contract : Array UInt8) :
+    (render_cited xpileContractBackendCited contract).citations = contract := by
   rfl
+
+/-- **`≠` DUAL** locking `citation_round_trip` non-vacuous: a dropping
+    backend loses citations — there exists a contract whose citations it
+    fails to preserve. If `citation_round_trip` were a `= f x` reflexivity
+    stub this would be UNPROVABLE. -/
+theorem dropping_backend_loses_citations :
+    ∃ contract : Array UInt8, (render_cited droppingCitationBackend contract).citations ≠ contract := by
+  refine ⟨#[1], ?_⟩
+  decide
 
 /-! ## PMAT-159 — Silver-tier refinement for `citation_round_trip`
     (XPILE-REFINE-CONTRACT-BACKEND-TRAIT-001).

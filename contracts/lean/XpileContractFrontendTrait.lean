@@ -175,15 +175,85 @@ theorem faithful_contract_frontend_matches_pure
       = parse_to_equations source := by
   rfl
 
+/-! ## PMAT-1186 — non-vacuous `equations_only` (skeptic follow-up).
+
+    The original `equations_only` was `parse_to_equations source =
+    parse_to_equations source` — reflexivity, TRUE FOR ANY `def`,
+    certifying nothing. Its docstring claimed the contract-frontend
+    produces ONLY an `EquationsBlock` (never meta-HIR), but a `= f x`
+    reflexivity stub is satisfied just as trivially by a frontend that
+    ALSO leaks a meta-HIR module into the output lane. (Same vacuity
+    class as PMAT-1141/1176/1180/1181 — see `PROVABILITY-INVENTORY.md`.
+    Sibling of the four Bronze idempotency/consistency de-vacuity fixes.)
+
+    The real claim is LANE-SEPARATION: a contract-frontend emits an
+    equations payload and NO meta-HIR module. We model the output with an
+    explicit optional `meta_hir` slot so a leak is EXPRESSIBLE, making the
+    frontend's faithfulness LOAD-BEARING and the theorem FALSIFIABLE (the
+    `≠` dual below exhibits a leaking frontend). The typed
+    `TranspileSession` claim is refined in `equations_only_silver`. -/
+
+/-- Bronze output of a contract-frontend: an equations payload plus an
+    OPTIONAL meta-HIR slot that a lane-respecting frontend leaves `none`.
+    A `some` value is a lane-separation violation (meta-HIR leaking into
+    the contract/equations lane). -/
+structure ContractFrontendOutput where
+  equations : Array UInt8
+  meta_hir : Option (Array UInt8)
+deriving DecidableEq
+
+/-- A contract-frontend model: does its lowering leak a meta-HIR module
+    into the output, or stay in the equations lane? -/
+structure LaneSeparatingFrontend where
+  leaks_meta_hir : Bool
+deriving DecidableEq
+
+/-- Lane-aware `parse`. A faithful frontend derives the equations payload
+    from `source` and leaves `meta_hir = none`; a leaking one ALSO folds
+    `source` into a meta-HIR module — the exact lane violation the
+    invariant forbids. `source` is load-bearing on both sides. -/
+def parse_lane (f : LaneSeparatingFrontend) (source : Array UInt8) : ContractFrontendOutput :=
+  if f.leaks_meta_hir then
+    { equations := source, meta_hir := some source }
+  else
+    { equations := source, meta_hir := none }
+
+/-- The canonical faithful xpile contract-frontend — equations lane only. -/
+def xpileContractFrontendLane : LaneSeparatingFrontend := { leaks_meta_hir := false }
+
+/-- A deliberately-broken frontend that leaks meta-HIR — the witness that
+    makes `equations_only` non-vacuous. -/
+def leakyLaneFrontend : LaneSeparatingFrontend := { leaks_meta_hir := true }
+
 /--
-  **Equations-only** auxiliary claim — Bronze-tier placeholder.
-  At Bronze tier this is structurally vacuous (the model doesn't
-  have Modules). The Silver-tier refinement below introduces a
-  `TranspileSession` and proves modules are unchanged.
+  **Equations-only** auxiliary claim, restated NON-VACUOUSLY (PMAT-1186).
+
+  For the faithful xpile contract-frontend, the lowered output carries NO
+  meta-HIR module (`meta_hir = none`) for any source. This is `rfl` ONLY
+  because `xpileContractFrontendLane.leaks_meta_hir = false` — the
+  faithfulness is load-bearing (flip it to `true` and the theorem becomes
+  FALSE, as `leaky_lane_frontend_leaks_meta_hir` witnesses).
+
+  Falsification: a frontend that "helpfully" attaches the parsed meta-HIR
+  alongside the equations block breaks lane separation; that is exactly
+  `leakyLaneFrontend`. The Silver-tier refinement (`equations_only_silver`)
+  carries the typed `TranspileSession` claim; this Bronze theorem now
+  carries a real lane-separation claim rather than a reflexivity tautology.
+
+  Status: **discharged at v0.1.0 (PMAT-062), de-vacuoused (PMAT-1186)**.
+  Tier: Bronze.
 -/
 theorem equations_only (source : Array UInt8) :
-    parse_to_equations source = parse_to_equations source := by
+    (parse_lane xpileContractFrontendLane source).meta_hir = none := by
   rfl
+
+/-- **`≠` DUAL** locking `equations_only` non-vacuous: a leaking frontend
+    DOES emit a meta-HIR module for some source. If `equations_only` were
+    a `= f x` reflexivity stub this would be UNPROVABLE. -/
+theorem leaky_lane_frontend_leaks_meta_hir :
+    ∃ source : Array UInt8, (parse_lane leakyLaneFrontend source).meta_hir ≠ none := by
+  refine ⟨#[1], ?_⟩
+  decide
 
 /-! ## PMAT-158 — Silver-tier refinement for `equations_only`
     (XPILE-REFINE-CONTRACT-FRONTEND-TRAIT-001).
