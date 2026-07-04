@@ -573,6 +573,16 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
             collect_expr_literals(key, out);
             collect_expr_literals(default, out);
         }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into dict/key/optional
+        // default (a str key literal or a literal-hosting default must be laid
+        // into the static data table just like `d.get(k, default)`'s).
+        Expr::DictPop { dict, key, default } => {
+            collect_expr_literals(dict, out);
+            collect_expr_literals(key, out);
+            if let Some(default) = default {
+                collect_expr_literals(default, out);
+            }
+        }
         Expr::SetContains { set, elem } => {
             collect_expr_literals(set, out);
             collect_expr_literals(elem, out);
@@ -6046,6 +6056,68 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     writeln!(out, "    local.get $p").expect("write");
     writeln!(out, "  )").expect("write");
 
+    // pop: read AND remove the value at a matching key, else trap. PMAT-1225:
+    // Python `d.pop(k)`. Removal is swap-last-into-hole + count-- — O(1) and
+    // IN PLACE: the region only shrinks, so the base pointer NEVER moves (no
+    // 2x realloc, unlike `set`) and the caller keeps its dict local unchanged.
+    // The bare `d.pop(k)` KeyError analogue is the `unreachable` on the
+    // not-found tail; the 2-arg `d.pop(k, default)` form is gated by `has` at
+    // the call site (see `emit_dict_pop`), so this helper only ever runs when
+    // the key is present — an absent key on the bare form is the one that traps.
+    writeln!(
+        out,
+        "  ;; __wasm_dict_pop_{s}(p, key) -> d[key]; REMOVES the entry (swap-last-into-hole,"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  ;; count--); traps (unreachable) if absent (KeyError). Base pointer never moves."
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_pop_{s} (param $p i32) (param $k {kparam}) (result i64)"
+    )
+    .expect("write");
+    writeln!(out, "    (local $v i64) (local $last i32)").expect("write");
+    emit_dict_scan_prologue(&mut out);
+    emit_dict_key_compare(&mut out, kind);
+    writeln!(out, "        if").expect("write");
+    // v = entry.value (captured BEFORE the hole is overwritten).
+    writeln!(out, "          local.get $ea").expect("write");
+    writeln!(out, "          i64.load offset={DICT_VAL_OFFSET}").expect("write");
+    writeln!(out, "          local.set $v").expect("write");
+    // last = p + LIST_ELEMS_OFFSET + (n-1)*DICT_ENTRY_SIZE (the final entry).
+    writeln!(out, "          local.get $p").expect("write");
+    writeln!(out, "          i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "          i32.add").expect("write");
+    writeln!(out, "          local.get $n").expect("write");
+    writeln!(out, "          i32.const 1").expect("write");
+    writeln!(out, "          i32.sub").expect("write");
+    writeln!(out, "          i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "          i32.mul").expect("write");
+    writeln!(out, "          i32.add").expect("write");
+    writeln!(out, "          local.set $last").expect("write");
+    // memory.copy(dst=$ea, src=$last, ENTRY): move the last entry into the
+    // hole. A no-op when $ea == $last (popping the last-indexed entry) — the
+    // decremented count then drops it from the scan range either way.
+    writeln!(out, "          local.get $ea").expect("write");
+    writeln!(out, "          local.get $last").expect("write");
+    writeln!(out, "          i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "          memory.copy").expect("write");
+    // count = n - 1 (stored at base+0).
+    writeln!(out, "          local.get $p").expect("write");
+    writeln!(out, "          local.get $n").expect("write");
+    writeln!(out, "          i32.const 1").expect("write");
+    writeln!(out, "          i32.sub").expect("write");
+    writeln!(out, "          i32.store").expect("write");
+    writeln!(out, "          local.get $v").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    emit_dict_scan_epilogue(&mut out);
+    writeln!(out, "    unreachable").expect("write");
+    writeln!(out, "  )").expect("write");
+
     out
 }
 
@@ -7794,6 +7866,12 @@ fn expr_touches_str(e: &Expr) -> bool {
         Expr::DictGetOr { dict, key, default } => {
             expr_touches_str(dict) || expr_touches_str(key) || expr_touches_str(default)
         }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
+        Expr::DictPop { dict, key, default } => {
+            expr_touches_str(dict)
+                || expr_touches_str(key)
+                || default.as_deref().is_some_and(expr_touches_str)
+        }
         Expr::SetContains { set, elem } => expr_touches_str(set) || expr_touches_str(elem),
         _ => false,
     }
@@ -7923,6 +8001,12 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
         Expr::DictGetOr { dict, key, default } => {
             expr_has_str_slice(dict) || expr_has_str_slice(key) || expr_has_str_slice(default)
+        }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
+        Expr::DictPop { dict, key, default } => {
+            expr_has_str_slice(dict)
+                || expr_has_str_slice(key)
+                || default.as_deref().is_some_and(expr_has_str_slice)
         }
         Expr::SetContains { set, elem } => expr_has_str_slice(set) || expr_has_str_slice(elem),
         _ => false,
@@ -8054,6 +8138,13 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
         // int-to-str-hosting default) must gate `$__wasm_int_to_str`.
         Expr::DictGetOr { dict, key, default } => {
             expr_has_int_to_str(dict) || expr_has_int_to_str(key) || expr_has_int_to_str(default)
+        }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands (a
+        // `str(n)` key/default must still gate `$__wasm_int_to_str`).
+        Expr::DictPop { dict, key, default } => {
+            expr_has_int_to_str(dict)
+                || expr_has_int_to_str(key)
+                || default.as_deref().is_some_and(expr_has_int_to_str)
         }
         Expr::SetContains { set, elem } => expr_has_int_to_str(set) || expr_has_int_to_str(elem),
         _ => false,
@@ -8283,6 +8374,14 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
                 || expr_uses_str_method(key, op)
                 || expr_uses_str_method(default, op)
         }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
+        Expr::DictPop { dict, key, default } => {
+            expr_uses_str_method(dict, op)
+                || expr_uses_str_method(key, op)
+                || default
+                    .as_deref()
+                    .is_some_and(|d| expr_uses_str_method(d, op))
+        }
         Expr::SetContains { set, elem } => {
             expr_uses_str_method(set, op) || expr_uses_str_method(elem, op)
         }
@@ -8398,6 +8497,12 @@ fn expr_has_str_contains(e: &Expr) -> bool {
                 || expr_has_str_contains(key)
                 || expr_has_str_contains(default)
         }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
+        Expr::DictPop { dict, key, default } => {
+            expr_has_str_contains(dict)
+                || expr_has_str_contains(key)
+                || default.as_deref().is_some_and(expr_has_str_contains)
+        }
         Expr::SetContains { set, elem } => {
             expr_has_str_contains(set) || expr_has_str_contains(elem)
         }
@@ -8510,6 +8615,12 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
         // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
         Expr::DictGetOr { dict, key, default } => {
             expr_has_str_repeat(dict) || expr_has_str_repeat(key) || expr_has_str_repeat(default)
+        }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
+        Expr::DictPop { dict, key, default } => {
+            expr_has_str_repeat(dict)
+                || expr_has_str_repeat(key)
+                || default.as_deref().is_some_and(expr_has_str_repeat)
         }
         Expr::SetContains { set, elem } => expr_has_str_repeat(set) || expr_has_str_repeat(elem),
         _ => false,
@@ -8644,6 +8755,14 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
             expr_has_str_method_2arg(dict, target)
                 || expr_has_str_method_2arg(key, target)
                 || expr_has_str_method_2arg(default, target)
+        }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
+        Expr::DictPop { dict, key, default } => {
+            expr_has_str_method_2arg(dict, target)
+                || expr_has_str_method_2arg(key, target)
+                || default
+                    .as_deref()
+                    .is_some_and(|d| expr_has_str_method_2arg(d, target))
         }
         Expr::SetContains { set, elem } => {
             expr_has_str_method_2arg(set, target) || expr_has_str_method_2arg(elem, target)
@@ -8810,6 +8929,12 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
             expr_has_str_eq(dict, scan)
                 || expr_has_str_eq(key, scan)
                 || expr_has_str_eq(default, scan)
+        }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
+        Expr::DictPop { dict, key, default } => {
+            expr_has_str_eq(dict, scan)
+                || expr_has_str_eq(key, scan)
+                || default.as_deref().is_some_and(|d| expr_has_str_eq(d, scan))
         }
         Expr::SetContains { set, elem } => {
             expr_has_str_eq(set, scan) || expr_has_str_eq(elem, scan)
@@ -9032,6 +9157,14 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // heap-constructed key/default pulls in the allocator — recurse.
         Expr::DictGetOr { dict, key, default } => {
             expr_has_heap_op(dict) || expr_has_heap_op(key) || expr_has_heap_op(default)
+        }
+        // PMAT-1225: `d.pop(k[, default])` — recurse into all operands so a
+        // heap-constructed key/default still pulls in the allocator. `pop`
+        // itself allocates nothing (it shrinks in place), so no extra flag.
+        Expr::DictPop { dict, key, default } => {
+            expr_has_heap_op(dict)
+                || expr_has_heap_op(key)
+                || default.as_deref().is_some_and(expr_has_heap_op)
         }
         Expr::SetContains { set, elem } => expr_has_heap_op(set) || expr_has_heap_op(elem),
         _ => false,
@@ -9820,6 +9953,14 @@ fn emit_stmt(
                         indent(out, depth);
                         writeln!(out, "drop").expect("write");
                     }
+                }
+                // PMAT-1225: `d.pop(k)` used as a bare statement (its value
+                // discarded) — emit the pop (which performs the in-place
+                // removal, the point of the statement) and drop the i64 value.
+                Expr::DictPop { .. } => {
+                    emit_expr(call, scope, out, depth)?;
+                    indent(out, depth);
+                    writeln!(out, "drop").expect("write");
                 }
                 other => {
                     return Err(unsupported(&format!(
@@ -10815,6 +10956,12 @@ fn emit_expr(
         // instead of trapping (the non-trapping sibling of `d[k]`).
         Expr::DictGetOr { dict, key, default } => {
             emit_dict_get_or(dict, key, default, scope, out, depth)
+        }
+        // PMAT-1225: `d.pop(k)` / `d.pop(k, default)` — a dict read that ALSO
+        // removes the entry. The bare form TRAPS on an absent key (KeyError);
+        // the 2-arg form is total (absent → the int `default`, no mutation).
+        Expr::DictPop { dict, key, default } => {
+            emit_dict_pop(dict, key, default.as_deref(), scope, out, depth)
         }
         // PMAT-995 (slice 3b): `k in d` / `x in s` — i32 bool membership.
         Expr::DictContains { dict, key } => emit_dict_contains(dict, key, scope, out, depth),
@@ -12132,6 +12279,64 @@ fn emit_dict_get_or(
     emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
     indent(out, depth);
     writeln!(out, "end").expect("write");
+    Ok(WatTy::I64)
+}
+
+/// PMAT-1225: lower `d.pop(k)` / `d.pop(k, default)` (`Expr::DictPop`) — a dict
+/// read that ALSO REMOVES the entry. The keyed `pop` helper
+/// (`$__wasm_dict_pop_<k>`, i64) scans for the key, captures its value, swaps
+/// the last entry into the hole, decrements the count, and returns the value;
+/// removal shrinks the region in place, so the dict's base pointer never moves
+/// and — unlike `d[k] = v` ([`emit_dict_set`]) — there is NO local write-back.
+///
+/// The bare `d.pop(k)` (`default: None`) traps (unreachable) on an absent key,
+/// exactly CPython's KeyError. The 2-arg `d.pop(k, default)` never traps: the
+/// membership helper (`$__wasm_dict_has_<k>`, i32) gates the MUTATING `pop` so
+/// it runs ONLY when the key is present; an absent key falls to the int
+/// `default` WITHOUT mutating — the same `if has then … else default` shape as
+/// [`emit_dict_get_or`], but the present branch pops (removes+returns) rather
+/// than reads. Both `if` arms and the value lower to i64. As in `emit_dict_get_or`
+/// the key expression is emitted twice on the 2-arg path (once per helper call)
+/// — cheap and side-effect-free for the literal/ident keys this subset admits.
+fn emit_dict_pop(
+    dict: &Expr,
+    key: &Expr,
+    default: Option<&Expr>,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let (name, kind) = dict_ident_kind(dict, scope)?;
+    match default {
+        // d.pop(k): unconditional pop; the helper's not-found tail traps.
+        None => {
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_dict_pop_{}", kind.suffix()).expect("write");
+        }
+        // d.pop(k, default): if has(p,k) then pop(p,k) else default.
+        Some(default) => {
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
+            indent(out, depth);
+            writeln!(out, "if (result i64)").expect("write");
+            indent(out, depth + 1);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth + 1)?;
+            indent(out, depth + 1);
+            writeln!(out, "call $__wasm_dict_pop_{}", kind.suffix()).expect("write");
+            indent(out, depth);
+            writeln!(out, "else").expect("write");
+            emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
+            indent(out, depth);
+            writeln!(out, "end").expect("write");
+        }
+    }
     Ok(WatTy::I64)
 }
 
