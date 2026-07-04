@@ -9255,6 +9255,22 @@ fn expr_has_list_sum(e: &Expr) -> bool {
             expr_has_list_sum(dict) || expr_has_list_sum(key) || expr_has_list_sum(default)
         }
         Expr::SetContains { set, elem } => expr_has_list_sum(set) || expr_has_list_sum(elem),
+        // PMAT-1248: a `sum(xs)` can be nested inside a `seq * count` repeat's
+        // COUNT (`"ab" * sum(xs)`, the int-repeat form — the sibling
+        // `expr_has_str_repeat` covers this arm too), or inside a container
+        // literal / struct field (`[sum(xs)]`, `Point(x=sum(xs))`). Recurse
+        // into each so the helper is never left undeclared at a
+        // `call $__wasm_list_sum_i64` site (the recurring gate-hole class:
+        // over-detecting is harmless — a valid unused WAT function — but
+        // under-detecting is a hard wat2wasm failure).
+        Expr::Repeat { seq, n, .. } => expr_has_list_sum(seq) || expr_has_list_sum(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => {
+            xs.iter().any(expr_has_list_sum)
+        }
+        Expr::DictLit(kvs) => kvs
+            .iter()
+            .any(|(k, v)| expr_has_list_sum(k) || expr_has_list_sum(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_list_sum(v)),
         _ => false,
     }
 }

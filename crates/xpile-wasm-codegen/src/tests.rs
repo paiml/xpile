@@ -1260,6 +1260,45 @@ fn list_sum_fn2_index() -> Function {
 }
 
 #[test]
+fn list_int_sum_nested_in_str_repeat_count_gates_helper() {
+    // PMAT-1248 gate-hole regression (found by adversarial self-review): a
+    // `sum(xs)` nested in a `seq * count` repeat's COUNT (`"ab" * sum(xs)`) must
+    // still declare `$__wasm_list_sum_i64` — the `expr_has_list_sum` gate walker
+    // has to recurse into `Expr::Repeat.n`, or the emitted `call` would reference
+    // an undeclared helper (a hard wat2wasm failure). Before the `Expr::Repeat`
+    // arm was added the walker fell through `_ => false` here.
+    let f = Function {
+        name: "f".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Repeat {
+                seq: Box::new(Expr::LitStr("ab".into())),
+                n: Box::new(Expr::Sum {
+                    list: Box::new(Expr::Ident("xs".into())),
+                    of_float: false,
+                    start: None,
+                }),
+                of_str: true,
+            },
+        },
+    };
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_sum_i64 (param $base i32) (result i64)"),
+        "nested-in-repeat-count sum still declares the reduction helper: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_sum_i64"),
+        "the nested sum lowers to a helper call: {wat}"
+    );
+}
+
+#[test]
 fn list_float_sum_refused_honestly() {
     // PMAT-1248: `sum(xs)` over a list[float] (`Expr::Sum { of_float: true }`)
     // is refused — the i64 helper would mis-reduce f64 elements. Honest error,
