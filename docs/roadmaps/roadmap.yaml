@@ -14579,3 +14579,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1246
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1246: [wasm/runtime/set] native-WASM `a.isdisjoint(b)` — the no-common-element predicate, completing the set-predicate family (`SetPredOp::Disjoint`). PMAT-1244/1245 wired set ORDERING (`<=`/`<`/`>=`/`>`) via `$__wasm_set_subset_<k>` but refused `isdisjoint` honestly (disjoint is NOT subset). FIX (single crate — xpile-wasm-codegen/src/lib.rs): a new `$__wasm_set_disjoint_<k>(p,q)->i32` helper in `dict_helpers_for` — the DUAL walk of subset. Subset returns 0 on the FIRST key of p ABSENT from q; disjoint returns 0 on the FIRST key of p PRESENT in q. Reuses the never-trapping `$__wasm_dict_has_<k>` to probe q (already forced by a set of that kind → NO new helper dependency). `emit_set_pred` routes `SetPredOp::Disjoint` to it BEFORE the subset (sub,sup) match (its own path — disjoint has NO cardinality relation so there is no size gate and no operand swap to share). NO cardinality relation (a size-1 set can be disjoint from a size-100 one). SYMMETRIC (p∩q=∅ ⇔ q∩p=∅). Two EMPTY sets are disjoint. Order-INDEPENDENT — survives a swap-into-hole discard. NO new Expr variant (Expr::SetPred already exists → every expr_has_*/collect_* walker already covers it). Set ALGEBRA (union/intersection/difference) stays refused honestly.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open), forward_ev_ranking rank 2 (HEAP/STRING/DICT runtime). Completes the set-predicate family PMAT-1242/1243/1244/1245 built: equality, subset/superset ordering, and now the no-common-element predicate. Only set ALGEBRA (union/intersection/difference — which allocate) remains refused."
+  - "IMPL (single crate — xpile-wasm-codegen/src/lib.rs): $__wasm_set_disjoint_<k> added to dict_helpers_for right after $__wasm_set_subset_<k> (the DUAL walk); emit_set_pred routes SetPredOp::Disjoint to it with a direct (lhs,rhs) call (no swap, no size gate), the subset (sub,sup) match reduced to the four ordering ops. NO new helper (reuses $__wasm_dict_has_<k>), NO meta-HIR/other-codegen/gate-walker edit."
+  - "REGRESSION WITNESS: new gated crates/xpile-wasm-codegen/tests/set_disjoint_witness.rs (3 tests). CONSTRUCT test asserts both int+str disjoint helpers are emitted AND called, reuse $__wasm_dict_has_<k>, and that the disjoint program does NOT call the subset helper. EXECUTED (WABT wat2wasm→wasm-interp + live python3): 14 zero-arg bool exports VALUE-MATCHING CPython — genuine disjoint, single-key overlap, equal, subset-relation overlap, size-asymmetric disjoint, symmetry (both directions), all empty-set edges, order-independence after a discard, str-keyed content compare. Existing set_pred_witness.rs updated: disjoint-refusal assertion removed (renamed set_pred_refuses_mixed). PLUS a manual E2E xpile transpile dj_e2e.py --target wasm → wat2wasm → wasm-interp == CPython over int+str keyed isdisjoint."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen. Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM + C-WASM-HEAP."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
