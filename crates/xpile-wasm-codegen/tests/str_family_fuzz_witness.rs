@@ -16,7 +16,8 @@
 //! Allocating string→string transforms:
 //!   `upper` `lower` `capitalize` `swapcase` `title` `strip` `lstrip` `rstrip`
 //! Non-allocating string→bool predicates:
-//!   `isdigit` `isalpha` `isspace` `isalnum` `isupper` `islower` `isascii`
+//!   `isdigit` `isnumeric` `isalpha` `isspace` `isalnum` `isupper` `islower`
+//!   `isascii`
 //!
 //! ## Why ASCII-only inputs
 //!
@@ -61,6 +62,9 @@ const TRANSFORMS: &[(StrMethodOp, &str, &str)] = &[
 /// The non-allocating string→bool predicates: (op, kernel name, CPython method).
 const PREDICATES: &[(StrMethodOp, &str, &str)] = &[
     (StrMethodOp::IsDigit, "isdigit", "isdigit"),
+    // PMAT-1211: isnumeric shares the isdigit byte scan (≡ isdigit over ASCII, both
+    // trap on non-ASCII); the ASCII-only corpus exercises the byte-exact domain.
+    (StrMethodOp::IsNumeric, "isnumeric", "isnumeric"),
     (StrMethodOp::IsAlpha, "isalpha", "isalpha"),
     (StrMethodOp::IsSpace, "isspace", "isspace"),
     (StrMethodOp::IsAlnum, "isalnum", "isalnum"),
@@ -543,7 +547,8 @@ fn str_family_matches_cpython_over_random_ascii_corpus() {
     eprintln!(
         "PMAT-1207: all {ran} (input × op) pairs executed in WABT and matched live \
          python3 — no silent divergence across upper/lower/capitalize/swapcase/title/\
-         strip/lstrip/rstrip + isdigit/isalpha/isspace/isalnum/isupper/islower/isascii."
+         strip/lstrip/rstrip + isdigit/isnumeric/isalpha/isspace/isalnum/isupper/\
+         islower/isascii."
     );
 }
 

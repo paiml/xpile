@@ -6677,7 +6677,21 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // helper and only needs the `(memory …)` its payload load reads (pulled in
     // below, alongside `needs_startswith`/`needs_endswith`, whichever way the
     // receiver reaches memory).
-    let needs_isdigit = module_uses_str_method(module, StrMethodOp::IsDigit);
+    //
+    // PMAT-1211: `s.isnumeric()` (`IsNumeric`) SHARES this exact helper. On the
+    // ASCII-decidable domain the numeric characters are exactly `'0'`–`'9'`
+    // (`0x30`–`0x39`, all Unicode category Nd), so `isnumeric` and `isdigit`
+    // compute the identical function over an all-ASCII string; and on the
+    // UNDECIDABLE non-ASCII domain (where `isnumeric`'s Nd/Nl/No superset — `"½"`,
+    // Roman numerals — would decide differently) BOTH must trap (this scalar lane
+    // carries no Unicode table). The isdigit scan already traps on a non-ASCII byte
+    // reached with an all-digit prefix and short-circuits `0` on a leading ASCII
+    // non-digit (`"a½".isnumeric()` → `0`, matching Python), so it is byte-exact
+    // for `isnumeric` on precisely the inputs it is byte-exact for `isdigit`. So
+    // either op present emits the one `$__wasm_str_isdigit` helper (like `isupper`
+    // /`islower` share `$__wasm_str_isupper_islower`) — no duplicate scan.
+    let needs_isdigit = module_uses_str_method(module, StrMethodOp::IsDigit)
+        || module_uses_str_method(module, StrMethodOp::IsNumeric);
     // PMAT-1191: `s.isalpha()` (`Expr::StrMethod`, op `IsAlpha`) — the predicate
     // twin of `isdigit`: a bool (i32) `1` iff `s` is non-empty and every code
     // point is an ASCII letter. Same non-allocating byte scan — it does NOT ride
@@ -9987,6 +10001,26 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_isdigit").expect("write");
             Ok(WatTy::I32)
         }
+        // PMAT-1211: `s.isnumeric()` — reuses the `$__wasm_str_isdigit` byte scan.
+        // On the ASCII-decidable domain the only numeric characters are `'0'`–`'9'`
+        // (all Unicode Nd), so `isnumeric` ≡ `isdigit` over an all-ASCII string;
+        // and on the non-ASCII domain (where `isnumeric`'s Nd/Nl/No superset — `"½"`
+        // etc. — would decide differently) the scan TRAPS, exactly as it must (this
+        // lane has no Unicode table). A leading ASCII non-digit still short-circuits
+        // to `0` before any non-ASCII byte (`"a½".isnumeric()` → False), matching
+        // Python. So the isdigit helper is byte-exact for `isnumeric` on precisely
+        // the inputs it is byte-exact for `isdigit` — no separate helper (cf.
+        // `isupper`/`islower` sharing `$__wasm_str_isupper_islower`).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsNumeric,
+            args,
+        } if args.is_empty() => {
+            emit_str_expr(recv, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_isdigit").expect("write");
+            Ok(WatTy::I32)
+        }
         // PMAT-1191: `s.isalpha()` — a bool (i32) predicate: `1` iff `s` is
         // non-empty and every code point is an ASCII letter 'A'..'Z'/'a'..'z'.
         // The receiver lowers to an i32 base-pointer (`emit_str_expr`), then the
@@ -10085,9 +10119,9 @@ fn emit_expr(
              `.find(p, start)`, `.rfind(p)`, `.rfind(p, start)`, `.index(p)`, \
              `.rindex(p)`, `.removeprefix(p)`, `.removesuffix(p)`, \
              `.replace(old, new)`, `.replace(old, new, count)`, `.isdigit()`, \
-             `.isalpha()`, `.isspace()`, `.isalnum()`, `.isupper()`, \
-             `.islower()`, and `.isascii()` are supported; the other is* \
-             predicates (isnumeric/istitle/…), upper/lower/strip/split/…, the \
+             `.isnumeric()`, `.isalpha()`, `.isspace()`, `.isalnum()`, \
+             `.isupper()`, `.islower()`, and `.isascii()` are supported; the other \
+             is* predicates (istitle/isdecimal/…), upper/lower/strip/split/…, the \
              3-arg `.find`/`.rfind`(p, start, end), and the start/end forms of \
              index/rindex/count are refused"
         ))),
