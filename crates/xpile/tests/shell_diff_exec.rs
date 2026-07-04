@@ -121,6 +121,13 @@ fn run_shell(fixture_path: &std::path::Path) -> Result<String, String> {
 /// transpilation + /bin/sh execution. Byte-for-byte deterministic.
 const REALISTIC_DEMO_EXPECTED: &str = "hello world\nhow are you\nHi, Noah Gift\nstarted zero done";
 
+/// PMAT-1268 expected output of `bashrs_for_loop_demo.sh` after
+/// transpilation + /bin/sh execution. Byte-for-byte deterministic:
+/// the single-line loop prints `item 1..3`, the multi-line loop
+/// prints `hello`/`bye` for `alice` then `bob`.
+const FOR_LOOP_DEMO_EXPECTED: &str =
+    "item 1\nitem 2\nitem 3\nhello alice\nbye alice\nhello bob\nbye bob";
+
 #[test]
 fn shell_diff_demo_realistic_shell_input_round_trip() {
     // PMAT-052: a `.sh` fixture that exercises every Layer B
@@ -148,6 +155,47 @@ fn shell_diff_demo_realistic_shell_input_round_trip() {
          one of the Layer B parser / renderer paths regressed.\n\
          === expected ===\n{REALISTIC_DEMO_EXPECTED}\n\
          === actual  ===\n{actual}"
+    );
+}
+
+#[test]
+fn shell_diff_demo_for_loop_round_trip() {
+    // PMAT-1268: a `.sh` fixture containing real `for` loops flows
+    // through bashrs-frontend's new loop parser → mHIR
+    // (`Stmt::ShellLoop` / `LoopKind::For`) → bashrs-backend
+    // (`render_shell_loop`) → /bin/sh, producing deterministic
+    // output. This is the FIRST shell control-flow construct to
+    // round-trip end-to-end in xpile.
+    //
+    // Load-bearing anti-regression: before PMAT-1268 the frontend
+    // REFUSED every loop (PMAT-989 — refuse rather than shred into
+    // barewords). A real execution witness (the loop body actually
+    // runs and its stdout is compared) is what proves the loop is
+    // parsed + emitted faithfully, not silently dropped — the exact
+    // failure mode (`do : # pending` placeholder that ate the body)
+    // that motivated the refusal.
+    if !have_python_and_sh() {
+        eprintln!(
+            "warning: skipping PMAT-1268 for-loop round-trip — /bin/sh not on PATH. \
+             CI environments with /bin/sh will still run this gate."
+        );
+        return;
+    }
+    let sh_path = fixture("bashrs_for_loop_demo.sh");
+    let actual = run_shell(&sh_path).expect("shell run");
+    assert_eq!(
+        actual, FOR_LOOP_DEMO_EXPECTED,
+        "bashrs for-loop demo output diverged. The frontend loop parser or the \
+         backend loop renderer regressed (or the loop body was dropped/shredded).\n\
+         === expected ===\n{FOR_LOOP_DEMO_EXPECTED}\n\
+         === actual  ===\n{actual}"
+    );
+    // Anchor the content so a future fixture edit can't make this
+    // test pass on empty / degenerate output (a shredded loop would
+    // print nothing here).
+    assert!(
+        actual.contains("item 1") && actual.contains("bye bob"),
+        "expected both loops' output present; the loop body may have been dropped: {actual}"
     );
 }
 

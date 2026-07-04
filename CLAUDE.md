@@ -42,24 +42,35 @@ and `crates/bashrs-backend/` exist as workspace members alongside
 `crates/depyler-frontend/` etc. as of v0.1.0 (PMAT-037..058 +
 PMAT-085..092 + PMAT-119 polish; see
 [`docs/specifications/sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md)).
-**Scope (be honest about it — PMAT-989):** the bashrs frontend
-handles the FLAT-command subset only — quoting (`'...'` / `"..."`),
-`$VAR`, `$(...)` / backtick command substitution, pipelines, and
-single-value assignment (`VAR=value`). Shell CONTROL-FLOW (loops
-`for`/`while`/`until`, conditionals `if`/`case`) is NOT handled: the
-frontend now REFUSES it with a hard `FrontendError` rather than
-silently shredding it into barewords (real `Stmt::ShellLoop`
-production is the v0.2.0 "real bashrs parser" job). The
-`C-BASHRS-POSIX-IDEMPOTENCE` contract holds for that flat-command
-subset under its §14.4 stratum coverage — it does NOT certify
-control-flow round-tripping (out of scope until the v0.2.0 fold).
-Do not claim the frontend "handles realistic POSIX shell idioms"
-in general; it handles the flat-command subset and refuses the
-rest. See CHANGELOG PMAT-085..092 + PMAT-119 for the flat-subset
-round-trip invariant lock-in series, and PMAT-989 for the
-control-flow refusal. The "v0.2.0 merger" framing was superseded
-for the flat subset — but control-flow parsing genuinely remains
-v0.2.0 work.
+**Scope (be honest about it — PMAT-989 / PMAT-1268):** the bashrs
+frontend handles the FLAT-command subset — quoting (`'...'` /
+`"..."`), `$VAR`, `$(...)` / backtick command substitution,
+pipelines, and single-value assignment (`VAR=value`) — PLUS, as of
+PMAT-1268, the `for … in <items>; do <flat-body> done` loop dialect
+(both single-line and multi-line forms; it lowers to
+`Stmt::ShellLoop { LoopKind::For, .. }` and round-trips through
+bashrs-backend to executable POSIX — see the
+`shell_diff_demo_for_loop_round_trip` execution witness). The
+for-body must itself be flat: NESTED loops are still refused. The
+REST of shell CONTROL-FLOW — `while`/`until` loops and `if`/`case`
+conditionals — is still NOT handled: the frontend REFUSES it with a
+hard `FrontendError` rather than silently shredding it into
+barewords (real `while`/`until`/`if`/`case` production is the v0.2.0
+"real bashrs parser" job; the `LoopKind::While`/`Until` IR and
+backend renderer already exist, so those are the next cheap slices,
+but the frontend parser + the `[ … ]`-test modelling are not done).
+The `C-BASHRS-POSIX-IDEMPOTENCE` contract holds for the flat-command
+subset AND the flat-body `for` loop under its §14.4 stratum
+coverage — it does NOT certify while/until/if/case or nested-loop
+round-tripping (out of scope until the v0.2.0 fold). Do not claim
+the frontend "handles realistic POSIX shell idioms" in general, or
+that it "handles shell control-flow" — it handles the flat-command
+subset plus the flat-body `for` loop, and refuses the rest. See
+CHANGELOG PMAT-085..092 + PMAT-119 for the flat-subset round-trip
+invariant lock-in series, PMAT-989 for the control-flow refusal, and
+PMAT-1268 for the `for`-loop parser. The "v0.2.0 merger" framing was
+superseded for the flat subset and the `for` loop — but
+while/until/if/case parsing genuinely remains v0.2.0 work.
 
 Concrete workflow when shell artifacts become necessary:
 

@@ -21,7 +21,7 @@
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    Block, Expr, Function, Item, Module, QuotingStrategy, SourceLang, Stmt, Type,
+    Block, Expr, Function, Item, LoopKind, Module, QuotingStrategy, SourceLang, Stmt, Type,
 };
 
 /// PMAT-049: raw token produced by the bashrs-frontend tokenizer.
@@ -587,6 +587,355 @@ fn control_flow_keyword(line: &str) -> Option<&'static str> {
     None
 }
 
+/// The first whitespace-delimited word of a (already-trimmed) line,
+/// or `""` if the line is blank. Used for command-position keyword
+/// checks (`for` / `do` / `done`).
+fn first_word(s: &str) -> &str {
+    s.split_whitespace().next().unwrap_or("")
+}
+
+/// PMAT-1268: lower a single FLAT (non-control-flow) shell line to a
+/// `Stmt`. Extracted verbatim from `parse_and_lower`'s inline body so
+/// that `for`-loop bodies and the top-level walk share one lowering
+/// path (the same DRY move PMAT-974 made on the backend's
+/// `render_stmt_lines`).
+///
+/// Preconditions the caller guarantees: `line` is already trimmed,
+/// non-empty, not a comment/shebang, and NOT shell control-flow
+/// (`control_flow_keyword(line)` is `None`). Returns `Ok(None)` only
+/// for a line that tokenizes to zero tokens (defensive; the caller's
+/// filtering makes this unreachable in practice).
+fn lower_flat_line(line: &str) -> Result<Option<Stmt>, FrontendError> {
+    // PMAT-051: detect `NAME=value` variable assignment at
+    // the start of a line. Recognises the canonical POSIX
+    // form: one bareword token whose name part is a
+    // POSIX-legal identifier, immediately followed by `=`,
+    // immediately followed by the value (the rest of the
+    // first token; further whitespace-separated tokens on
+    // the line are NOT supported at v0.1.0 — that'd be the
+    // `VAR=val cmd args` "exported once for next command"
+    // POSIX form). Whitespace around `=` is disallowed by
+    // POSIX, and we follow.
+    if let Some(eq_idx) = line.find('=') {
+        let name_part = &line[..eq_idx];
+        let value_part = &line[eq_idx + 1..];
+        if is_posix_identifier(name_part) {
+            // Tokenize the value_part so we can distinguish:
+            //   - exactly one token → `Stmt::ShellAssign`
+            //   - multiple tokens → POSIX's
+            //     `VAR=val cmd args` "exported for next
+            //     command" form (not supported at v0.1.0)
+            // This is quoting-aware — `NAME="Noah Gift"` is
+            // one (DoubleQuoted) token, not two barewords.
+            let value_tokens = tokenize_line(value_part)?;
+            match value_tokens.len() {
+                0 => {
+                    // `NAME=` with empty value — POSIX-legal,
+                    // means unset / empty. We model as
+                    // LitStr("").
+                    return Ok(Some(Stmt::ShellAssign {
+                        name: name_part.to_string(),
+                        value: Expr::LitStr(String::new()),
+                    }));
+                }
+                1 => {
+                    let value_expr = lower_raw_token(&value_tokens[0])?;
+                    return Ok(Some(Stmt::ShellAssign {
+                        name: name_part.to_string(),
+                        value: value_expr,
+                    }));
+                }
+                _ => {
+                    // Multi-token RHS = the
+                    // `VAR=val cmd args` POSIX form.
+                    // Reject at v0.1.0 — it's a less-used
+                    // idiom and supporting it correctly
+                    // requires modelling temporary-export
+                    // semantics. Fall through is *not*
+                    // safe (the line doesn't pipe or
+                    // bareword-command cleanly); error
+                    // explicitly.
+                    return Err(FrontendError::Lower(format!(
+                        "shell line `{line}` has `VAR=val cmd args` shape — \
+                         v0.1.0 supports only single-value assignments \
+                         (`VAR=value` on its own line)"
+                    )));
+                }
+            }
+        }
+    }
+
+    // PMAT-041: detect pipeline via `|` separator between
+    // command stages. A line without `|` produces a single
+    // `Stmt::Cmd`; a line with `|` produces a `Stmt::Pipeline`
+    // whose stages are each a Cmd built from that segment's
+    // tokens. The split is naive (no quoting awareness yet)
+    // — `echo "a | b" | cat` is parsed as three stages, not
+    // two with embedded pipe; that improves at v0.2.0 with
+    // the real bashrs parser.
+    //
+    // PMAT-088: distinguish single `|` (pipe) from `||`
+    // (short-circuit OR). A line that contains `||` but NOT
+    // a single `|` falls through to `Stmt::Cmd` so the
+    // `||` tokens survive as ordinary `LitStr` args. The
+    // shell at execution time re-interprets `||` as a
+    // short-circuit operator. The control-structure-faithful
+    // representation (`Stmt::ShortCircuit { lhs, op, rhs }`)
+    // is XPILE-BASHRS-LOGICAL-OPS-001 future work.
+    if line_has_unambiguous_pipe(line) {
+        let mut stages: Vec<Stmt> = Vec::new();
+        for segment in line.split('|') {
+            let trimmed = segment.trim();
+            if trimmed.is_empty() {
+                // Reject `cmd | | cmd` and `| cmd` /
+                // `cmd |` shapes — they're either empty
+                // stages or trailing/leading pipes that
+                // POSIX sh would reject too.
+                return Err(FrontendError::Lower(format!(
+                    "shell pipeline at line `{line}` has an empty stage \
+                     (leading, trailing, or `| |`); each stage must be a \
+                     non-empty command"
+                )));
+            }
+            // PMAT-049: quoting-aware tokenizer. The program
+            // name must be a Bare token (a quoted program
+            // name is unusual and unsupported at v0.1.0).
+            let raw_tokens = tokenize_line(trimmed)?;
+            let mut iter = raw_tokens.iter();
+            let Some(first) = iter.next() else {
+                continue;
+            };
+            let program = match first {
+                RawToken::Bare(s) => s.clone(),
+                _ => {
+                    return Err(FrontendError::Lower(format!(
+                        "shell pipeline stage `{trimmed}` starts with a quoted \
+                         program name; v0.1.0 requires the program to be a \
+                         bareword token"
+                    )));
+                }
+            };
+            let args: Vec<Expr> = iter.map(lower_raw_token).collect::<Result<Vec<_>, _>>()?;
+            stages.push(Stmt::Cmd { program, args });
+        }
+        if stages.len() < 2 {
+            // Containing `|` but yielding fewer than 2 stages
+            // means the user wrote a degenerate pipeline
+            // (e.g., `||` is shell-OR, which we don't support;
+            // also rejected above as empty-stage). Defensive
+            // belt-and-braces.
+            return Err(FrontendError::Lower(format!(
+                "shell pipeline at line `{line}` parses to {} stage(s); \
+                 need ≥2 (use a single command without `|` for one-stage \
+                 invocations)",
+                stages.len()
+            )));
+        }
+        return Ok(Some(Stmt::Pipeline { stages }));
+    }
+
+    // PMAT-049: quoting-aware tokenizer. Same logic as the
+    // pipeline-stage version above.
+    let raw_tokens = tokenize_line(line)?;
+    let mut iter = raw_tokens.iter();
+    let Some(first) = iter.next() else {
+        return Ok(None);
+    };
+    let program = match first {
+        RawToken::Bare(s) => s.clone(),
+        _ => {
+            return Err(FrontendError::Lower(format!(
+                "shell line `{line}` starts with a quoted program name; \
+                 v0.1.0 requires the program to be a bareword token"
+            )));
+        }
+    };
+    let args: Vec<Expr> = iter.map(lower_raw_token).collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(Stmt::Cmd { program, args }))
+}
+
+/// PMAT-1268: parse a `for VAR in ITEMS` header segment into its
+/// loop variable and item `Expr`s. `header` is the command-position
+/// segment BEFORE the `do` keyword (structural `;`/newline splitting
+/// already stripped any `; do …` tail). Refuses — never shreds —
+/// anything outside the slice-1 subset.
+fn parse_for_header(header: &str) -> Result<(String, Vec<Expr>), FrontendError> {
+    let tokens = tokenize_line(header)?;
+    let mut it = tokens.iter();
+    // tokens[0] must be the bareword `for` (the caller only reaches
+    // here for a `for`-first line, but re-check defensively).
+    match it.next() {
+        Some(RawToken::Bare(w)) if w == "for" => {}
+        _ => {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: malformed `for` header `{header}` (expected `for`)"
+            )));
+        }
+    }
+    let var = match it.next() {
+        Some(RawToken::Bare(v)) if is_posix_identifier(v) => v.clone(),
+        other => {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: `for` loop variable must be a POSIX identifier, \
+                 got {other:?} in header `{header}`"
+            )));
+        }
+    };
+    match it.next() {
+        Some(RawToken::Bare(w)) if w == "in" => {}
+        None => {
+            // `for x; do …` iterates the positional parameters
+            // (`"$@"`). That's a distinct semantics we don't model
+            // at slice 1 — refuse rather than guess an item list.
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: `for {var}` without an explicit `in <items>` iterates \
+                 the positional parameters (`$@`) — unsupported at this slice; \
+                 use `for {var} in <items>; do … done`"
+            )));
+        }
+        other => {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: expected `in` after `for {var}`, got {other:?}"
+            )));
+        }
+    }
+    let mut items: Vec<Expr> = Vec::new();
+    for tok in it {
+        // A stray `do` in the item list means the header was not
+        // separated from `do` by `;` or a newline (invalid POSIX);
+        // refuse rather than fold `do` into the item list.
+        if let RawToken::Bare(w) = tok {
+            if w == "do" {
+                return Err(FrontendError::Parse(format!(
+                    "bashrs-frontend: `for` header `{header}` is not separated from `do` \
+                     by `;` or a newline; write `for {var} in …; do` or put `do` on its \
+                     own line"
+                )));
+            }
+        }
+        items.push(lower_raw_token(tok)?);
+    }
+    Ok((var, items))
+}
+
+/// PMAT-1268: parse a POSIX `for VAR in ITEMS; do BODY; done` loop
+/// beginning at `lines[start]` (lines are pre-trimmed). Returns the
+/// built `Stmt::ShellLoop` and the index of the line AFTER the
+/// matching `done`.
+///
+/// SLICE-1 SCOPE (honest boundary): only the `for` dialect, and only
+/// a FLAT loop body (each body command is a plain Cmd / Pipeline /
+/// ShellAssign). NESTED control-flow inside the body (another `for`,
+/// or any `while`/`until`/`if`/`case`) is REFUSED, as are trailing
+/// constructs after `done` (redirects, `&`, chained commands).
+/// `while`/`until`/`if`/`case` headers themselves are still refused
+/// by the caller. The structural `;`/newline split of the loop
+/// skeleton is not quoting-aware — a `;` inside a quoted item
+/// mis-splits, but that degrades to a tokenizer error (unbalanced
+/// quote) and thus a clean REFUSE, never a silent shred.
+fn parse_for_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
+    // Collect the loop's command-position segments — split by both
+    // `;` and physical newline (equivalent POSIX command separators)
+    // — from the header line through the matching `done`.
+    let mut segments: Vec<String> = Vec::new();
+    let mut idx = start;
+    let mut next_after = None;
+    while idx < lines.len() {
+        let line = lines[idx];
+        idx += 1;
+        // Blank and comment lines inside the loop region are inert.
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut hit_done = false;
+        for seg in line.split(';') {
+            let seg = seg.trim();
+            if seg.is_empty() {
+                continue;
+            }
+            if first_word(seg) == "done" {
+                if seg != "done" {
+                    return Err(FrontendError::Parse(format!(
+                        "bashrs-frontend: `for` loop `done` has trailing content `{seg}` \
+                         (redirects / chained commands after `done` are not supported at \
+                         this slice); refusing rather than dropping it"
+                    )));
+                }
+                hit_done = true;
+                break;
+            }
+            segments.push(seg.to_string());
+        }
+        if hit_done {
+            next_after = Some(idx);
+            break;
+        }
+    }
+    let Some(next) = next_after else {
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: unterminated `for` loop starting at `{}` — no matching `done`",
+            lines[start]
+        )));
+    };
+
+    // segments[0] = the `for VAR in ITEMS` header.
+    // segments[1] must open with `do` (optionally carrying the first
+    // body command inline, e.g. `do echo $i`).
+    if segments.len() < 2 {
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: `for` loop starting at `{}` is missing its `do` keyword",
+            lines[start]
+        )));
+    }
+    let (var, items) = parse_for_header(&segments[0])?;
+
+    let do_seg = &segments[1];
+    if first_word(do_seg) != "do" {
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: `for {var} in …` must be followed by `do`, got `{do_seg}`"
+        )));
+    }
+    // Body commands: the remainder of the `do` segment (if any) plus
+    // every subsequent segment up to (but not including) `done`.
+    let mut body_lines: Vec<String> = Vec::new();
+    let do_remainder = do_seg
+        .strip_prefix("do")
+        .expect("first_word == \"do\" implies a \"do\" prefix")
+        .trim();
+    if !do_remainder.is_empty() {
+        body_lines.push(do_remainder.to_string());
+    }
+    for seg in &segments[2..] {
+        body_lines.push(seg.clone());
+    }
+
+    let mut body: Vec<Stmt> = Vec::new();
+    for cmd in &body_lines {
+        // Nested control-flow inside the body is out of slice-1
+        // scope — refuse (the v0.2.0 real parser handles nesting;
+        // the backend already recurses, but the frontend does not
+        // produce nested loops yet).
+        if let Some(kw) = control_flow_keyword(cmd) {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: nested shell control-flow (`{kw}`) inside a `for` body \
+                 is not supported at this slice; only a flat loop body \
+                 (Cmd / Pipeline / assignment) is handled"
+            )));
+        }
+        if let Some(stmt) = lower_flat_line(cmd)? {
+            body.push(stmt);
+        }
+    }
+
+    Ok((
+        Stmt::ShellLoop {
+            kind: LoopKind::For { var, items },
+            body,
+        },
+        next,
+    ))
+}
+
 pub struct BashrsFrontend;
 
 impl Frontend for BashrsFrontend {
@@ -653,193 +1002,73 @@ impl Frontend for BashrsFrontend {
         //       foo bar
         // is treated as a single logical line `echo foo bar`.
         let spliced = splice_line_continuations(source);
+        // PMAT-1268: collect the (trimmed) logical lines up front so
+        // the loop parser can look ahead across the `do … done` body.
+        // The old `for raw_line in spliced.lines()` walk couldn't
+        // consume subsequent lines, which is why control-flow could
+        // only ever be refused; index-based iteration is what lets a
+        // multi-line `for` loop be assembled.
+        let trimmed_lines: Vec<&str> = spliced.lines().map(str::trim).collect();
         let mut stmts: Vec<Stmt> = Vec::new();
-        for raw_line in spliced.lines() {
-            let line = raw_line.trim();
+        let mut i = 0;
+        while i < trimmed_lines.len() {
+            let line = trimmed_lines[i];
             if line.is_empty() {
+                i += 1;
                 continue;
             }
             if line.starts_with("#!") {
                 // Shebang. Skip — not a command, just an interpreter
                 // directive.
+                i += 1;
                 continue;
             }
             if line.starts_with('#') {
                 // Comment line.
+                i += 1;
                 continue;
             }
-            // PMAT-989: REFUSE shell control-flow rather than
-            // silently shredding it. The hand-rolled flat-command
-            // parser below has no notion of loops, conditionals, or
-            // `case` — so historically `for i in 1 2 3; do echo $i;
-            // done` was accepted and mislowered into four bareword
-            // `Stmt::Cmd`s (`for`, `do`, `echo`, `done`), destroying
-            // the loop with no diagnostic. That is worse than an
-            // error: the IR claims to be the script but isn't.
-            //
-            // We only support the FLAT-command subset (quoting,
-            // `$VAR`, `$(...)`, pipelines, single-value assignment).
-            // Control-flow is the v0.2.0 "real bashrs parser" job
-            // (it would produce `Stmt::ShellLoop` etc. from real
-            // shell input). Until then, refusing is the honest
-            // minimum — never shred.
+            // PMAT-1268: a `for VAR in …; do … done` loop. The IR
+            // (`Stmt::ShellLoop` + `LoopKind::For`) and the
+            // bashrs-backend renderer (`render_shell_loop`) already
+            // existed end-to-end (PMAT-048 / PMAT-974); this frontend
+            // parser was the last missing piece. `parse_for_loop`
+            // consumes from the header line through the matching
+            // `done` and returns the index just past it. Only the
+            // `for` dialect with a FLAT body is handled at this slice;
+            // nested control-flow inside the body is refused there.
+            if first_word(line) == "for" {
+                let (loop_stmt, next) = parse_for_loop(&trimmed_lines, i)?;
+                stmts.push(loop_stmt);
+                i = next;
+                continue;
+            }
+            // PMAT-989: REFUSE the remaining shell control-flow
+            // (`while`/`until`/`if`/`case`, and any stray
+            // `do`/`done`/`then`/`elif`/`else`/`fi`/`esac` keyword, or
+            // a `for` that appears after a `;` on a compound line
+            // rather than at line start) instead of silently shredding
+            // it into barewords. Historically `while [ … ]; do … done`
+            // was mislowered into bareword `Stmt::Cmd`s, destroying the
+            // loop with no diagnostic — worse than an error. Those
+            // dialects (and compound/nested control-flow) are the
+            // v0.2.0 "real bashrs parser" job; refusing is the honest
+            // minimum until then — never shred.
             if let Some(kw) = control_flow_keyword(line) {
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: shell control-flow (for/while/if/case) not supported — \
-                     flat-command subset only; refusing rather than silently shredding into \
+                    "bashrs-frontend: shell control-flow (while/until/if/case) not supported — \
+                     the `for … in …; do … done` loop is handled, but the rest of the \
+                     flat-command subset refuses rather than silently shredding into \
                      barewords. Offending keyword `{kw}` at line `{line}`."
                 )));
             }
-            // PMAT-051: detect `NAME=value` variable assignment at
-            // the start of a line. Recognises the canonical POSIX
-            // form: one bareword token whose name part is a
-            // POSIX-legal identifier, immediately followed by `=`,
-            // immediately followed by the value (the rest of the
-            // first token; further whitespace-separated tokens on
-            // the line are NOT supported at v0.1.0 — that'd be the
-            // `VAR=val cmd args` "exported once for next command"
-            // POSIX form). Whitespace around `=` is disallowed by
-            // POSIX, and we follow.
-            if let Some(eq_idx) = line.find('=') {
-                let name_part = &line[..eq_idx];
-                let value_part = &line[eq_idx + 1..];
-                if is_posix_identifier(name_part) {
-                    // Tokenize the value_part so we can distinguish:
-                    //   - exactly one token → `Stmt::ShellAssign`
-                    //   - multiple tokens → POSIX's
-                    //     `VAR=val cmd args` "exported for next
-                    //     command" form (not supported at v0.1.0)
-                    // This is quoting-aware — `NAME="Noah Gift"` is
-                    // one (DoubleQuoted) token, not two barewords.
-                    let value_tokens = tokenize_line(value_part)?;
-                    match value_tokens.len() {
-                        0 => {
-                            // `NAME=` with empty value — POSIX-legal,
-                            // means unset / empty. We model as
-                            // LitStr("").
-                            stmts.push(Stmt::ShellAssign {
-                                name: name_part.to_string(),
-                                value: Expr::LitStr(String::new()),
-                            });
-                            continue;
-                        }
-                        1 => {
-                            let value_expr = lower_raw_token(&value_tokens[0])?;
-                            stmts.push(Stmt::ShellAssign {
-                                name: name_part.to_string(),
-                                value: value_expr,
-                            });
-                            continue;
-                        }
-                        _ => {
-                            // Multi-token RHS = the
-                            // `VAR=val cmd args` POSIX form.
-                            // Reject at v0.1.0 — it's a less-used
-                            // idiom and supporting it correctly
-                            // requires modelling temporary-export
-                            // semantics. Fall through is *not*
-                            // safe (the line doesn't pipe or
-                            // bareword-command cleanly); error
-                            // explicitly.
-                            return Err(FrontendError::Lower(format!(
-                                "shell line `{line}` has `VAR=val cmd args` shape — \
-                                 v0.1.0 supports only single-value assignments \
-                                 (`VAR=value` on its own line)"
-                            )));
-                        }
-                    }
-                }
+            // Flat (non-control-flow) command line — assignment /
+            // pipeline / single command. Shared with `for`-loop
+            // bodies via `lower_flat_line` (PMAT-1268).
+            if let Some(stmt) = lower_flat_line(line)? {
+                stmts.push(stmt);
             }
-
-            // PMAT-041: detect pipeline via `|` separator between
-            // command stages. A line without `|` produces a single
-            // `Stmt::Cmd`; a line with `|` produces a `Stmt::Pipeline`
-            // whose stages are each a Cmd built from that segment's
-            // tokens. The split is naive (no quoting awareness yet)
-            // — `echo "a | b" | cat` is parsed as three stages, not
-            // two with embedded pipe; that improves at v0.2.0 with
-            // the real bashrs parser.
-            //
-            // PMAT-088: distinguish single `|` (pipe) from `||`
-            // (short-circuit OR). A line that contains `||` but NOT
-            // a single `|` falls through to `Stmt::Cmd` so the
-            // `||` tokens survive as ordinary `LitStr` args. The
-            // shell at execution time re-interprets `||` as a
-            // short-circuit operator. The control-structure-faithful
-            // representation (`Stmt::ShortCircuit { lhs, op, rhs }`)
-            // is XPILE-BASHRS-LOGICAL-OPS-001 future work.
-            if line_has_unambiguous_pipe(line) {
-                let mut stages: Vec<Stmt> = Vec::new();
-                for segment in line.split('|') {
-                    let trimmed = segment.trim();
-                    if trimmed.is_empty() {
-                        // Reject `cmd | | cmd` and `| cmd` /
-                        // `cmd |` shapes — they're either empty
-                        // stages or trailing/leading pipes that
-                        // POSIX sh would reject too.
-                        return Err(FrontendError::Lower(format!(
-                            "shell pipeline at line `{line}` has an empty stage \
-                             (leading, trailing, or `| |`); each stage must be a \
-                             non-empty command"
-                        )));
-                    }
-                    // PMAT-049: quoting-aware tokenizer. The program
-                    // name must be a Bare token (a quoted program
-                    // name is unusual and unsupported at v0.1.0).
-                    let raw_tokens = tokenize_line(trimmed)?;
-                    let mut iter = raw_tokens.iter();
-                    let Some(first) = iter.next() else {
-                        continue;
-                    };
-                    let program = match first {
-                        RawToken::Bare(s) => s.clone(),
-                        _ => {
-                            return Err(FrontendError::Lower(format!(
-                                "shell pipeline stage `{trimmed}` starts with a quoted \
-                                 program name; v0.1.0 requires the program to be a \
-                                 bareword token"
-                            )));
-                        }
-                    };
-                    let args: Vec<Expr> =
-                        iter.map(lower_raw_token).collect::<Result<Vec<_>, _>>()?;
-                    stages.push(Stmt::Cmd { program, args });
-                }
-                if stages.len() < 2 {
-                    // Containing `|` but yielding fewer than 2 stages
-                    // means the user wrote a degenerate pipeline
-                    // (e.g., `||` is shell-OR, which we don't support;
-                    // also rejected above as empty-stage). Defensive
-                    // belt-and-braces.
-                    return Err(FrontendError::Lower(format!(
-                        "shell pipeline at line `{line}` parses to {} stage(s); \
-                         need ≥2 (use a single command without `|` for one-stage \
-                         invocations)",
-                        stages.len()
-                    )));
-                }
-                stmts.push(Stmt::Pipeline { stages });
-                continue;
-            }
-
-            // PMAT-049: quoting-aware tokenizer. Same logic as the
-            // pipeline-stage version above.
-            let raw_tokens = tokenize_line(line)?;
-            let mut iter = raw_tokens.iter();
-            let Some(first) = iter.next() else {
-                continue;
-            };
-            let program = match first {
-                RawToken::Bare(s) => s.clone(),
-                _ => {
-                    return Err(FrontendError::Lower(format!(
-                        "shell line `{line}` starts with a quoted program name; \
-                         v0.1.0 requires the program to be a bareword token"
-                    )));
-                }
-            };
-            let args: Vec<Expr> = iter.map(lower_raw_token).collect::<Result<Vec<_>, _>>()?;
-            stmts.push(Stmt::Cmd { program, args });
+            i += 1;
         }
 
         // Wrap the parsed command sequence in a synthetic `main`
@@ -2349,45 +2578,317 @@ N=$((counter + 1))\n\
 
     // ----- PMAT-989: control-flow REFUSAL (no silent shredding) -----
 
+    /// PMAT-1268 helper: extract the single `Stmt::ShellLoop` a
+    /// for-loop fixture should lower to, asserting the surrounding
+    /// module shape (one synthesised `main` holding exactly the loop).
+    #[cfg(test)]
+    fn only_shell_loop(module: &Module) -> (&LoopKind, &[Stmt]) {
+        assert_eq!(module.items.len(), 1, "expected one synthesised function");
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("for-loop fixture has no module constants")
+        };
+        assert_eq!(f.name, "main");
+        assert_eq!(
+            f.body.stmts.len(),
+            1,
+            "expected exactly one top-level Stmt::ShellLoop, got {:?}",
+            f.body.stmts
+        );
+        match &f.body.stmts[0] {
+            Stmt::ShellLoop { kind, body } => (kind, body.as_slice()),
+            other => panic!("expected Stmt::ShellLoop, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn parse_and_lower_refuses_single_line_for_loop_no_shred() {
-        // PMAT-989 load-bearing regression guard. The historical bug:
-        // `for i in 1 2 3; do echo $i; done` was ACCEPTED and shredded
-        // into four bareword `Stmt::Cmd`s (`for`, `do`, `echo`,
-        // `done`), silently destroying the loop. This MUST now error,
-        // and MUST NOT produce any Cmd program.
-        let err = BashrsFrontend
+    fn parse_and_lower_single_line_for_loop() {
+        // PMAT-1268: the historical PMAT-989 shred shape
+        // (`for i in 1 2 3; do echo $i; done` mislowered into four
+        // bareword Cmds) is now PARSED into a real `Stmt::ShellLoop`.
+        // The IR (`LoopKind::For`) and bashrs-backend renderer already
+        // existed; this is the frontend catching up.
+        let module = BashrsFrontend
             .parse_and_lower(
                 &PathBuf::from("/tmp/loop.sh"),
                 "for i in 1 2 3; do echo $i; done\n",
             )
-            .expect_err("single-line for-loop must be REFUSED, never shredded");
-        let msg = format!("{err:?}");
-        assert!(
-            msg.contains("control-flow"),
-            "error should name shell control-flow; got {msg}"
+            .expect("single-line for-loop must now parse into a ShellLoop");
+        let (kind, body) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::For {
+                var: "i".to_string(),
+                items: vec![
+                    Expr::LitStr("1".to_string()),
+                    Expr::LitStr("2".to_string()),
+                    Expr::LitStr("3".to_string()),
+                ],
+            }
+        );
+        assert_eq!(
+            body,
+            &[Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::ShellVar("i".to_string())],
+            }]
         );
     }
 
     #[test]
-    fn parse_and_lower_refuses_multi_line_for_loop_no_shred() {
-        // The other shred shape: the loop spread across physical
-        // lines, where `for`, `do`, `done` each sit alone. The old
-        // parser turned each into its own bareword Cmd. Refuse.
+    fn parse_and_lower_multi_line_for_loop_do_on_own_line() {
+        // The multi-line shape with `for`, `do`, `done` each on their
+        // own physical line — the other historically-shredded form.
         let source = "\
 for i in 1 2 3
 do
   echo $i
 done
 ";
-        let err = BashrsFrontend
+        let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/loop2.sh"), source)
-            .expect_err("multi-line for-loop must be REFUSED, never shredded");
+            .expect("multi-line for-loop must parse into a ShellLoop");
+        let (kind, body) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::For {
+                var: "i".to_string(),
+                items: vec![
+                    Expr::LitStr("1".to_string()),
+                    Expr::LitStr("2".to_string()),
+                    Expr::LitStr("3".to_string()),
+                ],
+            }
+        );
+        assert_eq!(
+            body,
+            &[Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::ShellVar("i".to_string())],
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_for_loop_semicolon_do_multiline_body() {
+        // `; do` on the header line, then a multi-command body across
+        // physical lines. Verifies body statements accumulate in order
+        // and the `do`-remainder path and the newline-body path agree.
+        let source = "\
+for name in alice bob; do
+  echo hi $name
+  echo bye $name
+done
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/loop3.sh"), source)
+            .expect("`; do` + multi-command body must parse");
+        let (kind, body) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::For {
+                var: "name".to_string(),
+                items: vec![
+                    Expr::LitStr("alice".to_string()),
+                    Expr::LitStr("bob".to_string()),
+                ],
+            }
+        );
+        assert_eq!(body.len(), 2, "two body commands expected");
+        assert_eq!(
+            body[0],
+            Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![
+                    Expr::LitStr("hi".to_string()),
+                    Expr::ShellVar("name".to_string())
+                ],
+            }
+        );
+        assert_eq!(
+            body[1],
+            Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![
+                    Expr::LitStr("bye".to_string()),
+                    Expr::ShellVar("name".to_string())
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_for_loop_first_body_cmd_inline_with_do() {
+        // Compact one-liner where the first body command rides on the
+        // `do` segment (`; do echo $i;`) — the `do`-remainder path.
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/loop4.sh"),
+                "for x in a b; do echo $x; echo done_marker; done\n",
+            )
+            .expect("inline-do-body one-liner must parse");
+        let (_, body) = only_shell_loop(&module);
+        assert_eq!(body.len(), 2);
+        assert_eq!(
+            body[0],
+            Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::ShellVar("x".to_string())],
+            }
+        );
+        // `done_marker` is a bareword ARG, not the `done` keyword — it
+        // must survive as an ordinary Cmd arg (command-position check).
+        assert_eq!(
+            body[1],
+            Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::LitStr("done_marker".to_string())],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_for_loop_quoted_items() {
+        // Items are lowered through the quoting-aware tokenizer, so a
+        // quoted multi-word item stays ONE item.
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/loop5.sh"),
+                "for w in 'a b' c; do echo $w; done\n",
+            )
+            .expect("quoted for-items must parse");
+        let (kind, _) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::For {
+                var: "w".to_string(),
+                items: vec![
+                    Expr::QuotedString {
+                        content: "a b".to_string(),
+                        quoting: QuotingStrategy::Single,
+                    },
+                    Expr::LitStr("c".to_string()),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_for_loop_empty_item_list() {
+        // POSIX-legal `for x in ; do … done` — an empty item list (the
+        // body never runs). We model items as an empty Vec, not a
+        // refusal.
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/loop6.sh"),
+                "for x in ; do echo $x; done\n",
+            )
+            .expect("empty item list is legal POSIX");
+        let (kind, _) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::For {
+                var: "x".to_string(),
+                items: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_for_loop_composes_with_flat_commands() {
+        // A loop surrounded by ordinary flat commands: assignment,
+        // then loop, then a trailing command — order preserved.
+        let source = "\
+GREETING=hi
+for n in 1 2; do
+  echo $GREETING $n
+done
+echo after
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/loop7.sh"), source)
+            .expect("loop composed with flat commands must parse");
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("no module constants")
+        };
+        assert_eq!(f.body.stmts.len(), 3, "assign + loop + trailing cmd");
+        assert!(matches!(f.body.stmts[0], Stmt::ShellAssign { .. }));
+        assert!(matches!(f.body.stmts[1], Stmt::ShellLoop { .. }));
+        assert!(matches!(f.body.stmts[2], Stmt::Cmd { .. }));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_nested_for_loop_no_shred() {
+        // SLICE-1 boundary: a nested loop inside a `for` body is
+        // REFUSED (not shredded). The v0.2.0 real parser handles
+        // nesting; the backend already recurses, but the frontend does
+        // not produce nested loops yet.
+        let source = "\
+for i in 1 2; do
+  for j in a b; do
+    echo $i$j
+  done
+done
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/nested.sh"), source)
+            .expect_err("nested for-loop must be REFUSED at this slice");
         let msg = format!("{err:?}");
         assert!(
-            msg.contains("control-flow"),
-            "error should name shell control-flow; got {msg}"
+            msg.contains("nested"),
+            "error should name nested control-flow; got {msg}"
         );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_unterminated_for_loop() {
+        // A `for` header with no matching `done` must refuse, never
+        // silently accept a truncated loop.
+        let source = "\
+for i in 1 2 3; do
+  echo $i
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/unterm.sh"), source)
+            .expect_err("unterminated for-loop must be REFUSED");
+        assert!(format!("{err:?}").contains("unterminated"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_for_without_in() {
+        // `for x; do … done` iterates the positional params (`$@`) —
+        // a distinct semantics we don't model at this slice. Refuse.
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/noin.sh"), "for x; do echo $x; done\n")
+            .expect_err("`for x` without `in` must be REFUSED");
+        assert!(format!("{err:?}").contains("positional"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_done_with_trailing_content() {
+        // `done > file` / `done; echo x` (redirect or chained command
+        // after `done`) is out of slice-1 scope — refuse rather than
+        // drop the trailing construct.
+        let err = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/trail.sh"),
+                "for i in 1 2; do echo $i; done > /dev/null\n",
+            )
+            .expect_err("trailing content after `done` must be REFUSED");
+        assert!(format!("{err:?}").contains("trailing content"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_for_after_semicolon_on_compound_line() {
+        // A `for` that appears after a `;` (not at line start) is a
+        // compound-command shape the slice-1 parser doesn't assemble —
+        // it's caught by the residual control-flow refusal, not shred.
+        let err = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/compound.sh"),
+                "echo hi; for i in 1 2; do echo $i; done\n",
+            )
+            .expect_err("a `for` after `;` on a compound line must be REFUSED");
+        assert!(format!("{err:?}").contains("control-flow"));
     }
 
     #[test]
