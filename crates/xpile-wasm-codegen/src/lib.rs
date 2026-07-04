@@ -3982,6 +3982,167 @@ const STR_SWAPCASE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1203: `$__wasm_str_title(s) -> i32` — Python `s.title()`: a NEW heap
+/// string title-cased word-by-word — the FIRST ASCII letter of each word is
+/// upper-cased and every REMAINING letter of the word is lower-cased, where any
+/// NON-ALPHABETIC character (space, digit, `_`, punctuation) is a word boundary
+/// (`"hello world".title() == "Hello World"`, `"it's".title() == "It'S"`,
+/// `"a1b2".title() == "A1B2"` — a digit resets the word, so the letter after it
+/// re-capitalises). Allocating (rides the `needs_heap` gate, calls `$__alloc`).
+///
+/// **Stateful, unlike the byte-parallel `$__wasm_str_swapcase`.** Title-casing is
+/// NOT a per-byte function of the byte alone — it depends on whether the PREVIOUS
+/// character was a cased (ASCII-letter) character. The helper carries a `$prev`
+/// flag (`1` iff the last byte was an ASCII letter): a letter reached with
+/// `$prev == 0` (word start) is upper-cased, a letter reached with `$prev == 1`
+/// (mid-word) is lower-cased, and any non-letter passes through unchanged AND
+/// clears `$prev`. This is exactly CPython's ASCII `do_title` loop, where
+/// `is_cased == is_letter` for ASCII (so `"it's".title()` re-capitalises the `s`
+/// after the un-cased `'`).
+///
+/// **ASCII-only, with the same honest runtime boundary as the case-fold siblings
+/// (`upper`/`lower`/`capitalize`/`swapcase`).** Python's `str.title()` does FULL
+/// Unicode title mapping, which needs a case table this scalar lane does not
+/// carry. So the helper title-cases only the ASCII letters and, on the FIRST byte
+/// `>= 0x80` (any byte of a non-ASCII code point in valid UTF-8), executes
+/// `unreachable` — a TRAP, exactly like the case-fold siblings. It NEVER passes a
+/// non-ASCII byte through unchanged, so it never silently diverges: a pure-ASCII
+/// `s` is char-exact, any non-ASCII `s` aborts. Because every surviving byte is
+/// 1-byte ASCII, byte length == code-point length == the result length, so `len` /
+/// `Concat` / equality / a str RETURN compose uniformly.
+///
+/// One pass over the payload: `$__alloc(8 + slen)`, store the i32 BYTE-count header
+/// (= `slen`, unchanged by case flipping), `$prev = 0`, then for each byte: trap if
+/// `>= 0x80`; compute `$isU` (`'A'`–`'Z'`) and `$isL` (`'a'`–`'z'`); if it is a
+/// letter, lower-flip when `$prev` else upper-flip, and set `$prev = 1`; else store
+/// it unchanged and clear `$prev = 0`. A zero-length `s` writes no payload (the loop
+/// guard is `i < slen`) and returns an empty heap string.
+const STR_TITLE_HELPER: &str = "\
+  ;; PMAT-1203 __wasm_str_title(s) = Python s.title() — a NEW heap string title-cased
+  ;; word-by-word: the first ASCII letter of each word upper-cased, the rest of the
+  ;; word lower-cased, any NON-letter a word boundary (resets $prev). Stateful (not a
+  ;; per-byte fn): $prev = 1 iff the last byte was an ASCII letter. ASCII-only: a byte
+  ;; >= 0x80 (non-ASCII code point) TRAPS (unreachable), never a silent un-titled
+  ;; pass-through, so the result is char-exact for ASCII or aborts.
+  (func $__wasm_str_title (param $s i32) (result i32)
+    (local $slen i32)
+    (local $dst i32)
+    (local $i i32)
+    (local $c i32)
+    (local $prev i32)
+    (local $isU i32)
+    (local $isL i32)
+    ;; slen = byte length of s (unchanged by case flipping — all survivors ASCII).
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; dst = alloc(8 + slen) ; store the i32 header = slen.
+    local.get $slen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $slen
+    i32.store
+    ;; prev = 0 (the first letter begins a word -> upper-cased).
+    i32.const 0
+    local.set $prev
+    ;; for i in 0..slen: c = s[8+i]; trap if non-ASCII; title-flip; dst[8+i] = c.
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte -> honest trap (needs a Unicode case table we don't carry)
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; isU = c in 'A'(0x41)..'Z'(0x5a)
+        local.get $c
+        i32.const 0x41
+        i32.ge_u
+        local.get $c
+        i32.const 0x5a
+        i32.le_u
+        i32.and
+        local.set $isU
+        ;; isL = c in 'a'(0x61)..'z'(0x7a)
+        local.get $c
+        i32.const 0x61
+        i32.ge_u
+        local.get $c
+        i32.const 0x7a
+        i32.le_u
+        i32.and
+        local.set $isL
+        ;; if letter (isU || isL): case depends on $prev; else non-letter boundary.
+        local.get $isU
+        local.get $isL
+        i32.or
+        if
+          local.get $prev
+          if
+            ;; mid-word -> lower: uppercase letter (isU) gets +0x20
+            local.get $isU
+            if
+              local.get $c
+              i32.const 0x20
+              i32.add
+              local.set $c
+            end
+          else
+            ;; word start -> upper: lowercase letter (isL) gets -0x20
+            local.get $isL
+            if
+              local.get $c
+              i32.const 0x20
+              i32.sub
+              local.set $c
+            end
+          end
+          ;; this char is cased -> next letter is mid-word
+          i32.const 1
+          local.set $prev
+        else
+          ;; non-letter -> word boundary, next letter re-capitalises
+          i32.const 0
+          local.set $prev
+        end
+        ;; dst[8 + i] = c
+        local.get $dst
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        local.get $c
+        i32.store8
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    local.get $dst
+  )
+";
+
 /// PMAT-1189: `$__wasm_str_isdigit(s) -> i32` — Python `s.isdigit()` as a bool
 /// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is an ASCII decimal
 /// digit `'0'`–`'9'`, else `0`. Non-allocating (a single left-to-right scan of
@@ -6134,6 +6295,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (set via `expr_has_heap_op`, like upper/lower/capitalize/replace/zfill).
     // Byte-parallel (no charlen math — all survivors are 1-byte ASCII).
     let needs_swapcase = module_uses_str_method(module, StrMethodOp::SwapCase);
+    // PMAT-1203: `s.title()` (`Expr::StrMethod`, op `Title`) — an allocating
+    // string-RETURNING op (a fresh heap string title-cased word-by-word). Its own
+    // `$__wasm_str_title` helper carries a `$prev` flag (the first ASCII letter of
+    // each word upper-cased, the rest lower-cased, a non-letter a word boundary; a
+    // non-ASCII byte traps). Rides `needs_heap` (set via `expr_has_heap_op`, like
+    // upper/lower/capitalize/swapcase/replace/zfill). Byte-parallel storage (no
+    // charlen math — all survivors are 1-byte ASCII) but STATEFUL across the scan.
+    let needs_title = module_uses_str_method(module, StrMethodOp::Title);
     // PMAT-1189: `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`) — a bool (i32)
     // predicate: `1` iff `s` is non-empty and every code point is an ASCII digit.
     // NON-allocating (a single byte scan, no heap), so — unlike the case-fold
@@ -6440,6 +6609,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // heap-string module carries no dead helper.
     if needs_heap && needs_swapcase {
         out.push_str(STR_SWAPCASE_HELPER);
+    }
+    // PMAT-1203: emit the string TITLE helper once, when any function uses
+    // `s.title()` (`Expr::StrMethod`, op `Title`). The `$__wasm_str_title` helper
+    // title-cases word-by-word (first ASCII letter of each word upper, the rest
+    // lower, any non-letter a word boundary — stateful via a `$prev` flag).
+    // Allocating (calls `$__alloc` + `i32.store8`), so it rides `needs_heap` — a
+    // title sets the heap gate via `expr_has_heap_op`. A non-ASCII byte traps
+    // rather than folding. Gated on an actual use so an unrelated heap-string
+    // module carries no dead helper.
+    if needs_heap && needs_title {
+        out.push_str(STR_TITLE_HELPER);
     }
     // PMAT-1189: emit the string ISDIGIT helper once, when any function uses
     // `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`). NON-allocating (a single
@@ -7845,6 +8025,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // PMAT-1201: `s.swapcase()` (op `SwapCase`) bump-allocates its both-ways
         // case-flipped result the same way — a miss would emit
         // `$__wasm_str_swapcase` against an undeclared `$__alloc`.
+        // PMAT-1203: `s.title()` (op `Title`) bump-allocates its title-cased result
+        // the same way — a miss would emit `$__wasm_str_title` against an undeclared
+        // `$__alloc` (the same hard wat2wasm gate-hole).
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -7857,6 +8040,7 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::Lower
                     | StrMethodOp::Capitalize
                     | StrMethodOp::SwapCase
+                    | StrMethodOp::Title
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -8954,6 +9138,28 @@ fn emit_str_swapcase(
     emit_str_expr(recv, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_str_swapcase").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1203: lower `s.title()` — a materialising op leaving the i32 base-pointer
+/// of a fresh heap string title-cased word-by-word (the first ASCII letter of each
+/// word upper-cased, the rest lower-cased, any non-letter a word boundary). The
+/// receiver is string-valued (`emit_str_expr`, which refuses a non-str recv
+/// honestly); the allocating `$__wasm_str_title` helper does the stateful flip and
+/// TRAPS on a non-ASCII byte (the honest ASCII-only boundary — full Unicode title
+/// mapping needs a case table this scalar lane does not carry, so it refuses at
+/// runtime rather than silently returning a wrongly-cased string). A
+/// heap-constructed receiver (`(a + b).title()`) already pulled in the allocator
+/// via `expr_has_heap_op`.
+fn emit_str_title(
+    recv: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_title").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -10276,6 +10482,22 @@ fn emit_str_expr(
             args,
         } if args.is_empty() => {
             emit_str_swapcase(recv, scope, out, depth)?;
+            Ok(())
+        }
+        // PMAT-1203: `s.title()` in a string position — a fresh heap string (like
+        // capitalize/swapcase, a materialising op) title-cased word-by-word: the
+        // first ASCII letter of each word upper-cased, the rest lower-cased, any
+        // non-letter a word boundary. 0-arg; the allocating `$__wasm_str_title`
+        // helper does the stateful flip and TRAPS on a non-ASCII byte (the honest
+        // ASCII-only boundary — full Unicode title mapping needs a case table this
+        // scalar lane does not carry, so it refuses at runtime rather than silently
+        // returning a wrongly-cased string).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::Title,
+            args,
+        } if args.is_empty() => {
+            emit_str_title(recv, scope, out, depth)?;
             Ok(())
         }
         // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
