@@ -49,6 +49,14 @@ enum Cmd {
         /// Output path. Defaults to stdout.
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Emit a complete, buildable Cargo crate (`Cargo.toml` + `src/main.rs`)
+        /// to this directory instead of printing. If the program defines
+        /// `main()`, the crate is a runnable binary: `cargo build` gives a
+        /// native executable, and `cargo build --target wasm32-wasip1` gives a
+        /// single portable `.wasm` that runs on any OS/arch under a WASI
+        /// runtime (the "universal binary" path). `--target rust` only.
+        #[arg(long)]
+        emit_crate: Option<PathBuf>,
     },
     /// Report falsifier F1 (Layer-1 contract citation coverage) for
     /// a corpus. Walks the given path, transpiles every source file
@@ -162,9 +170,18 @@ fn main() -> Result<()> {
     let session = xpile_core::default_session();
     match cli.cmd.unwrap_or(Cmd::Info) {
         Cmd::Info => print_info(&session),
-        Cmd::Transpile { input, target, out } => {
-            transpile(&session, &input, &target, out.as_deref())
-        }
+        Cmd::Transpile {
+            input,
+            target,
+            out,
+            emit_crate,
+        } => transpile(
+            &session,
+            &input,
+            &target,
+            out.as_deref(),
+            emit_crate.as_deref(),
+        ),
         Cmd::Audit { path, target, json } => audit(&session, &path, &target, json),
         Cmd::Attestations {
             roadmap,
@@ -568,6 +585,7 @@ fn transpile(
     input: &Path,
     target_str: &str,
     out: Option<&Path>,
+    emit_crate: Option<&Path>,
 ) -> Result<()> {
     let source =
         std::fs::read_to_string(input).with_context(|| format!("reading {}", input.display()))?;
@@ -605,6 +623,14 @@ fn transpile(
     // Python object sharing natively, so the clone/move/refuse suite is
     // skipped for pointer-stable types there).
     let target = parse_target(target_str)?;
+
+    // `--emit-crate` produces a Rust crate; validate the target up front so a
+    // flag misuse fails fast with a clear message rather than surfacing as a
+    // downstream backend-lowering error.
+    if emit_crate.is_some() && target != Target::Rust {
+        bail!("--emit-crate produces a Rust crate; use it with --target rust (got {target:?})");
+    }
+
     let module = frontend
         .parse_and_lower_profiled(input, &source, lowering_profile_for(target))
         .with_context(|| format!("parse_and_lower failed for {}", input.display()))?;
@@ -632,6 +658,14 @@ fn transpile(
         .lower(&module, &config)
         .with_context(|| format!("backend `{}` failed", backend.name()))?;
 
+    // `--emit-crate`: write a complete, buildable binary crate instead of
+    // printing. The crate compiles as-is for the native host AND for
+    // `wasm32-wasip1` (a single portable `.wasm` — the universal-binary path).
+    // The `--target rust` invariant is validated up front (see above).
+    if let Some(dir) = emit_crate {
+        return write_crate(dir, input, &artifact.primary);
+    }
+
     match out {
         Some(path) => {
             std::fs::write(path, &artifact.primary)
@@ -640,6 +674,76 @@ fn transpile(
         }
         None => print!("{}", artifact.primary),
     }
+    Ok(())
+}
+
+/// Emit a complete, buildable binary crate (`Cargo.toml` + `src/main.rs`) from
+/// the transpiled Rust so the program can be `cargo build`'d directly. When the
+/// program defines `main()`, the crate is runnable — including for
+/// `wasm32-wasip1`, which yields a single portable `.wasm` that runs on any
+/// OS/arch under a WASI runtime (the "universal binary" path). The `indexmap`
+/// dependency is added only when the emitted Rust references it (i.e. the
+/// program uses a Python `dict`).
+fn write_crate(dir: &Path, input: &Path, rust: &str) -> Result<()> {
+    // Derive a valid crate name from the input file stem: lowercase, non
+    // alphanumeric → `_`, and a leading digit (or empty) gets an `app_` prefix.
+    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
+    let mut name: String = stem
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
+        name = format!("app_{name}");
+    }
+
+    let deps = if rust.contains("indexmap::") {
+        // Python `dict` lowers to `indexmap::IndexMap` for insertion order.
+        "indexmap = \"2\"\n"
+    } else {
+        ""
+    };
+    if !rust.contains("fn main(") {
+        eprintln!(
+            "xpile: note: the emitted crate has no `fn main` — add a Python \
+             `def main() -> None:` entry point to produce a runnable binary"
+        );
+    }
+
+    let cargo_toml = format!(
+        "[package]\n\
+         name = \"{name}\"\n\
+         version = \"0.1.0\"\n\
+         edition = \"2021\"\n\
+         \n\
+         [[bin]]\n\
+         name = \"{name}\"\n\
+         path = \"src/main.rs\"\n\
+         \n\
+         [dependencies]\n\
+         {deps}\
+         \n\
+         # opt-level \"z\" keeps the emitted `.wasm` small.\n\
+         [profile.release]\n\
+         opt-level = \"z\"\n"
+    );
+
+    let src_dir = dir.join("src");
+    std::fs::create_dir_all(&src_dir).with_context(|| format!("creating {}", src_dir.display()))?;
+    std::fs::write(dir.join("Cargo.toml"), cargo_toml)
+        .with_context(|| format!("writing {}", dir.join("Cargo.toml").display()))?;
+    std::fs::write(src_dir.join("main.rs"), rust)
+        .with_context(|| format!("writing {}", src_dir.join("main.rs").display()))?;
+    eprintln!(
+        "xpile: wrote crate `{name}` to {} \
+         (cargo build --target wasm32-wasip1 → a portable .wasm)",
+        dir.display()
+    );
     Ok(())
 }
 
