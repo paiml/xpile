@@ -583,6 +583,14 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
                 collect_expr_literals(default, out);
             }
         }
+        // PMAT-1227: `d.setdefault(k, default)` — lay out any str literals in its
+        // dict/key/default (a str key or a str-touching default), same as
+        // `d.get(k, default)`'s.
+        Expr::DictSetDefault { dict, key, default } => {
+            collect_expr_literals(dict, out);
+            collect_expr_literals(key, out);
+            collect_expr_literals(default, out);
+        }
         Expr::SetContains { set, elem } => {
             collect_expr_literals(set, out);
             collect_expr_literals(elem, out);
@@ -7872,6 +7880,10 @@ fn expr_touches_str(e: &Expr) -> bool {
                 || expr_touches_str(key)
                 || default.as_deref().is_some_and(expr_touches_str)
         }
+        // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_touches_str(dict) || expr_touches_str(key) || expr_touches_str(default)
+        }
         Expr::SetContains { set, elem } => expr_touches_str(set) || expr_touches_str(elem),
         _ => false,
     }
@@ -8007,6 +8019,10 @@ fn expr_has_str_slice(e: &Expr) -> bool {
             expr_has_str_slice(dict)
                 || expr_has_str_slice(key)
                 || default.as_deref().is_some_and(expr_has_str_slice)
+        }
+        // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_str_slice(dict) || expr_has_str_slice(key) || expr_has_str_slice(default)
         }
         Expr::SetContains { set, elem } => expr_has_str_slice(set) || expr_has_str_slice(elem),
         _ => false,
@@ -8145,6 +8161,11 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
             expr_has_int_to_str(dict)
                 || expr_has_int_to_str(key)
                 || default.as_deref().is_some_and(expr_has_int_to_str)
+        }
+        // PMAT-1227: `d.setdefault(k, default)` — a str-keyed `d.setdefault(str(n),
+        // 0)` (or an int-to-str-hosting default) must gate `$__wasm_int_to_str`.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_int_to_str(dict) || expr_has_int_to_str(key) || expr_has_int_to_str(default)
         }
         Expr::SetContains { set, elem } => expr_has_int_to_str(set) || expr_has_int_to_str(elem),
         _ => false,
@@ -8382,6 +8403,12 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
                     .as_deref()
                     .is_some_and(|d| expr_uses_str_method(d, op))
         }
+        // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_uses_str_method(dict, op)
+                || expr_uses_str_method(key, op)
+                || expr_uses_str_method(default, op)
+        }
         Expr::SetContains { set, elem } => {
             expr_uses_str_method(set, op) || expr_uses_str_method(elem, op)
         }
@@ -8503,6 +8530,12 @@ fn expr_has_str_contains(e: &Expr) -> bool {
                 || expr_has_str_contains(key)
                 || default.as_deref().is_some_and(expr_has_str_contains)
         }
+        // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_str_contains(dict)
+                || expr_has_str_contains(key)
+                || expr_has_str_contains(default)
+        }
         Expr::SetContains { set, elem } => {
             expr_has_str_contains(set) || expr_has_str_contains(elem)
         }
@@ -8621,6 +8654,10 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
             expr_has_str_repeat(dict)
                 || expr_has_str_repeat(key)
                 || default.as_deref().is_some_and(expr_has_str_repeat)
+        }
+        // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_str_repeat(dict) || expr_has_str_repeat(key) || expr_has_str_repeat(default)
         }
         Expr::SetContains { set, elem } => expr_has_str_repeat(set) || expr_has_str_repeat(elem),
         _ => false,
@@ -8763,6 +8800,12 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
                 || default
                     .as_deref()
                     .is_some_and(|d| expr_has_str_method_2arg(d, target))
+        }
+        // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_str_method_2arg(dict, target)
+                || expr_has_str_method_2arg(key, target)
+                || expr_has_str_method_2arg(default, target)
         }
         Expr::SetContains { set, elem } => {
             expr_has_str_method_2arg(set, target) || expr_has_str_method_2arg(elem, target)
@@ -8935,6 +8978,12 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
             expr_has_str_eq(dict, scan)
                 || expr_has_str_eq(key, scan)
                 || default.as_deref().is_some_and(|d| expr_has_str_eq(d, scan))
+        }
+        // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_str_eq(dict, scan)
+                || expr_has_str_eq(key, scan)
+                || expr_has_str_eq(default, scan)
         }
         Expr::SetContains { set, elem } => {
             expr_has_str_eq(set, scan) || expr_has_str_eq(elem, scan)
@@ -9166,6 +9215,13 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                 || expr_has_heap_op(key)
                 || default.as_deref().is_some_and(expr_has_heap_op)
         }
+        // PMAT-1227: `d.setdefault(k, default)` INSERTS on a miss, and the `set`
+        // helper 2x-reallocs (calls `$__alloc`) when the dict is at capacity, so
+        // the op ITSELF sets the heap gate — a miss would emit
+        // `$__wasm_dict_set_<k>`'s grow path against an undeclared `$__alloc` (the
+        // recurring gate-hole class). Unlike `d.get`/`d.pop` (which never grow),
+        // this returns `true` unconditionally; the operands are covered anyway.
+        Expr::DictSetDefault { .. } => true,
         Expr::SetContains { set, elem } => expr_has_heap_op(set) || expr_has_heap_op(elem),
         _ => false,
     }
@@ -9957,7 +10013,11 @@ fn emit_stmt(
                 // PMAT-1225: `d.pop(k)` used as a bare statement (its value
                 // discarded) — emit the pop (which performs the in-place
                 // removal, the point of the statement) and drop the i64 value.
-                Expr::DictPop { .. } => {
+                // PMAT-1227: `d.setdefault(k, default)` as a bare statement
+                // (`d.setdefault(k, 0)` to ENSURE a key) — same shape: emit the
+                // get-or-insert (the insert-if-absent side effect is the point)
+                // and drop the i64 value.
+                Expr::DictPop { .. } | Expr::DictSetDefault { .. } => {
                     emit_expr(call, scope, out, depth)?;
                     indent(out, depth);
                     writeln!(out, "drop").expect("write");
@@ -10962,6 +11022,14 @@ fn emit_expr(
         // the 2-arg form is total (absent → the int `default`, no mutation).
         Expr::DictPop { dict, key, default } => {
             emit_dict_pop(dict, key, default.as_deref(), scope, out, depth)
+        }
+        // PMAT-1227: `d.setdefault(k, default)` — a get-or-INSERT: on a HIT read
+        // the existing value (no mutation); on a MISS insert `default` under `k`
+        // (which may grow+relocate the dict) then read it back. Both cases
+        // evaluate to `d[k]` — the pre-existing value on a hit, the just-inserted
+        // `default` on a miss — exactly CPython's `dict.setdefault`.
+        Expr::DictSetDefault { dict, key, default } => {
+            emit_dict_set_default(dict, key, default, scope, out, depth)
         }
         // PMAT-995 (slice 3b): `k in d` / `x in s` — i32 bool membership.
         Expr::DictContains { dict, key } => emit_dict_contains(dict, key, scope, out, depth),
@@ -12337,6 +12405,67 @@ fn emit_dict_pop(
             writeln!(out, "end").expect("write");
         }
     }
+    Ok(WatTy::I64)
+}
+
+/// PMAT-1227: lower `d.setdefault(k, default)` (`Expr::DictSetDefault`) — a
+/// get-or-INSERT. On a HIT the key's value is read unchanged; on a MISS
+/// `default` is inserted under `k` and returned. Unlike [`emit_dict_get_or`]
+/// (a total READ) and [`emit_dict_pop`] (removal, which only shrinks in place),
+/// the miss path MUTATES *and* may GROW the dict: `$__wasm_dict_set_<k>`
+/// 2x-reallocs when the region is full and returns the (possibly relocated)
+/// base-pointer, which is written back into the dict local — exactly like
+/// [`emit_dict_set`]'s `d[k] = v`.
+///
+/// Emits `if not has(p, k): p = set(p, k, default)` (the membership helper
+/// `$__wasm_dict_has_<k>` never traps and GATES the insert, so a HIT never
+/// overwrites — CPython keeps the existing value) then reads back
+/// `get(p, k)` (now guaranteed present, i64). The trailing `get` re-scans, but
+/// that keeps a SINGLE i64 return path and emits `default` exactly once (the
+/// insert value) — simpler than the double-emit `if (result i64)` shape, and
+/// correct because setdefault's post-condition is `k in d`. The key expression
+/// is emitted 2–3× (has, [set], get) — cheap and side-effect-free for the
+/// literal/ident keys this subset admits, as in
+/// [`emit_dict_get_or`]/[`emit_dict_pop`]. All three helpers already exist
+/// (shared, gated on the dict's declared `Type::Dict` local), so this op
+/// declares no new helper; it only rides the `$__alloc` heap gate (the insert
+/// can grow), forced true for `DictSetDefault` in [`expr_has_heap_op`].
+fn emit_dict_set_default(
+    dict: &Expr,
+    key: &Expr,
+    default: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    let (name, kind) = dict_ident_kind(dict, scope)?;
+    let suffix = kind.suffix();
+    // if not has(p, k): p = set(p, k, default)  — insert-if-absent (never overwrites).
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_has_{suffix}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.eqz").expect("write");
+    indent(out, depth);
+    writeln!(out, "if").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth + 1)?;
+    emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
+    indent(out, depth + 1);
+    writeln!(out, "call $__wasm_dict_set_{suffix}").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "local.set ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
+    // return d[k] — present after the insert-if-absent above (i64).
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_get_{suffix}").expect("write");
     Ok(WatTy::I64)
 }
 
