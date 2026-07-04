@@ -79,6 +79,11 @@ equations:
     # Option-algebra (map/and_then laws) ratchets in later.
     lean_theorem: "XpileContracts.CXlatePyOptionalToOption.py_optional_structure_extensionality_diamond"
     lean_file: "contracts/lean/XlatePyOptionalToOption.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1275): Kani BMC over the
+    # primitive emitted Rust type. Non-vacuous (distinctness/projection/
+    # injectivity), verified SUCCESSFUL under Kani 0.67 pre-commit.
+    kani_harness: "py_optional_structure_extensionality_diamond"
+    kani_file: "contracts/kani/xlate_py_optional_to_option.rs"
     formula: |
       ∀ a b : PyOptional.
         a.present = b.present → a.payload = b.payload → a = b

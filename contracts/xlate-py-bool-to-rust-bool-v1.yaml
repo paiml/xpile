@@ -84,6 +84,11 @@ equations:
     # ratchet in later.
     lean_theorem: "XpileContracts.CXlatePyBoolToRustBool.py_bool_structure_extensionality_diamond"
     lean_file: "contracts/lean/XlatePyBoolToRustBool.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1275): Kani BMC over the
+    # primitive emitted Rust type. Non-vacuous (distinctness/projection/
+    # injectivity), verified SUCCESSFUL under Kani 0.67 pre-commit.
+    kani_harness: "py_bool_structure_extensionality_diamond"
+    kani_file: "contracts/kani/xlate_py_bool_to_rust_bool.rs"
     formula: |
       ∀ a b : PyBool.
         a.truth = b.truth → a = b

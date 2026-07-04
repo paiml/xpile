@@ -71,6 +71,11 @@ equations:
     # tiers ratchet in later.
     lean_theorem: "XpileContracts.CXlatePyTupleToRustTuple.py_tuple_structure_extensionality_diamond"
     lean_file: "contracts/lean/XlatePyTupleToRustTuple.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1275): Kani BMC over the
+    # primitive emitted Rust type. Non-vacuous (distinctness/projection/
+    # injectivity), verified SUCCESSFUL under Kani 0.67 pre-commit.
+    kani_harness: "py_tuple_structure_extensionality_diamond"
+    kani_file: "contracts/kani/xlate_py_tuple_to_rust_tuple.rs"
     formula: |
       ∀ a b : PyTuple.
         a.elems = b.elems → a = b
