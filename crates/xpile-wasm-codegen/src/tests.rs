@@ -4708,3 +4708,474 @@ fn inline_neg_fstring_executes_in_wabt() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// PMAT-1252: `sorted(xs)` over a `list[int]` / `list[float]` — the FIRST
+// list-VALUED op that ALLOCATES (returns a NEW sorted list on the bump heap).
+// ---------------------------------------------------------------------------
+
+/// PMAT-1252 `sorted(xs)` fixture:
+/// `def s(xs: list[<elem>]) -> <elem>: ys = sorted(xs[, reverse=..]); return ys[0]`.
+/// The bound `ys` is a `list[<elem>]` local, so `emit_list_expr` sees the
+/// `Expr::Sorted` in list-VALUED position; the trailing `ys[0]` materialises it.
+/// `of_float` / `key` are set directly so the refusal tests can drive mismatches.
+fn list_sorted_fn(elem: Type, reverse: bool, of_float: bool, key: Option<SortKey>) -> Function {
+    Function {
+        name: "s".into(),
+        params: vec![param("xs", Type::List(Box::new(elem.clone())))],
+        return_type: elem.clone(),
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "ys".into(),
+                ty: Type::List(Box::new(elem)),
+                value: Expr::Sorted {
+                    list: Box::new(Expr::Ident("xs".into())),
+                    reverse,
+                    key,
+                    of_float,
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("ys".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    }
+}
+
+#[test]
+fn list_int_sorted_emits_helper_call_and_heap() {
+    // `sorted(xs)` over a list[int] declares `$__wasm_list_sorted_i64`, calls it
+    // with the ascending selector `i32.const 0`, and — as the FIRST allocating
+    // list op — ALSO pulls in the bump allocator (`$__alloc`) + exported memory.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::I64,
+                false,
+                false,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains(
+            "(func $__wasm_list_sorted_i64 (param $base i32) (param $reverse i32) (result i32)"
+        ),
+        "int sort helper declared: {wat}"
+    );
+    assert!(
+        wat.contains("i32.const 0\n    call $__wasm_list_sorted_i64"),
+        "ascending sort pushes the reverse=0 selector before the call: {wat}"
+    );
+    assert!(
+        wat.contains("(func $__alloc"),
+        "an allocating list op forces the bump allocator: {wat}"
+    );
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "the fresh + source list records need the exported memory: {wat}"
+    );
+    // The helper copies + insertion-sorts an i64 payload with signed compares.
+    assert!(
+        wat.contains("i64.load") && wat.contains("i64.store"),
+        "i64 copy: {wat}"
+    );
+    assert!(
+        wat.contains("i64.gt_s") && wat.contains("i64.lt_s"),
+        "the sort keeps BOTH strict compares (asc gt, desc lt) in the one helper: {wat}"
+    );
+}
+
+#[test]
+fn list_int_sorted_reverse_emits_selector_one() {
+    // `sorted(xs, reverse=True)` pushes the descending selector `i32.const 1`
+    // before the SAME helper — one helper serves both directions.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::I64,
+                true,
+                false,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("i32.const 1\n    call $__wasm_list_sorted_i64"),
+        "reverse=True pushes the reverse=1 selector: {wat}"
+    );
+}
+
+#[test]
+fn list_float_sorted_emits_f64_helper_and_no_int_helper() {
+    // `sorted(xs)` over a list[float] declares the f64 twin (f64 copy + IEEE-754
+    // `f64.gt`/`f64.lt` compares) and carries NO dead i64 helper.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::F64,
+                false,
+                true,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains(
+            "(func $__wasm_list_sorted_f64 (param $base i32) (param $reverse i32) (result i32)"
+        ),
+        "float sort helper declared: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_sorted_f64")
+            && wat.contains("f64.load")
+            && wat.contains("f64.store"),
+        "float sort lowers to the f64 helper with an f64 copy: {wat}"
+    );
+    assert!(
+        wat.contains("f64.gt") && wat.contains("f64.lt"),
+        "float sort uses IEEE-754 compares: {wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_list_sorted_i64"),
+        "a float-only sort carries no dead i64 helper: {wat}"
+    );
+}
+
+#[test]
+fn list_int_sorted_carries_no_dead_float_helper() {
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::I64,
+                false,
+                false,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_sorted_f64"),
+        "an int-only sort carries no dead f64 helper: {wat}"
+    );
+}
+
+#[test]
+fn list_sorted_helper_absent_without_use() {
+    // A list module that does NOT sort (here a `min(xs)` fold) carries neither
+    // sort helper.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::I64,
+                Type::I64,
+                false,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_sorted_i64") && !wat.contains("$__wasm_list_sorted_f64"),
+        "no sort → no sort helper: {wat}"
+    );
+}
+
+#[test]
+fn list_sorted_with_key_refused_honestly() {
+    // `sorted(xs, key=lambda x: x)` — a key-based sort is deferred; refuse.
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::I64,
+                false,
+                false,
+                Some(SortKey {
+                    param: "x".into(),
+                    body: Box::new(Expr::Ident("x".into())),
+                }),
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("key=") || err.contains("element value only"),
+        "key sort refused: {err}"
+    );
+}
+
+#[test]
+fn list_sorted_non_name_list_refused_honestly() {
+    // `sorted([3, 1, 2])` — the WASM subset sorts a NAMED list; bind it first.
+    let f = Function {
+        name: "s".into(),
+        params: Vec::new(),
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "ys".into(),
+                ty: Type::List(Box::new(Type::I64)),
+                value: Expr::Sorted {
+                    list: Box::new(Expr::ListLit(vec![
+                        Expr::LitInt(3),
+                        Expr::LitInt(1),
+                        Expr::LitInt(2),
+                    ])),
+                    reverse: false,
+                    key: None,
+                    of_float: false,
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("ys".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("non-name list") || err.contains("bind the list to a name"),
+        "non-name list sort refused: {err}"
+    );
+}
+
+#[test]
+fn list_sorted_bool_list_refused_honestly() {
+    // `sorted(xs)` over a list[bool] — the sort family is int/float only (a bool
+    // rides an i32, which has no i64/f64 payload to fold); refuse honestly.
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::Bool,
+                false,
+                false,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("list[bool]") || err.contains("list[int]` / `list[float]"),
+        "bool-list sort refused: {err}"
+    );
+}
+
+#[test]
+fn list_sorted_float_tag_mismatch_refused() {
+    // A `list[int]` destination but an `of_float: true` tag is an internal kind
+    // disagreement — refuse rather than emit a call to the wrong-kind helper (a
+    // silent bit-misread otherwise).
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::I64,
+                false,
+                true,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("list[int]` / `list[float]") || err.contains("tag mismatch"),
+        "int/float tag mismatch refused: {err}"
+    );
+}
+
+/// PMAT-1252 EXECUTED WITNESS — assemble + run the REAL-emitted `sorted(xs)` over
+/// a list[int] in WABT and diff the sorted elements against CPython.
+///
+/// The emitted `$__wasm_list_sorted_i64` is driven directly from a self-contained
+/// module: a `(data)` segment lays a non-empty list at base 0 and an empty list
+/// (count 0) at base 512, and zero-arg exports call the helper on each and read
+/// back a chosen sorted element (i64→f64 for the engine's `=> f64:` parser). Both
+/// directions (asc `reverse=0`, desc `reverse=1`) and the empty case
+/// (`len(sorted([])) == 0`) are value-matched against CPython. Gated on
+/// `wasm_runtime_available()` — a clean skip without WABT.
+#[test]
+fn list_int_sorted_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_int_sorted_executes_in_wabt: WABT not installed");
+        return;
+    }
+    // CPython: sorted([5,-3,10,7,-1]) == [-3,-1,5,7,10]; reverse == [10,7,5,-1,-3].
+    let elems: [i64; 5] = [5, -3, 10, 7, -1];
+    let mut asc: Vec<i64> = elems.to_vec();
+    asc.sort();
+    let mut desc = asc.clone();
+    desc.reverse();
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::I64,
+                false,
+                false,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    // 520-byte image: non-empty list at base 0, empty list (count 0) at base 512.
+    let mut image = vec![0u8; 520];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "sort module exports memory: {helper_wat}"
+    );
+    // Read sorted[k] under `reverse`: call the helper, add 8 + k*8, i64.load → f64.
+    let read = |rev: i32, k: usize| {
+        format!(
+            "i32.const 0\n    i32.const {rev}\n    call $__wasm_list_sorted_i64\n    \
+             i32.const {}\n    i32.add\n    i64.load\n    f64.convert_i64_s)\n",
+            8 + k * 8
+        )
+    };
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}  \
+         (func (export \"e3\") (result f64)\n    {}  \
+         (func (export \"e4\") (result f64)\n    {}  \
+         (func (export \"e5\") (result f64)\n    \
+         i32.const 512\n    i32.const 0\n    call $__wasm_list_sorted_i64\n    \
+         i32.load\n    f64.convert_i32_s)\n",
+        read(0, 0),
+        read(0, 2),
+        read(0, 4),
+        read(1, 0),
+        read(1, 4),
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_int_sorted")
+        .expect("assemble+run REAL-emitted list-int-sorted witness");
+    let expected = [
+        asc[0] as f64,
+        asc[2] as f64,
+        asc[4] as f64,
+        desc[0] as f64,
+        desc[4] as f64,
+        0.0,
+    ];
+    assert_eq!(out.len(), expected.len(), "six exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "sorted witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1252 executed witness: REAL sorted(xs: list[int]) emit → run ===\n\
+         asc={asc:?} desc={desc:?} sorted([])==[] len 0; all six exports match CPython"
+    );
+}
+
+/// PMAT-1252 EXECUTED WITNESS (float twin) — assemble + run the REAL-emitted
+/// `sorted(xs)` over a list[float] and diff against CPython. The f64 helper
+/// returns f64 elements directly (no `f64.convert`).
+#[test]
+fn list_float_sorted_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_float_sorted_executes_in_wabt: WABT not installed");
+        return;
+    }
+    let elems: [f64; 4] = [3.5, 1.5, 2.5, -0.5];
+    let mut asc: Vec<f64> = elems.to_vec();
+    asc.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mut desc = asc.clone();
+    desc.reverse();
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sorted_fn(
+                Type::F64,
+                false,
+                true,
+                None,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    let mut image = vec![0u8; 128];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "float sort module exports memory: {helper_wat}"
+    );
+    let read = |rev: i32, k: usize| {
+        format!(
+            "i32.const 0\n    i32.const {rev}\n    call $__wasm_list_sorted_f64\n    \
+             i32.const {}\n    i32.add\n    f64.load)\n",
+            8 + k * 8
+        )
+    };
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}  \
+         (func (export \"e3\") (result f64)\n    {}",
+        read(0, 0),
+        read(0, 3),
+        read(1, 0),
+        read(1, 3),
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_float_sorted")
+        .expect("assemble+run REAL-emitted list-float-sorted witness");
+    let expected = [asc[0], asc[3], desc[0], desc[3]];
+    assert_eq!(out.len(), expected.len(), "four exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "float sorted witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1252 executed witness: REAL sorted(xs: list[float]) emit → run ===\n\
+         asc={asc:?} desc={desc:?}; all four exports match CPython"
+    );
+}
