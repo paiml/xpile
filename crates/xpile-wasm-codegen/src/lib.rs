@@ -4460,6 +4460,79 @@ const STR_ISUPPER_ISLOWER_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1199: `$__wasm_str_isascii(s) -> i32` — Python `s.isascii()` as a bool
+/// (i32 0/1): `1` iff every payload byte is in the ASCII range (`< 0x80`), else
+/// `0`. Non-allocating (a single left-to-right scan of the payload bytes with no
+/// heap use — it does NOT ride `needs_heap`). The seventh predicate in the `str`
+/// `is*` family to reach the WASM lane (after PMAT-1189 isdigit / 1191 isalpha /
+/// 1193 isspace / 1195 isalnum / 1197 isupper+islower).
+///
+/// **The odd one out of the family — FULLY DECIDABLE at the byte level, so it
+/// NEVER traps AND needs NO empty guard.** Where the isdigit-family predicates
+/// ask an undecidable Unicode-category question the moment a non-ASCII byte is
+/// reached (and so must TRAP on it), `isascii()` asks *exactly* "is every byte
+/// `< 0x80`" — a question UTF-8 answers directly (a byte `>= 0x80` is a non-ASCII
+/// code point, definitively `False`; a byte `< 0x80` is an ASCII code point). So:
+///   * a byte `>= 0x80` short-circuits to `0` (the DEFINITIVE answer, NOT a trap —
+///     there is no `unreachable` arm at all, the distinguishing shape of this
+///     helper);
+///   * a zero-length `s` falls through the loop to `i32.const 1` — Python
+///     `"".isascii()` is `True` (unlike the isdigit family's vacuous-`False`), so
+///     NO empty guard precedes the loop.
+///
+/// Byte-exact against CPython for EVERY input (ASCII → the loop completes → `1`;
+/// any non-ASCII → `0`); it is the one predicate whose non-ASCII inputs are
+/// value-matched (not trapped) in the executed witness.
+const STR_ISASCII_HELPER: &str = "\
+  ;; PMAT-1199 __wasm_str_isascii(s) = Python s.isascii() (i32 bool). True iff
+  ;; every payload byte is ASCII (< 0x80). Empty -> 1 (\"\".isascii() is True, so
+  ;; NO empty guard — the loop falls through). FULLY DECIDABLE: a byte >= 0x80 is
+  ;; the DEFINITIVE False (return 0), NOT a trap — isascii is exactly the \"are all
+  ;; bytes < 0x80\" question, so unlike the isdigit family it carries no trap arm.
+  (func $__wasm_str_isascii (param $s i32) (result i32)
+    (local $slen i32)
+    (local $i i32)
+    ;; slen = byte length of s
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; NO empty guard: \"\".isascii() is True, the loop below falls through to 1.
+    ;; for i in 0..slen
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; a non-ASCII payload byte (>= 0x80) is the DEFINITIVE answer: False.
+        ;; No trap arm — isascii is fully decidable at the byte level.
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.const 0x80
+        i32.ge_u
+        if
+          i32.const 0
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    ;; empty OR every byte < 0x80 -> True
+    i32.const 1
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5976,6 +6049,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // reads (folded into the condition below alongside `needs_isdigit`).
     let needs_isupper_lower = module_uses_str_method(module, StrMethodOp::IsUpper)
         || module_uses_str_method(module, StrMethodOp::IsLower);
+    // PMAT-1199: `s.isascii()` (`Expr::StrMethod`, op `IsAscii`) — the SEVENTH
+    // predicate in the `is*` family, and the ONLY one that is fully decidable at
+    // the byte level (a byte `>= 0x80` is the DEFINITIVE False; it NEVER traps and
+    // needs NO empty guard). Same non-allocating byte scan as the siblings — it
+    // does NOT ride `needs_heap`; it carries its own `$__wasm_str_isascii` helper
+    // and only needs the `(memory …)` its payload load reads (folded into the
+    // condition below alongside `needs_isdigit`).
+    let needs_isascii = module_uses_str_method(module, StrMethodOp::IsAscii);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5992,6 +6073,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_isspace
         || needs_isalnum
         || needs_isupper_lower
+        || needs_isascii
     {
         writeln!(
             out,
@@ -6262,6 +6344,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (a `want_upper` i32 flag), like the `$__wasm_str_upper_lower` case-fold pair.
     if needs_isupper_lower {
         out.push_str(STR_ISUPPER_ISLOWER_HELPER);
+    }
+    // PMAT-1199: emit the string ISASCII helper once, when any function uses
+    // `s.isascii()` (`Expr::StrMethod`, op `IsAscii`). Like the six sibling
+    // predicates it is non-allocating (a single byte scan returning a bool), so it
+    // is gated ONLY on `needs_isascii`, NOT `needs_heap`: a read-only str module
+    // (`def f(s): return s.isascii()`) carries no allocator but still needs it.
+    // Unlike the isdigit family it is fully decidable (no `unreachable` trap arm).
+    if needs_isascii {
+        out.push_str(STR_ISASCII_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -9138,16 +9229,34 @@ fn emit_expr(
             op: StrMethodOp::IsLower,
             args,
         } if args.is_empty() => emit_str_iscase(recv, false, scope, out, depth),
+        // PMAT-1199: `s.isascii()` — a bool (i32) predicate: `1` iff every payload
+        // byte is ASCII (`< 0x80`). The receiver lowers to an i32 base-pointer
+        // (`emit_str_expr`), then the non-allocating `$__wasm_str_isascii` helper
+        // scans the payload bytes. The ONE predicate in the `is*` family that is
+        // FULLY DECIDABLE at the byte level: a byte `>= 0x80` is the definitive
+        // `0` (never a trap — no `unreachable` arm) and the empty string is `1`
+        // (Python `"".isascii()` is True — no empty guard), so it is byte-exact
+        // against CPython for every input, including non-ASCII (→ False).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsAscii,
+            args,
+        } if args.is_empty() => {
+            emit_str_expr(recv, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_isascii").expect("write");
+            Ok(WatTy::I32)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
              `.find(p, start)`, `.rfind(p)`, `.rfind(p, start)`, `.index(p)`, \
              `.rindex(p)`, `.removeprefix(p)`, `.removesuffix(p)`, \
              `.replace(old, new)`, `.replace(old, new, count)`, `.isdigit()`, \
-             `.isalpha()`, `.isspace()`, `.isalnum()`, `.isupper()`, and \
-             `.islower()` are supported; the other is* predicates (isascii/\
-             isnumeric/…), upper/lower/strip/split/…, the 3-arg \
-             `.find`/`.rfind`(p, start, end), and the start/end forms of \
+             `.isalpha()`, `.isspace()`, `.isalnum()`, `.isupper()`, \
+             `.islower()`, and `.isascii()` are supported; the other is* \
+             predicates (isnumeric/istitle/…), upper/lower/strip/split/…, the \
+             3-arg `.find`/`.rfind`(p, start, end), and the start/end forms of \
              index/rindex/count are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
