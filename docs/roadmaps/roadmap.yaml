@@ -188,6 +188,22 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1275
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1275: [wasm/verify/list] EXECUTED adversarial-VALUE differential witness for the native-WASM READ-ONLY list[scalar] family (count / index / membership / slice / min / max / sum / concat) vs LIVE python3 — closes the value-distribution coverage gap the per-op witnesses leave open. This is an ADVERSARIAL-VERIFY slice (per feedback-ultracode-adversarial-verify: fan-out is only half; the other half is refuting our own claims). A skeptic pass over the PMAT-1247..1274 list-op burst found that EVERY shipped per-op witness exercises only NON-NEGATIVE small literals — PMAT-1274 (count/index) uses [3,7,3,3,9] / [1.5,2.5]; PMAT-1262 (membership) and PMAT-1272 (slice) use only positive values — so NOTHING locks in the underlying $__wasm_list_{count,index,minmax,sum}_* helpers on NEGATIVE i64 element loads, NEGATIVE needles, or the -0.0/0.0 f64-equality quirk ([-0.0].count(0.0)==1 because 0.0==-0.0). A sign / signed-zero / f64.eq regression would slip the whole suite. FIX (test-only, single crate): a new gated tests/list_adversarial_value_witness.rs (2 tests, 21 EXECUTED programs) whose corpus is chosen to be hostile — negative-dupe count, negative-needle index (first / mid / absent / MISS-traps-↔-ValueError), negative membership + not-in, boundary slice bounds over a NEGATIVE-valued list (xs[-3:-1] / inverted xs[3:1] / OOB xs[0:100] / under xs[-100:2]), concat-then-count over negatives, min/max/sum over all-negative lists, and the float signed-zero cases (count/membership over [-0.0], negative float count/index, min over negative floats). The CPython answer is COMPUTED per case via live python3 (repr never hard-coded), EXECUTED in WABT (wat2wasm→wasm-interp), and a trap ↔ raise both count as agreement. A second test (reversed_model_is_list) DOCUMENTS the one by-design divergence found: reversed(xs) is a CPython ITERATOR (so reversed(xs).index(v) raises AttributeError) but the WASM lane models it as an allocating LIST (PMAT-1253) — the CPython-VALID consuming form (for v in reversed(xs)) value-matches, so no VALID program is miscompiled; only invalid Python (a list method on an iterator) is over-accepted. Result: all 20 value-diff cases + the reversed-model case matched live python3 — the recent list ops are sign / signed-zero correct; the burst refuted NO real bug, and this witness now guards that. Gated on wasm_runtime_available + python3 (clean skip, still asserting emit, on free CI). NO source/meta-HIR/other-codegen edit.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open). forward_ev_ranking rank 1 (ADVERSARIAL-VERIFY your own work periodically) — the discipline slice after the PMAT-1247..1274 list/set burst. The skeptic probe confirmed the recent read-only list ops (count/index/membership/slice/min/max/sum) are correct on adversarial NEGATIVE / negative-needle / signed-zero inputs (no valid-program miscompile) and surfaced exactly one by-design over-acceptance (reversed-as-iterator), which it documents rather than 'fixes' (a fix would regress the intended allocating-list model the composition witness relies on)."
+  - "IMPL (test-only, single crate — crates/xpile-wasm-codegen/tests/list_adversarial_value_witness.rs): a self-diffing differential harness (lower→emit→wat2wasm→wasm-interp vs python3 -c) over a 20-case hostile-value corpus + a reversed-model documentation case; oracle computed from live CPython, trap↔raise treated as agreement. NO source, meta-HIR, frontend, or other-codegen change — pure regression coverage over already-shipped helpers."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (all witnesses incl. the new 2-test adversarial-value pair; no regression). Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM + C-WASM-HEAP (no new contract/Lean module minted — a verification witness over existing capability)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1274
   github_issue: null
   item_type: task
