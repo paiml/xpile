@@ -178,7 +178,8 @@ use xpile_backend::{
 };
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, Param, Stmt, StrMethodOp,
+    Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -9845,6 +9846,11 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             | Stmt::SetAdd { .. }
             | Stmt::FieldAssign { .. }
             | Stmt::SideEffectCall { .. }
+            // PMAT-1236: `d.clear()`/`s.clear()` (→ zero the count header in
+            // place) declares no new local; the actual dict/set-vs-list support
+            // decision (and the honest sort/reverse/list-clear refusal) is made
+            // downstream in `emit_list_mutate`, not here.
+            | Stmt::ListMutate { .. }
             | Stmt::Return(_)
             | Stmt::Break
             | Stmt::Continue => {}
@@ -9897,6 +9903,7 @@ fn stmt_kind(s: &Stmt) -> &'static str {
         Stmt::TryCatch { .. } => "TryCatch",
         Stmt::SideEffectCall { .. } => "SideEffectCall",
         Stmt::DelItem { .. } => "DelItem",
+        Stmt::ListMutate { .. } => "ListMutate",
         _ => "<container/aggregate statement>",
     }
 }
@@ -10007,6 +10014,18 @@ fn emit_stmt(
         // PMAT-995 (slice 3b): `s.add(e)` — insert into a set local (a keys-only
         // dict; the `set` helper is shared, with a 0 sentinel value).
         Stmt::SetAdd { set_name, elem } => emit_set_add(set_name, elem, scope, out, depth),
+        // PMAT-1236: `d.clear()` / `s.clear()` — reset a dict/set to EMPTY in
+        // place. The frontend lowers `.clear()` (dict, set, and list alike) to
+        // `Stmt::ListMutate { op: ListMutateOp::Clear }`; over a dict/set the
+        // whole runtime cost is zeroing the live-entry COUNT header at `base+0`
+        // (the same `+0` count `len(d)` reads), leaving the capacity + stale
+        // entry bytes untouched. No relocation (the region only shrinks, so the
+        // base-pointer never moves → NO `local.set` write-back), no helper, no
+        // trap: a bare `local.get $d ; i32.const 0 ; i32.store`. A later
+        // `d[k] = v` re-inserts from count 0, reusing the existing capacity.
+        Stmt::ListMutate { list_name, op, .. } => {
+            emit_list_mutate(list_name, *op, scope, out, depth)
+        }
         // PMAT-1023: `obj.field = value` — store through the struct
         // local/param's base-pointer (the OOP mutation primitive).
         Stmt::FieldAssign { obj, field, value } => {
@@ -12574,6 +12593,60 @@ fn emit_dict_contains(
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
     Ok(WatTy::I32)
+}
+
+/// PMAT-1236: lower an in-place list/dict/set mutator (`Stmt::ListMutate`). The
+/// frontend routes `.clear()` on a dict, a set, and a list ALIKE to this node,
+/// so the target's runtime kind is what decides support:
+///   * a dict/set local (`heap_map_kind(name)` → `Some(_)`) → `.clear()` zeroes
+///     the live-entry COUNT header at `base+0` (the `+0` count `len(d)` reads),
+///     leaving the capacity + stale bytes as garbage below `count`. That is the
+///     entire cost — the region only shrinks, so the base-pointer never moves
+///     (no `local.set` write-back), and no helper/trap is involved. A later
+///     `d[k] = v` re-inserts from count 0 into the existing capacity.
+///   * `.sort()`/`.reverse()`, and `.clear()` on a LIST, are refused honestly:
+///     the WASM list runtime is fixed-size with no in-place reordering pass, and
+///     a `list.clear()` count-reset would leave an empty list this subset cannot
+///     re-grow (`.append` is refused, PMAT-1033), so it is denied rather than
+///     silently producing an unusable empty record.
+fn emit_list_mutate(
+    name: &str,
+    op: ListMutateOp,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if op != ListMutateOp::Clear {
+        return Err(unsupported(&format!(
+            "`{name}.{}()` — the WASM subset has no in-place list reordering \
+             runtime; only `dict`/`set` `.clear()` is supported",
+            list_mutate_method(op)
+        )));
+    }
+    let Some(_kind) = scope.heap_map_kind(name) else {
+        return Err(unsupported(&format!(
+            "`{name}.clear()` over `{name}` which is not a `dict`/`set` local — a \
+             `list.clear()` is refused (the WASM subset cannot re-grow a cleared \
+             fixed-size list; `.append` is unsupported)"
+        )));
+    };
+    // Zero the live-entry count header at base+0 (`len` reads this same word).
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const 0").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store").expect("write");
+    Ok(())
+}
+
+/// The Python method spelling for a [`ListMutateOp`], for refusal messages.
+fn list_mutate_method(op: ListMutateOp) -> &'static str {
+    match op {
+        ListMutateOp::Sort | ListMutateOp::SortDesc => "sort",
+        ListMutateOp::Reverse => "reverse",
+        ListMutateOp::Clear => "clear",
+    }
 }
 
 /// Lower `d[k] = v` (`Stmt::DictSet`) — push base + key + i64 value, call the
