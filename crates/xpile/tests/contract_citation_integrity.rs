@@ -513,3 +513,144 @@ fn every_applicable_contract_is_actually_cited() {
         missing.join("\n")
     );
 }
+
+// ─── PMAT-956: the `on-disk → cited` orphan gate ───────────────────────────
+//
+// The other gates enforce `applicable → emitted` and `emitted → on-disk`. NONE
+// enforced the third direction: that every on-disk GOVERNING (`C-*`) contract is
+// cited SOMEWHERE in emitted output. Its absence is exactly how `C-WASM-HEAP`
+// (a Layer-5 compile contract) shipped cited by NOTHING — an L5 orphan an audit
+// had to find by hand. This gate makes that a mechanical invariant across all
+// five layers: a contract added without a citation FAILS here unless it is
+// deliberately listed as uncited-by-design with a reason.
+
+/// Governing contracts that are intentionally NOT cited in emitted output, each
+/// with the reason. Two honest categories only:
+///   * Layer 3 ARCHITECTURAL — govern the transpiler's own Frontend/Backend
+///     traits, not any emitted construct, so emitted code neither does nor
+///     should cite them (contract-taxonomy §"Layer 3").
+///   * Layer 2 DRAFT / scaffold proof lanes — the contract exists (`status:
+///     draft`) but the lane emits only a scaffold stub (or is a frontend LIFT,
+///     not an output emit), so citing it would misrepresent scaffold as
+///     production. Reserved until the lane goes production — at which point the
+///     entry must be removed (the `it IS now cited` assertion below enforces
+///     that).
+const UNCITED_BY_DESIGN: &[(&str, &str)] = &[
+    (
+        "C-XPILE-FRONTEND-TRAIT",
+        "L3 architectural — governs the Frontend trait, not emitted output",
+    ),
+    (
+        "C-XPILE-BACKEND-TRAIT",
+        "L3 architectural — governs the Backend trait, not emitted output",
+    ),
+    (
+        "C-XPILE-CONTRACT-FRONTEND-TRAIT",
+        "L3 architectural — governs the ContractFrontend trait",
+    ),
+    (
+        "C-XPILE-CONTRACT-BACKEND-TRAIT",
+        "L3 architectural — governs the ContractBackend trait",
+    ),
+    (
+        "C-XLATE-RUST-FN-TO-LEAN-THM",
+        "L2 draft — LeanContractBackend::render is a scaffold stub (`theorem _scaffold`)",
+    ),
+    (
+        "C-XLATE-LEAN-TO-RUST",
+        "L2 draft — no production Lean→Rust emit path yet",
+    ),
+    (
+        "C-NOTATION-LATEX-MATH-TO-EQUATION",
+        "L2 — latex-contract-frontend is a LIFT lane; not emitted as an output citation",
+    ),
+];
+
+/// `true` when `id` appears in `src` in a CITATION-shaped position — a `"<id>"`
+/// string literal (covers `ContractId::new("…")`, an `applicable_contracts`
+/// push, and a `const … = "<id>"` an emitter then cites), or an in-text
+/// `xpile-contract: <id>` / `xpile_contract "<id>"` comment/attribute. A bare
+/// doc-comment mention (`/// … <id> …`, unquoted) deliberately does NOT count.
+fn cited_shaped(src: &str, id: &str) -> bool {
+    src.contains(&format!("\"{id}\""))
+        || src.contains(&format!("xpile-contract: {id}"))
+        || src.contains(&format!("xpile_contract \"{id}\""))
+}
+
+/// Concatenate every non-test `crates/**/src/**.rs` — the emit surface the
+/// citation scanner searches. `tests/` dirs and in-`src` `tests.rs` modules are
+/// excluded so test assertions that mention an id are not mistaken for a
+/// citation.
+fn workspace_emit_src() -> String {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut out = String::new();
+    let mut stack = vec![root.join("crates")];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if !matches!(name, "tests" | "target") {
+                    stack.push(p);
+                }
+            } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if name != "tests.rs" {
+                    if let Ok(t) = fs::read_to_string(&p) {
+                        out.push_str(&t);
+                        out.push('\n');
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn every_governing_contract_is_cited_or_uncited_by_design() {
+    let on_disk: HashSet<String> = on_disk_contract_ids()
+        .into_iter()
+        .filter(|id| id.starts_with("C-"))
+        .collect();
+    assert!(
+        on_disk.contains("C-WASM-HEAP") && on_disk.contains("C-PY-INT-ARITH"),
+        "sanity: governing C-* id set should have loaded, got {} ids",
+        on_disk.len()
+    );
+    let src = workspace_emit_src();
+    let allow: HashMap<&str, &str> = UNCITED_BY_DESIGN.iter().copied().collect();
+
+    // (1) No orphan: every governing contract is cited in emitted output OR
+    //     explicitly allowlisted. This is the direction that would have caught
+    //     C-WASM-HEAP before it shipped.
+    let mut orphans: Vec<&String> = on_disk
+        .iter()
+        .filter(|id| !cited_shaped(&src, id) && !allow.contains_key(id.as_str()))
+        .collect();
+    orphans.sort();
+    assert!(
+        orphans.is_empty(),
+        "PMAT-956 orphan gate: on-disk contract(s) cited by NOTHING and not \
+         allowlisted. Either emit the citation (structural `ContractId::new(\"…\")` \
+         or in-text `// xpile-contract: …`) where the governed construct is \
+         emitted, or — if the lane is architectural/draft — add it to \
+         UNCITED_BY_DESIGN with a reason. Offenders: {orphans:?}"
+    );
+
+    // (2) The allowlist stays honest: every entry is a real on-disk contract AND
+    //     is still genuinely uncited. A draft lane that goes production (and
+    //     starts citing) must be REMOVED from the allowlist here.
+    for (id, _reason) in UNCITED_BY_DESIGN {
+        assert!(
+            on_disk.contains(*id),
+            "UNCITED_BY_DESIGN lists `{id}`, not an on-disk C-* contract — stale entry"
+        );
+        assert!(
+            !cited_shaped(&src, id),
+            "UNCITED_BY_DESIGN lists `{id}` but it IS now cited in emitted output — \
+             remove it from the allowlist (the lane went production)"
+        );
+    }
+}
