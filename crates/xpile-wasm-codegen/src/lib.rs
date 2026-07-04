@@ -178,8 +178,8 @@ use xpile_backend::{
 };
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, Param, SetPredOp, Stmt,
-    StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, Param, SetOp, SetPredOp,
+    Stmt, StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -5926,6 +5926,192 @@ fn emit_dict_store_key(out: &mut String, kind: KeyKind) {
 }
 
 /// Emit the three heap helpers for one [`KeyKind`].
+/// PMAT-1247: emit the four SET-ALGEBRA runtime helpers for one key kind —
+/// `$__wasm_set_union_<k>` / `_intersection_` / `_difference_` / `_symdiff_`,
+/// each `(p, q) -> i32` returning a fresh keys-only set region (Python set
+/// algebra yields a NEW set, never mutating an operand). Construction reuses the
+/// update-or-insert dedup helper `$__wasm_dict_set_<k>` and, for the gated ops,
+/// the never-trapping membership probe `$__wasm_dict_has_<k>` — so a set of this
+/// kind forces NO helper beyond the ones a literal already carries. Cap is
+/// pre-sized to the worst-case result (`|p|+|q|` for union/symdiff, `|p|` for
+/// intersection/difference), so a construction insert never trips the 2x
+/// realloc-grow path; each still consumes `dict_set`'s returned pointer, so a
+/// (hypothetical) grow would stay correct. Emitted from [`dict_helpers_for`]
+/// after the set predicates, gated on [`module_dict_key_kinds`].
+fn emit_set_algebra_helpers(out: &mut String, kind: KeyKind) {
+    // union: every key of p, then every key of q (dedup collapses the overlap).
+    emit_set_alg_helper(
+        out,
+        kind,
+        "union",
+        true,
+        &[("p", None), ("q", None)],
+        "p ∪ q (insert all of p, then all of q; dict_set dedup drops shared keys)",
+    );
+    // intersection: only the keys of p that are ALSO in q.
+    emit_set_alg_helper(
+        out,
+        kind,
+        "intersection",
+        false,
+        &[("p", Some(("q", true)))],
+        "p ∩ q (keys of p that are members of q)",
+    );
+    // difference: only the keys of p that are NOT in q.
+    emit_set_alg_helper(
+        out,
+        kind,
+        "difference",
+        false,
+        &[("p", Some(("q", false)))],
+        "p − q (keys of p that are not members of q)",
+    );
+    // symmetric difference: (p − q) then (q − p) — the keys in exactly one side.
+    emit_set_alg_helper(
+        out,
+        kind,
+        "symdiff",
+        true,
+        &[("p", Some(("q", false))), ("q", Some(("p", false)))],
+        "p △ q ((p − q) ∪ (q − p): keys in exactly one of the two sets)",
+    );
+}
+
+/// Emit ONE set-algebra helper: allocate a fresh set sized to `cap`
+/// (`|p|+|q|` if `cap_both` else `|p|`), write its `[count=0][cap]` header, run
+/// each `(src, gate)` walk (see [`emit_set_alg_walk`]), then leave the new set's
+/// base-pointer. `walks` lists the source region(s) to insert from in order.
+fn emit_set_alg_helper(
+    out: &mut String,
+    kind: KeyKind,
+    name: &str,
+    cap_both: bool,
+    walks: &[(&str, Option<(&str, bool)>)],
+    desc: &str,
+) {
+    let s = kind.suffix();
+    let kload = match kind {
+        KeyKind::Int => "i64.load",
+        KeyKind::Str => "i32.load",
+    };
+    writeln!(
+        out,
+        "  ;; __wasm_set_{name}_{s}(p, q) -> a NEW set = {desc}"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_set_{name}_{s} (param $p i32) (param $q i32) (result i32)"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "    (local $r i32) (local $cap i32) (local $i i32) (local $n i32) (local $ea i32)"
+    )
+    .expect("write");
+    // cap = |p| (+ |q| for union / symmetric difference)
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    if cap_both {
+        writeln!(out, "    local.get $q").expect("write");
+        writeln!(out, "    i32.load").expect("write");
+        writeln!(out, "    i32.add").expect("write");
+    }
+    writeln!(out, "    local.set $cap").expect("write");
+    // r = __alloc(LIST_ELEMS_OFFSET + cap*DICT_ENTRY_SIZE)
+    writeln!(out, "    local.get $cap").expect("write");
+    writeln!(out, "    i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "    i32.mul").expect("write");
+    writeln!(out, "    i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "    i32.add").expect("write");
+    writeln!(out, "    call $__alloc").expect("write");
+    writeln!(out, "    local.set $r").expect("write");
+    // header: count = 0 @ r+0 (each insert increments it)
+    writeln!(out, "    local.get $r").expect("write");
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "    i32.store").expect("write");
+    // header: capacity = cap @ r+DICT_CAP_OFFSET
+    writeln!(out, "    local.get $r").expect("write");
+    writeln!(out, "    local.get $cap").expect("write");
+    writeln!(out, "    i32.store offset={DICT_CAP_OFFSET}").expect("write");
+    for (src, gate) in walks {
+        emit_set_alg_walk(out, s, kload, src, *gate);
+    }
+    // result = the new set's base-pointer.
+    writeln!(out, "    local.get $r").expect("write");
+    writeln!(out, "  )").expect("write");
+}
+
+/// Emit a `walk $src, (optionally gated) insert each key into $r` loop into a
+/// set-algebra helper body. `gate = None` inserts unconditionally (union);
+/// `Some((g, true))` inserts only when the key IS a member of set `$g`
+/// (intersection); `Some((g, false))` inserts only when it is NOT (difference /
+/// symmetric difference). Insertion is the dedup `$__wasm_dict_set_<k>` with a
+/// `0` value sentinel, whose returned (possibly relocated) pointer is consumed
+/// back into `$r`. The `$done<src>` / `$next<src>` labels are per-source so a
+/// two-walk helper (union / symdiff) never collides.
+fn emit_set_alg_walk(
+    out: &mut String,
+    s: &str,
+    kload: &str,
+    src: &str,
+    gate: Option<(&str, bool)>,
+) {
+    // n = count(src); i = 0
+    writeln!(out, "    local.get ${src}").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.set $n").expect("write");
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "    local.set $i").expect("write");
+    writeln!(out, "    (block $done{src}").expect("write");
+    writeln!(out, "      (loop $next{src}").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        local.get $n").expect("write");
+    writeln!(out, "        i32.ge_s").expect("write");
+    writeln!(out, "        br_if $done{src}").expect("write");
+    // $ea = src + LIST_ELEMS_OFFSET + i*DICT_ENTRY_SIZE (entry i's address).
+    writeln!(out, "        local.get ${src}").expect("write");
+    writeln!(out, "        i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "        i32.mul").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $ea").expect("write");
+    let ind = if let Some((gset, want_present)) = gate {
+        // gate on membership in $gset: has(gset, key@ea), negate if !want_present.
+        writeln!(out, "        local.get ${gset}").expect("write");
+        writeln!(out, "        local.get $ea").expect("write");
+        writeln!(out, "        {kload}").expect("write");
+        writeln!(out, "        call $__wasm_dict_has_{s}").expect("write");
+        if !want_present {
+            writeln!(out, "        i32.eqz").expect("write");
+        }
+        writeln!(out, "        if").expect("write");
+        "          "
+    } else {
+        "        "
+    };
+    // r = dict_set(r, key@ea, 0) — update-or-insert (dedup), consume the pointer.
+    writeln!(out, "{ind}local.get $r").expect("write");
+    writeln!(out, "{ind}local.get $ea").expect("write");
+    writeln!(out, "{ind}{kload}").expect("write");
+    writeln!(out, "{ind}i64.const 0").expect("write");
+    writeln!(out, "{ind}call $__wasm_dict_set_{s}").expect("write");
+    writeln!(out, "{ind}local.set $r").expect("write");
+    if gate.is_some() {
+        writeln!(out, "        end").expect("write");
+    }
+    // i++
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const 1").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $i").expect("write");
+    writeln!(out, "        br $next{src}").expect("write");
+    writeln!(out, "      )").expect("write");
+    writeln!(out, "    )").expect("write");
+}
+
 fn dict_helpers_for(kind: KeyKind) -> String {
     let s = kind.suffix();
     let kparam = match kind {
@@ -6272,6 +6458,13 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     // no key of p is a member of q → p ∩ q = ∅ → disjoint.
     writeln!(out, "    i32.const 1").expect("write");
     writeln!(out, "  )").expect("write");
+
+    // PMAT-1247: the four SET-ALGEBRA helpers (union / intersection / difference
+    // / symmetric difference), each allocating a NEW set from p and q. They
+    // forward-reference `$__wasm_dict_set_{s}` (defined just below) and reuse the
+    // above `$__wasm_dict_has_{s}` probe — WAT resolves calls by name, so the
+    // forward reference assembles cleanly.
+    emit_set_algebra_helpers(&mut out, kind);
 
     // set: update an existing key in place, else append at count. PMAT-999: on
     // overflow (count >= capacity) the region GROWS — bump-alloc a 2x region,
@@ -12559,11 +12752,96 @@ fn emit_heap_map_bind(
     match value {
         Expr::DictLit(pairs) => emit_dict_lit(pairs, kind, scope, out, depth),
         Expr::SetLit(elems) => emit_set_lit(elems, kind, scope, out, depth),
+        // PMAT-1247: SET ALGEBRA — `a | b` / `a & b` / `a - b` / `a ^ b` yields a
+        // NEW set (never mutating an operand), so it is a valid set-binding value.
+        // Dispatches to the per-op allocating runtime helper.
+        Expr::SetOp { lhs, op, rhs } => emit_set_op(lhs, *op, rhs, kind, scope, out, depth),
         other => Err(unsupported(&format!(
-            "a `dict`/`set` binding must be a dict/set LITERAL in the WASM subset \
+            "a `dict`/`set` binding must be a dict/set LITERAL or a set-algebra \
+             expression (`a | b` / `a & b` / `a - b` / `a ^ b`) in the WASM subset \
              (a dict/set-returning call, comprehension, or copy is refused) — got {}",
             expr_kind(other)
         ))),
+    }
+}
+
+/// PMAT-1247: lower a SET-ALGEBRA binding value — `a | b` (union) / `a & b`
+/// (intersection) / `a - b` (difference) / `a ^ b` (symmetric difference),
+/// carried by [`Expr::SetOp`] — leaving the NEW set's `i32` base-pointer on the
+/// stack (Python set algebra yields a fresh set, never mutating an operand; the
+/// caller `local.set`s it, exactly like a `SetLit`). Both operands must be set
+/// NAMES of the binding's key kind — the runtime helper walks two entry regions
+/// of a shared key encoding, so a non-name or kind-mismatched operand is refused
+/// honestly (never a base-pointer combine). Dispatches to the per-op allocating
+/// helper `$__wasm_set_<op>_<k>(a, b) -> i32` co-emitted by [`dict_helpers_for`].
+fn emit_set_op(
+    lhs: &Expr,
+    op: SetOp,
+    rhs: &Expr,
+    kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let (Expr::Ident(ln), Expr::Ident(rn)) = (lhs, rhs) else {
+        return Err(unsupported(
+            "set algebra (`a | b` / `a & b` / `a - b` / `a ^ b`) with a non-name \
+             operand — the WASM subset combines two set LOCALS; bind a set literal \
+             or other set-valued expression to a local first",
+        ));
+    };
+    if !(scope.is_set(ln) && scope.is_set(rn)) {
+        return Err(unsupported(
+            "set algebra mixing a `set` operand with a non-`set` operand — a set \
+             op only ever combines two sets; refused honestly rather than \
+             combining base-pointers",
+        ));
+    }
+    let lk = scope.heap_map_kind(ln).expect("a set local has a key kind");
+    let rk = scope.heap_map_kind(rn).expect("a set local has a key kind");
+    if lk != rk || lk != kind {
+        return Err(unsupported(&format!(
+            "set algebra {op:?} over sets whose key kinds disagree (a {} {} a {} \
+             into a {} set) — the result and both operands must share one key \
+             encoding; refused honestly",
+            lk.suffix(),
+            set_op_symbol(op),
+            rk.suffix(),
+            kind.suffix()
+        )));
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${ln}").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${rn}").expect("write");
+    indent(out, depth);
+    writeln!(
+        out,
+        "call $__wasm_set_{}_{}",
+        set_op_name(op),
+        kind.suffix()
+    )
+    .expect("write");
+    Ok(())
+}
+
+/// The `$__wasm_set_<name>_<k>` stem for a set-algebra op.
+fn set_op_name(op: SetOp) -> &'static str {
+    match op {
+        SetOp::Union => "union",
+        SetOp::Intersection => "intersection",
+        SetOp::Difference => "difference",
+        SetOp::SymmetricDifference => "symdiff",
+    }
+}
+
+/// The Python operator glyph for a set-algebra op (diagnostics only).
+fn set_op_symbol(op: SetOp) -> &'static str {
+    match op {
+        SetOp::Union => "|",
+        SetOp::Intersection => "&",
+        SetOp::Difference => "-",
+        SetOp::SymmetricDifference => "^",
     }
 }
 
