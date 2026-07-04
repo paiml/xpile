@@ -7,6 +7,52 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.616] - 2026-07-04
+
+This release consolidates ~133 commits since v0.1.615, dominated by three arcs:
+the **contract-citation regime** reaching comprehensive + enforced coverage, a
+**provable-model-as-code** capability, and a large **native-WASM** container/
+reduction expansion.
+
+### Contract-citation regime — comprehensive + enforced (PMAT-956)
+
+- **Optional citation emission, library + binary.** `xpile transpile --contracts
+  on|off` (default on) and a config-driven `BackendConfig.emit_contracts` so a
+  library caller controls citations through the config exactly as the CLI does;
+  public `xpile_backend::strip_contract_citations` / `Artifact::with_citations`.
+- **Comprehensive Layer-5 coverage.** Every compile backend cites its L5 compile
+  contract; fixed the one orphan — heap-using WASM output now cites `C-WASM-HEAP`
+  (structural + in-text), keyed on `module_needs_heap`.
+- **Orphan gate** (`every_governing_contract_is_cited_or_uncited_by_design`):
+  enforces the `on-disk → cited` direction the prior gates never did — every
+  governing `C-*` contract must be cited in emitted output or explicitly
+  allowlisted as uncited-by-design (architectural L3 traits / draft proof lanes).
+  This is the invariant that would have caught the `C-WASM-HEAP` orphan.
+
+### Provable-model-as-code (PMAT-956) + provability breadth (PMAT-957/958/959)
+
+- **Mathlib model-proof lane** (walled-off `contracts/lean-models/`): OLS
+  uniqueness certificates for the constant, simple-linear, and general
+  k-parameter cases; the `C-OLS-MODEL-UNIQUENESS` contract brings it under `pv`,
+  cited on fitted linear models.
+- **Universal binary**: `xpile transpile --emit-crate` emits a complete buildable
+  crate that compiles to `wasm32-wasip1` (CI-verified == CPython under wasmtime).
+- **De-vacuity**: `C-FFI-SHELL-SUBPROCESS`'s two semantic equations gain
+  load-bearing Lean theorems, each with a non-vacuity `≠` dual.
+- **Symbolic (Kani) strata** added for `C-C-INT-ARITH` (i32 wrapping-add monoid)
+  and `C-OLS-MODEL-UNIQUENESS` (denominator non-degeneracy) — 13 → 15/35 contracts
+  meeting the §14.4 ≥2-stratum quorum bar.
+
+### Native-WASM container + reduction expansion (PMAT-1234..1253)
+
+- **dict**: `del d[k]`, `d.pop`, `d.clear()`, structural `==`/`!=` (keys AND
+  values).
+- **set**: `s.remove`/`s.discard`, structural equality, subset/superset ordering
+  `<=`/`<`/`>=`/`>`, `isdisjoint`, and the allocating algebra `|`/`&`/`-`/`^`.
+- **list**: reductions `sum`/`min`/`max` (int+float) and `any`/`all` (bool fold);
+  the first allocating list ops `sorted(...)` and `reversed(...)`/`xs[::-1]`.
+- Whole-family adversarial differential fuzzing vs live python3 (no divergence).
+
 ### Fixed — provability: context-manager finally guarantee was vacuous (PMAT-1141)
 
 `PyContextManagerExit.lean` modeled `exitRuns : Outcome → Bool := fun _ =>
