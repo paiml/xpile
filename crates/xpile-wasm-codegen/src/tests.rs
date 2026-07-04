@@ -5506,3 +5506,398 @@ fn list_float_reversed_executes_in_wabt() {
          rev={rev:?}; all three exports match CPython (via the shared i64-word helper)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// PMAT-1255: native-WASM `a + b` list concatenation over a `list[int]` /
+// `list[float]` — the THIRD allocating list-VALUED op (after `sorted` and
+// `reversed`). ONE `$__wasm_list_concat_i64` helper serves BOTH kinds (concat
+// moves 8-byte words verbatim, never interpreting them), like the single
+// `reversed` helper and unlike `sorted`'s two typed helpers.
+// ---------------------------------------------------------------------------
+
+/// PMAT-1255 `a + b` fixture:
+/// `def c(xs: list[<elem>], ys: list[<elem>]) -> <elem>: zs = xs + ys; return zs[0]`.
+/// The bound `zs` is a `list[<elem>]` local, so `emit_list_expr` sees the
+/// `Expr::ListConcat` in list-VALUED position; the trailing `zs[0]` reads it.
+fn list_concat_fn(elem: Type) -> Function {
+    Function {
+        name: "c".into(),
+        params: vec![
+            param("xs", Type::List(Box::new(elem.clone()))),
+            param("ys", Type::List(Box::new(elem.clone()))),
+        ],
+        return_type: elem.clone(),
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "zs".into(),
+                ty: Type::List(Box::new(elem)),
+                value: Expr::ListConcat {
+                    lhs: Box::new(Expr::Ident("xs".into())),
+                    rhs: Box::new(Expr::Ident("ys".into())),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("zs".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    }
+}
+
+#[test]
+fn list_int_concat_emits_helper_call_and_heap() {
+    // `xs + ys` over two list[int] declares `$__wasm_list_concat_i64`, calls it,
+    // and — as an allocating list op — ALSO pulls in the bump allocator
+    // (`$__alloc`) + exported memory. The helper takes TWO base params (a, b)
+    // and moves 8-byte words (i64 ld/st).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_concat_fn(Type::I64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_concat_i64 (param $a i32) (param $b i32) (result i32)"),
+        "concat helper declared with two base params: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_concat_i64"),
+        "the concat helper is called: {wat}"
+    );
+    assert!(
+        wat.contains("(func $__alloc"),
+        "an allocating list op forces the bump allocator: {wat}"
+    );
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "the fresh + source list records need the exported memory: {wat}"
+    );
+    assert!(
+        wat.contains("i64.load") && wat.contains("i64.store"),
+        "concatenation moves 8-byte words verbatim (i64 load/store): {wat}"
+    );
+}
+
+#[test]
+fn list_float_concat_reuses_the_same_i64_word_helper() {
+    // `xs + ys` over two list[float] emits the VERY SAME
+    // `$__wasm_list_concat_i64` helper — concat is a byte-move, so there is NO
+    // `_f64` concat twin (contrast the two typed `sorted` helpers). This is the
+    // load-bearing "one helper serves both" property (shared with `reversed`).
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_concat_fn(Type::F64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_concat_i64 (param $a i32) (param $b i32) (result i32)"),
+        "a FLOAT list concat reuses the i64-word helper: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_concat_i64"),
+        "the float concat calls the same helper: {wat}"
+    );
+    assert!(
+        !wat.contains("$__wasm_list_concat_f64"),
+        "there is NO dead f64 concat twin — one helper serves both: {wat}"
+    );
+}
+
+#[test]
+fn list_concat_helper_absent_without_use() {
+    // A module that never concatenates a list carries no concat helper.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_reversed_fn(Type::I64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_concat_i64"),
+        "no concat helper without an `a + b` list use: {wat}"
+    );
+}
+
+#[test]
+fn list_concat_bool_list_refused_honestly() {
+    // `xs + ys` over two list[bool] — the concat op is int/float (8-byte stride)
+    // only; a bool rides a 4-byte i32, so refuse honestly rather than move the
+    // wrong stride (a distinct-stride helper is deferred, matching sorted/reversed).
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_concat_fn(Type::Bool))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("list[bool]") || err.contains("list[int]` / `list[float]"),
+        "bool-list concat refused: {err}"
+    );
+}
+
+#[test]
+fn list_concat_non_name_operand_refused_honestly() {
+    // `xs + [3, 1, 2]` — the WASM subset concatenates two NAMED lists; bind the
+    // literal operand to a name first.
+    let f = Function {
+        name: "c".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "zs".into(),
+                ty: Type::List(Box::new(Type::I64)),
+                value: Expr::ListConcat {
+                    lhs: Box::new(Expr::Ident("xs".into())),
+                    rhs: Box::new(Expr::ListLit(vec![
+                        Expr::LitInt(3),
+                        Expr::LitInt(1),
+                        Expr::LitInt(2),
+                    ])),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("zs".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("non-name operand") || err.contains("bind a literal"),
+        "non-name operand concat refused: {err}"
+    );
+}
+
+#[test]
+fn list_concat_mixed_element_type_refused_honestly() {
+    // `xs: list[int] + ys: list[float]` — the WASM subset concatenates lists of
+    // ONE element type; a mixed concat refuses honestly (the result element type
+    // is `int`, so the `float` operand mismatches).
+    let f = Function {
+        name: "c".into(),
+        params: vec![
+            param("xs", Type::List(Box::new(Type::I64))),
+            param("ys", Type::List(Box::new(Type::F64))),
+        ],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "zs".into(),
+                ty: Type::List(Box::new(Type::I64)),
+                value: Expr::ListConcat {
+                    lhs: Box::new(Expr::Ident("xs".into())),
+                    rhs: Box::new(Expr::Ident("ys".into())),
+                },
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("zs".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("ONE element type") || err.contains("same element type"),
+        "mixed-element concat refused: {err}"
+    );
+}
+
+/// PMAT-1255 EXECUTED WITNESS (int) — assemble + run the REAL-emitted `xs + ys`
+/// over two `list[int]` and diff against CPython. A `(data)` image lays list `a`
+/// at base 0, list `b` at base 256, and an EMPTY list (count 0) at base 512;
+/// zero-arg exports call the single `$__wasm_list_concat_i64` helper and read
+/// back chosen elements of the concatenation. The concatenated sequence
+/// (`a[0..na]` then `b[0..nb]`), the left-empty identity (`[] + b == b`) and the
+/// right-empty identity (`a + [] == a`) are all value-matched against CPython.
+/// Gated on `wasm_runtime_available()` — a clean skip without WABT.
+#[test]
+fn list_int_concat_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_int_concat_executes_in_wabt: WABT not installed");
+        return;
+    }
+    // CPython: [5,-3,10] + [7,-1] == [5,-3,10,7,-1].
+    let a: [i64; 3] = [5, -3, 10];
+    let b: [i64; 2] = [7, -1];
+    let mut cat: Vec<i64> = a.to_vec();
+    cat.extend_from_slice(&b);
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_concat_fn(Type::I64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    // 640-byte image: list a @ base 0, list b @ base 256, empty list @ base 512.
+    let mut image = vec![0u8; 640];
+    image[0..4].copy_from_slice(&(a.len() as i32).to_le_bytes());
+    for (i, &e) in a.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    image[256..260].copy_from_slice(&(b.len() as i32).to_le_bytes());
+    for (i, &e) in b.iter().enumerate() {
+        let off = 256 + 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    // base 512: empty list (count 0) — already zeroed.
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "concat module exports memory: {helper_wat}"
+    );
+    // Read cat[k] = concat(0, 256) then + (8 + k*8), i64.load → f64.
+    let read = |lhs: i32, rhs: i32, k: usize| {
+        format!(
+            "i32.const {lhs}\n    i32.const {rhs}\n    call $__wasm_list_concat_i64\n    \
+             i32.const {}\n    i32.add\n    i64.load\n    f64.convert_i64_s)\n",
+            8 + k * 8
+        )
+    };
+    // e0..e2: concat(a,b)[0], [2], [4]; e3: LEFT-empty ([]+b)[0]==b[0]==7;
+    // e4: RIGHT-empty (a+[])[2]==a[2]==10.
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}  \
+         (func (export \"e3\") (result f64)\n    {}  \
+         (func (export \"e4\") (result f64)\n    {}",
+        read(0, 256, 0),
+        read(0, 256, 2),
+        read(0, 256, 4),
+        read(512, 256, 0),
+        read(0, 512, 2),
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_int_concat")
+        .expect("assemble+run REAL-emitted list-int-concat witness");
+    // CPython oracles: cat[0]=5, cat[2]=10, cat[4]=-1, ([]+b)[0]=7, (a+[])[2]=10.
+    let expected = [
+        cat[0] as f64,
+        cat[2] as f64,
+        cat[4] as f64,
+        b[0] as f64,
+        a[2] as f64,
+    ];
+    assert_eq!(out.len(), expected.len(), "five exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "concat witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1255 executed witness: REAL (xs + ys: list[int]) emit → run ===\n\
+         cat={cat:?}; []+b==b and a+[]==a identities hold; all five exports match CPython"
+    );
+}
+
+/// PMAT-1255 EXECUTED WITNESS (float) — assemble + run the REAL-emitted `xs + ys`
+/// over two `list[float]` and diff against CPython. Crucially it calls the VERY
+/// SAME `$__wasm_list_concat_i64` byte-move helper (there is no f64 twin); the
+/// driver reads the concatenated record's f64 elements directly.
+#[test]
+fn list_float_concat_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_float_concat_executes_in_wabt: WABT not installed");
+        return;
+    }
+    let a: [f64; 2] = [3.5, 1.5];
+    let b: [f64; 3] = [2.5, -0.5, 9.0];
+    let mut cat: Vec<f64> = a.to_vec();
+    cat.extend_from_slice(&b);
+
+    let helper_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_concat_fn(Type::F64))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    // The load-bearing property: a float concat rides the i64-word helper.
+    assert!(
+        helper_wat.contains("call $__wasm_list_concat_i64")
+            && !helper_wat.contains("$__wasm_list_concat_f64"),
+        "float concat uses the ONE i64-word helper: {helper_wat}"
+    );
+
+    let mut image = vec![0u8; 640];
+    image[0..4].copy_from_slice(&(a.len() as i32).to_le_bytes());
+    for (i, &e) in a.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    image[256..260].copy_from_slice(&(b.len() as i32).to_le_bytes());
+    for (i, &e) in b.iter().enumerate() {
+        let off = 256 + 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    // base 512: empty list (count 0) — already zeroed.
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        helper_wat.contains(mem_line),
+        "float concat module exports memory: {helper_wat}"
+    );
+    let read = |lhs: i32, rhs: i32, k: usize| {
+        format!(
+            "i32.const {lhs}\n    i32.const {rhs}\n    call $__wasm_list_concat_i64\n    \
+             i32.const {}\n    i32.add\n    f64.load)\n",
+            8 + k * 8
+        )
+    };
+    // e0..e2: concat(a,b)[0], [2], [4]; e3: right-empty (a+[])[1]==a[1].
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    {}  \
+         (func (export \"e1\") (result f64)\n    {}  \
+         (func (export \"e2\") (result f64)\n    {}  \
+         (func (export \"e3\") (result f64)\n    {}",
+        read(0, 256, 0),
+        read(0, 256, 2),
+        read(0, 256, 4),
+        read(0, 512, 1),
+    );
+    let witness_wat = helper_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_float_concat")
+        .expect("assemble+run REAL-emitted list-float-concat witness");
+    let expected = [cat[0], cat[2], cat[4], a[1]];
+    assert_eq!(out.len(), expected.len(), "four exports: {out:?}");
+    for (i, (g, e)) in out.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (g - e).abs() <= 1.0e-9,
+            "float concat witness e{i}: executed {g}, expected (CPython) {e}"
+        );
+    }
+    eprintln!(
+        "=== PMAT-1255 executed witness: REAL (xs + ys: list[float]) emit → run ===\n\
+         cat={cat:?}; a+[]==a identity holds; all four exports match CPython (shared i64-word helper)"
+    );
+}

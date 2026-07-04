@@ -7443,6 +7443,123 @@ const LIST_REVERSED_HELPER: &str = "\
     local.get $r)
 ";
 
+/// PMAT-1255: the list-CONCAT helper (`a + b` over two `list[scalar]`) — the
+/// THIRD list-VALUED op that ALLOCATES (after `sorted` and `reversed`). Given
+/// two length-prefixed base-pointers it bump-allocates a fresh record holding
+/// `na + nb` elements, copies `a`'s payload then `b`'s, and returns the new
+/// base. Concatenation MOVES 8-byte words verbatim (never interpreting them),
+/// so — exactly like [`LIST_REVERSED_HELPER`] — this ONE helper serves BOTH
+/// `list[int]` and `list[float]` (no int/float twin, unlike the two typed sort
+/// helpers). The EMPTY list is the identity: `[] + b == b`, `a + [] == a` fall
+/// out of `na == 0` / `nb == 0` copying zero words (no trap). Neither operand is
+/// mutated — Python's `a + b` yields a fresh list.
+const LIST_CONCAT_HELPER: &str = "\
+  ;; __wasm_list_concat_i64(a, b) -> a NEW list = a ++ b (8-byte stride)
+  ;; a, b → length-prefixed regions: i32 count @ base+0, 8-byte elements @ base+8.
+  ;; Concatenation MOVES 8-byte words verbatim (never interpreting them), so this
+  ;; ONE helper serves BOTH list[int] and list[float]: r = a[0..na] ++ b[0..nb].
+  (func $__wasm_list_concat_i64 (param $a i32) (param $b i32) (result i32)
+    (local $na i32)
+    (local $nb i32)
+    (local $r i32)
+    (local $ra i32)
+    (local $i i32)
+    ;; na = count(a), nb = count(b) (i32 headers @ base+0)
+    local.get $a
+    i32.load
+    local.set $na
+    local.get $b
+    i32.load
+    local.set $nb
+    ;; r = __alloc(8 + (na+nb)*8); write the i32 count header (na+nb) at r+0
+    local.get $na
+    local.get $nb
+    i32.add
+    i32.const 8
+    i32.mul
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $r
+    local.get $r
+    local.get $na
+    local.get $nb
+    i32.add
+    i32.store
+    ;; ra = r + 8 (element 0 of the new record)
+    local.get $r
+    i32.const 8
+    i32.add
+    local.set $ra
+    ;; copy a: for i in 0..na: r[i] = a[i]  (a's element 0 is at a+8)
+    i32.const 0
+    local.set $i
+    (block $acd
+      (loop $ac
+        local.get $i
+        local.get $na
+        i32.ge_u
+        br_if $acd
+        ;; dst = ra + i*8
+        local.get $ra
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; val = i64.load(a + 8 + i*8)
+        local.get $a
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $ac
+      )
+    )
+    ;; copy b: for i in 0..nb: r[na+i] = b[i]  (b's element 0 is at b+8)
+    i32.const 0
+    local.set $i
+    (block $bcd
+      (loop $bc
+        local.get $i
+        local.get $nb
+        i32.ge_u
+        br_if $bcd
+        ;; dst = ra + (na+i)*8
+        local.get $ra
+        local.get $na
+        local.get $i
+        i32.add
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; val = i64.load(b + 8 + i*8)
+        local.get $b
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $bc
+      )
+    )
+    local.get $r)
+";
+
 /// Native WASM backend. Lowers the meta-HIR scalar/control subset to WAT
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
@@ -8602,6 +8719,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // ONE helper serves both int and float (reversal is a verbatim 8-byte-word
     // move), so a SINGLE gate drives it (no int/float twin, unlike sorted).
     let needs_list_reversed = module_uses_list_reversed(module);
+    // PMAT-1255: `a + b` over two `list[int]`/`list[float]` (`Expr::ListConcat`)
+    // returns a NEW concatenated list via `$__wasm_list_concat_i64` — the THIRD
+    // list-VALUED op that ALLOCATES, so (like `sorted`/`reversed`) it ALSO forces
+    // `needs_heap` (via `expr_has_heap_op`). ONE helper serves both int and float
+    // (concat moves 8-byte words verbatim), so a SINGLE gate drives it.
+    let needs_list_concat = module_uses_list_concat(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -8627,6 +8750,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_sorted
         || needs_list_sorted_float
         || needs_list_reversed
+        || needs_list_concat
     {
         writeln!(
             out,
@@ -9035,6 +9159,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (contrast the two typed sort helpers above).
     if needs_list_reversed {
         out.push_str(LIST_REVERSED_HELPER);
+    }
+    // PMAT-1255: emit the list-CONCAT helper once, when any function uses
+    // `a + b` over two `list[int]`/`list[float]` (`Expr::ListConcat`). It
+    // ALLOCATES a fresh record holding `na + nb` elements via `$__alloc` (so the
+    // module also carries the bump heap + `(memory)` via `needs_heap`). ONE
+    // helper serves both int and float — concat moves 8-byte words verbatim,
+    // never interpreting them — so there is no dead-twin problem (contrast the
+    // two typed sort helpers above; this mirrors the single reverse helper).
+    if needs_list_concat {
+        out.push_str(LIST_CONCAT_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -10426,6 +10560,95 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
     }
 }
 
+/// PMAT-1255: does any function CONCATENATE two lists with `a + b`
+/// (`Expr::ListConcat`)? Gates the single `$__wasm_list_concat_i64` helper (one
+/// helper serves both kinds — concat is a verbatim 8-byte-word move, so no
+/// `want_float` split, exactly like the reverse gate). Exhaustive over the same
+/// stmt/expr forms as [`expr_has_list_reversed`]; a missed sub-expression would
+/// leave the helper undeclared at the `call $__wasm_list_concat_i64` site (a hard
+/// wat2wasm failure — the recurring gate-hole class, where over-detecting is a
+/// harmless unused function but under-detecting is fatal). The supported concat
+/// carries bare-Ident operands, so no OTHER list-op walker needs a `ListConcat`
+/// arm — nothing supported can nest inside a concat operand (a non-Ident operand
+/// refuses at emit, aborting codegen before any helper mismatch).
+fn module_uses_list_concat(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_concat(&f.body))
+}
+
+fn block_has_list_concat(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_concat) || expr_has_list_concat(&block.trailing_return)
+}
+
+fn stmt_has_list_concat(s: &Stmt) -> bool {
+    let e = expr_has_list_concat;
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            e(cond)
+                || then_body.iter().any(stmt_has_list_concat)
+                || else_body.iter().any(stmt_has_list_concat)
+        }
+        Stmt::While { cond, body } => e(cond) || body.iter().any(stmt_has_list_concat),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_concat(expr: &Expr) -> bool {
+    let e = expr_has_list_concat;
+    match expr {
+        // this node IS a list concatenation — the gate fires.
+        Expr::ListConcat { .. } => true,
+        Expr::Reversed { list } => e(list),
+        Expr::Sorted { list, .. } => e(list),
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
 fn block_has_str_repeat(block: &Block) -> bool {
     block.stmts.iter().any(stmt_has_str_repeat) || expr_has_str_repeat(&block.trailing_return)
 }
@@ -10966,6 +11189,14 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // would emit the reverse helper against an undeclared `$__alloc` — a hard
         // wat2wasm failure).
         Expr::Reversed { .. } => true,
+        // PMAT-1255: `a + b` over two lists (`Expr::ListConcat`) likewise
+        // bump-allocates a fresh concatenated record (via `$__wasm_list_concat_i64`
+        // → `$__alloc`), the THIRD list-VALUED allocating op, so it forces the
+        // bump heap + `(memory)`. The supported shape carries bare-Ident operands
+        // (no nested allocation), so returning `true` directly is correct and safe
+        // (over-detection is harmless; a miss would emit the concat helper against
+        // an undeclared `$__alloc` — a hard wat2wasm failure).
+        Expr::ListConcat { .. } => true,
         // PMAT-1060: `str(int)` bump-allocates its decimal-ASCII string, so it
         // pulls in the allocator + `(memory)` like any materialising op.
         Expr::ToStr {
@@ -15410,11 +15641,19 @@ fn emit_list_expr(
         // (reversal moves 8-byte words verbatim, never interpreting them). The
         // source is never mutated (Python's `reversed`/`[::-1]` yields a new seq).
         Expr::Reversed { list } => emit_list_reversed(list, elem, scope, out, depth),
+        // PMAT-1255: `a + b` over two `list[int]`/`list[float]` — the THIRD
+        // allocating list-VALUED op. `$__wasm_list_concat_i64(a, b)`
+        // bump-allocates a fresh record holding `a`'s then `b`'s elements and
+        // leaves the new base-pointer; ONE helper serves both int and float
+        // (concat moves 8-byte words verbatim). Neither operand is mutated
+        // (Python's `a + b` yields a new list).
+        Expr::ListConcat { lhs, rhs } => emit_list_concat(lhs, rhs, elem, scope, out, depth),
         other => Err(unsupported(&format!(
             "binding a list local from {} — the WASM subset materialises a \
              list LITERAL, shares another named list local/param, sorts a \
-             named list (`sorted(xs)`), or reverses one (`reversed(xs)` / \
-             `xs[::-1]`); other list-returning calls/slices are refused",
+             named list (`sorted(xs)`), reverses one (`reversed(xs)` / \
+             `xs[::-1]`), or concatenates two named lists (`a + b`); other \
+             list-returning calls/slices are refused",
             expr_kind(other)
         ))),
     }
@@ -15552,6 +15791,75 @@ fn emit_list_reversed(
     writeln!(out, "local.get ${src}").expect("write");
     indent(out, depth);
     writeln!(out, "call $__wasm_list_reversed_i64").expect("write");
+    Ok(())
+}
+
+/// PMAT-1255: lower `a + b` over two `list[scalar]` (`Expr::ListConcat`) — the
+/// THIRD allocating list-VALUED op. Pushes `a`'s then `b`'s base-pointer and
+/// calls `$__wasm_list_concat_i64`, which bump-allocates a fresh record holding
+/// `a`'s elements followed by `b`'s and leaves ITS base-pointer on the stack.
+///
+/// `elem` is the DESTINATION list's element type (from the bound name).
+/// Concatenation is a verbatim 8-byte-word move that NEVER interprets element
+/// values, so ONE helper (`$__wasm_list_concat_i64`) serves BOTH `list[int]`
+/// (I64) and `list[float]` (F64) — mirroring [`emit_list_reversed`]. A
+/// `list[bool]` (I32, 4-byte stride) is refused for parity with `sorted`/
+/// `reversed`. Both operands must be NAMED `list[scalar]` locals/params of
+/// exactly `elem` (bind a literal / other list-returning expression to a name
+/// first); a non-name operand refuses honestly rather than mis-lowering.
+fn emit_list_concat(
+    lhs: &Expr,
+    rhs: &Expr,
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // Int and float share the one 8-byte-word helper; a bool list (4-byte i32
+    // stride) is refused — a distinct-stride concat helper is deferred.
+    if !matches!(elem, WatTy::I64 | WatTy::F64) {
+        return Err(unsupported(&format!(
+            "`a + b` list concatenation over a `list[{}]` — the WASM subset \
+             concatenates `list[int]` / `list[float]` (8-byte stride) only (a \
+             bool/other-kind list is refused)",
+            elem.keyword()
+        )));
+    }
+    // Validate and push one named-list operand base-pointer. Both sides must be a
+    // NAMED `list[scalar]` local/param of the SAME element type as the result.
+    let mut push_operand = |side: &Expr| -> Result<(), BackendError> {
+        let Expr::Ident(src) = side else {
+            return Err(unsupported(
+                "`a + b` list concatenation over a non-name operand — the WASM \
+                 subset concatenates two named `list[scalar]` locals/params \
+                 (bind a literal or list-returning expression to a name first)",
+            ));
+        };
+        let Some(src_elem) = scope.list_elem_of(src) else {
+            return Err(unsupported(&format!(
+                "`{src}` in a list concatenation is not a `list[scalar]` \
+                 local/param in the WASM subset"
+            )));
+        };
+        if src_elem != elem {
+            return Err(unsupported(&format!(
+                "list concatenation mixes a `list[{}]` with the `list[{}]` \
+                 result — the WASM subset concatenates lists of ONE element \
+                 type (concatenate lists of the same element type)",
+                src_elem.keyword(),
+                elem.keyword()
+            )));
+        }
+        indent(out, depth);
+        writeln!(out, "local.get ${src}").expect("write");
+        Ok(())
+    };
+    // Push `a` then `b` (helper params $a, $b), then the single 8-byte-word
+    // helper; it leaves the fresh concatenated record's i32 base-pointer.
+    push_operand(lhs)?;
+    push_operand(rhs)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_list_concat_i64").expect("write");
     Ok(())
 }
 
