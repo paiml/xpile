@@ -12,3 +12,11 @@ description = "Native WebAssembly backend — lowers meta-HIR (scalar/control su
 xpile-backend = { workspace = true }
 xpile-contracts = { workspace = true }
 xpile-meta-hir = { workspace = true }
+
+# Dev-only: the Python frontend, so the E2E witnesses can drive the FULL
+# pipeline (Python source → meta-HIR → WASM) and guard against a
+# frontend-vs-codegen shape drift (the PMAT-1244 failure mode). No cycle:
+# neither frontend crate depends on this backend.
+[dev-dependencies]
+depyler-frontend = { workspace = true }
+xpile-frontend = { workspace = true }

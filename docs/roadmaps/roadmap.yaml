@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1257
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1257: [wasm/verify/list] ADVERSARIAL-VERIFY skeptic pass on the recent native-WASM allocating-op family (`sorted`/`reversed`/`a+b` concat/`xs[lo:hi]` slice + set ALGEBRA `|`/`&`/`-`/`^`) — the discipline slice (memory feedback-ultracode-adversarial-verify), ~11 feature slices since the last broad refutation (PMAT-1244). The skeptic pass tried to REFUTE the recent claims three ways and could not: (1) FRONTEND REACHABILITY — every prior list/set witness builds the meta-HIR BY HAND and drives `emit_module` directly, so NONE guards the exact PMAT-1244 failure mode (emit arm green while the Python frontend produces a different `Expr` shape → catch-all refusal). Live `xpile transpile probe.py --target wasm` on real Python for all four list ops + set algebra assembles clean AND value-matches CPython. (2) ADVERSARIAL CORRECTNESS — a 17-case int battery + 7-case float battery over an order-sensitive fold fingerprint (`acc=acc*31+v` / `acc*7+v`, so ONE returned scalar certifies the WHOLE ordered result) value-matches CPython on negatives/duplicates/empties/clamp/OOR/single-element/`xs[::-1]`; the lone apparent int mismatch was a harness artifact (wasm-interp prints i64 UNSIGNED; normalised it matched exactly). (3) SILENT-MISCOMPILE BOUNDARY — composed ops over a TEMPORARY (`sorted(a+b)`, `list(reversed(xs[1:4]))`, `xs[1:4][0]`) and the unsupported `list[bool]`/stepped slices all REFUSE with a hard backend error, never emit-but-wrong. NOTHING was refuted → the recent work HOLDS. DELIVERABLE (real, gated): bank the verification as a committed FULL-PIPELINE regression witness the hand-built-HIR witnesses cannot provide.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open), forward_ev_ranking rank 1 (ADVERSARIAL-VERIFY your own work — memory feedback-ultracode-adversarial-verify). ~11 allocating-op feature slices (PMAT-1245..1256) shipped since the last broad skeptic refutation at PMAT-1244; the every-5-8-slice discipline was due. The skeptic pass targeted the highest-risk class — half-delivered capability that LOOKS shipped (the PMAT-1244 pattern) — across the allocating list ops + set algebra."
+  - "IMPL (one new gated dev-only witness, no product-code change): crates/xpile-wasm-codegen/tests/list_e2e_frontend_witness.rs (4 tests) drives the FULL pipeline — real Python source -> the production PythonFrontend.parse_and_lower_profiled with the SAME LoweringProfile the CLI uses for --target wasm (AliasSemantics::Reference + runtime_abort) -> the production emit_module -> WABT (wat2wasm + wasm-interp --run-all-exports). Each probe is a zero-arg `go()` that folds the result list into ONE order-sensitive fingerprint, so a single executed scalar certifies the whole ordered result. Adds depyler-frontend + xpile-frontend as [dev-dependencies] (no cycle — neither frontend depends on this backend). Gated on wasm_runtime_available(): still asserts the pipeline LOWERS+EMITS when WABT is absent, so free CI stays green."
+  - "COVERAGE: int_list_ops (8 cases — sorted dups+negs, reversed x6, concat empty-lhs/rhs, slice neg-both/OOR-hi/empty/full) VALUE-MATCH CPython (negative fold round-trips through the unsigned-i64 print); float_list_ops (3 — sorted, xs[::-1], concat) match within 1e-9 (f64 bit-pattern survives the word-move); set_algebra (union/inter/diff/symdiff on {1,2,3,4} vs {3,4,5,6} = 6224) matches; unsupported_shapes_refuse (5 — sorted-of-concat-temp, reversed-of-slice-temp, index-of-slice-temp, bool-list slice, stepped slice) each assert emit(pipeline).is_err() — the silent-miscompile guard. This is the FIRST witness in the crate that proves frontend REACHABILITY (the PMAT-1244 gap), complementing the hand-built-HIR emit witnesses."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (all witnesses incl. the 4 new full-pipeline tests; no regression). Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM + C-WASM-HEAP (no new contract/Lean module minted — a verification slice). No product-code touched: the recent allocating-op family was found SOUND; the deliverable is the durable frontend-reachability guard it lacked."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1256
   github_issue: null
   item_type: task
