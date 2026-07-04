@@ -178,8 +178,8 @@ use xpile_backend::{
 };
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, Param, Stmt, StrMethodOp,
-    Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, Param, SetPredOp, Stmt,
+    StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -11370,6 +11370,14 @@ fn emit_expr(
         // PMAT-995 (slice 3b): `k in d` / `x in s` — i32 bool membership.
         Expr::DictContains { dict, key } => emit_dict_contains(dict, key, scope, out, depth),
         Expr::SetContains { set, elem } => emit_dict_contains(set, elem, scope, out, depth),
+        // PMAT-1245: set ordering `a <= b` / `a < b` / `a >= b` / `a > b` (subset
+        // / proper-subset / superset / proper-superset). The FRONTEND lowers set
+        // comparison operators to `SetPred`, NOT `BinOp` — so this is the path
+        // that makes set ordering reachable from Python source; it reuses the
+        // `$__wasm_set_subset_<k>` membership helper PMAT-1244 already emits.
+        // `a.isdisjoint(b)` (`SetPredOp::Disjoint`) needs a distinct walk and is
+        // refused honestly.
+        Expr::SetPred { lhs, op, rhs } => emit_set_pred(lhs, *op, rhs, scope, out, depth),
         // PMAT-1127: `needle in haystack` over strings — an i32 bool substring
         // test via a non-allocating byte search. Both operands lower to i32
         // base-pointers (`emit_str_expr`); `$__wasm_str_contains` slides the
@@ -13736,6 +13744,95 @@ fn binop_operand_is_set(e: &Expr, scope: &Scope) -> bool {
 fn binop_operand_is_dict(e: &Expr, scope: &Scope) -> bool {
     matches!(e, Expr::Ident(name)
         if scope.heap_map_kind(name).is_some() && !scope.is_set(name))
+}
+
+/// PMAT-1245: `Expr::SetPred` — Python set ordering `a <= b` / `a < b` / `a >= b`
+/// / `a > b` (subset / proper-subset / superset / proper-superset). The FRONTEND
+/// lowers set comparison operators to `SetPred` (never `BinOp`), so this — NOT
+/// the `emit_binop` set-ordering arm (PMAT-1244, reachable only from a hand-built
+/// meta-HIR or another frontend) — is the path that makes set ordering reachable
+/// from Python source. It reuses the `$__wasm_set_subset_<k>(sub,sup)->i32`
+/// membership helper PMAT-1244 already emits:
+///
+/// ```text
+///   a <= b  ⇔  subset(a, b)                 (non-strict subset)
+///   a >= b  ⇔  subset(b, a)                 (containment flipped)
+///   a <  b  ⇔  subset(a, b) ∧ |a| < |b|     (PROPER subset — inline size AND)
+///   a >  b  ⇔  subset(b, a) ∧ |b| < |a|
+/// ```
+///
+/// The strict variants AND on an inline header size compare (a subset of unequal
+/// size is a proper subset, since `p ⊆ q ⟹ |p| ≤ |q|` for sets). Both operands
+/// are set Idents (the WASM subset only orders set locals), so re-emitting one
+/// for the size reload is a pure `local.get`. `isdisjoint` (`Disjoint`) needs a
+/// distinct no-common-element walk (not subset) and is refused honestly.
+fn emit_set_pred(
+    lhs: &Expr,
+    op: SetPredOp,
+    rhs: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    // Both operands must be set NAMES of the SAME key kind — a set only orders
+    // against a set, and comparing two entry regions needs a shared key encoding.
+    let (Expr::Ident(ln), Expr::Ident(rn)) = (lhs, rhs) else {
+        return Err(unsupported(
+            "set predicate with a non-name operand — set ordering needs both \
+             sides bound to a name; bind a set literal or other set-valued \
+             expression to a local first",
+        ));
+    };
+    if !(scope.is_set(ln) && scope.is_set(rn)) {
+        return Err(unsupported(
+            "set predicate mixing a `set` operand with a non-`set` operand — a \
+             set only ever orders against another set; refused honestly rather \
+             than comparing base-pointers",
+        ));
+    }
+    let lk = scope.heap_map_kind(ln).expect("a set local has a key kind");
+    let rk = scope.heap_map_kind(rn).expect("a set local has a key kind");
+    if lk != rk {
+        return Err(unsupported(&format!(
+            "set predicate over sets with different key kinds ({} vs {}) — a \
+             set[int] and a set[str] have no subset relation; refused honestly",
+            lk.suffix(),
+            rk.suffix()
+        )));
+    }
+    let sfx = lk.suffix();
+    // (sub, sup) = the (⊆-inner, ⊇-outer) operands for THIS predicate — subset
+    // asks a ⊆ b; superset flips the containment to b ⊆ a.
+    let (sub, sup) = match op {
+        SetPredOp::Subset | SetPredOp::ProperSubset => (lhs, rhs),
+        SetPredOp::Superset | SetPredOp::ProperSuperset => (rhs, lhs),
+        SetPredOp::Disjoint => {
+            return Err(unsupported(
+                "set `a.isdisjoint(b)` — the no-common-element predicate needs a \
+                 distinct membership walk (return 0 on ANY shared key, not the \
+                 subset all-present walk); refused honestly (only subset/superset \
+                 ordering `<`/`<=`/`>`/`>=` is wired, PMAT-1245)",
+            ));
+        }
+    };
+    emit_expr(sub, scope, out, depth)?;
+    emit_expr(sup, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_set_subset_{sfx}").expect("write");
+    // Strict `<`/`>` also require |sub| < |sup| (proper subset).
+    if matches!(op, SetPredOp::ProperSubset | SetPredOp::ProperSuperset) {
+        emit_expr(sub, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.load").expect("write"); // |sub| (size header @ +0)
+        emit_expr(sup, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.load").expect("write"); // |sup|
+        indent(out, depth);
+        writeln!(out, "i32.lt_s").expect("write"); // |sub| < |sup|
+        indent(out, depth);
+        writeln!(out, "i32.and").expect("write"); // (sub ⊆ sup) ∧ proper
+    }
+    Ok(WatTy::I32)
 }
 
 fn emit_binop(
