@@ -75,6 +75,16 @@ equations:
     # the claim with `sorry` (Bronze tier) per the v0.2.0 substrate posture.
     # The monoid laws are mechanically true for `BitVec 32` addition, so the
     # `sorry`s discharge to `decide`/`bv_decide` at the Silver-tier ratchet.
+    # XPILE-QUORUM-001 / PMAT-958: Kani BMC harness (Symbolic stratum).
+    # The `c_int_wrapping_add_commutative_monoid_diamond` function in the
+    # harness file asserts all three monoid conjuncts (commutativity,
+    # associativity, left identity) over the ABI-honest `i32` width xpile
+    # emits for C `int`. Together with the Lean theorem above and the C-path
+    # differential transpile tests, this equation now has ≥1 Symbolic + ≥1
+    # Semantic vote per the ruchy 5.0 §14.4 quorum rule — closing the
+    # Semantic-only gap this contract carried since PMAT-475b.
+    kani_harness: "c_int_wrapping_add_commutative_monoid_diamond"
+    kani_file: "contracts/kani/c_int_arith.rs"
 
 proof_obligations:
   - type: postcondition
