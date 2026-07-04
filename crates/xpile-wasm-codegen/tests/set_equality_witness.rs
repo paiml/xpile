@@ -335,10 +335,12 @@ fn set_equality_lowers_and_carries_helper() {
 
 #[test]
 fn set_equality_refuses_dict_and_mixed_operands() {
-    // A DICT `==` must be REFUSED honestly (not a silent pointer compare) — dict
-    // equality needs a per-key value compare, not yet wired.
-    let dict_eq = module(
-        "seteq_dict",
+    // Dict `==`/`!=` is now WIRED (PMAT-1243); what must still be REFUSED is dict
+    // ORDERING (`<`) — dicts have no order relation, and the fall-through would
+    // compare base-pointers. (The dict `==` path is exercised in
+    // `dict_equality_witness.rs`.)
+    let dict_lt = module(
+        "seteq_dict_lt",
         vec![func(
             "f",
             vec![
@@ -355,16 +357,20 @@ fn set_equality_refuses_dict_and_mixed_operands() {
                     value: Expr::DictLit(vec![(Expr::LitInt(1), Expr::LitInt(10))]),
                 },
             ],
-            eq("a", "b"),
+            Expr::BinOp {
+                op: BinOp::Lt,
+                lhs: Box::new(ident("a")),
+                rhs: Box::new(ident("b")),
+            },
         )],
     );
     let msg = format!(
         "{:?}",
-        emit_module(&dict_eq).expect_err("dict `==` must be refused")
+        emit_module(&dict_lt).expect_err("dict `<` must be refused")
     );
     assert!(
-        msg.contains("dict") && msg.contains("base-pointer"),
-        "dict `==` refusal must name the dict pointer-compare hazard: {msg}"
+        msg.contains("dict") && msg.contains("only structural equality"),
+        "dict `<` refusal must name the dict equality-only boundary: {msg}"
     );
 
     // A set compared with a NON-set operand is refused (a set only equals a set).

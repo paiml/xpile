@@ -6046,6 +6046,101 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     writeln!(out, "    i32.const 1").expect("write");
     writeln!(out, "  )").expect("write");
 
+    // PMAT-1243: dict equality — `dict(p) == dict(q)` ? 1 : 0. STRUCTURAL over
+    // keys AND values (Python `{1:2} == {2:1}` is False, `{1:2} == {1:2}` True):
+    // sizes match AND every key of p is present in q with an EQUAL value. Dict
+    // keys are unique, so equal size + (∀k∈p: k∈q ∧ p[k]==q[k]) ⟺ p == q — no
+    // need to also walk q. Reuses the never-trapping `$__wasm_dict_has_{s}` to
+    // probe membership and `$__wasm_dict_get_{s}` to fetch q's value (safe: only
+    // called when has already returned 1, so it never traps). Values are always
+    // the i64 slot, so `i64.ne` is the value compare. Order-INDEPENDENT: the
+    // result never depends on the swap-into-hole storage order a `del`/`pop`
+    // leaves behind, so it is CPython-exact even after a removal.
+    writeln!(
+        out,
+        "  ;; __wasm_dict_eq_{s}(p, q) = (dict p == dict q) ? 1 : 0 (|p|==|q| AND ∀k: q[k]==p[k])"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_eq_{s} (param $p i32) (param $q i32) (result i32)"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "    (local $i i32) (local $n i32) (local $ea i32) (local $k {kparam})"
+    )
+    .expect("write");
+    // size check: |p| != |q| → not equal (cheap header compare, first).
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.get $q").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    i32.ne").expect("write");
+    writeln!(out, "    if").expect("write");
+    writeln!(out, "      i32.const 0").expect("write");
+    writeln!(out, "      return").expect("write");
+    writeln!(out, "    end").expect("write");
+    // walk p; every key must be present in q with an equal value, else not equal.
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.set $n").expect("write");
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "    local.set $i").expect("write");
+    writeln!(out, "    (block $done").expect("write");
+    writeln!(out, "      (loop $next").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        local.get $n").expect("write");
+    writeln!(out, "        i32.ge_s").expect("write");
+    writeln!(out, "        br_if $done").expect("write");
+    // $ea = p + LIST_ELEMS_OFFSET + i*DICT_ENTRY_SIZE (entry i's address).
+    writeln!(out, "        local.get $p").expect("write");
+    writeln!(out, "        i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "        i32.mul").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $ea").expect("write");
+    // $k = key@ea (loaded with the kind's shape); cached for has + get probes.
+    writeln!(out, "        local.get $ea").expect("write");
+    match kind {
+        KeyKind::Int => writeln!(out, "        i64.load").expect("write"),
+        KeyKind::Str => writeln!(out, "        i32.load").expect("write"),
+    }
+    writeln!(out, "        local.set $k").expect("write");
+    // if key ∉ q → return 0 (never-trapping membership probe).
+    writeln!(out, "        local.get $q").expect("write");
+    writeln!(out, "        local.get $k").expect("write");
+    writeln!(out, "        call $__wasm_dict_has_{s}").expect("write");
+    writeln!(out, "        i32.eqz").expect("write");
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          i32.const 0").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    // if p[k] != q[k] → return 0. p's value is entry $ea's DICT_VAL_OFFSET slot;
+    // q's value comes from get (safe now — has just confirmed the key is present).
+    writeln!(out, "        local.get $ea").expect("write");
+    writeln!(out, "        i64.load offset={DICT_VAL_OFFSET}").expect("write");
+    writeln!(out, "        local.get $q").expect("write");
+    writeln!(out, "        local.get $k").expect("write");
+    writeln!(out, "        call $__wasm_dict_get_{s}").expect("write");
+    writeln!(out, "        i64.ne").expect("write");
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          i32.const 0").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const 1").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $i").expect("write");
+    writeln!(out, "        br $next").expect("write");
+    writeln!(out, "      )").expect("write");
+    writeln!(out, "    )").expect("write");
+    // equal size + every key present with an equal value → equal.
+    writeln!(out, "    i32.const 1").expect("write");
+    writeln!(out, "  )").expect("write");
+
     // set: update an existing key in place, else append at count. PMAT-999: on
     // overflow (count >= capacity) the region GROWS — bump-alloc a 2x region,
     // memory.copy the header + entries, and RETURN the (possibly relocated)
@@ -9496,8 +9591,9 @@ struct Scope<'a> {
     /// `$__wasm_dict_*_<k>` entry helpers, so `heap_maps` alone cannot tell them
     /// apart — but `==`/`!=` differ: set equality is membership-only (no value
     /// slot), while dict equality must also compare values. This records which
-    /// LET-bound heap maps are sets so `emit_binop` routes ONLY sets to
-    /// `$__wasm_set_eq_<k>` (a dict `==` stays refused).
+    /// LET-bound heap maps are sets so `emit_binop` routes sets to
+    /// `$__wasm_set_eq_<k>` (membership-only) and dicts to `$__wasm_dict_eq_<k>`
+    /// (membership + per-key value compare, PMAT-1243).
     heap_sets: Vec<String>,
     /// PMAT-996 (slice 4): the module's struct layout registry (name → fields),
     /// shared across every function (struct definitions are module-global).
@@ -9869,8 +9965,9 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 scope.declare(name, WatTy::I32);
                 scope.heap_maps.push((name.clone(), kind));
                 // PMAT-1242: mark this heap map as a SET so `emit_binop` routes
-                // `s1 == s2` / `s1 != s2` to `$__wasm_set_eq_<k>` (a dict `==`
-                // needs value comparison and stays refused).
+                // `s1 == s2` / `s1 != s2` to the membership-only
+                // `$__wasm_set_eq_<k>` rather than the value-comparing
+                // `$__wasm_dict_eq_<k>` a dict uses (PMAT-1243).
                 scope.heap_sets.push(name.clone());
             }
             // PMAT-996 (slice 4): a struct LET binds an `i32` base-pointer local
@@ -13564,12 +13661,12 @@ fn binop_operand_is_set(e: &Expr, scope: &Scope) -> bool {
     matches!(e, Expr::Ident(name) if scope.is_set(name))
 }
 
-/// PMAT-1242: `true` if `e` is a DICT-valued binop operand — a LET-bound heap
-/// map `Ident` that is NOT a set. Like a set it rides an i32 base-pointer, so a
-/// naive `d1 == d2` would silently compare BASE-POINTERS while Python `==` over
-/// dicts is STRUCTURAL (keys AND values). Full dict equality (a value compare
-/// per key, plus str-valued dicts) is a follow-up; for now `emit_binop`
-/// REFUSES a dict binop honestly rather than miscompile a pointer compare.
+/// PMAT-1242/1243: `true` if `e` is a DICT-valued binop operand — a LET-bound
+/// heap map `Ident` that is NOT a set. Like a set it rides an i32 base-pointer,
+/// so a naive `d1 == d2` would silently compare BASE-POINTERS while Python `==`
+/// over dicts is STRUCTURAL (keys AND values). `emit_binop` intercepts on this
+/// to route equality to `$__wasm_dict_eq_<k>` (size check + per-key membership +
+/// i64 value compare); ordering and dict algebra stay refused honestly.
 fn binop_operand_is_dict(e: &Expr, scope: &Scope) -> bool {
     matches!(e, Expr::Ident(name)
         if scope.heap_map_kind(name).is_some() && !scope.is_set(name))
@@ -13741,20 +13838,69 @@ fn emit_binop(
         )));
     }
 
-    // PMAT-1242: a DICT operand rides an i32 base-pointer just like a set, so a
+    // PMAT-1243: a DICT operand rides an i32 base-pointer just like a set, so a
     // naive `d1 == d2` would silently compare BASE-POINTERS while Python `==`
-    // over dicts is STRUCTURAL (keys AND values). Full dict equality is a
-    // follow-up (it must also compare each value, and handle str-valued dicts);
-    // until then REFUSE honestly rather than emit a pointer compare that says
-    // `{1:2} == {1:2}` is False. (`k in d` is `Expr::DictContains`, not a
-    // binop, so it never reaches here.)
+    // over dicts is STRUCTURAL (keys AND values). Route equality to the real
+    // `$__wasm_dict_eq_<k>` helper (size check + per-key membership + i64 value
+    // compare); refuse the dict ops that are not wired (ordering, algebra)
+    // rather than let the fall-through compare pointers. (`k in d` is
+    // `Expr::DictContains`, not a binop, so it never reaches here.)
     if binop_operand_is_dict(lhs, scope) || binop_operand_is_dict(rhs, scope) {
+        // Both operands must be dict NAMES of the SAME key kind — a dict only
+        // equals another dict (`{1:2} == 1` and `{1:2} == {"a":2}` are False),
+        // and comparing two entry regions needs a shared key encoding. A
+        // dict-literal / non-name / non-dict / mixed-kind operand is refused.
+        // (The set branch above already caught any set operand, so here neither
+        // side is a set.)
+        let (Expr::Ident(ln), Expr::Ident(rn)) = (lhs, rhs) else {
+            return Err(unsupported(&format!(
+                "binary op {op:?} with a `dict` operand and a non-name operand — \
+                 dict comparison needs both sides bound to a name; bind a dict \
+                 literal or other dict-valued expression to a local first"
+            )));
+        };
+        let l_is_dict = scope.heap_map_kind(ln).is_some() && !scope.is_set(ln);
+        let r_is_dict = scope.heap_map_kind(rn).is_some() && !scope.is_set(rn);
+        if !(l_is_dict && r_is_dict) {
+            return Err(unsupported(&format!(
+                "binary op {op:?} mixing a `dict` operand with a non-`dict` \
+                 operand — a dict only ever equals another dict; refused \
+                 honestly rather than comparing base-pointers"
+            )));
+        }
+        let lk = scope
+            .heap_map_kind(ln)
+            .expect("a dict local has a key kind");
+        let rk = scope
+            .heap_map_kind(rn)
+            .expect("a dict local has a key kind");
+        if lk != rk {
+            return Err(unsupported(&format!(
+                "binary op {op:?} over dicts with different key kinds ({} vs {}) \
+                 — a dict[int,_] and a dict[str,_] can never be equal; refused \
+                 honestly",
+                lk.suffix(),
+                rk.suffix()
+            )));
+        }
+        if matches!(op, BinOp::Eq | BinOp::NotEq) {
+            // d1 == d2 ⇔ |d1| == |d2| AND ∀k∈d1: k∈d2 ∧ d1[k]==d2[k] — the
+            // helper returns an i32 bool. Push both base-pointers, call, invert
+            // for `!=`.
+            emit_expr(lhs, scope, out, depth)?;
+            emit_expr(rhs, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_dict_eq_{}", lk.suffix()).expect("write");
+            if matches!(op, BinOp::NotEq) {
+                indent(out, depth);
+                writeln!(out, "i32.eqz").expect("write"); // != is !(==)
+            }
+            return Ok(WatTy::I32);
+        }
         return Err(unsupported(&format!(
-            "binary op {op:?} over `dict` operand(s) — a dict rides an i32 \
-             base-pointer, so a naive compare would be POINTER identity while \
-             Python `==`/`!=` over dicts is structural (keys AND values). Dict \
-             equality is not yet wired in the WASM lane (sets are, PMAT-1242); \
-             refused honestly rather than comparing base-pointers"
+            "binary op {op:?} over `dict` operands — only structural equality \
+             `==`/`!=` is wired (PMAT-1243); ordering and dict algebra are not \
+             in the WASM dict subset, refused honestly"
         )));
     }
 
