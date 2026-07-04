@@ -75,7 +75,7 @@ Same constraints as `Frontend`. Both traits compose at the session level: a sess
 
 ## Profile and the two-mHIR decision
 
-`BackendConfig::profile` carries the asymmetric-direction marker from the [bidirectional-ruchy.md](bidirectional-ruchy.md) sub-spec:
+`BackendConfig::profile` carries the asymmetric-direction marker from the `bidirectional-ruchy.md` sub-spec:
 
 ```rust
 pub enum Profile {

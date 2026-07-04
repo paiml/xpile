@@ -3,7 +3,7 @@
 **Section 27 of [xpile-spec.md](../xpile-spec.md).**
 
 **Source document**:
-[`/home/noah/src/ruchy/docs/specifications/ruchy-5.0-sovereign-platform.md`](../../../../ruchy/docs/specifications/ruchy-5.0-sovereign-platform.md)
+the ruchy sovereign-platform spec
 (1051 lines, dated 2026-04-03). The "provability mandate" lives in
 ruchy's §14; that section is the model this document tracks against.
 

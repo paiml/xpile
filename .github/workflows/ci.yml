@@ -141,3 +141,45 @@ jobs:
       - name: lake build (advisory proof lane)
         working-directory: contracts/lean
         run: lake build
+
+  # ── Optional check: docs (README/documentation quality) ───────
+  # Grades and enforces the documentation with `pmat`:
+  #   - validate-docs --fail-on-error : every relative + external
+  #     link in the docs tree must resolve (490 links at time of
+  #     writing, 0 broken).
+  #   - demo-score : the presentation grade (quick-start, examples,
+  #     error-gracefulness, badges). Enforced against a floor so a
+  #     regression — stripping examples/ or reverting the README to
+  #     a stream-of-consciousness dump — fails the job.
+  #
+  # Kept as a SEPARATE ADVISORY job (mirroring kani/lake-build), NOT
+  # a required status check: validate-docs makes live HTTP requests
+  # to verify external links, so a transient network hiccup must
+  # never block an unrelated merge. Flip required once it has bedded
+  # in and external-link checking is proven stable.
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "docs-v0"
+
+      - name: Install pmat
+        run: cargo install pmat --locked
+
+      - name: pmat validate-docs (link integrity)
+        run: pmat validate-docs -r . --fail-on-error
+
+      - name: pmat demo-score (README presentation grade >= 6.0)
+        run: |
+          score=$(pmat demo-score --path . --format json | jq -r '.score')
+          echo "demo-score: ${score} / 10.0 (floor 6.0)"
+          awk -v s="${score}" 'BEGIN { exit !(s + 0 >= 6.0) }' || {
+            echo "::error::README demo-score ${score} is below the 6.0 floor"
+            exit 1
+          }

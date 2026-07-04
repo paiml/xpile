@@ -44,7 +44,7 @@ If the budget exhausts before both gates pass, the loop:
 2. Discards any speculative Rust written in this iteration
 3. Returns `AgentError::BudgetExhausted` with the original static error
 
-The user sees the *original static failure*, never a partial repair. This is non-negotiable per [`contracts/repair-budget-v1.yaml`](../../../../depyler/contracts/repair-budget-v1.yaml) (ported to xpile in Phase 1).
+The user sees the *original static failure*, never a partial repair. This is non-negotiable per `contracts/repair-budget-v1.yaml` (ported to xpile in Phase 1).
 
 ## Failure mode: oracle divergence at exit
 
