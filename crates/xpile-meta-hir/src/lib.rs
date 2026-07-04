@@ -145,6 +145,67 @@ pub struct Function {
 }
 
 impl Function {
+    /// PMAT-956: true if this function has the shape of a fitted
+    /// linear-regression predictor — a pure affine combination of its float
+    /// parameters `∑ⱼ wⱼ·xⱼ + b` with **≥2 distinctly literal-weighted features
+    /// AND a literal bias**. Drives the `C-OLS-MODEL-UNIQUENESS` citation (see
+    /// [`Function::applicable_contracts`]).
+    ///
+    /// The strong shape is deliberate: it is unambiguously the regression form,
+    /// so it does NOT fire on incidentally-linear utilities (`2·x`, `-x`,
+    /// `a+b`, averaging) that are not fitted models.
+    ///
+    /// Honesty: recognition is STRUCTURAL — it records that the function is a
+    /// linear-model predictor governed by the contract (whose determinism holds
+    /// by construction). It does NOT verify the weights are a least-squares fit;
+    /// the OLS-uniqueness the contract proves (in the walled-off Mathlib lane)
+    /// holds under that precondition, which is the modeller's assertion.
+    pub fn is_ols_linear_model(&self) -> bool {
+        // A predictor is a pure expression body (no statements), all-float
+        // parameters, and a float return.
+        if !self.body.stmts.is_empty() || !matches!(self.return_type, Type::F64) {
+            return false;
+        }
+        if self.params.is_empty() || !self.params.iter().all(|p| matches!(p.ty, Type::F64)) {
+            return false;
+        }
+        let param_names: std::collections::HashSet<&str> =
+            self.params.iter().map(|p| p.name.as_str()).collect();
+        let mut terms: Vec<&Expr> = Vec::new();
+        flatten_float_linear_terms(&self.body.trailing_return, &mut terms);
+        let mut weighted_features: std::collections::HashSet<&str> =
+            std::collections::HashSet::new();
+        let mut has_bias = false;
+        for t in terms {
+            match t {
+                // The bias — a bare float literal.
+                Expr::LitFloat(_) => has_bias = true,
+                // A bare feature (implicit weight 1) — allowed, but does not
+                // count toward the literal-weighted-feature requirement.
+                Expr::Ident(n) if param_names.contains(n.as_str()) => {}
+                // A literal-weighted feature: `w · x` or `x · w`.
+                Expr::FloatBinOp {
+                    op: FloatOp::Mul,
+                    lhs,
+                    rhs,
+                } => match weighted_param_name(lhs, rhs, &param_names)
+                    .or_else(|| weighted_param_name(rhs, lhs, &param_names))
+                {
+                    Some(name) => {
+                        weighted_features.insert(name);
+                    }
+                    None => return false,
+                },
+                // Anything else (a product of two params, a call, a division,
+                // a non-parameter identifier) disqualifies the whole body.
+                _ => return false,
+            }
+        }
+        // The unambiguous fitted-regression shape: ≥2 distinctly-weighted
+        // features and a bias.
+        weighted_features.len() >= 2 && has_bias
+    }
+
     /// Returns the list of contract IDs that govern this function.
     /// Drives codegen citation emission (PMAT-011): each ID returned
     /// here will appear as `// xpile-contract: <ID>` (Rust/Ruchy) or
@@ -193,6 +254,20 @@ impl Function {
         // instead of emitting uncited (the last core scalar to be wired).
         if tys.iter().any(|t| type_any(t, &|x| matches!(x, Type::F64))) {
             ids.push("C-PY-FLOAT-ARITH");
+        }
+        // PMAT-956 (provable-model-as-code): cite the model-uniqueness contract
+        // when the body is a fitted linear-model predictor — a pure,
+        // constant-weighted linear combination of the float params
+        // (`∑ cᵢ·xᵢ [+ b]`, with at least one literal weight). The contract's
+        // STRUCTURAL guarantee (the emitted predict is determined by its
+        // coefficient vector) holds by construction; its OLS-UNIQUENESS (the
+        // coefficients are THE minimiser) is machine-checked in the walled-off
+        // Mathlib lane (`contracts/lean-models/`, `ols_unique`) and holds when
+        // the weights are a least-squares fit — the modeller's assertion. The
+        // citation records the GOVERNING contract, not a claim that these
+        // specific weights were fit.
+        if self.is_ols_linear_model() {
+            ids.push("C-OLS-MODEL-UNIQUENESS");
         }
         // PMAT-861 (R6 slice 4): set now has its on-disk contract
         // (contracts/xlate-py-set-to-hashset-v1.yaml) — the last container wired,
@@ -551,6 +626,41 @@ fn type_any(t: &Type, f: &dyn Fn(&Type) -> bool) -> bool {
 /// PMAT-475 (R6): collect the declared type of every `let` binding (and loop
 /// element type) reachable in a statement list, recursing nested blocks — so a
 /// str/list/dict used only in a local still triggers its contract citation.
+/// PMAT-956: flatten a float `+`/`-` expression tree into its additive terms.
+/// Sign is irrelevant to linear-model recognition — a subtracted term is still
+/// a term; any non-additive node is a leaf term.
+fn flatten_float_linear_terms<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+        Expr::FloatBinOp {
+            op: FloatOp::Add | FloatOp::Sub,
+            lhs,
+            rhs,
+        } => {
+            flatten_float_linear_terms(lhs, out);
+            flatten_float_linear_terms(rhs, out);
+        }
+        other => out.push(other),
+    }
+}
+
+/// PMAT-956: if `c` is a float literal (a weight) and `p` is a reference to one
+/// of `params` (a feature), return that feature's name — i.e. recognise a
+/// `weight · feature` factor of a linear-model term.
+fn weighted_param_name<'a>(
+    c: &Expr,
+    p: &'a Expr,
+    params: &std::collections::HashSet<&str>,
+) -> Option<&'a str> {
+    if matches!(c, Expr::LitFloat(_)) {
+        if let Expr::Ident(n) = p {
+            if params.contains(n.as_str()) {
+                return Some(n.as_str());
+            }
+        }
+    }
+    None
+}
+
 fn collect_block_let_types<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Type>) {
     for s in stmts {
         match s {

@@ -148,6 +148,11 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         // enum — now cite their translation contracts (Item::applicable_contracts).
         "C-CONST-TRANSLATION",
         "C-ENUM-TRANSLATION",
+        // PMAT-956 (provable-model-as-code): a fitted linear-model predictor
+        // (∑ cᵢ·xᵢ + b over float params) now cites the model-uniqueness
+        // contract. The structural determinism holds by construction; the
+        // OLS-uniqueness is machine-checked in the Mathlib lane (ols_unique).
+        "C-OLS-MODEL-UNIQUENESS",
     ] {
         assert!(
             cited.contains(required),
@@ -170,6 +175,9 @@ fn every_emitted_citation_resolves_to_an_on_disk_contract() {
         ("bool_dict_key.py", &["C-XLATE-PY-DICT-TO-HASHMAP"]),
         ("augmented_set_ops.py", &["C-XLATE-PY-SET-TO-HASHSET"]),
         ("bool_float.py", &["C-PY-FLOAT-ARITH"]),
+        // PMAT-956: a fitted linear-model predictor cites the model-uniqueness
+        // contract (a `∑ cᵢ·xᵢ + b` body over float params, ≥1 literal weight).
+        ("ols_model.py", &["C-OLS-MODEL-UNIQUENESS"]),
         (
             "class_to_struct_contract.py",
             &["C-XLATE-PY-CLASS-TO-STRUCT"],
