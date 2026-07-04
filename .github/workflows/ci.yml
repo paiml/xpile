@@ -186,3 +186,51 @@ jobs:
             echo "::error::README demo-score ${score} is below the 6.0 floor"
             exit 1
           }
+
+  # ── Optional check: wasi (universal-binary path) ──────────────
+  # Proves the "works everywhere" claim end to end: xpile emits a proven model
+  # as a buildable crate (`transpile --emit-crate`), that crate builds to a
+  # single `wasm32-wasip1` binary, runs under wasmtime, and matches the CPython
+  # reference byte-for-byte. Advisory tier (installs a wasm target + a WASI
+  # runtime, both network-fetched) — not a required status check, mirroring
+  # kani/lake-build/docs.
+  wasi:
+    name: wasi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "wasi-v0"
+
+      - name: Install wasmtime
+        run: |
+          curl -fsSL https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: emit crate -> wasm32-wasip1 -> wasmtime, diff vs CPython
+        run: |
+          set -euo pipefail
+          MODEL=examples/proven-model/model.py
+          CRATE="$(mktemp -d)/model-crate"
+          # 1. xpile emits a complete, buildable crate
+          cargo run --quiet -p xpile -- transpile "$MODEL" --emit-crate "$CRATE"
+          # 2. build the single portable .wasm (explicit --target-dir so the
+          #    output path is deterministic regardless of ambient cargo config)
+          ( cd "$CRATE" && cargo build --release --target wasm32-wasip1 --target-dir "$CRATE/target" )
+          WASM="$CRATE/target/wasm32-wasip1/release/model.wasm"
+          # 3. run under wasmtime and diff against the CPython reference
+          wasm_out="$(wasmtime run "$WASM")"
+          py_out="$(python3 -c "exec(open('$MODEL').read()); main()")"
+          echo "wasm:"; echo "$wasm_out"
+          echo "cpython:"; echo "$py_out"
+          if [ "$wasm_out" != "$py_out" ]; then
+            echo "::error::the universal .wasm diverged from CPython"
+            exit 1
+          fi
+          echo "OK — the universal .wasm matches CPython byte-for-byte"
