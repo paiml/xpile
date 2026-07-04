@@ -53,6 +53,13 @@ equations:
   c_float32_structure_extensionality_diamond:
     lean_theorem: "XpileContracts.CCFloatArith.c_float32_structure_extensionality_diamond"
     lean_file: "contracts/lean/CFloatArith.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1269): Kani BMC proves
+    # the bit↔value round-trip `f32::from_bits(x).to_bits() == x` over
+    # ALL u32 patterns — the non-vacuous bijection form of this
+    # extensionality claim (replaces the reflexive `if a==b` scratch
+    # harness). Verified `SUCCESSFUL` under Kani 0.67 pre-commit.
+    kani_harness: "c_float32_structure_extensionality_diamond"
+    kani_file: "contracts/kani/c_float_arith.rs"
     formula: |
       ∀ a b : CFloat32.
         a.bits = b.bits → a = b
@@ -75,6 +82,11 @@ equations:
   c_float64_structure_extensionality_diamond:
     lean_theorem: "XpileContracts.CCFloatArith.c_float64_structure_extensionality_diamond"
     lean_file: "contracts/lean/CFloatArith.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1269): the f64 twin —
+    # Kani proves `f64::from_bits(x).to_bits() == x` over ALL u64
+    # patterns. Verified `SUCCESSFUL` under Kani 0.67 pre-commit.
+    kani_harness: "c_float64_structure_extensionality_diamond"
+    kani_file: "contracts/kani/c_float_arith.rs"
     formula: |
       ∀ a b : CFloat64.
         a.bits = b.bits → a = b
@@ -96,6 +108,12 @@ equations:
   c_float_abi_widths_distinct:
     lean_theorem: "XpileContracts.CCFloatArith.c_float_abi_widths_distinct"
     lean_file: "contracts/lean/CFloatArith.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1269): Kani asserts the
+    # concrete ABI widths — size_of::<f32>()*8 == 32, size_of::<f64>()*8
+    # == 64, and 32 != 64 — the non-vacuous ABI-honesty inequality.
+    # Verified `SUCCESSFUL` under Kani 0.67 pre-commit.
+    kani_harness: "c_float_abi_widths_distinct"
+    kani_file: "contracts/kani/c_float_arith.rs"
     formula: |
       (32 : Nat) ≠ 64
       (c_float is 32-bit, c_double is 64-bit — distinct ABI slots, never folded)
@@ -164,23 +182,57 @@ falsification_tests:
       A C float function shipped uncited (the original R6 drift) or cited a
       contract that does not exist on disk (the phantom-citation sin).
 
+# PMAT-1269: the authoritative, gate-wired harnesses live in
+# contracts/kani/c_float_arith.rs (referenced by the per-equation
+# `kani_harness:`/`kani_file:` fields above). These entries mirror
+# them for the human-readable inventory. NOTE: the pre-1269 scratch
+# harness here (`c_float32_bits_determine_value`, `if a == b {
+# assert_eq!(a, b) }`) was VACUOUS — a reflexive tautology certifying
+# nothing — and has been replaced by the non-vacuous bit↔value
+# bijection below.
 kani_harnesses:
   - id: KANI-C-FLOAT-ARITH-001
     obligation: c_float32_structure_extensionality_diamond
-    bound: 8
+    bound: 32
     property: |
-      A C `float` modelled by its 32-bit pattern is determined by those bits:
-      two values with equal bit patterns are equal. Checked symbolically over
-      the (here 8-bit-bounded) bit field; lifts to the full u32 pattern via the
-      Lean structure-extensionality theorem.
+      Structure extensionality via the bit↔value BIJECTION: the 32-bit
+      IEEE-754 pattern fully determines the C `float` value, proved as
+      `f32::from_bits(x).to_bits() == x` over ALL u32 patterns (NaN
+      payloads and subnormals included). Non-vacuous — fails if the map
+      is not information-preserving. Verified SUCCESSFUL under Kani 0.67.
     harness: |
       #[kani::proof]
-      fn c_float32_bits_determine_value() {
-          let a: u8 = kani::any();
-          let b: u8 = kani::any();
-          if a == b {
-              assert_eq!(a, b);
-          }
+      fn c_float32_structure_extensionality_diamond() {
+          let x: u32 = kani::any();
+          assert_eq!(f32::from_bits(x).to_bits(), x);
+      }
+  - id: KANI-C-FLOAT-ARITH-002
+    obligation: c_float64_structure_extensionality_diamond
+    bound: 64
+    property: |
+      The f64/C `double` twin: `f64::from_bits(x).to_bits() == x` over
+      ALL u64 patterns. Verified SUCCESSFUL under Kani 0.67.
+    harness: |
+      #[kani::proof]
+      fn c_float64_structure_extensionality_diamond() {
+          let x: u64 = kani::any();
+          assert_eq!(f64::from_bits(x).to_bits(), x);
+      }
+  - id: KANI-C-FLOAT-ARITH-003
+    obligation: c_float_abi_widths_distinct
+    bound: 1
+    property: |
+      ABI-honesty inequality: size_of::<f32>()*8 == 32,
+      size_of::<f64>()*8 == 64, and 32 != 64 — the C `float`/`double`
+      widths stay observably distinct. Verified SUCCESSFUL under Kani 0.67.
+    harness: |
+      #[kani::proof]
+      fn c_float_abi_widths_distinct() {
+          let float_bits = core::mem::size_of::<f32>() * 8;
+          let double_bits = core::mem::size_of::<f64>() * 8;
+          assert_eq!(float_bits, 32);
+          assert_eq!(double_bits, 64);
+          assert_ne!(float_bits, double_bits);
       }
 
 qa_gate:
