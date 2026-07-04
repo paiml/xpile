@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1273
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1273: [wasm/verify/list] family-wide DIFFERENTIAL witness for the WHOLE native-WASM list-op family vs LIVE CPython, fuzzed over COMPOSED op CHAINS instead of single ops (`list_family_composition_witness.rs`). Closes the interaction-coverage gap the per-op witnesses cannot reach: every sibling list witness pins ONE op on a FRESH named list (reduction/slice/contains/sorted/reversed/concat/any-all/enumerate/zip), so NONE exercises the ALLOCATING ops applied in SEQUENCE — and the bump-heap list runtime''s danger is precisely nested allocation. `a + b`, `sorted(xs)`, `reversed(xs)`, `xs[lo:hi]` each ALLOCATE a new region off the shared bump pointer; a chain like `sorted(reversed(a + b))[1:5]` allocates FOUR nested temporaries whose base pointers must not clobber one another, and a reduction/membership scan over an ALLOCATED (not source-literal) list reads a region the emitter produced — where a wrong element-count header silently short/long-folds. Also gate-hole coverage: a chain declares concat_i + reversed_i + sorted_i + slice_i + (sum|minmax|contains) helpers all in ONE module, so a missed gate-walker recursion leaves a helper undeclared and wat2wasm hard-fails. Found during a scheduled adversarial-verify skeptic pass (feedback-ultracode-adversarial-verify) over the WASM list surface (PMAT-1248..1272): the pass ALSO re-confirmed the stale-rlib false-positive trap — a stale cached xpile-wasm-codegen rlib made the CLI wrongly REFUSE list membership until a forced rebuild, NOT a code bug (feedback-stale-target-debug-binary). 23 composed programs (int AND float) all VALUE-MATCH live python3; nothing refuted. TEST-ONLY (new tests/list_family_composition_witness.rs, 5 tests), no product-code change — ADDITIVE and DISJOINT from the serial emit-lane hotspot, so no parallel-codegen collision.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open). forward_ev_ranking rank 1 (adversarial-verify discipline). The str family (str_family_fuzz_witness) and the dict/set family (dict_set_family_fuzz_witness) each already had a family-wide differential fuzz; the LIST family had only per-op witnesses. This slice adds the missing list-family fuzz, targeting COMPOSITIONS (nested allocation) rather than single ops."
+  - "COVERAGE (test-only): tests/list_family_composition_witness.rs (5 tests). composition_family_matches_cpython executes 23 COMPOSED programs through the production PythonFrontend (CLI --target wasm profile: AliasSemantics::Reference + runtime_abort) -> emit_module -> wat2wasm -> wasm-interp and VALUE-MATCHES live python3 running the byte-idiomatic program (python3 is the sole oracle, no hardcoded expectations; reversed(...) materialised with list(...) on the python side where the WASM lane already produces a real list). List-PRODUCING chains (concat/sorted/reversed/slice combinations, incl. the deep concat->reversed->sorted->slice) terminate in an order-sensitive fold len(ys)*1e8 + base-100 positional accumulation, so one scalar certifies length AND element order/content; REDUCTION chains (sum/min/max, incl. two reductions over one allocated list) and MEMBERSHIP-over-allocated-list scans return their scalar. Both int and float twins (float tolerance-compared). composition_corpus_lowers (emit-only, free-CI green). corpus_exercises_nested_allocation (asserts the deep four-alloc chain present + declares all four allocating helpers in one module). slice_of_temporary_refuses_honestly (`sorted(a)[1:3]` non-name slice refuses). min_of_empty_traps_like_cpython (min([]) TRAPs = CPython ValueError analogue). Gated on wasm_runtime_available + python3 (clean emit-only skip on a WABT-less host); all executed green on this host."
+  - "DONE: full gate green — fmt --all --check, clippy -p xpile-wasm-codegen --all-targets -D warnings, cargo test -p xpile-wasm-codegen (full suite, no regression). Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM (no new contract/Lean module — a test-only hardening slice over the existing list-op capability)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+
 - id: PMAT-1272
   github_issue: null
   item_type: task
