@@ -2104,6 +2104,292 @@ fn list_float_minmax_executes_in_wabt() {
     );
 }
 
+/// `def <name>(xs: list[bool]) -> bool: return {all|any}(xs)` — the PMAT-1251
+/// list-BOOL any/all fixture (the direct, non-generator `Expr::BoolReduce` the
+/// frontend emits for a `list[bool]` arg).
+fn named_bool_reduce_fn(name: &str, is_all: bool) -> Function {
+    Function {
+        name: name.into(),
+        params: vec![param("xs", Type::List(Box::new(Type::Bool)))],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BoolReduce {
+                list: Box::new(Expr::Ident("xs".into())),
+                is_all,
+                short_circuit: false,
+            },
+        },
+    }
+}
+
+#[test]
+fn list_bool_all_emits_reduction_helper_and_call() {
+    // PMAT-1251: `all(xs)` over a list[bool] emits the `$__wasm_list_bool_reduce`
+    // helper, a `call` over the list base-pointer with the `is_all` selector
+    // `i32.const 1`, and the exported memory the i32 loads read.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(named_bool_reduce_fn("f", true))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains(
+            "(func $__wasm_list_bool_reduce (param $base i32) (param $is_all i32) (result i32)"
+        ),
+        "bool reduction helper declared: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_bool_reduce"),
+        "all lowers to the bool-reduce helper call: {wat}"
+    );
+    assert!(
+        wat.contains("i32.const 1\n    call $__wasm_list_bool_reduce"),
+        "all pushes the is_all=1 selector before the call: {wat}"
+    );
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "list payload loads need the exported memory: {wat}"
+    );
+    // The fold reads i32 (0/1) elements over a 4-byte stride.
+    assert!(wat.contains("i32.load"), "i32 (bool) element load: {wat}");
+    // `all(xs)` result types as i32 (a bool).
+    assert!(
+        wat.contains("(func $f (param $xs i32) (result i32)"),
+        "bool result types as i32: {wat}"
+    );
+}
+
+#[test]
+fn list_bool_any_emits_selector_zero() {
+    // PMAT-1251: `any(xs)` pushes the is_all=0 selector into the SHARED helper.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(named_bool_reduce_fn("f", false))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("i32.const 0\n    call $__wasm_list_bool_reduce"),
+        "any pushes the is_all=0 selector before the call: {wat}"
+    );
+    // The two directions share ONE helper (no dead second function).
+    assert_eq!(
+        wat.matches("(func $__wasm_list_bool_reduce").count(),
+        1,
+        "exactly one bool-reduce helper: {wat}"
+    );
+}
+
+#[test]
+fn list_bool_reduce_helper_absent_without_use() {
+    // A module that never reduces a bool list carries no dead helper.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_minmax_fn(
+                Type::I64,
+                Type::I64,
+                true,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_bool_reduce"),
+        "no bool-reduce helper without a BoolReduce: {wat}"
+    );
+}
+
+#[test]
+fn list_bool_reduce_refuses_generator_short_circuit() {
+    // The lazy short-circuiting generator form (`any(P(x) for x in xs)`, which the
+    // frontend tags `short_circuit` + wraps in an Expr::Map) needs a per-element
+    // predicate lambda — refused honestly, never a silent miscompile.
+    let f = Function {
+        name: "g".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::Bool)))],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BoolReduce {
+                list: Box::new(Expr::Ident("xs".into())),
+                is_all: false,
+                short_circuit: true,
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("generator"),
+        "names the generator cause: {msg}"
+    );
+}
+
+#[test]
+fn list_bool_reduce_refuses_non_name_list() {
+    // `all([True, False])` (a list LITERAL, not a name) — the WASM subset folds a
+    // `list[bool]` NAME base-pointer only; refused (bind it to a name first).
+    let f = Function {
+        name: "g".into(),
+        params: Vec::new(),
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BoolReduce {
+                list: Box::new(Expr::ListLit(vec![
+                    Expr::LitBool(true),
+                    Expr::LitBool(false),
+                ])),
+                is_all: true,
+                short_circuit: false,
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("non-name list"),
+        "names the non-name cause: {err}"
+    );
+}
+
+#[test]
+fn list_bool_reduce_refuses_non_bool_list() {
+    // A direct BoolReduce over a `list[int]` name (its elements load as i64, not
+    // the i32 0/1 a bool list uses) is refused — never a bit-misread. (The
+    // frontend never produces this; it lowers `any`/`all` over a list[int] as a
+    // truthiness map + reduce, whose Expr::Map the subset separately refuses.)
+    let f = Function {
+        name: "g".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::Bool,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BoolReduce {
+                list: Box::new(Expr::Ident("xs".into())),
+                is_all: true,
+                short_circuit: false,
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("load as i64"),
+        "names the element-kind mismatch: {err}"
+    );
+}
+
+/// PMAT-1251 EXECUTED WITNESS — assemble + run REAL-emitted `all(xs)`/`any(xs)`
+/// over a `list[bool]` in WABT and diff both directions (on a non-empty AND the
+/// empty list) against CPython. Two REAL-emitted functions (`$al` = all, `$an` =
+/// any) share the one gated `$__wasm_list_bool_reduce` helper; the `(data)`
+/// segment lays down a `list[bool]` (i32 0/1 elements, 4-byte stride) at base 0
+/// and an empty list at base 64, and four zero-arg exports convert each i32
+/// result to f64 for the engine's `=> f64:` parser.
+#[test]
+fn list_bool_any_all_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!(
+            "SKIP list_bool_any_all_executes_in_wabt: WABT (wat2wasm/wasm-interp) not installed"
+        );
+        return;
+    }
+
+    // CPython-equivalent: all([T,T,F,T]) == False, any == True; all([]) == True,
+    // any([]) == False.
+    let elems: [i32; 4] = [1, 1, 0, 1];
+    let expected_all = f64::from(i32::from(elems.iter().all(|&b| b != 0))); // 0.0
+    let expected_any = f64::from(i32::from(elems.iter().any(|&b| b != 0))); // 1.0
+
+    let module_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![
+                Item::Function(named_bool_reduce_fn("al", true)),
+                Item::Function(named_bool_reduce_fn("an", false)),
+            ]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    // list[bool] ABI: i32 count @ base+0, i32 (0/1) elements @ base+8 (4-byte
+    // stride). Non-empty list at base 0; empty list (count 0) at base 64.
+    let mut image = vec![0u8; 128];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 4;
+        image[off..off + 4].copy_from_slice(&e.to_le_bytes());
+    }
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        module_wat.contains(mem_line),
+        "emitted bool-reduce module declares the exported memory: {module_wat}"
+    );
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    \
+         i32.const 0\n    call $al\n    f64.convert_i32_s)\n  \
+         (func (export \"e1\") (result f64)\n    \
+         i32.const 0\n    call $an\n    f64.convert_i32_s)\n  \
+         (func (export \"e2\") (result f64)\n    \
+         i32.const 64\n    call $al\n    f64.convert_i32_s)\n  \
+         (func (export \"e3\") (result f64)\n    \
+         i32.const 64\n    call $an\n    f64.convert_i32_s)\n"
+    );
+    let witness_wat = module_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_bool_any_all")
+        .expect("assemble+run REAL-emitted list-bool any/all witness");
+    assert_eq!(
+        out.len(),
+        4,
+        "four exports (all/any × nonempty/empty): {out:?}"
+    );
+    assert!(
+        (out[0] - expected_all).abs() <= 1.0e-9,
+        "all({elems:?}) executed {}, expected (CPython) {expected_all}",
+        out[0]
+    );
+    assert!(
+        (out[1] - expected_any).abs() <= 1.0e-9,
+        "any({elems:?}) executed {}, expected (CPython) {expected_any}",
+        out[1]
+    );
+    assert!(
+        (out[2] - 1.0).abs() <= 1.0e-9,
+        "all([]) executed {}, expected (CPython) True/1.0",
+        out[2]
+    );
+    assert!(
+        (out[3] - 0.0).abs() <= 1.0e-9,
+        "any([]) executed {}, expected (CPython) False/0.0",
+        out[3]
+    );
+
+    eprintln!("=== PMAT-1251 executed witness: REAL xpile all/any(xs: list[bool]) emit → run ===");
+    eprintln!("--- witness WAT (REAL-emitted $al/$an + data + e0..e3 drivers) ---\n{witness_wat}");
+    eprintln!(
+        "all({elems:?}) = {} (CPython {expected_all}); any = {} (CPython {expected_any}); \
+         all([]) = {} (1.0); any([]) = {} (0.0)",
+        out[0], out[1], out[2], out[3]
+    );
+}
+
 #[test]
 fn no_memory_emitted_without_list_param() {
     // The scalar-only `add` fn must NOT pull in a (memory …) decl.
@@ -2118,8 +2404,11 @@ fn no_memory_emitted_without_list_param() {
 }
 
 #[test]
-fn refuses_list_of_bool_param() {
-    // list[bool] has no honest WASM load width — refused.
+fn list_of_bool_param_indexes_as_i32() {
+    // PMAT-1251: `list[bool]` is the THIRD list element type — a bool rides an
+    // i32 (0/1) with a 4-byte stride (like list[f32]). `xs[0]` over a
+    // `list[bool]` param now lowers to a bounds-checked `i32.load` (was refused
+    // pre-1251 as having "no honest WASM load width").
     let f = Function {
         name: "lb".into(),
         params: vec![param("xs", Type::List(Box::new(Type::Bool)))],
@@ -2132,12 +2421,23 @@ fn refuses_list_of_bool_param() {
             },
         },
     };
-    let err = WasmBackend::new()
+    let wat = WasmBackend::new()
         .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
-        .unwrap_err();
-    let msg = err.to_string();
-    assert!(msg.contains("unsupported"), "honest refusal: {msg}");
-    assert!(msg.contains("list element type"), "names the cause: {msg}");
+        .unwrap()
+        .primary;
+    // list param is an i32 base-pointer; the bool element loads as i32.
+    assert!(wat.contains("(param $xs i32)"), "list → i32 base: {wat}");
+    assert!(
+        wat.contains("(func $lb (param $xs i32) (result i32)"),
+        "a bool result types as i32: {wat}"
+    );
+    assert!(wat.contains("i32.load"), "bool element loads as i32: {wat}");
+    // the bounds guard (Python IndexError analogue) is present on the read.
+    assert!(wat.contains("unreachable"), "OOB trap guard: {wat}");
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "list payload loads need the exported memory: {wat}"
+    );
 }
 
 #[test]
@@ -2497,18 +2797,31 @@ fn refuses_write_over_non_list_param() {
 }
 
 #[test]
-fn refuses_write_to_list_of_bool() {
-    // list[bool] has no honest WASM store width — the list param itself is
-    // refused (same as the read side).
-    let err = WasmBackend::new()
+fn list_of_bool_write_stores_i32() {
+    // PMAT-1251: `xs[i] = v` over a `list[bool]` param stores the bool value
+    // (an i32 0/1) with the SAME bounds guard + base+8 offset + 4-byte stride as
+    // the read path, terminating in `i32.store` (was refused pre-1251 as having
+    // "no honest WASM store width").
+    let wat = WasmBackend::new()
         .lower(
             &module_with(vec![Item::Function(set_fn(Type::Bool))]),
             &wasm_config(),
         )
-        .unwrap_err();
+        .unwrap()
+        .primary;
+    assert!(wat.contains("(param $xs i32)"), "list → i32 base: {wat}");
     assert!(
-        err.to_string().contains("list element type"),
-        "list[bool] refused: {err}"
+        wat.contains("(param $v i32)"),
+        "bool value param i32: {wat}"
+    );
+    assert!(
+        wat.contains("unreachable"),
+        "OOB trap guard on the write: {wat}"
+    );
+    assert!(wat.contains("i32.const 8"), "base+8 element offset: {wat}");
+    assert!(
+        wat.contains("i32.store"),
+        "bool element stores as i32: {wat}"
     );
 }
 
