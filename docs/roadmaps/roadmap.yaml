@@ -1169,7 +1169,7 @@ roadmap:
   github_issue: null
   item_type: bug
   title: 'PMAT-1099: [frontend/correctness/generators] the PMAT-1093 shrunk surface is STILL porous (skeptic pass PMAT-1098, B-F1..F9): the shipped "generator bodies must be call-pure — ANY call anywhere in the body refuses" gate and the "every accepted consumption does the same work as CPython" guarantee both fail one step past the fixture corpus. (1) ABORT/HANG — any(x > 5 for x in range(10**11)) is ACCEPTED and dies in 0.055s with "memory allocation of 800000000000 bytes failed" (exit 134) vs CPython instant True: the emitted .any() IS lazy but the source range is eagerly .collect()ed — any/all/next are SHORT-CIRCUIT consumers, not full-consumption ones; the 2-clause variant (for x in range(10**10) for y in range(2)) hangs outright (timeout 124). (2) SILENT — side-effecting calls ACCEPTED with observable divergence in the positions the call-purity scan misses: 2-clause genexp bodies (noisy(x, y) called 9x vs CPython''s short-circuited 6x under any()), if-filter position (filter evaluated over ALL elements vs stop-at-satisfaction), and sorted/max key= over a genexp (6 comparison-order calls vs CPython''s 3 decorate-once source-order calls; max key-call order also wrong). (3) SILENT — producer/consumer interleaving lost on the accepted plain for-over-genexp (all n0 n1 n2 then got… vs CPython''s interleaved n0 got0 n1 got1…). (4) SILENT — exception-vs-output ORDERING diverges even for PURE bodies: for v in (10 // (2 - x) for x in range(5)): print("got", v) loses the pre-raise "got 5"/"got 10" stdout (payload text itself exact) — defeats ANY call-scan-based gate, pure bodies included. (5) OVER-REFUSAL — ",".join(genexp) refused with the outside-directly-consuming-position rationale though str.join consumes fully, single-use, in source order. FIX DIRECTION: Rust iterators ARE lazy — the faithful lowering for the pure core is a native lazy iterator chain ((0..n).map(...).filter(...).any(...)) instead of collect-then-iterate; that fixes (1)(3)(4)(5) structurally. Extend the call-purity scan to EVERY genexp position (bodies + filters of ALL clauses, key= callables) and refuse what cannot lower lazily (closes (2)). PMAT-1093''s own whack-a-mole warning stands: prefer the lazy lowering over a third round of scan-hardening.'
-  status: open
+  status: done
   priority: high
   created: 2026-07-03T00:00:00Z
 - id: PMAT-1100
@@ -1186,10 +1186,10 @@ roadmap:
   status: open
   priority: low
   created: 2026-07-03T00:00:00Z
-- id: PMAT-1102
+- id: PMAT-1102B
   github_issue: null
   item_type: bug
-  title: 'PMAT-1102: [frontend/correctness/typing] acceptance-honesty pair — valid-or-refusable programs accepted into NON-COMPILING artifacts (skeptic pass PMAT-1098, A-F4 + B method note): (a) a dict subscript whose key expression''s static type differs from the dict''s key type is accepted at transpile time (exit 0) and emits ill-typed Rust: d = {"x": 1}; print(d[42]) → rustc E0277 "the trait bound String: Borrow<i64> is not satisfied" deep in the emitted miss-machinery, far from cause; CPython answers with a plain KeyError: 42 (exit 1). 5 reproductions incl. tuple-arity and nested-tuple mismatches. Honest posture: refuse at transpile time citing the key-type mismatch, or (CPython-faithful and cheap, since the miss is statically certain) lower directly to the guaranteed key_error_panic. (b) def main() -> int is accepted and emitted as pub fn main() -> i64 → rustc E0277 "main has invalid return type i64" — the Python entry-point name collides with Rust''s main signature rules. Emit a renamed __py_main plus a () wrapper (exit-code semantics via std::process::exit, matching the oracle harness convention) or refuse int-returning main honestly. def main() -> None unaffected (pinned by existing fixtures).'
+  title: 'PMAT-1102B: [frontend/correctness/typing] acceptance-honesty pair — valid-or-refusable programs accepted into NON-COMPILING artifacts (skeptic pass PMAT-1098, A-F4 + B method note): (a) a dict subscript whose key expression''s static type differs from the dict''s key type is accepted at transpile time (exit 0) and emits ill-typed Rust: d = {"x": 1}; print(d[42]) → rustc E0277 "the trait bound String: Borrow<i64> is not satisfied" deep in the emitted miss-machinery, far from cause; CPython answers with a plain KeyError: 42 (exit 1). 5 reproductions incl. tuple-arity and nested-tuple mismatches. Honest posture: refuse at transpile time citing the key-type mismatch, or (CPython-faithful and cheap, since the miss is statically certain) lower directly to the guaranteed key_error_panic. (b) def main() -> int is accepted and emitted as pub fn main() -> i64 → rustc E0277 "main has invalid return type i64" — the Python entry-point name collides with Rust''s main signature rules. Emit a renamed __py_main plus a () wrapper (exit-code semantics via std::process::exit, matching the oracle harness convention) or refuse int-returning main honestly. def main() -> None unaffected (pinned by existing fixtures).'
   status: open
   priority: medium
   created: 2026-07-03T00:00:00Z
@@ -1204,7 +1204,7 @@ roadmap:
   github_issue: null
   item_type: bug
   title: 'PMAT-1104: [frontend+rust-codegen/correctness/loop-var] PMAT-1095 remainder #2 — the NESTING boundary (skeptic pass PMAT-1098, E-F1..F7; the flat/plain-Name core survived 28 probes): (a) SILENT WRONG VALUES — nested-dup last-wins is REVERSED: for (x, y), x in [((1, 2), 3), ((4, 5), 6)] prints 1 2 / 4 5 vs CPython 3 2 / 6 5 — the deferred nested destructure (let (mut x, y) = __xpile_pair0) executes AFTER the header binding and shadows the LATER top-level x (first-wins); the PMAT-1095 dup-rewrite compares top-level components only, so dups spanning nesting levels escape the choke point (also repros with zip). (b) LOUD — rustc E0416 still emitted for dup names in a COMPREHENSION for-clause: [x for x, x in [(1, 2), (3, 4)]] (CPython 2 4) — the last-wins rewrite lives only in lower_for_stmt. (c) unused_mut on accepted nested-dup destructures (let (mut x, y) with x never reassigned) — the PMAT-1095 strict-mut claim fails on nested-pattern paths (all 11 plain-Name probes clean). (d) LOUD — an in-loop binding stored under an if and read later is accepted then E0425: for i in range(3): if i == 1: a = 5 / print(a) (CPython 5) — the read-after hoist does not cover if-nested stores (read-later-in-loop variant identical). (e) acceptance honesty — a comp-var read AFTER its comprehension ([x for x in [5]] then print(x)) is CPython NameError exit 1 but accepted into an E0425 artifact; refuse with the NameError-equivalent rationale. (f) minor WRONG-RATIONALEs: chr(True) refused as "chr(...) on a non-int argument" (bool IS an int subtype — CPython prints 1); triple-dup for x, (x, y), x refused with the stale "uses a non-Name for target (tuple unpacking…) — not supported at v0.1.0" (tuple targets ARE supported and executed elsewhere; the refusal accidentally dodges (a) on this shape but the rationale is false).'
-  status: open
+  status: done
   priority: high
   created: 2026-07-03T00:00:00Z
 - id: PMAT-1105
@@ -3041,7 +3041,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-498b: [Tranche2] sum(xs) over numeric lists'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3077,7 +3077,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-500b: [Tranche2] Set .add() mutation (set write-side)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3086,7 +3086,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-501b: [Tranche2] Set comprehensions {e for x in xs}'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3095,7 +3095,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502b: [Tranche2] str.replace(old, new)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3104,7 +3104,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502c: [Tranche2] sorted(xs) builtin'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3113,7 +3113,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502d: [Tranche2] reversed(xs) builtin'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3122,7 +3122,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502e: [Tranche2] 1-arg min(xs)/max(xs) over a list'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3131,7 +3131,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-503a: [Tranche2] raise Exc("msg") -> panic! (exceptions sub-slice 1)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3140,7 +3140,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502f: [Tranche2] sorted(xs, reverse=True) descending'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3149,7 +3149,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502g: [Tranche2] set algebra (union/intersection/difference/symdiff)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3158,7 +3158,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502h: [Tranche2] min(xs)/max(xs) over list[float]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3167,7 +3167,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502i: [Tranche2] empty collection constructors set()/dict()/list()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3176,7 +3176,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502j: [Tranche2] all(xs)/any(xs) over list[bool]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3185,7 +3185,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502k: [Tranche2] sequence repetition seq*n / n*seq'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3194,7 +3194,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502l: [Tranche2] more string methods lstrip/rstrip/find/count'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3203,7 +3203,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502m: [Tranche2] numeric conversions int(x)/float(x)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3212,7 +3212,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502n: [Tranche2] divmod(a, b) -> (a // b, a % b)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3221,7 +3221,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502o: [Tranche2] substring containment sub in s'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3230,7 +3230,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502p: [Tranche2] chained comparisons a < b < c'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3239,7 +3239,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502q: [Tranche2] tuple constant-indexing t[N]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3248,7 +3248,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502r: [Tranche2] open-ended slices xs[a:]/xs[:b]/xs[:]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3257,7 +3257,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502s: [Tranche2] negative list index xs[-k]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3266,7 +3266,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502t: [Tranche2] reverse-slice idiom xs[::-1]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3275,7 +3275,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502u: [Tranche2] list query methods count/index'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3284,7 +3284,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502v: [Tranche2] dict views d.keys()/d.values()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3293,7 +3293,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502w: [Tranche2] context-aware len(x)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3302,7 +3302,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502x: [Tranche2] dict items d.items()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3311,7 +3311,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502y: [Tranche2] for k, v in d.items() loop'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3320,7 +3320,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502z: [Tranche2] sorted(xs, key=lambda) — first lambda support'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3329,7 +3329,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502aa: [Tranche2] min/max(xs, key=lambda)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3338,7 +3338,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ab: [Tranche2] filter(lambda, xs)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3347,7 +3347,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ac: [Tranche2] map(lambda, xs)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3356,7 +3356,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ad: [Tranche2] str(x) over an int'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3365,7 +3365,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ae: [Tranche2] str(b) over a bool'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3374,7 +3374,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502af: [Tranche2] str(x) over a float — completes str()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3383,7 +3383,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ag: [Tranche2] str predicates isdigit/isalpha/isspace'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3392,7 +3392,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ah: [Tranche2] s.capitalize()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3401,7 +3401,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ai: [Tranche2] standalone enumerate(xs)/zip(a,b)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3410,7 +3410,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502aj: [Tranche2] s.title()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3419,7 +3419,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ak: [Tranche2] round(x) 1-arg (bankers rounding)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3428,7 +3428,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502al: [Tranche2] round(x, n) 2-arg, completes round'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3437,7 +3437,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502am: [Tranche2] f-string format specs'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3446,7 +3446,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502an: [Tranche2] list membership x in xs'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3455,7 +3455,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ao: [Tranche2] assert with message assert cond, msg'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3464,7 +3464,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ap: [Tranche2] in-place list mutators xs.sort()/.reverse()/.clear()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3473,7 +3473,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502aq: [Tranche2] in-place list concatenation xs.extend(ys)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3482,7 +3482,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ar: [Tranche2] positional list insertion xs.insert(i, x)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3491,7 +3491,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502as: [Tranche2] list pop xs.pop() / xs.pop(i) (expression form)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3500,7 +3500,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502at: [Tranche2] item deletion del coll[key] (list or dict)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3509,7 +3509,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502au: [Tranche2] dict pop d.pop(k) / d.pop(k, default) (expression form)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3518,7 +3518,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502av: [Tranche2] set element removal s.remove(x) / s.discard(x)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3527,7 +3527,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502aw: [Tranche2] string padding s.rjust(w) / s.ljust(w)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3536,7 +3536,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ax: [Tranche2] dict get-or-insert d.setdefault(k, default)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3545,7 +3545,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ay: [Tranche2] filtered list comprehension [e for v in xs if cond]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3554,7 +3554,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502az: [Tranche2] filtered dict + set comprehensions {... if cond}'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3563,7 +3563,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ba: [Tranche2] list comprehension over range(...)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3572,7 +3572,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bb: [Tranche2] in-place dict merge a.update(b)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3581,7 +3581,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bc: [Tranche2] general slice step xs[a:b:c] over a list'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3590,7 +3590,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bd: [Tranche2] dict + set comprehensions over range(...)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3609,7 +3609,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502be: [Tranche2] bool(x) truthiness cast'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3618,7 +3618,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bf: [Tranche2] int(s) / float(s) string parsing'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -3627,7 +3627,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bg: [Tranche2] list concatenation xs + ys'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3636,7 +3636,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bh: [Tranche2] str.format with sequential {} placeholders'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3645,7 +3645,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bi: [Tranche2] s.index(sub) substring index'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3654,7 +3654,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bj: [Tranche2] module-level constants NAME = <literal>'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3663,7 +3663,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bk: [Tranche2] continue / break loop control'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3672,7 +3672,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bl: [Tranche2] void functions (-> None)'
-  status: high
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3681,7 +3681,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bm: [Tranche2] early returns / guard clauses + terminal if/elif/else'
-  status: high
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3690,7 +3690,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bn: [Tranche2] pass no-op statement'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3699,7 +3699,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bo: [Tranche2] negative float literals (-3.14)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3708,7 +3708,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bp: [Tranche2] float-variable negation (-x, x: float)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3717,7 +3717,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bq: [Tranche2] float augmented assignment (x += y, -= *= /=)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3726,7 +3726,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502br: [Tranche2] float floor-division // and modulo %'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3735,7 +3735,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bs: [Tranche2] Python 3 true division / (always float)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3744,7 +3744,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bt: [Tranche2] float power a ** b -> powf'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3753,7 +3753,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bu: [Tranche2] float aug-assign with non-float rhs + **='
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3762,7 +3762,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bv: [Tranche2] bare return (no value) in void function'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3771,7 +3771,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bw: [Tranche2] print(...) builtin -> println!'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3780,7 +3780,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bx: [Tranche2] print of bool/float args'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3789,7 +3789,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502by: [Tranche2] print(sep=, end=) keyword args'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3798,7 +3798,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502bz: [Tranche2] chained assignment x = y = z = literal'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3807,7 +3807,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ca: [Tranche2] enumerate(xs, start) 2-arg'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3816,7 +3816,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cb: [Tranche2] str.format positional {N} placeholders'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3825,7 +3825,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cc: [Tranche2] context-aware not <bool var>'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3834,7 +3834,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cd: [Tranche2] string indexing s[i]'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3843,7 +3843,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ce: [Tranche2] context-aware and/or over bool vars'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3852,7 +3852,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cf: [Tranche2] dict comprehension over d.items()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3861,7 +3861,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cg: [Tranche2] list & set comprehensions over d.items()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3870,7 +3870,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ch: [Tranche2] str.format with format specs {:.2f}/{:05d}'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3879,7 +3879,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ci: [Tranche2] for i in reversed(range(...)) descending'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3888,7 +3888,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cj: [Tranche2] list(range(...)) materialize + list(xs) copy'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3897,7 +3897,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ck: [Tranche2] for-loop over a call iterable (reversed/sorted/list)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3906,7 +3906,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cl: [Tranche2] string iteration for c in s'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3915,7 +3915,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cm: [Tranche2] ord(c) / chr(n) builtins'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3924,7 +3924,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cn: [Tranche2] 2-arg min/max over str/bool'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3933,7 +3933,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502co: [Tranche2] no-arg str.split() (whitespace)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3942,7 +3942,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cp: [Tranche2] tuple literals as list elements'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3951,7 +3951,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cq: [Tranche2] str.removeprefix / removesuffix'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3960,7 +3960,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cr: [Tranche2] str.swapcase()'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3969,7 +3969,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cs: [Tranche2] str.zfill(width) sign-aware'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3978,7 +3978,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ct: [Tranche2] default parameter values'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3987,7 +3987,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cu: [Tranche2] str.center(width)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -3996,7 +3996,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cv: [Tranche2] hex/oct/bin builtins'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4005,7 +4005,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cw: [Tranche2] set(xs) materialize from list'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4014,7 +4014,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cx: [Tranche2] sum(xs, start) 2-arg form'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4023,7 +4023,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cy: [Tranche2] pow(a, b) builtin'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4032,7 +4032,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502cz: [Tranche2] variadic min/max'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4041,7 +4041,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502da: [Tranche2] int(s, base) radix string parse'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4050,7 +4050,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502db: [Tranche2] context-aware ternary branches (silent-miscompile fix)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4059,7 +4059,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dc: [Tranche2] context-aware comparison operands (silent-miscompile fix)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4068,7 +4068,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dd: [Tranche2] context-aware collection literals (silent-miscompile fix)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4077,7 +4077,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502de: [Tranche2] context-aware subscript index + unary minus (CLOSES the ctx-free-position class)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4086,7 +4086,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502df: [Tranche2] generator expressions via desugar to Expr::Map'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4095,7 +4095,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dg: [Tranche2] filtered generator expressions (if-clause)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4104,7 +4104,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dh: [Tranche2] min/max(xs, default=) empty-safe reduction'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4113,7 +4113,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502di: [Tranche2] str.isupper/islower/isalnum classification predicates'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4122,7 +4122,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dj: [Tranche2] str.partition/rpartition (3-tuple split)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4131,7 +4131,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dk: [Tranche2] dict(pairs) materialization'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4140,7 +4140,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dl: [Tranche2] str.splitlines (full Python boundary set)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4149,7 +4149,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dm: [Tranche2] printf-style percent formatting'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4158,7 +4158,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dn: [Tranche2] printf percent-format width/precision/flags'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4167,7 +4167,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502do: [Tranche2] %s over bool/float (str-convert)'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4176,7 +4176,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dp: [Tranche2] printf %x/%X/%o radix conversions'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4185,7 +4185,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dq: [Tranche2] varargs *args (first structural slice)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4194,7 +4194,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dr: [Tranche2] nested functions → ClosureLet'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4203,7 +4203,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502ds: [Tranche2] f(*xs) splat into a variadic param'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4212,7 +4212,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dt: [Tranche2] Expr::Block primitive + multi-statement nested functions'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4221,7 +4221,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502du: [Tranche2] expression-position list comprehensions'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4230,7 +4230,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dv: [Tranche2] expression-position set/dict comprehensions'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4239,7 +4239,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dw: [Tranche2] {**d1, **d2} dict merge'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4248,7 +4248,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dx: [Tranche2] mixed {**a, k: v} dict literals'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -4257,7 +4257,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-502dy: [Tranche2] nested subscript assignment grid[i][j]=v'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-13T00:00:00Z
   acceptance_criteria:
@@ -7907,7 +7907,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-399: Spec §28 + diamond-taxonomy.md sync to depth-9 UNIVERSAL + 7 UNIVERSAL milestones + 9 recurring templates'
-  status: planned
+  status: obsolete
   priority: medium
   created: 2026-05-20T18:00:00Z
   acceptance_criteria:
@@ -7916,7 +7916,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-388: Spec §28 + diamond-taxonomy.md sync to depth-8 UNIVERSAL + 6 UNIVERSAL milestones + 8 recurring templates'
-  status: planned
+  status: obsolete
   priority: medium
   created: 2026-05-20T16:00:00Z
   acceptance_criteria:
@@ -7925,7 +7925,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-377: Spec §28 + diamond-taxonomy.md sync to depth-7 UNIVERSAL + 5 UNIVERSAL milestones + 8 recurring templates'
-  status: planned
+  status: obsolete
   priority: medium
   created: 2026-05-20T12:00:00Z
   acceptance_criteria:
@@ -7934,7 +7934,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-366: Spec §28 + diamond-taxonomy.md sync to depth-6 UNIVERSAL + 4 UNIVERSAL milestones + 7 recurring templates'
-  status: planned
+  status: obsolete
   priority: medium
   created: 2026-05-20T08:00:00Z
   acceptance_criteria:
@@ -7943,7 +7943,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-355: Spec §28 + diamond-taxonomy.md sync to depth-5 UNIVERSAL + recurring algebraic templates (6 templates)'
-  status: planned
+  status: obsolete
   priority: medium
   created: 2026-05-20T05:00:00Z
   acceptance_criteria:
@@ -8033,7 +8033,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-345: Spec §28 + diamond-taxonomy.md sync to depth-4 UNIVERSAL + recurring algebraic templates'
-  status: planned
+  status: obsolete
   priority: medium
   created: 2026-05-24T01:00:00Z
   acceptance_criteria:
@@ -8105,7 +8105,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-337: Spec §28 + diamond-taxonomy.md sync to depth-3 UNIVERSAL + depth-21 substrate reality'
-  status: planned
+  status: obsolete
   priority: medium
   created: 2026-05-23T21:00:00Z
   acceptance_criteria:
@@ -8286,7 +8286,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-324: Spec §28 + diamond-taxonomy.md sync to depth-19 ACROSS LAYERS reality'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-23T14:30:00Z
@@ -8371,7 +8371,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-319: Spec §28 + diamond-taxonomy.md sync to depth-17 ACROSS LAYERS reality'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-23T12:00:00Z
@@ -8456,7 +8456,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-314: Spec §28 + diamond-taxonomy.md sync to depth-15 ACROSS LAYERS reality'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-23T09:30:00Z
@@ -8541,7 +8541,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-309: Spec §28 + diamond-taxonomy.md sync to depth-13 ACROSS LAYERS reality'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-23T07:00:00Z
@@ -8558,7 +8558,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-308: Diamond depth-13 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-13 via GLB/LUB universal property)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T06:30:00Z
@@ -8575,7 +8575,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-307: FIRST Diamond depth-13 in the substrate (absolute-value / norm axioms on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T06:00:00Z
@@ -8592,7 +8592,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-306: Diamond depth-12 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-12 via max/min monotonicity)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T05:30:00Z
@@ -8609,7 +8609,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-305: FIRST Diamond depth-12 in the substrate (ordered-ring sign rules on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T05:00:00Z
@@ -8626,7 +8626,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-304: Spec §28 + diamond-taxonomy.md sync to depth-11 ACROSS LAYERS reality'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-23T04:30:00Z
@@ -8643,7 +8643,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-303: Diamond depth-11 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-11 via discrete-order axioms)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T04:00:00Z
@@ -8660,7 +8660,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-302: FIRST Diamond depth-11 in the substrate (integral-domain axioms on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T03:30:00Z
@@ -8677,7 +8677,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-301: Diamond depth-10 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-10 via additive-lattice distributivity)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T03:00:00Z
@@ -8694,7 +8694,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-300: FIRST Diamond depth-10 in the substrate (RING-distributivity of negation over multiplication on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T02:30:00Z
@@ -8711,7 +8711,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-299: Diamond depth-9 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-9 via ordered monoid)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T02:00:00Z
@@ -8728,7 +8728,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-298: FIRST Diamond depth-9 in the substrate (linear-order trichotomy on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T01:30:00Z
@@ -8745,7 +8745,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-295: Diamond depth-8 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-8 via cancellative monoid)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T01:00:00Z
@@ -8762,7 +8762,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-294: FIRST Diamond depth-8 in the substrate (divisibility-preorder on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T00:30:00Z
@@ -8779,7 +8779,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-293: Diamond depth-7 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-7 via bounded lattice with top+bottom)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-23T00:00:00Z
@@ -8796,7 +8796,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-292: FIRST Diamond depth-7 in the substrate (order-distributive-lattice on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T23:30:00Z
@@ -8813,7 +8813,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-291: Diamond depth-6 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-6 via distributive lattice)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T23:00:00Z
@@ -8830,7 +8830,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-290: FIRST Diamond depth-6 in the substrate (negation-involution / abelian-group enrichment on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T22:30:00Z
@@ -8847,7 +8847,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-289: Diamond depth-3 across-layers broadened (C-BASHRS-POSIX-IDEMPOTENCE joins depth-3 via symmetric python-purity)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T22:00:00Z
@@ -8864,7 +8864,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-288: Diamond depth-4 ACROSS LAYERS extended (C-FFI-CPYTHON-EXT joins depth-4 via constructive refcount inverse)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T21:30:00Z
@@ -8881,7 +8881,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-287: Diamond depth-5 ACROSS LAYERS (C-COMPILE-RUST-TO-PTX-MMA reaches depth-5 via bounded-smem closure)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T21:00:00Z
@@ -8898,7 +8898,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-286: FIRST Diamond depth-5 in the substrate (bitwise-AND-commutative-monoid on C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T20:30:00Z
@@ -8915,7 +8915,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-285: Property-specific Silver-tier Kani harnesses for C-XPILE-CONTRACT-BACKEND-TRAIT (Path α extension, TENTH and final contract — citation round-trip pattern)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T20:00:00Z
@@ -8932,7 +8932,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-284: Property-specific Silver-tier Kani harnesses for C-XPILE-CONTRACT-FRONTEND-TRAIT (Path α extension, ninth contract — frame preservation pattern)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T19:30:00Z
@@ -8949,7 +8949,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-283: Property-specific Silver-tier Kani harnesses for C-XPILE-BACKEND-TRAIT (Path α extension, eighth contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T19:00:00Z
@@ -8966,7 +8966,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-282: Property-specific Silver-tier Kani harnesses for C-XPILE-FRONTEND-TRAIT (Path α extension, seventh contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T18:30:00Z
@@ -8983,7 +8983,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-281: Property-specific Silver-tier Kani harnesses for C-BASHRS-POSIX-IDEMPOTENCE (Path α extension, sixth contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T18:00:00Z
@@ -9000,7 +9000,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-280: PtxBackend::new_with_matmul_specialist — end-to-end §29 multi-emitter validation in production code'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T17:30:00Z
@@ -9017,7 +9017,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-279: Property-specific Silver-tier Kani harnesses for C-XLATE-PY-LIST-TO-VEC (Path α, FIFTH and FINAL contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T17:00:00Z
@@ -9034,7 +9034,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-278: Property-specific Silver-tier Kani harnesses for C-XLATE-LEAN-TO-RUST (Path α, fourth contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T16:30:00Z
@@ -9051,7 +9051,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-277: Property-specific Silver-tier Kani harnesses for C-XLATE-RUST-FN-TO-LEAN-THM (Path α, third contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: low
   created: 2026-05-22T16:00:00Z
@@ -9068,7 +9068,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-276: Property-specific Silver-tier Kani harnesses for C-COMPILE-RUST-TO-PTX-MMA (Path α, second contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T15:30:00Z
@@ -9085,7 +9085,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-275: Property-specific Silver-tier Kani harnesses for C-FFI-CPYTHON-EXT (closes audit-design.md §4 caveat for this contract)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T15:00:00Z
@@ -9102,7 +9102,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-274: equation + align math envs in LatexContractFrontend + FIFTH contract Runtime escape (C-NOTATION-LATEX-MATH-TO-EQUATION-V1)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T14:30:00Z
@@ -9119,7 +9119,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-273: xpile-spec.md §29 implementation roadmap updated with PMAT-261..266 status'
-  status: planned
+  status: obsolete
   priority: low
   assigned_to: null
   created: 2026-05-22T14:00:00Z
@@ -9136,7 +9136,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-272: LatexContractFrontend parse body lit up (math + citations + references)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T13:30:00Z
@@ -9153,7 +9153,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-271: for-in-range desugaring Runtime sweep (C-PY-INT-ARITH extension)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T13:00:00Z
@@ -9170,7 +9170,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-270: Contract-lane trait Runtime invariants (THIRD/FOURTH contracts to escape demo-fixture status)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T12:30:00Z
@@ -9187,7 +9187,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-269: Trait-contract Runtime stratum upgrade (SECOND contract family to escape demo fixture status)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T12:00:00Z
@@ -9204,7 +9204,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-268: Runtime-stratum sweeps for recursion + branching + modulo (C-PY-INT-ARITH deepening)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T11:30:00Z
@@ -9221,7 +9221,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-267: FIRST contract Runtime-stratum oracle fixture (C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T11:00:00Z
@@ -9238,7 +9238,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-266: Adversarial invariant tests for MultiEmitterBackend (Section 29 oracle hardening)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T10:30:00Z
@@ -9255,7 +9255,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-265: Refactor WgslBackend to use MultiEmitterBackend internally (mirrors PMAT-264 pattern for WGSL)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-22T10:00:00Z
@@ -9272,7 +9272,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-264: Refactor PtxBackend to use MultiEmitterBackend internally (validates Section 29 architecture in production)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-21T11:30:00Z
@@ -9289,7 +9289,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-263: TargetEmitter trait + MultiEmitterBackend routing layer (Section 29 routing)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-21T11:00:00Z
@@ -9306,7 +9306,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-262: Extend Artifact to carry QuorumStatus (Section 29 wiring continued)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-21T10:00:00Z
@@ -9323,7 +9323,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-261: Multi-emitter quorum scaffolding types in xpile-backend (EmitterRole, QuorumPolicy, QuorumStatus, DiffExecResult, ViaEntry)'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-21T09:00:00Z
@@ -9340,7 +9340,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-260: Audit-design.md §4 — mark "Oracle Hardware Blind Spots Re-emerge" as Mitigated via Multi-Emitter Quorum'
-  status: planned
+  status: done
   priority: low
   assigned_to: null
   created: 2026-05-21T08:00:00Z
@@ -9357,7 +9357,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-259: Add Section 29 (Layer-5 Multi-Emitter Oracle Quorum) — spec a+b quorum design for PTX emission'
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-05-20T21:30:00Z
@@ -9374,7 +9374,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-258: Refresh CURRENT.md PR count 184 → 217 (Diamond program shipped 32 PRs)'
-  status: planned
+  status: obsolete
   priority: low
   assigned_to: null
   created: 2026-05-20T21:00:00Z
@@ -9391,7 +9391,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-257: Quote acceptance_criteria with embedded colons to fix roadmap.yaml YAML parse error — unblocks pmat work list'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-20T20:30:00Z
@@ -11142,7 +11142,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-154: CURRENT.md refresh — PR count 113 → 184, post-session refresh stamp, QUORUM line expansion'
-  status: planned
+  status: obsolete
   priority: low
   assigned_to: null
   created: 2026-05-18T17:00:00Z
@@ -11159,7 +11159,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-153: post-session numerics — 195 → 204 tests + pmat tdg A- baseline'
-  status: planned
+  status: obsolete
   priority: low
   assigned_to: null
   created: 2026-05-18T16:30:00Z
@@ -11176,7 +11176,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-152: docs sweep — post-XPILE-QUORUM-006 Kani counts (12 → 43 BMC harnesses) across spec/audit/status'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-18T16:00:00Z
@@ -11193,7 +11193,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Kaizen spec sweep: fix stale claims'
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T03:19:19Z
@@ -11210,7 +11210,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Implement py-int-arith Layer-1 contract: checked arithmetic with bigint-pointer panic'
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T06:34:06Z
@@ -11227,7 +11227,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Extend Python subset: bitwise binops (& | ^ << >>)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T06:51:01Z
@@ -11243,7 +11243,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Extend Python subset: power operator (**)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T06:57:00Z
@@ -11259,7 +11259,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Extend Python subset: multi-statement / multi-assignment if-branches'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T07:02:09Z
@@ -11275,7 +11275,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Extend Python subset: while loops + mutable rebinding'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T07:09:37Z
@@ -11291,7 +11291,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Extend Python subset: for x in range(...) desugaring'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T13:23:56Z
@@ -11307,7 +11307,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Extend for-range: negative-step (count down)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T13:27:49Z
@@ -11339,7 +11339,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Lean codegen: while via partial def + threaded state'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T13:43:05Z
@@ -11355,7 +11355,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Codegen: contract citations in generated source (C-PY-INT-ARITH)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-16T20:48:13Z
@@ -11403,7 +11403,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Time-bounded escape hatches: XPILE-PENDING-UNTIL markers + CI gate'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T09:54:53Z
@@ -11419,7 +11419,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'xpile audit subcommand: report F1 citation % (XPILE-FALSIFY-001)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T10:03:57Z
@@ -11435,7 +11435,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Quarterly SOTA-gap dossier cadence (XPILE-SOTA-001)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T10:11:56Z
@@ -11451,7 +11451,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'First Lean refinement proof: C-PY-INT-ARITH fast/slow path equiv (XPILE-REFINE-001)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T11:17:55Z
@@ -11467,7 +11467,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Differential execution check: CPython vs transpiled binary on generated inputs (XPILE-DIFF-001)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T11:27:34Z
@@ -11483,7 +11483,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Symbolic stratum first cut: Kani harness for C-PY-INT-ARITH (XPILE-QUORUM-001)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T11:33:44Z
@@ -11499,7 +11499,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Run Kani harnesses in workspace tests (XPILE-QUORUM-002)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T12:36:20Z
@@ -11515,7 +11515,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Install Kani in CI; flip kani_verify gate on every PR (XPILE-QUORUM-003)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T12:40:07Z
@@ -11531,7 +11531,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Extend XPILE-PENDING-UNTIL scan to contracts/ (XPILE-EXEMPT-002)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T12:45:58Z
@@ -11547,7 +11547,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Refine F1 to applicable-contracts denominator; add Lean target (XPILE-FALSIFY-002)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T12:49:29Z
@@ -11563,7 +11563,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Multi-arg fixtures in differential exec gate (XPILE-DIFF-002)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T12:57:33Z
@@ -11579,7 +11579,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Mirror Rust BigInt mode in Ruchy backend (PMAT-012-FOLLOWUP)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T13:06:33Z
@@ -11595,7 +11595,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Rust + Ruchy BigInt bitwise/shift/power (PMAT-013-FOLLOWUP)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T13:33:11Z
@@ -11611,7 +11611,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Lean assert via conditional panic encoding (PMAT-009-FOLLOWUP)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T13:38:15Z
@@ -11627,7 +11627,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Discharge sorry in PyIntArith.fast_path_eq_slow_path (XPILE-REFINE-002 / PMAT-009-FOLLOWUP-2)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T13:43:54Z
@@ -11643,7 +11643,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Discharge mul/floor_div/mod stub theorems (XPILE-REFINE-003)
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T13:55:29Z
@@ -11659,7 +11659,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Complete C-PY-INT-ARITH refinement corpus: shift+pow theorems (XPILE-REFINE-004)'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T14:05:01Z
@@ -11675,7 +11675,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'XPILE-DIFF-003: overflow-prone ranges + panic-as-BigInt interpretation in diff_exec'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T14:12:05Z
@@ -11691,7 +11691,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'XPILE-QUORUM-005: Extrinsic stratum via pmat work-item attestations'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T14:20:23Z
@@ -11723,7 +11723,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'XPILE-REFINE-006: slow-path theorem for addition_overflow_promotion'
-  status: planned
+  status: done
   priority: high
   assigned_to: null
   created: 2026-05-17T14:44:04Z
@@ -12514,7 +12514,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-082: sub/bashrs-merger.md sweep — reflect PMAT-037..058 substrate completion (Layer B IR shape complete; C-BASHRS-POSIX-IDEMPOTENCE at full 4-stratum QUORUM)'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T07:00:00Z
@@ -12531,7 +12531,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-083: docs/status/CURRENT.md sweep — refresh high-water mark to v0.1.0 substrate completion (113 PRs, 27 crates, 12 contracts at 100% QUORUM)'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T07:30:00Z
@@ -12548,7 +12548,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-084: contracts/README.md sweep — rewrite for actual substrate state (12 contracts, lean/ + kani/ dirs, CI gates wired, tier roadmap)'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T08:00:00Z
@@ -12701,7 +12701,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-093: README frontend count fix — "Six language frontends" → "Seven" reflecting Shell/bashrs addition'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T12:30:00Z
@@ -12718,7 +12718,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-094: README hero SVG alt text — add Shell to the alt text language list for accessibility'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T13:00:00Z
@@ -12735,7 +12735,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-095: fix Ext numerics drift — C-BASHRS-POSIX-IDEMPOTENCE Ext=6 → Ext≥6/Ext=8 in audit-design.md and sub/bashrs-merger.md'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T13:30:00Z
@@ -12752,7 +12752,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-096: sub/phased-rollout.md sweep — add historical banner + "What actually shipped" section; mark planned phases as superseded/overshipped/punted'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T14:00:00Z
@@ -12769,7 +12769,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-097: sub/migration.md sweep — Phase A/B substantially shipped, in-tree skipping subtree path; mark per-crate status accurately and check off shipped Phase-B completion-gate items'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T14:30:00Z
@@ -12786,7 +12786,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-098: sub/contract-frontend-trait.md sweep — latex-contract-frontend crate ships at v0.1.0 (was "Planned Phase 4"), and ContractFrontend trait is at full §14.4 QUORUM via PMAT-066/067'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T15:00:00Z
@@ -12803,7 +12803,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-099: sub/contract-backend-trait.md sweep — xpile-latex-contract-backend and xpile-lean-contract-backend both ship as workspace crates at v0.1.0 (were "Planned Phase 4")'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T15:30:00Z
@@ -12820,7 +12820,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-100: sub/kaizen-fleet.md sweep — xpile transitions tool tier → kernel tier (Phase 4 overshipped); update fleet-contribution projections to reflect actual substrate state'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T16:00:00Z
@@ -12837,7 +12837,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-101: sub/ci-gates.md substantive rewrite — align with actual .github/workflows/ci.yml (Kani is per-PR not nightly; llvm-cov / mutants / pmat-tdg / check_provenance NOT wired yet)'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T16:30:00Z
@@ -12854,7 +12854,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-102: sub/pv-integration.md sweep — update pv lint gate example from 4 contracts/10 eqs to 12 contracts/35 eqs (live post-substrate-completion output)'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T17:00:00Z
@@ -12871,7 +12871,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-103: sub/latex-bidirectional.md sweep — latex-contract-frontend and xpile-latex-contract-backend are workspace crates at v0.1.0 (were "planned crate")'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T17:30:00Z
@@ -12888,7 +12888,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-104: sub/backend-trait.md sweep — add bashrs-backend to implementations table, "three backends real" → "four backends real"'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T18:00:00Z
@@ -12905,7 +12905,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-105: sub/frontend-trait.md sweep — add bashrs-frontend to implementations table (Real, 54 tests across PMAT-039..058 + PMAT-085..092)'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T18:30:00Z
@@ -12922,7 +12922,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-106: sub/vision.md architecture diagram — add bashrs-frontend + latex-contract-frontend (proof lane); drop "<future>" placeholder'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T19:00:00Z
@@ -12939,7 +12939,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-107: sub/meta-hir.md substantive rewrite — show actual Stmt/Expr/Type variants (Layer B shell additions from PMAT-039..056), Rust/Lean/Shell in SourceLang, structured Function (no more signature: String), federated → unified narrative'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T19:30:00Z
@@ -12956,7 +12956,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-108: sub/rust-codegen.md sweep — fixture list 5 → 11+ (factorial..factorial_iter + BigInt variants); point to CHANGELOG as canonical'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T20:00:00Z
@@ -12973,7 +12973,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-109: sub/glossary.md sweep — add QUORUM, Layer B variants, bashrs domain terms; fix PVScore mean drift (0.58 → 0.56)'
-  status: planned
+  status: obsolete
   priority: high
   assigned_to: null
   created: 2026-05-18T20:30:00Z
@@ -13449,7 +13449,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-145: status-history sweep — INDEX + 2026-05-18 substrate-completion doc'
-  status: planned
+  status: obsolete
   priority: low
   assigned_to: null
   created: 2026-05-18T12:30:00Z
@@ -13466,7 +13466,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-144: sub-spec theorem counts — kaizen-fleet.md + provability-roadmap.md (50 not 12, all 12 at 4-stratum)'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-18T12:15:00Z
@@ -13483,7 +13483,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-143: README §Contract-substrate-at-QUORUM — 50 theorems, not 12'
-  status: planned
+  status: obsolete
   priority: low
   assigned_to: null
   created: 2026-05-18T12:00:00Z
@@ -13500,7 +13500,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-142: audit-design.md — correct stale "3-stratum minimum" claim (all 12 are 4-stratum)'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-18T11:45:00Z
@@ -13517,7 +13517,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-141: audit-design.md — refresh theorem count and Sem vote numbers post-PMAT-127..138'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-18T11:30:00Z
@@ -13534,7 +13534,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-140: README "by the numbers" — reflect zero-warnings substrate after PMAT-138'
-  status: planned
+  status: obsolete
   priority: low
   assigned_to: null
   created: 2026-05-18T11:15:00Z
@@ -13551,7 +13551,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-139: spec + status — reflect zero-warnings substrate after PMAT-138'
-  status: planned
+  status: obsolete
   priority: medium
   assigned_to: null
   created: 2026-05-18T11:00:00Z
@@ -14414,3 +14414,18 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1230
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1230: [meta/roadmap-hygiene] reconcile stale ledger statuses — collapse the fossil live backlog ~275 -> ~20. A full-file roadmap review + a 4-agent disposition audit (cross-checked vs CHANGELOG, the Lean/Kani files, and memory) found ~95% of the planned/open/in_progress/high items were actually done, superseded, or obsolete: Tranche2 PMAT-498b..503a (132 items each self-reporting SHIPPED v0.1.x + a CHANGELOG entry), foundational PMAT-001..034 (bitwise/**/while/for-range/Kani/diff-exec shipped day 1-2), Diamond-depth theorems PMAT-286..308 (substrate now depth-13 UNIVERSAL / depth-21), Silver-tier Kani PMAT-275..285, §29 quorum plumbing PMAT-259..266/280 (production 3-way quorum on RTX 4090), Runtime fixtures 267..271, Latex 272/274, skeptic-pass 1099/1104. Doc-sync count-bump tasks (082..109/139..154/257/258/273 + spec-sync 304..399) marked OBSOLETE (targets years-stale). Duplicate id PMAT-1102 de-duplicated: original skeptic filing re-ided PMAT-1102B, impl record keeps PMAT-1102. Status-field-only change; appended at EOF to stay conflict-free with the concurrent cron lane. The ~20 genuinely-live items preserved: 1008/1035/1039/1087, 1100/1101/1102/1102B, 952, 956, 465/468/469, 476/482/487..491.'
+  status: done
+  priority: medium
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - 'Diff is status-field-only + the PMAT-1102 dedup + this EOF entry; roadmap.yaml still parses; live backlog (planned+open+in_progress) drops to ~20; new `obsolete` status carries the stale doc-sync tasks; zero duplicate ids; zero malformed `status: high`.'
+  - 'Roadmap-parsing gates unaffected: quorum.rs + attestations.rs key on the C-PY-INT-ARITH contract-id string + quorum strata, not the item status field; CI workspace-test authoritative.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Follow-up from the roadmap review. Honest-conservative: only high-confidence shipped/achieved items flipped; future-dated/uncertain items (GPU-runner infra 487..491, SOTA dossier 476, Mathlib-gated 956) left planned. Done in a git worktree off origin/main per memory feedback-cron-no-repl-mutex; entry appended at EOF (not top) so it does not collide with the cron adding new PMAT-12xx entries at the list head.'
