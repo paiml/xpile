@@ -3861,6 +3861,109 @@ const STR_CAPITALIZE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1189: `$__wasm_str_isdigit(s) -> i32` — Python `s.isdigit()` as a bool
+/// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is an ASCII decimal
+/// digit `'0'`–`'9'`, else `0`. Non-allocating (a single left-to-right scan of
+/// the payload bytes with no heap use — it does NOT ride `needs_heap`).
+///
+/// **Empty string → `0`.** Python's `"".isdigit()` is `False` (a vacuous "all
+/// chars are digits" is nonetheless `False`), so a zero-length `s` returns `0`
+/// before the loop.
+///
+/// **ASCII-only, with the honest runtime boundary of the case-fold siblings —
+/// but short-circuited on a definitive answer first.** Python's `str.isdigit()`
+/// also accepts Unicode digit code points (`"²".isdigit()` is `True`),
+/// which needs a Unicode table this scalar lane does not carry. The scan is
+/// therefore ordered so a DEFINITIVE answer never traps:
+///   * a NON-ASCII byte (`>= 0x80`) is reached only when every prior byte was an
+///     ASCII digit — at that point the result is genuinely undecidable (the
+///     trailing code point might or might not be a Unicode digit), so it executes
+///     `unreachable` (a TRAP, like the `upper`/`lower`/`index` siblings) rather
+///     than silently returning a wrong bool;
+///   * a DEFINITIVELY non-digit ASCII byte (`< '0'` or `> '9'`) short-circuits to
+///     `0` BEFORE any later non-ASCII byte is examined, so `"a²".isdigit()`
+///     returns `0` (Python's answer) and never traps — the earlier ASCII byte
+///     already forces `False` regardless of what follows.
+///
+/// So a pure-ASCII `s` is answer-exact; a non-ASCII `s` whose ASCII prefix is all
+/// digits aborts; a non-ASCII `s` with any earlier non-digit ASCII byte returns
+/// `0`. It never passes an unmapped non-ASCII byte off as a wrong `True`/`False`.
+const STR_ISDIGIT_HELPER: &str = "\
+  ;; PMAT-1189 __wasm_str_isdigit(s) = Python s.isdigit() (i32 bool). True iff s
+  ;; is non-empty AND every code point is an ASCII decimal digit '0'..'9'. Empty
+  ;; -> 0 (Python's vacuous-all is still False). ASCII-only honest boundary: a
+  ;; byte >= 0x80 reached with every prior byte a digit is an undecidable
+  ;; Unicode-digit case (\"\\u00b2\".isdigit() is True) -> unreachable (trap); a
+  ;; definitively non-digit ASCII byte short-circuits to 0 BEFORE any later
+  ;; non-ASCII byte, so \"a\\u00b2\" returns 0 (not a trap), matching Python.
+  (func $__wasm_str_isdigit (param $s i32) (result i32)
+    (local $slen i32)
+    (local $i i32)
+    (local $c i32)
+    ;; slen = byte length of s
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; empty string -> False (Python)
+    local.get $slen
+    i32.eqz
+    if
+      i32.const 0
+      return
+    end
+    ;; for i in 0..slen
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte (all prior bytes were digits) -> undecidable -> trap
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; c < '0' (0x30) -> a non-digit ASCII byte -> definitively 0
+        local.get $c
+        i32.const 0x30
+        i32.lt_u
+        if
+          i32.const 0
+          return
+        end
+        ;; c > '9' (0x39) -> a non-digit ASCII byte -> definitively 0
+        local.get $c
+        i32.const 0x39
+        i32.gt_u
+        if
+          i32.const 0
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    ;; non-empty and every byte was an ASCII digit -> True
+    i32.const 1
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5334,6 +5437,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // `needs_heap` (set via `expr_has_heap_op`, like upper/lower/replace/zfill).
     // Byte-parallel (no charlen math — all survivors are 1-byte ASCII).
     let needs_capitalize = module_uses_str_method(module, StrMethodOp::Capitalize);
+    // PMAT-1189: `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`) — a bool (i32)
+    // predicate: `1` iff `s` is non-empty and every code point is an ASCII digit.
+    // NON-allocating (a single byte scan, no heap), so — unlike the case-fold
+    // ops — it does NOT ride `needs_heap`; it carries its own `$__wasm_str_isdigit`
+    // helper and only needs the `(memory …)` its payload load reads (pulled in
+    // below, alongside `needs_startswith`/`needs_endswith`, whichever way the
+    // receiver reaches memory).
+    let needs_isdigit = module_uses_str_method(module, StrMethodOp::IsDigit);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5345,6 +5456,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_count
         || needs_find
         || needs_rfind
+        || needs_isdigit
     {
         writeln!(
             out,
@@ -5572,6 +5684,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // helper.
     if needs_heap && needs_capitalize {
         out.push_str(STR_CAPITALIZE_HELPER);
+    }
+    // PMAT-1189: emit the string ISDIGIT helper once, when any function uses
+    // `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`). NON-allocating (a single
+    // byte scan returning a bool), so — unlike the case-fold helpers — it is
+    // gated ONLY on `needs_isdigit`, NOT `needs_heap`: a read-only str module
+    // (`def f(s): return s.isdigit()`) carries no allocator but still needs this
+    // helper. Gated on an actual use so an unrelated module carries no dead code.
+    if needs_isdigit {
+        out.push_str(STR_ISDIGIT_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -8331,14 +8452,32 @@ fn emit_expr(
         } if args.len() == 3 => {
             emit_str_replace(recv, &args[0], &args[1], Some(&args[2]), scope, out, depth)
         }
+        // PMAT-1189: `s.isdigit()` — a bool (i32) predicate: `1` iff `s` is
+        // non-empty and every code point is an ASCII decimal digit '0'..'9'. The
+        // receiver lowers to an i32 base-pointer (`emit_str_expr`), then the
+        // non-allocating `$__wasm_str_isdigit` helper scans the payload bytes.
+        // ASCII-only honest boundary: a non-ASCII byte reached with every prior
+        // byte a digit TRAPS (Unicode digits need a table this lane lacks), while
+        // a definitively non-digit ASCII byte short-circuits to `0` first.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsDigit,
+            args,
+        } if args.is_empty() => {
+            emit_str_expr(recv, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_isdigit").expect("write");
+            Ok(WatTy::I32)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
              `.find(p, start)`, `.rfind(p)`, `.rfind(p, start)`, `.index(p)`, \
              `.rindex(p)`, `.removeprefix(p)`, `.removesuffix(p)`, \
-             `.replace(old, new)`, and `.replace(old, new, count)` are supported; \
-             upper/lower/strip/split/…, the 3-arg `.find`/`.rfind`(p, start, end), \
-             and the start/end forms of index/rindex/count are refused"
+             `.replace(old, new)`, `.replace(old, new, count)`, and `.isdigit()` \
+             are supported; the other is* predicates, upper/lower/strip/split/…, \
+             the 3-arg `.find`/`.rfind`(p, start, end), and the start/end forms of \
+             index/rindex/count are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
