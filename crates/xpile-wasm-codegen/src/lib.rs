@@ -6141,6 +6141,72 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     writeln!(out, "    i32.const 1").expect("write");
     writeln!(out, "  )").expect("write");
 
+    // PMAT-1244: set subset — `set(p) ⊆ set(q)` ? 1 : 0. MEMBERSHIP-ONLY: every
+    // key of p must be a member of q (NO size gate, unlike `set_eq`). This is the
+    // engine behind Python's set ordering: `p <= q` ⇔ p ⊆ q; `p >= q` ⇔ q ⊆ p
+    // (operands swapped by the caller); the STRICT `<`/`>` add an `emit_binop`
+    // inline `|p| < |q|` header compare on top (a subset with unequal size is a
+    // PROPER subset, since for sets p ⊆ q ⟹ |p| ≤ |q|). Reuses the never-trapping
+    // `$__wasm_dict_has_{s}` to probe q, so it introduces NO helper a set of this
+    // kind does not already force. Order-INDEPENDENT: the boolean result does not
+    // depend on the swap-into-hole storage order, so it is CPython-exact even for
+    // sets that have had elements removed.
+    writeln!(
+        out,
+        "  ;; __wasm_set_subset_{s}(p, q) = (set p ⊆ set q) ? 1 : 0 (∀ key∈p: key∈q)"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_set_subset_{s} (param $p i32) (param $q i32) (result i32)"
+    )
+    .expect("write");
+    writeln!(out, "    (local $i i32) (local $n i32) (local $ea i32)").expect("write");
+    // walk p; every key must be a member of q, else not a subset. No size gate.
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.set $n").expect("write");
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "    local.set $i").expect("write");
+    writeln!(out, "    (block $done").expect("write");
+    writeln!(out, "      (loop $next").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        local.get $n").expect("write");
+    writeln!(out, "        i32.ge_s").expect("write");
+    writeln!(out, "        br_if $done").expect("write");
+    // $ea = p + LIST_ELEMS_OFFSET + i*DICT_ENTRY_SIZE (entry i's address).
+    writeln!(out, "        local.get $p").expect("write");
+    writeln!(out, "        i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "        i32.mul").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $ea").expect("write");
+    // if key@ea is NOT in q → return 0. Load the key with the kind's shape.
+    writeln!(out, "        local.get $q").expect("write");
+    writeln!(out, "        local.get $ea").expect("write");
+    match kind {
+        KeyKind::Int => writeln!(out, "        i64.load").expect("write"),
+        KeyKind::Str => writeln!(out, "        i32.load").expect("write"),
+    }
+    writeln!(out, "        call $__wasm_dict_has_{s}").expect("write");
+    writeln!(out, "        i32.eqz").expect("write");
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          i32.const 0").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const 1").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $i").expect("write");
+    writeln!(out, "        br $next").expect("write");
+    writeln!(out, "      )").expect("write");
+    writeln!(out, "    )").expect("write");
+    // every key of p present in q → p ⊆ q.
+    writeln!(out, "    i32.const 1").expect("write");
+    writeln!(out, "  )").expect("write");
+
     // set: update an existing key in place, else append at count. PMAT-999: on
     // overflow (count >= capacity) the region GROWS — bump-alloc a 2x region,
     // memory.copy the header + entries, and RETURN the (possibly relocated)
@@ -13830,11 +13896,47 @@ fn emit_binop(
             }
             return Ok(WatTy::I32);
         }
+        // PMAT-1244: set ORDERING — subset/superset. Python:
+        //   `p <= q` ⇔ p ⊆ q            `p >= q` ⇔ q ⊆ p (operands swapped)
+        //   `p <  q` ⇔ p ⊆ q ∧ |p|<|q|  `p >  q` ⇔ q ⊆ p ∧ |q|<|p|
+        // `$__wasm_set_subset_<k>(a,b)` returns (a ⊆ b); the strict variants AND
+        // on an inline header size compare (a subset of unequal size is a PROPER
+        // subset, since p ⊆ q ⟹ |p| ≤ |q| for sets). Both operands are set
+        // Idents (guarded above), so re-emitting one is a pure `local.get` — no
+        // double side effect from the size reloads.
+        if matches!(op, BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq) {
+            let sfx = lk.suffix();
+            // (sub, sup) = the (⊆-inner, ⊇-outer) operands for THIS op — `<=`/`<`
+            // ask lhs ⊆ rhs; `>=`/`>` flip the containment to rhs ⊆ lhs.
+            let (sub, sup) = match op {
+                BinOp::LtEq | BinOp::Lt => (lhs, rhs),
+                BinOp::GtEq | BinOp::Gt => (rhs, lhs),
+                _ => unreachable!("guarded by the matches! above"),
+            };
+            emit_expr(sub, scope, out, depth)?;
+            emit_expr(sup, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_set_subset_{sfx}").expect("write");
+            // Strict `<`/`>` also require |sub| < |sup| (proper subset).
+            if matches!(op, BinOp::Lt | BinOp::Gt) {
+                emit_expr(sub, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "i32.load").expect("write"); // |sub| (size header @ +0)
+                emit_expr(sup, scope, out, depth)?;
+                indent(out, depth);
+                writeln!(out, "i32.load").expect("write"); // |sup|
+                indent(out, depth);
+                writeln!(out, "i32.lt_s").expect("write"); // |sub| < |sup|
+                indent(out, depth);
+                writeln!(out, "i32.and").expect("write"); // (sub ⊆ sup) ∧ proper
+            }
+            return Ok(WatTy::I32);
+        }
         return Err(unsupported(&format!(
-            "binary op {op:?} over `set` operands — only structural equality \
-             `==`/`!=` is wired (PMAT-1242); subset/superset ordering and set \
-             algebra (union/intersection/difference) are not yet in the WASM \
-             set subset, refused honestly"
+            "binary op {op:?} over `set` operands — structural equality `==`/`!=` \
+             (PMAT-1242) and subset/superset ordering `<`/`<=`/`>`/`>=` \
+             (PMAT-1244) are wired; set algebra (union/intersection/difference) \
+             is not yet in the WASM set subset, refused honestly"
         )));
     }
 
