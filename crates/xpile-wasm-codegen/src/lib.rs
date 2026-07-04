@@ -4081,6 +4081,124 @@ const STR_ISALPHA_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1193: `$__wasm_str_isspace(s) -> i32` — Python `s.isspace()` as a bool
+/// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is ASCII whitespace,
+/// else `0`. Non-allocating (a single left-to-right scan of the payload bytes
+/// with no heap use — it does NOT ride `needs_heap`). The predicate twin of
+/// [`STR_ISDIGIT_HELPER`] / [`STR_ISALPHA_HELPER`], differing only in the
+/// per-byte ASCII-membership test — the ASCII WHITESPACE set, which is two
+/// contiguous ranges: `0x09`–`0x0D` (`\t \n \v \f \r`) and `0x1C`–`0x20` (FS GS
+/// RS US and the space `0x20`). Those four separators `0x1C`–`0x1F` ARE
+/// whitespace to CPython's `str.isspace()` (verified vs python3).
+///
+/// **Empty string → `0`.** Python's `"".isspace()` is `False` (a vacuous "all
+/// chars are whitespace" is nonetheless `False`), so a zero-length `s` returns
+/// `0` before the loop.
+///
+/// **ASCII-only, with the honest runtime boundary of the isdigit/isalpha
+/// siblings — but short-circuited on a definitive answer first.** Python's
+/// `str.isspace()` also accepts non-ASCII Unicode whitespace (`" ".isspace()`
+/// — a NBSP — is `True`), which needs a Unicode table this scalar lane does not
+/// carry. The scan is therefore ordered so a DEFINITIVE answer never traps:
+///   * a NON-ASCII byte (`>= 0x80`) is reached only when every prior byte was
+///     ASCII whitespace — the result is then genuinely undecidable (the trailing
+///     code point might or might not be Unicode whitespace), so it executes
+///     `unreachable` (a TRAP, like the `isdigit` / `isalpha` siblings) rather
+///     than silently returning a wrong bool;
+///   * a DEFINITIVELY non-whitespace ASCII byte (any byte `< 0x80` outside the
+///     two whitespace ranges) short-circuits to `0` BEFORE any later non-ASCII
+///     byte is examined, so `"a ".isspace()` returns `0` (Python's answer)
+///     and never traps — the earlier ASCII byte already forces `False`.
+///
+/// So a pure-ASCII `s` is answer-exact; a non-ASCII `s` whose ASCII prefix is all
+/// whitespace aborts; a non-ASCII `s` with any earlier non-whitespace ASCII byte
+/// returns `0`. It never passes an unmapped non-ASCII byte off as a wrong bool.
+const STR_ISSPACE_HELPER: &str = "\
+  ;; PMAT-1193 __wasm_str_isspace(s) = Python s.isspace() (i32 bool). True iff s
+  ;; is non-empty AND every code point is ASCII whitespace: 0x09..0x0d (\\t\\n\\v\\f\\r)
+  ;; or 0x1c..0x20 (FS GS RS US and space). Empty -> 0 (Python's vacuous-all is
+  ;; still False). ASCII-only honest boundary: a byte >= 0x80 reached with every
+  ;; prior byte whitespace is an undecidable Unicode-whitespace case
+  ;; (\"\\u00a0\".isspace() is True) -> unreachable (trap); a definitively
+  ;; non-whitespace ASCII byte short-circuits to 0 BEFORE any later non-ASCII
+  ;; byte, so \"a\\u00a0\" returns 0 (not a trap), matching Python.
+  (func $__wasm_str_isspace (param $s i32) (result i32)
+    (local $slen i32)
+    (local $i i32)
+    (local $c i32)
+    ;; slen = byte length of s
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; empty string -> False (Python)
+    local.get $slen
+    i32.eqz
+    if
+      i32.const 0
+      return
+    end
+    ;; for i in 0..slen
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte (all prior bytes were whitespace) -> undecidable -> trap
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; is_ws = (0x09 <= c <= 0x0d) | (0x1c <= c <= 0x20); NOT ws -> definitively 0
+        ;; (0x09 <= c) & (c <= 0x0d)  -> tab/LF/VT/FF/CR
+        local.get $c
+        i32.const 0x09
+        i32.ge_u
+        local.get $c
+        i32.const 0x0d
+        i32.le_u
+        i32.and
+        ;; (0x1c <= c) & (c <= 0x20)  -> FS/GS/RS/US/space
+        local.get $c
+        i32.const 0x1c
+        i32.ge_u
+        local.get $c
+        i32.const 0x20
+        i32.le_u
+        i32.and
+        ;; is_ws = either range
+        i32.or
+        ;; a definitively non-whitespace ASCII byte -> 0
+        i32.eqz
+        if
+          i32.const 0
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    ;; non-empty and every byte was ASCII whitespace -> True
+    i32.const 1
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5569,6 +5687,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // the `(memory …)` its payload load reads (pulled in below alongside
     // `needs_isdigit`).
     let needs_isalpha = module_uses_str_method(module, StrMethodOp::IsAlpha);
+    // PMAT-1193: `s.isspace()` (`Expr::StrMethod`, op `IsSpace`) — the third
+    // predicate in the `is*` family: a bool (i32) `1` iff `s` is non-empty and
+    // every code point is ASCII whitespace (`0x09`–`0x0D` or `0x1C`–`0x20`). Same
+    // non-allocating byte scan as isdigit/isalpha — it does NOT ride `needs_heap`;
+    // it carries its own `$__wasm_str_isspace` helper and only needs the
+    // `(memory …)` its payload load reads (pulled in below alongside
+    // `needs_isdigit`/`needs_isalpha`).
+    let needs_isspace = module_uses_str_method(module, StrMethodOp::IsSpace);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5582,6 +5708,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_rfind
         || needs_isdigit
         || needs_isalpha
+        || needs_isspace
     {
         writeln!(
             out,
@@ -5826,6 +5953,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (`def f(s): return s.isalpha()`) carries no allocator but still needs it.
     if needs_isalpha {
         out.push_str(STR_ISALPHA_HELPER);
+    }
+    // PMAT-1193: emit the string ISSPACE helper once, when any function uses
+    // `s.isspace()` (`Expr::StrMethod`, op `IsSpace`). Like isdigit/isalpha it is
+    // non-allocating (a single byte scan returning a bool), so it is gated ONLY
+    // on `needs_isspace`, NOT `needs_heap`: a read-only str module
+    // (`def f(s): return s.isspace()`) carries no allocator but still needs it.
+    if needs_isspace {
+        out.push_str(STR_ISSPACE_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -8619,15 +8754,33 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_isalpha").expect("write");
             Ok(WatTy::I32)
         }
+        // PMAT-1193: `s.isspace()` — a bool (i32) predicate: `1` iff `s` is
+        // non-empty and every code point is ASCII whitespace (0x09..0x0d or
+        // 0x1c..0x20). The receiver lowers to an i32 base-pointer
+        // (`emit_str_expr`), then the non-allocating `$__wasm_str_isspace` helper
+        // scans the payload bytes. ASCII-only honest boundary: a non-ASCII byte
+        // reached with every prior byte whitespace TRAPS (Unicode whitespace needs
+        // a table this lane lacks), while a definitively non-whitespace ASCII byte
+        // short-circuits to `0` first.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsSpace,
+            args,
+        } if args.is_empty() => {
+            emit_str_expr(recv, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_isspace").expect("write");
+            Ok(WatTy::I32)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
              `.find(p, start)`, `.rfind(p)`, `.rfind(p, start)`, `.index(p)`, \
              `.rindex(p)`, `.removeprefix(p)`, `.removesuffix(p)`, \
-             `.replace(old, new)`, `.replace(old, new, count)`, `.isdigit()`, and \
-             `.isalpha()` are supported; the other is* predicates, \
-             upper/lower/strip/split/…, the 3-arg `.find`/`.rfind`(p, start, end), \
-             and the start/end forms of index/rindex/count are refused"
+             `.replace(old, new)`, `.replace(old, new, count)`, `.isdigit()`, \
+             `.isalpha()`, and `.isspace()` are supported; the other is* \
+             predicates, upper/lower/strip/split/…, the 3-arg `.find`/`.rfind`(p, \
+             start, end), and the start/end forms of index/rindex/count are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
