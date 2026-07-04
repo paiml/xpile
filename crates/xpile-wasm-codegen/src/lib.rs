@@ -3861,6 +3861,127 @@ const STR_CAPITALIZE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1201: `$__wasm_str_swapcase(s) -> i32` — Python `s.swapcase()`: a NEW heap
+/// string with the case of every ASCII letter flipped (`A`–`Z` → `a`–`z` AND
+/// `a`–`z` → `A`–`Z`, in a single pass — the both-directions twin of
+/// [`STR_UPPER_LOWER_HELPER`], which flips only ONE direction per `up` flag).
+/// Allocating (rides the `needs_heap` gate, calls `$__alloc`).
+///
+/// **ASCII-only, with the same honest runtime boundary as `$__wasm_str_upper_
+/// lower` / `$__wasm_str_capitalize`.** Python's `str.swapcase()` does FULL
+/// Unicode case flipping (`"ß".swapcase() == "SS"`, `"É".swapcase() == "é"`),
+/// which needs a case table this scalar lane does not carry. So the helper
+/// case-flips only the ASCII letters and, on the FIRST byte `>= 0x80` (any byte
+/// of a non-ASCII code point in valid UTF-8), executes `unreachable` — a TRAP,
+/// exactly like the `upper` / `lower` / `capitalize` siblings. It NEVER passes a
+/// non-ASCII byte through unchanged, so it never silently diverges from CPython:
+/// for a pure-ASCII `s` the result is char-exact, and for any non-ASCII `s` it
+/// traps rather than returning a wrongly-flipped string. Because every surviving
+/// byte is 1-byte ASCII, byte length == code-point length == the result length,
+/// so `len` / `Concat` / equality / a str RETURN compose uniformly.
+///
+/// One byte-parallel pass: `$__alloc(8 + slen)`, store the i32 BYTE-count header
+/// (= `slen`, unchanged by case flipping), then for each payload byte: trap if
+/// `>= 0x80`, else flip `'a'`–`'z'` UP (`c - 0x20`) OR `'A'`–`'Z'` DOWN
+/// (`c + 0x20`) — a non-letter byte is stored unchanged. A zero-length `s` writes
+/// no payload (the loop guard is `i < slen`) and returns an empty heap string.
+const STR_SWAPCASE_HELPER: &str = "\
+  ;; PMAT-1201 __wasm_str_swapcase(s) = Python s.swapcase() — a NEW heap string with
+  ;; the case of every ASCII letter flipped BOTH ways ('a'..'z' -> upper AND
+  ;; 'A'..'Z' -> lower) in one pass. ASCII-only: a byte >= 0x80 (non-ASCII code
+  ;; point) TRAPS (unreachable), never a silent un-flipped pass-through, so the
+  ;; result is char-exact for ASCII or aborts.
+  (func $__wasm_str_swapcase (param $s i32) (result i32)
+    (local $slen i32)
+    (local $dst i32)
+    (local $i i32)
+    (local $c i32)
+    ;; slen = byte length of s (unchanged by case flipping — all survivors ASCII).
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; dst = alloc(8 + slen) ; store the i32 header = slen.
+    local.get $slen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $slen
+    i32.store
+    ;; for i in 0..slen: c = s[8+i]; trap if non-ASCII; case-flip; dst[8+i] = c.
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte -> honest trap (needs a Unicode case table we don't carry)
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; c in 'a'(0x61)..'z'(0x7a) (lowercase) -> upper: c - 0x20
+        local.get $c
+        i32.const 0x61
+        i32.ge_u
+        local.get $c
+        i32.const 0x7a
+        i32.le_u
+        i32.and
+        if
+          local.get $c
+          i32.const 0x20
+          i32.sub
+          local.set $c
+        else
+          ;; c in 'A'(0x41)..'Z'(0x5a) (uppercase) -> lower: c + 0x20
+          local.get $c
+          i32.const 0x41
+          i32.ge_u
+          local.get $c
+          i32.const 0x5a
+          i32.le_u
+          i32.and
+          if
+            local.get $c
+            i32.const 0x20
+            i32.add
+            local.set $c
+          end
+        end
+        ;; dst[8 + i] = c
+        local.get $dst
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        local.get $c
+        i32.store8
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    local.get $dst
+  )
+";
+
 /// PMAT-1189: `$__wasm_str_isdigit(s) -> i32` — Python `s.isdigit()` as a bool
 /// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is an ASCII decimal
 /// digit `'0'`–`'9'`, else `0`. Non-allocating (a single left-to-right scan of
@@ -6006,6 +6127,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // `needs_heap` (set via `expr_has_heap_op`, like upper/lower/replace/zfill).
     // Byte-parallel (no charlen math — all survivors are 1-byte ASCII).
     let needs_capitalize = module_uses_str_method(module, StrMethodOp::Capitalize);
+    // PMAT-1201: `s.swapcase()` (`Expr::StrMethod`, op `SwapCase`) — an allocating
+    // string-RETURNING op (a fresh heap string with the case of every ASCII letter
+    // flipped BOTH ways). Its own `$__wasm_str_swapcase` helper (the both-directions
+    // twin of `$__wasm_str_upper_lower`; a non-ASCII byte traps). Rides `needs_heap`
+    // (set via `expr_has_heap_op`, like upper/lower/capitalize/replace/zfill).
+    // Byte-parallel (no charlen math — all survivors are 1-byte ASCII).
+    let needs_swapcase = module_uses_str_method(module, StrMethodOp::SwapCase);
     // PMAT-1189: `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`) — a bool (i32)
     // predicate: `1` iff `s` is non-empty and every code point is an ASCII digit.
     // NON-allocating (a single byte scan, no heap), so — unlike the case-fold
@@ -6301,6 +6429,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // helper.
     if needs_heap && needs_capitalize {
         out.push_str(STR_CAPITALIZE_HELPER);
+    }
+    // PMAT-1201: emit the string SWAPCASE helper once, when any function uses
+    // `s.swapcase()` (`Expr::StrMethod`, op `SwapCase`). The `$__wasm_str_swapcase`
+    // helper flips the case of every ASCII letter BOTH ways in one pass (the
+    // both-directions twin of `$__wasm_str_upper_lower`). Allocating (calls
+    // `$__alloc` + `i32.store8`), so it rides `needs_heap` — a swapcase sets the
+    // heap gate via `expr_has_heap_op`. Byte-parallel (no char helper — a non-ASCII
+    // byte traps rather than folding). Gated on an actual use so an unrelated
+    // heap-string module carries no dead helper.
+    if needs_heap && needs_swapcase {
+        out.push_str(STR_SWAPCASE_HELPER);
     }
     // PMAT-1189: emit the string ISDIGIT helper once, when any function uses
     // `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`). NON-allocating (a single
@@ -7703,6 +7842,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // PMAT-1187: `s.capitalize()` (op `Capitalize`) bump-allocates its
         // first-upper/rest-lower result the same way — a miss would emit
         // `$__wasm_str_capitalize` against an undeclared `$__alloc`.
+        // PMAT-1201: `s.swapcase()` (op `SwapCase`) bump-allocates its both-ways
+        // case-flipped result the same way — a miss would emit
+        // `$__wasm_str_swapcase` against an undeclared `$__alloc`.
         Expr::StrMethod { recv, args, op } => {
             matches!(
                 op,
@@ -7714,6 +7856,7 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::Upper
                     | StrMethodOp::Lower
                     | StrMethodOp::Capitalize
+                    | StrMethodOp::SwapCase
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -8790,6 +8933,27 @@ fn emit_str_capitalize(
     emit_str_expr(recv, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_str_capitalize").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1201: lower `s.swapcase()` — a materialising op leaving the i32
+/// base-pointer of a fresh heap string with the case of every ASCII letter flipped
+/// BOTH ways (`A`–`Z` → `a`–`z` AND `a`–`z` → `A`–`Z`). The receiver is
+/// string-valued (`emit_str_expr`, which refuses a non-str recv honestly); the
+/// allocating `$__wasm_str_swapcase` helper does the flip and TRAPS on a non-ASCII
+/// byte (the honest ASCII-only boundary — full Unicode case flipping needs a case
+/// table this scalar lane does not carry, so it refuses at runtime rather than
+/// silently returning a wrongly-flipped string). A heap-constructed receiver
+/// (`(a + b).swapcase()`) already pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_swapcase(
+    recv: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_swapcase").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -10099,6 +10263,21 @@ fn emit_str_expr(
             emit_str_capitalize(recv, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1201: `s.swapcase()` in a string position — a fresh heap string
+        // (like upper/lower/capitalize, a materialising op) with the case of every
+        // ASCII letter flipped BOTH ways. 0-arg; the allocating
+        // `$__wasm_str_swapcase` helper does the flip and TRAPS on a non-ASCII byte
+        // (the honest ASCII-only boundary — full Unicode case flipping needs a case
+        // table this scalar lane does not carry, so it refuses at runtime rather
+        // than silently returning a wrongly-flipped string).
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::SwapCase,
+            args,
+        } if args.is_empty() => {
+            emit_str_swapcase(recv, scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1166: a `StrFormat` reaching HERE is one the bare-`{}` fold in
         // `try_fold_strformat_to_concat` declined — a template carrying a
         // format spec (`"{:>5}".format(x)`), a positional (`"{0}"`), a named
@@ -10133,9 +10312,9 @@ fn emit_str_expr(
              a `Chr` (chr(n)), `s[i]`, `s[lo:hi]`, a str-valued `if`/`else`, \
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
              count])`, `.zfill(width)`, `.upper()` / `.lower()` / \
-             `.capitalize()` (ASCII-only — a non-ASCII byte traps), or a \
-             str-returning call; stepped slicing / str(float) / bare f-strings \
-             are refused",
+             `.capitalize()` / `.swapcase()` (ASCII-only — a non-ASCII byte \
+             traps), or a str-returning call; stepped slicing / str(float) / \
+             bare f-strings are refused",
             expr_kind(other)
         ))),
     }

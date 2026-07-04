@@ -43,7 +43,7 @@ enum Cmd {
     Transpile {
         /// Path to the source file (e.g., `add.py`, `kernel.c`).
         input: PathBuf,
-        /// Target backend: rust | ruchy | ptx | wgsl | spirv | lean | shell.
+        /// Target backend: rust | ruchy | ptx | wgsl | spirv | wasm | lean | shell | forjar.
         #[arg(long, default_value = "rust")]
         target: String,
         /// Output path. Defaults to stdout.
