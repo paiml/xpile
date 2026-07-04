@@ -14528,3 +14528,37 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1243
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1243: [wasm/runtime/dict] native-WASM DICT equality `d1 == d2` / `d1 != d2` (`Expr::BinOp{Eq|NotEq}` over two dict locals) — closes the SECOND half of the PMAT-1242 base-pointer silent-miscompile (that slice wired set `==` and left dict `==` as an honest refusal). A `$__wasm_dict_eq_<k>(p,q)->i32` helper: `|p|==|q|` cheap header compare AND ∀k∈p: k∈q ∧ p[k]==q[k] — the load-bearing distinction from set_eq is the per-key i64 VALUE compare (Python `{1:2} == {2:1}` is False even though the KEYSETS `{1,2}` are equal, which set_eq alone gets wrong). Reuses the never-trapping `$__wasm_dict_has_<k>` for membership and `$__wasm_dict_get_<k>` for q''s value (safe: only after has confirmed the key). Emitted in `dict_helpers_for` after set_eq; `emit_binop` routes dict Eq/NotEq via `binop_operand_is_dict`. Order-INDEPENDENT (survives a `del`/`pop` swap-into-hole). No meta-HIR / gate-walker edit.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice, forward_ev_ranking rank 2. Completes the dict/set structural-comparison surface: set_eq (PMAT-1242) is membership-only, dict_eq adds the VALUE compare that distinguishes a dict from its keyset — `{1:2}=={1:3}` → False where a keyset compare says True."
+  - "IMPL (single crate — xpile-wasm-codegen/src/lib.rs): `$__wasm_dict_eq_<k>` helper (size check, then per-key has-membership + i64 value compare via get); `emit_binop` routes dict Eq/NotEq to it (`!=` = i32.eqz inversion) and refuses dict ordering/algebra honestly. No new locals/literals/helper-dependency → no walker arm needed."
+  - "REGRESSION WITNESS: gated `crates/xpile-wasm-codegen/tests/dict_equality_witness.rs`. EXECUTED (WABT + live python3) — same-keys/differing-VALUE → False (the case set_eq gets wrong), reordered-insert → equal, differing-size → unequal, `!=` inversion, order-independence after a `del`, str-keyed value compare. All == CPython."
+  - "DONE (PR #1818): full gate green — fmt/check/clippy/pv-lint/deny + `cargo test -p xpile-wasm-codegen`. Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM + C-WASM-HEAP (no new contract/Lean module)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1244
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1244: [wasm/runtime/set] native-WASM SET subset/superset ORDERING `s1 <= s2` / `s1 < s2` / `s1 >= s2` / `s1 > s2` (`Expr::BinOp{Lt|LtEq|Gt|GtEq}` over two set locals) — extends the set comparison surface from equality (PMAT-1242) to the ordering relations. A new membership-only helper `$__wasm_set_subset_<k>(p,q)->i32` returns `(p ⊆ q)` — walk p, every key must be a member of q, NO size gate (unlike set_eq). It reuses the never-trapping `$__wasm_dict_has_<k>` (already forced by a set of that kind → no new helper dependency), emitted in `dict_helpers_for` after dict_eq. `emit_binop` routes: `p <= q` ⇔ subset(p,q); `p >= q` ⇔ subset(q,p) (operands swapped); the STRICT `p < q` ⇔ subset(p,q) ∧ |p|<|q| and `p > q` ⇔ subset(q,p) ∧ |q|<|p| AND on an inline header size compare (a subset of unequal size is PROPER, since p ⊆ q ⟹ |p| ≤ |q| for sets). Order-INDEPENDENT — the boolean never depends on the swap-into-hole storage order a removal leaves behind, so it is CPython-exact even over a MUTATED set. Before this slice a set operand under `<`/`<=`/`>`/`>=` was honestly refused (NOT a silent miscompile — the set branch only handled `==`/`!=`); the capability was simply missing. Set ALGEBRA (union/intersection/difference) stays refused honestly.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open), strategic_goals.forward_ev_ranking rank 2 (heap/string/dict runtime forward — biggest forward capability): the tractable clean next after set/dict equality (memory `project-wasm-dict-set-surface` flagged subset `<=` as 'order-indep, tractable clean next'). ORDER-INDEPENDENT like equality, so it sidesteps the deletion-order entanglement that keeps full for-in-dict iteration a hard multi-slice arc."
+  - "IMPL (single crate — xpile-wasm-codegen/src/lib.rs): `$__wasm_set_subset_<k>` helper (a p-walk probing q with `has`, no size gate) emitted with the dict/set helper family right after `dict_eq`; `emit_binop`'s set branch adds a `Lt|LtEq|Gt|GtEq` arm that picks `(sub,sup)` = (lhs,rhs) for `<=`/`<` or (rhs,lhs) for `>=`/`>`, calls the helper, and for the STRICT variants ANDs on an inline `i32.load`+`i32.lt_s` size compare. Both operands are set Idents (guarded above), so re-emitting one for the size reload is a pure `local.get` (no double side effect). No meta-HIR / other-codegen / gate-walker edit — the ordering reuses the existing `Expr::BinOp` (already walked by every `expr_has_*`), introduces no new locals/literals, and no helper a set does not already force (the recurring undeclared-helper gotcha class does not apply)."
+  - "REGRESSION WITNESS: new gated `crates/xpile-wasm-codegen/tests/set_subset_witness.rs` (4 tests). CONSTRUCT: the module carries `$__wasm_set_subset_i`+`_s` defs AND calls, reuses `$__wasm_dict_has_i`+`_s`, and the str path forces `$__wasm_str_eq`; a set-vs-nonset `<=` / a set[int]<=set[str] / a set union `|` each refuse honestly with a naming message. EXECUTED (WABT `wat2wasm`→`wasm-interp` + live python3, clean skip without): 21 zero-arg bool exports VALUE-MATCHING CPython — non-strict `<=` held for a proper subset AND equal sets, strict `<` correctly REJECTED equal sets (`{1,2,3}<{1,2,3}`→0, proving the size gate is load-bearing where a subset-only check would wrongly say True), superset `>=`/`>` mirrored via operand swap, empty-set edges (∅⊆{1}, ∅⊊{1}→1; ∅⊊∅→0), order-independence AFTER a swap-into-hole `discard`, and the str-keyed content-compare path. `cpython_pins_are_python` cross-checks every pin against a live python3 (non-vacuity: asserts all 21 covered)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, `cargo test -p xpile-wasm-codegen` (all witnesses incl. set_subset_witness 4 pass; whole-suite 78+ no regression). Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM + C-WASM-HEAP (ordering reuses the shipped has + heap contracts — no new contract/Lean module minted)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
