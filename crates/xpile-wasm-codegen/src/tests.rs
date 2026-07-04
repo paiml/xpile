@@ -23,6 +23,7 @@ fn module_with(items: Vec<Item>) -> Module {
 
 fn wasm_config() -> BackendConfig {
     BackendConfig {
+        emit_contracts: true,
         target: Target::Wasm,
         profile: Profile::RustOut,
         hardware: None,
@@ -1853,6 +1854,7 @@ fn accepts_scalar_struct_refuses_nonscalar_field() {
 #[test]
 fn refuses_wrong_target() {
     let cfg = BackendConfig {
+        emit_contracts: true,
         target: Target::Rust,
         profile: Profile::RustOut,
         hardware: None,

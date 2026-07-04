@@ -41,6 +41,7 @@ fn main() -> anyhow::Result<()> {
         .find(|b| b.targets().contains(&Target::Rust))
         .expect("rust backend");
     let cfg = BackendConfig {
+        emit_contracts: true,
         target: Target::Rust,
         profile: Profile::RustOut,
         hardware: None,

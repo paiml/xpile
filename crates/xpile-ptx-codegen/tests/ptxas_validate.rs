@@ -69,6 +69,7 @@ fn module_with(f: Function) -> Module {
 
 fn ptx_config(sm: &str) -> BackendConfig {
     BackendConfig {
+        emit_contracts: true,
         target: Target::Ptx,
         profile: Profile::RustOut,
         hardware: Some(HwProfile::Ptx {

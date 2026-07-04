@@ -2056,7 +2056,7 @@ impl Backend for LeanBackend {
         &[Target::Lean]
     }
 
-    fn lower(&self, module: &Module, _config: &BackendConfig) -> Result<Artifact, BackendError> {
+    fn lower(&self, module: &Module, config: &BackendConfig) -> Result<Artifact, BackendError> {
         let primary = emit_module(module).map_err(|e| BackendError::Lower(e.to_string()))?;
         Ok(Artifact {
             primary,
@@ -2065,7 +2065,8 @@ impl Backend for LeanBackend {
             quorum_status: QuorumStatus::Single {
                 emitter: "xpile-lean-codegen".to_string(),
             },
-        })
+        }
+        .with_citations(config.emit_contracts))
     }
 }
 

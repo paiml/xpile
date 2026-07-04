@@ -112,7 +112,9 @@ impl Backend for WgslBackend {
             None | Some(HwProfile::Wgsl { .. }) => {}
             _ => return Err(BackendError::MissingHardware(Target::Wgsl)),
         }
-        self.inner.lower(module, config)
+        self.inner
+            .lower(module, config)
+            .map(|a| a.with_citations(config.emit_contracts))
     }
 }
 
@@ -384,6 +386,7 @@ mod tests {
 
     fn wgsl_config(features: Vec<String>) -> BackendConfig {
         BackendConfig {
+            emit_contracts: true,
             target: Target::Wgsl,
             profile: Profile::RustOut,
             hardware: Some(HwProfile::Wgsl { features }),
@@ -456,6 +459,7 @@ mod tests {
         // still drives the real lowering.
         let backend = WgslBackend::new();
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Wgsl,
             profile: Profile::RustOut,
             hardware: None,
@@ -483,6 +487,7 @@ mod tests {
     fn wgsl_backend_rejects_wrong_hardware() {
         let backend = WgslBackend::new();
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Wgsl,
             profile: Profile::RustOut,
             hardware: Some(HwProfile::Ptx {

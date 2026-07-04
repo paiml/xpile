@@ -42,6 +42,7 @@ fn kernel_module() -> Module {
 
 fn spirv_config() -> BackendConfig {
     BackendConfig {
+        emit_contracts: true,
         target: Target::Spirv,
         profile: Profile::RustOut,
         hardware: Some(HwProfile::Spirv { version: (1, 3) }),

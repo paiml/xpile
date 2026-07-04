@@ -4262,7 +4262,7 @@ impl Backend for RuchyBackend {
         &[Target::Ruchy]
     }
 
-    fn lower(&self, module: &Module, _config: &BackendConfig) -> Result<Artifact, BackendError> {
+    fn lower(&self, module: &Module, config: &BackendConfig) -> Result<Artifact, BackendError> {
         let primary = emit_module(module).map_err(|e| BackendError::Lower(e.to_string()))?;
         Ok(Artifact {
             primary,
@@ -4271,7 +4271,8 @@ impl Backend for RuchyBackend {
             quorum_status: QuorumStatus::Single {
                 emitter: "xpile-ruchy-codegen".to_string(),
             },
-        })
+        }
+        .with_citations(config.emit_contracts))
     }
 }
 

@@ -384,6 +384,7 @@ fn lower_hybrid_rust(session: &TranspileSession, modules: &[Module]) -> Result<S
         .find(|b| b.targets().contains(&Target::Rust))
         .context("no Rust backend registered")?;
     let config = BackendConfig {
+        emit_contracts: true,
         target: Target::Rust,
         profile: Profile::RustOut,
         hardware: None,
@@ -662,21 +663,17 @@ fn transpile(
         target,
         profile: Profile::RustOut,
         hardware: None,
+        // PMAT-956: `--contracts off` suppresses citation emission. The config
+        // drives it, so every `Backend::lower` honours it directly (rather than
+        // a post-emit strip). Default `on` keeps every citation across the
+        // applicable L1–L5 taxonomy layers.
+        emit_contracts: contracts != "off",
     };
 
     let artifact = backend
         .lower(&module, &config)
         .with_context(|| format!("backend `{}` failed", backend.name()))?;
-
-    // `--contracts off`: strip the emitted `xpile-contract` citations for
-    // annotation-free output. Default `on` keeps every citation (every emitted
-    // construct is cited across the applicable L1–L5 taxonomy layers). The
-    // library counterpart is `xpile_backend::strip_contract_citations`.
-    let primary = if contracts == "off" {
-        xpile_backend::strip_contract_citations(&artifact.primary)
-    } else {
-        artifact.primary
-    };
+    let primary = artifact.primary;
 
     // `--emit-crate`: write a complete, buildable binary crate instead of
     // printing. The crate compiles as-is for the native host AND for
@@ -927,6 +924,7 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
             .find(|b| b.targets().contains(&target))
             .expect("target validated above");
         let config = BackendConfig {
+            emit_contracts: true,
             target,
             profile: Profile::RustOut,
             hardware: None,

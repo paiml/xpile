@@ -41,6 +41,7 @@ fn main() -> anyhow::Result<()> {
         .find(|b| b.targets().contains(&Target::Shell))
         .expect("bashrs backend");
     let cfg = BackendConfig {
+        emit_contracts: true,
         target: Target::Shell,
         profile: Profile::RustOut,
         hardware: None,

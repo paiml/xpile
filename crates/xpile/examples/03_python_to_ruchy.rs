@@ -35,6 +35,7 @@ fn main() -> anyhow::Result<()> {
         .find(|b| b.targets().contains(&Target::Ruchy))
         .expect("ruchy backend");
     let cfg = BackendConfig {
+        emit_contracts: true,
         target: Target::Ruchy,
         profile: Profile::RustOut,
         hardware: None,

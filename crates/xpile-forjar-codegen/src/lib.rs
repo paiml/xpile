@@ -95,7 +95,8 @@ impl Backend for ForjarBackend {
             quorum_status: QuorumStatus::Single {
                 emitter: "xpile-forjar-codegen".to_string(),
             },
-        })
+        }
+        .with_citations(config.emit_contracts))
     }
 }
 

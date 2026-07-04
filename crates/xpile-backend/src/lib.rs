@@ -90,6 +90,18 @@ pub struct BackendConfig {
     pub target: Target,
     pub profile: Profile,
     pub hardware: Option<HwProfile>,
+    /// PMAT-956: whether emitted code is annotated with its `// xpile-contract:`
+    /// citations across the applicable L1–L5 taxonomy layers. `true` by default
+    /// (every emitted construct is cited — the "every construct under a cited
+    /// contract" north-star); set `false` for annotation-free output. Every
+    /// `Backend::lower` honours it, so a library caller controls citation
+    /// emission through the config, exactly as the CLI's `--contracts off` does.
+    #[serde(default = "default_emit_contracts")]
+    pub emit_contracts: bool,
+}
+
+fn default_emit_contracts() -> bool {
+    true
 }
 
 /// Emitted artifact — primary source/IR text plus sidecar files plus
@@ -190,6 +202,21 @@ pub fn strip_contract_citations(text: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+impl Artifact {
+    /// PMAT-956: honour a [`BackendConfig::emit_contracts`] flag on this
+    /// artifact — a no-op when `emit` is `true` (the default: keep every
+    /// citation), or strips the `xpile-contract` citations from `primary` when
+    /// `false`. Every `Backend::lower` calls this at its return point, so the
+    /// optional-emission control is config-driven and uniform across backends.
+    #[must_use]
+    pub fn with_citations(mut self, emit: bool) -> Self {
+        if !emit {
+            self.primary = strip_contract_citations(&self.primary);
+        }
+        self
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -834,6 +861,7 @@ mod quorum_scaffolding_tests {
 
     fn dummy_config() -> BackendConfig {
         BackendConfig {
+            emit_contracts: true,
             target: Target::Ptx,
             profile: Profile::RustOut,
             hardware: None,
