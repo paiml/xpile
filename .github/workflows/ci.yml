@@ -160,17 +160,20 @@ jobs:
   docs:
     name: docs
     runs-on: ubuntu-latest
+    env:
+      # Pinned prebuilt musl binary: no `cargo install` (pmat needs rustc
+      # ≥1.95 while this repo's toolchain is 1.93), no compile time, and a
+      # fixed version so the demo-score floor can't drift under a pmat update.
+      PMAT_VERSION: v3.21.0
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: "docs-v0"
-
-      - name: Install pmat
-        run: cargo install pmat --locked
+      - name: Install pmat (pinned prebuilt binary)
+        run: |
+          mkdir -p "$HOME/.pmat"
+          curl -fsSL "https://github.com/paiml/paiml-mcp-agent-toolkit/releases/download/${PMAT_VERSION}/pmat-${PMAT_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar xz -C "$HOME/.pmat"
+          echo "$HOME/.pmat/pmat-${PMAT_VERSION}-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
 
       - name: pmat validate-docs (link integrity)
         run: pmat validate-docs -r . --fail-on-error
