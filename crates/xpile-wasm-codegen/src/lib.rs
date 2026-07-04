@@ -7036,6 +7036,321 @@ const LIST_BOOL_REDUCE_HELPER: &str = "\
     local.get $is_all)
 ";
 
+/// PMAT-1252: the list-INT-SORT reduction helper — Python `sorted(xs)` /
+/// `sorted(xs, reverse=True)` over a `list[int]`. This is the FIRST list op that
+/// RETURNS a new list, so unlike the sum/min/max/any/all folds it ALLOCATES: it
+/// bump-allocates a fresh PMAT-968 length-prefixed record (`$__alloc(8 + n*8)`),
+/// copies the source elements in, then INSERTION-SORTS the copy in place and
+/// returns the new base-pointer — the source list is never mutated (Python's
+/// `sorted` yields a new list). It calls `$__alloc`, so a module using it forces
+/// `needs_heap` (via [`expr_has_heap_op`]) and rides its OWN `needs_list_sorted`.
+///
+/// Insertion sort is chosen for its compactness and STABILITY: the inner shift
+/// fires only on a STRICT compare (`prev > key` ascending, `prev < key`
+/// descending), so equal elements never cross and their input order is preserved
+/// — matching CPython's stable `sorted` (and `sorted(reverse=True)`, which is a
+/// stable descending sort, NOT ascending-then-reversed). The `$reverse` param
+/// selects the direction at the call site (`i32.const 1` descending, `0`
+/// ascending). The EMPTY list does NOT trap (unlike min/max): `sorted([]) == []`,
+/// so `n == 0` allocates an empty record and returns it. Integer compares are
+/// signed (`i64.gt_s`/`i64.lt_s`), the scalar subset's i64 posture, matching the
+/// Rust `.sort()` / `.sort_by(desc)` lane.
+const LIST_SORTED_INT_HELPER: &str = "\
+  ;; __wasm_list_sorted_i64(base, reverse) -> a NEW sorted list[int]
+  ;; base → length-prefixed region: i32 count @ base+0, i64 elements @ base+8.
+  (func $__wasm_list_sorted_i64 (param $base i32) (param $reverse i32) (result i32)
+    (local $n i32)
+    (local $r i32)
+    (local $ra i32)
+    (local $i i32)
+    (local $j i32)
+    (local $key i64)
+    (local $prev i64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; r = __alloc(8 + n*8); write the i32 count header at r+0
+    local.get $n
+    i32.const 8
+    i32.mul
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $r
+    local.get $r
+    local.get $n
+    i32.store
+    ;; ra = r + 8 (address of element 0 in the new record; reused throughout)
+    local.get $r
+    i32.const 8
+    i32.add
+    local.set $ra
+    ;; copy: for i in 0..n: r[i] = base[i]
+    i32.const 0
+    local.set $i
+    (block $cpd
+      (loop $cp
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $cpd
+        ;; dst = ra + i*8
+        local.get $ra
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; val = i64.load(base + 8 + i*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cp
+      )
+    )
+    ;; insertion sort r in place: for i in 1..n
+    i32.const 1
+    local.set $i
+    (block $srtd
+      (loop $srt
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $srtd
+        ;; key = r[i]
+        local.get $ra
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        local.set $key
+        ;; j = i (the hole; shift larger/smaller predecessors up into it)
+        local.get $i
+        local.set $j
+        (block $ind
+          (loop $inn
+            ;; if j == 0, the hole reached the front — stop
+            local.get $j
+            i32.eqz
+            br_if $ind
+            ;; prev = r[j-1]
+            local.get $ra
+            local.get $j
+            i32.const 1
+            i32.sub
+            i32.const 8
+            i32.mul
+            i32.add
+            i64.load
+            local.set $prev
+            ;; should_shift = reverse ? (prev < key) : (prev > key) — STRICT (stable)
+            local.get $reverse
+            if (result i32)
+              local.get $prev
+              local.get $key
+              i64.lt_s
+            else
+              local.get $prev
+              local.get $key
+              i64.gt_s
+            end
+            ;; stop when NOT shifting (eqz of should_shift → break)
+            i32.eqz
+            br_if $ind
+            ;; r[j] = prev (shift the predecessor up into the hole)
+            local.get $ra
+            local.get $j
+            i32.const 8
+            i32.mul
+            i32.add
+            local.get $prev
+            i64.store
+            ;; j -= 1
+            local.get $j
+            i32.const 1
+            i32.sub
+            local.set $j
+            br $inn
+          )
+        )
+        ;; r[j] = key (drop the key into the final hole)
+        local.get $ra
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        local.get $key
+        i64.store
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $srt
+      )
+    )
+    local.get $r)
+";
+
+/// PMAT-1252: the list-FLOAT-SORT twin — Python `sorted(xs)` / `sorted(xs,
+/// reverse=True)` over a `list[float]`. Structurally identical to
+/// [`LIST_SORTED_INT_HELPER`] but with an f64 key/predecessor and IEEE-754
+/// `f64.gt`/`f64.lt` compares (a float list shares the int list's header +
+/// 8-byte stride; only the element `*.load`/`*.store` and the compare opcode
+/// differ). Gated on its OWN `needs_list_sorted_float`. Empty list → a fresh
+/// empty list (no trap), like the int sibling. NaN elements: an IEEE-754
+/// compare with NaN is always false, so a NaN never triggers a shift and the
+/// result is unspecified around it — matching CPython's documented undefined
+/// NaN-sort behaviour (and the Rust `.sort_by(partial_cmp)` lane's Equal
+/// fallback); it is NOT a trap.
+const LIST_SORTED_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_sorted_f64(base, reverse) -> a NEW sorted list[float]
+  ;; base → length-prefixed region: i32 count @ base+0, f64 elements @ base+8.
+  (func $__wasm_list_sorted_f64 (param $base i32) (param $reverse i32) (result i32)
+    (local $n i32)
+    (local $r i32)
+    (local $ra i32)
+    (local $i i32)
+    (local $j i32)
+    (local $key f64)
+    (local $prev f64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; r = __alloc(8 + n*8); write the i32 count header at r+0
+    local.get $n
+    i32.const 8
+    i32.mul
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $r
+    local.get $r
+    local.get $n
+    i32.store
+    ;; ra = r + 8 (address of element 0 in the new record; reused throughout)
+    local.get $r
+    i32.const 8
+    i32.add
+    local.set $ra
+    ;; copy: for i in 0..n: r[i] = base[i]
+    i32.const 0
+    local.set $i
+    (block $cpd
+      (loop $cp
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $cpd
+        local.get $ra
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        f64.load
+        f64.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cp
+      )
+    )
+    ;; insertion sort r in place: for i in 1..n
+    i32.const 1
+    local.set $i
+    (block $srtd
+      (loop $srt
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $srtd
+        local.get $ra
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        f64.load
+        local.set $key
+        local.get $i
+        local.set $j
+        (block $ind
+          (loop $inn
+            local.get $j
+            i32.eqz
+            br_if $ind
+            local.get $ra
+            local.get $j
+            i32.const 1
+            i32.sub
+            i32.const 8
+            i32.mul
+            i32.add
+            f64.load
+            local.set $prev
+            ;; should_shift = reverse ? (prev < key) : (prev > key) — STRICT (stable)
+            local.get $reverse
+            if (result i32)
+              local.get $prev
+              local.get $key
+              f64.lt
+            else
+              local.get $prev
+              local.get $key
+              f64.gt
+            end
+            i32.eqz
+            br_if $ind
+            local.get $ra
+            local.get $j
+            i32.const 8
+            i32.mul
+            i32.add
+            local.get $prev
+            f64.store
+            local.get $j
+            i32.const 1
+            i32.sub
+            local.set $j
+            br $inn
+          )
+        )
+        local.get $ra
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        local.get $key
+        f64.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $srt
+      )
+    )
+    local.get $r)
+";
+
 /// Native WASM backend. Lowers the meta-HIR scalar/control subset to WAT
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
@@ -8180,6 +8495,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // minmax), so it rides its OWN gate, NOT `needs_heap`, and needs the
     // `(memory …)` its i32-element loads read.
     let needs_list_bool_reduce = module_uses_list_bool_reduce(module);
+    // PMAT-1252: `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`)
+    // returns a NEW sorted list via a `$__wasm_list_sorted_*` helper — the FIRST
+    // list-VALUED op that ALLOCATES, so it ALSO forces `needs_heap` (via
+    // `expr_has_heap_op`, which pulls in `$__alloc` + the bump-heap `(memory)`).
+    // Each kind rides its OWN gate so a module that sorts only ints carries no
+    // dead f64 helper and vice-versa.
+    let needs_list_sorted = module_uses_list_sorted(module);
+    let needs_list_sorted_float = module_uses_list_sorted_float(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -8202,6 +8525,8 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_minmax
         || needs_list_minmax_float
         || needs_list_bool_reduce
+        || needs_list_sorted
+        || needs_list_sorted_float
     {
         writeln!(
             out,
@@ -8587,6 +8912,19 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // minmax), so gated ONLY on `needs_list_bool_reduce`, NOT `needs_heap`.
     if needs_list_bool_reduce {
         out.push_str(LIST_BOOL_REDUCE_HELPER);
+    }
+    // PMAT-1252: emit the list-SORT reduction helpers once, when any function
+    // uses `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`). Each
+    // ALLOCATES a fresh sorted record via `$__alloc` (so the module also carries
+    // the bump heap + `(memory)` via `needs_heap`); each rides its OWN gate so a
+    // module that sorts only ints carries no dead f64 helper and vice-versa. The
+    // helpers call `$__alloc`, emitted above under `needs_heap` — WAT function
+    // references are order-independent, so a forward reference is fine.
+    if needs_list_sorted {
+        out.push_str(LIST_SORTED_INT_HELPER);
+    }
+    if needs_list_sorted_float {
+        out.push_str(LIST_SORTED_FLOAT_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -9788,6 +10126,105 @@ fn expr_has_bool_reduce(expr: &Expr) -> bool {
     }
 }
 
+/// PMAT-1252: does any function `sorted(xs)` a `list[int]` (`Expr::Sorted {
+/// of_float: false, .. }`)? Gates the `$__wasm_list_sorted_i64` helper. Keyed on
+/// `of_float` so the int and float sorts drive INDEPENDENT gates — a module that
+/// only sorts int lists carries no dead f64 helper and vice-versa. Exhaustive
+/// over the same stmt/expr forms as [`expr_has_list_minmax`]; a missed
+/// sub-expression would leave the helper undeclared at the `call
+/// $__wasm_list_sorted_i64` site (a hard wat2wasm failure — the recurring
+/// gate-hole class, where over-detecting is a harmless unused function but
+/// under-detecting is fatal). The gate keys on the SAME `of_float` that
+/// [`emit_list_sorted`] uses to pick the helper, so gate and emit never disagree.
+fn module_uses_list_sorted(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_sorted(&f.body, false))
+}
+
+/// PMAT-1252: the twin gate for `sorted(xs)` over a `list[float]`
+/// (`Expr::Sorted { of_float: true, .. }`), driving `$__wasm_list_sorted_f64`.
+fn module_uses_list_sorted_float(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_sorted(&f.body, true))
+}
+
+fn block_has_list_sorted(block: &Block, want_float: bool) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(|s| stmt_has_list_sorted(s, want_float))
+        || expr_has_list_sorted(&block.trailing_return, want_float)
+}
+
+fn stmt_has_list_sorted(s: &Stmt, want_float: bool) -> bool {
+    let e = |x| expr_has_list_sorted(x, want_float);
+    let st = |x| stmt_has_list_sorted(x, want_float);
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
+    let e = |x| expr_has_list_sorted(x, want_float);
+    match expr {
+        // this node IS the list sort of the kind we gate — the gate must fire
+        // (the SUPPORTED shape carries a bare-Ident list with no key, so nothing
+        // of interest nests; the detecting arm returns `true` directly).
+        Expr::Sorted { of_float, .. } if *of_float == want_float => true,
+        // a sort of the OTHER kind is a distinct helper; still recurse into its
+        // `list` operand (defensive — a future keyed form could nest a same-kind
+        // sort there).
+        Expr::Sorted { list, .. } => e(list),
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
 fn block_has_str_repeat(block: &Block) -> bool {
     block.stmts.iter().any(stmt_has_str_repeat) || expr_has_str_repeat(&block.trailing_return)
 }
@@ -10311,6 +10748,14 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // PMAT-1058: a string slice `s[lo:hi]` materialises a fresh heap
         // substring (calls `$__alloc`), so it pulls in the bump heap.
         Expr::Slice { of_str: true, .. } => true,
+        // PMAT-1252: `sorted(xs)` bump-allocates a fresh sorted list record (via
+        // `$__wasm_list_sorted_*` → `$__alloc`), so it forces the bump heap +
+        // `(memory)` — the first list-VALUED op that allocates. The list operand
+        // is a bare Ident in the supported shape (no nested allocation), so
+        // returning `true` directly is both correct and safe (over-detection is
+        // harmless; a miss would emit the sort helper against an undeclared
+        // `$__alloc` — a hard wat2wasm failure).
+        Expr::Sorted { .. } => true,
         // PMAT-1060: `str(int)` bump-allocates its decimal-ASCII string, so it
         // pulls in the allocator + `(memory)` like any materialising op.
         Expr::ToStr {
@@ -14726,13 +15171,111 @@ fn emit_list_expr(
             writeln!(out, "local.get ${src}").expect("write");
             Ok(())
         }
+        // PMAT-1252: `sorted(xs)` / `sorted(xs, reverse=True)` over a
+        // `list[int]` / `list[float]` — the FIRST list-VALUED op that
+        // ALLOCATES: `$__wasm_list_sorted_{i64|f64}(base, reverse)` bump-allocates
+        // a fresh record, copies `xs`, insertion-sorts the copy, and leaves the
+        // new base-pointer (the source is never mutated). The destination `elem`
+        // fixes the helper kind, cross-checked against `of_float`; the source
+        // must be a NAMED list of the SAME element type.
+        Expr::Sorted {
+            list,
+            reverse,
+            key,
+            of_float,
+        } => emit_list_sorted(
+            list,
+            *reverse,
+            key.as_ref(),
+            *of_float,
+            elem,
+            scope,
+            out,
+            depth,
+        ),
         other => Err(unsupported(&format!(
             "binding a list local from {} — the WASM subset materialises a \
-             list LITERAL or shares another named list local/param \
-             (list-returning calls/slices are refused)",
+             list LITERAL, shares another named list local/param, or sorts a \
+             named list (`sorted(xs)`); other list-returning calls/slices are \
+             refused",
             expr_kind(other)
         ))),
     }
+}
+
+/// PMAT-1252: lower `sorted(list[, reverse])` producing a NEW `list[scalar]`
+/// on the bump heap. Leaves the fresh record's `i32` base-pointer on the stack.
+///
+/// `elem` is the DESTINATION list's element type (from the bound name), and it
+/// drives the helper kind (`WatTy::I64` → `$__wasm_list_sorted_i64`, `WatTy::F64`
+/// → `_f64`) — cross-checked against the frontend's `of_float` tag so the emit
+/// and the [`module_uses_list_sorted`] gate (which keys on `of_float`) always
+/// pick the SAME helper (a disagreement would emit a call to an ungated,
+/// undeclared helper — a hard wat2wasm failure). The source must be a NAMED
+/// `list[scalar]` of exactly `elem` (a non-name list, or a bool/mismatched-kind
+/// list, refuses honestly). `key=` sorting is deferred.
+#[allow(clippy::too_many_arguments)]
+fn emit_list_sorted(
+    list: &Expr,
+    reverse: bool,
+    key: Option<&SortKey>,
+    of_float: bool,
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if key.is_some() {
+        return Err(unsupported(
+            "`sorted(xs, key=…)` — the WASM subset sorts by element value only \
+             (a `key=` sort is deferred)",
+        ));
+    }
+    // The destination element type fixes the helper; it must agree with the
+    // frontend's `of_float` tag (F64 ⇔ float, I64 ⇔ int). A bool list (I32) or a
+    // kind disagreement refuses — never a silent bit-misread.
+    let helper = match (elem, of_float) {
+        (WatTy::I64, false) => "__wasm_list_sorted_i64",
+        (WatTy::F64, true) => "__wasm_list_sorted_f64",
+        _ => {
+            return Err(unsupported(&format!(
+                "`sorted(xs)` over a `list[{}]` — the WASM subset sorts \
+                 `list[int]` / `list[float]` only (a bool/other-kind list, or a \
+                 float/int tag mismatch, is refused)",
+                elem.keyword()
+            )));
+        }
+    };
+    let Expr::Ident(src) = list else {
+        return Err(unsupported(
+            "`sorted(…)` over a non-name list — the WASM subset sorts a named \
+             `list[scalar]` local/param (bind the list to a name first)",
+        ));
+    };
+    let Some(src_elem) = scope.list_elem_of(src) else {
+        return Err(unsupported(&format!(
+            "`sorted({src})` where `{src}` is not a `list[scalar]` local/param \
+             in the WASM subset"
+        )));
+    };
+    if src_elem != elem {
+        return Err(unsupported(&format!(
+            "`sorted({src})` sorts a `list[{}]` into a `list[{}]` — the WASM \
+             subset keeps the element type (sort a list into a list of the same \
+             element type)",
+            src_elem.keyword(),
+            elem.keyword()
+        )));
+    }
+    // Push the source base-pointer + the reverse selector, then call the helper;
+    // it leaves the fresh sorted record's i32 base-pointer on the stack.
+    indent(out, depth);
+    writeln!(out, "local.get ${src}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(reverse)).expect("write");
+    indent(out, depth);
+    writeln!(out, "call ${helper}").expect("write");
+    Ok(())
 }
 
 /// PMAT-1033: lower an [`Expr::ListLit`] (`[e0, e1, …]`) onto the bump heap
