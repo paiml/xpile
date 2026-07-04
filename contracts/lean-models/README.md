@@ -49,7 +49,23 @@ fitted model satisfies (residuals orthogonal to `1` and to `x`). Unique given
 | `slr_unique` | it is the **unique** minimiser (positive spread) |
 | `slr_strict` | **non-vacuity dual**: strictly larger off the optimum |
 
-The general `k`-parameter case builds on the same residual-orthogonality identity.
+### General k-parameter linear model (`Models/GeneralLinear.lean`)
+
+The capstone. `k` feature functions `φ : Fin k → Fin n → ℝ`, predictor
+`i ↦ ∑ⱼ βⱼ·φⱼ(i)`, `olsSSE = ∑ᵢ (yᵢ − ∑ⱼ βⱼ φⱼ(i))²`. Normal-equations
+characterisation (residual ⊥ every feature), unique given **full column rank** —
+stated directly as "the only coefficients mapping to the zero prediction are
+`0`", avoiding matrix machinery.
+
+| theorem | statement |
+|---|---|
+| `ols_decomp` | `olsSSE β' = olsSSE β + ∑ᵢ (∑ⱼ (β'ⱼ−βⱼ)·φⱼ(i))²` when `β` solves the normal equations |
+| `ols_min` | the normal-equations point **is** a minimiser |
+| `ols_unique` | it is the **unique** minimiser (full column rank) |
+| `ols_strict` | **non-vacuity dual**: strictly larger off the optimum |
+
+**Subsumes** the constant model (`k = 1`, `φ₀ ≡ 1`) and simple linear regression
+(`k = 2`, `φ₀ ≡ 1`, `φ₁ = x`) as special cases of one general theorem.
 
 ## Build
 
@@ -61,9 +77,9 @@ lake build           # elaborate the certificate
 
 ## Status
 
-Done: the isolated Mathlib lane + CI + the OLS-uniqueness certificates for the
-**constant** model (`Basic`) and **simple linear regression** (`SimpleLinear`).
-**Next** (not yet wired): a governing contract YAML in `contracts/`, the general
-`k`-parameter normal-equations uniqueness (positive-definite Gram matrix), and
-the emit path lowering a fitted model → meta-HIR `const + fn` carrying a
+Done: the isolated Mathlib lane + CI + OLS-uniqueness certificates for the
+**constant** model (`Basic`), **simple linear regression** (`SimpleLinear`), and
+the **general k-parameter** linear model (`GeneralLinear`, which subsumes the
+first two). **Next** (not yet wired): a governing contract YAML in `contracts/`,
+and the emit path lowering a fitted model → meta-HIR `const + fn` carrying a
 `// xpile-contract:` citation of this certificate.
