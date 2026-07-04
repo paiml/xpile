@@ -23,7 +23,10 @@
 # NOT exercised at v0.1.0 (parser limitations):
 #   Stmt::Pipeline   — not in this fixture (pipelines aren't
 #                      meaningfully testable through echo)
-#   Stmt::ShellLoop  — parser doesn't recognise multi-line loops yet
+#   Stmt::ShellLoop  — `for … in …; do … done` IS now parsed
+#                      (PMAT-1268) — see bashrs_for_loop_demo.sh for
+#                      its dedicated round-trip witness; while/until/
+#                      if/case and nested loops still refuse
 #   Special params   — $1 / $@ / $? not recognised yet
 #   Backticks        — `cmd` not recognised yet
 #
