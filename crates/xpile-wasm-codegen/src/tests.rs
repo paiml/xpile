@@ -5642,9 +5642,11 @@ fn list_concat_bool_list_refused_honestly() {
 }
 
 #[test]
-fn list_concat_non_name_operand_refused_honestly() {
-    // `xs + [3, 1, 2]` — the WASM subset concatenates two NAMED lists; bind the
-    // literal operand to a name first.
+fn list_concat_literal_operand_compiles() {
+    // PMAT-1259: `xs + [3, 1, 2]` — a list-LITERAL operand now lowers directly
+    // (each operand routes through `emit_list_expr`, so it need not be a bare
+    // name). The literal materialises a fresh record (`$__alloc`) whose
+    // base-pointer feeds the concat helper.
     let f = Function {
         name: "c".into(),
         params: vec![param("xs", Type::List(Box::new(Type::I64)))],
@@ -5669,13 +5671,63 @@ fn list_concat_non_name_operand_refused_honestly() {
             },
         },
     };
-    let err = WasmBackend::new()
+    let wat = WasmBackend::new()
         .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
-        .unwrap_err()
-        .to_string();
+        .expect("literal concat operand now compiles")
+        .primary;
     assert!(
-        err.contains("non-name operand") || err.contains("bind a literal"),
-        "non-name operand concat refused: {err}"
+        wat.contains("call $__wasm_list_concat_i64"),
+        "literal-operand concat calls the concat helper: {wat}"
+    );
+    assert!(
+        wat.contains("call $__alloc"),
+        "the literal operand materialises a record via the allocator: {wat}"
+    );
+}
+
+#[test]
+fn list_concat_chained_three_operands_compiles() {
+    // PMAT-1259: `a + b + c` = `(a + b) + c` — a nested `ListConcat` as the LHS
+    // operand now lowers (recursively through `emit_list_expr`), emitting the
+    // concat helper call twice. The frontend produces exactly this nesting; the
+    // pre-PMAT-1259 emit refused the nested operand.
+    let list_i64 = || Type::List(Box::new(Type::I64));
+    let cat = |l: Expr, r: Expr| Expr::ListConcat {
+        lhs: Box::new(l),
+        rhs: Box::new(r),
+    };
+    let f = Function {
+        name: "c".into(),
+        params: vec![
+            param("a", list_i64()),
+            param("b", list_i64()),
+            param("d", list_i64()),
+        ],
+        return_type: Type::I64,
+        body: Block {
+            stmts: vec![Stmt::Let {
+                name: "zs".into(),
+                ty: list_i64(),
+                value: cat(
+                    cat(Expr::Ident("a".into()), Expr::Ident("b".into())),
+                    Expr::Ident("d".into()),
+                ),
+                mutable: false,
+            }],
+            trailing_return: Expr::Index {
+                collection: Box::new(Expr::Ident("zs".into())),
+                index: Box::new(Expr::LitInt(0)),
+            },
+        },
+    };
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .expect("chained concat now compiles")
+        .primary;
+    assert_eq!(
+        wat.matches("call $__wasm_list_concat_i64").count(),
+        2,
+        "a chained `a + b + c` emits the concat helper twice: {wat}"
     );
 }
 
@@ -5712,7 +5764,9 @@ fn list_concat_mixed_element_type_refused_honestly() {
         .unwrap_err()
         .to_string();
     assert!(
-        err.contains("ONE element type") || err.contains("same element type"),
+        err.contains("ONE element type")
+            || err.contains("same element type")
+            || err.contains("changes element type"),
         "mixed-element concat refused: {err}"
     );
 }

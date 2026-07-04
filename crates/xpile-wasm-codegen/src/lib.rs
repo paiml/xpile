@@ -10578,6 +10578,11 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
         Expr::Sorted { list, .. } => e(list),
         Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
         Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        // PMAT-1259: a list-valued concat operand can now nest a same-kind
+        // `sorted(...)` (`sorted(xs) + ys`), so recurse into BOTH operands —
+        // else the sort helper is left undeclared at its `call` site (a hard
+        // wat2wasm failure, the recurring gate-hole class).
+        Expr::ListConcat { lhs, rhs } => e(lhs) || e(rhs),
         Expr::Concat { lhs, rhs }
         | Expr::BinOp { lhs, rhs, .. }
         | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
@@ -10669,6 +10674,11 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
         Expr::Sorted { list, .. } => e(list),
         Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
         Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        // PMAT-1259: a list-valued concat operand can now nest a
+        // `list(reversed(...))` (`list(reversed(xs)) + ys`), so recurse into
+        // BOTH operands — else the reverse helper is left undeclared at its
+        // `call` site (a hard wat2wasm failure, the recurring gate-hole class).
+        Expr::ListConcat { lhs, rhs } => e(lhs) || e(rhs),
         Expr::Concat { lhs, rhs }
         | Expr::BinOp { lhs, rhs, .. }
         | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
@@ -10713,10 +10723,14 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
 /// stmt/expr forms as [`expr_has_list_reversed`]; a missed sub-expression would
 /// leave the helper undeclared at the `call $__wasm_list_concat_i64` site (a hard
 /// wat2wasm failure — the recurring gate-hole class, where over-detecting is a
-/// harmless unused function but under-detecting is fatal). The supported concat
-/// carries bare-Ident operands, so no OTHER list-op walker needs a `ListConcat`
-/// arm — nothing supported can nest inside a concat operand (a non-Ident operand
-/// refuses at emit, aborting codegen before any helper mismatch).
+/// harmless unused function but under-detecting is fatal).
+///
+/// PMAT-1259: a concat operand is now any list-VALUED expr (`sorted`/`reversed`/
+/// slice/nested-concat/list-literal, not only a bare Ident), so the OTHER
+/// allocating-list gates MUST recurse into `ListConcat`'s operands — the
+/// `sorted`/`reversed`/`slice` walkers (and the heap gate) each carry a
+/// `ListConcat` arm for exactly that reason. This gate itself fires on ANY
+/// `ListConcat` node (`=> true`), so it never needs to look inside its operands.
 fn module_uses_list_concat(module: &Module) -> bool {
     module_functions(module).any(|f| block_has_list_concat(&f.body))
 }
@@ -16175,9 +16189,22 @@ fn emit_list_reversed(
 /// values, so ONE helper (`$__wasm_list_concat_i64`) serves BOTH `list[int]`
 /// (I64) and `list[float]` (F64) — mirroring [`emit_list_reversed`]. A
 /// `list[bool]` (I32, 4-byte stride) is refused for parity with `sorted`/
-/// `reversed`. Both operands must be NAMED `list[scalar]` locals/params of
-/// exactly `elem` (bind a literal / other list-returning expression to a name
-/// first); a non-name operand refuses honestly rather than mis-lowering.
+/// `reversed`.
+///
+/// PMAT-1259: each operand is any list-VALUED expression of exactly `elem`,
+/// lowered through [`emit_list_expr`] — so beyond a bare NAMED list it now
+/// accepts a `list` LITERAL (`xs + [3, 1, 2]`), a nested concat
+/// (`a + b + c` = `(a + b) + c`), and the other allocating list-valued ops
+/// (`sorted(xs) + ys`, `reversed(xs) + ys`, `xs[1:] + ys`). This is SAFE
+/// despite the operands allocating: [`emit_list_expr`] leaves each operand's
+/// base-pointer on the WASM OPERAND STACK, and a later operand's fresh
+/// bump-allocation only GROWS the heap (never touching an earlier operand's
+/// record or the operand-stack pointer to it), so evaluating `b` after `a`'s
+/// pointer is already stacked cannot invalidate it — the same discipline that
+/// makes `[1] + [2]` (two `emit_list_lit` records) correct. A non-list operand
+/// (never produced by the frontend for `ListConcat`) refuses honestly inside
+/// [`emit_list_expr`]; an element-type mismatch (`list[int] + list[float]`)
+/// refuses there too (each operand is lowered AS `elem`).
 fn emit_list_concat(
     lhs: &Expr,
     rhs: &Expr,
@@ -16196,39 +16223,12 @@ fn emit_list_concat(
             elem.keyword()
         )));
     }
-    // Validate and push one named-list operand base-pointer. Both sides must be a
-    // NAMED `list[scalar]` local/param of the SAME element type as the result.
-    let mut push_operand = |side: &Expr| -> Result<(), BackendError> {
-        let Expr::Ident(src) = side else {
-            return Err(unsupported(
-                "`a + b` list concatenation over a non-name operand — the WASM \
-                 subset concatenates two named `list[scalar]` locals/params \
-                 (bind a literal or list-returning expression to a name first)",
-            ));
-        };
-        let Some(src_elem) = scope.list_elem_of(src) else {
-            return Err(unsupported(&format!(
-                "`{src}` in a list concatenation is not a `list[scalar]` \
-                 local/param in the WASM subset"
-            )));
-        };
-        if src_elem != elem {
-            return Err(unsupported(&format!(
-                "list concatenation mixes a `list[{}]` with the `list[{}]` \
-                 result — the WASM subset concatenates lists of ONE element \
-                 type (concatenate lists of the same element type)",
-                src_elem.keyword(),
-                elem.keyword()
-            )));
-        }
-        indent(out, depth);
-        writeln!(out, "local.get ${src}").expect("write");
-        Ok(())
-    };
-    // Push `a` then `b` (helper params $a, $b), then the single 8-byte-word
-    // helper; it leaves the fresh concatenated record's i32 base-pointer.
-    push_operand(lhs)?;
-    push_operand(rhs)?;
+    // Push `a`'s then `b`'s base-pointer (helper params $a, $b) — each operand
+    // is any list-valued expr of `elem`, lowered through the shared
+    // `emit_list_expr` dispatcher — then the single 8-byte-word helper; it
+    // leaves the fresh concatenated record's i32 base-pointer.
+    emit_list_expr(lhs, elem, scope, out, depth)?;
+    emit_list_expr(rhs, elem, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_list_concat_i64").expect("write");
     Ok(())
