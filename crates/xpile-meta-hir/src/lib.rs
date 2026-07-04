@@ -3363,6 +3363,17 @@ pub enum StrMethodOp {
     /// ASCII subset; not normalization-aware (grapheme clusters are out of
     /// scope at v0.2.0, as elsewhere in the string surface).
     Reverse,
+    /// `.expandtabs(tabsize=8)` → each tab (`\t`) replaced by the number of
+    /// ASCII spaces needed to reach the next multiple of `tabsize`, with the
+    /// COLUMN counted in **code points** (not bytes) and reset to 0 on `\n`/`\r`
+    /// (**Str**, 0 or 1 int arg; the omitted arg defaults to `8`). PMAT-1219.
+    /// A `tabsize <= 0` drops tabs entirely (0 spaces). Char-exact with NO trap
+    /// arm — the payload code points are copied verbatim and only the ASCII
+    /// tab/newline bytes are interpreted, so any valid UTF-8 round-trips
+    /// (`"é\t".expandtabs(4)` → `"é   "`), matching CPython and the rust/ruchy
+    /// code-point walk. Non-tab bytes are never folded, so unlike the case-fold
+    /// family it needs no Unicode table.
+    ExpandTabs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
