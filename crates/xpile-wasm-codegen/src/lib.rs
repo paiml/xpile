@@ -508,6 +508,10 @@ fn collect_stmt_literals(s: &Stmt, out: &mut Vec<String>) {
         // call's ARGS may reference literals (`c.tag(ord("x"))`).
         Stmt::FieldAssign { value, .. } => collect_expr_literals(value, out),
         Stmt::SideEffectCall { call } => collect_expr_literals(call, out),
+        // PMAT-1234: `del d[k]` — the dict KEY can carry a str literal
+        // (`del d["ab"]`) that must be laid out into a (data) segment, exactly
+        // like the `DictSet` write-side arm above.
+        Stmt::DelItem { key, .. } => collect_expr_literals(key, out),
         _ => {}
     }
 }
@@ -7814,6 +7818,10 @@ fn stmt_touches_str(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => expr_touches_str(key) || expr_touches_str(value),
         Stmt::SetAdd { elem, .. } => expr_touches_str(elem),
         Stmt::SideEffectCall { call } => expr_touches_str(call),
+        // PMAT-1234: `del d[k]` over a str-keyed dict — the KEY (`del d[chr(n)]`)
+        // can be the sole str-touching site in a function, gating `(memory)` +
+        // the char-helper family; scan it (the write-side sibling of DictSet).
+        Stmt::DelItem { key, .. } => expr_touches_str(key),
         _ => false,
     }
 }
@@ -7929,6 +7937,8 @@ fn stmt_has_str_slice(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => expr_has_str_slice(key) || expr_has_str_slice(value),
         Stmt::SetAdd { elem, .. } => expr_has_str_slice(elem),
         Stmt::SideEffectCall { call } => expr_has_str_slice(call),
+        // PMAT-1234: `del d[s[1:4]]` — the KEY can host the slice helper.
+        Stmt::DelItem { key, .. } => expr_has_str_slice(key),
         _ => false,
     }
 }
@@ -8079,6 +8089,11 @@ fn stmt_has_int_to_str(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => expr_has_int_to_str(key) || expr_has_int_to_str(value),
         Stmt::SetAdd { elem, .. } => expr_has_int_to_str(elem),
         Stmt::SideEffectCall { call } => expr_has_int_to_str(call),
+        // PMAT-1234: `del d[str(n)]` over a str-keyed dict — the KEY routes a
+        // `ToStr` through `emit_dict_key`, emitting `call $__wasm_int_to_str`;
+        // scan it so the helper is never called-but-undeclared (the exact
+        // gate-hole class PMAT-1151 fixed for the DictSet write side).
+        Stmt::DelItem { key, .. } => expr_has_int_to_str(key),
         _ => false,
     }
 }
@@ -8323,6 +8338,8 @@ fn stmt_uses_str_method(s: &Stmt, op: StrMethodOp) -> bool {
         }
         Stmt::SetAdd { elem, .. } => expr_uses_str_method(elem, op),
         Stmt::SideEffectCall { call } => expr_uses_str_method(call, op),
+        // PMAT-1234: `del d[s.upper()]` — the KEY can host a str-method call.
+        Stmt::DelItem { key, .. } => expr_uses_str_method(key, op),
         _ => false,
     }
 }
@@ -8460,6 +8477,8 @@ fn stmt_has_str_contains(s: &Stmt) -> bool {
         }
         Stmt::SetAdd { elem, .. } => expr_has_str_contains(elem),
         Stmt::SideEffectCall { call } => expr_has_str_contains(call),
+        // PMAT-1234: `del d[1 if "a" in s else 0]` — the KEY can host `x in s`.
+        Stmt::DelItem { key, .. } => expr_has_str_contains(key),
         _ => false,
     }
 }
@@ -8585,6 +8604,8 @@ fn stmt_has_str_repeat(s: &Stmt) -> bool {
             indices.iter().any(expr_has_str_repeat) || expr_has_str_repeat(value)
         }
         Stmt::DictSet { key, value, .. } => expr_has_str_repeat(key) || expr_has_str_repeat(value),
+        // PMAT-1234: `del d[s * n]` — the KEY can host a str-repeat.
+        Stmt::DelItem { key, .. } => expr_has_str_repeat(key),
         Stmt::SetAdd { elem, .. } => expr_has_str_repeat(elem),
         Stmt::SideEffectCall { call } => expr_has_str_repeat(call),
         _ => false,
@@ -8890,6 +8911,8 @@ fn stmt_has_str_eq(s: &Stmt, scan: &StrEqScan<'_>) -> bool {
         }
         Stmt::SetAdd { elem, .. } => expr_has_str_eq(elem, scan),
         Stmt::SideEffectCall { call } => expr_has_str_eq(call, scan),
+        // PMAT-1234: `del d[1 if a == b else 2]` — the KEY can host a str eq/cmp.
+        Stmt::DelItem { key, .. } => expr_has_str_eq(key, scan),
         _ => false,
     }
 }
@@ -9043,6 +9066,9 @@ fn stmt_has_heap_op(s: &Stmt) -> bool {
             indices.iter().any(expr_has_heap_op) || expr_has_heap_op(value)
         }
         Stmt::DictSet { key, value, .. } => expr_has_heap_op(key) || expr_has_heap_op(value),
+        // PMAT-1234: `del d["a" + s]` — the KEY can host a heap-allocating op
+        // (concat/chr/slice), which rides `needs_heap`; scan it.
+        Stmt::DelItem { key, .. } => expr_has_heap_op(key),
         Stmt::SetAdd { elem, .. } => expr_has_heap_op(elem),
         Stmt::SideEffectCall { call } => expr_has_heap_op(call),
         Stmt::Break | Stmt::Continue => false,
@@ -9810,9 +9836,12 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             // PMAT-1023: `obj.field = v` writes an EXISTING record's field and
             // a statement method call mutates through an existing pointer —
             // neither introduces a new local.
+            // PMAT-1234: `del d[k]` (DelItem) removes from an existing dict in
+            // place — no new local (the dict base was declared by its `Let`).
             Stmt::Assign { .. }
             | Stmt::IndexAssign { .. }
             | Stmt::DictSet { .. }
+            | Stmt::DelItem { .. }
             | Stmt::SetAdd { .. }
             | Stmt::FieldAssign { .. }
             | Stmt::SideEffectCall { .. }
@@ -9867,6 +9896,7 @@ fn stmt_kind(s: &Stmt) -> &'static str {
         Stmt::FieldIndexAssign { .. } => "FieldIndexAssign",
         Stmt::TryCatch { .. } => "TryCatch",
         Stmt::SideEffectCall { .. } => "SideEffectCall",
+        Stmt::DelItem { .. } => "DelItem",
         _ => "<container/aggregate statement>",
     }
 }
@@ -9961,6 +9991,19 @@ fn emit_stmt(
             key,
             value,
         } => emit_dict_set(dict_name, key, value, scope, out, depth),
+        // PMAT-1234: `del d[k]` — dict entry removal as a STATEMENT. The
+        // companion of `d.pop(k)`: it reuses the SAME removal helper
+        // (`$__wasm_dict_pop_<k>`, swap-last-into-hole + count--, in place —
+        // the base pointer never moves, so there is NO local write-back) and
+        // simply DROPS the returned value; the removal IS the point. The
+        // helper's not-found tail traps (`unreachable`), matching CPython
+        // `del d[missing]` raising KeyError. Only the DICT form is in the WASM
+        // subset — `del xs[i]` (list-element deletion) is refused (no
+        // list-shrink runtime; a fixed-size heap record cannot shrink+shift in
+        // place, the PMAT-1033 relocation-hazard posture).
+        Stmt::DelItem { name, key, is_dict } => {
+            emit_dict_del(name, key, *is_dict, scope, out, depth)
+        }
         // PMAT-995 (slice 3b): `s.add(e)` — insert into a set local (a keys-only
         // dict; the `set` helper is shared, with a 0 sentinel value).
         Stmt::SetAdd { set_name, elem } => emit_set_add(set_name, elem, scope, out, depth),
@@ -12406,6 +12449,52 @@ fn emit_dict_pop(
         }
     }
     Ok(WatTy::I64)
+}
+
+/// PMAT-1234: lower `del d[k]` (`Stmt::DelItem`, `is_dict`) — dict entry removal
+/// in STATEMENT position. It is exactly the bare `d.pop(k)` ([`emit_dict_pop`]
+/// with `default: None`) with the returned value discarded: the shared keyed
+/// removal helper (`$__wasm_dict_pop_<k>`, swap-last-into-hole + count--) does
+/// the mutation IN PLACE (the region only shrinks, so the base pointer never
+/// moves and there is NO local write-back — unlike `d[k] = v`), and the trailing
+/// `drop` throws away the i64 value nobody asked for. The helper's not-found
+/// tail traps (`unreachable`), matching CPython `del d[missing]` → KeyError.
+///
+/// The key's `KeyKind` is read from the dict local's declared type
+/// (`heap_map_kind`), exactly as [`emit_dict_set`] does for `d[k] = v` — a
+/// non-dict `name` is refused. The LIST form (`del xs[i]`, `is_dict == false`)
+/// is refused: the WASM list runtime has no shrink-and-shift (a fixed-size heap
+/// record cannot shrink in place, the PMAT-1033 relocation-hazard posture).
+fn emit_dict_del(
+    name: &str,
+    key: &Expr,
+    is_dict: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if !is_dict {
+        return Err(unsupported(&format!(
+            "`del {name}[i]` (list-element deletion) — the WASM subset supports \
+             `del d[k]` over a `dict` only (a fixed-size list record cannot \
+             shrink in place)"
+        )));
+    }
+    let kind = scope.heap_map_kind(name).ok_or_else(|| {
+        unsupported(&format!(
+            "`del {name}[k]` over `{name}` which is not a `dict` local in the \
+             WASM subset"
+        ))
+    })?;
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    emit_dict_key(key, kind, scope, out, depth)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_pop_{}", kind.suffix()).expect("write");
+    // Discard the removed value — `del` is a statement, the removal is the point.
+    indent(out, depth);
+    writeln!(out, "drop").expect("write");
+    Ok(())
 }
 
 /// PMAT-1227: lower `d.setdefault(k, default)` (`Expr::DictSetDefault`) — a
