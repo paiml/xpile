@@ -281,6 +281,131 @@ fn float_list_ops_execute_and_match_cpython() {
 }
 
 // ---------------------------------------------------------------------------
+// PMAT-1259 — EXECUTED witness for GENERALIZED list-concat operands. A concat
+// operand is now any list-VALUED expr (chained `a + b + c`, a list LITERAL,
+// and the other allocating list ops `sorted`/`reversed`/slice), not only a
+// bare name. The `chain_mixed` case exercises `sorted(a) + b[1:] + c` — proof
+// the sorted AND slice gate-walkers recurse into concat operands (else their
+// helper is undeclared → a hard wat2wasm failure), and that the operand-stack
+// discipline survives operands that themselves bump-allocate.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn generalized_concat_operands_execute_and_match_cpython() {
+    // (tag, setup defining `ys`, CPython fingerprint `acc=0; acc=acc*31+v`).
+    let cases: &[(&str, &str, i64)] = &[
+        // chained `a + b + c` = `(a + b) + c` — a nested ListConcat operand.
+        (
+            "chain_abc",
+            "    a: list[int] = [1,2]\n    b: list[int] = [3,4]\n    c: list[int] = [5,6]\n    ys: list[int] = a + b + c",
+            30569571,
+        ),
+        // a bare name + a list LITERAL operand (the literal bump-allocates).
+        (
+            "name_plus_lit",
+            "    a: list[int] = [7,8,9]\n    ys: list[int] = a + [3,1,2]",
+            208063260,
+        ),
+        // `sorted(a) + b` — a same-kind sort nested in a concat operand.
+        (
+            "sorted_plus_name",
+            "    a: list[int] = [5,3,9,1]\n    b: list[int] = [100]\n    ys: list[int] = sorted(a) + b",
+            1018078,
+        ),
+        // `list(reversed(a)) + b` — a reverse nested in a concat operand.
+        (
+            "reversed_plus_name",
+            "    a: list[int] = [1,2,3]\n    b: list[int] = [9]\n    ys: list[int] = list(reversed(a)) + b",
+            91335,
+        ),
+        // `a[1:4] + b` — a slice nested in a concat operand.
+        (
+            "slice_plus_name",
+            "    a: list[int] = [10,20,30,40,50]\n    b: list[int] = [99]\n    ys: list[int] = a[1:4] + b",
+            625989,
+        ),
+        // `sorted(a) + b[1:] + c` — sorted + slice both nested in a chain.
+        (
+            "chain_mixed",
+            "    a: list[int] = [3,1,2]\n    b: list[int] = [10,20,30]\n    c: list[int] = [7]\n    ys: list[int] = sorted(a) + b[1:] + c",
+            30585723,
+        ),
+        // `a + a + a` — the SAME record aliased three times in a chain (no
+        // operand-stack aliasing hazard: each operand's pointer is stacked
+        // before the next, and reads never mutate).
+        (
+            "self_chain",
+            "    a: list[int] = [4,5]\n    ys: list[int] = a + a + a",
+            119258307,
+        ),
+    ];
+
+    for (tag, setup, _) in cases {
+        let src = int_probe(setup);
+        assert!(
+            emit(&src).is_ok(),
+            "pipeline failed to lower+emit generalized-concat probe {tag}"
+        );
+    }
+
+    if !wasm_runtime_available() {
+        eprintln!(
+            "PMAT-1259: WABT absent — emit-only concat-operand check passed, execution skipped"
+        );
+        return;
+    }
+
+    for (tag, setup, expect) in cases {
+        let src = int_probe(setup);
+        let got = run_i64(&src, tag);
+        assert_eq!(
+            got, *expect,
+            "generalized concat {tag}: wasm={got} cpython={expect}"
+        );
+    }
+}
+
+#[test]
+fn generalized_concat_float_operands_execute_and_match_cpython() {
+    let cases: &[(&str, &str, f64)] = &[
+        // float chained concat.
+        (
+            "f_chain",
+            "    a: list[float] = [1.5,2.5]\n    b: list[float] = [3.5]\n    c: list[float] = [4.5,5.5]\n    ys: list[float] = a + b + c",
+            4667.5,
+        ),
+        // `sorted(a) + b` over floats.
+        (
+            "f_sorted_plus",
+            "    a: list[float] = [3.5,1.5,2.5]\n    b: list[float] = [9.5]\n    ys: list[float] = sorted(a) + b",
+            671.0,
+        ),
+    ];
+
+    for (tag, setup, _) in cases {
+        let src = float_probe(setup);
+        assert!(
+            emit(&src).is_ok(),
+            "pipeline failed to lower+emit float generalized-concat probe {tag}"
+        );
+    }
+
+    if !wasm_runtime_available() {
+        eprintln!("PMAT-1259: WABT absent — float concat-operand emit-only check passed, execution skipped");
+        return;
+    }
+
+    for (tag, setup, expect) in cases {
+        let src = float_probe(setup);
+        let got = run_f64(&src, tag);
+        assert!(
+            (got - *expect).abs() < 1e-9,
+            "float generalized concat {tag}: wasm={got} cpython={expect}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // EXECUTED set ALGEBRA — union/intersection/difference/symmetric-difference.
 // ---------------------------------------------------------------------------
 
