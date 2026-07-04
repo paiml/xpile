@@ -170,18 +170,83 @@ theorem faithful_backend_matches_pure
       = lower module config := by
   rfl
 
-/--
-  **Target consistency** auxiliary claim — Bronze-tier placeholder.
-  At Bronze tier this reduces to `rfl` because the model doesn't
-  carry a target tag separate from the byte payload. The
-  Silver-tier refinement below introduces a real `Target` enum.
+/-! ## PMAT-1186 — non-vacuous `target_consistency` (skeptic follow-up).
 
-  Listed here for the citation gate; the load-bearing claim lives
-  in `target_consistency_silver` below.
+    The original `target_consistency` was `lower module config = lower
+    module config` — reflexivity, TRUE FOR ANY `def`, certifying nothing.
+    Its docstring claimed the emitted artifact carries the caller's
+    requested target, but a `= f x` reflexivity stub is satisfied just as
+    trivially by a backend that HARDCODES one fixed target and ignores the
+    request. (Same vacuity class as PMAT-1141/1176/1180/1181 — see
+    `PROVABILITY-INVENTORY.md`. Sibling of the four Bronze
+    idempotency/consistency de-vacuity fixes.)
+
+    The real claim is TARGET-FIDELITY: the emitted `Artifact`'s target tag
+    equals the caller-REQUESTED target, not a value the backend invents. We
+    model a minimal Bronze target tag (a `UInt8` code) so the backend's
+    faithfulness is LOAD-BEARING and the theorem is FALSIFIABLE (the `≠`
+    dual below exhibits a hardcoding backend that mis-targets). The typed
+    `Target` enum claim is refined in `target_consistency_silver` below. -/
+
+/-- Bronze artifact carrying an explicit emitted-target tag (a `UInt8`
+    code standing in for the Silver `Target` enum). -/
+structure TaggedArtifact where
+  target : UInt8
+deriving DecidableEq
+
+/-- A backend model: does it stamp the caller-REQUESTED target onto the
+    artifact, or hardcode one fixed target regardless of the request? A
+    faithful backend honours the request; a hardcoding one ignores it. -/
+structure TargetStampingBackend where
+  hardcodes : Bool
+deriving DecidableEq
+
+/-- Tagged `lower`. A faithful backend (`hardcodes = false`) stamps the
+    `requested` target; a hardcoding one always stamps target `0`
+    regardless of what was asked for (e.g. an emitter wired to a single
+    codegen path that ignores `--target`). -/
+def lower_tagged (b : TargetStampingBackend) (requested : UInt8) : TaggedArtifact :=
+  if b.hardcodes then { target := 0 } else { target := requested }
+
+/-- The canonical faithful xpile backend — honours the requested target. -/
+def xpileTargetBackend : TargetStampingBackend := { hardcodes := false }
+
+/-- A deliberately-broken backend that hardcodes one target — the witness
+    that makes `target_consistency` non-vacuous. -/
+def hardcodingTargetBackend : TargetStampingBackend := { hardcodes := true }
+
+/--
+  **Target consistency** auxiliary claim, restated NON-VACUOUSLY
+  (PMAT-1186).
+
+  For the faithful xpile backend, the emitted `Artifact`'s target tag
+  equals the caller-requested target. This is `rfl` ONLY because
+  `xpileTargetBackend.hardcodes = false` — the faithfulness of
+  `xpileTargetBackend` is load-bearing (flip it to `true` and the theorem
+  becomes FALSE, as `hardcoding_backend_mistargets` witnesses).
+
+  Falsification: a backend wired to a single codegen path that ignores
+  `--target` and always emits, say, Rust, mis-targets any other request;
+  that is exactly `hardcodingTargetBackend`. The Silver-tier refinement
+  (`target_consistency_silver`) carries the typed `Target` enum claim; this
+  Bronze theorem now carries a real target-fidelity claim rather than a
+  reflexivity tautology.
+
+  Status: **discharged at v0.1.0 (PMAT-064), de-vacuoused (PMAT-1186)**.
+  Tier: Bronze.
 -/
-theorem target_consistency (module config : Array UInt8) :
-    lower module config = lower module config := by
+theorem target_consistency (requested : UInt8) :
+    (lower_tagged xpileTargetBackend requested).target = requested := by
   rfl
+
+/-- **`≠` DUAL** locking `target_consistency` non-vacuous: a hardcoding
+    backend mis-targets — there exists a requested target it fails to
+    stamp. If `target_consistency` were a `= f x` reflexivity stub this
+    would be UNPROVABLE. -/
+theorem hardcoding_backend_mistargets :
+    ∃ requested : UInt8, (lower_tagged hardcodingTargetBackend requested).target ≠ requested := by
+  refine ⟨1, ?_⟩
+  decide
 
 /-! ## PMAT-157 — Silver-tier refinement for `target_consistency`
     (XPILE-REFINE-BACKEND-TRAIT-001).
