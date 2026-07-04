@@ -6682,6 +6682,62 @@ const FLOOR_HELPERS: &str = "\
   )
 ";
 
+/// PMAT-1248: the list-INT-SUM helper — Python `sum(xs)` over a `list[int]`.
+/// `base` is an i32 pointer to a length-prefixed region (i32 element count @
+/// base+0, packed i64 elements @ base+8, the PMAT-968 list ABI). It folds
+/// `acc += xs[i]` LEFT-TO-RIGHT for `i` in `0..count` — matching CPython's
+/// left-to-right reduction and the rust `.iter().sum::<i64>()` lane — and
+/// returns the i64 total. The empty list sums to 0 (Python `sum([]) == 0`).
+/// Non-allocating: it reads the list payload and touches no heap, so it is
+/// gated ONLY on `needs_list_sum` (NOT `needs_heap`), like the byte-scan
+/// str predicates. Integer overflow wraps in `i64.add` — the same modular
+/// i64 posture the WASM `+` lowering already carries (Python ints are
+/// unbounded; this is the documented scalar-subset wart, not a new one).
+const LIST_SUM_INT_HELPER: &str = "\
+  ;; __wasm_list_sum_i64(base) = sum(xs) for a list[int] (Python sum(xs))
+  ;; base → length-prefixed region: i32 count @ base+0, i64 elements @ base+8.
+  (func $__wasm_list_sum_i64 (param $base i32) (result i64)
+    (local $i i32)
+    (local $n i32)
+    (local $acc i64)
+    ;; n = element count (i32 header @ base+0); acc = 0; i = 0
+    local.get $base
+    i32.load
+    local.set $n
+    i64.const 0
+    local.set $acc
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        ;; while i < n  (unsigned — count is a non-negative header)
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; acc += i64.load(base + 8 + i*8)
+        local.get $acc
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.add
+        local.set $acc
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $acc)
+";
+
 /// Native WASM backend. Lowers the meta-HIR scalar/control subset to WAT
 /// text. `Backend` impl (single-emitter — no §29 quorum at this slice;
 /// the executed two-emitter `WasmDiffExecEngine` witness is deferred to
@@ -7793,6 +7849,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // and only needs the `(memory …)` its payload load reads (folded into the
     // condition below alongside `needs_isdigit`).
     let needs_isascii = module_uses_str_method(module, StrMethodOp::IsAscii);
+    // PMAT-1248: `sum(xs)` over a `list[int]` (`Expr::Sum { of_float: false }`)
+    // reduces the list payload via `$__wasm_list_sum_i64` — a non-allocating
+    // read (like the byte-scan str predicates), so it rides its OWN gate, NOT
+    // `needs_heap`. It needs the `(memory …)` its list-payload loads read; a
+    // summed list already forces `(memory)` via `module_uses_list_param`/
+    // `needs_heap` (a param base-pointer or a `ListLit` local), but assert it
+    // here too, mirroring the `needs_str_cmp`/`needs_isascii` belt-and-suspenders.
+    let needs_list_sum = module_uses_list_sum(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -7810,6 +7874,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_isalnum
         || needs_isupper_lower
         || needs_isascii
+        || needs_list_sum
     {
         writeln!(
             out,
@@ -8157,6 +8222,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // Unlike the isdigit family it is fully decidable (no `unreachable` trap arm).
     if needs_isascii {
         out.push_str(STR_ISASCII_HELPER);
+    }
+    // PMAT-1248: emit the list-INT-SUM reduction helper once, when any function
+    // uses `sum(xs)` over a `list[int]` (`Expr::Sum { of_float: false }`). Like
+    // the byte-scan `is*` predicates it is NON-allocating (it folds the list
+    // payload into an i64 total, touching no heap), so it is gated ONLY on
+    // `needs_list_sum`, NOT `needs_heap`: a `def total(xs: list[int]) -> int:
+    // return sum(xs)` module carries no allocator but still needs it.
+    if needs_list_sum {
+        out.push_str(LIST_SUM_INT_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -9069,6 +9143,136 @@ fn expr_has_str_contains(e: &Expr) -> bool {
 /// Mirrors [`module_uses_str_contains`]'s shape.
 fn module_uses_str_repeat(module: &Module) -> bool {
     module_functions(module).any(|f| block_has_str_repeat(&f.body))
+}
+
+/// PMAT-1248: does any function reduce a list with `sum(xs)` over a
+/// `list[int]` (`Expr::Sum { of_float: false, .. }`)? Gates the
+/// `$__wasm_list_sum_i64` reduction helper (and the `(memory …)` its list-
+/// payload loads read) so a module with no int-list sum carries no dead
+/// helper. Exhaustive over the same stmt/expr forms as the other gate walkers
+/// (`expr_has_str_repeat` &c.) — a missed sub-expression would leave the
+/// helper undeclared at the `call $__wasm_list_sum_i64` site (a hard wat2wasm
+/// failure, the recurring gate-hole class). Runs AFTER `desugar_module_foreach`
+/// (like every gate scan), so it needs no `Stmt::ForEach` arm. The `of_float`
+/// (list[float]) form is refused at lowering, so it is deliberately NOT gated
+/// here — no helper is emitted for a shape that never lowers.
+fn module_uses_list_sum(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_sum(&f.body))
+}
+
+fn block_has_list_sum(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_sum) || expr_has_list_sum(&block.trailing_return)
+}
+
+fn stmt_has_list_sum(s: &Stmt) -> bool {
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
+            expr_has_list_sum(value)
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_list_sum(cond)
+                || then_body.iter().any(stmt_has_list_sum)
+                || else_body.iter().any(stmt_has_list_sum)
+        }
+        Stmt::While { cond, body } => expr_has_list_sum(cond) || body.iter().any(stmt_has_list_sum),
+        Stmt::FieldAssign { value, .. } => expr_has_list_sum(value),
+        Stmt::IndexAssign { indices, value, .. } => {
+            indices.iter().any(expr_has_list_sum) || expr_has_list_sum(value)
+        }
+        Stmt::DictSet { key, value, .. } => expr_has_list_sum(key) || expr_has_list_sum(value),
+        Stmt::DelItem { key, .. } => expr_has_list_sum(key),
+        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_has_list_sum(elem),
+        Stmt::SideEffectCall { call } => expr_has_list_sum(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_sum(e: &Expr) -> bool {
+    match e {
+        // this node IS the int-list sum we gate — no need to recurse (its
+        // only operand in the supported shape is a bare list NAME).
+        Expr::Sum {
+            of_float: false, ..
+        } => true,
+        // a list[float] sum is refused at lowering; still recurse into its
+        // operands (a supported int sum could be nested inside, degenerate but
+        // exhaustive).
+        Expr::Sum { list, start, .. } => {
+            expr_has_list_sum(list) || start.as_deref().is_some_and(expr_has_list_sum)
+        }
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => expr_has_list_sum(lhs) || expr_has_list_sum(rhs),
+        Expr::UnOp { operand, .. } => expr_has_list_sum(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_has_list_sum(cond) || expr_has_list_sum(then_expr) || expr_has_list_sum(else_expr)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_list_sum),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_has_list_sum(obj) || args.iter().any(expr_has_list_sum)
+        }
+        Expr::Index { collection, index } => {
+            expr_has_list_sum(collection) || expr_has_list_sum(index)
+        }
+        Expr::Len(c) => expr_has_list_sum(c),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_list_sum(value),
+        Expr::StrCharAt { string, index } => expr_has_list_sum(string) || expr_has_list_sum(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_has_list_sum(collection)
+                || lo.as_deref().is_some_and(expr_has_list_sum)
+                || hi.as_deref().is_some_and(expr_has_list_sum)
+        }
+        Expr::StrMethod { recv, args, .. } => {
+            expr_has_list_sum(recv) || args.iter().any(expr_has_list_sum)
+        }
+        Expr::StrContains { haystack, needle } => {
+            expr_has_list_sum(haystack) || expr_has_list_sum(needle)
+        }
+        Expr::FieldAccess { obj, .. } => expr_has_list_sum(obj),
+        Expr::ToStr { value, .. } => expr_has_list_sum(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_has_list_sum(dict) || expr_has_list_sum(key)
+        }
+        Expr::DictGetOr { dict, key, default } => {
+            expr_has_list_sum(dict) || expr_has_list_sum(key) || expr_has_list_sum(default)
+        }
+        Expr::DictPop { dict, key, default } => {
+            expr_has_list_sum(dict)
+                || expr_has_list_sum(key)
+                || default.as_deref().is_some_and(expr_has_list_sum)
+        }
+        Expr::DictSetDefault { dict, key, default } => {
+            expr_has_list_sum(dict) || expr_has_list_sum(key) || expr_has_list_sum(default)
+        }
+        Expr::SetContains { set, elem } => expr_has_list_sum(set) || expr_has_list_sum(elem),
+        // PMAT-1248: a `sum(xs)` can be nested inside a `seq * count` repeat's
+        // COUNT (`"ab" * sum(xs)`, the int-repeat form — the sibling
+        // `expr_has_str_repeat` covers this arm too), or inside a container
+        // literal / struct field (`[sum(xs)]`, `Point(x=sum(xs))`). Recurse
+        // into each so the helper is never left undeclared at a
+        // `call $__wasm_list_sum_i64` site (the recurring gate-hole class:
+        // over-detecting is harmless — a valid unused WAT function — but
+        // under-detecting is a hard wat2wasm failure).
+        Expr::Repeat { seq, n, .. } => expr_has_list_sum(seq) || expr_has_list_sum(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => {
+            xs.iter().any(expr_has_list_sum)
+        }
+        Expr::DictLit(kvs) => kvs
+            .iter()
+            .any(|(k, v)| expr_has_list_sum(k) || expr_has_list_sum(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_list_sum(v)),
+        _ => false,
+    }
 }
 
 fn block_has_str_repeat(block: &Block) -> bool {
@@ -11652,6 +11856,15 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_contains").expect("write");
             Ok(WatTy::I32)
         }
+        // PMAT-1248: `sum(xs)` over a `list[int]` — an i64 reduction. The list
+        // NAME lowers to its i32 base-pointer, then `$__wasm_list_sum_i64` folds
+        // the payload left-to-right. Refuses the list[float] form, an explicit
+        // `start`, and a non-name list honestly (see `emit_list_sum`).
+        Expr::Sum {
+            list,
+            of_float,
+            start,
+        } => emit_list_sum(list, *of_float, start.as_deref(), scope, out, depth),
         // PMAT-996 (slice 4): `Name(f=v, …)` — allocate + populate a plain-data
         // struct on the bump heap; leaves the instance's i32 base-pointer.
         Expr::StructLit { name, fields } => emit_struct_lit(name, fields, scope, out, depth),
@@ -11992,6 +12205,81 @@ fn emit_len(
     writeln!(out, "i32.load").expect("write");
     indent(out, depth);
     writeln!(out, "i64.extend_i32_u").expect("write");
+    Ok(WatTy::I64)
+}
+
+/// PMAT-1248: emit `sum(xs)` over a `list[int]` — leaves the i64 total on the
+/// stack. The list NAME lowers to its i32 base-pointer (`local.get $name`, the
+/// PMAT-968 list ABI: a length-prefixed region with the i32 count @ base+0 and
+/// packed i64 elements @ base+8), then `$__wasm_list_sum_i64` folds the payload
+/// left-to-right — matching CPython's left-to-right `sum` reduction and the
+/// rust `.iter().sum::<i64>()` lane. The empty list sums to 0 (Python
+/// `sum([]) == 0`), computed inside the helper.
+///
+/// Honest scope (each a hard [`BackendError`], never a silent miscompile):
+///   * `of_float` (Python `sum` over a `list[float]`) is refused — a naive f64
+///     accumulator is a clean follow-up slice, but the i64 helper here would
+///     mis-reduce f64 elements. The gate (`module_uses_list_sum`) deliberately
+///     ignores the float form, so no dead helper is emitted for it.
+///   * an explicit `start` (`sum(xs, start)`) is refused — only the 1-arg form
+///     (start defaults to 0) is emitted; a general `start` expression would also
+///     need every gate walker to recurse into it (the serial-hotspot toil), so
+///     it is deferred rather than half-wired.
+///   * a non-name list (a list LITERAL / temporary — `sum([1, 2, 3])`) is
+///     refused; bind it to a name first. A name that is not a `list[int]`
+///     (a `list[float]`/`str`/dict/set/scalar) is refused by the element-type
+///     check against [`Scope::list_elem_of`].
+fn emit_list_sum(
+    list: &Expr,
+    of_float: bool,
+    start: Option<&Expr>,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    if of_float {
+        return Err(unsupported(
+            "sum() over a list[float] — the WASM subset reduces a `list[int]` \
+             (i64 accumulator) only; a float sum (f64 accumulator) is not yet \
+             emitted (refused honestly rather than mis-reduced)",
+        ));
+    }
+    if start.is_some() {
+        return Err(unsupported(
+            "sum(xs, start) with an explicit start — the WASM subset emits the \
+             1-arg `sum(xs)` only (start defaults to 0); the start form is \
+             deferred (refused honestly)",
+        ));
+    }
+    let Expr::Ident(name) = list else {
+        return Err(unsupported(
+            "sum() of a non-name list — the WASM subset sums a `list[int]` NAME \
+             (an i32 base-pointer into linear memory); a list literal / temporary \
+             is refused (bind it to a name first)",
+        ));
+    };
+    match scope.list_elem_of(name) {
+        Some(WatTy::I64) => {}
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "sum() over `{name}` whose elements load as {} — the WASM subset \
+                 reduces a `list[int]` (i64 elements) only",
+                other.keyword()
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "sum() over `{name}` which is not a `list[int]` param/local — only \
+                 a list (an i32 base-pointer into linear memory) can be summed in \
+                 the WASM subset"
+            )));
+        }
+    }
+    // Push the list base-pointer and fold the payload via the reduction helper.
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_list_sum_i64").expect("write");
     Ok(WatTy::I64)
 }
 

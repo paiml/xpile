@@ -1162,6 +1162,307 @@ fn list_int_param_uses_i64_load_and_stride() {
     assert!(wat.contains("i64.add"), "elements summed: {wat}");
 }
 
+/// `def total(xs: list[<elem>]) -> <ret>: return sum(xs)` — the PMAT-1248
+/// list-INT-SUM fixture. `of_float` selects the `Expr::Sum` variant; a mismatch
+/// with `elem` is used deliberately by the refusal tests.
+fn list_sum_fn(elem: Type, ret: Type, of_float: bool) -> Function {
+    Function {
+        name: "total".into(),
+        params: vec![param("xs", Type::List(Box::new(elem)))],
+        return_type: ret,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Sum {
+                list: Box::new(Expr::Ident("xs".into())),
+                of_float,
+                start: None,
+            },
+        },
+    }
+}
+
+#[test]
+fn list_int_sum_emits_reduction_helper_and_call() {
+    // PMAT-1248: `sum(xs)` over a list[int] emits the `$__wasm_list_sum_i64`
+    // reduction helper, a `call` to it over the list base-pointer, and the
+    // exported linear memory the payload loads read.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn(
+                Type::I64,
+                Type::I64,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_sum_i64 (param $base i32) (result i64)"),
+        "reduction helper declared: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_sum_i64"),
+        "sum lowers to a helper call: {wat}"
+    );
+    assert!(
+        wat.contains("(param $xs i32)"),
+        "list[int] param is an i32 base-pointer: {wat}"
+    );
+    assert!(
+        wat.contains("(memory (export \"mem\") 1)"),
+        "list payload loads need the exported memory: {wat}"
+    );
+    // The reduction folds with i64.add over an 8-byte stride (i64 elements).
+    assert!(wat.contains("i64.add"), "i64 accumulation: {wat}");
+    assert!(wat.contains("i64.load"), "i64 element load: {wat}");
+}
+
+#[test]
+fn list_int_sum_helper_absent_without_use() {
+    // No `sum(xs)` → no dead reduction helper (the codebase's no-dead-helper
+    // discipline). A plain `xs[0] + xs[1]` module reads memory but never sums.
+    let wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn2_index())]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+    assert!(
+        !wat.contains("$__wasm_list_sum_i64"),
+        "no reduction helper without a sum(): {wat}"
+    );
+}
+
+/// `def total(xs: list[int]) -> int: return xs[0] + xs[1]` — a list module that
+/// reads memory but performs NO `sum()`, guarding the no-dead-helper gate.
+fn list_sum_fn2_index() -> Function {
+    Function {
+        name: "total".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(Expr::Index {
+                    collection: Box::new(Expr::Ident("xs".into())),
+                    index: Box::new(Expr::LitInt(0)),
+                }),
+                rhs: Box::new(Expr::Index {
+                    collection: Box::new(Expr::Ident("xs".into())),
+                    index: Box::new(Expr::LitInt(1)),
+                }),
+            },
+        },
+    }
+}
+
+#[test]
+fn list_int_sum_nested_in_str_repeat_count_gates_helper() {
+    // PMAT-1248 gate-hole regression (found by adversarial self-review): a
+    // `sum(xs)` nested in a `seq * count` repeat's COUNT (`"ab" * sum(xs)`) must
+    // still declare `$__wasm_list_sum_i64` — the `expr_has_list_sum` gate walker
+    // has to recurse into `Expr::Repeat.n`, or the emitted `call` would reference
+    // an undeclared helper (a hard wat2wasm failure). Before the `Expr::Repeat`
+    // arm was added the walker fell through `_ => false` here.
+    let f = Function {
+        name: "f".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Repeat {
+                seq: Box::new(Expr::LitStr("ab".into())),
+                n: Box::new(Expr::Sum {
+                    list: Box::new(Expr::Ident("xs".into())),
+                    of_float: false,
+                    start: None,
+                }),
+                of_str: true,
+            },
+        },
+    };
+    let wat = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap()
+        .primary;
+    assert!(
+        wat.contains("(func $__wasm_list_sum_i64 (param $base i32) (result i64)"),
+        "nested-in-repeat-count sum still declares the reduction helper: {wat}"
+    );
+    assert!(
+        wat.contains("call $__wasm_list_sum_i64"),
+        "the nested sum lowers to a helper call: {wat}"
+    );
+}
+
+#[test]
+fn list_float_sum_refused_honestly() {
+    // PMAT-1248: `sum(xs)` over a list[float] (`Expr::Sum { of_float: true }`)
+    // is refused — the i64 helper would mis-reduce f64 elements. Honest error,
+    // never a silent miscompile.
+    let err = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn(
+                Type::F64,
+                Type::F64,
+                true,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("list[float]") && err.contains("sum"),
+        "float sum refused honestly: {err}"
+    );
+}
+
+#[test]
+fn list_sum_with_start_refused_honestly() {
+    // PMAT-1248: `sum(xs, start)` with an explicit start is refused — only the
+    // 1-arg form is emitted.
+    let f = Function {
+        name: "total".into(),
+        params: vec![param("xs", Type::List(Box::new(Type::I64)))],
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Sum {
+                list: Box::new(Expr::Ident("xs".into())),
+                of_float: false,
+                start: Some(Box::new(Expr::LitInt(100))),
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("start"), "explicit start refused: {err}");
+}
+
+#[test]
+fn list_sum_of_non_name_refused_honestly() {
+    // PMAT-1248: `sum([1, 2, 3])` (a list LITERAL, not a name) is refused —
+    // the WASM subset sums a named list base-pointer.
+    let f = Function {
+        name: "total".into(),
+        params: Vec::new(),
+        return_type: Type::I64,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Sum {
+                list: Box::new(Expr::ListLit(vec![
+                    Expr::LitInt(1),
+                    Expr::LitInt(2),
+                    Expr::LitInt(3),
+                ])),
+                of_float: false,
+                start: None,
+            },
+        },
+    };
+    let err = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("non-name list") || err.contains("bind it to a name"),
+        "list-literal sum refused: {err}"
+    );
+}
+
+/// PMAT-1248 EXECUTED WITNESS — assemble + run the REAL-emitted `sum(xs)` over a
+/// list[int] in WABT and diff the executed total against CPython.
+///
+/// `wasm-interp --run-all-exports` can't populate memory from outside, so the
+/// REAL-emitted `$total` module is wrapped in a self-contained driver: a `(data)`
+/// segment lays down TWO length-prefixed list regions — a NON-EMPTY list at base
+/// 0 and an EMPTY list (count 0) at base 128 — and two zero-arg exports call
+/// `$total` on each, converting the i64 total to f64 (`f64.convert_i64_s`) so the
+/// engine's `=> f64:` parser reads it. The results are diffed against the
+/// CPython-equivalent (`sum(elems)` and `sum([]) == 0`). Gated on
+/// `wasm_runtime_available()` — a clean skip on a host without WABT.
+#[test]
+fn list_int_sum_executes_in_wabt() {
+    if !wasm_runtime_available() {
+        eprintln!("SKIP list_int_sum_executes_in_wabt: WABT (wat2wasm/wasm-interp) not installed");
+        return;
+    }
+
+    // CPython-equivalent: sum([5, -3, 10, 7, -1]) == 18; sum([]) == 0.
+    let elems: [i64; 5] = [5, -3, 10, 7, -1];
+    let expected_nonempty: i64 = elems.iter().sum();
+    let expected_empty: i64 = 0;
+
+    let total_wat = WasmBackend::new()
+        .lower(
+            &module_with(vec![Item::Function(list_sum_fn(
+                Type::I64,
+                Type::I64,
+                false,
+            ))]),
+            &wasm_config(),
+        )
+        .unwrap()
+        .primary;
+
+    // Build a 136-byte memory image: a non-empty list at base 0 (i32 count +
+    // 4 pad + packed i64 elements) and an empty list (count 0) at base 128.
+    let mut image = vec![0u8; 136];
+    image[0..4].copy_from_slice(&(elems.len() as i32).to_le_bytes());
+    for (i, &e) in elems.iter().enumerate() {
+        let off = 8 + i * 8;
+        image[off..off + 8].copy_from_slice(&e.to_le_bytes());
+    }
+    // base 128: count 0 (already zero from the zero-init) → an empty list.
+    let data_str = wat_data_escape(&image);
+
+    let mem_line = "  (memory (export \"mem\") 1)\n";
+    assert!(
+        total_wat.contains(mem_line),
+        "emitted sum module declares the exported memory: {total_wat}"
+    );
+    let driver = format!(
+        "  (data (i32.const 0) \"{data_str}\")\n  \
+         (func (export \"e0\") (result f64)\n    \
+         i32.const 0\n    call $total\n    f64.convert_i64_s)\n  \
+         (func (export \"e1\") (result f64)\n    \
+         i32.const 128\n    call $total\n    f64.convert_i64_s)\n"
+    );
+    let witness_wat = total_wat.replacen(mem_line, &format!("{mem_line}{driver}"), 1);
+
+    let engine = WasmDiffExecEngine::new();
+    let out = engine
+        .assemble_run_parse(&witness_wat, "list_int_sum")
+        .expect("assemble+run REAL-emitted list-sum witness");
+    assert_eq!(
+        out.len(),
+        2,
+        "two exports (e0 non-empty, e1 empty): {out:?}"
+    );
+    assert!(
+        (out[0] - expected_nonempty as f64).abs() <= 1.0e-9,
+        "sum({elems:?}) executed {}, expected (CPython) {expected_nonempty}",
+        out[0]
+    );
+    assert!(
+        (out[1] - expected_empty as f64).abs() <= 1.0e-9,
+        "sum([]) executed {}, expected (CPython) {expected_empty}",
+        out[1]
+    );
+
+    eprintln!("=== PMAT-1248 executed witness: REAL xpile sum(xs) emit → run ===");
+    eprintln!("--- witness WAT (REAL-emitted $total + data + e0/e1 drivers) ---\n{witness_wat}");
+    eprintln!(
+        "sum({elems:?}) = {} (CPython {expected_nonempty}); sum([]) = {} (CPython {expected_empty})",
+        out[0], out[1]
+    );
+}
+
 #[test]
 fn no_memory_emitted_without_list_param() {
     // The scalar-only `add` fn must NOT pull in a (memory …) decl.
