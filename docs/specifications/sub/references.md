@@ -6,21 +6,21 @@
 
 | Repo | Role | Notes |
 |---|---|---|
-| [`paiml/xpile`](../../..) | This repo | Polyglot transpile workbench — v0.1.0, 12 contracts at 100% §14.4 QUORUM, 27 workspace crates, 4 real backends (Rust/Ruchy/Lean/Shell) |
-| [`paiml/aprender`](../../../../aprender) | ML framework + provable-contracts source | `aprender-contracts` crate produces `pv` |
-| [`paiml/provable-contracts`](../../../../provable-contracts) | Canonical `pv-spec.md` and contract framework | The reference for this spec structure |
-| [`paiml/depyler`](../../../../depyler) | Python → Rust transpiler | depyler-frontend in-tree as `crates/depyler-frontend/` (per [migration.md](migration.md) PMAT-097); legacy repo still exists as separate downstream consumer at v0.1.0 |
-| [`paiml/decy`](../../../../decy) | C → Rust transpiler | decy-frontend in-tree as `crates/decy-frontend/` (scaffold-stage); legacy repo still exists |
-| [`paiml/ruchy`](../../../../ruchy) | Modern language for data science | ruchy-frontend in-tree as `crates/ruchy-frontend/` (scaffold-stage) |
-| [`paiml/bashrs`](../../../../bashrs) | POSIX shell transpiler | bashrs-frontend + bashrs-backend in-tree as `crates/bashrs-{frontend,backend}/` (real emission, 54 tests, post PMAT-037..058 merger); legacy repo still exists |
-| [`paiml/paiml-mcp-agent-toolkit`](../../../../paiml-mcp-agent-toolkit) | `pmat` source | Work + quality controller |
-| [`pymc-labs/alchemize`](../../../../alchemize) | LLM transpile compiler for probabilistic models | Source of the four-tool agent loop pattern |
+| [`paiml/xpile`](https://github.com/paiml/xpile) | This repo | Polyglot transpile workbench — v0.1.0, 12 contracts at 100% §14.4 QUORUM, 27 workspace crates, 4 real backends (Rust/Ruchy/Lean/Shell) |
+| [`paiml/aprender`](https://github.com/paiml/aprender) | ML framework + provable-contracts source | `aprender-contracts` crate produces `pv` |
+| [`paiml/provable-contracts`](https://github.com/paiml/provable-contracts) | Canonical `pv-spec.md` and contract framework | The reference for this spec structure |
+| [`paiml/depyler`](https://github.com/paiml/depyler) | Python → Rust transpiler | depyler-frontend in-tree as `crates/depyler-frontend/` (per [migration.md](migration.md) PMAT-097); legacy repo still exists as separate downstream consumer at v0.1.0 |
+| [`paiml/decy`](https://github.com/paiml/decy) | C → Rust transpiler | decy-frontend in-tree as `crates/decy-frontend/` (scaffold-stage); legacy repo still exists |
+| [`paiml/ruchy`](https://github.com/paiml/ruchy) | Modern language for data science | ruchy-frontend in-tree as `crates/ruchy-frontend/` (scaffold-stage) |
+| [`paiml/bashrs`](https://github.com/paiml/bashrs) | POSIX shell transpiler | bashrs-frontend + bashrs-backend in-tree as `crates/bashrs-{frontend,backend}/` (real emission, 54 tests, post PMAT-037..058 merger); legacy repo still exists |
+| [`paiml/paiml-mcp-agent-toolkit`](https://github.com/paiml/paiml-mcp-agent-toolkit) | `pmat` source | Work + quality controller |
+| [`pymc-labs/alchemize`](https://github.com/pymc-labs/alchemize) | LLM transpile compiler for probabilistic models | Source of the four-tool agent loop pattern |
 
 ## Tools
 
 - **`pv`** — `/home/noah/.cargo/bin/pv` (v0.32.0 at time of writing)
   - 34 subcommands: `validate`, `scaffold`, `kani`, `probar`, `generate`, `lint`, `score`, `query`, `codegen`, `kaizen`, `coverage`, `graph`, `lean`, `roofline`, `audit`, `diff`, `coq`, `fuzz`, `mirai`, …
-  - Canonical spec: [`provable-contracts/docs/specifications/pv-spec.md`](../../../../provable-contracts/docs/specifications/pv-spec.md)
+  - Canonical spec: `provable-contracts/docs/specifications/pv-spec.md`
 - **`pmat`** — Pragmatic Multi-language Agent Toolkit
   - Source: [paiml/paiml-mcp-agent-toolkit](https://github.com/paiml/paiml-mcp-agent-toolkit)
   - Used commands: `pmat tdg`, `pmat query`, `pmat work *`, `pmat context`
@@ -36,7 +36,7 @@
 - **alchemize skills/** — [pymc-labs/alchemize/alchemize/skills](https://github.com/pymc-labs/alchemize/tree/main/alchemize/skills) — the markdown skill format xpile inherits
 - **aprender contracts/** — [paiml/aprender/contracts](https://github.com/paiml/aprender/tree/main/contracts) — 303+ kernel contracts as templates
 - **provable-contracts pv-spec.md** — the structural template for this spec
-- **depyler repair-mode spec** — [`depyler/docs/specifications/depyler-repair-mode.md`](../../../../depyler/docs/specifications/depyler-repair-mode.md) (branch `feat/repair-mode-spec`)
+- **depyler repair-mode spec** — `depyler/docs/specifications/depyler-repair-mode.md` (branch `feat/repair-mode-spec`)
 
 ## Papers (foundations)
 

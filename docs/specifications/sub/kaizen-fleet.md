@@ -4,7 +4,7 @@
 
 ## The fleet at a glance
 
-Per [pv-spec §31](../../../../provable-contracts/docs/specifications/sub/kaizen-fleet-enforcement.md):
+Per pv-spec §31:
 
 - **40 repos** under continuous-improvement enforcement
 - **294 contracts** across the fleet

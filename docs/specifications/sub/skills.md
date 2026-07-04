@@ -51,7 +51,7 @@ The agent calls `apply_skill(name)` which pulls the markdown body into the LLM c
 
 **Critical design rule.** A skill that fires often enough across the corpus signals a recurring failure pattern in the static transpiler. The fix is to lift the skill's logic into `xpile-rust-codegen` as a deterministic rule and **delete** the skill markdown.
 
-This is encoded in [`contracts/skill-graduation-v1.yaml`](../../../../depyler/contracts/skill-graduation-v1.yaml) (ported from depyler to xpile in Phase 1).
+This is encoded in `contracts/skill-graduation-v1.yaml` (ported from depyler to xpile in Phase 1).
 
 ## Graduation pipeline
 
