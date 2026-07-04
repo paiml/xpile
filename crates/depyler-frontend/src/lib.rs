@@ -17101,6 +17101,8 @@ fn infer_type(e: &Expr) -> Type {
  StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
             // PMAT-530: s[::-1] reverse-slice → Str.
  StrMethodOp::Reverse => Type::Str,
+            // PMAT-1219: expandtabs → Str.
+ StrMethodOp::ExpandTabs => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal infers element
         // type from the first element (frontend ensures homogeneity
@@ -17539,6 +17541,8 @@ fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
  StrMethodOp::SplitLines => Type::List(Box::new(Type::Str)),
             // PMAT-530: s[::-1] reverse-slice → Str.
  StrMethodOp::Reverse => Type::Str,
+            // PMAT-1219: expandtabs → Str.
+ StrMethodOp::ExpandTabs => Type::Str,
         },
         // PMAT-455 (v0.2.0 Track 1.B): list literal — same inference
         // shape as the context-free `infer_type` arm.
@@ -18610,9 +18614,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                             op,
                             StrMethodOp::Strip | StrMethodOp::LStrip | StrMethodOp::RStrip
                         );
+                        // PMAT-1219: `s.expandtabs()` / `s.expandtabs(tabsize)`
+                        // accept an optional tabsize arg (arity 0 → 0 or 1 args);
+                        // the omitted form defaults tabsize to 8 in codegen.
+                        let allows_tabsize = matches!(op, StrMethodOp::ExpandTabs);
                         let ok_argc = call.args.len() == arity
                             || (allows_fill && call.args.len() == arity + 1)
                             || (allows_charset && call.args.len() == arity + 1)
+                            || (allows_tabsize && call.args.len() == arity + 1)
                             || (allows_start_end && (arity..=arity + 2).contains(&call.args.len()));
                         if !call.keywords.is_empty() || !ok_argc {
                             return Err(FrontendError::Lower(format!(
@@ -25479,6 +25488,8 @@ fn str_method_op(name: &str) -> Option<StrMethodOp> {
         "zfill" => Some(StrMethodOp::ZFill),
         // PMAT-502cu: center (1-arg width).
         "center" => Some(StrMethodOp::Center),
+        // PMAT-1219: expandtabs (0 or 1 int arg, tabsize default 8).
+        "expandtabs" => Some(StrMethodOp::ExpandTabs),
         _ => None,
     }
 }
@@ -25511,6 +25522,9 @@ fn str_method_moves_receiver(op: StrMethodOp) -> bool {
             | StrMethodOp::Rfind
             | StrMethodOp::RIndex
             | StrMethodOp::SplitLines
+            // PMAT-1219: expandtabs binds `let __s = (recv)` in its emitted
+            // block, so a reused receiver must be cloned (E0382), like zfill.
+            | StrMethodOp::ExpandTabs
     )
 }
 
@@ -25567,6 +25581,10 @@ fn str_method_arity(op: StrMethodOp) -> usize {
         StrMethodOp::SplitLines => 0,
         // PMAT-530: s[::-1] reverse — synthesized (no surface method), 0 args.
         StrMethodOp::Reverse => 0,
+        // PMAT-1219: expandtabs — base arity 0 (bare `.expandtabs()` defaults
+        // tabsize to 8); the optional 1-arg `.expandtabs(n)` form is admitted
+        // by the `allows_tabsize` flag at the call site (like strip's charset).
+        StrMethodOp::ExpandTabs => 0,
     }
 }
 

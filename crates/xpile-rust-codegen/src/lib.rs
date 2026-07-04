@@ -2902,6 +2902,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                 } else {
                     out.push_str("format!(\"{}{}{}\", \" \".repeat(__left), __s, \" \".repeat(__marg - __left)) } }");
                 }
+            } else if matches!(op, StrMethodOp::ExpandTabs) {
+                // PMAT-1219: `.expandtabs(tabsize=8)` — expand each '\t' to spaces
+                // up to the next multiple of tabsize, COUNTING COLUMNS IN CODE
+                // POINTS (`.chars()`), resetting the column on '\n'/'\r'; a
+                // tabsize <= 0 drops tabs (0 spaces). Rust std has no expandtabs,
+                // so emit an explicit char-walk — byte-exact vs CPython incl. a
+                // multibyte payload (non-tab chars are copied verbatim, each
+                // counting as one column). The optional arg defaults to 8.
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let __ts: i64 = ");
+                if let Some(a) = args.first() {
+                    out.push('(');
+                    emit_expr(out, a, mode)?;
+                    out.push_str(") as i64");
+                } else {
+                    out.push('8');
+                }
+                out.push_str("; let mut __r = String::new(); let mut __col: i64 = 0; for __c in __s.chars() { if __c == '\\t' { if __ts > 0 { let __k = __ts - (__col % __ts); for _ in 0..__k { __r.push(' '); } __col += __k; } } else if __c == '\\n' || __c == '\\r' { __r.push(__c); __col = 0; } else { __r.push(__c); __col += 1; } } __r }");
             } else if matches!(op, StrMethodOp::Partition | StrMethodOp::RPartition) {
                 // PMAT-502dj: `.partition(sep)` / `.rpartition(sep)` → the
                 // 3-tuple `(before, sep, after)` at the first / last `sep`. The
@@ -3199,6 +3218,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                         unreachable!("partition/rpartition handled above")
                     }
                     StrMethodOp::SplitLines => unreachable!("splitlines handled above"),
+                    StrMethodOp::ExpandTabs => unreachable!("expandtabs handled above"),
                 }
             }
         }

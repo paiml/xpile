@@ -4624,6 +4624,318 @@ const STR_REVERSE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1219: `$__wasm_str_expandtabs(s, ts) -> i32` — Python
+/// `s.expandtabs(tabsize)`: a NEW heap string with each tab (`\t`, `0x09`)
+/// replaced by the ASCII spaces (`0x20`) needed to reach the next multiple of
+/// `tabsize`, the COLUMN counted in **code points** and reset to `0` after each
+/// `\n` (`0x0a`) or `\r` (`0x0d`). Allocating (rides the `needs_heap` gate, calls
+/// `$__alloc`).
+///
+/// **Char-exact with NO trap arm — like reverse, unlike the case-fold family.**
+/// Only the ASCII tab/newline bytes are ever interpreted; every other code point
+/// (identified by its UTF-8 lead byte length `l`, as in `$__wasm_str_reverse`) is
+/// copied VERBATIM and counts as ONE column, so a multibyte payload round-trips
+/// unchanged (`"é\t".expandtabs(4)` → `"é   "`, `"日本\tx".expandtabs(4)` →
+/// `"日本  x"`), matching CPython and the rust/ruchy `.chars()` walk — no Unicode
+/// table, no non-ASCII trap. A lone continuation byte (`0x80`–`0xBF`, which valid
+/// UTF-8 never leads with) is copied as a 1-byte unit, the same defensive default
+/// as reverse.
+///
+/// **`tabsize <= 0` drops tabs (0 spaces), matching CPython** (`"a\tb".expandtabs(0)`
+/// → `"ab"`): the per-tab space count guards `tsize > 0` before the
+/// `col mod tsize` (so no divide-by-zero) and adds nothing when it fails. The
+/// tabsize is `i32.wrap_i64`'d like the pad family's width — a realistic small
+/// tabsize is exact; an out-of-i32-range value wraps then clamps.
+///
+/// The output byte length is not known a priori (tabs expand), so the helper makes
+/// TWO passes over the payload with the identical column arithmetic: pass 1 sums
+/// the output byte length `rlen`; pass 2 `$__alloc(8 + rlen)`, stores the header,
+/// and fills the payload (`memory.fill` spaces for a tab, `i32.store8` the byte for
+/// a newline/CR, `memory.copy` the `l` code-point bytes otherwise). A zero-length
+/// `s` sizes to `rlen == 0` and returns an empty heap string.
+const STR_EXPANDTABS_HELPER: &str = "\
+  ;; PMAT-1219 __wasm_str_expandtabs(s, ts) = Python s.expandtabs(ts) — a NEW heap
+  ;; string with each tab expanded to spaces to the next multiple of ts, the COLUMN
+  ;; counted in CODE POINTS and reset on \\n/\\r. Char-exact with NO trap arm: only
+  ;; the ASCII tab/newline bytes are interpreted; every other code point (length l
+  ;; from its UTF-8 lead byte) is copied verbatim and counts as one column. ts<=0
+  ;; drops tabs. Two passes (pass 1 sizes rlen, pass 2 fills) share the column math.
+  (func $__wasm_str_expandtabs (param $s i32) (param $ts i64) (result i32)
+    (local $slen i32)
+    (local $tsize i32)
+    (local $rlen i32)
+    (local $i i32)
+    (local $col i32)
+    (local $b i32)
+    (local $l i32)
+    (local $k i32)
+    (local $dst i32)
+    (local $wpos i32)
+    ;; slen = byte length of s ; tsize = wrap(ts) (i32; ts<=0 handled per tab).
+    local.get $s
+    i32.load
+    local.set $slen
+    local.get $ts
+    i32.wrap_i64
+    local.set $tsize
+    ;; ---- pass 1: rlen = output byte length ----
+    i32.const 0
+    local.set $rlen
+    i32.const 0
+    local.set $i
+    i32.const 0
+    local.set $col
+    block $d1
+      loop $l1
+        local.get $i
+        local.get $slen
+        i32.ge_u
+        br_if $d1
+        ;; b = lead byte s[8 + i].
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $b
+        ;; l = UTF-8 code-point byte length from b (default 1; same table as reverse).
+        i32.const 1
+        local.set $l
+        local.get $b
+        i32.const 0xc0
+        i32.ge_u
+        local.get $b
+        i32.const 0xe0
+        i32.lt_u
+        i32.and
+        if
+          i32.const 2
+          local.set $l
+        end
+        local.get $b
+        i32.const 0xe0
+        i32.ge_u
+        local.get $b
+        i32.const 0xf0
+        i32.lt_u
+        i32.and
+        if
+          i32.const 3
+          local.set $l
+        end
+        local.get $b
+        i32.const 0xf0
+        i32.ge_u
+        if
+          i32.const 4
+          local.set $l
+        end
+        ;; classify b (only 1-byte ASCII bytes can be \\t/\\n/\\r).
+        local.get $b
+        i32.const 0x09
+        i32.eq
+        if
+          ;; tab: if tsize > 0, k = tsize - (col mod tsize); col += k; rlen += k.
+          local.get $tsize
+          i32.const 0
+          i32.gt_s
+          if
+            local.get $tsize
+            local.get $col
+            local.get $tsize
+            i32.rem_u
+            i32.sub
+            local.set $k
+            local.get $col
+            local.get $k
+            i32.add
+            local.set $col
+            local.get $rlen
+            local.get $k
+            i32.add
+            local.set $rlen
+          end
+        else
+          local.get $b
+          i32.const 0x0a
+          i32.eq
+          local.get $b
+          i32.const 0x0d
+          i32.eq
+          i32.or
+          if
+            ;; newline / CR: 1 byte, col reset to 0.
+            local.get $rlen
+            i32.const 1
+            i32.add
+            local.set $rlen
+            i32.const 0
+            local.set $col
+          else
+            ;; ordinary code point: l bytes, col += 1.
+            local.get $rlen
+            local.get $l
+            i32.add
+            local.set $rlen
+            local.get $col
+            i32.const 1
+            i32.add
+            local.set $col
+          end
+        end
+        ;; i += l
+        local.get $i
+        local.get $l
+        i32.add
+        local.set $i
+        br $l1
+      end
+    end
+    ;; ---- allocate: dst = alloc(8 + rlen) ; store the i32 header = rlen ----
+    local.get $rlen
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $rlen
+    i32.store
+    ;; wpos = dst + 8 (payload write cursor).
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.set $wpos
+    ;; ---- pass 2: fill the payload (same column math) ----
+    i32.const 0
+    local.set $i
+    i32.const 0
+    local.set $col
+    block $d2
+      loop $l2
+        local.get $i
+        local.get $slen
+        i32.ge_u
+        br_if $d2
+        ;; b = lead byte s[8 + i].
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $b
+        ;; l = UTF-8 code-point byte length from b (default 1).
+        i32.const 1
+        local.set $l
+        local.get $b
+        i32.const 0xc0
+        i32.ge_u
+        local.get $b
+        i32.const 0xe0
+        i32.lt_u
+        i32.and
+        if
+          i32.const 2
+          local.set $l
+        end
+        local.get $b
+        i32.const 0xe0
+        i32.ge_u
+        local.get $b
+        i32.const 0xf0
+        i32.lt_u
+        i32.and
+        if
+          i32.const 3
+          local.set $l
+        end
+        local.get $b
+        i32.const 0xf0
+        i32.ge_u
+        if
+          i32.const 4
+          local.set $l
+        end
+        local.get $b
+        i32.const 0x09
+        i32.eq
+        if
+          ;; tab: if tsize > 0, fill k spaces at wpos; wpos += k; col += k.
+          local.get $tsize
+          i32.const 0
+          i32.gt_s
+          if
+            local.get $tsize
+            local.get $col
+            local.get $tsize
+            i32.rem_u
+            i32.sub
+            local.set $k
+            local.get $wpos
+            i32.const 0x20
+            local.get $k
+            memory.fill
+            local.get $wpos
+            local.get $k
+            i32.add
+            local.set $wpos
+            local.get $col
+            local.get $k
+            i32.add
+            local.set $col
+          end
+        else
+          local.get $b
+          i32.const 0x0a
+          i32.eq
+          local.get $b
+          i32.const 0x0d
+          i32.eq
+          i32.or
+          if
+            ;; newline / CR: store the byte; wpos += 1; col reset to 0.
+            local.get $wpos
+            local.get $b
+            i32.store8
+            local.get $wpos
+            i32.const 1
+            i32.add
+            local.set $wpos
+            i32.const 0
+            local.set $col
+          else
+            ;; ordinary code point: copy l bytes from s+8+i; wpos += l; col += 1.
+            local.get $wpos
+            local.get $s
+            i32.const 8
+            i32.add
+            local.get $i
+            i32.add
+            local.get $l
+            memory.copy
+            local.get $wpos
+            local.get $l
+            i32.add
+            local.set $wpos
+            local.get $col
+            i32.const 1
+            i32.add
+            local.set $col
+          end
+        end
+        ;; i += l
+        local.get $i
+        local.get $l
+        i32.add
+        local.set $i
+        br $l2
+      end
+    end
+    local.get $dst
+  )
+";
+
 /// PMAT-1189: `$__wasm_str_isdigit(s) -> i32` — Python `s.isdigit()` as a bool
 /// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is an ASCII decimal
 /// digit `'0'`–`'9'`, else `0`. Non-allocating (a single left-to-right scan of
@@ -6819,6 +7131,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // point's length), so it is char-exact for any valid UTF-8 with NO trap arm —
     // matching CPython `s[::-1]` and the rust/ruchy `.chars().rev()` lane.
     let needs_reverse = module_uses_str_method(module, StrMethodOp::Reverse);
+    // PMAT-1219: `s.expandtabs()` / `s.expandtabs(tabsize)` (`Expr::StrMethod`, op
+    // `ExpandTabs`) — an allocating string-RETURNING op (a fresh heap string with
+    // each `\t` replaced by the ASCII spaces needed to reach the next multiple of
+    // `tabsize`, the COLUMN counted in CODE POINTS and reset on `\n`/`\r`). Its own
+    // `$__wasm_str_expandtabs` helper does a two-pass walk (pass 1 sizes the output,
+    // pass 2 fills it) — it copies each non-tab code point verbatim and only
+    // interprets the ASCII tab/newline bytes, so like reverse it needs NO Unicode
+    // table and is char-exact for any valid UTF-8 with NO trap arm. Rides
+    // `needs_heap` (set via `expr_has_heap_op`, like reverse/pad/strip).
+    let needs_expandtabs = module_uses_str_method(module, StrMethodOp::ExpandTabs);
     // PMAT-1189: `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`) — a bool (i32)
     // predicate: `1` iff `s` is non-empty and every code point is an ASCII digit.
     // NON-allocating (a single byte scan, no heap), so — unlike the case-fold
@@ -7183,6 +7505,19 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // so an unrelated heap-string module carries no dead helper.
     if needs_heap && needs_reverse {
         out.push_str(STR_REVERSE_HELPER);
+    }
+    // PMAT-1219: emit the string EXPANDTABS helper once, when any function uses
+    // `s.expandtabs()` / `s.expandtabs(tabsize)` (`Expr::StrMethod`, op `ExpandTabs`).
+    // The `$__wasm_str_expandtabs` helper expands each `\t` to spaces to the next
+    // multiple of `tabsize` (column counted in CODE POINTS, reset on `\n`/`\r`).
+    // Allocating (calls `$__alloc` + `memory.fill` + `memory.copy`), so it rides
+    // `needs_heap` — an expandtabs sets the heap gate via `expr_has_heap_op`. Like
+    // reverse it needs NO Unicode table (only ASCII tab/newline bytes are
+    // interpreted; the payload is copied verbatim), so it is char-exact for any valid
+    // UTF-8 with NO trap arm. Gated on an actual use so an unrelated heap-string
+    // module carries no dead helper.
+    if needs_heap && needs_expandtabs {
+        out.push_str(STR_EXPANDTABS_HELPER);
     }
     // PMAT-1189: emit the string ISDIGIT helper once, when any function uses
     // `s.isdigit()` (`Expr::StrMethod`, op `IsDigit`). NON-allocating (a single
@@ -8624,6 +8959,12 @@ fn expr_has_heap_op(e: &Expr) -> bool {
                     | StrMethodOp::LJust
                     | StrMethodOp::Center
                     | StrMethodOp::Reverse
+                    // PMAT-1219: `s.expandtabs()` bump-allocates its tab-expanded
+                    // result the same way — a miss would emit `$__wasm_str_expandtabs`
+                    // against an undeclared `$__alloc` (the same hard wat2wasm
+                    // gate-hole). Its tabsize arg is an int (never heap), but the
+                    // recurse into `args`/`recv` covers a heap-constructed receiver.
+                    | StrMethodOp::ExpandTabs
             ) || expr_has_heap_op(recv)
                 || args.iter().any(expr_has_heap_op)
         }
@@ -9820,6 +10161,39 @@ fn emit_str_pad(
     writeln!(out, "i32.const {mode}").expect("write");
     indent(out, depth);
     writeln!(out, "call $__wasm_str_pad").expect("write");
+    Ok(WatTy::I32)
+}
+
+/// PMAT-1219: lower `s.expandtabs()` / `s.expandtabs(tabsize)` — a materialising op
+/// leaving the i32 base-pointer of a fresh heap string with each `\t` expanded to
+/// spaces to the next multiple of `tabsize` (column in code points, reset on
+/// `\n`/`\r`). The receiver is string-valued (`emit_str_expr`, which refuses a
+/// non-str recv honestly); the tabsize is int-valued (`emit_expr_typed` as `i64`,
+/// like the pad width). The **optional** arg defaults to `8` (`i64.const 8`) — the
+/// bare `s.expandtabs()` form. The allocating `$__wasm_str_expandtabs` helper does
+/// the two-pass expansion and — like reverse, unlike the case-fold ops — never
+/// folds a payload byte (only ASCII tab/newline bytes are interpreted), so it is
+/// char-exact for any UTF-8 with no trap. A heap-constructed receiver
+/// (`(a + b).expandtabs()`) already pulled in the allocator via `expr_has_heap_op`.
+fn emit_str_expandtabs(
+    recv: &Expr,
+    tabsize: Option<&Expr>,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    emit_str_expr(recv, scope, out, depth)?;
+    match tabsize {
+        Some(e) => {
+            emit_expr_typed(e, scope, out, depth, WatTy::I64)?;
+        }
+        None => {
+            indent(out, depth);
+            writeln!(out, "i64.const 8").expect("write");
+        }
+    }
+    indent(out, depth);
+    writeln!(out, "call $__wasm_str_expandtabs").expect("write");
     Ok(WatTy::I32)
 }
 
@@ -11196,6 +11570,23 @@ fn emit_str_expr(
             emit_str_reverse(recv, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1219: `s.expandtabs()` / `s.expandtabs(tabsize)` in a string position
+        // — a fresh heap string (a materialising op) with each `\t` expanded to
+        // spaces to the next multiple of `tabsize` (column counted in CODE POINTS,
+        // reset on `\n`/`\r`). 0 or 1 arg: the omitted tabsize defaults to 8. The
+        // allocating `$__wasm_str_expandtabs` helper copies each non-tab code point
+        // verbatim (only ASCII tab/newline bytes are interpreted), so — unlike the
+        // case-fold ops — it needs NO Unicode table and is char-exact for any valid
+        // UTF-8 with NO trap arm (`"é\t".expandtabs(4)` → `"é   "`), matching CPython
+        // and the rust/ruchy `.chars()` walk.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::ExpandTabs,
+            args,
+        } if args.len() <= 1 => {
+            emit_str_expandtabs(recv, args.first(), scope, out, depth)?;
+            Ok(())
+        }
         // PMAT-1205: `s.strip()` / `s.lstrip()` / `s.rstrip()` in a string position
         // — a fresh heap string (like the case-fold family, a materialising op) with
         // the leading (`Strip`/`LStrip`) and/or trailing (`Strip`/`RStrip`) run of
@@ -11289,7 +11680,8 @@ fn emit_str_expr(
              `.removeprefix(p)` / `.removesuffix(p)`, `.replace(old, new[, \
              count])`, `.zfill(width)`, `.rjust(w)` / `.ljust(w)` / \
              `.center(w)` (space-pad, char-exact), `s[::-1]` (reverse, \
-             char-exact), `.upper()` / `.lower()` / \
+             char-exact), `.expandtabs([n])` (tab-expand, char-exact), \
+             `.upper()` / `.lower()` / \
              `.capitalize()` / `.swapcase()` / `.title()` / `.strip()` / \
              `.lstrip()` / `.rstrip()` (ASCII-only — a non-ASCII byte traps), \
              or a str-returning call; stepped slicing / str(float) / bare \

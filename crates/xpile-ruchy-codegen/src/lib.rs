@@ -2274,6 +2274,25 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                 }
                 return Ok(());
             }
+            // PMAT-1219: `.expandtabs(tabsize=8)` (block form, matching the Rust
+            // backend) — expand each '\t' to spaces up to the next multiple of
+            // tabsize, COUNTING COLUMNS IN CODE POINTS, resetting on '\n'/'\r';
+            // tabsize <= 0 drops tabs. Optional arg defaults to 8. Byte-exact vs
+            // CPython incl. a multibyte payload (non-tab chars copied verbatim).
+            if matches!(op, StrMethodOp::ExpandTabs) {
+                out.push_str("{ let __s = (");
+                emit_expr(out, recv, mode)?;
+                out.push_str("); let __ts: i64 = ");
+                if let Some(a) = args.first() {
+                    out.push('(');
+                    emit_expr(out, a, mode)?;
+                    out.push_str(") as i64");
+                } else {
+                    out.push('8');
+                }
+                out.push_str("; let mut __r = String::new(); let mut __col: i64 = 0; for __c in __s.chars() { if __c == '\\t' { if __ts > 0 { let __k = __ts - (__col % __ts); for _ in 0..__k { __r.push(' '); } __col += __k; } } else if __c == '\\n' || __c == '\\r' { __r.push(__c); __col = 0; } else { __r.push(__c); __col += 1; } } __r }");
+                return Ok(());
+            }
             // PMAT-502dj: `.partition(sep)` / `.rpartition(sep)` → 3-tuple.
             if matches!(op, StrMethodOp::Partition | StrMethodOp::RPartition) {
                 // PMAT-726 (HUNT-V10 V10-1): bind recv+sep once and guard the empty
@@ -2520,6 +2539,7 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), RuchyCodegenE
                     unreachable!("partition/rpartition handled above")
                 }
                 StrMethodOp::SplitLines => unreachable!("splitlines handled above"),
+                StrMethodOp::ExpandTabs => unreachable!("expandtabs handled above"),
             }
         }
         // PMAT-455 (v0.2.0 Track 1.B): Ruchy → Rust → `vec![...]`.
