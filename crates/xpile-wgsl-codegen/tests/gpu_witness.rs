@@ -32,6 +32,7 @@ fn kernel_module() -> Module {
 
 fn wgsl_config() -> BackendConfig {
     BackendConfig {
+        emit_contracts: true,
         target: Target::Wgsl,
         profile: Profile::RustOut,
         hardware: Some(HwProfile::Wgsl {

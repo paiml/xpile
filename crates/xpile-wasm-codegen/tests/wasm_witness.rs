@@ -36,6 +36,7 @@ fn kernel_module() -> Module {
 
 fn wasm_config() -> BackendConfig {
     BackendConfig {
+        emit_contracts: true,
         target: Target::Wasm,
         profile: Profile::RustOut,
         hardware: None,

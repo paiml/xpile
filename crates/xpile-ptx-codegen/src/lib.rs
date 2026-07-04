@@ -242,7 +242,9 @@ impl Backend for PtxBackend {
             Some(HwProfile::Ptx { .. }) => {}
             _ => return Err(BackendError::MissingHardware(Target::Ptx)),
         }
-        self.inner.lower(module, config)
+        self.inner
+            .lower(module, config)
+            .map(|a| a.with_citations(config.emit_contracts))
     }
 }
 
@@ -804,6 +806,7 @@ mod tests {
 
     fn ptx_config(sm: &str) -> BackendConfig {
         BackendConfig {
+            emit_contracts: true,
             target: Target::Ptx,
             profile: Profile::RustOut,
             hardware: Some(HwProfile::Ptx {
@@ -843,6 +846,7 @@ mod tests {
     fn ptx_backend_rejects_missing_hardware() {
         let backend = PtxBackend::new();
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Ptx,
             profile: Profile::RustOut,
             hardware: None,
@@ -935,6 +939,7 @@ mod tests {
     fn multi_emitter_constructor_rejects_missing_hardware() {
         let backend = PtxBackend::new_with_matmul_specialist();
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Ptx,
             profile: Profile::RustOut,
             hardware: None,

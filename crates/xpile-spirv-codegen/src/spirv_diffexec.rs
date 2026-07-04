@@ -704,6 +704,7 @@ mod tests {
 
     fn diffexec_config() -> BackendConfig {
         BackendConfig {
+            emit_contracts: true,
             target: xpile_backend::Target::Spirv,
             profile: xpile_backend::Profile::RustOut,
             hardware: Some(HwProfile::Spirv { version: (1, 3) }),

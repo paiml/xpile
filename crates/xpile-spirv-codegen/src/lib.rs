@@ -227,7 +227,9 @@ impl Backend for SpirvBackend {
             None | Some(HwProfile::Spirv { .. }) => {}
             _ => return Err(BackendError::MissingHardware(Target::Spirv)),
         }
-        self.inner.lower(module, config)
+        self.inner
+            .lower(module, config)
+            .map(|a| a.with_citations(config.emit_contracts))
     }
 }
 
@@ -326,6 +328,7 @@ mod tests {
 
     fn spirv_config() -> BackendConfig {
         BackendConfig {
+            emit_contracts: true,
             target: Target::Spirv,
             profile: Profile::RustOut,
             hardware: Some(HwProfile::Spirv { version: (1, 3) }),
@@ -387,6 +390,7 @@ mod tests {
     fn backend_accepts_no_hardware() {
         let backend = SpirvBackend::new();
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Spirv,
             profile: Profile::RustOut,
             hardware: None,
@@ -399,6 +403,7 @@ mod tests {
     fn backend_rejects_wrong_hardware() {
         let backend = SpirvBackend::new();
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Spirv,
             profile: Profile::RustOut,
             hardware: Some(HwProfile::Ptx {

@@ -286,6 +286,7 @@ mod tests {
             .find(|b| b.name() == "bashrs")
             .expect("bashrs backend registered");
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -344,6 +345,7 @@ mod tests {
         assert_eq!(f.body.stmts.len(), 2);
 
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -384,6 +386,7 @@ mod tests {
             .parse_and_lower(Path::new("/tmp/v.sh"), "echo $HOME and ${USER}\n")
             .expect("parse shell var");
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -417,6 +420,7 @@ mod tests {
             .parse_and_lower(Path::new("/tmp/p.sh"), "ls /tmp | wc -l\n")
             .expect("parse pipeline");
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -451,6 +455,7 @@ mod tests {
             .parse_and_lower(Path::new("/tmp/refuse.sh"), "echo hi\n")
             .expect("parse");
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Rust,
             profile: Profile::RustOut,
             hardware: None,
@@ -487,6 +492,7 @@ mod tests {
             .find(|b| b.name() == "ptx")
             .expect("ptx backend registered");
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Ptx,
             profile: Profile::RustOut,
             hardware: Some(HwProfile::Ptx {
@@ -522,6 +528,7 @@ mod tests {
             .find(|b| b.name() == "ptx")
             .expect("ptx backend registered");
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Ptx,
             profile: Profile::RustOut,
             hardware: None,

@@ -217,7 +217,7 @@ impl Backend for BashrsBackend {
         &[Target::Shell]
     }
 
-    fn lower(&self, module: &Module, _config: &BackendConfig) -> Result<Artifact, BackendError> {
+    fn lower(&self, module: &Module, config: &BackendConfig) -> Result<Artifact, BackendError> {
         // PMAT-039/041/042/047/048/974: real Layer B emit.
         // bashrs-frontend wraps each shell script in a synthetic `main`
         // function whose body is a `Vec<Stmt>`; depyler-frontend
@@ -331,7 +331,8 @@ impl Backend for BashrsBackend {
             quorum_status: QuorumStatus::Single {
                 emitter: "bashrs-backend".to_string(),
             },
-        })
+        }
+        .with_citations(config.emit_contracts))
     }
 }
 
@@ -369,6 +370,7 @@ mod tests {
         // both the audit pipeline and a human reader find the same ID.
         let module = empty_shell_module();
         let config = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -433,6 +435,7 @@ mod tests {
             ffi_boundaries: vec![],
         };
         let config = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -502,6 +505,7 @@ mod tests {
             ffi_boundaries: vec![],
         };
         let config = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -622,6 +626,7 @@ mod tests {
             ffi_boundaries: vec![],
         };
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -847,6 +852,7 @@ mod tests {
             ffi_boundaries: vec![],
         };
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -968,6 +974,7 @@ mod tests {
             ffi_boundaries: vec![],
         };
         let config = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -1063,6 +1070,7 @@ mod tests {
             ffi_boundaries: vec![],
         };
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,
@@ -1122,6 +1130,7 @@ mod tests {
             ffi_boundaries: vec![],
         };
         let cfg = BackendConfig {
+            emit_contracts: true,
             target: Target::Shell,
             profile: Profile::RustOut,
             hardware: None,

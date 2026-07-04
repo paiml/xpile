@@ -42,6 +42,7 @@ fn main() -> anyhow::Result<()> {
         .find(|b| b.targets().contains(&Target::Lean))
         .expect("lean backend");
     let cfg = BackendConfig {
+        emit_contracts: true,
         target: Target::Lean,
         profile: Profile::RustOut,
         hardware: None,

@@ -242,6 +242,7 @@ fn run_gx10_arm() -> Result<(Vec<f64>, DiffExecResult), String> {
 /// vector is exactly what the engine compared.
 fn run_local_arm(local_sm: &str) -> Result<(Vec<f64>, DiffExecResult), String> {
     let cfg = BackendConfig {
+        emit_contracts: true,
         target: Target::Ptx,
         profile: Profile::RustOut,
         hardware: Some(HwProfile::Ptx {

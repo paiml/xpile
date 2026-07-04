@@ -66,6 +66,7 @@ fn config_for(target: Target) -> BackendConfig {
         _ => None,
     };
     BackendConfig {
+        emit_contracts: true,
         target,
         profile: Profile::RustOut,
         hardware,

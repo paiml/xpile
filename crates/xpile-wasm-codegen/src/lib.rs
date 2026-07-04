@@ -7056,9 +7056,12 @@ impl Backend for WasmBackend {
                     quorum_status: QuorumStatus::Single {
                         emitter: "xpile-wasm-codegen".to_string(),
                     },
-                })
+                }
+                .with_citations(config.emit_contracts))
             }
-            WasmBackendInner::DiffExecWitness(inner) => inner.lower(module, config),
+            WasmBackendInner::DiffExecWitness(inner) => inner
+                .lower(module, config)
+                .map(|a| a.with_citations(config.emit_contracts)),
         }
     }
 }

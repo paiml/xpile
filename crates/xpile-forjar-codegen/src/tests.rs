@@ -52,6 +52,7 @@ fn lit(s: &str) -> Expr {
 
 fn forjar_config() -> BackendConfig {
     BackendConfig {
+        emit_contracts: true,
         target: Target::ForjarYaml,
         profile: Profile::RustOut,
         hardware: None,
@@ -297,6 +298,7 @@ fn refuses_an_empty_shell_module() {
 fn backend_refuses_wrong_target() {
     let m = shell_module("svc", vec![cmd("true", vec![])]);
     let cfg = BackendConfig {
+        emit_contracts: true,
         target: Target::Rust,
         profile: Profile::RustOut,
         hardware: None,

@@ -117,6 +117,7 @@ fn local_compute_capability() -> String {
 
 fn ptx_config(sm: &str) -> BackendConfig {
     BackendConfig {
+        emit_contracts: true,
         target: Target::Ptx,
         profile: Profile::RustOut,
         hardware: Some(HwProfile::Ptx {
