@@ -89,6 +89,37 @@ fn cites_the_compile_contract() {
 }
 
 #[test]
+fn heap_using_module_also_cites_the_wasm_heap_l5_contract() {
+    // PMAT-956 (L5 completeness): a module that ALLOCATES (here, a `str`-returning
+    // function → the bump heap) cites BOTH the base compile contract and the
+    // Layer-5 heap contract C-WASM-HEAP — structurally AND in-text — so heap-using
+    // WAT is not uncited at Layer 5. A scalar module cites only the base
+    // (`cites_the_compile_contract`).
+    let f = Function {
+        name: "s".into(),
+        params: vec![param("x", Type::Str)],
+        return_type: Type::Str,
+        body: Block {
+            stmts: Vec::new(),
+            trailing_return: Expr::Ident("x".into()),
+        },
+    };
+    let art = WasmBackend::new()
+        .lower(&module_with(vec![Item::Function(f)]), &wasm_config())
+        .expect("str-returning (heap) module lowers");
+    let cited: Vec<&str> = art.citations.iter().map(|c| c.as_str()).collect();
+    assert!(
+        cited.contains(&"C-COMPILE-RUST-TO-WASM") && cited.contains(&"C-WASM-HEAP"),
+        "a heap-using module cites both L5 contracts structurally: {cited:?}"
+    );
+    assert!(
+        art.primary.contains(";; xpile-contract: C-WASM-HEAP"),
+        "and in-text:\n{}",
+        art.primary
+    );
+}
+
+#[test]
 fn backend_metadata() {
     let b = WasmBackend::new();
     assert_eq!(b.name(), "wasm");

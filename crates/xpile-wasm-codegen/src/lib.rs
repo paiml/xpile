@@ -190,6 +190,12 @@ pub use wasm_diffexec::{
 /// The Layer-5 compile contract every emitted WAT function cites.
 const CONTRACT_ID: &str = "C-COMPILE-RUST-TO-WASM";
 
+/// PMAT-956: the Layer-5 contract governing the WASM bump-heap allocator (a
+/// strict extension of [`CONTRACT_ID`]). Cited — structurally and in-text —
+/// whenever the emitted module allocates (`module_needs_heap`), so heap-using
+/// output is not uncited at Layer 5.
+const HEAP_CONTRACT_ID: &str = "C-WASM-HEAP";
+
 /// PMAT-968 list ABI / PMAT-986 str ABI: a `list[scalar]` base-pointer
 /// points at an `i32` element-count header at `base+0`; the packed elements
 /// start at this byte offset. The offset is 8 (not 4) so every `i64`/`f64`
@@ -7119,10 +7125,17 @@ impl Backend for WasmBackend {
         match &self.inner {
             WasmBackendInner::Single => {
                 let wat = emit_module(module)?;
+                // PMAT-956: an allocating module additionally cites the Layer-5
+                // heap contract C-WASM-HEAP (structural channel), so heap-using
+                // WAT is not uncited at Layer 5.
+                let mut citations = vec![ContractId::new(CONTRACT_ID)];
+                if module_needs_heap(module) {
+                    citations.push(ContractId::new(HEAP_CONTRACT_ID));
+                }
                 Ok(Artifact {
                     primary: wat,
                     sidecars: Vec::new(),
-                    citations: vec![ContractId::new(CONTRACT_ID)],
+                    citations,
                     quorum_status: QuorumStatus::Single {
                         emitter: "xpile-wasm-codegen".to_string(),
                     },
@@ -8205,6 +8218,10 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
                  inputs at __HEAP_BASE)"
             )
             .expect("write");
+            // PMAT-956: the bump-heap allocator is governed by C-WASM-HEAP (the
+            // Layer-5 extension of C-COMPILE-RUST-TO-WASM); cite it in-text
+            // whenever the module allocates, so heap-using WAT is not uncited.
+            writeln!(out, "  ;; xpile-contract: {HEAP_CONTRACT_ID}").expect("write");
         }
         if !literals.is_empty() {
             writeln!(
