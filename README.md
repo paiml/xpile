@@ -135,7 +135,7 @@ QUORUM while newer contracts are still accreting stratum votes; run
 
 ```text
 $ xpile quorum
-  totals: 15 QUORUM, 19 PARTIAL, 0 UNVERIFIED (34 contracts total)
+  totals: 15 QUORUM, 20 PARTIAL, 0 UNVERIFIED (35 contracts total)
 ```
 
 Full detail — the contract taxonomy, quorum strata, and the "Diamond" theorem

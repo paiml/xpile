@@ -350,5 +350,14 @@ lean_lib «XpileContractsPilot» where
     -- Pilot 32 → 34; closes the north-star "every construct under a cited
     -- contract" claim UNCONDITIONALLY.
     `ConstTranslation,            -- C-CONST-TRANSLATION         (PMAT-1145)
-    `EnumTranslation              -- C-ENUM-TRANSLATION          (PMAT-1146)
+    `EnumTranslation,             -- C-ENUM-TRANSLATION          (PMAT-1146)
+    -- PMAT-956 (provable-model-as-code): NEW Layer-1 semantics contract for a
+    -- fitted least-squares linear model. Core-only STRUCTURE EXTENSIONALITY on
+    -- the emitted coefficient vector (`LinearModel{coeffReprs}`) — the emitted
+    -- `predict` is determined by its coefficients. The DEEP uniqueness content
+    -- (the coefficients are the UNIQUE OLS minimiser) is machine-checked in the
+    -- SEPARATE Mathlib lane `contracts/lean-models/` (`ols_unique`/`ols_strict`);
+    -- this hermetic core module carries only the structural Diamond (depth-1).
+    -- NO Mathlib. Pilot 34 → 35.
+    `OlsModelUniqueness           -- C-OLS-MODEL-UNIQUENESS      (PMAT-956)
   ]

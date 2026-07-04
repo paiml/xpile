@@ -1,0 +1,143 @@
+metadata:
+  id: C-OLS-MODEL-UNIQUENESS
+  version: "1.0.0"
+  created: "2026-07-04"
+  author: PAIML Engineering
+  kind: pattern
+  status: draft
+  description: |
+    Provable-model-as-code (PMAT-956): the semantics of a fitted least-squares
+    linear model. A model over features `φ` with coefficient vector `β` lowers to
+    a `predict` function over CONST coefficients — `predict(x) = ∑ⱼ βⱼ · φⱼ(x)`.
+    The load-bearing property is OPTIMALITY-UNIQUENESS: those coefficients are the
+    UNIQUE minimiser of the sum of squared errors `∑ᵢ (yᵢ − ∑ⱼ βⱼ φⱼ(i))²`, given
+    full column rank (the features are linearly independent — the identifiability
+    condition). So a model shipped as proven code carries not just its weights but
+    a machine-checked certificate that the fit is THE optimum, not merely A fit.
+
+    TWO-LANE proof design (the deliberate Mathlib isolation):
+      * The tier-defining STRUCTURAL Diamond — a linear model is determined by its
+        ordered coefficient vector — is core-Lean, Mathlib-free, in the hermetic
+        `contracts/lean/` pilot (`OlsModelUniqueness.lean`).
+      * The DEEP uniqueness content is machine-checked in the SEPARATE Mathlib
+        lane `contracts/lean-models/Models/GeneralLinear.lean` (`ols_unique`,
+        `ols_strict`, `ols_min`), which subsumes the constant model (`Basic.lean`)
+        and simple linear regression (`SimpleLinear.lean`) as `k = 1, 2` cases.
+        Mathlib is walled off there (its own advisory `lean-models` CI job) so the
+        core lane stays cache-free.
+
+    Layer 1 of the xpile contract taxonomy (language/model semantics). The
+    delivery vehicle is the `xpile transpile --emit-crate` → `wasm32-wasip1`
+    universal-binary path: a proven model ships as one portable `.wasm` that runs
+    everywhere and carries this cited contract.
+  references:
+    - "Ordinary least squares: the normal equations XᵀXβ = Xᵀy and uniqueness under full column rank"
+    - "contracts/lean-models/Models/GeneralLinear.lean (the Mathlib-backed uniqueness certificate: ols_unique / ols_strict)"
+    - "contracts/lean-models/README.md (the walled-off model-proof lane)"
+    - "docs/specifications/audit-design.md (acceptance-honesty: a proven model ships with a machine-checked optimality certificate)"
+  depends_on: []
+
+equations:
+  linear_model_structure_extensionality_diamond:
+    # PMAT-956: tier-defining Diamond equation — registers
+    # C-OLS-MODEL-UNIQUENESS at depth-1 under the R6-grandfathered gate.
+    lean_theorem: "XpileContracts.COlsModelUniqueness.linear_model_structure_extensionality_diamond"
+    lean_file: "contracts/lean/OlsModelUniqueness.lean"
+    formula: |
+      forall a b : LinearModel.
+        a.coeffReprs = b.coeffReprs -> a = b
+      (a fitted linear model is determined by its ordered coefficient vector)
+    domain: |
+      A fitted least-squares linear model. xpile lowers it to a Rust `predict`
+      over const coefficients; the Diamond captures structure-extensionality of
+      the emitted coefficient vector, pinning the emitted predictor.
+    invariants:
+      - "FIRST Diamond-tier theorem of C-OLS-MODEL-UNIQUENESS (registers it at depth-1)"
+      - "structure extensionality on the coefficient vector (sorry-free, core-Lean, no Mathlib)"
+    preconditions:
+      - "the construct is a fitted linear model lowered to a `predict` over const coefficients"
+    postconditions:
+      - "reordering, dropping, or altering a coefficient yields a structurally-distinct model — falsified here"
+
+  ols_minimizer_unique:
+    # The DEEP semantic content, machine-checked in the SEPARATE Mathlib lane.
+    lean_theorem: "XpileModels.ols_unique"
+    lean_file: "contracts/lean-models/Models/GeneralLinear.lean"
+    formula: |
+      given features φ, target y, and coefficients β whose residual is orthogonal
+      to every feature (the normal equations), and full column rank
+      (only γ = 0 maps to the zero prediction):
+        olsSSE β' = olsSSE β  ->  β' = β
+      and strictly, β' ≠ β  ->  olsSSE β < olsSSE β' (ols_strict — non-vacuous).
+    domain: |
+      Any finite linear model with linearly-independent features. Subsumes the
+      constant model (k=1) and simple linear regression (k=2).
+    invariants:
+      - "the fitted coefficients are THE unique OLS minimiser, not merely a fit"
+      - "machine-checked in the Mathlib lane (contracts/lean-models/), sorry/axiom-free, warningAsError"
+      - "the non-vacuity dual (ols_strict) proves the minimiser is genuinely unique, not vacuously"
+    preconditions:
+      - "the residual is orthogonal to every feature (β solves the normal equations)"
+      - "the features are linearly independent (full column rank — identifiability)"
+    postconditions:
+      - "no other coefficient vector achieves the same or lower SSE"
+
+proof_obligations:
+  - type: precondition
+    property: the construct is a fitted linear model over const coefficients
+    formal: "model == LinearModel { coeffReprs }"
+    applies_to: linear_model_structure_extensionality_diamond
+  - type: postcondition
+    property: the emitted predictor is determined by the coefficient vector
+    formal: "a.coeffReprs == b.coeffReprs -> a == b"
+    applies_to: linear_model_structure_extensionality_diamond
+  - type: postcondition
+    property: the fitted coefficients are the unique OLS minimiser (Mathlib lane)
+    formal: "normal_equations(beta) && full_column_rank -> unique_minimizer(beta)"
+    applies_to: ols_minimizer_unique
+  - type: frame
+    property: no mutation of the meta-HIR module during translation
+    formal: "modifies() == 0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-OLS-001
+    rule: |
+      The structural Diamond (a linear model is determined by its coefficient
+      vector) MUST elaborate, sorry-free, in the hermetic core pilot.
+    prediction: |
+      `contracts/lean/OlsModelUniqueness.lean` is in the `lake build` pilot and
+      the lakefile root list stays in sync with the inventory.
+    test: |
+      cargo test -p xpile --test lean_pilot_roots inventory_pilot_count_in_sync_with_lakefile
+    if_fails: |
+      The structural Diamond regressed to a `sorry`, or the pilot wiring drifted.
+    ship_blocking: true
+    counter_example_classes:
+      - coefficient_reordered
+      - coefficient_dropped
+
+  - id: FALSIFY-OLS-002
+    rule: |
+      The DEEP uniqueness certificate (`ols_unique` / `ols_strict`) MUST elaborate
+      sorry-free in the Mathlib model-proof lane under `warningAsError`.
+    prediction: |
+      The advisory `lean-models` CI job (`lake exe cache get` + `lake build` over
+      `contracts/lean-models/`) is green — a `sorry` would fail it.
+    test: |
+      cd contracts/lean-models && lake build
+    if_fails: |
+      The OLS-uniqueness proof regressed — the fitted coefficients are no longer
+      certified as THE unique minimiser.
+    ship_blocking: false
+    counter_example_classes:
+      - uniqueness_unproven
+
+qa_gate:
+  id: QA-OLS-MODEL-UNIQUENESS
+  name: "Provable least-squares model uniqueness contract"
+  min_coverage: 0.50
+  max_complexity: 20
+  required_tests:
+    - inventory_pilot_count_in_sync_with_lakefile
+    - lakefile_pilot_matches_discharged_set

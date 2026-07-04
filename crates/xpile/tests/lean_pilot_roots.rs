@@ -286,6 +286,11 @@ const EXPECTED_PILOT: &[&str] = &[
     // translation contracts — closes Pillar A's "every construct cited" gap.
     "ConstTranslation",
     "EnumTranslation",
+    // PMAT-956 (provable-model-as-code): the least-squares model contract. Core
+    // structure-extensionality Diamond over the emitted coefficient vector; the
+    // deep OLS-uniqueness proof lives in the separate Mathlib lane
+    // (contracts/lean-models/), verified by the `lean-models` CI job.
+    "OlsModelUniqueness",
 ];
 
 #[test]
