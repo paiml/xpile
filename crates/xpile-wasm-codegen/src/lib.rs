@@ -178,8 +178,8 @@ use xpile_backend::{
 };
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, Param, SetOp, SetPredOp,
-    SortKey, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, Module, PairIterKind, Param, SetOp,
+    SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -7961,20 +7961,31 @@ impl TargetEmitter for WasmSaxpySpecialistEmitter {
 /// the zero default where Python raises `NameError` — the same PMAT-838
 /// tradeoff the Rust lane documents. Dict iteration (`over_keys`), in-place
 /// element mutation (`mutate_elems`), and non-name/non-str iterables
-/// (list literals, `enumerate`/`zip` — those are `ForEachPair`) refuse with
-/// precise messages.
+/// (list literals bound to a name notwithstanding) refuse with precise
+/// messages.
+///
+/// PMAT-1260: `for i, x in enumerate(xs[, start])` — a [`Stmt::ForEachPair`]
+/// with [`PairIterKind::Enumerate`] over a NAMED `list[scalar]` — is desugared
+/// here too, into the same Let+While+`Index` subset: the enumerate index IS the
+/// loop counter (offset by `start`), the element is the `Index` read. The
+/// element type is resolved from a per-function name→type env (params + every
+/// `let`), since — unlike [`Stmt::ForEach`] — `ForEachPair` carries no
+/// `elem_ty` field. `zip`, `Pairs` (`d.items()`), and a non-name enumerate
+/// source still refuse.
 fn desugar_module_foreach(module: &Module) -> Result<Module, BackendError> {
     let mut m = module.clone();
     for item in &mut m.items {
         match item {
             Item::Function(f) => {
+                let env = fn_name_type_env(f);
                 let mut next = 0usize;
-                f.body.stmts = desugar_foreach_stmts(&f.body.stmts, &mut next)?;
+                f.body.stmts = desugar_foreach_stmts(&f.body.stmts, &mut next, &env)?;
             }
             Item::Struct { methods, .. } => {
                 for f in methods {
+                    let env = fn_name_type_env(f);
                     let mut next = 0usize;
-                    f.body.stmts = desugar_foreach_stmts(&f.body.stmts, &mut next)?;
+                    f.body.stmts = desugar_foreach_stmts(&f.body.stmts, &mut next, &env)?;
                 }
             }
             _ => {}
@@ -7983,9 +7994,32 @@ fn desugar_module_foreach(module: &Module) -> Result<Module, BackendError> {
     Ok(m)
 }
 
+/// PMAT-1260: a function's `name → declared Type` env (params + every `let` in
+/// the body, a shadowing `let` overriding the param). Drives the enumerate
+/// element-type resolution in [`desugar_foreach_stmts`] — `ForEachPair` has no
+/// `elem_ty` field, so the list element type is recovered from the iterable's
+/// declared list type here. Reuses [`collect_let_types`] (the same walker the
+/// f-string int normaliser uses); it does not descend into loop bodies, so an
+/// enumerate over a name first bound *inside* another loop is not resolved and
+/// refuses honestly downstream — the common param / top-level-`let` source
+/// resolves.
+fn fn_name_type_env(f: &Function) -> HashMap<String, Type> {
+    let mut env: HashMap<String, Type> = HashMap::new();
+    for p in &f.params {
+        env.insert(p.name.clone(), p.ty.clone());
+    }
+    collect_let_types(&f.body.stmts, &mut env);
+    env
+}
+
 /// The recursive statement rewrite behind [`desugar_module_foreach`].
-/// `next` numbers the synthetic locals within one function.
-fn desugar_foreach_stmts(stmts: &[Stmt], next: &mut usize) -> Result<Vec<Stmt>, BackendError> {
+/// `next` numbers the synthetic locals within one function; `env` resolves the
+/// enumerate element type (PMAT-1260).
+fn desugar_foreach_stmts(
+    stmts: &[Stmt],
+    next: &mut usize,
+    env: &HashMap<String, Type>,
+) -> Result<Vec<Stmt>, BackendError> {
     let mut out = Vec::with_capacity(stmts.len());
     for s in stmts {
         match s {
@@ -8012,7 +8046,7 @@ fn desugar_foreach_stmts(stmts: &[Stmt], next: &mut usize) -> Result<Vec<Stmt>, 
                          element mutation cannot propagate; refused honestly",
                     ));
                 }
-                let body = desugar_foreach_stmts(body, next)?;
+                let body = desugar_foreach_stmts(body, next, env)?;
                 let k = *next;
                 *next += 1;
                 let idx = format!("__wasm_fe_i_{k}");
@@ -8114,9 +8148,111 @@ fn desugar_foreach_stmts(stmts: &[Stmt], next: &mut usize) -> Result<Vec<Stmt>, 
                     body: wbody,
                 });
             }
+            // PMAT-1260: `for i, x in enumerate(xs[, start])` over a NAMED
+            // `list[scalar]`. The enumerate index IS the loop counter (offset
+            // by `start`); the element is the same `Index` read the single-var
+            // ForEach uses. Desugared into Let+While so every downstream scan +
+            // emit pass sees only statements it already lowers. `zip`, `Pairs`
+            // (`d.items()`), and a non-name source refuse honestly.
+            Stmt::ForEachPair {
+                first,
+                second,
+                iter,
+                kind,
+                body,
+            } => {
+                let PairIterKind::Enumerate { start } = kind else {
+                    return Err(unsupported(
+                        "for-loop over zip(...) or a list of 2-tuples \
+                         (d.items()) — the WASM subset paired-iterates only \
+                         `enumerate(<named list>)`; the two-source / \
+                         shortest-iterable / tuple-element cases are not yet in \
+                         the lane",
+                    ));
+                };
+                // `enumerate` binds the SECOND target to the element, so the
+                // element type is the iterable's list element type. Resolve it
+                // from the per-function env (ForEachPair carries no elem_ty).
+                let Expr::Ident(src) = iter else {
+                    return Err(unsupported(&format!(
+                        "for-loop over enumerate({}) — the WASM subset iterates \
+                         a named `list[scalar]`; bind the iterable to a name \
+                         first",
+                        expr_kind(iter)
+                    )));
+                };
+                let elem_ty = match env.get(src) {
+                    Some(Type::List(elem)) => (**elem).clone(),
+                    _ => {
+                        return Err(unsupported(&format!(
+                            "for-loop over enumerate(`{src}`) — `{src}` is not a \
+                             declared `list[scalar]` in scope; the WASM \
+                             enumerate subset needs its element type"
+                        )));
+                    }
+                };
+                let body = desugar_foreach_stmts(body, next, env)?;
+                let k = *next;
+                *next += 1;
+                let idx = format!("__wasm_fe_i_{k}");
+                // The enumerate index: the raw counter, offset by `start` when
+                // non-zero (`checked` semantics are unnecessary — the WASM lane
+                // models Python `int` as i64 throughout).
+                let index_val = if *start == 0 {
+                    Expr::Ident(idx.clone())
+                } else {
+                    Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Ident(idx.clone())),
+                        rhs: Box::new(Expr::LitInt(*start)),
+                    }
+                };
+                let mut wbody = Vec::with_capacity(body.len() + 3);
+                // Both bindings read the counter BEFORE the increment, so the
+                // index is the current position (CPython-exact) and `continue`
+                // (→ `br` back to the `while` cond) still sees the advance.
+                wbody.push(Stmt::Let {
+                    name: first.clone(),
+                    ty: Type::I64,
+                    value: index_val,
+                    mutable: false,
+                });
+                wbody.push(Stmt::Let {
+                    name: second.clone(),
+                    ty: elem_ty,
+                    value: Expr::Index {
+                        collection: Box::new(Expr::Ident(src.clone())),
+                        index: Box::new(Expr::Ident(idx.clone())),
+                    },
+                    mutable: false,
+                });
+                wbody.push(Stmt::Assign {
+                    name: idx.clone(),
+                    value: Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Ident(idx.clone())),
+                        rhs: Box::new(Expr::LitInt(1)),
+                    },
+                });
+                wbody.extend(body);
+                out.push(Stmt::Let {
+                    name: idx.clone(),
+                    ty: Type::I64,
+                    value: Expr::LitInt(0),
+                    mutable: true,
+                });
+                out.push(Stmt::While {
+                    cond: Expr::BinOp {
+                        op: BinOp::Lt,
+                        lhs: Box::new(Expr::Ident(idx.clone())),
+                        rhs: Box::new(Expr::Len(Box::new(Expr::Ident(src.clone())))),
+                    },
+                    body: wbody,
+                });
+            }
             Stmt::While { cond, body } => out.push(Stmt::While {
                 cond: cond.clone(),
-                body: desugar_foreach_stmts(body, next)?,
+                body: desugar_foreach_stmts(body, next, env)?,
             }),
             Stmt::If {
                 cond,
@@ -8124,8 +8260,8 @@ fn desugar_foreach_stmts(stmts: &[Stmt], next: &mut usize) -> Result<Vec<Stmt>, 
                 else_body,
             } => out.push(Stmt::If {
                 cond: cond.clone(),
-                then_body: desugar_foreach_stmts(then_body, next)?,
-                else_body: desugar_foreach_stmts(else_body, next)?,
+                then_body: desugar_foreach_stmts(then_body, next, env)?,
+                else_body: desugar_foreach_stmts(else_body, next, env)?,
             }),
             other => out.push(other.clone()),
         }
