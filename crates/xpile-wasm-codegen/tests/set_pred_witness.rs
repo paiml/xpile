@@ -30,8 +30,9 @@
 //!   a >  b  ⇔  subset(b, a) ∧ |b| < |a|     (SetPredOp::ProperSuperset)
 //! ```
 //!
-//! `a.isdisjoint(b)` (`SetPredOp::Disjoint`) needs a distinct no-common-element
-//! walk and is refused honestly.
+//! `a.isdisjoint(b)` (`SetPredOp::Disjoint`) has its own DUAL helper as of
+//! PMAT-1246 (see `set_disjoint_witness.rs`); this witness covers the ordering
+//! relations.
 //!
 //! Every value pin is cross-checked against live `python3`. Gated on
 //! `wasm_runtime_available()` — a clean skip (still asserting the EMIT path
@@ -334,7 +335,7 @@ fn set_pred_lowers_and_carries_helper() {
 }
 
 #[test]
-fn set_pred_refuses_mixed_and_disjoint() {
+fn set_pred_refuses_mixed() {
     // A set predicate against a NON-set operand is refused.
     let mixed = module(
         "setpred_mixed",
@@ -373,24 +374,6 @@ fn set_pred_refuses_mixed_and_disjoint() {
     assert!(
         msg.contains("key kind"),
         "mixed-kind set predicate must name the key-kind mismatch: {msg}"
-    );
-
-    // `a.isdisjoint(b)` (Disjoint) is NOT subset — refused honestly for now.
-    let disjoint = module(
-        "setpred_disjoint",
-        vec![func(
-            "f",
-            vec![iset("a", &[1, 2]), iset("b", &[3, 4])],
-            pred(SetPredOp::Disjoint, "a", "b"),
-        )],
-    );
-    let msg = format!(
-        "{:?}",
-        emit_module(&disjoint).expect_err("isdisjoint must be refused")
-    );
-    assert!(
-        msg.contains("isdisjoint") || msg.contains("disjoint"),
-        "isdisjoint must be refused as an unwired predicate: {msg}"
     );
 }
 

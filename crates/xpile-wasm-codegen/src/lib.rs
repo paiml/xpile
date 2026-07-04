@@ -6207,6 +6207,72 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     writeln!(out, "    i32.const 1").expect("write");
     writeln!(out, "  )").expect("write");
 
+    // PMAT-1246: set disjoint — `set(p).isdisjoint(set(q))` ? 1 : 0. The
+    // no-common-element predicate — the DUAL of subset: subset returns 0 on ANY
+    // ABSENT key (∀ key∈p: key∈q), disjoint returns 0 on ANY PRESENT key
+    // (∀ key∈p: key∉q). Two disjoint sets share nothing; if any key of p is a
+    // member of q the sets intersect. Walk p, probe q with the never-trapping
+    // `$__wasm_dict_has_{s}` (already forced by a set of this kind → NO new helper
+    // dependency). NO size gate — disjoint has no cardinality relation (a size-1
+    // set can be disjoint from a size-100 one). SYMMETRIC (p∩q=∅ ⇔ q∩p=∅) so
+    // walking p vs q is CPython-exact regardless of which side is the receiver;
+    // order-INDEPENDENT so it survives a swap-into-hole discard. Two EMPTY sets are
+    // disjoint (the loop never runs → falls through to 1), matching CPython.
+    writeln!(
+        out,
+        "  ;; __wasm_set_disjoint_{s}(p, q) = set(p).isdisjoint(set(q)) ? 1 : 0 (∀ key∈p: key∉q)"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_set_disjoint_{s} (param $p i32) (param $q i32) (result i32)"
+    )
+    .expect("write");
+    writeln!(out, "    (local $i i32) (local $n i32) (local $ea i32)").expect("write");
+    // walk p; the FIRST key that is a member of q → the sets intersect → return 0.
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.set $n").expect("write");
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "    local.set $i").expect("write");
+    writeln!(out, "    (block $done").expect("write");
+    writeln!(out, "      (loop $next").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        local.get $n").expect("write");
+    writeln!(out, "        i32.ge_s").expect("write");
+    writeln!(out, "        br_if $done").expect("write");
+    // $ea = p + LIST_ELEMS_OFFSET + i*DICT_ENTRY_SIZE (entry i's address).
+    writeln!(out, "        local.get $p").expect("write");
+    writeln!(out, "        i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "        i32.mul").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $ea").expect("write");
+    // if key@ea IS in q → the sets share a key → return 0 (not disjoint).
+    writeln!(out, "        local.get $q").expect("write");
+    writeln!(out, "        local.get $ea").expect("write");
+    match kind {
+        KeyKind::Int => writeln!(out, "        i64.load").expect("write"),
+        KeyKind::Str => writeln!(out, "        i32.load").expect("write"),
+    }
+    writeln!(out, "        call $__wasm_dict_has_{s}").expect("write");
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          i32.const 0").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const 1").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $i").expect("write");
+    writeln!(out, "        br $next").expect("write");
+    writeln!(out, "      )").expect("write");
+    writeln!(out, "    )").expect("write");
+    // no key of p is a member of q → p ∩ q = ∅ → disjoint.
+    writeln!(out, "    i32.const 1").expect("write");
+    writeln!(out, "  )").expect("write");
+
     // set: update an existing key in place, else append at count. PMAT-999: on
     // overflow (count >= capacity) the region GROWS — bump-alloc a 2x region,
     // memory.copy the header + entries, and RETURN the (possibly relocated)
@@ -11375,8 +11441,8 @@ fn emit_expr(
         // comparison operators to `SetPred`, NOT `BinOp` — so this is the path
         // that makes set ordering reachable from Python source; it reuses the
         // `$__wasm_set_subset_<k>` membership helper PMAT-1244 already emits.
-        // `a.isdisjoint(b)` (`SetPredOp::Disjoint`) needs a distinct walk and is
-        // refused honestly.
+        // `a.isdisjoint(b)` (`SetPredOp::Disjoint`) routes to its own DUAL helper
+        // `$__wasm_set_disjoint_<k>` (return 0 on any shared key) — PMAT-1246.
         Expr::SetPred { lhs, op, rhs } => emit_set_pred(lhs, *op, rhs, scope, out, depth),
         // PMAT-1127: `needle in haystack` over strings — an i32 bool substring
         // test via a non-allocating byte search. Both operands lower to i32
@@ -13764,8 +13830,9 @@ fn binop_operand_is_dict(e: &Expr, scope: &Scope) -> bool {
 /// The strict variants AND on an inline header size compare (a subset of unequal
 /// size is a proper subset, since `p ⊆ q ⟹ |p| ≤ |q|` for sets). Both operands
 /// are set Idents (the WASM subset only orders set locals), so re-emitting one
-/// for the size reload is a pure `local.get`. `isdisjoint` (`Disjoint`) needs a
-/// distinct no-common-element walk (not subset) and is refused honestly.
+/// for the size reload is a pure `local.get`. PMAT-1246: `isdisjoint`
+/// (`Disjoint`) routes to its own `$__wasm_set_disjoint_<k>` helper — the DUAL
+/// walk (return 0 on any SHARED key), no size gate, no operand swap.
 fn emit_set_pred(
     lhs: &Expr,
     op: SetPredOp,
@@ -13801,19 +13868,24 @@ fn emit_set_pred(
         )));
     }
     let sfx = lk.suffix();
+    // PMAT-1246: `a.isdisjoint(b)` — the no-common-element predicate. Its own
+    // helper (return 0 on ANY shared key, the DUAL of subset's return-0-on-any-
+    // absent-key walk), NOT the subset helper: disjoint has no cardinality
+    // relation, so there is no size-gate or operand-swap to share. Symmetric, so
+    // walk lhs vs rhs directly.
+    if matches!(op, SetPredOp::Disjoint) {
+        emit_expr(lhs, scope, out, depth)?;
+        emit_expr(rhs, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "call $__wasm_set_disjoint_{sfx}").expect("write");
+        return Ok(WatTy::I32);
+    }
     // (sub, sup) = the (⊆-inner, ⊇-outer) operands for THIS predicate — subset
     // asks a ⊆ b; superset flips the containment to b ⊆ a.
     let (sub, sup) = match op {
         SetPredOp::Subset | SetPredOp::ProperSubset => (lhs, rhs),
         SetPredOp::Superset | SetPredOp::ProperSuperset => (rhs, lhs),
-        SetPredOp::Disjoint => {
-            return Err(unsupported(
-                "set `a.isdisjoint(b)` — the no-common-element predicate needs a \
-                 distinct membership walk (return 0 on ANY shared key, not the \
-                 subset all-present walk); refused honestly (only subset/superset \
-                 ordering `<`/`<=`/`>`/`>=` is wired, PMAT-1245)",
-            ));
-        }
+        SetPredOp::Disjoint => unreachable!("Disjoint handled above"),
     };
     emit_expr(sub, scope, out, depth)?;
     emit_expr(sup, scope, out, depth)?;
