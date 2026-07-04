@@ -3964,6 +3964,123 @@ const STR_ISDIGIT_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1191: `$__wasm_str_isalpha(s) -> i32` — Python `s.isalpha()` as a bool
+/// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is an ASCII letter
+/// `'A'`–`'Z'` or `'a'`–`'z'`, else `0`. Non-allocating (a single left-to-right
+/// scan of the payload bytes with no heap use — it does NOT ride `needs_heap`).
+/// The direct predicate twin of [`STR_ISDIGIT_HELPER`], differing only in the
+/// per-byte ASCII-membership test (two letter ranges instead of one digit range).
+///
+/// **Empty string → `0`.** Python's `"".isalpha()` is `False` (a vacuous "all
+/// chars are letters" is nonetheless `False`), so a zero-length `s` returns `0`
+/// before the loop.
+///
+/// **ASCII-only, with the honest runtime boundary of the isdigit sibling — but
+/// short-circuited on a definitive answer first.** Python's `str.isalpha()`
+/// also accepts Unicode letter code points (`"é".isalpha()` is `True`), which
+/// needs a Unicode table this scalar lane does not carry. The scan is therefore
+/// ordered so a DEFINITIVE answer never traps:
+///   * a NON-ASCII byte (`>= 0x80`) is reached only when every prior byte was an
+///     ASCII letter — the result is then genuinely undecidable (the trailing code
+///     point might or might not be a Unicode letter), so it executes `unreachable`
+///     (a TRAP, like the `upper`/`lower`/`isdigit` siblings) rather than silently
+///     returning a wrong bool;
+///   * a DEFINITIVELY non-letter ASCII byte (below `'A'`, in the gap `'Z'`..`'a'`
+///     — i.e. `[\]^_`` — or above `'z'`) short-circuits to `0` BEFORE any later
+///     non-ASCII byte is examined, so `"1é".isalpha()` returns `0` (Python's
+///     answer) and never traps — the earlier ASCII byte already forces `False`.
+///
+/// So a pure-ASCII `s` is answer-exact; a non-ASCII `s` whose ASCII prefix is all
+/// letters aborts; a non-ASCII `s` with any earlier non-letter ASCII byte returns
+/// `0`. It never passes an unmapped non-ASCII byte off as a wrong `True`/`False`.
+const STR_ISALPHA_HELPER: &str = "\
+  ;; PMAT-1191 __wasm_str_isalpha(s) = Python s.isalpha() (i32 bool). True iff s
+  ;; is non-empty AND every code point is an ASCII letter 'A'..'Z' or 'a'..'z'.
+  ;; Empty -> 0 (Python's vacuous-all is still False). ASCII-only honest
+  ;; boundary: a byte >= 0x80 reached with every prior byte a letter is an
+  ;; undecidable Unicode-letter case (\"\\u00e9\".isalpha() is True) -> unreachable
+  ;; (trap); a definitively non-letter ASCII byte short-circuits to 0 BEFORE any
+  ;; later non-ASCII byte, so \"1\\u00e9\" returns 0 (not a trap), matching Python.
+  (func $__wasm_str_isalpha (param $s i32) (result i32)
+    (local $slen i32)
+    (local $i i32)
+    (local $c i32)
+    ;; slen = byte length of s
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; empty string -> False (Python)
+    local.get $slen
+    i32.eqz
+    if
+      i32.const 0
+      return
+    end
+    ;; for i in 0..slen
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte (all prior bytes were letters) -> undecidable -> trap
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; c < 'A' (0x41) -> a non-letter ASCII byte -> definitively 0
+        local.get $c
+        i32.const 0x41
+        i32.lt_u
+        if
+          i32.const 0
+          return
+        end
+        ;; 'Z' < c < 'a'  (0x5B..0x60: '[\\]^_`') -> a non-letter ASCII byte -> 0
+        local.get $c
+        i32.const 0x5A
+        i32.gt_u
+        local.get $c
+        i32.const 0x61
+        i32.lt_u
+        i32.and
+        if
+          i32.const 0
+          return
+        end
+        ;; c > 'z' (0x7A) -> a non-letter ASCII byte -> definitively 0
+        local.get $c
+        i32.const 0x7A
+        i32.gt_u
+        if
+          i32.const 0
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    ;; non-empty and every byte was an ASCII letter -> True
+    i32.const 1
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5445,6 +5562,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // below, alongside `needs_startswith`/`needs_endswith`, whichever way the
     // receiver reaches memory).
     let needs_isdigit = module_uses_str_method(module, StrMethodOp::IsDigit);
+    // PMAT-1191: `s.isalpha()` (`Expr::StrMethod`, op `IsAlpha`) — the predicate
+    // twin of `isdigit`: a bool (i32) `1` iff `s` is non-empty and every code
+    // point is an ASCII letter. Same non-allocating byte scan — it does NOT ride
+    // `needs_heap`; it carries its own `$__wasm_str_isalpha` helper and only needs
+    // the `(memory …)` its payload load reads (pulled in below alongside
+    // `needs_isdigit`).
+    let needs_isalpha = module_uses_str_method(module, StrMethodOp::IsAlpha);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5457,6 +5581,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_find
         || needs_rfind
         || needs_isdigit
+        || needs_isalpha
     {
         writeln!(
             out,
@@ -5693,6 +5818,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // helper. Gated on an actual use so an unrelated module carries no dead code.
     if needs_isdigit {
         out.push_str(STR_ISDIGIT_HELPER);
+    }
+    // PMAT-1191: emit the string ISALPHA helper once, when any function uses
+    // `s.isalpha()` (`Expr::StrMethod`, op `IsAlpha`). Like `isdigit` it is
+    // non-allocating (a single byte scan returning a bool), so it is gated ONLY
+    // on `needs_isalpha`, NOT `needs_heap`: a read-only str module
+    // (`def f(s): return s.isalpha()`) carries no allocator but still needs it.
+    if needs_isalpha {
+        out.push_str(STR_ISALPHA_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -8469,15 +8602,32 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_isdigit").expect("write");
             Ok(WatTy::I32)
         }
+        // PMAT-1191: `s.isalpha()` — a bool (i32) predicate: `1` iff `s` is
+        // non-empty and every code point is an ASCII letter 'A'..'Z'/'a'..'z'.
+        // The receiver lowers to an i32 base-pointer (`emit_str_expr`), then the
+        // non-allocating `$__wasm_str_isalpha` helper scans the payload bytes.
+        // ASCII-only honest boundary: a non-ASCII byte reached with every prior
+        // byte a letter TRAPS (Unicode letters need a table this lane lacks),
+        // while a definitively non-letter ASCII byte short-circuits to `0` first.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsAlpha,
+            args,
+        } if args.is_empty() => {
+            emit_str_expr(recv, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_isalpha").expect("write");
+            Ok(WatTy::I32)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
              `.find(p, start)`, `.rfind(p)`, `.rfind(p, start)`, `.index(p)`, \
              `.rindex(p)`, `.removeprefix(p)`, `.removesuffix(p)`, \
-             `.replace(old, new)`, `.replace(old, new, count)`, and `.isdigit()` \
-             are supported; the other is* predicates, upper/lower/strip/split/…, \
-             the 3-arg `.find`/`.rfind`(p, start, end), and the start/end forms of \
-             index/rindex/count are refused"
+             `.replace(old, new)`, `.replace(old, new, count)`, `.isdigit()`, and \
+             `.isalpha()` are supported; the other is* predicates, \
+             upper/lower/strip/split/…, the 3-arg `.find`/`.rfind`(p, start, end), \
+             and the start/end forms of index/rindex/count are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
