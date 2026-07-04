@@ -41,7 +41,8 @@
 //! path lowers + carries the `$__wasm_str_pad` helper + call) on a host without
 //! WABT.
 
-use std::process::Command;
+use std::collections::BTreeSet;
+use std::process::{Command, Stdio};
 
 use xpile_meta_hir::{Block, Expr, Function, Item, Module, Param, SourceLang, StrMethodOp, Type};
 use xpile_wasm_codegen::{emit_module, wasm_runtime_available};
@@ -403,5 +404,255 @@ fn real_pad_program_executes_in_wasm_and_matches_cpython() {
          value-matched CPython (incl. non-ASCII 'café'->'  café' char-exact, empty \
          ''->'   ', negative width copy, and the center parity bias \
          'ab'.center(5)->'  ab ' / 'abcd'.center(9)->'   abcd  ')."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// PMAT-1215 — RANDOMIZED DIFFERENTIAL fuzz for the width-arg pad family vs LIVE
+// python3. The pinned `CASES` above nail the headline forms, but a hand-picked
+// table only catches the inputs the author enumerated. This fuzz drives
+// rjust/ljust/center over a deterministic corpus of ASCII *and* MULTIBYTE
+// strings × a systematic width sweep straddling the width-vs-charlen boundary
+// and every center parity combination (even/odd pad × even/odd width),
+// comparing each EXECUTED WASM result byte-for-byte against the value python3
+// actually returns.
+//
+// Why this is the missing witness: the pad family is char-exact with NO trap
+// arm, so multibyte inputs are IN SCOPE (unlike the ASCII-only case-fold fuzz in
+// `str_family_fuzz_witness.rs` (PMAT-1207), whose ops trap on non-ASCII, and
+// which never took a width arg). So this is the FIRST randomized *multibyte*
+// width-math differential — exactly where a code-point-vs-byte width bug or a
+// center parity off-by-one would surface on a width the 15 pinned cases never
+// touch. python3 is the literal oracle → zero reimplementation risk.
+// ---------------------------------------------------------------------------
+
+/// Deterministic 64-bit LCG (no `rand` → `cargo deny` clean, byte-stable corpus).
+struct Lcg(u64);
+impl Lcg {
+    fn next_u64(&mut self) -> u64 {
+        // Numerical-Recipes / PCG-style multiplier + odd increment.
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next_u64() >> 33) as usize % n
+    }
+}
+
+/// Fuzz corpus for the pad family: curated ASCII edges of both char-len
+/// parities, multibyte code points of every UTF-8 width (2-byte é/Greek, 3-byte
+/// €/CJK, 4-byte astral emoji), interior/edge/all-space cases, and a handful of
+/// deterministic LCG-built ASCII strings. Deduped + ordered (BTreeSet) so the
+/// corpus is byte-stable run to run.
+fn pad_corpus() -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for s in [
+        "",
+        "a",
+        "ab",
+        "abc",
+        "abcd",
+        "abcde", // ASCII, char-len 0..5 (both parities)
+        "café",
+        "é",
+        "αβ",
+        "αβγ", // 2-byte code points (é / Greek)
+        "€",
+        "a€b",
+        "日本",
+        "日本語", // 3-byte code points (€ / CJK)
+        "🎉",
+        "🎉x",
+        "x🎉y", // 4-byte astral emoji
+        "π=3",
+        " a ",
+        "  ", // mixed + interior/edge/all-space
+    ] {
+        set.insert(s.to_string());
+    }
+    // A few deterministic ASCII strings so the corpus is not purely curated.
+    const ALPHABET: &[u8] = b"abAB01 _";
+    let mut rng = Lcg(0xD1B54A32D192ED03); // arbitrary fixed seed
+    for _ in 0..6 {
+        let len = rng.below(6); // 0..=5
+        let mut bytes = Vec::with_capacity(len);
+        for _ in 0..len {
+            bytes.push(ALPHABET[rng.below(ALPHABET.len())]);
+        }
+        set.insert(String::from_utf8(bytes).expect("ASCII bytes are valid UTF-8"));
+    }
+    set.into_iter().collect()
+}
+
+/// The width sweep for a string of char-length `l`: `-1` (negative → copy), `l`
+/// (width == charlen boundary → no pad), `l+1..=l+3` (walk the center parity
+/// bias through every (pad-parity × width-parity) combination across even/odd-
+/// length strings), and `l+6` (a larger pad). Crucially the sweep is anchored to
+/// the CODE-POINT count, so a byte-length width bug on a multibyte input lands
+/// off-by-`(byte_len - char_len)` and is caught.
+fn width_sweep(l: usize) -> Vec<i64> {
+    let l = l as i64;
+    vec![-1, l, l + 1, l + 2, l + 3, l + 6]
+}
+
+/// `true` iff `python3` is invocable (the differential oracle).
+fn python3_available() -> bool {
+    Command::new("python3")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Lowercase hex of a byte slice — ASCII-safe wire format for the oracle (a
+/// space / control byte in the payload would otherwise break the line protocol).
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Decode lowercase hex to bytes.
+fn unhex(h: &str) -> Vec<u8> {
+    (0..h.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&h[i..i + 2], 16).expect("valid hex pair"))
+        .collect()
+}
+
+/// The python3 pad oracle: one task per line (`<op> <hex> <width>`) fed to a
+/// single python3 process; returns `getattr(s, op)(int(width))` per line as
+/// lowercase `<hex>` (UTF-8-encoded, since a padded result may carry a multibyte
+/// payload). The empty input keeps a stable 3-token layout (`op  width`, the
+/// middle hex empty), so `split(' ')` is always exactly three fields.
+fn python_pad_oracle(tasks: &[(&str, String, i64)]) -> Vec<String> {
+    let script = r#"
+import sys
+out = []
+for ln in sys.stdin.read().splitlines():
+    if not ln:
+        continue
+    op, h, w = ln.split(' ')
+    s = bytes.fromhex(h).decode('utf-8')
+    r = getattr(s, op)(int(w))
+    out.append(r.encode('utf-8').hex())
+sys.stdout.write('\n'.join(out))
+"#;
+    let mut input = String::new();
+    for (op, h, w) in tasks {
+        input.push_str(&format!("{op} {h} {w}\n"));
+    }
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child
+                .stdin
+                .take()
+                .expect("python3 stdin")
+                .write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .expect("run python3 pad oracle");
+    assert!(
+        out.status.success(),
+        "python3 pad oracle failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| l.to_string())
+        .collect()
+}
+
+fn op_from_name(n: &str) -> StrMethodOp {
+    match n {
+        "rjust" => StrMethodOp::RJust,
+        "ljust" => StrMethodOp::LJust,
+        "center" => StrMethodOp::Center,
+        _ => unreachable!("pad fuzz only exercises rjust/ljust/center"),
+    }
+}
+
+#[test]
+fn pad_family_matches_cpython_over_randomized_multibyte_corpus() {
+    // The EMIT path must lower for every pad op regardless of WABT/python3 (holds
+    // on free CI too) — a construct smoke.
+    for op in [StrMethodOp::RJust, StrMethodOp::LJust, StrMethodOp::Center] {
+        emit_module(&pad_module(op))
+            .unwrap_or_else(|e| panic!("pad {} must lower: {e:?}", op_name(op)));
+    }
+    if !wasm_runtime_available() {
+        eprintln!(
+            "PMAT-1215: skipping EXECUTED pad fuzz — WABT (wat2wasm / wasm-interp) \
+             absent. The pad programs lowered through emit_module above; a box with \
+             WABT + python3 also runs the corpus and value-matches CPython."
+        );
+        return;
+    }
+    if !python3_available() {
+        eprintln!("PMAT-1215: skipping pad fuzz — python3 (the oracle) absent.");
+        return;
+    }
+
+    // Build the (op, string, width) case set, deduped + ordered for stability.
+    let corpus = pad_corpus();
+    let mut cases: BTreeSet<(&str, String, i64)> = BTreeSet::new();
+    for s in &corpus {
+        let l = s.chars().count();
+        for w in width_sweep(l) {
+            for op in ["rjust", "ljust", "center"] {
+                cases.insert((op, s.clone(), w));
+            }
+        }
+    }
+    let cases: Vec<(&str, String, i64)> = cases.into_iter().collect();
+    eprintln!(
+        "PMAT-1215: randomized pad differential over {} inputs → {} (op, input, width) \
+         cases vs live python3",
+        corpus.len(),
+        cases.len()
+    );
+
+    // 1) One batched python3 call for the whole ground truth.
+    let tasks: Vec<(&str, String, i64)> = cases
+        .iter()
+        .map(|(op, s, w)| (*op, hex(s.as_bytes()), *w))
+        .collect();
+    let oracle = python_pad_oracle(&tasks);
+    assert_eq!(
+        oracle.len(),
+        cases.len(),
+        "python3 pad oracle returned {} results for {} tasks",
+        oracle.len(),
+        cases.len()
+    );
+
+    // 2) Execute each case in WABT and diff byte-for-byte against CPython.
+    let mut ran = 0usize;
+    for ((op_name_s, s, w), want_hex) in cases.iter().zip(oracle.iter()) {
+        let expected =
+            String::from_utf8(unhex(want_hex)).expect("python pad result is valid UTF-8");
+        let op = op_from_name(op_name_s);
+        let got = exec_pad(op, s, *w, &expected).expect("WABT present");
+        assert_eq!(
+            got, expected,
+            "executed WASM {s:?}.{op_name_s}({w}) = {got:?} but CPython = {expected:?}"
+        );
+        ran += 1;
+    }
+    assert_eq!(ran, cases.len());
+    eprintln!(
+        "PMAT-1215: all {ran} (op, input, width) pad cases executed in WABT and \
+         value-matched live python3 — no silent divergence in the pad family width \
+         math (incl. multibyte char-vs-byte width + center parity across all widths)."
     );
 }
