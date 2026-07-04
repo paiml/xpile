@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1272
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1272: [wasm/verify/list] EXECUTED FULL-PIPELINE ADVERSARIAL witness for the native-WASM `xs[lo:hi]` list slice (PMAT-1256) over `list[int]` / `list[float]` — closes a genuine ZERO-COVERAGE gap: the list-slice op shipped with only shared frontend-reachability guarding and NO executed witness pinning its Python SLICE SEMANTICS on the WASM lane (the only `*slice*` test file was `str_slice_witness.rs`). Python `xs[lo:hi]` is NOT a raw `[lo, hi)` cut: a negative bound WRAPS (`-k` -> `len+k`), an out-of-range bound CLAMPS to `[0, len]`, and an inverted range (`lo >= hi` post-normalisation) yields the EMPTY list — never a trap, never a wrap-around read. Those three rules are exactly where a naive `memcpy(base+lo*8, (hi-lo)*8)` lowering silently miscompiles (negative index -> wild pointer; `hi > len` -> OOB read; `lo > hi` -> negative length). Found during a scheduled adversarial-verify skeptic pass (feedback-ultracode-adversarial-verify) over the recently-shipped WASM list surface (PMAT-1248..1262): a live `xpile transpile --target wasm` -> WABT -> CPython differential harness confirmed all three slice edges VALUE-MATCH CPython, but there was no durable CI guard locking that in. TEST-ONLY (a new tests/list_slice_adversarial_witness.rs, 4 tests), no product-code change — ADDITIVE and DISJOINT from the serial emit-lane hotspot, so no parallel-codegen collision.'
+  status: done
+  priority: high
+  created: 2026-07-04T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open). forward_ev_ranking rank 1 (adversarial-verify discipline). A skeptic pass over PMAT-1248..1262 (the rapid WASM-list-surface series) built a live CLI->WABT->CPython differential harness and threw adversarial edges at every recently-shipped op (slice OOB/negative/inverted, sorted with dups+negatives, min/max float ties, zip length-mismatch both directions, enumerate negative-start, nested for-loops, int/float membership, concat-with-empty, min-of-empty trap). NOTHING was refuted — all match CPython — so the deliverable is the durable regression guard the highest-risk op (slice, with the most subtle Python semantics) was missing. IMPORTANT INFRA LESSON re-confirmed: the concurrent OS-cron sprint fire clobbers the SHARED /mnt/nvme-raid0/targets/xpile binary mid-probe (a rebuilt-but-wrong-branch binary produced false REFUSED results); ground truth required an isolated `git worktree` + explicit --target-dir build (feedback-stale-target-debug-binary / feedback-concurrent-interactive-clobbers-cron)."
+  - "COVERAGE (test-only): tests/list_slice_adversarial_witness.rs (4 tests). int_slice_adversarial_executes_and_matches_cpython (7 cases folding len(ys)*1e8 + a base-100 positional accumulation of the sliced payload, so a single scalar certifies BOTH length AND element order/content: in-range interior cut, hi-past-end clamp, both-bounds-negative wrap, negative-lo/positive-hi mix, lo>hi inverted->empty, both-past-end->empty, explicit whole-list identity copy). float_slice_executes_and_matches_cpython (the f64 element-copy twin over a negative-wrap range). empty_list_slice_is_empty (slicing a real length-0 param header is EMPTY, never a trap). stepped_list_slice_refuses_honestly (a stepped `xs[i:j:k]` is outside the step-1 subset and errors with a message naming the shape, not a silent stride-drop). Each lowers REAL Python through the production PythonFrontend (CLI --target wasm profile: AliasSemantics::Reference + runtime_abort) -> emit_module -> wat2wasm -> wasm-interp and VALUE-MATCHES CPython. Gated on wasm_runtime_available (clean emit-only skip on a WABT-less host); all 4 executed green on this host."
+  - "DONE: full gate green — fmt --all --check, clippy -p xpile-wasm-codegen --all-targets -D warnings, cargo test -p xpile-wasm-codegen (full suite, no regression). Built + gated in an isolated worktree immune to the concurrent-cron clobber. Sprint 2026-07-04. CITES C-COMPILE-RUST-TO-WASM (no new contract/Lean module — a test-only hardening slice over the existing slice capability)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+
 - id: PMAT-1262
   github_issue: null
   item_type: task
