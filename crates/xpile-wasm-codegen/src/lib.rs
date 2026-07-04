@@ -4199,6 +4199,135 @@ const STR_ISSPACE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1195: `$__wasm_str_isalnum(s) -> i32` — Python `s.isalnum()` as a bool
+/// (i32 0/1): `1` iff `s` is NON-EMPTY and every code point is ASCII
+/// alphanumeric, else `0`. Non-allocating (a single left-to-right scan of the
+/// payload bytes with no heap use — it does NOT ride `needs_heap`). The fourth
+/// predicate twin of [`STR_ISDIGIT_HELPER`] / [`STR_ISALPHA_HELPER`] /
+/// [`STR_ISSPACE_HELPER`], and the direct UNION of the isdigit and isalpha
+/// membership tests — the ASCII ALPHANUMERIC set is three contiguous ranges:
+/// `0x30`–`0x39` (`'0'`–`'9'`), `0x41`–`0x5A` (`'A'`–`'Z'`) and `0x61`–`0x7A`
+/// (`'a'`–`'z'`).
+///
+/// **Empty string → `0`.** Python's `"".isalnum()` is `False` (a vacuous "all
+/// chars are alphanumeric" is nonetheless `False`), so a zero-length `s` returns
+/// `0` before the loop.
+///
+/// **ASCII-only, with the honest runtime boundary of the isdigit/isalpha/isspace
+/// siblings — but short-circuited on a definitive answer first.** Python's
+/// `str.isalnum()` also accepts non-ASCII Unicode alphanumerics (`"²".isalnum()`
+/// — a superscript two — and `"é".isalnum()` are both `True`), which needs a
+/// Unicode table this scalar lane does not carry. The scan is therefore ordered
+/// so a DEFINITIVE answer never traps:
+///   * a NON-ASCII byte (`>= 0x80`) is reached only when every prior byte was
+///     ASCII alphanumeric — the result is then genuinely undecidable (the
+///     trailing code point might or might not be a Unicode letter/digit), so it
+///     executes `unreachable` (a TRAP, like the `isdigit` / `isalpha` /
+///     `isspace` siblings) rather than silently returning a wrong bool;
+///   * a DEFINITIVELY non-alphanumeric ASCII byte (any byte `< 0x80` outside the
+///     three ranges) short-circuits to `0` BEFORE any later non-ASCII byte is
+///     examined, so `"a!é".isalnum()` returns `0` (Python's answer) and never
+///     traps — the earlier `!` already forces `False`.
+///
+/// So a pure-ASCII `s` is answer-exact; a non-ASCII `s` whose ASCII prefix is all
+/// alphanumeric aborts; a non-ASCII `s` with any earlier non-alphanumeric ASCII
+/// byte returns `0`. It never passes an unmapped non-ASCII byte off as a wrong
+/// bool.
+const STR_ISALNUM_HELPER: &str = "\
+  ;; PMAT-1195 __wasm_str_isalnum(s) = Python s.isalnum() (i32 bool). True iff s
+  ;; is non-empty AND every code point is ASCII alphanumeric: 0x30..0x39 ('0'..'9')
+  ;; or 0x41..0x5a ('A'..'Z') or 0x61..0x7a ('a'..'z'). Empty -> 0 (Python's
+  ;; vacuous-all is still False). ASCII-only honest boundary: a byte >= 0x80
+  ;; reached with every prior byte alphanumeric is an undecidable Unicode
+  ;; letter/digit case (\"\\u00b2\".isalnum() is True) -> unreachable (trap); a
+  ;; definitively non-alphanumeric ASCII byte short-circuits to 0 BEFORE any later
+  ;; non-ASCII byte, so \"a!\\u00e9\" returns 0 (not a trap), matching Python.
+  (func $__wasm_str_isalnum (param $s i32) (result i32)
+    (local $slen i32)
+    (local $i i32)
+    (local $c i32)
+    ;; slen = byte length of s
+    local.get $s
+    i32.load
+    local.set $slen
+    ;; empty string -> False (Python)
+    local.get $slen
+    i32.eqz
+    if
+      i32.const 0
+      return
+    end
+    ;; for i in 0..slen
+    i32.const 0
+    local.set $i
+    block $done
+      loop $loop
+        local.get $i
+        local.get $slen
+        i32.ge_s
+        br_if $done
+        ;; c = load byte s[8 + i]
+        local.get $s
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $c
+        ;; non-ASCII byte (all prior bytes were alphanumeric) -> undecidable -> trap
+        local.get $c
+        i32.const 0x80
+        i32.ge_u
+        if
+          unreachable
+        end
+        ;; is_alnum = (0x30<=c<=0x39) | (0x41<=c<=0x5a) | (0x61<=c<=0x7a);
+        ;; NOT alnum -> definitively 0
+        ;; (0x30 <= c) & (c <= 0x39)  -> digit
+        local.get $c
+        i32.const 0x30
+        i32.ge_u
+        local.get $c
+        i32.const 0x39
+        i32.le_u
+        i32.and
+        ;; (0x41 <= c) & (c <= 0x5a)  -> uppercase letter
+        local.get $c
+        i32.const 0x41
+        i32.ge_u
+        local.get $c
+        i32.const 0x5a
+        i32.le_u
+        i32.and
+        i32.or
+        ;; (0x61 <= c) & (c <= 0x7a)  -> lowercase letter
+        local.get $c
+        i32.const 0x61
+        i32.ge_u
+        local.get $c
+        i32.const 0x7a
+        i32.le_u
+        i32.and
+        i32.or
+        ;; a definitively non-alphanumeric ASCII byte -> 0
+        i32.eqz
+        if
+          i32.const 0
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $loop
+      end
+    end
+    ;; non-empty and every byte was ASCII alphanumeric -> True
+    i32.const 1
+  )
+";
+
 /// PMAT-1060: the int-to-string helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -5695,6 +5824,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // `(memory …)` its payload load reads (pulled in below alongside
     // `needs_isdigit`/`needs_isalpha`).
     let needs_isspace = module_uses_str_method(module, StrMethodOp::IsSpace);
+    // PMAT-1195: `s.isalnum()` (`Expr::StrMethod`, op `IsAlnum`) — the fourth
+    // predicate in the `is*` family: a bool (i32) `1` iff `s` is non-empty and
+    // every code point is ASCII alphanumeric (`0x30`–`0x39` / `0x41`–`0x5A` /
+    // `0x61`–`0x7A`, the UNION of the isdigit and isalpha ranges). Same
+    // non-allocating byte scan as isdigit/isalpha/isspace — it does NOT ride
+    // `needs_heap`; it carries its own `$__wasm_str_isalnum` helper and only
+    // needs the `(memory …)` its payload load reads (pulled in below alongside
+    // `needs_isdigit`/`needs_isalpha`/`needs_isspace`).
+    let needs_isalnum = module_uses_str_method(module, StrMethodOp::IsAlnum);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -5709,6 +5847,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_isdigit
         || needs_isalpha
         || needs_isspace
+        || needs_isalnum
     {
         writeln!(
             out,
@@ -5961,6 +6100,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (`def f(s): return s.isspace()`) carries no allocator but still needs it.
     if needs_isspace {
         out.push_str(STR_ISSPACE_HELPER);
+    }
+    // PMAT-1195: emit the string ISALNUM helper once, when any function uses
+    // `s.isalnum()` (`Expr::StrMethod`, op `IsAlnum`). Like isdigit/isalpha/
+    // isspace it is non-allocating (a single byte scan returning a bool), so it
+    // is gated ONLY on `needs_isalnum`, NOT `needs_heap`: a read-only str module
+    // (`def f(s): return s.isalnum()`) carries no allocator but still needs it.
+    if needs_isalnum {
+        out.push_str(STR_ISALNUM_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -8772,15 +8919,35 @@ fn emit_expr(
             writeln!(out, "call $__wasm_str_isspace").expect("write");
             Ok(WatTy::I32)
         }
+        // PMAT-1195: `s.isalnum()` — a bool (i32) predicate: `1` iff `s` is
+        // non-empty and every code point is ASCII alphanumeric (0x30..0x39,
+        // 0x41..0x5a, or 0x61..0x7a — the UNION of the isdigit and isalpha
+        // ranges). The receiver lowers to an i32 base-pointer (`emit_str_expr`),
+        // then the non-allocating `$__wasm_str_isalnum` helper scans the payload
+        // bytes. ASCII-only honest boundary: a non-ASCII byte reached with every
+        // prior byte alphanumeric TRAPS (Unicode letters/digits need a table this
+        // lane lacks), while a definitively non-alphanumeric ASCII byte
+        // short-circuits to `0` first.
+        Expr::StrMethod {
+            recv,
+            op: StrMethodOp::IsAlnum,
+            args,
+        } if args.is_empty() => {
+            emit_str_expr(recv, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_str_isalnum").expect("write");
+            Ok(WatTy::I32)
+        }
         Expr::StrMethod { op, .. } => Err(unsupported(&format!(
             "string method {op:?} on the WASM lane — only `len(s)` (CharCount), \
              `.startswith(p)`, `.endswith(p)`, `.count(p)`, `.find(p)`, \
              `.find(p, start)`, `.rfind(p)`, `.rfind(p, start)`, `.index(p)`, \
              `.rindex(p)`, `.removeprefix(p)`, `.removesuffix(p)`, \
              `.replace(old, new)`, `.replace(old, new, count)`, `.isdigit()`, \
-             `.isalpha()`, and `.isspace()` are supported; the other is* \
-             predicates, upper/lower/strip/split/…, the 3-arg `.find`/`.rfind`(p, \
-             start, end), and the start/end forms of index/rindex/count are refused"
+             `.isalpha()`, `.isspace()`, and `.isalnum()` are supported; the other \
+             is* predicates, upper/lower/strip/split/…, the 3-arg \
+             `.find`/`.rfind`(p, start, end), and the start/end forms of \
+             index/rindex/count are refused"
         ))),
         // PMAT-986: `ord(s[i])` over a `str` param — the ONE string op that
         // returns an int (a code point), so it needs no result string. Any
