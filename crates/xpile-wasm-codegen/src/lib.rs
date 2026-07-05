@@ -615,6 +615,12 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
         // PMAT-1225: `d.pop(k[, default])` — recurse into dict/key/optional
         // default (a str key literal or a literal-hosting default must be laid
         // into the static data table just like `d.get(k, default)`'s).
+        Expr::ListPop { list, index } => {
+            collect_expr_literals(list, out);
+            if let Some(index) = index {
+                collect_expr_literals(pop_index_scan_expr(index), out);
+            }
+        }
         Expr::DictPop { dict, key, default } => {
             collect_expr_literals(dict, out);
             collect_expr_literals(key, out);
@@ -7705,6 +7711,247 @@ const LIST_REMOVE_FLOAT_HELPER: &str = "\
     i32.store)
 ";
 
+/// PMAT-1289: the list-INT-INDEXED-POP helper — Python `xs.pop(i)` over a
+/// `list[int]`. The VALUE-RETURNING sibling of [`LIST_DELITEM_HELPER`]: the
+/// SAME CPython index math (a negative index adds the length; an index still
+/// out of `[0, n)` afterwards — including ANY index on an empty list — raises
+/// `IndexError`, lowered to a `unreachable` trap, never a silent wrap or a
+/// last-element fallback), the SAME low→high left-shifting tail move, and the
+/// SAME count drop — PLUS a typed load of `elems[slot]` BEFORE the shift
+/// closes the hole, returned as the expression value (`xs.pop(i)` evaluates to
+/// the removed element; `del xs[i]` is void).
+///
+/// The shift stays a pure 8-byte word move (`i64.load`/`i64.store`, never
+/// interpreting the payload) in BOTH twins — only the value load/return is
+/// typed, which is why (like `remove`/`insert`, unlike `del`'s single shared
+/// helper) an f64 twin ([`LIST_POP_INDEX_FLOAT_HELPER`]) exists. Because a pop
+/// only SHRINKS (the base-pointer never moves, no overrun), there is NO
+/// growable-list precondition: ANY named scalar list — a PARAM included —
+/// qualifies, exactly like `del`/`remove`/`pop()`. A `list[bool]` (4-byte i32
+/// stride) is refused at the call site (an i32-stride twin is deferred, like
+/// `insert`/`del`/`remove`).
+const LIST_POP_INDEX_INT_HELPER: &str = "\
+  ;; __wasm_list_pop_idx_i64(base, idx) — Python `xs.pop(i)`, list[int]
+  ;; base → i32 count @ base+0, i32 capacity @ base+4, 8-byte elements @ base+8.
+  ;; Normalises the index (neg += n; still out of [0,n) → unreachable =
+  ;; IndexError), loads the removed element (the result), shifts the tail left,
+  ;; drops the count, returns the element.
+  (func $__wasm_list_pop_idx_i64 (param $base i32) (param $idx i64) (result i64)
+    (local $n i32)      ;; current element count
+    (local $slot i32)   ;; normalized pop position in [0, n)
+    (local $j i32)      ;; shift cursor
+    (local $s i64)      ;; signed normalized index (CPython pop math)
+    (local $v i64)      ;; the removed element (the result)
+    ;; n = count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; s = idx ; CPython pop: if s < 0 { s += n }
+    local.get $idx
+    local.set $s
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $s
+      local.get $n
+      i64.extend_i32_u
+      i64.add
+      local.set $s
+    end
+    ;; bounds: if s < 0 → IndexError → trap (index too negative even after += n)
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      unreachable
+    end
+    ;; bounds: if s >= n → IndexError → trap (covers ANY index on an empty list)
+    local.get $s
+    local.get $n
+    i64.extend_i32_u
+    i64.ge_s
+    if
+      unreachable
+    end
+    ;; slot = (i32) s   (s now in [0, n), fits an i32)
+    local.get $s
+    i32.wrap_i64
+    local.set $slot
+    ;; v = elems[slot] — the result, loaded BEFORE the shift closes the hole
+    local.get $base
+    i32.const 8
+    i32.add
+    local.get $slot
+    i32.const 8
+    i32.mul
+    i32.add
+    i64.load
+    local.set $v
+    ;; shift tail left: for (j = slot; j+1 < n; j++) elems[j] = elems[j+1]
+    ;; (an 8-byte word move; i64.load/store never interpret the payload)
+    local.get $slot
+    local.set $j
+    (block $done
+      (loop $next
+        ;; while j+1 < n  →  break once (j+1) >= n
+        local.get $j
+        i32.const 1
+        i32.add
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; dst = base + 8 + j*8
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; src word = i64.load(base + 8 + (j+1)*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 1
+        i32.add
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        ;; j += 1
+        local.get $j
+        i32.const 1
+        i32.add
+        local.set $j
+        br $next
+      )
+    )
+    ;; count = n - 1 (n >= 1 here — the bounds trap already rejected n == 0)
+    local.get $base
+    local.get $n
+    i32.const 1
+    i32.sub
+    i32.store
+    ;; the removed element (the expression value)
+    local.get $v)
+";
+
+/// PMAT-1289: the f64 twin of [`LIST_POP_INDEX_INT_HELPER`] — Python
+/// `xs.pop(i)` over a `list[float]`. IDENTICAL index math, tail shift (still a
+/// pure i64 word move — it never interprets the payload, so an f64 bit pattern
+/// moves losslessly, NaN payloads included), and count drop; only the value
+/// load (`f64.load`), the `$v` local, and the `(result f64)` are typed.
+const LIST_POP_INDEX_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_pop_idx_f64(base, idx) — Python `xs.pop(i)`, list[float]
+  ;; base → i32 count @ base+0, i32 capacity @ base+4, 8-byte elements @ base+8.
+  ;; Same normalise/trap/shift/count-- as the i64 twin; only the value load and
+  ;; the result type are f64 (the shift stays a pure i64 word move).
+  (func $__wasm_list_pop_idx_f64 (param $base i32) (param $idx i64) (result f64)
+    (local $n i32)      ;; current element count
+    (local $slot i32)   ;; normalized pop position in [0, n)
+    (local $j i32)      ;; shift cursor
+    (local $s i64)      ;; signed normalized index (CPython pop math)
+    (local $v f64)      ;; the removed element (the result)
+    ;; n = count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; s = idx ; CPython pop: if s < 0 { s += n }
+    local.get $idx
+    local.set $s
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $s
+      local.get $n
+      i64.extend_i32_u
+      i64.add
+      local.set $s
+    end
+    ;; bounds: if s < 0 → IndexError → trap (index too negative even after += n)
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      unreachable
+    end
+    ;; bounds: if s >= n → IndexError → trap (covers ANY index on an empty list)
+    local.get $s
+    local.get $n
+    i64.extend_i32_u
+    i64.ge_s
+    if
+      unreachable
+    end
+    ;; slot = (i32) s   (s now in [0, n), fits an i32)
+    local.get $s
+    i32.wrap_i64
+    local.set $slot
+    ;; v = elems[slot] — the result, loaded (typed) BEFORE the shift
+    local.get $base
+    i32.const 8
+    i32.add
+    local.get $slot
+    i32.const 8
+    i32.mul
+    i32.add
+    f64.load
+    local.set $v
+    ;; shift tail left: for (j = slot; j+1 < n; j++) elems[j] = elems[j+1]
+    ;; (an 8-byte word move; i64.load/store never interpret the payload)
+    local.get $slot
+    local.set $j
+    (block $done
+      (loop $next
+        ;; while j+1 < n  →  break once (j+1) >= n
+        local.get $j
+        i32.const 1
+        i32.add
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; dst = base + 8 + j*8
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; src word = i64.load(base + 8 + (j+1)*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 1
+        i32.add
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        ;; j += 1
+        local.get $j
+        i32.const 1
+        i32.add
+        local.set $j
+        br $next
+      )
+    )
+    ;; count = n - 1 (n >= 1 here — the bounds trap already rejected n == 0)
+    local.get $base
+    local.get $n
+    i32.const 1
+    i32.sub
+    i32.store
+    ;; the removed element (the expression value)
+    local.get $v)
+";
+
 /// PMAT-1274: the list-INT-COUNT helper — Python `xs.count(x)` over a
 /// `list[int]`. A NON-allocating read (a linear scan, like `contains`/`sum`),
 /// so it rides its OWN gate (`needs_list_count`), NOT `needs_heap`. It reads the
@@ -10455,6 +10702,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // under this single gate (the unused twin is harmless dead WAT, like
     // `contains`/`insert`; no `$__alloc` inside, so no `needs_heap` coupling).
     let needs_list_sort_inplace = module_uses_list_sort_inplace(module);
+    // PMAT-1289: `xs.pop(i)` — the INDEXED pop (`Expr::ListPop` with an index) —
+    // over a `list[int]`/`list[float]` loads-then-shifts via the typed
+    // `$__wasm_list_pop_idx_{i64,f64}` helper pair — it reads/writes the
+    // length-prefixed region, so it rides its OWN gate and needs the
+    // `(memory …)`. The tail shift is a pure word move but the value load/return
+    // is TYPED (like `remove`, unlike `del`'s single helper), so BOTH twins are
+    // emitted under this single gate (the node carries no element-kind
+    // discriminant; the unused twin is harmless dead WAT, like `contains`). The
+    // no-index `xs.pop()` stays INLINE (no helper) and does NOT arm this gate.
+    let needs_list_pop_idx = module_uses_list_pop_index(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -10490,6 +10747,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_remove
         || needs_list_reverse
         || needs_list_sort_inplace
+        || needs_list_pop_idx
     {
         writeln!(
             out,
@@ -11001,6 +11259,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         out.push_str(LIST_SORT_INPLACE_INT_HELPER);
         out.push_str(LIST_SORT_INPLACE_FLOAT_HELPER);
     }
+    // PMAT-1289: emit the INDEXED-POP helper pair once, when any function uses
+    // `xs.pop(i)` over a `list[int]`/`list[float]` (`Expr::ListPop` with an
+    // index). It loads the removed element (typed), shifts the tail left in
+    // place, and drops the count — `del xs[i]`'s value-returning sibling. It
+    // only SHRINKS (the base-pointer never moves), so the call site accepts ANY
+    // scalar list local (a param included), no capacity guard. The value
+    // load/return is TYPED, so BOTH twins are emitted (the unused twin is
+    // harmless dead WAT, like `contains`/`remove`).
+    if needs_list_pop_idx {
+        out.push_str(LIST_POP_INDEX_INT_HELPER);
+        out.push_str(LIST_POP_INDEX_FLOAT_HELPER);
+    }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
     // (the str-key helpers call it).
@@ -11231,6 +11501,13 @@ fn expr_touches_str(e: &Expr) -> bool {
                 || expr_touches_str(key)
                 || default.as_deref().is_some_and(expr_touches_str)
         }
+        Expr::ListPop { list, index } => {
+            expr_touches_str(list)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(expr_touches_str)
+        }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
             expr_touches_str(dict) || expr_touches_str(key) || expr_touches_str(default)
@@ -11380,6 +11657,13 @@ fn expr_has_str_slice(e: &Expr) -> bool {
             expr_has_str_slice(dict)
                 || expr_has_str_slice(key)
                 || default.as_deref().is_some_and(expr_has_str_slice)
+        }
+        Expr::ListPop { list, index } => {
+            expr_has_str_slice(list)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(expr_has_str_slice)
         }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
@@ -11535,6 +11819,13 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
             expr_has_int_to_str(dict)
                 || expr_has_int_to_str(key)
                 || default.as_deref().is_some_and(expr_has_int_to_str)
+        }
+        Expr::ListPop { list, index } => {
+            expr_has_int_to_str(list)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(expr_has_int_to_str)
         }
         // PMAT-1227: `d.setdefault(k, default)` — a str-keyed `d.setdefault(str(n),
         // 0)` (or an int-to-str-hosting default) must gate `$__wasm_int_to_str`.
@@ -11787,6 +12078,13 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
                     .as_deref()
                     .is_some_and(|d| expr_uses_str_method(d, op))
         }
+        Expr::ListPop { list, index } => {
+            expr_uses_str_method(list, op)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(|i| expr_uses_str_method(i, op))
+        }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
             expr_uses_str_method(dict, op)
@@ -11928,6 +12226,13 @@ fn expr_has_str_contains(e: &Expr) -> bool {
                 || expr_has_str_contains(key)
                 || default.as_deref().is_some_and(expr_has_str_contains)
         }
+        Expr::ListPop { list, index } => {
+            expr_has_str_contains(list)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(expr_has_str_contains)
+        }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
             expr_has_str_contains(dict)
@@ -12054,6 +12359,9 @@ fn expr_has_list_sum(expr: &Expr, want_float: bool) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
@@ -12169,6 +12477,9 @@ fn expr_has_list_minmax(expr: &Expr, want_float: bool) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
@@ -12273,6 +12584,9 @@ fn expr_has_list_contains(expr: &Expr) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
@@ -12554,11 +12868,240 @@ fn expr_has_list_query(expr: &Expr, want_index: bool) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // recurse into a nested membership test (a `ListQuery` could nest in its
         // needle — `(xs.count(3)) in ys`); operand order is immaterial for `||`,
         // written `elem`-first here so it is textually distinct from the sibling
         // gate walkers (this walker's own `ListQuery` arms are above).
+        Expr::ListContains { list, elem } => e(elem) || e(list),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
+/// PMAT-1289: undo the frontend's PMAT-609 runtime-pop-index normalize wrap.
+///
+/// The frontend hands `Expr::ListPop.index` in exactly three shapes: a bare
+/// NON-NEGATIVE literal (`xs.pop(2)`), the negative-literal rewrite
+/// `len(xs) - k` (`xs.pop(-k)`, PMAT-570 — see `emit_list_pop`'s own unwrap),
+/// and — for any RUNTIME index — this normalize Block:
+///
+/// ```text
+/// { let __pidx: i64 = RAW; if __pidx < 0 { len(xs) + __pidx } else { __pidx } }
+/// ```
+///
+/// That wrap exists for the RUST lane (`Vec::remove` takes a `usize`; a bare
+/// `(i) as usize` would wrap a negative to `usize::MAX`). The WASM lane's
+/// `$__wasm_list_pop_idx_*` helper applies the CPython normalize ITSELF
+/// (negative `+= n`, then the `[0, n)` bounds trap), so the WASM emit wants
+/// the RAW index back — emitting the Block would DOUBLE-normalize (a value in
+/// `[-n, 0)` after the Block's `+ len` would be re-added `n`, silently popping
+/// where CPython raises `IndexError`). This returns `Some(RAW)` when `index`
+/// is exactly that Block shape, `None` otherwise (a non-matching Block falls
+/// through to `emit_list_pop`'s honest refusal — never a miscompile).
+fn unwrap_pop_index_normalize(index: &Expr) -> Option<&Expr> {
+    let Expr::Block(block) = index else {
+        return None;
+    };
+    let [Stmt::Let {
+        name,
+        value: raw,
+        ty: Type::I64,
+        ..
+    }] = block.stmts.as_slice()
+    else {
+        return None;
+    };
+    if name != "__pidx" {
+        return None;
+    }
+    let Expr::IfExpr {
+        cond,
+        then_expr,
+        else_expr,
+    } = &block.trailing_return
+    else {
+        return None;
+    };
+    let cond_is_neg_check = matches!(
+        &**cond,
+        Expr::BinOp { op: BinOp::Lt, lhs, rhs }
+            if matches!(&**lhs, Expr::Ident(n) if n == "__pidx")
+                && matches!(&**rhs, Expr::LitInt(0))
+    );
+    let then_is_len_add = matches!(
+        &**then_expr,
+        Expr::BinOp { op: BinOp::Add, lhs, rhs }
+            if matches!(&**lhs, Expr::Len(_))
+                && matches!(&**rhs, Expr::Ident(n) if n == "__pidx")
+    );
+    let else_is_ident = matches!(&**else_expr, Expr::Ident(n) if n == "__pidx");
+    if cond_is_neg_check && then_is_len_add && else_is_ident {
+        Some(raw)
+    } else {
+        None
+    }
+}
+
+/// PMAT-1289: match the PMAT-570 negative-literal index rewrite
+/// `len(<receiver>) - k` (with `k ≥ 0` and the SAME receiver being indexed —
+/// `xs.pop(len(ys) - 2)` must NOT match) and return `k`.
+///
+/// The frontend pre-rewrites a NEGATIVE LITERAL index to `len(xs) - k` for the
+/// Rust lane (`Vec` indexing takes a `usize`) in THREE places: a pop index
+/// (`xs.pop(-k)`), a del index (`del xs[-k]`), and a read-side subscript
+/// (`xs[-k]`). The WASM lane's runtimes apply the CPython normalise THEMSELVES
+/// (negative `+= n`, then a bounds trap), so each of those emit sites must
+/// recover the raw `-k` — passing the pre-rewritten value through would
+/// DOUBLE-normalise, silently indexing where CPython raises `IndexError`
+/// whenever `n < k ≤ 2n` (the caught corners: `[5].pop(-2)`,
+/// `del xs[-4]` on 3 elements, `xs[-2]` on 1 element — the last two found by
+/// the PMAT-1289 differential fuzz REFUTING shipped PMAT-1284/PMAT-1001
+/// behaviour). A user-written `xs[len(xs) - k]` is HIR-identical and also
+/// unwraps; on an underflow it traps exactly where the Rust lane's
+/// `(len - k) as usize` panics — the safe, cross-backend-consistent posture
+/// for that ambiguous corner.
+fn neg_literal_index_k(index: &Expr, receiver: &str) -> Option<i64> {
+    let Expr::BinOp {
+        op: BinOp::Sub,
+        lhs,
+        rhs,
+    } = index
+    else {
+        return None;
+    };
+    let Expr::Len(l) = &**lhs else {
+        return None;
+    };
+    let Expr::Ident(n) = &**l else {
+        return None;
+    };
+    if n != receiver {
+        return None;
+    }
+    let Expr::LitInt(k) = &**rhs else {
+        return None;
+    };
+    (*k >= 0).then_some(*k)
+}
+
+/// PMAT-1289: the expression a GATE WALKER should scan inside a pop INDEX —
+/// the RAW index when the frontend's normalize Block wraps it (the same unwrap
+/// `emit_list_pop` performs, so the walkers see exactly what the emit will
+/// emit), the index itself otherwise. Without this, a gated op nested in a
+/// RUNTIME index (`xs.pop(ys.index(30))` — the `ys.index` call sits INSIDE the
+/// Block's `let __pidx = …`) would be invisible to every `expr_has_*` walker
+/// (none has an `Expr::Block` arm — the Block itself is never emitted on this
+/// lane), leaving its helper undeclared at the emitted call site — the
+/// recurring gate-hole class as a hard wat2wasm failure. The Block's OWN glue
+/// (`len`, `__pidx`, literals, the compare/add) gates nothing, so scanning RAW
+/// alone is exhaustive.
+fn pop_index_scan_expr(index: &Expr) -> &Expr {
+    unwrap_pop_index_normalize(index).unwrap_or(index)
+}
+
+/// PMAT-1289: does any function use the INDEXED pop `xs.pop(i)`
+/// (`Expr::ListPop` with `index: Some`)? Gates BOTH the
+/// `$__wasm_list_pop_idx_i64` and `$__wasm_list_pop_idx_f64` helpers (and the
+/// `(memory …)` their shifts read/write). The node carries NO element-kind
+/// discriminant (resolved only at emit time via [`Scope::list_elem_of`], like
+/// `ListContains`), so BOTH typed twins are emitted under this single gate;
+/// the unused twin is a harmless dead function. The NO-INDEX `xs.pop()` is
+/// INLINE WAT (no helper, PMAT-1278) and must NOT arm this gate — the
+/// detecting arm keys on `index: Some` (the sort walker's Reverse/Clear
+/// filtering discipline applied to the `index` axis). Exhaustive over the same
+/// stmt/expr forms as [`expr_has_list_query`]; a missed sub-expression would
+/// leave the helper undeclared at the `call $__wasm_list_pop_idx_*` site (a
+/// hard wat2wasm failure — the recurring gate-hole class, where over-detecting
+/// is a harmless unused function but under-detecting is fatal).
+fn module_uses_list_pop_index(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_pop_index(&f.body))
+}
+
+fn block_has_list_pop_index(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_pop_index)
+        || expr_has_list_pop_index(&block.trailing_return)
+}
+
+fn stmt_has_list_pop_index(s: &Stmt) -> bool {
+    let e = |x| expr_has_list_pop_index(x);
+    let st = |x| stmt_has_list_pop_index(x);
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_list_pop_index(expr: &Expr) -> bool {
+    let e = |x| expr_has_list_pop_index(x);
+    match expr {
+        // this node IS an indexed pop — fire (the typed helper pair serves
+        // every use, a same-gate pop nested in the index included, so no need
+        // to inspect what nests inside).
+        Expr::ListPop { index: Some(_), .. } => true,
+        // a NO-index pop is INLINE (no helper of its own) — recurse into the
+        // receiver defensively (the emit accepts only a bare name there).
+        Expr::ListPop { list, index: None } => e(list),
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        // operand order `key`-first (commutative for `||`), textually distinct
+        // from the sibling gate walkers so a bulk arm-injection edit anchored on
+        // the standard DictPop+DictSetDefault text cannot inject a DUPLICATE
+        // ListPop arm here (this walker's own detecting arms are above).
+        Expr::DictPop { dict, key, default } => {
+            e(key) || e(dict) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(key) || e(dict) || e(default),
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        // operand order `elem`-first, textually distinct from the sibling gate
+        // walkers (this walker's own detecting arms are the ListPop pair above).
         Expr::ListContains { list, elem } => e(elem) || e(list),
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
@@ -12646,6 +13189,9 @@ fn expr_has_bool_reduce(expr: &Expr) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
@@ -12760,6 +13306,9 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
@@ -12866,6 +13415,9 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
@@ -12969,6 +13521,9 @@ fn expr_has_list_concat(expr: &Expr) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
@@ -13080,6 +13635,9 @@ fn expr_has_list_slice(expr: &Expr) -> bool {
             e(dict) || e(key) || default.as_deref().is_some_and(e)
         }
         Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
         Expr::SetContains { set, elem } => e(set) || e(elem),
         // PMAT-1262: a list membership `x in xs` can nest a helper-gated op in its
         // needle (`sum(ys) in xs`, `len(s) in xs`), so recurse into both operands.
@@ -13201,6 +13759,13 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
             expr_has_str_repeat(dict)
                 || expr_has_str_repeat(key)
                 || default.as_deref().is_some_and(expr_has_str_repeat)
+        }
+        Expr::ListPop { list, index } => {
+            expr_has_str_repeat(list)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(expr_has_str_repeat)
         }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
@@ -13355,6 +13920,13 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
                 || default
                     .as_deref()
                     .is_some_and(|d| expr_has_str_method_2arg(d, target))
+        }
+        Expr::ListPop { list, index } => {
+            expr_has_str_method_2arg(list, target)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(|i| expr_has_str_method_2arg(i, target))
         }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
@@ -13547,6 +14119,13 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
             expr_has_str_eq(dict, scan)
                 || expr_has_str_eq(key, scan)
                 || default.as_deref().is_some_and(|d| expr_has_str_eq(d, scan))
+        }
+        Expr::ListPop { list, index } => {
+            expr_has_str_eq(list, scan)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(|i| expr_has_str_eq(i, scan))
         }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
@@ -13828,6 +14407,16 @@ fn expr_has_heap_op(e: &Expr) -> bool {
             expr_has_heap_op(dict)
                 || expr_has_heap_op(key)
                 || default.as_deref().is_some_and(expr_has_heap_op)
+        }
+        // PMAT-1289: `xs.pop(i)` itself does NOT allocate (an in-place shrink) —
+        // recurse only, so a nested allocating op in the INDEX still forces the
+        // heap (`xs.pop(len(sorted(ys)) - 1)`).
+        Expr::ListPop { list, index } => {
+            expr_has_heap_op(list)
+                || index
+                    .as_deref()
+                    .map(pop_index_scan_expr)
+                    .is_some_and(expr_has_heap_op)
         }
         // PMAT-1227: `d.setdefault(k, default)` INSERTS on a miss, and the `set`
         // helper 2x-reallocs (calls `$__alloc`) when the dict is at capacity, so
@@ -16051,8 +16640,19 @@ fn emit_list_elem_addr(
     // Evaluate the index expression once into the per-function scratch i64
     // local `$__wasm_idx` so it can be reused by both the bounds guard and
     // the address computation without re-evaluating a (possibly effectful)
-    // call.
-    emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
+    // call. PMAT-1289: a READ-side NEGATIVE-LITERAL `xs[-k]` arrives
+    // pre-rewritten to `len(xs) - k` (PMAT-570, for the Rust lane) — recover
+    // the raw `-k` so the PMAT-1001 normalise below applies ONCE (passing the
+    // rewritten value through double-normalised: `xs[-2]` on a 1-element list
+    // silently read slot 0 where CPython raises `IndexError` — found by the
+    // PMAT-1289 probe sweep; the store side was never folded, and a raw index
+    // is emitted unchanged).
+    if let Some(k) = neg_literal_index_k(index, name) {
+        indent(out, depth);
+        writeln!(out, "i64.const {}", -k).expect("write");
+    } else {
+        emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
+    }
     indent(out, depth);
     writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
 
@@ -16628,15 +17228,28 @@ fn emit_list_query(
 /// Semantics: an empty-list pop TRAPS (`unreachable`) exactly where CPython
 /// raises `IndexError` — the same posture as the out-of-range `xs[i]` trap.
 ///
+/// PMAT-1289: the INDEXED form `xs.pop(i)` (previously refused here) lowers via
+/// the typed `$__wasm_list_pop_idx_{i64,f64}(base, idx)` helper pair
+/// ([`LIST_POP_INDEX_INT_HELPER`] / [`LIST_POP_INDEX_FLOAT_HELPER`]) — the
+/// value-RETURNING sibling of `del xs[i]`'s `$__wasm_list_delitem`: the same
+/// CPython index normalise (negative `+= n`) + `IndexError` trap (out of
+/// `[0, n)` after normalising, empty list included) + low→high left shift +
+/// count drop, plus a typed load of the removed element BEFORE the shift,
+/// returned as the expression value. The shift moves 8-byte words, so the
+/// indexed form serves `list[int]` / `list[float]` only — a `list[bool]`
+/// (4-byte i32 stride) refuses (an i32-stride twin is deferred, exactly like
+/// `insert`/`del`/`remove`; note the INLINE no-index pop DOES take bool — it
+/// never shifts). Like every shrink, no growable-list precondition: params,
+/// literal bindings, and helper-results all qualify.
+///
 /// Honest scope (each a hard [`BackendError`], never a silent miscompile):
-///   * the INDEXED form `xs.pop(i)` needs to SHIFT every later element down one
-///     slot (a bespoke copy loop) — deferred; refused here so it never silently
-///     degrades to a last-element pop.
 ///   * a NON-NAME receiver (a list LITERAL / temporary — `[1, 2, 3].pop()`,
 ///     `sorted(ys).pop()`) is refused; the lane needs a declared `list[scalar]`
 ///     NAME (an i32 base-pointer whose count header it can decrement).
 ///   * a name that is not a scalar list (`list_elem_of` → `None`, e.g. a
 ///     `list[str]` whose elements are not a fixed-width scalar) is refused.
+///   * `xs.pop(i)` over a `list[bool]` is refused (i32 stride vs the 8-byte
+///     word shift; the no-index form still accepts bool).
 fn emit_list_pop(
     list: &Expr,
     index: Option<&Expr>,
@@ -16644,13 +17257,86 @@ fn emit_list_pop(
     out: &mut String,
     depth: usize,
 ) -> Result<WatTy, BackendError> {
-    if index.is_some() {
-        return Err(unsupported(
-            "`xs.pop(i)` with an explicit index — the WASM subset pops only the \
-             LAST element (`xs.pop()`); an indexed removal must shift every later \
-             element down one slot (a bespoke copy loop) which is not yet lowered. \
-             Refused rather than silently popping the last element instead",
-        ));
+    if let Some(index_expr) = index {
+        let Expr::Ident(name) = list else {
+            return Err(unsupported(
+                "`.pop(i)` on a non-name list — the WASM subset pops from a \
+                 `list[int]` / `list[float]` NAME (an i32 base-pointer into linear \
+                 memory whose payload it shifts and whose count header it \
+                 decrements); a list literal / temporary (`[1, 2, 3].pop(0)`, \
+                 `sorted(ys).pop(0)`) is refused (bind it to a name first)",
+            ));
+        };
+        // The indexed pop shifts whole 8-byte words, so only the i64/f64 element
+        // kinds qualify (the typed helper pair also loads/returns the removed
+        // element at that width). A `list[bool]` (i32 stride) refuses — unlike
+        // the INLINE no-index pop below, which never shifts.
+        let helper = match scope.list_elem_of(name) {
+            Some(WatTy::I64) => "$__wasm_list_pop_idx_i64",
+            Some(WatTy::F64) => "$__wasm_list_pop_idx_f64",
+            Some(other) => {
+                return Err(unsupported(&format!(
+                    "`{name}.pop(i)` whose elements load as {} — the WASM subset's \
+                     INDEXED pop shifts 8-byte words, so it serves only a \
+                     `list[int]` / `list[float]` (a `list[bool]` would need an \
+                     i32-stride shift twin, deferred like `insert`/`del`; the \
+                     no-index `{name}.pop()` does accept it)",
+                    other.keyword()
+                )));
+            }
+            None => {
+                return Err(unsupported(&format!(
+                    "`{name}.pop(i)` where `{name}` is not a `list[int]` / \
+                     `list[float]` param/local — only a scalar list (an i32 \
+                     base-pointer into linear memory) can be popped by index in \
+                     the WASM subset"
+                )));
+            }
+        };
+        // base (i32) ; RAW index typed to i64 ; call. The helper applies THE
+        // one CPython normalise (negative `+= n`, then the `[0, n)` bounds
+        // trap), so the frontend's two PRE-normalised index shapes must be
+        // UNWRAPPED back to the raw index first — emitting them as-is would
+        // DOUBLE-normalise (a pre-normalised value landing in `[-n, 0)` gets
+        // `n` re-added, silently popping where CPython raises `IndexError`;
+        // the caught corner: `[5].pop(-2)` → frontend `len - 2` → runtime
+        // `-1` → re-add → pops slot 0 instead of trapping).
+        indent(out, depth);
+        writeln!(out, "local.get ${name}").expect("write");
+        if let Some(raw) = unwrap_pop_index_normalize(index_expr) {
+            // Shape 3: the PMAT-609 runtime-index normalize Block — emit the
+            // RAW inner index; the helper re-applies the identical normalise.
+            emit_expr_typed(raw, scope, out, depth, WatTy::I64)?;
+        } else if let Some(k) = neg_literal_index_k(index_expr, name) {
+            // Shape 2: the PMAT-570 negative-literal rewrite `len(xs) - k`
+            // (from `xs.pop(-k)`) — recover the raw `-k` so the helper's
+            // normalise is applied ONCE (a user-written `xs.pop(len(xs) - k)`
+            // is HIR-identical; on an underflow it traps here exactly where
+            // the Rust lane's `(len - k) as usize` panics — the safe,
+            // cross-backend-consistent posture for that corner).
+            indent(out, depth);
+            writeln!(out, "i64.const {}", -k).expect("write");
+        } else if matches!(index_expr, Expr::Block(_)) {
+            // A Block that is NOT the known normalize shape (a frontend
+            // change would land here) — refuse rather than guess.
+            return Err(unsupported(&format!(
+                "`{name}.pop(i)` whose index lowered to an unrecognised Block \
+                 shape — the WASM subset unwraps only the frontend's \
+                 `__pidx` normalize wrap (PMAT-609); this shape is refused \
+                 rather than risking a double-normalised index"
+            )));
+        } else {
+            // Shape 1: a bare (non-negative) literal, or any raw expression —
+            // the helper's normalise + bounds trap IS the CPython semantics.
+            emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
+        }
+        indent(out, depth);
+        writeln!(out, "call {helper}").expect("write");
+        return Ok(if helper.ends_with("f64") {
+            WatTy::F64
+        } else {
+            WatTy::I64
+        });
     }
     let Expr::Ident(name) = list else {
         return Err(unsupported(
@@ -17996,11 +18682,22 @@ fn emit_list_delitem(
             )));
         }
     };
-    // base (i32) ; index typed to i64 (the helper normalises + bounds-checks in
-    // signed i64) ; then the shrink-and-shift helper does the work (void statement).
+    // base (i32) ; RAW index typed to i64 (the helper normalises + bounds-checks
+    // in signed i64) ; then the shrink-and-shift helper does the work (void
+    // statement). PMAT-1289: a NEGATIVE-LITERAL `del xs[-k]` arrives
+    // pre-rewritten to `len(xs) - k` (PMAT-570, for the Rust lane's `usize`
+    // remove) — recover the raw `-k` so the helper's normalise applies ONCE
+    // (passing the rewritten value through double-normalised: `del xs[-4]` on a
+    // 3-element list silently deleted slot 2 where CPython raises `IndexError`
+    // — REFUTED by the PMAT-1289 differential fuzz).
     indent(out, depth);
     writeln!(out, "local.get ${list_name}").expect("write");
-    emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
+    if let Some(k) = neg_literal_index_k(index_expr, list_name) {
+        indent(out, depth);
+        writeln!(out, "i64.const {}", -k).expect("write");
+    } else {
+        emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
+    }
     indent(out, depth);
     writeln!(out, "call $__wasm_list_delitem").expect("write");
     Ok(())

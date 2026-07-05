@@ -356,6 +356,43 @@ fn del_out_of_range_traps() {
 }
 
 #[test]
+fn del_deep_negative_boundary_traps() {
+    // ★ PMAT-1289 REGRESSION GUARD (found by the pop(i) differential fuzz
+    // REFUTING shipped PMAT-1284 behaviour): `del xs[-4]` on a 3-element list
+    // → CPython normalises ONCE (-4 + 3 = -1, still negative → IndexError).
+    // The frontend pre-rewrites the negative literal to `len(xs) - 4`
+    // (PMAT-570); the old emit passed that pre-normalised value straight to
+    // the helper, whose own `+= n` RE-added the length (-1 + 3 = 2) and
+    // SILENTLY deleted slot 2 where CPython raises. The emit must unwrap the
+    // rewrite back to the raw -4 so exactly ONE normalise applies.
+    let src =
+        "def go() -> int:\n    xs: list[int] = [9, 2, -6]\n    del xs[-4]\n    return len(xs)\n";
+    let wat = emit(src).unwrap_or_else(|e| panic!("deep-negative-del emit failed: {e}"));
+
+    if !wasm_runtime_available() {
+        eprintln!("PMAT-1289: WABT absent — emit-only deep-negative-del check passed, run skipped");
+        return;
+    }
+
+    let wasm_path = assemble(&wat, "del_deepneg");
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm_path)
+        .output()
+        .expect("spawn wasm-interp");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(
+        combined.contains("unreachable") || !run.status.success(),
+        "del xs[-4] on 3 elements must TRAP (IndexError), never delete slot 2; \
+         got clean run: {combined}"
+    );
+}
+
+#[test]
 fn del_on_empty_traps() {
     // xs = []; del xs[0] → CPython IndexError → `unreachable` trap.
     let src = "def go() -> int:\n    xs: list[int] = []\n    del xs[0]\n    return len(xs)\n";
