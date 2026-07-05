@@ -126,6 +126,14 @@ jobs:
         run: cargo kani --version
 
       - name: cargo test -p xpile --test kani_verify
+        # Anti-vacuity tripwire (XPILE-RULESET-002 / F9): now that `kani` is a
+        # REQUIRED status context, arm kani_verify.rs to PANIC (not skip) if
+        # `cargo kani` is missing here — so a broken install reds this required
+        # check instead of passing vacuously. Scoped to THIS job only; the
+        # required `workspace-test` job runs the same test without kani by
+        # design and must keep skipping (hence an env var, not CI=true).
+        env:
+          XPILE_REQUIRE_KANI: "1"
         run: cargo test -p xpile --test kani_verify -- --nocapture
 
   # ── Optional check: lake-build (Proof lane / PMAT-903) ────────
