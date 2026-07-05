@@ -264,6 +264,14 @@ fn emit_function_with_while_helpers(
                     f.name
                 )));
             }
+            Stmt::ShellIf { .. } => {
+                return Err(LeanCodegenError::Unsupported(format!(
+                    "function `{}` has Stmt::ShellIf inside a while loop; \
+                     C-BASHRS-POSIX-IDEMPOTENCE governs shell conditionals — \
+                     Lean codegen does not lower them",
+                    f.name
+                )));
+            }
             // PMAT-051: same disposition.
             Stmt::ShellAssign { .. } => {
                 return Err(LeanCodegenError::Unsupported(format!(
@@ -1291,6 +1299,12 @@ fn emit_stmt(out: &mut String, stmt: &Stmt) -> Result<(), LeanCodegenError> {
         Stmt::ShellLoop { .. } => Err(LeanCodegenError::Unsupported(
             "Lean backend does not lower Stmt::ShellLoop — \
              contract C-BASHRS-POSIX-IDEMPOTENCE governs shell loops; \
+             use `--target shell`"
+                .into(),
+        )),
+        Stmt::ShellIf { .. } => Err(LeanCodegenError::Unsupported(
+            "Lean backend does not lower Stmt::ShellIf — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell conditionals; \
              use `--target shell`"
                 .into(),
         )),

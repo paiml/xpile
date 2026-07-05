@@ -133,6 +133,49 @@ fn render_shell_loop(kind: &LoopKind, body: &[Stmt]) -> Result<String, BackendEr
     Ok(format!("{header}; do\n{}\ndone", body_lines.join("\n")))
 }
 
+/// PMAT-1283: render a `Stmt::ShellIf` to POSIX shell:
+/// `if COND; then\n\t<then>\n[else\n\t<else>\n]fi`. The condition is the
+/// opaque `Expr::LitStr` the frontend captured, printed verbatim (same
+/// as loop conditions). An empty `then` body collapses to the POSIX
+/// no-op `:`; the `else` block is omitted when its body is empty (an
+/// `if … then … fi` with no `else`). Bodies render through the shared
+/// `render_stmt_lines` walker, so a nested loop / conditional in either
+/// branch recurses.
+fn render_shell_if(
+    cond: &Expr,
+    then_body: &[Stmt],
+    else_body: &[Stmt],
+) -> Result<String, BackendError> {
+    fn indent_body(body: &[Stmt]) -> Result<Vec<String>, BackendError> {
+        let mut out: Vec<String> = Vec::new();
+        for stmt in body {
+            for line in render_stmt_lines(stmt)? {
+                for sub in line.split('\n') {
+                    out.push(format!("\t{sub}"));
+                }
+            }
+        }
+        Ok(out)
+    }
+    let mut then_lines = indent_body(then_body)?;
+    if then_lines.is_empty() {
+        then_lines.push("\t:".to_string());
+    }
+    let header = format!("if {}; then", render_arg(cond)?);
+    if else_body.is_empty() {
+        return Ok(format!("{header}\n{}\nfi", then_lines.join("\n")));
+    }
+    let mut else_lines = indent_body(else_body)?;
+    if else_lines.is_empty() {
+        else_lines.push("\t:".to_string());
+    }
+    Ok(format!(
+        "{header}\n{}\nelse\n{}\nfi",
+        then_lines.join("\n"),
+        else_lines.join("\n")
+    ))
+}
+
 /// PMAT-974: render a single top-level shell statement to its POSIX
 /// surface line(s).
 ///
@@ -179,9 +222,14 @@ fn render_stmt_lines(stmt: &Stmt) -> Result<Vec<String>, BackendError> {
         }
         Stmt::ShellAssign { name, value } => Ok(vec![format!("{name}={}", render_arg(value)?)]),
         Stmt::ShellLoop { kind, body } => Ok(vec![render_shell_loop(kind, body)?]),
+        Stmt::ShellIf {
+            cond,
+            then_body,
+            else_body,
+        } => Ok(vec![render_shell_if(cond, then_body, else_body)?]),
         other => Err(BackendError::Lower(format!(
             "bashrs-backend cannot render {other:?} as a shell statement; \
-             only Stmt::Cmd / Stmt::Pipeline / Stmt::ShellAssign / Stmt::ShellLoop supported"
+             only Stmt::Cmd / Stmt::Pipeline / Stmt::ShellAssign / Stmt::ShellLoop / Stmt::ShellIf supported"
         ))),
     }
 }
@@ -283,6 +331,7 @@ impl Backend for BashrsBackend {
                         Stmt::Cmd { .. }
                             | Stmt::Pipeline { .. }
                             | Stmt::ShellLoop { .. }
+                            | Stmt::ShellIf { .. }
                             | Stmt::ShellAssign { .. }
                     )
                 })
@@ -667,6 +716,62 @@ mod tests {
         assert!(
             rendered.ends_with("\ndone"),
             "loop should end with `done`: {rendered}"
+        );
+    }
+
+    #[test]
+    fn render_shell_if_no_else() {
+        // PMAT-1283: `if COND; then <body> fi` — no else arm.
+        use xpile_meta_hir::{Expr, Stmt};
+        let cond = Expr::LitStr("[ -f /tmp/x ]".into());
+        let then_body = vec![Stmt::Cmd {
+            program: "echo".into(),
+            args: vec![Expr::LitStr("found".into())],
+        }];
+        let rendered = render_shell_if(&cond, &then_body, &[]).unwrap();
+        assert_eq!(rendered, "if [ -f /tmp/x ]; then\n\techo found\nfi");
+    }
+
+    #[test]
+    fn render_shell_if_with_else() {
+        // PMAT-1283: the `else` arm renders between `then` body and `fi`.
+        use xpile_meta_hir::{Expr, Stmt};
+        let cond = Expr::LitStr("[ $x -gt 3 ]".into());
+        let then_body = vec![Stmt::Cmd {
+            program: "echo".into(),
+            args: vec![Expr::LitStr("big".into())],
+        }];
+        let else_body = vec![Stmt::Cmd {
+            program: "echo".into(),
+            args: vec![Expr::LitStr("small".into())],
+        }];
+        let rendered = render_shell_if(&cond, &then_body, &else_body).unwrap();
+        assert_eq!(
+            rendered,
+            "if [ $x -gt 3 ]; then\n\techo big\nelse\n\techo small\nfi"
+        );
+    }
+
+    #[test]
+    fn render_shell_if_nested_loop_body_indents() {
+        // A loop inside the then-branch renders recursively with the
+        // inner body indented one tab past the loop (two past `if`).
+        use xpile_meta_hir::{Expr, LoopKind, Stmt};
+        let cond = Expr::LitStr("[ -d /tmp ]".into());
+        let inner_loop = Stmt::ShellLoop {
+            kind: LoopKind::For {
+                var: "f".into(),
+                items: vec![Expr::LitStr("a".into()), Expr::LitStr("b".into())],
+            },
+            body: vec![Stmt::Cmd {
+                program: "echo".into(),
+                args: vec![Expr::ShellVar("f".into())],
+            }],
+        };
+        let rendered = render_shell_if(&cond, &[inner_loop], &[]).unwrap();
+        assert_eq!(
+            rendered,
+            "if [ -d /tmp ]; then\n\tfor f in a b; do\n\t\techo $f\n\tdone\nfi"
         );
     }
 

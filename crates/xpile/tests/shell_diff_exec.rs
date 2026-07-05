@@ -139,6 +139,11 @@ const WHILE_LOOP_DEMO_EXPECTED: &str = "tick 0\ntick 1\ntick 2\ndown 3\ndown 2\n
 const NESTED_LOOP_DEMO_EXPECTED: &str = "cell 1 a\ncell 1 b\ncell 2 a\ncell 2 b\n\
      mix 2 x\nmix 2 y\nmix 1 x\nmix 1 y";
 
+/// PMAT-1283 expected output of `bashrs_if_demo.sh`: the if/then/fi
+/// prints `big` (true); the if/then/else/fi takes the else (`not-three`);
+/// the if-inside-for picks `i == 2`. Byte-for-byte deterministic.
+const IF_DEMO_EXPECTED: &str = "big\nnot-three\npicked 2";
+
 #[test]
 fn shell_diff_demo_realistic_shell_input_round_trip() {
     // PMAT-052: a `.sh` fixture that exercises every Layer B
@@ -277,6 +282,38 @@ fn shell_diff_demo_nested_loop_round_trip() {
     assert!(
         actual.contains("cell 2 b") && actual.contains("mix 1 y"),
         "expected both nested blocks' inner output; a nested body may have been dropped: {actual}"
+    );
+}
+
+#[test]
+fn shell_diff_demo_if_round_trip() {
+    // PMAT-1283: a `.sh` fixture with `if`/`then`/`else`/`fi`
+    // conditionals (including an if nested in a for loop) flows through
+    // the frontend's `Stmt::ShellIf` parser → mHIR → bashrs-backend
+    // (`render_shell_if`) → /bin/sh, producing deterministic output.
+    // The taken branches actually run, proving the conditional is
+    // emitted faithfully (not flattened, dropped, or shredded).
+    if !have_python_and_sh() {
+        eprintln!(
+            "warning: skipping PMAT-1283 if round-trip — /bin/sh not on PATH. \
+             CI environments with /bin/sh will still run this gate."
+        );
+        return;
+    }
+    let sh_path = fixture("bashrs_if_demo.sh");
+    let actual = run_shell(&sh_path).expect("shell run");
+    assert_eq!(
+        actual, IF_DEMO_EXPECTED,
+        "bashrs if demo output diverged. The frontend if-parser or the backend \
+         render_shell_if regressed (or a branch was mis-taken/dropped).\n\
+         === expected ===\n{IF_DEMO_EXPECTED}\n\
+         === actual  ===\n{actual}"
+    );
+    // Anchor the else-arm + nested-if outputs so this can't pass on
+    // partial output.
+    assert!(
+        actual.contains("not-three") && actual.contains("picked 2"),
+        "expected the else-arm and nested-if outputs; a branch may have been dropped: {actual}"
     );
 }
 

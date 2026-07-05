@@ -522,6 +522,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-048: ShellLoop is bashrs-domain — no BigInt
             // operand reachable through it.
             Stmt::ShellLoop { .. } => false,
+            Stmt::ShellIf { .. } => false,
             // PMAT-051: ShellAssign same disposition.
             Stmt::ShellAssign { .. } => false,
         }
@@ -1732,6 +1733,12 @@ fn emit_stmt_indented(
         Stmt::ShellLoop { .. } => Err(CodegenError::Unsupported(
             "Rust backend does not lower Stmt::ShellLoop — \
              contract C-BASHRS-POSIX-IDEMPOTENCE governs shell loops; \
+             use `--target shell`"
+                .into(),
+        )),
+        Stmt::ShellIf { .. } => Err(CodegenError::Unsupported(
+            "Rust backend does not lower Stmt::ShellIf — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell conditionals; \
              use `--target shell`"
                 .into(),
         )),
