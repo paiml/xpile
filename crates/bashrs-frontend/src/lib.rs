@@ -882,104 +882,204 @@ fn parse_loop_header(header: &str) -> Result<LoopKind, FrontendError> {
 /// skeleton is not quoting-aware — a `;` inside a quoted item /
 /// condition mis-splits, but that degrades to a tokenizer error
 /// (unbalanced quote) and thus a clean REFUSE, never a silent shred.
-fn parse_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
-    // The loop dialect keyword (`for`/`while`/`until`), used only for
-    // legible diagnostics.
-    let kw = first_word(lines[start]);
-    // Collect the loop's command-position segments — split by both
-    // `;` and physical newline (equivalent POSIX command separators)
-    // — from the header line through the matching `done`.
-    let mut segments: Vec<String> = Vec::new();
-    let mut idx = start;
-    let mut next_after = None;
-    while idx < lines.len() {
-        let line = lines[idx];
-        idx += 1;
-        // Blank and comment lines inside the loop region are inert.
+/// PMAT-1281: collect ONE loop region — from the header line `start`
+/// through its depth-matched `done` — into a command-position SEGMENT
+/// stream, and return that stream plus the index of the LINE just past
+/// the matching `done`.
+///
+/// The region's lines are split on `;` (the same loop-scoped `;`
+/// handling the pre-1281 flat parser used — the TOP level stays
+/// line-based, so top-level `;`-as-literal and quoted `;` are
+/// unaffected). A leading `do` carrying an inline first body command
+/// (`do echo $i`, or even `do for j …`) is normalised into a standalone
+/// `do` segment followed by its remainder, so `parse_loop_at` /
+/// `parse_segment_seq` see a keyword-at-front stream and handle
+/// arbitrarily NESTED loops by recursion. Depth tracks
+/// `for`/`while`/`until` openers (+1) against `done` (-1); the region
+/// ends when depth returns to 0.
+///
+/// Note (pre-existing edge, unchanged): if the matching `done` sits
+/// mid-line with content after it on the same physical line
+/// (`… done; echo after`), that trailing content is not collected —
+/// the caller resumes at the next line. This matched the pre-1281
+/// single-`done` behaviour.
+fn collect_loop_region(
+    lines: &[&str],
+    start: usize,
+) -> Result<(Vec<String>, usize), FrontendError> {
+    let mut segs: Vec<String> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut li = start;
+    let mut next_line: Option<usize> = None;
+    // Push a segment and account for its depth effect; returns true if
+    // this segment is the region-closing `done` (depth back to 0).
+    fn account(segs: &mut Vec<String>, depth: &mut i32, s: &str) -> bool {
+        segs.push(s.to_string());
+        match first_word(s) {
+            "for" | "while" | "until" => {
+                *depth += 1;
+                false
+            }
+            "done" => {
+                *depth -= 1;
+                *depth == 0
+            }
+            _ => false,
+        }
+    }
+    'outer: while li < lines.len() {
+        let line = lines[li];
+        li += 1;
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let mut hit_done = false;
-        for seg in line.split(';') {
-            let seg = seg.trim();
-            if seg.is_empty() {
+        for raw in line.split(';') {
+            let s = raw.trim();
+            if s.is_empty() || s.starts_with('#') {
                 continue;
             }
-            if first_word(seg) == "done" {
-                if seg != "done" {
+            // Normalise `do <rest>` → `do`, `<rest>` (rest may be a
+            // nested loop header or a flat command).
+            if first_word(s) == "do" && s != "do" {
+                segs.push("do".to_string());
+                let rest = s
+                    .strip_prefix("do")
+                    .expect("first_word == \"do\" implies a \"do\" prefix")
+                    .trim();
+                if !rest.is_empty() && account(&mut segs, &mut depth, rest) {
+                    next_line = Some(li);
+                    break 'outer;
+                }
+                continue;
+            }
+            if account(&mut segs, &mut depth, s) {
+                next_line = Some(li);
+                break 'outer;
+            }
+        }
+    }
+    match next_line {
+        Some(n) => Ok((segs, n)),
+        None => Err(FrontendError::Parse(format!(
+            "bashrs-frontend: unterminated `{}` loop starting at `{}` — no matching `done`",
+            first_word(lines[start]),
+            lines[start]
+        ))),
+    }
+}
+
+/// PMAT-1268/1276/1281: parse the loop beginning at line `start`
+/// (`for`/`while`/`until`). Collects the loop region (depth-matched
+/// through its `done`) and parses it — including any NESTED loops in
+/// the body — returning the built `Stmt::ShellLoop` and the index of
+/// the LINE just past the matching `done`.
+fn parse_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
+    let (segs, next_line) = collect_loop_region(lines, start)?;
+    let (loop_stmt, _seg_end) = parse_loop_at(&segs, 0)?;
+    Ok((loop_stmt, next_line))
+}
+
+/// PMAT-1281: parse a sequence of command-position segments (from
+/// `flatten_to_segments`) into `Stmt`s by recursive descent, starting
+/// at `pos`. When `in_loop` is true we are inside a `do … done` body:
+/// a `done` segment terminates the sequence (its index + 1 is returned
+/// so the caller resumes just past it); when false (top level) a stray
+/// `done` is an error. Loop headers recurse into `parse_loop_at`, so
+/// NESTING is handled to arbitrary depth (each loop consumes its own
+/// matching `done`). `if`/`case` (and any stray control keyword) still
+/// REFUSE — never shred.
+fn parse_segment_seq(
+    segs: &[String],
+    pos: usize,
+    in_loop: bool,
+) -> Result<(Vec<Stmt>, usize), FrontendError> {
+    let mut stmts: Vec<Stmt> = Vec::new();
+    let mut i = pos;
+    while i < segs.len() {
+        let seg = &segs[i];
+        match first_word(seg) {
+            "done" => {
+                if !in_loop {
                     return Err(FrontendError::Parse(format!(
-                        "bashrs-frontend: `{kw}` loop `done` has trailing content `{seg}` \
-                         (redirects / chained commands after `done` are not supported at \
-                         this slice); refusing rather than dropping it"
+                        "bashrs-frontend: stray `done` (`{seg}`) with no matching \
+                         `for`/`while`/`until` loop"
                     )));
                 }
-                hit_done = true;
-                break;
+                if seg != "done" {
+                    return Err(FrontendError::Parse(format!(
+                        "bashrs-frontend: loop `done` has trailing content `{seg}` \
+                         (redirects / chained commands after `done` are not supported); \
+                         refusing rather than dropping it"
+                    )));
+                }
+                return Ok((stmts, i + 1));
             }
-            segments.push(seg.to_string());
-        }
-        if hit_done {
-            next_after = Some(idx);
-            break;
+            "for" | "while" | "until" => {
+                let (loop_stmt, next) = parse_loop_at(segs, i)?;
+                stmts.push(loop_stmt);
+                i = next;
+            }
+            "do" => {
+                return Err(FrontendError::Parse(format!(
+                    "bashrs-frontend: stray `do` (`{seg}`) with no preceding loop header"
+                )));
+            }
+            "if" | "then" | "elif" | "else" | "fi" | "case" | "esac" => {
+                return Err(FrontendError::Parse(format!(
+                    "bashrs-frontend: shell control-flow (if/case) not supported — \
+                     `for`/`while`/`until` loops are handled, but if/case refuses rather \
+                     than silently shredding into barewords. Offending keyword in `{seg}`."
+                )));
+            }
+            _ => {
+                // The segment's first word is not a control keyword, but a
+                // control keyword can still hide AFTER a `&&` / `||` / `|`
+                // that our `;`-only split didn't separate (e.g.
+                // `echo a && for i in …`). `control_flow_keyword` scans the
+                // `;`/`&`/`|`-delimited command positions; if it finds one,
+                // REFUSE rather than let `lower_flat_line` shred the loop /
+                // conditional into barewords.
+                if let Some(kw) = control_flow_keyword(seg) {
+                    return Err(FrontendError::Parse(format!(
+                        "bashrs-frontend: shell control-flow keyword `{kw}` after a \
+                         `&&`/`||`/`|` in `{seg}` — compound control-flow is not supported \
+                         (only a leading `for`/`while`/`until` loop or a flat command per \
+                         `;`-segment); refusing rather than shredding into barewords."
+                    )));
+                }
+                if let Some(stmt) = lower_flat_line(seg)? {
+                    stmts.push(stmt);
+                }
+                i += 1;
+            }
         }
     }
-    let Some(next) = next_after else {
+    if in_loop {
+        return Err(FrontendError::Parse(
+            "bashrs-frontend: unterminated loop — reached end of input with no matching `done`"
+                .to_string(),
+        ));
+    }
+    Ok((stmts, i))
+}
+
+/// PMAT-1268/1276/1281: parse one loop whose header is `segs[start]`
+/// (`for`/`while`/`until`). Expects `segs[start + 1]` to be the `do`
+/// keyword (`flatten_to_segments` normalises `do <rest>` so `do` is
+/// always its own segment); the body is parsed recursively via
+/// `parse_segment_seq` — so a NESTED loop in the body is handled — up to
+/// the matching `done`. Returns the built `Stmt::ShellLoop` and the
+/// index just past that `done`.
+fn parse_loop_at(segs: &[String], start: usize) -> Result<(Stmt, usize), FrontendError> {
+    let kw = first_word(&segs[start]);
+    let kind = parse_loop_header(&segs[start])?;
+    if start + 1 >= segs.len() || first_word(&segs[start + 1]) != "do" {
         return Err(FrontendError::Parse(format!(
-            "bashrs-frontend: unterminated `{kw}` loop starting at `{}` — no matching `done`",
-            lines[start]
-        )));
-    };
-
-    // segments[0] = the loop header (`for … in …` / `while …` /
-    // `until …`). segments[1] must open with `do` (optionally carrying
-    // the first body command inline, e.g. `do echo $i`).
-    if segments.len() < 2 {
-        return Err(FrontendError::Parse(format!(
-            "bashrs-frontend: `{kw}` loop starting at `{}` is missing its `do` keyword",
-            lines[start]
+            "bashrs-frontend: `{kw}` loop header `{}` must be followed by `do`",
+            &segs[start]
         )));
     }
-    let kind = parse_loop_header(&segments[0])?;
-
-    let do_seg = &segments[1];
-    if first_word(do_seg) != "do" {
-        return Err(FrontendError::Parse(format!(
-            "bashrs-frontend: `{kw}` loop header `{}` must be followed by `do`, got `{do_seg}`",
-            &segments[0]
-        )));
-    }
-    // Body commands: the remainder of the `do` segment (if any) plus
-    // every subsequent segment up to (but not including) `done`.
-    let mut body_lines: Vec<String> = Vec::new();
-    let do_remainder = do_seg
-        .strip_prefix("do")
-        .expect("first_word == \"do\" implies a \"do\" prefix")
-        .trim();
-    if !do_remainder.is_empty() {
-        body_lines.push(do_remainder.to_string());
-    }
-    for seg in &segments[2..] {
-        body_lines.push(seg.clone());
-    }
-
-    let mut body: Vec<Stmt> = Vec::new();
-    for cmd in &body_lines {
-        // Nested control-flow inside the body is out of this slice's
-        // scope — refuse (the v0.2.0 real parser handles nesting; the
-        // backend already recurses, but the frontend does not produce
-        // nested loops yet).
-        if let Some(nested) = control_flow_keyword(cmd) {
-            return Err(FrontendError::Parse(format!(
-                "bashrs-frontend: nested shell control-flow (`{nested}`) inside a `{kw}` loop \
-                 body is not supported at this slice; only a flat loop body \
-                 (Cmd / Pipeline / assignment) is handled"
-            )));
-        }
-        if let Some(stmt) = lower_flat_line(cmd)? {
-            body.push(stmt);
-        }
-    }
-
+    let (body, next) = parse_segment_seq(segs, start + 2, true)?;
     Ok((Stmt::ShellLoop { kind, body }, next))
 }
 
@@ -1049,12 +1149,13 @@ impl Frontend for BashrsFrontend {
         //       foo bar
         // is treated as a single logical line `echo foo bar`.
         let spliced = splice_line_continuations(source);
-        // PMAT-1268: collect the (trimmed) logical lines up front so
-        // the loop parser can look ahead across the `do … done` body.
-        // The old `for raw_line in spliced.lines()` walk couldn't
-        // consume subsequent lines, which is why control-flow could
-        // only ever be refused; index-based iteration is what lets a
-        // multi-line `for` loop be assembled.
+        // PMAT-1268/1276/1281: the TOP level stays line-based (so a
+        // top-level `;` keeps its pre-1281 literal-passthrough
+        // behaviour and quoted `;` / `$(…)` are unaffected). A
+        // `for`/`while`/`until` line routes to `parse_loop`, which
+        // collects the loop region and parses it — including
+        // arbitrarily NESTED loops — via the recursive segment parser,
+        // returning the LINE index just past the matching `done`.
         let trimmed_lines: Vec<&str> = spliced.lines().map(str::trim).collect();
         let mut stmts: Vec<Stmt> = Vec::new();
         let mut i = 0;
@@ -1065,8 +1166,7 @@ impl Frontend for BashrsFrontend {
                 continue;
             }
             if line.starts_with("#!") {
-                // Shebang. Skip — not a command, just an interpreter
-                // directive.
+                // Shebang. Skip — not a command, just an interpreter directive.
                 i += 1;
                 continue;
             }
@@ -1075,15 +1175,6 @@ impl Frontend for BashrsFrontend {
                 i += 1;
                 continue;
             }
-            // PMAT-1268/1276: a `for`/`while`/`until` loop. The IR
-            // (`Stmt::ShellLoop` + `LoopKind`) and the bashrs-backend
-            // renderer (`render_shell_loop`) already existed end-to-end
-            // (PMAT-048 / PMAT-974); PMAT-1268 added the `for` frontend
-            // parser and PMAT-1276 extends it to `while`/`until`.
-            // `parse_loop` consumes from the header line through the
-            // matching `done` and returns the index just past it. Only
-            // a FLAT body is handled at this slice; nested control-flow
-            // inside the body is refused there.
             if matches!(first_word(line), "for" | "while" | "until") {
                 let (loop_stmt, next) = parse_loop(&trimmed_lines, i)?;
                 stmts.push(loop_stmt);
@@ -1091,16 +1182,10 @@ impl Frontend for BashrsFrontend {
                 continue;
             }
             // PMAT-989: REFUSE the remaining shell control-flow
-            // (`if`/`case`, and any stray `do`/`done`/`then`/`elif`/
-            // `else`/`fi`/`esac` keyword, or a loop keyword that appears
-            // after a `;` on a compound line rather than at line start)
-            // instead of silently shredding it into barewords.
-            // Historically `if [ … ]; then … fi` was mislowered into
-            // bareword `Stmt::Cmd`s, destroying the conditional with no
-            // diagnostic — worse than an error. `if`/`case` (and
-            // compound/nested control-flow) are the v0.2.0 "real bashrs
-            // parser" job; refusing is the honest minimum until then —
-            // never shred.
+            // (`if`/`case`, and any stray `do`/`done`/`then`/… keyword,
+            // or a loop keyword appearing after a `;` on a compound line
+            // rather than at line start) instead of silently shredding
+            // it into barewords. `if`/`case` are the v0.2.0 job.
             if let Some(kw) = control_flow_keyword(line) {
                 return Err(FrontendError::Parse(format!(
                     "bashrs-frontend: shell control-flow (if/case) not supported — \
@@ -1109,9 +1194,7 @@ impl Frontend for BashrsFrontend {
                      barewords. Offending keyword `{kw}` at line `{line}`."
                 )));
             }
-            // Flat (non-control-flow) command line — assignment /
-            // pipeline / single command. Shared with `for`-loop
-            // bodies via `lower_flat_line` (PMAT-1268).
+            // Flat (non-control-flow) command line.
             if let Some(stmt) = lower_flat_line(line)? {
                 stmts.push(stmt);
             }
@@ -2864,25 +2947,71 @@ echo after
     }
 
     #[test]
-    fn parse_and_lower_refuses_nested_for_loop_no_shred() {
-        // SLICE-1 boundary: a nested loop inside a `for` body is
-        // REFUSED (not shredded). The v0.2.0 real parser handles
-        // nesting; the backend already recurses, but the frontend does
-        // not produce nested loops yet.
+    fn parse_and_lower_nested_for_loop() {
+        // PMAT-1281: a `for` nested inside a `for` body now PARSES into
+        // a `ShellLoop` whose body is itself a `ShellLoop` (the backend
+        // already renders nested loops recursively). Was refused pre-1281.
         let source = "\
 for i in 1 2; do
   for j in a b; do
-    echo $i$j
+    echo $i $j
   done
 done
 ";
-        let err = BashrsFrontend
+        let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/nested.sh"), source)
-            .expect_err("nested for-loop must be REFUSED at this slice");
-        let msg = format!("{err:?}");
+            .expect("nested for-loop must parse");
+        let (outer_kind, outer_body) = only_shell_loop(&module);
+        assert_eq!(
+            outer_kind,
+            &LoopKind::For {
+                var: "i".to_string(),
+                items: vec![Expr::LitStr("1".into()), Expr::LitStr("2".into())],
+            }
+        );
+        // The outer body is exactly one statement: the inner loop.
+        assert_eq!(outer_body.len(), 1, "outer body is the inner loop");
+        let Stmt::ShellLoop {
+            kind: inner_kind,
+            body: inner_body,
+        } = &outer_body[0]
+        else {
+            panic!("expected a nested ShellLoop, got {:?}", outer_body[0]);
+        };
+        assert_eq!(
+            inner_kind,
+            &LoopKind::For {
+                var: "j".to_string(),
+                items: vec![Expr::LitStr("a".into()), Expr::LitStr("b".into())],
+            }
+        );
+        assert_eq!(
+            inner_body,
+            &[Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::ShellVar("i".into()), Expr::ShellVar("j".into())],
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_nested_for_loop_single_line() {
+        // The all-on-one-line nesting form:
+        // `for i in 1 2; do for j in a b; do echo $i $j; done; done`.
+        // Exercises the `do <nested-header>` normalisation + depth-aware
+        // `done` matching in `collect_loop_region`.
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/nested1.sh"),
+                "for i in 1 2; do for j in a b; do echo $i $j; done; done\n",
+            )
+            .expect("single-line nested for-loop must parse");
+        let (_outer_kind, outer_body) = only_shell_loop(&module);
+        assert_eq!(outer_body.len(), 1);
         assert!(
-            msg.contains("nested"),
-            "error should name nested control-flow; got {msg}"
+            matches!(&outer_body[0], Stmt::ShellLoop { .. }),
+            "outer body must be the inner loop, got {:?}",
+            outer_body[0]
         );
     }
 
@@ -3070,9 +3199,10 @@ echo after
     }
 
     #[test]
-    fn parse_and_lower_refuses_nested_while_in_for_body() {
-        // A `while` nested inside a `for` body is still out of scope —
-        // refuse (nested control-flow), never shred.
+    fn parse_and_lower_nested_while_in_for_body() {
+        // PMAT-1281: a `while` nested inside a `for` body now parses —
+        // mixed loop dialects nest just as same-dialect ones do. The
+        // inner while's opaque condition round-trips as a LitStr.
         let source = "\
 for i in 1 2; do
   while [ $i -gt 0 ]; do
@@ -3080,10 +3210,23 @@ for i in 1 2; do
   done
 done
 ";
-        let err = BashrsFrontend
+        let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/nw.sh"), source)
-            .expect_err("nested while must be REFUSED");
-        assert!(format!("{err:?}").contains("nested"));
+            .expect("nested while-in-for must parse");
+        let (_outer_kind, outer_body) = only_shell_loop(&module);
+        assert_eq!(outer_body.len(), 1);
+        let Stmt::ShellLoop {
+            kind: inner_kind, ..
+        } = &outer_body[0]
+        else {
+            panic!("expected nested ShellLoop, got {:?}", outer_body[0]);
+        };
+        assert_eq!(
+            inner_kind,
+            &LoopKind::While {
+                cond: Expr::LitStr("[ $i -gt 0 ]".to_string()),
+            }
+        );
     }
 
     #[test]
