@@ -675,6 +675,18 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
                 collect_expr_literals(v, out);
             }
         }
+        // PMAT-1304: a dict MERGE lays out its explicit pairs' str literals
+        // (`{**a, "z": 5}` — the key is stored by base-pointer, so it must be
+        // in the static data table) exactly like a DictLit entry; a splat
+        // source is a bare dict name (no literal), but recursing is harmless.
+        Expr::DictMerge { entries } => {
+            for (k, v) in entries {
+                if let Some(k) = k {
+                    collect_expr_literals(k, out);
+                }
+                collect_expr_literals(v, out);
+            }
+        }
         Expr::SetLit(elems) => {
             for el in elems {
                 collect_expr_literals(el, out);
@@ -13244,6 +13256,12 @@ fn expr_has_list_sum(expr: &Expr, want_float: bool) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -13354,6 +13372,12 @@ fn expr_has_list_minmax(expr: &Expr, want_float: bool) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -13455,6 +13479,12 @@ fn expr_has_list_contains(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -13744,6 +13774,12 @@ fn expr_has_list_query(expr: &Expr, want_index: bool) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -13970,6 +14006,12 @@ fn expr_has_list_pop_index(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -14066,6 +14108,12 @@ fn expr_has_bool_reduce(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -14183,6 +14231,12 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -14288,6 +14342,12 @@ fn expr_has_set_to_list(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -14409,6 +14469,12 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -14518,6 +14584,12 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -14624,6 +14696,12 @@ fn expr_has_list_concat(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -14738,6 +14816,12 @@ fn expr_has_list_slice(expr: &Expr) -> bool {
         Expr::Repeat { seq, n, .. } => e(seq) || e(n),
         Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
         Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
+        // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
+        // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
         _ => false,
     }
@@ -19791,10 +19875,16 @@ fn emit_heap_map_bind(
         // NEW set (never mutating an operand), so it is a valid set-binding value.
         // Dispatches to the per-op allocating runtime helper.
         Expr::SetOp { lhs, op, rhs } => emit_set_op(lhs, *op, rhs, kind, scope, out, depth),
+        // PMAT-1304: DICT MERGE — `{**a, **b}` (dict-display splat) and `a | b`
+        // (PEP 584 union) both lower to `Expr::DictMerge`; each yields a FRESH
+        // dict (never mutating a source — `{**d}` is the dict COPY), so it is a
+        // valid dict-binding value.
+        Expr::DictMerge { entries } => emit_dict_merge(entries, kind, scope, out, depth),
         other => Err(unsupported(&format!(
-            "a `dict`/`set` binding must be a dict/set LITERAL or a set-algebra \
-             expression (`a | b` / `a & b` / `a - b` / `a ^ b`) in the WASM subset \
-             (a dict/set-returning call, comprehension, or copy is refused) — got {}",
+            "a `dict`/`set` binding must be a dict/set LITERAL, a set-algebra \
+             expression (`a | b` / `a & b` / `a - b` / `a ^ b`), or a dict merge \
+             (`{{**a, **b}}` / `a | b`) in the WASM subset (a dict/set-returning \
+             call, comprehension, or name copy is refused) — got {}",
             expr_kind(other)
         ))),
     }
@@ -19987,6 +20077,94 @@ fn emit_set_lit(
         indent(out, depth);
         writeln!(out, "local.set ${DICT_DST_SCRATCH}").expect("write");
     }
+    indent(out, depth);
+    writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+    Ok(())
+}
+
+/// PMAT-1304: lower a DICT-MERGE binding value — `{**a, **b}` (dict-display
+/// splat, possibly mixed with explicit `k: v` pairs) and the PEP 584 union
+/// `a | b`, both carried by [`Expr::DictMerge`] — leaving the NEW dict's `i32`
+/// base-pointer on the stack (a merge yields a FRESH dict, never mutating a
+/// source; `{**d}` is the dict COPY). Builds an EMPTY region sized for the
+/// explicit pairs (+ slack; splat cardinality is dynamic, so the walk 2x-grows
+/// and relocates exactly like a LET-bound receiver — PMAT-1303's witnessed
+/// path), then folds each entry LEFT-TO-RIGHT so a later entry WINS on a key
+/// collision, matching CPython:
+///
+/// * a SPLAT (`key == None`) must be a dict NAME of the binding's key kind —
+///   merged via `$__wasm_dict_update_<k>` (the PMAT-1302 walk; here the
+///   receiver is the fresh dst, so no user-visible local is ever mutated);
+/// * an EXPLICIT `k: v` pair is one `$__wasm_dict_set_<k>` update-or-insert,
+///   exactly a dict-literal entry.
+///
+/// Both helpers are already co-emitted for every LET-bound dict kind
+/// ([`module_dict_key_kinds`] keys off the `Let`'s `Type::Dict` annotation, not
+/// the value expr), so the merge introduces NO helper and NO gate walker. A
+/// non-name splat source (a nested literal/merge — the dst scratch is single),
+/// a `set` source, or a kind-mismatched source refuses honestly.
+fn emit_dict_merge(
+    entries: &[(Option<Expr>, Expr)],
+    kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let explicit = entries.iter().filter(|(k, _)| k.is_some()).count() as i32;
+    emit_map_alloc(explicit + DICT_GROWTH_SLACK, out, depth);
+    for (key, value) in entries {
+        indent(out, depth);
+        writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
+        match key {
+            // `**src` / a `|` operand — a whole-dict splat.
+            None => {
+                let Expr::Ident(src) = value else {
+                    return Err(unsupported(
+                        "a dict merge (`{**a, **b}` / `a | b`) with a non-name \
+                         source — the WASM subset merges dict LOCALS; bind a \
+                         nested literal / merge to a local first",
+                    ));
+                };
+                let skind = scope.heap_map_kind(src).ok_or_else(|| {
+                    unsupported(&format!(
+                        "dict merge splats `{src}` which is not a `dict`/`set` \
+                         local in the WASM subset"
+                    ))
+                })?;
+                if scope.is_set(src) {
+                    return Err(unsupported(&format!(
+                        "dict merge splats the `set` `{src}` — a set is not a \
+                         mapping in the WASM subset"
+                    )));
+                }
+                if skind != kind {
+                    return Err(unsupported(&format!(
+                        "dict merge over key kinds that disagree (a {} source \
+                         into a {} result) — every source must share the \
+                         result's key encoding; refused honestly",
+                        skind.suffix(),
+                        kind.suffix()
+                    )));
+                }
+                indent(out, depth);
+                writeln!(out, "local.get ${src}").expect("write");
+                indent(out, depth);
+                writeln!(out, "call $__wasm_dict_update_{}", kind.suffix()).expect("write");
+            }
+            // explicit `k: v` pair — exactly one dict-literal insert.
+            Some(k) => {
+                emit_dict_key(k, kind, scope, out, depth)?;
+                emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
+                indent(out, depth);
+                writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
+            }
+        }
+        // Consume the returned (possibly grown + relocated) base back into the
+        // scratch — both helpers return the i32 base-pointer (PMAT-999).
+        indent(out, depth);
+        writeln!(out, "local.set ${DICT_DST_SCRATCH}").expect("write");
+    }
+    // result = dst (the merged dict's base-pointer).
     indent(out, depth);
     writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
     Ok(())
@@ -22746,6 +22924,7 @@ fn expr_kind(e: &Expr) -> &'static str {
         Expr::LitStr(_) => "LitStr",
         Expr::ListLit(_) => "ListLit",
         Expr::DictLit(_) => "DictLit",
+        Expr::DictMerge { .. } => "DictMerge",
         Expr::SetLit(_) => "SetLit",
         Expr::TupleLit(_) => "TupleLit",
         Expr::Len(_) => "Len",
