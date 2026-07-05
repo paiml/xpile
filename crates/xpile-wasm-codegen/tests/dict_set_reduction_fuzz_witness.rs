@@ -50,13 +50,18 @@
 //! ## Refusal guards (the PMAT-1292 defense)
 //!
 //! The reductions are CPython-exact ONLY because they are order-BLIND (`sum`/`min`/
-//! `max`) or order-DEFINING (`sorted`). An order-DEPENDENT observation of a
-//! bump-heap container — `for k in d`, `for k in d.keys()`, `for v in d.values()`,
-//! `list(d)`, `list(d.values())`, `list(s)` — would read the arbitrary storage
-//! order and silently diverge from CPython's insertion / hash order. Those MUST
-//! refuse at compile time. This witness pins those refusals so a future slice can
-//! never quietly accept one without an order-safe model (the exact class PMAT-1292
-//! caught mid-stream). These run on the EMIT path alone — no WABT required.
+//! `max`) or order-DEFINING (`sorted`). An ORDER-DEPENDENT observation of a
+//! bump-heap container — `for k in d` / `for k in d.keys()` / `for v in
+//! d.values()` with a positional body (`r = r*10 + k`), `list(d)`,
+//! `list(d.values())`, `list(s)` — would read the arbitrary storage order and
+//! silently diverge from CPython's insertion / hash order. Those MUST refuse at
+//! compile time. (PMAT-1297 later opened `for k in d` for order-INDEPENDENT
+//! commutative bodies, which stay CPython-exact; the cases pinned here all use an
+//! order-DEPENDENT `r = r*10 + k` body or a bare `list(...)`, so they still
+//! refuse.) This witness pins those refusals so a future slice can never quietly
+//! accept an order-DEPENDENT one without an order-safe model (the exact class
+//! PMAT-1292 caught mid-stream). These run on the EMIT path alone — no WABT
+//! required.
 //!
 //! ## Gating
 //!

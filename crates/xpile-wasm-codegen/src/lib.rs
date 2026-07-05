@@ -9968,6 +9968,14 @@ fn expr_references_any(e: &Expr, names: &HashSet<String>) -> bool {
             expr_references_any(lhs, names) || expr_references_any(rhs, names)
         }
         Expr::Len(inner) => expr_references_any(inner, names),
+        // PMAT-1297: a pure string method (`len(k)` → `CharCount`, `k.upper()`,
+        // …) references an accumulator iff its receiver or an argument does — so
+        // `total = total + len(k)` over a str-keyed dict/set is a commutative
+        // fold, not order-dependent. Recursing (rather than the conservative
+        // `_ => true`) admits the natural str-key length reduction.
+        Expr::StrMethod { recv, args, .. } => {
+            expr_references_any(recv, names) || args.iter().any(|a| expr_references_any(a, names))
+        }
         Expr::Index { collection, index } => {
             expr_references_any(collection, names) || expr_references_any(index, names)
         }
@@ -10010,11 +10018,17 @@ fn desugar_foreach_stmts(
                 dict_guard,
                 mutate_elems,
             } => {
-                if *over_keys || dict_guard.is_some() {
+                // PMAT-1297: `for k in d` over a MUTATED dict arrives from the
+                // frontend as a materialised keys-Vec + size-change guard
+                // (`dict_guard: Some`, `over_keys: false`) — the WASM subset does
+                // not model the snapshot + RuntimeError-on-resize semantics, so it
+                // is refused distinctly from the read-only key iteration handled
+                // below (`over_keys: true`, `dict_guard: None`).
+                if dict_guard.is_some() {
                     return Err(unsupported(
-                        "for-loop over a dict — dict iteration is not in the \
-                         WASM subset (HashMap-order + heap-relocation \
-                         semantics are unresolved; iterate a list or str)",
+                        "for-loop over a MUTATED dict — the keys-snapshot + \
+                         size-change-guard form is not in the WASM subset; \
+                         iterate a read-only dict, a list, or a str",
                     ));
                 }
                 if *mutate_elems {
@@ -10024,34 +10038,40 @@ fn desugar_foreach_stmts(
                          element mutation cannot propagate; refused honestly",
                     ));
                 }
-                // PMAT-1292: a SET has NO defined iteration order — CPython walks
-                // its hash table (for int keys, roughly `hash(k) & mask` probe
-                // order), while xpile walks the bump-heap live-entry region in
-                // STORAGE order, and a `discard` swaps the last entry into the
-                // hole. The two orders DIVERGE. A COMMUTATIVE reduction
-                // (sum / count / product / min / max / any / all) is invariant
-                // under that permutation, so it is CPython-exact; an
-                // ORDER-DEPENDENT body (`acc = acc*10 + x`, a "first element"
-                // flag, `print(x)`) is NOT, and emitting it would silently
-                // diverge. Refuse the order-dependent case rather than shred it
-                // into a wrong result. Only NAMED set iteration reaches here (a
-                // set literal already refuses in the `iter` match below); list
-                // and str iteration have a DEFINED order, so they are unguarded.
-                if let Expr::Ident(n) = iter {
-                    if matches!(env.get(n), Some(Type::Set(_))) {
-                        set_iteration_body_order_safe(body).map_err(|why| {
-                            unsupported(&format!(
-                                "order-dependent `for … in {n}` over a set — {why}. \
-                                 A set has no defined iteration order (CPython walks \
-                                 its hash table; xpile walks bump-heap storage \
-                                 order), so only an order-INDEPENDENT reduction \
-                                 (sum / count / product / min / max / any / all — a \
-                                 commutative fold) matches CPython. For an \
-                                 order-DEFINED sequence, bind `sorted({n})` and \
-                                 iterate that."
-                            ))
-                        })?;
+                // PMAT-1292/1297: a SET, and a DICT iterated by its keys
+                // (`over_keys`), have NO storage order xpile can guarantee matches
+                // CPython. CPython walks a set's hash table (unordered) and a
+                // dict's INSERTION order; xpile walks the bump-heap live-entry
+                // region in STORAGE order, and a `discard`/`del` swaps the last
+                // entry into the hole — so storage order can DIVERGE from either.
+                // A COMMUTATIVE reduction (sum / count / product / min / max — a
+                // commutative fold) is invariant under that permutation, so it is
+                // CPython-exact; an ORDER-DEPENDENT body (`acc = acc*10 + x`, a
+                // "first element" flag, `print(x)`) is NOT, and emitting it would
+                // silently diverge. Refuse the order-dependent case rather than
+                // shred it into a wrong result. Only a NAMED set/dict reaches here
+                // (a set/dict literal or a `d.keys()`/`d.values()` view already
+                // refuses in the `iter` match below); list and str iteration have
+                // a DEFINED order, so they are unguarded.
+                let hash_order_iter = match iter {
+                    Expr::Ident(n) if *over_keys => Some((n.as_str(), "dict")),
+                    Expr::Ident(n) if matches!(env.get(n), Some(Type::Set(_))) => {
+                        Some((n.as_str(), "set"))
                     }
+                    _ => None,
+                };
+                if let Some((n, kind)) = hash_order_iter {
+                    set_iteration_body_order_safe(body).map_err(|why| {
+                        unsupported(&format!(
+                            "order-dependent `for … in {n}` over a {kind} — {why}. \
+                             xpile walks bump-heap storage order (a `del`/`discard` \
+                             swaps the last entry into the hole), so only an \
+                             order-INDEPENDENT reduction (sum / count / product / \
+                             min / max — a commutative fold) matches CPython. For \
+                             an order-DEFINED sequence, bind `sorted({n})` and \
+                             iterate that."
+                        ))
+                    })?;
                 }
                 let body = desugar_foreach_stmts(body, next, env)?;
                 let k = *next;
@@ -15465,6 +15485,24 @@ impl Scope<'_> {
         })
     }
 
+    /// PMAT-1297: the KEY WAT type if `name` is a LET-bound DICT local (an
+    /// int-keyed dict's key loads as `i64`, a str-keyed dict's as `i32`, so the
+    /// `for k in d` loop var behaves as a str local downstream), else `None`. A
+    /// SET returns `None` here — set iteration routes through [`set_elem_of`].
+    /// Drives the `Expr::Index` over a dict NAME that the `for k in d` desugar
+    /// ([`desugar_foreach_stmts`]) emits per key: a dict entry shares the set's
+    /// [`DICT_ENTRY_SIZE`] (16) byte layout with the key at entry+0, so the read
+    /// reuses [`emit_set_elem_read`] verbatim (it never touches the value slot).
+    fn dict_key_elem_of(&self, name: &str) -> Option<WatTy> {
+        if self.is_set(name) {
+            return None;
+        }
+        Some(match self.heap_map_kind(name)? {
+            KeyKind::Int => WatTy::I64,
+            KeyKind::Str => WatTy::I32,
+        })
+    }
+
     /// PMAT-1276: `true` if `name` is an APPEND-safe list local — a `ListLit`
     /// binding whose record [`emit_list_lit`] over-allocated with spare
     /// capacity. `xs.append(v)` is emitted only for these; every other list
@@ -17365,6 +17403,24 @@ fn emit_index(
         emit_set_elem_read(name, elem, index, scope, out, depth)?;
         return Ok(elem);
     }
+    // PMAT-1297: `for k in d` over a dict lowers (in `desugar_foreach_stmts`) to
+    // `d[i]` — an `Expr::Index` on a dict NAME. Read entry `i`'s KEY from the
+    // 16-byte-stride entry array (identical layout to a set — key at entry+0;
+    // reuse [`emit_set_elem_read`], which never touches the value slot). Gated on
+    // the synthetic foreach counter: a user-written `d[k]` is a DictGet LOOKUP
+    // (never an `Expr::Index` on the dict NAME), so a bare `d[i]` reaching here is
+    // strictly the key-iteration lowering.
+    if let Some(elem) = scope.dict_key_elem_of(name) {
+        if !is_foreach_counter(index) {
+            return Err(unsupported(&format!(
+                "positional subscript of the dict `{name}` — a dict is keyed, not \
+                 positional; entry-order access exists only as the internal \
+                 per-element read of `for k in {name}`"
+            )));
+        }
+        emit_set_elem_read(name, elem, index, scope, out, depth)?;
+        return Ok(elem);
+    }
     Err(unsupported(&format!(
         "index over `{name}` which is not a `list[scalar]` param/local or a \
          `set[int|str]` local — only a list (i32 base-pointer into linear \
@@ -18767,34 +18823,46 @@ fn emit_str_expr(
             emit_str_slice(collection, lo, hi, *of_str, *step, scope, out, depth)?;
             Ok(())
         }
-        // PMAT-1290: `s[i]` where `s` is a `set[str]` — the per-element read the
-        // `for w in s` desugar emits, arriving in a STRING position because the
-        // loop var is str-typed. Load entry `i`'s stored str base-pointer (i32)
-        // from the 16-byte-stride set entry array (see `emit_set_elem_read`), so
-        // the loop var behaves as an ordinary str local downstream (`len(w)`,
-        // concat, `==`). Only a `set[str]` reaches here; a non-name collection or
-        // a `set[int]`/list element in a str position is refused honestly.
+        // PMAT-1290/1297: `s[i]`/`d[i]` where `s` is a `set[str]` or `d` a
+        // `dict[str, _]` — the per-element read the `for w in s` / `for k in d`
+        // desugar emits, arriving in a STRING position because the loop var is
+        // str-typed. Load entry `i`'s stored str base-pointer (i32) from the
+        // 16-byte-stride entry array (see `emit_set_elem_read`; a dict key shares
+        // the set's entry+0 layout), so the loop var behaves as an ordinary str
+        // local downstream (`len(w)`, concat, `==`). Only a str-keyed set/dict
+        // reaches here; a non-name collection or an int-keyed / list element in a
+        // str position is refused honestly.
         Expr::Index { collection, index } => {
             let Expr::Ident(name) = collection.as_ref() else {
                 return Err(unsupported(
                     "indexing a non-name collection in a string position — only \
-                     a `set[str]` local (iterated via `for w in s`) yields a str \
+                     a `set[str]` local (iterated via `for w in s`) or a \
+                     `dict[str, _]` (iterated via `for k in d`) yields a str \
                      element in the WASM subset",
                 ));
             };
-            match scope.set_elem_of(name) {
+            // A str-keyed SET (`for w in s`) or str-keyed DICT (`for k in d`)
+            // both yield an i32 str-pointer key per iteration; an int-keyed
+            // container (i64) filters out to the honest non-str refusal below.
+            let str_key = scope
+                .set_elem_of(name)
+                .or_else(|| scope.dict_key_elem_of(name))
+                .filter(|t| *t == WatTy::I32);
+            match str_key {
                 Some(WatTy::I32) if is_foreach_counter(index) => {
                     emit_set_elem_read(name, WatTy::I32, index, scope, out, depth)
                 }
                 Some(WatTy::I32) => Err(unsupported(&format!(
-                    "subscripting the set `{name}` — a Python set is not \
-                     subscriptable (`TypeError`); set element access exists only \
-                     as the internal per-element read of `for w in {name}`"
+                    "positional subscript of `{name}` in a string position — a \
+                     set/dict element exists only as the internal per-element \
+                     read of `for … in {name}` (a set is not subscriptable; a \
+                     dict is keyed, not positional)"
                 ))),
                 _ => Err(unsupported(&format!(
                     "string-position index over `{name}` — only a `set[str]` \
-                     local yields a str element in the WASM subset (a `set[int]` \
-                     or list element is not a str)"
+                     local or a `dict[str, _]` iterated by keys yields a str \
+                     element in the WASM subset (a `set[int]`/`dict[int, _]` or \
+                     list element is not a str)"
                 ))),
             }
         }

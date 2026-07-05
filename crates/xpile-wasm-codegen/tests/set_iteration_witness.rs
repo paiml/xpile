@@ -457,8 +457,13 @@ fn direct_set_subscript_refuses_typeerror() {
 }
 
 #[test]
-fn for_in_dict_still_refuses() {
-    // Set iteration must NOT have loosened dict iteration (which is order-hard).
+fn order_dependent_for_in_dict_still_refuses() {
+    // PMAT-1297 opened `for k in d` for ORDER-INDEPENDENT (commutative) bodies
+    // (the positive witnesses live in dict_key_iteration_witness.rs), but an
+    // ORDER-DEPENDENT body must STAY refused — a dict's storage order can diverge
+    // from CPython's insertion order after a swap-into-hole `del`, so emitting a
+    // positional fold (`total = total * 10 + k`) would silently miscompile. This
+    // pins that honesty guard.
     let m = module(
         "dict_iter",
         vec![func(
@@ -478,9 +483,15 @@ fn for_in_dict_still_refuses() {
                     var: "k".into(),
                     iter: ident("d"),
                     elem_ty: Type::I64,
+                    // `total = total * 10 + k` — the position of each key matters,
+                    // so the result depends on iteration order.
                     body: vec![assign(
                         "total",
-                        binop(BinOp::Add, ident("total"), ident("k")),
+                        binop(
+                            BinOp::Add,
+                            binop(BinOp::Mul, ident("total"), Expr::LitInt(10)),
+                            ident("k"),
+                        ),
                     )],
                     over_keys: true,
                     dict_guard: None,
@@ -492,8 +503,8 @@ fn for_in_dict_still_refuses() {
     );
     let err = emit_module(&m).unwrap_err().to_string();
     assert!(
-        err.contains("dict iteration is not in the WASM subset"),
-        "dict iteration must stay refused, got: {err}"
+        err.contains("order-dependent") && err.contains("dict"),
+        "an order-dependent dict iteration must stay refused, got: {err}"
     );
 }
 
