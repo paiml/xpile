@@ -818,22 +818,74 @@ fn parse_for_header(header: &str) -> Result<(String, Vec<Expr>), FrontendError> 
     Ok((var, items))
 }
 
-/// PMAT-1268: parse a POSIX `for VAR in ITEMS; do BODY; done` loop
-/// beginning at `lines[start]` (lines are pre-trimmed). Returns the
-/// built `Stmt::ShellLoop` and the index of the line AFTER the
-/// matching `done`.
+/// PMAT-1276: parse a loop HEADER segment (everything before `do`)
+/// into its `LoopKind`, dispatching on the leading keyword.
 ///
-/// SLICE-1 SCOPE (honest boundary): only the `for` dialect, and only
-/// a FLAT loop body (each body command is a plain Cmd / Pipeline /
-/// ShellAssign). NESTED control-flow inside the body (another `for`,
-/// or any `while`/`until`/`if`/`case`) is REFUSED, as are trailing
-/// constructs after `done` (redirects, `&`, chained commands).
-/// `while`/`until`/`if`/`case` headers themselves are still refused
-/// by the caller. The structural `;`/newline split of the loop
-/// skeleton is not quoting-aware — a `;` inside a quoted item
-/// mis-splits, but that degrades to a tokenizer error (unbalanced
-/// quote) and thus a clean REFUSE, never a silent shred.
-fn parse_for_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
+///   * `for VAR in ITEMS` → `LoopKind::For` (via `parse_for_header`).
+///   * `while COND` / `until COND` → `LoopKind::While`/`Until` whose
+///     condition is captured VERBATIM as an opaque `Expr::LitStr`.
+///     This matches the IR's documented v0.1.0 posture — the loop
+///     condition is OPAQUE; the backend prints it back byte-for-byte
+///     (`render_arg(LitStr(s)) == s`). We deliberately do NOT model
+///     the `[ … ]` test structurally (that's the v0.2.0 real parser).
+fn parse_loop_header(header: &str) -> Result<LoopKind, FrontendError> {
+    match first_word(header) {
+        "for" => {
+            let (var, items) = parse_for_header(header)?;
+            Ok(LoopKind::For { var, items })
+        }
+        kw @ ("while" | "until") => {
+            // Condition = everything after the leading keyword, kept
+            // verbatim as an opaque LitStr (round-trips through the
+            // backend unchanged). `$VAR` refs inside stay literal in
+            // the string; the shell expands them at run time.
+            let cond_text = header
+                .strip_prefix(kw)
+                .expect("first_word matched implies a prefix")
+                .trim();
+            if cond_text.is_empty() {
+                return Err(FrontendError::Parse(format!(
+                    "bashrs-frontend: `{kw}` loop has an empty condition; \
+                     write `{kw} <cond>; do … done`"
+                )));
+            }
+            let cond = Expr::LitStr(cond_text.to_string());
+            Ok(if kw == "while" {
+                LoopKind::While { cond }
+            } else {
+                LoopKind::Until { cond }
+            })
+        }
+        other => Err(FrontendError::Parse(format!(
+            "bashrs-frontend: unrecognized loop header keyword `{other}` in `{header}`"
+        ))),
+    }
+}
+
+/// PMAT-1268/1276: parse a POSIX `for`/`while`/`until` loop beginning
+/// at `lines[start]` (lines are pre-trimmed). Returns the built
+/// `Stmt::ShellLoop` and the index of the line AFTER the matching
+/// `done`.
+///
+/// SLICE SCOPE (honest boundary):
+///   - `for VAR in ITEMS; do FLAT-BODY done` (PMAT-1268).
+///   - `while COND; do FLAT-BODY done` / `until COND; do … done`
+///     (PMAT-1276) — COND is captured verbatim as an opaque
+///     `Expr::LitStr` (see `parse_loop_header`); the `[ … ]` test is
+///     NOT modelled structurally.
+///
+/// Both dialects require a FLAT body (Cmd / Pipeline / ShellAssign).
+/// NESTED control-flow inside the body (another loop, or `if`/`case`)
+/// is REFUSED, as are trailing constructs after `done` (redirects,
+/// `&`, chained commands). `if`/`case` headers themselves are still
+/// refused by the caller. The structural `;`/newline split of the loop
+/// skeleton is not quoting-aware — a `;` inside a quoted item /
+/// condition mis-splits, but that degrades to a tokenizer error
+/// (unbalanced quote) and thus a clean REFUSE, never a silent shred.
+fn parse_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
+    // The loop dialect keyword (`for`/`while`/`until`), used only for
+    // legible diagnostics.
+    let kw = first_word(lines[start]);
     // Collect the loop's command-position segments — split by both
     // `;` and physical newline (equivalent POSIX command separators)
     // — from the header line through the matching `done`.
@@ -856,7 +908,7 @@ fn parse_for_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), Fronten
             if first_word(seg) == "done" {
                 if seg != "done" {
                     return Err(FrontendError::Parse(format!(
-                        "bashrs-frontend: `for` loop `done` has trailing content `{seg}` \
+                        "bashrs-frontend: `{kw}` loop `done` has trailing content `{seg}` \
                          (redirects / chained commands after `done` are not supported at \
                          this slice); refusing rather than dropping it"
                     )));
@@ -873,26 +925,27 @@ fn parse_for_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), Fronten
     }
     let Some(next) = next_after else {
         return Err(FrontendError::Parse(format!(
-            "bashrs-frontend: unterminated `for` loop starting at `{}` — no matching `done`",
+            "bashrs-frontend: unterminated `{kw}` loop starting at `{}` — no matching `done`",
             lines[start]
         )));
     };
 
-    // segments[0] = the `for VAR in ITEMS` header.
-    // segments[1] must open with `do` (optionally carrying the first
-    // body command inline, e.g. `do echo $i`).
+    // segments[0] = the loop header (`for … in …` / `while …` /
+    // `until …`). segments[1] must open with `do` (optionally carrying
+    // the first body command inline, e.g. `do echo $i`).
     if segments.len() < 2 {
         return Err(FrontendError::Parse(format!(
-            "bashrs-frontend: `for` loop starting at `{}` is missing its `do` keyword",
+            "bashrs-frontend: `{kw}` loop starting at `{}` is missing its `do` keyword",
             lines[start]
         )));
     }
-    let (var, items) = parse_for_header(&segments[0])?;
+    let kind = parse_loop_header(&segments[0])?;
 
     let do_seg = &segments[1];
     if first_word(do_seg) != "do" {
         return Err(FrontendError::Parse(format!(
-            "bashrs-frontend: `for {var} in …` must be followed by `do`, got `{do_seg}`"
+            "bashrs-frontend: `{kw}` loop header `{}` must be followed by `do`, got `{do_seg}`",
+            &segments[0]
         )));
     }
     // Body commands: the remainder of the `do` segment (if any) plus
@@ -911,14 +964,14 @@ fn parse_for_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), Fronten
 
     let mut body: Vec<Stmt> = Vec::new();
     for cmd in &body_lines {
-        // Nested control-flow inside the body is out of slice-1
-        // scope — refuse (the v0.2.0 real parser handles nesting;
-        // the backend already recurses, but the frontend does not
-        // produce nested loops yet).
-        if let Some(kw) = control_flow_keyword(cmd) {
+        // Nested control-flow inside the body is out of this slice's
+        // scope — refuse (the v0.2.0 real parser handles nesting; the
+        // backend already recurses, but the frontend does not produce
+        // nested loops yet).
+        if let Some(nested) = control_flow_keyword(cmd) {
             return Err(FrontendError::Parse(format!(
-                "bashrs-frontend: nested shell control-flow (`{kw}`) inside a `for` body \
-                 is not supported at this slice; only a flat loop body \
+                "bashrs-frontend: nested shell control-flow (`{nested}`) inside a `{kw}` loop \
+                 body is not supported at this slice; only a flat loop body \
                  (Cmd / Pipeline / assignment) is handled"
             )));
         }
@@ -927,13 +980,7 @@ fn parse_for_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), Fronten
         }
     }
 
-    Ok((
-        Stmt::ShellLoop {
-            kind: LoopKind::For { var, items },
-            body,
-        },
-        next,
-    ))
+    Ok((Stmt::ShellLoop { kind, body }, next))
 }
 
 pub struct BashrsFrontend;
@@ -1028,36 +1075,36 @@ impl Frontend for BashrsFrontend {
                 i += 1;
                 continue;
             }
-            // PMAT-1268: a `for VAR in …; do … done` loop. The IR
-            // (`Stmt::ShellLoop` + `LoopKind::For`) and the
-            // bashrs-backend renderer (`render_shell_loop`) already
-            // existed end-to-end (PMAT-048 / PMAT-974); this frontend
-            // parser was the last missing piece. `parse_for_loop`
-            // consumes from the header line through the matching
-            // `done` and returns the index just past it. Only the
-            // `for` dialect with a FLAT body is handled at this slice;
-            // nested control-flow inside the body is refused there.
-            if first_word(line) == "for" {
-                let (loop_stmt, next) = parse_for_loop(&trimmed_lines, i)?;
+            // PMAT-1268/1276: a `for`/`while`/`until` loop. The IR
+            // (`Stmt::ShellLoop` + `LoopKind`) and the bashrs-backend
+            // renderer (`render_shell_loop`) already existed end-to-end
+            // (PMAT-048 / PMAT-974); PMAT-1268 added the `for` frontend
+            // parser and PMAT-1276 extends it to `while`/`until`.
+            // `parse_loop` consumes from the header line through the
+            // matching `done` and returns the index just past it. Only
+            // a FLAT body is handled at this slice; nested control-flow
+            // inside the body is refused there.
+            if matches!(first_word(line), "for" | "while" | "until") {
+                let (loop_stmt, next) = parse_loop(&trimmed_lines, i)?;
                 stmts.push(loop_stmt);
                 i = next;
                 continue;
             }
             // PMAT-989: REFUSE the remaining shell control-flow
-            // (`while`/`until`/`if`/`case`, and any stray
-            // `do`/`done`/`then`/`elif`/`else`/`fi`/`esac` keyword, or
-            // a `for` that appears after a `;` on a compound line
-            // rather than at line start) instead of silently shredding
-            // it into barewords. Historically `while [ … ]; do … done`
-            // was mislowered into bareword `Stmt::Cmd`s, destroying the
-            // loop with no diagnostic — worse than an error. Those
-            // dialects (and compound/nested control-flow) are the
-            // v0.2.0 "real bashrs parser" job; refusing is the honest
-            // minimum until then — never shred.
+            // (`if`/`case`, and any stray `do`/`done`/`then`/`elif`/
+            // `else`/`fi`/`esac` keyword, or a loop keyword that appears
+            // after a `;` on a compound line rather than at line start)
+            // instead of silently shredding it into barewords.
+            // Historically `if [ … ]; then … fi` was mislowered into
+            // bareword `Stmt::Cmd`s, destroying the conditional with no
+            // diagnostic — worse than an error. `if`/`case` (and
+            // compound/nested control-flow) are the v0.2.0 "real bashrs
+            // parser" job; refusing is the honest minimum until then —
+            // never shred.
             if let Some(kw) = control_flow_keyword(line) {
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: shell control-flow (while/until/if/case) not supported — \
-                     the `for … in …; do … done` loop is handled, but the rest of the \
+                    "bashrs-frontend: shell control-flow (if/case) not supported — \
+                     `for`/`while`/`until` loops are handled, but the rest of the \
                      flat-command subset refuses rather than silently shredding into \
                      barewords. Offending keyword `{kw}` at line `{line}`."
                 )));
@@ -2911,14 +2958,132 @@ fi
     }
 
     #[test]
-    fn parse_and_lower_refuses_while_loop() {
-        let err = BashrsFrontend
+    fn parse_and_lower_single_line_while_loop() {
+        // PMAT-1276: `while COND; do … done` now PARSES into a
+        // `LoopKind::While`. The condition is captured verbatim as an
+        // opaque `Expr::LitStr` (the IR's v0.1.0 posture) — here
+        // `[ -f /tmp/x ]`, which round-trips through the backend.
+        let module = BashrsFrontend
             .parse_and_lower(
                 &PathBuf::from("/tmp/w.sh"),
-                "while true; do echo hi; done\n",
+                "while [ -f /tmp/x ]; do echo hi; done\n",
             )
-            .expect_err("while-loop must be REFUSED");
-        assert!(format!("{err:?}").contains("control-flow"));
+            .expect("single-line while-loop must parse into a ShellLoop");
+        let (kind, body) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::While {
+                cond: Expr::LitStr("[ -f /tmp/x ]".to_string()),
+            }
+        );
+        assert_eq!(
+            body,
+            &[Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::LitStr("hi".to_string())],
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_multi_line_while_loop_do_on_own_line() {
+        // The `while` condition holds a `$VAR` ref; it stays LITERAL in
+        // the opaque LitStr (the shell expands it at run time), so the
+        // whole test predicate round-trips byte-for-byte.
+        let source = "\
+while [ $i -lt 3 ]
+do
+  echo $i
+done
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/w2.sh"), source)
+            .expect("multi-line while-loop must parse");
+        let (kind, body) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::While {
+                cond: Expr::LitStr("[ $i -lt 3 ]".to_string()),
+            }
+        );
+        assert_eq!(body.len(), 1);
+        assert_eq!(
+            body[0],
+            Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::ShellVar("i".to_string())],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_until_loop() {
+        // `until COND; do … done` — POSIX's inverted while — parses to
+        // `LoopKind::Until` with the same opaque-condition treatment.
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/u.sh"),
+                "until [ -e /tmp/done ]; do echo waiting; done\n",
+            )
+            .expect("until-loop must parse into a ShellLoop");
+        let (kind, _) = only_shell_loop(&module);
+        assert_eq!(
+            kind,
+            &LoopKind::Until {
+                cond: Expr::LitStr("[ -e /tmp/done ]".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_while_loop_composes_with_flat_commands() {
+        // A `while` loop between an assignment and a trailing command —
+        // order preserved, condition opaque.
+        let source = "\
+i=0
+while [ $i -lt 2 ]; do
+  echo $i
+  i=$((i+1))
+done
+echo after
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/w3.sh"), source)
+            .expect("while composed with flat commands must parse");
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("no module constants")
+        };
+        assert_eq!(f.body.stmts.len(), 3, "assign + while + trailing cmd");
+        assert!(matches!(f.body.stmts[0], Stmt::ShellAssign { .. }));
+        assert!(matches!(f.body.stmts[1], Stmt::ShellLoop { .. }));
+        assert!(matches!(f.body.stmts[2], Stmt::Cmd { .. }));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_empty_while_condition() {
+        // `while ; do … done` has no condition — refuse rather than
+        // build a degenerate loop.
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/we.sh"), "while ; do echo hi; done\n")
+            .expect_err("empty while condition must be REFUSED");
+        assert!(format!("{err:?}").contains("empty condition"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_nested_while_in_for_body() {
+        // A `while` nested inside a `for` body is still out of scope —
+        // refuse (nested control-flow), never shred.
+        let source = "\
+for i in 1 2; do
+  while [ $i -gt 0 ]; do
+    echo $i
+  done
+done
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/nw.sh"), source)
+            .expect_err("nested while must be REFUSED");
+        assert!(format!("{err:?}").contains("nested"));
     }
 
     #[test]

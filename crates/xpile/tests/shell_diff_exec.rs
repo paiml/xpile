@@ -128,6 +128,11 @@ const REALISTIC_DEMO_EXPECTED: &str = "hello world\nhow are you\nHi, Noah Gift\n
 const FOR_LOOP_DEMO_EXPECTED: &str =
     "item 1\nitem 2\nitem 3\nhello alice\nbye alice\nhello bob\nbye bob";
 
+/// PMAT-1276 expected output of `bashrs_while_loop_demo.sh` after
+/// transpilation + /bin/sh execution. The `while` counts up (3 ticks),
+/// the `until` counts down (3 lines). Byte-for-byte deterministic.
+const WHILE_LOOP_DEMO_EXPECTED: &str = "tick 0\ntick 1\ntick 2\ndown 3\ndown 2\ndown 1";
+
 #[test]
 fn shell_diff_demo_realistic_shell_input_round_trip() {
     // PMAT-052: a `.sh` fixture that exercises every Layer B
@@ -196,6 +201,44 @@ fn shell_diff_demo_for_loop_round_trip() {
     assert!(
         actual.contains("item 1") && actual.contains("bye bob"),
         "expected both loops' output present; the loop body may have been dropped: {actual}"
+    );
+}
+
+#[test]
+fn shell_diff_demo_while_until_loop_round_trip() {
+    // PMAT-1276: a `.sh` fixture with real `while` and `until` loops
+    // flows through bashrs-frontend's loop parser → mHIR
+    // (`LoopKind::While` / `Until`) → bashrs-backend → /bin/sh,
+    // producing deterministic output. The loop CONDITION round-trips as
+    // an opaque LitStr and its `$VAR` refs expand at shell run time.
+    //
+    // Anti-regression: before PMAT-1276 the frontend REFUSED
+    // while/until (only `for` was handled since PMAT-1268). A real
+    // execution witness (the loop bodies actually run and their stdout
+    // is compared) proves the loops are parsed + emitted faithfully,
+    // not shredded. Both loops terminate by construction (count to a
+    // bound), so the gate never hangs.
+    if !have_python_and_sh() {
+        eprintln!(
+            "warning: skipping PMAT-1276 while/until round-trip — /bin/sh not on PATH. \
+             CI environments with /bin/sh will still run this gate."
+        );
+        return;
+    }
+    let sh_path = fixture("bashrs_while_loop_demo.sh");
+    let actual = run_shell(&sh_path).expect("shell run");
+    assert_eq!(
+        actual, WHILE_LOOP_DEMO_EXPECTED,
+        "bashrs while/until demo output diverged. The frontend loop parser or the \
+         backend loop renderer regressed (or a loop body/condition was dropped).\n\
+         === expected ===\n{WHILE_LOOP_DEMO_EXPECTED}\n\
+         === actual  ===\n{actual}"
+    );
+    // Anchor content so a future edit can't make this pass on empty
+    // output (a shredded loop would print nothing).
+    assert!(
+        actual.contains("tick 0") && actual.contains("down 1"),
+        "expected both loops' output present; a loop body may have been dropped: {actual}"
     );
 }
 
