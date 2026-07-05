@@ -139,10 +139,11 @@ const WHILE_LOOP_DEMO_EXPECTED: &str = "tick 0\ntick 1\ntick 2\ndown 3\ndown 2\n
 const NESTED_LOOP_DEMO_EXPECTED: &str = "cell 1 a\ncell 1 b\ncell 2 a\ncell 2 b\n\
      mix 2 x\nmix 2 y\nmix 1 x\nmix 1 y";
 
-/// PMAT-1283 expected output of `bashrs_if_demo.sh`: the if/then/fi
+/// PMAT-1283/1284 expected output of `bashrs_if_demo.sh`: the if/then/fi
 /// prints `big` (true); the if/then/else/fi takes the else (`not-three`);
-/// the if-inside-for picks `i == 2`. Byte-for-byte deterministic.
-const IF_DEMO_EXPECTED: &str = "big\nnot-three\npicked 2";
+/// the if-inside-for picks `i == 2`; the elif chain takes its second arm
+/// (`grade-b`). Byte-for-byte deterministic.
+const IF_DEMO_EXPECTED: &str = "big\nnot-three\npicked 2\ngrade-b";
 
 #[test]
 fn shell_diff_demo_realistic_shell_input_round_trip() {
@@ -309,11 +310,13 @@ fn shell_diff_demo_if_round_trip() {
          === expected ===\n{IF_DEMO_EXPECTED}\n\
          === actual  ===\n{actual}"
     );
-    // Anchor the else-arm + nested-if outputs so this can't pass on
-    // partial output.
+    // Anchor the else-arm, nested-if, and elif-chain outputs so this
+    // can't pass on partial output.
     assert!(
-        actual.contains("not-three") && actual.contains("picked 2"),
-        "expected the else-arm and nested-if outputs; a branch may have been dropped: {actual}"
+        actual.contains("not-three")
+            && actual.contains("picked 2")
+            && actual.contains("grade-b"),
+        "expected the else-arm, nested-if, and elif outputs; a branch may have been dropped: {actual}"
     );
 }
 

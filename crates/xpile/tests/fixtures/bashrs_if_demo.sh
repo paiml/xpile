@@ -34,3 +34,15 @@ for i in 1 2 3; do
     echo picked $i
   fi
 done
+
+# PMAT-1284: an elif chain (the second arm is taken for g=2).
+g=2
+if [ $g -eq 1 ]; then
+  echo grade-a
+elif [ $g -eq 2 ]; then
+  echo grade-b
+elif [ $g -eq 3 ]; then
+  echo grade-c
+else
+  echo grade-f
+fi

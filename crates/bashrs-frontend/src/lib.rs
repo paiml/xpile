@@ -1106,25 +1106,32 @@ fn parse_loop_at(segs: &[String], start: usize) -> Result<(Stmt, usize), Fronten
 /// consumes up to its terminator. Returns the `Stmt::ShellIf` and the
 /// index just past the matching `fi`.
 fn parse_if_at(segs: &[String], start: usize) -> Result<(Stmt, usize), FrontendError> {
-    let header = &segs[start];
-    let cond_text = header
-        .strip_prefix("if")
-        .expect("caller dispatched on first_word == \"if\"")
+    // The opener is `if` (top of a chain) or `elif` (a recursive
+    // continuation). PMAT-1284: `elif` is DESUGARED into a nested
+    // `Stmt::ShellIf` living in the parent's `else_body`, so the whole
+    // `if … elif … [else …] fi` chain shares one `Stmt::ShellIf` shape
+    // (no new IR); the backend re-sugars a lone-`ShellIf` else-body back
+    // to `elif`. The chain closes on a single `fi`.
+    let opener = first_word(&segs[start]);
+    debug_assert!(opener == "if" || opener == "elif");
+    let cond_text = segs[start]
+        .strip_prefix(opener)
+        .expect("caller dispatched on the opener keyword")
         .trim();
     if cond_text.is_empty() {
-        return Err(FrontendError::Parse(
-            "bashrs-frontend: `if` has an empty condition; write `if <cond>; then … fi`"
-                .to_string(),
-        ));
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: `{opener}` has an empty condition; write \
+             `{opener} <cond>; then …`"
+        )));
     }
     let cond = Expr::LitStr(cond_text.to_string());
     if start + 1 >= segs.len() || first_word(&segs[start + 1]) != "then" {
         return Err(FrontendError::Parse(format!(
-            "bashrs-frontend: `if {cond_text}` must be followed by `then`"
+            "bashrs-frontend: `{opener} {cond_text}` must be followed by `then`"
         )));
     }
-    // then-body runs until `else` or `fi`.
-    let (then_body, t_idx, term) = parse_segment_seq(segs, start + 2, &["else", "fi"])?;
+    // then-body runs until `elif` / `else` / `fi`.
+    let (then_body, t_idx, term) = parse_segment_seq(segs, start + 2, &["elif", "else", "fi"])?;
     match term {
         Some("fi") => Ok((
             Stmt::ShellIf {
@@ -1134,6 +1141,19 @@ fn parse_if_at(segs: &[String], start: usize) -> Result<(Stmt, usize), FrontendE
             },
             t_idx + 1,
         )),
+        Some("elif") => {
+            // Recurse: the `elif` opens a nested conditional whose own
+            // `else`/`elif`/`fi` continues (and closes) the chain.
+            let (nested, next) = parse_if_at(segs, t_idx)?;
+            Ok((
+                Stmt::ShellIf {
+                    cond,
+                    then_body,
+                    else_body: vec![nested],
+                },
+                next,
+            ))
+        }
         Some("else") => {
             // else-body runs until `fi`.
             let (else_body, f_idx, _) = parse_segment_seq(segs, t_idx + 1, &["fi"])?;
@@ -1146,9 +1166,9 @@ fn parse_if_at(segs: &[String], start: usize) -> Result<(Stmt, usize), FrontendE
                 f_idx + 1,
             ))
         }
-        _ => Err(FrontendError::Parse(
-            "bashrs-frontend: `if` without a matching `fi`".to_string(),
-        )),
+        _ => Err(FrontendError::Parse(format!(
+            "bashrs-frontend: `{opener}` without a matching `fi`"
+        ))),
     }
 }
 
@@ -3281,8 +3301,10 @@ fi
     }
 
     #[test]
-    fn parse_and_lower_refuses_elif_chain() {
-        // `elif` chains are explicitly out of scope for this slice.
+    fn parse_and_lower_elif_chain_desugars_to_nested_if() {
+        // PMAT-1284: `elif` now PARSES — desugared into a nested
+        // `Stmt::ShellIf` in the parent's `else_body`. `if C1; elif C2;
+        // fi` → ShellIf{C1, .., else:[ShellIf{C2, .., else:[]}]}.
         let source = "\
 if [ $x -eq 1 ]; then
   echo one
@@ -3290,9 +3312,78 @@ elif [ $x -eq 2 ]; then
   echo two
 fi
 ";
-        let err = BashrsFrontend
+        let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/elif.sh"), source)
-            .expect_err("elif must be REFUSED at this slice");
+            .expect("elif chain must parse");
+        let (cond, then_body, else_body) = only_shell_if(&module);
+        assert_eq!(cond, &Expr::LitStr("[ $x -eq 1 ]".to_string()));
+        assert_eq!(then_body.len(), 1);
+        // else_body is exactly the nested `elif` conditional.
+        assert_eq!(else_body.len(), 1);
+        let Stmt::ShellIf {
+            cond: c2,
+            then_body: t2,
+            else_body: e2,
+        } = &else_body[0]
+        else {
+            panic!(
+                "elif must desugar to a nested ShellIf, got {:?}",
+                else_body[0]
+            );
+        };
+        assert_eq!(c2, &Expr::LitStr("[ $x -eq 2 ]".to_string()));
+        assert_eq!(
+            t2,
+            &vec![Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::LitStr("two".to_string())],
+            }]
+        );
+        assert!(
+            e2.is_empty(),
+            "no final else, so the innermost else is empty"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_elif_chain_with_final_else() {
+        // A 3-way chain ending in `else` nests two deep.
+        let source = "\
+if [ $x -eq 1 ]; then
+  echo one
+elif [ $x -eq 2 ]; then
+  echo two
+else
+  echo other
+fi
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/elif2.sh"), source)
+            .expect("elif+else chain must parse");
+        let (_c1, _t1, else1) = only_shell_if(&module);
+        // else1 = [ShellIf{C2, .., else:[echo other]}]
+        let Stmt::ShellIf { else_body: e2, .. } = &else1[0] else {
+            panic!("expected nested elif ShellIf");
+        };
+        assert_eq!(
+            e2,
+            &vec![Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::LitStr("other".to_string())],
+            }],
+            "the final else lands in the innermost else_body"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_elif_without_if() {
+        // A stray `elif` with no preceding `if` is refused, never shred.
+        let err = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/strayelif.sh"),
+                "elif [ $x -eq 1 ]; then echo hi; fi\n",
+            )
+            .expect_err("stray elif must be REFUSED");
         assert!(format!("{err:?}").contains("elif"));
     }
 
