@@ -23,6 +23,13 @@
 //! - ruchy: `RUCHY_EXECUTABLE_FIXTURES` in `tests/ruchy_exec_witness.rs` -> (7, 7)
 //!   (XPILE-WITNESS-003; the witness skips-with-reason when `ruchy` is absent, so
 //!   this floor protects the curated set's SIZE from silent shrinkage)
+//! - forjar: `FORJAR_SHELL_CORPUS` in `tests/forjar_validate_witness.rs` -> (4, 4)
+//!   (XPILE-WITNESS-003; the witness runs forjar's real `validate` but skips-with-
+//!   reason when `forjar` is absent, so this floor protects the corpus SIZE)
+//! - lean: `LEAN_VALUE_CORPUS` in `tests/lean_elaborate_witness.rs` -> (6, 6)
+//!   (XPILE-WITNESS-003; the witness elaborates + `by decide`-evaluates via `lean`
+//!   but skips-with-reason when `lean` is absent, so this floor protects the
+//!   corpus SIZE from silent shrinkage)
 //!
 //! GPU lanes (ptx/wgsl/spirv) run under `cargo test --workspace` but
 //! SKIP-WITH-REASON on hosted runners (no CUDA toolchain / no Vulkan adapter).
@@ -44,6 +51,8 @@ const RUST_DIFF_FLOOR: usize = 44; // current 44 (34 oracle + 10 diff_exec)
 const HYBRID_FLOOR: usize = 3; // current 3
 const WASI_FLOOR: usize = 1; // current 1
 const RUCHY_FLOOR: usize = 7; // current 7 (XPILE-WITNESS-003 curated executing set)
+const FORJAR_FLOOR: usize = 4; // current 4 (XPILE-WITNESS-003 validator-accepted shell corpus)
+const LEAN_FLOOR: usize = 6; // current 6 (XPILE-WITNESS-003 semantic value-function corpus)
 
 // ── Path helpers ────────────────────────────────────────────────────────────
 fn crate_dir() -> PathBuf {
@@ -162,6 +171,60 @@ fn ruchy_witness_count() -> usize {
     n
 }
 
+/// Count the `FORJAR_SHELL_CORPUS` entries in `tests/forjar_validate_witness.rs`.
+/// Each entry is a `("<name>", "<shell>")` tuple; the witness emits forjar.yaml
+/// for each and runs forjar's real `validate` (skips-with-reason when `forjar`
+/// is absent, so its EXISTENCE and SIZE are what this manifest protects).
+fn forjar_witness_count() -> usize {
+    let src = read(&crate_dir().join("tests/forjar_validate_witness.rs"));
+    let mut in_list = false;
+    let mut n = 0;
+    for line in src.lines() {
+        let t = line.trim();
+        if t.starts_with("const FORJAR_SHELL_CORPUS") {
+            in_list = true;
+            continue;
+        }
+        if !in_list {
+            continue;
+        }
+        if t.starts_with("];") {
+            break;
+        }
+        if t.starts_with("(\"") {
+            n += 1;
+        }
+    }
+    n
+}
+
+/// Count the `LEAN_VALUE_CORPUS` entries in `tests/lean_elaborate_witness.rs`.
+/// Each entry is a `LeanCase { .. }` value-function case that the witness emits
+/// as Lean and elaborates + `by decide`-evaluates via `lean` (skips-with-reason
+/// when `lean` is absent, so its SIZE is what this manifest protects).
+fn lean_witness_count() -> usize {
+    let src = read(&crate_dir().join("tests/lean_elaborate_witness.rs"));
+    let mut in_list = false;
+    let mut n = 0;
+    for line in src.lines() {
+        let t = line.trim();
+        if t.starts_with("const LEAN_VALUE_CORPUS") {
+            in_list = true;
+            continue;
+        }
+        if !in_list {
+            continue;
+        }
+        if t.starts_with("];") {
+            break;
+        }
+        if t.starts_with("LeanCase {") {
+            n += 1;
+        }
+    }
+    n
+}
+
 // ── Per-lane floor gates ────────────────────────────────────────────────────
 #[test]
 fn wasm_witness_floor() {
@@ -238,6 +301,30 @@ fn ruchy_witness_floor() {
     );
 }
 
+#[test]
+fn forjar_witness_floor() {
+    let n = forjar_witness_count();
+    eprintln!(
+        "witness-manifest[forjar]: {n} validator-accepted shell inputs (floor {FORJAR_FLOOR})"
+    );
+    assert!(
+        n >= FORJAR_FLOOR,
+        "forjar witness floor breached: {n} < {FORJAR_FLOOR} — the forjar \
+         validation witness's shell corpus shrank (XPILE-WITNESS-002/003)"
+    );
+}
+
+#[test]
+fn lean_witness_floor() {
+    let n = lean_witness_count();
+    eprintln!("witness-manifest[lean]: {n} semantic value-function cases (floor {LEAN_FLOOR})");
+    assert!(
+        n >= LEAN_FLOOR,
+        "lean witness floor breached: {n} < {LEAN_FLOOR} — the Lean elaboration \
+         witness's value-function corpus shrank (XPILE-WITNESS-002/003)"
+    );
+}
+
 // ── GPU lanes: skipped-with-reason, never silently absent ───────────────────
 #[test]
 fn gpu_lanes_skip_with_reason_never_silently_absent() {
@@ -285,9 +372,17 @@ fn witness_floor_manifest_emitted() {
     let hybrid = hybrid_witness_count();
     let wasi = wasi_witness_count();
     let ruchy = ruchy_witness_count();
-    let total = wasm + shell + rustd + hybrid + wasi + ruchy;
-    let floor_total =
-        WASM_FLOOR + SHELL_FLOOR + RUST_DIFF_FLOOR + HYBRID_FLOOR + WASI_FLOOR + RUCHY_FLOOR;
+    let forjar = forjar_witness_count();
+    let lean = lean_witness_count();
+    let total = wasm + shell + rustd + hybrid + wasi + ruchy + forjar + lean;
+    let floor_total = WASM_FLOOR
+        + SHELL_FLOOR
+        + RUST_DIFF_FLOOR
+        + HYBRID_FLOOR
+        + WASI_FLOOR
+        + RUCHY_FLOOR
+        + FORJAR_FLOOR
+        + LEAN_FLOOR;
 
     eprintln!("== XPILE-WITNESS-002 witness-floor manifest ==");
     eprintln!("  lane                executed  floor");
@@ -297,6 +392,8 @@ fn witness_floor_manifest_emitted() {
     eprintln!("  hybrid              {hybrid:>8}  {HYBRID_FLOOR}");
     eprintln!("  wasi                {wasi:>8}  {WASI_FLOOR}");
     eprintln!("  ruchy               {ruchy:>8}  {RUCHY_FLOOR}");
+    eprintln!("  forjar              {forjar:>8}  {FORJAR_FLOOR}");
+    eprintln!("  lean                {lean:>8}  {LEAN_FLOOR}");
     eprintln!("  TOTAL               {total:>8}  {floor_total}");
 
     assert!(
