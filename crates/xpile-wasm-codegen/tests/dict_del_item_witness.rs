@@ -444,9 +444,12 @@ fn dict_del_item_lowers_and_carries_shape() {
 }
 
 #[test]
-fn dict_del_list_form_is_refused() {
-    // `del xs[i]` (list-element deletion, `is_dict == false`) is outside the WASM
-    // subset — an HONEST refusal, not a silent miscompile.
+fn dict_del_list_form_now_lowers() {
+    // PMAT-1284: `del xs[i]` (list-element deletion, `is_dict == false`) over a
+    // `list[int]`/`list[float]` is now SUPPORTED — the shrink-and-shift mirror of
+    // `insert` — so the list form lowers to a `$__wasm_list_delitem` call rather
+    // than the old honest refusal. (The dedicated executed differential coverage
+    // lives in `list_delitem_witness.rs`.)
     let m = module(
         "del_list",
         vec![func(
@@ -467,11 +470,10 @@ fn dict_del_list_form_is_refused() {
             Expr::LitInt(0),
         )],
     );
-    let err = emit_module(&m).expect_err("`del xs[i]` (list) must be refused by the WASM lane");
-    let msg = format!("{err:?}");
+    let wat = emit_module(&m).expect("`del xs[i]` (list[int]) now lowers through the WASM lane");
     assert!(
-        msg.contains("list") && msg.to_lowercase().contains("del"),
-        "the refusal must name the unsupported `del xs[i]` list form: {msg}"
+        wat.contains("call $__wasm_list_delitem"),
+        "the list `del xs[i]` form must call the delete-at-index helper:\n{wat}"
     );
 }
 

@@ -7372,6 +7372,129 @@ const LIST_INSERT_FLOAT_HELPER: &str = "\
     i32.store)
 ";
 
+/// PMAT-1284: the list DELETE-AT-INDEX helper — Python `del xs[i]` over a
+/// `list[int]`/`list[float]`, the in-place MIRROR of [`LIST_INSERT_INT_HELPER`]
+/// (grow+shift-right ↔ shrink+shift-left).
+///
+/// This is the FIRST list-mutation that SHRINKS *and* SHIFTS: `pop()` shrinks
+/// only at the END and `insert()` grows+shifts; `del xs[i]` removes the element
+/// at an arbitrary position and slides the tail LEFT to close the hole. Because
+/// it only shrinks, it needs NO capacity guard and — unlike `append`/`insert`,
+/// which grow and so demand a literal-bound list's spare slack — it works on ANY
+/// list local carrying a valid base-pointer (a param included, exactly like
+/// `pop`): the record only gets smaller, the base-pointer never moves, so every
+/// alias observes the deletion and nothing overruns.
+///
+/// The index follows CPython `del list[i]` / `list.pop(i)` EXACTLY (NOT the
+/// forgiving `insert` clamp): a negative index adds the length (`i += n`) and an
+/// index still out of `[0, n)` afterwards — including ANY index on an empty list
+/// — raises `IndexError`, lowered here to a `unreachable` trap (never a
+/// `Vec::remove`-style silent wrap). The clamp/bounds math runs in SIGNED i64 so
+/// a large-magnitude negative index normalises correctly before narrowing to the
+/// i32 slot. The tail `[slot+1, n)` is shifted left by one slot walking LOW→HIGH
+/// (`for j = slot; j+1 < n; j++: elems[j] = elems[j+1]`) so no element is
+/// overwritten before it is copied, then the count header drops to `n - 1`.
+///
+/// The shift moves whole 8-byte words with `i64.load`/`i64.store` — a pure
+/// byte-move that never interprets the payload — so ONE helper serves BOTH the
+/// `list[int]` (i64) and `list[float]` (f64) element kinds (like `reversed`,
+/// unlike `insert`'s typed value store). A `list[bool]` (4-byte i32 stride) is
+/// refused at the call site (it would need an i32-stride shift twin, deferred
+/// exactly like `insert`/`append`).
+const LIST_DELITEM_HELPER: &str = "\
+  ;; __wasm_list_delitem(base, idx) — Python `del xs[i]`, list[int]/list[float]
+  ;; base → i32 count @ base+0, i32 capacity @ base+4, 8-byte elements @ base+8.
+  (func $__wasm_list_delitem (param $base i32) (param $idx i64)
+    (local $n i32)      ;; current element count
+    (local $slot i32)   ;; normalized delete position in [0, n)
+    (local $j i32)      ;; shift cursor
+    (local $s i64)      ;; signed normalized index (CPython del math)
+    ;; n = count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; s = idx ; CPython del: if s < 0 { s += n }
+    local.get $idx
+    local.set $s
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $s
+      local.get $n
+      i64.extend_i32_u
+      i64.add
+      local.set $s
+    end
+    ;; bounds: if s < 0 → IndexError → trap (index too negative even after += n)
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      unreachable
+    end
+    ;; bounds: if s >= n → IndexError → trap (covers ANY index on an empty list)
+    local.get $s
+    local.get $n
+    i64.extend_i32_u
+    i64.ge_s
+    if
+      unreachable
+    end
+    ;; slot = (i32) s   (s now in [0, n), fits an i32)
+    local.get $s
+    i32.wrap_i64
+    local.set $slot
+    ;; shift tail left: for (j = slot; j+1 < n; j++) elems[j] = elems[j+1]
+    ;; (an 8-byte word move; i64.load/store never interpret the payload)
+    local.get $slot
+    local.set $j
+    (block $done
+      (loop $next
+        ;; while j+1 < n  →  break once (j+1) >= n
+        local.get $j
+        i32.const 1
+        i32.add
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; dst = base + 8 + j*8
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; src word = i64.load(base + 8 + (j+1)*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 1
+        i32.add
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        ;; j += 1
+        local.get $j
+        i32.const 1
+        i32.add
+        local.set $j
+        br $next
+      )
+    )
+    ;; count = n - 1 (write back to base+0; n >= 1 here — the bounds trap above
+    ;; already rejected every index when n == 0)
+    local.get $base
+    local.get $n
+    i32.const 1
+    i32.sub
+    i32.store)
+";
+
 /// PMAT-1274: the list-INT-COUNT helper — Python `xs.count(x)` over a
 /// `list[int]`. A NON-allocating read (a linear scan, like `contains`/`sum`),
 /// so it rides its OWN gate (`needs_list_count`), NOT `needs_heap`. It reads the
@@ -9755,6 +9878,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // no element-kind discriminant, so BOTH typed helpers are emitted under this
     // single gate (the unused twin is a harmless dead fn, like `contains`).
     let needs_list_insert = module_uses_list_insert(module);
+    // PMAT-1284: `del xs[i]` over a `list[int]`/`list[float]` (`Stmt::DelItem`,
+    // `is_dict == false`) shrinks-and-shifts via the single `$__wasm_list_delitem`
+    // helper — it reads/writes the length-prefixed region, so it rides its OWN gate
+    // and needs the `(memory …)`. The shift is a pure 8-byte word move, so ONE
+    // helper serves both element kinds (no dead twin, unlike `insert`).
+    let needs_list_delitem = module_uses_list_delitem(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -9786,6 +9915,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_count
         || needs_list_index
         || needs_list_insert
+        || needs_list_delitem
     {
         writeln!(
             out,
@@ -10254,6 +10384,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if needs_list_insert {
         out.push_str(LIST_INSERT_INT_HELPER);
         out.push_str(LIST_INSERT_FLOAT_HELPER);
+    }
+    // PMAT-1284: emit the single list DELETE-AT-INDEX helper once, when any
+    // function uses `del xs[i]` over a `list[int]`/`list[float]` (`Stmt::DelItem`,
+    // `is_dict == false`). It shrinks+shifts in place (the base-pointer never
+    // moves, so unlike `insert`/`append` it accepts ANY list local — a param
+    // included — with no capacity guard). The shift is a pure 8-byte word move, so
+    // ONE helper serves both element kinds (no dead twin).
+    if needs_list_delitem {
+        out.push_str(LIST_DELITEM_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -11558,6 +11697,41 @@ fn stmt_has_list_insert(s: &Stmt) -> bool {
             then_body.iter().any(stmt_has_list_insert) || else_body.iter().any(stmt_has_list_insert)
         }
         Stmt::While { body, .. } => body.iter().any(stmt_has_list_insert),
+        _ => false,
+    }
+}
+
+/// PMAT-1284: does any function use `del xs[i]` over a LIST (`Stmt::DelItem` with
+/// `is_dict == false`)? Gates the single `$__wasm_list_delitem` helper (and the
+/// `(memory …)` its shift loads/stores touch). The node carries NO element-kind
+/// discriminant (int vs float resolved at emit time via [`Scope::list_elem_of`]),
+/// but the shift is a pure 8-byte word move, so ONE helper serves both — unlike
+/// `insert`, no twin is emitted. A dict `del d[k]` (`is_dict == true`) rides the
+/// dict helpers, NOT this gate, so it is filtered out here. `DelItem` is a
+/// STATEMENT, so the walk recurses into `If`/`While` bodies only (every `for`
+/// loop is already desugared to `While` before any gate scan). Nested list ops in
+/// the index are gated separately by the `Stmt::DelItem { key, .. }` arms already
+/// present in every `*_has_*` walker.
+fn module_uses_list_delitem(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_delitem(&f.body))
+}
+
+fn block_has_list_delitem(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_delitem)
+}
+
+fn stmt_has_list_delitem(s: &Stmt) -> bool {
+    match s {
+        Stmt::DelItem { is_dict, .. } => !*is_dict,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            then_body.iter().any(stmt_has_list_delitem)
+                || else_body.iter().any(stmt_has_list_delitem)
+        }
+        Stmt::While { body, .. } => body.iter().any(stmt_has_list_delitem),
         _ => false,
     }
 }
@@ -16993,8 +17167,10 @@ fn emit_dict_pop(
 /// The key's `KeyKind` is read from the dict local's declared type
 /// (`heap_map_kind`), exactly as [`emit_dict_set`] does for `d[k] = v` — a
 /// non-dict `name` is refused. The LIST form (`del xs[i]`, `is_dict == false`)
-/// is refused: the WASM list runtime has no shrink-and-shift (a fixed-size heap
-/// record cannot shrink in place, the PMAT-1033 relocation-hazard posture).
+/// is delegated to [`emit_list_delitem`] (PMAT-1284): the list runtime DOES have
+/// a shrink-and-shift now (the in-place mirror of `insert`), so a `list[int]` /
+/// `list[float]` element deletion is supported (a `list[bool]` is refused there,
+/// pending the i32-stride twin).
 fn emit_dict_del(
     name: &str,
     key: &Expr,
@@ -17004,11 +17180,7 @@ fn emit_dict_del(
     depth: usize,
 ) -> Result<(), BackendError> {
     if !is_dict {
-        return Err(unsupported(&format!(
-            "`del {name}[i]` (list-element deletion) — the WASM subset supports \
-             `del d[k]` over a `dict` only (a fixed-size list record cannot \
-             shrink in place)"
-        )));
+        return emit_list_delitem(name, key, scope, out, depth);
     }
     let kind = scope.heap_map_kind(name).ok_or_else(|| {
         unsupported(&format!(
@@ -17024,6 +17196,62 @@ fn emit_dict_del(
     // Discard the removed value — `del` is a statement, the removal is the point.
     indent(out, depth);
     writeln!(out, "drop").expect("write");
+    Ok(())
+}
+
+/// PMAT-1284: lower `del xs[i]` over a LIST (`Stmt::DelItem`, `is_dict == false`)
+/// — element deletion at an arbitrary index, the in-place MIRROR of
+/// [`emit_list_insert`] (grow+shift-right ↔ shrink+shift-left).
+///
+/// All the real work (CPython index normalise + IndexError trap + low→high tail
+/// shift-left + count--) lives in the single [`LIST_DELITEM_HELPER`]
+/// (`$__wasm_list_delitem`); this call site just (1) resolves the element kind —
+/// accepting a `list[int]`/`list[float]` (both 8-byte, one shared helper),
+/// refusing a `list[bool]` (i32 stride, deferred like `insert`) or a non-list
+/// name — pushes the base-pointer and the index TYPED to i64 (the frontend
+/// guarantees an int index; the helper normalises in signed i64), and `call`s the
+/// helper. Unlike `insert`/`append`, deletion SHRINKS, so it imposes NO
+/// growable-list precondition: it accepts ANY list local with a valid
+/// base-pointer (a param included — the record only gets smaller, the
+/// base-pointer never moves, so no overrun and every alias observes it), exactly
+/// like `pop`.
+fn emit_list_delitem(
+    list_name: &str,
+    index_expr: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // The element kind must be a fixed-width 8-byte scalar (i64/f64) — the delete
+    // helper moves whole 8-byte words. A `list[bool]` (i32 elements) would need an
+    // i32-stride shift twin (deferred, exactly like `insert`/`append`), and a
+    // `list[str]` is not a fixed-width scalar list.
+    match scope.list_elem_of(list_name) {
+        Some(WatTy::I64) | Some(WatTy::F64) => {}
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "`del {list_name}[i]` whose elements load as {} — the WASM subset \
+                 deletes only from a `list[int]` / `list[float]` (an 8-byte i64/f64 \
+                 payload); this element kind is refused (a `list[bool]` would need an \
+                 i32-stride shift twin, deferred like `insert`)",
+                other.keyword()
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "`del {list_name}[i]` where `{list_name}` is not a `list[int]` / \
+                 `list[float]` param/local — only a scalar list (an i32 base-pointer \
+                 into linear memory) can be deleted from in the WASM subset"
+            )));
+        }
+    };
+    // base (i32) ; index typed to i64 (the helper normalises + bounds-checks in
+    // signed i64) ; then the shrink-and-shift helper does the work (void statement).
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "call $__wasm_list_delitem").expect("write");
     Ok(())
 }
 
