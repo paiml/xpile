@@ -24,11 +24,13 @@
 //! ```
 //!
 //! A later `d[k] = v` re-inserts from count 0 into the EXISTING capacity (the
-//! `reinsert` probes prove the region is reusable). `list.reverse()` is now
-//! SUPPORTED (PMAT-1286, an in-place two-pointer word swap); `list.clear()` and
-//! `list.sort()`/`.sort(reverse=True)` are HONESTLY refused (a list count-reset
-//! and an in-place sort are separate slices — see
-//! `list_mutate_forms_clear_sort_refused_reverse_supported`).
+//! `reinsert` probes prove the region is reusable). The WHOLE `Stmt::ListMutate`
+//! family now lowers over a list too: `list.reverse()` (PMAT-1286, an in-place
+//! two-pointer word swap), `list.sort()`/`.sort(reverse=True)` (PMAT-1288, an
+//! in-place stable insertion sort via `$__wasm_list_sort_{i64,f64}`), and
+//! `list.clear()` (PMAT-1288, the SAME bare count-header zero a dict/set clear
+//! is — see `list_mutate_forms_all_lower`; the EXECUTED list-side witness lives
+//! in `list_sort_clear_witness.rs`).
 //!
 //! ## Witness shape
 //!
@@ -472,17 +474,19 @@ fn dict_clear_lowers_and_carries_shape() {
 }
 
 #[test]
-fn list_mutate_forms_clear_sort_refused_reverse_supported() {
-    // PMAT-1286: `list.reverse()` is now SUPPORTED (in-place two-pointer word
-    // swap); `list.clear()` and `list.sort()`/`.sort(reverse=True)` remain HONEST
-    // refusals (not silent miscompiles).
+fn list_mutate_forms_all_lower() {
+    // PMAT-1288: the WHOLE `Stmt::ListMutate` family now lowers over a list —
+    // `reverse` (PMAT-1286, word-swap helper), `sort`/`sort(reverse=True)`
+    // (PMAT-1288, typed in-place insertion-sort helpers), and `clear`
+    // (PMAT-1288, the SAME bare count-header zero a dict/set clear is).
     let list_let = |name: &str| Stmt::Let {
         name: name.into(),
         ty: Type::List(Box::new(Type::I64)),
         mutable: true,
         value: Expr::ListLit(vec![Expr::LitInt(3), Expr::LitInt(1), Expr::LitInt(2)]),
     };
-    // list.clear() — still refused (a list count-reset is a separate slice).
+    // list.clear() — a bare header zero: NO helper call, NO $__wasm_list_sort/
+    // reverse declaration (the gate stays tight; clear needs no helper at all).
     let m = module(
         "list_clear",
         vec![func(
@@ -491,12 +495,16 @@ fn list_mutate_forms_clear_sort_refused_reverse_supported() {
             Expr::LitInt(0),
         )],
     );
-    let err = emit_module(&m).expect_err("`xs.clear()` (list) must be refused");
+    let wat = emit_module(&m).expect("`xs.clear()` (list) must now lower+emit");
     assert!(
-        format!("{err:?}").to_lowercase().contains("list"),
-        "list.clear() refusal must name the list form: {err:?}"
+        wat.contains("local.get $xs"),
+        "list.clear() must read the list base-pointer:\n{wat}"
     );
-    // list.sort() / list.sort(reverse=True) — still refused (no in-place sort).
+    assert!(
+        !wat.contains("$__wasm_list_sort") && !wat.contains("$__wasm_list_reverse"),
+        "a bare list.clear() needs no sort/reverse helper (tight gates):\n{wat}"
+    );
+    // list.sort() / list.sort(reverse=True) — the typed in-place helper pair.
     for op in [ListMutateOp::Sort, ListMutateOp::SortDesc] {
         let m = module(
             "list_sort",
@@ -513,10 +521,22 @@ fn list_mutate_forms_clear_sort_refused_reverse_supported() {
                 Expr::LitInt(0),
             )],
         );
-        let err = emit_module(&m).expect_err("list sort must be refused");
+        let wat = emit_module(&m).expect("list sort must now lower+emit");
         assert!(
-            format!("{err:?}").to_lowercase().contains("sort"),
-            "list.{op:?} refusal must cite the missing in-place sort runtime: {err:?}"
+            wat.contains("call $__wasm_list_sort_i64")
+                && wat.contains("$__wasm_list_sort_i64 (param $base i32) (param $reverse i32)"),
+            "list.{op:?} must call AND declare the in-place sort helper:\n{wat}"
+        );
+        // Whitespace-collapsed so the assertion is indentation-independent.
+        let flat = wat.split_whitespace().collect::<Vec<_>>().join(" ");
+        let want_flag = if op == ListMutateOp::SortDesc {
+            "i32.const 1 call $__wasm_list_sort_i64"
+        } else {
+            "i32.const 0 call $__wasm_list_sort_i64"
+        };
+        assert!(
+            flat.contains(want_flag),
+            "list.{op:?} must pass the right direction flag:\n{wat}"
         );
     }
     // PMAT-1286: list.reverse() — now SUPPORTED, emits the single word-swap helper.
