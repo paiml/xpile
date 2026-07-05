@@ -9907,19 +9907,55 @@ fn is_commutative_monoid_op(op: BinOp) -> bool {
     )
 }
 
-/// Does `value` fold `name` into itself via a commutative monoid op with the
+/// Does `value` fold `name` into itself via a commutative monoid op with every
 /// other operand free of any accumulator? (`acc = acc + x`, `acc = 1 + acc`,
-/// `n = n + 1`, `t = t ^ x` …). The non-`name` operand must reference NO
-/// accumulator so distinct accumulators can't couple order-dependently.
+/// `n = n + 1`, `t = t ^ x` …). The other operands must reference NO accumulator
+/// so distinct accumulators can't couple order-dependently.
+///
+/// PMAT-1301: generalised from a SINGLE `acc OP e` to a same-`op` fold SPINE so
+/// the natural two-variable reduction `total = total + k + v` (parsed as
+/// `(total + k) + v`) over `for k, v in d.items()` is admitted — the accumulator
+/// may appear as ANY single leaf of a tree built entirely from ONE commutative +
+/// associative monoid op, with every other leaf accumulator-free. Requiring the
+/// SAME op along the accumulator's spine preserves associativity: a mixed
+/// `total = (total + k) * v` (Horner) is order-DEPENDENT and stays refused.
 fn is_commutative_accum(name: &str, value: &Expr, assigned: &HashSet<String>) -> bool {
     if let Expr::BinOp { op, lhs, rhs } = value {
         if is_commutative_monoid_op(*op) {
-            let is_name = |e: &Expr| matches!(e, Expr::Ident(n) if n == name);
-            return (is_name(lhs) && !expr_references_any(rhs, assigned))
-                || (is_name(rhs) && !expr_references_any(lhs, assigned));
+            return accum_spine_ok(name, *op, lhs, rhs, assigned);
         }
     }
     false
+}
+
+/// The accumulator `name` folds into `lhs OP rhs` (with `OP` a commutative +
+/// associative monoid op) iff EXACTLY ONE side carries the accumulator as a
+/// same-`OP` fold spine and the OTHER side references no accumulator. The
+/// carrying side is either `name` itself (`acc OP e`) or, recursively, a nested
+/// `_ OP _` of the SAME op that itself folds `name` (`acc OP a OP b …`).
+fn accum_spine_ok(
+    name: &str,
+    op: BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    assigned: &HashSet<String>,
+) -> bool {
+    let side_folds = |side: &Expr| -> bool {
+        if matches!(side, Expr::Ident(n) if n == name) {
+            return true;
+        }
+        if let Expr::BinOp {
+            op: iop,
+            lhs: il,
+            rhs: ir,
+        } = side
+        {
+            return *iop == op && accum_spine_ok(name, op, il, ir, assigned);
+        }
+        false
+    };
+    (side_folds(lhs) && !expr_references_any(rhs, assigned))
+        || (side_folds(rhs) && !expr_references_any(lhs, assigned))
 }
 
 /// The conditional extremum idiom `if e CMP acc: acc = e` (or `if acc CMP e`),
@@ -10470,14 +10506,142 @@ fn desugar_foreach_stmts(
                             body: wbody,
                         });
                     }
+                    // PMAT-1301: `for k, v in d.items()` over a NAMED dict — the
+                    // FIRST key+value PAIRED iteration, completing the read-only
+                    // dict-iteration surface (bare keys PMAT-1297 / `.keys()`
+                    // PMAT-1299 / `.values()` PMAT-1298 → items). The frontend
+                    // lowers `d.items()` to `Expr::DictView { kind: Items }` (typing
+                    // as `List(Tuple[K, V])`), producing a `ForEachPair` with
+                    // `PairIterKind::Pairs`. ★ NO tuple is ever MATERIALISED — the
+                    // "list[tuple] ABI" the memo flagged as HARD is only needed for
+                    // `.items()` as a BOUND list value; the ITERATION form binds two
+                    // separate loop locals from ONE entry: `k` from the entry KEY
+                    // slot (@entry+0 — the SAME read `for k in d`/`.keys()` use) and
+                    // `v` from the VALUE slot (@entry+DICT_VAL_OFFSET — the SAME read
+                    // `for v in d.values()` uses). A dict IS a set-with-values at
+                    // entry+0, so both reads REUSE existing `emit_index` arms — NO
+                    // new Stmt/Expr/Type variant, NO new helper, NO gate-walker edit
+                    // (single-crate, off the serial meta-HIR/all-codegen hotspot).
                     PairIterKind::Pairs => {
-                        return Err(unsupported(
-                            "for-loop over a list of 2-tuples (e.g. `d.items()`) — \
-                         the WASM subset paired-iterates only \
-                         `enumerate(<named list>)` and `zip(<named list>, \
-                         <named list>)`; tuple-element destructuring is not yet \
-                         in the lane",
-                        ));
+                        // `d.items()` is the only 2-tuple iterable the WASM subset
+                        // pairs; a `list[tuple[A, B]]` literal / other source is not
+                        // in the lane (no list[tuple] ABI).
+                        let Expr::DictView {
+                            dict,
+                            kind: DictViewKind::Items,
+                        } = iter
+                        else {
+                            return Err(unsupported(&format!(
+                                "for-loop over a list of 2-tuples ({}) — the WASM \
+                                 subset paired-iterates `enumerate(<named list>)`, \
+                                 `zip(<named list>, <named list>)`, and `d.items()` \
+                                 over a NAMED dict; a general `list[tuple]` iterable \
+                                 is not yet in the lane",
+                                expr_kind(iter)
+                            )));
+                        };
+                        let Expr::Ident(src) = dict.as_ref() else {
+                            return Err(unsupported(&format!(
+                                "for-loop over `.items()` of {} — the WASM subset \
+                                 iterates the items of a NAMED dict; bind the dict \
+                                 to a name first",
+                                expr_kind(dict)
+                            )));
+                        };
+                        // Resolve K, V from the per-function env (ForEachPair carries
+                        // no elem_ty). A supported dict has int (i64) values
+                        // (`dict_value_is_supported`), so the value read is always
+                        // i64; K may be int (i64) or str (i32 base-ptr).
+                        let (k_ty, v_ty) = match env.get(src) {
+                            Some(Type::Dict(k, v)) => ((**k).clone(), (**v).clone()),
+                            _ => {
+                                return Err(unsupported(&format!(
+                                    "for-loop over `{src}.items()` — `{src}` is not a \
+                                     declared `dict[_, int]` in scope; the WASM items \
+                                     subset needs its key/value types"
+                                )));
+                            }
+                        };
+                        // Hash-order guard (PMAT-1292/1297/1298/1299): CPython
+                        // iterates `.items()` in INSERTION order, but xpile walks
+                        // bump-heap STORAGE order (a `del`/`discard` swaps the last
+                        // entry into the hole), so only an order-INDEPENDENT body (a
+                        // commutative fold over the (k, v) pairs) is CPython-exact.
+                        // Both `k` and `v` are fresh per-iteration Lets (not carried
+                        // accumulators), so a `total = total + k + v` sum / count /
+                        // product passes; an order-DEPENDENT body (`r = r*10 + k`)
+                        // refuses honestly with a `sorted(d.items())` escape hatch.
+                        set_iteration_body_order_safe(body).map_err(|why| {
+                            unsupported(&format!(
+                                "order-dependent `for k, v in {src}.items()` — {why}. \
+                                 xpile walks bump-heap storage order (a \
+                                 `del`/`discard` swaps the last entry into the hole), \
+                                 so only an order-INDEPENDENT reduction (sum / count / \
+                                 product / min / max — a commutative fold over the \
+                                 (k, v) pairs) matches CPython. For an order-DEFINED \
+                                 sequence, bind `sorted({src}.items())` and iterate \
+                                 that."
+                            ))
+                        })?;
+                        let body = desugar_foreach_stmts(body, next, env)?;
+                        let k = *next;
+                        *next += 1;
+                        let idx = format!("{FOREACH_IDX_PREFIX}{k}");
+                        let mut wbody = Vec::with_capacity(body.len() + 3);
+                        // Bind `k` from entry i's KEY @entry+0 — the SAME plain
+                        // `Index` on the dict name the bare `for k in d` emits
+                        // (`emit_index` routes it via `dict_key_elem_of`; a str key
+                        // lands in a str position and routes via `emit_str_expr`).
+                        wbody.push(Stmt::Let {
+                            name: first.clone(),
+                            ty: k_ty,
+                            value: Expr::Index {
+                                collection: Box::new(Expr::Ident(src.clone())),
+                                index: Box::new(Expr::Ident(idx.clone())),
+                            },
+                            mutable: false,
+                        });
+                        // Bind `v` from entry i's VALUE @entry+DICT_VAL_OFFSET (always
+                        // i64) — the SAME `DictView{Values}`-marked `Index` read the
+                        // `for v in d.values()` iteration emits.
+                        wbody.push(Stmt::Let {
+                            name: second.clone(),
+                            ty: v_ty,
+                            value: Expr::Index {
+                                collection: Box::new(Expr::DictView {
+                                    dict: Box::new(Expr::Ident(src.clone())),
+                                    kind: DictViewKind::Values,
+                                }),
+                                index: Box::new(Expr::Ident(idx.clone())),
+                            },
+                            mutable: false,
+                        });
+                        // Both bindings read the CURRENT counter, then it advances —
+                        // so `continue` (→ `br` to the `while` cond) still sees the
+                        // increment.
+                        wbody.push(Stmt::Assign {
+                            name: idx.clone(),
+                            value: Expr::BinOp {
+                                op: BinOp::Add,
+                                lhs: Box::new(Expr::Ident(idx.clone())),
+                                rhs: Box::new(Expr::LitInt(1)),
+                            },
+                        });
+                        wbody.extend(body);
+                        out.push(Stmt::Let {
+                            name: idx.clone(),
+                            ty: Type::I64,
+                            value: Expr::LitInt(0),
+                            mutable: true,
+                        });
+                        out.push(Stmt::While {
+                            cond: Expr::BinOp {
+                                op: BinOp::Lt,
+                                lhs: Box::new(Expr::Ident(idx.clone())),
+                                rhs: Box::new(Expr::Len(Box::new(Expr::Ident(src.clone())))),
+                            },
+                            body: wbody,
+                        });
                     }
                 }
             }
