@@ -20,6 +20,9 @@
 //! - rust-differential: `tests/oracle_fixtures/*.py` + `FixtureCfg` rows in `tests/diff_exec.rs` -> (34+10=44, 44)
 //! - hybrid: `#[test]`s in `tests/hybrid_verify{,_float,_multiarg}.rs` -> (3, 3)
 //! - wasi: the `examples/proven-model/model.py` input the CI `wasi` job runs -> (1, 1)
+//! - ruchy: `RUCHY_EXECUTABLE_FIXTURES` in `tests/ruchy_exec_witness.rs` -> (7, 7)
+//!   (XPILE-WITNESS-003; the witness skips-with-reason when `ruchy` is absent, so
+//!   this floor protects the curated set's SIZE from silent shrinkage)
 //!
 //! GPU lanes (ptx/wgsl/spirv) run under `cargo test --workspace` but
 //! SKIP-WITH-REASON on hosted runners (no CUDA toolchain / no Vulkan adapter).
@@ -40,6 +43,7 @@ const SHELL_FLOOR: usize = 7; // current 7
 const RUST_DIFF_FLOOR: usize = 44; // current 44 (34 oracle + 10 diff_exec)
 const HYBRID_FLOOR: usize = 3; // current 3
 const WASI_FLOOR: usize = 1; // current 1
+const RUCHY_FLOOR: usize = 7; // current 7 (XPILE-WITNESS-003 curated executing set)
 
 // ── Path helpers ────────────────────────────────────────────────────────────
 fn crate_dir() -> PathBuf {
@@ -130,6 +134,34 @@ fn wasi_witness_count() -> usize {
     usize::from(repo_root().join("examples/proven-model/model.py").is_file())
 }
 
+/// Curated fixtures the Ruchy execution witness (XPILE-WITNESS-003) drives
+/// through `ruchy transpile` -> rustc -> run and byte-diffs vs CPython. Counts
+/// the entries of `RUCHY_EXECUTABLE_FIXTURES` so the curated set cannot silently
+/// shrink (the witness skips-with-reason when `ruchy` is absent, so its EXISTENCE
+/// and SIZE are what this manifest protects — the anti-silent-deletion guarantee).
+fn ruchy_witness_count() -> usize {
+    let src = read(&crate_dir().join("tests/ruchy_exec_witness.rs"));
+    let mut in_list = false;
+    let mut n = 0;
+    for line in src.lines() {
+        let t = line.trim();
+        if t.starts_with("const RUCHY_EXECUTABLE_FIXTURES") {
+            in_list = true;
+            continue;
+        }
+        if !in_list {
+            continue;
+        }
+        if t.starts_with("];") {
+            break;
+        }
+        if t.starts_with('"') {
+            n += 1;
+        }
+    }
+    n
+}
+
 // ── Per-lane floor gates ────────────────────────────────────────────────────
 #[test]
 fn wasm_witness_floor() {
@@ -195,6 +227,17 @@ fn wasi_witness_floor() {
     );
 }
 
+#[test]
+fn ruchy_witness_floor() {
+    let n = ruchy_witness_count();
+    eprintln!("witness-manifest[ruchy]: {n} curated executing fixtures (floor {RUCHY_FLOOR})");
+    assert!(
+        n >= RUCHY_FLOOR,
+        "ruchy witness floor breached: {n} < {RUCHY_FLOOR} — the Ruchy execution \
+         witness's curated fixture set shrank (XPILE-WITNESS-002/003)"
+    );
+}
+
 // ── GPU lanes: skipped-with-reason, never silently absent ───────────────────
 #[test]
 fn gpu_lanes_skip_with_reason_never_silently_absent() {
@@ -241,8 +284,10 @@ fn witness_floor_manifest_emitted() {
     let rustd = rust_differential_witness_count();
     let hybrid = hybrid_witness_count();
     let wasi = wasi_witness_count();
-    let total = wasm + shell + rustd + hybrid + wasi;
-    let floor_total = WASM_FLOOR + SHELL_FLOOR + RUST_DIFF_FLOOR + HYBRID_FLOOR + WASI_FLOOR;
+    let ruchy = ruchy_witness_count();
+    let total = wasm + shell + rustd + hybrid + wasi + ruchy;
+    let floor_total =
+        WASM_FLOOR + SHELL_FLOOR + RUST_DIFF_FLOOR + HYBRID_FLOOR + WASI_FLOOR + RUCHY_FLOOR;
 
     eprintln!("== XPILE-WITNESS-002 witness-floor manifest ==");
     eprintln!("  lane                executed  floor");
@@ -251,6 +296,7 @@ fn witness_floor_manifest_emitted() {
     eprintln!("  rust-differential   {rustd:>8}  {RUST_DIFF_FLOOR}");
     eprintln!("  hybrid              {hybrid:>8}  {HYBRID_FLOOR}");
     eprintln!("  wasi                {wasi:>8}  {WASI_FLOOR}");
+    eprintln!("  ruchy               {ruchy:>8}  {RUCHY_FLOOR}");
     eprintln!("  TOTAL               {total:>8}  {floor_total}");
 
     assert!(
