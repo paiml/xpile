@@ -47,9 +47,12 @@
 //! * `pop_from_param_lowers` — the "any named scalar list" generality: a list
 //!   PARAM pop LOWERS + assembles (emit-only; a param export is not zero-arg so it
 //!   is not executed here).
-//! * Honest refusals — the INDEXED form `xs.pop(i)` (element-shifting removal), a
-//!   NON-NAME receiver (`[1, 2, 3].pop()`), and a helper-allocated temporary
-//!   (`sorted(ys).pop()`) must ERROR at compile time, never silently degrade.
+//! * Honest refusals — a NON-NAME receiver (`[1, 2, 3].pop()`) and a
+//!   helper-allocated temporary (`sorted(ys).pop()`) must ERROR at compile
+//!   time, never silently degrade. (The INDEXED form `xs.pop(i)` — refused when
+//!   this witness was written — lowers since PMAT-1289 via the typed
+//!   `$__wasm_list_pop_idx_{i64,f64}` helpers; see
+//!   `tests/list_pop_index_witness.rs`.)
 //!
 //! Gated on [`wasm_runtime_available`] — a clean skip (still asserting the full
 //! pipeline LOWERS + EMITS) on a host without WABT, so free CI stays green.
@@ -354,13 +357,17 @@ fn pop_from_param_lowers() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn pop_indexed_refuses_honestly() {
-    // `xs.pop(0)` needs to shift every later element down one slot — not lowered.
+fn pop_indexed_now_lowers() {
+    // PMAT-1289 FLIPPED this from a refusal: `xs.pop(0)` now lowers via the
+    // typed `$__wasm_list_pop_idx_i64` helper (the value-returning sibling of
+    // `del xs[i]`'s shift). Full execution witnesses live in
+    // `tests/list_pop_index_witness.rs`; here we just pin that the OLD refusal
+    // is gone and the helper is declared + called.
     let src = "def go() -> int:\n    xs: list[int] = [1, 2, 3]\n    return xs.pop(0)\n";
-    let err = emit(src).expect_err("indexed pop must refuse");
+    let wat = emit(src).unwrap_or_else(|e| panic!("indexed pop must now lower, got: {e}"));
     assert!(
-        err.contains("pop") && err.contains("index"),
-        "indexed-pop refusal should name the index, got: {err}"
+        wat.contains("call $__wasm_list_pop_idx_i64"),
+        "indexed pop should call the PMAT-1289 helper"
     );
 }
 

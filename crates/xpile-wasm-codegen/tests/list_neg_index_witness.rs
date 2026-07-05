@@ -10,6 +10,15 @@
 //! before the guard, uniform across read + store; a still-negative result
 //! (`i < -len`) is caught by the guard (Python IndexError).
 //!
+//! PMAT-1289 UPDATE: the `len(xs) - k` HIR shape is ambiguous (the frontend
+//! folds the literal `xs[-k]` to it; a user can also write it verbatim), and
+//! the two readings DIVERGE in CPython when `n < k ≤ 2n`. The emit now unwraps
+//! the shape to the raw `-k` (the literal reading) so the runtime normalise
+//! applies exactly once — `xs[-2]` on a 1-element list previously READ slot 0
+//! where CPython raises IndexError (a silent miscompile, found by the
+//! PMAT-1289 probe sweep). The user-written verbatim form now traps on that
+//! corner, exactly where the Rust lane's `(len - k) as usize` panics.
+//!
 //! This witness drives int-list kernels over a preloaded fixture and asserts the
 //! executed value VALUE-MATCHES CPython, incl. the out-of-range + too-negative
 //! IndexError traps. Gated on `wasm_runtime_available()`.
@@ -143,12 +152,31 @@ fn negative_list_index_normalizes_and_matches_cpython() {
         return;
     }
 
-    // RUNTIME-negative read: xs[len(xs)-5] = xs[-1] = 40.
+    // The `len(xs) - k` shape — PMAT-1289 POSTURE FLIP. This HIR shape is
+    // AMBIGUOUS: the frontend folds the literal `xs[-5]` to it (PMAT-570), and
+    // a user can write `xs[len(xs) - 5]` verbatim; on a 4-element list CPython
+    // raises IndexError for the first and reads 40 for the second. The emit
+    // must pick ONE reading — it now unwraps the shape back to the raw `-5`
+    // (the literal reading), because (a) the literal form dominates real code,
+    // (b) the OLD wrap-to-40 behaviour silently READ where `xs[-5]` raises —
+    // a miscompile, the worse failure mode — and (c) a trap here is exactly
+    // where the RUST lane's `(len - 5) as usize` panics, keeping the two
+    // backends consistent on the ambiguous corner. So: -5 → += 4 → still
+    // negative → IndexError trap.
     let c1 = kernel("c1", vec![], idx("xs", sub(len("xs"), Expr::LitInt(5))));
     assert_eq!(
         run(&emit_module(&c1).unwrap()),
+        Err(()),
+        "xs[len-5] (the folded xs[-5]) must trap (IndexError) on a 4-list"
+    );
+
+    // The same shape IN RANGE is unambiguous — both readings agree:
+    // xs[len(xs)-1] == xs[-1] == 40 (unwrap → -1 → += 4 → 3).
+    let c1b = kernel("c1b", vec![], idx("xs", sub(len("xs"), Expr::LitInt(1))));
+    assert_eq!(
+        run(&emit_module(&c1b).unwrap()),
         Ok(40),
-        "xs[len-5] should wrap to xs[-1]=40"
+        "xs[len-1] (== the folded xs[-1]) should read 40"
     );
 
     // Store negative LITERAL then read: xs[-1] = 7; return xs[3]  → 7.
