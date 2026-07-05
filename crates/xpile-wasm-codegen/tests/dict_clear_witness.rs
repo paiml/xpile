@@ -483,7 +483,11 @@ fn list_mutate_forms_clear_sort_refused_reverse_supported() {
     // list.clear() — still refused (a list count-reset is a separate slice).
     let m = module(
         "list_clear",
-        vec![func("f", vec![list_let("xs"), clear("xs")], Expr::LitInt(0))],
+        vec![func(
+            "f",
+            vec![list_let("xs"), clear("xs")],
+            Expr::LitInt(0),
+        )],
     );
     let err = emit_module(&m).expect_err("`xs.clear()` (list) must be refused");
     assert!(
