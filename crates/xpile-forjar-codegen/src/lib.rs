@@ -27,7 +27,8 @@
 //!   idempotently; a sibling `type: task` invokes it.
 //!
 //! Every manifest carries the canonical envelope: `version: "1.0"`,
-//! `name`, `machines: { localhost: { addr: localhost } }`, `resources:`.
+//! `name`, `machines: { localhost: { hostname: localhost, addr: localhost } }`,
+//! `resources:`.
 //!
 //! ## What it REFUSES (never wrong YAML — Lean-style honest refusal)
 //!
@@ -149,6 +150,10 @@ pub fn emit_manifest(module: &Module) -> Result<String, BackendError> {
     writeln!(out, "name: {stack_name}").expect("write");
     writeln!(out, "machines:").expect("write");
     writeln!(out, "  localhost:").expect("write");
+    // forjar's Machine schema REQUIRES `hostname` (verified via `forjar
+    // validate`: emitting only `addr` fails with "missing field `hostname`").
+    // Emit both, matching forjar's own examples (dist-forjar.yaml).
+    writeln!(out, "    hostname: localhost").expect("write");
     writeln!(out, "    addr: localhost").expect("write");
     writeln!(out, "resources:").expect("write");
 
