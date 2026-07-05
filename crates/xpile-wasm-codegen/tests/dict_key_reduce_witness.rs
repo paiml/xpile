@@ -415,19 +415,27 @@ fn str_keyed_dict_reduction_refuses() {
 }
 
 // ---------------------------------------------------------------------------
-// HONEST REFUSAL: a dict VALUE reduction (`sum(d.values())`) reads entry+8, a
-// DISTINCT materialiser not yet wired — refuse, never silently reuse the KEY
-// materialiser (which would sum the keys instead of the values).
+// PMAT-1295 wired the dict VALUE reduction (`sum(d.values())` reads entry+8 via
+// the DISTINCT `$__wasm_dict_values_to_list_i64` materialiser). It now LOWERS
+// through a SEPARATE helper (never silently reusing the KEY materialiser). The
+// EXECUTED value-matching coverage lives in `dict_value_reduce_witness.rs`; this
+// arm just pins that the value path routes through its OWN helper, distinct from
+// the key path, so a future collapse of the two is caught here too.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn dict_values_reduction_refuses() {
+fn dict_values_reduction_uses_distinct_value_materialiser() {
     let src =
         "def go() -> int:\n    d: dict[int, int] = {1: 10, 2: 20}\n    return sum(d.values())\n";
-    let err = emit(src).expect_err("sum(d.values()) must refuse (value materialiser not wired)");
+    let wat = emit(src).expect("sum(d.values()) must lower (PMAT-1295)");
     assert!(
-        !err.is_empty(),
-        "value reduction must refuse with a hard error, got empty"
+        wat.contains("(func $__wasm_dict_values_to_list_i64")
+            && wat.contains("call $__wasm_dict_values_to_list_i64"),
+        "value reduction must route through the VALUE materialiser (entry+8):\n{wat}"
+    );
+    assert!(
+        !wat.contains("call $__wasm_set_to_list_i64"),
+        "a values-only reduction must NOT emit/call the KEY materialiser (entry+0):\n{wat}"
     );
 }
 
