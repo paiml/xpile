@@ -8,7 +8,7 @@ Reproduce everything below with:
 
 ```sh
 cd contracts/lean
-lake build                          # builds the PILOT (green ⇔ all 25 elaborate)
+lake build                          # builds the PILOT (green ⇔ all 35 elaborate)
 for f in *.lean; do lean "$f"; echo "$f rc=$?"; done   # full per-file status
 ```
 
@@ -108,7 +108,7 @@ genuinely machine-checked.
 **As of PMAT-948 (CAPSTONE), there are ZERO non-elaborating modules.** Every
 `contracts/lean/*.lean` file is now a `lakefile.lean` root and elaborates clean
 under bare core Lean 4.15.0 with `warningAsError := true` — no `sorry`, no
-`axiom`, no `import Mathlib`. `lake build` is green ⇔ all 23 modules still do.
+`axiom`, no `import Mathlib`. `lake build` is green ⇔ all 35 modules still do.
 The historical per-module discharge counts (`error:` lines from `lean <file>`
 on v4.15.0, all now in the pilot above) were: `XpileBackendTrait` 3 +
 `XpileContractFrontendTrait` 2 (PMAT-904), `XpileFrontendTrait` 5 (PMAT-913),
@@ -197,7 +197,7 @@ PMAT-914/915/916/928/936/937/938/948): a `fail to show termination` first-error
 is not proof the fault is termination — check for a self-naming `.val`/projection
 helper first.** The capstone `PyIntArith` was the final confirmation: its `:892`
 termination head was the same `def PyIntFast.val (p) := p.val` name-shadow as the
-prior nine, NOT a genuine missing measure. Across the whole 23-module substrate,
+prior nine, NOT a genuine missing measure. Across the whole 35-module substrate,
 exactly ZERO definitions needed a hand-written `termination_by`/`decreasing_by` —
 the only real structural-recursion *content* anywhere was the new core Bézout
 existence proof (`int_gcd_bezout_exists`), which rides on core's own
@@ -208,7 +208,7 @@ falsified: it did not.
 ## Relationship to `audit-design.md`
 
 Day 10 (PMAT-909) truths-up `audit-design.md` to state: the Lean lane is now
-`lake`-machine-checked over a (now 23-module) pilot, the `grep sorry`/`grep
+`lake`-machine-checked over a (now 35-module) pilot, the `grep sorry`/`grep
 axiom` debt figures were a measurement artifact, and the real remaining debt is
 **ZERO non-elaborating modules** — PMAT-948 discharged the last one
 (`PyIntArith`, the capstone: name-shadow `.val`→`.1`, Mathlib lemma-name/tactic

@@ -22,7 +22,7 @@ strategic_goals:
       status: advancing-2026-06-25
       detail: >-
         §14.4 QUORUM = Sem/Lean + Sym/Kani + Run/diff-exec + Ext. Lean pilot now
-        27 machine-checked modules via a REAL `lake build` (sorry/axiom/Mathlib-free,
+        35 machine-checked modules via a REAL `lake build` (sorry/axiom/Mathlib-free,
         warningAsError) — the "Lean scaffold" framing is STALE. Citation-integrity is
         enforced at BOTH the per-function AND the definition-level surface (PMAT-958:
         Item::applicable_contracts() cites the class/dataclass contract directly on
@@ -93,7 +93,7 @@ strategic_goals:
       detail: >-
         Rust<->Ruchy (profiles), Rust<->Lean (both machine-checked), Wasm emit AND
         lift COMPLETE for the scalar+control surface — round-trip fixed-point
-        witnessed (PMAT-952 emit + the Wasm lift frontend); WIDENING lift to
+        witnessed (PMAT-951 emit + PMAT-957/959 lift); WIDENING lift to
         aggregates/heap tracks Pillar B's runtime work. forjar emit-only (source
         blocked, no Item::Resource node), shell round-trip idempotence.
         "Bidirectional" = both paths WHERE SOUND, refuse where not.
