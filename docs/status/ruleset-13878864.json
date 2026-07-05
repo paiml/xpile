@@ -1,0 +1,76 @@
+{
+  "id": 13878864,
+  "name": "Green Main — unified gate enforcement",
+  "target": "branch",
+  "source_type": "Organization",
+  "source": "paiml",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/main",
+        "refs/heads/master"
+      ]
+    },
+    "repository_name": {
+      "exclude": [],
+      "include": [
+        "~ALL"
+      ],
+      "protected": true
+    }
+  },
+  "rules": [
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "required_reviewers": [],
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": true,
+        "required_status_checks": [
+          {
+            "context": "gate"
+          },
+          {
+            "context": "kani"
+          },
+          {
+            "context": "lake-build"
+          },
+          {
+            "context": "workspace-test"
+          }
+        ]
+      }
+    }
+  ],
+  "node_id": "RRS_lACkVXNlcs4BaGgJzgDTxlA",
+  "created_at": "2026-03-13T13:41:07.383+01:00",
+  "updated_at": "2026-07-05T17:35:13.678+02:00",
+  "bypass_actors": [
+    {
+      "actor_id": null,
+      "actor_type": "OrganizationAdmin",
+      "bypass_mode": "always"
+    }
+  ]
+}
