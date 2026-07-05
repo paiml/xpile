@@ -18,7 +18,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use xpile_backend::{BackendConfig, Profile, Target};
+use xpile_backend::{BackendConfig, HwProfile, Profile, Target};
 use xpile_core::TranspileSession;
 use xpile_ffi_manifest::{
     defining_function, resolve_boundary_to_langs, retype_float_ffi_sites, FfiEntry, FfiManifest,
@@ -64,6 +64,13 @@ enum Cmd {
         /// `xpile_backend::strip_contract_citations`.
         #[arg(long, default_value = "on", value_parser = ["on", "off"])]
         contracts: String,
+        /// Hardware profile for hardware-dependent targets. `ptx` selects the
+        /// PTX profile at the contract-floor compute capability `sm_80`;
+        /// `ptx:sm_89` overrides it. REQUIRED to reach `--target ptx` (the PTX
+        /// backend refuses without a compute capability). Omit for every other
+        /// target.
+        #[arg(long)]
+        hardware: Option<String>,
     },
     /// Report falsifier F1 (Layer-1 contract citation coverage) for
     /// a corpus. Walks the given path, transpiles every source file
@@ -183,6 +190,7 @@ fn main() -> Result<()> {
             out,
             emit_crate,
             contracts,
+            hardware,
         } => transpile(
             &session,
             &input,
@@ -190,6 +198,7 @@ fn main() -> Result<()> {
             out.as_deref(),
             emit_crate.as_deref(),
             &contracts,
+            hardware.as_deref(),
         ),
         Cmd::Audit { path, target, json } => audit(&session, &path, &target, json),
         Cmd::Attestations {
@@ -597,6 +606,7 @@ fn transpile(
     out: Option<&Path>,
     emit_crate: Option<&Path>,
     contracts: &str,
+    hardware: Option<&str>,
 ) -> Result<()> {
     let source =
         std::fs::read_to_string(input).with_context(|| format!("reading {}", input.display()))?;
@@ -662,7 +672,11 @@ fn transpile(
     let config = BackendConfig {
         target,
         profile: Profile::RustOut,
-        hardware: None,
+        // XPILE-PTX-001: `--hardware ptx[:sm_XX]` supplies the PTX compute
+        // capability so `--target ptx` is CLI-reachable (was hardcoded `None`,
+        // making every `transpile --target ptx` refuse with MissingHardware).
+        // Omitting `--hardware` keeps the prior `None` for all other targets.
+        hardware: parse_hardware(hardware)?,
         // PMAT-956: `--contracts off` suppresses citation emission. The config
         // drives it, so every `Backend::lower` honours it directly (rather than
         // a post-emit strip). Default `on` keeps every citation across the
@@ -812,6 +826,30 @@ fn parse_target(s: &str) -> Result<Target> {
             )
         }
     })
+}
+
+/// XPILE-PTX-001: parse the optional `--hardware` profile. `None` (flag
+/// omitted) keeps the prior default of no hardware profile, so every existing
+/// invocation is byte-identical. `ptx` selects `HwProfile::Ptx` at the
+/// contract-floor compute capability `sm_80`; `ptx:sm_89` overrides the
+/// capability. PTX is the only profile the CLI plumbs today (WGSL/SPIR-V emit
+/// under their backend defaults); an unknown value fails fast with a clear
+/// message rather than silently ignoring the flag.
+fn parse_hardware(s: Option<&str>) -> Result<Option<HwProfile>> {
+    let s = match s {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+    let (kind, cap) = s.split_once(':').unwrap_or((s, ""));
+    match kind {
+        "ptx" => {
+            let compute_capability = if cap.is_empty() { "sm_80" } else { cap }.to_string();
+            Ok(Some(HwProfile::Ptx { compute_capability }))
+        }
+        other => bail!(
+            "unknown --hardware `{other}`; the CLI plumbs: ptx (optionally ptx:sm_XX, e.g. ptx:sm_89)"
+        ),
+    }
 }
 
 // ─── audit: F1 citation-coverage reporter (XPILE-FALSIFY-001) ────
