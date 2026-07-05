@@ -8500,6 +8500,246 @@ const LIST_REVERSE_INPLACE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1288: the IN-PLACE list-SORT helper (int) — Python `xs.sort()` /
+/// `xs.sort(reverse=True)` over a `list[int]` (`Stmt::ListMutate` with
+/// `ListMutateOp::Sort`/`SortDesc`). This is [`LIST_SORTED_INT_HELPER`] MINUS
+/// the alloc+copy phase: the SAME stable insertion sort (inner shift fires only
+/// on a STRICT `i64.gt_s`/`i64.lt_s` compare, so equal elements never cross —
+/// matching CPython's stable `list.sort`, and `sort(reverse=True)` is a stable
+/// DESCENDING sort, not ascending-then-reversed), run directly over the
+/// receiver's payload at `base+8` instead of a fresh record. No `$__alloc`
+/// call, so it does NOT force `needs_heap`. Void — mutates in place; the
+/// base-pointer never moves, so every alias observes the new order (the
+/// alias-safe posture `reverse`/`del`/`remove` share), and because the count is
+/// unchanged there is NO growable-list precondition: ANY scalar list local — a
+/// PARAM included — qualifies. The outer `i32.ge_u` guard exits immediately for
+/// the empty (`1 >= 0`) and single-element (`1 >= 1`) list: both are no-ops, as
+/// in CPython. The `$reverse` param selects the direction at the call site
+/// (`i32.const 1` descending, `0` ascending), exactly like the `sorted` pair.
+const LIST_SORT_INPLACE_INT_HELPER: &str = "\
+  ;; __wasm_list_sort_i64(base, reverse) — Python xs.sort([reverse=True]): sort IN PLACE.
+  ;; base → length-prefixed region: i32 count @ base+0, i64 elements @ base+8.
+  ;; Stable insertion sort over the receiver's own payload (no alloc, no copy).
+  ;; Void — mutates in place (base never moves, so every alias observes it).
+  (func $__wasm_list_sort_i64 (param $base i32) (param $reverse i32)
+    (local $n i32)
+    (local $ea i32)   ;; base + 8 (element 0)
+    (local $i i32)
+    (local $j i32)
+    (local $key i64)
+    (local $prev i64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; ea = base + 8 (element 0)
+    local.get $base
+    i32.const 8
+    i32.add
+    local.set $ea
+    ;; insertion sort in place: for i in 1..n
+    i32.const 1
+    local.set $i
+    (block $srtd
+      (loop $srt
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $srtd
+        ;; key = elems[i]
+        local.get $ea
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        local.set $key
+        ;; j = i (the hole; shift out-of-order predecessors up into it)
+        local.get $i
+        local.set $j
+        (block $ind
+          (loop $inn
+            ;; if j == 0, the hole reached the front — stop
+            local.get $j
+            i32.eqz
+            br_if $ind
+            ;; prev = elems[j-1]
+            local.get $ea
+            local.get $j
+            i32.const 1
+            i32.sub
+            i32.const 8
+            i32.mul
+            i32.add
+            i64.load
+            local.set $prev
+            ;; should_shift = reverse ? (prev < key) : (prev > key) — STRICT (stable)
+            local.get $reverse
+            if (result i32)
+              local.get $prev
+              local.get $key
+              i64.lt_s
+            else
+              local.get $prev
+              local.get $key
+              i64.gt_s
+            end
+            ;; stop when NOT shifting (eqz of should_shift → break)
+            i32.eqz
+            br_if $ind
+            ;; elems[j] = prev (shift the predecessor up into the hole)
+            local.get $ea
+            local.get $j
+            i32.const 8
+            i32.mul
+            i32.add
+            local.get $prev
+            i64.store
+            ;; j -= 1
+            local.get $j
+            i32.const 1
+            i32.sub
+            local.set $j
+            br $inn
+          )
+        )
+        ;; elems[j] = key (drop the key into the final hole)
+        local.get $ea
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        local.get $key
+        i64.store
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $srt
+      )
+    )
+  )
+";
+
+/// PMAT-1288: the IN-PLACE list-SORT twin (float) — `xs.sort()` /
+/// `xs.sort(reverse=True)` over a `list[float]`. Structurally identical to
+/// [`LIST_SORT_INPLACE_INT_HELPER`] but with an f64 key/predecessor and
+/// IEEE-754 `f64.gt`/`f64.lt` compares (the SAME compare opcodes as
+/// [`LIST_SORTED_FLOAT_HELPER`], so `xs.sort()` and `xs = sorted(xs)` order a
+/// float payload identically — NaN never fires the strict compare, matching
+/// Python's undefined NaN-sort posture). A float list shares the int list's
+/// header + 8-byte stride; only the element `*.load`/`*.store` and the compare
+/// opcode differ. Both twins ride the single `needs_list_sort_inplace` gate
+/// (`Stmt::ListMutate` carries `of_float`, but the emit site resolves the kind
+/// from [`Scope::list_elem_of`] — one gate emitting both twins can never
+/// mismatch it; the unused twin is harmless dead WAT, like `contains`/`insert`).
+const LIST_SORT_INPLACE_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_sort_f64(base, reverse) — Python xs.sort([reverse=True]) over list[float].
+  ;; base → length-prefixed region: i32 count @ base+0, f64 elements @ base+8.
+  ;; Stable insertion sort over the receiver's own payload (no alloc, no copy).
+  ;; Void — mutates in place (base never moves, so every alias observes it).
+  (func $__wasm_list_sort_f64 (param $base i32) (param $reverse i32)
+    (local $n i32)
+    (local $ea i32)   ;; base + 8 (element 0)
+    (local $i i32)
+    (local $j i32)
+    (local $key f64)
+    (local $prev f64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; ea = base + 8 (element 0)
+    local.get $base
+    i32.const 8
+    i32.add
+    local.set $ea
+    ;; insertion sort in place: for i in 1..n
+    i32.const 1
+    local.set $i
+    (block $srtd
+      (loop $srt
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $srtd
+        ;; key = elems[i]
+        local.get $ea
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        f64.load
+        local.set $key
+        ;; j = i (the hole; shift out-of-order predecessors up into it)
+        local.get $i
+        local.set $j
+        (block $ind
+          (loop $inn
+            ;; if j == 0, the hole reached the front — stop
+            local.get $j
+            i32.eqz
+            br_if $ind
+            ;; prev = elems[j-1]
+            local.get $ea
+            local.get $j
+            i32.const 1
+            i32.sub
+            i32.const 8
+            i32.mul
+            i32.add
+            f64.load
+            local.set $prev
+            ;; should_shift = reverse ? (prev < key) : (prev > key) — STRICT (stable)
+            local.get $reverse
+            if (result i32)
+              local.get $prev
+              local.get $key
+              f64.lt
+            else
+              local.get $prev
+              local.get $key
+              f64.gt
+            end
+            ;; stop when NOT shifting (eqz of should_shift → break)
+            i32.eqz
+            br_if $ind
+            ;; elems[j] = prev (shift the predecessor up into the hole)
+            local.get $ea
+            local.get $j
+            i32.const 8
+            i32.mul
+            i32.add
+            local.get $prev
+            f64.store
+            ;; j -= 1
+            local.get $j
+            i32.const 1
+            i32.sub
+            local.set $j
+            br $inn
+          )
+        )
+        ;; elems[j] = key (drop the key into the final hole)
+        local.get $ea
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        local.get $key
+        f64.store
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $srt
+      )
+    )
+  )
+";
+
 /// PMAT-1255: the list-CONCAT helper (`a + b` over two `list[scalar]`) — the
 /// THIRD list-VALUED op that ALLOCATES (after `sorted` and `reversed`). Given
 /// two length-prefixed base-pointers it bump-allocates a fresh record holding
@@ -10206,6 +10446,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // so it rides its OWN gate and needs the `(memory …)`. The swap is a pure
     // 8-byte word move, so ONE helper serves both element kinds (no dead twin).
     let needs_list_reverse = module_uses_list_reverse(module);
+    // PMAT-1288: `xs.sort()` / `xs.sort(reverse=True)` over a
+    // `list[int]`/`list[float]` (`Stmt::ListMutate` with `Sort`/`SortDesc`)
+    // insertion-sorts the payload IN PLACE via `$__wasm_list_sort_{i64,f64}` —
+    // it reads/writes the length-prefixed region, so it rides its OWN gate and
+    // needs the `(memory …)`. Unlike `reverse` (a pure word move → one helper),
+    // the compare is TYPED (`i64.gt_s`/`f64.gt`), so BOTH twins are emitted
+    // under this single gate (the unused twin is harmless dead WAT, like
+    // `contains`/`insert`; no `$__alloc` inside, so no `needs_heap` coupling).
+    let needs_list_sort_inplace = module_uses_list_sort_inplace(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -10240,6 +10489,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_delitem
         || needs_list_remove
         || needs_list_reverse
+        || needs_list_sort_inplace
     {
         writeln!(
             out,
@@ -10739,6 +10989,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // serves both element kinds (no dead twin, unlike the typed `sorted` pair).
     if needs_list_reverse {
         out.push_str(LIST_REVERSE_INPLACE_HELPER);
+    }
+    // PMAT-1288: emit the IN-PLACE list-SORT helper pair once, when any function
+    // uses `xs.sort()` / `xs.sort(reverse=True)` over a `list[int]`/`list[float]`
+    // (`Stmt::ListMutate` with `Sort`/`SortDesc`). The stable insertion sort runs
+    // directly over the receiver's payload (the base-pointer never moves, so —
+    // like `reverse`/`del`/`remove` — it accepts ANY scalar list local, a param
+    // included, with no capacity guard). The compare is TYPED, so BOTH twins are
+    // emitted (the unused twin is harmless dead WAT, like `contains`/`insert`).
+    if needs_list_sort_inplace {
+        out.push_str(LIST_SORT_INPLACE_INT_HELPER);
+        out.push_str(LIST_SORT_INPLACE_FLOAT_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -12158,6 +12419,46 @@ fn stmt_has_list_reverse(s: &Stmt) -> bool {
                 || else_body.iter().any(stmt_has_list_reverse)
         }
         Stmt::While { body, .. } => body.iter().any(stmt_has_list_reverse),
+        _ => false,
+    }
+}
+
+/// PMAT-1288: does any function use `xs.sort()` / `xs.sort(reverse=True)` over a
+/// LIST (`Stmt::ListMutate` with `ListMutateOp::Sort`/`SortDesc`)? Gates BOTH the
+/// `$__wasm_list_sort_i64` and `$__wasm_list_sort_f64` helpers (and the
+/// `(memory …)` their payload loads/stores touch). The compare is TYPED, so both
+/// twins ride this single gate — the stmt does carry an `of_float` flag, but the
+/// emit site resolves the element kind from [`Scope::list_elem_of`], and one gate
+/// emitting both twins can never mismatch that resolution; the unused twin is
+/// harmless dead WAT (like `contains`/`insert`). A `ListMutateOp::Reverse`/`Clear`
+/// is filtered out here — `reverse` rides its own gate and `clear` is a bare
+/// header write (no helper). `ListMutate` is a STATEMENT, so the walk recurses
+/// into `If`/`While` bodies only (every `for` loop is already desugared to
+/// `While` before any gate scan); it nests no expression, so no `*_has_*` expr
+/// walker needs a new arm.
+fn module_uses_list_sort_inplace(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_sort_inplace(&f.body))
+}
+
+fn block_has_list_sort_inplace(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_sort_inplace)
+}
+
+fn stmt_has_list_sort_inplace(s: &Stmt) -> bool {
+    match s {
+        Stmt::ListMutate {
+            op: ListMutateOp::Sort | ListMutateOp::SortDesc,
+            ..
+        } => true,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            then_body.iter().any(stmt_has_list_sort_inplace)
+                || else_body.iter().any(stmt_has_list_sort_inplace)
+        }
+        Stmt::While { body, .. } => body.iter().any(stmt_has_list_sort_inplace),
         _ => false,
     }
 }
@@ -17871,29 +18172,30 @@ fn emit_list_mutate(
     depth: usize,
 ) -> Result<(), BackendError> {
     match op {
-        // PMAT-1286: in-place `xs.reverse()` — the only in-place list REORDERING
-        // this subset lowers (sort still refused). Accepts any scalar list local.
+        // PMAT-1286: in-place `xs.reverse()`. Accepts any scalar list local.
         ListMutateOp::Reverse => return emit_list_reverse(name, scope, out, depth),
-        // An in-place `.sort()` / `.sort(reverse=True)` needs the typed
-        // `$__wasm_list_sorted_{i64,f64}` compare wired to an in-place pass — a
-        // clean follow-up. Refused honestly (rebind via `xs = sorted(xs)`).
+        // PMAT-1288: in-place `xs.sort()` / `xs.sort(reverse=True)` — the typed
+        // stable insertion sort run directly over the receiver's payload.
         ListMutateOp::Sort | ListMutateOp::SortDesc => {
-            return Err(unsupported(&format!(
-                "`{name}.{}()` — the WASM subset has no in-place list SORT runtime \
-                 yet (rebind with `xs = sorted(xs)`); `.reverse()` and dict/set \
-                 `.clear()` are the supported in-place mutators",
-                list_mutate_method(op)
-            )));
+            return emit_list_sort_inplace(name, op == ListMutateOp::SortDesc, scope, out, depth);
         }
         ListMutateOp::Clear => {}
     }
-    let Some(_kind) = scope.heap_map_kind(name) else {
+    // PMAT-1288: `.clear()` accepts a dict/set (PMAT-1236) OR any scalar-list
+    // local — a list record shares the dict/set posture: the live-element count
+    // is the i32 header at base+0, so a clear is the SAME bare header-zero, and
+    // it is STRIDE-AGNOSTIC (no payload touch), so every list element kind
+    // qualifies. The capacity header at LIST_CAP_OFFSET is untouched, so a
+    // cleared literal-bound list stays appendable from count 0 (reusing its
+    // existing slack), and a cleared param/alias shrinks in place (the
+    // base-pointer never moves → every alias observes `len == 0`).
+    if scope.heap_map_kind(name).is_none() && scope.list_elem_of(name).is_none() {
         return Err(unsupported(&format!(
-            "`{name}.clear()` over `{name}` which is not a `dict`/`set` local — a \
-             list `.clear()` count-reset is a separate slice; the supported \
-             in-place list mutator is `.reverse()` (dict/set `.clear()` also work)"
+            "`{name}.clear()` over `{name}` which is not a `dict`/`set`/`list` \
+             param/local — only a length-prefixed heap record (an i32 live-count \
+             header at base+0) can be count-reset in place in the WASM subset"
         )));
-    };
+    }
     // Zero the live-entry count header at base+0 (`len` reads this same word).
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
@@ -17946,6 +18248,61 @@ fn emit_list_reverse(
     writeln!(out, "local.get ${name}").expect("write");
     indent(out, depth);
     writeln!(out, "call $__wasm_list_reverse").expect("write");
+    Ok(())
+}
+
+/// PMAT-1288: lower `xs.sort()` / `xs.sort(reverse=True)` (`Stmt::ListMutate`
+/// with `ListMutateOp::Sort`/`SortDesc`) — stable-sort a `list[int]`/`list[float]`
+/// local IN PLACE. All the work (the strict-compare insertion sort — the SAME
+/// compare opcodes as the allocating `sorted` pair, so `xs.sort()` and
+/// `xs = sorted(xs)` order a payload identically) lives in the typed
+/// `$__wasm_list_sort_{i64,f64}` helpers; this call site only (1) resolves the
+/// element kind from [`Scope::list_elem_of`] to pick the typed helper — refusing
+/// a `list[bool]` (4-byte i32 stride; a distinct-stride twin is deferred, like
+/// `sorted`) and a non-list name — and (2) pushes the base-pointer plus the
+/// direction flag (`i32.const 1` for `reverse=True`, `0` ascending) and `call`s
+/// the helper (which returns nothing — `sort` is a void statement). Because a
+/// sort leaves the count unchanged and the record never relocates, there is NO
+/// growable-list precondition: any scalar list local (a PARAM included) is
+/// accepted, exactly like `reverse`/`del`/`remove`, and every alias observes
+/// the new order. The stmt's `of_float` flag is intentionally ignored — the
+/// scope resolution is the single source of truth for the element kind, and
+/// the gate emits BOTH twins so the two can never disagree.
+fn emit_list_sort_inplace(
+    name: &str,
+    desc: bool,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let method = if desc { "sort(reverse=True)" } else { "sort()" };
+    let helper = match scope.list_elem_of(name) {
+        Some(WatTy::I64) => "$__wasm_list_sort_i64",
+        Some(WatTy::F64) => "$__wasm_list_sort_f64",
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "`{name}.{method}` whose elements load as {} — the WASM subset \
+                 sorts only a `list[int]` / `list[float]` (an i64/f64 payload) in \
+                 place; this element kind is refused (a `list[bool]` would need an \
+                 i32-stride helper twin, deferred like `sorted`/`reversed`)",
+                other.keyword()
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "`{name}.{method}` where `{name}` is not a `list[int]` / \
+                 `list[float]` param/local — only a scalar list (an i32 \
+                 base-pointer into linear memory) can be sorted in place in the \
+                 WASM subset"
+            )));
+        }
+    };
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {}", i32::from(desc)).expect("write");
+    indent(out, depth);
+    writeln!(out, "call {helper}").expect("write");
     Ok(())
 }
 
@@ -18123,14 +18480,6 @@ fn emit_list_append(
 }
 
 /// The Python method spelling for a [`ListMutateOp`], for refusal messages.
-fn list_mutate_method(op: ListMutateOp) -> &'static str {
-    match op {
-        ListMutateOp::Sort | ListMutateOp::SortDesc => "sort",
-        ListMutateOp::Reverse => "reverse",
-        ListMutateOp::Clear => "clear",
-    }
-}
-
 /// Lower `d[k] = v` (`Stmt::DictSet`) — push base + key + i64 value, call the
 /// keyed `set` helper (update-or-insert; traps if at capacity).
 fn emit_dict_set(
