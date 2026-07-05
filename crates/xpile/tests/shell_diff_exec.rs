@@ -133,6 +133,12 @@ const FOR_LOOP_DEMO_EXPECTED: &str =
 /// the `until` counts down (3 lines). Byte-for-byte deterministic.
 const WHILE_LOOP_DEMO_EXPECTED: &str = "tick 0\ntick 1\ntick 2\ndown 3\ndown 2\ndown 1";
 
+/// PMAT-1281 expected output of `bashrs_nested_loop_demo.sh`. The
+/// for-in-for block prints the 4 `cell` cells; the while-wrapping-for
+/// block prints the 4 `mix` cells. Byte-for-byte deterministic.
+const NESTED_LOOP_DEMO_EXPECTED: &str = "cell 1 a\ncell 1 b\ncell 2 a\ncell 2 b\n\
+     mix 2 x\nmix 2 y\nmix 1 x\nmix 1 y";
+
 #[test]
 fn shell_diff_demo_realistic_shell_input_round_trip() {
     // PMAT-052: a `.sh` fixture that exercises every Layer B
@@ -239,6 +245,38 @@ fn shell_diff_demo_while_until_loop_round_trip() {
     assert!(
         actual.contains("tick 0") && actual.contains("down 1"),
         "expected both loops' output present; a loop body may have been dropped: {actual}"
+    );
+}
+
+#[test]
+fn shell_diff_demo_nested_loop_round_trip() {
+    // PMAT-1281: a `.sh` fixture with NESTED loops (for-in-for +
+    // while-wrapping-for) flows through the frontend's recursive loop
+    // parser → mHIR (nested `Stmt::ShellLoop`) → bashrs-backend
+    // (recursive `render_shell_loop`) → /bin/sh, producing deterministic
+    // output. The inner loop bodies actually run, proving the nested
+    // shape is emitted faithfully (not flattened or shredded). Both
+    // loops terminate by construction, so the gate never hangs.
+    if !have_python_and_sh() {
+        eprintln!(
+            "warning: skipping PMAT-1281 nested-loop round-trip — /bin/sh not on PATH. \
+             CI environments with /bin/sh will still run this gate."
+        );
+        return;
+    }
+    let sh_path = fixture("bashrs_nested_loop_demo.sh");
+    let actual = run_shell(&sh_path).expect("shell run");
+    assert_eq!(
+        actual, NESTED_LOOP_DEMO_EXPECTED,
+        "bashrs nested-loop demo output diverged. The frontend recursive loop parser or \
+         the backend recursive renderer regressed (or a nested body was flattened/dropped).\n\
+         === expected ===\n{NESTED_LOOP_DEMO_EXPECTED}\n\
+         === actual  ===\n{actual}"
+    );
+    // Anchor both nesting flavours so this can't pass on partial output.
+    assert!(
+        actual.contains("cell 2 b") && actual.contains("mix 1 y"),
+        "expected both nested blocks' inner output; a nested body may have been dropped: {actual}"
     );
 }
 

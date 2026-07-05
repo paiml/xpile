@@ -42,40 +42,40 @@ and `crates/bashrs-backend/` exist as workspace members alongside
 `crates/depyler-frontend/` etc. as of v0.1.0 (PMAT-037..058 +
 PMAT-085..092 + PMAT-119 polish; see
 [`docs/specifications/sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md)).
-**Scope (be honest about it — PMAT-989 / PMAT-1268 / PMAT-1276):**
-the bashrs frontend handles the FLAT-command subset — quoting
-(`'...'` / `"..."`), `$VAR`, `$(...)` / backtick command
+**Scope (be honest about it — PMAT-989 / PMAT-1268 / PMAT-1276 /
+PMAT-1281):** the bashrs frontend handles the FLAT-command subset —
+quoting (`'...'` / `"..."`), `$VAR`, `$(...)` / backtick command
 substitution, pipelines, and single-value assignment (`VAR=value`) —
-PLUS the three LOOP dialects: `for … in <items>; do <flat-body>
-done` (PMAT-1268) and `while COND; do … done` / `until COND; do …
-done` (PMAT-1276), in both single-line and multi-line forms, lowering
-to `Stmt::ShellLoop { LoopKind::{For,While,Until}, .. }` and
-round-tripping through bashrs-backend to executable POSIX (see the
-`shell_diff_demo_for_loop_round_trip` and
-`shell_diff_demo_while_until_loop_round_trip` execution witnesses).
-Two honesty caveats on the loops: (a) the body must itself be FLAT —
-NESTED loops are refused; (b) a `while`/`until` CONDITION is captured
-VERBATIM as an opaque `Expr::LitStr` and printed back byte-for-byte —
-the `[ … ]` test is NOT modelled structurally (that's v0.2.0). The
-REST of shell CONTROL-FLOW — `if`/`case` conditionals — is still NOT
-handled: the frontend REFUSES it with a hard `FrontendError` rather
-than silently shredding it into barewords (real `if`/`case`
-production, plus structural `[ … ]`-test modelling and nesting, is
-the v0.2.0 "real bashrs parser" job). The `C-BASHRS-POSIX-IDEMPOTENCE`
-contract holds for the flat-command subset AND the flat-body
-for/while/until loops under its §14.4 stratum coverage — it does NOT
-certify if/case, nested-loop, or structural-condition round-tripping
-(out of scope until the v0.2.0 fold). Do not claim the frontend
-"handles realistic POSIX shell idioms" in general, or that it "fully
-handles shell control-flow" — it handles the flat-command subset plus
-flat-body for/while/until loops (with opaque conditions), and refuses
-if/case. See CHANGELOG PMAT-085..092 + PMAT-119 for the flat-subset
+PLUS the three LOOP dialects: `for … in <items>; do … done`
+(PMAT-1268) and `while COND; do … done` / `until COND; do … done`
+(PMAT-1276), in single-line and multi-line forms, INCLUDING
+arbitrarily NESTED loops of any dialect mix (PMAT-1281 — the frontend
+now parses recursively; the backend `render_shell_loop` already
+recursed). All lower to `Stmt::ShellLoop { LoopKind::{For,While,Until},
+.. }` and round-trip through bashrs-backend to executable POSIX (see
+the `shell_diff_demo_{for,while_until,nested}_loop_round_trip`
+execution witnesses). One honesty caveat remains on the loops: a
+`while`/`until` CONDITION is captured VERBATIM as an opaque
+`Expr::LitStr` and printed back byte-for-byte — the `[ … ]` test is
+NOT modelled structurally (that's v0.2.0). The REST of shell
+CONTROL-FLOW — `if`/`case` conditionals — is still NOT handled: the
+frontend REFUSES it with a hard `FrontendError` rather than silently
+shredding it into barewords (real `if`/`case` production, plus
+structural `[ … ]`-test modelling, is the v0.2.0 "real bashrs parser"
+job). The `C-BASHRS-POSIX-IDEMPOTENCE` contract holds for the
+flat-command subset AND the (possibly-nested) for/while/until loops
+under its §14.4 stratum coverage — it does NOT certify if/case or
+structural-condition round-tripping (out of scope until the v0.2.0
+fold). Do not claim the frontend "handles realistic POSIX shell
+idioms" in general, or that it "fully handles shell control-flow" — it
+handles the flat-command subset plus (nested) for/while/until loops
+(with opaque conditions), and refuses if/case. See CHANGELOG PMAT-085..092 + PMAT-119 for the flat-subset
 round-trip invariant lock-in series, PMAT-989 for the control-flow
-refusal, PMAT-1268 for the `for`-loop parser, and PMAT-1276 for the
-`while`/`until` parser. The "v0.2.0 merger" framing was superseded
-for the flat subset and the for/while/until loops — but if/case
-parsing (and structural condition modelling) genuinely remains v0.2.0
-work.
+refusal, PMAT-1268 for the `for`-loop parser, PMAT-1276 for the
+`while`/`until` parser, and PMAT-1281 for recursive loop NESTING. The
+"v0.2.0 merger" framing was superseded for the flat subset and the
+(nested) for/while/until loops — but if/case parsing (and structural
+condition modelling) genuinely remains v0.2.0 work.
 
 Concrete workflow when shell artifacts become necessary:
 
