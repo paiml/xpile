@@ -47,18 +47,40 @@ jobs:
       - name: cargo deny check advisories
         run: cargo deny check advisories
 
-  # ── Required check: workspace-test ────────────────────────────
-  # Runs the test suite. Kept as a separate job so the failure
-  # mode is visible at a glance (gate vs tests).
+  # ── workspace-test (intended-required — see enforcement note) ─
+  # Runs the full test suite, INCLUDING the ~424 WASM execution
+  # witnesses: WABT is installed below and `XPILE_REQUIRE_WASM_RUNTIME=1`
+  # makes a missing WABT a hard failure instead of a silent skip
+  # (XPILE-WITNESS-001). Kept a separate job so the failure mode is
+  # visible at a glance (gate vs tests).
+  #
+  # ENFORCEMENT NOTE: the paiml org branch-protection ruleset currently
+  # lists ONLY `gate` as a required status check — `workspace-test` is NOT
+  # yet GitHub-enforced, even though it runs every in-tree differential
+  # witness. Add `workspace-test` to the required contexts at the org
+  # ruleset layer (XPILE-RULESET-001); this comment is the honest state
+  # until that org-level edit lands.
   workspace-test:
     name: workspace-test
     runs-on: ubuntu-latest
+    env:
+      # Declare that this host MUST execute the WASM witnesses. Combined with
+      # the WABT install step, this turns `wasm_runtime_available()` into a
+      # tripwire: drop the install and the witnesses panic red, never skip green.
+      XPILE_REQUIRE_WASM_RUNTIME: "1"
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install WABT (wat2wasm + wasm-interp) for the WASM execution witnesses
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wabt
+          wat2wasm --version
+          wasm-interp --version
 
       - name: cargo test --workspace
         run: cargo test --workspace

@@ -170,17 +170,39 @@ pub fn general_module_wat() -> String {
 }
 
 /// `true` when both `wat2wasm` and `wasm-interp` (WABT) are invocable —
-/// the gate that decides whether [`WasmDiffExecEngine`] should be
-/// installed. Mirrors [`xpile_ptx_codegen::cuda_toolchain_available`] /
-/// [`xpile_wgsl_codegen::wgpu_adapter_available`]: absence is a clean skip
-/// (free CI has no WABT), presence runs the witness (local box).
+/// the gate that decides whether [`WasmDiffExecEngine`] and the ~424 WASM
+/// execution witnesses should run. Mirrors
+/// [`xpile_ptx_codegen::cuda_toolchain_available`] /
+/// [`xpile_wgsl_codegen::wgpu_adapter_available`]: on a normal host absence
+/// is a clean skip, presence runs the witnesses.
+///
+/// XPILE-WITNESS-001 anti-silent-skip tripwire: when the caller *declares*
+/// it must execute the witnesses by setting `XPILE_REQUIRE_WASM_RUNTIME`
+/// (CI does), a missing WABT is a HARD panic rather than a silent skip.
+/// Without this, a dropped `Install WABT` CI step would turn every execution
+/// witness into a green no-op — the CF-4 "a gate that samples one point of a
+/// compounding system and stays green" failure this repo's own architectural
+/// review (`docs/specifications/fable-architectural-review.md`) flagged as
+/// the single largest unsampled surface. Locally the variable is unset, so
+/// absence stays a clean skip and off-CI runs keep working.
 pub fn wasm_runtime_available() -> bool {
     let wat2wasm = Command::new("wat2wasm").arg("--version").output().is_ok();
     let interp = Command::new("wasm-interp")
         .arg("--version")
         .output()
         .is_ok();
-    wat2wasm && interp
+    let available = wat2wasm && interp;
+
+    if !available && std::env::var_os("XPILE_REQUIRE_WASM_RUNTIME").is_some() {
+        panic!(
+            "XPILE_REQUIRE_WASM_RUNTIME is set but WABT is not invocable \
+             (wat2wasm present: {wat2wasm}, wasm-interp present: {interp}); \
+             the WASM execution witnesses would silently skip. Install WABT \
+             (`apt-get install wabt`) or unset XPILE_REQUIRE_WASM_RUNTIME."
+        );
+    }
+
+    available
 }
 
 /// A real WASM `DiffExecEngine`: assembles each emitter's WAT module with
@@ -353,6 +375,24 @@ mod tests {
     fn engine_constructs() {
         // Pure-CPU smoke: building the engine never touches a runtime.
         let _engine = WasmDiffExecEngine::new();
+    }
+
+    #[test]
+    fn required_runtime_is_present_when_declared() {
+        // XPILE-WITNESS-001: the single named RED signal for the anti-silent-
+        // skip guard. When a host declares it must execute the WASM witnesses
+        // (CI exports `XPILE_REQUIRE_WASM_RUNTIME=1`), WABT must be installed —
+        // so if the CI `Install WABT` step is ever dropped while the variable
+        // stays set, this test fails loudly instead of the whole witness suite
+        // skipping green. A no-op pass on any host that has not opted in.
+        if std::env::var_os("XPILE_REQUIRE_WASM_RUNTIME").is_none() {
+            return;
+        }
+        assert!(
+            wasm_runtime_available(),
+            "XPILE_REQUIRE_WASM_RUNTIME=1 but WABT (wat2wasm + wasm-interp) is \
+             not invocable; the WASM execution witnesses cannot run"
+        );
     }
 
     #[test]
