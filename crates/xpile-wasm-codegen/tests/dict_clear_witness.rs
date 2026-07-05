@@ -470,33 +470,30 @@ fn dict_clear_lowers_and_carries_shape() {
 }
 
 #[test]
-fn list_mutate_forms_are_refused() {
-    // `list.clear()`, `list.sort()`, `list.reverse()` are outside the WASM subset
-    // — HONEST refusals, not silent miscompiles.
+fn list_mutate_forms_clear_sort_refused_reverse_supported() {
+    // PMAT-1286: `list.reverse()` is now SUPPORTED (in-place two-pointer word
+    // swap); `list.clear()` and `list.sort()`/`.sort(reverse=True)` remain HONEST
+    // refusals (not silent miscompiles).
     let list_let = |name: &str| Stmt::Let {
         name: name.into(),
         ty: Type::List(Box::new(Type::I64)),
         mutable: true,
         value: Expr::ListLit(vec![Expr::LitInt(3), Expr::LitInt(1), Expr::LitInt(2)]),
     };
-    // list.clear() — refused (a cleared fixed-size list cannot re-grow).
+    // list.clear() — still refused (a list count-reset is a separate slice).
     let m = module(
         "list_clear",
-        vec![func(
-            "f",
-            vec![list_let("xs"), clear("xs")],
-            Expr::LitInt(0),
-        )],
+        vec![func("f", vec![list_let("xs"), clear("xs")], Expr::LitInt(0))],
     );
     let err = emit_module(&m).expect_err("`xs.clear()` (list) must be refused");
     assert!(
         format!("{err:?}").to_lowercase().contains("list"),
         "list.clear() refusal must name the list form: {err:?}"
     );
-    // list.sort() / list.reverse() — refused (no in-place reorder runtime).
-    for op in [ListMutateOp::Sort, ListMutateOp::Reverse] {
+    // list.sort() / list.sort(reverse=True) — still refused (no in-place sort).
+    for op in [ListMutateOp::Sort, ListMutateOp::SortDesc] {
         let m = module(
-            "list_reorder",
+            "list_sort",
             vec![func(
                 "f",
                 vec![
@@ -510,12 +507,34 @@ fn list_mutate_forms_are_refused() {
                 Expr::LitInt(0),
             )],
         );
-        let err = emit_module(&m).expect_err("list reorder must be refused");
+        let err = emit_module(&m).expect_err("list sort must be refused");
         assert!(
-            format!("{err:?}").contains("reordering"),
-            "list.{op:?} refusal must cite the missing reorder runtime: {err:?}"
+            format!("{err:?}").to_lowercase().contains("sort"),
+            "list.{op:?} refusal must cite the missing in-place sort runtime: {err:?}"
         );
     }
+    // PMAT-1286: list.reverse() — now SUPPORTED, emits the single word-swap helper.
+    let m = module(
+        "list_reverse",
+        vec![func(
+            "f",
+            vec![
+                list_let("xs"),
+                Stmt::ListMutate {
+                    list_name: "xs".into(),
+                    op: ListMutateOp::Reverse,
+                    of_float: false,
+                },
+            ],
+            Expr::LitInt(0),
+        )],
+    );
+    let wat = emit_module(&m).expect("`xs.reverse()` (list) must now lower+emit");
+    assert!(
+        wat.contains("call $__wasm_list_reverse")
+            && wat.contains("$__wasm_list_reverse (param $base i32)"),
+        "list.reverse() must call AND declare the in-place reverse helper:\n{wat}"
+    );
 }
 
 // ---- EXECUTED witness (gated on WABT) --------------------------------------

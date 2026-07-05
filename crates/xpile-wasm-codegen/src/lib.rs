@@ -8402,6 +8402,104 @@ const LIST_REVERSED_HELPER: &str = "\
     local.get $r)
 ";
 
+/// PMAT-1286: the IN-PLACE list-REVERSE helper — Python `xs.reverse()` over a
+/// `list[int]` / `list[float]` (`Stmt::ListMutate` with `ListMutateOp::Reverse`).
+/// Unlike [`LIST_REVERSED_HELPER`] (the allocating `reversed(xs)` / `xs[::-1]`
+/// that RETURNS a fresh list), this reverses the record IN PLACE and returns
+/// nothing: a two-pointer word swap `base[i] <-> base[n-1-i]` for `i` in
+/// `0..n/2`. Because it mutates the SAME region, the base-pointer never moves, so
+/// every alias holding it observes the reversal (the alias-safe posture the
+/// append/insert/del/remove in-place mutators share).
+///
+/// ONE helper serves BOTH `list[int]` and `list[float]`: a swap MOVES two 8-byte
+/// words verbatim and NEVER interprets them, so an f64's bit pattern moved as an
+/// i64 word is lossless (and an `i64.load`/`i64.store` — unlike `f64.load`/`store`
+/// — cannot canonicalise a NaN payload). This is the same insight that lets
+/// [`LIST_REVERSED_HELPER`] and [`LIST_CONCAT_HELPER`] use one helper each; only
+/// the TYPED-compare ops (`sorted`/`min`/`max`) need int/float twins. Because the
+/// count is unchanged (a reversal neither grows nor shrinks), the call site
+/// accepts ANY scalar list local — a param included — with NO capacity guard.
+/// The `i32.ge_s` loop guard is SIGNED so the EMPTY list (`n == 0` → `j == -1`)
+/// and the single-element list (`i == j == 0`) both loop zero times, never
+/// touching memory: `[].reverse()` / `[x].reverse()` are no-ops, as in CPython.
+const LIST_REVERSE_INPLACE_HELPER: &str = "\
+  ;; __wasm_list_reverse(base) — Python xs.reverse(): reverse the list IN PLACE.
+  ;; base → length-prefixed region: i32 count @ base+0, 8-byte elements @ base+8.
+  ;; Two-pointer swap of 8-byte words: for i in 0..n/2 swap base[i] <-> base[n-1-i].
+  ;; A word swap MOVES bytes verbatim (never interpreting them), so this ONE helper
+  ;; serves BOTH list[int] and list[float]. Void — mutates in place (base never
+  ;; moves, so every alias observes it). Empty / single-element lists loop zero
+  ;; times (SIGNED i>=j guard: j == -1 when n == 0).
+  (func $__wasm_list_reverse (param $base i32)
+    (local $n i32)
+    (local $ea i32)   ;; base + 8 (element 0)
+    (local $i i32)    ;; low index
+    (local $j i32)    ;; high index
+    (local $lo i32)   ;; addr of low element
+    (local $hi i32)   ;; addr of high element
+    (local $tmp i64)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; ea = base + 8 (element 0)
+    local.get $base
+    i32.const 8
+    i32.add
+    local.set $ea
+    ;; i = 0 ; j = n - 1
+    i32.const 0
+    local.set $i
+    local.get $n
+    i32.const 1
+    i32.sub
+    local.set $j
+    (block $done
+      (loop $sw
+        ;; while i < j  (SIGNED: j == -1 when n == 0, so 0 >= -1 exits immediately)
+        local.get $i
+        local.get $j
+        i32.ge_s
+        br_if $done
+        ;; lo = ea + i*8 ; hi = ea + j*8
+        local.get $ea
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        local.set $lo
+        local.get $ea
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        local.set $hi
+        ;; tmp = *lo ; *lo = *hi ; *hi = tmp  (verbatim 8-byte word swap)
+        local.get $lo
+        i64.load
+        local.set $tmp
+        local.get $lo
+        local.get $hi
+        i64.load
+        i64.store
+        local.get $hi
+        local.get $tmp
+        i64.store
+        ;; i++ ; j--
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $sw
+      )
+    )
+  )
+";
+
 /// PMAT-1255: the list-CONCAT helper (`a + b` over two `list[scalar]`) — the
 /// THIRD list-VALUED op that ALLOCATES (after `sorted` and `reversed`). Given
 /// two length-prefixed base-pointers it bump-allocates a fresh record holding
@@ -10102,6 +10200,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // value compare is TYPED (`i64.eq`/`f64.eq`), so BOTH twins are emitted under
     // this single gate (the unused twin is a harmless dead fn, like `contains`).
     let needs_list_remove = module_uses_list_remove(module);
+    // PMAT-1286: `xs.reverse()` over a `list[int]`/`list[float]` (`Stmt::ListMutate`
+    // with `ListMutateOp::Reverse`) reverses the payload IN PLACE via the single
+    // `$__wasm_list_reverse` helper — it reads/writes the length-prefixed region,
+    // so it rides its OWN gate and needs the `(memory …)`. The swap is a pure
+    // 8-byte word move, so ONE helper serves both element kinds (no dead twin).
+    let needs_list_reverse = module_uses_list_reverse(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -10135,6 +10239,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_insert
         || needs_list_delitem
         || needs_list_remove
+        || needs_list_reverse
     {
         writeln!(
             out,
@@ -10624,6 +10729,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if needs_list_remove {
         out.push_str(LIST_REMOVE_INT_HELPER);
         out.push_str(LIST_REMOVE_FLOAT_HELPER);
+    }
+    // PMAT-1286: emit the single IN-PLACE list-REVERSE helper once, when any
+    // function uses `xs.reverse()` over a `list[int]`/`list[float]`
+    // (`Stmt::ListMutate` with `ListMutateOp::Reverse`). It swaps 8-byte words
+    // two-pointer in place (the base-pointer never moves, so — like
+    // `del`/`remove` — it accepts ANY scalar list local, a param included, with
+    // no capacity guard). The swap is a pure 8-byte word move, so ONE helper
+    // serves both element kinds (no dead twin, unlike the typed `sorted` pair).
+    if needs_list_reverse {
+        out.push_str(LIST_REVERSE_INPLACE_HELPER);
     }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
@@ -12006,6 +12121,43 @@ fn stmt_has_list_remove(s: &Stmt) -> bool {
             then_body.iter().any(stmt_has_list_remove) || else_body.iter().any(stmt_has_list_remove)
         }
         Stmt::While { body, .. } => body.iter().any(stmt_has_list_remove),
+        _ => false,
+    }
+}
+
+/// PMAT-1286: does any function use `xs.reverse()` over a LIST (`Stmt::ListMutate`
+/// with `ListMutateOp::Reverse`)? Gates the single `$__wasm_list_reverse` helper
+/// (and the `(memory …)` its swap loads/stores touch). The swap is a pure 8-byte
+/// word move, so ONE helper serves both element kinds (no dead twin, like `del`).
+/// A `ListMutateOp::Clear`/`Sort`/`SortDesc` is filtered out here — `clear` on a
+/// dict/set is a bare header write (no helper) and list `sort`/`clear` are still
+/// refused, so none of them need this gate. `ListMutate` is a STATEMENT, so the
+/// walk recurses into `If`/`While` bodies only (every `for` loop is already
+/// desugared to `While` before any gate scan); it nests no expression, so no
+/// `*_has_*` expr walker needs a new arm.
+fn module_uses_list_reverse(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_reverse(&f.body))
+}
+
+fn block_has_list_reverse(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_reverse)
+}
+
+fn stmt_has_list_reverse(s: &Stmt) -> bool {
+    match s {
+        Stmt::ListMutate {
+            op: ListMutateOp::Reverse,
+            ..
+        } => true,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            then_body.iter().any(stmt_has_list_reverse)
+                || else_body.iter().any(stmt_has_list_reverse)
+        }
+        Stmt::While { body, .. } => body.iter().any(stmt_has_list_reverse),
         _ => false,
     }
 }
@@ -17691,20 +17843,26 @@ fn emit_dict_contains(
     Ok(WatTy::I32)
 }
 
-/// PMAT-1236: lower an in-place list/dict/set mutator (`Stmt::ListMutate`). The
-/// frontend routes `.clear()` on a dict, a set, and a list ALIKE to this node,
-/// so the target's runtime kind is what decides support:
-///   * a dict/set local (`heap_map_kind(name)` → `Some(_)`) → `.clear()` zeroes
-///     the live-entry COUNT header at `base+0` (the `+0` count `len(d)` reads),
-///     leaving the capacity + stale bytes as garbage below `count`. That is the
-///     entire cost — the region only shrinks, so the base-pointer never moves
-///     (no `local.set` write-back), and no helper/trap is involved. A later
+/// PMAT-1236 / PMAT-1286: lower an in-place list/dict/set mutator
+/// (`Stmt::ListMutate`). The frontend routes `.sort()`/`.reverse()`/`.clear()`
+/// on a dict, a set, and a list ALIKE to this node, so the operation AND the
+/// target's runtime kind decide support:
+///   * `.reverse()` on a `list[int]`/`list[float]` (PMAT-1286) → an in-place
+///     two-pointer 8-byte word swap via [`emit_list_reverse`]. The count is
+///     unchanged, so the base-pointer never moves (every alias observes it) and
+///     ANY scalar list local qualifies — a param included — with no capacity
+///     guard. Delegated below.
+///   * `.clear()` on a dict/set local (`heap_map_kind(name)` → `Some(_)`) →
+///     zeroes the live-entry COUNT header at `base+0` (the `+0` count `len(d)`
+///     reads), leaving the capacity + stale bytes as garbage below `count`. That
+///     is the entire cost — the region only shrinks, so the base-pointer never
+///     moves (no `local.set` write-back), and no helper/trap is involved. A later
 ///     `d[k] = v` re-inserts from count 0 into the existing capacity.
-///   * `.sort()`/`.reverse()`, and `.clear()` on a LIST, are refused honestly:
-///     the WASM list runtime is fixed-size with no in-place reordering pass, and
-///     a `list.clear()` count-reset would leave an empty list this subset cannot
-///     re-grow (`.append` is refused, PMAT-1033), so it is denied rather than
-///     silently producing an unusable empty record.
+///   * `.sort()`/`.sort(reverse=…)`, and `.clear()` on a LIST, are refused
+///     honestly: an in-place SORT needs the typed compare the two `sorted`
+///     helpers carry wired to an in-place pass (a clean follow-up; use
+///     `xs = sorted(xs)` for now), and a list `.clear()` count-reset is a
+///     separate slice (though `.append` — PMAT-1276 — could now re-grow one).
 fn emit_list_mutate(
     name: &str,
     op: ListMutateOp,
@@ -17712,18 +17870,28 @@ fn emit_list_mutate(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
-    if op != ListMutateOp::Clear {
-        return Err(unsupported(&format!(
-            "`{name}.{}()` — the WASM subset has no in-place list reordering \
-             runtime; only `dict`/`set` `.clear()` is supported",
-            list_mutate_method(op)
-        )));
+    match op {
+        // PMAT-1286: in-place `xs.reverse()` — the only in-place list REORDERING
+        // this subset lowers (sort still refused). Accepts any scalar list local.
+        ListMutateOp::Reverse => return emit_list_reverse(name, scope, out, depth),
+        // An in-place `.sort()` / `.sort(reverse=True)` needs the typed
+        // `$__wasm_list_sorted_{i64,f64}` compare wired to an in-place pass — a
+        // clean follow-up. Refused honestly (rebind via `xs = sorted(xs)`).
+        ListMutateOp::Sort | ListMutateOp::SortDesc => {
+            return Err(unsupported(&format!(
+                "`{name}.{}()` — the WASM subset has no in-place list SORT runtime \
+                 yet (rebind with `xs = sorted(xs)`); `.reverse()` and dict/set \
+                 `.clear()` are the supported in-place mutators",
+                list_mutate_method(op)
+            )));
+        }
+        ListMutateOp::Clear => {}
     }
     let Some(_kind) = scope.heap_map_kind(name) else {
         return Err(unsupported(&format!(
             "`{name}.clear()` over `{name}` which is not a `dict`/`set` local — a \
-             `list.clear()` is refused (the WASM subset cannot re-grow a cleared \
-             fixed-size list; `.append` is unsupported)"
+             list `.clear()` count-reset is a separate slice; the supported \
+             in-place list mutator is `.reverse()` (dict/set `.clear()` also work)"
         )));
     };
     // Zero the live-entry count header at base+0 (`len` reads this same word).
@@ -17733,6 +17901,51 @@ fn emit_list_mutate(
     writeln!(out, "i32.const 0").expect("write");
     indent(out, depth);
     writeln!(out, "i32.store").expect("write");
+    Ok(())
+}
+
+/// PMAT-1286: lower `xs.reverse()` (`Stmt::ListMutate` with `ListMutateOp::Reverse`)
+/// — reverse a `list[int]`/`list[float]` local IN PLACE. All the work (the
+/// two-pointer 8-byte word swap, empty/single-element no-op) lives in the single
+/// `$__wasm_list_reverse` helper ([`LIST_REVERSE_INPLACE_HELPER`]); this call site
+/// only (1) resolves the element kind to enforce a scalar-list receiver — a swap
+/// MOVES words verbatim, so ONE helper handles both i64 and f64, but a
+/// `list[bool]` (4-byte i32 stride) is refused for parity with `sorted`/`reversed`
+/// (a distinct-stride helper is deferred), and a non-list name is refused — and
+/// (2) pushes the base-pointer and `call`s the helper (which returns nothing —
+/// `reverse` is a void statement). Because a reversal leaves the count unchanged,
+/// there is NO growable-list precondition: any scalar list local (a param
+/// included) is accepted, exactly like `del`/`remove`.
+fn emit_list_reverse(
+    name: &str,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    match scope.list_elem_of(name) {
+        Some(WatTy::I64) | Some(WatTy::F64) => {}
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "`{name}.reverse()` whose elements load as {} — the WASM subset \
+                 reverses only a `list[int]` / `list[float]` (an i64/f64 payload) \
+                 in place; this element kind is refused (a `list[bool]` would need \
+                 an i32-stride helper twin, deferred like `sorted`/`reversed`)",
+                other.keyword()
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "`{name}.reverse()` where `{name}` is not a `list[int]` / \
+                 `list[float]` param/local — only a scalar list (an i32 \
+                 base-pointer into linear memory) can be reversed in place in the \
+                 WASM subset"
+            )));
+        }
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_list_reverse").expect("write");
     Ok(())
 }
 
