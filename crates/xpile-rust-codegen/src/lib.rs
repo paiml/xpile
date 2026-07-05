@@ -523,6 +523,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // operand reachable through it.
             Stmt::ShellLoop { .. } => false,
             Stmt::ShellIf { .. } => false,
+            Stmt::ShellCase { .. } => false,
             // PMAT-051: ShellAssign same disposition.
             Stmt::ShellAssign { .. } => false,
         }
@@ -1739,6 +1740,12 @@ fn emit_stmt_indented(
         Stmt::ShellIf { .. } => Err(CodegenError::Unsupported(
             "Rust backend does not lower Stmt::ShellIf — \
              contract C-BASHRS-POSIX-IDEMPOTENCE governs shell conditionals; \
+             use `--target shell`"
+                .into(),
+        )),
+        Stmt::ShellCase { .. } => Err(CodegenError::Unsupported(
+            "Rust backend does not lower Stmt::ShellCase — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell case statements; \
              use `--target shell`"
                 .into(),
         )),

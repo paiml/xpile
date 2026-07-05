@@ -43,50 +43,51 @@ and `crates/bashrs-backend/` exist as workspace members alongside
 PMAT-085..092 + PMAT-119 polish; see
 [`docs/specifications/sub/bashrs-merger.md`](docs/specifications/sub/bashrs-merger.md)).
 **Scope (be honest about it — PMAT-989 / PMAT-1268 / PMAT-1276 /
-PMAT-1281 / PMAT-1283 / PMAT-1284):** the bashrs frontend handles the
-FLAT-command subset — quoting (`'...'` / `"..."`), `$VAR`, `$(...)` /
-backtick command substitution, pipelines, and single-value assignment
-(`VAR=value`) — PLUS shell CONTROL-FLOW: the three LOOP dialects
-`for … in <items>; do … done` (PMAT-1268) and `while COND; do … done`
-/ `until COND; do … done` (PMAT-1276), AND the `if COND; then …
-[elif COND; then …]* [else …] fi` conditional (PMAT-1283 for
-if/then/else, PMAT-1284 for `elif` chains), in single-line and
-multi-line forms, INCLUDING arbitrarily NESTED blocks of any mix
-(loop-in-loop, if-in-loop, loop-in-if, if-in-if; PMAT-1281/1283 — the
-frontend parses recursively; the backend renders recursively). Loops
-lower to `Stmt::ShellLoop { LoopKind::{For,While,Until}, .. }` and
-conditionals to `Stmt::ShellIf { cond, then_body, else_body }` — an
-`elif` chain is DESUGARED into a nested `ShellIf` in the parent's
-`else_body` (no new IR) and the backend RE-SUGARS a lone-`ShellIf`
-else-body back to `elif` (so `elif` round-trips byte-identically; an
-explicit `else if … fi` canonicalises to `elif`, semantically
-identical + idempotent). All round-trip through bashrs-backend to
-executable POSIX (see the
-`shell_diff_demo_{for,while_until,nested}_loop_round_trip` and
-`shell_diff_demo_if_round_trip` execution witnesses — the latter now
-covers an `elif` chain). Honesty caveats: (a) a `while`/`until`/`if`/
-`elif` CONDITION is captured VERBATIM as an opaque `Expr::LitStr` and
-printed back byte-for-byte — the `[ … ]` test is NOT modelled
-structurally (v0.2.0); (b) `case`/`esac` is still NOT handled — the
-frontend REFUSES it with a hard `FrontendError` rather than shredding
-into barewords (it, plus structural `[ … ]`-test modelling, is the
-v0.2.0 "real bashrs parser" job). The `C-BASHRS-POSIX-IDEMPOTENCE`
-contract holds for the flat-command subset AND the (possibly-nested)
-for/while/until loops and if/then/elif/else conditionals under its
-§14.4 stratum coverage — it does NOT certify `case` or
-structural-condition round-tripping (out of scope until the v0.2.0
-fold). Do not claim the frontend "handles realistic POSIX shell
-idioms" in general, or that it "fully handles shell control-flow" — it
-handles the flat-command subset plus (nested) for/while/until loops and
-if/then/elif/else (with opaque conditions), and refuses `case`. See
-CHANGELOG PMAT-085..092 + PMAT-119 for the flat-subset round-trip
-invariant lock-in series, PMAT-989 for the control-flow refusal,
-PMAT-1268 for the `for`-loop parser, PMAT-1276 for the `while`/`until`
-parser, PMAT-1281 for recursive loop NESTING, PMAT-1283 for the
-`if`/`then`/`else` parser, and PMAT-1284 for `elif` chains. The
-"v0.2.0 merger" framing was superseded for the flat subset and the
-(nested) for/while/until loops + if/then/elif/else — but `case` parsing
-(and structural condition modelling) genuinely remains v0.2.0 work.
+PMAT-1281 / PMAT-1283 / PMAT-1284 / PMAT-1285):** the bashrs frontend
+handles the FLAT-command subset — quoting (`'...'` / `"..."`), `$VAR`,
+`$(...)` / backtick command substitution, pipelines, and single-value
+assignment (`VAR=value`) — PLUS the FULL shell CONTROL-FLOW surface for
+v0.1.0: the three LOOP dialects `for … in <items>; do … done`
+(PMAT-1268) and `while`/`until COND; do … done` (PMAT-1276); the
+`if COND; then … [elif COND; then …]* [else …] fi` conditional
+(PMAT-1283 for if/then/else, PMAT-1284 for `elif`); and the
+`case WORD in PAT1|PAT2) BODY ;; … esac` statement (PMAT-1285) — in
+single-line and multi-line forms, INCLUDING arbitrarily NESTED blocks
+of any mix (loop-in-loop, if-in-loop, loop-in-if, if-in-if,
+loop/if-in-case-arm). Loops lower to `Stmt::ShellLoop`, conditionals
+to `Stmt::ShellIf { cond, then_body, else_body }` (an `elif` chain is
+DESUGARED into a nested `ShellIf` in the parent's `else_body` and the
+backend RE-SUGARS it back to `elif` — byte-identical round-trip;
+explicit `else if … fi` canonicalises to `elif`, idempotent), and
+`case` to `Stmt::ShellCase { word, arms: Vec<CaseArm{patterns, body}> }`.
+All round-trip through bashrs-backend to executable POSIX (see the
+`shell_diff_demo_{for,while_until,nested}_loop_round_trip`,
+`shell_diff_demo_if_round_trip` (covers `elif`), and
+`shell_diff_demo_case_round_trip` execution witnesses). Honesty
+caveats: (a) a `while`/`until`/`if`/`elif` CONDITION and a `case`
+pattern are captured VERBATIM (opaque `Expr::LitStr` / raw glob
+strings) and printed back byte-for-byte — the `[ … ]` test and glob
+metacharacters are NOT modelled structurally (v0.2.0); (b) `case` is
+TOP-LEVEL only — a `case` nested inside a loop/if body refuses (the
+`;`-segment split would mangle arm `;;`; arm bodies THEMSELVES may
+contain nested loops/ifs); (c) `;&`/`;;&` (bash fall-through) is not
+modelled. Everything else refuses with a hard `FrontendError` rather
+than shredding into barewords. The `C-BASHRS-POSIX-IDEMPOTENCE`
+contract holds for the flat-command subset AND the (nested)
+for/while/until loops, if/then/elif/else conditionals, and top-level
+`case` under its §14.4 stratum coverage — it does NOT certify
+case-in-loop, structural condition/pattern modelling, or `;&`
+fall-through (v0.2.0). Do not claim the frontend "handles ALL POSIX
+shell" — it handles the flat-command subset plus (nested)
+for/while/until + if/then/elif/else + top-level case (with opaque
+conditions/patterns). See CHANGELOG PMAT-085..092 + PMAT-119 for the
+flat-subset round-trip invariant lock-in series, PMAT-989 for the
+control-flow refusal, PMAT-1268 for `for`, PMAT-1276 for
+`while`/`until`, PMAT-1281 for recursive loop NESTING, PMAT-1283 for
+`if`/`then`/`else`, PMAT-1284 for `elif`, and PMAT-1285 for `case`.
+With `case`, the v0.1.0 shell CONTROL-FLOW surface is COMPLETE — only
+structural condition/pattern modelling, case-in-loop, and `;&`
+fall-through remain for the v0.2.0 "real bashrs parser" fold.
 
 Concrete workflow when shell artifacts become necessary:
 

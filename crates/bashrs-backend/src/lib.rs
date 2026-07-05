@@ -32,7 +32,7 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_contracts::ContractId;
-use xpile_meta_hir::{Expr, Item, LoopKind, Module, QuotingStrategy, Stmt};
+use xpile_meta_hir::{CaseArm, Expr, Item, LoopKind, Module, QuotingStrategy, Stmt};
 
 /// PMAT-042: render a single `Stmt::Cmd` arg into its POSIX shell
 /// surface form, honouring the carried `QuotingStrategy` for
@@ -199,6 +199,34 @@ fn render_shell_if(
     Ok(out)
 }
 
+/// PMAT-1285: render a `Stmt::ShellCase` to POSIX shell — a
+/// `case WORD in` header, then per arm a tab-indented `PAT1|PAT2)`
+/// pattern line, the body indented two tabs, and a `;;` terminator,
+/// closed by `esac`.
+///
+/// `WORD` is the opaque matched value (rendered via `render_arg`); each
+/// arm's pattern list joins with `|` and closes with `)`; the arm body
+/// renders through the shared `render_stmt_lines` walker (so a nested
+/// loop / conditional in an arm composes) and each arm ends with `;;`.
+/// An empty arm body is POSIX-legal (`PAT) ;;`), so — unlike loop
+/// bodies — it is NOT padded with a `:` no-op.
+fn render_shell_case(word: &Expr, arms: &[CaseArm]) -> Result<String, BackendError> {
+    let mut out = format!("case {} in", render_arg(word)?);
+    for arm in arms {
+        out.push_str(&format!("\n\t{})", arm.patterns.join("|")));
+        for stmt in &arm.body {
+            for line in render_stmt_lines(stmt)? {
+                for sub in line.split('\n') {
+                    out.push_str(&format!("\n\t\t{sub}"));
+                }
+            }
+        }
+        out.push_str("\n\t\t;;");
+    }
+    out.push_str("\nesac");
+    Ok(out)
+}
+
 /// PMAT-974: render a single top-level shell statement to its POSIX
 /// surface line(s).
 ///
@@ -250,9 +278,10 @@ fn render_stmt_lines(stmt: &Stmt) -> Result<Vec<String>, BackendError> {
             then_body,
             else_body,
         } => Ok(vec![render_shell_if(cond, then_body, else_body)?]),
+        Stmt::ShellCase { word, arms } => Ok(vec![render_shell_case(word, arms)?]),
         other => Err(BackendError::Lower(format!(
             "bashrs-backend cannot render {other:?} as a shell statement; \
-             only Stmt::Cmd / Stmt::Pipeline / Stmt::ShellAssign / Stmt::ShellLoop / Stmt::ShellIf supported"
+             only Stmt::Cmd / Stmt::Pipeline / Stmt::ShellAssign / Stmt::ShellLoop / Stmt::ShellIf / Stmt::ShellCase supported"
         ))),
     }
 }
@@ -355,6 +384,7 @@ impl Backend for BashrsBackend {
                             | Stmt::Pipeline { .. }
                             | Stmt::ShellLoop { .. }
                             | Stmt::ShellIf { .. }
+                            | Stmt::ShellCase { .. }
                             | Stmt::ShellAssign { .. }
                     )
                 })
@@ -772,6 +802,40 @@ mod tests {
         assert_eq!(
             rendered,
             "if [ $x -gt 3 ]; then\n\techo big\nelse\n\techo small\nfi"
+        );
+    }
+
+    #[test]
+    fn render_shell_case_multi_pattern_arms() {
+        // PMAT-1285: `case WORD in PAT1|PAT2) BODY ;; … esac`, with a
+        // multi-pattern arm and the `*` default.
+        use xpile_meta_hir::{CaseArm, Expr, Stmt};
+        let cmd = |s: &str| Stmt::Cmd {
+            program: "echo".into(),
+            args: vec![Expr::LitStr(s.into())],
+        };
+        let arms = vec![
+            CaseArm {
+                patterns: vec!["a".into()],
+                body: vec![cmd("aye")],
+            },
+            CaseArm {
+                patterns: vec!["b".into(), "c".into()],
+                body: vec![cmd("bc")],
+            },
+            CaseArm {
+                patterns: vec!["*".into()],
+                body: vec![cmd("other")],
+            },
+        ];
+        let rendered = render_shell_case(&Expr::ShellVar("x".into()), &arms).unwrap();
+        assert_eq!(
+            rendered,
+            "case $x in\n\
+             \ta)\n\t\techo aye\n\t\t;;\n\
+             \tb|c)\n\t\techo bc\n\t\t;;\n\
+             \t*)\n\t\techo other\n\t\t;;\n\
+             esac"
         );
     }
 
