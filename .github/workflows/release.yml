@@ -1,0 +1,106 @@
+name: release
+
+# Clean-room release gate (XPILE-CLEANROOM-001 / doctrine §4.5).
+#
+# xpile ships 31 crates via a MANUAL Friday `cargo publish --workspace`
+# (see reference-cratesio-publish-order). This workflow is the missing
+# DRY-RUN + CLEAN-ROOM gate for that process: it packages and
+# verify-builds the whole workspace exactly as a real publish would, but
+# with `--dry-run`, so nothing is uploaded. It does NOT publish — the real
+# upload stays the manual, dependency-ordered Friday batch.
+#
+# Triggered ONLY on manual dispatch and on `v*` tag pushes — never on
+# every PR: packaging + verify-building 31 crates from an empty registry
+# cache is minutes-heavy and needs network. Advisory tier, mirroring
+# kani / lake-build / docs / wasi / lean-models:
+#   NOT a required status check at the branch-protection layer.
+#
+# The per-PR half of this gate is the fast static falsifier
+# `crates/xpile/tests/publish_manifest_integrity.rs` (runs under
+# `cargo test --workspace`), which catches a stripped `version =` before
+# it ever reaches this heavy lane.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Optional check: cleanroom-publish (XPILE-CLEANROOM-001) ───
+  # Runs `cargo publish --workspace --dry-run --locked` under an
+  # ISOLATED, EMPTY CARGO_HOME so no sibling `[patch.crates-io]`
+  # path-override and no previously-cached crate can satisfy a
+  # dependency the real crates.io registry could not. cargo's
+  # workspace dry-run packages every crate, resolves intra-workspace
+  # deps from the just-packaged tarballs (its
+  # `target/package/tmp-registry` overlay), and verify-BUILDS each one
+  # from its packaged form — catching BOTH a path-dep missing
+  # `version =` (dry-run red) and a path-only dep on an unpublished
+  # crate (clean-room red). This is the strongest FREE proxy for a true
+  # clean-room build without actually uploading.
+  # NOT a required status check at the branch-protection layer.
+  cleanroom-publish:
+    name: cleanroom-publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `toolchain:` pin needed — rust-toolchain.toml resolves cargo to
+      # 1.93.0 regardless; @stable only supplies the rustup shim (same as
+      # every other Rust job in ci.yml).
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct key so this heavy lane's build cache never bleeds into
+          # the fast `gate`. (The dry-run step below deliberately runs under
+          # a FRESH CARGO_HOME, so its downloads are never cached anyway.)
+          prefix-key: "release-v0"
+
+      # Memory gotcha (reference-cratesio-publish-order): a stale
+      # `target/package/tmp-registry` overlay from a PREVIOUS batch makes the
+      # workspace dry-run die with "no hash listed for <crate> vX". Purge
+      # cargo's package scratch dirs first; both are safe to delete and are
+      # absent on a cold runner (rm -rf is a harmless no-op then).
+      - name: Purge stale cargo package overlay
+        run: rm -rf target/package/tmp-registry target/package/tmp-crate
+
+      # Clean-room guard: a committed `.cargo/config.toml` carrying a
+      # `[patch.crates-io]` path override (the personal sibling-checkout
+      # trick documented at Cargo.toml:85) would let a dry-run resolve a dep
+      # from a local path and mask a missing version=. Fail loudly if such a
+      # file is ever committed. None is committed today — this is a tripwire.
+      - name: Guard against committed sibling-path patch overrides
+        run: |
+          if git ls-files '.cargo/config.toml' '.cargo/config' | grep -q .; then
+            if grep -REn 'patch\.' .cargo 2>/dev/null | grep -q 'path *='; then
+              echo "::error::a committed .cargo/config has a path-based [patch] — not a clean room"
+              exit 1
+            fi
+          fi
+          echo "no committed sibling-path patch override — clean room preserved"
+
+      # DoD names "build the workspace" explicitly. Warm build so a plain
+      # compile break surfaces before the slower packaging/verify pass, and
+      # benefits from the rust-cache above.
+      - name: cargo build --workspace --locked
+        run: cargo build --workspace --locked
+
+      # THE gate. A fresh empty CARGO_HOME = the clean room: cargo must
+      # resolve every non-workspace dependency from crates.io as-published
+      # (no cached/patched sibling copy), and every intra-workspace dep from
+      # the packaged overlay under target/. `--locked` pins the graph to
+      # Cargo.lock; `--dry-run` uploads nothing; `--workspace` auto-orders the
+      # 31 crates and waits between levels. Run UNPIPED so a non-zero exit is
+      # never masked (reference-cratesio-publish-order: NEVER pipe publish).
+      - name: cargo publish --workspace --dry-run (isolated CARGO_HOME clean room)
+        run: |
+          set -euo pipefail
+          CLEANROOM_HOME="$(mktemp -d)/cleanroom-cargo-home"
+          mkdir -p "$CLEANROOM_HOME"
+          echo "clean-room CARGO_HOME=$CLEANROOM_HOME (fresh, empty registry cache)"
+          CARGO_HOME="$CLEANROOM_HOME" cargo publish --workspace --dry-run --locked
