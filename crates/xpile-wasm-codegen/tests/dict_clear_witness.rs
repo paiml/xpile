@@ -24,9 +24,11 @@
 //! ```
 //!
 //! A later `d[k] = v` re-inserts from count 0 into the EXISTING capacity (the
-//! `reinsert` probes prove the region is reusable). `list.clear()`, `list.sort()`
-//! and `list.reverse()` are HONESTLY refused (the WASM list runtime is fixed-size
-//! with no reorder pass, and a cleared list this subset cannot re-grow).
+//! `reinsert` probes prove the region is reusable). `list.reverse()` is now
+//! SUPPORTED (PMAT-1286, an in-place two-pointer word swap); `list.clear()` and
+//! `list.sort()`/`.sort(reverse=True)` are HONESTLY refused (a list count-reset
+//! and an in-place sort are separate slices — see
+//! `list_mutate_forms_clear_sort_refused_reverse_supported`).
 //!
 //! ## Witness shape
 //!
