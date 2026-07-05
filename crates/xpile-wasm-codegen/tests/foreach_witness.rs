@@ -446,29 +446,58 @@ fn increment_precedes_body_so_continue_advances() {
 // ---- refusal tests (always run) ---------------------------------------------
 
 #[test]
-fn dict_iteration_is_refused_precisely() {
+fn order_dependent_dict_iteration_is_refused_precisely() {
+    // PMAT-1297 opened order-INDEPENDENT `for k in d` (commutative folds), but an
+    // order-DEPENDENT body (`r = r * 10 + k`) must still refuse BY NAME — a dict's
+    // bump-heap storage order can diverge from CPython's insertion order after a
+    // swap-into-hole `del`, so a positional fold would silently miscompile.
     let m = module(
         "bad",
         vec![func(
             "f",
             Type::I64,
             vec![],
-            vec![Stmt::ForEach {
-                var: "k".into(),
-                iter: ident("d"),
-                elem_ty: Type::I64,
-                body: vec![],
-                over_keys: true,
-                dict_guard: None,
-                mutate_elems: false,
-            }],
-            lit_i(0),
+            vec![
+                Stmt::Let {
+                    name: "d".into(),
+                    ty: Type::Dict(Box::new(Type::I64), Box::new(Type::I64)),
+                    mutable: true,
+                    value: Expr::DictLit(vec![(lit_i(1), lit_i(10)), (lit_i(2), lit_i(20))]),
+                },
+                Stmt::Let {
+                    name: "r".into(),
+                    ty: Type::I64,
+                    mutable: true,
+                    value: lit_i(0),
+                },
+                Stmt::ForEach {
+                    var: "k".into(),
+                    iter: ident("d"),
+                    elem_ty: Type::I64,
+                    body: vec![Stmt::Assign {
+                        name: "r".into(),
+                        value: Expr::BinOp {
+                            op: BinOp::Add,
+                            lhs: Box::new(Expr::BinOp {
+                                op: BinOp::Mul,
+                                lhs: Box::new(ident("r")),
+                                rhs: Box::new(lit_i(10)),
+                            }),
+                            rhs: Box::new(ident("k")),
+                        },
+                    }],
+                    over_keys: true,
+                    dict_guard: None,
+                    mutate_elems: false,
+                },
+            ],
+            ident("r"),
         )],
     );
     let err = emit_module(&m).unwrap_err().to_string();
     assert!(
-        err.contains("dict iteration"),
-        "dict for-loops refuse by name, not a generic statement error: {err}"
+        err.contains("order-dependent") && err.contains("dict"),
+        "an order-dependent dict for-loop refuses by name, not a generic error: {err}"
     );
 }
 
