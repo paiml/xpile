@@ -850,6 +850,15 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
             };
             kind_has || body.iter().any(stmt_has_int_arith)
         }
+        Stmt::ShellIf {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_has_int_arith(cond)
+                || then_body.iter().any(stmt_has_int_arith)
+                || else_body.iter().any(stmt_has_int_arith)
+        }
     }
 }
 
@@ -1767,6 +1776,26 @@ pub enum Stmt {
     /// Same cross-domain disposition: bashrs-only; other backends
     /// refuse via `Unsupported(...)` naming `C-BASHRS-POSIX-IDEMPOTENCE`.
     ShellLoop { kind: LoopKind, body: Vec<Stmt> },
+    /// POSIX shell `if COND; then … [else …] fi` conditional. PMAT-1283
+    /// / XPILE-BASHRS-MERGER-001 Layer B.
+    ///
+    /// This is distinct from `Stmt::If` (the C/Python conditional whose
+    /// `cond` is a boolean `Expr`): a shell `if` tests the EXIT STATUS
+    /// of a COMMAND. At v0.1.0 the condition is captured VERBATIM as an
+    /// opaque `Expr::LitStr` — the same posture as `LoopKind::While` /
+    /// `Until` conditions — and the backend prints it back byte-for-byte;
+    /// the `[ … ]` test is not modelled structurally. `else_body` is
+    /// empty when the source has no `else` arm (`elif` chains and `case`
+    /// are later work).
+    ///
+    /// Same cross-domain disposition as `ShellLoop`: bashrs-only; other
+    /// backends refuse via `Unsupported(...)` naming
+    /// `C-BASHRS-POSIX-IDEMPOTENCE`.
+    ShellIf {
+        cond: Expr,
+        then_body: Vec<Stmt>,
+        else_body: Vec<Stmt>,
+    },
 }
 
 /// POSIX shell loop dialects. PMAT-048 / XPILE-BASHRS-MERGER-001
@@ -4309,6 +4338,19 @@ fn escape_stmt(s: &mut Stmt) {
                 escape_stmt(st);
             }
         }
+        Stmt::ShellIf {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            escape_expr(cond);
+            for st in then_body {
+                escape_stmt(st);
+            }
+            for st in else_body {
+                escape_stmt(st);
+            }
+        }
     }
 }
 
@@ -4855,6 +4897,19 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
                 collect_idents_stmt(st, acc);
             }
         }
+        Stmt::ShellIf {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_idents_expr(cond, acc);
+            for st in then_body {
+                collect_idents_stmt(st, acc);
+            }
+            for st in else_body {
+                collect_idents_stmt(st, acc);
+            }
+        }
     }
 }
 
@@ -5083,6 +5138,18 @@ fn retype_stmt(
         }
         Stmt::ShellLoop { body, .. } => {
             for st in body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        Stmt::ShellIf {
+            then_body,
+            else_body,
+            ..
+        } => {
+            for st in then_body {
+                retype_stmt(st, float_ffi, float_locals);
+            }
+            for st in else_body {
                 retype_stmt(st, float_ffi, float_locals);
             }
         }

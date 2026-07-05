@@ -903,7 +903,7 @@ fn parse_loop_header(header: &str) -> Result<LoopKind, FrontendError> {
 /// (`… done; echo after`), that trailing content is not collected —
 /// the caller resumes at the next line. This matched the pre-1281
 /// single-`done` behaviour.
-fn collect_loop_region(
+fn collect_block_region(
     lines: &[&str],
     start: usize,
 ) -> Result<(Vec<String>, usize), FrontendError> {
@@ -912,15 +912,18 @@ fn collect_loop_region(
     let mut li = start;
     let mut next_line: Option<usize> = None;
     // Push a segment and account for its depth effect; returns true if
-    // this segment is the region-closing `done` (depth back to 0).
+    // this segment is the region-closing terminator (depth back to 0).
+    // Block OPENERS `for`/`while`/`until`/`if` push depth; CLOSERS
+    // `done` (loop) / `fi` (if) pop it. `do`/`then`/`else` are
+    // depth-neutral mid-block keywords.
     fn account(segs: &mut Vec<String>, depth: &mut i32, s: &str) -> bool {
         segs.push(s.to_string());
         match first_word(s) {
-            "for" | "while" | "until" => {
+            "for" | "while" | "until" | "if" => {
                 *depth += 1;
                 false
             }
-            "done" => {
+            "done" | "fi" => {
                 *depth -= 1;
                 *depth == 0
             }
@@ -938,14 +941,14 @@ fn collect_loop_region(
             if s.is_empty() || s.starts_with('#') {
                 continue;
             }
-            // Normalise `do <rest>` → `do`, `<rest>` (rest may be a
-            // nested loop header or a flat command).
-            if first_word(s) == "do" && s != "do" {
-                segs.push("do".to_string());
-                let rest = s
-                    .strip_prefix("do")
-                    .expect("first_word == \"do\" implies a \"do\" prefix")
-                    .trim();
+            // Normalise a leading block-body keyword (`do`/`then`/`else`)
+            // carrying an inline first body command into `<kw>`,
+            // `<rest>` — the rest may itself be a nested block header or
+            // a flat command, handled uniformly by the recursive parser.
+            let fw = first_word(s);
+            if matches!(fw, "do" | "then" | "else") && s != fw {
+                segs.push(fw.to_string());
+                let rest = s[fw.len()..].trim();
                 if !rest.is_empty() && account(&mut segs, &mut depth, rest) {
                     next_line = Some(li);
                     break 'outer;
@@ -960,23 +963,33 @@ fn collect_loop_region(
     }
     match next_line {
         Some(n) => Ok((segs, n)),
-        None => Err(FrontendError::Parse(format!(
-            "bashrs-frontend: unterminated `{}` loop starting at `{}` — no matching `done`",
-            first_word(lines[start]),
-            lines[start]
-        ))),
+        None => {
+            let (kind, term) = if first_word(lines[start]) == "if" {
+                ("if", "fi")
+            } else {
+                ("loop", "done")
+            };
+            Err(FrontendError::Parse(format!(
+                "bashrs-frontend: unterminated `{}` block starting at `{}` — no matching `{term}`",
+                kind, lines[start]
+            )))
+        }
     }
 }
 
-/// PMAT-1268/1276/1281: parse the loop beginning at line `start`
-/// (`for`/`while`/`until`). Collects the loop region (depth-matched
-/// through its `done`) and parses it — including any NESTED loops in
-/// the body — returning the built `Stmt::ShellLoop` and the index of
-/// the LINE just past the matching `done`.
-fn parse_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
-    let (segs, next_line) = collect_loop_region(lines, start)?;
-    let (loop_stmt, _seg_end) = parse_loop_at(&segs, 0)?;
-    Ok((loop_stmt, next_line))
+/// PMAT-1268/1276/1281/1283: parse the control-flow BLOCK beginning at
+/// line `start` — a `for`/`while`/`until` loop or an `if` conditional.
+/// Collects the block region (depth-matched through its `done`/`fi`) and
+/// parses it — including any NESTED blocks in the body — returning the
+/// built `Stmt` and the index of the LINE just past the terminator.
+fn parse_block(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
+    let (segs, next_line) = collect_block_region(lines, start)?;
+    let (stmt, _seg_end) = if first_word(&segs[0]) == "if" {
+        parse_if_at(&segs, 0)?
+    } else {
+        parse_loop_at(&segs, 0)?
+    };
+    Ok((stmt, next_line))
 }
 
 /// PMAT-1281: parse a sequence of command-position segments (from
@@ -988,63 +1001,67 @@ fn parse_loop(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendErr
 /// NESTING is handled to arbitrary depth (each loop consumes its own
 /// matching `done`). `if`/`case` (and any stray control keyword) still
 /// REFUSE — never shred.
-fn parse_segment_seq(
-    segs: &[String],
+fn parse_segment_seq<'a>(
+    segs: &'a [String],
     pos: usize,
-    in_loop: bool,
-) -> Result<(Vec<Stmt>, usize), FrontendError> {
+    terminators: &[&str],
+) -> Result<(Vec<Stmt>, usize, Option<&'a str>), FrontendError> {
     let mut stmts: Vec<Stmt> = Vec::new();
     let mut i = pos;
     while i < segs.len() {
         let seg = &segs[i];
-        match first_word(seg) {
-            "done" => {
-                if !in_loop {
-                    return Err(FrontendError::Parse(format!(
-                        "bashrs-frontend: stray `done` (`{seg}`) with no matching \
-                         `for`/`while`/`until` loop"
-                    )));
-                }
-                if seg != "done" {
-                    return Err(FrontendError::Parse(format!(
-                        "bashrs-frontend: loop `done` has trailing content `{seg}` \
-                         (redirects / chained commands after `done` are not supported); \
-                         refusing rather than dropping it"
-                    )));
-                }
-                return Ok((stmts, i + 1));
+        let fw = first_word(seg);
+        // A terminator keyword ends this sequence; return WITHOUT
+        // consuming it (the caller consumes / dispatches). For block
+        // closers (`done`/`fi`) require no trailing content.
+        if terminators.contains(&fw) {
+            if (fw == "done" || fw == "fi") && seg.as_str() != fw {
+                return Err(FrontendError::Parse(format!(
+                    "bashrs-frontend: `{fw}` has trailing content `{seg}` \
+                     (redirects / chained commands after `{fw}` are not supported); \
+                     refusing rather than dropping it"
+                )));
             }
+            return Ok((stmts, i, Some(fw)));
+        }
+        match fw {
             "for" | "while" | "until" => {
                 let (loop_stmt, next) = parse_loop_at(segs, i)?;
                 stmts.push(loop_stmt);
                 i = next;
             }
-            "do" => {
+            "if" => {
+                let (if_stmt, next) = parse_if_at(segs, i)?;
+                stmts.push(if_stmt);
+                i = next;
+            }
+            "do" | "done" | "then" | "elif" | "else" | "fi" => {
+                // A structural keyword that is NOT an expected terminator
+                // here — stray (a `done`/`fi`/`else` with no open block)
+                // or unsupported (`elif` chains are later work). Refuse —
+                // never shred.
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: stray `do` (`{seg}`) with no preceding loop header"
+                    "bashrs-frontend: stray or unsupported shell keyword `{fw}` in `{seg}` \
+                     (`elif` chains and `case` are not supported yet)"
                 )));
             }
-            "if" | "then" | "elif" | "else" | "fi" | "case" | "esac" => {
+            "case" | "esac" => {
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: shell control-flow (if/case) not supported — \
-                     `for`/`while`/`until` loops are handled, but if/case refuses rather \
-                     than silently shredding into barewords. Offending keyword in `{seg}`."
+                    "bashrs-frontend: shell `case`/`esac` not supported — for/while/until \
+                     loops and if/then/else are handled; refusing rather than shredding \
+                     `{seg}` into barewords."
                 )));
             }
             _ => {
-                // The segment's first word is not a control keyword, but a
-                // control keyword can still hide AFTER a `&&` / `||` / `|`
-                // that our `;`-only split didn't separate (e.g.
-                // `echo a && for i in …`). `control_flow_keyword` scans the
-                // `;`/`&`/`|`-delimited command positions; if it finds one,
-                // REFUSE rather than let `lower_flat_line` shred the loop /
-                // conditional into barewords.
+                // First word isn't a control keyword, but one can hide
+                // AFTER a `&&`/`||`/`|` our `;`-only split didn't separate
+                // (e.g. `echo a && if …`). Refuse rather than let
+                // `lower_flat_line` shred it into barewords.
                 if let Some(kw) = control_flow_keyword(seg) {
                     return Err(FrontendError::Parse(format!(
                         "bashrs-frontend: shell control-flow keyword `{kw}` after a \
-                         `&&`/`||`/`|` in `{seg}` — compound control-flow is not supported \
-                         (only a leading `for`/`while`/`until` loop or a flat command per \
-                         `;`-segment); refusing rather than shredding into barewords."
+                         `&&`/`||`/`|` in `{seg}` — compound control-flow is not supported; \
+                         refusing rather than shredding into barewords."
                     )));
                 }
                 if let Some(stmt) = lower_flat_line(seg)? {
@@ -1054,22 +1071,20 @@ fn parse_segment_seq(
             }
         }
     }
-    if in_loop {
-        return Err(FrontendError::Parse(
-            "bashrs-frontend: unterminated loop — reached end of input with no matching `done`"
-                .to_string(),
-        ));
+    if !terminators.is_empty() {
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: unterminated block — reached end of input expecting one of \
+             {terminators:?}"
+        )));
     }
-    Ok((stmts, i))
+    Ok((stmts, i, None))
 }
 
 /// PMAT-1268/1276/1281: parse one loop whose header is `segs[start]`
 /// (`for`/`while`/`until`). Expects `segs[start + 1]` to be the `do`
-/// keyword (`flatten_to_segments` normalises `do <rest>` so `do` is
-/// always its own segment); the body is parsed recursively via
-/// `parse_segment_seq` — so a NESTED loop in the body is handled — up to
-/// the matching `done`. Returns the built `Stmt::ShellLoop` and the
-/// index just past that `done`.
+/// keyword; the body is parsed recursively (so a NESTED block is
+/// handled) up to the matching `done`. Returns the `Stmt::ShellLoop`
+/// and the index just past that `done`.
 fn parse_loop_at(segs: &[String], start: usize) -> Result<(Stmt, usize), FrontendError> {
     let kw = first_word(&segs[start]);
     let kind = parse_loop_header(&segs[start])?;
@@ -1079,8 +1094,62 @@ fn parse_loop_at(segs: &[String], start: usize) -> Result<(Stmt, usize), Fronten
             &segs[start]
         )));
     }
-    let (body, next) = parse_segment_seq(segs, start + 2, true)?;
-    Ok((Stmt::ShellLoop { kind, body }, next))
+    let (body, done_idx, _term) = parse_segment_seq(segs, start + 2, &["done"])?;
+    Ok((Stmt::ShellLoop { kind, body }, done_idx + 1))
+}
+
+/// PMAT-1283: parse one `if COND; then … [else …] fi` conditional whose
+/// header is `segs[start]` (`if COND`). The condition is captured
+/// verbatim as an opaque `Expr::LitStr` (same posture as loop
+/// conditions). The then/else bodies are parsed recursively — so a
+/// NESTED loop / conditional in either branch is handled — and each
+/// consumes up to its terminator. Returns the `Stmt::ShellIf` and the
+/// index just past the matching `fi`.
+fn parse_if_at(segs: &[String], start: usize) -> Result<(Stmt, usize), FrontendError> {
+    let header = &segs[start];
+    let cond_text = header
+        .strip_prefix("if")
+        .expect("caller dispatched on first_word == \"if\"")
+        .trim();
+    if cond_text.is_empty() {
+        return Err(FrontendError::Parse(
+            "bashrs-frontend: `if` has an empty condition; write `if <cond>; then … fi`"
+                .to_string(),
+        ));
+    }
+    let cond = Expr::LitStr(cond_text.to_string());
+    if start + 1 >= segs.len() || first_word(&segs[start + 1]) != "then" {
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: `if {cond_text}` must be followed by `then`"
+        )));
+    }
+    // then-body runs until `else` or `fi`.
+    let (then_body, t_idx, term) = parse_segment_seq(segs, start + 2, &["else", "fi"])?;
+    match term {
+        Some("fi") => Ok((
+            Stmt::ShellIf {
+                cond,
+                then_body,
+                else_body: Vec::new(),
+            },
+            t_idx + 1,
+        )),
+        Some("else") => {
+            // else-body runs until `fi`.
+            let (else_body, f_idx, _) = parse_segment_seq(segs, t_idx + 1, &["fi"])?;
+            Ok((
+                Stmt::ShellIf {
+                    cond,
+                    then_body,
+                    else_body,
+                },
+                f_idx + 1,
+            ))
+        }
+        _ => Err(FrontendError::Parse(
+            "bashrs-frontend: `if` without a matching `fi`".to_string(),
+        )),
+    }
 }
 
 pub struct BashrsFrontend;
@@ -1175,23 +1244,25 @@ impl Frontend for BashrsFrontend {
                 i += 1;
                 continue;
             }
-            if matches!(first_word(line), "for" | "while" | "until") {
-                let (loop_stmt, next) = parse_loop(&trimmed_lines, i)?;
-                stmts.push(loop_stmt);
+            if matches!(first_word(line), "for" | "while" | "until" | "if") {
+                let (block_stmt, next) = parse_block(&trimmed_lines, i)?;
+                stmts.push(block_stmt);
                 i = next;
                 continue;
             }
-            // PMAT-989: REFUSE the remaining shell control-flow
-            // (`if`/`case`, and any stray `do`/`done`/`then`/… keyword,
-            // or a loop keyword appearing after a `;` on a compound line
-            // rather than at line start) instead of silently shredding
-            // it into barewords. `if`/`case` are the v0.2.0 job.
+            // PMAT-989: REFUSE the remaining shell control-flow (`case`,
+            // and any stray `do`/`done`/`then`/`elif`/`else`/`fi`/`esac`
+            // keyword, or a for/while/until/if keyword appearing after a
+            // `;` on a compound line rather than at line start) instead
+            // of silently shredding it into barewords. `case` (and
+            // `elif` chains) are the v0.2.0 job.
             if let Some(kw) = control_flow_keyword(line) {
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: shell control-flow (if/case) not supported — \
-                     `for`/`while`/`until` loops are handled, but the rest of the \
-                     flat-command subset refuses rather than silently shredding into \
-                     barewords. Offending keyword `{kw}` at line `{line}`."
+                    "bashrs-frontend: shell `case` (and `elif` chains, and compound-line \
+                     control-flow) not supported — `for`/`while`/`until` loops and \
+                     `if`/`then`/`else` are handled, but the rest refuses rather than \
+                     silently shredding into barewords. Offending keyword `{kw}` at line \
+                     `{line}`."
                 )));
             }
             // Flat (non-control-flow) command line.
@@ -3067,23 +3138,162 @@ for i in 1 2 3; do
         assert!(format!("{err:?}").contains("control-flow"));
     }
 
+    /// PMAT-1283 helper: the single `Stmt::ShellIf` a fixture lowers to.
+    #[cfg(test)]
+    fn only_shell_if(module: &Module) -> (&Expr, &[Stmt], &[Stmt]) {
+        assert_eq!(module.items.len(), 1);
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("no module constants")
+        };
+        assert_eq!(f.body.stmts.len(), 1, "expected one Stmt::ShellIf");
+        match &f.body.stmts[0] {
+            Stmt::ShellIf {
+                cond,
+                then_body,
+                else_body,
+            } => (cond, then_body.as_slice(), else_body.as_slice()),
+            other => panic!("expected Stmt::ShellIf, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn parse_and_lower_refuses_if_then_fi_no_shred() {
-        // Conditionals are equally unsupported and equally shredded
-        // historically (`if`, `then`, `echo`, `fi`). Refuse.
+    fn parse_and_lower_if_then_fi() {
+        // PMAT-1283: `if COND; then … fi` now PARSES into a
+        // `Stmt::ShellIf` with an empty else-body. The condition is an
+        // opaque LitStr (round-trips verbatim). Was refused pre-1283.
         let source = "\
 if [ -f /tmp/x ]; then
   echo found
 fi
 ";
-        let err = BashrsFrontend
+        let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/cond.sh"), source)
-            .expect_err("if/then/fi must be REFUSED, never shredded");
-        let msg = format!("{err:?}");
-        assert!(
-            msg.contains("control-flow"),
-            "error should name shell control-flow; got {msg}"
+            .expect("if/then/fi must parse");
+        let (cond, then_body, else_body) = only_shell_if(&module);
+        assert_eq!(cond, &Expr::LitStr("[ -f /tmp/x ]".to_string()));
+        assert_eq!(
+            then_body,
+            &[Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::LitStr("found".to_string())],
+            }]
         );
+        assert!(else_body.is_empty(), "no else arm");
+    }
+
+    #[test]
+    fn parse_and_lower_if_then_else_fi() {
+        // The `else` arm parses into `else_body`.
+        let source = "\
+if [ $x -gt 3 ]; then
+  echo big
+else
+  echo small
+fi
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/cond2.sh"), source)
+            .expect("if/then/else/fi must parse");
+        let (cond, then_body, else_body) = only_shell_if(&module);
+        assert_eq!(cond, &Expr::LitStr("[ $x -gt 3 ]".to_string()));
+        assert_eq!(then_body.len(), 1);
+        assert_eq!(else_body.len(), 1);
+        assert_eq!(
+            else_body[0],
+            Stmt::Cmd {
+                program: "echo".to_string(),
+                args: vec![Expr::LitStr("small".to_string())],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_single_line_if() {
+        // The compact one-liner form `if C; then A; else B; fi`.
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/cond3.sh"),
+                "if [ $n -eq 0 ]; then echo zero; else echo nonzero; fi\n",
+            )
+            .expect("single-line if must parse");
+        let (_cond, then_body, else_body) = only_shell_if(&module);
+        assert_eq!(then_body.len(), 1);
+        assert_eq!(else_body.len(), 1);
+    }
+
+    #[test]
+    fn parse_and_lower_if_nested_in_for_loop() {
+        // An `if` inside a `for` body (mixed block nesting).
+        let source = "\
+for i in 1 2; do
+  if [ $i -eq 1 ]; then
+    echo one
+  fi
+done
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/mix.sh"), source)
+            .expect("if-in-for must parse");
+        let (_kind, body) = only_shell_loop(&module);
+        assert_eq!(body.len(), 1);
+        assert!(
+            matches!(&body[0], Stmt::ShellIf { .. }),
+            "loop body must be the if, got {:?}",
+            body[0]
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_loop_nested_in_if_branch() {
+        // A `for` loop inside an `if` then-branch (the other nesting mix).
+        let source = "\
+if [ -d /tmp ]; then
+  for f in a b; do
+    echo $f
+  done
+fi
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/loopif.sh"), source)
+            .expect("loop-in-if must parse");
+        let (_cond, then_body, _else) = only_shell_if(&module);
+        assert_eq!(then_body.len(), 1);
+        assert!(matches!(&then_body[0], Stmt::ShellLoop { .. }));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_empty_if_condition() {
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/emptyif.sh"), "if ; then echo x; fi\n")
+            .expect_err("empty if condition must be REFUSED");
+        assert!(format!("{err:?}").contains("empty condition"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_unterminated_if() {
+        let err = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/untermif.sh"),
+                "if [ -f /tmp/x ]; then\n  echo hi\n",
+            )
+            .expect_err("unterminated if must be REFUSED");
+        assert!(format!("{err:?}").contains("unterminated"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_elif_chain() {
+        // `elif` chains are explicitly out of scope for this slice.
+        let source = "\
+if [ $x -eq 1 ]; then
+  echo one
+elif [ $x -eq 2 ]; then
+  echo two
+fi
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/elif.sh"), source)
+            .expect_err("elif must be REFUSED at this slice");
+        assert!(format!("{err:?}").contains("elif"));
     }
 
     #[test]
