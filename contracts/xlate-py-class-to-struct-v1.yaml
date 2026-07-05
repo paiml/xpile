@@ -91,6 +91,12 @@ equations:
     # in later.
     lean_theorem: "XpileContracts.CXlatePyClassToStruct.py_struct_structure_extensionality_diamond"
     lean_file: "contracts/lean/XlatePyClassToStruct.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1277): Kani BMC over the
+    # emitted Rust struct — per-field projection + structure-extensional
+    # equality + per-field injectivity. Non-vacuous; verified SUCCESSFUL
+    # under Kani 0.67 pre-commit.
+    kani_harness: "py_struct_structure_extensionality_diamond"
+    kani_file: "contracts/kani/xlate_py_class_to_struct.rs"
     formula: |
       ∀ a b : PyStruct.
         a.fields = b.fields → a = b
