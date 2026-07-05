@@ -10077,6 +10077,26 @@ fn desugar_foreach_stmts(
                         )),
                         _ => None,
                     },
+                    // PMAT-1299: `for k in d.keys()` — the EXPLICIT keys view over a
+                    // NAMED dict walks the SAME bump-heap live-entry region the bare
+                    // `for k in d` (`over_keys`) and `for v in d.values()` walk, so it
+                    // is order-sensitive identically (a `del` swaps the last entry
+                    // into the hole, permuting storage order). Gate the body with the
+                    // same commutative-fold whitelist; the escape hatch is
+                    // `sorted(d.keys())`. (A MUTATED-dict keys view arrives as
+                    // `dict_guard: Some` and is already refused above, so any
+                    // `DictView{Keys}` reaching here is the read-only explicit view.)
+                    Expr::DictView {
+                        dict,
+                        kind: DictViewKind::Keys,
+                    } => match dict.as_ref() {
+                        Expr::Ident(n) => Some((
+                            format!("{n}.keys()"),
+                            "dict's keys",
+                            format!("sorted({n}.keys())"),
+                        )),
+                        _ => None,
+                    },
                     _ => None,
                 };
                 if let Some((display, kind, escape)) = hash_order_iter {
@@ -10152,6 +10172,27 @@ fn desugar_foreach_stmts(
                             return Err(unsupported(&format!(
                                 "for-loop over `.values()` of {} — the WASM subset \
                                  iterates the values of a NAMED dict; bind the dict \
+                                 to a name first",
+                                expr_kind(other)
+                            )));
+                        }
+                    },
+                    // PMAT-1299: `for k in d.keys()` — the EXPLICIT keys view over a
+                    // NAMED dict. The iteration source is the dict name; the
+                    // per-element read is the SAME plain `Index` the bare `for k in d`
+                    // emits (the `_` elem_read arm below), which `emit_index` routes
+                    // through `dict_key_elem_of` to load the KEY slot (entry+0). No
+                    // `DictView` marker rides the read (unlike `.values()`), so no
+                    // key-materialiser gate is spuriously armed.
+                    Expr::DictView {
+                        dict,
+                        kind: DictViewKind::Keys,
+                    } => match dict.as_ref() {
+                        Expr::Ident(n) => (None, n.clone()),
+                        other => {
+                            return Err(unsupported(&format!(
+                                "for-loop over `.keys()` of {} — the WASM subset \
+                                 iterates the keys of a NAMED dict; bind the dict \
                                  to a name first",
                                 expr_kind(other)
                             )));
