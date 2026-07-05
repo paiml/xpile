@@ -17,8 +17,12 @@
 //!   aliasing, native to linear memory (the PMAT-1024 reference posture);
 //! * a list-literal ITERABLE (`for x in [5, 10, 15]`) binds ONCE into a
 //!   synthetic `__wasm_fe_l_<k>` local (the PMAT-1028 str-literal pattern);
-//! * **append / growth stays REFUSED** precisely (a fixed-size record
-//!   cannot grow in place; relocation would break aliases — PMAT-999).
+//! * **append** (PMAT-1276) now EMITS for a LITERAL-bound list — the literal
+//!   over-allocates `LIST_GROWTH_SLACK` spare slots + a capacity header, so
+//!   `xs.append(v)` writes IN PLACE (the record never relocates, so aliases
+//!   stay valid) and traps past capacity. Append to a param / alias / helper
+//!   result (no spare capacity) is refused. See `list_append_witness.rs` for
+//!   the executed differential; the emit-shape half is pinned below.
 //!
 //! ## Witness shape
 //!
@@ -413,10 +417,16 @@ fn list_lit_materialises_on_the_bump_heap_under_the_param_abi() {
         wat.contains("i64.store offset=8"),
         "elements store from base+8 (the PMAT-968 param ABI):\n{wat}"
     );
-    // scan_sum's 4-element list: 8-byte header + 4*8 = 40 bytes.
+    // PMAT-1276: scan_sum's 4-element list now over-allocates LIST_GROWTH_SLACK
+    // (16) spare slots for append: 8-byte header + (4 + 16)*8 = 168 bytes, and
+    // records the fixed slot-capacity (4 + 16 = 20) at base+4.
     assert!(
-        wat.contains("i32.const 40"),
-        "the alloc size is 8 + n*elem_size:\n{wat}"
+        wat.contains("i32.const 168"),
+        "the alloc size is 8 + (n + LIST_GROWTH_SLACK)*elem_size:\n{wat}"
+    );
+    assert!(
+        wat.contains("i32.const 20") && wat.contains("i32.store offset=4"),
+        "the list records its fixed slot-capacity (n + slack) at base+4:\n{wat}"
     );
 }
 
@@ -446,9 +456,12 @@ fn alias_binding_is_a_bare_pointer_copy() {
 // ---- refusal tests (always run) ---------------------------------------------
 
 #[test]
-fn append_keeps_the_precise_growth_refusal() {
+fn append_to_literal_bound_list_emits_a_bounded_in_place_write() {
+    // PMAT-1276: `xs = [1, 2]; xs.append(3)` now EMITS — the literal reserved
+    // spare capacity, so append writes IN PLACE (the record never relocates,
+    // so aliases stay valid) with a capacity guard that traps past the bound.
     let m = module(
-        "bad",
+        "ok",
         vec![func(
             "f",
             Type::I64,
@@ -463,11 +476,46 @@ fn append_keeps_the_precise_growth_refusal() {
             Expr::Len(Box::new(ident("xs"))),
         )],
     );
+    let wat = emit_module(&m).expect("literal-bound append lowers");
+    // The bounded-capacity guard: read capacity at base+4, compare, trap.
+    assert!(
+        wat.contains("i32.load offset=4")
+            && wat.contains("i32.ge_u")
+            && wat.contains("unreachable"),
+        "append emits a capacity guard (load cap@base+4, ge_u, trap):\n{wat}"
+    );
+    // The element store and the count-header write-back.
+    assert!(
+        wat.contains("i64.store offset=8") && wat.contains("i32.store"),
+        "append stores the element and writes back the incremented count:\n{wat}"
+    );
+}
+
+#[test]
+fn append_to_a_param_list_is_refused() {
+    // PMAT-1276: a list PARAM was sized exactly by the caller — no spare
+    // capacity — so appending to it is refused rather than overrunning.
+    let m = module(
+        "bad",
+        vec![func(
+            "f",
+            Type::I64,
+            vec![Param {
+                name: "xs".into(),
+                ty: Type::List(Box::new(Type::I64)),
+                mutable: true,
+            }],
+            vec![Stmt::ListAppend {
+                list_name: "xs".into(),
+                elem: lit_i(3),
+            }],
+            Expr::Len(Box::new(ident("xs"))),
+        )],
+    );
     let err = emit_module(&m).unwrap_err().to_string();
     assert!(
-        err.contains("list growth is outside the WASM subset")
-            && err.contains("relocation would break aliases"),
-        "append refuses precisely, naming the relocation hazard: {err}"
+        err.contains("append") && (err.contains("param") || err.contains("spare capacity")),
+        "append to a param refuses precisely, naming the missing capacity: {err}"
     );
 }
 

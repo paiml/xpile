@@ -206,6 +206,25 @@ const HEAP_CONTRACT_ID: &str = "C-WASM-HEAP";
 /// keeps the single list/str linear-memory ABI uniform).
 const LIST_ELEMS_OFFSET: i32 = 8;
 
+/// PMAT-1276: the i32 slot-**capacity** header a `list[scalar]` carries at
+/// `base+4` — the same byte the dict/set bump heap uses for its capacity
+/// ([`DICT_CAP_OFFSET`]); a list previously left this word unused. `len(xs)`
+/// reads the live-element COUNT at `base+0`; `xs.append(v)` reads the capacity
+/// here to bound the write (an append at `count == capacity` traps rather than
+/// overrunning the record). The read-only list ops touch only `base+0` and the
+/// elements at `base+8`, so recording a capacity here is transparent to them.
+const LIST_CAP_OFFSET: i32 = 4;
+
+/// PMAT-1276: spare element slots a `ListLit` over-allocates past its literal
+/// entries, so a subsequent `xs.append(v)` has room in the (realloc-free) bump
+/// heap. Mirrors [`DICT_GROWTH_SLACK`] exactly: the capacity is FIXED at
+/// construction (`literal_count + LIST_GROWTH_SLACK`), and an append beyond it
+/// TRAPS (`unreachable`) rather than relocating the record — the honest
+/// bounded-capacity posture that keeps append ALIAS-SAFE (the base-pointer
+/// never moves, so every alias holding it still observes the mutation, unlike
+/// the relocation hazard the PMAT-1033 growth-refusal warned about).
+const LIST_GROWTH_SLACK: i32 = 16;
+
 /// PMAT-968: name of the per-function scratch `i64` local that holds an
 /// evaluated `Index` index, reused by the bounds guard and the address
 /// computation (so the index expression is evaluated exactly once). Prefixed
@@ -510,9 +529,9 @@ fn collect_stmt_literals(s: &Stmt, out: &mut Vec<String>) {
         // segment; the collector previously skipped SetAdd entirely, so the
         // literal was "not laid out — internal layout error". The WRITE-side
         // sibling of the DictSet layout arm above.
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => {
-            collect_expr_literals(elem, out)
-        }
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => collect_expr_literals(elem, out),
         // PMAT-1023: a field write's VALUE and a statement-position method
         // call's ARGS may reference literals (`c.tag(ord("x"))`).
         Stmt::FieldAssign { value, .. } => collect_expr_literals(value, out),
@@ -10114,7 +10133,9 @@ fn stmt_touches_str(s: &Stmt) -> bool {
             indices.iter().any(expr_touches_str) || expr_touches_str(value)
         }
         Stmt::DictSet { key, value, .. } => expr_touches_str(key) || expr_touches_str(value),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_touches_str(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_touches_str(elem),
         Stmt::SideEffectCall { call } => expr_touches_str(call),
         // PMAT-1234: `del d[k]` over a str-keyed dict — the KEY (`del d[chr(n)]`)
         // can be the sole str-touching site in a function, gating `(memory)` +
@@ -10235,7 +10256,9 @@ fn stmt_has_str_slice(s: &Stmt) -> bool {
             indices.iter().any(expr_has_str_slice) || expr_has_str_slice(value)
         }
         Stmt::DictSet { key, value, .. } => expr_has_str_slice(key) || expr_has_str_slice(value),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_has_str_slice(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_has_str_slice(elem),
         Stmt::SideEffectCall { call } => expr_has_str_slice(call),
         // PMAT-1234: `del d[s[1:4]]` — the KEY can host the slice helper.
         Stmt::DelItem { key, .. } => expr_has_str_slice(key),
@@ -10389,7 +10412,9 @@ fn stmt_has_int_to_str(s: &Stmt) -> bool {
         // UNDECLARED (a hard wat2wasm failure the value-only scan never caught).
         // Scan both the key and value, and the elem.
         Stmt::DictSet { key, value, .. } => expr_has_int_to_str(key) || expr_has_int_to_str(value),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_has_int_to_str(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_has_int_to_str(elem),
         Stmt::SideEffectCall { call } => expr_has_int_to_str(call),
         // PMAT-1234: `del d[str(n)]` over a str-keyed dict — the KEY routes a
         // `ToStr` through `emit_dict_key`, emitting `call $__wasm_int_to_str`;
@@ -10640,7 +10665,9 @@ fn stmt_uses_str_method(s: &Stmt, op: StrMethodOp) -> bool {
         Stmt::DictSet { key, value, .. } => {
             expr_uses_str_method(key, op) || expr_uses_str_method(value, op)
         }
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_uses_str_method(elem, op),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_uses_str_method(elem, op),
         Stmt::SideEffectCall { call } => expr_uses_str_method(call, op),
         // PMAT-1234: `del d[s.upper()]` — the KEY can host a str-method call.
         Stmt::DelItem { key, .. } => expr_uses_str_method(key, op),
@@ -10785,7 +10812,9 @@ fn stmt_has_str_contains(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => {
             expr_has_str_contains(key) || expr_has_str_contains(value)
         }
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_has_str_contains(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_has_str_contains(elem),
         Stmt::SideEffectCall { call } => expr_has_str_contains(call),
         // PMAT-1234: `del d[1 if "a" in s else 0]` — the KEY can host `x in s`.
         Stmt::DelItem { key, .. } => expr_has_str_contains(key),
@@ -10937,7 +10966,9 @@ fn stmt_has_list_sum(s: &Stmt, want_float: bool) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11047,7 +11078,9 @@ fn stmt_has_list_minmax(s: &Stmt, want_float: bool) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11147,7 +11180,9 @@ fn stmt_has_list_contains(s: &Stmt) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11243,7 +11278,9 @@ fn stmt_has_list_query(s: &Stmt, want_index: bool) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11334,7 +11371,9 @@ fn stmt_has_bool_reduce(s: &Stmt) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11434,7 +11473,9 @@ fn stmt_has_list_sorted(s: &Stmt, want_float: bool) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11538,7 +11579,9 @@ fn stmt_has_list_reversed(s: &Stmt) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11644,7 +11687,9 @@ fn stmt_has_list_concat(s: &Stmt) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11744,7 +11789,9 @@ fn stmt_has_list_slice(s: &Stmt) -> bool {
         Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
         Stmt::DictSet { key, value, .. } => e(key) || e(value),
         Stmt::DelItem { key, .. } => e(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => e(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11840,7 +11887,9 @@ fn stmt_has_str_repeat(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => expr_has_str_repeat(key) || expr_has_str_repeat(value),
         // PMAT-1234: `del d[s * n]` — the KEY can host a str-repeat.
         Stmt::DelItem { key, .. } => expr_has_str_repeat(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_has_str_repeat(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_has_str_repeat(elem),
         Stmt::SideEffectCall { call } => expr_has_str_repeat(call),
         _ => false,
     }
@@ -11982,9 +12031,9 @@ fn stmt_has_str_method_2arg(s: &Stmt, target: StrMethodOp) -> bool {
         Stmt::DictSet { key, value, .. } => {
             expr_has_str_method_2arg(key, target) || expr_has_str_method_2arg(value, target)
         }
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => {
-            expr_has_str_method_2arg(elem, target)
-        }
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_has_str_method_2arg(elem, target),
         Stmt::SideEffectCall { call } => expr_has_str_method_2arg(call, target),
         _ => false,
     }
@@ -12153,7 +12202,9 @@ fn stmt_has_str_eq(s: &Stmt, scan: &StrEqScan<'_>) -> bool {
         Stmt::DictSet { key, value, .. } => {
             expr_has_str_eq(key, scan) || expr_has_str_eq(value, scan)
         }
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_has_str_eq(elem, scan),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_has_str_eq(elem, scan),
         Stmt::SideEffectCall { call } => expr_has_str_eq(call, scan),
         // PMAT-1234: `del d[1 if a == b else 2]` — the KEY can host a str eq/cmp.
         Stmt::DelItem { key, .. } => expr_has_str_eq(key, scan),
@@ -12319,7 +12370,9 @@ fn stmt_has_heap_op(s: &Stmt) -> bool {
         // PMAT-1234: `del d["a" + s]` — the KEY can host a heap-allocating op
         // (concat/chr/slice), which rides `needs_heap`; scan it.
         Stmt::DelItem { key, .. } => expr_has_heap_op(key),
-        Stmt::SetAdd { elem, .. } | Stmt::SetRemove { elem, .. } => expr_has_heap_op(elem),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. } => expr_has_heap_op(elem),
         Stmt::SideEffectCall { call } => expr_has_heap_op(call),
         Stmt::Break | Stmt::Continue => false,
         _ => false,
@@ -12687,6 +12740,15 @@ struct Scope<'a> {
     /// WAT type its elements load as (`i64`/`f64`/`f32`). `Index` over such
     /// a local emits `base + i*size` + that element's `*.load`.
     list_elem: Vec<(String, WatTy)>,
+    /// PMAT-1276: the subset of list locals that are APPEND-safe — bound by a
+    /// `Let`/`Assign` to a `ListLit` (which [`emit_list_lit`] over-allocates
+    /// with [`LIST_GROWTH_SLACK`] spare slots + a capacity header at
+    /// [`LIST_CAP_OFFSET`]) and NEVER rebound to a non-literal list value. A
+    /// list PARAM, an aliased list (`ys = xs`), or a `concat`/`sorted`/
+    /// `reversed`/`slice` RESULT carries no spare capacity, so appending to it
+    /// is refused at emit time — a clean compile-time refusal, never a silent
+    /// runtime overrun. Computed once per function by [`collect_growable_lists`].
+    growable_lists: Vec<String>,
     /// PMAT-986: names that are `str` base-pointers into linear memory (i32
     /// byte count @ base+0, UTF-8 bytes @ base+8). `len(s)` reads the header;
     /// `ord(s[i])` does a bounds-checked `i32.load8_u` of byte `i`. Str
@@ -12820,6 +12882,14 @@ impl Scope<'_> {
             .map(|(_, t)| *t)
     }
 
+    /// PMAT-1276: `true` if `name` is an APPEND-safe list local — a `ListLit`
+    /// binding whose record [`emit_list_lit`] over-allocated with spare
+    /// capacity. `xs.append(v)` is emitted only for these; every other list
+    /// (a param, an alias, or a helper-allocated result) is refused.
+    fn is_growable_list(&self, name: &str) -> bool {
+        self.growable_lists.iter().any(|n| n == name)
+    }
+
     /// PMAT-986: `true` if `name` is a `str` param or (PMAT-1028) str-annotated
     /// local base-pointer (a length-prefixed UTF-8 byte region in linear
     /// memory). Drives `len(s)`, `ord(s[i])`, and string-position lowering.
@@ -12917,6 +12987,7 @@ fn emit_function(
     let mut scope = Scope {
         locals: Vec::new(),
         list_elem: Vec::new(),
+        growable_lists: Vec::new(),
         str_names: Vec::new(),
         heap_maps: Vec::new(),
         heap_sets: Vec::new(),
@@ -12958,6 +13029,10 @@ fn emit_function(
     // `(local …)` declarations precede the body in WAT (WASM requires all
     // locals declared up front, after the params).
     collect_let_locals(&f.body, &mut scope)?;
+    // PMAT-1276: classify which list locals are APPEND-safe (literal-bound,
+    // never rebound to a helper result). Runs AFTER `collect_let_locals` so
+    // every list name is registered in `scope.list_elem`.
+    collect_growable_lists(&f.body.stmts, &mut scope);
 
     // Emit body into a buffer first (it also validates types).
     let mut body = String::new();
@@ -13170,22 +13245,16 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             | Stmt::ListMutate { .. }
             | Stmt::Return(_)
             | Stmt::Break
+            // PMAT-1276: `xs.append(v)` mutates an EXISTING list record in
+            // place (the base-pointer never moves) — it declares no new local.
+            // The append-safety decision (literal-bound + spare capacity) is
+            // made downstream in `emit_list_append`, exactly as the
+            // `emit_list_mutate` clear/sort/reverse decision is.
+            | Stmt::ListAppend { .. }
             | Stmt::Continue => {}
             // PMAT-1034: a `raise` (→ `unreachable` trap) introduces no
             // locals — its message expression is never evaluated on WASM.
             Stmt::Raise { .. } => {}
-            // PMAT-1033: growth stays REFUSED precisely — a fixed-size list
-            // record cannot grow in place on the bump heap, and relocating it
-            // would silently break every alias holding the old base-pointer
-            // (the PMAT-999 relocation-hazard posture).
-            Stmt::ListAppend { list_name, .. } => {
-                return Err(unsupported(&format!(
-                    "`{list_name}.append(…)` — list growth is outside the WASM \
-                     subset (a fixed-size heap record cannot grow in place; \
-                     relocation would break aliases). Pre-size the list and \
-                     write `{list_name}[i] = …` instead"
-                )));
-            }
             other => {
                 return Err(unsupported(&format!(
                     "statement {} (outside the WASM scalar/control subset)",
@@ -13195,6 +13264,65 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
         }
     }
     Ok(())
+}
+
+/// PMAT-1276: populate [`Scope::growable_lists`] — the list locals it is safe
+/// to `xs.append(v)` on. A list name qualifies iff EVERY `Let`/`Assign` that
+/// binds it has a [`Expr::ListLit`] value (the only list form
+/// [`emit_list_lit`] over-allocates with spare capacity) and it is bound to a
+/// literal at least once. A single non-literal binding (an alias `ys = xs`, a
+/// `sorted`/`reversed`/`concat`/`slice` result, or any other list-valued
+/// expression whose helper allocates NO spare capacity) disqualifies the name:
+/// appending to such a record would overrun it, so `emit_list_append` refuses
+/// it at compile time. List PARAMS never appear here (they have no `Let`), so
+/// they are refused too — the caller sized them exactly.
+fn collect_growable_lists(stmts: &[Stmt], scope: &mut Scope) {
+    let mut lit_bound: Vec<String> = Vec::new();
+    let mut disqualified: Vec<String> = Vec::new();
+    scan_list_bindings(stmts, scope, &mut lit_bound, &mut disqualified);
+    for name in lit_bound {
+        if !disqualified.contains(&name) && !scope.growable_lists.contains(&name) {
+            scope.growable_lists.push(name);
+        }
+    }
+}
+
+/// Recursive worker for [`collect_growable_lists`]: record each list-local
+/// binding as literal (→ `lit_bound`) or non-literal (→ `disqualified`),
+/// descending into `If`/`While` bodies (an append target may be bound inside a
+/// branch or loop).
+fn scan_list_bindings(
+    stmts: &[Stmt],
+    scope: &Scope,
+    lit_bound: &mut Vec<String>,
+    disqualified: &mut Vec<String>,
+) {
+    for s in stmts {
+        match s {
+            Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {
+                if scope.list_elem_of(name).is_none() {
+                    continue; // not a list local — irrelevant to append safety
+                }
+                if matches!(value, Expr::ListLit(_)) {
+                    lit_bound.push(name.clone());
+                } else {
+                    disqualified.push(name.clone());
+                }
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                scan_list_bindings(then_body, scope, lit_bound, disqualified);
+                scan_list_bindings(else_body, scope, lit_bound, disqualified);
+            }
+            Stmt::While { body, .. } => {
+                scan_list_bindings(body, scope, lit_bound, disqualified);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn indent(out: &mut String, n: usize) {
@@ -13352,6 +13480,15 @@ fn emit_stmt(
         // `d[k] = v` re-inserts from count 0, reusing the existing capacity.
         Stmt::ListMutate { list_name, op, .. } => {
             emit_list_mutate(list_name, *op, scope, out, depth)
+        }
+        // PMAT-1276: `xs.append(v)` — the FIRST list-mutation-that-GROWS. An
+        // in-place write at the live-element count (bounded by the capacity
+        // header `emit_list_lit` reserved), then `count++`. The record never
+        // relocates, so every alias holding the base-pointer observes the
+        // append — the alias-safe posture the old PMAT-1033 growth-refusal
+        // could not offer. Only literal-bound lists (spare capacity) qualify.
+        Stmt::ListAppend { list_name, elem } => {
+            emit_list_append(list_name, elem, scope, out, depth)
         }
         // PMAT-1023: `obj.field = value` — store through the struct
         // local/param's base-pointer (the OOP mutation primitive).
@@ -16521,6 +16658,108 @@ fn emit_list_mutate(
     Ok(())
 }
 
+/// PMAT-1276: lower `xs.append(v)` (`Stmt::ListAppend`) — append `v` to a
+/// literal-bound `list[scalar]` local IN PLACE.
+///
+/// The list record carries an i32 live-element **count** at `base+0` and a
+/// FIXED slot **capacity** at `base+4` ([`LIST_CAP_OFFSET`]), the slack
+/// [`emit_list_lit`] reserved. Append:
+///   1. loads `count` and `capacity`; if `count >= capacity`, traps
+///      (`unreachable`) — the honest bounded-capacity boundary (never a heap
+///      overrun, and — because the base-pointer never moves — never the
+///      alias-invalidating relocation the PMAT-1033 refusal warned about);
+///   2. else stores `v` at `base + LIST_ELEMS_OFFSET + count*stride` (a
+///      natural-width `*.store`, matching the element read/write path);
+///   3. writes `count + 1` back to `base+0` so every subsequent `len(xs)` /
+///      `xs[i]` / `for x in xs` / reduction sees the appended element.
+///
+/// `count` is re-read from memory each time rather than cached in a scratch
+/// local (it is unchanged until the final write-back), so no per-function
+/// scratch declaration is needed. Only an APPEND-safe list (a `ListLit`
+/// binding — see [`Scope::is_growable_list`]) is accepted; a param, an alias,
+/// or a helper-allocated result (`sorted`/`reversed`/`concat`/`slice`, none of
+/// which reserve spare capacity) is refused here at compile time.
+fn emit_list_append(
+    list_name: &str,
+    elem_expr: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let Some(elem) = scope.list_elem_of(list_name) else {
+        return Err(unsupported(&format!(
+            "`{list_name}.append(v)` over `{list_name}` which is not a \
+             `list[scalar]` local — the WASM subset appends to a named \
+             `list[int]`/`list[float]`/`list[bool]` only"
+        )));
+    };
+    if !scope.is_growable_list(list_name) {
+        return Err(unsupported(&format!(
+            "`{list_name}.append(v)` — the WASM subset appends only to a list \
+             bound to a LITERAL (`{list_name} = []` / `{list_name} = [..]`), \
+             which reserves spare capacity. `{list_name}` is a param, an alias, \
+             or a `sorted`/`reversed`/`concat`/slice result (no spare capacity); \
+             appending to it is refused rather than overrunning the record"
+        )));
+    }
+    let stride = elem.byte_size();
+    // Bounds/capacity guard: if count(base+0) >= capacity(base+4) → trap.
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load ;; count @ base+0").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    indent(out, depth);
+    writeln!(
+        out,
+        "i32.load offset={LIST_CAP_OFFSET} ;; capacity @ base+4"
+    )
+    .expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.ge_u").expect("write");
+    indent(out, depth);
+    writeln!(out, "if").expect("write");
+    indent(out, depth + 1);
+    writeln!(
+        out,
+        "unreachable ;; append past fixed capacity (bounded bump heap)"
+    )
+    .expect("write");
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
+    // addr = base + count*stride ; then store v at offset=LIST_ELEMS_OFFSET.
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load ;; count").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {stride}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.mul").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add ;; base + count*stride").expect("write");
+    emit_expr_typed(elem_expr, scope, out, depth, elem)?;
+    indent(out, depth);
+    writeln!(out, "{} offset={LIST_ELEMS_OFFSET}", elem.store_instr()).expect("write");
+    // count = count + 1 (write back to base+0).
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const 1").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store ;; count = count + 1").expect("write");
+    Ok(())
+}
+
 /// The Python method spelling for a [`ListMutateOp`], for refusal messages.
 fn list_mutate_method(op: ListMutateOp) -> &'static str {
     match op {
@@ -17321,21 +17560,33 @@ fn emit_list_lit(
 ) -> Result<(), BackendError> {
     let n = i32::try_from(elems.len())
         .map_err(|_| unsupported("list literal longer than i32::MAX elements"))?;
-    let size = LIST_ELEMS_OFFSET + n * elem.byte_size();
-    // dst = __alloc(8 + n*elem_size)
+    // PMAT-1276: over-allocate `LIST_GROWTH_SLACK` spare slots past the literal
+    // entries so a later `xs.append(v)` has room in the realloc-free bump heap;
+    // record that fixed capacity at base+4. `capacity` cannot overflow i32 for
+    // any list a WASM module realistically emits (n is already bounded above).
+    let cap = n.saturating_add(LIST_GROWTH_SLACK);
+    let size = LIST_ELEMS_OFFSET + cap * elem.byte_size();
+    // dst = __alloc(8 + (n + slack)*elem_size)
     indent(out, depth);
     writeln!(out, "i32.const {size}").expect("write");
     indent(out, depth);
     writeln!(out, "call $__alloc").expect("write");
     indent(out, depth);
     writeln!(out, "local.set ${LIST_DST_SCRATCH}").expect("write");
-    // Header: the i32 element count at base+0.
+    // Header: the i32 live-element count at base+0 …
     indent(out, depth);
     writeln!(out, "local.get ${LIST_DST_SCRATCH}").expect("write");
     indent(out, depth);
     writeln!(out, "i32.const {n}").expect("write");
     indent(out, depth);
     writeln!(out, "i32.store").expect("write");
+    // … and the fixed slot-capacity at base+4 (`append` bounds writes to it).
+    indent(out, depth);
+    writeln!(out, "local.get ${LIST_DST_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {cap}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store offset={LIST_CAP_OFFSET}").expect("write");
     // Each element at base + LIST_ELEMS_OFFSET + i*elem_size.
     for (i, e) in elems.iter().enumerate() {
         indent(out, depth);
