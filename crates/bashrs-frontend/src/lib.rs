@@ -1037,19 +1037,25 @@ fn parse_segment_seq<'a>(
             }
             "do" | "done" | "then" | "elif" | "else" | "fi" => {
                 // A structural keyword that is NOT an expected terminator
-                // here — stray (a `done`/`fi`/`else` with no open block)
-                // or unsupported (`elif` chains are later work). Refuse —
+                // here — a stray `done`/`fi`/`elif`/`else` with no open
+                // block expecting it (well-formed loop/if/elif chains are
+                // consumed by `parse_loop_at`/`parse_if_at`). Refuse —
                 // never shred.
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: stray or unsupported shell keyword `{fw}` in `{seg}` \
-                     (`elif` chains and `case` are not supported yet)"
+                    "bashrs-frontend: stray shell keyword `{fw}` in `{seg}` — no open \
+                     block expects it here; refusing rather than shredding into barewords"
                 )));
             }
             "case" | "esac" => {
+                // `case`/`esac` IS supported at TOP LEVEL (PMAT-1285); only
+                // a `case` NESTED inside a loop/if body refuses — this
+                // `;`-segment-split context would mangle the arm `;;`
+                // terminators (v0.2.0 work).
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: shell `case`/`esac` not supported — for/while/until \
-                     loops and if/then/else are handled; refusing rather than shredding \
-                     `{seg}` into barewords."
+                    "bashrs-frontend: shell `case`/`esac` is top-level only — a `case` \
+                     nested inside a loop/if body is not supported (the `;`-segment \
+                     split would mangle arm `;;` terminators); refusing rather than \
+                     shredding `{seg}` into barewords."
                 )));
             }
             _ => {
@@ -3830,7 +3836,15 @@ done
         let err = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/cnl.sh"), source)
             .expect_err("case-in-loop must be REFUSED at this slice");
-        assert!(format!("{err:?}").contains("case"));
+        let msg = format!("{err:?}");
+        assert!(msg.contains("case"));
+        // The refusal must state the TRUE boundary — top-level `case` IS
+        // supported (PMAT-1285); a flat "not supported" would de-lie the
+        // shipped capability (PMAT-1287 skeptic finding).
+        assert!(
+            msg.contains("top-level only"),
+            "case-in-loop refusal must name the real boundary, got: {msg}"
+        );
     }
 
     #[test]
