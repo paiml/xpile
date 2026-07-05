@@ -99,9 +99,21 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), LeanCodegenError>
 
 /// PMAT-011: emit Lean structured attributes for each applicable
 /// contract. `@[xpile_contract "<ID>"]` is the form named in
-/// `sub/contract-frontend-trait.md`'s citation grid — Lean's elaborator
-/// parses it, so the citation bridge can use Lean's name resolution
-/// rather than regex over body text.
+/// `sub/contract-frontend-trait.md`'s citation grid — the INTENT is a
+/// structured attribute Lean's elaborator can resolve by name (rather than
+/// regex over body text).
+///
+/// HONESTY CAVEAT (verified 2026-07-05 by `lean_elaborate_witness.rs` and
+/// `docs/specifications/audit-design.md` §7): `xpile_contract` is NOT actually a
+/// REGISTERED Lean attribute anywhere, so bare `lean` REJECTS the emitted
+/// attribute (`unexpected token; expected ']'`) and `--contracts on` Lean does
+/// not elaborate standalone. The `contracts/lean/*` proof modules sidestep this
+/// by mentioning `@[xpile_contract …]` only in PROSE, never as a live attribute.
+/// Registering it must happen in a SEPARATELY-IMPORTED module (an in-file
+/// `registerBuiltinAttribute` fails with `unknown attribute`), so wiring genuine
+/// Lean-native resolution is a prelude+import design task — NOT a switch to a
+/// comment, which would abandon the deliberate structured-attribute form. Until
+/// that prelude exists, `--contracts off` is the elaborate-able emit.
 fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), LeanCodegenError> {
     for id in f.applicable_contracts() {
         writeln!(out, "@[xpile_contract \"{id}\"]")?;

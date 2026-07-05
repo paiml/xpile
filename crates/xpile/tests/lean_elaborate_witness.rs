@@ -22,10 +22,17 @@
 //! is not a registered Lean attribute, so `lean` rejects it
 //! (*"unexpected token; expected ']'"*) and the emitted Lean does NOT elaborate.
 //! Every other backend cites contracts as COMMENTS (`// xpile-contract:`), which
-//! never affect compilation; only the Lean lane uses an attribute form that
-//! breaks the most basic check. The fix is to emit the citation as a Lean
-//! comment (`-- xpile-contract:`) or register the attribute in a prelude; until
-//! then the elaborate-able Lean is the annotation-free (`--contracts off`) form.
+//! never affect compilation; only the Lean lane uses an attribute form. The
+//! attribute is DELIBERATE (the citation grid's structured form for Lean-native
+//! name resolution; `main.rs`/`xpile-backend` recognise `@[xpile_contract` as the
+//! Lean citation prefix, and example 02 states it is "a Lean attribute, not a
+//! comment"), so a comment is the WRONG fix. The real gap: the attribute was
+//! never actually REGISTERED, so the intended Lean-native resolution isn't wired.
+//! The design-consistent fix is a separately-imported prelude that registers it
+//! (in-file `registerBuiltinAttribute` fails — verified); that also changes the
+//! emit's standalone-ness + frozen tests, so it is a deliberate design task.
+//! Until then the elaborate-able Lean is the annotation-free (`--contracts off`)
+//! form this witness uses. See `docs/specifications/audit-design.md` §7.
 //!
 //! SCOPE: the Lean lane lowers only VALUE functions (arithmetic / comparison /
 //! bool) — it refuses `None`-returning (void) functions, statement-form
