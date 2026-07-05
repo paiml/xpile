@@ -1,11 +1,19 @@
 # Enforcement hand-off — the org-gated tail of the fable architectural review
 
+> **STATUS 2026-07-05 — the flip is LIVE.** Org ruleset `13878864` now requires
+> `['gate', 'kani', 'lake-build', 'workspace-test']` (was `['gate']`).
+> XPILE-RULESET-001 ✅ and the ruleset half of XPILE-RULESET-002 ✅ are DONE — the
+> seven merged gates plus the proof lane are now **merge-blocking**, not advisory.
+> Snapshot: [`ruleset-13878864.json`](ruleset-13878864.json). Still open:
+> RULESET-002's `kani_verify` hard-fail companion PR, the SOT-001 governance
+> decision, and PMAT-487 (GPU runners).
+
 The EV-ranked backlog in [`docs/specifications/fable-architectural-review.md`](../specifications/fable-architectural-review.md)
 §7b was implemented autonomously **as far as the PR flow reaches**. Seven gate
-PRs landed (see the table below). Four items remain — not because the code is
-hard, but because they require an action **outside** the `branch → PR → gate`
-loop: an **org-admin ruleset edit**, an **owner governance decision**, or
-**hardware/ops access**. This file is the runbook for that tail.
+PRs landed (see the table below), and the org-admin ruleset flip that makes them
+enforce has now been applied. What remains needs an **owner governance
+decision** (SOT-001) or **hardware/ops access** (PMAT-487). This file is the
+runbook + record for that tail.
 
 ## What already landed (autonomous, merged)
 
@@ -19,37 +27,32 @@ loop: an **org-admin ruleset edit**, an **owner governance decision**, or
 | XPILE-CLEANROOM-001 | 8 | #1878 | release workflow: `cargo publish --workspace --dry-run` under isolated CARGO_HOME + per-PR manifest falsifier |
 | XPILE-PTX-001 | 12 | #1876 | `--hardware ptx` makes `--target ptx` CLI-reachable; refuses loudly without it |
 
-**All seven run under the `workspace-test` (or `gate`) job — which the ruleset
-below does not yet require.** They show red on a bad PR but do **not block
-merge** until the ruleset edit lands. That is the single highest-EV item and it
-is the one I cannot do.
+All seven run under the `workspace-test` (or `gate`) job. Until 2026-07-05 the
+ruleset required only `gate`, so they were advisory-green — red on a bad PR but
+not merge-blocking. **That is now fixed (see the STATUS banner).**
 
 ---
 
-## 1. XPILE-RULESET-001 (EV rank **1**) — make the gates actually enforce
+## 1. XPILE-RULESET-001 (EV rank **1**) — make the gates actually enforce ✅ DONE 2026-07-05
 
-**Why it's #1:** every gate inherits its meaning from enforcement. Today ruleset
-`13878864` ("Green Main") requires **only** the `gate` context:
+**Why it was #1:** every gate inherits its meaning from enforcement. Before the
+flip, ruleset `13878864` ("Green Main") required **only** the `gate` context —
+which runs fmt/check/clippy/pv-lint/deny but **not** the differential witnesses,
+the witness-floor manifest, or the claims-drift gate (those are `workspace-test`).
+So all seven PRs above were advisory-green. The flip added `workspace-test`
+(this item) plus `lake-build` + `kani` (item 2) to the required contexts.
 
-```
-$ gh api repos/paiml/xpile/rules/branches/main
-required_status_checks: ['gate']        # ← workspace-test is NOT here
-strict_required_status_checks_policy: False
-```
+**⚠️ endpoint gotcha:** ruleset `13878864` is **Organization-sourced**
+(`source_type: Organization`, `source: paiml`), so the repo endpoint
+`repos/paiml/xpile/rulesets/13878864` can **read** it but a `PUT` there returns
+**404**. Edit it at the **org** endpoint `orgs/paiml/rulesets/13878864` (requires
+org-admin, which is outside normal repo-push rights).
 
-`gate` runs fmt/check/clippy/pv-lint/deny. It does **not** run the differential
-witnesses, the witness-floor manifest, or the claims-drift gate — those are the
-`workspace-test` job. So all seven PRs above are advisory-green until an
-org-admin adds `workspace-test` to the required contexts. `ci.yml` even *says*
-"Required check" in a comment (reconciled to an ENFORCEMENT NOTE by
-WITNESS-001), but a comment is not a ruleset.
-
-**The edit (org-admin only — outside PR flow):**
+**The edit as applied (idempotent — re-running is a no-op):**
 
 ```bash
-# Add workspace-test (RULESET-001) — and lake-build + kani (RULESET-002, below)
-# in the same session. Idempotent: re-running is a no-op.
-gh api repos/paiml/xpile/rulesets/13878864 \
+# Read from the ORG endpoint, add the 3 contexts, PUT back to the ORG endpoint.
+gh api orgs/paiml/rulesets/13878864 \
   | jq '{name, target, enforcement, conditions, bypass_actors,
          rules: [ .rules[]
            | if .type=="required_status_checks"
@@ -59,7 +62,10 @@ gh api repos/paiml/xpile/rulesets/13878864 \
                     | unique | map({context: .}) )
              else . end ] }' > /tmp/ruleset-new.json
 
-gh api --method PUT repos/paiml/xpile/rulesets/13878864 --input /tmp/ruleset-new.json
+gh api --method PUT orgs/paiml/rulesets/13878864 --input /tmp/ruleset-new.json
+
+# Verify the EFFECTIVE gate on main:
+gh api repos/paiml/xpile/rules/branches/main   # → required now includes workspace-test
 ```
 
 Then decide `strict` explicitly: `strict_required_status_checks_policy: true`
@@ -67,25 +73,33 @@ forces branches to be up-to-date with `main` before merge (safer, more rebases);
 `false` (today) does not. The review recommends deciding it explicitly, not by
 default.
 
-**Falsifier (proves it's enforcing):** open a throwaway PR whose only change is
-one deliberately failing `#[test]`. `workspace-test` goes red **and GitHub
-refuses the merge button**. Before this edit, the same PR merges. Snapshot the
-post-edit ruleset JSON to `docs/status/ruleset-13878864.json`.
+**Enforcement verified two ways:** (1) `gh api repos/paiml/xpile/rules/branches/main`
+now lists `workspace-test` among the effective required contexts; (2) this very
+PR — the one committing `ruleset-13878864.json` — had to pass all four required
+checks (`gate`, `workspace-test`, `lake-build`, `kani`) before it could merge, a
+positive proof that the context names are wired correctly (a misnamed required
+context would hang the PR unmergeable forever, not block-then-pass). The snapshot
+is committed at [`ruleset-13878864.json`](ruleset-13878864.json). `strict` was
+left **false** deliberately — requiring branches be up-to-date with `main` before
+merge would add rebase churn to the active autonomous cron; promote to `strict`
+only if stale-base merges become a real problem.
 
 ---
 
-## 2. XPILE-RULESET-002 (EV rank **4**) — promote the proof lane
+## 2. XPILE-RULESET-002 (EV rank **4**) — promote the proof lane ✅ ruleset half DONE 2026-07-05
 
-Same ruleset session as #1 (the command above already adds `lake-build` and
-`kani`). These jobs are **real, green, and latency-free to promote** today
-(lake-build ~16s, kani ~2m). An advisory proof lane compounds no confidence.
+The ruleset half is done — `lake-build` and `kani` were added in the same edit as
+#1 (verified green on 5/5 recent completed commits before promoting; lake-build
+~16s, kani ~2m — latency-free). An advisory proof lane compounds no confidence.
 
-**One repo-side companion PR** (this half *is* in PR flow, but is coupled to the
-promotion so it's parked here): make `contracts/kani/kani_verify.rs` **fail, not
-warn**, when `cargo-kani` is missing and `CI=true` — otherwise a runner without
-kani installed would report green-by-absence, re-creating the skip-as-green hole
-(F9) at the very moment kani becomes required. Do this in the same change window
-as the ruleset edit so the required `kani` context can never pass vacuously.
+**Still open — one repo-side companion PR** (normal branch→PR flow): make
+`contracts/kani/kani_verify.rs` **fail, not warn**, when `cargo-kani` is missing
+and `CI=true` — otherwise a runner without kani installed would report
+green-by-absence, re-creating the skip-as-green hole (F9) now that `kani` is a
+required context. Today's CI *does* run kani (it reports success, not skip), so
+the promotion is safe; this companion hardens against a future runner-config
+change making the required `kani` pass vacuously. **This is the one sub-item I can
+still do as an ordinary PR — say the word.**
 
 **Falsifiers:** (a) a PR adding `sorry` to any pilot Lean module → `lake-build`
 red, merge blocked; (b) a PR inverting one asserted property in an existing kani
