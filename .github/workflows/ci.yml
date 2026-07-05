@@ -289,3 +289,36 @@ jobs:
       - name: lake build (advisory model-proof lane)
         working-directory: contracts/lean-models
         run: lake build
+
+  # ── Optional check: shader-validate (offline WGSL+SPIR-V corpus / PMAT-482) ──
+  # Converts the GPU-lane SKIP into a VALIDATED gate on free CI. `naga` is the
+  # SINGLE shared oracle for the WGSL lane (front-end parse+validate) AND the
+  # SPIR-V lane (WGSL->naga->spv), so a naga regression can silently break
+  # SPIR-V. This job emits the full supported-shape WGSL corpus and runs it
+  # through the CPU-only naga front-end, then compiles the compute-shaped
+  # shaders through the naga WGSL->SPIR-V backend and checks the words with
+  # the in-crate `validate_spirv` header gate — NO GPU adapter, NO wgpu
+  # device, NO external spirv-val binary. There is NO skip path (unlike the
+  # gpu_witness / gpu_real_kernel tests), so every naga bump re-validates the
+  # whole corpus for BOTH lanes in one named place.
+  #
+  # Kept a SEPARATE ADVISORY job (mirroring kani/lake-build/docs/wasi/
+  # lean-models) so the shader lane is diagnosable at a glance rather than
+  # buried in the workspace-test output. NOT a required status check at the
+  # branch-protection layer (yet).
+  shader-validate:
+    name: shader-validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct cache key so the wgpu/naga build tree doesn't bloat the
+          # gate/workspace-test caches.
+          prefix-key: "shader-validate-v0"
+
+      - name: offline WGSL naga-validate + WGSL->SPIR-V corpus (no GPU)
+        run: cargo test -p xpile-spirv-codegen --test offline_validate -- --nocapture
