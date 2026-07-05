@@ -232,6 +232,22 @@ const LIST_GROWTH_SLACK: i32 = 16;
 /// from the supported frontends never start `__wasm`.
 const IDX_SCRATCH: &str = "__wasm_idx";
 
+/// PMAT-1290: the name prefix of the synthetic non-negative loop counter the
+/// single-var `for … in …` desugar ([`desugar_foreach_stmts`]) binds. It is the
+/// ONLY legitimate index into a set: a user-written `s[i]` (a Python set is not
+/// subscriptable — `TypeError`) stays refused, so set element access exists
+/// solely as the internal per-element read of set iteration. Shared by the
+/// desugar (which mints `{FOREACH_IDX_PREFIX}{k}`) and [`is_foreach_counter`]
+/// (which gates the set-index emit), so the coupling is explicit, not a magic
+/// string. Prefixed with `__wasm` like [`IDX_SCRATCH`] — never a user local.
+const FOREACH_IDX_PREFIX: &str = "__wasm_fe_i_";
+
+/// PMAT-1290: `true` if `e` is a synthetic foreach loop counter (see
+/// [`FOREACH_IDX_PREFIX`]) — the sole legitimate set index.
+fn is_foreach_counter(e: &Expr) -> bool {
+    matches!(e, Expr::Ident(n) if n.starts_with(FOREACH_IDX_PREFIX))
+}
+
 /// PMAT-993: per-function scratch `i32` locals for string construction. The
 /// destination base-pointer (`$__wasm_str_dst`) and the first operand's byte
 /// length (`$__wasm_str_la`, the write offset of the second operand) of a
@@ -9593,7 +9609,7 @@ fn desugar_foreach_stmts(
                 let body = desugar_foreach_stmts(body, next, env)?;
                 let k = *next;
                 *next += 1;
-                let idx = format!("__wasm_fe_i_{k}");
+                let idx = format!("{FOREACH_IDX_PREFIX}{k}");
                 // Resolve the iteration SOURCE to a name + the per-element
                 // read expression.
                 let (setup, src): (Option<Stmt>, String) = match iter {
@@ -9731,7 +9747,7 @@ fn desugar_foreach_stmts(
                         let body = desugar_foreach_stmts(body, next, env)?;
                         let k = *next;
                         *next += 1;
-                        let idx = format!("__wasm_fe_i_{k}");
+                        let idx = format!("{FOREACH_IDX_PREFIX}{k}");
                         // The enumerate index: the raw counter, offset by `start` when
                         // non-zero (`checked` semantics are unnecessary — the WASM lane
                         // models Python `int` as i64 throughout).
@@ -9838,7 +9854,7 @@ fn desugar_foreach_stmts(
                         let body = desugar_foreach_stmts(body, next, env)?;
                         let k = *next;
                         *next += 1;
-                        let idx = format!("__wasm_fe_i_{k}");
+                        let idx = format!("{FOREACH_IDX_PREFIX}{k}");
                         let mut wbody = Vec::with_capacity(body.len() + 3);
                         // Both bindings read the CURRENT counter, then it advances —
                         // so `continue` (→ `br` to the `while` cond) still sees the
@@ -14724,6 +14740,23 @@ impl Scope<'_> {
             .map(|(_, t)| *t)
     }
 
+    /// PMAT-1290: the element WAT type if `name` is a LET-bound `set` local,
+    /// else `None` — an int set's element loads as `i64` (the stored key), a
+    /// str set's as `i32` (the stored str base-pointer, so the loop var behaves
+    /// as a str local). Drives the `Expr::Index` over a set NAME that the
+    /// `for x in s` desugar ([`desugar_foreach_stmts`]) emits per element.
+    /// Distinct from [`Scope::list_elem_of`]: a set entry is a
+    /// [`DICT_ENTRY_SIZE`] (16) byte record, NOT an 8-byte packed slot.
+    fn set_elem_of(&self, name: &str) -> Option<WatTy> {
+        if !self.is_set(name) {
+            return None;
+        }
+        Some(match self.heap_map_kind(name)? {
+            KeyKind::Int => WatTy::I64,
+            KeyKind::Str => WatTy::I32,
+        })
+    }
+
     /// PMAT-1276: `true` if `name` is an APPEND-safe list local — a `ListLit`
     /// binding whose record [`emit_list_lit`] over-allocated with spare
     /// capacity. `xs.append(v)` is emitted only for these; every other list
@@ -16599,19 +16632,37 @@ fn emit_index(
              list literals / temporaries / nested indexing are refused",
         ));
     };
-    let Some(elem) = scope.list_elem_of(name) else {
-        return Err(unsupported(&format!(
-            "index over `{name}` which is not a `list[scalar]` param/local — \
-             only a list (i32 base-pointer into linear memory) can be \
-             indexed in the WASM subset (no str/dict/tuple indexing)"
-        )));
-    };
-    // Emit the bounds-checked element address onto the stack, then read the
-    // element at it with the element's natural `*.load`.
-    emit_list_elem_addr(name, elem, index, scope, out, depth)?;
-    indent(out, depth);
-    writeln!(out, "{}", elem.load_instr()).expect("write");
-    Ok(elem)
+    if let Some(elem) = scope.list_elem_of(name) {
+        // Emit the bounds-checked element address onto the stack, then read the
+        // element at it with the element's natural `*.load`.
+        emit_list_elem_addr(name, elem, index, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "{}", elem.load_instr()).expect("write");
+        return Ok(elem);
+    }
+    // PMAT-1290: `for x in s` over a set lowers (in `desugar_foreach_stmts`) to a
+    // `while` loop whose per-element read is `s[i]` — an `Expr::Index` on a set
+    // NAME. Read entry `i`'s KEY from the 16-byte-stride entry array (see
+    // [`emit_set_elem_read`]). Gated on the index being the synthetic foreach
+    // counter: a user-written `s[i]` (a Python set is NOT subscriptable —
+    // `TypeError`) stays refused, so this is strictly the iteration lowering.
+    if let Some(elem) = scope.set_elem_of(name) {
+        if !is_foreach_counter(index) {
+            return Err(unsupported(&format!(
+                "subscripting the set `{name}` — a Python set is not \
+                 subscriptable (`TypeError`); set element access exists only as \
+                 the internal per-element read of `for x in {name}`"
+            )));
+        }
+        emit_set_elem_read(name, elem, index, scope, out, depth)?;
+        return Ok(elem);
+    }
+    Err(unsupported(&format!(
+        "index over `{name}` which is not a `list[scalar]` param/local or a \
+         `set[int|str]` local — only a list (i32 base-pointer into linear \
+         memory) or a set (iterated via `for x in s`) can be indexed in the \
+         WASM subset (no str/dict/tuple indexing)"
+    )))
 }
 
 /// Emit the bounds-checked linear-memory ADDRESS of `name[index]` onto the
@@ -16732,6 +16783,98 @@ fn emit_list_elem_addr(
     writeln!(out, "i32.mul").expect("write");
     indent(out, depth);
     writeln!(out, "i32.add").expect("write");
+    Ok(())
+}
+
+/// PMAT-1290: read the KEY of set entry `index`, leaving it (typed `elem`) on
+/// the stack — the per-element read the `for x in s` desugar
+/// ([`desugar_foreach_stmts`]) emits as an [`Expr::Index`] over a set NAME.
+///
+/// A set entry is a [`DICT_ENTRY_SIZE`] (16) byte record with the key at entry
+/// offset 0 (the value half is unused for a set), so entry `i`'s key address is
+/// `base + LIST_ELEMS_OFFSET + i * DICT_ENTRY_SIZE` — a **16-byte stride**, NOT
+/// the 8-byte packed-slot stride a `list[scalar]` uses ([`emit_list_elem_addr`]).
+/// The key loads as the set's element WAT type: `i64` for an int set (the stored
+/// key), `i32` for a str set (the stored str base-pointer, so the loop var
+/// behaves as a str local downstream).
+///
+/// Real Python never subscripts a set, so the ONLY producer is the desugar,
+/// whose index is the non-negative loop counter `0..len(s)`; a defensive
+/// `i < 0 || i >= count` guard preserves the `list`-`IndexError` fail-loud
+/// posture anyway (`count` is the live-entry i32 header at `base+0`, shared with
+/// the list/str/dict layout).
+///
+/// Iteration walks the LIVE-entry region `0..count` in STORAGE order. A
+/// `discard`/`remove` swaps the last entry into the hole, so this is NOT
+/// CPython's hash-order iteration — but a set has no defined order, and every
+/// witness reduces the elements COMMUTATIVELY (sum / count / max / membership),
+/// for which storage order is irrelevant: both sides agree on the multiset, and
+/// that is all a commutative fold observes. An order-DEPENDENT observation of a
+/// set (e.g. building a list of the iteration sequence) is NOT emitted here — it
+/// would diverge from CPython and is refused upstream.
+fn emit_set_elem_read(
+    name: &str,
+    elem: WatTy,
+    index: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // Evaluate the index once into the per-function scratch i64 `$__wasm_idx`
+    // (declared body-driven, like the list path).
+    emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
+    indent(out, depth);
+    writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
+
+    // Defensive bounds guard (the Python IndexError analogue):
+    //   if (i < 0) | (i >= count) { unreachable }
+    // `count` is the live-entry i32 header at base+0, zero-extended to i64.
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.const 0").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.lt_s").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load").expect("write"); // live-entry count (header @ base+0)
+    indent(out, depth);
+    writeln!(out, "i64.extend_i32_u").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i64.le_s").expect("write"); // count <= i  ⇔  i >= count
+    indent(out, depth);
+    writeln!(out, "i32.or").expect("write");
+    indent(out, depth);
+    writeln!(out, "if").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "unreachable").expect("write");
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
+
+    // addr = base + LIST_ELEMS_OFFSET + (index as i32) * DICT_ENTRY_SIZE
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${IDX_SCRATCH}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.wrap_i64").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {DICT_ENTRY_SIZE}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.mul").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add").expect("write");
+
+    // Load entry `i`'s key with its natural width (i64 int / i32 str-pointer).
+    indent(out, depth);
+    writeln!(out, "{}", elem.load_instr()).expect("write");
     Ok(())
 }
 
@@ -17755,6 +17898,37 @@ fn emit_str_expr(
         } => {
             emit_str_slice(collection, lo, hi, *of_str, *step, scope, out, depth)?;
             Ok(())
+        }
+        // PMAT-1290: `s[i]` where `s` is a `set[str]` — the per-element read the
+        // `for w in s` desugar emits, arriving in a STRING position because the
+        // loop var is str-typed. Load entry `i`'s stored str base-pointer (i32)
+        // from the 16-byte-stride set entry array (see `emit_set_elem_read`), so
+        // the loop var behaves as an ordinary str local downstream (`len(w)`,
+        // concat, `==`). Only a `set[str]` reaches here; a non-name collection or
+        // a `set[int]`/list element in a str position is refused honestly.
+        Expr::Index { collection, index } => {
+            let Expr::Ident(name) = collection.as_ref() else {
+                return Err(unsupported(
+                    "indexing a non-name collection in a string position — only \
+                     a `set[str]` local (iterated via `for w in s`) yields a str \
+                     element in the WASM subset",
+                ));
+            };
+            match scope.set_elem_of(name) {
+                Some(WatTy::I32) if is_foreach_counter(index) => {
+                    emit_set_elem_read(name, WatTy::I32, index, scope, out, depth)
+                }
+                Some(WatTy::I32) => Err(unsupported(&format!(
+                    "subscripting the set `{name}` — a Python set is not \
+                     subscriptable (`TypeError`); set element access exists only \
+                     as the internal per-element read of `for w in {name}`"
+                ))),
+                _ => Err(unsupported(&format!(
+                    "string-position index over `{name}` — only a `set[str]` \
+                     local yields a str element in the WASM subset (a `set[int]` \
+                     or list element is not a str)"
+                ))),
+            }
         }
         // PMAT-1060: `str(n)` in a string position — materialise the decimal
         // int string (like `Chr`/`Slice`, a fresh heap string). Re-materialised
