@@ -16,12 +16,22 @@
 //!   4. Assert the verifier exits with status 0 AND its stdout
 //!      contains `VERIFICATION:- SUCCESSFUL`.
 //!
-//! Skip behaviour: if `cargo-kani` is missing from PATH, the test
-//! prints a warning and exits OK — same posture as
-//! `assert_rustc_runs` and `diff_exec.rs`'s python3/rustc gates.
-//! Once Kani is installed in CI (XPILE-QUORUM-003, separate ticket
-//! to wire the GitHub Actions step), this gate becomes load-bearing
-//! across every PR.
+//! Skip behaviour + anti-vacuity tripwire (XPILE-RULESET-002 / F9):
+//! if `cargo-kani` is missing from PATH the test prints a warning and
+//! exits OK — same posture as `assert_rustc_runs` and `diff_exec.rs`'s
+//! python3/rustc gates — UNLESS the `XPILE_REQUIRE_KANI` env var is
+//! set, in which case a missing `cargo-kani` is a hard PANIC. The
+//! `kani` CI job (which is now a REQUIRED status context, see
+//! `docs/status/enforcement-handoff.md`) installs kani-verifier AND
+//! sets `XPILE_REQUIRE_KANI=1`, so if that job ever loses its kani
+//! install the required check goes RED instead of passing vacuously.
+//!
+//! We deliberately do NOT key the tripwire on `CI=true`: GitHub sets
+//! `CI=true` in *every* job, including `workspace-test`, which runs
+//! `cargo test --workspace` (this test) WITHOUT kani installed by
+//! design. Keying on `CI=true` there would red the required
+//! `workspace-test` context and wedge every merge. The env-var
+//! tripwire mirrors `XPILE_REQUIRE_WASM_RUNTIME` (XPILE-WITNESS-001).
 //!
 //! Why a workspace test rather than a `build.rs`:
 //!   - Cargo doesn't allow running other Cargo invocations from
@@ -129,6 +139,19 @@ fn run_kani(crate_dir: &Path) -> Result<String, String> {
 #[test]
 fn every_kani_harness_discharges() {
     if !have_cargo_kani() {
+        // Anti-vacuity tripwire (XPILE-RULESET-002 / F9): now that `kani`
+        // is a REQUIRED CI context, a runner that lost its kani install
+        // must FAIL, not skip-green. The `kani` job sets XPILE_REQUIRE_KANI=1
+        // after installing kani-verifier; if this test runs there without
+        // `cargo kani` on PATH, refuse. See the module docs for why this is
+        // NOT keyed on `CI=true` (that would wedge the required workspace-test).
+        assert!(
+            std::env::var_os("XPILE_REQUIRE_KANI").is_none(),
+            "XPILE_REQUIRE_KANI is set but `cargo kani` is not invocable — the \
+             required `kani` context must not pass vacuously (F9). The kani CI \
+             job must `cargo install --locked kani-verifier` before running this \
+             gate. Refusing to skip."
+        );
         eprintln!(
             "warning: skipping XPILE-QUORUM-002 — `cargo kani` not on PATH. \
              To run this gate locally:\n  \
@@ -191,6 +214,24 @@ fn every_kani_harness_discharges() {
         "XPILE-QUORUM-002: verified {} Kani harness file(s) — Symbolic stratum discharged.",
         harnesses.len()
     );
+}
+
+// Anti-vacuity self-test (XPILE-RULESET-002 / F9), mirroring
+// XPILE-WITNESS-001's `required_runtime_is_present_when_declared`. When a
+// runner DECLARES kani is required (`XPILE_REQUIRE_KANI` set — done by the
+// `kani` CI job), `cargo kani` must actually be invocable; otherwise the
+// required `kani` context would pass vacuously. Fast: does not run any
+// harness. No-op locally / in `workspace-test` where the var is unset.
+#[test]
+fn required_kani_is_present_when_declared() {
+    if std::env::var_os("XPILE_REQUIRE_KANI").is_some() {
+        assert!(
+            have_cargo_kani(),
+            "XPILE_REQUIRE_KANI is set but `cargo kani` is not invocable — the \
+             required kani CI context would pass vacuously (F9). Install \
+             kani-verifier in the job that sets XPILE_REQUIRE_KANI."
+        );
+    }
 }
 
 // Self-test: harness collection logic finds the expected file. If a
