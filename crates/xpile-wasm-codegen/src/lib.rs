@@ -6179,6 +6179,76 @@ fn emit_set_alg_walk(
     writeln!(out, "    )").expect("write");
 }
 
+/// PMAT-1302: emit the in-place dict-merge helper `$__wasm_dict_update_<k>(d, o)
+/// -> d'` — the runtime of Python `d.update(o)`. Walk every entry of the source
+/// dict `o` (key at `entry+0`, value at `entry+DICT_VAL_OFFSET`, stride
+/// [`DICT_ENTRY_SIZE`], count at `o+0`) and thread the receiver through
+/// `d = $__wasm_dict_set_<k>(d, key, val)`. `dict_set` overwrites an existing
+/// key in place and appends a new one — exactly Python `update` — and returns
+/// the (possibly 2x-grown + relocated) base-pointer, consumed back into `$d`.
+/// The final `$d` is returned so the emit site can `local.set` the caller's
+/// dict local. Structurally the [`emit_set_alg_walk`] loop with the value read
+/// swapped in for the `0` sentinel and `$d` in place of `$r`; forward-references
+/// `$__wasm_dict_set_<k>` (resolved by name, like the set-algebra helpers).
+fn emit_dict_update_helper(out: &mut String, kind: KeyKind) {
+    let s = kind.suffix();
+    let kload = match kind {
+        KeyKind::Int => "i64.load",
+        KeyKind::Str => "i32.load",
+    };
+    writeln!(
+        out,
+        "  ;; __wasm_dict_update_{s}(d, o) -> d': d[k]=v for each (k,v) in o (Python d.update(o))"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_update_{s} (param $d i32) (param $o i32) (result i32)"
+    )
+    .expect("write");
+    writeln!(out, "    (local $i i32) (local $n i32) (local $ea i32)").expect("write");
+    // n = count(o); i = 0
+    writeln!(out, "    local.get $o").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.set $n").expect("write");
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "    local.set $i").expect("write");
+    writeln!(out, "    (block $done").expect("write");
+    writeln!(out, "      (loop $next").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        local.get $n").expect("write");
+    writeln!(out, "        i32.ge_s").expect("write");
+    writeln!(out, "        br_if $done").expect("write");
+    // $ea = o + LIST_ELEMS_OFFSET + i*DICT_ENTRY_SIZE (source entry i's address).
+    writeln!(out, "        local.get $o").expect("write");
+    writeln!(out, "        i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "        i32.mul").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $ea").expect("write");
+    // d = dict_set(d, key@ea, val@ea+DICT_VAL_OFFSET) — update-or-insert, thread.
+    writeln!(out, "        local.get $d").expect("write");
+    writeln!(out, "        local.get $ea").expect("write");
+    writeln!(out, "        {kload}").expect("write");
+    writeln!(out, "        local.get $ea").expect("write");
+    writeln!(out, "        i64.load offset={DICT_VAL_OFFSET}").expect("write");
+    writeln!(out, "        call $__wasm_dict_set_{s}").expect("write");
+    writeln!(out, "        local.set $d").expect("write");
+    // i++
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const 1").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $i").expect("write");
+    writeln!(out, "        br $next").expect("write");
+    writeln!(out, "      )").expect("write");
+    writeln!(out, "    )").expect("write");
+    // result = the (possibly relocated) receiver base-pointer.
+    writeln!(out, "    local.get $d").expect("write");
+    writeln!(out, "  )").expect("write");
+}
+
 fn dict_helpers_for(kind: KeyKind) -> String {
     let s = kind.suffix();
     let kparam = match kind {
@@ -6532,6 +6602,25 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     // above `$__wasm_dict_has_{s}` probe — WAT resolves calls by name, so the
     // forward reference assembles cleanly.
     emit_set_algebra_helpers(&mut out, kind);
+
+    // PMAT-1302: the IN-PLACE dict-merge helper `$__wasm_dict_update_{s}(d, o) ->
+    // d'` — Python `d.update(o)`. It walks every entry of `o` (source dict) and
+    // `d = $__wasm_dict_set_{s}(d, key, val)` — the SAME update-or-insert dedup
+    // the set-algebra walk uses, but reading the VALUE at `entry+DICT_VAL_OFFSET`
+    // (a real dict merge) instead of a `0` sentinel, and threading the RECEIVER
+    // `d` (not a fresh allocation). `dict_set` overwrites an existing key in
+    // place and appends a new one, so existing keys of `d` are overwritten by
+    // `o`'s (exactly Python `update` semantics); on a capacity overflow it
+    // 2x-grows + relocates, returning the (possibly moved) base-pointer, which
+    // is threaded back into `$d` and RETURNED so the caller updates its local.
+    // `o` is a DISTINCT region (a non-aliasing dict name) so its walk stays
+    // valid across a `d` relocation; the self-case `d.update(d)` never grows (all
+    // keys already present) so `d` never moves. Forward-references
+    // `$__wasm_dict_set_{s}` (defined below) — resolved by name like the set
+    // algebra helpers. Introduces NO helper a LET-bound dict of this kind does
+    // not already carry, so it is co-emitted here (gated by the dict binding via
+    // `module_dict_key_kinds`), needing NO new gate walker.
+    emit_dict_update_helper(&mut out, kind);
 
     // set: update an existing key in place, else append at count. PMAT-999: on
     // overflow (count >= capacity) the region GROWS — bump-alloc a 2x region,
@@ -16127,6 +16216,11 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             Stmt::Assign { .. }
             | Stmt::IndexAssign { .. }
             | Stmt::DictSet { .. }
+            // PMAT-1302: `d.update(other)` (DictUpdate) merges `other` into an
+            // EXISTING dict in place — no new local (both dict bases were
+            // declared by their `Let`s). The dict-vs-set / same-kind support
+            // decision is made downstream in `emit_dict_update`, like DictSet.
+            | Stmt::DictUpdate { .. }
             | Stmt::DelItem { .. }
             | Stmt::SetAdd { .. }
             // PMAT-1240: `s.remove(e)`/`s.discard(e)` (SetRemove) removes from an
@@ -16578,6 +16672,17 @@ fn emit_stmt(
             indent(out, depth);
             writeln!(out, "unreachable ;; raise (Python exception analogue)").expect("write");
             Ok(())
+        }
+        // PMAT-1302: `d.update(other)` — in-place dict merge. Walk `other`'s
+        // entries and `d = dict_set(d, k, v)` for each (overwriting existing
+        // keys, exactly Python `update`), via the co-emitted
+        // `$__wasm_dict_update_<k>` helper; the returned (possibly grown)
+        // base-pointer is written back to the receiver local exactly as
+        // `d[k] = v` ([`emit_dict_set`]) does. `other` must be a DICT NAME of the
+        // same key kind — a dict literal (`d.update({...})`), a set argument, or
+        // a mismatched kind is refused honestly.
+        Stmt::DictUpdate { dict_name, other } => {
+            emit_dict_update(dict_name, other, scope, out, depth)
         }
         other => Err(unsupported(&format!(
             "statement {} (outside the WASM scalar/control subset)",
@@ -20635,6 +20740,84 @@ fn emit_dict_set(
     writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
     // PMAT-999: the helper returns the (possibly grown) base-pointer — update
     // the dict local so later reads see the relocated region.
+    indent(out, depth);
+    writeln!(out, "local.set ${dict_name}").expect("write");
+    Ok(())
+}
+
+/// PMAT-1302: lower `d.update(other)` (`Stmt::DictUpdate`) — an in-place dict
+/// merge. Emits `d = $__wasm_dict_update_<k>(d, other)`: the co-emitted helper
+/// walks `other`'s entries and `dict_set`s each `(k, v)` into `d` (overwriting
+/// existing keys, exactly Python `update`), returning the (possibly grown +
+/// relocated) receiver base-pointer, which is written back to the `d` local
+/// exactly as [`emit_dict_set`] writes back after a growing `d[k] = v`.
+///
+/// The subset admits only the DICT-to-DICT, same-key-kind form:
+/// * the RECEIVER `dict_name` must be a `dict` local (a set is refused — a set
+///   has no key/value entries to merge, and Python `set.update` is a different
+///   op);
+/// * `other` must be a plain NAME (`Expr::Ident`) that resolves to a `dict` of
+///   the SAME [`KeyKind`] — a dict literal (`d.update({...})`, bind it to a
+///   local first), a set argument (not a mapping), or a mismatched key kind is
+///   refused honestly rather than mis-merged.
+///
+/// Both dicts are `dict[K, int]` in this subset (value type checked at their
+/// LET bindings), so the value read is always the i64 slot at
+/// `entry+DICT_VAL_OFFSET`. No new helper — `$__wasm_dict_update_<k>` is
+/// co-emitted by [`dict_helpers_for`] for every dict kind present.
+fn emit_dict_update(
+    dict_name: &str,
+    other: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let kind = scope.heap_map_kind(dict_name).ok_or_else(|| {
+        unsupported(&format!(
+            "`{dict_name}.update(...)` over `{dict_name}` which is not a `dict` \
+             local in the WASM subset"
+        ))
+    })?;
+    if scope.is_set(dict_name) {
+        return Err(unsupported(&format!(
+            "`{dict_name}.update(...)` over a `set` — a set has no key/value \
+             entries to merge in the WASM subset (set.update is a different op)"
+        )));
+    }
+    let Expr::Ident(other_name) = other else {
+        return Err(unsupported(
+            "`d.update(other)` — `other` must be a `dict` NAME in the WASM subset \
+             (bind a dict literal / expression to a local first)",
+        ));
+    };
+    let okind = scope.heap_map_kind(other_name).ok_or_else(|| {
+        unsupported(&format!(
+            "`{dict_name}.update({other_name})` — `{other_name}` is not a `dict` \
+             local in the WASM subset"
+        ))
+    })?;
+    if scope.is_set(other_name) {
+        return Err(unsupported(&format!(
+            "`{dict_name}.update({other_name})` over a `set` argument — a set is \
+             not a mapping in the WASM subset"
+        )));
+    }
+    if okind != kind {
+        return Err(unsupported(&format!(
+            "`{dict_name}.update({other_name})` — key kinds differ ({} vs {}); \
+             the WASM subset merges only same-key-kind dicts",
+            kind.suffix(),
+            okind.suffix()
+        )));
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${dict_name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${other_name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_dict_update_{}", kind.suffix()).expect("write");
+    // The helper returns the (possibly grown) base-pointer — update the receiver
+    // local so later reads see the relocated region (as `emit_dict_set` does).
     indent(out, depth);
     writeln!(out, "local.set ${dict_name}").expect("write");
     Ok(())
