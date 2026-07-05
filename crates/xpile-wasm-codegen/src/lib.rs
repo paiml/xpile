@@ -8573,6 +8573,100 @@ const LIST_SORTED_FLOAT_HELPER: &str = "\
     local.get $r)
 ";
 
+/// PMAT-1291: the SET→LIST materialisation helper — the source half of
+/// `sorted(s)` over a `set[int]`. Python `sorted(s)` first materialises the set
+/// to a list of its (unique) elements, then sorts; this helper does the first
+/// step, copying an int set's keys into a FRESH PMAT-968 `list[int]` record so
+/// [`LIST_SORTED_INT_HELPER`] can copy-and-sort it into the final result.
+///
+/// A set rides the bump-heap open-assoc ABI (PMAT-995): an `i32` live count @
+/// `base+0`, an `i32` capacity @ `base+4`, then fixed [`DICT_ENTRY_SIZE`] (16)
+/// byte entries from `base+8` ([`LIST_ELEMS_OFFSET`]) with the i64 key @
+/// `entry+0` (the value half is a set dummy). This helper reads entry `i`'s key
+/// (`sa + i*16`) and packs it into the new list at `ra + i*8` — a set is
+/// dup-free by construction, so the materialised list already holds the unique
+/// elements, exactly as CPython's `list(s)`. It calls `$__alloc`, so a module
+/// using it forces `needs_heap` (which `sorted` already forces via
+/// [`expr_has_heap_op`]); it rides its OWN `needs_set_to_list` gate.
+///
+/// ★ ONLY int sets (i64 keys → a `list[int]` result) are materialised — a `str`
+/// set would produce a `list[str]`, which the WASM list subset does not model
+/// ([`map_list_elem_type`] refuses it), so `sorted(str_set)` is refused upstream
+/// at the list-typing level (and defensively in [`emit_list_sorted`]). The EMPTY
+/// set does NOT trap: `n == 0` allocs an empty record → `sorted(set()) == []`.
+///
+/// ★ ORDER: the set is walked in STORAGE order, but the caller ALWAYS re-sorts
+/// the result (this helper exists solely as `sorted`'s source), so the final
+/// order is deterministic and CPython-exact regardless of the set's arbitrary
+/// hash/storage order — which is exactly why `sorted(s)` is tractable while a
+/// bare `list(s)` (arbitrary order, refused) is not.
+const SET_TO_LIST_INT_HELPER: &str = "\
+  ;; __wasm_set_to_list_i64(set) -> a NEW list[int] of the set's keys
+  ;; set → open-assoc region: i32 count @ set+0, 16-byte entries @ set+8 (key @ entry+0)
+  ;; result → length-prefixed list: i32 count @ r+0, i64 elements @ r+8
+  (func $__wasm_set_to_list_i64 (param $s i32) (result i32)
+    (local $n i32)
+    (local $r i32)
+    (local $ra i32)
+    (local $sa i32)
+    (local $i i32)
+    ;; n = live-entry count (i32 header @ s+0)
+    local.get $s
+    i32.load
+    local.set $n
+    ;; r = __alloc(8 + n*8); write the i32 count header at r+0
+    local.get $n
+    i32.const 8
+    i32.mul
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $r
+    local.get $r
+    local.get $n
+    i32.store
+    ;; ra = r + 8 (address of list element 0)
+    local.get $r
+    i32.const 8
+    i32.add
+    local.set $ra
+    ;; sa = s + 8 (address of set entry 0 — LIST_ELEMS_OFFSET)
+    local.get $s
+    i32.const 8
+    i32.add
+    local.set $sa
+    ;; for i in 0..n: r[i] = key of set entry i
+    ;;   dest = ra + i*8 ; key = i64.load(sa + i*16)
+    i32.const 0
+    local.set $i
+    (block $cpd
+      (loop $cp
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $cpd
+        local.get $ra
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        local.get $sa
+        local.get $i
+        i32.const 16
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cp
+      )
+    )
+    local.get $r)
+";
+
 /// PMAT-1253: the list-REVERSE helper — Python `reversed(xs)` /
 /// `list(reversed(xs))` / `xs[::-1]` over a `list[int]` / `list[float]`. Like
 /// [`LIST_SORTED_INT_HELPER`] this is a list-VALUED op that RETURNS a NEW list,
@@ -10647,6 +10741,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // dead f64 helper and vice-versa.
     let needs_list_sorted = module_uses_list_sorted(module);
     let needs_list_sorted_float = module_uses_list_sorted_float(module);
+    // PMAT-1291: `sorted(s)` over a `set[int]` materialises the set to a fresh
+    // `list[int]` via `$__wasm_set_to_list_i64` (the source of the sort), which
+    // ALLOCATES via `$__alloc` — so it also forces `needs_heap` (via
+    // `expr_has_heap_op`). ONE helper (int sets only; a str set → `list[str]` is
+    // unmodelled) rides its OWN gate.
+    let needs_set_to_list = module_uses_set_to_list(module);
     // PMAT-1253: `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a
     // `list[int]` / `list[float]` (`Expr::Reversed`) returns a NEW reversed list
     // via `$__wasm_list_reversed_i64` — the SECOND list-VALUED op that ALLOCATES,
@@ -10752,6 +10852,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_bool_reduce
         || needs_list_sorted
         || needs_list_sorted_float
+        || needs_set_to_list
         || needs_list_reversed
         || needs_list_concat
         || needs_list_slice
@@ -11162,6 +11263,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     }
     if needs_list_sorted_float {
         out.push_str(LIST_SORTED_FLOAT_HELPER);
+    }
+    // PMAT-1291: emit the SET→LIST materialisation helper once, when any function
+    // sorts a set (`sorted(s)` → `Sorted { list: SetToList { set } }`). It copies
+    // an int set's keys into a fresh `list[int]` record via `$__alloc` (so the
+    // module also carries the bump heap + `(memory)` via `needs_heap`, which
+    // `sorted` already forces); `$__wasm_list_sorted_i64` (gated above) then sorts
+    // a copy of that record. Int sets only (a str set → `list[str]`, unmodelled).
+    if needs_set_to_list {
+        out.push_str(SET_TO_LIST_INT_HELPER);
     }
     // PMAT-1253: emit the list-REVERSE helper once, when any function uses
     // `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a `list[int]` /
@@ -13340,6 +13450,101 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
     }
 }
 
+/// PMAT-1291: does any function materialise a set to a list (`Expr::SetToList`)?
+/// Gates the `$__wasm_set_to_list_i64` helper. In the supported shape a
+/// `SetToList` only appears as the source of `sorted(s)`
+/// (`Sorted { list: SetToList { set } }`), so this walker's load-bearing arm is
+/// the recursion into `Sorted`'s `list`; the detecting arm returns `true`
+/// directly (the set operand is a bare Ident, nothing further nests). Exhaustive
+/// over the same stmt/expr forms as [`expr_has_list_sorted`] so a `SetToList`
+/// buried under any wrapper still arms the gate — else the helper is left
+/// undeclared at its `call $__wasm_set_to_list_i64` site (a hard wat2wasm
+/// failure, the recurring gate-hole class).
+fn module_uses_set_to_list(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_set_to_list(&f.body))
+}
+
+fn block_has_set_to_list(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_set_to_list) || expr_has_set_to_list(&block.trailing_return)
+}
+
+fn stmt_has_set_to_list(s: &Stmt) -> bool {
+    let e = expr_has_set_to_list;
+    let st = stmt_has_set_to_list;
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_set_to_list(expr: &Expr) -> bool {
+    let e = expr_has_set_to_list;
+    match expr {
+        // this node IS the set→list materialisation the gate fires on.
+        Expr::SetToList { .. } => true,
+        // the SUPPORTED shape: `sorted(s)` = `Sorted { list: SetToList { set } }`.
+        Expr::Sorted { list, .. } => e(list),
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::ListConcat { lhs, rhs } => e(lhs) || e(rhs),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::ListContains { list, elem } => e(list) || e(elem),
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
 /// PMAT-1253: does any function reverse a `list[int]` / `list[float]`
 /// (`Expr::Reversed` over a genuine list)? Gates the single
 /// `$__wasm_list_reversed_i64` helper (one helper serves both kinds — reversal is
@@ -14262,6 +14467,13 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // harmless; a miss would emit the sort helper against an undeclared
         // `$__alloc` — a hard wat2wasm failure).
         Expr::Sorted { .. } => true,
+        // PMAT-1291: `sorted(s)` over a set materialises the set to a fresh
+        // `list[int]` via `$__wasm_set_to_list_i64` → `$__alloc` before sorting,
+        // so a `SetToList` node also forces the bump heap + `(memory)`. (In the
+        // supported shape it only ever appears inside a `Sorted` node, which
+        // already returns `true` above; the arm is defense-in-depth and covers
+        // the recursion into `set` — a bare Ident that allocates nothing extra.)
+        Expr::SetToList { .. } => true,
         // PMAT-1253: `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a
         // list likewise bump-allocates a fresh reversed record (via
         // `$__wasm_list_reversed_i64` → `$__alloc`), the SECOND list-VALUED
@@ -19826,12 +20038,25 @@ fn emit_list_expr(
             of_str,
             step,
         } => emit_list_slice(collection, lo, hi, *of_str, *step, elem, scope, out, depth),
+        // PMAT-1291: a bare `list(s)` over a set (`Expr::SetToList`) inherits the
+        // set's ARBITRARY hash/storage order — observing it element-by-element
+        // could diverge from CPython — so it is refused. The materialisation IS
+        // supported, but ONLY as the source of `sorted(s)` (handled inside
+        // `emit_list_sorted` via `emit_set_to_list`), where the re-sort makes the
+        // order deterministic and CPython-exact.
+        Expr::SetToList { .. } => Err(unsupported(
+            "`list(s)` over a set — the WASM subset materialises a set to a list \
+             only inside `sorted(s)` (which re-sorts to a deterministic order); a \
+             bare `list(s)` inherits the set's arbitrary storage order and is \
+             refused (use `sorted(s)`)",
+        )),
         other => Err(unsupported(&format!(
             "binding a list local from {} — the WASM subset materialises a \
              list LITERAL, shares another named list local/param, sorts a \
-             named list (`sorted(xs)`), reverses one (`reversed(xs)` / \
-             `xs[::-1]`), concatenates two named lists (`a + b`), or slices one \
-             (`xs[lo:hi]`); other list-returning calls are refused",
+             named list (`sorted(xs)`) or a set (`sorted(s)`), reverses one \
+             (`reversed(xs)` / `xs[::-1]`), concatenates two named lists \
+             (`a + b`), or slices one (`xs[lo:hi]`); other list-returning calls \
+             are refused",
             expr_kind(other)
         ))),
     }
@@ -19978,35 +20203,114 @@ fn emit_list_sorted(
             )));
         }
     };
-    let Expr::Ident(src) = list else {
-        return Err(unsupported(
-            "`sorted(…)` over a non-name list — the WASM subset sorts a named \
-             `list[scalar]` local/param (bind the list to a name first)",
-        ));
-    };
-    let Some(src_elem) = scope.list_elem_of(src) else {
-        return Err(unsupported(&format!(
-            "`sorted({src})` where `{src}` is not a `list[scalar]` local/param \
-             in the WASM subset"
-        )));
-    };
-    if src_elem != elem {
-        return Err(unsupported(&format!(
-            "`sorted({src})` sorts a `list[{}]` into a `list[{}]` — the WASM \
-             subset keeps the element type (sort a list into a list of the same \
-             element type)",
-            src_elem.keyword(),
-            elem.keyword()
-        )));
+    // Push the SOURCE list's base-pointer. Two shapes are supported:
+    //   * `sorted(xs)` — a NAMED `list[scalar]` local/param: `local.get $xs`.
+    //   * `sorted(s)` over a `set[int]` — the frontend lowers this to
+    //     `Sorted { list: SetToList { set } }` (PMAT-520). The set is
+    //     materialised to a FRESH `list[int]` on the heap (its keys, dup-free)
+    //     via `$__wasm_set_to_list_i64`, leaving that record's base on the stack;
+    //     the sort helper then copies-and-sorts it into the final result. Because
+    //     the result is ALWAYS sorted, the set's arbitrary storage order is
+    //     irrelevant → CPython-exact (PMAT-1291).
+    match list {
+        Expr::Ident(src) => {
+            let Some(src_elem) = scope.list_elem_of(src) else {
+                return Err(unsupported(&format!(
+                    "`sorted({src})` where `{src}` is not a `list[scalar]` \
+                     local/param in the WASM subset"
+                )));
+            };
+            if src_elem != elem {
+                return Err(unsupported(&format!(
+                    "`sorted({src})` sorts a `list[{}]` into a `list[{}]` — the \
+                     WASM subset keeps the element type (sort a list into a list \
+                     of the same element type)",
+                    src_elem.keyword(),
+                    elem.keyword()
+                )));
+            }
+            indent(out, depth);
+            writeln!(out, "local.get ${src}").expect("write");
+        }
+        // PMAT-1291: `sorted(s)` over a `set[int]` — materialise the set to a
+        // fresh `list[int]` (leaves its base on the stack), then sort a copy.
+        Expr::SetToList { set } => emit_set_to_list(set, elem, scope, out, depth)?,
+        _ => {
+            return Err(unsupported(
+                "`sorted(…)` over a non-name list — the WASM subset sorts a \
+                 named `list[scalar]` local/param or a `set[int]` (`sorted(s)`); \
+                 bind other list-returning values to a name first",
+            ));
+        }
     }
-    // Push the source base-pointer + the reverse selector, then call the helper;
-    // it leaves the fresh sorted record's i32 base-pointer on the stack.
-    indent(out, depth);
-    writeln!(out, "local.get ${src}").expect("write");
+    // Push the reverse selector, then call the helper; it leaves the fresh
+    // sorted record's i32 base-pointer on the stack.
     indent(out, depth);
     writeln!(out, "i32.const {}", i32::from(reverse)).expect("write");
     indent(out, depth);
     writeln!(out, "call ${helper}").expect("write");
+    Ok(())
+}
+
+/// PMAT-1291: lower the `set → list[int]` materialisation that is the source of
+/// `sorted(s)` over a `set[int]` (the frontend `Expr::SetToList { set }` inside
+/// `Expr::Sorted`, PMAT-520). Emits `local.get $set` then a call to
+/// `$__wasm_set_to_list_i64`, leaving a FRESH `list[int]` record's `i32`
+/// base-pointer on the stack (the caller — [`emit_list_sorted`] — then sorts a
+/// copy of it).
+///
+/// The destination `elem` is the sorted result's element type; it must be I64
+/// (an `int` set → a `list[int]`). A `set[str]` would materialise a `list[str]`,
+/// which the WASM list subset does not model — that case is already refused
+/// upstream when the destination `list[str]` local is typed
+/// ([`map_list_elem_type`]), and refused defensively here too. The `set` operand
+/// must be a NAMED `set[int]` local (a non-name / non-set / str-set source is a
+/// hard `BackendError`, never a silent base-pointer misread).
+fn emit_set_to_list(
+    set: &Expr,
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // The result of `sorted(s)` over an int set is a `list[int]` (i64 stride);
+    // the materialisation helper is int-only (a str set → `list[str]`, unmodelled).
+    if elem != WatTy::I64 {
+        return Err(unsupported(&format!(
+            "`sorted(s)` over a set into a `list[{}]` — the WASM subset \
+             materialises an `int` set (`set[int]` → `list[int]`) only; a str \
+             set (→ `list[str]`) is unmodelled",
+            elem.keyword()
+        )));
+    }
+    let Expr::Ident(sname) = set else {
+        return Err(unsupported(
+            "`sorted(set(...))` over a non-name set — the WASM subset sorts a \
+             NAMED `set[int]` local (`sorted(s)`); bind the set to a name first",
+        ));
+    };
+    if !scope.is_set(sname) {
+        return Err(unsupported(&format!(
+            "`sorted({sname})` where `{sname}` is not a `set` local in the WASM \
+             subset"
+        )));
+    }
+    // A set materialised to a `list[int]` must be an INT set (i64 keys); a str
+    // set (`set_elem_of` → I32 str-pointer) would need a `list[str]`, refused.
+    match scope.set_elem_of(sname) {
+        Some(WatTy::I64) => {}
+        _ => {
+            return Err(unsupported(&format!(
+                "`sorted({sname})` over a non-int set — the WASM subset sorts a \
+                 `set[int]` into a `list[int]` only (a str set → `list[str]` is \
+                 unmodelled)"
+            )));
+        }
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${sname}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_set_to_list_i64").expect("write");
     Ok(())
 }
 
