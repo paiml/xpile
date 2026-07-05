@@ -531,7 +531,8 @@ fn collect_stmt_literals(s: &Stmt, out: &mut Vec<String>) {
         // sibling of the DictSet layout arm above.
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => collect_expr_literals(elem, out),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => collect_expr_literals(elem, out),
         // PMAT-1282: `xs.insert(i, v)` — BOTH the index and the value can carry a
         // str literal (`xs.insert(len("hi"), "ab"[1:])`) that must be laid out.
         Stmt::ListInsert { index, elem, .. } => {
@@ -7495,6 +7496,215 @@ const LIST_DELITEM_HELPER: &str = "\
     i32.store)
 ";
 
+/// PMAT-1285: the list-INT-REMOVE helper — Python `xs.remove(v)` over a
+/// `list[int]`. `list.remove` deletes the FIRST element EQUAL to `v` (a
+/// value compare, NOT an index like `del xs[i]`), so this helper FUSES the
+/// two shipped primitives: a linear scan for the first match (exactly like
+/// [`LIST_INDEX_INT_HELPER`], `i64.eq` per element) followed by the same
+/// left-shrinking tail shift as [`LIST_DELITEM_HELPER`]. A MISS (no element
+/// equals `v`, including ANY value on an empty list) raises Python
+/// `ValueError`, lowered here to a deterministic `unreachable` trap — the
+/// same posture as `index`'s miss and `del`'s out-of-range trap.
+///
+/// Because it only SHRINKS (the base-pointer never moves, no overrun), it
+/// imposes NO growable-list precondition and — like `del`/`pop` — accepts ANY
+/// scalar list local, a PARAM included (every alias observes the removal). The
+/// tail `[slot+1, n)` is shifted left one slot walking LOW→HIGH so no element
+/// is overwritten before it is copied; the shift moves whole 8-byte words with
+/// `i64.load`/`i64.store` (a pure byte-move that never interprets the payload).
+/// Unlike `del` — a pure word move served by ONE helper — `remove` needs a
+/// TYPED value compare, so it has an f64 twin ([`LIST_REMOVE_FLOAT_HELPER`]);
+/// the SHIFT stays an i64 word move in both. A `list[bool]` (i32 stride) is
+/// refused at the call site (an i32 twin is deferred, like `insert`).
+const LIST_REMOVE_INT_HELPER: &str = "\
+  ;; __wasm_list_remove_i64(base, needle) — Python `xs.remove(v)`, list[int]
+  ;; base → i32 count @ base+0, i32 capacity @ base+4, 8-byte elements @ base+8.
+  ;; Scans for the FIRST element == needle (i64.eq), shifts the tail left to
+  ;; close the hole, then drops the count. No match → `unreachable` (ValueError).
+  (func $__wasm_list_remove_i64 (param $base i32) (param $needle i64)
+    (local $n i32)      ;; current element count
+    (local $i i32)      ;; scan cursor / found slot
+    (local $j i32)      ;; shift cursor
+    ;; n = count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; find the first i where elems[i] == needle
+    i32.const 0
+    local.set $i
+    (block $found
+      (block $miss
+        (loop $next
+          ;; if i >= n → miss (value absent → ValueError)
+          local.get $i
+          local.get $n
+          i32.ge_u
+          br_if $miss
+          ;; if i64.load(base + 8 + i*8) == needle → found (i is the slot)
+          local.get $base
+          i32.const 8
+          i32.add
+          local.get $i
+          i32.const 8
+          i32.mul
+          i32.add
+          i64.load
+          local.get $needle
+          i64.eq
+          br_if $found
+          ;; i += 1
+          local.get $i
+          i32.const 1
+          i32.add
+          local.set $i
+          br $next
+        )
+      )
+      ;; v not in xs → Python ValueError; trap deterministically.
+      unreachable
+    )
+    ;; shift tail left: for (j = i; j+1 < n; j++) elems[j] = elems[j+1]
+    ;; (an 8-byte word move; i64.load/store never interpret the payload)
+    local.get $i
+    local.set $j
+    (block $done
+      (loop $shift
+        ;; while j+1 < n  →  break once (j+1) >= n
+        local.get $j
+        i32.const 1
+        i32.add
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; dst = base + 8 + j*8
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; src word = i64.load(base + 8 + (j+1)*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 1
+        i32.add
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        ;; j += 1
+        local.get $j
+        i32.const 1
+        i32.add
+        local.set $j
+        br $shift
+      )
+    )
+    ;; count = n - 1 (n >= 1 here — the miss trap rejected the empty/absent cases)
+    local.get $base
+    local.get $n
+    i32.const 1
+    i32.sub
+    i32.store)
+";
+
+/// PMAT-1285: the list-FLOAT-REMOVE twin — Python `xs.remove(v)` over a
+/// `list[float]`. Structurally identical to [`LIST_REMOVE_INT_HELPER`] but the
+/// find loop loads/compares with `f64.load`/`f64.eq` (the shift stays an i64
+/// word move — a verbatim 8-byte copy, safer for NaN payloads than an
+/// f64.load/store pair). Same IEEE-754 caveat as `index`/`count`: a NaN value
+/// never matches (`nan != nan`), so `xs.remove(nan)` traps as a ValueError,
+/// though CPython removes the element when the SAME nan OBJECT is stored (an
+/// identity semantics the value-only lane does not model). Gated together with
+/// the int helper under the single `needs_list_remove`.
+const LIST_REMOVE_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_remove_f64(base, needle) — Python `xs.remove(v)`, list[float]
+  ;; base → i32 count @ base+0, 8-byte f64 elements @ base+8. Scans with f64.eq;
+  ;; the tail shift is an i64 word move. No match → `unreachable` (ValueError).
+  (func $__wasm_list_remove_f64 (param $base i32) (param $needle f64)
+    (local $n i32)
+    (local $i i32)
+    (local $j i32)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    (block $found
+      (block $miss
+        (loop $next
+          local.get $i
+          local.get $n
+          i32.ge_u
+          br_if $miss
+          ;; if f64.load(base + 8 + i*8) == needle → found
+          local.get $base
+          i32.const 8
+          i32.add
+          local.get $i
+          i32.const 8
+          i32.mul
+          i32.add
+          f64.load
+          local.get $needle
+          f64.eq
+          br_if $found
+          local.get $i
+          i32.const 1
+          i32.add
+          local.set $i
+          br $next
+        )
+      )
+      unreachable
+    )
+    ;; shift tail left (8-byte word move via i64.load/store)
+    local.get $i
+    local.set $j
+    (block $done
+      (loop $shift
+        local.get $j
+        i32.const 1
+        i32.add
+        local.get $n
+        i32.ge_u
+        br_if $done
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 1
+        i32.add
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        local.get $j
+        i32.const 1
+        i32.add
+        local.set $j
+        br $shift
+      )
+    )
+    local.get $base
+    local.get $n
+    i32.const 1
+    i32.sub
+    i32.store)
+";
+
 /// PMAT-1274: the list-INT-COUNT helper — Python `xs.count(x)` over a
 /// `list[int]`. A NON-allocating read (a linear scan, like `contains`/`sum`),
 /// so it rides its OWN gate (`needs_list_count`), NOT `needs_heap`. It reads the
@@ -9884,6 +10094,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // and needs the `(memory …)`. The shift is a pure 8-byte word move, so ONE
     // helper serves both element kinds (no dead twin, unlike `insert`).
     let needs_list_delitem = module_uses_list_delitem(module);
+    // PMAT-1285: `xs.remove(v)` over a `list[int]`/`list[float]`
+    // (`Stmt::ListRemoveValue`) scans for the first value-match then
+    // shrinks-and-shifts via a `$__wasm_list_remove_{i64,f64}` helper — it
+    // reads/writes the length-prefixed region, so it rides its OWN gate and needs
+    // the `(memory …)`. Unlike `del` (a pure 8-byte word move → one helper), the
+    // value compare is TYPED (`i64.eq`/`f64.eq`), so BOTH twins are emitted under
+    // this single gate (the unused twin is a harmless dead fn, like `contains`).
+    let needs_list_remove = module_uses_list_remove(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -9916,6 +10134,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_index
         || needs_list_insert
         || needs_list_delitem
+        || needs_list_remove
     {
         writeln!(
             out,
@@ -10394,6 +10613,18 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if needs_list_delitem {
         out.push_str(LIST_DELITEM_HELPER);
     }
+    // PMAT-1285: emit the list REMOVE-BY-VALUE helpers once, when any function uses
+    // `xs.remove(v)` over a `list[int]`/`list[float]` (`Stmt::ListRemoveValue`). It
+    // scans for the first value-match (typed `i64.eq`/`f64.eq`), shifts the tail
+    // left in place, and drops the count — or traps (`unreachable` = ValueError) on
+    // a miss. It shrinks in place (the base-pointer never moves), so — unlike
+    // `insert`/`append` — the call site accepts ANY scalar list local (a param
+    // included), no capacity guard. Unlike `del`, the value compare is TYPED, so
+    // BOTH twins are emitted (the unused twin is harmless dead WAT, like `contains`).
+    if needs_list_remove {
+        out.push_str(LIST_REMOVE_INT_HELPER);
+        out.push_str(LIST_REMOVE_FLOAT_HELPER);
+    }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
     // (the str-key helpers call it).
@@ -10550,7 +10781,8 @@ fn stmt_touches_str(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => expr_touches_str(key) || expr_touches_str(value),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_touches_str(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_touches_str(elem),
         Stmt::ListInsert { index, elem, .. } => expr_touches_str(index) || expr_touches_str(elem),
         Stmt::SideEffectCall { call } => expr_touches_str(call),
         // PMAT-1234: `del d[k]` over a str-keyed dict — the KEY (`del d[chr(n)]`)
@@ -10674,7 +10906,8 @@ fn stmt_has_str_slice(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => expr_has_str_slice(key) || expr_has_str_slice(value),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_has_str_slice(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_str_slice(elem),
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_str_slice(index) || expr_has_str_slice(elem)
         }
@@ -10833,7 +11066,8 @@ fn stmt_has_int_to_str(s: &Stmt) -> bool {
         Stmt::DictSet { key, value, .. } => expr_has_int_to_str(key) || expr_has_int_to_str(value),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_has_int_to_str(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_int_to_str(elem),
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_int_to_str(index) || expr_has_int_to_str(elem)
         }
@@ -11089,7 +11323,8 @@ fn stmt_uses_str_method(s: &Stmt, op: StrMethodOp) -> bool {
         }
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_uses_str_method(elem, op),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_uses_str_method(elem, op),
         Stmt::ListInsert { index, elem, .. } => {
             expr_uses_str_method(index, op) || expr_uses_str_method(elem, op)
         }
@@ -11239,7 +11474,8 @@ fn stmt_has_str_contains(s: &Stmt) -> bool {
         }
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_has_str_contains(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_str_contains(elem),
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_str_contains(index) || expr_has_str_contains(elem)
         }
@@ -11396,7 +11632,8 @@ fn stmt_has_list_sum(s: &Stmt, want_float: bool) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -11509,7 +11746,8 @@ fn stmt_has_list_minmax(s: &Stmt, want_float: bool) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -11612,7 +11850,8 @@ fn stmt_has_list_contains(s: &Stmt) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -11736,6 +11975,41 @@ fn stmt_has_list_delitem(s: &Stmt) -> bool {
     }
 }
 
+/// PMAT-1285: does any function use `xs.remove(v)` (`Stmt::ListRemoveValue`)? Gates
+/// BOTH the `$__wasm_list_remove_i64` and `$__wasm_list_remove_f64` helpers (and the
+/// `(memory …)` their scan/shift loads/stores touch). The node carries NO
+/// element-kind discriminant (int vs float resolved at emit time via
+/// [`Scope::list_elem_of`]), so BOTH typed helpers are emitted under this single
+/// gate; the unused twin is a harmless dead function (like `contains`/`index`).
+/// Unlike `del` (a pure 8-byte word move → one helper), `remove` needs a TYPED
+/// value compare (`i64.eq`/`f64.eq`), so a twin is required. `ListRemoveValue` is a
+/// STATEMENT, so the walk recurses into `If`/`While` bodies only (every `for` loop
+/// is already desugared to `While` before any gate scan). A nested helper-gated op
+/// in the removed VALUE is gated separately by the `Stmt::ListRemoveValue { value,
+/// .. }` arms present in every `*_has_*` walker.
+fn module_uses_list_remove(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_remove(&f.body))
+}
+
+fn block_has_list_remove(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_remove)
+}
+
+fn stmt_has_list_remove(s: &Stmt) -> bool {
+    match s {
+        Stmt::ListRemoveValue { .. } => true,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            then_body.iter().any(stmt_has_list_remove) || else_body.iter().any(stmt_has_list_remove)
+        }
+        Stmt::While { body, .. } => body.iter().any(stmt_has_list_remove),
+        _ => false,
+    }
+}
+
 /// PMAT-1274: does any function use `xs.count(v)` (`Expr::ListQuery` with
 /// `ListQueryOp::Count`)? Gates BOTH the `$__wasm_list_count_i64` and
 /// `$__wasm_list_count_f64` helpers (and the `(memory …)` their list-payload
@@ -11780,7 +12054,8 @@ fn stmt_has_list_query(s: &Stmt, want_index: bool) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -11874,7 +12149,8 @@ fn stmt_has_bool_reduce(s: &Stmt) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -11977,7 +12253,8 @@ fn stmt_has_list_sorted(s: &Stmt, want_float: bool) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -12084,7 +12361,8 @@ fn stmt_has_list_reversed(s: &Stmt) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -12193,7 +12471,8 @@ fn stmt_has_list_concat(s: &Stmt) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -12296,7 +12575,8 @@ fn stmt_has_list_slice(s: &Stmt) -> bool {
         Stmt::DelItem { key, .. } => e(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => e(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
         Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
@@ -12395,7 +12675,8 @@ fn stmt_has_str_repeat(s: &Stmt) -> bool {
         Stmt::DelItem { key, .. } => expr_has_str_repeat(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_has_str_repeat(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_str_repeat(elem),
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_str_repeat(index) || expr_has_str_repeat(elem)
         }
@@ -12542,7 +12823,8 @@ fn stmt_has_str_method_2arg(s: &Stmt, target: StrMethodOp) -> bool {
         }
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_has_str_method_2arg(elem, target),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_str_method_2arg(elem, target),
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_str_method_2arg(index, target) || expr_has_str_method_2arg(elem, target)
         }
@@ -12716,7 +12998,8 @@ fn stmt_has_str_eq(s: &Stmt, scan: &StrEqScan<'_>) -> bool {
         }
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_has_str_eq(elem, scan),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_str_eq(elem, scan),
         Stmt::ListInsert { index, elem, .. } => {
             expr_has_str_eq(index, scan) || expr_has_str_eq(elem, scan)
         }
@@ -12887,7 +13170,8 @@ fn stmt_has_heap_op(s: &Stmt) -> bool {
         Stmt::DelItem { key, .. } => expr_has_heap_op(key),
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
-        | Stmt::ListAppend { elem, .. } => expr_has_heap_op(elem),
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_heap_op(elem),
         Stmt::ListInsert { index, elem, .. } => expr_has_heap_op(index) || expr_has_heap_op(elem),
         Stmt::SideEffectCall { call } => expr_has_heap_op(call),
         Stmt::Break | Stmt::Continue => false,
@@ -13772,6 +14056,11 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             // The insert-safety decision (literal-bound + spare capacity, like
             // append) is made downstream in `emit_list_insert`.
             | Stmt::ListInsert { .. }
+            // PMAT-1285: `xs.remove(v)` scans+shrinks an EXISTING list record in
+            // place (the base-pointer never moves) — it declares no new local. The
+            // element-kind support decision is made downstream in
+            // `emit_list_remove`, like the append/insert/del in-place mutators.
+            | Stmt::ListRemoveValue { .. }
             | Stmt::Continue => {}
             // PMAT-1034: a `raise` (→ `unreachable` trap) introduces no
             // locals — its message expression is never evaluated on WASM.
@@ -14023,6 +14312,15 @@ fn emit_stmt(
             index,
             elem,
         } => emit_list_insert(list_name, index, elem, scope, out, depth),
+        // PMAT-1285: `xs.remove(v)` — remove the FIRST element EQUAL to `v`. A
+        // linear scan for a typed value match (like `index`) fused with a
+        // shrink+shift-left (like `del xs[i]`), trapping (`unreachable` = Python
+        // ValueError) when the value is absent. Done in place (the base-pointer
+        // never moves), so — like `del`/`pop` — it accepts ANY scalar list local
+        // (a param included), no growable-list precondition.
+        Stmt::ListRemoveValue { list_name, value } => {
+            emit_list_remove(list_name, value, scope, out, depth)
+        }
         // PMAT-1023: `obj.field = value` — store through the struct
         // local/param's base-pointer (the OOP mutation primitive).
         Stmt::FieldAssign { obj, field, value } => {
@@ -17252,6 +17550,65 @@ fn emit_list_delitem(
     emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_list_delitem").expect("write");
+    Ok(())
+}
+
+/// PMAT-1285: lower `xs.remove(v)` over a `list[int]`/`list[float]`
+/// (`Stmt::ListRemoveValue`) — remove the FIRST element EQUAL to `v` (a VALUE
+/// delete, not an index delete like `del xs[i]`).
+///
+/// All the real work (a linear scan for the first typed match + the same
+/// left-shrinking tail shift as `del` + count-- + the ValueError trap on a miss)
+/// lives in the `$__wasm_list_remove_{i64,f64}` helper. This call site (1) resolves
+/// the element kind to pick the typed helper — accepting a `list[int]` (i64) /
+/// `list[float]` (f64), refusing a `list[bool]` (i32 stride, deferred like
+/// `insert`) or a non-list name — then (2) pushes the base-pointer and the value
+/// TYPED to the element kind, and `call`s the helper.
+///
+/// Unlike `insert`/`append`, `remove` only SHRINKS (the base-pointer never moves,
+/// no overrun), so — exactly like `del`/`pop` — it imposes NO growable-list
+/// precondition: it accepts ANY scalar list local, a PARAM included (every alias
+/// observes the removal).
+fn emit_list_remove(
+    list_name: &str,
+    value_expr: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // The element kind selects the typed helper and the value's WAT type. Only the
+    // i64/f64 scalar element kinds are lowered; a `list[bool]` (i32 elements) would
+    // need an i32 helper twin (deferred, exactly like `insert`), and a `list[str]`
+    // is not a fixed-width scalar list.
+    let (helper, want_elem) = match scope.list_elem_of(list_name) {
+        Some(WatTy::I64) => ("$__wasm_list_remove_i64", WatTy::I64),
+        Some(WatTy::F64) => ("$__wasm_list_remove_f64", WatTy::F64),
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "`{list_name}.remove(v)` whose elements load as {} — the WASM \
+                 subset removes only from a `list[int]` / `list[float]` (an i64/f64 \
+                 payload); this element kind is refused (a `list[bool]` would need an \
+                 i32 helper twin, deferred like `insert`)",
+                other.keyword()
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "`{list_name}.remove(v)` where `{list_name}` is not a `list[int]` / \
+                 `list[float]` param/local — only a scalar list (an i32 base-pointer \
+                 into linear memory) can be removed from in the WASM subset"
+            )));
+        }
+    };
+    // base (i32) ; value typed to the element kind ; then the scan-and-shift helper
+    // finds the first match, closes the hole, and drops the count (or traps on a
+    // miss = Python ValueError). `remove` only SHRINKS in place, so — unlike
+    // `insert`/`append` — it imposes NO growable-list precondition (a param is fine).
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    emit_expr_typed(value_expr, scope, out, depth, want_elem)?;
+    indent(out, depth);
+    writeln!(out, "call {helper}").expect("write");
     Ok(())
 }
 
