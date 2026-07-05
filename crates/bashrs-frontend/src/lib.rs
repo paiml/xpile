@@ -21,7 +21,7 @@
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};
 use xpile_meta_hir::{
-    Block, Expr, Function, Item, LoopKind, Module, QuotingStrategy, SourceLang, Stmt, Type,
+    Block, CaseArm, Expr, Function, Item, LoopKind, Module, QuotingStrategy, SourceLang, Stmt, Type,
 };
 
 /// PMAT-049: raw token produced by the bashrs-frontend tokenizer.
@@ -1172,6 +1172,180 @@ fn parse_if_at(segs: &[String], start: usize) -> Result<(Stmt, usize), FrontendE
     }
 }
 
+/// PMAT-1285: build the command-position segment stream for a piece of
+/// shell TEXT (a `case`-arm body) — split on `;` and newline, drop
+/// blank / comment segments, normalise a leading `do`/`then`/`else`
+/// carrying an inline first command. Mirrors `collect_block_region`'s
+/// per-line segmenting (minus the depth bookkeeping), so an arm body
+/// feeds the same recursive `parse_segment_seq` and can therefore carry
+/// a nested loop / conditional.
+fn segments_of(text: &str) -> Vec<String> {
+    let mut segs: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        for raw in line.split(';') {
+            let s = raw.trim();
+            if s.is_empty() || s.starts_with('#') {
+                continue;
+            }
+            let fw = first_word(s);
+            if matches!(fw, "do" | "then" | "else") && s != fw {
+                segs.push(fw.to_string());
+                let rest = s[fw.len()..].trim();
+                if !rest.is_empty() {
+                    segs.push(rest.to_string());
+                }
+            } else {
+                segs.push(s.to_string());
+            }
+        }
+    }
+    segs
+}
+
+/// PMAT-1285: parse a TOP-LEVEL `case WORD in PAT) BODY ;; … esac`
+/// beginning at line `start`, returning the built `Stmt::ShellCase` and
+/// the index of the LINE just past the matching `esac`.
+///
+/// SLICE-1 SCOPE (honest boundary): only a TOP-LEVEL `case` — a `case`
+/// nested inside a loop / `if` body is refused by `parse_segment_seq`
+/// (the `;`-segment split there would mangle the arm `;;` separators).
+/// Arm BODIES may themselves contain nested loops / conditionals (they
+/// parse through the shared `parse_segment_seq`). The structural splits
+/// (`;;` between arms, first `)` ending a pattern list) are not
+/// quoting-aware; a `;;` / `)` inside a quoted pattern or a `$(…)`
+/// mis-splits, but that degrades to a downstream parse error → clean
+/// REFUSE, never a silent shred. `;&` / `;;&` (bash fall-through) is not
+/// modelled.
+fn parse_case(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
+    // Collect region lines [start ..= matching `esac`], case-depth aware
+    // (a nested `case` opener raises depth so the OUTER `esac` closes the
+    // region; the nested `case` is then refused when its arm body is
+    // parsed).
+    let mut region: Vec<&str> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut li = start;
+    let mut next_line: Option<usize> = None;
+    'outer: while li < lines.len() {
+        let line = lines[li];
+        li += 1;
+        region.push(line);
+        for part in line.split([';', '&', '|']) {
+            match first_word(part.trim()) {
+                "case" => depth += 1,
+                "esac" => {
+                    depth -= 1;
+                    if depth == 0 {
+                        next_line = Some(li);
+                        break 'outer;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let Some(next) = next_line else {
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: unterminated `case` starting at `{}` — no matching `esac`",
+            lines[start]
+        )));
+    };
+
+    // Region text: `case WORD in <arms> esac`. Strip the `case` head and
+    // the `esac` tail; split off the header `WORD in`.
+    let joined = region.join("\n");
+    let rest = joined
+        .trim_start()
+        .strip_prefix("case")
+        .expect("caller dispatched on first_word == \"case\"")
+        .trim_start();
+    // WORD is the first whitespace-delimited token; `in` must follow.
+    let word_tok = rest.split_whitespace().next().unwrap_or("");
+    if word_tok.is_empty() {
+        return Err(FrontendError::Parse(
+            "bashrs-frontend: `case` has no word to match; write `case WORD in … esac`".to_string(),
+        ));
+    }
+    let after_word = rest[word_tok.len()..].trim_start();
+    let arms_and_esac = match after_word.strip_prefix("in") {
+        Some(a) if a.is_empty() || a.starts_with(char::is_whitespace) => a.trim_start(),
+        _ => {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: `case {word_tok}` must be followed by `in`"
+            )));
+        }
+    };
+    let arms_text = match arms_and_esac.trim_end().strip_suffix("esac") {
+        Some(a) => a.trim_end(),
+        None => {
+            return Err(FrontendError::Parse(
+                "bashrs-frontend: malformed `case` — `esac` terminator not found where expected"
+                    .to_string(),
+            ));
+        }
+    };
+
+    // The matched word, lowered through the quoting-aware tokenizer
+    // (so `$x` → `ShellVar`, `"$x"` → a QuotedString, …). Exactly one
+    // token is expected.
+    let word_tokens = tokenize_line(word_tok)?;
+    let word = match word_tokens.as_slice() {
+        [tok] => lower_raw_token(tok)?,
+        _ => {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: `case` word `{word_tok}` must be a single token"
+            )));
+        }
+    };
+
+    // Arms: split on `;;`; each chunk is `PAT1|PAT2) BODY`.
+    let mut arms: Vec<CaseArm> = Vec::new();
+    for chunk in arms_text.split(";;") {
+        let chunk = chunk.trim();
+        if chunk.is_empty() {
+            continue;
+        }
+        let Some(paren) = chunk.find(')') else {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: `case` arm `{chunk}` has no `)` after its pattern list"
+            )));
+        };
+        let pat_part = chunk[..paren].trim();
+        let body_text = chunk[paren + 1..].trim();
+        if pat_part.is_empty() {
+            return Err(FrontendError::Parse(
+                "bashrs-frontend: `case` arm has an empty pattern list before `)`".to_string(),
+            ));
+        }
+        let patterns: Vec<String> = pat_part
+            .split('|')
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+        if patterns.is_empty() {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: `case` arm pattern list `{pat_part}` is empty"
+            )));
+        }
+        // Arm body — parsed through the shared recursive segment parser
+        // (so a nested loop / conditional in the arm composes; a nested
+        // `case` refuses).
+        let (body, _end, _term) = parse_segment_seq(&segments_of(body_text), 0, &[])?;
+        arms.push(CaseArm { patterns, body });
+    }
+
+    if arms.is_empty() {
+        return Err(FrontendError::Parse(
+            "bashrs-frontend: `case … in … esac` has no arms".to_string(),
+        ));
+    }
+
+    Ok((Stmt::ShellCase { word, arms }, next))
+}
+
 pub struct BashrsFrontend;
 
 impl Frontend for BashrsFrontend {
@@ -1270,6 +1444,16 @@ impl Frontend for BashrsFrontend {
                 i = next;
                 continue;
             }
+            // PMAT-1285: a top-level `case WORD in … esac`. It needs raw
+            // lines (the `;`-segment split would mangle arm `;;`), so it
+            // is parsed here rather than through the segment machinery;
+            // a `case` nested in a loop/if body is refused downstream.
+            if first_word(line) == "case" {
+                let (case_stmt, next) = parse_case(&trimmed_lines, i)?;
+                stmts.push(case_stmt);
+                i = next;
+                continue;
+            }
             // PMAT-989: REFUSE the remaining shell control-flow (`case`,
             // and any stray `do`/`done`/`then`/`elif`/`else`/`fi`/`esac`
             // keyword, or a for/while/until/if keyword appearing after a
@@ -1278,11 +1462,12 @@ impl Frontend for BashrsFrontend {
             // `elif` chains) are the v0.2.0 job.
             if let Some(kw) = control_flow_keyword(line) {
                 return Err(FrontendError::Parse(format!(
-                    "bashrs-frontend: shell `case` (and `elif` chains, and compound-line \
-                     control-flow) not supported — `for`/`while`/`until` loops and \
-                     `if`/`then`/`else` are handled, but the rest refuses rather than \
-                     silently shredding into barewords. Offending keyword `{kw}` at line \
-                     `{line}`."
+                    "bashrs-frontend: unsupported shell control-flow (a `case` nested in a \
+                     block body, a stray `esac`/`elif`/`then`/`fi`/`do`/`done`, or a \
+                     control-flow keyword after a `;` on a compound line) — top-level \
+                     `for`/`while`/`until` loops, `if`/`then`/`elif`/`else`, and `case` \
+                     are handled, but the rest refuses rather than silently shredding into \
+                     barewords. Offending keyword `{kw}` at line `{line}`."
                 )));
             }
             // Flat (non-control-flow) command line.
@@ -3531,16 +3716,121 @@ done
     }
 
     #[test]
-    fn parse_and_lower_refuses_case_esac() {
+    fn parse_and_lower_case_esac() {
+        // PMAT-1285: `case WORD in PAT) BODY ;; … esac` now PARSES into
+        // a `Stmt::ShellCase`. Multi-pattern arms (`b|c`) and the `*`
+        // default are supported. Was refused pre-1285.
+        use xpile_meta_hir::CaseArm;
         let source = "\
 case $x in
   a) echo aye ;;
+  b|c) echo bee-or-cee ;;
+  *) echo other ;;
 esac
 ";
-        let err = BashrsFrontend
+        let module = BashrsFrontend
             .parse_and_lower(&PathBuf::from("/tmp/c.sh"), source)
-            .expect_err("case/esac must be REFUSED");
-        assert!(format!("{err:?}").contains("control-flow"));
+            .expect("case must parse");
+        assert_eq!(module.items.len(), 1);
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!("no module constants")
+        };
+        assert_eq!(f.body.stmts.len(), 1);
+        let Stmt::ShellCase { word, arms } = &f.body.stmts[0] else {
+            panic!("expected Stmt::ShellCase, got {:?}", f.body.stmts[0]);
+        };
+        assert_eq!(word, &Expr::ShellVar("x".to_string()));
+        assert_eq!(arms.len(), 3);
+        assert_eq!(
+            arms[0],
+            CaseArm {
+                patterns: vec!["a".to_string()],
+                body: vec![Stmt::Cmd {
+                    program: "echo".to_string(),
+                    args: vec![Expr::LitStr("aye".to_string())],
+                }],
+            }
+        );
+        // Multi-pattern arm `b|c`.
+        assert_eq!(arms[1].patterns, vec!["b".to_string(), "c".to_string()]);
+        // Default `*` arm.
+        assert_eq!(arms[2].patterns, vec!["*".to_string()]);
+    }
+
+    #[test]
+    fn parse_and_lower_single_line_case() {
+        let module = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/c1.sh"),
+                "case $x in a) echo aye ;; *) echo other ;; esac\n",
+            )
+            .expect("single-line case must parse");
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!()
+        };
+        let Stmt::ShellCase { arms, .. } = &f.body.stmts[0] else {
+            panic!("expected ShellCase");
+        };
+        assert_eq!(arms.len(), 2);
+    }
+
+    #[test]
+    fn parse_and_lower_case_arm_with_nested_loop() {
+        // An arm body may contain a nested loop (parsed recursively).
+        let source = "\
+case $y in
+  go)
+    for i in 1 2; do
+      echo $i
+    done
+    ;;
+  *) echo nope ;;
+esac
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/c2.sh"), source)
+            .expect("case with nested-loop arm must parse");
+        let Item::Function(f) = &module.items[0] else {
+            unreachable!()
+        };
+        let Stmt::ShellCase { arms, .. } = &f.body.stmts[0] else {
+            panic!("expected ShellCase");
+        };
+        assert_eq!(arms.len(), 2);
+        assert_eq!(arms[0].patterns, vec!["go".to_string()]);
+        assert!(
+            matches!(arms[0].body.as_slice(), [Stmt::ShellLoop { .. }]),
+            "first arm body must be the nested loop, got {:?}",
+            arms[0].body
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_unterminated_case() {
+        let err = BashrsFrontend
+            .parse_and_lower(
+                &PathBuf::from("/tmp/uc.sh"),
+                "case $x in\n  a) echo aye ;;\n",
+            )
+            .expect_err("unterminated case must be REFUSED");
+        assert!(format!("{err:?}").contains("unterminated"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_case_nested_in_loop() {
+        // A `case` inside a loop body is out of slice-1 scope (the
+        // `;`-segment split would mangle the arm `;;`). Refuse.
+        let source = "\
+for i in 1 2; do
+  case $i in
+    1) echo one ;;
+  esac
+done
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/cnl.sh"), source)
+            .expect_err("case-in-loop must be REFUSED at this slice");
+        assert!(format!("{err:?}").contains("case"));
     }
 
     #[test]

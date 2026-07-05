@@ -145,6 +145,12 @@ const NESTED_LOOP_DEMO_EXPECTED: &str = "cell 1 a\ncell 1 b\ncell 2 a\ncell 2 b\
 /// (`grade-b`). Byte-for-byte deterministic.
 const IF_DEMO_EXPECTED: &str = "big\nnot-three\npicked 2\ngrade-b";
 
+/// PMAT-1285 expected output of `bashrs_case_demo.sh`: `fruit=c` matches
+/// the `b|c)` multi-pattern arm (`bee-or-cee`); `mode=go` runs the
+/// nested loop in the `go)` arm (`step 1`/`step 2`). Byte-for-byte
+/// deterministic.
+const CASE_DEMO_EXPECTED: &str = "bee-or-cee\nstep 1\nstep 2";
+
 #[test]
 fn shell_diff_demo_realistic_shell_input_round_trip() {
     // PMAT-052: a `.sh` fixture that exercises every Layer B
@@ -317,6 +323,37 @@ fn shell_diff_demo_if_round_trip() {
             && actual.contains("picked 2")
             && actual.contains("grade-b"),
         "expected the else-arm, nested-if, and elif outputs; a branch may have been dropped: {actual}"
+    );
+}
+
+#[test]
+fn shell_diff_demo_case_round_trip() {
+    // PMAT-1285: a `.sh` fixture with `case … in … esac` (single- and
+    // multi-pattern arms, `*` default, and a nested loop in an arm)
+    // flows through the frontend's `Stmt::ShellCase` parser → mHIR →
+    // bashrs-backend (`render_shell_case`) → /bin/sh, producing
+    // deterministic output. The matched arm's body actually runs,
+    // proving the case is emitted faithfully (not flattened/dropped).
+    if !have_python_and_sh() {
+        eprintln!(
+            "warning: skipping PMAT-1285 case round-trip — /bin/sh not on PATH. \
+             CI environments with /bin/sh will still run this gate."
+        );
+        return;
+    }
+    let sh_path = fixture("bashrs_case_demo.sh");
+    let actual = run_shell(&sh_path).expect("shell run");
+    assert_eq!(
+        actual, CASE_DEMO_EXPECTED,
+        "bashrs case demo output diverged. The frontend case parser or the backend \
+         render_shell_case regressed (or an arm was mis-matched/dropped).\n\
+         === expected ===\n{CASE_DEMO_EXPECTED}\n\
+         === actual  ===\n{actual}"
+    );
+    // Anchor the multi-pattern match + nested-loop-arm output.
+    assert!(
+        actual.contains("bee-or-cee") && actual.contains("step 2"),
+        "expected the multi-pattern arm and nested-loop-arm output: {actual}"
     );
 }
 

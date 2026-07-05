@@ -412,6 +412,7 @@ fn function_bigint_mode(f: &Function) -> bool {
             // PMAT-048: see rust-codegen's twin arm.
             Stmt::ShellLoop { .. } => false,
             Stmt::ShellIf { .. } => false,
+            Stmt::ShellCase { .. } => false,
             // PMAT-051: see rust-codegen's twin arm.
             Stmt::ShellAssign { .. } => false,
         }
@@ -1438,6 +1439,12 @@ fn emit_stmt_indented(
         Stmt::ShellIf { .. } => Err(RuchyCodegenError::Unsupported(
             "Ruchy backend does not lower Stmt::ShellIf — \
              contract C-BASHRS-POSIX-IDEMPOTENCE governs shell conditionals; \
+             use `--target shell`"
+                .into(),
+        )),
+        Stmt::ShellCase { .. } => Err(RuchyCodegenError::Unsupported(
+            "Ruchy backend does not lower Stmt::ShellCase — \
+             contract C-BASHRS-POSIX-IDEMPOTENCE governs shell case statements; \
              use `--target shell`"
                 .into(),
         )),

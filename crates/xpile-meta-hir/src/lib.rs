@@ -859,6 +859,9 @@ fn stmt_has_int_arith(s: &Stmt) -> bool {
                 || then_body.iter().any(stmt_has_int_arith)
                 || else_body.iter().any(stmt_has_int_arith)
         }
+        Stmt::ShellCase { word, arms } => {
+            expr_has_int_arith(word) || arms.iter().any(|a| a.body.iter().any(stmt_has_int_arith))
+        }
     }
 }
 
@@ -1796,6 +1799,26 @@ pub enum Stmt {
         then_body: Vec<Stmt>,
         else_body: Vec<Stmt>,
     },
+    /// POSIX shell `case WORD in PAT) … ;; … esac`. PMAT-1285 /
+    /// XPILE-BASHRS-MERGER-001 Layer B. `word` is the matched value
+    /// (an `Expr`, typically `ShellVar` — same posture as loop items);
+    /// each `CaseArm` carries its glob pattern list and body. bashrs-
+    /// only; other backends refuse via `Unsupported(...)` naming
+    /// `C-BASHRS-POSIX-IDEMPOTENCE`.
+    ShellCase { word: Expr, arms: Vec<CaseArm> },
+}
+
+/// One arm of a `Stmt::ShellCase`: a `PAT1|PAT2|…) BODY ;;` clause.
+/// `patterns` holds the raw shell glob patterns (e.g. `["b", "c"]` for
+/// `b|c)`, `["*"]` for the default) VERBATIM — glob metacharacters
+/// (`*`/`?`/`[…]`) are not modelled structurally at v0.1.0, matching
+/// the opaque-condition posture of loops/if. `body` renders through the
+/// shared statement walker, so a nested loop / conditional in an arm
+/// composes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaseArm {
+    pub patterns: Vec<String>,
+    pub body: Vec<Stmt>,
 }
 
 /// POSIX shell loop dialects. PMAT-048 / XPILE-BASHRS-MERGER-001
@@ -4351,6 +4374,14 @@ fn escape_stmt(s: &mut Stmt) {
                 escape_stmt(st);
             }
         }
+        Stmt::ShellCase { word, arms } => {
+            escape_expr(word);
+            for a in arms {
+                for st in &mut a.body {
+                    escape_stmt(st);
+                }
+            }
+        }
     }
 }
 
@@ -4910,6 +4941,14 @@ fn collect_idents_stmt(s: &Stmt, acc: &mut std::collections::HashSet<String>) {
                 collect_idents_stmt(st, acc);
             }
         }
+        Stmt::ShellCase { word, arms } => {
+            collect_idents_expr(word, acc);
+            for a in arms {
+                for st in &a.body {
+                    collect_idents_stmt(st, acc);
+                }
+            }
+        }
     }
 }
 
@@ -5151,6 +5190,13 @@ fn retype_stmt(
             }
             for st in else_body {
                 retype_stmt(st, float_ffi, float_locals);
+            }
+        }
+        Stmt::ShellCase { arms, .. } => {
+            for a in arms {
+                for st in &mut a.body {
+                    retype_stmt(st, float_ffi, float_locals);
+                }
             }
         }
         // Leaf / non-print / non-let-binding statements carry no float-FFI
