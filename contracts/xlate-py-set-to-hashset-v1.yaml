@@ -30,6 +30,13 @@ equations:
   py_set_structure_extensionality_diamond:
     lean_theorem: "XpileContracts.CXlatePySetToHashset.py_set_structure_extensionality_diamond"
     lean_file: "contracts/lean/XlatePySetToHashset.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1282): Kani BMC over a
+    # STRUCTURAL MODEL (bitmask / value-array) of the container semantics —
+    # std HashSet/HashMap are Kani-hostile (RawTable alloc). Non-vacuous
+    # (order-independence/dedup or last-write-wins/key-independence);
+    # verified SUCCESSFUL under Kani 0.67 pre-commit.
+    kani_harness: "py_set_structure_extensionality_diamond"
+    kani_file: "contracts/kani/xlate_py_set_to_hashset.rs"
     formula: |
       ∀ a b : PySet.
         a.repr = b.repr → a = b

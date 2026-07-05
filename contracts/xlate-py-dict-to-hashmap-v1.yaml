@@ -61,6 +61,13 @@ equations:
   dict_to_hashmap_structure_preserved_diamond:
     lean_theorem: "XpileContracts.CXlatePyDictToHashmap.dict_to_hashmap_structure_preserved_diamond"
     lean_file: "contracts/lean/XlatePyDictToHashmap.lean"
+    # Symbolic stratum (XPILE-QUORUM-001 / PMAT-1282): Kani BMC over a
+    # STRUCTURAL MODEL (bitmask / value-array) of the container semantics —
+    # std HashSet/HashMap are Kani-hostile (RawTable alloc). Non-vacuous
+    # (order-independence/dedup or last-write-wins/key-independence);
+    # verified SUCCESSFUL under Kani 0.67 pre-commit.
+    kani_harness: "dict_to_hashmap_structure_preserved_diamond"
+    kani_file: "contracts/kani/xlate_py_dict_to_hashmap.rs"
     formula: |
       ∀ (d : PyDict K V).
         (lower(d).entries = d.entries)               -- entry-sequence preserved
