@@ -532,6 +532,12 @@ fn collect_stmt_literals(s: &Stmt, out: &mut Vec<String>) {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => collect_expr_literals(elem, out),
+        // PMAT-1282: `xs.insert(i, v)` — BOTH the index and the value can carry a
+        // str literal (`xs.insert(len("hi"), "ab"[1:])`) that must be laid out.
+        Stmt::ListInsert { index, elem, .. } => {
+            collect_expr_literals(index, out);
+            collect_expr_literals(elem, out);
+        }
         // PMAT-1023: a field write's VALUE and a statement-position method
         // call's ARGS may reference literals (`c.tag(ord("x"))`).
         Stmt::FieldAssign { value, .. } => collect_expr_literals(value, out),
@@ -7114,6 +7120,258 @@ const LIST_CONTAINS_FLOAT_HELPER: &str = "\
     i32.const 0)
 ";
 
+/// PMAT-1282: the list-INT-INSERT helper — Python `xs.insert(i, v)` over a
+/// `list[int]`. The FIRST list-mutation that both GROWS the live-element count
+/// AND SHIFTS the tail (unlike `append`, which only grows at the end, and `pop`,
+/// which only shrinks). It mutates the record IN PLACE — the base-pointer never
+/// moves — so every alias holding it observes the insertion, the same alias-safe
+/// posture `append`/`pop` rely on. It reads/writes the PMAT-968 length-prefixed
+/// region (i32 count @ base+0, i32 capacity @ base+4, i64 elements @ base+8) and,
+/// like `append`, refuses (traps `unreachable`) when the fixed capacity is full.
+///
+/// The insert position is clamped EXACTLY as CPython `list.insert` (`listobject.c`
+/// `ins1`): a negative index adds the length (`i += n`) and, if still negative,
+/// pins to `0` (the front); an index past the end pins to `n` (append position) —
+/// never a `Vec::insert`-style panic on an out-of-range index. The clamp math runs
+/// in SIGNED i64 (so a very large-magnitude negative index normalises correctly)
+/// before narrowing to the i32 slot. The tail `[slot, n)` is shifted right by one
+/// slot walking HIGH→LOW (`for j = n; j > slot; j--: elems[j] = elems[j-1]`) so no
+/// element is overwritten before it is copied; the new value lands at `slot` and
+/// the count header is bumped to `n + 1`.
+const LIST_INSERT_INT_HELPER: &str = "\
+  ;; __wasm_list_insert_i64(base, idx, val) — Python xs.insert(idx, val), list[int]
+  ;; base → i32 count @ base+0, i32 capacity @ base+4, i64 elements @ base+8.
+  (func $__wasm_list_insert_i64 (param $base i32) (param $idx i64) (param $val i64)
+    (local $n i32)      ;; current element count
+    (local $slot i32)   ;; normalized insert position in [0, n]
+    (local $j i32)      ;; shift cursor
+    (local $s i64)      ;; signed normalized index (CPython clamp math)
+    ;; n = count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; capacity guard: if n >= capacity(base+4) → trap (bounded bump heap)
+    local.get $n
+    local.get $base
+    i32.load offset=4
+    i32.ge_u
+    if
+      unreachable
+    end
+    ;; s = idx ; CPython list.insert clamp: if s < 0 { s += n }
+    local.get $idx
+    local.set $s
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $s
+      local.get $n
+      i64.extend_i32_u
+      i64.add
+      local.set $s
+    end
+    ;; if s < 0 { s = 0 }  (still negative after += n → clamp to the front)
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      i64.const 0
+      local.set $s
+    end
+    ;; if s > n { s = n }  (past the end → clamp to the append position)
+    local.get $s
+    local.get $n
+    i64.extend_i32_u
+    i64.gt_s
+    if
+      local.get $n
+      i64.extend_i32_u
+      local.set $s
+    end
+    ;; slot = (i32) s   (s now in [0, n], fits an i32)
+    local.get $s
+    i32.wrap_i64
+    local.set $slot
+    ;; shift tail right: for (j = n; j > slot; j--) elems[j] = elems[j-1]
+    local.get $n
+    local.set $j
+    (block $done
+      (loop $next
+        ;; while j > slot  (unsigned; both in [0, n])
+        local.get $j
+        local.get $slot
+        i32.le_u
+        br_if $done
+        ;; dst = base + 8 + j*8
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; src value = i64.load(base + 8 + (j-1)*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 1
+        i32.sub
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        ;; j -= 1
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $next
+      )
+    )
+    ;; elems[slot] = val:  addr = base + 8 + slot*8
+    local.get $base
+    i32.const 8
+    i32.add
+    local.get $slot
+    i32.const 8
+    i32.mul
+    i32.add
+    local.get $val
+    i64.store
+    ;; count = n + 1 (write back to base+0)
+    local.get $base
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.store)
+";
+
+/// PMAT-1282: the list-FLOAT-INSERT twin — Python `xs.insert(i, v)` over a
+/// `list[float]`. Structurally identical to [`LIST_INSERT_INT_HELPER`] (same
+/// header, same 8-byte stride, same CPython clamp + high→low shift); only the
+/// `$val` param and the value store are f64. The tail shift moves whole 8-byte
+/// words with `i64.load`/`i64.store` (a pure byte-move that never interprets the
+/// payload, exactly like the `reversed` helper), so the shift itself is shared
+/// verbatim with the int helper and only the final `elems[slot] = val` store is
+/// f64. Gated together with the int helper under the single `needs_list_insert`
+/// (the [`xpile_meta_hir::Stmt::ListInsert`] node carries no element-kind
+/// discriminant, so both twins emit; the unused one is harmless dead WAT, exactly
+/// like the `contains`/`count`/`index` twins).
+const LIST_INSERT_FLOAT_HELPER: &str = "\
+  ;; __wasm_list_insert_f64(base, idx, val) — Python xs.insert(idx, val), list[float]
+  ;; base → i32 count @ base+0, i32 capacity @ base+4, f64 elements @ base+8.
+  (func $__wasm_list_insert_f64 (param $base i32) (param $idx i64) (param $val f64)
+    (local $n i32)      ;; current element count
+    (local $slot i32)   ;; normalized insert position in [0, n]
+    (local $j i32)      ;; shift cursor
+    (local $s i64)      ;; signed normalized index (CPython clamp math)
+    ;; n = count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    ;; capacity guard: if n >= capacity(base+4) → trap (bounded bump heap)
+    local.get $n
+    local.get $base
+    i32.load offset=4
+    i32.ge_u
+    if
+      unreachable
+    end
+    ;; s = idx ; CPython list.insert clamp: if s < 0 { s += n }
+    local.get $idx
+    local.set $s
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $s
+      local.get $n
+      i64.extend_i32_u
+      i64.add
+      local.set $s
+    end
+    ;; if s < 0 { s = 0 }  (still negative after += n → clamp to the front)
+    local.get $s
+    i64.const 0
+    i64.lt_s
+    if
+      i64.const 0
+      local.set $s
+    end
+    ;; if s > n { s = n }  (past the end → clamp to the append position)
+    local.get $s
+    local.get $n
+    i64.extend_i32_u
+    i64.gt_s
+    if
+      local.get $n
+      i64.extend_i32_u
+      local.set $s
+    end
+    ;; slot = (i32) s   (s now in [0, n], fits an i32)
+    local.get $s
+    i32.wrap_i64
+    local.set $slot
+    ;; shift tail right: for (j = n; j > slot; j--) elems[j] = elems[j-1]
+    ;; (an 8-byte word move; i64.load/store never interpret the f64 payload)
+    local.get $n
+    local.set $j
+    (block $done
+      (loop $next
+        ;; while j > slot  (unsigned; both in [0, n])
+        local.get $j
+        local.get $slot
+        i32.le_u
+        br_if $done
+        ;; dst = base + 8 + j*8
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 8
+        i32.mul
+        i32.add
+        ;; src word = i64.load(base + 8 + (j-1)*8)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $j
+        i32.const 1
+        i32.sub
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        i64.store
+        ;; j -= 1
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $next
+      )
+    )
+    ;; elems[slot] = val:  addr = base + 8 + slot*8
+    local.get $base
+    i32.const 8
+    i32.add
+    local.get $slot
+    i32.const 8
+    i32.mul
+    i32.add
+    local.get $val
+    f64.store
+    ;; count = n + 1 (write back to base+0)
+    local.get $base
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.store)
+";
+
 /// PMAT-1274: the list-INT-COUNT helper — Python `xs.count(x)` over a
 /// `list[int]`. A NON-allocating read (a linear scan, like `contains`/`sum`),
 /// so it rides its OWN gate (`needs_list_count`), NOT `needs_heap`. It reads the
@@ -9490,6 +9748,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // both element-kind twins (no element-kind discriminant on the node).
     let needs_list_count = module_uses_list_count(module);
     let needs_list_index = module_uses_list_index(module);
+    // PMAT-1282: `xs.insert(i, v)` over a `list[int]`/`list[float]`
+    // (`Stmt::ListInsert`) shifts the tail and writes via a `$__wasm_list_insert_*`
+    // helper — it reads/writes the length-prefixed region, so (like the read
+    // helpers) it rides its OWN gate and needs the `(memory …)`. The node carries
+    // no element-kind discriminant, so BOTH typed helpers are emitted under this
+    // single gate (the unused twin is a harmless dead fn, like `contains`).
+    let needs_list_insert = module_uses_list_insert(module);
     if module_uses_list_param(module)
         || needs_heap
         || !literals.is_empty()
@@ -9520,6 +9785,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         || needs_list_contains
         || needs_list_count
         || needs_list_index
+        || needs_list_insert
     {
         writeln!(
             out,
@@ -9979,6 +10245,16 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         out.push_str(LIST_INDEX_INT_HELPER);
         out.push_str(LIST_INDEX_FLOAT_HELPER);
     }
+    // PMAT-1282: emit the list-INSERT helpers once, when any function uses
+    // `xs.insert(i, v)` over a `list[int]`/`list[float]` (`Stmt::ListInsert`). Each
+    // shifts the tail + writes in place (it GROWS the count, so — like `append` —
+    // only literal-bound lists with spare capacity are accepted at the call site;
+    // a full record traps). Both typed helpers are emitted (no element-kind
+    // discriminant on the node); the unused twin is harmless dead WAT.
+    if needs_list_insert {
+        out.push_str(LIST_INSERT_INT_HELPER);
+        out.push_str(LIST_INSERT_FLOAT_HELPER);
+    }
     // PMAT-995 (slice 3b): emit the dict/set heap helpers (get/has/set per key
     // kind) once, when any function builds a dict/set. After `$__wasm_str_eq`
     // (the str-key helpers call it).
@@ -10136,6 +10412,7 @@ fn stmt_touches_str(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_touches_str(elem),
+        Stmt::ListInsert { index, elem, .. } => expr_touches_str(index) || expr_touches_str(elem),
         Stmt::SideEffectCall { call } => expr_touches_str(call),
         // PMAT-1234: `del d[k]` over a str-keyed dict — the KEY (`del d[chr(n)]`)
         // can be the sole str-touching site in a function, gating `(memory)` +
@@ -10259,6 +10536,9 @@ fn stmt_has_str_slice(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_has_str_slice(elem),
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_has_str_slice(index) || expr_has_str_slice(elem)
+        }
         Stmt::SideEffectCall { call } => expr_has_str_slice(call),
         // PMAT-1234: `del d[s[1:4]]` — the KEY can host the slice helper.
         Stmt::DelItem { key, .. } => expr_has_str_slice(key),
@@ -10415,6 +10695,9 @@ fn stmt_has_int_to_str(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_has_int_to_str(elem),
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_has_int_to_str(index) || expr_has_int_to_str(elem)
+        }
         Stmt::SideEffectCall { call } => expr_has_int_to_str(call),
         // PMAT-1234: `del d[str(n)]` over a str-keyed dict — the KEY routes a
         // `ToStr` through `emit_dict_key`, emitting `call $__wasm_int_to_str`;
@@ -10668,6 +10951,9 @@ fn stmt_uses_str_method(s: &Stmt, op: StrMethodOp) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_uses_str_method(elem, op),
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_uses_str_method(index, op) || expr_uses_str_method(elem, op)
+        }
         Stmt::SideEffectCall { call } => expr_uses_str_method(call, op),
         // PMAT-1234: `del d[s.upper()]` — the KEY can host a str-method call.
         Stmt::DelItem { key, .. } => expr_uses_str_method(key, op),
@@ -10815,6 +11101,9 @@ fn stmt_has_str_contains(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_has_str_contains(elem),
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_has_str_contains(index) || expr_has_str_contains(elem)
+        }
         Stmt::SideEffectCall { call } => expr_has_str_contains(call),
         // PMAT-1234: `del d[1 if "a" in s else 0]` — the KEY can host `x in s`.
         Stmt::DelItem { key, .. } => expr_has_str_contains(key),
@@ -10969,6 +11258,7 @@ fn stmt_has_list_sum(s: &Stmt, want_float: bool) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11081,6 +11371,7 @@ fn stmt_has_list_minmax(s: &Stmt, want_float: bool) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11183,6 +11474,7 @@ fn stmt_has_list_contains(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11236,6 +11528,40 @@ fn expr_has_list_contains(expr: &Expr) -> bool {
     }
 }
 
+/// PMAT-1282: does any function use `xs.insert(i, v)` (`Stmt::ListInsert`)? Gates
+/// BOTH the `$__wasm_list_insert_i64` and `$__wasm_list_insert_f64` helpers (and
+/// the `(memory …)` their shift loads/stores touch). Like `contains`/`count`, the
+/// node carries NO element-kind discriminant (resolved only at emit time via
+/// [`Scope::list_elem_of`]), so BOTH typed helpers are emitted under this single
+/// gate; the unused twin is a harmless dead function. `ListInsert` is a STATEMENT,
+/// so the walk recurses into `If`/`While` bodies only — every `for` loop has
+/// already been rewritten to `While` by [`desugar_module_foreach`] before any gate
+/// scan runs. It returns `true` on the FIRST `ListInsert` regardless of what nests
+/// in its index/elem (the helpers serve every use); the nested-op gate-holes are
+/// closed separately by the `Stmt::ListInsert` arms added to every `*_has_*` walker.
+fn module_uses_list_insert(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_list_insert(&f.body))
+}
+
+fn block_has_list_insert(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_list_insert)
+}
+
+fn stmt_has_list_insert(s: &Stmt) -> bool {
+    match s {
+        Stmt::ListInsert { .. } => true,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            then_body.iter().any(stmt_has_list_insert) || else_body.iter().any(stmt_has_list_insert)
+        }
+        Stmt::While { body, .. } => body.iter().any(stmt_has_list_insert),
+        _ => false,
+    }
+}
+
 /// PMAT-1274: does any function use `xs.count(v)` (`Expr::ListQuery` with
 /// `ListQueryOp::Count`)? Gates BOTH the `$__wasm_list_count_i64` and
 /// `$__wasm_list_count_f64` helpers (and the `(memory …)` their list-payload
@@ -11281,6 +11607,7 @@ fn stmt_has_list_query(s: &Stmt, want_index: bool) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11374,6 +11701,7 @@ fn stmt_has_bool_reduce(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11476,6 +11804,7 @@ fn stmt_has_list_sorted(s: &Stmt, want_float: bool) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11582,6 +11911,7 @@ fn stmt_has_list_reversed(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11690,6 +12020,7 @@ fn stmt_has_list_concat(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11792,6 +12123,7 @@ fn stmt_has_list_slice(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
         Stmt::SideEffectCall { call } => e(call),
         _ => false,
     }
@@ -11890,6 +12222,9 @@ fn stmt_has_str_repeat(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_has_str_repeat(elem),
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_has_str_repeat(index) || expr_has_str_repeat(elem)
+        }
         Stmt::SideEffectCall { call } => expr_has_str_repeat(call),
         _ => false,
     }
@@ -12034,6 +12369,9 @@ fn stmt_has_str_method_2arg(s: &Stmt, target: StrMethodOp) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_has_str_method_2arg(elem, target),
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_has_str_method_2arg(index, target) || expr_has_str_method_2arg(elem, target)
+        }
         Stmt::SideEffectCall { call } => expr_has_str_method_2arg(call, target),
         _ => false,
     }
@@ -12205,6 +12543,9 @@ fn stmt_has_str_eq(s: &Stmt, scan: &StrEqScan<'_>) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_has_str_eq(elem, scan),
+        Stmt::ListInsert { index, elem, .. } => {
+            expr_has_str_eq(index, scan) || expr_has_str_eq(elem, scan)
+        }
         Stmt::SideEffectCall { call } => expr_has_str_eq(call, scan),
         // PMAT-1234: `del d[1 if a == b else 2]` — the KEY can host a str eq/cmp.
         Stmt::DelItem { key, .. } => expr_has_str_eq(key, scan),
@@ -12373,6 +12714,7 @@ fn stmt_has_heap_op(s: &Stmt) -> bool {
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. } => expr_has_heap_op(elem),
+        Stmt::ListInsert { index, elem, .. } => expr_has_heap_op(index) || expr_has_heap_op(elem),
         Stmt::SideEffectCall { call } => expr_has_heap_op(call),
         Stmt::Break | Stmt::Continue => false,
         _ => false,
@@ -13251,6 +13593,11 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
             // made downstream in `emit_list_append`, exactly as the
             // `emit_list_mutate` clear/sort/reverse decision is.
             | Stmt::ListAppend { .. }
+            // PMAT-1282: `xs.insert(i, v)` shifts the tail and writes IN PLACE
+            // (the base-pointer never moves) — it declares no new local either.
+            // The insert-safety decision (literal-bound + spare capacity, like
+            // append) is made downstream in `emit_list_insert`.
+            | Stmt::ListInsert { .. }
             | Stmt::Continue => {}
             // PMAT-1034: a `raise` (→ `unreachable` trap) introduces no
             // locals — its message expression is never evaluated on WASM.
@@ -13490,6 +13837,18 @@ fn emit_stmt(
         Stmt::ListAppend { list_name, elem } => {
             emit_list_append(list_name, elem, scope, out, depth)
         }
+        // PMAT-1282: `xs.insert(i, v)` — the FIRST list-mutation that both GROWS
+        // the count AND SHIFTS the tail. Clamps the index CPython-style, shifts
+        // `[slot, n)` right by one slot, writes the value at `slot`, bumps the
+        // count. Done in place (the base-pointer never moves), so every alias
+        // observes it — like `append`. Only literal-bound lists (spare capacity)
+        // qualify; a full record traps (`unreachable`), decided in
+        // `emit_list_insert`.
+        Stmt::ListInsert {
+            list_name,
+            index,
+            elem,
+        } => emit_list_insert(list_name, index, elem, scope, out, depth),
         // PMAT-1023: `obj.field = value` — store through the struct
         // local/param's base-pointer (the OOP mutation primitive).
         Stmt::FieldAssign { obj, field, value } => {
@@ -16789,6 +17148,77 @@ fn emit_list_mutate(
     writeln!(out, "i32.const 0").expect("write");
     indent(out, depth);
     writeln!(out, "i32.store").expect("write");
+    Ok(())
+}
+
+/// PMAT-1282: lower `xs.insert(i, v)` (`Stmt::ListInsert`) — insert `v` before
+/// position `i` in a literal-bound `list[int]`/`list[float]` local IN PLACE.
+///
+/// All the real work (CPython index clamp + high→low tail shift + count bump +
+/// capacity trap) lives in the `$__wasm_list_insert_{i64,f64}` helper; this call
+/// site just (1) resolves the element kind to pick the typed helper — refusing a
+/// `list[bool]`/`list[str]` or a non-list name — and (2) enforces the SAME
+/// growable-list precondition as [`emit_list_append`] (a `ListInsert` grows the
+/// count, so the list must be bound to a LITERAL that reserved spare capacity; a
+/// param / alias / `sorted`/`reversed`/`concat`/slice result carries no slack and
+/// is refused rather than overrunning the record). It then pushes the base-pointer,
+/// the index TYPED to i64 (the frontend already guarantees an int index; the helper
+/// clamps in signed i64), and the value typed to the element kind, and `call`s the
+/// helper (which returns nothing — `insert` is a void statement).
+fn emit_list_insert(
+    list_name: &str,
+    index_expr: &Expr,
+    elem_expr: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    // The element kind selects the typed helper and the value's WAT type. Only the
+    // i64/f64 scalar element kinds are lowered; a `list[bool]` (i32 elements) would
+    // need an i32 helper twin (deferred, exactly like `append`, which is likewise
+    // int/float only), and a `list[str]` is not a fixed-width scalar list.
+    let (helper, want_elem) = match scope.list_elem_of(list_name) {
+        Some(WatTy::I64) => ("$__wasm_list_insert_i64", WatTy::I64),
+        Some(WatTy::F64) => ("$__wasm_list_insert_f64", WatTy::F64),
+        Some(other) => {
+            return Err(unsupported(&format!(
+                "`{list_name}.insert(i, v)` whose elements load as {} — the WASM \
+                 subset inserts only into a `list[int]` / `list[float]` (an i64/f64 \
+                 payload); this element kind is refused (a `list[bool]` would need an \
+                 i32 helper twin, deferred like `append`)",
+                other.keyword()
+            )));
+        }
+        None => {
+            return Err(unsupported(&format!(
+                "`{list_name}.insert(i, v)` where `{list_name}` is not a `list[int]` / \
+                 `list[float]` param/local — only a scalar list (an i32 base-pointer \
+                 into linear memory) can be inserted into in the WASM subset"
+            )));
+        }
+    };
+    // `insert` GROWS the list, so — exactly like `append` — it requires the spare
+    // capacity only a LITERAL binding reserves. A param, an alias, or a
+    // `sorted`/`reversed`/`concat`/slice result has no slack; inserting would
+    // overrun the record, so it is refused at compile time rather than corrupting
+    // adjacent heap.
+    if !scope.is_growable_list(list_name) {
+        return Err(unsupported(&format!(
+            "`{list_name}.insert(i, v)` — the WASM subset inserts only into a list \
+             bound to a LITERAL (`{list_name} = []` / `{list_name} = [..]`), which \
+             reserves spare capacity. `{list_name}` is a param, an alias, or a \
+             `sorted`/`reversed`/`concat`/slice result (no spare capacity); inserting \
+             into it is refused rather than overrunning the record"
+        )));
+    }
+    // base (i32) ; index typed to i64 (the helper clamps in signed i64) ; value
+    // typed to the element kind ; then the shift-and-insert helper does the work.
+    indent(out, depth);
+    writeln!(out, "local.get ${list_name}").expect("write");
+    emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
+    emit_expr_typed(elem_expr, scope, out, depth, want_elem)?;
+    indent(out, depth);
+    writeln!(out, "call {helper}").expect("write");
     Ok(())
 }
 
