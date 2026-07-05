@@ -133,14 +133,19 @@ fn render_shell_loop(kind: &LoopKind, body: &[Stmt]) -> Result<String, BackendEr
     Ok(format!("{header}; do\n{}\ndone", body_lines.join("\n")))
 }
 
-/// PMAT-1283: render a `Stmt::ShellIf` to POSIX shell:
-/// `if COND; then\n\t<then>\n[else\n\t<else>\n]fi`. The condition is the
-/// opaque `Expr::LitStr` the frontend captured, printed verbatim (same
-/// as loop conditions). An empty `then` body collapses to the POSIX
-/// no-op `:`; the `else` block is omitted when its body is empty (an
-/// `if … then … fi` with no `else`). Bodies render through the shared
-/// `render_stmt_lines` walker, so a nested loop / conditional in either
-/// branch recurses.
+/// PMAT-1283/1284: render a `Stmt::ShellIf` to POSIX shell:
+/// `if COND; then\n\t<then>\n[elif …]*[else\n\t<else>\n]fi`. The
+/// condition is the opaque `Expr::LitStr` the frontend captured,
+/// printed verbatim. An empty branch body collapses to the POSIX no-op
+/// `:`. Bodies render through the shared `render_stmt_lines` walker, so
+/// a nested loop / conditional in any branch recurses.
+///
+/// PMAT-1284 `elif` re-sugaring: the frontend DESUGARS an `elif` chain
+/// into a nested `Stmt::ShellIf` in the parent's `else_body`. Here, a
+/// `while`-let peels each else-body that is EXACTLY one `ShellIf` back
+/// into an `elif` clause under a single `fi` — the inverse. This also
+/// canonicalises an explicit `else if … fi` into `elif` (semantically
+/// identical and idempotent).
 fn render_shell_if(
     cond: &Expr,
     then_body: &[Stmt],
@@ -157,23 +162,41 @@ fn render_shell_if(
         }
         Ok(out)
     }
-    let mut then_lines = indent_body(then_body)?;
-    if then_lines.is_empty() {
-        then_lines.push("\t:".to_string());
+    // One `if`/`elif` clause: `<kw> COND; then\n\t<body>` (empty body →
+    // the POSIX `:` no-op so the block stays well-formed).
+    fn clause(kw: &str, cond: &Expr, body: &[Stmt]) -> Result<String, BackendError> {
+        let mut lines = indent_body(body)?;
+        if lines.is_empty() {
+            lines.push("\t:".to_string());
+        }
+        Ok(format!(
+            "{kw} {}; then\n{}",
+            render_arg(cond)?,
+            lines.join("\n")
+        ))
     }
-    let header = format!("if {}; then", render_arg(cond)?);
-    if else_body.is_empty() {
-        return Ok(format!("{header}\n{}\nfi", then_lines.join("\n")));
+
+    let mut out = clause("if", cond, then_body)?;
+    let mut else_b: &[Stmt] = else_body;
+    while let [Stmt::ShellIf {
+        cond: c2,
+        then_body: t2,
+        else_body: e2,
+    }] = else_b
+    {
+        out.push('\n');
+        out.push_str(&clause("elif", c2, t2)?);
+        else_b = e2.as_slice();
     }
-    let mut else_lines = indent_body(else_body)?;
-    if else_lines.is_empty() {
-        else_lines.push("\t:".to_string());
+    if !else_b.is_empty() {
+        let mut else_lines = indent_body(else_b)?;
+        if else_lines.is_empty() {
+            else_lines.push("\t:".to_string());
+        }
+        out.push_str(&format!("\nelse\n{}", else_lines.join("\n")));
     }
-    Ok(format!(
-        "{header}\n{}\nelse\n{}\nfi",
-        then_lines.join("\n"),
-        else_lines.join("\n")
-    ))
+    out.push_str("\nfi");
+    Ok(out)
 }
 
 /// PMAT-974: render a single top-level shell statement to its POSIX
@@ -749,6 +772,31 @@ mod tests {
         assert_eq!(
             rendered,
             "if [ $x -gt 3 ]; then\n\techo big\nelse\n\techo small\nfi"
+        );
+    }
+
+    #[test]
+    fn render_shell_if_resugars_elif_chain() {
+        // PMAT-1284: a `ShellIf` whose else-body is EXACTLY one nested
+        // `ShellIf` re-sugars to an `elif` clause under a single `fi`.
+        use xpile_meta_hir::{Expr, Stmt};
+        let cmd = |s: &str| Stmt::Cmd {
+            program: "echo".into(),
+            args: vec![Expr::LitStr(s.into())],
+        };
+        // if C1; then one; elif C2; then two; else other; fi
+        let inner = Stmt::ShellIf {
+            cond: Expr::LitStr("[ $x -eq 2 ]".into()),
+            then_body: vec![cmd("two")],
+            else_body: vec![cmd("other")],
+        };
+        let cond = Expr::LitStr("[ $x -eq 1 ]".into());
+        let rendered = render_shell_if(&cond, &[cmd("one")], &[inner]).unwrap();
+        assert_eq!(
+            rendered,
+            "if [ $x -eq 1 ]; then\n\techo one\n\
+             elif [ $x -eq 2 ]; then\n\techo two\n\
+             else\n\techo other\nfi"
         );
     }
 
