@@ -14577,6 +14577,20 @@ fn emit_expr(
         // (Python `ValueError`). Refuses a non-name list / non-scalar element
         // honestly (see `emit_list_query`).
         Expr::ListQuery { list, op, arg } => emit_list_query(list, *op, arg, scope, out, depth),
+        // PMAT-1278: `xs.pop()` over a `list[int]` / `list[float]` / `list[bool]`
+        // — the FIRST list-mutation-that-SHRINKS the WASM lane lowers (`append`
+        // GROWS, `xs[i]=v` writes in place; this REMOVES the last element and
+        // evaluates to it). An EXPRESSION: guard-empty (`unreachable` trap =
+        // Python `IndexError`), load the last element (the result, left on the
+        // stack), then decrement the i32 count header at base+0 in place — so
+        // every later `len(xs)` / `xs[i]` / `for x in xs` sees the shrink. NO
+        // relocation (the base-pointer never moves), so it is alias-safe on ANY
+        // named scalar list (param / literal-bound / helper-allocated-then-named),
+        // unlike `append` which needs the growth-slack of a literal binding. NO
+        // helper + no nested gated sub-expr (the only child is the receiver name),
+        // so no gate-walker touch. The INDEXED form `xs.pop(i)` (element-shifting
+        // removal) is refused honestly (see `emit_list_pop`).
+        Expr::ListPop { list, index } => emit_list_pop(list, index.as_deref(), scope, out, depth),
         // PMAT-1245: set ordering `a <= b` / `a < b` / `a >= b` / `a > b` (subset
         // / proper-subset / superset / proper-superset). The FRONTEND lowers set
         // comparison operators to `SetPred`, NOT `BinOp` — so this is the path
@@ -15304,6 +15318,126 @@ fn emit_list_query(
     indent(out, depth);
     writeln!(out, "call {helper}").expect("write");
     Ok(WatTy::I64)
+}
+
+/// PMAT-1278: emit `xs.pop()` (`Expr::ListPop` with no index) over a
+/// `list[int]` / `list[float]` / `list[bool]` — the FIRST list-mutation-that-
+/// SHRINKS the WASM lane lowers. Leaves the removed LAST element on the stack
+/// (the expression value) and decrements the i32 count header in place.
+///
+/// The whole op is inline WAT (no `$__wasm_list_pop_*` helper, unlike
+/// `contains`/`count`/`index`): guard-empty, load-last, decrement-count — a
+/// handful of instructions referencing only the receiver local. Because the
+/// base-pointer NEVER moves (only the count header shrinks), pop is alias-safe
+/// on ANY named scalar list — a param (caller-sized), a literal-bound local, or
+/// a `sorted`/`reversed`/`concat`/slice result bound to a name (each carries a
+/// valid count header at base+0). This is STRICTLY more general than
+/// `emit_list_append`, which needs the spare capacity only a literal binding
+/// reserves; a shrink reads a header it can only make SMALLER, so no capacity /
+/// relocation hazard exists.
+///
+/// Stack shape: the loaded element (the result) is pushed FIRST, then the
+/// `count = count - 1` write-back pushes and fully consumes its own
+/// `(addr, value)` on TOP of it — so the op nets exactly one value (the result)
+/// on the stack, the element's WAT type.
+///
+/// Semantics: an empty-list pop TRAPS (`unreachable`) exactly where CPython
+/// raises `IndexError` — the same posture as the out-of-range `xs[i]` trap.
+///
+/// Honest scope (each a hard [`BackendError`], never a silent miscompile):
+///   * the INDEXED form `xs.pop(i)` needs to SHIFT every later element down one
+///     slot (a bespoke copy loop) — deferred; refused here so it never silently
+///     degrades to a last-element pop.
+///   * a NON-NAME receiver (a list LITERAL / temporary — `[1, 2, 3].pop()`,
+///     `sorted(ys).pop()`) is refused; the lane needs a declared `list[scalar]`
+///     NAME (an i32 base-pointer whose count header it can decrement).
+///   * a name that is not a scalar list (`list_elem_of` → `None`, e.g. a
+///     `list[str]` whose elements are not a fixed-width scalar) is refused.
+fn emit_list_pop(
+    list: &Expr,
+    index: Option<&Expr>,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    if index.is_some() {
+        return Err(unsupported(
+            "`xs.pop(i)` with an explicit index — the WASM subset pops only the \
+             LAST element (`xs.pop()`); an indexed removal must shift every later \
+             element down one slot (a bespoke copy loop) which is not yet lowered. \
+             Refused rather than silently popping the last element instead",
+        ));
+    }
+    let Expr::Ident(name) = list else {
+        return Err(unsupported(
+            "`.pop()` on a non-name list — the WASM subset pops from a \
+             `list[int]` / `list[float]` / `list[bool]` NAME (an i32 base-pointer \
+             into linear memory whose count header it decrements); a list literal \
+             / temporary (`[1, 2, 3].pop()`, `sorted(ys).pop()`) is refused (bind \
+             it to a name first)",
+        ));
+    };
+    let Some(elem) = scope.list_elem_of(name) else {
+        return Err(unsupported(&format!(
+            "`{name}.pop()` where `{name}` is not a `list[int]` / `list[float]` / \
+             `list[bool]` param/local — only a scalar list (an i32 base-pointer \
+             into linear memory) can be popped in the WASM subset"
+        )));
+    };
+    let stride = elem.byte_size();
+    // Guard: if count(base+0) == 0 → trap (Python IndexError on empty pop).
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load ;; count @ base+0").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.eqz").expect("write");
+    indent(out, depth);
+    writeln!(out, "if").expect("write");
+    indent(out, depth + 1);
+    writeln!(out, "unreachable ;; pop from empty list (IndexError)").expect("write");
+    indent(out, depth);
+    writeln!(out, "end").expect("write");
+    // Load the last element (the result) — addr = base + (count-1)*stride, read
+    // at offset=LIST_ELEMS_OFFSET. Left on the stack as the expression value.
+    indent(out, depth);
+    writeln!(out, "local.get ${name} ;; base (last-elem addr)").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load ;; count").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const 1").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.sub ;; count-1").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const {stride}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.mul").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.add ;; base + (count-1)*stride").expect("write");
+    indent(out, depth);
+    writeln!(
+        out,
+        "{} offset={LIST_ELEMS_OFFSET} ;; -> removed element (result)",
+        elem.load_instr()
+    )
+    .expect("write");
+    // Decrement the count header in place: base+0 = count - 1. Pushes and fully
+    // consumes (addr, value) ON TOP of the result, leaving the result on stack.
+    indent(out, depth);
+    writeln!(out, "local.get ${name} ;; base (count store addr)").expect("write");
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.load ;; count").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.const 1").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.sub").expect("write");
+    indent(out, depth);
+    writeln!(out, "i32.store ;; count = count - 1").expect("write");
+    Ok(elem)
 }
 
 /// PMAT-1251: emit `any(xs)` / `all(xs)` over a `list[bool]` — leaves the i32
