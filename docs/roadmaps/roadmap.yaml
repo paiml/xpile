@@ -3425,7 +3425,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-476: [R7] 2026-Q3 SOTA dossier (HARD-DATED CI gate 2026-08-15)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:

@@ -154,12 +154,40 @@ reason** so their absence on hosted runners is loud, not silent.
 
 ## Not blocked on you (available future work, in normal PR flow)
 
-These ranked items are neither org-gated nor owner-decisions — they're just
-below the enforcement tail in EV and can proceed as ordinary PRs when desired:
-XPILE-WITNESS-003 (Ruchy execution witness, rank 9), PMAT-1008 (Python aliasing
-preservation, rank 11), PMAT-476 (2026-Q3 SOTA dossier — **calendar-bound,
-CI-gate due 2026-08-15**, rank 14), and PMAT-985-DICT-ITER (for-in-dict WASM
-breadth, rank 15, now unblocked since WITNESS-001 landed).
+These ranked items are neither org-gated nor owner-decisions — they sit below the
+enforcement tail in EV and proceed as ordinary PRs. Status as of 2026-07-05:
+
+- **XPILE-WITNESS-003** (rank 9) — ✅ **DONE, and widened past its original Ruchy
+  scope.** All three string-compare-only backends now have real behavioural
+  witnesses, each floored against silent deletion in the XPILE-WITNESS-002
+  manifest:
+  - *ruchy* — `ruchy_exec_witness.rs` drives `xpile → ruchy transpile → rustc → run`
+    and byte-diffs vs CPython on 7 curated fixtures (the honest ceiling: `ruchy`
+    v4.2.1 parses only 16/34 and runs 5/34; every fixture that runs matches
+    CPython, so the gap is coverage, not correctness) (#1893, floored #1894).
+  - *lean* — `lean_elaborate_witness.rs` emits Lean and appends a
+    `example : f args = v := by decide` obligation per function, so a wrong
+    emission fails Lean's decider (6 functions / 11 obligations) (#1896). The
+    citation-attribute finding was corrected after adversarial re-check: the
+    `@[xpile_contract]` attribute is DELIBERATE, and the fix is a registration
+    prelude, not a comment (#1899).
+  - *forjar* — `forjar_validate_witness.rs` runs forjar's OWN `validate` on the
+    emitted YAML for 4 shell shapes. This **caught a real bug**: the emit carried
+    `machines.*.addr` but no `hostname`, so `forjar validate` rejected *every*
+    config while the structural test stayed green — fixed (#1900), backstopped
+    in-CI (#1901).
+  - floors for forjar + lean added to the witness manifest (#1902).
+- **PMAT-476** (rank 14) — ✅ **DONE.** The 2026-Q3 SOTA dossier is published
+  (audit-design.md §7, 2026-06-12), the `sota_dossier_deadline.rs` gate is green,
+  and the deadline line is bumped to the 2026-Q4 slot (2026-11-15). Nothing due
+  until then.
+- **PMAT-1008** (rank 11) — OPEN. Python aliasing / value-vs-reference
+  preservation. Contained today by the alias-then-mutate clean-reject stopgap;
+  it is correctness-grind work the owner has explicitly de-prioritised relative
+  to the provable-contract regime, so it is not being pushed autonomously.
+- **PMAT-985-DICT-ITER** (rank 15) — IN PROGRESS on the WASM lane (for-in-dict
+  iteration; `for k in d` / `.keys()` / `.values()` / `.items()` landed on the
+  active WASM-surface stream).
 
 ---
 
