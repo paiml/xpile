@@ -52,3 +52,27 @@ equations:
       - "the operands are Python set (lowered to Rust HashSet), not list/dict"
     postconditions:
       - "emitted Rust uses HashSet; set-typed code carries // xpile-contract: C-XLATE-PY-SET-TO-HASHSET"
+
+falsification_tests:
+  - id: FALSIFY-XLATE-PY-SET-TO-HASHSET-001
+    rule: |
+      Python set lowers to a DETERMINISTIC-iteration set
+      (indexmap::IndexSet), never std HashSet (per-process RandomState
+      => run-to-run flapping that diverges from CPython). The
+      structure-extensionality claim (canonical element representation
+      => set equality) is witnessed by dedup + order-independent ops
+      matching on the compiled binary.
+    prediction: |
+      transpile(set_deterministic.py) contains `IndexSet`, contains no
+      `collections::HashSet`, and the compiled binary passes
+      dedup_count == 3, union_size == 4, and membership.
+    test: |
+      cargo test -p xpile --test transpile_e2e set_deterministic
+    if_fails: |
+      The set lowering emitted std HashSet (non-deterministic iteration)
+      or broke dedup/union/membership — the canonical-representation
+      model (C-XLATE-PY-SET-TO-HASHSET) is violated.
+    ship_blocking: true
+    counter_example_classes:
+      - hashset_nondeterministic_iteration
+      - broken_set_dedup_or_membership

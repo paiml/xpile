@@ -163,3 +163,42 @@ equations:
     postconditions:
       - "an emitter that reordered or dropped argv elements would produce a distinct ShellInvocation, caught by (a)"
       - "C-FFI-SHELL-SUBPROCESS reaches depth-1 — every contract carries ≥1 wired Diamond (depth-1 UNIVERSAL invariant preserved)"
+
+falsification_tests:
+  - id: FALSIFY-FFI-SHELL-SUBPROCESS-001
+    rule: |
+      emit_shell_shim must forward argv verbatim, in order, to the
+      resolved boundary symbol (argv_passthrough) and return the
+      captured Output (exit_code_propagation): the shim is
+      Command::new(sym).args(args).output() — no reorder, no C ABI.
+    prediction: |
+      A Python->Shell boundary for `deploy` emits
+      `Command::new("deploy").args(args).output()` returning
+      ::std::io::Result<::std::process::Output>, with no extern "C" /
+      unsafe, citing C-FFI-SHELL-SUBPROCESS.
+    test: |
+      cargo test -p xpile-ffi-manifest --lib emit_shims_shell_boundary_emits_command_wrapper
+    if_fails: |
+      emit_shell_shim reordered/dropped argv, renamed the program,
+      swallowed the exit code, or emitted a C-ABI extern block.
+    ship_blocking: true
+    counter_example_classes:
+      - argv_reorder_or_drop
+      - wrong_program_name
+      - swallowed_exit_code
+  - id: FALSIFY-FFI-SHELL-SUBPROCESS-002
+    rule: |
+      The live hybrid producer (`xpile hybrid --emit-shims`) on the
+      committed hybrid_shell fixture must emit a real Command-based
+      shell shim that spawns the program by name.
+    prediction: |
+      The emitted shim file contains `pub fn _tool_shim`,
+      `Command::new("_tool")`, and cites C-FFI-SHELL-SUBPROCESS.
+    test: |
+      cargo test -p xpile --test hybrid_shell_producer xpile_hybrid_emits_live_shell_shim
+    if_fails: |
+      The hybrid reconciler failed to resolve the Python->Shell boundary
+      or emit_shell_shim stopped producing the Command wrapper.
+    ship_blocking: true
+    counter_example_classes:
+      - missing_live_shell_shim

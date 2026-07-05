@@ -3,12 +3,14 @@ metadata:
   version: "0.1.0"
   created: "2026-05-17"
   author: PAIML Engineering
-  # `kind: pattern` rather than `kernel` while the contract is at
-  # scaffold stage (no equations, no falsification_tests yet). Same
-  # rationale as `compile-rust-to-ptx-mma-v1.yaml` — registered with
-  # the contract substrate for citation + quorum tracking, full
-  # provability gates (kind: kernel) kick in once Layer A v0.2.0
-  # populates the equation / harness / falsification sections.
+  # `kind: pattern` rather than `kernel`: this contract governs an
+  # emit-time cross-domain strategy (Python subprocess.run <-> bashrs
+  # POSIX emit), not a discharged kernel refinement tower. It carries a
+  # full equation tower (subprocess_run_equals_shell_run + the
+  # Silver/Gold/Platinum/Diamond refinements below) AND real
+  # falsification_tests wired to the shell_diff_exec Runtime-stratum
+  # witnesses — it is NOT a bare scaffold. Same `kind: pattern`
+  # rationale as `ffi-shell-subprocess-v1.yaml`.
   kind: pattern
   status: draft
   description: |
@@ -578,3 +580,53 @@ equations:
     preconditions: []
     postconditions:
       - "Diamond depth-13 broadened: second L2 contract at depth-13"
+
+falsification_tests:
+  - id: FALSIFY-BASHRS-POSIX-IDEMP-001
+    rule: |
+      CPython running the Python source and /bin/sh running the
+      bashrs-emitted script must produce byte-identical stdout —
+      subprocess_run_equals_shell_run holds on real execution.
+    prediction: |
+      run_cpython(bashrs_diff_demo.py) == run_shell(bashrs_diff_demo.py).
+    test: |
+      cargo test -p xpile --test shell_diff_exec shell_diff_demo_cpython_vs_bashrs_emit_agree
+    if_fails: |
+      depyler-frontend's subprocess.run lowering or bashrs-backend's emit
+      diverged from the Python observable — the Runtime-stratum witness
+      for C-BASHRS-POSIX-IDEMPOTENCE is broken.
+    ship_blocking: true
+    counter_example_classes:
+      - cpython_vs_shell_divergence
+  - id: FALSIFY-BASHRS-POSIX-IDEMP-002
+    rule: |
+      A .sh fixture transpiled through bashrs-frontend -> bashrs-backend
+      -> /bin/sh must reproduce its deterministic expected output
+      byte-for-byte on every run (idempotent / deterministic emit).
+    prediction: |
+      run_shell(bashrs_realistic_demo.sh) == REALISTIC_DEMO_EXPECTED,
+      stable across repeated runs.
+    test: |
+      cargo test -p xpile --test shell_diff_exec shell_diff_demo_realistic_shell_input_round_trip
+    if_fails: |
+      A Layer-B parser/renderer path regressed or introduced run-to-run
+      variance — the round-trip is no longer deterministic.
+    ship_blocking: true
+    counter_example_classes:
+      - nondeterministic_shell_emit
+  - id: FALSIFY-BASHRS-POSIX-IDEMP-003
+    rule: |
+      A shell control-flow body (for/while/if/case) must round-trip
+      faithfully — the body actually runs and its stdout is compared,
+      so a shredded/dropped body is caught, not silently accepted.
+    prediction: |
+      run_shell(bashrs_for_loop_demo.sh) == FOR_LOOP_DEMO_EXPECTED and
+      contains both `item 1` and `bye bob`.
+    test: |
+      cargo test -p xpile --test shell_diff_exec shell_diff_demo_for_loop_round_trip
+    if_fails: |
+      The frontend loop parser or backend loop renderer dropped or
+      shredded a body (the PMAT-989 failure mode the refusal guarded).
+    ship_blocking: true
+    counter_example_classes:
+      - shredded_control_flow_body

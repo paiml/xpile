@@ -63,3 +63,40 @@ equations:
     postconditions:
       - "emitted Rust uses f64; float-typed code carries // xpile-contract: C-PY-FLOAT-ARITH"
       - "float and int integer lanes stay observably distinct (f64 vs i64)"
+
+falsification_tests:
+  - id: FALSIFY-PY-FLOAT-ARITH-001
+    rule: |
+      Python float must lower to Rust f64 with plain infix IEEE-754 ops
+      (no checked_*, true `/` division), and the emitted binary must run
+      and match the float results — the float lane stays observably
+      distinct from the i64 lane.
+    prediction: |
+      transpile(float_arith.py) contains `-> f64` and `: f64`, contains
+      no `checked_`, and the compiled binary passes the lerp/average/
+      scale assertions.
+    test: |
+      cargo test -p xpile --test transpile_e2e float_arithmetic_roundtrip
+    if_fails: |
+      float was lowered to i64/bigint or emitted checked_* / floor
+      division — the f64 IEEE-754 lowering (C-PY-FLOAT-ARITH) regressed.
+    ship_blocking: true
+    counter_example_classes:
+      - float_lowered_as_int
+      - checked_or_floor_on_float
+  - id: FALSIFY-PY-FLOAT-ARITH-002
+    rule: |
+      In the native-WASM lane, a Type::F64 function with a FloatOp::Mul
+      must emit f64 opcodes (f64 param / f64.const / f64.mul), never i64
+      integer opcodes.
+    prediction: |
+      WasmBackend lowering of a `scale(x: f64) -> f64` body emits
+      `(param $x f64)`, `f64.const 2.0`, and `f64.mul`.
+    test: |
+      cargo test -p xpile-wasm-codegen --lib float_arith_emits_f64_ops
+    if_fails: |
+      The WASM backend selected integer opcodes for a float function —
+      float/int lane distinction (C-PY-FLOAT-ARITH) is broken in WASM.
+    ship_blocking: true
+    counter_example_classes:
+      - wasm_float_emits_int_ops
