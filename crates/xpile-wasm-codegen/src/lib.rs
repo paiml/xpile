@@ -179,8 +179,8 @@ use xpile_backend::{
 };
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module, PairIterKind,
-    Param, SetOp, SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
+    BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
+    PairIterKind, Param, SetOp, SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -13772,6 +13772,16 @@ fn expr_has_set_to_list(expr: &Expr) -> bool {
     match expr {
         // this node IS the set→list materialisation the gate fires on.
         Expr::SetToList { .. } => true,
+        // PMAT-1294: a dict-KEY reduction/sort (`sum(d)`/`min(d)`/`max(d)`/
+        // `sorted(d)` → `DictView{Keys}` inside a `Sum`/`ListMinMax`/`Sorted`)
+        // materialises the dict's keys via the SAME `$__wasm_set_to_list_i64`
+        // helper (a dict shares the set's open-assoc region — `emit_dict_keys_to_list`),
+        // so it must arm this gate too. Only `Keys` uses the materialiser
+        // (`Values`/`Items` are refused at emit and fall through to the tail).
+        Expr::DictView {
+            kind: DictViewKind::Keys,
+            ..
+        } => true,
         // the SUPPORTED shape: `sorted(s)` = `Sorted { list: SetToList { set } }`.
         Expr::Sorted { list, .. } => e(list),
         Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
@@ -14748,6 +14758,16 @@ fn expr_has_heap_op(e: &Expr) -> bool {
         // already returns `true` above; the arm is defense-in-depth and covers
         // the recursion into `set` — a bare Ident that allocates nothing extra.)
         Expr::SetToList { .. } => true,
+        // PMAT-1294: a dict-KEY reduction/sort materialises the dict's keys to a
+        // fresh `list[int]` via `$__wasm_set_to_list_i64` → `$__alloc`, so a
+        // `DictView{Keys}` also forces the bump heap + `(memory)`. Defense-in-depth
+        // (the dict itself is heap-allocated, so heap is already on for any
+        // reachable dict reduction); the operand is a bare Ident that allocates
+        // nothing extra.
+        Expr::DictView {
+            kind: DictViewKind::Keys,
+            ..
+        } => true,
         // PMAT-1253: `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a
         // list likewise bump-allocates a fresh reversed record (via
         // `$__wasm_list_reversed_i64` → `$__alloc`), the SECOND list-VALUED
@@ -17580,6 +17600,32 @@ fn emit_list_sum(
             writeln!(out, "call $__wasm_list_sum_i64").expect("write");
             Ok(WatTy::I64)
         }
+        // PMAT-1294: `sum(d)` over a `dict[int, _]` — the frontend materialises the
+        // iterable arg (PMAT-521), and since Python iterates a dict as its KEYS,
+        // lowers this to `Sum { list: DictView { kind: Keys } }`. A `sum` is a
+        // COMMUTATIVE+ASSOCIATIVE fold, so the dict's arbitrary storage order is
+        // irrelevant → the total of the keys is CPython-EXACT regardless of hash
+        // order. The dict's keys are materialised to a FRESH `list[int]` via the
+        // layout-identical `$__wasm_set_to_list_i64` (a dict shares the set's
+        // open-assoc region — see `emit_dict_keys_to_list`), whose base the same
+        // i64 sum helper then folds. Int-keyed dicts only; a float tag over a dict
+        // can never occur (dict keys are hashable — no float-key set/dict summed).
+        Expr::DictView {
+            dict,
+            kind: DictViewKind::Keys,
+        } => {
+            if of_float {
+                return Err(unsupported(
+                    "sum() over a dict — the WASM subset sums the keys of an \
+                     int-keyed dict (`dict[int, _]`) only; a float-key form is not \
+                     modelled",
+                ));
+            }
+            emit_dict_keys_to_list(dict, WatTy::I64, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_list_sum_i64").expect("write");
+            Ok(WatTy::I64)
+        }
         Expr::Ident(name) => {
             match scope.list_elem_of(name) {
                 Some(elem) if elem == want_elem => {}
@@ -17702,6 +17748,34 @@ fn emit_list_minmax(
                 )));
             }
             emit_set_to_list(set, WatTy::I64, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "i32.const {}", i32::from(is_max)).expect("write");
+            indent(out, depth);
+            writeln!(out, "call $__wasm_list_minmax_i64").expect("write");
+            Ok(WatTy::I64)
+        }
+        // PMAT-1294: `min(d)` / `max(d)` over a `dict[int, _]` — the frontend
+        // materialises the iterable arg to the dict's KEYS (Python iterates a dict
+        // as its keys), lowering this to `ListMinMax { list: DictView { Keys } }`.
+        // min/max are ORDER-INDEPENDENT extrema, so the dict's arbitrary storage
+        // order is irrelevant → CPython-EXACT. The keys materialise to a FRESH
+        // `list[int]` via `$__wasm_set_to_list_i64` (a dict shares the set's
+        // open-assoc region — `emit_dict_keys_to_list`), whose base the same i64
+        // min/max helper folds (`is_max` selects direction). An EMPTY dict
+        // materialises an empty list → the helper traps (`unreachable`), matching
+        // Python `min({})`/`max({})` → `ValueError`. Int-keyed dicts only.
+        Expr::DictView {
+            dict,
+            kind: DictViewKind::Keys,
+        } => {
+            if of_float {
+                return Err(unsupported(&format!(
+                    "{op}() over a dict — the WASM subset reduces the keys of an \
+                     int-keyed dict (`dict[int, _]`) only; a float-key form is not \
+                     modelled"
+                )));
+            }
+            emit_dict_keys_to_list(dict, WatTy::I64, scope, out, depth)?;
             indent(out, depth);
             writeln!(out, "i32.const {}", i32::from(is_max)).expect("write");
             indent(out, depth);
@@ -20563,11 +20637,22 @@ fn emit_list_sorted(
         // PMAT-1291: `sorted(s)` over a `set[int]` — materialise the set to a
         // fresh `list[int]` (leaves its base on the stack), then sort a copy.
         Expr::SetToList { set } => emit_set_to_list(set, elem, scope, out, depth)?,
+        // PMAT-1294: `sorted(d)` over a `dict[int, _]` — Python iterates a dict as
+        // its KEYS, so the frontend lowers this to `Sorted { list: DictView{Keys} }`.
+        // `sorted` is ORDER-DEFINING (it re-sorts), so the dict's arbitrary storage
+        // order is irrelevant → CPython-EXACT. Materialise the keys to a fresh
+        // `list[int]` (leaves its base on the stack), then sort a copy — the same
+        // shape as `sorted(s)` over a set (`emit_dict_keys_to_list`).
+        Expr::DictView {
+            dict,
+            kind: DictViewKind::Keys,
+        } => emit_dict_keys_to_list(dict, elem, scope, out, depth)?,
         _ => {
             return Err(unsupported(
                 "`sorted(…)` over a non-name list — the WASM subset sorts a \
-                 named `list[scalar]` local/param or a `set[int]` (`sorted(s)`); \
-                 bind other list-returning values to a name first",
+                 named `list[scalar]` local/param, a `set[int]` (`sorted(s)`), or \
+                 an int-keyed dict's keys (`sorted(d)`); bind other list-returning \
+                 values to a name first",
             ));
         }
     }
@@ -20637,6 +20722,79 @@ fn emit_set_to_list(
     }
     indent(out, depth);
     writeln!(out, "local.get ${sname}").expect("write");
+    indent(out, depth);
+    writeln!(out, "call $__wasm_set_to_list_i64").expect("write");
+    Ok(())
+}
+
+/// PMAT-1294: lower the `dict → list[int]` materialisation that is the source of
+/// a dict-KEY reduction/sort — `sum(d)`/`min(d)`/`max(d)`/`sorted(d)` over a
+/// `dict[int, _]`, which the frontend lowers to `Expr::DictView { kind: Keys }`
+/// (Python iterates a dict as its keys). Leaves a FRESH `list[int]` record's
+/// `i32` base-pointer on the stack (the dup-free int keys), exactly as
+/// [`emit_set_to_list`] does for a set — the callers ([`emit_sum`],
+/// [`emit_list_minmax`], [`emit_list_sorted`]) then fold/sort a copy.
+///
+/// **The set materialiser is reused verbatim.** A dict and a set share the SAME
+/// open-assoc region ([`DICT_ENTRY_SIZE`] = 16-byte entries: KEY @ `entry+0`,
+/// value @ `entry+`[`DICT_VAL_OFFSET`]; `i32` live-count @ `base+0`, entries @
+/// `base+8`). `$__wasm_set_to_list_i64` reads ONLY the key at `entry+0` with a
+/// 16-byte stride for `count` entries from the front — so it materialises a
+/// dict's keys byte-for-byte the same way, never touching the value slot. Live
+/// entries are contiguous `[0, count)` because `del d[k]` / `d.pop(k)`
+/// swap-last-into-hole + `count--` (never tombstone — see `$__wasm_dict_pop_*`),
+/// so a post-deletion dict materialises its live keys correctly.
+///
+/// The destination `elem` must be I64 (an `int` key → a `list[int]`). A str-keyed
+/// dict (`dict[str, _]`) would materialise a `list[str]`, which the WASM list
+/// subset does not model — refused here (and upstream when the `list[str]` local
+/// is typed). The `dict` operand must be a NAMED `dict[int, _]` local; a non-name
+/// / non-dict / set / str-keyed source is a hard `BackendError`, never a silent
+/// base-pointer misread. Value-type-agnostic: only keys are read, so any
+/// constructible int-keyed dict works (the value support is gated at build time).
+fn emit_dict_keys_to_list(
+    dict: &Expr,
+    elem: WatTy,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if elem != WatTy::I64 {
+        return Err(unsupported(&format!(
+            "a dict-key reduction into a `list[{}]` — the WASM subset materialises \
+             an int-keyed dict (`dict[int, _]` → `list[int]` of its keys) only; a \
+             str-keyed dict (→ `list[str]`) is unmodelled",
+            elem.keyword()
+        )));
+    }
+    let Expr::Ident(dname) = dict else {
+        return Err(unsupported(
+            "a dict-key reduction over a non-name dict — the WASM subset reduces the \
+             keys of a NAMED `dict[int, _]` local (`sum(d)`/`min(d)`/`max(d)`/\
+             `sorted(d)`); bind the dict to a name first",
+        ));
+    };
+    // Must be a DICT (a set is `is_set`; both share `heap_maps`), and int-keyed.
+    if scope.heap_map_kind(dname).is_none() || scope.is_set(dname) {
+        return Err(unsupported(&format!(
+            "a dict-key reduction over `{dname}` which is not a `dict` local in the \
+             WASM subset"
+        )));
+    }
+    match scope.heap_map_kind(dname) {
+        Some(KeyKind::Int) => {}
+        _ => {
+            return Err(unsupported(&format!(
+                "a dict-key reduction over `{dname}` whose keys are not `int` — the \
+                 WASM subset reduces a `dict[int, _]`'s keys into a `list[int]` only \
+                 (str keys → `list[str]` is unmodelled)"
+            )));
+        }
+    }
+    // A dict shares the set's open-assoc layout, so the set materialiser reads the
+    // dict's keys verbatim (it never touches the value slot at `entry+8`).
+    indent(out, depth);
+    writeln!(out, "local.get ${dname}").expect("write");
     indent(out, depth);
     writeln!(out, "call $__wasm_set_to_list_i64").expect("write");
     Ok(())
