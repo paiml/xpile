@@ -172,6 +172,7 @@
 use std::fmt::Write as _;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use xpile_backend::{
     Artifact, Backend, BackendConfig, BackendError, EmittedText, MultiEmitterBackend, QuorumPolicy,
     QuorumStatus, Target, TargetEmitter,
@@ -9666,6 +9667,250 @@ fn fn_name_type_env(f: &Function) -> HashMap<String, Type> {
     env
 }
 
+/// PMAT-1292: is a `for x in <set>` loop body ORDER-INDEPENDENT — does its net
+/// effect survive an arbitrary permutation of the iteration sequence? A set has
+/// no defined iteration order (CPython's hash-table order ≠ xpile's bump-heap
+/// storage order), so only an order-invariant body matches CPython. This is a
+/// SOUND UNDER-approximation: it accepts a whitelist of provably-commutative
+/// reduction shapes and refuses everything else (an honest "not supported"),
+/// never the reverse — so it can reject a legitimately-order-independent program
+/// it doesn't recognise, but it can NEVER accept an order-dependent one.
+///
+/// A "carried accumulator" is any variable target of a [`Stmt::Assign`] in the
+/// body (a fresh per-iteration temp uses [`Stmt::Let`]). The body is order-safe
+/// iff every statement is one of:
+///   * `acc = acc OP e` / `acc = e OP acc` with `OP` a COMMUTATIVE+ASSOCIATIVE
+///     monoid op (`+ * & | ^ and or`) and `e` referencing NO accumulator (sum /
+///     count / product / bit / boolean folds);
+///   * the extremum idiom `if e CMP acc: acc = e` (`CMP` an inequality, `e` the
+///     assigned element expr) — min / max;
+///   * an `if` whose guard reads NO accumulator (element-only), both arms safe;
+///   * a nested `for` (element loop) whose body is safe against the same
+///     accumulators;
+///   * a `let` whose initialiser reads no accumulator (an element-derived temp).
+///
+/// Anything else — a bare reassignment, a guard observing an accumulator, a
+/// `break`/`return`/side-effecting call — makes the result order-dependent and
+/// is refused.
+fn set_iteration_body_order_safe(body: &[Stmt]) -> Result<(), String> {
+    let mut assigned = HashSet::new();
+    for s in body {
+        collect_assigned_names(s, &mut assigned);
+    }
+    for s in body {
+        set_iter_stmt_order_safe(s, &assigned)?;
+    }
+    Ok(())
+}
+
+/// Collect every [`Stmt::Assign`] target reachable in `s` (recursing through
+/// conditionals and nested loops) — the carried accumulators of a set-iteration
+/// body. `Let` targets are deliberately EXCLUDED (a fresh per-iteration local is
+/// not carried across iterations).
+fn collect_assigned_names(s: &Stmt, out: &mut HashSet<String>) {
+    match s {
+        Stmt::Assign { name, .. } => {
+            out.insert(name.clone());
+        }
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            for st in then_body {
+                collect_assigned_names(st, out);
+            }
+            for st in else_body {
+                collect_assigned_names(st, out);
+            }
+        }
+        Stmt::ForEach { body, .. } | Stmt::While { body, .. } => {
+            for st in body {
+                collect_assigned_names(st, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Order-safety of one statement inside a set-iteration body (see
+/// [`set_iteration_body_order_safe`]). `assigned` is the full accumulator set.
+fn set_iter_stmt_order_safe(s: &Stmt, assigned: &HashSet<String>) -> Result<(), String> {
+    match s {
+        Stmt::Assign { name, value } => {
+            if is_commutative_accum(name, value, assigned) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "the assignment to `{name}` is not a commutative accumulation \
+                     (it reassigns unconditionally, or combines its own prior value \
+                     in an order-sensitive position such as `{name} * k + x`)"
+                ))
+            }
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            if is_extremum_idiom(cond, then_body, else_body, assigned) {
+                return Ok(());
+            }
+            if expr_references_any(cond, assigned) {
+                return Err(
+                    "a conditional guard observes an accumulator, so which branch \
+                     runs (and hence the result) depends on iteration order"
+                        .to_string(),
+                );
+            }
+            for st in then_body {
+                set_iter_stmt_order_safe(st, assigned)?;
+            }
+            for st in else_body {
+                set_iter_stmt_order_safe(st, assigned)?;
+            }
+            Ok(())
+        }
+        // A nested element loop: its own dict/mutation posture is re-checked
+        // when it is desugared; here it only needs an order-safe body against
+        // the SAME accumulators (a commutative fold over a product is still
+        // commutative).
+        Stmt::ForEach {
+            body,
+            over_keys,
+            mutate_elems,
+            ..
+        } => {
+            if *over_keys || *mutate_elems {
+                return Err("a nested dict / element-mutating loop, whose effect is \
+                     order-sensitive"
+                    .to_string());
+            }
+            for st in body {
+                set_iter_stmt_order_safe(st, assigned)?;
+            }
+            Ok(())
+        }
+        // A fresh per-iteration local is fine only if it depends purely on the
+        // element(s); reading an accumulator into a temp could smuggle an
+        // order-dependent value back into a later accumulation.
+        Stmt::Let { value, .. } => {
+            if expr_references_any(value, assigned) {
+                Err(
+                    "a `let` initialiser reads an accumulator — a set-iteration \
+                     temp must depend only on the loop element"
+                        .to_string(),
+                )
+            } else {
+                Ok(())
+            }
+        }
+        _ => Err("a statement form that is not a commutative reduction (a \
+             break/continue/return or a side-effecting call makes the result \
+             depend on iteration order)"
+            .to_string()),
+    }
+}
+
+/// `+ * & | ^ and or` — the commutative AND associative binary ops, for which
+/// `acc = acc OP e` folds to the same value regardless of iteration order.
+/// Subtraction/division/shift/pow and the comparisons are deliberately EXCLUDED.
+fn is_commutative_monoid_op(op: BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::Add
+            | BinOp::Mul
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::And
+            | BinOp::Or
+    )
+}
+
+/// Does `value` fold `name` into itself via a commutative monoid op with the
+/// other operand free of any accumulator? (`acc = acc + x`, `acc = 1 + acc`,
+/// `n = n + 1`, `t = t ^ x` …). The non-`name` operand must reference NO
+/// accumulator so distinct accumulators can't couple order-dependently.
+fn is_commutative_accum(name: &str, value: &Expr, assigned: &HashSet<String>) -> bool {
+    if let Expr::BinOp { op, lhs, rhs } = value {
+        if is_commutative_monoid_op(*op) {
+            let is_name = |e: &Expr| matches!(e, Expr::Ident(n) if n == name);
+            return (is_name(lhs) && !expr_references_any(rhs, assigned))
+                || (is_name(rhs) && !expr_references_any(lhs, assigned));
+        }
+    }
+    false
+}
+
+/// The conditional extremum idiom `if e CMP acc: acc = e` (or `if acc CMP e`),
+/// `CMP` an inequality — a min/max fold, which is order-independent. The `then`
+/// branch is exactly one `acc = e` assignment (no `else`), the guard compares
+/// that same element expr `e` against `acc`, and `e` reads no accumulator.
+fn is_extremum_idiom(
+    cond: &Expr,
+    then_body: &[Stmt],
+    else_body: &[Stmt],
+    assigned: &HashSet<String>,
+) -> bool {
+    if !else_body.is_empty() || then_body.len() != 1 {
+        return false;
+    }
+    let Stmt::Assign {
+        name: acc,
+        value: v,
+    } = &then_body[0]
+    else {
+        return false;
+    };
+    let Expr::BinOp { op, lhs, rhs } = cond else {
+        return false;
+    };
+    if !matches!(op, BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq) {
+        return false;
+    }
+    let is_acc = |e: &Expr| matches!(e, Expr::Ident(n) if n == acc);
+    let shape_ok = (is_acc(lhs) && rhs.as_ref() == v) || (is_acc(rhs) && lhs.as_ref() == v);
+    shape_ok && !expr_references_any(v, assigned)
+}
+
+/// Does `e` read any name in `names`? SOUND-conservative: an expression form
+/// this walker does not recognise returns `true` (assume it MIGHT read an
+/// accumulator), so an unrecognised guard/operand refuses rather than risking a
+/// silent order-dependent emit. The recognised forms cover every shape a
+/// set-iteration reduction actually uses.
+fn expr_references_any(e: &Expr, names: &HashSet<String>) -> bool {
+    match e {
+        Expr::Ident(n) => names.contains(n),
+        Expr::LitInt(_) | Expr::LitFloat(_) | Expr::LitStr(_) | Expr::LitBool(_) | Expr::Unit => {
+            false
+        }
+        Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
+            expr_references_any(lhs, names) || expr_references_any(rhs, names)
+        }
+        Expr::Len(inner) => expr_references_any(inner, names),
+        Expr::Index { collection, index } => {
+            expr_references_any(collection, names) || expr_references_any(index, names)
+        }
+        Expr::StrCharAt { string, index } => {
+            expr_references_any(string, names) || expr_references_any(index, names)
+        }
+        Expr::StrChars { string } => expr_references_any(string, names),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_references_any(cond, names)
+                || expr_references_any(then_expr, names)
+                || expr_references_any(else_expr, names)
+        }
+        Expr::Call { args, .. } => args.iter().any(|a| expr_references_any(a, names)),
+        // Unrecognised form: assume it may reference an accumulator.
+        _ => true,
+    }
+}
+
 /// The recursive statement rewrite behind [`desugar_module_foreach`].
 /// `next` numbers the synthetic locals within one function; `env` resolves the
 /// enumerate element type (PMAT-1260).
@@ -9699,6 +9944,35 @@ fn desugar_foreach_stmts(
                          list subset holds scalars (copies), so an in-place \
                          element mutation cannot propagate; refused honestly",
                     ));
+                }
+                // PMAT-1292: a SET has NO defined iteration order — CPython walks
+                // its hash table (for int keys, roughly `hash(k) & mask` probe
+                // order), while xpile walks the bump-heap live-entry region in
+                // STORAGE order, and a `discard` swaps the last entry into the
+                // hole. The two orders DIVERGE. A COMMUTATIVE reduction
+                // (sum / count / product / min / max / any / all) is invariant
+                // under that permutation, so it is CPython-exact; an
+                // ORDER-DEPENDENT body (`acc = acc*10 + x`, a "first element"
+                // flag, `print(x)`) is NOT, and emitting it would silently
+                // diverge. Refuse the order-dependent case rather than shred it
+                // into a wrong result. Only NAMED set iteration reaches here (a
+                // set literal already refuses in the `iter` match below); list
+                // and str iteration have a DEFINED order, so they are unguarded.
+                if let Expr::Ident(n) = iter {
+                    if matches!(env.get(n), Some(Type::Set(_))) {
+                        set_iteration_body_order_safe(body).map_err(|why| {
+                            unsupported(&format!(
+                                "order-dependent `for … in {n}` over a set — {why}. \
+                                 A set has no defined iteration order (CPython walks \
+                                 its hash table; xpile walks bump-heap storage \
+                                 order), so only an order-INDEPENDENT reduction \
+                                 (sum / count / product / min / max / any / all — a \
+                                 commutative fold) matches CPython. For an \
+                                 order-DEFINED sequence, bind `sorted({n})` and \
+                                 iterate that."
+                            ))
+                        })?;
+                    }
                 }
                 let body = desugar_foreach_stmts(body, next, env)?;
                 let k = *next;
