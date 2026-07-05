@@ -73,10 +73,13 @@ fn single_bare_command_lowers_to_a_task_resource() {
     );
     let yaml = emit_manifest(&m).expect("single command lowers cleanly");
 
-    // Envelope.
+    // Envelope. `hostname` is a forjar-REQUIRED schema field (see the
+    // dedicated regression test below); assert both machine keys here so this
+    // core golden also fails cheaply, in CI, if either is dropped.
     assert!(yaml.contains("version: \"1.0\""));
     assert!(yaml.contains("name: deploy"));
     assert!(yaml.contains("machines:"));
+    assert!(yaml.contains("hostname: localhost"));
     assert!(yaml.contains("addr: localhost"));
 
     // Structural golden: parse it back and assert the resource shape.
@@ -92,6 +95,33 @@ fn single_bare_command_lowers_to_a_task_resource() {
         task["command"].as_str(),
         Some("systemctl restart nginx"),
         "command scalar reconstructs the shell line"
+    );
+}
+
+/// Regression guard (PR #1900): forjar's `Machine` schema REQUIRES a
+/// `hostname` field. An earlier emit carried only `addr`, so EVERY emitted
+/// forjar.yaml failed `forjar validate` with "machines.localhost: missing
+/// field `hostname`" — while this structural suite stayed green because it
+/// never asserted `hostname`. The binary witness
+/// (`crates/xpile/tests/forjar_validate_witness.rs`) runs the real validator
+/// but SKIPS in CI (no forjar install on the workspace-test runner); this
+/// cheap parse-level assertion is the in-CI backstop that catches the same
+/// regression with zero toolchain dependency.
+#[test]
+fn machine_block_carries_forjar_required_hostname() {
+    let m = shell_module("deploy", vec![cmd("echo", vec![lit("hi")])]);
+    let yaml = emit_manifest(&m).expect("bare command lowers cleanly");
+    let v = parse_yaml(&yaml);
+    let machine = &v["machines"]["localhost"];
+    assert_eq!(
+        machine["hostname"].as_str(),
+        Some("localhost"),
+        "forjar validate REQUIRES machines.<name>.hostname"
+    );
+    assert_eq!(
+        machine["addr"].as_str(),
+        Some("localhost"),
+        "addr remains alongside hostname (forjar accepts both)"
     );
 }
 
