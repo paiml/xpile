@@ -37,10 +37,11 @@
 //!     riding an i32 base-pointer) == CPython — incl. a `len(k) > 1` count.
 //!   * the EMPTY dict iterates zero times (the loop guard holds at `i = 0`).
 //!   * a dict-OUTER × list-INNER nested loop composes.
-//!   * HONEST REFUSALS: an order-DEPENDENT body, a MUTATED dict, and the explicit
-//!     `.keys()` view iteration all refuse at compile time — never a storage-order
-//!     misread. (`for v in d.values()` VALUE iteration is supported as of PMAT-1298
-//!     — see `dict_value_iteration_witness.rs`.)
+//!   * HONEST REFUSALS: an order-DEPENDENT body and a MUTATED dict refuse at
+//!     compile time — never a storage-order misread. (`for v in d.values()` VALUE
+//!     iteration is supported as of PMAT-1298 — see `dict_value_iteration_witness.rs`;
+//!     the explicit `for k in d.keys()` view is supported as of PMAT-1299 — see
+//!     `dict_keys_view_iteration_witness.rs`.)
 //!
 //! This lowers REAL Python through the frontend the CLI uses for `--target wasm`
 //! (avoiding the PMAT-1244/1245 reachability trap), then assembles + runs the
@@ -333,15 +334,22 @@ fn mutated_dict_iteration_refuses() {
 }
 
 #[test]
-fn dict_keys_view_iteration_refuses() {
-    // `for k in d.keys()` — the EXPLICIT keys view. `for k in d` (the bare dict,
-    // PMAT-1297) and `for v in d.values()` (PMAT-1298) are both supported, but the
-    // explicit `.keys()` view is not yet routed — it refuses honestly rather than
-    // silently misreading (a follow-up would route it through the same key read).
+fn dict_keys_view_iteration_now_lowers() {
+    // PMAT-1299: `for k in d.keys()` — the EXPLICIT keys view is now routed through
+    // the SAME key read the bare `for k in d` uses (was refused at PMAT-1297). Its
+    // full differential battery lives in `dict_keys_view_iteration_witness.rs`; this
+    // is the in-file cross-check that the bare-dict path's refusal set no longer
+    // catches the explicit view.
     let src = "def go() -> int:\n    d: dict[int, int] = {5: 1, 3: 2, 27: 3}\n    total: int = 0\n    for k in d.keys():\n        total = total + k\n    return total\n";
-    let err = emit(src).expect_err("iterating d.keys() must refuse");
+    let wat = emit(src).expect("`for k in d.keys()` must now lower (PMAT-1299)");
     assert!(
-        err.contains("unsupported construct") || err.contains("WASM"),
-        "refusal should name the unsupported view iteration, got: {err}"
+        wat.contains("(loop") && wat.contains("i32.const 16"),
+        "keys-view iteration must emit a 16-byte-stride entry loop:\n{wat}"
+    );
+    // The KEY slot loads at offset 0 (NOT the value slot at offset 8), and no
+    // key-materialiser helper is armed (the read is a bare `Index`, not a view).
+    assert!(
+        !wat.contains("set_to_list") && !wat.contains("dict_values_to_list"),
+        "keys-view iteration must read entries in place, not materialise a list:\n{wat}"
     );
 }
