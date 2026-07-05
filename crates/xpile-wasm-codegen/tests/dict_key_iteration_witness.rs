@@ -37,9 +37,10 @@
 //!     riding an i32 base-pointer) == CPython — incl. a `len(k) > 1` count.
 //!   * the EMPTY dict iterates zero times (the loop guard holds at `i = 0`).
 //!   * a dict-OUTER × list-INNER nested loop composes.
-//!   * HONEST REFUSALS: an order-DEPENDENT body, a MUTATED dict, and value/view
-//!     iteration (`for v in d.values()`) all refuse at compile time — never a
-//!     storage-order misread.
+//!   * HONEST REFUSALS: an order-DEPENDENT body, a MUTATED dict, and the explicit
+//!     `.keys()` view iteration all refuse at compile time — never a storage-order
+//!     misread. (`for v in d.values()` VALUE iteration is supported as of PMAT-1298
+//!     — see `dict_value_iteration_witness.rs`.)
 //!
 //! This lowers REAL Python through the frontend the CLI uses for `--target wasm`
 //! (avoiding the PMAT-1244/1245 reachability trap), then assembles + runs the
@@ -332,11 +333,13 @@ fn mutated_dict_iteration_refuses() {
 }
 
 #[test]
-fn dict_values_iteration_refuses() {
-    // `for v in d.values()` — a values VIEW, not the key iteration this slice
-    // opened; the WASM subset iterates a named container, not a view temporary.
-    let src = "def go() -> int:\n    d: dict[int, int] = {5: 1, 3: 2, 27: 3}\n    total: int = 0\n    for v in d.values():\n        total = total + v\n    return total\n";
-    let err = emit(src).expect_err("iterating d.values() must refuse");
+fn dict_keys_view_iteration_refuses() {
+    // `for k in d.keys()` — the EXPLICIT keys view. `for k in d` (the bare dict,
+    // PMAT-1297) and `for v in d.values()` (PMAT-1298) are both supported, but the
+    // explicit `.keys()` view is not yet routed — it refuses honestly rather than
+    // silently misreading (a follow-up would route it through the same key read).
+    let src = "def go() -> int:\n    d: dict[int, int] = {5: 1, 3: 2, 27: 3}\n    total: int = 0\n    for k in d.keys():\n        total = total + k\n    return total\n";
+    let err = emit(src).expect_err("iterating d.keys() must refuse");
     assert!(
         err.contains("unsupported construct") || err.contains("WASM"),
         "refusal should name the unsupported view iteration, got: {err}"

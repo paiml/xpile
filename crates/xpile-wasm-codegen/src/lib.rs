@@ -10053,22 +10053,41 @@ fn desugar_foreach_stmts(
                 // (a set/dict literal or a `d.keys()`/`d.values()` view already
                 // refuses in the `iter` match below); list and str iteration have
                 // a DEFINED order, so they are unguarded.
-                let hash_order_iter = match iter {
-                    Expr::Ident(n) if *over_keys => Some((n.as_str(), "dict")),
-                    Expr::Ident(n) if matches!(env.get(n), Some(Type::Set(_))) => {
-                        Some((n.as_str(), "set"))
+                let hash_order_iter: Option<(String, &str, String)> = match iter {
+                    Expr::Ident(n) if *over_keys => {
+                        Some((n.clone(), "dict", format!("sorted({n})")))
                     }
+                    Expr::Ident(n) if matches!(env.get(n), Some(Type::Set(_))) => {
+                        Some((n.clone(), "set", format!("sorted({n})")))
+                    }
+                    // PMAT-1298: `for v in d.values()` walks the VALUE slot of the
+                    // SAME bump-heap live-entry region a key/set iteration walks, so
+                    // it is order-sensitive identically — a `del` swaps the last
+                    // entry into the hole, permuting storage order. Gate the body
+                    // with the same commutative-fold whitelist; the escape hatch is
+                    // `sorted(d.values())`.
+                    Expr::DictView {
+                        dict,
+                        kind: DictViewKind::Values,
+                    } => match dict.as_ref() {
+                        Expr::Ident(n) => Some((
+                            format!("{n}.values()"),
+                            "dict's values",
+                            format!("sorted({n}.values())"),
+                        )),
+                        _ => None,
+                    },
                     _ => None,
                 };
-                if let Some((n, kind)) = hash_order_iter {
+                if let Some((display, kind, escape)) = hash_order_iter {
                     set_iteration_body_order_safe(body).map_err(|why| {
                         unsupported(&format!(
-                            "order-dependent `for … in {n}` over a {kind} — {why}. \
+                            "order-dependent `for … in {display}` over a {kind} — {why}. \
                              xpile walks bump-heap storage order (a `del`/`discard` \
                              swaps the last entry into the hole), so only an \
                              order-INDEPENDENT reduction (sum / count / product / \
                              min / max — a commutative fold) matches CPython. For \
-                             an order-DEFINED sequence, bind `sorted({n})` and \
+                             an order-DEFINED sequence, bind `{escape}` and \
                              iterate that."
                         ))
                     })?;
@@ -10120,6 +10139,24 @@ fn desugar_foreach_stmts(
                             l_name,
                         )
                     }
+                    // PMAT-1298: `for v in d.values()` — a values VIEW over a NAMED
+                    // dict. The iteration source is the dict name; the per-element
+                    // read (below) carries the `DictView{Values}` marker so
+                    // `emit_index` loads the VALUE slot (entry+8) rather than the key.
+                    Expr::DictView {
+                        dict,
+                        kind: DictViewKind::Values,
+                    } => match dict.as_ref() {
+                        Expr::Ident(n) => (None, n.clone()),
+                        other => {
+                            return Err(unsupported(&format!(
+                                "for-loop over `.values()` of {} — the WASM subset \
+                                 iterates the values of a NAMED dict; bind the dict \
+                                 to a name first",
+                                expr_kind(other)
+                            )));
+                        }
+                    },
                     other => {
                         return Err(unsupported(&format!(
                             "for-loop over {} — the WASM subset iterates a \
@@ -10130,16 +10167,31 @@ fn desugar_foreach_stmts(
                         )));
                     }
                 };
-                let elem_read = if matches!(iter, Expr::StrChars { .. }) {
-                    Expr::StrCharAt {
+                let elem_read = match iter {
+                    Expr::StrChars { .. } => Expr::StrCharAt {
                         string: Box::new(Expr::Ident(src.clone())),
                         index: Box::new(Expr::Ident(idx.clone())),
-                    }
-                } else {
-                    Expr::Index {
+                    },
+                    // PMAT-1298: `for v in d.values()` reads entry `i`'s VALUE slot.
+                    // Wrap the dict name in a `DictView{Values}` marker so
+                    // `emit_index` loads at entry+DICT_VAL_OFFSET (always i64); the
+                    // `DictView{Values}` under this `Index` is the in-place iteration
+                    // read, NOT a materialisation (`expr_has_dict_values_to_list`
+                    // excludes it from the value-materialiser gate).
+                    Expr::DictView {
+                        kind: DictViewKind::Values,
+                        ..
+                    } => Expr::Index {
+                        collection: Box::new(Expr::DictView {
+                            dict: Box::new(Expr::Ident(src.clone())),
+                            kind: DictViewKind::Values,
+                        }),
+                        index: Box::new(Expr::Ident(idx.clone())),
+                    },
+                    _ => Expr::Index {
                         collection: Box::new(Expr::Ident(src.clone())),
                         index: Box::new(Expr::Ident(idx.clone())),
-                    }
+                    },
                 };
                 let mut wbody = Vec::with_capacity(body.len() + 2);
                 wbody.push(Stmt::Let {
@@ -14018,6 +14070,25 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
         } => e(cond) || e(then_expr) || e(else_expr),
         Expr::Call { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        // PMAT-1298: `d.values()[i]` — a DIRECT `DictView{Values}` under an `Index`
+        // is the in-place value-ITERATION read (`for v in d.values()`, the desugar
+        // marker), which reads entries directly and needs NO
+        // `$__wasm_dict_values_to_list` materialiser. Do NOT recurse into that
+        // collection — recursing would arm this gate and emit a DEAD materialiser
+        // helper. `sorted(d.values())[i]` nests the `DictView` under `Sorted` (not
+        // directly under `Index`), which the `Sorted` arm above still detects, so
+        // the reduction/sort path is unaffected.
+        Expr::Index { collection, index }
+            if matches!(
+                collection.as_ref(),
+                Expr::DictView {
+                    kind: DictViewKind::Values,
+                    ..
+                }
+            ) =>
+        {
+            e(index)
+        }
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
         Expr::Ord { value } | Expr::Chr { value } => e(value),
@@ -17371,6 +17442,41 @@ fn emit_index(
     out: &mut String,
     depth: usize,
 ) -> Result<WatTy, BackendError> {
+    // PMAT-1298: `for v in d.values()` over a dict lowers (in
+    // `desugar_foreach_stmts`) to an `Expr::Index` whose collection is a
+    // `DictView{Values}` marker on the dict NAME. Read entry `i`'s VALUE at
+    // entry+DICT_VAL_OFFSET (always i64 — dict values are int-only in this lane),
+    // reusing the same 16-byte-stride bounds-checked entry read as the key path,
+    // one `offset=` immediate apart. Gated on the synthetic foreach counter: a
+    // `d.values()` view is not subscriptable in Python, so a positional subscript
+    // of it never reaches here as a supported form.
+    if let Expr::DictView {
+        dict,
+        kind: DictViewKind::Values,
+    } = collection
+    {
+        let Expr::Ident(name) = dict.as_ref() else {
+            return Err(unsupported(
+                "iterating `.values()` of a non-name dict — the WASM subset \
+                 iterates the values of a NAMED dict; bind it to a name first",
+            ));
+        };
+        let Some(_) = scope.dict_key_elem_of(name) else {
+            return Err(unsupported(&format!(
+                "`.values()` iteration over `{name}` which is not a `dict[_, int]` \
+                 local — only a bump-heap dict's values can be iterated"
+            )));
+        };
+        if !is_foreach_counter(index) {
+            return Err(unsupported(&format!(
+                "positional subscript of `{name}.values()` — a dict values view is \
+                 not subscriptable; value-order access exists only as the internal \
+                 per-element read of `for v in {name}.values()`"
+            )));
+        }
+        emit_set_elem_read(name, WatTy::I64, index, scope, out, depth, DICT_VAL_OFFSET)?;
+        return Ok(WatTy::I64);
+    }
     let Expr::Ident(name) = collection else {
         return Err(unsupported(
             "indexing a non-name collection — the WASM list subset only \
@@ -17400,7 +17506,7 @@ fn emit_index(
                  the internal per-element read of `for x in {name}`"
             )));
         }
-        emit_set_elem_read(name, elem, index, scope, out, depth)?;
+        emit_set_elem_read(name, elem, index, scope, out, depth, 0)?;
         return Ok(elem);
     }
     // PMAT-1297: `for k in d` over a dict lowers (in `desugar_foreach_stmts`) to
@@ -17418,7 +17524,7 @@ fn emit_index(
                  per-element read of `for k in {name}`"
             )));
         }
-        emit_set_elem_read(name, elem, index, scope, out, depth)?;
+        emit_set_elem_read(name, elem, index, scope, out, depth, 0)?;
         return Ok(elem);
     }
     Err(unsupported(&format!(
@@ -17576,6 +17682,11 @@ fn emit_list_elem_addr(
 /// that is all a commutative fold observes. An order-DEPENDENT observation of a
 /// set (e.g. building a list of the iteration sequence) is NOT emitted here — it
 /// would diverge from CPython and is refused upstream.
+///
+/// PMAT-1298: `field_offset` selects which slot of entry `i` is read. `0` reads
+/// the KEY at entry+0 with `elem`'s natural width (set / dict-key iteration);
+/// [`DICT_VAL_OFFSET`] reads the VALUE at entry+8 (`for v in d.values()`), always
+/// an `i64` — the same bounds-checked entry address, one `offset=` immediate apart.
 fn emit_set_elem_read(
     name: &str,
     elem: WatTy,
@@ -17583,6 +17694,7 @@ fn emit_set_elem_read(
     scope: &Scope,
     out: &mut String,
     depth: usize,
+    field_offset: i32,
 ) -> Result<(), BackendError> {
     // Evaluate the index once into the per-function scratch i64 `$__wasm_idx`
     // (declared body-driven, like the list path).
@@ -17636,9 +17748,16 @@ fn emit_set_elem_read(
     indent(out, depth);
     writeln!(out, "i32.add").expect("write");
 
-    // Load entry `i`'s key with its natural width (i64 int / i32 str-pointer).
+    // Load the selected field of entry `i`: the KEY at entry+0 with its natural
+    // width (i64 int / i32 str-pointer, `field_offset == 0`), or the VALUE at
+    // entry+DICT_VAL_OFFSET (PMAT-1298 `for v in d.values()`, always i64) via a
+    // `offset=` load immediate off the same entry base address.
     indent(out, depth);
-    writeln!(out, "{}", elem.load_instr()).expect("write");
+    if field_offset == 0 {
+        writeln!(out, "{}", elem.load_instr()).expect("write");
+    } else {
+        writeln!(out, "{} offset={field_offset}", elem.load_instr()).expect("write");
+    }
     Ok(())
 }
 
@@ -18850,7 +18969,7 @@ fn emit_str_expr(
                 .filter(|t| *t == WatTy::I32);
             match str_key {
                 Some(WatTy::I32) if is_foreach_counter(index) => {
-                    emit_set_elem_read(name, WatTy::I32, index, scope, out, depth)
+                    emit_set_elem_read(name, WatTy::I32, index, scope, out, depth, 0)
                 }
                 Some(WatTy::I32) => Err(unsupported(&format!(
                     "positional subscript of `{name}` in a string position — a \
