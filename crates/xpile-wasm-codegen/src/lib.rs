@@ -17557,41 +17557,66 @@ fn emit_list_sum(
     } else {
         (WatTy::I64, "$__wasm_list_sum_i64", WatTy::I64)
     };
-    let Expr::Ident(name) = list else {
-        return Err(unsupported(&format!(
+    match list {
+        // PMAT-1293: `sum(s)` over a `set[int]` — the frontend materialises the
+        // iterable arg, lowering this to `Sum { list: SetToList { set } }`
+        // (PMAT-521), exactly as `sorted(s)` produces `Sorted { list: SetToList }`.
+        // A `sum` is a COMMUTATIVE+ASSOCIATIVE fold, so the set's arbitrary
+        // storage order is irrelevant → the total is CPython-EXACT regardless of
+        // hash order. The set is materialised to a FRESH `list[int]` (its dup-free
+        // keys) via `$__wasm_set_to_list_i64`, whose base the same i64 sum helper
+        // then folds. Int sets only (a str set can't be summed — Python
+        // `TypeError`; refused in `emit_set_to_list`). A float tag over a set can
+        // never occur (no float set is modelled) — refused for defence in depth.
+        Expr::SetToList { set } => {
+            if of_float {
+                return Err(unsupported(
+                    "sum() over a set — the WASM subset sums an `int` set \
+                     (`set[int]`) only; a float set is not modelled",
+                ));
+            }
+            emit_set_to_list(set, WatTy::I64, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_list_sum_i64").expect("write");
+            Ok(WatTy::I64)
+        }
+        Expr::Ident(name) => {
+            match scope.list_elem_of(name) {
+                Some(elem) if elem == want_elem => {}
+                Some(other) => {
+                    return Err(unsupported(&format!(
+                        "sum() over `{name}` whose elements load as {} — this `sum` \
+                         reduces a `list[{}]` ({} elements); the {} form is emitted \
+                         separately",
+                        other.keyword(),
+                        want_elem.keyword(),
+                        want_elem.keyword(),
+                        other.keyword(),
+                    )));
+                }
+                None => {
+                    return Err(unsupported(&format!(
+                        "sum() over `{name}` which is not a `list[{}]` param/local — \
+                         only a list (an i32 base-pointer into linear memory) can be \
+                         summed in the WASM subset",
+                        want_elem.keyword()
+                    )));
+                }
+            }
+            // Push the list base-pointer and fold the payload via the helper.
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            indent(out, depth);
+            writeln!(out, "call {helper}").expect("write");
+            Ok(result)
+        }
+        _ => Err(unsupported(&format!(
             "sum() of a non-name list — the WASM subset sums a `list[{}]` NAME \
-             (an i32 base-pointer into linear memory); a list literal / temporary \
-             is refused (bind it to a name first)",
+             (an i32 base-pointer into linear memory) or a `set[int]` (`sum(s)`); a \
+             list literal / temporary is refused (bind it to a name first)",
             want_elem.keyword()
-        )));
-    };
-    match scope.list_elem_of(name) {
-        Some(elem) if elem == want_elem => {}
-        Some(other) => {
-            return Err(unsupported(&format!(
-                "sum() over `{name}` whose elements load as {} — this `sum` reduces \
-                 a `list[{}]` ({} elements); the {} form is emitted separately",
-                other.keyword(),
-                want_elem.keyword(),
-                want_elem.keyword(),
-                other.keyword(),
-            )));
-        }
-        None => {
-            return Err(unsupported(&format!(
-                "sum() over `{name}` which is not a `list[{}]` param/local — only \
-                 a list (an i32 base-pointer into linear memory) can be summed in \
-                 the WASM subset",
-                want_elem.keyword()
-            )));
-        }
+        ))),
     }
-    // Push the list base-pointer and fold the payload via the reduction helper.
-    indent(out, depth);
-    writeln!(out, "local.get ${name}").expect("write");
-    indent(out, depth);
-    writeln!(out, "call {helper}").expect("write");
-    Ok(result)
 }
 
 /// PMAT-1250: emit `min(xs)` / `max(xs)` over a `list[int]` / `list[float]` —
@@ -17657,42 +17682,71 @@ fn emit_list_minmax(
         (WatTy::I64, "$__wasm_list_minmax_i64", WatTy::I64)
     };
     let op = if is_max { "max" } else { "min" };
-    let Expr::Ident(name) = list else {
-        return Err(unsupported(&format!(
+    match list {
+        // PMAT-1293: `min(s)` / `max(s)` over a `set[int]` — the frontend
+        // materialises the iterable arg to `ListMinMax { list: SetToList { set } }`
+        // (PMAT-521), as `sorted(s)` produces `Sorted { list: SetToList }`. An
+        // extremum is ORDER-INDEPENDENT, so the set's arbitrary storage order is
+        // irrelevant → the result is CPython-EXACT. The set is materialised to a
+        // FRESH `list[int]` (its dup-free keys) via `$__wasm_set_to_list_i64`,
+        // whose base the same i64 min/max helper then folds (`is_max` selects the
+        // direction). An EMPTY set materialises an empty list → the helper traps
+        // (`unreachable`), matching Python `min(set())`/`max(set())` → `ValueError`.
+        // Int sets only (a str set needs a string compare — refused in
+        // `emit_set_to_list`). A float tag over a set can never occur.
+        Expr::SetToList { set } => {
+            if of_float {
+                return Err(unsupported(&format!(
+                    "{op}() over a set — the WASM subset reduces an `int` set \
+                     (`set[int]`) only; a float set is not modelled"
+                )));
+            }
+            emit_set_to_list(set, WatTy::I64, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "i32.const {}", i32::from(is_max)).expect("write");
+            indent(out, depth);
+            writeln!(out, "call $__wasm_list_minmax_i64").expect("write");
+            Ok(WatTy::I64)
+        }
+        Expr::Ident(name) => {
+            match scope.list_elem_of(name) {
+                Some(elem) if elem == want_elem => {}
+                Some(other) => {
+                    return Err(unsupported(&format!(
+                        "{op}() over `{name}` whose elements load as {} — this \
+                         `{op}` reduces a `list[{}]`; the {} form is emitted \
+                         separately",
+                        other.keyword(),
+                        want_elem.keyword(),
+                        other.keyword(),
+                    )));
+                }
+                None => {
+                    return Err(unsupported(&format!(
+                        "{op}() over `{name}` which is not a `list[{}]` param/local — \
+                         only a list (an i32 base-pointer into linear memory) can be \
+                         reduced in the WASM subset",
+                        want_elem.keyword()
+                    )));
+                }
+            }
+            // Push the base-pointer + the is_max selector, then fold via the helper.
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            indent(out, depth);
+            writeln!(out, "i32.const {}", i32::from(is_max)).expect("write");
+            indent(out, depth);
+            writeln!(out, "call {helper}").expect("write");
+            Ok(result)
+        }
+        _ => Err(unsupported(&format!(
             "{op}() of a non-name list — the WASM subset reduces a `list[{}]` NAME \
-             (an i32 base-pointer into linear memory); a list literal / temporary \
-             (incl. the variadic `{op}(a, b)` form) is refused (bind it to a name first)",
+             (an i32 base-pointer into linear memory) or a `set[int]` \
+             (`{op}(s)`); a list literal / temporary (incl. the variadic \
+             `{op}(a, b)` form) is refused (bind it to a name first)",
             want_elem.keyword()
-        )));
-    };
-    match scope.list_elem_of(name) {
-        Some(elem) if elem == want_elem => {}
-        Some(other) => {
-            return Err(unsupported(&format!(
-                "{op}() over `{name}` whose elements load as {} — this `{op}` reduces \
-                 a `list[{}]`; the {} form is emitted separately",
-                other.keyword(),
-                want_elem.keyword(),
-                other.keyword(),
-            )));
-        }
-        None => {
-            return Err(unsupported(&format!(
-                "{op}() over `{name}` which is not a `list[{}]` param/local — only a \
-                 list (an i32 base-pointer into linear memory) can be reduced in the \
-                 WASM subset",
-                want_elem.keyword()
-            )));
-        }
+        ))),
     }
-    // Push the list base-pointer + the is_max selector, then fold via the helper.
-    indent(out, depth);
-    writeln!(out, "local.get ${name}").expect("write");
-    indent(out, depth);
-    writeln!(out, "i32.const {}", i32::from(is_max)).expect("write");
-    indent(out, depth);
-    writeln!(out, "call {helper}").expect("write");
-    Ok(result)
 }
 
 /// PMAT-1262: emit `x in xs` (`Expr::ListContains`) over a `list[int]` /
