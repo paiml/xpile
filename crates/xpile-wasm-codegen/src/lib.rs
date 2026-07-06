@@ -8840,6 +8840,127 @@ const LIST_BOOL_REDUCE_HELPER: &str = "\
     local.get $is_all)
 ";
 
+/// PMAT-1332: the list-INT truthiness-reduce helper — Python `any(xs)` /
+/// `all(xs)` over a `list[int]`. Python applies PER-ELEMENT truthiness: an `int`
+/// counts as True iff it is NONZERO. Structurally this is [`LIST_BOOL_REDUCE_HELPER`]
+/// with the i32/4-byte element load swapped for an i64/8-byte load (the PMAT-968
+/// `list[int]` ABI: i32 count @ base+0, i64 elements @ base+8) and the truthiness
+/// test `i32.ne 0` swapped for `i64.ne 0`. `all` short-circuits False on the first
+/// falsey (zero) element, `any` short-circuits True on the first truthy (nonzero)
+/// one; the empty list yields `all([]) == True` / `any([]) == False` (both
+/// `== is_all`) — matching CPython and the Rust `.iter().all(|&x| x != 0)` /
+/// `.any(|&x| x != 0)` lane. Non-allocating (a payload fold, like sum/minmax), so
+/// it rides the same `needs_list_bool_reduce` gate (any `Expr::BoolReduce`).
+const LIST_INT_TRUTHY_REDUCE_HELPER: &str = "\
+  ;; __wasm_list_int_truthy_reduce(base, is_all) = all(xs)/any(xs), list[int]
+  ;; Python per-element truthiness: an element counts as True iff it is NONZERO.
+  ;; base → length-prefixed region: i32 count @ base+0, i64 elements @ base+8.
+  (func $__wasm_list_int_truthy_reduce (param $base i32) (param $is_all i32) (result i32)
+    (local $i i32)
+    (local $n i32)
+    ;; n = element count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        ;; while i < n  (unsigned — count is a non-negative header)
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; x = i64.load(base + 8 + i*8)  — a list[int] element (8-byte i64 stride)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        i64.load
+        ;; b = (x != 0) — an i32 0/1 truthiness (nonzero is True).
+        i64.const 0
+        i64.ne
+        ;; short-circuit iff (is_all XOR b):
+        ;;   all (is_all=1): break on a FALSEY element (b=0 → 1^0 = 1);
+        ;;   any (is_all=0): break on a TRUTHY element (b=1 → 0^1 = 1).
+        local.get $is_all
+        i32.xor
+        if
+          ;; the decided result: all → 0 (False), any → 1 (True) = !is_all
+          local.get $is_all
+          i32.eqz
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    ;; loop exhausted (incl. the empty list): all → 1, any → 0; both == is_all.
+    local.get $is_all)
+";
+
+/// PMAT-1332: the list-FLOAT truthiness-reduce twin — Python `any(xs)` /
+/// `all(xs)` over a `list[float]`. Identical to [`LIST_INT_TRUTHY_REDUCE_HELPER`]
+/// but reads f64 at the same 8-byte stride and tests `f64.ne 0.0`. The IEEE
+/// semantics land EXACTLY on Python's `bool(f)`: `NaN != 0.0` is True (`bool(nan)`
+/// is truthy), and `-0.0 != 0.0` is False (`bool(-0.0)` is falsy) — both handled
+/// by the single `f64.ne` compare without a special case. Non-allocating; rides
+/// the same `needs_list_bool_reduce` gate.
+const LIST_FLOAT_TRUTHY_REDUCE_HELPER: &str = "\
+  ;; __wasm_list_float_truthy_reduce(base, is_all) = all(xs)/any(xs), list[float]
+  ;; Python per-element truthiness: an element counts as True iff it is NONZERO
+  ;; (IEEE: NaN is truthy, -0.0 is falsy — both fall out of a single f64.ne 0.0).
+  ;; base → length-prefixed region: i32 count @ base+0, f64 elements @ base+8.
+  (func $__wasm_list_float_truthy_reduce (param $base i32) (param $is_all i32) (result i32)
+    (local $i i32)
+    (local $n i32)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; x = f64.load(base + 8 + i*8)  — a list[float] element (8-byte f64 stride)
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 8
+        i32.mul
+        i32.add
+        f64.load
+        ;; b = (x != 0.0) — an i32 0/1 truthiness (NaN → 1, ±0.0 → 0).
+        f64.const 0
+        f64.ne
+        local.get $is_all
+        i32.xor
+        if
+          local.get $is_all
+          i32.eqz
+          return
+        end
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    local.get $is_all)
+";
+
 /// PMAT-1252: the list-INT-SORT reduction helper — Python `sorted(xs)` /
 /// `sorted(xs, reverse=True)` over a `list[int]`. This is the FIRST list op that
 /// RETURNS a new list, so unlike the sum/min/max/any/all folds it ALLOCATES: it
@@ -12873,6 +12994,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // minmax), so gated ONLY on `needs_list_bool_reduce`, NOT `needs_heap`.
     if needs_list_bool_reduce {
         out.push_str(LIST_BOOL_REDUCE_HELPER);
+        // PMAT-1332: the SCALAR truthiness twins — `any(xs)`/`all(xs)` over a
+        // `list[int]`/`list[float]`, which Python lowers to a per-element
+        // truthiness map + reduce (the frontend builds `BoolReduce { list: Map {
+        // list: xs, lambda: __x != 0 / __x != 0.0 } }`). Any `Expr::BoolReduce`
+        // already fires this gate (and declares the `(memory)` these payload
+        // folds read), so the three mutually-exclusive fold helpers co-emit here
+        // — the two unused in a given module are harmless, self-contained WAT
+        // functions (no external calls), and co-emission is strictly walker-hole
+        // safe (over-detecting a helper is harmless; under-detecting is fatal).
+        out.push_str(LIST_INT_TRUTHY_REDUCE_HELPER);
+        out.push_str(LIST_FLOAT_TRUTHY_REDUCE_HELPER);
     }
     // PMAT-1252: emit the list-SORT reduction helpers once, when any function
     // uses `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`). Each
@@ -20579,18 +20711,72 @@ fn emit_list_pop(
 /// `any` short-circuits True on the first truthy one — all computed inside the
 /// helper.
 ///
+/// PMAT-1332: `any(xs)`/`all(xs)` over a `list[int]`/`list[float]` is ALSO
+/// emitted, via [`list_scalar_truthy_target`] — the frontend lowers Python's
+/// per-element truthiness to a `Map { __x != 0 }` over the source list, which
+/// this recognises and folds by NONZERO over the raw i64/f64 payload
+/// (`$__wasm_list_int_truthy_reduce` / `$__wasm_list_float_truthy_reduce`).
+///
 /// Honest scope (each a hard [`BackendError`], never a silent miscompile):
 ///   * the SHORT-CIRCUITING generator form (`any(P(x) for x in xs)`, which the
 ///     frontend tags `short_circuit` and wraps in an `Expr::Map` mapping each
 ///     element through a predicate lambda) is refused — it needs to lower an
 ///     arbitrary per-element lambda body (deferred, not half-wired). Only the
-///     direct `list[bool]` reduction (a bare-Ident list) is emitted.
+///     direct `list[bool]` reduction and the recognised scalar-truthiness map
+///     are emitted.
 ///   * a non-name list (a list LITERAL / temporary — `all([True, False])`) is
 ///     refused; bind it to a name first.
-///   * a name that is not a `list[bool]` — whose elements do not load as i32 —
-///     is refused by the element-type check against [`Scope::list_elem_of`].
-///     (`any`/`all` over a `list[int]`/`list[float]` is lowered by the frontend
-///     as a truthiness map + reduce, whose `Expr::Map` the WASM subset refuses.)
+///   * a `list[str]` truthiness (`any(words)` → a `len(__x) != 0` map) is NOT
+///     recognised by [`list_scalar_truthy_target`] (only the `!= 0`/`!= 0.0`
+///     scalar maps), so it falls through to the non-name refusal — the
+///     `list[str]` payload/ABI fold is deferred.
+///   * a dict-sourced truthiness (`any(d)` → a `Map` over a `DictView{Keys}`,
+///     not a bare Ident) likewise falls through — it needs a keys/values
+///     materialisation first (a follow-up).
+///
+/// PMAT-1332: recognise the frontend's per-element-truthiness map that
+/// `any(xs)`/`all(xs)` over a `list[int]`/`list[float]` lowers to. Python applies
+/// truthiness element-wise (`int` → nonzero, `float` → nonzero), so the frontend
+/// emits `BoolReduce { list: Map { list: <src>, lambda: __x != 0 (int) / __x !=
+/// 0.0 (float) } }`. This returns the source list NAME and the scalar WAT element
+/// kind (`I64` for the `!= 0` map, `F64` for the `!= 0.0` map) when `list` is
+/// EXACTLY that map over a bare list NAME — the reduction is then a raw
+/// nonzero-fold of the underlying i64/f64 payload, no general `Map` lowering
+/// needed. Returns `None` for any other `list` (a bare `list[bool]` Ident, a
+/// `DictView`-sourced map, or an unrelated map), which falls through to the
+/// `list[bool]` path / honest refusal. The `LitFloat` guard accepts `±0.0`
+/// (the compare target is zero either way); the frontend emits `+0.0`.
+fn list_scalar_truthy_target(list: &Expr) -> Option<(&str, WatTy)> {
+    let Expr::Map {
+        list: inner,
+        lambda,
+    } = list
+    else {
+        return None;
+    };
+    let Expr::Ident(name) = inner.as_ref() else {
+        return None;
+    };
+    let Expr::BinOp {
+        op: BinOp::NotEq,
+        lhs,
+        rhs,
+    } = lambda.body.as_ref()
+    else {
+        return None;
+    };
+    // The predicate must test the SAME param the lambda binds (`__x != 0`).
+    match lhs.as_ref() {
+        Expr::Ident(p) if *p == lambda.param => {}
+        _ => return None,
+    }
+    match rhs.as_ref() {
+        Expr::LitInt(0) => Some((name, WatTy::I64)),
+        Expr::LitFloat(f) if *f == 0.0 => Some((name, WatTy::F64)),
+        _ => None,
+    }
+}
+
 fn emit_bool_reduce(
     list: &Expr,
     is_all: bool,
@@ -20606,6 +20792,36 @@ fn emit_bool_reduce(
              only; the lazy short-circuiting generator form (a per-element \
              predicate lambda) is deferred (refused honestly)"
         )));
+    }
+    // PMAT-1332: `any(xs)`/`all(xs)` over a `list[int]`/`list[float]` — the
+    // frontend lowers Python's per-element truthiness to a `Map { __x != 0 }`
+    // over the source list, wrapped in this `BoolReduce`. Recognise that exact
+    // identity-truthiness map over a bare list NAME and fold the raw i64/f64
+    // payload by NONZERO via a stride-matched helper — no general `Map` lowering.
+    if let Some((name, kind)) = list_scalar_truthy_target(list) {
+        // The source must be a declared list of the matching scalar kind (the
+        // frontend only builds this map over such a list; a mismatch is refused
+        // honestly rather than mis-lowered).
+        let (helper, ok) = match (kind, scope.list_elem_of(name)) {
+            (WatTy::I64, Some(WatTy::I64)) => ("$__wasm_list_int_truthy_reduce", true),
+            (WatTy::F64, Some(WatTy::F64)) => ("$__wasm_list_float_truthy_reduce", true),
+            _ => ("", false),
+        };
+        if !ok {
+            return Err(unsupported(&format!(
+                "{op}() over `{name}` — a per-element truthiness reduce requires a \
+                 declared `list[int]`/`list[float]` NAME whose element kind matches \
+                 the `!= 0` predicate; this source is refused"
+            )));
+        }
+        // Push the list base-pointer + the is_all selector, then fold via the helper.
+        indent(out, depth);
+        writeln!(out, "local.get ${name}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
+        indent(out, depth);
+        writeln!(out, "call {helper}").expect("write");
+        return Ok(WatTy::I32);
     }
     let Expr::Ident(name) = list else {
         return Err(unsupported(&format!(
