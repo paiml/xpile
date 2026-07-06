@@ -10001,18 +10001,141 @@ fn fn_name_type_env(f: &Function) -> HashMap<String, Type> {
 ///     accumulators;
 ///   * a `let` whose initialiser reads no accumulator (an element-derived temp).
 ///
+/// PMAT-1314 adds ONE more whitelisted form — the keyed STORE
+///   * `dst[kv] = e` with `kv` EXACTLY a loop variable and `e` a pure function
+///     of `kv` alone (the dict-BUILD loop `r[k] = src[k] * 2`): distinct
+///     source elements hit distinct keys, and EQUAL elements repeat an
+///     IDENTICAL write, so the final mapping is invariant under any iteration
+///     permutation. `e` must read NO accumulator, NO stored-into dict
+///     (intermediate contents are order-dependent), NO body-`let` temp (a
+///     temp could smuggle another loop var: `t = a; r[b] = t`), NO OTHER loop
+///     var (`r[b] = a` under nesting), and contain NO call (a call can mutate
+///     a dict argument by reference, PMAT-1309). An `.items()` store keyed by
+///     the KEY var may also read its paired VALUE var (`v` is `src[k]`, a
+///     function of `k`).
+///
 /// Anything else — a bare reassignment, a guard observing an accumulator, a
 /// `break`/`return`/side-effecting call — makes the result order-dependent and
 /// is refused.
-fn set_iteration_body_order_safe(body: &[Stmt]) -> Result<(), String> {
-    let mut assigned = HashSet::new();
+fn set_iteration_body_order_safe(body: &[Stmt], vars: &HashIterVars) -> Result<(), String> {
+    // `forbidden` = every carried accumulator PLUS every dict stored into in
+    // this body: an expression reading EITHER observes order-dependent
+    // intermediate state, so all reference checks below use the union.
+    let mut forbidden = HashSet::new();
     for s in body {
-        collect_assigned_names(s, &mut assigned);
+        collect_assigned_names(s, &mut forbidden);
+        collect_dict_store_dsts(s, &mut forbidden);
+    }
+    let mut let_temps = HashSet::new();
+    for s in body {
+        collect_let_names(s, &mut let_temps);
     }
     for s in body {
-        set_iter_stmt_order_safe(s, &assigned)?;
+        set_iter_stmt_order_safe(s, &forbidden, &let_temps, vars)?;
     }
     Ok(())
+}
+
+/// PMAT-1314: the loop-variable context a hash-order iteration body is checked
+/// against, enabling the keyed-STORE whitelist arm of
+/// [`set_iteration_body_order_safe`]. `key_vars` are the variables valid as a
+/// store KEY (the element/key var of every enclosing hash-order loop — a
+/// nested loop pushes its own var); `paired` maps an `.items()` KEY var to its
+/// VALUE var (`v` is a function of `k`, so a store keyed by `k` may read `v`);
+/// `all_vars` is every loop var in scope (a store value must not read a var
+/// its key does not determine); `iter_srcs` are the iterated container names
+/// (a store into one is mutation-during-iteration and refuses).
+#[derive(Clone)]
+struct HashIterVars {
+    key_vars: HashSet<String>,
+    paired: HashMap<String, String>,
+    all_vars: HashSet<String>,
+    iter_srcs: HashSet<String>,
+}
+
+impl HashIterVars {
+    /// The single-var context of `for x in s` / `for k in d` /
+    /// `for k in d.keys()` / `for v in d.values()` over container `src`.
+    fn single(var: &str, src: &str) -> Self {
+        Self {
+            key_vars: HashSet::from([var.to_string()]),
+            paired: HashMap::new(),
+            all_vars: HashSet::from([var.to_string()]),
+            iter_srcs: HashSet::from([src.to_string()]),
+        }
+    }
+
+    /// The paired context of `for k, v in d.items()`: only the KEY var keys a
+    /// store (the VALUE var is not injective), but a store keyed by `k` may
+    /// read `v` (it is `src[k]`, a function of the key).
+    fn items(key_var: &str, val_var: &str, src: &str) -> Self {
+        Self {
+            key_vars: HashSet::from([key_var.to_string()]),
+            paired: HashMap::from([(key_var.to_string(), val_var.to_string())]),
+            all_vars: HashSet::from([key_var.to_string(), val_var.to_string()]),
+            iter_srcs: HashSet::from([src.to_string()]),
+        }
+    }
+}
+
+/// Collect every [`Stmt::DictSet`] target reachable in `s` (recursing through
+/// conditionals and nested loops) — the dicts a hash-order iteration body
+/// stores into. Reading one of these mid-loop observes order-dependent
+/// intermediate contents, so they join the accumulators in the forbidden set.
+fn collect_dict_store_dsts(s: &Stmt, out: &mut HashSet<String>) {
+    match s {
+        Stmt::DictSet { dict_name, .. } => {
+            out.insert(dict_name.clone());
+        }
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            for st in then_body {
+                collect_dict_store_dsts(st, out);
+            }
+            for st in else_body {
+                collect_dict_store_dsts(st, out);
+            }
+        }
+        Stmt::ForEach { body, .. } | Stmt::While { body, .. } => {
+            for st in body {
+                collect_dict_store_dsts(st, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collect every [`Stmt::Let`] target reachable in `s` — the body-local temps.
+/// A stored VALUE may not read one (PMAT-1314): a temp is checked only for
+/// accumulator-freedom, so it could smuggle ANOTHER loop variable into a store
+/// (`t = a` in the outer loop, `r[b] = t` in the inner — order-dependent).
+fn collect_let_names(s: &Stmt, out: &mut HashSet<String>) {
+    match s {
+        Stmt::Let { name, .. } => {
+            out.insert(name.clone());
+        }
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            for st in then_body {
+                collect_let_names(st, out);
+            }
+            for st in else_body {
+                collect_let_names(st, out);
+            }
+        }
+        Stmt::ForEach { body, .. } | Stmt::While { body, .. } => {
+            for st in body {
+                collect_let_names(st, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Collect every [`Stmt::Assign`] target reachable in `s` (recursing through
@@ -10046,11 +10169,18 @@ fn collect_assigned_names(s: &Stmt, out: &mut HashSet<String>) {
 }
 
 /// Order-safety of one statement inside a set-iteration body (see
-/// [`set_iteration_body_order_safe`]). `assigned` is the full accumulator set.
-fn set_iter_stmt_order_safe(s: &Stmt, assigned: &HashSet<String>) -> Result<(), String> {
+/// [`set_iteration_body_order_safe`]). `forbidden` is the accumulator set
+/// UNION the stored-into dicts; `let_temps` the body-local `let` targets;
+/// `vars` the loop-variable context the keyed-STORE arm keys against.
+fn set_iter_stmt_order_safe(
+    s: &Stmt,
+    forbidden: &HashSet<String>,
+    let_temps: &HashSet<String>,
+    vars: &HashIterVars,
+) -> Result<(), String> {
     match s {
         Stmt::Assign { name, value } => {
-            if is_commutative_accum(name, value, assigned) {
+            if is_commutative_accum(name, value, forbidden) {
                 Ok(())
             } else {
                 Err(format!(
@@ -10065,29 +10195,34 @@ fn set_iter_stmt_order_safe(s: &Stmt, assigned: &HashSet<String>) -> Result<(), 
             then_body,
             else_body,
         } => {
-            if is_extremum_idiom(cond, then_body, else_body, assigned) {
+            if is_extremum_idiom(cond, then_body, else_body, forbidden) {
                 return Ok(());
             }
-            if expr_references_any(cond, assigned) {
+            if expr_references_any(cond, forbidden) {
                 return Err(
-                    "a conditional guard observes an accumulator, so which branch \
-                     runs (and hence the result) depends on iteration order"
+                    "a conditional guard observes an accumulator or a stored-into \
+                     dict, so which branch runs (and hence the result) depends on \
+                     iteration order"
                         .to_string(),
                 );
             }
             for st in then_body {
-                set_iter_stmt_order_safe(st, assigned)?;
+                set_iter_stmt_order_safe(st, forbidden, let_temps, vars)?;
             }
             for st in else_body {
-                set_iter_stmt_order_safe(st, assigned)?;
+                set_iter_stmt_order_safe(st, forbidden, let_temps, vars)?;
             }
             Ok(())
         }
         // A nested element loop: its own dict/mutation posture is re-checked
         // when it is desugared; here it only needs an order-safe body against
         // the SAME accumulators (a commutative fold over a product is still
-        // commutative).
+        // commutative). PMAT-1314: the nested var joins the store-key
+        // vocabulary (a store keyed by it stays a pure function of its key),
+        // and a nested Ident/view source joins the iterated set.
         Stmt::ForEach {
+            var,
+            iter,
             body,
             over_keys,
             mutate_elems,
@@ -10098,8 +10233,22 @@ fn set_iter_stmt_order_safe(s: &Stmt, assigned: &HashSet<String>) -> Result<(), 
                      order-sensitive"
                     .to_string());
             }
+            let mut inner = vars.clone();
+            inner.key_vars.insert(var.clone());
+            inner.all_vars.insert(var.clone());
+            match iter {
+                Expr::Ident(n) => {
+                    inner.iter_srcs.insert(n.clone());
+                }
+                Expr::DictView { dict, .. } => {
+                    if let Expr::Ident(n) = dict.as_ref() {
+                        inner.iter_srcs.insert(n.clone());
+                    }
+                }
+                _ => {}
+            }
             for st in body {
-                set_iter_stmt_order_safe(st, assigned)?;
+                set_iter_stmt_order_safe(st, forbidden, let_temps, &inner)?;
             }
             Ok(())
         }
@@ -10107,20 +10256,120 @@ fn set_iter_stmt_order_safe(s: &Stmt, assigned: &HashSet<String>) -> Result<(), 
         // element(s); reading an accumulator into a temp could smuggle an
         // order-dependent value back into a later accumulation.
         Stmt::Let { value, .. } => {
-            if expr_references_any(value, assigned) {
-                Err(
-                    "a `let` initialiser reads an accumulator — a set-iteration \
-                     temp must depend only on the loop element"
-                        .to_string(),
-                )
+            if expr_references_any(value, forbidden) {
+                Err("a `let` initialiser reads an accumulator or a stored-into \
+                     dict — a set-iteration temp must depend only on the loop \
+                     element"
+                    .to_string())
             } else {
                 Ok(())
             }
         }
-        _ => Err("a statement form that is not a commutative reduction (a \
-             break/continue/return or a side-effecting call makes the result \
-             depend on iteration order)"
+        // PMAT-1314: the keyed STORE `dst[kv] = e` — the dict-BUILD form
+        // (`r[k] = src[k] * 2`). Order-independent iff the KEY is exactly a
+        // loop variable and the VALUE is a pure function of that key alone:
+        // distinct elements hit distinct keys, and equal elements repeat an
+        // IDENTICAL write, so the final mapping survives any permutation.
+        Stmt::DictSet {
+            dict_name,
+            key,
+            value,
+        } => {
+            if vars.iter_srcs.contains(dict_name) {
+                return Err(format!(
+                    "a store into `{dict_name}` WHILE iterating it — \
+                     mutation-during-iteration has no defined order to preserve"
+                ));
+            }
+            let Expr::Ident(kv) = key else {
+                return Err(format!(
+                    "a store into `{dict_name}` keyed by an expression that is \
+                     not exactly a loop variable — a fixed or computed key makes \
+                     last-write-wins depend on iteration order; only \
+                     `{dict_name}[<loop var>] = <pure function of the loop var>` \
+                     is order-independent"
+                ));
+            };
+            if !vars.key_vars.contains(kv) || forbidden.contains(kv) {
+                return Err(format!(
+                    "a store into `{dict_name}` keyed by `{kv}`, which is not a \
+                     (read-only) loop variable — only a loop-variable key makes \
+                     the store order-independent"
+                ));
+            }
+            // The stored value may read the key var, its paired `.items()`
+            // value var, and loop-invariant names — nothing whose content
+            // varies with iteration order or with a sibling loop variable.
+            let mut val_forbidden = forbidden.clone();
+            val_forbidden.extend(let_temps.iter().cloned());
+            let paired_ok = vars.paired.get(kv);
+            for v in &vars.all_vars {
+                if v != kv && Some(v) != paired_ok {
+                    val_forbidden.insert(v.clone());
+                }
+            }
+            if expr_references_any(value, &val_forbidden) {
+                return Err(format!(
+                    "the value stored into `{dict_name}[{kv}]` is not a pure \
+                     function of `{kv}` — it reads an accumulator, a stored-into \
+                     dict, a body `let` temp, or another loop variable, so the \
+                     stored value depends on iteration order"
+                ));
+            }
+            if expr_contains_call(value) {
+                return Err(format!(
+                    "a call inside the value stored into `{dict_name}[{kv}]` — a \
+                     call can mutate a dict argument by reference mid-iteration, \
+                     which is order-dependent; bind the call result before the \
+                     loop"
+                ));
+            }
+            Ok(())
+        }
+        _ => Err("a statement form that is not a commutative reduction or a \
+             loop-var-keyed store (a break/continue/return or a side-effecting \
+             call makes the result depend on iteration order)"
             .to_string()),
+    }
+}
+
+/// Does `e` contain a function CALL anywhere in its recognised structure? A
+/// call in a stored VALUE could mutate a dict argument by reference
+/// (PMAT-1309 params) mid-iteration, so the keyed-store whitelist refuses it.
+/// Forms [`expr_references_any`] does not recognise already refuse there
+/// (`_ => true`), so `false` for unrecognised forms is sound here.
+fn expr_contains_call(e: &Expr) -> bool {
+    match e {
+        Expr::Call { .. } => true,
+        Expr::BinOp { lhs, rhs, .. } | Expr::Concat { lhs, rhs } => {
+            expr_contains_call(lhs) || expr_contains_call(rhs)
+        }
+        Expr::Len(inner) => expr_contains_call(inner),
+        Expr::StrMethod { recv, args, .. } => {
+            expr_contains_call(recv) || args.iter().any(expr_contains_call)
+        }
+        Expr::Index { collection, index } => {
+            expr_contains_call(collection) || expr_contains_call(index)
+        }
+        Expr::StrCharAt { string, index } => {
+            expr_contains_call(string) || expr_contains_call(index)
+        }
+        Expr::StrChars { string } => expr_contains_call(string),
+        Expr::DictGet { dict, key } => expr_contains_call(dict) || expr_contains_call(key),
+        Expr::DictGetOr { dict, key, default } => {
+            expr_contains_call(dict) || expr_contains_call(key) || expr_contains_call(default)
+        }
+        Expr::DictContains { dict, key } => expr_contains_call(dict) || expr_contains_call(key),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_contains_call(cond)
+                || expr_contains_call(then_expr)
+                || expr_contains_call(else_expr)
+        }
+        _ => false,
     }
 }
 
@@ -10252,6 +10501,25 @@ fn expr_references_any(e: &Expr, names: &HashSet<String>) -> bool {
             expr_references_any(string, names) || expr_references_any(index, names)
         }
         Expr::StrChars { string } => expr_references_any(string, names),
+        // PMAT-1314: `d[k]`, `d.get(k, def)` and `k in d` are PURE keyed reads
+        // — they reference a name iff the dict / key / default expression does
+        // (a stored-into dict is caught by its NAME landing in the forbidden
+        // set). `d[k]` traps on an absent key, but WHETHER any iteration traps
+        // is order-blind (the element multiset is fixed) and a trap aborts the
+        // run, so no order-dependent partial state is observable. Recursing
+        // admits the natural build/fold shapes (`r[k] = src[k] * 2`,
+        // `acc = acc + src[k]`, `if k in allow: …`).
+        Expr::DictGet { dict, key } => {
+            expr_references_any(dict, names) || expr_references_any(key, names)
+        }
+        Expr::DictGetOr { dict, key, default } => {
+            expr_references_any(dict, names)
+                || expr_references_any(key, names)
+                || expr_references_any(default, names)
+        }
+        Expr::DictContains { dict, key } => {
+            expr_references_any(dict, names) || expr_references_any(key, names)
+        }
         Expr::IfExpr {
             cond,
             then_expr,
@@ -10322,12 +10590,12 @@ fn desugar_foreach_stmts(
                 // (a set/dict literal or a `d.keys()`/`d.values()` view already
                 // refuses in the `iter` match below); list and str iteration have
                 // a DEFINED order, so they are unguarded.
-                let hash_order_iter: Option<(String, &str, String)> = match iter {
+                let hash_order_iter: Option<(String, &str, String, String)> = match iter {
                     Expr::Ident(n) if *over_keys => {
-                        Some((n.clone(), "dict", format!("sorted({n})")))
+                        Some((n.clone(), "dict", format!("sorted({n})"), n.clone()))
                     }
                     Expr::Ident(n) if matches!(env.get(n), Some(Type::Set(_))) => {
-                        Some((n.clone(), "set", format!("sorted({n})")))
+                        Some((n.clone(), "set", format!("sorted({n})"), n.clone()))
                     }
                     // PMAT-1298: `for v in d.values()` walks the VALUE slot of the
                     // SAME bump-heap live-entry region a key/set iteration walks, so
@@ -10343,6 +10611,7 @@ fn desugar_foreach_stmts(
                             format!("{n}.values()"),
                             "dict's values",
                             format!("sorted({n}.values())"),
+                            n.clone(),
                         )),
                         _ => None,
                     },
@@ -10363,21 +10632,24 @@ fn desugar_foreach_stmts(
                             format!("{n}.keys()"),
                             "dict's keys",
                             format!("sorted({n}.keys())"),
+                            n.clone(),
                         )),
                         _ => None,
                     },
                     _ => None,
                 };
-                if let Some((display, kind, escape)) = hash_order_iter {
-                    set_iteration_body_order_safe(body).map_err(|why| {
+                if let Some((display, kind, escape, src_name)) = hash_order_iter {
+                    let iter_vars = HashIterVars::single(var, &src_name);
+                    set_iteration_body_order_safe(body, &iter_vars).map_err(|why| {
                         unsupported(&format!(
                             "order-dependent `for … in {display}` over a {kind} — {why}. \
                              xpile walks bump-heap storage order (a `del`/`discard` \
                              swaps the last entry into the hole), so only an \
                              order-INDEPENDENT reduction (sum / count / product / \
-                             min / max — a commutative fold) matches CPython. For \
-                             an order-DEFINED sequence, bind `{escape}` and \
-                             iterate that."
+                             min / max — a commutative fold) or a loop-var-keyed \
+                             store (`dst[{var}] = <pure fn of {var}>`, PMAT-1314) \
+                             matches CPython. For an order-DEFINED sequence, bind \
+                             `{escape}` and iterate that."
                         ))
                     })?;
                 }
@@ -10829,14 +11101,17 @@ fn desugar_foreach_stmts(
                         // accumulators), so a `total = total + k + v` sum / count /
                         // product passes; an order-DEPENDENT body (`r = r*10 + k`)
                         // refuses honestly with a `sorted(d.items())` escape hatch.
-                        set_iteration_body_order_safe(body).map_err(|why| {
+                        let iter_vars = HashIterVars::items(first, second, src);
+                        set_iteration_body_order_safe(body, &iter_vars).map_err(|why| {
                             unsupported(&format!(
                                 "order-dependent `for k, v in {src}.items()` — {why}. \
                                  xpile walks bump-heap storage order (a \
                                  `del`/`discard` swaps the last entry into the hole), \
                                  so only an order-INDEPENDENT reduction (sum / count / \
                                  product / min / max — a commutative fold over the \
-                                 (k, v) pairs) matches CPython. For an order-DEFINED \
+                                 (k, v) pairs) or a KEY-keyed store \
+                                 (`dst[{first}] = <pure fn of ({first}, {second})>`, \
+                                 PMAT-1314) matches CPython. For an order-DEFINED \
                                  sequence, bind `sorted({src}.items())` and iterate \
                                  that."
                             ))
