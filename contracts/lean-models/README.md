@@ -80,6 +80,24 @@ lake build           # elaborate the certificate
 Done: the isolated Mathlib lane + CI + OLS-uniqueness certificates for the
 **constant** model (`Basic`), **simple linear regression** (`SimpleLinear`), and
 the **general k-parameter** linear model (`GeneralLinear`, which subsumes the
-first two). **Next** (not yet wired): a governing contract YAML in `contracts/`,
-and the emit path lowering a fitted model → meta-HIR `const + fn` carrying a
-`// xpile-contract:` citation of this certificate.
+first two).
+
+**The emit path is wired** (this README previously said "not yet wired" — stale):
+- the governing contract `contracts/ols-model-uniqueness-v1.yaml`
+  (`C-OLS-MODEL-UNIQUENESS`), plus a core-lane companion
+  `contracts/lean/OlsModelUniqueness.lean` and the kani harness
+  `contracts/kani/ols_model_uniqueness.rs`;
+- `Function::is_ols_linear_model()` structurally recognises the fitted-regression
+  shape (≥2 distinctly-weighted float features + a literal bias, pure-expression
+  body) and `applicable_contracts()` emits the `C-OLS-MODEL-UNIQUENESS` citation
+  next to the predictor on every backend that carries citations
+  (`examples/proven-model/model.py` demonstrates it end-to-end).
+
+Honesty: recognition is STRUCTURAL — it asserts the function is a linear-model
+predictor of the class the certificate governs; it does NOT verify the weights
+are a least-squares fit (that precondition is the modeller's assertion). Both
+directions are pinned by witnesses: the positive citation by
+`crates/xpile/tests/contract_citation_integrity.rs` (fixture `ols_model.py`), and
+the recognition DISCRIMINATION — that near-misses (no bias, one feature, bare
+features, a product of parameters, an integer model) do NOT get stamped — by
+`crates/xpile/tests/ols_recognition.rs`.
