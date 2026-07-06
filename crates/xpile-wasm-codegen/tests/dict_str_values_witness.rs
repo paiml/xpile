@@ -18,12 +18,13 @@
 //! * value READS (`d[k]`, `d.get(k, default)`) get STRING-position arms in
 //!   `emit_str_expr` (`call $__wasm_dict_get_<k>` + `i32.wrap_i64`), so
 //!   `len`/`ord`/`==`/`<`/concat/slice/f-string over a read all compose;
-//! * the value-INTERPRETING forms REFUSE — dict `==` (the eq helper compares
-//!   value slots with `i64.eq`: pointer identity, not content), `.values()`
-//!   iteration/reductions (`min` would be lowest-ADDRESS), and MIXED
-//!   value-kind `update`/merge (a raw slot copy the reader would
-//!   mis-interpret). `.pop`/`.setdefault` were refused here too until
-//!   PMAT-1306 wired their str legs (see `dict_str_pop_setdefault_witness.rs`).
+//! * the value-INTERPRETING forms REFUSE — `.values()` iteration/reductions
+//!   (`min` would be lowest-ADDRESS) and MIXED value-kind `update`/merge (a
+//!   raw slot copy the reader would mis-interpret). `.pop`/`.setdefault` were
+//!   refused here too until PMAT-1306 wired their str legs (see
+//!   `dict_str_pop_setdefault_witness.rs`), and dict `==` until PMAT-1307
+//!   wired the content-comparing `$__wasm_dict_eq_sv_<k>` twin (see
+//!   `dict_str_eq_witness.rs`).
 //!
 //! ## The silent-miscompile class this witness pins shut
 //!
@@ -265,13 +266,11 @@ fn dict_str_values_lower_and_reuse_helpers() {
 #[test]
 fn dict_str_values_refuse_value_interpreting_forms() {
     let d = "    d: dict[int, str] = {1: \"x\", 2: \"yy\"}\n";
-    let dd = "    a: dict[int, str] = {1: \"x\"}\n    b: dict[int, str] = {1: \"x\"}\n";
     for (label, src, needle) in [
-        (
-            "dict ==",
-            format!("def f() -> int:\n{dd}    if a == b:\n        return 1\n    return 0\n"),
-            "over a str-valued dict",
-        ),
+        // dict `==`/`!=` over a str-valued dict LOWERS since PMAT-1307 (the
+        // content-comparing `$__wasm_dict_eq_sv_<k>` twin — see
+        // `dict_str_eq_witness.rs`); the value-ITERATING forms below remain
+        // refused.
         (
             "for v in d.values()",
             format!(
