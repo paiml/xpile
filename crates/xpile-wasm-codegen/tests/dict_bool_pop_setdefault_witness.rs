@@ -47,7 +47,8 @@
 //!   * `d.setdefault(...)` through a dict PARAMETER — an insert can grow+relocate
 //!     the record, leaving the caller's base-pointer stale (the PMAT-1309
 //!     growth-through-param refusal, value-kind-agnostic);
-//!   * a float-valued `d.setdefault(...)` — the value-kind gate still refuses it.
+//!   * a NESTED-valued `d.setdefault(...)` — the value-kind gate still refuses it
+//!     (PMAT-1322 wired FLOAT values; the pin moved to a nested value).
 //!
 //! Every probe is FULL-pipeline (REAL Python → `PythonFrontend` → `emit_module`
 //! → `wat2wasm` → `wasm-interp`), value-matched against LIVE python3 executing
@@ -282,10 +283,14 @@ fn dict_bool_pop_setdefault_refuse_out_of_lane_forms() {
             "def g(d: dict[int, bool]) -> int:\n    x: bool = d.setdefault(9, True)\n    return len(d)\n".to_string(),
             "growth through a param",
         ),
-        // a float-valued setdefault — the value-kind gate still refuses float.
+        // a NESTED-valued setdefault — the value-kind gate still refuses it.
+        // (PMAT-1322 lifted the FLOAT refusal that stood here: a float value now
+        // lowers — its bits ride the i64 slot via reinterpret — so the pin moved to
+        // a nested value, which remains outside the WASM dict value subset. See
+        // dict_float_values_witness.rs for float setdefault, now WIRED.)
         (
-            "float-valued setdefault",
-            "def f() -> int:\n    d: dict[int, float] = {1: 2.5}\n    x: float = d.setdefault(2, 3.5)\n    return len(d)\n".to_string(),
+            "nested-valued setdefault",
+            "def f() -> int:\n    d: dict[int, dict[int, int]] = {}\n    return len(d)\n".to_string(),
             "dict value type",
         ),
     ] {
