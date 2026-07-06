@@ -11371,8 +11371,9 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // PMAT-1028: the str-returning callables, so a call may feed a string
     // position (`s: str = build(5)`, a concat operand) with proven str-ness.
     let str_rets = build_str_returners(module);
-    // PMAT-1309: dict/set param signatures of every free function, so call
-    // sites kind-check dict/set arguments (see `check_heap_call_args`).
+    // PMAT-1309: dict/set param signatures of every free function AND
+    // (PMAT-1311) instance method, so call sites kind-check dict/set
+    // arguments (see `check_heap_call_args`).
     let heap_sigs = build_heap_sig_registry(module);
     let regs = Registries {
         literals: &literals,
@@ -16232,7 +16233,8 @@ struct Scope<'a> {
     /// verified to actually produce a str pointer — its i32 result alone is
     /// ambiguous (bool and struct returns are i32 too).
     str_rets: &'a StrReturners,
-    /// PMAT-1309: per-free-function dict/set param signatures — call sites
+    /// PMAT-1309: per-callable dict/set param signatures (free fns by name,
+    /// PMAT-1311 instance methods by `<Struct>.<method>`) — call sites
     /// kind-check dict/set arguments against the callee's declared kinds.
     heap_sigs: &'a HeapSigRegistry,
     /// The function's return WAT type (drives `return` checking).
@@ -16319,7 +16321,8 @@ impl Scope<'_> {
     }
 
     /// PMAT-1309: the callee's per-param dict/set signature, for call-site
-    /// kind checking of dict/set arguments (free functions only).
+    /// kind checking of dict/set arguments — free functions by plain name,
+    /// (PMAT-1311) instance methods by their `<Struct>.<method>` key.
     fn fn_heap_sigs(&self, key: &str) -> Option<&[Option<HeapParamSig>]> {
         self.heap_sigs
             .iter()
@@ -16452,7 +16455,8 @@ struct Registries<'a> {
     assoc_fns: &'a AssocFnRegistry,
     mod_fns: &'a AssocFnRegistry,
     str_rets: &'a StrReturners,
-    /// PMAT-1309: per-free-function dict/set param signatures, so call sites
+    /// PMAT-1309: per-callable dict/set param signatures (free fns by name,
+    /// PMAT-1311 instance methods by `<Struct>.<method>`), so call sites
     /// kind-check dict/set arguments (an i32-for-i32 WAT match alone would
     /// silently miscompile a kind mismatch).
     heap_sigs: &'a HeapSigRegistry,
@@ -22356,22 +22360,30 @@ fn build_method_registry(
                 } else {
                     &m.params[..]
                 };
-                // PMAT-1309: dict/set params are FREE-function-only for now —
-                // the call-site kind check (`check_heap_call_args`) covers the
-                // free-fn registry; a method taking one would bypass it.
-                // Before PMAT-1309 this refused at `param_wat_type`; keep the
-                // module-level refusal explicit and precise.
-                if let Some(p) = value_params
-                    .iter()
-                    .find(|p| matches!(p.ty, Type::Dict(_, _) | Type::Set(_)))
-                {
-                    return Err(unsupported(&format!(
-                        "struct `{name}` method `{mname}` takes the dict/set \
-                         parameter `{pname}` — the WASM subset passes dicts/sets \
-                         to FREE functions only",
-                        mname = m.name,
-                        pname = p.name,
-                    )));
+                // PMAT-1311: INSTANCE methods may declare dict/set params —
+                // they register in the heap-sig registry under their
+                // `<Struct>.<method>` key, so `emit_method_call` kind-checks
+                // arguments exactly like the free-fn path (PMAT-1309).
+                // ASSOCIATED fns (the desugared explicit `__init__` ctor,
+                // static methods) keep refusing: their `Expr::Call` sites
+                // route through the assoc registry, which passes no heap
+                // sigs — a dict/set param there would bypass the kind check
+                // (and an `__init__` taking one implies a dict-valued FIELD,
+                // which the struct layout refuses anyway).
+                if !has_self {
+                    if let Some(p) = value_params
+                        .iter()
+                        .find(|p| matches!(p.ty, Type::Dict(_, _) | Type::Set(_)))
+                    {
+                        return Err(unsupported(&format!(
+                            "struct `{name}` associated function `{mname}` \
+                             takes the dict/set parameter `{pname}` — the WASM \
+                             subset passes dicts/sets to free functions and \
+                             instance methods only",
+                            mname = m.name,
+                            pname = p.name,
+                        )));
+                    }
                 }
                 let ptys = value_params
                     .iter()
@@ -22484,12 +22496,16 @@ fn build_module_fn_registry(module: &Module) -> Result<AssocFnRegistry, BackendE
 /// interpretation — a silent miscompile, so call sites check this triple.
 type HeapParamSig = (KeyKind, bool, bool);
 
-/// PMAT-1309: per-FREE-function dict/set param signatures — for each param
+/// PMAT-1309: per-callable dict/set param signatures — for each param
 /// position, `Some(sig)` when it is a `dict[K, V]` / `set[K]`, else `None` —
-/// PLUS (PMAT-1310) the function's dict/set RETURN kind, `Some(sig)` when the
-/// declared return type is a `dict[K, V]` / `set[K]`. Struct methods/assoc
-/// fns never carry dict/set params or returns (refused at
-/// [`build_method_registry`]), so free fns are the whole surface.
+/// PLUS (PMAT-1310) the callable's dict/set RETURN kind, `Some(sig)` when the
+/// declared return type is a `dict[K, V]` / `set[K]`. FREE functions key by
+/// plain name; (PMAT-1311) INSTANCE methods key by `<Struct>.<method>` (dots
+/// never appear in Python identifiers, so no collision) with sigs over the
+/// NON-self params — positionally aligned with a `MethodCall`'s `args`.
+/// Assoc fns never carry dict/set params (refused at
+/// [`build_method_registry`]) and methods never carry dict/set returns
+/// (refused there via [`callable_ret`]), so those legs stay `None`.
 type HeapSigRegistry = Vec<(String, Vec<Option<HeapParamSig>>, Option<HeapParamSig>)>;
 
 /// The dict/set kind triple of a `Type`, if it is a supported dict/set shape.
@@ -22513,11 +22529,39 @@ fn heap_kind_of_type(ty: &Type) -> Option<HeapParamSig> {
 fn build_heap_sig_registry(module: &Module) -> HeapSigRegistry {
     let mut reg = HeapSigRegistry::new();
     for item in &module.items {
-        let Item::Function(f) = item else { continue };
-        let sigs: Vec<Option<HeapParamSig>> =
-            f.params.iter().map(|p| heap_kind_of_type(&p.ty)).collect();
-        let ret = heap_kind_of_type(&f.return_type);
-        reg.push((f.name.clone(), sigs, ret));
+        match item {
+            Item::Function(f) => {
+                let sigs: Vec<Option<HeapParamSig>> =
+                    f.params.iter().map(|p| heap_kind_of_type(&p.ty)).collect();
+                let ret = heap_kind_of_type(&f.return_type);
+                reg.push((f.name.clone(), sigs, ret));
+            }
+            // PMAT-1311: INSTANCE methods register under `<Struct>.<method>`
+            // with sigs over the NON-self params (aligned with the `args` a
+            // `MethodCall` carries). Assoc fns (no `self`) skip: their
+            // dict/set params refuse at `build_method_registry`, so an entry
+            // here could never be consulted. The ret leg is `None` in
+            // practice — a dict/set-RETURNING method refuses earlier, at
+            // `build_method_registry` via `callable_ret` (`map_type` refuses
+            // dict/set), before this registry is built.
+            Item::Struct { name, methods, .. } => {
+                for m in methods {
+                    let has_self = m.params.first().is_some_and(
+                        |p| matches!((&p.name, &p.ty), (n, Type::Struct(s)) if n == "self" && s == name),
+                    );
+                    if !has_self {
+                        continue;
+                    }
+                    let sigs: Vec<Option<HeapParamSig>> = m.params[1..]
+                        .iter()
+                        .map(|p| heap_kind_of_type(&p.ty))
+                        .collect();
+                    let ret = heap_kind_of_type(&m.return_type);
+                    reg.push((format!("{name}.{}", m.name), sigs, ret));
+                }
+            }
+            _ => {}
+        }
     }
     reg
 }
@@ -22549,7 +22593,8 @@ fn peel_heap_clone_arg<'e>(a: &'e Expr, scope: &Scope) -> &'e Expr {
 
 /// PMAT-1309: kind-check the dict/set arguments of a call. `expected` is the
 /// callee's per-param dict/set signature (`None` = the callee declares no
-/// dict/set at that position — assoc fns and methods always pass `None`).
+/// dict/set at that position — assoc fns always pass `None`; PMAT-1311:
+/// instance methods pass their `<Struct>.<method>`-keyed registry entry).
 /// Every mismatch here would be a SILENT MISCOMPILE at the i32-pointer WAT
 /// level (wrong key encoding, value slots misread as ints vs str pointers,
 /// set membership walked as a dict), so each refuses with the offender named.
@@ -23531,12 +23576,17 @@ fn emit_method_call(
             args.len()
         )));
     }
-    // PMAT-1309: methods never declare dict/set params (refused at registry
-    // build) — a dict/set argument must not silently pass as a stray i32.
-    check_heap_call_args(&format!("{sname}.{method}"), None, args, scope)?;
+    // PMAT-1311: kind-check dict/set arguments against the method's declared
+    // heap sigs (registered under the `<Struct>.<method>` key) — the same
+    // silent-miscompile belt the free-fn call path carries (PMAT-1309).
+    let heap_key = format!("{sname}.{method}");
+    check_heap_call_args(&heap_key, scope.fn_heap_sigs(&heap_key), args, scope)?;
     indent(out, depth);
     writeln!(out, "local.get ${oname}").expect("write");
     for (a, pt) in args.iter().zip(ptys.iter()) {
+        // A dict/set argument passes its shared base-pointer — peel the
+        // frontend's value-semantics `Clone` wrapper (PMAT-1309/1311).
+        let a = peel_heap_clone_arg(a, scope);
         emit_expr_typed(a, scope, out, depth, *pt)?;
     }
     indent(out, depth);

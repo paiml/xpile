@@ -415,8 +415,9 @@ fn returning_a_non_name_refuses() {
     );
 }
 
-/// Dict/set returns are FREE-function-only, like params: a struct method
-/// declaring one refuses at the method registry.
+/// Dict/set RETURNS are FREE-function-only (params reach instance methods
+/// since PMAT-1311, but returns do not): a struct method declaring one
+/// refuses at the method registry (`callable_ret`).
 #[test]
 fn method_dict_return_refuses() {
     let err = emit(

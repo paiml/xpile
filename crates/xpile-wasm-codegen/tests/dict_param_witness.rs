@@ -37,8 +37,9 @@
 //! — a silent miscompile, not a trap. `check_heap_call_args` kind-checks the
 //! triple `(key_kind, value_is_str, is_set)` per argument, pinned here:
 //! str-keyed→int-keyed, str-valued→int-valued, set→dict, a dict literal
-//! argument (bind it first), a dict passed to a NON-dict param, and dict/set
-//! params on struct METHODS (free functions only) all refuse.
+//! argument (bind it first), and a dict passed to a NON-dict param all
+//! refuse. (PMAT-1311 extended the surface to instance-METHOD params —
+//! executed coverage in `dict_method_param_witness.rs`.)
 //!
 //! ## Param-seeded gate walkers (the PMAT-1305/1307 standing lesson)
 //!
@@ -603,19 +604,17 @@ fn kind_mismatched_arguments_refuse() {
     assert!(err.contains("dict"), "literal-arg message, got: {err}");
 }
 
-/// Dict/set params are FREE-function-only: a struct method declaring one
-/// refuses at the method registry (its call path bypasses the free-fn
-/// kind check).
+/// PMAT-1311 lifted the method-param refusal this test used to pin: an
+/// INSTANCE method declaring a dict/set param now LOWERS, kind-checked at
+/// the call site via its `<Struct>.<method>` heap-sig entry (executed
+/// coverage lives in `dict_method_param_witness.rs`). Assoc fns / the
+/// desugared `__init__` ctor keep refusing (pinned there too).
 #[test]
-fn method_dict_param_refuses() {
-    let err = emit(
+fn method_dict_param_now_lowers() {
+    emit(
         "class C:\n    def __init__(self) -> None:\n        self.x: int = 1\n    def m(self, d: dict[int, int]) -> int:\n        return len(d)\n\ndef g() -> int:\n    c: C = C()\n    d: dict[int, int] = {1: 1}\n    return c.m(d)\n",
     )
-    .expect_err("method dict param must refuse");
-    assert!(
-        err.contains("FREE functions only"),
-        "method-param message, got: {err}"
-    );
+    .expect("method dict param must lower since PMAT-1311");
 }
 
 /// PMAT-1310 lifted the dict-return refusal this test used to pin: a
