@@ -43,6 +43,7 @@
 
 use std::collections::BTreeSet;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use xpile_meta_hir::{Block, Expr, Function, Item, Module, Param, SourceLang, StrMethodOp, Type};
 use xpile_wasm_codegen::{emit_module, wasm_runtime_available};
@@ -196,11 +197,21 @@ fn exec_pad(op: StrMethodOp, s: &str, w: i64, expected: &str) -> Option<String> 
     }
     let n_out = expected.len();
     let wat = build_witness_wat(&kernel_wat, s, w, n_out);
+    // PMAT-1330: a per-CALL unique dir. The earlier key `s.len()*131 + w`
+    // COLLIDES across different strings of the same byte length + width, and the
+    // fixed-program test shares a pid with the randomised-corpus test (separate
+    // `#[test]` fns run as threads in ONE process), so two probes could race on
+    // the same `pad.wat`/`pad.wasm` — one overwriting the other's module before
+    // `wasm-interp` reads it (a scheduling-dependent flake, e.g. an `"é".center(3)`
+    // WASM=3 vs CPython=4 mismatch). A monotonic `AtomicU64` guarantees a distinct
+    // path per invocation regardless of thread interleaving (the recurring
+    // WABT-witness temp-dir gotcha).
+    static PAD_PROBE_SEQ: AtomicU64 = AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
         "xpile-wasm-str-pad-{}-{}-{}",
         std::process::id(),
         op_name(op),
-        s.len().wrapping_mul(131).wrapping_add(w as usize)
+        PAD_PROBE_SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).expect("create work dir");
     let wat_path = dir.join("pad.wat");
