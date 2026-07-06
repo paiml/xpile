@@ -20908,6 +20908,57 @@ fn dict_keys_truthy_dict(list: &Expr) -> Option<(&Expr, bool)> {
     None
 }
 
+/// PMAT-1335: recognise the SET-element truthiness source that `any(s)` / `all(s)`
+/// over a `set[int]` / `set[str]` lowers to. Python iterates a set as its ELEMENTS,
+/// so the frontend materialises the set arg to `SetToList` (the same view
+/// `sum(s)`/`sorted(s)` use) and applies per-element truthiness under a `Map`:
+///   * an int set → `Map { SetToList{set}, <param> != 0 }`      (EMIT)
+///   * a str set  → `Map { SetToList{set}, len(<param>) != 0 }` (REFUSE)
+///
+/// Returns `(set, int_elem)` — the underlying set operand and whether the elements
+/// are `int` (a raw NONZERO fold the WASM subset emits) vs `str` (a per-element
+/// `len(e) != 0` truthiness over materialised i64 pointer slots, refused honestly
+/// with a clear message rather than the generic non-name-list refusal). Returns
+/// `None` for any other `list` (a dict view — handled by [`dict_keys_truthy_dict`] /
+/// [`dict_values_truthy_dict`] — a bare list Ident, an unrelated map), which falls
+/// through. The SET twin of [`dict_keys_truthy_dict`]; the FOLD helper is always the
+/// i64 truthy reduce (set elements are `int|str`, never float/bool — hashable — so
+/// no `i64.reinterpret_f64` slot dance the VALUES lane needs for floats).
+fn set_truthy_target(list: &Expr) -> Option<(&Expr, bool)> {
+    let Expr::Map {
+        list: inner,
+        lambda,
+    } = list
+    else {
+        return None;
+    };
+    let Expr::SetToList { set } = inner.as_ref() else {
+        return None;
+    };
+    // int-element truthiness: `<param> != 0` (an i64 nonzero fold; a `!= 0.0` float
+    // map can never occur over set elements, so require I64 exactly).
+    if matches!(truthiness_notzero_kind(lambda), Some(WatTy::I64)) {
+        return Some((set.as_ref(), true));
+    }
+    // str-element truthiness: `len(<param>) != 0` — recognised so the str set form
+    // refuses with a precise message (never a base-pointer misread).
+    if let Expr::BinOp {
+        op: BinOp::NotEq,
+        lhs,
+        rhs,
+    } = lambda.body.as_ref()
+    {
+        let len_of_param = matches!(
+            lhs.as_ref(),
+            Expr::Len(inner) if matches!(inner.as_ref(), Expr::Ident(p) if *p == lambda.param)
+        );
+        if len_of_param && matches!(rhs.as_ref(), Expr::LitInt(0)) {
+            return Some((set.as_ref(), false));
+        }
+    }
+    None
+}
+
 fn emit_bool_reduce(
     list: &Expr,
     is_all: bool,
@@ -21006,6 +21057,45 @@ fn emit_bool_reduce(
             )));
         }
         emit_dict_keys_to_list(dict, WatTy::I64, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
+        indent(out, depth);
+        writeln!(out, "call $__wasm_list_int_truthy_reduce").expect("write");
+        return Ok(WatTy::I32);
+    }
+    // PMAT-1335: `any(s)` / `all(s)` over a `set[int]` — Python iterates the set's
+    // ELEMENTS, so the frontend materialises the set arg to `SetToList` and folds its
+    // per-element truthiness (the SET twin of the PMAT-1334 dict-keys reduce). An int
+    // set's elements materialise to a FRESH `list[int]` via the set materialiser
+    // (`$__wasm_set_to_list_i64` reads the key at `entry+0` — `emit_set_to_list`) and
+    // fold by NONZERO via the SAME i64 truthy helper PMAT-1332 uses: `any(set()) ==
+    // False` / `all(set()) == True` fall out of the helper's identity return, `all`
+    // short-circuits False on the first zero element, `any` short-circuits True on the
+    // first nonzero one, and the fold is blind to the set's arbitrary storage order (a
+    // truthiness reduce is commutative+associative). A str set lowers to a `len(e) != 0`
+    // map that refuses honestly (a per-element str truthiness over materialised i64
+    // pointer slots is not in the subset yet) — with a precise message.
+    if let Some((set, int_elem)) = set_truthy_target(list) {
+        let Expr::Ident(sname) = set else {
+            return Err(unsupported(&format!(
+                "{op}(s) over a non-name set — the WASM subset reduces `any(s)` / \
+                 `all(s)` over a NAMED set local; bind it to a name first"
+            )));
+        };
+        if !scope.is_set(sname) {
+            return Err(unsupported(&format!(
+                "{op}(s) over `{sname}` — `{sname}` is not a `set` local in the WASM \
+                 subset"
+            )));
+        }
+        if !int_elem {
+            return Err(unsupported(&format!(
+                "{op}(s) over the str set `{sname}` (`set[str]`) — a per-element str \
+                 truthiness (`len(e) != 0`) over materialised i64 pointer slots is not \
+                 in the WASM subset yet; refused honestly"
+            )));
+        }
+        emit_set_to_list(set, WatTy::I64, scope, out, depth)?;
         indent(out, depth);
         writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
         indent(out, depth);
