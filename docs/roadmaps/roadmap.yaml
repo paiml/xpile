@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1323
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1323: [wasm/verify/dict] ADVERSARIAL-VERIFY the WHOLE non-int dict VALUE surface (str PMAT-1305 / bool PMAT-1320+1321 / float PMAT-1322) — the verify-discipline pass DUE after +4 slices since the PMAT-1318 skeptic. A SKEPTIC sweep, not a feature: it tries to REFUTE the value-kind claims by driving CROSS-CUTTING corners the per-slice witnesses do NOT individually stress, value-matching every one against LIVE python3. The three non-int kinds SHARE the 8-byte i64 value slot but read back through DIFFERENT transports (str = i32 base-pointer, bool = i32.wrap_i64 to 0/1, float = f64.reinterpret_i64 of the bits); a read with the WRONG transport, a store that skipped its reinterpret/extend, or a value-kind scope flag that failed to register at some binding site would surface as a run-time divergence or an emit-time type mismatch. Probes built to trip exactly those: FLOAT numeric corners (`-0.0 == 0.0` differ-in-bits-equal-in-value, 1e308 vs 1e-300, non-dyadic 0.1+0.2, overwrite, two-read `<`, update()-merge = raw i64-slot copy, pop/setdefault feeding float arithmetic, a negative-float pop default, a RELOCATING 20-key grow past the 16-slot slack); BOOL boolean-ops (and/or/not/!= over d[k] reads — each wants the wrapped i32, an i64 read mis-types — overwrite True→False, update()-merge, a get hit returning stored False over a True default); CROSS-KIND no-crosstalk (float/bool/int/str dict all in ONE function, each read correctly); WALKER PARITY (a float/bool dict declared INSIDE a while/if/for body still registers its value kind — the collector recurses, ForEach is pre-desugared to While); BOUNDARY flows (float/bool/str dict across a PARAM and a RETURN). Plus a consolidated HONESTY battery that re-pins the genuine-correctness refusals (float `==`, float/int value-kind-mismatched `==`, sum/min(.values()) + for-v-in-.values() over float/bool, str/f-string of a float, setdefault-through-param aliasing grow, 1-arg .get() Optional, bool arithmetic, nested value) each with a SPECIFIC needle so a refusal that fired for the wrong reason is caught. RESULT of the sweep at the PMAT-1322 head: NOTHING REFUTED (28 works probes all == CPython, 10 refusals all honest). TEST-ONLY: one new gated witness crate-file; NO src change, NO new meta-HIR variant.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "VERIFY: an INDEPENDENT skeptic harness (54 CLI-path probes across 3 rounds, then a distilled 28-probe + 10-refusal witness corpus) drove the str/bool/float dict VALUE surface through the REAL `xpile transpile --target wasm` path AND emit_module → wat2wasm → wasm-interp, value-matching every works probe against LIVE python3 on the identical source. NOTHING REFUTED — every transport (reinterpret_f64/i64 float, extend/wrap bool, shared keyed helper str) is correct at the cross-cutting corners."
+  - "WALKER PARITY CONFIRMED: a `dict[K, float]`/`dict[K, bool]` declared inside a while/if/for body reads back through the right transport — traced the cause (collect_let_locals_stmts recurses into While/If bodies; ForEach is desugared to While by desugar_module_foreach BEFORE the collector runs) AND executed it (f_in_while/f_in_if/b_in_for all == CPython). Present/absent is KEY-based (value slot loaded only on key match, occupancy by count) so a float bit-pattern can NEVER collide with an empty-slot sentinel — that vector is closed."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/dict_value_kind_adversarial_verify_witness.rs (3 tests) — emit-construct pins that all three transports coexist in one module with no bespoke per-value-kind helper; a 10-form honesty battery each asserting a SPECIFIC refusal needle; the executed 28-probe differential against live python3. Clean skip without WABT; runs for real under XPILE_REQUIRE_WASM_RUNTIME=1."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen. Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1322
   github_issue: null
   item_type: task
