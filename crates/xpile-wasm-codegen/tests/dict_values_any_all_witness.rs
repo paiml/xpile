@@ -50,9 +50,10 @@
 //!   * a str-VALUED dict (`any(d.values())` over `dict[_, str]`) — the frontend
 //!     wraps a `len(v) != 0` map the recognizer does not match, so it falls to the
 //!     non-name-list refusal (a per-element str payload fold is deferred);
-//!   * a KEYS view (`any(d.keys())`) — a `DictView{Keys}`-sourced map, out of this
-//!     slice's VALUES lane (a keys materialisation + fold is a separate follow-up);
 //!   * the lazy short-circuiting GENERATOR form (`any(P(v) for v in d.values())`).
+//!
+//! (The KEYS view `any(d.keys())` / bare `any(d)` was the follow-up this slice
+//! named — now delivered by PMAT-1334, see `dict_keys_any_all_witness.rs`.)
 //!
 //! Every probe is FULL-pipeline (REAL Python → `PythonFrontend` → `emit_module` →
 //! `wat2wasm` → `wasm-interp`), value-matched against LIVE python3 executing the
@@ -349,12 +350,10 @@ fn dict_values_any_all_refuse_out_of_lane_forms() {
             "def f() -> bool:\n    d: dict[int, str] = {1: \"a\", 2: \"\"}\n    return any(d.values())\n".to_string(),
             "non-name list",
         ),
-        // a KEYS view — a `DictView{Keys}`-sourced map, out of this VALUES lane.
-        (
-            "any(d.keys())",
-            "def f() -> bool:\n    d: dict[int, int] = {1: 0, 2: 5}\n    return any(d.keys())\n".to_string(),
-            "non-name list",
-        ),
+        // (`any(d.keys())` / `any(d)` over an INT-keyed dict is now IN lane as of
+        // PMAT-1334 — a `DictView{Keys}` materialised + folded — so it is NOT a
+        // refusal here; see `dict_keys_any_all_witness.rs`. A str-VALUED dict stays
+        // refused above.)
         // the lazy short-circuiting GENERATOR form — a per-element predicate lambda.
         (
             "any(<generator over d.values()>)",
