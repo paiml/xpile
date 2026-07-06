@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1318
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1318: [wasm/verify/dict] ADVERSARIAL-VERIFY differential witness over the COMPREHENSION + hash-source-store surface (PMAT-1314 dict-iteration stores / PMAT-1315 set-BUILD inserts / PMAT-1316 set comprehensions / PMAT-1317 dict comprehensions + the shared `comp_self_reference_belt`) — the scheduled ~4-slices-since-PMAT-1313 skeptic pass. The four preceding slices each shipped a "REAL CORRECTNESS FIND" (the self-reference clobber belt hoisted across all three desugars), so the belt and the PMAT-1292 hash-order gate are the highest-EV place to hunt a hollow/always-empty miscompile or a refusal that silently doesn''t fire. ~30 adversarial comprehension modules were driven END-TO-END — `python3 → xpile --target wasm → wat2wasm → wasm-interp` — and value-diffed against LIVE CPython on the IDENTICAL source. VERDICT: NOTHING REFUTED — every claimed capability value-matches CPython; every claimed refusal (belt self-reference + order-gate) refuses. The load-bearing belt was probed on all self-reference channels: iterable (`{v: v for v in d.values()}` — `ast_expr_mentions_name` recurses into the `.values()` RECEIVER), filter, value (`{k: v + d[k] for k, v in d.items()}`), a nested inner comp, and BOTH 2-generator legs (inner iterable / element — the belt fires at the TOP of each desugar, BEFORE the 2-gen dispatch); the shadow carve-out (`{r: r+100 for r in u}`, `{t*2 for t in u}`) value-matches (the Rust lane renames the loop var to `__forc0`, so no destination collision). The order-gate refuses a constant/computed/other-loop-var key, a call-in-value, a v-keyed `.items()` swap, a non-commutative fold, and a comp over a dict mutated elsewhere — while admitting the commutative `acc = acc + src[k]` fold (PMAT-1314 DictGet pure-read) and the set-build cross-product/degenerate inserts (PMAT-1315 dedup relaxation). MODEL-HONESTY: the lone apparent mismatch during the sweep was a TEST artifact — a `acc = acc * 100000 + …` fold over 40 keys overflows i64, and the WASM lane WRAPS where CPython uses bignum (the pre-existing C-PY-INT-ARITH limitation, NOT a comprehension defect); every executed pin is bounded under i64 by construction (bounded permutation-invariant sum for the wide `c_big_growth` / `c_scrambled_set` cases). Test-only slice (one new witness file); NO product-code edit; verify-discipline counter RESETS here.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/comp_hash_source_fuzz_witness.rs (6 tests) — 17 admitted `c_*` observables across an int-keyed + a str-keyed module, each == a hand-derived constant == live python3 on the IDENTICAL source; content observables permutation-invariant (base-N folds over a BOUND `sorted(...)` list or a commutative sum), so the CPython cross-check cannot flap on hash/storage order (`c_scrambled_set` discards-into-a-hole + re-adds so bump-heap order provably diverges, yet the pin holds). MUTATION-VERIFIED: corrupting the `c_dict_keys` pin fails the executed lane (WASM 33060501007014 != pin ...015), reverted green."
+  - "REFUSAL TEETH: `belt_refusals_refuse_at_the_frontend` pins 6 self-reference shapes (values-iterable / items-value / items-len / nested-comp / 2-gen-inner-iter / 2-gen-element) at `parse_and_lower` with the belt message; `gate_refusals_refuse_at_the_backend` pins 6 order-gate shapes (const-key / computed-key / call-in-value / v-keyed-swap / non-commutative-fold / comp-over-mutated-dict) as valid mHIR (lower Ok) that `emit_module` refuses — so a regression that drops either guard fails a test rather than silently miscompiling."
+  - "COVERAGE: bare-dict / `.keys()` / `.values()` / `.items()` / set sources; filtered comps; the shadow carve-out; set-BUILD stores (cross-product `t.add(a+b)`, degenerate `t.add(7)`); the source-read value `{k: src[k]*k for k in src}`; growth past the 16-slot literal slack (40-key set); str keys + `dict[str, str]`; and the full `transform(src)` dict-in/comp-build/dict-out boundary pipeline called twice per-call-fresh — 17 executed value-matches."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen. Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1317
   github_issue: null
   item_type: task
