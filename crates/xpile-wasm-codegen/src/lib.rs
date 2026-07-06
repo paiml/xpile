@@ -2976,6 +2976,318 @@ const STR_SLICE_HELPER: &str = "\
   )
 ";
 
+/// PMAT-1327: the STEPPED string-SLICE helper (allocating — rides the
+/// `needs_heap` gate like [`STR_SLICE_HELPER`], and calls `$__wasm_str_charlen`
+/// + `$__wasm_str_char_width` from [`STR_CHAR_HELPERS`]).
+///
+///   * `$__wasm_str_slice_step(s, lo, hi, k) -> i32` — Python `s[i:j:k]` with a
+///     compile-time-constant, NON-zero step `k` (the general stepped slice,
+///     including the `s[::-1]` reverse idiom the frontend lowers to `k == -1`):
+///     materialise a NEW heap string holding the CHARACTERS at indices `start`,
+///     `start + k`, `start + 2k`, … `lo`/`hi` are i64 CHARACTER indices already
+///     carrying the step-sign default sentinels — a missing bound is passed `0`
+///     (lo) / `i64::MAX` (hi) for `k > 0` and `i64::MAX` (lo) / `i64::MIN` (hi)
+///     for `k < 0` by the lowering, exactly reproducing CPython's `PySlice_Unpack`
+///     defaults. Both bounds are then normalised by CPython's
+///     `PySlice_AdjustIndices` (a negative bound `+= cl`; then clamped per the
+///     STEP SIGN — `[0, cl]` for `k > 0`, `[-1, cl-1]` for `k < 0`), and the
+///     result char `count` is derived from the same routine. An out-of-range or
+///     empty selection yields a well-formed empty string, never a trap.
+///
+/// Each of the `count` selected chars is located by a FRESH forward walk from
+/// `base+8` (each byte advanced by its UTF-8 lead-byte width), so the copied
+/// byte range is exactly the encoding of the selected code points — char-exact
+/// for non-ASCII, never a byte slice that could split a multi-byte code point.
+/// A first pass sums the selected chars' byte widths to size the allocation; a
+/// second pass copies them in selection order (increasing char index for
+/// `k > 0`, decreasing for `k < 0`). The result is a fresh length-prefixed heap
+/// string, so it composes uniformly with `len` / `Concat` / equality / a str
+/// RETURN. `k == 0` is a Python `ValueError`, refused at lowering (never reaches
+/// this helper).
+const STR_SLICE_STEP_HELPER: &str = "\
+  ;; __wasm_str_slice_step(s, lo, hi, k) = a NEW heap string of chars
+  ;; start, start+k, start+2k, … of s (Python s[i:j:k], char-exact, k != 0).
+  (func $__wasm_str_slice_step (param $s i32) (param $lo i64) (param $hi i64) (param $k i64) (result i32)
+    (local $cl i64)
+    (local $start i64)
+    (local $stop i64)
+    (local $count i64)
+    (local $begin i32)
+    (local $i i64)
+    (local $ci i64)
+    (local $want i64)
+    (local $p i32)
+    (local $w i32)
+    (local $tot i32)
+    (local $dst i32)
+    (local $cur i32)
+    ;; cl = charlen(s); begin = base+8 (first payload byte).
+    local.get $s
+    call $__wasm_str_charlen
+    i64.extend_i32_u
+    local.set $cl
+    local.get $s
+    i32.const 8
+    i32.add
+    local.set $begin
+    local.get $lo
+    local.set $start
+    local.get $hi
+    local.set $stop
+    ;; --- AdjustIndices(start): if start<0 start+=cl (floor to k<0?-1:0); ---
+    ;; --- else if start>=cl start = k<0?cl-1:cl ---
+    local.get $start
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $start
+      local.get $cl
+      i64.add
+      local.set $start
+      local.get $start
+      i64.const 0
+      i64.lt_s
+      if
+        local.get $k
+        i64.const 0
+        i64.lt_s
+        if (result i64)
+          i64.const -1
+        else
+          i64.const 0
+        end
+        local.set $start
+      end
+    else
+      local.get $start
+      local.get $cl
+      i64.ge_s
+      if
+        local.get $k
+        i64.const 0
+        i64.lt_s
+        if (result i64)
+          local.get $cl
+          i64.const 1
+          i64.sub
+        else
+          local.get $cl
+        end
+        local.set $start
+      end
+    end
+    ;; --- AdjustIndices(stop): same routine ---
+    local.get $stop
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $stop
+      local.get $cl
+      i64.add
+      local.set $stop
+      local.get $stop
+      i64.const 0
+      i64.lt_s
+      if
+        local.get $k
+        i64.const 0
+        i64.lt_s
+        if (result i64)
+          i64.const -1
+        else
+          i64.const 0
+        end
+        local.set $stop
+      end
+    else
+      local.get $stop
+      local.get $cl
+      i64.ge_s
+      if
+        local.get $k
+        i64.const 0
+        i64.lt_s
+        if (result i64)
+          local.get $cl
+          i64.const 1
+          i64.sub
+        else
+          local.get $cl
+        end
+        local.set $stop
+      end
+    end
+    ;; --- count: k<0 ? (stop<start ? (start-stop-1)/(-k)+1 : 0) ---
+    ;; ---        : (start<stop ? (stop-start-1)/k+1    : 0) ---
+    local.get $k
+    i64.const 0
+    i64.lt_s
+    if
+      local.get $stop
+      local.get $start
+      i64.lt_s
+      if (result i64)
+        local.get $start
+        local.get $stop
+        i64.sub
+        i64.const 1
+        i64.sub
+        i64.const 0
+        local.get $k
+        i64.sub
+        i64.div_s
+        i64.const 1
+        i64.add
+      else
+        i64.const 0
+      end
+      local.set $count
+    else
+      local.get $start
+      local.get $stop
+      i64.lt_s
+      if (result i64)
+        local.get $stop
+        local.get $start
+        i64.sub
+        i64.const 1
+        i64.sub
+        local.get $k
+        i64.div_s
+        i64.const 1
+        i64.add
+      else
+        i64.const 0
+      end
+      local.set $count
+    end
+    ;; --- PASS A: tot = sum of selected chars' byte widths ---
+    i32.const 0
+    local.set $tot
+    i64.const 0
+    local.set $i
+    (block $a_done
+      (loop $a_next
+        local.get $i
+        local.get $count
+        i64.ge_s
+        br_if $a_done
+        local.get $start
+        local.get $i
+        local.get $k
+        i64.mul
+        i64.add
+        local.set $want
+        local.get $begin
+        local.set $p
+        i64.const 0
+        local.set $ci
+        (block $a_wdone
+          (loop $a_wnext
+            local.get $ci
+            local.get $want
+            i64.ge_s
+            br_if $a_wdone
+            local.get $p
+            local.get $p
+            i32.load8_u
+            call $__wasm_str_char_width
+            i32.add
+            local.set $p
+            local.get $ci
+            i64.const 1
+            i64.add
+            local.set $ci
+            br $a_wnext
+          )
+        )
+        local.get $tot
+        local.get $p
+        i32.load8_u
+        call $__wasm_str_char_width
+        i32.add
+        local.set $tot
+        local.get $i
+        i64.const 1
+        i64.add
+        local.set $i
+        br $a_next
+      )
+    )
+    ;; --- alloc(tot+8); header = tot; cur = dst+8 ---
+    local.get $tot
+    i32.const 8
+    i32.add
+    call $__alloc
+    local.set $dst
+    local.get $dst
+    local.get $tot
+    i32.store
+    local.get $dst
+    i32.const 8
+    i32.add
+    local.set $cur
+    ;; --- PASS B: copy each selected char in selection order ---
+    i64.const 0
+    local.set $i
+    (block $b_done
+      (loop $b_next
+        local.get $i
+        local.get $count
+        i64.ge_s
+        br_if $b_done
+        local.get $start
+        local.get $i
+        local.get $k
+        i64.mul
+        i64.add
+        local.set $want
+        local.get $begin
+        local.set $p
+        i64.const 0
+        local.set $ci
+        (block $b_wdone
+          (loop $b_wnext
+            local.get $ci
+            local.get $want
+            i64.ge_s
+            br_if $b_wdone
+            local.get $p
+            local.get $p
+            i32.load8_u
+            call $__wasm_str_char_width
+            i32.add
+            local.set $p
+            local.get $ci
+            i64.const 1
+            i64.add
+            local.set $ci
+            br $b_wnext
+          )
+        )
+        local.get $p
+        i32.load8_u
+        call $__wasm_str_char_width
+        local.set $w
+        local.get $cur
+        local.get $p
+        local.get $w
+        memory.copy
+        local.get $cur
+        local.get $w
+        i32.add
+        local.set $cur
+        local.get $i
+        i64.const 1
+        i64.add
+        local.set $i
+        br $b_next
+      )
+    )
+    local.get $dst
+  )
+";
+
 /// PMAT-1142: the string-REPEAT helper (allocating — rides the `needs_heap`
 /// gate, calls `$__alloc`).
 ///
@@ -12326,6 +12638,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
             if module_uses_str_slice(module) {
                 out.push_str(STR_SLICE_HELPER);
             }
+            // PMAT-1327: the STEPPED slice helper (`s[i:j:k]`, incl. `s[::-1]`) —
+            // same heap + char-semantics dependencies as STR_SLICE_HELPER (any
+            // slice arms `needs_heap` via `expr_has_heap_op`; a str param/return
+            // arms `module_touches_str`), gated on an actual stepped slice so a
+            // plain-slice-only module carries no dead helper.
+            if module_uses_str_slice_step(module) {
+                out.push_str(STR_SLICE_STEP_HELPER);
+            }
         }
     }
     // PMAT-1060: emit the int→str helper once, when any function uses
@@ -12977,89 +13297,117 @@ fn expr_touches_str(e: &Expr) -> bool {
     }
 }
 
-/// PMAT-1058: `true` when any function in `module` uses a supported string
-/// slice `s[lo:hi]` (`Expr::Slice { of_str: true, step: None }`) — the gate for
-/// emitting [`STR_SLICE_HELPER`]. A stepped string slice or a list slice is
-/// refused at lowering (not counted here), so the helper is emitted only for a
-/// module that actually materialises a substring.
+/// PMAT-1058 / PMAT-1327: `true` when any function in `module` uses a string
+/// slice of the requested step-kind. With `stepped == false` it detects a plain
+/// `s[lo:hi]` (`Expr::Slice { of_str: true, step: None }`) — the gate for
+/// [`STR_SLICE_HELPER`]. With `stepped == true` it detects a STEPPED `s[i:j:k]`
+/// (`Expr::Slice { of_str: true, step: Some }`, incl. the `s[::-1]` reverse
+/// idiom) — the gate for [`STR_SLICE_STEP_HELPER`]. A list slice
+/// (`of_str: false`) is refused in this scalar/str position (a list slice is
+/// materialised only when BOUND to a `list[scalar]` local, via `emit_list_slice`),
+/// so neither kind is counted here — the helper is emitted only for a module that
+/// actually materialises a substring. The single `stepped` parameter keeps the
+/// full gate-hole coverage shared between the plain and stepped variants (one
+/// leaf arm differs; every recursion is identical).
+fn module_uses_str_slice_kind(module: &Module, stepped: bool) -> bool {
+    module_functions(module).any(|f| block_has_str_slice(&f.body, stepped))
+}
+
+/// [`STR_SLICE_HELPER`] gate — a plain `s[lo:hi]` (step 1).
 fn module_uses_str_slice(module: &Module) -> bool {
-    module_functions(module).any(|f| block_has_str_slice(&f.body))
+    module_uses_str_slice_kind(module, false)
 }
 
-fn block_has_str_slice(block: &Block) -> bool {
-    block.stmts.iter().any(stmt_has_str_slice) || expr_has_str_slice(&block.trailing_return)
+/// PMAT-1327: [`STR_SLICE_STEP_HELPER`] gate — a stepped `s[i:j:k]` (any
+/// non-`None` compile-time step, incl. the `s[::-1]` reverse idiom).
+fn module_uses_str_slice_step(module: &Module) -> bool {
+    module_uses_str_slice_kind(module, true)
 }
 
-fn stmt_has_str_slice(s: &Stmt) -> bool {
+fn block_has_str_slice(block: &Block, stepped: bool) -> bool {
+    block.stmts.iter().any(|s| stmt_has_str_slice(s, stepped))
+        || expr_has_str_slice(&block.trailing_return, stepped)
+}
+
+fn stmt_has_str_slice(s: &Stmt, stepped: bool) -> bool {
     match s {
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => {
-            expr_has_str_slice(value)
+            expr_has_str_slice(value, stepped)
         }
         Stmt::If {
             cond,
             then_body,
             else_body,
         } => {
-            expr_has_str_slice(cond)
-                || then_body.iter().any(stmt_has_str_slice)
-                || else_body.iter().any(stmt_has_str_slice)
+            expr_has_str_slice(cond, stepped)
+                || then_body.iter().any(|s| stmt_has_str_slice(s, stepped))
+                || else_body.iter().any(|s| stmt_has_str_slice(s, stepped))
         }
         Stmt::While { cond, body } => {
-            expr_has_str_slice(cond) || body.iter().any(stmt_has_str_slice)
+            expr_has_str_slice(cond, stepped) || body.iter().any(|s| stmt_has_str_slice(s, stepped))
         }
-        Stmt::FieldAssign { value, .. } => expr_has_str_slice(value),
+        Stmt::FieldAssign { value, .. } => expr_has_str_slice(value, stepped),
         // PMAT-1151: write-side gate holes (see `stmt_has_int_to_str`) — an
         // index (`xs[len(s[1:4])] = v`) and a DictSet/SetAdd key/elem
         // (`d[s[1:4]] = v`, `q.add(s[1:4])`) can host the slice helper.
         Stmt::IndexAssign { indices, value, .. } => {
-            indices.iter().any(expr_has_str_slice) || expr_has_str_slice(value)
+            indices.iter().any(|e| expr_has_str_slice(e, stepped))
+                || expr_has_str_slice(value, stepped)
         }
-        Stmt::DictSet { key, value, .. } => expr_has_str_slice(key) || expr_has_str_slice(value),
+        Stmt::DictSet { key, value, .. } => {
+            expr_has_str_slice(key, stepped) || expr_has_str_slice(value, stepped)
+        }
         Stmt::SetAdd { elem, .. }
         | Stmt::SetRemove { elem, .. }
         | Stmt::ListAppend { elem, .. }
-        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_str_slice(elem),
+        | Stmt::ListRemoveValue { value: elem, .. } => expr_has_str_slice(elem, stepped),
         Stmt::ListInsert { index, elem, .. } => {
-            expr_has_str_slice(index) || expr_has_str_slice(elem)
+            expr_has_str_slice(index, stepped) || expr_has_str_slice(elem, stepped)
         }
-        Stmt::SideEffectCall { call } => expr_has_str_slice(call),
+        Stmt::SideEffectCall { call } => expr_has_str_slice(call, stepped),
         // PMAT-1234: `del d[s[1:4]]` — the KEY can host the slice helper.
-        Stmt::DelItem { key, .. } => expr_has_str_slice(key),
+        Stmt::DelItem { key, .. } => expr_has_str_slice(key, stepped),
         _ => false,
     }
 }
 
-fn expr_has_str_slice(e: &Expr) -> bool {
+fn expr_has_str_slice(e: &Expr, stepped: bool) -> bool {
     match e {
-        // this node IS a supported string slice — no need to recurse further.
+        // this node IS a string slice of the requested step-kind — no need to
+        // recurse further. `stepped == false` matches a plain `step: None` slice;
+        // `stepped == true` matches a `step: Some` (stepped) slice.
         Expr::Slice {
-            of_str: true,
-            step: None,
-            ..
-        } => true,
+            of_str: true, step, ..
+        } if step.is_some() == stepped => true,
         Expr::Slice {
             collection, lo, hi, ..
         } => {
-            expr_has_str_slice(collection)
-                || lo.as_deref().is_some_and(expr_has_str_slice)
-                || hi.as_deref().is_some_and(expr_has_str_slice)
+            expr_has_str_slice(collection, stepped)
+                || lo
+                    .as_deref()
+                    .is_some_and(|e| expr_has_str_slice(e, stepped))
+                || hi
+                    .as_deref()
+                    .is_some_and(|e| expr_has_str_slice(e, stepped))
         }
         Expr::Concat { lhs, rhs }
         | Expr::BinOp { lhs, rhs, .. }
-        | Expr::FloatBinOp { lhs, rhs, .. } => expr_has_str_slice(lhs) || expr_has_str_slice(rhs),
-        Expr::UnOp { operand, .. } => expr_has_str_slice(operand),
+        | Expr::FloatBinOp { lhs, rhs, .. } => {
+            expr_has_str_slice(lhs, stepped) || expr_has_str_slice(rhs, stepped)
+        }
+        Expr::UnOp { operand, .. } => expr_has_str_slice(operand, stepped),
         Expr::IfExpr {
             cond,
             then_expr,
             else_expr,
         } => {
-            expr_has_str_slice(cond)
-                || expr_has_str_slice(then_expr)
-                || expr_has_str_slice(else_expr)
+            expr_has_str_slice(cond, stepped)
+                || expr_has_str_slice(then_expr, stepped)
+                || expr_has_str_slice(else_expr, stepped)
         }
-        Expr::Call { args, .. } => args.iter().any(expr_has_str_slice),
+        Expr::Call { args, .. } => args.iter().any(|e| expr_has_str_slice(e, stepped)),
         Expr::MethodCall { obj, args, .. } => {
-            expr_has_str_slice(obj) || args.iter().any(expr_has_str_slice)
+            expr_has_str_slice(obj, stepped) || args.iter().any(|e| expr_has_str_slice(e, stepped))
         }
         // PMAT-1150: a str slice can be the KEY of a str-keyed dict subscript
         // (`d[s[1:4]]`), whose key is lowered via `emit_str_expr` — the SOLE
@@ -13069,34 +13417,36 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         // subscript-hosted `s[1:4]` this gate skips leaves `$__wasm_str_slice`
         // UNDECLARED (a hard wat2wasm failure). Recurse into both operands.
         Expr::Index { collection, index } => {
-            expr_has_str_slice(collection) || expr_has_str_slice(index)
+            expr_has_str_slice(collection, stepped) || expr_has_str_slice(index, stepped)
         }
         // PMAT-1148: `len(<str temporary>)` synthesises `StrMethod{CharCount,
         // recv}` (Python len is a CODE-POINT count), so a slice inside the recv
         // (`len(s[1:4] + t)`) reaches the slice helper only by recursing here —
         // mirrors the `expr_has_heap_op` / `expr_has_str_repeat` StrMethod arms.
         Expr::StrMethod { recv, args, .. } => {
-            expr_has_str_slice(recv) || args.iter().any(expr_has_str_slice)
+            expr_has_str_slice(recv, stepped) || args.iter().any(|e| expr_has_str_slice(e, stepped))
         }
-        Expr::Len(c) => expr_has_str_slice(c),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_slice(value),
+        Expr::Len(c) => expr_has_str_slice(c, stepped),
+        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_slice(value, stepped),
         Expr::StrCharAt { string, index } => {
-            expr_has_str_slice(string) || expr_has_str_slice(index)
+            expr_has_str_slice(string, stepped) || expr_has_str_slice(index, stepped)
         }
-        Expr::FieldAccess { obj, .. } => expr_has_str_slice(obj),
+        Expr::FieldAccess { obj, .. } => expr_has_str_slice(obj, stepped),
         // PMAT-1150: `str(...)` / `repr(...)` wraps its arg in `Expr::ToStr`,
         // whose value can host a slice reached only by an intermediate node
         // (`str(len(s[1:4]))` is ToStr→Len→Slice) — the ToStr arm was the other
         // half of this gate hole, so the walk stopped at ToStr and never reached
         // the Len→Slice below it. Recurse into the wrapped value.
-        Expr::ToStr { value, .. } => expr_has_str_slice(value),
+        Expr::ToStr { value, .. } => expr_has_str_slice(value, stepped),
         // PMAT-1127: `x in s` — a slice operand (`s[1:4] in t`) needs the slice
         // helper gated here.
         Expr::StrContains { haystack, needle } => {
-            expr_has_str_slice(haystack) || expr_has_str_slice(needle)
+            expr_has_str_slice(haystack, stepped) || expr_has_str_slice(needle, stepped)
         }
         // PMAT-1142: a repeat operand (`s[1:4] * n`) needs the slice helper.
-        Expr::Repeat { seq, n, .. } => expr_has_str_slice(seq) || expr_has_str_slice(n),
+        Expr::Repeat { seq, n, .. } => {
+            expr_has_str_slice(seq, stepped) || expr_has_str_slice(n, stepped)
+        }
         // PMAT-1150: a str slice can be the computed KEY of a str-keyed dict/set
         // op (`d[s[1:3]]`, `s[0:2] in q`). The subscript lowers to `DictGet` /
         // `DictContains` / `SetContains` (NOT `Expr::Index`), whose key/elem is
@@ -13104,32 +13454,44 @@ fn expr_has_str_slice(e: &Expr) -> bool {
         // recursed into these dict/set nodes, so the slice helper stayed
         // UNDECLARED (a hard wat2wasm failure). Recurse into both operands.
         Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
-            expr_has_str_slice(dict) || expr_has_str_slice(key)
+            expr_has_str_slice(dict, stepped) || expr_has_str_slice(key, stepped)
         }
         // PMAT-1223: `d.get(k, default)` — recurse into all three operands.
         Expr::DictGetOr { dict, key, default } => {
-            expr_has_str_slice(dict) || expr_has_str_slice(key) || expr_has_str_slice(default)
+            expr_has_str_slice(dict, stepped)
+                || expr_has_str_slice(key, stepped)
+                || expr_has_str_slice(default, stepped)
         }
         // PMAT-1225: `d.pop(k[, default])` — recurse into all operands.
         Expr::DictPop { dict, key, default } => {
-            expr_has_str_slice(dict)
-                || expr_has_str_slice(key)
-                || default.as_deref().is_some_and(expr_has_str_slice)
+            expr_has_str_slice(dict, stepped)
+                || expr_has_str_slice(key, stepped)
+                || default
+                    .as_deref()
+                    .is_some_and(|e| expr_has_str_slice(e, stepped))
         }
         Expr::ListPop { list, index } => {
-            expr_has_str_slice(list)
+            expr_has_str_slice(list, stepped)
                 || index
                     .as_deref()
                     .map(pop_index_scan_expr)
-                    .is_some_and(expr_has_str_slice)
+                    .is_some_and(|e| expr_has_str_slice(e, stepped))
         }
         // PMAT-1227: `d.setdefault(k, default)` — recurse into all three operands.
         Expr::DictSetDefault { dict, key, default } => {
-            expr_has_str_slice(dict) || expr_has_str_slice(key) || expr_has_str_slice(default)
+            expr_has_str_slice(dict, stepped)
+                || expr_has_str_slice(key, stepped)
+                || expr_has_str_slice(default, stepped)
         }
-        Expr::SetContains { set, elem } => expr_has_str_slice(set) || expr_has_str_slice(elem),
-        Expr::ListContains { list, elem } => expr_has_str_slice(list) || expr_has_str_slice(elem),
-        Expr::ListQuery { list, arg, .. } => expr_has_str_slice(list) || expr_has_str_slice(arg),
+        Expr::SetContains { set, elem } => {
+            expr_has_str_slice(set, stepped) || expr_has_str_slice(elem, stepped)
+        }
+        Expr::ListContains { list, elem } => {
+            expr_has_str_slice(list, stepped) || expr_has_str_slice(elem, stepped)
+        }
+        Expr::ListQuery { list, arg, .. } => {
+            expr_has_str_slice(list, stepped) || expr_has_str_slice(arg, stepped)
+        }
         _ => false,
     }
 }
@@ -18659,8 +19021,10 @@ fn emit_expr(
             Ok(WatTy::I32)
         }
         // PMAT-1058: `s[lo:hi]` — a char-exact string slice, materialised as a
-        // NEW heap substring. The result is an i32 (the str pointer). A list
-        // slice / stepped string slice is refused inside `emit_str_slice`.
+        // NEW heap substring. The result is an i32 (the str pointer). PMAT-1327:
+        // a STEPPED string slice `s[i:j:k]` (incl. `s[::-1]`) is also materialised
+        // here (via `$__wasm_str_slice_step`); a list slice is refused inside
+        // `emit_str_slice`.
         Expr::Slice {
             collection,
             lo,
@@ -20262,11 +20626,13 @@ fn emit_int_to_str(
 /// clamped to `[0, len]` by the helper), then calls `$__wasm_str_slice`, which
 /// materialises the substring in the bump heap and leaves its i32 base-pointer.
 ///
-/// Only the unstepped `of_str` form is supported. A LIST slice (`of_str: false`
-/// — lists are param-only base-pointers in the WASM subset, there is no
-/// list-return/temporary shape) and a STEPPED string slice (`s[i:j:k]`, incl.
-/// the `xs[::-1]` reverse the frontend lowers to a negative `step`) refuse
-/// honestly, never a silent miscompile.
+/// Both the unstepped `s[lo:hi]` form and (PMAT-1327) the STEPPED `s[i:j:k]`
+/// form (incl. the `s[::-1]` reverse the frontend lowers to `step: Some(-1)`)
+/// are supported — the stepped form routes through `$__wasm_str_slice_step` with
+/// step-sign-dependent default bound sentinels, a zero step refusing honestly. A
+/// LIST slice (`of_str: false` — lists are param-only base-pointers in the WASM
+/// subset, there is no list-return/temporary shape in this scalar/str position)
+/// refuses honestly, never a silent miscompile.
 #[allow(clippy::too_many_arguments)]
 fn emit_str_slice(
     collection: &Expr,
@@ -20290,12 +20656,47 @@ fn emit_str_slice(
              `list[scalar]` local (`ys = xs[i:j]`); refused here",
         ));
     }
-    if step.is_some() {
-        return Err(unsupported(
-            "a STEPPED string slice `s[i:j:k]` (incl. the `s[::-1]` reverse \
-             idiom) — the WASM string subset slices `s[lo:hi]` (step 1) only; \
-             refused",
-        ));
+    if let Some(k) = step {
+        // PMAT-1327: a STEPPED string slice `s[i:j:k]` with a compile-time-constant
+        // step. `k == 0` is a Python `ValueError` — refused here (never reaches the
+        // helper). The DEFAULT (missing) bound sentinels depend on the step sign,
+        // exactly reproducing CPython's `PySlice_Unpack`: `k > 0` → lo defaults to
+        // `0`, hi to `i64::MAX` (→ clamps to `cl`); `k < 0` → lo defaults to
+        // `i64::MAX` (→ clamps to `cl-1`), hi to `i64::MIN` (→ clamps to `-1`). An
+        // EXPLICIT bound is passed raw; `$__wasm_str_slice_step`'s AdjustIndices
+        // normalises both.
+        if k == 0 {
+            return Err(unsupported(
+                "a stepped string slice `s[i:j:0]` — a zero step is a Python \
+                 `ValueError`; refused",
+            ));
+        }
+        emit_str_expr(collection, scope, out, depth)?;
+        let (lo_default, hi_default) = if k < 0 {
+            // i64::MAX (lo) / i64::MIN (hi).
+            ("9223372036854775807", "-9223372036854775808")
+        } else {
+            ("0", "9223372036854775807")
+        };
+        match lo {
+            Some(b) => emit_expr_typed(b, scope, out, depth, WatTy::I64)?,
+            None => {
+                indent(out, depth);
+                writeln!(out, "i64.const {lo_default}").expect("write");
+            }
+        }
+        match hi {
+            Some(b) => emit_expr_typed(b, scope, out, depth, WatTy::I64)?,
+            None => {
+                indent(out, depth);
+                writeln!(out, "i64.const {hi_default}").expect("write");
+            }
+        }
+        indent(out, depth);
+        writeln!(out, "i64.const {k}").expect("write");
+        indent(out, depth);
+        writeln!(out, "call $__wasm_str_slice_step").expect("write");
+        return Ok(());
     }
     // base string pointer.
     emit_str_expr(collection, scope, out, depth)?;
