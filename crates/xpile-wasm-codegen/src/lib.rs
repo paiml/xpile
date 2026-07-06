@@ -405,13 +405,27 @@ fn dict_value_kind(ty: &Type) -> Result<KeyKind, BackendError> {
         // PMAT-1320: a bool value STORES through the int slot (i32→i64 extend in
         // `emit_dict_val`); its READ is wrapped back to an i32 bool in
         // `emit_dict_get`/`emit_dict_get_or`, distinguished by `dict_val_is_bool`.
-        Type::I64 | Type::CLong | Type::Bool => Ok(KeyKind::Int),
+        //
+        // PMAT-1322: a `float` value STORES through the SAME i64 slot too — its 64
+        // f64 BITS are `i64.reinterpret_f64`'d into the slot (bit-preserving, no
+        // width change, unlike bool's zero-extend), and the READ reinterprets them
+        // back to f64 (`emit_dict_get`/`get_or`/`pop`/`setdefault`, distinguished by
+        // `dict_val_is_float`). Bit-transport is exact, so `d[k]` composes with float
+        // arithmetic/comparison. Honest refusals (float-specific, unlike bool):
+        // whole-dict `==` (`i64.eq` over the reinterpreted bits is UNSOUND — +0.0 and
+        // -0.0 carry different bits yet compare equal, and NaN carries equal bits yet
+        // compares unequal), and `.values()` iteration/reductions (the value
+        // materialiser fills a `list[i64]`, not the `list[float]` the frontend types
+        // them). `str(d[k])`/f-string of a float read route through the existing
+        // `str(float)` refusal (dtoa is not in the WASM subset).
+        Type::I64 | Type::CLong | Type::Bool | Type::F64 => Ok(KeyKind::Int),
         Type::Str => Ok(KeyKind::Str),
         other => Err(unsupported(&format!(
             "dict value type {other:?} — the WASM dict subset stores i64 integer, \
-             bool (i32 0/1 extended, read back as a bool), or str (i32 base-pointer) \
-             values only (dict[K, int] / dict[K, bool] / dict[K, str]); float/nested \
-             values are refused"
+             bool (i32 0/1 extended, read back as a bool), float (f64 bits \
+             reinterpreted through the i64 slot), or str (i32 base-pointer) values \
+             only (dict[K, int] / dict[K, bool] / dict[K, float] / dict[K, str]); \
+             nested values are refused"
         ))),
     }
 }
@@ -10800,6 +10814,30 @@ fn desugar_foreach_stmts(
                                  the WASM subset yet (int values only)",
                             ));
                         }
+                        // PMAT-1322: a float-valued dict's value slot holds
+                        // reinterpreted f64 bits, and a bool-valued dict's holds an
+                        // extended 0/1 — neither is the plain i64 the per-element
+                        // value read (`emit_index` over `DictView{Values}`) and the
+                        // order-safety fold gate assume, so `.values()` iteration is
+                        // refused for both (int values only), consistent with str.
+                        if matches!(elem_ty, Type::F64 | Type::Bool) {
+                            return Err(unsupported(&format!(
+                                "for-loop over `.values()` of a `dict[_, {}]` — the \
+                                 value slot holds {} rather than a plain i64, and \
+                                 non-int value iteration is not in the WASM subset yet \
+                                 (int values only)",
+                                if matches!(elem_ty, Type::F64) {
+                                    "float"
+                                } else {
+                                    "bool"
+                                },
+                                if matches!(elem_ty, Type::F64) {
+                                    "reinterpreted f64 bits"
+                                } else {
+                                    "an extended 0/1"
+                                }
+                            )));
+                        }
                         match dict.as_ref() {
                             Expr::Ident(n) => (None, n.clone()),
                             other => {
@@ -16581,6 +16619,17 @@ struct Scope<'a> {
     /// subset), `.values()` reductions (`list[bool]`, not the value materialiser),
     /// and pop/setdefault (deferred like str's PMAT-1306).
     bool_val_dicts: Vec<String>,
+    /// PMAT-1322: the NAMES in [`Scope::heap_maps`] whose dict VALUE type is
+    /// `float` (`dict[K, float]`). A float value STORES its 64 f64 BITS through the
+    /// same 8-byte i64 slot via `i64.reinterpret_f64` (bit-preserving, unlike bool's
+    /// zero-extend) and READS them back with `f64.reinterpret_i64`, so `d[k]` IS a
+    /// proper f64 and composes with float arithmetic/comparison (the frontend types
+    /// `d[k]` as `float`). This registry drives the read reinterpret
+    /// (`emit_dict_get`/`emit_dict_get_or`/`emit_dict_pop`/`emit_dict_set_default`)
+    /// and the float-specific honest refusals: whole-dict `==` (`i64.eq` over the
+    /// reinterpreted bits mis-answers ±0.0 and NaN) and `.values()`
+    /// iteration/reductions (`list[float]`, not the i64 value materialiser).
+    float_val_dicts: Vec<String>,
     /// PMAT-996 (slice 4): the module's struct layout registry (name → fields),
     /// shared across every function (struct definitions are module-global).
     structs: &'a StructRegistry,
@@ -16666,6 +16715,15 @@ impl Scope<'_> {
     /// `.values()` reductions, and pop/setdefault refuse honestly.
     fn dict_val_is_bool(&self, name: &str) -> bool {
         self.bool_val_dicts.iter().any(|n| n == name)
+    }
+
+    /// PMAT-1322: `true` if `name` is a `dict[K, float]` local/param — its value
+    /// slot holds the 64 f64 BITS of the value (`i64.reinterpret_f64`'d in on
+    /// store). `d[k]`/`d.get`/`d.pop`/`d.setdefault` reads `f64.reinterpret_i64`
+    /// that slot back to a proper f64, so float arithmetic/comparison compose;
+    /// whole-dict `==` and `.values()` iteration/reductions refuse honestly.
+    fn dict_val_is_float(&self, name: &str) -> bool {
+        self.float_val_dicts.iter().any(|n| n == name)
     }
 
     /// PMAT-996: the struct type name if `name` is a struct local/param
@@ -16919,6 +16977,7 @@ fn emit_function(
         heap_map_params: Vec::new(),
         str_val_dicts: Vec::new(),
         bool_val_dicts: Vec::new(),
+        float_val_dicts: Vec::new(),
         structs,
         struct_locals: Vec::new(),
         methods,
@@ -16968,6 +17027,11 @@ fn emit_function(
             // register it only so `str`/`repr`/f-string of a read refuses.
             if matches!(v.as_ref(), Type::Bool) {
                 scope.bool_val_dicts.push(name.clone());
+            }
+            // PMAT-1322: a `dict[K, float]` param stores f64 bits in the i64 slot;
+            // register it so reads reinterpret back to f64 and `==`/`.values()` refuse.
+            if matches!(v.as_ref(), Type::F64) {
+                scope.float_val_dicts.push(name.clone());
             }
             scope.heap_maps.push((name.clone(), kind));
             scope.heap_map_params.push(name.clone());
@@ -17117,6 +17181,12 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 // `str`/`repr`/f-string of a value read refuses.
                 if matches!(v.as_ref(), Type::Bool) {
                     scope.bool_val_dicts.push(name.clone());
+                }
+                // PMAT-1322: a `dict[K, float]` LET stores f64 bits in the i64 slot
+                // (`i64.reinterpret_f64` on store); register it so reads reinterpret
+                // back to f64 and the value-interpreting `==`/`.values()` refuse.
+                if matches!(v.as_ref(), Type::F64) {
+                    scope.float_val_dicts.push(name.clone());
                 }
                 scope.declare(name, WatTy::I32);
                 scope.heap_maps.push((name.clone(), kind));
@@ -21564,9 +21634,18 @@ fn emit_dict_val(
                     writeln!(out, "i64.extend_i32_u").expect("write");
                     Ok(())
                 }
+                // PMAT-1322: a `float` value (`dict[K, float]`) reaches here as an
+                // f64 — reinterpret its 64 BITS into the i64 slot (bit-preserving,
+                // not a numeric convert). The read side (`dict_val_is_float`)
+                // reinterprets them straight back to f64, so bit-transport is exact.
+                WatTy::F64 => {
+                    indent(out, depth);
+                    writeln!(out, "i64.reinterpret_f64").expect("write");
+                    Ok(())
+                }
                 other => Err(unsupported(&format!(
-                    "dict value lowered to WASM {} but an int/bool value slot is \
-                     i64 (a float value is refused at `dict_value_kind`)",
+                    "dict value lowered to WASM {} but an int/bool/float value slot \
+                     is i64",
                     other.keyword()
                 ))),
             }
@@ -21810,6 +21889,14 @@ fn emit_dict_get(
         writeln!(out, "i32.wrap_i64").expect("write");
         return Ok(WatTy::I32);
     }
+    // PMAT-1322: a float-valued dict stores the f64 BITS in the i64 slot; reinterpret
+    // them straight back to f64 so `d[k]` IS a proper float (the frontend types it
+    // `float`) and composes with float arithmetic/comparison. Bit-exact round-trip.
+    if scope.dict_val_is_float(name) {
+        indent(out, depth);
+        writeln!(out, "f64.reinterpret_i64").expect("write");
+        return Ok(WatTy::F64);
+    }
     Ok(WatTy::I64)
 }
 
@@ -21848,10 +21935,14 @@ fn emit_dict_get_or(
     refuse_dict_pop_in_key_or_default("d.get(k, default)", key, Some(default))?;
     // PMAT-1320: a bool-valued dict's `.get(k, default)` yields a BOOL — the
     // present branch wraps its i64 slot back to an i32 `0`/`1` and the `default`
-    // is typed as an i32 bool, so the whole `if` is `(result i32)`. An int-valued
-    // dict stays the i64 read/return path.
+    // is typed as an i32 bool, so the whole `if` is `(result i32)`. PMAT-1322: a
+    // float-valued dict yields a FLOAT — the present branch `f64.reinterpret_i64`s
+    // the slot and the `default` is an f64, so the `if` is `(result f64)`. An
+    // int-valued dict stays the i64 read/return path.
     let (result_ty, wat) = if scope.dict_val_is_bool(name) {
         ("i32", WatTy::I32)
+    } else if scope.dict_val_is_float(name) {
+        ("f64", WatTy::F64)
     } else {
         ("i64", WatTy::I64)
     };
@@ -21872,6 +21963,9 @@ fn emit_dict_get_or(
     if wat == WatTy::I32 {
         indent(out, depth + 1);
         writeln!(out, "i32.wrap_i64").expect("write");
+    } else if wat == WatTy::F64 {
+        indent(out, depth + 1);
+        writeln!(out, "f64.reinterpret_i64").expect("write");
     }
     indent(out, depth);
     writeln!(out, "else").expect("write");
@@ -21924,8 +22018,15 @@ fn emit_dict_pop(
     // twin of the PMAT-1320 `d[k]`/`d.get` bool READS, exactly as PMAT-1306 wired
     // the str-value pop/setdefault after PMAT-1305 wired the str get/get_or.
     let is_bool = scope.dict_val_is_bool(name);
+    // PMAT-1322: a float-valued dict's `.pop(...)` returns a FLOAT — the same
+    // shared pop helper reads the i64 slot, then `f64.reinterpret_i64` recovers the
+    // f64 (the frontend types `d.pop(k)` as `float`), and the 2-arg default is an
+    // f64. Mutually exclusive with `is_bool` (a dict has ONE value kind).
+    let is_float = scope.dict_val_is_float(name);
     let (result_ty, wat) = if is_bool {
         ("i32", WatTy::I32)
+    } else if is_float {
+        ("f64", WatTy::F64)
     } else {
         ("i64", WatTy::I64)
     };
@@ -21946,6 +22047,10 @@ fn emit_dict_pop(
             if is_bool {
                 indent(out, depth);
                 writeln!(out, "i32.wrap_i64").expect("write");
+            } else if is_float {
+                // PMAT-1322: reinterpret the popped f64 BITS back to an f64.
+                indent(out, depth);
+                writeln!(out, "f64.reinterpret_i64").expect("write");
             }
         }
         // d.pop(k, default): if has(p,k) then pop(p,k) else default.
@@ -21967,6 +22072,10 @@ fn emit_dict_pop(
             if is_bool {
                 indent(out, depth + 1);
                 writeln!(out, "i32.wrap_i64").expect("write");
+            } else if is_float {
+                // PMAT-1322: reinterpret the popped f64 BITS so both arms are f64.
+                indent(out, depth + 1);
+                writeln!(out, "f64.reinterpret_i64").expect("write");
             }
             indent(out, depth);
             writeln!(out, "else").expect("write");
@@ -22200,7 +22309,18 @@ fn emit_dict_set_default(
     // `get` `i32.wrap_i64`s the slot to a proper i32 bool, so the whole expression
     // evaluates to a bool (the frontend types `d.setdefault(k, default)` as bool).
     let is_bool = scope.dict_val_is_bool(name);
-    let wat = if is_bool { WatTy::I32 } else { WatTy::I64 };
+    // PMAT-1322: float-valued setdefault STORES an f64 default (its bits
+    // reinterpreted into the i64 slot by `emit_dict_val`) and RETURNS a float — the
+    // read-back `get` `f64.reinterpret_i64`s the slot. The pop/setdefault twin of
+    // the PMAT-1322 `d[k]`/`d.get` float reads. Mutually exclusive with `is_bool`.
+    let is_float = scope.dict_val_is_float(name);
+    let wat = if is_bool {
+        WatTy::I32
+    } else if is_float {
+        WatTy::F64
+    } else {
+        WatTy::I64
+    };
     refuse_dict_pop_in_key_or_default("d.setdefault(k, default)", key, Some(default))?;
     let suffix = kind.suffix();
     // if not has(p, k): p = set(p, k, default)  — insert-if-absent (never overwrites).
@@ -22217,9 +22337,11 @@ fn emit_dict_set_default(
     writeln!(out, "local.get ${name}").expect("write");
     emit_dict_key(key, kind, scope, out, depth + 1)?;
     // PMAT-1321: a bool default is an i32 `0`/`1`; `emit_dict_val` (KeyKind::Int)
-    // zero-extends it into the i64 slot exactly as the store lane does. An int
-    // default already lowers to the i64 slot (emit_dict_val passes it through).
-    if is_bool {
+    // zero-extends it into the i64 slot exactly as the store lane does. PMAT-1322: a
+    // float default is an f64 that `emit_dict_val` reinterprets into the slot. An int
+    // default already lowers to the i64 slot (emit_dict_val passes it through) — so
+    // route BOTH non-int value kinds through `emit_dict_val` (KeyKind::Int).
+    if is_bool || is_float {
         emit_dict_val(default, KeyKind::Int, scope, out, depth + 1)?;
     } else {
         emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
@@ -22240,6 +22362,10 @@ fn emit_dict_set_default(
     if is_bool {
         indent(out, depth);
         writeln!(out, "i32.wrap_i64").expect("write");
+    } else if is_float {
+        // PMAT-1322: reinterpret the read-back f64 BITS to a proper f64.
+        indent(out, depth);
+        writeln!(out, "f64.reinterpret_i64").expect("write");
     }
     Ok(wat)
 }
@@ -24755,6 +24881,22 @@ fn emit_binop(
                  `dict[_, int]` vs a `dict[_, str]`) — a shared key's values \
                  can never compare equal, but two EMPTY dicts are equal, so \
                  neither value lane's helper is correct; refused honestly"
+            )));
+        }
+        // PMAT-1322: a FLOAT-valued dict cannot use `$__wasm_dict_eq_<k>` — its
+        // per-value compare is `i64.eq` over the slots, but a float slot holds the
+        // f64 BITS (`i64.reinterpret_f64`'d in), and bit-equality is NOT float
+        // equality: +0.0 and -0.0 carry DIFFERENT bits yet `0.0 == -0.0` is True,
+        // while a NaN carries EQUAL bits yet `nan != nan`. A dict-of-floats `==`
+        // therefore needs a per-value `f64.eq`, which is not wired; refuse honestly
+        // rather than emit a bit-compare that mis-answers these two float corners.
+        if scope.dict_val_is_float(ln) || scope.dict_val_is_float(rn) {
+            return Err(unsupported(&format!(
+                "binary op {op:?} over float-valued dicts (`dict[_, float]`) — the \
+                 dict-equality helper compares value slots with `i64.eq`, but a float \
+                 slot holds reinterpreted f64 BITS: `0.0 == -0.0` (different bits) and \
+                 `nan != nan` (equal bits) would both be mis-answered. A per-value \
+                 `f64.eq` compare is not in the WASM dict subset; refused honestly"
             )));
         }
         if matches!(op, BinOp::Eq | BinOp::NotEq) {

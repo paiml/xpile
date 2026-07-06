@@ -308,15 +308,25 @@ fn dict_bool_values_refuse_out_of_lane_forms() {
     }
 }
 
-/// The value-kind gate still refuses the UNMODELLED kinds (float/nested) — adding
-/// bool must not have opened anything else.
+/// The value-kind gate still refuses the UNMODELLED value kinds. PMAT-1322 lifted
+/// FLOAT out of this set (a `dict[K, float]` now lowers — its f64 bits ride the
+/// i64 slot via reinterpret; see `dict_float_values_witness.rs`), so this pins the
+/// remaining refusal on a NESTED value (`dict[int, dict[int, int]]`) — still not in
+/// the WASM dict subset. STALE-TEST FLIP: this test formerly asserted a float value
+/// was refused (`dict_value_gate_still_refuses_float`); PMAT-1322 makes float lower,
+/// so the pin moved to a nested value.
 #[test]
-fn dict_value_gate_still_refuses_float() {
-    let err = emit("def f() -> int:\n    d: dict[int, float] = {1: 2.5}\n    return len(d)\n")
-        .expect_err("a float-valued dict must still be refused");
+fn dict_value_gate_still_refuses_nested() {
+    let err = emit("def f() -> int:\n    d: dict[int, dict[int, int]] = {}\n    return len(d)\n")
+        .expect_err("a nested-dict-valued dict must still be refused");
     assert!(
         err.contains("dict value type"),
-        "float-value refusal should come from the value gate, got: {err}"
+        "nested-value refusal should come from the value gate, got: {err}"
+    );
+    // And confirm the float flip: a float value now LOWERS (no longer refused).
+    assert!(
+        emit("def f() -> int:\n    d: dict[int, float] = {1: 2.5}\n    return len(d)\n").is_ok(),
+        "PMAT-1322: a float-valued dict must now lower (the value gate admits float)"
     );
 }
 

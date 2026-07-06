@@ -323,15 +323,17 @@ fn dict_str_values_refuse_mixed_value_kinds() {
     );
 }
 
-/// The value-kind gate still refuses the UNMODELLED kinds (float/bool/nested)
-/// — widening int→{int, str} must not have opened anything else.
+/// The value-kind gate still refuses the UNMODELLED value kinds. Since this
+/// witness landed, int→{int, str} widened, then bool (PMAT-1320) and float
+/// (PMAT-1322) joined the int-slot lane — so the pin is now on a NESTED value
+/// (`dict[int, dict[int, int]]`), still outside the WASM dict value subset.
 #[test]
-fn dict_value_gate_still_refuses_other_kinds() {
-    let err = emit("def f() -> int:\n    d: dict[int, float] = {1: 2.5}\n    return len(d)\n")
-        .expect_err("a float-valued dict must still be refused");
+fn dict_value_gate_still_refuses_nested() {
+    let err = emit("def f() -> int:\n    d: dict[int, dict[int, int]] = {}\n    return len(d)\n")
+        .expect_err("a nested-dict-valued dict must still be refused");
     assert!(
         err.contains("dict value type"),
-        "float-value refusal should come from the value gate, got: {err}"
+        "nested-value refusal should come from the value gate, got: {err}"
     );
 }
 
