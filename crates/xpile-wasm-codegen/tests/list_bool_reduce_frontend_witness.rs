@@ -231,14 +231,24 @@ fn any_all_execute_and_match_cpython() {
 /// `xpile transpile --target wasm` earlier; pinned here so a future frontend
 /// or codegen change that begins ACCEPTING one of them (without a real
 /// implementation) is caught.
+///
+/// PMAT-1332 NOTE: `any`/`all` over a `list[int]`/`list[float]` (the scalar
+/// truthiness map) is NO LONGER refused — it now folds the raw i64/f64 payload
+/// by nonzero (`$__wasm_list_{int,float}_truthy_reduce`), executed CPython-exact
+/// in `list_scalar_truthy_reduce_witness.rs`. The `list[str]` truthiness (a
+/// `len(__x) != 0` map, NOT a `!= 0` scalar map) stays refused — the case below.
 #[test]
 fn any_all_unsupported_shapes_refuse() {
-    // 1. `list[int]` per-element truthiness — the frontend wraps the list in an
-    //    `Expr::Map` (a non-name list), which the WASM subset refuses.
-    let int_truthiness = "def f() -> bool:\n    xs: list[int] = [1, 0, 2]\n    return all(xs)\n";
+    // 1. `list[str]` per-element truthiness — the frontend wraps the list in a
+    //    `len(__x) != 0` map, which `list_scalar_truthy_target` does NOT match
+    //    (only the `!= 0`/`!= 0.0` scalar maps), so the list[str] element type is
+    //    refused (the string payload/ABI fold is deferred). The scalar int/float
+    //    forms, by contrast, now EMIT (moved to the dedicated witness).
+    let str_truthiness =
+        "def f() -> bool:\n    words: list[str] = [\"a\", \"\"]\n    return all(words)\n";
     assert!(
-        emit(int_truthiness).is_err(),
-        "all(xs) over a list[int] (truthiness map) must refuse in the WASM subset"
+        emit(str_truthiness).is_err(),
+        "all(words) over a list[str] (len-truthiness map) must refuse in the WASM subset"
     );
 
     // 2. A list LITERAL argument (a temporary, not a name).

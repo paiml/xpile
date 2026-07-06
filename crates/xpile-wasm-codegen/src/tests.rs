@@ -2298,8 +2298,11 @@ fn list_bool_reduce_refuses_non_name_list() {
 fn list_bool_reduce_refuses_non_bool_list() {
     // A direct BoolReduce over a `list[int]` name (its elements load as i64, not
     // the i32 0/1 a bool list uses) is refused — never a bit-misread. (The
-    // frontend never produces this; it lowers `any`/`all` over a list[int] as a
-    // truthiness map + reduce, whose Expr::Map the subset separately refuses.)
+    // frontend never produces this shape: it lowers `any`/`all` over a list[int]
+    // as a truthiness MAP + reduce — `BoolReduce { list: Map { __x != 0 } }` —
+    // which PMAT-1332 recognises and folds via `$__wasm_list_int_truthy_reduce`.
+    // This BARE-Ident BoolReduce over a non-bool list is not that map, so it
+    // still refuses on the element-kind mismatch.)
     let f = Function {
         name: "g".into(),
         params: vec![param("xs", Type::List(Box::new(Type::I64)))],
