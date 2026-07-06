@@ -15406,10 +15406,14 @@ fn expr_is_str_valued(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         Expr::Ident(name) => scan.names.contains(&name.as_str()),
         Expr::Call { callee, .. } => scan.rets.keys.iter().any(|k| k == callee),
         Expr::MethodCall { method, .. } => scan.rets.methods.iter().any(|(_, m)| m == method),
-        // PMAT-1305: `d[k]` / `d.get(k, default)` over a `dict[K, str]` local
-        // is string-valued (the value slot holds an i32 str base-pointer), so
-        // a compare hosting it must arm `$__wasm_str_eq` / `$__wasm_str_cmp`.
-        Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => {
+        // PMAT-1305/1306: `d[k]` / `d.get(k, default)` / `d.pop(k[, default])`
+        // / `d.setdefault(k, default)` over a `dict[K, str]` local is
+        // string-valued (the value slot holds an i32 str base-pointer), so a
+        // compare hosting it must arm `$__wasm_str_eq` / `$__wasm_str_cmp`.
+        Expr::DictGet { dict, .. }
+        | Expr::DictGetOr { dict, .. }
+        | Expr::DictPop { dict, .. }
+        | Expr::DictSetDefault { dict, .. } => {
             matches!(dict.as_ref(), Expr::Ident(d) if scan.str_val_dicts.contains(&d.as_str()))
         }
         _ => false,
@@ -16759,6 +16763,17 @@ fn emit_stmt(
                 // (`d.setdefault(k, 0)` to ENSURE a key) — same shape: emit the
                 // get-or-insert (the insert-if-absent side effect is the point)
                 // and drop the i64 value.
+                // PMAT-1306: over a str-VALUED dict the value is an i32 str
+                // pointer, so the statement routes through the STRING lowering
+                // (the emit_str_expr DictPop/DictSetDefault arms — the pop is
+                // still the removal, the setdefault still the ensure-key) and
+                // drops the i32 instead.
+                Expr::DictPop { dict, .. } | Expr::DictSetDefault { dict, .. } if matches!(dict.as_ref(), Expr::Ident(d) if scope.dict_val_is_str(d)) =>
+                {
+                    emit_str_expr(call, scope, out, depth)?;
+                    indent(out, depth);
+                    writeln!(out, "drop").expect("write");
+                }
                 Expr::DictPop { .. } | Expr::DictSetDefault { .. } => {
                     emit_expr(call, scope, out, depth)?;
                     indent(out, depth);
@@ -19547,6 +19562,7 @@ fn emit_str_expr(
                      not a string"
                 )));
             }
+            refuse_dict_pop_in_key_or_default("d.get(k, default)", key, Some(default))?;
             indent(out, depth);
             writeln!(out, "local.get ${name}").expect("write");
             emit_dict_key(key, kind, scope, out, depth)?;
@@ -19566,6 +19582,117 @@ fn emit_str_expr(
             emit_str_expr(default, scope, out, depth + 1)?;
             indent(out, depth);
             writeln!(out, "end").expect("write");
+            Ok(())
+        }
+        // PMAT-1306: `d.pop(k)` / `d.pop(k, default)` over a str-VALUED dict in
+        // a string position — the removing read. The value slot holds the
+        // string's i32 base-pointer (zero-extended at store time), so the SAME
+        // keyed `pop` helper the int lane uses (swap-last-into-hole + count--,
+        // in place — the base-pointer never moves, so no write-back) returns
+        // the pointer in its i64 slot, wrapped back to i32. The bare form
+        // TRAPS on an absent key (KeyError); the 2-arg form gates the MUTATING
+        // pop on membership and falls to the `default` STRING (lowered via
+        // this same string path — an int default refuses honestly) without
+        // mutating, exactly CPython.
+        Expr::DictPop { dict, key, default } => {
+            let (name, kind) = dict_ident_kind(dict, scope)?;
+            if !scope.dict_val_is_str(name) {
+                return Err(unsupported(&format!(
+                    "`{name}.pop(...)` in a string position over an int-valued \
+                     dict (`dict[_, int]`) — the value is an integer, not a \
+                     string"
+                )));
+            }
+            // PMAT-1306: the 2-arg path re-emits the key and lowers the
+            // default lazily — a nested pop in either would remove twice/skip.
+            if default.is_some() {
+                refuse_dict_pop_in_key_or_default("d.pop(k, default)", key, default.as_deref())?;
+            }
+            match default {
+                None => {
+                    indent(out, depth);
+                    writeln!(out, "local.get ${name}").expect("write");
+                    emit_dict_key(key, kind, scope, out, depth)?;
+                    indent(out, depth);
+                    writeln!(out, "call $__wasm_dict_pop_{}", kind.suffix()).expect("write");
+                    indent(out, depth);
+                    writeln!(out, "i32.wrap_i64").expect("write");
+                }
+                Some(default) => {
+                    indent(out, depth);
+                    writeln!(out, "local.get ${name}").expect("write");
+                    emit_dict_key(key, kind, scope, out, depth)?;
+                    indent(out, depth);
+                    writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
+                    indent(out, depth);
+                    writeln!(out, "if (result i32)").expect("write");
+                    indent(out, depth + 1);
+                    writeln!(out, "local.get ${name}").expect("write");
+                    emit_dict_key(key, kind, scope, out, depth + 1)?;
+                    indent(out, depth + 1);
+                    writeln!(out, "call $__wasm_dict_pop_{}", kind.suffix()).expect("write");
+                    indent(out, depth + 1);
+                    writeln!(out, "i32.wrap_i64").expect("write");
+                    indent(out, depth);
+                    writeln!(out, "else").expect("write");
+                    emit_str_expr(default, scope, out, depth + 1)?;
+                    indent(out, depth);
+                    writeln!(out, "end").expect("write");
+                }
+            }
+            Ok(())
+        }
+        // PMAT-1306: `d.setdefault(k, default)` over a str-VALUED dict in a
+        // string position — the get-or-INSERT. The miss path STORES the
+        // `default` string's pointer through `emit_dict_val` (emit_str_expr +
+        // i64.extend_i32_u — the PMAT-1305 store routing) via the shared
+        // `$__wasm_dict_set_<k>`, which may GROW + relocate the dict; the
+        // returned base-pointer is written back into the dict local exactly as
+        // `d[k] = v` does. Then `get(p, k)` (now guaranteed present) reads the
+        // value slot back, wrapped to the i32 str pointer — the pre-existing
+        // string on a hit, the just-inserted default on a miss, exactly
+        // CPython's `dict.setdefault`. Same 2–3× key re-emit as the int lane
+        // (literal/ident keys only — cheap, side-effect-free).
+        Expr::DictSetDefault { dict, key, default } => {
+            let (name, kind) = dict_ident_kind(dict, scope)?;
+            if !scope.dict_val_is_str(name) {
+                return Err(unsupported(&format!(
+                    "`{name}.setdefault(...)` in a string position over an \
+                     int-valued dict (`dict[_, int]`) — the value is an \
+                     integer, not a string"
+                )));
+            }
+            refuse_dict_pop_in_key_or_default("d.setdefault(k, default)", key, Some(default))?;
+            let suffix = kind.suffix();
+            // if not has(p, k): p = set(p, k, <default str ptr>)  — insert-if-absent.
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_dict_has_{suffix}").expect("write");
+            indent(out, depth);
+            writeln!(out, "i32.eqz").expect("write");
+            indent(out, depth);
+            writeln!(out, "if").expect("write");
+            indent(out, depth + 1);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth + 1)?;
+            emit_dict_val(default, KeyKind::Str, scope, out, depth + 1)?;
+            indent(out, depth + 1);
+            writeln!(out, "call $__wasm_dict_set_{suffix}").expect("write");
+            indent(out, depth + 1);
+            writeln!(out, "local.set ${name}").expect("write");
+            indent(out, depth);
+            writeln!(out, "end").expect("write");
+            // return d[k] — present after the insert-if-absent above; wrap the
+            // i64 value slot back to the i32 str base-pointer.
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_dict_get_{suffix}").expect("write");
+            indent(out, depth);
+            writeln!(out, "i32.wrap_i64").expect("write");
             Ok(())
         }
         // PMAT-1028: a CALL of a PROVEN str-returning callable (free fn,
@@ -19883,6 +20010,106 @@ fn emit_str_len_i32(
     Ok(())
 }
 
+/// PMAT-1306: `true` if `e` contains a `d.pop(...)` anywhere in its subtree.
+/// `DictPop` is the ONLY side-effecting expression the WASM lane lowers (every
+/// other admitted form is pure or — like `setdefault` — idempotent under
+/// re-evaluation), so the emitters that (a) re-emit a sub-expression more than
+/// once (`emit_concat`'s length+copy passes; the 2–3× key re-emit in
+/// `get_or`/2-arg-`pop`/`setdefault`) or (b) evaluate it LAZILY where CPython
+/// is eager (the `default` argument of those same three forms) must refuse a
+/// pop-bearing operand rather than remove twice / skip the removal. Bind the
+/// popped value to a name first. Conservative: explicit arms for every
+/// composite the string/dict lanes admit; unlisted forms are leaves.
+fn expr_contains_dict_pop(e: &Expr) -> bool {
+    match e {
+        Expr::DictPop { .. } => true,
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => {
+            expr_contains_dict_pop(lhs) || expr_contains_dict_pop(rhs)
+        }
+        Expr::Repeat { seq, n, .. } => expr_contains_dict_pop(seq) || expr_contains_dict_pop(n),
+        Expr::Chr { value } => expr_contains_dict_pop(value),
+        Expr::ToStr { value, .. } => expr_contains_dict_pop(value),
+        Expr::Len(inner) => expr_contains_dict_pop(inner),
+        Expr::Ord { value } => expr_contains_dict_pop(value),
+        Expr::UnOp { operand, .. } => expr_contains_dict_pop(operand),
+        Expr::StrCharAt { string, index } => {
+            expr_contains_dict_pop(string) || expr_contains_dict_pop(index)
+        }
+        Expr::StrChars { string } => expr_contains_dict_pop(string),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => {
+            expr_contains_dict_pop(collection)
+                || lo.as_deref().is_some_and(expr_contains_dict_pop)
+                || hi.as_deref().is_some_and(expr_contains_dict_pop)
+        }
+        Expr::Index { collection, index } => {
+            expr_contains_dict_pop(collection) || expr_contains_dict_pop(index)
+        }
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_contains_dict_pop(cond)
+                || expr_contains_dict_pop(then_expr)
+                || expr_contains_dict_pop(else_expr)
+        }
+        Expr::StrMethod { recv, args, .. } => {
+            expr_contains_dict_pop(recv) || args.iter().any(expr_contains_dict_pop)
+        }
+        Expr::StrContains { haystack, needle } => {
+            expr_contains_dict_pop(haystack) || expr_contains_dict_pop(needle)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_contains_dict_pop),
+        Expr::MethodCall { obj, args, .. } => {
+            expr_contains_dict_pop(obj) || args.iter().any(expr_contains_dict_pop)
+        }
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => {
+            expr_contains_dict_pop(dict) || expr_contains_dict_pop(key)
+        }
+        Expr::SetContains { set, elem } => {
+            expr_contains_dict_pop(set) || expr_contains_dict_pop(elem)
+        }
+        Expr::DictGetOr { dict, key, default } | Expr::DictSetDefault { dict, key, default } => {
+            expr_contains_dict_pop(dict)
+                || expr_contains_dict_pop(key)
+                || expr_contains_dict_pop(default)
+        }
+        _ => false,
+    }
+}
+
+/// PMAT-1306: refuse a `d.pop(...)` nested in the KEY (re-emitted 2–3×: it
+/// would remove 2–3 times) or the DEFAULT (emitted lazily inside the miss
+/// branch, where CPython evaluates the argument EAGERLY — a present key would
+/// silently skip the pop's removal) of a `get_or`/2-arg-`pop`/`setdefault`.
+/// Shared by BOTH value lanes — the int emitters and the string-position arms.
+fn refuse_dict_pop_in_key_or_default(
+    form: &str,
+    key: &Expr,
+    default: Option<&Expr>,
+) -> Result<(), BackendError> {
+    if expr_contains_dict_pop(key) {
+        return Err(unsupported(&format!(
+            "`d.pop(...)` inside the key of `{form}` — the key is re-emitted \
+             per helper call, so the pop would remove more than once; bind the \
+             popped value to a name first"
+        )));
+    }
+    if default.is_some_and(expr_contains_dict_pop) {
+        return Err(unsupported(&format!(
+            "`d.pop(...)` inside the default of `{form}` — the default lowers \
+             lazily (miss branch only) but CPython evaluates the argument \
+             eagerly, so a present key would skip the pop's removal; bind the \
+             popped value to a name first"
+        )));
+    }
+    Ok(())
+}
+
 /// PMAT-993: lower string concatenation `a + b` (`Expr::Concat`) — the
 /// headline string-RETURNING op of slice 2.
 ///
@@ -19909,6 +20136,24 @@ fn emit_concat(
     let mut operands: Vec<&Expr> = Vec::new();
     flatten_concat(lhs, &mut operands);
     flatten_concat(rhs, &mut operands);
+
+    // PMAT-1306: concat re-evaluates each operand once per pass (two length
+    // passes + the byte copy). Every other admitted operand is pure or
+    // idempotent under re-evaluation (`setdefault` re-reads the same value on
+    // its later passes), but `d.pop(...)` MUTATES — the first pass removes the
+    // entry and the next traps (bare pop) or silently falls to its default
+    // (2-arg). Refuse; bind the popped string to a name first.
+    for op in &operands {
+        if expr_contains_dict_pop(op) {
+            return Err(unsupported(
+                "`d.pop(...)` inside a string concatenation / f-string — \
+                 concat re-evaluates each operand (length + copy passes) and a \
+                 pop mutates, so it would remove more than once; bind the \
+                 popped string to a name first (`s = d.pop(k)`) and \
+                 concatenate `s`",
+            ));
+        }
+    }
 
     // total_bytes = Σ len(opᵢ): push each operand's i32 byte length and add.
     emit_str_len_i32(operands[0], scope, out, depth)?;
@@ -20478,6 +20723,7 @@ fn emit_dict_get_or(
              position (len/ord/==/concat/return-as-str)"
         )));
     }
+    refuse_dict_pop_in_key_or_default("d.get(k, default)", key, Some(default))?;
     // condition: has(p, k) -> i32 (never traps)
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
@@ -20525,15 +20771,20 @@ fn emit_dict_pop(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let (name, kind) = dict_ident_kind(dict, scope)?;
-    // PMAT-1305: a str-valued dict's `.pop(k)` returns a STRING — a str
-    // position has no DictPop lowering yet, and the int lane must not hand a
-    // pointer to arithmetic. Removal without the value is `del d[k]`.
+    // PMAT-1305/1306: a str-valued dict's `.pop(k)` returns a STRING — it
+    // lowers in a STRING position (the `emit_str_expr` DictPop arm); the int
+    // lane must not hand a pointer to arithmetic. This guard is defense in
+    // depth behind the frontend's str typing of the expression.
     if scope.dict_val_is_str(name) {
         return Err(unsupported(&format!(
-            "`{name}.pop(...)` over a str-valued dict (`dict[_, str]`) — the \
-             str-value pop is not in the WASM subset yet; for removal alone use \
-             `del {name}[k]`"
+            "`{name}.pop(...)` in an integer position over a str-valued dict \
+             (`dict[_, str]`) — the value is a string, not an integer"
         )));
+    }
+    // PMAT-1306: the 2-arg path re-emits the key (has + pop) and lowers the
+    // default lazily — a nested pop in either would remove twice / skip.
+    if default.is_some() {
+        refuse_dict_pop_in_key_or_default("d.pop(k, default)", key, default)?;
     }
     match default {
         // d.pop(k): unconditional pop; the helper's not-found tail traps.
@@ -20769,16 +21020,18 @@ fn emit_dict_set_default(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let (name, kind) = dict_ident_kind(dict, scope)?;
-    // PMAT-1305: a str-valued dict's `.setdefault(k, default)` both STORES a
-    // str default and RETURNS a str — neither leg is wired in the str lane
-    // yet; the int lane must not store/hand a pointer as an integer.
+    // PMAT-1305/1306: a str-valued dict's `.setdefault(k, default)` both
+    // STORES a str default and RETURNS a str — it lowers in a STRING position
+    // (the `emit_str_expr` DictSetDefault arm); the int lane must not
+    // store/hand a pointer as an integer. Defense in depth behind the
+    // frontend's str typing of the expression.
     if scope.dict_val_is_str(name) {
         return Err(unsupported(&format!(
-            "`{name}.setdefault(...)` over a str-valued dict (`dict[_, str]`) — \
-             the str-value setdefault is not in the WASM subset yet; use \
-             `if k not in {name}: {name}[k] = default`"
+            "`{name}.setdefault(...)` in an integer position over a str-valued \
+             dict (`dict[_, str]`) — the value is a string, not an integer"
         )));
     }
+    refuse_dict_pop_in_key_or_default("d.setdefault(k, default)", key, Some(default))?;
     let suffix = kind.suffix();
     // if not has(p, k): p = set(p, k, default)  — insert-if-absent (never overwrites).
     indent(out, depth);
@@ -22659,11 +22912,15 @@ fn binop_operand_is_string(e: &Expr, scope: &Scope) -> bool {
         Expr::Call { callee, .. } => scope.call_returns_str(callee),
         Expr::MethodCall { obj, method, .. } => matches!(obj.as_ref(), Expr::Ident(o)
             if scope.struct_of(o).is_some_and(|s| scope.method_returns_str(&s, method))),
-        // PMAT-1305: `d[k]` / `d.get(k, default)` over a str-VALUED dict yields
-        // an i32 str base-pointer — a `==`/`!=`/ordering over it must route to
-        // the content-compare helpers (two such reads compared in the int lane
+        // PMAT-1305/1306: `d[k]` / `d.get(k, default)` / `d.pop(k[, default])`
+        // / `d.setdefault(k, default)` over a str-VALUED dict yields an i32
+        // str base-pointer — a `==`/`!=`/ordering over it must route to the
+        // content-compare helpers (two such reads compared in the int lane
         // would be pointer identity, a silent miscompile).
-        Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => {
+        Expr::DictGet { dict, .. }
+        | Expr::DictGetOr { dict, .. }
+        | Expr::DictPop { dict, .. }
+        | Expr::DictSetDefault { dict, .. } => {
             matches!(dict.as_ref(), Expr::Ident(d) if scope.dict_val_is_str(d))
         }
         _ => false,

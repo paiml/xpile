@@ -20,9 +20,10 @@
 //!   `len`/`ord`/`==`/`<`/concat/slice/f-string over a read all compose;
 //! * the value-INTERPRETING forms REFUSE — dict `==` (the eq helper compares
 //!   value slots with `i64.eq`: pointer identity, not content), `.values()`
-//!   iteration/reductions (`min` would be lowest-ADDRESS), `.pop`/`.setdefault`
-//!   (str legs unwired), and MIXED value-kind `update`/merge (a raw slot copy
-//!   the reader would mis-interpret).
+//!   iteration/reductions (`min` would be lowest-ADDRESS), and MIXED
+//!   value-kind `update`/merge (a raw slot copy the reader would
+//!   mis-interpret). `.pop`/`.setdefault` were refused here too until
+//!   PMAT-1306 wired their str legs (see `dict_str_pop_setdefault_witness.rs`).
 //!
 //! ## The silent-miscompile class this witness pins shut
 //!
@@ -285,21 +286,10 @@ fn dict_str_values_refuse_value_interpreting_forms() {
             ),
             "str-value iteration is not in the WASM subset yet",
         ),
-        // pop/setdefault: the frontend binds the expression-position mutator
-        // to a str-typed let, so the refusal fires in the STRING lowering
-        // (no DictPop/DictSetDefault arm there) — the int-lane guards inside
-        // `emit_dict_pop`/`emit_dict_set_default` are defense in depth behind
-        // this. Either way: an honest refusal, never a pointer-as-int.
-        (
-            "d.pop(k)",
-            format!("def f() -> int:\n{d}    s: str = d.pop(1)\n    return len(s)\n"),
-            "in a string position",
-        ),
-        (
-            "d.setdefault(k, s)",
-            format!("def f() -> int:\n{d}    s: str = d.setdefault(3, \"zz\")\n    return len(s)\n"),
-            "in a string position",
-        ),
+        // pop/setdefault over a str-valued dict LOWER since PMAT-1306 (their
+        // str legs are wired — see `dict_str_pop_setdefault_witness.rs`); the
+        // int-lane guards inside `emit_dict_pop`/`emit_dict_set_default`
+        // remain as defense in depth for an INT-position use, pinned there.
     ] {
         let err = match emit(&src) {
             Err(e) => e,
