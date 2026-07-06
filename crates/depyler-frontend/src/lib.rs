@@ -15049,6 +15049,14 @@ fn desugar_list_comp(
     target: &str,
     comp: &ast::ExprListComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-1317: the self-reference clobber belt — the PMAT-1316 audit lead
+    // confirmed the same shape here: `ys = [x for x in u if x in ys]`
+    // (filter) and `ys = [len(ys) for x in u]` (element) were LIVE
+    // silent-wrong (the guard/element read the fresh empty shadow — the
+    // element case even read the GROWING accumulator); the iterable
+    // spelling `xs = [x for x in xs]` (a CPython copy) died downstream at
+    // rustc E0502.
+    comp_self_reference_belt(&ctx.fn_name, "list", target, &comp.generators, &[&comp.elt])?;
     // PMAT-502fc: two-generator list comprehension `[expr for x in a for y in b]`
     // → nested `for` loops appending to the accumulator. Both generators must
     // have plain-Name targets over list-typed iterables (range / tuple-target
@@ -15288,6 +15296,53 @@ fn desugar_list_comp(
     ])
 }
 
+/// PMAT-1316/PMAT-1317 self-reference belt, shared by the list/dict/set
+/// comprehension desugars: each materialises the EMPTY destination before
+/// iterating, so a comprehension that reads its own assignment target — in
+/// an iterable (`t = {x for x in t}`), a filter (`t = {x for x in u if x in
+/// t}`), or an element/key/value read — would see the clobbered name
+/// instead of the pre-assignment value CPython evaluates. Before the belt
+/// the filter and element positions were LIVE silent-wrong on every
+/// backend (the emitted guard/element read the fresh empty shadow) and the
+/// iterable position died downstream at rustc E0502; now all three refuse
+/// loudly at the frontend. A comp VARIABLE shadowing the target
+/// (`t = {t for t in u}`) stays admitted for element/filter reads — those
+/// resolve to the (renamed) loop var, not the destination; an ITERABLE
+/// read is pre-shadow in CPython and always refuses.
+fn comp_self_reference_belt(
+    fn_name: &str,
+    kind: &str,
+    target: &str,
+    generators: &[ast::Comprehension],
+    element_reads: &[&ast::Expr],
+) -> Result<(), FrontendError> {
+    let target_shadowed = generators.iter().any(|g| match &g.target {
+        ast::Expr::Name(n) => n.id.as_str() == target,
+        ast::Expr::Tuple(t) => t
+            .elts
+            .iter()
+            .any(|e| matches!(e, ast::Expr::Name(n) if n.id.as_str() == target)),
+        _ => false,
+    });
+    let self_read = generators.iter().any(|g| {
+        ast_expr_mentions_name(&g.iter, target)
+            || (!target_shadowed && g.ifs.iter().any(|i| ast_expr_mentions_name(i, target)))
+    }) || (!target_shadowed
+        && element_reads
+            .iter()
+            .any(|e| ast_expr_mentions_name(e, target)));
+    if self_read {
+        return Err(FrontendError::Lower(format!(
+            "function `{fn_name}` binds a {kind} comprehension to `{target}` while the \
+             comprehension itself reads `{target}` — the desugar materialises \
+             the empty destination first, so that read would see the clobbered \
+             name instead of the pre-assignment value CPython evaluates; bind \
+             the comprehension to a fresh name"
+        )));
+    }
+    Ok(())
+}
+
 /// PMAT-501: desugar a dict comprehension `{k: v for x in iter}` into
 /// `let mut <target>: dict[K, V] = {}` + `for x in iter { <target>[k] = v }`
 /// — the same materialisation as [`desugar_list_comp`] but with a
@@ -15298,6 +15353,18 @@ fn desugar_dict_comp(
     target: &str,
     comp: &ast::ExprDictComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-1317: the self-reference clobber belt — the PMAT-1316 audit lead
+    // confirmed: `d = {k: 1 for k in u if k in d}` (filter) and
+    // `d = {k: v * 2 for k, v in d.items()}` (iterable) were LIVE
+    // silent-wrong (always-empty result where CPython reads the
+    // pre-assignment dict).
+    comp_self_reference_belt(
+        &ctx.fn_name,
+        "dict",
+        target,
+        &comp.generators,
+        &[&comp.key, &comp.value],
+    )?;
     // PMAT-502fd: two-generator dict comprehension → nested `for` loops.
     if comp.generators.len() == 2 {
         return desugar_dict_comp_2gen(ctx, target, comp);
@@ -15437,11 +15504,38 @@ fn desugar_dict_comp(
         ));
     }
     let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
-    let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
-        Type::List(e) => *e,
+    // PMAT-1317: dict/set sources join the dict-comprehension vocabulary,
+    // desugaring to EXACTLY the statement-form loop shapes (PMAT-472 /
+    // PMAT-742 / PMAT-847), mirroring the PMAT-1316 set-comp widening: a
+    // dict iterates its KEYS — lazy `over_keys` when read-only; the owned
+    // keys-snapshot + size-change guard when the dict is mutated anywhere
+    // in the function — and a set iterates its elements. Every backend
+    // then sees the same HIR as the manual keyed-store loop; in particular
+    // `{k: d[k] * 2 for k in d}` IS the PMAT-1314 dict-build loop
+    // `for k in d: r[k] = d[k] * 2`, and the WASM hash-order gate applies
+    // unchanged.
+    let (iter_expr, elem_in_ty, over_keys, dict_guard) = match infer_type_in_ctx(ctx, &iter_expr) {
+        Type::List(e) => (iter_expr, *e, false, None),
+        Type::Dict(key_ty, _) if matches!(&iter_expr, Expr::Ident(n) if ctx.mutable.contains(n)) => {
+            let dict_name = match &iter_expr {
+                Expr::Ident(n) => n.clone(),
+                _ => unreachable!("matched Expr::Ident above"),
+            };
+            (
+                Expr::DictView {
+                    dict: Box::new(iter_expr),
+                    kind: DictViewKind::Keys,
+                },
+                *key_ty,
+                false,
+                Some(dict_name),
+            )
+        }
+        Type::Dict(key_ty, _) => (iter_expr, *key_ty, true, None),
+        Type::Set(e) => (iter_expr, *e, false, None),
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` dict-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}` or `{{… for x in range(...)}}`",
+                "function `{}` dict-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T] | dict[K, V] | set[T]>}}` or `{{… for x in range(...)}}`",
  ctx.fn_name
             )));
         }
@@ -15509,8 +15603,8 @@ fn desugar_dict_comp(
             iter: iter_expr,
             elem_ty: elem_in_ty,
             body,
-            over_keys: false,
-            dict_guard: None,
+            over_keys,
+            dict_guard,
             mutate_elems: false,
         },
     ])
@@ -15624,38 +15718,11 @@ fn desugar_set_comp(
     target: &str,
     comp: &ast::ExprSetComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
-    // PMAT-1316 self-reference belt: the desugar binds the EMPTY destination
-    // before iterating, so a comprehension that reads its own assignment
-    // target — in the iterable (`t = {x for x in t}`), a filter
-    // (`t = {x for x in u if x in t}`; previously a live silent-wrong: the
-    // filter read the fresh empty set where CPython reads the pre-assignment
-    // one), or the element — would see the clobbered name. Refuse loudly. A
-    // comp VARIABLE shadowing the target (`t = {t for t in u}`) stays
-    // admitted for element/filter reads: those resolve to the (renamed) loop
-    // var, not the destination; an ITERABLE read is pre-shadow in CPython and
-    // always refuses.
-    let target_shadowed = comp.generators.iter().any(|g| match &g.target {
-        ast::Expr::Name(n) => n.id.as_str() == target,
-        ast::Expr::Tuple(t) => t
-            .elts
-            .iter()
-            .any(|e| matches!(e, ast::Expr::Name(n) if n.id.as_str() == target)),
-        _ => false,
-    });
-    let self_read = comp.generators.iter().any(|g| {
-        ast_expr_mentions_name(&g.iter, target)
-            || (!target_shadowed && g.ifs.iter().any(|i| ast_expr_mentions_name(i, target)))
-    }) || (!target_shadowed && ast_expr_mentions_name(&comp.elt, target));
-    if self_read {
-        return Err(FrontendError::Lower(format!(
-            "function `{}` binds a set comprehension to `{target}` while the \
-             comprehension itself reads `{target}` — the desugar materialises \
-             the empty destination first, so that read would see the clobbered \
-             name instead of the pre-assignment value CPython evaluates; bind \
-             the comprehension to a fresh name",
-            ctx.fn_name
-        )));
-    }
+    // PMAT-1316 self-reference belt (shared with the dict/list desugars
+    // since PMAT-1317 — see `comp_self_reference_belt`): a filter read of
+    // the target was previously a live silent-wrong (the filter read the
+    // fresh empty set where CPython reads the pre-assignment one).
+    comp_self_reference_belt(&ctx.fn_name, "set", target, &comp.generators, &[&comp.elt])?;
     // PMAT-502fd: two-generator set comprehension → nested `for` loops.
     if comp.generators.len() == 2 {
         return desugar_set_comp_2gen(ctx, target, comp);

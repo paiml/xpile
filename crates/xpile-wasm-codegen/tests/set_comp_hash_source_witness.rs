@@ -434,21 +434,17 @@ fn tuple_source_still_refuses() {
     );
 }
 
-/// HONESTY pins for what this slice does NOT widen: the two-generator comp
-/// over hash sources and the dict COMPREHENSION (the PMAT-1314 keyed-store
-/// sugar) still refuse at the frontend — the manual loop is their supported
-/// spelling; both are follow-up frontend slices.
+/// HONESTY pin for what this slice did NOT widen: the two-generator comp
+/// over hash sources still refuses at the frontend — the manual nested
+/// loop is its supported spelling. (The dict COMPREHENSION over hash
+/// sources, pinned refused here at PMAT-1316, was widened by PMAT-1317 —
+/// see `dict_comp_hash_source_witness.rs` for its executed witness.)
 #[test]
-fn two_generator_and_dict_comp_over_hash_sources_still_refuse() {
+fn two_generator_comp_over_hash_sources_still_refuses() {
     expect_refusal(
         "comp-2gen-hash-src",
         "def go() -> int:\n    s: set[int] = {1, 2}\n    u: set[int] = {10, 20}\n    t = {a + b for a in s for b in u}\n    return len(t)\n",
         "multi-generator set comprehension over an iterable typing as",
-    );
-    expect_refusal(
-        "dict-comp-hash-src",
-        "def go() -> int:\n    d: dict[int, int] = {1: 10, 2: 20}\n    r = {k: d[k] * 2 for k in d}\n    return len(r)\n",
-        "dict-comprehends over an iterable typing as",
     );
 }
 
