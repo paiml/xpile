@@ -6804,6 +6804,130 @@ fn dict_helpers_for(kind: KeyKind) -> String {
     out
 }
 
+/// PMAT-1307: the str-VALUED dict-equality twin `$__wasm_dict_eq_sv_<k>(p, q)
+/// -> i32` — structurally `$__wasm_dict_eq_<k>` (size gate + walk p + per-key
+/// membership probe) with the VALUE compare swapped from `i64.ne` (pointer
+/// identity for a str value) to a CONTENT compare: both 8-byte value slots
+/// hold an i32 str base-pointer zero-extended (the PMAT-1305 store shape), so
+/// each side is `i32.wrap_i64`-narrowed back and handed to `$__wasm_str_eq`
+/// (length header + byte loop). Python `{1: 'a'} == {1: 'a'}` is True across
+/// two DISTINCT allocations — `i64.eq` on the slots would answer False for
+/// any heap-materialised (concat/chr/slice-built) value, a silent miscompile
+/// the int-lane helper cannot avoid.
+///
+/// Reuses the never-trapping `$__wasm_dict_has_<k>` probe and the
+/// present-key-safe `$__wasm_dict_get_<k>` fetch — both emitted with the key
+/// kind's dict helper set, which any `dict[k, str]` LET already forces. The
+/// one EXTRA reference is `$__wasm_str_eq`, so the gate
+/// ([`module_needs_dict_eq_sv`]) also arms `needs_str_eq` for the int-keyed
+/// case (a str-KEYED dict forces it regardless). Order-INDEPENDENT like its
+/// int twin: the walk probes by key, never by storage index, so the result
+/// survives the swap-into-hole order a `del`/`pop` leaves behind. Emitted
+/// per key kind, only when a dict-eq over a str-valued dict can occur.
+fn dict_eq_sv_helper_for(kind: KeyKind) -> String {
+    let s = kind.suffix();
+    let kparam = match kind {
+        KeyKind::Int => "i64",
+        KeyKind::Str => "i32",
+    };
+    let mut out = String::new();
+    writeln!(
+        out,
+        "  ;; __wasm_dict_eq_sv_{s}(p, q) = (dict p == dict q) ? 1 : 0 for STR-valued"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  ;; dicts (|p|==|q| AND ∀k: str_eq(p[k], q[k]) — value CONTENT, never pointer)"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "  (func $__wasm_dict_eq_sv_{s} (param $p i32) (param $q i32) (result i32)"
+    )
+    .expect("write");
+    writeln!(
+        out,
+        "    (local $i i32) (local $n i32) (local $ea i32) (local $k {kparam})"
+    )
+    .expect("write");
+    // size check: |p| != |q| → not equal (cheap header compare, first).
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.get $q").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    i32.ne").expect("write");
+    writeln!(out, "    if").expect("write");
+    writeln!(out, "      i32.const 0").expect("write");
+    writeln!(out, "      return").expect("write");
+    writeln!(out, "    end").expect("write");
+    // walk p; every key must be present in q with CONTENT-equal value.
+    writeln!(out, "    local.get $p").expect("write");
+    writeln!(out, "    i32.load").expect("write");
+    writeln!(out, "    local.set $n").expect("write");
+    writeln!(out, "    i32.const 0").expect("write");
+    writeln!(out, "    local.set $i").expect("write");
+    writeln!(out, "    (block $done").expect("write");
+    writeln!(out, "      (loop $next").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        local.get $n").expect("write");
+    writeln!(out, "        i32.ge_s").expect("write");
+    writeln!(out, "        br_if $done").expect("write");
+    // $ea = p + LIST_ELEMS_OFFSET + i*DICT_ENTRY_SIZE (entry i's address).
+    writeln!(out, "        local.get $p").expect("write");
+    writeln!(out, "        i32.const {LIST_ELEMS_OFFSET}").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const {DICT_ENTRY_SIZE}").expect("write");
+    writeln!(out, "        i32.mul").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $ea").expect("write");
+    // $k = key@ea (loaded with the kind's shape); cached for has + get probes.
+    writeln!(out, "        local.get $ea").expect("write");
+    match kind {
+        KeyKind::Int => writeln!(out, "        i64.load").expect("write"),
+        KeyKind::Str => writeln!(out, "        i32.load").expect("write"),
+    }
+    writeln!(out, "        local.set $k").expect("write");
+    // if key ∉ q → return 0 (never-trapping membership probe).
+    writeln!(out, "        local.get $q").expect("write");
+    writeln!(out, "        local.get $k").expect("write");
+    writeln!(out, "        call $__wasm_dict_has_{s}").expect("write");
+    writeln!(out, "        i32.eqz").expect("write");
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          i32.const 0").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    // if str_eq(p[k], q[k]) is false → return 0. Both value slots hold an i32
+    // str base-pointer zero-extended; wrap each back and compare CONTENT (the
+    // ONLY line that differs from the int twin's `i64.ne`). q's value comes
+    // from get — safe now, has just confirmed the key is present.
+    writeln!(out, "        local.get $ea").expect("write");
+    writeln!(out, "        i64.load offset={DICT_VAL_OFFSET}").expect("write");
+    writeln!(out, "        i32.wrap_i64").expect("write");
+    writeln!(out, "        local.get $q").expect("write");
+    writeln!(out, "        local.get $k").expect("write");
+    writeln!(out, "        call $__wasm_dict_get_{s}").expect("write");
+    writeln!(out, "        i32.wrap_i64").expect("write");
+    writeln!(out, "        call $__wasm_str_eq").expect("write");
+    writeln!(out, "        i32.eqz").expect("write");
+    writeln!(out, "        if").expect("write");
+    writeln!(out, "          i32.const 0").expect("write");
+    writeln!(out, "          return").expect("write");
+    writeln!(out, "        end").expect("write");
+    writeln!(out, "        local.get $i").expect("write");
+    writeln!(out, "        i32.const 1").expect("write");
+    writeln!(out, "        i32.add").expect("write");
+    writeln!(out, "        local.set $i").expect("write");
+    writeln!(out, "        br $next").expect("write");
+    writeln!(out, "      )").expect("write");
+    writeln!(out, "    )").expect("write");
+    // equal size + every key present with content-equal value → equal.
+    writeln!(out, "    i32.const 1").expect("write");
+    writeln!(out, "  )").expect("write");
+    out
+}
+
 /// Python floor-division and floor-modulo helper functions, in WAT.
 ///
 /// WASM `i64.div_s` truncates toward zero; Python `//` floors toward −∞.
@@ -11255,7 +11379,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         mod_fns: &mod_fns,
         str_rets: &str_rets,
     };
-    let needs_str_eq = module_needs_str_eq(module, &str_rets) || dict_str_keys;
+    // PMAT-1307: an `==`/`!=` over str-VALUED dicts routes to the
+    // `$__wasm_dict_eq_sv_<k>` twin, whose value compare calls
+    // `$__wasm_str_eq` — so the INT-keyed twin must arm `needs_str_eq` (a
+    // str-KEYED dict forces it below regardless, via its key compares).
+    let (dict_eq_sv_int, dict_eq_sv_str) = module_needs_dict_eq_sv(module);
+    let needs_str_eq = module_needs_str_eq(module, &str_rets) || dict_str_keys || dict_eq_sv_int;
     // PMAT-1059: a string ORDERING compare (`<`/`<=`/`>`/`>=`) reads the str
     // bytes via `$__wasm_str_cmp` — it needs linear memory declared (to load
     // the payload) but NOT the bump allocator (it allocates nothing).
@@ -12186,6 +12315,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     if needs_dict {
         out.push_str(&dict_helpers(dict_int_keys, dict_str_keys));
     }
+    // PMAT-1307: the str-VALUED dict-equality twins, per key kind — the same
+    // walk as `$__wasm_dict_eq_<k>` with the value compare swapped to
+    // `$__wasm_str_eq` CONTENT equality. Emitted only when an `==`/`!=` over
+    // a `dict[k, str]` local can occur (the gate guarantees the kind's dict
+    // helper set above AND `$__wasm_str_eq` are both present).
+    if dict_eq_sv_int {
+        out.push_str(&dict_eq_sv_helper_for(KeyKind::Int));
+    }
+    if dict_eq_sv_str {
+        out.push_str(&dict_eq_sv_helper_for(KeyKind::Str));
+    }
     // Emit the Python floor-division / floor-modulo helpers once. WASM
     // `i64.div_s` truncates toward zero and `i64.rem_s` is the truncating
     // remainder; Python's `//`/`%` floor toward −∞ with the remainder
@@ -12830,6 +12970,84 @@ fn module_needs_str_eq(module: &Module, rets: &StrReturners) -> bool {
         };
         block_has_str_eq(&f.body, &scan)
     })
+}
+
+/// PMAT-1307: which key kinds need the str-VALUED dict-equality twin
+/// `$__wasm_dict_eq_sv_<k>` — `(int_keyed, str_keyed)`. A kind needs it when
+/// some function both (a) LET-binds a `dict[k, str]` and (b) hosts an
+/// `Eq`/`NotEq` whose operand is one of those dict NAMES — the shape
+/// `emit_binop` routes to the twin. The hunt reuses the battle-tested
+/// [`block_has_str_eq`] walker (audited exhaustive over every expression host
+/// in PMAT-1150/1151) with a crafted scan: the str-valued dict NAMES as the
+/// `names` set (so the dict Ident itself classifies as a compare operand) and
+/// an EMPTY returner set (a str-returning call is irrelevant to dict-eq
+/// routing). OVER-approximate — any other string equality in the same
+/// function also hits, emitting the twin unused (harmless dead WAT, the
+/// `contains`/`insert` posture) — but never under: a missed gate is a `call`
+/// against an undeclared helper, a hard wat2wasm failure. Soundness of the
+/// twin's OWN references: condition (a) guarantees the kind's dict helper set
+/// (`has`/`get`) is emitted, and the caller ORs the int-keyed flag into
+/// `needs_str_eq` (a str-KEYED dict forces `$__wasm_str_eq` regardless).
+fn module_needs_dict_eq_sv(module: &Module) -> (bool, bool) {
+    let empty_rets = StrReturners::default();
+    let mut need_int = false;
+    let mut need_str = false;
+    for f in module_functions(module) {
+        let mut int_keyed: Vec<&str> = Vec::new();
+        let mut str_keyed: Vec<&str> = Vec::new();
+        collect_sv_dict_names_by_kind(&f.body.stmts, &mut int_keyed, &mut str_keyed);
+        for (names, flag) in [(int_keyed, &mut need_int), (str_keyed, &mut need_str)] {
+            if *flag || names.is_empty() {
+                continue;
+            }
+            let scan = StrEqScan {
+                names,
+                str_val_dicts: Vec::new(),
+                rets: &empty_rets,
+                ops: &[BinOp::Eq, BinOp::NotEq],
+            };
+            if block_has_str_eq(&f.body, &scan) {
+                *flag = true;
+            }
+        }
+    }
+    (need_int, need_str)
+}
+
+/// PMAT-1307: collect the names of `dict[K, str]` `Let` locals anywhere in
+/// `stmts`, SPLIT by key kind — the per-kind sibling of
+/// [`collect_str_val_dict_names`] (the `$__wasm_dict_eq_sv_<k>` twin is
+/// emitted per key kind, so the gate must know WHICH kind's names host an
+/// equality). An unsupported key type is skipped here (refused later at
+/// binding lowering, like [`scan_stmts_dict_kinds`]).
+fn collect_sv_dict_names_by_kind<'a>(
+    stmts: &'a [Stmt],
+    int_keyed: &mut Vec<&'a str>,
+    str_keyed: &mut Vec<&'a str>,
+) {
+    for s in stmts {
+        match s {
+            Stmt::Let {
+                name,
+                ty: Type::Dict(k, v),
+                ..
+            } if matches!(**v, Type::Str) => match dict_key_kind(k) {
+                Ok(KeyKind::Int) => int_keyed.push(name.as_str()),
+                Ok(KeyKind::Str) => str_keyed.push(name.as_str()),
+                Err(_) => {}
+            },
+            Stmt::While { body, .. } => collect_sv_dict_names_by_kind(body, int_keyed, str_keyed),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_sv_dict_names_by_kind(then_body, int_keyed, str_keyed);
+                collect_sv_dict_names_by_kind(else_body, int_keyed, str_keyed);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// PMAT-1059: `true` if any function performs a string ORDERING compare
@@ -23305,27 +23523,36 @@ fn emit_binop(
                 rk.suffix()
             )));
         }
-        // PMAT-1305: `$__wasm_dict_eq_<k>` compares each VALUE slot with
-        // `i64.eq` — for a str-valued dict that is POINTER identity, while
-        // Python compares string CONTENT ({1: 'a'} == {1: 'a'} is True even
-        // across distinct allocations). A content-comparing dict-eq twin is
-        // not wired yet; refuse rather than miscompare.
-        if scope.dict_val_is_str(ln) || scope.dict_val_is_str(rn) {
+        // PMAT-1307: dicts whose VALUE kinds disagree (`dict[K, int]` vs
+        // `dict[K, str]`) refuse — NEITHER lane's helper is correct. The int
+        // helper would compare a number against a pointer; constant-False
+        // would miscompile the EMPTY case (`{} == {}` is True in Python even
+        // when the annotations differ). Refused honestly, mirroring the
+        // key-kind gate above.
+        let l_sv = scope.dict_val_is_str(ln);
+        let r_sv = scope.dict_val_is_str(rn);
+        if l_sv != r_sv {
             return Err(unsupported(&format!(
-                "binary op {op:?} over a str-valued dict (`dict[_, str]`) — dict \
-                 equality compares value slots as i64 (pointer identity for str \
-                 values, but Python compares string CONTENT); refused honestly \
-                 until a content-comparing dict-eq is wired"
+                "binary op {op:?} over dicts with different VALUE kinds (a \
+                 `dict[_, int]` vs a `dict[_, str]`) — a shared key's values \
+                 can never compare equal, but two EMPTY dicts are equal, so \
+                 neither value lane's helper is correct; refused honestly"
             )));
         }
         if matches!(op, BinOp::Eq | BinOp::NotEq) {
             // d1 == d2 ⇔ |d1| == |d2| AND ∀k∈d1: k∈d2 ∧ d1[k]==d2[k] — the
             // helper returns an i32 bool. Push both base-pointers, call, invert
-            // for `!=`.
+            // for `!=`. PMAT-1307: str-VALUED dicts route to the
+            // `$__wasm_dict_eq_sv_<k>` twin, whose value compare is
+            // `$__wasm_str_eq` CONTENT equality — `i64.eq` on the slots would
+            // be POINTER identity, answering False for any heap-materialised
+            // value of equal bytes ({1: 'a'} == {1: 'a'} is True in Python
+            // across distinct allocations).
             emit_expr(lhs, scope, out, depth)?;
             emit_expr(rhs, scope, out, depth)?;
             indent(out, depth);
-            writeln!(out, "call $__wasm_dict_eq_{}", lk.suffix()).expect("write");
+            let helper = if l_sv { "dict_eq_sv" } else { "dict_eq" };
+            writeln!(out, "call $__wasm_{helper}_{}", lk.suffix()).expect("write");
             if matches!(op, BinOp::NotEq) {
                 indent(out, depth);
                 writeln!(out, "i32.eqz").expect("write"); // != is !(==)
