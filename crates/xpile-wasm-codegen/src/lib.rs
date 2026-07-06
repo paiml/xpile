@@ -15541,6 +15541,13 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
             .iter()
             .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        // PMAT-1329: `sum(d.values())` over a BOOL-valued dict wraps the
+        // `DictView{Values}` in a bool→int `Map` (the frontend's PMAT-565
+        // coercion). The value materialiser fires INSIDE that map, so the gate
+        // must recurse through it — else `$__wasm_dict_values_to_list_i64` is
+        // left undeclared at its call site (the recurring gate-hole class).
+        // `Filter` shares the shape and is folded in for defence in depth.
+        Expr::Map { list, lambda } | Expr::Filter { list, lambda } => e(list) || e(&lambda.body),
         _ => false,
     }
 }
@@ -19725,6 +19732,22 @@ fn emit_len(
     Ok(WatTy::I64)
 }
 
+/// PMAT-1329: is `lambda` the bool→int identity cast the frontend (PMAT-565)
+/// inserts around a `list[bool]` before `sum` — `lambda(__b) = int(__b)`?
+/// Python's `sum` counts each `True` as 1 (bool is an int subtype), so the
+/// frontend maps every bool element up to an int before folding. Its body must
+/// be a `NumCast { value: <the bound param>, to_float: false, .. }` — a widen of
+/// the 0/1 bool to an int, which is a runtime NO-OP on the already-`0`/`1` i64
+/// value slots a bool-valued dict stores (PMAT-1320). Any other lambda shape is
+/// NOT this coercion and must not be treated as a pass-through.
+fn is_bool_to_int_map(lambda: &SortKey) -> bool {
+    matches!(
+        lambda.body.as_ref(),
+        Expr::NumCast { value, to_float: false, .. }
+            if matches!(value.as_ref(), Expr::Ident(p) if *p == lambda.param)
+    )
+}
+
 /// PMAT-1248: emit `sum(xs)` over a `list[int]` — leaves the i64 total on the
 /// stack. The list NAME lowers to its i32 base-pointer (`local.get $name`, the
 /// PMAT-968 list ABI: a length-prefixed region with the i32 count @ base+0 and
@@ -19873,9 +19896,48 @@ fn emit_list_sum(
             writeln!(out, "call {helper}").expect("write");
             Ok(result)
         }
+        // PMAT-1329: `sum(d.values())` over a BOOL-valued dict (`dict[_, bool]`).
+        // Python's `sum` counts each `True` as 1 (bool is an int subtype), so the
+        // frontend (PMAT-565) wraps `d.values()` in a bool→int `Map` and types the
+        // result `int`. A bool value is STORED as `0`/`1` zero-extended into the
+        // 8-byte i64 slot (PMAT-1320), so the bool→int map is a runtime NO-OP: the
+        // raw value slots ARE the 0/1 ints. Materialise them to a fresh `list[int]`
+        // (the kind-agnostic `$__wasm_dict_values_to_list_i64`, duplicates KEPT)
+        // and fold with the shared i64 sum helper. `sum` is COMMUTATIVE+ASSOCIATIVE
+        // over integers, so the dict's arbitrary storage order is irrelevant → the
+        // total (the count of `True`) is CPython-EXACT. No float/NaN corner (a bool
+        // can never be NaN) and no non-associativity corner (integer `+`), unlike
+        // the honestly-refused float-value sum. Result types as `int` (i64),
+        // matching the frontend's `Sum { of_float: false }`. The materialiser is
+        // armed by the `Expr::Map` arm added to `expr_has_dict_values_to_list`.
+        Expr::Map {
+            list: inner,
+            lambda,
+        } if matches!(
+            inner.as_ref(),
+            Expr::DictView { dict, kind: DictViewKind::Values }
+                if matches!(dict.as_ref(), Expr::Ident(n) if scope.dict_val_is_bool(n))
+        ) && is_bool_to_int_map(lambda) =>
+        {
+            // Defensive: the bool count is always an int fold (`of_float` false).
+            if of_float {
+                return Err(unsupported(
+                    "sum() over a bool-valued dict's values with a float tag — the \
+                     bool count is an int fold; a float form is impossible here",
+                ));
+            }
+            let Expr::DictView { dict, .. } = inner.as_ref() else {
+                unreachable!("guarded by the arm pattern above")
+            };
+            emit_dict_values_to_list(dict, WatTy::I64, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_list_sum_i64").expect("write");
+            Ok(WatTy::I64)
+        }
         _ => Err(unsupported(&format!(
             "sum() of a non-name list — the WASM subset sums a `list[{}]` NAME \
-             (an i32 base-pointer into linear memory) or a `set[int]` (`sum(s)`); a \
+             (an i32 base-pointer into linear memory), a `set[int]` (`sum(s)`), or a \
+             bool-valued dict's values (`sum(d.values())` over `dict[_, bool]`); a \
              list literal / temporary is refused (bind it to a name first)",
             want_elem.keyword()
         ))),

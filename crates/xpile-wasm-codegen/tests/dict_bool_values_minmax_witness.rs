@@ -32,9 +32,11 @@
 //!   * min/max composed in an int arithmetic guard;
 //!   * a bool dict flowing across a FUNCTION param, reduced in the callee.
 //!
+//! NB `sum(d.values())` over bool was refused here in PMAT-1328 and is now WIRED
+//! in PMAT-1329 (the bool→int `Map` the frontend inserts is a NO-OP on the 0/1
+//! i64 slots — see `dict_bool_values_sum_witness.rs`).
+//!
 //! REFUSES honestly (NOT silently mis-lowered — regression guards):
-//!   * `sum(d.values())` over bool (the frontend inserts a bool→int coercion the
-//!     WASM Sum arm does not model — falls to the non-name-list refusal);
 //!   * `sorted(d.values())` / `reversed(d.values())` over bool (a distinct-stride
 //!     `list[bool]` helper is deferred);
 //!   * `for v in d.values()` over bool (the order-safety fold gate has no bool
@@ -219,13 +221,8 @@ fn dict_bool_values_minmax_wrap_and_reuse_helper() {
 #[test]
 fn dict_bool_values_refuse_out_of_lane_forms() {
     for (label, src, needle) in [
-        // sum over bool values — the frontend's bool→int coercion is not modelled
-        // by the WASM Sum arm (falls to the non-name-list refusal).
-        (
-            "sum(d.values())",
-            "def f() -> int:\n    d: dict[int, bool] = {1: True, 2: False}\n    return sum(d.values())\n".to_string(),
-            "non-name list",
-        ),
+        // NB `sum(d.values())` over bool is now WIRED (PMAT-1329) — no longer a
+        // refusal; see `dict_bool_values_sum_witness.rs`.
         // sorted over bool values — a distinct-stride list[bool] helper is deferred.
         (
             "sorted(d.values())",

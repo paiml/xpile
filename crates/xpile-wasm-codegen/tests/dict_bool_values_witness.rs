@@ -286,13 +286,16 @@ fn dict_bool_values_refuse_out_of_lane_forms() {
             "def f() -> int:\n    d: dict[int, bool] = {1: True, 2: False}\n    return d[1] + d[2] + 5\n".to_string(),
             "outside the WASM scalar/control subset",
         ),
-        // .values() reductions — d.values() types as list[bool], not the
-        // list[i64] the value materialiser folds.
+        // sorted over bool values — a distinct-stride list[bool] helper is deferred
+        // (min/max/sum over d.values() are wired, but the ALLOCATING sort is not).
         (
-            "sum(d.values())",
-            "def f() -> int:\n    d: dict[int, bool] = {1: True, 2: False}\n    return sum(d.values())\n".to_string(),
-            "sum() of a non-name list",
+            "sorted(d.values())",
+            "def f() -> int:\n    d: dict[int, bool] = {1: True, 2: False}\n    xs: list[bool] = sorted(d.values())\n    return len(xs)\n".to_string(),
+            "sorted",
         ),
+        // NB `sum(d.values())` over a bool-valued dict was refused here in
+        // PMAT-1320 and is now WIRED in PMAT-1329 (the bool→int `Map` is a NO-OP
+        // on the 0/1 i64 slots) — see `dict_bool_values_sum_witness.rs`.
         // NB `d.pop(...)` / `d.setdefault(...)` over a bool value were refused
         // here in PMAT-1320 and are now WIRED in PMAT-1321 — see
         // `dict_bool_pop_setdefault_witness.rs`.
