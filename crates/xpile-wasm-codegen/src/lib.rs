@@ -15382,6 +15382,21 @@ fn expr_has_set_to_list(expr: &Expr) -> bool {
         Expr::Call { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
+        // PMAT-1330: `len(d.keys())` reads the dict's COUNT header directly
+        // (`emit_len`'s `DictView` arm) — it never materialises the keys, so a
+        // DIRECT `DictView{Keys}` under a `Len` must NOT arm this gate, else a
+        // DEAD `$__wasm_set_to_list_i64` (the shared keys materialiser) is declared.
+        Expr::Len(c)
+            if matches!(
+                c.as_ref(),
+                Expr::DictView {
+                    kind: DictViewKind::Keys,
+                    ..
+                }
+            ) =>
+        {
+            false
+        }
         Expr::Len(c) => e(c),
         Expr::Ord { value } | Expr::Chr { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
@@ -15509,6 +15524,25 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
             e(index)
         }
         Expr::Index { collection, index } => e(collection) || e(index),
+        // PMAT-1330: `len(d.values())` reads the dict's COUNT header directly
+        // (`emit_len`'s `DictView` arm) — it never materialises the values, so a
+        // DIRECT `DictView{Values}` under a `Len` must NOT arm this gate, else a
+        // DEAD `$__wasm_dict_values_to_list_i64` helper is declared. Mirrors the
+        // `Index`-over-`DictView{Values}` carve-out above. A `DictView{Values}`
+        // nested UNDER a wrapper inside the `len` (e.g. `len(sorted(d.values()))`)
+        // is not a direct child here and still recurses — though that whole shape
+        // refuses at emit (a len of a non-name list temporary).
+        Expr::Len(c)
+            if matches!(
+                c.as_ref(),
+                Expr::DictView {
+                    kind: DictViewKind::Values,
+                    ..
+                }
+            ) =>
+        {
+            false
+        }
         Expr::Len(c) => e(c),
         Expr::Ord { value } | Expr::Chr { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
@@ -19663,6 +19697,46 @@ fn emit_len(
     out: &mut String,
     depth: usize,
 ) -> Result<WatTy, BackendError> {
+    // PMAT-1330: `len()` of a dict VIEW — `len(d.keys())` / `len(d.values())` /
+    // `len(d.items())`. Python guarantees a view's length EQUALS the dict's
+    // live-entry count for ALL THREE kinds (a view is a lazy proxy over the dict,
+    // never a materialised copy), so this reads the dict's i32 count header at
+    // base+0 — EXACTLY as `len(d)` does (PMAT-995) — and NEVER interprets a
+    // key/value slot. Hence it is CPython-EXACT for ANY key/value kind
+    // (int/str/bool/float), ORDER-INDEPENDENT (a count carries no ordering, so the
+    // dict's arbitrary storage order is irrelevant), and allocates nothing. The
+    // frontend lowers a view under `len` to `Len(DictView{..})` regardless of kind;
+    // the value/key MATERIALISERS (`emit_dict_values_to_list` / the keys one) are
+    // NOT reached — the count is read directly — so the Keys/Values gate walkers
+    // carve THIS `Len(DictView{..})` shape out (return `false`) to avoid declaring
+    // a DEAD materialiser helper (mirrors the `Index`-over-`DictView{Values}`
+    // carve-out). The `Items` kind arms no materialiser gate at all.
+    if let Expr::DictView { dict, .. } = collection {
+        let Expr::Ident(dname) = dict.as_ref() else {
+            return Err(unsupported(
+                "len() of a dict view over a non-name dict — the WASM subset takes \
+                 len() of a view (`d.keys()`/`d.values()`/`d.items()`) over a NAMED \
+                 dict local; bind the dict to a name first",
+            ));
+        };
+        // Must be a DICT (a set is `is_set`; both share `heap_maps`). A view over
+        // anything but a dict local is a hard refusal, never a base-pointer misread.
+        if scope.heap_map_kind(dname).is_none() || scope.is_set(dname) {
+            return Err(unsupported(&format!(
+                "len() of a view over `{dname}` which is not a `dict` local in the \
+                 WASM subset"
+            )));
+        }
+        // A dict view's length is the dict's live-entry count — the i32 header at
+        // base+0, zero-extended to i64 (the PMAT-995 dict/set len ABI).
+        indent(out, depth);
+        writeln!(out, "local.get ${dname}").expect("write");
+        indent(out, depth);
+        writeln!(out, "i32.load").expect("write");
+        indent(out, depth);
+        writeln!(out, "i64.extend_i32_u").expect("write");
+        return Ok(WatTy::I64);
+    }
     let Expr::Ident(name) = collection else {
         // PMAT-1148: `len()` of a temporary STRING expression. Every
         // string-VALUED form (a `Concat`, an `s * n` `Repeat`, a `s[lo:hi]`
