@@ -20020,11 +20020,31 @@ fn emit_list_minmax(
                      modelled"
                 )));
             }
+            // PMAT-1328: a BOOL-valued dict (`dict[_, bool]`) stores each value as a
+            // `0`/`1` zero-extended into the 8-byte i64 slot. min/max are
+            // ORDER-INDEPENDENT extrema and `0`/`1` needs no interpretation to
+            // compare, so the i64 min/max helper folds the RAW slots CORRECTLY
+            // (`max([True, False])` = `max(1, 0)` = `1`). But the extremum must be
+            // WRAPPED back to an i32 so `min/max(d.values())` IS a proper `bool`
+            // (the frontend types it so — `max([True, False])` is `True`, not the
+            // int `1`). Without the wrap the arm returned an i64 into a `bool` (i32)
+            // return/value position — INVALID WAT (`type mismatch, expected [i32] got
+            // [i64]`), the value-kind hole this slice closes. Mirrors
+            // `emit_dict_get`'s bool read (`i32.wrap_i64`). No float/NaN corner (bool
+            // can't be NaN) and no order/associativity corner (min/max are both), so
+            // the reduction is CPython-EXACT — unlike the honestly-refused float and
+            // sum-of-bool value reductions.
+            let val_is_bool = matches!(dict.as_ref(), Expr::Ident(n) if scope.dict_val_is_bool(n));
             emit_dict_values_to_list(dict, WatTy::I64, scope, out, depth)?;
             indent(out, depth);
             writeln!(out, "i32.const {}", i32::from(is_max)).expect("write");
             indent(out, depth);
             writeln!(out, "call $__wasm_list_minmax_i64").expect("write");
+            if val_is_bool {
+                indent(out, depth);
+                writeln!(out, "i32.wrap_i64").expect("write");
+                return Ok(WatTy::I32);
+            }
             Ok(WatTy::I64)
         }
         Expr::Ident(name) => {
