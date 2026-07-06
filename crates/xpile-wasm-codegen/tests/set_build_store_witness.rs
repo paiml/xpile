@@ -556,23 +556,28 @@ fn fold_reading_built_set_refuses() {
     );
 }
 
-/// HONESTY pin: a set COMPREHENSION over a set/dict source — the exact sugar
-/// for this build loop — still refuses at the FRONTEND (its desugar accepts
-/// list/range iterables only). The manual loop is the supported spelling;
-/// widening the comprehension iterable vocabulary is a frontend slice, not
-/// an order-safety one.
+/// PMAT-1316 FLIPPED the old honesty pin: a set COMPREHENSION over a
+/// set/dict source — the exact sugar for this build loop — now LOWERS: the
+/// frontend desugar produces the SAME `ForEach` + `SetAdd` HIR as the manual
+/// loop this witness certifies, and the order gate rides it unchanged. The
+/// executed differential for the sugar lives in
+/// `set_comp_hash_source_witness.rs`.
 #[test]
-fn set_comprehension_over_hash_source_still_refuses_at_frontend() {
-    expect_refusal(
-        "comprehension-set-src",
-        "def go() -> int:\n    s: set[int] = {1, 2, 3}\n    t = {x * 2 for x in s}\n    return len(t)\n",
-        "set-comprehends over an iterable typing as",
-    );
-    expect_refusal(
-        "comprehension-dict-src",
-        "def go() -> int:\n    d: dict[int, int] = {1: 10}\n    t = {k * 3 for k in d}\n    return len(t)\n",
-        "set-comprehends over an iterable typing as",
-    );
+fn set_comprehension_over_hash_source_now_lowers() {
+    for (name, src) in [
+        (
+            "comprehension-set-src",
+            "def go() -> int:\n    s: set[int] = {1, 2, 3}\n    t = {x * 2 for x in s}\n    return len(t)\n",
+        ),
+        (
+            "comprehension-dict-src",
+            "def go() -> int:\n    d: dict[int, int] = {1: 10}\n    t = {k * 3 for k in d}\n    return len(t)\n",
+        ),
+    ] {
+        emit(src).unwrap_or_else(|e| {
+            panic!("`{name}` must lower through the PMAT-1316 widened desugar, got: {e}")
+        });
+    }
 }
 
 // ---- the executed differential --------------------------------------------------

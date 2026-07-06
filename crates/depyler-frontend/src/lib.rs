@@ -11105,6 +11105,78 @@ fn ast_body_returns_value(stmts: &[ast::Stmt]) -> bool {
     })
 }
 
+/// PMAT-1316: conservative "does `name` appear anywhere in this EXPRESSION"
+/// AST scan — the expression half of [`ast_stmts_mention_name`], hoisted to
+/// top level so the set-comprehension desugar can refuse a comprehension that
+/// READS its own assignment target (the desugar binds the empty destination
+/// FIRST, so such a read would see the clobbered name, not the
+/// pre-assignment value CPython evaluates). Same over-matching contract as
+/// PMAT-1084: a false positive refuses, never miscompiles.
+fn ast_expr_mentions_name(e: &ast::Expr, name: &str) -> bool {
+    use self::ast_expr_mentions_name as expr_mentions;
+    fn comp_mentions(gens: &[ast::Comprehension], name: &str) -> bool {
+        gens.iter().any(|g| {
+            ast_expr_mentions_name(&g.target, name)
+                || ast_expr_mentions_name(&g.iter, name)
+                || g.ifs.iter().any(|i| ast_expr_mentions_name(i, name))
+        })
+    }
+    let any = |es: &[ast::Expr]| es.iter().any(|x| expr_mentions(x, name));
+    match e {
+        ast::Expr::Name(n) => n.id.as_str() == name,
+        ast::Expr::BoolOp(b) => any(&b.values),
+        ast::Expr::NamedExpr(n) => expr_mentions(&n.target, name) || expr_mentions(&n.value, name),
+        ast::Expr::BinOp(b) => expr_mentions(&b.left, name) || expr_mentions(&b.right, name),
+        ast::Expr::UnaryOp(u) => expr_mentions(&u.operand, name),
+        ast::Expr::Lambda(l) => expr_mentions(&l.body, name),
+        ast::Expr::IfExp(t) => {
+            expr_mentions(&t.test, name)
+                || expr_mentions(&t.body, name)
+                || expr_mentions(&t.orelse, name)
+        }
+        ast::Expr::Dict(d) => {
+            d.keys.iter().flatten().any(|k| expr_mentions(k, name)) || any(&d.values)
+        }
+        ast::Expr::Set(s) => any(&s.elts),
+        ast::Expr::List(l) => any(&l.elts),
+        ast::Expr::Tuple(t) => any(&t.elts),
+        ast::Expr::ListComp(c) => expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name),
+        ast::Expr::SetComp(c) => expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name),
+        ast::Expr::DictComp(c) => {
+            expr_mentions(&c.key, name)
+                || expr_mentions(&c.value, name)
+                || comp_mentions(&c.generators, name)
+        }
+        ast::Expr::GeneratorExp(c) => {
+            expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name)
+        }
+        ast::Expr::Compare(c) => expr_mentions(&c.left, name) || any(&c.comparators),
+        ast::Expr::Call(c) => {
+            expr_mentions(&c.func, name)
+                || any(&c.args)
+                || c.keywords.iter().any(|k| expr_mentions(&k.value, name))
+        }
+        ast::Expr::FormattedValue(f) => {
+            expr_mentions(&f.value, name)
+                || f.format_spec
+                    .as_deref()
+                    .is_some_and(|s| expr_mentions(s, name))
+        }
+        ast::Expr::JoinedStr(j) => any(&j.values),
+        ast::Expr::Attribute(a) => expr_mentions(&a.value, name),
+        ast::Expr::Subscript(s) => expr_mentions(&s.value, name) || expr_mentions(&s.slice, name),
+        ast::Expr::Starred(s) => expr_mentions(&s.value, name),
+        ast::Expr::Slice(s) => [&s.lower, &s.upper, &s.step]
+            .into_iter()
+            .flatten()
+            .any(|x| expr_mentions(x, name)),
+        ast::Expr::Await(a) => expr_mentions(&a.value, name),
+        ast::Expr::Yield(y) => y.value.as_deref().is_some_and(|v| expr_mentions(v, name)),
+        ast::Expr::YieldFrom(y) => expr_mentions(&y.value, name),
+        _ => false,
+    }
+}
+
 /// PMAT-1084: conservative "does `name` appear anywhere in these statements"
 /// AST scan, used to refuse `__exit__` bodies that USE their exc params — the
 /// desugar fabricates zero-values for them (CPython passes `None` on the clean
@@ -11113,77 +11185,7 @@ fn ast_body_returns_value(stmts: &[ast::Stmt]) -> bool {
 /// without a read) leads to a refusal, never a miscompile, so shadowing is
 /// deliberately NOT modeled.
 fn ast_stmts_mention_name(stmts: &[ast::Stmt], name: &str) -> bool {
-    fn expr_mentions(e: &ast::Expr, name: &str) -> bool {
-        let any = |es: &[ast::Expr]| es.iter().any(|x| expr_mentions(x, name));
-        match e {
-            ast::Expr::Name(n) => n.id.as_str() == name,
-            ast::Expr::BoolOp(b) => any(&b.values),
-            ast::Expr::NamedExpr(n) => {
-                expr_mentions(&n.target, name) || expr_mentions(&n.value, name)
-            }
-            ast::Expr::BinOp(b) => expr_mentions(&b.left, name) || expr_mentions(&b.right, name),
-            ast::Expr::UnaryOp(u) => expr_mentions(&u.operand, name),
-            ast::Expr::Lambda(l) => expr_mentions(&l.body, name),
-            ast::Expr::IfExp(t) => {
-                expr_mentions(&t.test, name)
-                    || expr_mentions(&t.body, name)
-                    || expr_mentions(&t.orelse, name)
-            }
-            ast::Expr::Dict(d) => {
-                d.keys.iter().flatten().any(|k| expr_mentions(k, name)) || any(&d.values)
-            }
-            ast::Expr::Set(s) => any(&s.elts),
-            ast::Expr::List(l) => any(&l.elts),
-            ast::Expr::Tuple(t) => any(&t.elts),
-            ast::Expr::ListComp(c) => {
-                expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name)
-            }
-            ast::Expr::SetComp(c) => {
-                expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name)
-            }
-            ast::Expr::DictComp(c) => {
-                expr_mentions(&c.key, name)
-                    || expr_mentions(&c.value, name)
-                    || comp_mentions(&c.generators, name)
-            }
-            ast::Expr::GeneratorExp(c) => {
-                expr_mentions(&c.elt, name) || comp_mentions(&c.generators, name)
-            }
-            ast::Expr::Compare(c) => expr_mentions(&c.left, name) || any(&c.comparators),
-            ast::Expr::Call(c) => {
-                expr_mentions(&c.func, name)
-                    || any(&c.args)
-                    || c.keywords.iter().any(|k| expr_mentions(&k.value, name))
-            }
-            ast::Expr::FormattedValue(f) => {
-                expr_mentions(&f.value, name)
-                    || f.format_spec
-                        .as_deref()
-                        .is_some_and(|s| expr_mentions(s, name))
-            }
-            ast::Expr::JoinedStr(j) => any(&j.values),
-            ast::Expr::Attribute(a) => expr_mentions(&a.value, name),
-            ast::Expr::Subscript(s) => {
-                expr_mentions(&s.value, name) || expr_mentions(&s.slice, name)
-            }
-            ast::Expr::Starred(s) => expr_mentions(&s.value, name),
-            ast::Expr::Slice(s) => [&s.lower, &s.upper, &s.step]
-                .into_iter()
-                .flatten()
-                .any(|x| expr_mentions(x, name)),
-            ast::Expr::Await(a) => expr_mentions(&a.value, name),
-            ast::Expr::Yield(y) => y.value.as_deref().is_some_and(|v| expr_mentions(v, name)),
-            ast::Expr::YieldFrom(y) => expr_mentions(&y.value, name),
-            _ => false,
-        }
-    }
-    fn comp_mentions(gens: &[ast::Comprehension], name: &str) -> bool {
-        gens.iter().any(|g| {
-            expr_mentions(&g.target, name)
-                || expr_mentions(&g.iter, name)
-                || g.ifs.iter().any(|i| expr_mentions(i, name))
-        })
-    }
+    use self::ast_expr_mentions_name as expr_mentions;
     stmts.iter().any(|s| match s {
         ast::Stmt::Expr(e) => expr_mentions(&e.value, name),
         ast::Stmt::Return(r) => r.value.as_deref().is_some_and(|v| expr_mentions(v, name)),
@@ -15622,6 +15624,38 @@ fn desugar_set_comp(
     target: &str,
     comp: &ast::ExprSetComp,
 ) -> Result<Vec<Stmt>, FrontendError> {
+    // PMAT-1316 self-reference belt: the desugar binds the EMPTY destination
+    // before iterating, so a comprehension that reads its own assignment
+    // target — in the iterable (`t = {x for x in t}`), a filter
+    // (`t = {x for x in u if x in t}`; previously a live silent-wrong: the
+    // filter read the fresh empty set where CPython reads the pre-assignment
+    // one), or the element — would see the clobbered name. Refuse loudly. A
+    // comp VARIABLE shadowing the target (`t = {t for t in u}`) stays
+    // admitted for element/filter reads: those resolve to the (renamed) loop
+    // var, not the destination; an ITERABLE read is pre-shadow in CPython and
+    // always refuses.
+    let target_shadowed = comp.generators.iter().any(|g| match &g.target {
+        ast::Expr::Name(n) => n.id.as_str() == target,
+        ast::Expr::Tuple(t) => t
+            .elts
+            .iter()
+            .any(|e| matches!(e, ast::Expr::Name(n) if n.id.as_str() == target)),
+        _ => false,
+    });
+    let self_read = comp.generators.iter().any(|g| {
+        ast_expr_mentions_name(&g.iter, target)
+            || (!target_shadowed && g.ifs.iter().any(|i| ast_expr_mentions_name(i, target)))
+    }) || (!target_shadowed && ast_expr_mentions_name(&comp.elt, target));
+    if self_read {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` binds a set comprehension to `{target}` while the \
+             comprehension itself reads `{target}` — the desugar materialises \
+             the empty destination first, so that read would see the clobbered \
+             name instead of the pre-assignment value CPython evaluates; bind \
+             the comprehension to a fresh name",
+            ctx.fn_name
+        )));
+    }
     // PMAT-502fd: two-generator set comprehension → nested `for` loops.
     if comp.generators.len() == 2 {
         return desugar_set_comp_2gen(ctx, target, comp);
@@ -15748,11 +15782,36 @@ fn desugar_set_comp(
         ));
     }
     let iter_expr = str_iter_to_chars(ctx, lower_expr_in_ctx(ctx, gen.iter.clone())?);
-    let elem_in_ty = match infer_type_in_ctx(ctx, &iter_expr) {
-        Type::List(e) => *e,
+    // PMAT-1316: dict/set sources join the comprehension vocabulary,
+    // desugaring to EXACTLY the statement-form loop shapes (PMAT-472 /
+    // PMAT-742 / PMAT-847): a dict iterates its KEYS — lazy `over_keys` when
+    // read-only; the owned keys-snapshot + size-change guard when the dict is
+    // mutated anywhere in the function, matching `for k in d:` — and a set
+    // iterates its elements. Every backend then sees the same HIR as the
+    // manual loop; in particular the WASM hash-order gate applies unchanged
+    // (`{x * 2 for x in s}` IS the PMAT-1315 set-build loop).
+    let (iter_expr, elem_in_ty, over_keys, dict_guard) = match infer_type_in_ctx(ctx, &iter_expr) {
+        Type::List(e) => (iter_expr, *e, false, None),
+        Type::Dict(key_ty, _) if matches!(&iter_expr, Expr::Ident(n) if ctx.mutable.contains(n)) => {
+            let dict_name = match &iter_expr {
+                Expr::Ident(n) => n.clone(),
+                _ => unreachable!("matched Expr::Ident above"),
+            };
+            (
+                Expr::DictView {
+                    dict: Box::new(iter_expr),
+                    kind: DictViewKind::Keys,
+                },
+                *key_ty,
+                false,
+                Some(dict_name),
+            )
+        }
+        Type::Dict(key_ty, _) => (iter_expr, *key_ty, true, None),
+        Type::Set(e) => (iter_expr, *e, false, None),
         other => {
             return Err(FrontendError::Lower(format!(
-                "function `{}` set-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T]>}}` or `{{… for x in range(...)}}`",
+                "function `{}` set-comprehends over an iterable typing as {other:?}; v0.2.0 supports `{{… for x in <list[T] | dict[K, V] | set[T]>}}` or `{{… for x in range(...)}}`",
  ctx.fn_name
             )));
         }
@@ -15799,8 +15858,8 @@ fn desugar_set_comp(
             iter: iter_expr,
             elem_ty: elem_in_ty,
             body,
-            over_keys: false,
-            dict_guard: None,
+            over_keys,
+            dict_guard,
             mutate_elems: false,
         },
     ])
