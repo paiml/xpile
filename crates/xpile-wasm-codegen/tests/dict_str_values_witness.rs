@@ -329,10 +329,8 @@ fn dict_str_values_refuse_mixed_value_kinds() {
 /// (`dict[int, dict[int, int]]`), still outside the WASM dict value subset.
 #[test]
 fn dict_value_gate_still_refuses_nested() {
-    let err = emit(
-        "def f() -> int:\n    d: dict[int, dict[int, int]] = {}\n    return len(d)\n",
-    )
-    .expect_err("a nested-dict-valued dict must still be refused");
+    let err = emit("def f() -> int:\n    d: dict[int, dict[int, int]] = {}\n    return len(d)\n")
+        .expect_err("a nested-dict-valued dict must still be refused");
     assert!(
         err.contains("dict value type"),
         "nested-value refusal should come from the value gate, got: {err}"
