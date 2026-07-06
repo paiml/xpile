@@ -11371,6 +11371,9 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // PMAT-1028: the str-returning callables, so a call may feed a string
     // position (`s: str = build(5)`, a concat operand) with proven str-ness.
     let str_rets = build_str_returners(module);
+    // PMAT-1309: dict/set param signatures of every free function, so call
+    // sites kind-check dict/set arguments (see `check_heap_call_args`).
+    let heap_sigs = build_heap_sig_registry(module);
     let regs = Registries {
         literals: &literals,
         structs: &structs,
@@ -11378,6 +11381,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         assoc_fns: &assoc_fns,
         mod_fns: &mod_fns,
         str_rets: &str_rets,
+        heap_sigs: &heap_sigs,
     };
     // PMAT-1307: an `==`/`!=` over str-VALUED dicts routes to the
     // `$__wasm_dict_eq_sv_<k>` twin, whose value compare calls
@@ -12398,7 +12402,15 @@ fn module_uses_list_param(module: &Module) -> bool {
             // (PMAT-1023: this scan covers struct METHODS too — their `self`
             // receiver is a struct param, so any module with a method gets
             // the `(memory …)` its field loads/stores need.)
-            .any(|p| matches!(p.ty, Type::List(_) | Type::Str | Type::Struct(_)))
+            // PMAT-1309: a dict/set param is an i32 base-pointer to a bump-heap
+            // entry array, so it too needs the `(memory …)` declaration (the
+            // dict-kind scan forces the heap+helpers alongside).
+            .any(|p| {
+                matches!(
+                    p.ty,
+                    Type::List(_) | Type::Str | Type::Struct(_) | Type::Dict(_, _) | Type::Set(_)
+                )
+            })
     })
 }
 
@@ -12902,6 +12914,23 @@ fn module_dict_key_kinds(module: &Module) -> (bool, bool) {
     let mut need_int = false;
     let mut need_str = false;
     for f in module_functions(module) {
+        // PMAT-1309: a dict/set PARAM pulls in its kind's helper set exactly
+        // like a `Let` binding — its keyed reads (`d[k]`, `in`, `pop`) call
+        // the same `$__wasm_dict_*_<k>` helpers; a miss here would be a
+        // `call` against an undeclared helper (hard wat2wasm failure).
+        for p in &f.params {
+            let key_ty = match &p.ty {
+                Type::Dict(k, _) | Type::Set(k) => Some(k.as_ref()),
+                _ => None,
+            };
+            if let Some(k) = key_ty {
+                match dict_key_kind(k) {
+                    Ok(KeyKind::Int) => need_int = true,
+                    Ok(KeyKind::Str) => need_str = true,
+                    Err(_) => {} // refused at param mapping
+                }
+            }
+        }
         scan_block_dict_kinds(&f.body, &mut need_int, &mut need_str);
     }
     (need_int, need_str)
@@ -12960,7 +12989,10 @@ fn module_needs_str_eq(module: &Module, rets: &StrReturners) -> bool {
             .map(|p| p.name.as_str())
             .collect();
         collect_str_let_names(&f.body.stmts, &mut names);
-        let mut str_val_dicts: Vec<&str> = Vec::new();
+        // PMAT-1309: dict[K, str] PARAMS classify like Let-bound ones — a
+        // value read through a param (`d[k]`, `d.get`, `d.pop`, …) is a
+        // string operand for eq/cmp routing.
+        let mut str_val_dicts: Vec<&str> = str_val_dict_param_names(f);
         collect_str_val_dict_names(&f.body.stmts, &mut str_val_dicts);
         let scan = StrEqScan {
             names,
@@ -12995,6 +13027,20 @@ fn module_needs_dict_eq_sv(module: &Module) -> (bool, bool) {
     for f in module_functions(module) {
         let mut int_keyed: Vec<&str> = Vec::new();
         let mut str_keyed: Vec<&str> = Vec::new();
+        // PMAT-1309: a `dict[K, str]` PARAM hosts the same eq shapes a
+        // Let-bound one does — seed the per-kind name lists from the
+        // signature before the body walk.
+        for p in &f.params {
+            if let Type::Dict(k, v) = &p.ty {
+                if matches!(**v, Type::Str) {
+                    match dict_key_kind(k) {
+                        Ok(KeyKind::Int) => int_keyed.push(p.name.as_str()),
+                        Ok(KeyKind::Str) => str_keyed.push(p.name.as_str()),
+                        Err(_) => {}
+                    }
+                }
+            }
+        }
         collect_sv_dict_names_by_kind(&f.body.stmts, &mut int_keyed, &mut str_keyed);
         for (names, flag) in [(int_keyed, &mut need_int), (str_keyed, &mut need_str)] {
             if *flag || names.is_empty() {
@@ -13065,7 +13111,10 @@ fn module_needs_str_cmp(module: &Module, rets: &StrReturners) -> bool {
             .map(|p| p.name.as_str())
             .collect();
         collect_str_let_names(&f.body.stmts, &mut names);
-        let mut str_val_dicts: Vec<&str> = Vec::new();
+        // PMAT-1309: dict[K, str] PARAMS classify like Let-bound ones — a
+        // value read through a param (`d[k]`, `d.get`, `d.pop`, …) is a
+        // string operand for eq/cmp routing.
+        let mut str_val_dicts: Vec<&str> = str_val_dict_param_names(f);
         collect_str_val_dict_names(&f.body.stmts, &mut str_val_dicts);
         let scan = StrEqScan {
             names,
@@ -15428,6 +15477,17 @@ fn collect_str_let_names<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a str>) {
 /// `stmts` (including nested `If`/`While` bodies) into `out` — the pre-scan
 /// mirror of [`Scope::str_val_dicts`], so the `$__wasm_str_eq`/`$__wasm_str_cmp`
 /// gate walkers classify a `d[k]` read over one as string-valued.
+/// PMAT-1309: the `dict[K, str]` PARAMETER names of `f` — the param-side
+/// sibling of [`collect_str_val_dict_names`], seeding every scan that
+/// classifies value reads through a str-valued dict as string operands.
+fn str_val_dict_param_names(f: &Function) -> Vec<&str> {
+    f.params
+        .iter()
+        .filter(|p| matches!(&p.ty, Type::Dict(_, v) if matches!(**v, Type::Str)))
+        .map(|p| p.name.as_str())
+        .collect()
+}
+
 fn collect_str_val_dict_names<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a str>) {
     for s in stmts {
         match s {
@@ -16050,6 +16110,24 @@ fn param_wat_type(ty: &Type) -> Result<WatTy, BackendError> {
         // (fields at fixed 8-byte-slot offsets); `p.field` loads from it.
         return Ok(WatTy::I32);
     }
+    if let Type::Dict(k, v) = ty {
+        // PMAT-1309: a dict param is an i32 base-pointer to a bump-heap
+        // `[count][cap]`-headed entry array — the SAME record a `Let`-bound
+        // `DictLit` allocates, passed by reference through an intra-module
+        // call (Python reference semantics). Key + value kinds are validated
+        // now (honest early refusal); the caller registers them in the scope
+        // so every keyed read routes through the right `$__wasm_dict_*_<k>`
+        // helper and value encoding.
+        dict_key_kind(k)?;
+        dict_value_kind(v)?;
+        return Ok(WatTy::I32);
+    }
+    if let Type::Set(e) = ty {
+        // PMAT-1309: a set param is a keys-only dict record (16-byte entries,
+        // dummy value slot) behind the same i32 base-pointer ABI.
+        dict_key_kind(e)?;
+        return Ok(WatTy::I32);
+    }
     map_type(ty)
 }
 
@@ -16108,6 +16186,17 @@ struct Scope<'a> {
     /// `$__wasm_set_eq_<k>` (membership-only) and dicts to `$__wasm_dict_eq_<k>`
     /// (membership + per-key value compare, PMAT-1243).
     heap_sets: Vec<String>,
+    /// PMAT-1309: the subset of [`Scope::heap_maps`] names that are function
+    /// PARAMETERS. The caller keeps its own copy of the base-pointer, so any
+    /// op that can GROW + RELOCATE the record and write the moved base back
+    /// into the local (`d[k] = v`, `d.setdefault`, `d.update`, `s.add`)
+    /// would leave the caller holding a STALE pointer — those refuse on a
+    /// param. The IN-PLACE ops (`pop`/`del`/`remove`/`discard`/`clear` — the
+    /// region never moves, no write-back) and the whole read surface remain
+    /// caller-visible reference semantics, exactly the list-param posture
+    /// (`append` needs a growable literal binding; `remove`/`del` accept any
+    /// list local, params included).
+    heap_map_params: Vec<String>,
     /// PMAT-1305: the NAMES in [`Scope::heap_maps`] whose dict VALUE type is
     /// `str` (`dict[K, str]`). The value slot then holds an `i32` string
     /// base-pointer zero-extended into the 8-byte slot, so: `d[k]` reads route
@@ -16143,6 +16232,9 @@ struct Scope<'a> {
     /// verified to actually produce a str pointer — its i32 result alone is
     /// ambiguous (bool and struct returns are i32 too).
     str_rets: &'a StrReturners,
+    /// PMAT-1309: per-free-function dict/set param signatures — call sites
+    /// kind-check dict/set arguments against the callee's declared kinds.
+    heap_sigs: &'a HeapSigRegistry,
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -16166,6 +16258,14 @@ impl Scope<'_> {
     /// set routes `==`/`!=` to `$__wasm_set_eq_<k>`.
     fn is_set(&self, name: &str) -> bool {
         self.heap_sets.iter().any(|n| n == name)
+    }
+
+    /// PMAT-1309: `true` if `name` is a dict/set PARAMETER — the growth ops
+    /// (`d[k] = v`, `setdefault`, `update`, `s.add`) refuse on it (a grown
+    /// record relocates; the caller's base-pointer would go stale), while
+    /// in-place mutation and every read stay caller-visible.
+    fn is_heap_param(&self, name: &str) -> bool {
+        self.heap_map_params.iter().any(|n| n == name)
     }
 
     /// PMAT-1305: `true` if `name` is a LET-bound `dict[K, str]` local — its
@@ -16210,6 +16310,15 @@ impl Scope<'_> {
             .iter()
             .find(|(k, _, _)| k == key)
             .map(|(_, p, r)| (p.as_slice(), *r))
+    }
+
+    /// PMAT-1309: the callee's per-param dict/set signature, for call-site
+    /// kind checking of dict/set arguments (free functions only).
+    fn fn_heap_sigs(&self, key: &str) -> Option<&[Option<HeapParamSig>]> {
+        self.heap_sigs
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, s)| s.as_slice())
     }
 
     fn ty_of(&self, name: &str) -> Result<WatTy, BackendError> {
@@ -16327,6 +16436,10 @@ struct Registries<'a> {
     assoc_fns: &'a AssocFnRegistry,
     mod_fns: &'a AssocFnRegistry,
     str_rets: &'a StrReturners,
+    /// PMAT-1309: per-free-function dict/set param signatures, so call sites
+    /// kind-check dict/set arguments (an i32-for-i32 WAT match alone would
+    /// silently miscompile a kind mismatch).
+    heap_sigs: &'a HeapSigRegistry,
 }
 
 fn emit_function(
@@ -16341,6 +16454,7 @@ fn emit_function(
         assoc_fns,
         mod_fns,
         str_rets,
+        heap_sigs,
     } = *regs;
     // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
     // base-pointer of the newly-materialised length-prefixed string in linear
@@ -16375,6 +16489,7 @@ fn emit_function(
         str_names: Vec::new(),
         heap_maps: Vec::new(),
         heap_sets: Vec::new(),
+        heap_map_params: Vec::new(),
         str_val_dicts: Vec::new(),
         structs,
         struct_locals: Vec::new(),
@@ -16382,6 +16497,7 @@ fn emit_function(
         assoc_fns,
         mod_fns,
         str_rets,
+        heap_sigs,
         literals,
         ret,
         ret_is_unit,
@@ -16407,6 +16523,26 @@ fn emit_function(
         // reads resolve the field offset from the registry.
         if let Type::Struct(sname) = ty {
             scope.struct_locals.push((name.clone(), sname.clone()));
+        }
+        // PMAT-1309: a dict/set PARAM registers exactly like a `Let`-bound
+        // dict/set (`collect_let_locals_stmts`) — key kind into `heap_maps`,
+        // set-ness into `heap_sets`, a str VALUE kind into `str_val_dicts` —
+        // so every keyed read/`in`/`len`/iteration/`==` treats it like a
+        // local. PLUS `heap_map_params`, which the growth ops consult to
+        // refuse (a grown record relocates; the caller's pointer goes stale).
+        if let Type::Dict(k, v) = ty {
+            let kind = dict_key_kind(k)?;
+            if dict_value_kind(v)? == KeyKind::Str {
+                scope.str_val_dicts.push(name.clone());
+            }
+            scope.heap_maps.push((name.clone(), kind));
+            scope.heap_map_params.push(name.clone());
+        }
+        if let Type::Set(e) = ty {
+            let kind = dict_key_kind(e)?;
+            scope.heap_maps.push((name.clone(), kind));
+            scope.heap_sets.push(name.clone());
+            scope.heap_map_params.push(name.clone());
         }
     }
 
@@ -16964,7 +17100,14 @@ fn emit_stmt(
                             args.len()
                         )));
                     }
+                    // PMAT-1309: kind-check dict/set arguments — the
+                    // statement-position mutating-helper idiom (`tally(d)`)
+                    // is exactly where a dict flows through a call.
+                    check_heap_call_args(callee, scope.fn_heap_sigs(callee), args, scope)?;
                     for (a, pt) in args.iter().zip(ptys.iter()) {
+                        // A dict/set argument passes its shared base-pointer —
+                        // peel the frontend's value-semantics `Clone` wrapper.
+                        let a = peel_heap_clone_arg(a, scope);
                         emit_expr_typed(a, scope, out, depth, *pt)?;
                     }
                     indent(out, depth);
@@ -17545,6 +17688,10 @@ fn emit_expr(
                         args.len()
                     )));
                 }
+                // PMAT-1309: assoc fns never declare dict/set params (refused
+                // at registry build) — a dict/set argument is refused here
+                // rather than silently passing as a stray i32 pointer.
+                check_heap_call_args(callee, None, args, scope)?;
                 for (a, pt) in args.iter().zip(ptys.iter()) {
                     emit_expr_typed(a, scope, out, depth, *pt)?;
                 }
@@ -17571,7 +17718,14 @@ fn emit_expr(
                         args.len()
                     )));
                 }
+                // PMAT-1309: kind-check dict/set arguments against the
+                // callee's declared dict/set params — an i32-for-i32 WAT
+                // match alone would silently miscompile a kind mismatch.
+                check_heap_call_args(callee, scope.fn_heap_sigs(callee), args, scope)?;
                 for (a, pt) in args.iter().zip(ptys.iter()) {
+                    // A dict/set argument passes its shared base-pointer —
+                    // peel the frontend's value-semantics `Clone` wrapper.
+                    let a = peel_heap_clone_arg(a, scope);
                     emit_expr_typed(a, scope, out, depth, *pt)?;
                 }
                 indent(out, depth);
@@ -19873,6 +20027,9 @@ fn emit_str_expr(
         // (literal/ident keys only — cheap, side-effect-free).
         Expr::DictSetDefault { dict, key, default } => {
             let (name, kind) = dict_ident_kind(dict, scope)?;
+            // PMAT-1309: the miss path inserts (may grow + relocate) —
+            // refused on a dict PARAM like `d[k] = v`.
+            refuse_heap_param_growth("d.setdefault(k, default)", name, scope)?;
             if !scope.dict_val_is_str(name) {
                 return Err(unsupported(&format!(
                     "`{name}.setdefault(...)` in a string position over an \
@@ -21238,6 +21395,9 @@ fn emit_dict_set_default(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let (name, kind) = dict_ident_kind(dict, scope)?;
+    // PMAT-1309: the miss path inserts (may grow + relocate) — refused on a
+    // dict PARAM like `d[k] = v`.
+    refuse_heap_param_growth("d.setdefault(k, default)", name, scope)?;
     // PMAT-1305/1306: a str-valued dict's `.setdefault(k, default)` both
     // STORES a str default and RETURNS a str — it lowers in a STRING position
     // (the `emit_str_expr` DictSetDefault arm); the int lane must not
@@ -21636,6 +21796,26 @@ fn emit_list_append(
 /// The Python method spelling for a [`ListMutateOp`], for refusal messages.
 /// Lower `d[k] = v` (`Stmt::DictSet`) — push base + key + i64 value, call the
 /// keyed `set` helper (update-or-insert; traps if at capacity).
+/// PMAT-1309: refuse a GROWTH op (`d[k] = v` / `setdefault` / `update` /
+/// `s.add`) whose receiver is a dict/set PARAMETER. An insert can 2x-grow and
+/// RELOCATE the record; the write-back updates only the callee's local, so
+/// the CALLER would keep a stale base-pointer (and Python reference semantics
+/// say it must observe the insert). In-place mutation (`pop`/`del`/`remove`/
+/// `discard`/`clear` — the region never moves) and the whole read surface
+/// stay supported on params.
+fn refuse_heap_param_growth(op: &str, name: &str, scope: &Scope) -> Result<(), BackendError> {
+    if scope.is_heap_param(name) {
+        return Err(unsupported(&format!(
+            "`{op}` over the dict/set PARAMETER `{name}` — an insert can grow + \
+             relocate the record, leaving the caller's base-pointer stale; the \
+             WASM subset refuses growth through a param (in-place mutation — \
+             pop/del/remove/discard/clear — and every read are supported; \
+             grow the dict/set where it is bound, in the caller)"
+        )));
+    }
+    Ok(())
+}
+
 fn emit_dict_set(
     dict_name: &str,
     key: &Expr,
@@ -21644,6 +21824,7 @@ fn emit_dict_set(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
+    refuse_heap_param_growth("d[k] = v", dict_name, scope)?;
     let kind = scope.heap_map_kind(dict_name).ok_or_else(|| {
         unsupported(&format!(
             "`{dict_name}[k] = v` over `{dict_name}` which is not a `dict` local \
@@ -21697,6 +21878,9 @@ fn emit_dict_update(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
+    // PMAT-1309: growth refusal is RECEIVER-side only — `other` is read-only
+    // in the walk, so a param SOURCE (`d.update(p)`) stays supported.
+    refuse_heap_param_growth("d.update(other)", dict_name, scope)?;
     let kind = scope.heap_map_kind(dict_name).ok_or_else(|| {
         unsupported(&format!(
             "`{dict_name}.update(...)` over `{dict_name}` which is not a `dict` \
@@ -21778,6 +21962,7 @@ fn emit_set_add(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
+    refuse_heap_param_growth("s.add(e)", set_name, scope)?;
     let kind = scope.heap_map_kind(set_name).ok_or_else(|| {
         unsupported(&format!(
             "`{set_name}.add(e)` over `{set_name}` which is not a `set` local in \
@@ -21956,6 +22141,23 @@ fn build_method_registry(
                 } else {
                     &m.params[..]
                 };
+                // PMAT-1309: dict/set params are FREE-function-only for now —
+                // the call-site kind check (`check_heap_call_args`) covers the
+                // free-fn registry; a method taking one would bypass it.
+                // Before PMAT-1309 this refused at `param_wat_type`; keep the
+                // module-level refusal explicit and precise.
+                if let Some(p) = value_params
+                    .iter()
+                    .find(|p| matches!(p.ty, Type::Dict(_, _) | Type::Set(_)))
+                {
+                    return Err(unsupported(&format!(
+                        "struct `{name}` method `{mname}` takes the dict/set \
+                         parameter `{pname}` — the WASM subset passes dicts/sets \
+                         to FREE functions only",
+                        mname = m.name,
+                        pname = p.name,
+                    )));
+                }
                 let ptys = value_params
                     .iter()
                     .map(|p| param_wat_type(&p.ty))
@@ -22055,6 +22257,141 @@ fn build_module_fn_registry(module: &Module) -> Result<AssocFnRegistry, BackendE
         reg.push((f.name.clone(), ptys, ret));
     }
     Ok(reg)
+}
+
+/// PMAT-1309: one dict/set parameter's kind triple — `(key_kind, value_is_str,
+/// is_set)`. The WAT signature alone cannot distinguish a `dict[int, int]`
+/// from a `dict[str, str]` or a `set[int]` (all i32 base-pointers), but a
+/// kind-mismatched argument is read with the WRONG key encoding / value
+/// interpretation — a silent miscompile, so call sites check this triple.
+type HeapParamSig = (KeyKind, bool, bool);
+
+/// PMAT-1309: per-FREE-function dict/set param signatures — for each param
+/// position, `Some(sig)` when it is a `dict[K, V]` / `set[K]`, else `None`.
+/// Struct methods/assoc fns never carry dict/set params (refused at
+/// [`build_method_registry`]), so free fns are the whole surface.
+type HeapSigRegistry = Vec<(String, Vec<Option<HeapParamSig>>)>;
+
+/// Build the PMAT-1309 dict/set param-signature registry. A key/value kind
+/// the subset refuses maps to `None` here — the call would already refuse at
+/// the callee's own param mapping (`param_wat_type`), so no new refusal
+/// surface is introduced.
+fn build_heap_sig_registry(module: &Module) -> HeapSigRegistry {
+    let mut reg = HeapSigRegistry::new();
+    for item in &module.items {
+        let Item::Function(f) = item else { continue };
+        let sigs: Vec<Option<HeapParamSig>> = f
+            .params
+            .iter()
+            .map(|p| match &p.ty {
+                Type::Dict(k, v) => match (dict_key_kind(k), dict_value_kind(v)) {
+                    (Ok(kk), Ok(vk)) => Some((kk, vk == KeyKind::Str, false)),
+                    _ => None,
+                },
+                Type::Set(e) => dict_key_kind(e).ok().map(|kk| (kk, false, true)),
+                _ => None,
+            })
+            .collect();
+        reg.push((f.name.clone(), sigs));
+    }
+    reg
+}
+
+/// PMAT-1309: peel the frontend's `Expr::Clone` wrapper off a dict/set call
+/// argument. The frontend's alias-disposition pass wraps an argument whose
+/// name stays LIVE after the call (`got = p_take(d)` … `len(d)`) in a
+/// `Clone` — its reconciliation for VALUE-semantics targets, where the
+/// callee's copy must not be confused with the caller's. Dicts/sets are not
+/// in its `reference_native` set (deliberately: an ALIAS `e = d` + a growing
+/// `d[k] = v` would relocate under one name — the disposition suite refuses
+/// that shape), so the wrapper reaches this backend even under the Reference
+/// profile. In the WASM heap lane the argument IS the shared base-pointer —
+/// Python passes the reference, the callee's growth ops refuse on params
+/// (`refuse_heap_param_growth`), and in-place mutation through the pointer is
+/// exactly CPython's visible-to-the-caller semantics. So a `Clone` of a
+/// REGISTERED dict/set NAME peels to the name; a `Clone` of anything else is
+/// returned untouched and refuses downstream (never a silent copy).
+fn peel_heap_clone_arg<'e>(a: &'e Expr, scope: &Scope) -> &'e Expr {
+    if let Expr::Clone(inner) = a {
+        if let Expr::Ident(n) = inner.as_ref() {
+            if scope.heap_map_kind(n).is_some() {
+                return inner;
+            }
+        }
+    }
+    a
+}
+
+/// PMAT-1309: kind-check the dict/set arguments of a call. `expected` is the
+/// callee's per-param dict/set signature (`None` = the callee declares no
+/// dict/set at that position — assoc fns and methods always pass `None`).
+/// Every mismatch here would be a SILENT MISCOMPILE at the i32-pointer WAT
+/// level (wrong key encoding, value slots misread as ints vs str pointers,
+/// set membership walked as a dict), so each refuses with the offender named.
+fn check_heap_call_args(
+    display: &str,
+    expected: Option<&[Option<HeapParamSig>]>,
+    args: &[Expr],
+    scope: &Scope,
+) -> Result<(), BackendError> {
+    for (i, a) in args.iter().enumerate() {
+        let a = peel_heap_clone_arg(a, scope);
+        let exp = expected.and_then(|s| s.get(i).copied().flatten());
+        let actual = match a {
+            Expr::Ident(n) => scope
+                .heap_map_kind(n)
+                .map(|kk| (n.as_str(), kk, scope.dict_val_is_str(n), scope.is_set(n))),
+            _ => None,
+        };
+        match (exp, actual) {
+            (None, None) => {}
+            (Some(_), None) => {
+                return Err(unsupported(&format!(
+                    "argument {pos} of `{display}` is a dict/set parameter — the \
+                     WASM subset passes dicts/sets by NAME (a dict/set local of \
+                     the declared kind); bind a literal / merge / expression to \
+                     a local first",
+                    pos = i + 1,
+                )));
+            }
+            (None, Some((name, ..))) => {
+                return Err(unsupported(&format!(
+                    "`{display}` passes the dict/set local `{name}` where the \
+                     callee declares no dict/set parameter — the base-pointer \
+                     would be misread; refused honestly",
+                )));
+            }
+            (Some((ek, ev, es)), Some((name, ak, av, aset))) => {
+                if es != aset {
+                    return Err(unsupported(&format!(
+                        "`{display}` passes the {actual_kind} `{name}` where the \
+                         callee declares a {exp_kind} parameter — refused honestly",
+                        actual_kind = if aset { "set" } else { "dict" },
+                        exp_kind = if es { "set" } else { "dict" },
+                    )));
+                }
+                if ek != ak {
+                    return Err(unsupported(&format!(
+                        "`{display}` passes `{name}` with {}-keyed entries to a \
+                         {}-keyed dict/set parameter — every call must match the \
+                         declared key encoding; refused honestly",
+                        ak.suffix(),
+                        ek.suffix(),
+                    )));
+                }
+                if ev != av {
+                    return Err(unsupported(&format!(
+                        "`{display}` passes the dict[_, {}] `{name}` to a \
+                         dict[_, {}] parameter — the value slots would be \
+                         misinterpreted; refused honestly",
+                        if av { "str" } else { "int" },
+                        if ev { "str" } else { "int" },
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Look up a struct's field layout by name.
@@ -22969,6 +23306,9 @@ fn emit_method_call(
             args.len()
         )));
     }
+    // PMAT-1309: methods never declare dict/set params (refused at registry
+    // build) — a dict/set argument must not silently pass as a stray i32.
+    check_heap_call_args(&format!("{sname}.{method}"), None, args, scope)?;
     indent(out, depth);
     writeln!(out, "local.get ${oname}").expect("write");
     for (a, pt) in args.iter().zip(ptys.iter()) {
