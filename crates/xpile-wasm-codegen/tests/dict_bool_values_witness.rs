@@ -38,10 +38,12 @@
 //!     WASM scalar subset;
 //!   * `.values()` iteration / `sum`/`min`/`max`(`d.values()`) — `d.values()`
 //!     types as `list[bool]`, not the `list[i64]` the value materialiser folds;
-//!   * `d.pop(...)` / `d.setdefault(...)` — the bool value-return legs are
-//!     DEFERRED, exactly the str-value split (PMAT-1305 wired get/get_or,
-//!     PMAT-1306 wired pop/setdefault);
 //!   * the value-kind gate still refuses float/nested values.
+//!
+//! (`d.pop(...)` / `d.setdefault(...)` over a bool value were DEFERRED here and
+//! are now WIRED in PMAT-1321 — the pop/setdefault twin of these reads, exactly
+//! the str-value split PMAT-1305 get/get_or → PMAT-1306 pop/setdefault. See
+//! `dict_bool_pop_setdefault_witness.rs`.)
 //!
 //! Every probe is FULL-pipeline (REAL Python → `PythonFrontend` → `emit_module`
 //! → `wat2wasm` → `wasm-interp`), value-matched against LIVE python3 executing
@@ -291,17 +293,9 @@ fn dict_bool_values_refuse_out_of_lane_forms() {
             "def f() -> int:\n    d: dict[int, bool] = {1: True, 2: False}\n    return sum(d.values())\n".to_string(),
             "sum() of a non-name list",
         ),
-        // pop/setdefault bool value-return legs are DEFERRED (the str split).
-        (
-            "d.pop(k, default)",
-            "def f() -> int:\n    d: dict[int, bool] = {1: True}\n    if d.pop(1, False):\n        return 1\n    return 0\n".to_string(),
-            "bool pop/setdefault legs are not wired yet",
-        ),
-        (
-            "d.setdefault(k, default)",
-            "def f() -> int:\n    d: dict[int, bool] = {1: True}\n    x: bool = d.setdefault(2, False)\n    return len(d)\n".to_string(),
-            "bool pop/setdefault legs are not wired yet",
-        ),
+        // NB `d.pop(...)` / `d.setdefault(...)` over a bool value were refused
+        // here in PMAT-1320 and are now WIRED in PMAT-1321 — see
+        // `dict_bool_pop_setdefault_witness.rs`.
     ] {
         let err = match emit(&src) {
             Err(e) => e,

@@ -188,6 +188,22 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1321
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1321: [wasm/capability/dict] BOOL-valued dict POP / SETDEFAULT legs (`dict[K, bool]`) — the pop/setdefault TWIN of the PMAT-1320 bool `d[k]` / `d.get(k, default)` READS, closing the leg PMAT-1320 DEFERRED (exactly the str-value split: PMAT-1305 wired the str get/get_or, PMAT-1306 wired the str pop/setdefault). A bool value SHARES the int lane''s storage (the value slot is the same 8-byte i64, a bool stored as a `0`/`1` zero-extended), so the keyed `$__wasm_dict_pop_<k>` / `_has_<k>` / `_set_<k>` / `_get_<k>` helpers are all SHARED — NO bespoke bool helper. The whole slice is the type edges: `emit_dict_pop` `i32.wrap_i64`s the popped slot back to a proper i32 bool (the frontend types `d.pop(k)` as `bool`) and lowers the 2-arg `default` + the `if` result as i32; `emit_dict_set_default` `emit_dict_val`-zero-extends the i32 bool `default` into the i64 slot on the miss INSERT (exactly as `d[k] = <bool>`) then `i32.wrap_i64`s the read-back `get`. An i64 "just reuse the whole int lane" pop/setdefault — the shortcut PMAT-1320 warned against for the reads — would mismatch every bool position it lands beside (`if d.pop(k):` wants i32, `d.pop(k) == True`, the i32-bool 2-arg default); the i32-wrap makes them compose, and `str(d.pop(k))` renders `"True"`/`"False"` (len 4/5) via the existing str(bool) path for free. HONESTY (refuses, not silently mis-lowered): arithmetic on a popped bool (`d.pop(k) + 5` — bool arithmetic isn''t in the WASM scalar subset), `setdefault` through a dict PARAM (an insert can grow+relocate → stale caller pointer, the value-kind-agnostic PMAT-1309 refusal), and a float-valued setdefault (the value-kind gate still refuses float); the bare `d.pop(missing)` traps = CPython KeyError. Two emit edits (the pop + setdefault bool branches, replacing the PMAT-1320 refusals); one new EXECUTED gated witness; the two now-stale PMAT-1320 refusal pins removed.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "CAPABILITY: `dict[K, bool]` `d.pop(k)` / `d.pop(k, default)` / `d.setdefault(k, default)` produce/store a proper i32 bool (`emit_dict_pop` wraps the popped slot + lowers the 2-arg default & if-result as i32; `emit_dict_set_default` zero-extends the i32-bool default into the slot on the miss insert then wraps the read-back get), so the popped/inserted bool composes in every bool position (truthiness, `== <bool>`, a `bool` local, `str(...)` render), the len decrement/increment is correct, a str-keyed bool dict works, and a RELOCATING setdefault grow re-reads the moved slots; the keyed pop/has/set/get helpers are SHARED with the int lane (no bespoke bool helper)."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/dict_bool_pop_setdefault_witness.rs — 20 executed probes value-matched against LIVE python3 on the IDENTICAL source (pop bare truthiness/==/local, len decrement + key gone, pop bare statement, pop-with-default hit/miss/miss-true/no-mutate, str(pop) via str(bool), setdefault miss-insert/hit-keeps/ensure/miss-true, str-keyed pop+setdefault, a RELOCATING setdefault grow past the 16-slot slack) + a separate int+str-keyed bare-pop-absent TRAP witness + a MUTATION-verify pin; emit pins on the i32.wrap_i64 read + i64.extend_i32_u store + reuse of the keyed pop/has/set/get helpers + True/False literals + no bespoke helper; FULL-pipeline refusals for arithmetic-on-pop / setdefault-through-param / float-value. Clean skip without WABT. The two PMAT-1320 pop/setdefault refusal pins (now WIRED) removed from dict_bool_values_witness.rs."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (0 fail). Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1320
   github_issue: null
   item_type: task

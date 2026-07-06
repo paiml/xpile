@@ -21916,19 +21916,19 @@ fn emit_dict_pop(
              (`dict[_, str]`) — the value is a string, not an integer"
         )));
     }
-    // PMAT-1320: a bool-valued dict's `.pop(...)` returns a BOOL (an i32), but the
-    // pop leg emits an i64 read/return path. The bool pop/setdefault legs are
-    // DEFERRED (exactly the str-value split: PMAT-1305 wired get/get_or, PMAT-1306
-    // wired pop/setdefault). Use `d[k]`/`d.get(k, default)` bool reads + `del d[k]`
-    // removal, or wire the i32-wrapped pop/setdefault twin in a follow-up.
-    if scope.dict_val_is_bool(name) {
-        return Err(unsupported(&format!(
-            "`{name}.pop(...)` over a bool-valued dict (`dict[_, bool]`) — the \
-             bool pop/setdefault legs are not wired yet (the value slot is i64 but \
-             a bool read is an i32); use `d[k]` / `d.get(k, default)` reads + \
-             `del d[k]`"
-        )));
-    }
+    // PMAT-1321: a bool-valued dict's `.pop(...)` returns a BOOL — the value slot
+    // is the same 8-byte i64 (a `0`/`1` zero-extended at store), so the pop helper
+    // is SHARED with the int lane; the whole slice is that the returned slot is
+    // `i32.wrap_i64`'d back to a proper i32 bool (the frontend types `d.pop(k)` as
+    // `bool`), and the 2-arg default is an i32 bool. This is the pop/setdefault
+    // twin of the PMAT-1320 `d[k]`/`d.get` bool READS, exactly as PMAT-1306 wired
+    // the str-value pop/setdefault after PMAT-1305 wired the str get/get_or.
+    let is_bool = scope.dict_val_is_bool(name);
+    let (result_ty, wat) = if is_bool {
+        ("i32", WatTy::I32)
+    } else {
+        ("i64", WatTy::I64)
+    };
     // PMAT-1306: the 2-arg path re-emits the key (has + pop) and lowers the
     // default lazily — a nested pop in either would remove twice / skip.
     if default.is_some() {
@@ -21942,6 +21942,11 @@ fn emit_dict_pop(
             emit_dict_key(key, kind, scope, out, depth)?;
             indent(out, depth);
             writeln!(out, "call $__wasm_dict_pop_{}", kind.suffix()).expect("write");
+            // PMAT-1321: wrap the popped `0`/`1` i64 slot back to a proper i32 bool.
+            if is_bool {
+                indent(out, depth);
+                writeln!(out, "i32.wrap_i64").expect("write");
+            }
         }
         // d.pop(k, default): if has(p,k) then pop(p,k) else default.
         Some(default) => {
@@ -21951,20 +21956,26 @@ fn emit_dict_pop(
             indent(out, depth);
             writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
             indent(out, depth);
-            writeln!(out, "if (result i64)").expect("write");
+            writeln!(out, "if (result {result_ty})").expect("write");
             indent(out, depth + 1);
             writeln!(out, "local.get ${name}").expect("write");
             emit_dict_key(key, kind, scope, out, depth + 1)?;
             indent(out, depth + 1);
             writeln!(out, "call $__wasm_dict_pop_{}", kind.suffix()).expect("write");
+            // PMAT-1321: the present branch pops the i64 slot; wrap it to an i32
+            // bool so both `if` arms (and the i32 `default`) agree on the type.
+            if is_bool {
+                indent(out, depth + 1);
+                writeln!(out, "i32.wrap_i64").expect("write");
+            }
             indent(out, depth);
             writeln!(out, "else").expect("write");
-            emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
+            emit_expr_typed(default, scope, out, depth + 1, wat)?;
             indent(out, depth);
             writeln!(out, "end").expect("write");
         }
     }
-    Ok(WatTy::I64)
+    Ok(wat)
 }
 
 /// PMAT-1234: lower `del d[k]` (`Stmt::DelItem`, `is_dict`) — dict entry removal
@@ -22182,15 +22193,14 @@ fn emit_dict_set_default(
              dict (`dict[_, str]`) — the value is a string, not an integer"
         )));
     }
-    // PMAT-1320: bool-valued setdefault both STORES an i32 bool default and
-    // RETURNS a bool — deferred like the bool `.pop(...)` leg (see there).
-    if scope.dict_val_is_bool(name) {
-        return Err(unsupported(&format!(
-            "`{name}.setdefault(...)` over a bool-valued dict (`dict[_, bool]`) — \
-             the bool pop/setdefault legs are not wired yet; use a `d[k] = <bool>` \
-             store + `d[k]` / `d.get(k, default)` reads"
-        )));
-    }
+    // PMAT-1321: bool-valued setdefault both STORES an i32 bool default and
+    // RETURNS a bool — the pop/setdefault twin of the PMAT-1320 bool reads. The
+    // STORE shares the int lane: `emit_dict_val` (KeyKind::Int) zero-extends the
+    // i32 `0`/`1` into the i64 slot exactly as `d[k] = <bool>` does; the READ-BACK
+    // `get` `i32.wrap_i64`s the slot to a proper i32 bool, so the whole expression
+    // evaluates to a bool (the frontend types `d.setdefault(k, default)` as bool).
+    let is_bool = scope.dict_val_is_bool(name);
+    let wat = if is_bool { WatTy::I32 } else { WatTy::I64 };
     refuse_dict_pop_in_key_or_default("d.setdefault(k, default)", key, Some(default))?;
     let suffix = kind.suffix();
     // if not has(p, k): p = set(p, k, default)  — insert-if-absent (never overwrites).
@@ -22206,20 +22216,32 @@ fn emit_dict_set_default(
     indent(out, depth + 1);
     writeln!(out, "local.get ${name}").expect("write");
     emit_dict_key(key, kind, scope, out, depth + 1)?;
-    emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
+    // PMAT-1321: a bool default is an i32 `0`/`1`; `emit_dict_val` (KeyKind::Int)
+    // zero-extends it into the i64 slot exactly as the store lane does. An int
+    // default already lowers to the i64 slot (emit_dict_val passes it through).
+    if is_bool {
+        emit_dict_val(default, KeyKind::Int, scope, out, depth + 1)?;
+    } else {
+        emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
+    }
     indent(out, depth + 1);
     writeln!(out, "call $__wasm_dict_set_{suffix}").expect("write");
     indent(out, depth + 1);
     writeln!(out, "local.set ${name}").expect("write");
     indent(out, depth);
     writeln!(out, "end").expect("write");
-    // return d[k] — present after the insert-if-absent above (i64).
+    // return d[k] — present after the insert-if-absent above (i64 slot).
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
     emit_dict_key(key, kind, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_get_{suffix}").expect("write");
-    Ok(WatTy::I64)
+    // PMAT-1321: wrap the read-back `0`/`1` slot to a proper i32 bool.
+    if is_bool {
+        indent(out, depth);
+        writeln!(out, "i32.wrap_i64").expect("write");
+    }
+    Ok(wat)
 }
 
 /// Lower `k in d` / `x in s` (`Expr::DictContains` / `Expr::SetContains`) — push
