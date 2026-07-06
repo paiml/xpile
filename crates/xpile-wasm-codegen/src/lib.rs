@@ -372,16 +372,23 @@ fn dict_key_kind(ty: &Type) -> Result<KeyKind, BackendError> {
     }
 }
 
-/// PMAT-995: validate a dict VALUE type. The bump-heap dict stores each value in
-/// an 8-byte `i64` slot, so the first cut supports the `i64` integer domain
-/// (`I64`/`CLong`) only; bool/float/unsigned/str/nested values are refused
-/// honestly (no silent width-narrowing or reinterpret).
-fn dict_value_is_supported(ty: &Type) -> Result<(), BackendError> {
+/// PMAT-995/1305: classify a dict VALUE type. The bump-heap dict stores each
+/// value in an 8-byte `i64` slot: an int value (`I64`/`CLong`) IS the slot;
+/// PMAT-1305 adds `str` values, stored as the string's `i32` base-pointer
+/// zero-extended into the same slot (strings are immutable in Python, so the
+/// pointer copy IS reference semantics — merge/update/del move the slot raw,
+/// soundly). Bool/float/unsigned/nested values are refused honestly (no silent
+/// width-narrowing or reinterpret). Returns the value's [`KeyKind`]-shaped
+/// classification (Int = i64 scalar, Str = i32 str base-pointer) so the
+/// binding registers str-valued dicts in [`Scope::str_val_dicts`].
+fn dict_value_kind(ty: &Type) -> Result<KeyKind, BackendError> {
     match ty {
-        Type::I64 | Type::CLong => Ok(()),
+        Type::I64 | Type::CLong => Ok(KeyKind::Int),
+        Type::Str => Ok(KeyKind::Str),
         other => Err(unsupported(&format!(
             "dict value type {other:?} — the WASM dict subset stores i64 integer \
-             values only (dict[K, int]); bool/float/str/nested values are refused"
+             or str (i32 base-pointer) values only (dict[K, int] / dict[K, str]); \
+             bool/float/nested values are refused"
         ))),
     }
 }
@@ -8775,9 +8782,10 @@ const SET_TO_LIST_INT_HELPER: &str = "\
 /// `Expr::DictView { kind: Values }`). It is [`SET_TO_LIST_INT_HELPER`] with a
 /// SINGLE change: the payload load reads the entry's VALUE at
 /// `entry+`[`DICT_VAL_OFFSET`] (`i64.load offset=8`) instead of its KEY at
-/// `entry+0`. A dict stores i64 values only ([`dict_value_is_supported`]), so
-/// the values pack into the same `list[int]` record (i32 count @ `r+0`, i64
-/// elements @ `r+8`) the key/set materialiser produces. Duplicates are KEPT
+/// `entry+0`. An INT-valued dict stores i64 values ([`dict_value_kind`];
+/// PMAT-1305's str-valued dicts refuse this materialiser — the slots would be
+/// pointers), so the values pack into the same `list[int]` record (i32 count @
+/// `r+0`, i64 elements @ `r+8`) the key/set materialiser produces. Duplicates are KEPT
 /// (values need not be distinct — `sorted(d.values())` is a list, not a set),
 /// and live entries are contiguous `[0, count)` after any swap-into-hole delete,
 /// so the fresh list holds exactly the dict's live values.
@@ -10300,20 +10308,33 @@ fn desugar_foreach_stmts(
                     // dict. The iteration source is the dict name; the per-element
                     // read (below) carries the `DictView{Values}` marker so
                     // `emit_index` loads the VALUE slot (entry+8) rather than the key.
+                    // PMAT-1305: a STR-valued dict refuses here — the value slot is
+                    // an i32 str base-pointer and the str-position per-element read
+                    // is not wired (and the order-safety gate has no str-fold
+                    // vocabulary); int values only.
                     Expr::DictView {
                         dict,
                         kind: DictViewKind::Values,
-                    } => match dict.as_ref() {
-                        Expr::Ident(n) => (None, n.clone()),
-                        other => {
-                            return Err(unsupported(&format!(
-                                "for-loop over `.values()` of {} — the WASM subset \
-                                 iterates the values of a NAMED dict; bind the dict \
-                                 to a name first",
-                                expr_kind(other)
-                            )));
+                    } => {
+                        if matches!(elem_ty, Type::Str) {
+                            return Err(unsupported(
+                                "for-loop over `.values()` of a str-valued dict \
+                                 (`dict[_, str]`) — str-value iteration is not in \
+                                 the WASM subset yet (int values only)",
+                            ));
                         }
-                    },
+                        match dict.as_ref() {
+                            Expr::Ident(n) => (None, n.clone()),
+                            other => {
+                                return Err(unsupported(&format!(
+                                    "for-loop over `.values()` of {} — the WASM subset \
+                                     iterates the values of a NAMED dict; bind the dict \
+                                     to a name first",
+                                    expr_kind(other)
+                                )));
+                            }
+                        }
+                    }
                     // PMAT-1299: `for k in d.keys()` — the EXPLICIT keys view over a
                     // NAMED dict. The iteration source is the dict name; the
                     // per-element read is the SAME plain `Index` the bare `for k in d`
@@ -10650,9 +10671,10 @@ fn desugar_foreach_stmts(
                             )));
                         };
                         // Resolve K, V from the per-function env (ForEachPair carries
-                        // no elem_ty). A supported dict has int (i64) values
-                        // (`dict_value_is_supported`), so the value read is always
-                        // i64; K may be int (i64) or str (i32 base-ptr).
+                        // no elem_ty). An ITERABLE dict has int (i64) values (a
+                        // str-valued dict refuses just below — PMAT-1305), so the
+                        // value read is always i64; K may be int (i64) or str
+                        // (i32 base-ptr).
                         let (k_ty, v_ty) = match env.get(src) {
                             Some(Type::Dict(k, v)) => ((**k).clone(), (**v).clone()),
                             _ => {
@@ -10663,6 +10685,17 @@ fn desugar_foreach_stmts(
                                 )));
                             }
                         };
+                        // PMAT-1305: a STR-valued dict refuses — the `v` binding
+                        // would read the value slot (an i32 str base-pointer) as an
+                        // i64 scalar, and the order-safety gate has no str-fold
+                        // vocabulary; int values only.
+                        if matches!(v_ty, Type::Str) {
+                            return Err(unsupported(&format!(
+                                "for-loop over `{src}.items()` of a str-valued dict \
+                                 (`dict[_, str]`) — str-value iteration is not in the \
+                                 WASM subset yet (int values only)"
+                            )));
+                        }
                         // Hash-order guard (PMAT-1292/1297/1298/1299): CPython
                         // iterates `.items()` in INSERTION order, but xpile walks
                         // bump-heap STORAGE order (a `del`/`discard` swaps the last
@@ -12787,8 +12820,11 @@ fn module_needs_str_eq(module: &Module, rets: &StrReturners) -> bool {
             .map(|p| p.name.as_str())
             .collect();
         collect_str_let_names(&f.body.stmts, &mut names);
+        let mut str_val_dicts: Vec<&str> = Vec::new();
+        collect_str_val_dict_names(&f.body.stmts, &mut str_val_dicts);
         let scan = StrEqScan {
             names,
+            str_val_dicts,
             rets,
             ops: &[BinOp::Eq, BinOp::NotEq],
         };
@@ -12811,8 +12847,11 @@ fn module_needs_str_cmp(module: &Module, rets: &StrReturners) -> bool {
             .map(|p| p.name.as_str())
             .collect();
         collect_str_let_names(&f.body.stmts, &mut names);
+        let mut str_val_dicts: Vec<&str> = Vec::new();
+        collect_str_val_dict_names(&f.body.stmts, &mut str_val_dicts);
         let scan = StrEqScan {
             names,
+            str_val_dicts,
             rets,
             ops: &[BinOp::Lt, BinOp::LtEq, BinOp::Gt, BinOp::GtEq],
         };
@@ -15134,6 +15173,10 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
 /// `[Lt, LtEq, Gt, GtEq]` gates `$__wasm_str_cmp` — same walk, different op set.
 struct StrEqScan<'a> {
     names: Vec<&'a str>,
+    /// PMAT-1305: the names of `dict[K, str]` LET locals — a `d[k]` /
+    /// `d.get(k, default)` read over one is string-valued, so a compare hosting
+    /// it needs `$__wasm_str_eq` / `$__wasm_str_cmp` declared.
+    str_val_dicts: Vec<&'a str>,
     rets: &'a StrReturners,
     ops: &'a [BinOp],
 }
@@ -15157,6 +15200,32 @@ fn collect_str_let_names<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a str>) {
             } => {
                 collect_str_let_names(then_body, out);
                 collect_str_let_names(else_body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// PMAT-1305: collect the names of `dict[K, str]` `Let` locals anywhere in
+/// `stmts` (including nested `If`/`While` bodies) into `out` — the pre-scan
+/// mirror of [`Scope::str_val_dicts`], so the `$__wasm_str_eq`/`$__wasm_str_cmp`
+/// gate walkers classify a `d[k]` read over one as string-valued.
+fn collect_str_val_dict_names<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a str>) {
+    for s in stmts {
+        match s {
+            Stmt::Let {
+                name,
+                ty: Type::Dict(_, v),
+                ..
+            } if matches!(**v, Type::Str) => out.push(name.as_str()),
+            Stmt::While { body, .. } => collect_str_val_dict_names(body, out),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_str_val_dict_names(then_body, out);
+                collect_str_val_dict_names(else_body, out);
             }
             _ => {}
         }
@@ -15337,6 +15406,12 @@ fn expr_is_str_valued(e: &Expr, scan: &StrEqScan<'_>) -> bool {
         Expr::Ident(name) => scan.names.contains(&name.as_str()),
         Expr::Call { callee, .. } => scan.rets.keys.iter().any(|k| k == callee),
         Expr::MethodCall { method, .. } => scan.rets.methods.iter().any(|(_, m)| m == method),
+        // PMAT-1305: `d[k]` / `d.get(k, default)` over a `dict[K, str]` local
+        // is string-valued (the value slot holds an i32 str base-pointer), so
+        // a compare hosting it must arm `$__wasm_str_eq` / `$__wasm_str_cmp`.
+        Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => {
+            matches!(dict.as_ref(), Expr::Ident(d) if scan.str_val_dicts.contains(&d.as_str()))
+        }
         _ => false,
     }
 }
@@ -15811,6 +15886,15 @@ struct Scope<'a> {
     /// `$__wasm_set_eq_<k>` (membership-only) and dicts to `$__wasm_dict_eq_<k>`
     /// (membership + per-key value compare, PMAT-1243).
     heap_sets: Vec<String>,
+    /// PMAT-1305: the NAMES in [`Scope::heap_maps`] whose dict VALUE type is
+    /// `str` (`dict[K, str]`). The value slot then holds an `i32` string
+    /// base-pointer zero-extended into the 8-byte slot, so: `d[k]` reads route
+    /// through the STRING lowering (`emit_str_expr`, wrapping the i64 back to
+    /// i32); `d[k] = v` / literal-pair stores route the value through
+    /// `emit_str_expr` + `i64.extend_i32_u`; and the value-INTERPRETING forms
+    /// (dict `==`, `.values()` iteration/reductions) refuse — an `i64.eq` over
+    /// pointers is identity, not content, and Python compares content.
+    str_val_dicts: Vec<String>,
     /// PMAT-996 (slice 4): the module's struct layout registry (name → fields),
     /// shared across every function (struct definitions are module-global).
     structs: &'a StructRegistry,
@@ -15860,6 +15944,14 @@ impl Scope<'_> {
     /// set routes `==`/`!=` to `$__wasm_set_eq_<k>`.
     fn is_set(&self, name: &str) -> bool {
         self.heap_sets.iter().any(|n| n == name)
+    }
+
+    /// PMAT-1305: `true` if `name` is a LET-bound `dict[K, str]` local — its
+    /// value slot holds an i32 str base-pointer (zero-extended to the 8-byte
+    /// slot), so value reads/writes route through the string lowering and the
+    /// value-INTERPRETING forms (dict `==`, `.values()` reductions) refuse.
+    fn dict_val_is_str(&self, name: &str) -> bool {
+        self.str_val_dicts.iter().any(|n| n == name)
     }
 
     /// PMAT-996: the struct type name if `name` is a struct local/param
@@ -16061,6 +16153,7 @@ fn emit_function(
         str_names: Vec::new(),
         heap_maps: Vec::new(),
         heap_sets: Vec::new(),
+        str_val_dicts: Vec::new(),
         structs,
         struct_locals: Vec::new(),
         methods,
@@ -16216,7 +16309,13 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 ..
             } => {
                 let kind = dict_key_kind(k)?;
-                dict_value_is_supported(v)?;
+                // PMAT-1305: a str-valued dict (`dict[K, str]`) stores each
+                // value as an i32 str base-pointer in the i64 slot — register
+                // it so value reads/writes route through the string lowering
+                // and the value-interpreting forms refuse.
+                if dict_value_kind(v)? == KeyKind::Str {
+                    scope.str_val_dicts.push(name.clone());
+                }
                 scope.declare(name, WatTy::I32);
                 scope.heap_maps.push((name.clone(), kind));
             }
@@ -16453,9 +16552,15 @@ fn emit_stmt(
             // PMAT-995: a dict/set LET (its local recorded in `scope.heap_maps`)
             // materialises its `DictLit`/`SetLit` on the bump heap and stashes
             // the base-pointer; routed away from the scalar `emit_expr_typed`
-            // path (which has no K/V context).
+            // path (which has no K/V context). PMAT-1305: the VALUE kind (int
+            // slot vs str base-pointer) rides the binding's registration.
             if let Some(kind) = scope.heap_map_kind(name) {
-                emit_heap_map_bind(value, kind, scope, out, depth)?;
+                let val_kind = if scope.dict_val_is_str(name) {
+                    KeyKind::Str
+                } else {
+                    KeyKind::Int
+                };
+                emit_heap_map_bind(value, kind, val_kind, scope, out, depth)?;
                 indent(out, depth);
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
@@ -16491,7 +16596,12 @@ fn emit_stmt(
         }
         Stmt::Assign { name, value } => {
             if let Some(kind) = scope.heap_map_kind(name) {
-                emit_heap_map_bind(value, kind, scope, out, depth)?;
+                let val_kind = if scope.dict_val_is_str(name) {
+                    KeyKind::Str
+                } else {
+                    KeyKind::Int
+                };
+                emit_heap_map_bind(value, kind, val_kind, scope, out, depth)?;
                 indent(out, depth);
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
@@ -17861,6 +17971,17 @@ fn emit_index(
                  local — only a bump-heap dict's values can be iterated"
             )));
         };
+        // PMAT-1305: a str-valued dict's value slot is an i32 str base-pointer,
+        // not an i64 scalar — the int-typed per-element read would hand a
+        // pointer to the loop body. Refused (the desugar refuses earlier with a
+        // clearer message; this is defense in depth).
+        if scope.dict_val_is_str(name) {
+            return Err(unsupported(&format!(
+                "`.values()` iteration over the str-valued dict `{name}` \
+                 (`dict[_, str]`) — str-value iteration is not in the WASM \
+                 subset yet"
+            )));
+        }
         if !is_foreach_counter(index) {
             return Err(unsupported(&format!(
                 "positional subscript of `{name}.values()` — a dict values view is \
@@ -19387,6 +19508,66 @@ fn emit_str_expr(
             emit_int_to_str(value, *of_float, scope, out, depth)?;
             Ok(())
         }
+        // PMAT-1305: `d[k]` over a str-VALUED dict (`dict[K, str]`) in a string
+        // position — the entry's i64 value slot holds the string's i32
+        // base-pointer (zero-extended at store time), so the read is the SAME
+        // keyed `get` helper the int lane uses (traps on an absent key — the
+        // Python KeyError analogue) with the result wrapped back to i32. The
+        // pointer then behaves as an ordinary str local downstream (len/ord/
+        // ==/concat/slice/return). An int-valued dict in a string position is
+        // refused honestly.
+        Expr::DictGet { dict, key } => {
+            let (name, kind) = dict_ident_kind(dict, scope)?;
+            if !scope.dict_val_is_str(name) {
+                return Err(unsupported(&format!(
+                    "`{name}[k]` in a string position over an int-valued dict \
+                     (`dict[_, int]`) — the value is an integer, not a string"
+                )));
+            }
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_dict_get_{}", kind.suffix()).expect("write");
+            indent(out, depth);
+            writeln!(out, "i32.wrap_i64").expect("write");
+            Ok(())
+        }
+        // PMAT-1305: `d.get(k, default)` over a str-VALUED dict in a string
+        // position — the TOTAL read: `if has(p, k) then wrap(get(p, k)) else
+        // <default str ptr>` (the emit_dict_get_or shape with an i32 result and
+        // the default lowered through the string path). Never traps; an absent
+        // key yields the default's pointer, exactly CPython.
+        Expr::DictGetOr { dict, key, default } => {
+            let (name, kind) = dict_ident_kind(dict, scope)?;
+            if !scope.dict_val_is_str(name) {
+                return Err(unsupported(&format!(
+                    "`{name}.get(k, default)` in a string position over an \
+                     int-valued dict (`dict[_, int]`) — the value is an integer, \
+                     not a string"
+                )));
+            }
+            indent(out, depth);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
+            indent(out, depth);
+            writeln!(out, "if (result i32)").expect("write");
+            indent(out, depth + 1);
+            writeln!(out, "local.get ${name}").expect("write");
+            emit_dict_key(key, kind, scope, out, depth + 1)?;
+            indent(out, depth + 1);
+            writeln!(out, "call $__wasm_dict_get_{}", kind.suffix()).expect("write");
+            indent(out, depth + 1);
+            writeln!(out, "i32.wrap_i64").expect("write");
+            indent(out, depth);
+            writeln!(out, "else").expect("write");
+            emit_str_expr(default, scope, out, depth + 1)?;
+            indent(out, depth);
+            writeln!(out, "end").expect("write");
+            Ok(())
+        }
         // PMAT-1028: a CALL of a PROVEN str-returning callable (free fn,
         // `Struct::__init__`-style assoc fn) in a string position — the
         // factory-composition idiom `s: str = build(5)`. Delegates to the
@@ -19864,12 +20045,13 @@ fn emit_repeat(
 fn emit_heap_map_bind(
     value: &Expr,
     kind: KeyKind,
+    val_kind: KeyKind,
     scope: &Scope,
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
     match value {
-        Expr::DictLit(pairs) => emit_dict_lit(pairs, kind, scope, out, depth),
+        Expr::DictLit(pairs) => emit_dict_lit(pairs, kind, val_kind, scope, out, depth),
         Expr::SetLit(elems) => emit_set_lit(elems, kind, scope, out, depth),
         // PMAT-1247: SET ALGEBRA — `a | b` / `a & b` / `a - b` / `a ^ b` yields a
         // NEW set (never mutating an operand), so it is a valid set-binding value.
@@ -19879,7 +20061,7 @@ fn emit_heap_map_bind(
         // (PEP 584 union) both lower to `Expr::DictMerge`; each yields a FRESH
         // dict (never mutating a source — `{**d}` is the dict COPY), so it is a
         // valid dict-binding value.
-        Expr::DictMerge { entries } => emit_dict_merge(entries, kind, scope, out, depth),
+        Expr::DictMerge { entries } => emit_dict_merge(entries, kind, val_kind, scope, out, depth),
         other => Err(unsupported(&format!(
             "a `dict`/`set` binding must be a dict/set LITERAL, a set-algebra \
              expression (`a | b` / `a & b` / `a - b` / `a ^ b`), or a dict merge \
@@ -20017,6 +20199,30 @@ fn emit_dict_key(
     }
 }
 
+/// PMAT-1305: push a dict VALUE into the 8-byte i64 slot the entry stores. An
+/// int value (`val_kind` Int) is the slot; a STR value is its `i32` base-pointer
+/// lowered through the string path and ZERO-extended into the slot (strings are
+/// immutable, so storing the pointer IS Python's reference semantics — a read
+/// wraps it back to i32). Used by literal construction, `d[k] = v`, and the
+/// explicit pairs of a dict merge.
+fn emit_dict_val(
+    value: &Expr,
+    val_kind: KeyKind,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    match val_kind {
+        KeyKind::Int => emit_expr_typed(value, scope, out, depth, WatTy::I64),
+        KeyKind::Str => {
+            emit_str_expr(value, scope, out, depth)?;
+            indent(out, depth);
+            writeln!(out, "i64.extend_i32_u").expect("write");
+            Ok(())
+        }
+    }
+}
+
 /// Lower a `DictLit` — Python `{k0: v0, k1: v1, …}` — onto the bump heap. Builds
 /// an EMPTY region then update-or-inserts each pair (in source order) via
 /// `$__wasm_dict_set_<k>`, so a DUPLICATE key keeps the LAST value and the live
@@ -20027,6 +20233,7 @@ fn emit_dict_key(
 fn emit_dict_lit(
     pairs: &[(Expr, Expr)],
     kind: KeyKind,
+    val_kind: KeyKind,
     scope: &Scope,
     out: &mut String,
     depth: usize,
@@ -20037,7 +20244,7 @@ fn emit_dict_lit(
         indent(out, depth);
         writeln!(out, "local.get ${DICT_DST_SCRATCH}").expect("write");
         emit_dict_key(k, kind, scope, out, depth)?;
-        emit_expr_typed(v, scope, out, depth, WatTy::I64)?;
+        emit_dict_val(v, val_kind, scope, out, depth)?;
         indent(out, depth);
         writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
         // PMAT-999: consume the returned (possibly grown) pointer back into the
@@ -20106,6 +20313,7 @@ fn emit_set_lit(
 fn emit_dict_merge(
     entries: &[(Option<Expr>, Expr)],
     kind: KeyKind,
+    val_kind: KeyKind,
     scope: &Scope,
     out: &mut String,
     depth: usize,
@@ -20146,6 +20354,26 @@ fn emit_dict_merge(
                         kind.suffix()
                     )));
                 }
+                // PMAT-1305: the update walk copies each source value slot RAW
+                // (an i64 int, or an i32 str base-pointer zero-extended — the
+                // pointer copy is sound, strings are immutable), so the source's
+                // VALUE kind must match the destination's: an int-valued source
+                // splatted into a str-valued result (or vice versa) would store
+                // slots the reader mis-interprets — refused honestly.
+                let src_val_is_str = scope.dict_val_is_str(src);
+                if src_val_is_str != (val_kind == KeyKind::Str) {
+                    return Err(unsupported(&format!(
+                        "dict merge over VALUE kinds that disagree (a dict[_, {}] \
+                         source into a dict[_, {}] result) — every source must \
+                         share the result's value encoding; refused honestly",
+                        if src_val_is_str { "str" } else { "int" },
+                        if val_kind == KeyKind::Str {
+                            "str"
+                        } else {
+                            "int"
+                        },
+                    )));
+                }
                 indent(out, depth);
                 writeln!(out, "local.get ${src}").expect("write");
                 indent(out, depth);
@@ -20154,7 +20382,7 @@ fn emit_dict_merge(
             // explicit `k: v` pair — exactly one dict-literal insert.
             Some(k) => {
                 emit_dict_key(k, kind, scope, out, depth)?;
-                emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
+                emit_dict_val(value, val_kind, scope, out, depth)?;
                 indent(out, depth);
                 writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
             }
@@ -20199,6 +20427,17 @@ fn emit_dict_get(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let (name, kind) = dict_ident_kind(dict, scope)?;
+    // PMAT-1305: a str-valued dict's `d[k]` is a STRING (an i32 base-pointer),
+    // not an i64 scalar — it lowers via `emit_str_expr`'s DictGet arm. Reaching
+    // the int lane means an int position consumed a str value; refuse rather
+    // than hand a pointer to arithmetic.
+    if scope.dict_val_is_str(name) {
+        return Err(unsupported(&format!(
+            "`{name}[k]` over a str-valued dict (`dict[_, str]`) in an int \
+             position — the value is a string; use it in a string position \
+             (len/ord/==/concat/return-as-str)"
+        )));
+    }
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
     emit_dict_key(key, kind, scope, out, depth)?;
@@ -20229,6 +20468,16 @@ fn emit_dict_get_or(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let (name, kind) = dict_ident_kind(dict, scope)?;
+    // PMAT-1305: a str-valued dict's `.get(k, default)` yields a STRING — it
+    // lowers via `emit_str_expr`'s DictGetOr arm; the int lane must not hand a
+    // pointer to arithmetic.
+    if scope.dict_val_is_str(name) {
+        return Err(unsupported(&format!(
+            "`{name}.get(k, default)` over a str-valued dict (`dict[_, str]`) \
+             in an int position — the value is a string; use it in a string \
+             position (len/ord/==/concat/return-as-str)"
+        )));
+    }
     // condition: has(p, k) -> i32 (never traps)
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
@@ -20276,6 +20525,16 @@ fn emit_dict_pop(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let (name, kind) = dict_ident_kind(dict, scope)?;
+    // PMAT-1305: a str-valued dict's `.pop(k)` returns a STRING — a str
+    // position has no DictPop lowering yet, and the int lane must not hand a
+    // pointer to arithmetic. Removal without the value is `del d[k]`.
+    if scope.dict_val_is_str(name) {
+        return Err(unsupported(&format!(
+            "`{name}.pop(...)` over a str-valued dict (`dict[_, str]`) — the \
+             str-value pop is not in the WASM subset yet; for removal alone use \
+             `del {name}[k]`"
+        )));
+    }
     match default {
         // d.pop(k): unconditional pop; the helper's not-found tail traps.
         None => {
@@ -20510,6 +20769,16 @@ fn emit_dict_set_default(
     depth: usize,
 ) -> Result<WatTy, BackendError> {
     let (name, kind) = dict_ident_kind(dict, scope)?;
+    // PMAT-1305: a str-valued dict's `.setdefault(k, default)` both STORES a
+    // str default and RETURNS a str — neither leg is wired in the str lane
+    // yet; the int lane must not store/hand a pointer as an integer.
+    if scope.dict_val_is_str(name) {
+        return Err(unsupported(&format!(
+            "`{name}.setdefault(...)` over a str-valued dict (`dict[_, str]`) — \
+             the str-value setdefault is not in the WASM subset yet; use \
+             `if k not in {name}: {name}[k] = default`"
+        )));
+    }
     let suffix = kind.suffix();
     // if not has(p, k): p = set(p, k, default)  — insert-if-absent (never overwrites).
     indent(out, depth);
@@ -20910,10 +21179,17 @@ fn emit_dict_set(
              in the WASM subset"
         ))
     })?;
+    // PMAT-1305: a str-valued dict stores the value's i32 str base-pointer
+    // zero-extended into the i64 slot; an int-valued dict stores the i64.
+    let val_kind = if scope.dict_val_is_str(dict_name) {
+        KeyKind::Str
+    } else {
+        KeyKind::Int
+    };
     indent(out, depth);
     writeln!(out, "local.get ${dict_name}").expect("write");
     emit_dict_key(key, kind, scope, out, depth)?;
-    emit_expr_typed(value, scope, out, depth, WatTy::I64)?;
+    emit_dict_val(value, val_kind, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_set_{}", kind.suffix()).expect("write");
     // PMAT-999: the helper returns the (possibly grown) base-pointer — update
@@ -20986,6 +21262,27 @@ fn emit_dict_update(
              the WASM subset merges only same-key-kind dicts",
             kind.suffix(),
             okind.suffix()
+        )));
+    }
+    // PMAT-1305: the update walk copies each source value slot RAW (an i64
+    // int, or an i32 str base-pointer zero-extended — sound, strings are
+    // immutable), so both dicts must share ONE value encoding; a mixed
+    // int-valued/str-valued update would store slots the reader
+    // mis-interprets — refused honestly.
+    if scope.dict_val_is_str(dict_name) != scope.dict_val_is_str(other_name) {
+        return Err(unsupported(&format!(
+            "`{dict_name}.update({other_name})` — VALUE kinds differ (dict[_, {}] \
+             vs dict[_, {}]); the WASM subset merges only same-value-kind dicts",
+            if scope.dict_val_is_str(dict_name) {
+                "str"
+            } else {
+                "int"
+            },
+            if scope.dict_val_is_str(other_name) {
+                "str"
+            } else {
+                "int"
+            },
         )));
     }
     indent(out, depth);
@@ -21830,8 +22127,9 @@ fn emit_dict_keys_to_list(
 ///
 /// **A DISTINCT materialiser from the keys path.** `$__wasm_dict_values_to_list_i64`
 /// is `$__wasm_set_to_list_i64` reading the VALUE at `entry+`[`DICT_VAL_OFFSET`]
-/// (`i64.load offset=8`) instead of the key at `entry+0`. A dict stores i64 values
-/// only ([`dict_value_is_supported`]), so the values pack into a `list[int]`. Live
+/// (`i64.load offset=8`) instead of the key at `entry+0`. An INT-valued dict
+/// stores i64 values ([`dict_value_kind`]; a str-valued dict refuses below —
+/// PMAT-1305), so the values pack into a `list[int]`. Live
 /// entries are contiguous `[0, count)` (`del`/`pop` swap-last-into-hole + `count--`),
 /// so a post-deletion dict materialises its live values correctly. Value-order is
 /// the dict's arbitrary storage order, but sum/min/max are order-INDEPENDENT and
@@ -21865,11 +22163,23 @@ fn emit_dict_values_to_list(
         ));
     };
     // Must be a DICT (a set is `is_set`; both share `heap_maps`). Any key kind is
-    // fine — only the i64 value slot is read (dict values are i64, dict_value_is_supported).
+    // fine — only the i64 value slot is read.
     if scope.heap_map_kind(dname).is_none() || scope.is_set(dname) {
         return Err(unsupported(&format!(
             "a dict-value reduction over `{dname}` which is not a `dict` local in \
              the WASM subset"
+        )));
+    }
+    // PMAT-1305: a str-valued dict's value slots are i32 str base-pointers —
+    // materialising them into a `list[int]` and folding would reduce POINTERS
+    // (`min(d.values())` would be lowest-address, not lexicographic-min).
+    // Refused honestly; the int-valued dict path is unchanged.
+    if scope.dict_val_is_str(dname) {
+        return Err(unsupported(&format!(
+            "a dict-value reduction over the str-valued dict `{dname}` \
+             (`dict[_, str]`) — the values are strings, and reducing/sorting \
+             them as i64 slots would operate on pointers, not content; refused \
+             honestly"
         )));
     }
     // A dict shares the set's open-assoc layout; the values materialiser reads the
@@ -22349,6 +22659,13 @@ fn binop_operand_is_string(e: &Expr, scope: &Scope) -> bool {
         Expr::Call { callee, .. } => scope.call_returns_str(callee),
         Expr::MethodCall { obj, method, .. } => matches!(obj.as_ref(), Expr::Ident(o)
             if scope.struct_of(o).is_some_and(|s| scope.method_returns_str(&s, method))),
+        // PMAT-1305: `d[k]` / `d.get(k, default)` over a str-VALUED dict yields
+        // an i32 str base-pointer — a `==`/`!=`/ordering over it must route to
+        // the content-compare helpers (two such reads compared in the int lane
+        // would be pointer identity, a silent miscompile).
+        Expr::DictGet { dict, .. } | Expr::DictGetOr { dict, .. } => {
+            matches!(dict.as_ref(), Expr::Ident(d) if scope.dict_val_is_str(d))
+        }
         _ => false,
     }
 }
@@ -22729,6 +23046,19 @@ fn emit_binop(
                  honestly",
                 lk.suffix(),
                 rk.suffix()
+            )));
+        }
+        // PMAT-1305: `$__wasm_dict_eq_<k>` compares each VALUE slot with
+        // `i64.eq` — for a str-valued dict that is POINTER identity, while
+        // Python compares string CONTENT ({1: 'a'} == {1: 'a'} is True even
+        // across distinct allocations). A content-comparing dict-eq twin is
+        // not wired yet; refuse rather than miscompare.
+        if scope.dict_val_is_str(ln) || scope.dict_val_is_str(rn) {
+            return Err(unsupported(&format!(
+                "binary op {op:?} over a str-valued dict (`dict[_, str]`) — dict \
+                 equality compares value slots as i64 (pointer identity for str \
+                 values, but Python compares string CONTENT); refused honestly \
+                 until a content-comparing dict-eq is wired"
             )));
         }
         if matches!(op, BinOp::Eq | BinOp::NotEq) {
