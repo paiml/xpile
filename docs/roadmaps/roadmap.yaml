@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1319
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1319: [frontend/capability/dict] TWO-GENERATOR comprehensions over dict/set sources — the shared `desugar_comp_2gen` (PMAT-502fc/fd, list/dict/set 2-gen) widens its iterable vocabulary from `list[T]` / `range(...)` to `Type::Dict` (iterates KEYS, exactly like the `for k in d:` statement — lazy `over_keys` read-only, owned keys-snapshot + size-change guard when the dict is mutated in the function, PMAT-472/742) and `Type::Set` (elements, PMAT-847) — the SAME widening PMAT-1316 (set comp) / PMAT-1317 (dict comp) applied to the ONE-generator desugars, now carried to the nested-loop form. So the exact sugar the PMAT-1316/1317 honesty pins held frontend-refused — `{x + y for x in a for y in b}` over hash sources — now lowers to the SAME nested `ForEach` + `SetAdd`/`DictSet` HIR as the manual `for x in a: for y in b: r.add(x + y)` loop, and the PMAT-1292/1314/1315 hash-order gate, the PMAT-1309 param belts, and the PMAT-1310 return relocation ride it with ZERO WASM-lane edits (the eighth already-generic slice). Mechanism: the four-arm source classification (list/mutable-dict-snapshot/lazy-dict/set) that the two guard-aware 1-gen desugars inline is extracted to `comp_iter_source_binding` and called per-generator in the 2-gen path, threading each generator''s `over_keys`/`dict_guard` into its `ForEach` (was hard-coded `false`/`None`). VERIFIED end-to-end: a 2-gen SET comp over SET sources lowers, emits, and VALUE-MATCHES live CPython (headliner `{x+y}`, filtered-both-legs, cross-product-dedup, subtraction, 5×5 growth past the 16-slot slack, two-set-param `cross_len` boundary — 6 executed pins == hand constants == python3); the Rust lane (deterministic IndexMap/IndexSet) additionally runs the dict-source + computed-key forms (`d1.keys().cloned()` lazy read-only, `.collect::<Vec<_>>()` + `if d.len() != n { panic! }` guard for a mutable source — value-matched vs CPython). HONESTY (the sugar refuses IDENTICALLY to the manual loop): a 2-gen comp over DICT sources, a 2-gen LIST-build over set sources, and a 2-gen DICT comp with a computed key all refuse at the WASM ORDER-GATE (bump-heap storage order is order-sensitive) as VALID mHIR; a tuple source and 3+ generators refuse at the FRONTEND; the shared self-reference belt fires through both generator legs (PMAT-1318). One frontend helper + the 2-gen desugar''s two `over_keys`/`dict_guard` threads; one new gated witness; two PMAT-1316/1317 honesty pins FLIPPED.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "CAPABILITY: `{expr for x in A for y in B}` over dict/set sources lowers to the nested manual-loop HIR — the frontend refusal `multi-generator {kind} comprehension over an iterable typing as {other}; ... (dict iterables deferred)` is replaced by `comp_iter_source_binding`, which classifies each generator''s iterable exactly as the statement `for` forms do (set→elements, dict→keys lazy-or-guarded)."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/comp_2gen_hash_source_witness.rs — 6 executed `check_2gen_*` observables (set-src / filtered-both-legs / cross-product-dedup / subtraction / 5×5-growth-past-slack / two-set-param `cross_len` pipeline) == hand pins == live python3 on IDENTICAL source, permutation-invariant (base-100 `sorted(t)` folds or commutative sums); emit pins on the `cross_len` two-set-param ABI + `$__wasm_dict_set_i`/`$__wasm_dict_has_i`; a sugar≡manual-loop execution parity; FRONTEND teeth (tuple-src / 3-gen / self-ref) at `lower`; ORDER-GATE teeth (dict-src / list-build / computed-key-dict-comp) as valid mHIR the WASM backend refuses."
+  - "HONESTY PINS FLIPPED: `two_generator_set_comp_over_set_sources_now_lowers_and_emits` (was `_still_refuses`) in set_comp_hash_source_witness.rs and `two_generator_dict_comp_over_hash_sources_now_lowers_gate_refuses_wasm` in dict_comp_hash_source_witness.rs (the dict-comp form lowers but the order-gate refuses last-write-wins over the repeated bare-loop-var key)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p depyler-frontend + -p xpile-wasm-codegen. Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1318
   github_issue: null
   item_type: task

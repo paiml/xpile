@@ -481,16 +481,19 @@ fn tuple_source_still_refuses() {
     );
 }
 
-/// HONESTY pin for what this slice does NOT widen: the two-generator dict
-/// comprehension over hash sources still refuses at the frontend — the
-/// manual nested loop is its supported spelling.
+/// PMAT-1319 FLIPPED this PMAT-1317 honesty pin: the two-generator dict/set
+/// comprehension over hash sources now LOWERS (the shared `desugar_comp_2gen`
+/// widened its iterable vocabulary to dict/set — see
+/// `comp_2gen_hash_source_witness.rs` for the executed witness). A 2-gen dict
+/// comp with a key that is a bare loop var (`{a: b for a in s for b in u}`)
+/// lowers to valid mHIR, but its store is last-write-wins over the repeated key
+/// `a` — order-dependent — so the WASM order-gate refuses it at the backend
+/// (identically to the manual `for a in s: for b in u: r[a] = b` loop).
 #[test]
-fn two_generator_dict_comp_over_hash_sources_still_refuses() {
-    expect_refusal(
-        "dict-comp-2gen-hash-src",
-        "def go() -> int:\n    s: set[int] = {1, 2}\n    u: set[int] = {10, 20}\n    r = {a: b for a in s for b in u}\n    return len(r)\n",
-        "multi-generator dict comprehension over an iterable typing as",
-    );
+fn two_generator_dict_comp_over_hash_sources_now_lowers_gate_refuses_wasm() {
+    let src = "def go() -> int:\n    s: set[int] = {1, 2}\n    u: set[int] = {10, 20}\n    r = {a: b for a in s for b in u}\n    return len(r)\n";
+    lower(src).expect("2-gen dict comp over hash sources must now LOWER (PMAT-1319)");
+    expect_refusal("dict-comp-2gen-hash-src", src, "order-dependent");
 }
 
 // ---- the executed differential --------------------------------------------------

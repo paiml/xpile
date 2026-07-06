@@ -434,18 +434,18 @@ fn tuple_source_still_refuses() {
     );
 }
 
-/// HONESTY pin for what this slice did NOT widen: the two-generator comp
-/// over hash sources still refuses at the frontend — the manual nested
-/// loop is its supported spelling. (The dict COMPREHENSION over hash
-/// sources, pinned refused here at PMAT-1316, was widened by PMAT-1317 —
-/// see `dict_comp_hash_source_witness.rs` for its executed witness.)
+/// PMAT-1319 FLIPPED this PMAT-1316 honesty pin: the two-generator comp over
+/// hash sources now LOWERS AND EXECUTES (the shared `desugar_comp_2gen` widened
+/// its iterable vocabulary to dict/set). A 2-gen SET comp over SET sources
+/// builds an order-independent set, so unlike the dict-source form it passes
+/// the WASM order-gate and runs — see `comp_2gen_hash_source_witness.rs` for
+/// the executed value-match vs CPython. (The dict COMPREHENSION over hash
+/// sources, pinned refused here at PMAT-1316, was widened by PMAT-1317.)
 #[test]
-fn two_generator_comp_over_hash_sources_still_refuses() {
-    expect_refusal(
-        "comp-2gen-hash-src",
-        "def go() -> int:\n    s: set[int] = {1, 2}\n    u: set[int] = {10, 20}\n    t = {a + b for a in s for b in u}\n    return len(t)\n",
-        "multi-generator set comprehension over an iterable typing as",
-    );
+fn two_generator_set_comp_over_set_sources_now_lowers_and_emits() {
+    let src = "def go() -> int:\n    s: set[int] = {1, 2}\n    u: set[int] = {10, 20}\n    t = {a + b for a in s for b in u}\n    return len(t)\n";
+    lower(src).expect("2-gen set comp over set sources must now LOWER (PMAT-1319)");
+    emit(src).expect("2-gen set comp over set sources must now EMIT to WASM (PMAT-1319)");
 }
 
 /// HONESTY pin: an EXPRESSION-position comp (`len({x * 2 for x in s})`)
