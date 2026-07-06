@@ -295,15 +295,16 @@ fn scalar_truthy_unsupported_shapes_refuse() {
         "all(list[str]) (len-truthiness map) must refuse in the WASM subset"
     );
 
-    // 2. A dict-sourced `any(d)` over an INT-keyed dict now EMITS (PMAT-1334
-    //    materialises the keys + folds — see `dict_keys_any_all_witness.rs`). The
-    //    STR-keyed form still refuses: the frontend maps `len(k) != 0` over a
-    //    `DictView{Keys}`, a per-element str truthiness the subset defers.
+    // 2. A dict-sourced `any(d)` over an INT-keyed dict EMITS (PMAT-1334 folds the
+    //    keys); the STR-keyed form now EMITS TOO (PMAT-1336 folds `len(k) != 0`
+    //    DIRECTLY out of the region's str-pointer keys via
+    //    `$__wasm_hash_strkey_truthy_reduce` — see `str_truthy_reduce_witness.rs`).
+    //    Pin that it lowers cleanly (no longer a refusal boundary here).
     let dict_str_truthiness =
         "def f() -> bool:\n    d: dict[str, int] = {\"a\": 10, \"\": 20}\n    return any(d)\n";
     assert!(
-        emit(dict_str_truthiness).is_err(),
-        "any(str-keyed dict) (len-truthiness map over keys) must refuse in the WASM subset"
+        emit(dict_str_truthiness).is_ok(),
+        "any(str-keyed dict) now folds via the fused str-key helper (PMAT-1336)"
     );
 
     // 3. A list LITERAL argument (a temporary, not a name).

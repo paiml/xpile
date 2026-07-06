@@ -45,13 +45,13 @@
 //!   * a dict flowing across a FUNCTION param, reduced in the callee.
 //!
 //! REFUSES honestly (NOT silently mis-lowered — regression guards):
-//!   * a str-KEYED dict (`any(d)` over `dict[str, _]`) — the frontend wraps a
-//!     `len(k) != 0` map; the recognizer detects that shape and refuses with a
-//!     PRECISE message (a per-element str truthiness over materialised i64 pointer
-//!     slots is deferred), NOT the generic non-name-list tail;
 //!   * a VALUES view (`any(d.values())`) stays in the PMAT-1333 lane (this witness
 //!     only pins the KEYS twin);
 //!   * the lazy short-circuiting GENERATOR form (`any(k > 0 for k in d)`).
+//!
+//! (A str-KEYED dict `any(d)` / `all(d.keys())` was refused here at PMAT-1334;
+//! PMAT-1336 turns it into a WORKING `len(k) != 0` fold — see
+//! `str_truthy_reduce_witness.rs`.)
 //!
 //! Every probe is FULL-pipeline (REAL Python → `PythonFrontend` → `emit_module` →
 //! `wat2wasm` → `wasm-interp`), value-matched against LIVE python3 executing the
@@ -298,39 +298,22 @@ fn dict_keys_any_all_bare_and_view_are_aliases() {
 // ---- honest refusals (through the FULL pipeline) ------------------------------
 
 /// The forms OUTSIDE the int-KEYS any/all lane refuse — never silently
-/// mis-lowered.
+/// mis-lowered. (The str-KEYED dict `any(d)`/`all(d.keys())` moved from a refusal
+/// to a WORKING `len(k) != 0` fold in PMAT-1336 — see
+/// `str_truthy_reduce_witness.rs`; it is no longer a refusal.)
 #[test]
 fn dict_keys_any_all_refuse_out_of_lane_forms() {
-    for (label, src, needle) in [
-        // a str-KEYED dict — the frontend wraps a `len(k) != 0` map; the recognizer
-        // detects that shape and refuses with a PRECISE message (a per-element str
-        // truthiness over materialised i64 pointer slots is deferred).
-        (
-            "any(str-keyed d)",
-            "def f() -> bool:\n    d: dict[str, int] = {\"a\": 1, \"\": 2}\n    return any(d)\n".to_string(),
-            "str-keyed dict",
-        ),
-        (
-            "all(str-keyed d.keys())",
-            "def f() -> bool:\n    d: dict[str, int] = {\"a\": 1, \"\": 2}\n    return all(d.keys())\n".to_string(),
-            "str-keyed dict",
-        ),
-        // the lazy short-circuiting GENERATOR form — a per-element predicate lambda.
-        (
-            "any(<generator over d>)",
-            "def f() -> bool:\n    d: dict[int, int] = {0: 1, 5: 2}\n    return any(k > 0 for k in d)\n".to_string(),
-            "<generator>",
-        ),
-    ] {
-        let err = match emit(&src) {
-            Err(e) => e,
-            Ok(wat) => panic!("{label} must be refused but lowered:\n{wat}"),
-        };
-        assert!(
-            err.contains(needle),
-            "{label} refusal should mention {needle:?}, got: {err}"
-        );
-    }
+    // The lazy short-circuiting GENERATOR form — a per-element predicate lambda.
+    let label = "any(<generator over d>)";
+    let src = "def f() -> bool:\n    d: dict[int, int] = {0: 1, 5: 2}\n    return any(k > 0 for k in d)\n";
+    let err = match emit(src) {
+        Err(e) => e,
+        Ok(wat) => panic!("{label} must be refused but lowered:\n{wat}"),
+    };
+    assert!(
+        err.contains("<generator>"),
+        "{label} refusal should mention \"<generator>\", got: {err}"
+    );
 }
 
 // ---- WABT harness -------------------------------------------------------------
