@@ -15714,6 +15714,16 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
         // left undeclared at its call site (the recurring gate-hole class).
         // `Filter` shares the shape and is folded in for defence in depth.
         Expr::Map { list, lambda } | Expr::Filter { list, lambda } => e(list) || e(&lambda.body),
+        // PMAT-1333: `any(d.values())` / `all(d.values())` over a bool/int/float-
+        // valued dict materialises the values view via
+        // `$__wasm_dict_values_to_list_i64` (`emit_bool_reduce`). The
+        // `DictView{Values}` sits DIRECTLY under the `BoolReduce` (a bool-valued
+        // dict) or under its inner `Map` (an int/float value's `!= 0`/`!= 0.0`
+        // truthiness map), so the gate must recurse through the reduce — else the
+        // materialiser is left undeclared at its call site (the recurring
+        // gate-hole class; over-detecting is a harmless dead helper, a miss is a
+        // fatal wat2wasm error). The `Map` arm above handles the int/float nesting.
+        Expr::BoolReduce { list, .. } => e(list),
         _ => false,
     }
 }
@@ -20757,6 +20767,18 @@ fn list_scalar_truthy_target(list: &Expr) -> Option<(&str, WatTy)> {
     let Expr::Ident(name) = inner.as_ref() else {
         return None;
     };
+    Some((name, truthiness_notzero_kind(lambda)?))
+}
+
+/// PMAT-1332 / PMAT-1333: is `lambda` the per-element NONZERO truthiness predicate
+/// the frontend lowers Python's `any`/`all` over a numeric sequence to — `<param>
+/// != 0` (int) or `<param> != 0.0` (float)? Returns the compare target's scalar
+/// WAT kind (`I64` for `!= 0`, `F64` for `!= 0.0`) when `lambda.body` is EXACTLY
+/// that `NotEq` over the bound param, else `None`. Shared by the list-name reduce
+/// ([`list_scalar_truthy_target`]) and the dict-values reduce
+/// ([`dict_values_truthy_dict`]). The `LitFloat` guard accepts `±0.0` (the compare
+/// target is zero either way; the frontend emits `+0.0`).
+fn truthiness_notzero_kind(lambda: &SortKey) -> Option<WatTy> {
     let Expr::BinOp {
         op: BinOp::NotEq,
         lhs,
@@ -20771,8 +20793,51 @@ fn list_scalar_truthy_target(list: &Expr) -> Option<(&str, WatTy)> {
         _ => return None,
     }
     match rhs.as_ref() {
-        Expr::LitInt(0) => Some((name, WatTy::I64)),
-        Expr::LitFloat(f) if *f == 0.0 => Some((name, WatTy::F64)),
+        Expr::LitInt(0) => Some(WatTy::I64),
+        Expr::LitFloat(f) if *f == 0.0 => Some(WatTy::F64),
+        _ => None,
+    }
+}
+
+/// PMAT-1333: recognise the source of `any(d.values())` / `all(d.values())` over a
+/// bool/int/float-VALUED dict. Returns the dict operand (an `Expr::Ident` in the
+/// supported form) when `list` is the frontend's dict-values truthiness source:
+///   * a BARE `DictView{Values}` — a bool-VALUED dict, whose stored 0/1 slot IS
+///     its truthiness (Python takes `d.values()` truthiness element-wise; a `bool`
+///     needs no `!= 0` map, so the frontend hands the view straight to the fold);
+///   * a `Map { DictView{Values}, <param> != 0 }`   — an int-VALUED dict;
+///   * a `Map { DictView{Values}, <param> != 0.0 }` — a float-VALUED dict.
+///
+/// The FOLD helper is chosen by the caller from the dict's stored VALUE KIND (via
+/// `scope`), NOT the map's literal: a float value's i64 slot holds
+/// `i64.reinterpret_f64` BITS, so it must fold via the f64 truthy helper (`f64.ne
+/// 0.0`) to honour IEEE truthiness (`bool(-0.0) == False`, `bool(NaN) == True`),
+/// whereas a bool/int value folds via the i64 helper (`i64.ne 0`). Returns `None`
+/// for any other `list` (a bare list Ident, a keys view, an unrelated map), which
+/// falls through to [`list_scalar_truthy_target`] / the `list[bool]` path / the
+/// honest non-name refusal.
+fn dict_values_truthy_dict(list: &Expr) -> Option<&Expr> {
+    match list {
+        Expr::DictView {
+            dict,
+            kind: DictViewKind::Values,
+        } => Some(dict.as_ref()),
+        Expr::Map {
+            list: inner,
+            lambda,
+        } => {
+            let Expr::DictView {
+                dict,
+                kind: DictViewKind::Values,
+            } = inner.as_ref()
+            else {
+                return None;
+            };
+            // Only a genuine `!= 0`/`!= 0.0` truthiness map counts (not some other
+            // map over the values view).
+            truthiness_notzero_kind(lambda)?;
+            Some(dict.as_ref())
+        }
         _ => None,
     }
 }
@@ -20792,6 +20857,54 @@ fn emit_bool_reduce(
              only; the lazy short-circuiting generator form (a per-element \
              predicate lambda) is deferred (refused honestly)"
         )));
+    }
+    // PMAT-1333: `any(d.values())` / `all(d.values())` over a bool/int/float-VALUED
+    // dict — the dict-view twin of the PMAT-1332 list truthiness reduce. The
+    // frontend lowers `d.values()` to `DictView{Values}` and applies Python's
+    // per-element truthiness (a `bool` value straight through; an `int` via `__x
+    // != 0`; a `float` via `__x != 0.0`). Materialise the value slots into a fresh
+    // `list[int]` (the kind-agnostic `$__wasm_dict_values_to_list_i64`, which
+    // copies each i64 value slot VERBATIM — duplicates kept, storage order
+    // irrelevant to a truthiness fold) and fold by NONZERO via the SAME truthy
+    // helpers PMAT-1332 uses. `any([]) == False` / `all([]) == True` fall out of
+    // the helper's identity return. The fold helper is chosen by the dict's stored
+    // VALUE KIND: a float value's i64 slot holds `i64.reinterpret_f64` BITS, so it
+    // must fold as f64 (`f64.ne 0.0`) to honour IEEE truthiness — `bool(-0.0) ==
+    // False`, `bool(NaN) == True` (a raw i64 `!= 0` on `-0.0`'s bits `0x8000…`
+    // would WRONGLY read truthy); a bool/int value folds as i64 (`i64.ne 0`).
+    if let Some(dict) = dict_values_truthy_dict(list) {
+        let Expr::Ident(dname) = dict else {
+            return Err(unsupported(&format!(
+                "{op}() over the values of a non-name dict — the WASM subset reduces \
+                 `d.values()` of a NAMED dict local; bind it to a name first"
+            )));
+        };
+        if scope.heap_map_kind(dname).is_none() || scope.is_set(dname) {
+            return Err(unsupported(&format!(
+                "{op}() over `{dname}.values()` — `{dname}` is not a `dict` local in \
+                 the WASM subset"
+            )));
+        }
+        if scope.dict_val_is_str(dname) {
+            return Err(unsupported(&format!(
+                "{op}() over the str-valued dict `{dname}` (`dict[_, str]`) — a \
+                 per-element str truthiness (`len(v) != 0`) over materialised i64 \
+                 pointer slots is not in the WASM subset yet; refused honestly"
+            )));
+        }
+        // A FLOAT-valued dict stores f64 BITS in the i64 slot → fold as f64 to
+        // honour IEEE truthiness; a bool/int value is a plain i64 → fold as i64.
+        let helper = if scope.dict_val_is_float(dname) {
+            "$__wasm_list_float_truthy_reduce"
+        } else {
+            "$__wasm_list_int_truthy_reduce"
+        };
+        emit_dict_values_to_list(dict, WatTy::I64, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
+        indent(out, depth);
+        writeln!(out, "call {helper}").expect("write");
+        return Ok(WatTy::I32);
     }
     // PMAT-1332: `any(xs)`/`all(xs)` over a `list[int]`/`list[float]` — the
     // frontend lowers Python's per-element truthiness to a `Map { __x != 0 }`
