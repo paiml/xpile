@@ -15561,6 +15561,18 @@ fn expr_has_set_to_list(expr: &Expr) -> bool {
             .iter()
             .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        // PMAT-1334: `any(d)` / `all(d)` over a dict iterate the KEYS — the frontend
+        // materialises the dict arg to `DictView{Keys}` and wraps it in a per-element
+        // truthiness `Map` under a `BoolReduce` (`emit_bool_reduce` folds the keys via
+        // the set-layout key materialiser `$__wasm_set_to_list_i64`). The keys view
+        // sits under the reduce's inner `Map`, so the gate must recurse through BOTH —
+        // else the shared key materialiser is left undeclared at its `call` site (the
+        // recurring gate-hole class; over-detecting is a harmless dead helper, a miss
+        // is a fatal wat2wasm error). Mirrors the PMAT-1329/1333 arms on the value
+        // gate; `Filter` shares the `{ list, lambda }` shape and is folded in for
+        // defence in depth.
+        Expr::Map { list, lambda } | Expr::Filter { list, lambda } => e(list) || e(&lambda.body),
+        Expr::BoolReduce { list, .. } => e(list),
         _ => false,
     }
 }
@@ -20842,6 +20854,60 @@ fn dict_values_truthy_dict(list: &Expr) -> Option<&Expr> {
     }
 }
 
+/// PMAT-1334: recognise the KEY-view truthiness source that `any(d)` / `all(d)`
+/// lowers to. Python iterates a dict as its KEYS, so the frontend materialises the
+/// dict arg to `DictView{Keys}` (the same view `sum(d)`/`max(d)`/`list(d)` use) and
+/// applies per-element truthiness under a `Map`:
+///   * an int-keyed dict → `Map { DictView{Keys}, <param> != 0 }`      (EMIT)
+///   * a str-keyed dict  → `Map { DictView{Keys}, len(<param>) != 0 }` (REFUSE)
+///
+/// Returns `(dict, int_key)` — the underlying dict operand and whether the keys are
+/// `int` (a raw NONZERO fold the WASM subset emits) vs `str` (a per-element
+/// `len(k) != 0` truthiness over materialised i64 pointer slots, refused honestly
+/// with a clear message rather than the generic non-name-list refusal). Returns
+/// `None` for any other `list` (a values view — handled by [`dict_values_truthy_dict`]
+/// — a bare list Ident, an unrelated map), which falls through. The dict view is a
+/// KEYS twin of PMAT-1333; the FOLD helper is always the i64 truthy reduce (dict
+/// keys are `int|str`, never float/bool — no reinterpret needed).
+fn dict_keys_truthy_dict(list: &Expr) -> Option<(&Expr, bool)> {
+    let Expr::Map {
+        list: inner,
+        lambda,
+    } = list
+    else {
+        return None;
+    };
+    let Expr::DictView {
+        dict,
+        kind: DictViewKind::Keys,
+    } = inner.as_ref()
+    else {
+        return None;
+    };
+    // int-key truthiness: `<param> != 0` (an i64 nonzero fold; a `!= 0.0` float map
+    // can never occur over dict keys, so require I64 exactly).
+    if matches!(truthiness_notzero_kind(lambda), Some(WatTy::I64)) {
+        return Some((dict.as_ref(), true));
+    }
+    // str-key truthiness: `len(<param>) != 0` — recognised so the str-keyed form
+    // refuses with a precise message (never a base-pointer misread).
+    if let Expr::BinOp {
+        op: BinOp::NotEq,
+        lhs,
+        rhs,
+    } = lambda.body.as_ref()
+    {
+        let len_of_param = matches!(
+            lhs.as_ref(),
+            Expr::Len(inner) if matches!(inner.as_ref(), Expr::Ident(p) if *p == lambda.param)
+        );
+        if len_of_param && matches!(rhs.as_ref(), Expr::LitInt(0)) {
+            return Some((dict.as_ref(), false));
+        }
+    }
+    None
+}
+
 fn emit_bool_reduce(
     list: &Expr,
     is_all: bool,
@@ -20904,6 +20970,46 @@ fn emit_bool_reduce(
         writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
         indent(out, depth);
         writeln!(out, "call {helper}").expect("write");
+        return Ok(WatTy::I32);
+    }
+    // PMAT-1334: `any(d)` / `all(d)` over a dict — Python iterates the KEYS, so the
+    // frontend materialises the dict arg to `DictView{Keys}` and folds its
+    // per-element truthiness (the KEY-view twin of the PMAT-1333 `.values()` reduce).
+    // An int-keyed dict's keys materialise to a FRESH `list[int]` via the set-layout
+    // key materialiser (`$__wasm_set_to_list_i64` reads the key at `entry+0`; a dict
+    // shares the set's open-assoc region — `emit_dict_keys_to_list`) and fold by
+    // NONZERO via the SAME i64 truthy helper PMAT-1332 uses: `any({}) == False` /
+    // `all({}) == True` fall out of the helper's identity return, `all` short-circuits
+    // False on the first zero key, `any` short-circuits True on the first nonzero one,
+    // and the fold is blind to the dict's arbitrary storage order (a truthiness reduce
+    // is commutative+associative). A str-keyed dict lowers to a `len(k) != 0` map that
+    // refuses honestly (a per-element str truthiness over materialised i64 pointer
+    // slots is not in the subset yet) — with a precise message, not the generic tail.
+    if let Some((dict, int_key)) = dict_keys_truthy_dict(list) {
+        let Expr::Ident(dname) = dict else {
+            return Err(unsupported(&format!(
+                "{op}(d) over a non-name dict — the WASM subset reduces `any(d)` / \
+                 `all(d)` over a NAMED dict local; bind it to a name first"
+            )));
+        };
+        if scope.heap_map_kind(dname).is_none() || scope.is_set(dname) {
+            return Err(unsupported(&format!(
+                "{op}(d) over `{dname}` — `{dname}` is not a `dict` local in the WASM \
+                 subset"
+            )));
+        }
+        if !int_key {
+            return Err(unsupported(&format!(
+                "{op}(d) over the str-keyed dict `{dname}` (`dict[str, _]`) — a \
+                 per-element str truthiness (`len(k) != 0`) over materialised i64 \
+                 pointer slots is not in the WASM subset yet; refused honestly"
+            )));
+        }
+        emit_dict_keys_to_list(dict, WatTy::I64, scope, out, depth)?;
+        indent(out, depth);
+        writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
+        indent(out, depth);
+        writeln!(out, "call $__wasm_list_int_truthy_reduce").expect("write");
         return Ok(WatTy::I32);
     }
     // PMAT-1332: `any(xs)`/`all(xs)` over a `list[int]`/`list[float]` — the
