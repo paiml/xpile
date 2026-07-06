@@ -8961,6 +8961,83 @@ const LIST_FLOAT_TRUTHY_REDUCE_HELPER: &str = "\
     local.get $is_all)
 ";
 
+/// PMAT-1336: the STR-KEY truthiness-reduce helper — Python `any(s)` / `all(s)`
+/// over a `set[str]` and `any(d)` / `all(d)` over a `str`-KEYED dict. A set and a
+/// dict share the SAME open-assoc region ([`DICT_ENTRY_SIZE`] = 16-byte entries:
+/// KEY @ `entry+0`, value @ `entry+`[`DICT_VAL_OFFSET`]; `i32` live-count @
+/// `base+0`, entries @ `base+`[`LIST_ELEMS_OFFSET`]), and a str KEY is stored as an
+/// `i32` POINTER at `entry+0` (`emit_dict_store_key` → `i32.store`). Python string
+/// truthiness is `len(s) != 0`, and the length-prefixed str ABI puts the byte count
+/// as an `i32` header @ the pointer (`emit_str_len_i32` → `i32.load`) — so a str is
+/// truthy iff `i32.load(ptr) != 0`. The empty string `""` is a valid element/key
+/// (count 0 → falsey), so `any({""}) == False` / `all({"", "x"}) == False` land
+/// exactly.
+///
+/// Unlike the int lane this does NOT materialise a `list[int]` first (a str set/dict
+/// would need a `list[str]`, unmodelled — the int materialisers refuse `elem != I64`):
+/// it walks the region entries DIRECTLY, reading each str pointer at `entry+0` and its
+/// length prefix, folding truthiness in place. Live entries are contiguous `[0, n)`
+/// (`del`/`pop`/`discard` swap-last-into-hole + `count--`), so a post-mutation
+/// set/dict folds its live keys correctly. `all` short-circuits False on the first
+/// empty-string key, `any` short-circuits True on the first non-empty one; the empty
+/// region yields `all == True` / `any == False` (both `== is_all`) — matching CPython.
+/// Non-allocating (a pointer-slot fold), so it rides the same `needs_list_bool_reduce`
+/// gate as the scalar truthy folds — it never calls `$__alloc`.
+const HASH_STRKEY_TRUTHY_REDUCE_HELPER: &str = "\
+  ;; __wasm_hash_strkey_truthy_reduce(base, is_all) = all/any over a set[str] /
+  ;; str-keyed dict's KEYS. Python per-element truthiness: a str is True iff
+  ;; len(s) != 0. base → open-assoc region: i32 count @ base+0, 16-byte entries @
+  ;; base+8, a str KEY (i32 pointer) @ entry+0, its i32 byte-count header @ *ptr.
+  (func $__wasm_hash_strkey_truthy_reduce (param $base i32) (param $is_all i32) (result i32)
+    (local $i i32)
+    (local $n i32)
+    ;; n = live-entry count (i32 header @ base+0)
+    local.get $base
+    i32.load
+    local.set $n
+    i32.const 0
+    local.set $i
+    (block $done
+      (loop $next
+        ;; while i < n  (unsigned — count is a non-negative header)
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $done
+        ;; ptr = i32.load(base + 8 + i*16)  — the str KEY pointer at entry+0
+        local.get $base
+        i32.const 8
+        i32.add
+        local.get $i
+        i32.const 16
+        i32.mul
+        i32.add
+        i32.load
+        ;; b = (i32.load(ptr) != 0) — the byte-count header; nonempty str is truthy
+        i32.load
+        i32.const 0
+        i32.ne
+        ;; short-circuit iff (is_all XOR b): all breaks on a falsey (empty) key,
+        ;; any breaks on a truthy (nonempty) one; the decided result is !is_all.
+        local.get $is_all
+        i32.xor
+        if
+          local.get $is_all
+          i32.eqz
+          return
+        end
+        ;; i += 1
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $next
+      )
+    )
+    ;; loop exhausted (incl. the empty region): all → 1, any → 0; both == is_all.
+    local.get $is_all)
+";
+
 /// PMAT-1252: the list-INT-SORT reduction helper — Python `sorted(xs)` /
 /// `sorted(xs, reverse=True)` over a `list[int]`. This is the FIRST list op that
 /// RETURNS a new list, so unlike the sum/min/max/any/all folds it ALLOCATES: it
@@ -13005,6 +13082,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         // safe (over-detecting a helper is harmless; under-detecting is fatal).
         out.push_str(LIST_INT_TRUTHY_REDUCE_HELPER);
         out.push_str(LIST_FLOAT_TRUTHY_REDUCE_HELPER);
+        // PMAT-1336: the STR-KEY truthiness fold — `any(s)`/`all(s)` over a
+        // `set[str]` and `any(d)`/`all(d)` over a str-KEYED dict. A str set/dict
+        // can't materialise a `list[int]` (a str element → a `list[str]`,
+        // unmodelled — the int materialisers refuse `elem != I64`), so this walks
+        // the shared open-assoc region DIRECTLY, reading each str pointer at
+        // `entry+0` and folding `len(k) != 0`. Non-allocating, self-contained WAT
+        // (no `$__alloc`), so it co-emits under the same `BoolReduce` gate — dead
+        // (but valid) in a module that has a `BoolReduce` but no str set/dict.
+        out.push_str(HASH_STRKEY_TRUTHY_REDUCE_HELPER);
     }
     // PMAT-1252: emit the list-SORT reduction helpers once, when any function
     // uses `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`). Each
@@ -20811,6 +20897,29 @@ fn truthiness_notzero_kind(lambda: &SortKey) -> Option<WatTy> {
     }
 }
 
+/// Is `lambda` the per-element STR truthiness predicate `len(<param>) != 0`? Python
+/// truthiness of a `str` is `len(s) != 0`, so the frontend maps each str element
+/// through this over a `SetToList` / `DictView` when reducing a str set/dict with
+/// `any`/`all`. Returns `true` when `lambda.body` is EXACTLY `len(<bound param>) !=
+/// 0`. Shared by [`set_truthy_target`] (int-vs-str set discriminant) and
+/// [`dict_values_truthy_dict`] (so a str-VALUED dict reaches its PRECISE refusal
+/// rather than the generic non-name-list tail — symmetric with the set/keys lanes).
+fn is_str_len_notzero_map(lambda: &SortKey) -> bool {
+    let Expr::BinOp {
+        op: BinOp::NotEq,
+        lhs,
+        rhs,
+    } = lambda.body.as_ref()
+    else {
+        return false;
+    };
+    let len_of_param = matches!(
+        lhs.as_ref(),
+        Expr::Len(inner) if matches!(inner.as_ref(), Expr::Ident(p) if *p == lambda.param)
+    );
+    len_of_param && matches!(rhs.as_ref(), Expr::LitInt(0))
+}
+
 /// PMAT-1333: recognise the source of `any(d.values())` / `all(d.values())` over a
 /// bool/int/float-VALUED dict. Returns the dict operand (an `Expr::Ident` in the
 /// supported form) when `list` is the frontend's dict-values truthiness source:
@@ -20845,9 +20954,14 @@ fn dict_values_truthy_dict(list: &Expr) -> Option<&Expr> {
             else {
                 return None;
             };
-            // Only a genuine `!= 0`/`!= 0.0` truthiness map counts (not some other
-            // map over the values view).
-            truthiness_notzero_kind(lambda)?;
+            // Only a genuine truthiness map counts (not some other map over the
+            // values view): a scalar `!= 0`/`!= 0.0` (int/bool/float value) OR a
+            // str `len(v) != 0` (a str-VALUED dict — recognised so it reaches the
+            // PRECISE `dict_val_is_str` refusal in the caller, not the generic tail;
+            // the str-value FOLD itself is deferred, out of the keys-only scope).
+            if truthiness_notzero_kind(lambda).is_none() && !is_str_len_notzero_map(lambda) {
+                return None;
+            }
             Some(dict.as_ref())
         }
         _ => None,
@@ -20858,13 +20972,13 @@ fn dict_values_truthy_dict(list: &Expr) -> Option<&Expr> {
 /// lowers to. Python iterates a dict as its KEYS, so the frontend materialises the
 /// dict arg to `DictView{Keys}` (the same view `sum(d)`/`max(d)`/`list(d)` use) and
 /// applies per-element truthiness under a `Map`:
-///   * an int-keyed dict → `Map { DictView{Keys}, <param> != 0 }`      (EMIT)
-///   * a str-keyed dict  → `Map { DictView{Keys}, len(<param>) != 0 }` (REFUSE)
+///   * an int-keyed dict → `Map { DictView{Keys}, <param> != 0 }`      (EMIT, i64 fold)
+///   * a str-keyed dict  → `Map { DictView{Keys}, len(<param>) != 0 }` (EMIT, str fold)
 ///
 /// Returns `(dict, int_key)` — the underlying dict operand and whether the keys are
-/// `int` (a raw NONZERO fold the WASM subset emits) vs `str` (a per-element
-/// `len(k) != 0` truthiness over materialised i64 pointer slots, refused honestly
-/// with a clear message rather than the generic non-name-list refusal). Returns
+/// `int` (a raw NONZERO fold over materialised i64 keys) vs `str` (a per-element
+/// `len(k) != 0` truthiness folded DIRECTLY out of the region's str-pointer keys via
+/// `$__wasm_hash_strkey_truthy_reduce` — PMAT-1336). Returns
 /// `None` for any other `list` (a values view — handled by [`dict_values_truthy_dict`]
 /// — a bare list Ident, an unrelated map), which falls through. The dict view is a
 /// KEYS twin of PMAT-1333; the FOLD helper is always the i64 truthy reduce (dict
@@ -20889,21 +21003,10 @@ fn dict_keys_truthy_dict(list: &Expr) -> Option<(&Expr, bool)> {
     if matches!(truthiness_notzero_kind(lambda), Some(WatTy::I64)) {
         return Some((dict.as_ref(), true));
     }
-    // str-key truthiness: `len(<param>) != 0` — recognised so the str-keyed form
-    // refuses with a precise message (never a base-pointer misread).
-    if let Expr::BinOp {
-        op: BinOp::NotEq,
-        lhs,
-        rhs,
-    } = lambda.body.as_ref()
-    {
-        let len_of_param = matches!(
-            lhs.as_ref(),
-            Expr::Len(inner) if matches!(inner.as_ref(), Expr::Ident(p) if *p == lambda.param)
-        );
-        if len_of_param && matches!(rhs.as_ref(), Expr::LitInt(0)) {
-            return Some((dict.as_ref(), false));
-        }
+    // str-key truthiness: `len(<param>) != 0` — the str-keyed form folds via the
+    // fused str-key helper (PMAT-1336).
+    if is_str_len_notzero_map(lambda) {
+        return Some((dict.as_ref(), false));
     }
     None
 }
@@ -20912,13 +21015,13 @@ fn dict_keys_truthy_dict(list: &Expr) -> Option<(&Expr, bool)> {
 /// over a `set[int]` / `set[str]` lowers to. Python iterates a set as its ELEMENTS,
 /// so the frontend materialises the set arg to `SetToList` (the same view
 /// `sum(s)`/`sorted(s)` use) and applies per-element truthiness under a `Map`:
-///   * an int set → `Map { SetToList{set}, <param> != 0 }`      (EMIT)
-///   * a str set  → `Map { SetToList{set}, len(<param>) != 0 }` (REFUSE)
+///   * an int set → `Map { SetToList{set}, <param> != 0 }`      (EMIT, i64 fold)
+///   * a str set  → `Map { SetToList{set}, len(<param>) != 0 }` (EMIT, str fold)
 ///
 /// Returns `(set, int_elem)` — the underlying set operand and whether the elements
-/// are `int` (a raw NONZERO fold the WASM subset emits) vs `str` (a per-element
-/// `len(e) != 0` truthiness over materialised i64 pointer slots, refused honestly
-/// with a clear message rather than the generic non-name-list refusal). Returns
+/// are `int` (a raw NONZERO fold over materialised i64 keys) vs `str` (a per-element
+/// `len(e) != 0` truthiness folded DIRECTLY out of the region's str-pointer elements
+/// via `$__wasm_hash_strkey_truthy_reduce` — PMAT-1336). Returns
 /// `None` for any other `list` (a dict view — handled by [`dict_keys_truthy_dict`] /
 /// [`dict_values_truthy_dict`] — a bare list Ident, an unrelated map), which falls
 /// through. The SET twin of [`dict_keys_truthy_dict`]; the FOLD helper is always the
@@ -20940,21 +21043,10 @@ fn set_truthy_target(list: &Expr) -> Option<(&Expr, bool)> {
     if matches!(truthiness_notzero_kind(lambda), Some(WatTy::I64)) {
         return Some((set.as_ref(), true));
     }
-    // str-element truthiness: `len(<param>) != 0` — recognised so the str set form
-    // refuses with a precise message (never a base-pointer misread).
-    if let Expr::BinOp {
-        op: BinOp::NotEq,
-        lhs,
-        rhs,
-    } = lambda.body.as_ref()
-    {
-        let len_of_param = matches!(
-            lhs.as_ref(),
-            Expr::Len(inner) if matches!(inner.as_ref(), Expr::Ident(p) if *p == lambda.param)
-        );
-        if len_of_param && matches!(rhs.as_ref(), Expr::LitInt(0)) {
-            return Some((set.as_ref(), false));
-        }
+    // str-element truthiness: `len(<param>) != 0` — the str set folds via the fused
+    // str-key helper (PMAT-1336).
+    if is_str_len_notzero_map(lambda) {
+        return Some((set.as_ref(), false));
     }
     None
 }
@@ -21050,11 +21142,18 @@ fn emit_bool_reduce(
             )));
         }
         if !int_key {
-            return Err(unsupported(&format!(
-                "{op}(d) over the str-keyed dict `{dname}` (`dict[str, _]`) — a \
-                 per-element str truthiness (`len(k) != 0`) over materialised i64 \
-                 pointer slots is not in the WASM subset yet; refused honestly"
-            )));
+            // PMAT-1336: a str-KEYED dict folds `len(k) != 0` over its str-pointer
+            // keys. A str-keyed dict can't materialise a `list[int]` (a str key →
+            // a `list[str]`, unmodelled), so fold the region's KEY pointers DIRECTLY
+            // via the fused str-truthy helper — a dict IS a set-with-values, its keys
+            // sit at `entry+0` exactly as a set's do, so the SAME helper reads them.
+            indent(out, depth);
+            writeln!(out, "local.get ${dname}").expect("write");
+            indent(out, depth);
+            writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
+            indent(out, depth);
+            writeln!(out, "call $__wasm_hash_strkey_truthy_reduce").expect("write");
+            return Ok(WatTy::I32);
         }
         emit_dict_keys_to_list(dict, WatTy::I64, scope, out, depth)?;
         indent(out, depth);
@@ -21089,11 +21188,17 @@ fn emit_bool_reduce(
             )));
         }
         if !int_elem {
-            return Err(unsupported(&format!(
-                "{op}(s) over the str set `{sname}` (`set[str]`) — a per-element str \
-                 truthiness (`len(e) != 0`) over materialised i64 pointer slots is not \
-                 in the WASM subset yet; refused honestly"
-            )));
+            // PMAT-1336: a str SET folds `len(e) != 0` over its str-pointer keys.
+            // A str set can't materialise a `list[int]` (a str element → a
+            // `list[str]`, unmodelled), so fold the region's KEY pointers DIRECTLY
+            // via the fused str-truthy helper — the set local IS the region base.
+            indent(out, depth);
+            writeln!(out, "local.get ${sname}").expect("write");
+            indent(out, depth);
+            writeln!(out, "i32.const {}", i32::from(is_all)).expect("write");
+            indent(out, depth);
+            writeln!(out, "call $__wasm_hash_strkey_truthy_reduce").expect("write");
+            return Ok(WatTy::I32);
         }
         emit_set_to_list(set, WatTy::I64, scope, out, depth)?;
         indent(out, depth);

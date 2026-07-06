@@ -342,13 +342,15 @@ fn dict_values_any_all_float_routes_to_f64_helper() {
 #[test]
 fn dict_values_any_all_refuse_out_of_lane_forms() {
     for (label, src, needle) in [
-        // a str-VALUED dict — the frontend wraps a `len(v) != 0` map the
-        // recognizer does not match, so it falls to the non-name-list refusal (a
-        // per-element str payload fold is deferred).
+        // a str-VALUED dict — the frontend wraps a `len(v) != 0` map. As of
+        // PMAT-1336 the values recognizer matches that str map too, so the refusal
+        // is now the PRECISE `dict_val_is_str` message (a per-element str VALUE fold
+        // over `entry+8` is deferred — the keys/set str twin ships, the values twin
+        // does not), NOT the generic non-name-list tail.
         (
             "any(str d.values())",
             "def f() -> bool:\n    d: dict[int, str] = {1: \"a\", 2: \"\"}\n    return any(d.values())\n".to_string(),
-            "non-name list",
+            "str-valued dict",
         ),
         // (`any(d.keys())` / `any(d)` over an INT-keyed dict is now IN lane as of
         // PMAT-1334 — a `DictView{Keys}` materialised + folded — so it is NOT a

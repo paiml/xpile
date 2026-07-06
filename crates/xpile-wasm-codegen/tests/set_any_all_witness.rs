@@ -46,11 +46,10 @@
 //!   * a set flowing across a FUNCTION param, reduced in the callee.
 //!
 //! REFUSES honestly (NOT silently mis-lowered — regression guards):
-//!   * a str SET (`any(s)` over `set[str]`) — the frontend wraps a `len(e) != 0`
-//!     map; the recognizer detects that shape and refuses with a PRECISE message (a
-//!     per-element str truthiness over materialised i64 pointer slots is deferred),
-//!     NOT the generic non-name-list tail;
 //!   * the lazy short-circuiting GENERATOR form (`any(x > 0 for x in s)`).
+//!
+//! (A str SET `any(s)` / `all(s)` was refused here at PMAT-1335; PMAT-1336 turns it
+//! into a WORKING `len(e) != 0` fold — see `str_truthy_reduce_witness.rs`.)
 //!
 //! Every probe is FULL-pipeline (REAL Python → `PythonFrontend` → `emit_module` →
 //! `wat2wasm` → `wasm-interp`), value-matched against LIVE python3 executing the
@@ -263,39 +262,21 @@ fn set_any_all_reuses_shared_helpers() {
 // ---- honest refusals (through the FULL pipeline) ------------------------------
 
 /// The forms OUTSIDE the int-set any/all lane refuse — never silently mis-lowered.
+/// (The str SET `any(s)`/`all(s)` moved from a refusal to a WORKING fold in
+/// PMAT-1336 — see `str_truthy_reduce_witness.rs`; it is no longer a refusal.)
 #[test]
 fn set_any_all_refuse_out_of_lane_forms() {
-    for (label, src, needle) in [
-        // a str SET — the frontend wraps a `len(e) != 0` map; the recognizer detects
-        // that shape and refuses with a PRECISE message (a per-element str truthiness
-        // over materialised i64 pointer slots is deferred).
-        (
-            "any(str set)",
-            "def f() -> bool:\n    s: set[str] = {\"a\", \"\"}\n    return any(s)\n".to_string(),
-            "str set",
-        ),
-        (
-            "all(str set)",
-            "def f() -> bool:\n    s: set[str] = {\"a\", \"\"}\n    return all(s)\n".to_string(),
-            "str set",
-        ),
-        // the lazy short-circuiting GENERATOR form — a per-element predicate lambda.
-        (
-            "any(<generator over s>)",
-            "def f() -> bool:\n    s: set[int] = {0, 5}\n    return any(x > 0 for x in s)\n"
-                .to_string(),
-            "<generator>",
-        ),
-    ] {
-        let err = match emit(&src) {
-            Err(e) => e,
-            Ok(wat) => panic!("{label} must be refused but lowered:\n{wat}"),
-        };
-        assert!(
-            err.contains(needle),
-            "{label} refusal should mention {needle:?}, got: {err}"
-        );
-    }
+    // The lazy short-circuiting GENERATOR form — a per-element predicate lambda.
+    let label = "any(<generator over s>)";
+    let src = "def f() -> bool:\n    s: set[int] = {0, 5}\n    return any(x > 0 for x in s)\n";
+    let err = match emit(src) {
+        Err(e) => e,
+        Ok(wat) => panic!("{label} must be refused but lowered:\n{wat}"),
+    };
+    assert!(
+        err.contains("<generator>"),
+        "{label} refusal should mention \"<generator>\", got: {err}"
+    );
 }
 
 // ---- WABT harness -------------------------------------------------------------
