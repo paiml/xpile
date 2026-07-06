@@ -180,7 +180,7 @@ use xpile_backend::{
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    PairIterKind, Param, SetOp, SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
+    NumBuiltinOp, PairIterKind, Param, SetOp, SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -631,7 +631,7 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
             collect_expr_literals(then_expr, out);
             collect_expr_literals(else_expr, out);
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
             for a in args {
                 collect_expr_literals(a, out);
             }
@@ -8786,6 +8786,28 @@ const LIST_INDEX_FLOAT_HELPER: &str = "\
 /// `.iter().all(|&b| b)` / `.any(|&b| b)` lane. Reads linear memory, allocates
 /// nothing (an i32 bool, not a new object), so it is gated on its OWN
 /// `needs_list_bool_reduce`, NOT `needs_heap`.
+/// PMAT-1338: `$__wasm_abs_i64(x) = abs(x)` — Python integer `abs`. A branch
+/// form (`x < 0 ? 0 - x : x`) so the operand is evaluated exactly once (it is
+/// pushed as the arg). CPython-exact over the representable i64 range; at
+/// `x == i64::MIN` the true value `2**63` overflows i64 and `0 - x` wraps back
+/// to `i64::MIN`, the SAME i64-domain boundary the lane's `-x` ([`emit_unop`])
+/// already has. Reads no memory and allocates nothing, so it is gated on its
+/// OWN `needs_abs_i64`, NOT `needs_heap`/`needs_memory` (self-contained WAT).
+const ABS_I64_HELPER: &str = "\
+  ;; __wasm_abs_i64(x) = abs(x) for a Python int (i64). Branch form: x<0 ? -x : x.
+  (func $__wasm_abs_i64 (param $x i64) (result i64)
+    local.get $x
+    i64.const 0
+    i64.lt_s
+    if (result i64)
+      i64.const 0
+      local.get $x
+      i64.sub
+    else
+      local.get $x
+    end)
+";
+
 const LIST_BOOL_REDUCE_HELPER: &str = "\
   ;; __wasm_list_bool_reduce(base, is_all) = all(xs) if is_all else any(xs), list[bool]
   ;; base → length-prefixed region: i32 count @ base+0, i32 (0/1) elements @ base+8.
@@ -10973,6 +10995,8 @@ fn expr_contains_call(e: &Expr) -> bool {
                 || expr_contains_call(then_expr)
                 || expr_contains_call(else_expr)
         }
+        // PMAT-1338: `abs(...)`'s arg can host a call (`abs(bump(c))`).
+        Expr::NumBuiltin { args, .. } => args.iter().any(expr_contains_call),
         _ => false,
     }
 }
@@ -11133,7 +11157,9 @@ fn expr_references_any(e: &Expr, names: &HashSet<String>) -> bool {
                 || expr_references_any(then_expr, names)
                 || expr_references_any(else_expr, names)
         }
-        Expr::Call { args, .. } => args.iter().any(|a| expr_references_any(a, names)),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(|a| expr_references_any(a, names))
+        }
         // Unrecognised form: assume it may reference an accumulator.
         _ => true,
     }
@@ -11951,7 +11977,7 @@ fn normalize_expr_fstring_ints(e: &mut Expr, ctx: &HashMap<String, Type>) {
             normalize_expr_fstring_ints(then_expr, ctx);
             normalize_expr_fstring_ints(else_expr, ctx);
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
             for a in args {
                 normalize_expr_fstring_ints(a, ctx);
             }
@@ -12074,6 +12100,16 @@ fn concat_operand_is_int(e: &Expr, ctx: &HashMap<String, Type>) -> bool {
         Expr::UnOp { op, operand } => {
             matches!(op, UnOp::Neg | UnOp::BitNot) && concat_operand_is_int(operand, ctx)
         }
+        // PMAT-1338: `abs(x)` is int iff its operand is int — the frontend records
+        // that in `of_float` (int arg → false → i64 result). So `f"{abs(n)}"`
+        // over an int `n` is `str(int)` (the sign-aware `$__wasm_int_to_str`
+        // renders a leading `-` when needed, though abs is non-negative). A float
+        // `abs` (`of_float: true`) is NOT int and stays unwrapped -> refused.
+        Expr::NumBuiltin {
+            op: NumBuiltinOp::Abs,
+            of_float,
+            ..
+        } => !*of_float,
         // The int-VALUED string methods the WASM lane already emits as `i64`:
         // `len(s)` (`CharCount`, PMAT-1148) and the search family (`find` /
         // `rfind` / `count` / `index` / `rindex`). Str-, bool-, and list-valued
@@ -12537,6 +12573,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // minmax), so it rides its OWN gate, NOT `needs_heap`, and needs the
     // `(memory …)` its i32-element loads read.
     let needs_list_bool_reduce = module_uses_list_bool_reduce(module);
+    // PMAT-1338: `abs(x)` over an INT (`Expr::NumBuiltin { op: Abs, of_float:
+    // false }`) calls the `$__wasm_abs_i64` branch helper. Non-allocating and
+    // memory-free (a pure i64→i64 fold), so it rides its OWN gate, NOT
+    // `needs_heap`/`needs_memory`. `abs(float)` is the inline native `f64.abs`
+    // and needs no helper, so it does NOT arm this gate.
+    let needs_abs_i64 = module_uses_abs_i64(module);
     // PMAT-1252: `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`)
     // returns a NEW sorted list via a `$__wasm_list_sorted_*` helper — the FIRST
     // list-VALUED op that ALLOCATES, so it ALSO forces `needs_heap` (via
@@ -13092,6 +13134,13 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         // (but valid) in a module that has a `BoolReduce` but no str set/dict.
         out.push_str(HASH_STRKEY_TRUTHY_REDUCE_HELPER);
     }
+    // PMAT-1338: emit the integer-`abs` branch helper once, when any function
+    // uses `abs(x)` over an int (`Expr::NumBuiltin { op: Abs, of_float: false }`).
+    // Self-contained WAT (no memory, no `$__alloc`), so gated ONLY on its own
+    // `needs_abs_i64`. `abs(float)` is inline `f64.abs` and never reaches here.
+    if needs_abs_i64 {
+        out.push_str(ABS_I64_HELPER);
+    }
     // PMAT-1252: emit the list-SORT reduction helpers once, when any function
     // uses `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`). Each
     // ALLOCATES a fresh sorted record via `$__alloc` (so the module also carries
@@ -13457,7 +13506,9 @@ fn expr_touches_str(e: &Expr) -> bool {
             then_expr,
             else_expr,
         } => expr_touches_str(cond) || expr_touches_str(then_expr) || expr_touches_str(else_expr),
-        Expr::Call { args, .. } => args.iter().any(expr_touches_str),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(expr_touches_str)
+        }
         Expr::Index { collection, index } => {
             expr_touches_str(collection) || expr_touches_str(index)
         }
@@ -13623,7 +13674,9 @@ fn expr_has_str_slice(e: &Expr, stepped: bool) -> bool {
                 || expr_has_str_slice(then_expr, stepped)
                 || expr_has_str_slice(else_expr, stepped)
         }
-        Expr::Call { args, .. } => args.iter().any(|e| expr_has_str_slice(e, stepped)),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(|e| expr_has_str_slice(e, stepped))
+        }
         Expr::MethodCall { obj, args, .. } => {
             expr_has_str_slice(obj, stepped) || args.iter().any(|e| expr_has_str_slice(e, stepped))
         }
@@ -13800,7 +13853,9 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
                 || expr_has_int_to_str(then_expr)
                 || expr_has_int_to_str(else_expr)
         }
-        Expr::Call { args, .. } => args.iter().any(expr_has_int_to_str),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(expr_has_int_to_str)
+        }
         Expr::MethodCall { obj, args, .. } => {
             expr_has_int_to_str(obj) || args.iter().any(expr_has_int_to_str)
         }
@@ -14187,7 +14242,9 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
                 || expr_uses_str_method(then_expr, op)
                 || expr_uses_str_method(else_expr, op)
         }
-        Expr::Call { args, .. } => args.iter().any(|a| expr_uses_str_method(a, op)),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(|a| expr_uses_str_method(a, op))
+        }
         Expr::MethodCall { obj, args, .. } => {
             expr_uses_str_method(obj, op) || args.iter().any(|a| expr_uses_str_method(a, op))
         }
@@ -14338,7 +14395,9 @@ fn expr_has_str_contains(e: &Expr) -> bool {
                 || expr_has_str_contains(then_expr)
                 || expr_has_str_contains(else_expr)
         }
-        Expr::Call { args, .. } => args.iter().any(expr_has_str_contains),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(expr_has_str_contains)
+        }
         Expr::MethodCall { obj, args, .. } => {
             expr_has_str_contains(obj) || args.iter().any(expr_has_str_contains)
         }
@@ -14499,7 +14558,7 @@ fn expr_has_list_sum(expr: &Expr, want_float: bool) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -14623,7 +14682,7 @@ fn expr_has_list_minmax(expr: &Expr, want_float: bool) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -14736,7 +14795,7 @@ fn expr_has_list_contains(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -15026,7 +15085,7 @@ fn expr_has_list_query(expr: &Expr, want_index: bool) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -15259,7 +15318,7 @@ fn expr_has_list_pop_index(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -15359,7 +15418,7 @@ fn expr_has_bool_reduce(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -15394,6 +15453,107 @@ fn expr_has_bool_reduce(expr: &Expr) -> bool {
         // PMAT-1304: a dict MERGE's explicit pairs can nest a helper-gated op
         // (`{**a, 1: sum(xs)}`) exactly like a DictLit entry; a splat source is
         // a bare dict name (nothing gated), but recursing is harmless.
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
+/// PMAT-1338: does any function `abs(x)` over an INT (`Expr::NumBuiltin { op:
+/// Abs, of_float: false }`)? Gates the `$__wasm_abs_i64` branch helper. Mirrors
+/// the [`module_uses_list_bool_reduce`] quartet exactly (same stmt/expr forms) —
+/// a missed sub-expression would leave the helper undeclared at the `call
+/// $__wasm_abs_i64` site (a hard wat2wasm failure — the recurring gate-hole
+/// class: over-detecting is a harmless unused function, under-detecting is
+/// fatal). `abs(float)` is inline `f64.abs` (no helper), so it does NOT fire
+/// this gate — the head arm keys on `of_float: false`.
+fn module_uses_abs_i64(module: &Module) -> bool {
+    module_functions(module).any(|f| block_has_abs_i64(&f.body))
+}
+
+fn block_has_abs_i64(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_abs_i64) || expr_has_abs_i64(&block.trailing_return)
+}
+
+fn stmt_has_abs_i64(s: &Stmt) -> bool {
+    let e = |x| expr_has_abs_i64(x);
+    let st = |x| stmt_has_abs_i64(x);
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_abs_i64(expr: &Expr) -> bool {
+    let e = |x| expr_has_abs_i64(x);
+    match expr {
+        // this node IS an int `abs` — fire the gate (one helper serves every
+        // int-abs use; the head arm keys on `of_float: false` so a float `abs`
+        // — inline `f64.abs`, no helper — falls through to recurse its args).
+        Expr::NumBuiltin {
+            op: NumBuiltinOp::Abs,
+            of_float: false,
+            ..
+        } => true,
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        // a non-int `abs` (float) / `min` / `max` / `math.*` can still NEST an
+        // int abs in an arg (`abs(x_f + float(abs(n)))`), so recurse its args.
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::ListContains { list, elem } => e(list) || e(elem),
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
         Expr::DictMerge { entries } => entries
             .iter()
             .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
@@ -15482,7 +15642,7 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -15597,7 +15757,7 @@ fn expr_has_set_to_list(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         // PMAT-1330: `len(d.keys())` reads the dict's COUNT header directly
@@ -15732,7 +15892,7 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         // PMAT-1298: `d.values()[i]` — a DIRECT `DictView{Values}` under an `Index`
         // is the in-place value-ITERATION read (`for v in d.values()`, the desugar
@@ -15898,7 +16058,7 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -16010,7 +16170,7 @@ fn expr_has_list_concat(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -16133,7 +16293,7 @@ fn expr_has_list_slice(expr: &Expr) -> bool {
             then_expr,
             else_expr,
         } => e(cond) || e(then_expr) || e(else_expr),
-        Expr::Call { args, .. } => args.iter().any(e),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
@@ -16236,7 +16396,9 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
                 || expr_has_str_repeat(then_expr)
                 || expr_has_str_repeat(else_expr)
         }
-        Expr::Call { args, .. } => args.iter().any(expr_has_str_repeat),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(expr_has_str_repeat)
+        }
         Expr::MethodCall { obj, args, .. } => {
             expr_has_str_repeat(obj) || args.iter().any(expr_has_str_repeat)
         }
@@ -16395,7 +16557,9 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
                 || expr_has_str_method_2arg(then_expr, target)
                 || expr_has_str_method_2arg(else_expr, target)
         }
-        Expr::Call { args, .. } => args.iter().any(|a| expr_has_str_method_2arg(a, target)),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(|a| expr_has_str_method_2arg(a, target))
+        }
         Expr::MethodCall { obj, args, .. } => {
             expr_has_str_method_2arg(obj, target)
                 || args.iter().any(|a| expr_has_str_method_2arg(a, target))
@@ -16623,7 +16787,9 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
                 || expr_has_str_eq(then_expr, scan)
                 || expr_has_str_eq(else_expr, scan)
         }
-        Expr::Call { args, .. } => args.iter().any(|a| expr_has_str_eq(a, scan)),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(|a| expr_has_str_eq(a, scan))
+        }
         Expr::Index { collection, index } => {
             expr_has_str_eq(collection, scan) || expr_has_str_eq(index, scan)
         }
@@ -16868,7 +17034,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
             then_expr,
             else_expr,
         } => expr_has_heap_op(cond) || expr_has_heap_op(then_expr) || expr_has_heap_op(else_expr),
-        Expr::Call { args, .. } => args.iter().any(expr_has_heap_op),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(expr_has_heap_op)
+        }
         Expr::Index { collection, index } => {
             expr_has_heap_op(collection) || expr_has_heap_op(index)
         }
@@ -18801,6 +18969,11 @@ fn emit_expr(
         Expr::UnOp { op, operand } => emit_unop(*op, operand, scope, out, depth),
         Expr::BinOp { op, lhs, rhs } => emit_binop(*op, lhs, rhs, scope, out, depth),
         Expr::FloatBinOp { op, lhs, rhs } => emit_float_binop(*op, lhs, rhs, scope, out, depth),
+        // PMAT-1338: `abs(x)` — the first scalar numeric builtin
+        // (`Expr::NumBuiltin`) in the WASM lane. `abs(float)` is the native
+        // `f64.abs`; `abs(int)` calls the branch-form `$__wasm_abs_i64` helper.
+        // The variadic `min`/`max` and the `math.*` ops refuse honestly.
+        Expr::NumBuiltin { op, args, .. } => emit_num_builtin(*op, args, scope, out, depth),
         Expr::IfExpr {
             cond,
             then_expr,
@@ -22181,7 +22354,9 @@ fn expr_contains_dict_pop(e: &Expr) -> bool {
         Expr::StrContains { haystack, needle } => {
             expr_contains_dict_pop(haystack) || expr_contains_dict_pop(needle)
         }
-        Expr::Call { args, .. } => args.iter().any(expr_contains_dict_pop),
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => {
+            args.iter().any(expr_contains_dict_pop)
+        }
         Expr::MethodCall { obj, args, .. } => {
             expr_contains_dict_pop(obj) || args.iter().any(expr_contains_dict_pop)
         }
@@ -25637,6 +25812,96 @@ fn emit_unop(
             writeln!(out, "i64.xor").expect("write");
             Ok(WatTy::I64)
         }
+    }
+}
+
+/// PMAT-1338: lower a scalar numeric builtin (`Expr::NumBuiltin` — Python
+/// `abs(x)` / `min(a, b)` / `max(a, b)` / `math.*`). Only `abs` is in the WASM
+/// subset at v0.1.0; everything else refuses honestly.
+///
+/// * `abs(float)` → the native `f64.abs` (one instruction). Bit-exact with
+///   CPython on EVERY IEEE input: `abs(-0.0) == 0.0`, `abs(nan)` is a NaN,
+///   `abs(±inf) == inf` — `f64.abs` just clears the sign bit, exactly Python's
+///   float `abs`.
+/// * `abs(int)` → `call $__wasm_abs_i64` (a branch-form helper: `x < 0 ? -x :
+///   x`). Single-evaluation of the operand (it is pushed once as the helper
+///   arg), so a side-effecting operand — the lane's only one is `d.pop(k)` — is
+///   not double-run. CPython-exact over the representable i64 range; the ONE
+///   boundary is `abs(i64::MIN)`, whose true value `2**63` is outside the
+///   modeled i64 range, so it wraps to `i64::MIN` — the SAME i64-domain
+///   limitation the lane already has for `-x` ([`emit_unop`]'s `UnOp::Neg`) and
+///   every other int op (documented, not a defect).
+///
+/// The frontend ([`depyler-frontend`], PMAT-795) coerces a `bool` arg to i64
+/// and only lets `abs` through for an `I64`/`F64` first arg, so the operand
+/// here is always i64 or f64; an i32/f32 is unexpected and refuses.
+fn emit_num_builtin(
+    op: NumBuiltinOp,
+    args: &[Expr],
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    match op {
+        NumBuiltinOp::Abs => {
+            if args.len() != 1 {
+                return Err(unsupported(&format!(
+                    "abs() takes exactly one argument but {} were passed",
+                    args.len()
+                )));
+            }
+            let t = emit_expr(&args[0], scope, out, depth)?;
+            indent(out, depth);
+            match t {
+                WatTy::F64 => {
+                    // Native single-instruction float abs — clears the sign bit,
+                    // bit-exact with CPython over all IEEE inputs (incl. -0.0/NaN/inf).
+                    writeln!(out, "f64.abs").expect("write");
+                    Ok(WatTy::F64)
+                }
+                WatTy::I64 => {
+                    // Branch-form helper (single operand eval). See fn docs for the
+                    // i64::MIN boundary (shared with the lane's `-x`).
+                    writeln!(out, "call $__wasm_abs_i64").expect("write");
+                    Ok(WatTy::I64)
+                }
+                WatTy::I32 => Err(unsupported(
+                    "abs() over a bool/i32 value — the frontend coerces a bool arg \
+                     to int before this point, so an i32 operand is unexpected",
+                )),
+                WatTy::F32 => Err(unsupported(
+                    "abs() over an f32 value is not in the WASM subset (i64/f64 only)",
+                )),
+            }
+        }
+        // The scalar variadic `min(a, b)` / `max(a, b)` — a distinct follow-up.
+        // A FLOAT min/max also needs Python's order-dependent NaN semantics
+        // (`min(1.0, nan) == 1.0` but `min(nan, 1.0)` is nan), which WASM's
+        // `f64.min`/`f64.max` (always NaN-propagating) do NOT match — deferred.
+        NumBuiltinOp::Min | NumBuiltinOp::Max => Err(unsupported(
+            "min(a, b) / max(a, b) — the scalar variadic form is not yet in the \
+             WASM subset (only abs(x) is); a float min/max additionally needs \
+             Python's NaN-order semantics that WASM f64.min/max do not provide",
+        )),
+        // The `math.*` builtins: the transcendentals have no bit-exact WASM
+        // instruction, and sqrt/floor/ceil/trunc need CPython's domain (sqrt of
+        // a negative RAISES) / rounding (→ int) semantics. Refused honestly.
+        NumBuiltinOp::Sqrt
+        | NumBuiltinOp::Floor
+        | NumBuiltinOp::Ceil
+        | NumBuiltinOp::Trunc
+        | NumBuiltinOp::Sin
+        | NumBuiltinOp::Cos
+        | NumBuiltinOp::Tan
+        | NumBuiltinOp::Exp
+        | NumBuiltinOp::Ln
+        | NumBuiltinOp::Log10
+        | NumBuiltinOp::Log2 => Err(unsupported(
+            "a math.* numeric builtin (sqrt/floor/ceil/trunc/sin/cos/tan/exp/ln/\
+             log10/log2) is not in the WASM subset — the transcendentals have no \
+             bit-exact WASM instruction and the rounding ops need CPython's \
+             domain/rounding-to-int semantics; only abs(x) is supported",
+        )),
     }
 }
 
