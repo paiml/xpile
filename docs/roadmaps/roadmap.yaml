@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1316
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1316: [frontend/capability/dict] set COMPREHENSIONS over dict/set sources — the PMAT-501b desugar''s iterable vocabulary widens from list/range to `Type::Dict` (iterates KEYS, mirroring the `for k in d:` statement arm-for-arm — lazy `over_keys` read-only, owned keys-snapshot + size-change guard when the dict is mutated anywhere in the function, PMAT-472/742) and `Type::Set` (elements, PMAT-847) — so the exact sugar PMAT-1315 pinned as frontend-refused (`{x * 2 for x in s}`, `{k * 3 for k in d}`) now lowers to the SAME `ForEach` + `SetAdd` HIR as the manual build loop, and the PMAT-1292/1314/1315 hash-order gate, the PMAT-1309 param belts, and the PMAT-1310 return relocation ride it with ZERO WASM-lane edits (sixth consecutive already-generic slice: single desugar match arm + the ForEach''s previously hard-coded `over_keys: false`/`dict_guard: None` threaded). ★ REAL CORRECTNESS FIND — the SELF-REFERENCE clobber: the desugar binds the EMPTY destination before iterating, so a comprehension reading its own assignment target sees the clobbered name, not the pre-assignment value CPython evaluates; `t = {1}; u = [1, 2]; t = {x for x in u if x in t}` was a LIVE silent-wrong for LIST sources (emitted Rust''s filter read the fresh empty set — returned 0 where CPython returns 1; rustc accepted it since `contains`+`insert` don''t overlap borrows). NEW self-reference belt (all backends, list sources included): any read of the target from a generator ITERABLE, a FILTER, or the ELEMENT refuses loudly at the frontend — while a comp VARIABLE shadowing the target (`t = {t * 2 for t in u}`) stays admitted (element/filter reads resolve to the renamed loop var; an iterable read is pre-shadow in CPython and always refuses). Mechanism: the PMAT-1084 `expr_mentions` AST scan hoisted to a top-level `ast_expr_mentions_name` (same over-matching contract: a false positive refuses, never miscompiles). HONESTY: the two-generator comp over hash sources, the dict COMPREHENSION `{k: f(k) for k in d}` (the PMAT-1314 keyed-store sugar), tuple sources, and expression-position comps in the WASM lane all still refuse (pinned) — the 1-gen assignment-position set comp is the widened surface; dict-comp widening is the natural next frontend slice.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "CAPABILITY: `{x * 2 for x in s}` (set source), `{k * 3 for k in d}` (bare dict = keys), filtered `{x * 2 for x in s if x > 2}`, `{d[k] + k for k in d}` (DictGet vocabulary in the element), degenerate `{7 for x in s}`, str elements over str keys, a 25-element comp destination relocating past the 16-slot slack, the shadow carve-out `{t * 2 for t in u}`, a scrambled source (discard swap-into-hole; membership still matches), and the FULL dict-param-in/set-return-out `keyset(src)` pipeline (called twice, per-call-fresh) all lower and value-match live CPython; `.values()`/`.items()` comp spellings (already admitted via List-typed views) pinned as family members."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/set_comp_hash_source_witness.rs (8 tests) — 12 zero-arg observables == hand pins == live python3 on IDENTICAL source, all permutation-invariant (len / membership / base-100 folds over a BOUND `sorted(t)` list); emit pins on `$__wasm_dict_set_i/s` + `$__wasm_dict_has_i/s` + `$__wasm_dict_pop_i` + the `keyset` boundary ABI; MUTATION-VERIFIED (corrupted check_comp_filtered pin fails the executed lane, reverted green); the PMAT-1315 honesty pin FLIPPED to `set_comprehension_over_hash_source_now_lowers`."
+  - "REFUSAL BELT: self-reference through iterable / filter (the previously-silent-wrong spelling) / element / list-source; comp over a MUTATED dict refuses in the WASM lane exactly like the statement spelling (Rust lane admits both via keys-snapshot + guard); call element refuses through the sugar (the order gate runs on desugared HIR); tuple source; 2-gen over hash sources; dict-comp over hash sources; expression-position comp in the WASM lane."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test --workspace (2325 passed, 0 failed). Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1315
   github_issue: null
   item_type: task
