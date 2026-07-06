@@ -372,23 +372,46 @@ fn dict_key_kind(ty: &Type) -> Result<KeyKind, BackendError> {
     }
 }
 
-/// PMAT-995/1305: classify a dict VALUE type. The bump-heap dict stores each
-/// value in an 8-byte `i64` slot: an int value (`I64`/`CLong`) IS the slot;
-/// PMAT-1305 adds `str` values, stored as the string's `i32` base-pointer
-/// zero-extended into the same slot (strings are immutable in Python, so the
-/// pointer copy IS reference semantics — merge/update/del move the slot raw,
-/// soundly). Bool/float/unsigned/nested values are refused honestly (no silent
-/// width-narrowing or reinterpret). Returns the value's [`KeyKind`]-shaped
-/// classification (Int = i64 scalar, Str = i32 str base-pointer) so the
-/// binding registers str-valued dicts in [`Scope::str_val_dicts`].
+/// PMAT-995/1305/1320: classify a dict VALUE type for the STORE lane. The
+/// bump-heap dict stores each value in an 8-byte `i64` slot: an int value
+/// (`I64`/`CLong`) IS the slot; PMAT-1305 adds `str` values, stored as the
+/// string's `i32` base-pointer zero-extended into the same slot (strings are
+/// immutable in Python, so the pointer copy IS reference semantics —
+/// merge/update/del move the slot raw, soundly).
+///
+/// PMAT-1320 adds `bool` values, stored as their `i32` `0`/`1` zero-extended
+/// into the slot. A bool value SHARES the int STORE lane (this classifier
+/// returns `Int` for it) — the slot is an 8-byte i64 either way and
+/// `emit_dict_val` zero-extends an i32 `0`/`1` exactly as it extends a str
+/// base-pointer. But the READ is DISTINCT: a bool-valued `d[k]` is wrapped
+/// `i64`→`i32` back to a proper BOOL (`emit_dict_get`/`emit_dict_get_or`), NOT
+/// left as an i64 int, so it composes with the bool contexts the frontend types
+/// it into — truthiness (`if d[k]:`), `==`/`!=` (`i32.eq` over `0`/`1` — content
+/// equality, unlike str's pointer identity), a bool local (`b: bool = d[k]`),
+/// and `d.get(k, False)` (an i32 bool default). The i64-read framing was WRONG:
+/// the frontend types `d[k]` as `bool` (i32), so an i64 read mismatches every
+/// bool operand it lands beside. Because the read IS a proper bool, `str(d[k])` /
+/// `f"{d[k]}"` route through the existing `str(bool)` path (`"True"`/`"False"`) —
+/// bool→text works, no special handling. HONEST refusals (NOT "the int lane"):
+/// arithmetic on a bool read (`d[k] + 5` — bool arithmetic isn't in the WASM
+/// scalar subset), `.values()` iteration/reductions (`d.values()` types as
+/// `list[bool]`, not the `list[i64]` the value materialiser handles), and
+/// pop/setdefault (deferred, exactly like str's PMAT-1305→1306 split).
+/// Float/unsigned/nested values are still refused honestly (no width-narrowing or
+/// reinterpret). Returns the value's STORE-lane [`KeyKind`] (Int = i64 slot incl.
+/// bool `0`/`1` extended, Str = i32 str base-pointer).
 fn dict_value_kind(ty: &Type) -> Result<KeyKind, BackendError> {
     match ty {
-        Type::I64 | Type::CLong => Ok(KeyKind::Int),
+        // PMAT-1320: a bool value STORES through the int slot (i32→i64 extend in
+        // `emit_dict_val`); its READ is wrapped back to an i32 bool in
+        // `emit_dict_get`/`emit_dict_get_or`, distinguished by `dict_val_is_bool`.
+        Type::I64 | Type::CLong | Type::Bool => Ok(KeyKind::Int),
         Type::Str => Ok(KeyKind::Str),
         other => Err(unsupported(&format!(
-            "dict value type {other:?} — the WASM dict subset stores i64 integer \
-             or str (i32 base-pointer) values only (dict[K, int] / dict[K, str]); \
-             bool/float/nested values are refused"
+            "dict value type {other:?} — the WASM dict subset stores i64 integer, \
+             bool (i32 0/1 extended, read back as a bool), or str (i32 base-pointer) \
+             values only (dict[K, int] / dict[K, bool] / dict[K, str]); float/nested \
+             values are refused"
         ))),
     }
 }
@@ -16542,6 +16565,22 @@ struct Scope<'a> {
     /// (dict `==`, `.values()` iteration/reductions) refuse — an `i64.eq` over
     /// pointers is identity, not content, and Python compares content.
     str_val_dicts: Vec<String>,
+    /// PMAT-1320: the NAMES in [`Scope::heap_maps`] whose dict VALUE type is
+    /// `bool` (`dict[K, bool]`). A bool value STORES like a str base-pointer — its
+    /// `i32` `0`/`1` zero-extended into the 8-byte i64 slot — but READS back as a
+    /// proper i32 BOOL: `emit_dict_get`/`emit_dict_get_or` wrap the `0`/`1` slot
+    /// with `i32.wrap_i64` so `d[k]` composes with the bool contexts the frontend
+    /// types it into (truthiness `if d[k]:`, `==`/`!=`, a `b: bool = d[k]` local,
+    /// an i32-bool `d.get(k, False)` default). The i64 "reuse the int lane" framing
+    /// is WRONG — the frontend types `d[k]` as `bool` (i32), so an i64 read
+    /// mismatches every bool operand it lands beside. Because the read IS a proper
+    /// bool, `str(d[k])` / `f"{d[k]}"` also route through the existing `str(bool)`
+    /// path (`"True"`/`"False"`) — no special text-render handling. This registry
+    /// drives the read wrap (`emit_dict_get`/`emit_dict_get_or`) and the honest
+    /// refusals it leaves standing: arithmetic on a bool read (not in the scalar
+    /// subset), `.values()` reductions (`list[bool]`, not the value materialiser),
+    /// and pop/setdefault (deferred like str's PMAT-1306).
+    bool_val_dicts: Vec<String>,
     /// PMAT-996 (slice 4): the module's struct layout registry (name → fields),
     /// shared across every function (struct definitions are module-global).
     structs: &'a StructRegistry,
@@ -16617,6 +16656,16 @@ impl Scope<'_> {
     /// value-INTERPRETING forms (dict `==`, `.values()` reductions) refuse.
     fn dict_val_is_str(&self, name: &str) -> bool {
         self.str_val_dicts.iter().any(|n| n == name)
+    }
+
+    /// PMAT-1320: `true` if `name` is a `dict[K, bool]` local/param — its value
+    /// slot holds an i32 `0`/`1` extended to the 8-byte slot. `d[k]`/`d.get(...)`
+    /// reads WRAP that back to a proper i32 bool (`i32.wrap_i64`), so truthiness,
+    /// `==`/`!=`, a bool local, an i32-bool default, and `str(d[k])`/f-string
+    /// (via the existing `str(bool)` path) all compose; arithmetic on a read,
+    /// `.values()` reductions, and pop/setdefault refuse honestly.
+    fn dict_val_is_bool(&self, name: &str) -> bool {
+        self.bool_val_dicts.iter().any(|n| n == name)
     }
 
     /// PMAT-996: the struct type name if `name` is a struct local/param
@@ -16869,6 +16918,7 @@ fn emit_function(
         heap_sets: Vec::new(),
         heap_map_params: Vec::new(),
         str_val_dicts: Vec::new(),
+        bool_val_dicts: Vec::new(),
         structs,
         struct_locals: Vec::new(),
         methods,
@@ -16913,6 +16963,11 @@ fn emit_function(
             let kind = dict_key_kind(k)?;
             if dict_value_kind(v)? == KeyKind::Str {
                 scope.str_val_dicts.push(name.clone());
+            }
+            // PMAT-1320: a `dict[K, bool]` param reads through the int lane;
+            // register it only so `str`/`repr`/f-string of a read refuses.
+            if matches!(v.as_ref(), Type::Bool) {
+                scope.bool_val_dicts.push(name.clone());
             }
             scope.heap_maps.push((name.clone(), kind));
             scope.heap_map_params.push(name.clone());
@@ -17056,6 +17111,12 @@ fn collect_let_locals_stmts(stmts: &[Stmt], scope: &mut Scope) -> Result<(), Bac
                 // and the value-interpreting forms refuse.
                 if dict_value_kind(v)? == KeyKind::Str {
                     scope.str_val_dicts.push(name.clone());
+                }
+                // PMAT-1320: a `dict[K, bool]` LET reads through the int lane
+                // (its i64 slot IS 0/1); register it only so the divergent
+                // `str`/`repr`/f-string of a value read refuses.
+                if matches!(v.as_ref(), Type::Bool) {
+                    scope.bool_val_dicts.push(name.clone());
                 }
                 scope.declare(name, WatTy::I32);
                 scope.heap_maps.push((name.clone(), kind));
@@ -20096,6 +20157,12 @@ fn emit_ord(
 /// silent `str(int)` reuse. `str(bool)` lowers to an i32 (not an i64) and
 /// `str(str)` to a pointer, so the `emit_expr_typed(_, I64)` type check rejects
 /// them with an honest mismatch rather than a wrong conversion.
+///
+/// PMAT-1320: a `dict[K, bool]` value READ (`d[k]`) lowers to a proper i32 bool
+/// (`emit_dict_get` wraps the `0`/`1` slot back — the frontend types it `bool`),
+/// so `str(d[k])` / `f"{d[k]}"` route through the EXISTING `str(bool)` path (which
+/// emits the `"True"`/`"False"` string literals), NOT through this int→str
+/// helper — bool→text just works, no special refusal needed.
 fn emit_int_to_str(
     value: &Expr,
     of_float: bool,
@@ -21479,7 +21546,31 @@ fn emit_dict_val(
     depth: usize,
 ) -> Result<(), BackendError> {
     match val_kind {
-        KeyKind::Int => emit_expr_typed(value, scope, out, depth, WatTy::I64),
+        KeyKind::Int => {
+            // PMAT-1320: an int value already lowers to `i64` (the slot). A BOOL
+            // value (`dict[K, bool]` — classified `Int` for the STORE lane because
+            // its slot is the same 8-byte i64) lowers to an `i32` `0`/`1` — a bool
+            // literal `True`/`False`, or a bool read `d1[j]` (which `emit_dict_get`
+            // now wraps to i32) — so zero-extend it into the slot exactly as a str
+            // base-pointer is. No other `i32`-producing expression reaches this
+            // int-value arm: a str value routes to the `Str` arm, and any other i32
+            // in an int/bool value position is an upstream type error (an `f64`
+            // float still refuses honestly below).
+            let got = emit_expr(value, scope, out, depth)?;
+            match got {
+                WatTy::I64 => Ok(()),
+                WatTy::I32 => {
+                    indent(out, depth);
+                    writeln!(out, "i64.extend_i32_u").expect("write");
+                    Ok(())
+                }
+                other => Err(unsupported(&format!(
+                    "dict value lowered to WASM {} but an int/bool value slot is \
+                     i64 (a float value is refused at `dict_value_kind`)",
+                    other.keyword()
+                ))),
+            }
+        }
         KeyKind::Str => {
             emit_str_expr(value, scope, out, depth)?;
             indent(out, depth);
@@ -21709,6 +21800,16 @@ fn emit_dict_get(
     emit_dict_key(key, kind, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_get_{}", kind.suffix()).expect("write");
+    // PMAT-1320: a bool-valued dict stores the bool as `0`/`1` zero-extended into
+    // the 8-byte i64 slot; wrap it back to an i32 so `d[k]` IS a proper BOOL and
+    // composes with truthiness / `==` / `!=` / a bool local (the frontend types
+    // `d[k]` as `bool`). This mirrors the str-value read's `i32.wrap_i64`, but the
+    // low bit is a `0`/`1` boolean, not a str base-pointer.
+    if scope.dict_val_is_bool(name) {
+        indent(out, depth);
+        writeln!(out, "i32.wrap_i64").expect("write");
+        return Ok(WatTy::I32);
+    }
     Ok(WatTy::I64)
 }
 
@@ -21745,26 +21846,39 @@ fn emit_dict_get_or(
         )));
     }
     refuse_dict_pop_in_key_or_default("d.get(k, default)", key, Some(default))?;
+    // PMAT-1320: a bool-valued dict's `.get(k, default)` yields a BOOL — the
+    // present branch wraps its i64 slot back to an i32 `0`/`1` and the `default`
+    // is typed as an i32 bool, so the whole `if` is `(result i32)`. An int-valued
+    // dict stays the i64 read/return path.
+    let (result_ty, wat) = if scope.dict_val_is_bool(name) {
+        ("i32", WatTy::I32)
+    } else {
+        ("i64", WatTy::I64)
+    };
     // condition: has(p, k) -> i32 (never traps)
     indent(out, depth);
     writeln!(out, "local.get ${name}").expect("write");
     emit_dict_key(key, kind, scope, out, depth)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_dict_has_{}", kind.suffix()).expect("write");
-    // if (result i64) get(p, k) else default
+    // if (result <ty>) get(p, k) else default
     indent(out, depth);
-    writeln!(out, "if (result i64)").expect("write");
+    writeln!(out, "if (result {result_ty})").expect("write");
     indent(out, depth + 1);
     writeln!(out, "local.get ${name}").expect("write");
     emit_dict_key(key, kind, scope, out, depth + 1)?;
     indent(out, depth + 1);
     writeln!(out, "call $__wasm_dict_get_{}", kind.suffix()).expect("write");
+    if wat == WatTy::I32 {
+        indent(out, depth + 1);
+        writeln!(out, "i32.wrap_i64").expect("write");
+    }
     indent(out, depth);
     writeln!(out, "else").expect("write");
-    emit_expr_typed(default, scope, out, depth + 1, WatTy::I64)?;
+    emit_expr_typed(default, scope, out, depth + 1, wat)?;
     indent(out, depth);
     writeln!(out, "end").expect("write");
-    Ok(WatTy::I64)
+    Ok(wat)
 }
 
 /// PMAT-1225: lower `d.pop(k)` / `d.pop(k, default)` (`Expr::DictPop`) — a dict
@@ -21800,6 +21914,19 @@ fn emit_dict_pop(
         return Err(unsupported(&format!(
             "`{name}.pop(...)` in an integer position over a str-valued dict \
              (`dict[_, str]`) — the value is a string, not an integer"
+        )));
+    }
+    // PMAT-1320: a bool-valued dict's `.pop(...)` returns a BOOL (an i32), but the
+    // pop leg emits an i64 read/return path. The bool pop/setdefault legs are
+    // DEFERRED (exactly the str-value split: PMAT-1305 wired get/get_or, PMAT-1306
+    // wired pop/setdefault). Use `d[k]`/`d.get(k, default)` bool reads + `del d[k]`
+    // removal, or wire the i32-wrapped pop/setdefault twin in a follow-up.
+    if scope.dict_val_is_bool(name) {
+        return Err(unsupported(&format!(
+            "`{name}.pop(...)` over a bool-valued dict (`dict[_, bool]`) — the \
+             bool pop/setdefault legs are not wired yet (the value slot is i64 but \
+             a bool read is an i32); use `d[k]` / `d.get(k, default)` reads + \
+             `del d[k]`"
         )));
     }
     // PMAT-1306: the 2-arg path re-emits the key (has + pop) and lowers the
@@ -22053,6 +22180,15 @@ fn emit_dict_set_default(
         return Err(unsupported(&format!(
             "`{name}.setdefault(...)` in an integer position over a str-valued \
              dict (`dict[_, str]`) — the value is a string, not an integer"
+        )));
+    }
+    // PMAT-1320: bool-valued setdefault both STORES an i32 bool default and
+    // RETURNS a bool — deferred like the bool `.pop(...)` leg (see there).
+    if scope.dict_val_is_bool(name) {
+        return Err(unsupported(&format!(
+            "`{name}.setdefault(...)` over a bool-valued dict (`dict[_, bool]`) — \
+             the bool pop/setdefault legs are not wired yet; use a `d[k] = <bool>` \
+             store + `d[k]` / `d.get(k, default)` reads"
         )));
     }
     refuse_dict_pop_in_key_or_default("d.setdefault(k, default)", key, Some(default))?;

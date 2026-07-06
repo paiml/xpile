@@ -188,6 +188,22 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1320
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1320: [wasm/capability/dict] BOOL-valued dicts (`dict[K, bool]`) — the SECOND non-int dict VALUE kind, after PMAT-1305 str values. A bool value SHARES the int STORE lane (the value slot is an 8-byte i64; `emit_dict_val` zero-extends the bool''s i32 `0`/`1` into it exactly as PMAT-1305 extends a str base-pointer) but the READ is the whole slice: `emit_dict_get` / `emit_dict_get_or` WRAP the slot back i64→i32 so `d[k]` is a proper BOOL, because the frontend types `d[k]` as `bool` (an i32). ★ CORRECTNESS FIND — this slice CORRECTED a broken uncommitted WIP that classified bool as `Int` and read it back as i64 ("reuse the entire int lane; the only divergence is str rendering"): empirically that lowered only 3 trivial forms (`!=` between two reads, store, del) and REFUSED every headline form — `if d[k]:`, `d[k] == True`, `d.get(k, False)`, `b: bool = d[k]` — with an i64/i32 mismatch, because an i64 read mismatches every bool operand it lands beside. The i32-wrap read makes all of them compose, AND makes `str(d[k])`/`f"{d[k]}"` route through the EXISTING `str(bool)` path (rendering `"True"`/`"False"`, len 4/5) with NO special handling — so the WIP''s `expr_stays_bool_val_dict_read` text-refusal guard was dead code and was REMOVED. HONESTY (refuses, not silently mis-lowered): arithmetic on a bool read (`d[k] + 5` — bool arithmetic isn''t in the WASM scalar subset), `.values()` iteration/reductions (`d.values()` types as `list[bool]`, not the `list[i64]` value materialiser), and `pop`/`setdefault` bool value-return legs (DEFERRED with a clean refusal, exactly the str split PMAT-1305 get/get_or → PMAT-1306 pop/setdefault); float/nested values still refuse at the value gate. Two emit edits (get + get_or bool wrap) + two clean pop/setdefault refusals + a store comment; one new EXECUTED gated witness; the WIP''s dead guard/helper removed.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "CAPABILITY: `dict[K, bool]` value READS produce a proper i32 bool (`emit_dict_get`/`emit_dict_get_or` `i32.wrap_i64` the 0/1 slot), so `if d[k]:` / `if not d[k]:`, `d[k] == True/False`, cross-dict `a[i] != b[j]`, `b: bool = d[k]`, `d.get(k, default)` (hit+miss), `str(d[k])`/f-string (via the existing str(bool) path), dict→dict value copy, and a str-keyed bool dict all lower; stores/overwrite/len/contains/del/keys-iteration/update ride the shared keyed helpers (a bool stores i32→i64-extended into the slot)."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/dict_bool_values_witness.rs — 23 executed probes value-matched against LIVE python3 on the IDENTICAL source (truthiness/not, ==/!= literal+cross-dict, bool local, get hit/miss/true-default, str/f-string render == \"True\"/\"False\" lengths, store+overwrite, dict→dict copy, str-keyed, del/contains/keys-fold/update over bool values, a RELOCATING 20-key grow past the 16-slot slack); emit pins on the i32.wrap_i64 read + i64.extend_i32_u store + reuse of the keyed get/set/update helpers + the True/False literals + no bespoke bool helper; FULL-pipeline refusals for arithmetic-on-read / sum(.values()) / pop / setdefault; the float value-kind gate still refuses. Clean skip without WABT."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (121 test binaries, 0 fail). Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1319
   github_issue: null
   item_type: task
