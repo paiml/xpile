@@ -618,18 +618,16 @@ fn method_dict_param_refuses() {
     );
 }
 
-/// Returning a dict stays refused (the caller-side registration story is a
-/// separate slice) — no silent i32 masquerading as a scalar.
+/// PMAT-1310 lifted the dict-return refusal this test used to pin: a
+/// dict-returning free fn + caller-side binding now LOWERS (the caller-side
+/// registration story shipped as the return-values slice; executed coverage
+/// lives in `dict_return_witness.rs`).
 #[test]
-fn dict_return_type_still_refuses() {
-    let err = emit(
+fn dict_return_now_lowers() {
+    emit(
         "def f() -> dict[int, int]:\n    d: dict[int, int] = {1: 1}\n    return d\n\ndef g() -> int:\n    d: dict[int, int] = f()\n    return len(d)\n",
     )
-    .expect_err("dict return type must refuse");
-    assert!(
-        err.contains("dict") || err.contains("Dict"),
-        "return-type message, got: {err}"
-    );
+    .expect("dict return + caller binding must lower since PMAT-1310");
 }
 
 // ---- the executed differential --------------------------------------------------

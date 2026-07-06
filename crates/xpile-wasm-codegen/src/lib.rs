@@ -16239,6 +16239,12 @@ struct Scope<'a> {
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
     ret_is_unit: bool,
+    /// PMAT-1310: `Some(kind_triple)` when THIS function's declared return
+    /// type is a `dict[K, V]` / `set[K]` — every `return e` (trailing or
+    /// early) must then be a kind-matched NON-param dict/set local, validated
+    /// by [`emit_heap_ret`] (an i32-typed anything-else would be a silent
+    /// pointer miscompile).
+    ret_heap: Option<HeapParamSig>,
 }
 
 impl Scope<'_> {
@@ -16317,8 +16323,18 @@ impl Scope<'_> {
     fn fn_heap_sigs(&self, key: &str) -> Option<&[Option<HeapParamSig>]> {
         self.heap_sigs
             .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, s)| s.as_slice())
+            .find(|(k, ..)| k == key)
+            .map(|(_, s, _)| s.as_slice())
+    }
+
+    /// PMAT-1310: the callee's dict/set RETURN kind, if its declared return
+    /// type is a supported `dict[K, V]` / `set[K]` (free functions only).
+    /// Drives the `d = f(…)` binding lowering and the value-position refusal.
+    fn fn_heap_ret(&self, key: &str) -> Option<HeapParamSig> {
+        self.heap_sigs
+            .iter()
+            .find(|(k, ..)| k == key)
+            .and_then(|(_, _, r)| *r)
     }
 
     fn ty_of(&self, name: &str) -> Result<WatTy, BackendError> {
@@ -16464,6 +16480,26 @@ fn emit_function(
     // it. A str-returning function is the headline deliverable of this slice.
     let ret_is_str = matches!(f.return_type, Type::Str);
     let ret_is_unit = matches!(f.return_type, Type::Unit);
+    // PMAT-1310: a dict/set RETURN rides an i32 base-pointer (the bump-heap
+    // record a callee-local `Let` built — module-global linear memory, so the
+    // record survives the return). Key/value kinds validate NOW (honest early
+    // refusal on an unsupported kind), and the triple is threaded into the
+    // scope so every `return` site kind-checks via `emit_heap_ret`.
+    let ret_heap = match &f.return_type {
+        Type::Dict(k, v) => {
+            let kk = dict_key_kind(k)
+                .map_err(|e| unsupported(&format!("function `{}` return type: {e}", f.name)))?;
+            let vk = dict_value_kind(v)
+                .map_err(|e| unsupported(&format!("function `{}` return type: {e}", f.name)))?;
+            Some((kk, vk == KeyKind::Str, false))
+        }
+        Type::Set(e) => {
+            let kk = dict_key_kind(e)
+                .map_err(|e| unsupported(&format!("function `{}` return type: {e}", f.name)))?;
+            Some((kk, false, true))
+        }
+        _ => None,
+    };
     let ret = if ret_is_unit {
         // A void function: no result type. Use i32 as a placeholder that
         // is never read (ret_is_unit gates emission of any result).
@@ -16477,6 +16513,9 @@ fn emit_function(
         // (`-> Self { Self { … } }`), and it upgrades the PMAT-996 posture
         // for free functions too (`def make(): return Point(1, 2)` lowers;
         // the trailing `StructLit` leaves exactly this pointer).
+        WatTy::I32
+    } else if ret_heap.is_some() {
+        // PMAT-1310: a dict/set result rides an i32 base-pointer.
         WatTy::I32
     } else {
         map_type(&f.return_type)?
@@ -16501,6 +16540,7 @@ fn emit_function(
         literals,
         ret,
         ret_is_unit,
+        ret_heap,
     };
     // Params are locals 0..n. A `list[scalar]` param (PMAT-966) rides an
     // `i32` base-pointer into linear memory; its element type is recorded
@@ -16574,6 +16614,10 @@ fn emit_function(
         // PMAT-993: a str return — the trailing expr must be string-VALUED
         // (a heap pointer); emit it via the dedicated string lowering.
         emit_str_expr(&f.body.trailing_return, &scope, &mut body, 2)?;
+    } else if scope.ret_heap.is_some() {
+        // PMAT-1310: a dict/set return — the trailing expr must be a
+        // kind-matched NON-param dict/set local (validated, never a bare i32).
+        emit_heap_ret(&f.body.trailing_return, &scope, &mut body, 2)?;
     } else {
         emit_expr(&f.body.trailing_return, &scope, &mut body, 2)?;
     }
@@ -16918,7 +16962,7 @@ fn emit_stmt(
                 } else {
                     KeyKind::Int
                 };
-                emit_heap_map_bind(value, kind, val_kind, scope, out, depth)?;
+                emit_heap_map_bind(value, kind, val_kind, scope.is_set(name), scope, out, depth)?;
                 indent(out, depth);
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
@@ -16959,7 +17003,7 @@ fn emit_stmt(
                 } else {
                     KeyKind::Int
                 };
-                emit_heap_map_bind(value, kind, val_kind, scope, out, depth)?;
+                emit_heap_map_bind(value, kind, val_kind, scope.is_set(name), scope, out, depth)?;
                 indent(out, depth);
                 writeln!(out, "local.set ${name}").expect("write");
                 return Ok(());
@@ -17157,6 +17201,10 @@ fn emit_stmt(
                         "early `return <value>` from a unit/void function",
                     ));
                 }
+            } else if scope.ret_heap.is_some() {
+                // PMAT-1310: an EARLY dict/set return validates exactly like
+                // the trailing one — a kind-matched NON-param dict/set local.
+                emit_heap_ret(e, scope, out, depth)?;
             } else {
                 emit_expr_typed(e, scope, out, depth, scope.ret)?;
             }
@@ -17716,6 +17764,19 @@ fn emit_expr(
                         "`{callee}` takes {} argument(s) but the call passes {}",
                         ptys.len(),
                         args.len()
+                    )));
+                }
+                // PMAT-1310: a dict/set-returning call is only supported as
+                // the WHOLE value of a dict/set binding (`d = make(…)`, the
+                // emit_heap_map_bind arm — which never routes here) or as a
+                // discarded statement. In any other value position the i32
+                // base-pointer would flow into a scalar/str/struct slot
+                // unregistered — a silent miscompile; refuse it honestly.
+                if scope.fn_heap_ret(callee).is_some() {
+                    return Err(unsupported(&format!(
+                        "a call to the dict/set-returning `{callee}` outside a \
+                         dict/set binding — bind the result to a dict/set \
+                         local first (`d = {callee}(…)`), then use `d`",
                     )));
                 }
                 // PMAT-1309: kind-check dict/set arguments against the
@@ -20660,12 +20721,15 @@ fn emit_repeat(
 
 /// Lower a `dict`/`set` BINDING value — its `DictLit`/`SetLit` — onto the bump
 /// heap, leaving the new region's `i32` base-pointer on the stack (the caller
-/// `local.set`s it). A dict/set-returning call / comprehension is refused (no
-/// dict-returning op in the WASM subset).
+/// `local.set`s it). PMAT-1310: a dict/set-returning CALL to a free module
+/// function is a valid binding value too (`d = make()`) — the returned
+/// base-pointer registers under the binding's declared kind, kind-checked
+/// against the callee's signature. A comprehension / name copy stays refused.
 fn emit_heap_map_bind(
     value: &Expr,
     kind: KeyKind,
     val_kind: KeyKind,
+    dst_is_set: bool,
     scope: &Scope,
     out: &mut String,
     depth: usize,
@@ -20682,14 +20746,165 @@ fn emit_heap_map_bind(
         // dict (never mutating a source — `{**d}` is the dict COPY), so it is a
         // valid dict-binding value.
         Expr::DictMerge { entries } => emit_dict_merge(entries, kind, val_kind, scope, out, depth),
+        // PMAT-1310: DICT/SET-RETURNING CALL — `d = make(…)`. The callee built
+        // a FRESH record in module-global linear memory (its `return` refuses
+        // params and name copies don't exist in-lane, so the result NEVER
+        // aliases a caller-visible name); binding the returned base-pointer
+        // registers it under this name — including for GROWTH, which stays
+        // sound exactly because the record is unaliased.
+        Expr::Call { callee, args } => {
+            let Some((rk, rv, rs)) = scope.fn_heap_ret(callee) else {
+                return Err(unsupported(&format!(
+                    "binding a dict/set from a call to `{callee}`, which does \
+                     not declare a supported `dict[K, V]` / `set[K]` return \
+                     type — the base-pointer kinds would be unknowable; \
+                     refused honestly",
+                )));
+            };
+            if rs != dst_is_set {
+                return Err(unsupported(&format!(
+                    "binding a {dst} from `{callee}`, which returns a {src} — \
+                     refused honestly",
+                    dst = if dst_is_set { "set" } else { "dict" },
+                    src = if rs { "set" } else { "dict" },
+                )));
+            }
+            if rk != kind {
+                return Err(unsupported(&format!(
+                    "binding a {}-keyed dict/set from `{callee}`, which returns \
+                     {}-keyed entries — every binding must match the callee's \
+                     declared key encoding; refused honestly",
+                    kind.suffix(),
+                    rk.suffix(),
+                )));
+            }
+            if !rs && rv != (val_kind == KeyKind::Str) {
+                return Err(unsupported(&format!(
+                    "binding a dict[_, {}] from `{callee}`, which returns a \
+                     dict[_, {}] — the value slots would be misinterpreted; \
+                     refused honestly",
+                    if val_kind == KeyKind::Str {
+                        "str"
+                    } else {
+                        "int"
+                    },
+                    if rv { "str" } else { "int" },
+                )));
+            }
+            let Some((ptys, _)) = scope.mod_fn_sig(callee) else {
+                return Err(unsupported(&format!(
+                    "call to `{callee}` — not a function of this WASM module"
+                )));
+            };
+            let ptys = ptys.to_vec();
+            if ptys.len() != args.len() {
+                return Err(unsupported(&format!(
+                    "`{callee}` takes {} argument(s) but the call passes {}",
+                    ptys.len(),
+                    args.len()
+                )));
+            }
+            // PMAT-1309: kind-check dict/set arguments — a dict can flow IN
+            // on the same call whose result flows OUT (`r = doubled(d)`).
+            check_heap_call_args(callee, scope.fn_heap_sigs(callee), args, scope)?;
+            for (a, pt) in args.iter().zip(ptys.iter()) {
+                // A dict/set argument passes its shared base-pointer — peel
+                // the frontend's value-semantics `Clone` wrapper.
+                let a = peel_heap_clone_arg(a, scope);
+                emit_expr_typed(a, scope, out, depth, *pt)?;
+            }
+            indent(out, depth);
+            writeln!(out, "call ${callee}").expect("write");
+            Ok(())
+        }
         other => Err(unsupported(&format!(
             "a `dict`/`set` binding must be a dict/set LITERAL, a set-algebra \
-             expression (`a | b` / `a & b` / `a - b` / `a ^ b`), or a dict merge \
-             (`{{**a, **b}}` / `a | b`) in the WASM subset (a dict/set-returning \
-             call, comprehension, or name copy is refused) — got {}",
+             expression (`a | b` / `a & b` / `a - b` / `a ^ b`), a dict merge \
+             (`{{**a, **b}}` / `a | b`), or a dict/set-returning CALL in the \
+             WASM subset (a comprehension or name copy is refused) — got {}",
             expr_kind(other)
         ))),
     }
+}
+
+/// PMAT-1310: lower a `return e` from a function whose declared return type is
+/// a `dict[K, V]` / `set[K]`. `e` must be a dict/set LOCAL of exactly the
+/// declared kind triple — anything else i32-typed (a bool, a str/struct/list
+/// pointer, a mismatched dict) would be a SILENT pointer miscompile in the
+/// caller, so every other shape refuses. Returning a PARAM refuses too: the
+/// caller already holds that record under the argument's name, so the return
+/// would create a second caller-visible name for ONE record — a later grow
+/// through either would relocate it and leave the other stale (exactly the
+/// aliasing channel `refuse_heap_param_growth` + the name-copy refusal keep
+/// closed). A freshly-built local is the only thing a dict/set return hands
+/// out, which is what makes caller-side GROWTH on the result sound.
+fn emit_heap_ret(
+    e: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    let (rk, rv, rs) = scope.ret_heap.expect("caller gated on ret_heap");
+    // The frontend's alias-disposition pass may wrap a returned name that was
+    // read earlier in the function in `Clone` — same reconciliation as a call
+    // argument; peel a REGISTERED dict/set name, refuse anything else.
+    let e = peel_heap_clone_arg(e, scope);
+    let Expr::Ident(name) = e else {
+        return Err(unsupported(&format!(
+            "a dict/set RETURN must be a dict/set LOCAL name in the WASM \
+             subset — bind a literal / merge / set-algebra result to a local \
+             first; got {}",
+            expr_kind(e)
+        )));
+    };
+    let Some(ak) = scope.heap_map_kind(name) else {
+        return Err(unsupported(&format!(
+            "returning `{name}` from a dict/set-returning function, but it is \
+             not a dict/set local — the i32 would silently masquerade as a \
+             base-pointer; refused honestly",
+        )));
+    };
+    if scope.is_heap_param(name) {
+        return Err(unsupported(&format!(
+            "returning the dict/set PARAMETER `{name}` — the caller already \
+             holds this record under its argument name, so the return would \
+             create a SECOND caller-visible name for one record (a later grow \
+             through either would relocate it and leave the other stale); \
+             return a freshly-built local instead",
+        )));
+    }
+    if scope.is_set(name) != rs {
+        return Err(unsupported(&format!(
+            "returning the {actual} `{name}` from a function declared to \
+             return a {declared} — refused honestly",
+            actual = if scope.is_set(name) { "set" } else { "dict" },
+            declared = if rs { "set" } else { "dict" },
+        )));
+    }
+    if ak != rk {
+        return Err(unsupported(&format!(
+            "returning `{name}` with {}-keyed entries from a function declared \
+             to return {}-keyed entries — refused honestly",
+            ak.suffix(),
+            rk.suffix(),
+        )));
+    }
+    if !rs && scope.dict_val_is_str(name) != rv {
+        return Err(unsupported(&format!(
+            "returning the dict[_, {}] `{name}` from a function declared to \
+             return a dict[_, {}] — the caller would misinterpret the value \
+             slots; refused honestly",
+            if scope.dict_val_is_str(name) {
+                "str"
+            } else {
+                "int"
+            },
+            if rv { "str" } else { "int" },
+        )));
+    }
+    indent(out, depth);
+    writeln!(out, "local.get ${name}").expect("write");
+    Ok(())
 }
 
 /// PMAT-1247: lower a SET-ALGEBRA binding value — `a | b` (union) / `a & b`
@@ -22249,6 +22464,9 @@ fn build_module_fn_registry(module: &Module) -> Result<AssocFnRegistry, BackendE
         let ret = match &f.return_type {
             Type::Unit => None,
             Type::Str | Type::Struct(_) => Some(WatTy::I32),
+            // PMAT-1310: a dict/set return rides an i32 base-pointer; its
+            // key/value kinds validate at the callee's own `emit_function`.
+            Type::Dict(..) | Type::Set(..) => Some(WatTy::I32),
             other => Some(
                 map_type(other)
                     .map_err(|e| unsupported(&format!("function `{}` return type: {e}", f.name)))?,
@@ -22267,32 +22485,39 @@ fn build_module_fn_registry(module: &Module) -> Result<AssocFnRegistry, BackendE
 type HeapParamSig = (KeyKind, bool, bool);
 
 /// PMAT-1309: per-FREE-function dict/set param signatures — for each param
-/// position, `Some(sig)` when it is a `dict[K, V]` / `set[K]`, else `None`.
-/// Struct methods/assoc fns never carry dict/set params (refused at
+/// position, `Some(sig)` when it is a `dict[K, V]` / `set[K]`, else `None` —
+/// PLUS (PMAT-1310) the function's dict/set RETURN kind, `Some(sig)` when the
+/// declared return type is a `dict[K, V]` / `set[K]`. Struct methods/assoc
+/// fns never carry dict/set params or returns (refused at
 /// [`build_method_registry`]), so free fns are the whole surface.
-type HeapSigRegistry = Vec<(String, Vec<Option<HeapParamSig>>)>;
+type HeapSigRegistry = Vec<(String, Vec<Option<HeapParamSig>>, Option<HeapParamSig>)>;
 
-/// Build the PMAT-1309 dict/set param-signature registry. A key/value kind
-/// the subset refuses maps to `None` here — the call would already refuse at
-/// the callee's own param mapping (`param_wat_type`), so no new refusal
-/// surface is introduced.
+/// The dict/set kind triple of a `Type`, if it is a supported dict/set shape.
+/// Shared by the param and (PMAT-1310) return legs of the signature registry.
+fn heap_kind_of_type(ty: &Type) -> Option<HeapParamSig> {
+    match ty {
+        Type::Dict(k, v) => match (dict_key_kind(k), dict_value_kind(v)) {
+            (Ok(kk), Ok(vk)) => Some((kk, vk == KeyKind::Str, false)),
+            _ => None,
+        },
+        Type::Set(e) => dict_key_kind(e).ok().map(|kk| (kk, false, true)),
+        _ => None,
+    }
+}
+
+/// Build the PMAT-1309 dict/set param-signature registry (PMAT-1310: now also
+/// carrying each function's dict/set RETURN kind). A key/value kind the
+/// subset refuses maps to `None` here — the call would already refuse at the
+/// callee's own param/return mapping (`param_wat_type` / `emit_function`), so
+/// no new refusal surface is introduced.
 fn build_heap_sig_registry(module: &Module) -> HeapSigRegistry {
     let mut reg = HeapSigRegistry::new();
     for item in &module.items {
         let Item::Function(f) = item else { continue };
-        let sigs: Vec<Option<HeapParamSig>> = f
-            .params
-            .iter()
-            .map(|p| match &p.ty {
-                Type::Dict(k, v) => match (dict_key_kind(k), dict_value_kind(v)) {
-                    (Ok(kk), Ok(vk)) => Some((kk, vk == KeyKind::Str, false)),
-                    _ => None,
-                },
-                Type::Set(e) => dict_key_kind(e).ok().map(|kk| (kk, false, true)),
-                _ => None,
-            })
-            .collect();
-        reg.push((f.name.clone(), sigs));
+        let sigs: Vec<Option<HeapParamSig>> =
+            f.params.iter().map(|p| heap_kind_of_type(&p.ty)).collect();
+        let ret = heap_kind_of_type(&f.return_type);
+        reg.push((f.name.clone(), sigs, ret));
     }
     reg
 }
