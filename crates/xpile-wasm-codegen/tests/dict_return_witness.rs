@@ -38,9 +38,10 @@
 //!
 //! Returning a PARAM (the aliasing channel), returning a literal / set-algebra
 //! expression directly (bind to a local first — the return must be a NAME so
-//! the kind triple is known), a dict/set return on a struct METHOD (free
-//! functions only, like params), and a dict-returning call consumed in a
-//! value position (`len(make())` — bind it first). Backend kind-mismatch
+//! the kind triple is known), and a dict-returning call consumed in a
+//! value position (`len(make())` — bind it first). Struct-METHOD dict/set
+//! returns lower since PMAT-1312 (`dict_method_return_witness.rs`; the old
+//! refusal pin below flipped to a capability pin). Backend kind-mismatch
 //! checks (returning a dict where a set is declared, binding a dict[_, str]
 //! result to a dict[_, int] local, …) are defense-in-depth behind the
 //! frontend's declared-vs-produced type check and are not reachable from
@@ -415,18 +416,21 @@ fn returning_a_non_name_refuses() {
     );
 }
 
-/// Dict/set RETURNS are FREE-function-only (params reach instance methods
-/// since PMAT-1311, but returns do not): a struct method declaring one
-/// refuses at the method registry (`callable_ret`).
+/// STALE-TEST FLIP (PMAT-1312): this pinned the method-dict-return REFUSAL
+/// when returns were free-function-only. Instance-method dict/set returns
+/// now lower (`callable_ret` rides the i32 base-pointer ABI) — the exact
+/// source that refused here must EMIT, with the method carrying the return
+/// ABI. The full executed surface lives in `dict_method_return_witness.rs`.
 #[test]
-fn method_dict_return_refuses() {
-    let err = emit(
+fn method_dict_return_now_lowers() {
+    let wat = emit(
         "class C:\n    def __init__(self) -> None:\n        self.x: int = 1\n    def m(self) -> dict[int, int]:\n        d: dict[int, int] = {1: 1}\n        return d\n\ndef g() -> int:\n    c: C = C()\n    return c.x\n",
     )
-    .expect_err("method dict return must refuse");
+    .expect("method dict return must lower since PMAT-1312");
     assert!(
-        err.contains("method `m` return type"),
-        "method-return message, got: {err}"
+        wat.contains("(func $C.m (param $self i32) (result i32)"),
+        "method must carry the dict-return ABI, got WAT (first 4k):\n{}",
+        &wat[..wat.len().min(4096)]
     );
 }
 

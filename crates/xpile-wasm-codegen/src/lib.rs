@@ -18333,6 +18333,25 @@ fn emit_expr(
         // PMAT-1023: `obj.method(args)` in a VALUE position — the method must
         // return a value (a unit method's "result" cannot feed an expression).
         Expr::MethodCall { obj, method, args } => {
+            // PMAT-1312: a dict/set-returning method call is only supported
+            // as the WHOLE value of a dict/set binding (`d = b.make(…)`, the
+            // emit_heap_map_bind arm — which never routes here) or as a
+            // discarded statement. In any other value position the i32
+            // base-pointer would flow into a scalar/str/struct slot
+            // unregistered — a silent miscompile; refuse it honestly
+            // (mirroring the PMAT-1310 free-fn guard).
+            if let Expr::Ident(oname) = obj.as_ref() {
+                if let Some(sname) = scope.struct_of(oname) {
+                    if scope.fn_heap_ret(&format!("{sname}.{method}")).is_some() {
+                        return Err(unsupported(&format!(
+                            "a call to the dict/set-returning method \
+                             `{sname}.{method}` outside a dict/set binding — \
+                             bind the result to a dict/set local first \
+                             (`d = {oname}.{method}(…)`), then use `d`",
+                        )));
+                    }
+                }
+            }
             emit_method_call(obj, method, args, scope, out, depth)?.ok_or_else(|| {
                 unsupported(&format!(
                     "method `.{method}(…)` returns no value (Python `-> None`) — \
@@ -20821,11 +20840,84 @@ fn emit_heap_map_bind(
             writeln!(out, "call ${callee}").expect("write");
             Ok(())
         }
+        // PMAT-1312: DICT/SET-RETURNING METHOD CALL — `d = b.make(…)`. Same
+        // soundness as the free-fn arm (PMAT-1310): the method built a FRESH
+        // record in module-global linear memory (its `return` refuses params,
+        // `self` cannot smuggle one — struct layouts refuse dict/set FIELDS —
+        // and name copies don't exist in-lane), so the returned base-pointer
+        // never aliases a caller-visible name; binding it registers the
+        // record under this name, caller-side GROWTH included. The kind
+        // triple checks against the method's `<Struct>.<method>` heap-sig
+        // entry; emission delegates to `emit_method_call` (receiver + arity
+        // + PMAT-1311 arg kind-check + Clone-peel all live there).
+        Expr::MethodCall { obj, method, args } => {
+            let Expr::Ident(oname) = obj.as_ref() else {
+                return Err(unsupported(&format!(
+                    "binding a dict/set from `.{method}(…)` over a non-name \
+                     receiver — the WASM subset calls methods on a struct \
+                     LOCAL/PARAM only"
+                )));
+            };
+            let Some(sname) = scope.struct_of(oname) else {
+                return Err(unsupported(&format!(
+                    "binding a dict/set from `{oname}.{method}(…)`, but \
+                     `{oname}` is not a struct local/param — non-struct \
+                     method receivers are outside the WASM subset"
+                )));
+            };
+            let heap_key = format!("{sname}.{method}");
+            let Some((rk, rv, rs)) = scope.fn_heap_ret(&heap_key) else {
+                return Err(unsupported(&format!(
+                    "binding a dict/set from a call to `{heap_key}`, which \
+                     does not declare a supported `dict[K, V]` / `set[K]` \
+                     return type — the base-pointer kinds would be \
+                     unknowable; refused honestly",
+                )));
+            };
+            if rs != dst_is_set {
+                return Err(unsupported(&format!(
+                    "binding a {dst} from `{heap_key}`, which returns a \
+                     {src} — refused honestly",
+                    dst = if dst_is_set { "set" } else { "dict" },
+                    src = if rs { "set" } else { "dict" },
+                )));
+            }
+            if rk != kind {
+                return Err(unsupported(&format!(
+                    "binding a {}-keyed dict/set from `{heap_key}`, which \
+                     returns {}-keyed entries — every binding must match the \
+                     callee's declared key encoding; refused honestly",
+                    kind.suffix(),
+                    rk.suffix(),
+                )));
+            }
+            if !rs && rv != (val_kind == KeyKind::Str) {
+                return Err(unsupported(&format!(
+                    "binding a dict[_, {}] from `{heap_key}`, which returns a \
+                     dict[_, {}] — the value slots would be misinterpreted; \
+                     refused honestly",
+                    if val_kind == KeyKind::Str {
+                        "str"
+                    } else {
+                        "int"
+                    },
+                    if rv { "str" } else { "int" },
+                )));
+            }
+            emit_method_call(obj, method, args, scope, out, depth)?.ok_or_else(|| {
+                unsupported(&format!(
+                    "`{heap_key}` returns no value (unit) — its call cannot \
+                     be a dict/set binding value"
+                ))
+            })?;
+            Ok(())
+        }
         other => Err(unsupported(&format!(
             "a `dict`/`set` binding must be a dict/set LITERAL, a set-algebra \
              expression (`a | b` / `a & b` / `a - b` / `a ^ b`), a dict merge \
-             (`{{**a, **b}}` / `a | b`), or a dict/set-returning CALL in the \
-             WASM subset (a comprehension or name copy is refused) — got {}",
+             (`{{**a, **b}}` / `a | b`), or a dict/set-returning CALL or \
+             METHOD CALL in the WASM subset (a comprehension or name copy is \
+             refused) — got {}",
             expr_kind(other)
         ))),
     }
@@ -22324,12 +22416,29 @@ type AssocFnRegistry = Vec<(String, Vec<WatTy>, Option<WatTy>)>;
 
 /// The WAT result shape of a method/assoc-fn return type. `Unit` is `None`;
 /// a `str` OR `Struct` return rides an i32 base-pointer (heap string /
-/// heap record).
-fn callable_ret(owner: &str, mname: &str, ret: &Type) -> Result<Option<WatTy>, BackendError> {
+/// heap record). PMAT-1312: a `dict`/`set` return rides an i32 base-pointer
+/// too (the callee-built bump-heap record — module-global linear memory, so
+/// it survives the return), for INSTANCE methods only (`has_self`): an assoc
+/// fn's `Expr::Call` sites resolve through the assoc registry, whose
+/// `<Struct>::<name>` key is absent from the heap-sig registry — a dict/set
+/// result there could never kind-check at its binding, so it refuses here
+/// with the offender named (mirroring the PMAT-1311 assoc-fn PARAM refusal).
+fn callable_ret(
+    owner: &str,
+    mname: &str,
+    ret: &Type,
+    has_self: bool,
+) -> Result<Option<WatTy>, BackendError> {
     match ret {
         Type::Unit => Ok(None),
         Type::Str => Ok(Some(WatTy::I32)),
         Type::Struct(_) => Ok(Some(WatTy::I32)),
+        Type::Dict(_, _) | Type::Set(_) if has_self => Ok(Some(WatTy::I32)),
+        Type::Dict(_, _) | Type::Set(_) => Err(unsupported(&format!(
+            "struct `{owner}` associated function `{mname}` returns a \
+             dict/set — the WASM subset returns dicts/sets from free \
+             functions and instance methods only"
+        ))),
         other => map_type(other).map(Some).map_err(|e| {
             unsupported(&format!(
                 "struct `{owner}` method `{mname}` return type: {e}"
@@ -22395,7 +22504,7 @@ fn build_method_registry(
                             mname = m.name
                         ))
                     })?;
-                let ret = callable_ret(name, &m.name, &m.return_type)?;
+                let ret = callable_ret(name, &m.name, &m.return_type, has_self)?;
                 if has_self {
                     reg.push((name.clone(), m.name.clone(), ptys, ret));
                 } else {
@@ -22503,9 +22612,10 @@ type HeapParamSig = (KeyKind, bool, bool);
 /// plain name; (PMAT-1311) INSTANCE methods key by `<Struct>.<method>` (dots
 /// never appear in Python identifiers, so no collision) with sigs over the
 /// NON-self params — positionally aligned with a `MethodCall`'s `args`.
-/// Assoc fns never carry dict/set params (refused at
-/// [`build_method_registry`]) and methods never carry dict/set returns
-/// (refused there via [`callable_ret`]), so those legs stay `None`.
+/// PMAT-1312: the ret leg is LIVE for instance methods too (`d = b.make()`
+/// kind-checks at `emit_heap_map_bind`'s MethodCall arm). Assoc fns never
+/// carry dict/set params OR returns (refused at [`build_method_registry`]),
+/// so their legs stay `None`.
 type HeapSigRegistry = Vec<(String, Vec<Option<HeapParamSig>>, Option<HeapParamSig>)>;
 
 /// The dict/set kind triple of a `Type`, if it is a supported dict/set shape.
@@ -22539,11 +22649,11 @@ fn build_heap_sig_registry(module: &Module) -> HeapSigRegistry {
             // PMAT-1311: INSTANCE methods register under `<Struct>.<method>`
             // with sigs over the NON-self params (aligned with the `args` a
             // `MethodCall` carries). Assoc fns (no `self`) skip: their
-            // dict/set params refuse at `build_method_registry`, so an entry
-            // here could never be consulted. The ret leg is `None` in
-            // practice — a dict/set-RETURNING method refuses earlier, at
-            // `build_method_registry` via `callable_ret` (`map_type` refuses
-            // dict/set), before this registry is built.
+            // dict/set params AND returns refuse at `build_method_registry`,
+            // so an entry here could never be consulted. PMAT-1312: the ret
+            // leg is live — a dict/set-returning instance method's binding
+            // (`d = b.make()`) kind-checks against it, exactly like the
+            // free-fn return leg (PMAT-1310).
             Item::Struct { name, methods, .. } => {
                 for m in methods {
                     let has_self = m.params.first().is_some_and(
