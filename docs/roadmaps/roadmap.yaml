@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1313
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1313: [wasm/verify/dict] ADVERSARIAL-VERIFY differential fuzz over the dict/set FUNCTION/METHOD BOUNDARY surface (PMAT-1309 free-fn params / PMAT-1310 free-fn returns / PMAT-1311 method params / PMAT-1312 method returns) — the scheduled ~4-slices-since-PMAT-1308 skeptic pass over the newest lane. A fixed-seed LCG drives whole MODULES where records cross boundaries BOTH directions and BOTH callable kinds at once: a free-fn factory (optionally RELOCATING inside the callee before return), mutating helpers (pop-with-default/guarded-del/get/len folds), a two-param helper called ALIASED (`hb(d, d)`) and unaliased, and a class whose method factory reads self state and whose method mutator pops with a `self.base` default the driver RE-POINTS mid-sequence; drivers interleave caller-side growth (stores + loops past the 16-slot slack), inline-arithmetic pops, mid-sequence RE-BINDS (`d = mk()` twice), and `d.update(e)` merges of two RETURNED records. 113 observables (12 sequences x 7-8 + 19 curated extra modules distilled from 24 hand probes: aliasing del-via-other-alias, wide i64 keys, per-instance factories, returned-set caller growth past slack, loop re-binds, arg-eval order beside a mutating call, depth-3 chains, RECURSION draining a param, guarded clear-through-param then re-grow, str-valued content + sv-twin eq over returned records, set-param discard, method-returned record handed BACK IN) — every one value-matched vs LIVE CPython on IDENTICAL source. VERDICT: NOTHING REFUTED — the boundary surface holds; the load-bearing growth-through-param belt verified on all five spellings (d[k]=v / setdefault / update / |= / s.add) x both callable kinds, plus the kind-mismatched re-bind and branch-selected-bind refusals. MODEL HONESTY double-pin: the Rust replay''s acc fold must equal CPython per sequence AND every eqm/eqn oracle value must be 1/0 — a replay drift fails the test before a wasm bug could hide behind a model bug. MUTATION-VERIFIED teeth: two seeded boundary miscompiles both KILLED by the executed diff (emit_heap_ret returning i32.const 0 — null-pointer return, callers silently see an EMPTY record; the value-position call-arg loop passing i32.const 0 for a dict/set arg — callee mutations vanish); both revert to a byte-identical lib.rs. All exported helpers TOTAL under `--run-all-exports` zeroed-arg invocation. Test-only slice (one new witness file); verify-discipline counter RESETS here.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "DISCIPLINE: the feedback-ultracode-adversarial-verify cadence honored — 4 capability slices (PMAT-1309/1310/1311/1312) since the PMAT-1308 reset; this pass probes the exact surface those slices shipped, through the FULL pipeline, trusting no self-report."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/dict_boundary_fuzz_witness.rs (5 tests) — corpus determinism pin; capacity-model pin (curated cg relocates INSIDE the factory, kg relocates CALLER-side on the returned record, >=2 callee-relocating sequences; full driver-op alphabet coverage incl. the aliased two-param call and the method-factory feedback); i32 boundary-ABI emit pins on all four legs; growth+bind refusal-belt pins; the executed 113-observable differential with the double model-honesty pin."
+  - "EXECUTED locally: 113/113 observables == live CPython (WABT + python3); zero divergences across 24 hand probes + the LCG corpus. Both seeded mutations killed (cg_acc: WASM -4323 vs CPython 23643 under m1; WASM -3366 under m2 — silent, trap-free, caught by the first sequence)."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen. Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1312
   github_issue: null
   item_type: task
