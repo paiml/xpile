@@ -14856,6 +14856,48 @@ fn comp_range_bounds(
     Ok(Some(bounds))
 }
 
+/// PMAT-1319: classify a comprehension generator's iterable into the
+/// `(iter_expr, elem_ty, over_keys, dict_guard)` a [`Stmt::ForEach`] needs —
+/// the SAME classification the `for x in <iter>:` statement forms use
+/// (PMAT-472 / PMAT-742 / PMAT-847). A `list[T]` / `set[T]` iterates its
+/// ELEMENTS (`over_keys: false`, no guard); a `dict[K, V]` iterates its KEYS
+/// — lazily (`over_keys: true`) when read-only, or via an owned keys-snapshot
+/// (`DictView{Keys}`) + a size-change guard when the source dict is mutated
+/// anywhere in the function (`ctx.mutable`), matching `for k in d:`. Every
+/// other iterable is refused via the caller-supplied `unsupported` closure
+/// (so each comprehension flavour keeps its own worded message). This is the
+/// widening PMAT-1316 (set comp) / PMAT-1317 (dict comp) applied to the shared
+/// two-generator desugar, so a `{expr for x in a for y in b}` over dict/set
+/// sources lowers to EXACTLY the nested manual-loop HIR — the WASM hash-order
+/// gate, the param belts, and the return relocation ride it unchanged.
+fn comp_iter_source_binding(
+    ctx: &mut LoweringCtx,
+    iter_expr: Expr,
+    unsupported: impl FnOnce(&Type) -> FrontendError,
+) -> Result<(Expr, Type, bool, Option<String>), FrontendError> {
+    Ok(match infer_type_in_ctx(ctx, &iter_expr) {
+        Type::List(e) => (iter_expr, *e, false, None),
+        Type::Dict(key_ty, _) if matches!(&iter_expr, Expr::Ident(n) if ctx.mutable.contains(n)) => {
+            let dict_name = match &iter_expr {
+                Expr::Ident(n) => n.clone(),
+                _ => unreachable!("matched Expr::Ident above"),
+            };
+            (
+                Expr::DictView {
+                    dict: Box::new(iter_expr),
+                    kind: DictViewKind::Keys,
+                },
+                *key_ty,
+                false,
+                Some(dict_name),
+            )
+        }
+        Type::Dict(key_ty, _) => (iter_expr, *key_ty, true, None),
+        Type::Set(e) => (iter_expr, *e, false, None),
+        other => return Err(unsupported(&other)),
+    })
+}
+
 /// v0.2.0 slice: single generator; the iterable is either a `list[T]` or a
 /// `range(...)` (PMAT-502ba). A single `if` filter is supported
 /// (PMAT-502ay): `[elem for var in iter if cond]` wraps the append in an
@@ -14889,13 +14931,14 @@ fn desugar_comp_2gen(
             ))),
         }
     };
-    let list_elem = |ty: Type| -> Result<Type, FrontendError> {
-        match ty {
- Type::List(e) => Ok(*e),
- other => Err(FrontendError::Lower(format!(
-                "function `{fn_name}` has a multi-generator {kind} comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` / `range(...)` iterables (dict iterables deferred)"
-            ))),
-        }
+    // PMAT-1319: the refusal for an iterable outside the list/range/dict/set
+    // vocabulary — the two-generator twin of the 1-generator messages, now that
+    // dict/set sources are admitted (a homogeneous tuple source is still
+    // deferred here; the 1-generator path materialises it, this one does not).
+    let unsupported_iter = |other: &Type| -> FrontendError {
+        FrontendError::Lower(format!(
+            "function `{fn_name}` has a multi-generator {kind} comprehension over an iterable typing as {other:?}; v0.2.0 supports two `for` clauses over `list[T]` / `range(...)` / `dict[K, V]` (keys) / `set[T]` iterables (tuple sources and 3+ generators are deferred)"
+        ))
     };
     // PMAT-543: materialize a bare `range(...)` generator iterable to a `Vec`
     // (the 2-generator path lowers to nested `ForEach` over list-typed iters, so
@@ -14919,8 +14962,12 @@ fn desugar_comp_2gen(
     let inner_var = plain_name(inner)?;
 
     // Outer generator: iterable + element type + bound var, then its filter.
+    // PMAT-1319: `comp_iter_source_binding` widens the iterable vocabulary from
+    // `list[T]`/`range(...)` to dict (keys, guarded when mutable) and set —
+    // returning the `over_keys`/`dict_guard` the nested `ForEach` carries.
     let outer_iter = materialize_iter(ctx, &outer.iter)?;
-    let outer_elem_ty = list_elem(infer_type_in_ctx(ctx, &outer_iter))?;
+    let (outer_iter, outer_elem_ty, outer_over_keys, outer_guard) =
+        comp_iter_source_binding(ctx, outer_iter, |o| unsupported_iter(o))?;
     ctx.bound.insert(outer_var.clone());
     ctx.name_types
         .insert(outer_var.clone(), outer_elem_ty.clone());
@@ -14929,7 +14976,8 @@ fn desugar_comp_2gen(
     // Inner generator (lowered with the outer var in scope, so its iterable may
     // reference the outer binding).
     let inner_iter = materialize_iter(ctx, &inner.iter)?;
-    let inner_elem_ty = list_elem(infer_type_in_ctx(ctx, &inner_iter))?;
+    let (inner_iter, inner_elem_ty, inner_over_keys, inner_guard) =
+        comp_iter_source_binding(ctx, inner_iter, |o| unsupported_iter(o))?;
     ctx.bound.insert(inner_var.clone());
     ctx.name_types
         .insert(inner_var.clone(), inner_elem_ty.clone());
@@ -14959,8 +15007,8 @@ fn desugar_comp_2gen(
         iter: inner_iter,
         elem_ty: inner_elem_ty,
         body: inner_body,
-        over_keys: false,
-        dict_guard: None,
+        over_keys: inner_over_keys,
+        dict_guard: inner_guard,
         mutate_elems: false,
     };
     let outer_body = wrap(outer_filter, vec![inner_loop]);
@@ -14969,8 +15017,8 @@ fn desugar_comp_2gen(
         iter: outer_iter,
         elem_ty: outer_elem_ty,
         body: outer_body,
-        over_keys: false,
-        dict_guard: None,
+        over_keys: outer_over_keys,
+        dict_guard: outer_guard,
         mutate_elems: false,
     };
     Ok(vec![
