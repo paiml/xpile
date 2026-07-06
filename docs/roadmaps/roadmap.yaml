@@ -205,6 +205,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1339
+  github_issue: null
+  item_type: task
+  title: "PMAT-1339: [wasm/runtime/num] native-WASM integer `min(a, b, …)` / `max(a, b, …)` — the SECOND scalar numeric builtin (`Expr::NumBuiltin`) the WASM lane emits, after PMAT-1338's `abs`. WASM has NO `i64.min`/`i64.max` (only the float forms), so an all-INT min/max folds each pairwise step through a `select` helper: `$__wasm_min_i64(a, b)` = `a<b ? a : b` (`i64.lt_s` + `select`), `$__wasm_max_i64(a, b)` = `a>b ? a : b` (`i64.gt_s` + `select`). The variadic form is a LEFT fold — `min(a,b,c)` emits `a`, then for each remaining operand emits it and `call`s the helper, lowering to `min(min(a,b),c)`, matching CPython's left-to-right reduce; every operand is emitted EXACTLY once (pushed as a helper arg, so a side-effecting operand is not double-run). CPython-exact over the WHOLE i64 range — a min/max never leaves the operand set, so there is NO overflow boundary (unlike `abs(i64::MIN)`), and ties resolve value-identically to CPython's first-wins pick (`<`/`>` — not `<=`/`>=` — makes a tie fall to `b`, which equals `a`). FIX is SINGLE-CRATE (xpile-wasm-codegen), NO new Expr/Stmt/Type variant → NO serial all-codegen edit: (1) the `emit_num_builtin` Min|Max arm now emits the int fold (was a blanket refusal); (2) two new self-contained `select` helpers (`MIN_I64_HELPER`/`MAX_I64_HELPER`: no memory, no `$__alloc`); (3) a PARAMETERIZED gate quartet `module_uses_int_minmax(module, want)`/`block`/`stmt`/`expr_has_int_minmax` (mirroring the `list_sorted` `want_float` parameterization) — called once per op so the two ops drive INDEPENDENT gates (a pure-min program carries no dead max helper); the head arm keys on `of_float: false` so a float min/max never arms it and a nested int min/max inside a float one still recurses. CITES C-COMPILE-RUST-TO-WASM (no heap → no C-WASM-HEAP; no new contract/Lean module). HONEST REFUSALS (regression-guarded): a FLOAT min/max (needs Python's order-dependent NaN semantics — `min(1.0,nan)==1.0` but `min(nan,1.0)` is nan — that WASM's always-NaN-propagating `f64.min`/`max` do NOT match) and a bool/str min/max (an i32 operand — bool needs an i64 coercion, str is a heap-pointer content compare; both a separate lane). Also updated abs_num_builtin_witness.rs whose refusal test previously asserted int min/max refuses (it now lowers)."
+  status: done
+  priority: high
+  created: 2026-07-07T00:00:00Z
+  acceptance_criteria:
+  - "Backlog-replenishment slice (sprint window 2026-06-25..07-11 open), strategic_goals.forward_ev_ranking rank 2 (HEAP/STRING/DICT + scalar runtime). The num tail named by PMAT-1338's DONE note — scalar `min(a,b)`/`max(a,b)` for INT (clean, no NaN); a genuine capability (int min/max was refused before), CPython-exact, composing with the abs helper and all arithmetic. Float/bool/str min/max refuse honestly."
+  - "IMPL (single crate, off the serial hotspot): xpile-wasm-codegen — the `emit_num_builtin` Min|Max int fold (`$__wasm_{min,max}_i64` `select` helpers), the parameterized `module_uses_int_minmax(_, want)` gate quartet (independent per-op gates, `of_float: false`-keyed). NO gate-walker meta-HIR edit; NO new contract/Lean module minted (cites C-COMPILE-RUST-TO-WASM)."
+  - "REGRESSION WITNESS: new gated crates/xpile-wasm-codegen/tests/int_minmax_witness.rs (6 tests). CONSTRUCT (always-run, no WABT): a pure min program CALLS+DECLARES only the min helper (max program the mirror); variadic `min(a,b,c)`/`max(a,b,c,d)` fold via 2/3 helper calls; nested `min(max(...),4)` declares BOTH helpers exactly once; float/bool min/max refuse with precise messages, str min/max refuses (via the string-subset emitter). EXECUTED (WABT wat2wasm→wasm-interp + live python3): 24 observables VALUE-MATCHING CPython — order independence, negative operands (results shifted non-negative for the unsigned-i64 interp print), ties, variadic left-fold, nested min/max, composed with arith/abs/len/if-expr, two param-boundary calls — all == live python3, zero mismatches."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (no regression; +6 new; abs witness refusal test retargeted float). Sprint 2026-07-07. `min`/`max` (int) is the second NumBuiltin op wired; NEXT (num tail): the FLOAT min/max twin (needs NaN-order modeling) and the `math.*` rounding ops (floor/ceil/trunc via `f64.floor`/`ceil`/`trunc` + i64 convert with CPython domain guards)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1337
   github_issue: null
   item_type: task
