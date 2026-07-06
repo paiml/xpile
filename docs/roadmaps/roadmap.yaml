@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1308
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1308: [wasm/verify/dict] ADVERSARIAL-VERIFY interleaved-mutation fuzz over the str-VALUED dict surface (PMAT-1305 stores/reads + PMAT-1306 pop/setdefault str legs + PMAT-1307 content-eq twin) — the ~4-slices-since-PMAT-1303 skeptic pass. The FULL str-value mutation alphabet (`d[k]="s"` literal store / `d[k]=h+"x"` HEAP-built store / `del` / bound+bare `pop` / `pop(k,dflt)` / bound+bare `setdefault` / `update` / `|=` / `clear`) interleaved by a fixed-seed LCG over BOTH key kinds, value-matched against LIVE python3 on the IDENTICAL source (9 curated edges + 11 random walks + 14 extras = 245 observables). GAPS CLOSED: (1) eq-after-scramble was never pinned — every sequence carries `eqm` (scrambled receiver == fresh all-literal model spelling, expect 1) + `eqn` (one content flipped, expect 0), exercising the sv twin''s size gate + walk-p + membership probe over swap-into-hole reorder, relocated regions, and heap-built value slots; (2) the SETDEFAULT-miss grow path shipped relocation-UNWITNESSED (the PMAT-1303 hollow-grow class): `sg` drives 20 setdefault-misses past the 16-slot slack (one REAL relocation through the write-back), `gm` doubles (17→34→68) with str values, `corpus_forces_real_relocations` pins the mirrored capacity arithmetic; (3) the ACCEPTED mutation-inside-store `d[k] = d.pop(j)` was never executed (`x_setpop_*`: fresh-key, same-key delete-then-reinsert, heap-built content-preserving); (4) bound pops/setdefaults fold position-weighted into `pl`/`pc` so a wrong slot after swap/relocation diverges. MUTATION-VERIFIED TEETH: routing str-valued `==` back to the int pointer-eq helper → ps_eqm diverges (0 vs 1); dropping the setdefault write-back (`local.set`→`drop`) → sg TRAPS through the stale pre-relocation base (only a relocating corpus can see this). DID-NOT-REFUTE: the honest-refusal belt holds through the FULL pipeline — side-effecting pop inside get/pop/setdefault defaults (eager-vs-lazy), pop inside concat/f-string (multi-eval), mixed VALUE-kind ==/update, str-value .values()/.items() iteration — all pinned with message needles. Test-only, single test file; clean skip without WABT.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "Verify-discipline slice (memory feedback-ultracode-adversarial-verify: due every ~5-8 slices; 4 capability slices since PMAT-1303). Targets the freshest surface — the str-value dict lane (PMAT-1305..1307) including the FIRST side-effecting expr in the string lane (DictPop) that memory project-wasm-dict-set-surface flagged for multi-eval + lazy-vs-eager audit."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/dict_strv_scramble_fuzz_witness.rs (5 tests) — corpus determinism; relocation + full-alphabet coverage pins (sg==1 via setdefault-miss, gm==2, gp==1 via |=, every Op variant + both key lanes + heap-built stores present, a walk interleaves pop with merge, every sequence carries eqm); emit + helper-carriage pins ($__wasm_dict_eq_sv_<k> / $__wasm_dict_set_<k> / $__wasm_dict_pop_<k>); 10 full-pipeline refusal pins; the executed differential (245 observables >= 150 floor) vs live python3."
+  - "EXECUTED locally: 245/245 observables == CPython (WABT + python3 present); both seeded mutations killed. No divergence found — the PMAT-1305..1307 claims SURVIVE the skeptic pass; the refusal belt holds. Verify-discipline reset; next due ~5-8 slices out."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (109 test binaries all green). Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1307
   github_issue: null
   item_type: task
