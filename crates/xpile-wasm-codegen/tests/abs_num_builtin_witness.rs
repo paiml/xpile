@@ -22,10 +22,9 @@
 //! is coerced to int, PMAT-795), and records the choice in `of_float` — so the
 //! backend dispatches `f64.abs` vs the i64 helper with no ambiguity.
 //!
-//! `min(a,b)`/`max(a,b)` (the scalar variadic form) and the `math.*` ops REFUSE
-//! honestly: a float min/max needs Python's order-dependent NaN semantics WASM's
-//! `f64.min`/`max` do not provide, and the transcendentals have no bit-exact
-//! WASM instruction. Only `abs` is in the subset at v0.1.0.
+//! The `math.*` ops REFUSE honestly (the transcendentals have no bit-exact WASM
+//! instruction). A FLOAT/bool/str `min(a,b)`/`max(a,b)` also refuses; the all-INT
+//! `min`/`max` is now in the subset (PMAT-1339 — see `int_minmax_witness.rs`).
 //!
 //! ## The load-bearing edges
 //!
@@ -275,15 +274,17 @@ fn abs_in_fstring_wraps_via_str_int() {
 #[test]
 fn non_abs_num_builtins_refuse() {
     for (label, src, needle) in [
+        // PMAT-1339: an all-INT min/max now LOWERS (see int_minmax_witness.rs);
+        // a FLOAT min/max still refuses (WASM f64.min/max mismatch CPython NaN).
         (
-            "min(a, b) scalar",
-            "def f(a: int, b: int) -> int:\n    return min(a, b)\n",
-            "min(a, b)",
+            "min(a, b) float",
+            "def f(a: float, b: float) -> float:\n    return min(a, b)\n",
+            "float (f64)",
         ),
         (
-            "max(a, b) scalar",
-            "def f(a: int, b: int) -> int:\n    return max(a, b)\n",
-            "max(a, b)",
+            "max(a, b) float",
+            "def f(a: float, b: float) -> float:\n    return max(a, b)\n",
+            "float (f64)",
         ),
         (
             "math.sqrt",

@@ -8808,6 +8808,45 @@ const ABS_I64_HELPER: &str = "\
     end)
 ";
 
+/// PMAT-1339: `$__wasm_min_i64(a, b) = min(a, b)` for two Python ints — the
+/// scalar twin of [`ABS_I64_HELPER`], the SECOND `NumBuiltin` op in the lane.
+/// WASM has NO `i64.min` (only `f64.min`), so this is a branch-free `select`:
+/// push `a` (val1), `b` (val2), then the condition `a < b` (`i64.lt_s`);
+/// `select` yields `a` when the condition is nonzero, else `b`. CPython's
+/// `min(a, b)` returns the FIRST argument on a tie, but for ints equal values
+/// are indistinguishable, so `a < b ? a : b` is value-exact (a `<` — not `<=`
+/// — makes a tie fall to `b`, which equals `a`). Each param is re-fetched from
+/// its slot, so the operands are single-evaluated at the CALL site (pushed once
+/// as the two args). CPython-exact over the whole i64 range — no overflow
+/// boundary (unlike `abs(i64::MIN)`), as a min/max never leaves the operand set.
+const MIN_I64_HELPER: &str = "\
+  ;; __wasm_min_i64(a, b) = min(a, b) for two Python ints (i64). select: a<b ? a : b.
+  (func $__wasm_min_i64 (param $a i64) (param $b i64) (result i64)
+    local.get $a
+    local.get $b
+    local.get $a
+    local.get $b
+    i64.lt_s
+    select)
+";
+
+/// PMAT-1339: `$__wasm_max_i64(a, b) = max(a, b)` for two Python ints — the
+/// `max` twin of [`MIN_I64_HELPER`]. Same `select` shape with the condition
+/// flipped to `a > b` (`i64.gt_s`): `select` yields `a` when `a > b`, else `b`
+/// (a tie falls to `b`, which equals `a`), value-exact with CPython's
+/// first-arg-wins-tie `max`. Single-evaluation and no overflow boundary, as for
+/// `min`.
+const MAX_I64_HELPER: &str = "\
+  ;; __wasm_max_i64(a, b) = max(a, b) for two Python ints (i64). select: a>b ? a : b.
+  (func $__wasm_max_i64 (param $a i64) (param $b i64) (result i64)
+    local.get $a
+    local.get $b
+    local.get $a
+    local.get $b
+    i64.gt_s
+    select)
+";
+
 const LIST_BOOL_REDUCE_HELPER: &str = "\
   ;; __wasm_list_bool_reduce(base, is_all) = all(xs) if is_all else any(xs), list[bool]
   ;; base → length-prefixed region: i32 count @ base+0, i32 (0/1) elements @ base+8.
@@ -12579,6 +12618,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // `needs_heap`/`needs_memory`. `abs(float)` is the inline native `f64.abs`
     // and needs no helper, so it does NOT arm this gate.
     let needs_abs_i64 = module_uses_abs_i64(module);
+    // PMAT-1339: `min(a, b)` / `max(a, b)` over INTs (`Expr::NumBuiltin { op:
+    // Min|Max, of_float: false }`) call the `$__wasm_min_i64` / `$__wasm_max_i64`
+    // `select` helpers. Pure i64→i64 folds (no memory, no `$__alloc`), so each
+    // rides its OWN gate, NOT `needs_heap`/`needs_memory`. A FLOAT min/max refuses
+    // in `emit_num_builtin` (WASM `f64.min`/`max` mismatch CPython's NaN order),
+    // so `of_float: true` does NOT arm either gate.
+    let needs_min_i64 = module_uses_int_minmax(module, NumBuiltinOp::Min);
+    let needs_max_i64 = module_uses_int_minmax(module, NumBuiltinOp::Max);
     // PMAT-1252: `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`)
     // returns a NEW sorted list via a `$__wasm_list_sorted_*` helper — the FIRST
     // list-VALUED op that ALLOCATES, so it ALSO forces `needs_heap` (via
@@ -13140,6 +13187,17 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // `needs_abs_i64`. `abs(float)` is inline `f64.abs` and never reaches here.
     if needs_abs_i64 {
         out.push_str(ABS_I64_HELPER);
+    }
+    // PMAT-1339: emit the integer min/max `select` helpers once each, when any
+    // function uses `min(a, b)` / `max(a, b)` over ints (`Expr::NumBuiltin { op:
+    // Min|Max, of_float: false }`). Self-contained WAT (no memory, no `$__alloc`),
+    // so each is gated ONLY on its own `needs_*`. A float min/max refuses upstream
+    // and never reaches here.
+    if needs_min_i64 {
+        out.push_str(MIN_I64_HELPER);
+    }
+    if needs_max_i64 {
+        out.push_str(MAX_I64_HELPER);
     }
     // PMAT-1252: emit the list-SORT reduction helpers once, when any function
     // uses `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`). Each
@@ -15526,6 +15584,113 @@ fn expr_has_abs_i64(expr: &Expr) -> bool {
         } => e(cond) || e(then_expr) || e(else_expr),
         // a non-int `abs` (float) / `min` / `max` / `math.*` can still NEST an
         // int abs in an arg (`abs(x_f + float(abs(n)))`), so recurse its args.
+        Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
+        Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
+        Expr::Index { collection, index } => e(collection) || e(index),
+        Expr::Len(c) => e(c),
+        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::StrCharAt { string, index } => e(string) || e(index),
+        Expr::Slice {
+            collection, lo, hi, ..
+        } => e(collection) || lo.as_deref().is_some_and(e) || hi.as_deref().is_some_and(e),
+        Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
+        Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
+        Expr::FieldAccess { obj, .. } => e(obj),
+        Expr::ToStr { value, .. } => e(value),
+        Expr::DictGet { dict, key } | Expr::DictContains { dict, key } => e(dict) || e(key),
+        Expr::DictGetOr { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::DictPop { dict, key, default } => {
+            e(dict) || e(key) || default.as_deref().is_some_and(e)
+        }
+        Expr::DictSetDefault { dict, key, default } => e(dict) || e(key) || e(default),
+        Expr::ListPop { list, index } => {
+            e(list) || index.as_deref().map(pop_index_scan_expr).is_some_and(e)
+        }
+        Expr::SetContains { set, elem } => e(set) || e(elem),
+        Expr::ListContains { list, elem } => e(list) || e(elem),
+        Expr::ListQuery { list, arg, .. } => e(list) || e(arg),
+        Expr::Repeat { seq, n, .. } => e(seq) || e(n),
+        Expr::ListLit(xs) | Expr::TupleLit(xs) | Expr::SetLit(xs) => xs.iter().any(e),
+        Expr::DictLit(kvs) => kvs.iter().any(|(k, v)| e(k) || e(v)),
+        Expr::DictMerge { entries } => entries
+            .iter()
+            .any(|(k, v)| k.as_ref().is_some_and(&e) || e(v)),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| e(v)),
+        _ => false,
+    }
+}
+
+/// PMAT-1339: does any function apply `min` / `max` (per `want`) over INTs
+/// (`Expr::NumBuiltin { op: want, of_float: false }`)? Gates the matching
+/// `$__wasm_min_i64` / `$__wasm_max_i64` `select` helper. Parameterized by the
+/// target op (like [`module_uses_list_sorted`]'s `want_float`) so the two ops
+/// drive INDEPENDENT gates — a module that only takes `min` carries no dead
+/// `max` helper and vice-versa. Exhaustive over the same stmt/expr forms as
+/// [`expr_has_abs_i64`]; a missed sub-expression would leave the helper
+/// undeclared at the `call $__wasm_{min,max}_i64` site (a hard wat2wasm failure —
+/// the recurring gate-hole class, where over-detecting is a harmless unused
+/// function but under-detecting is fatal). Keyed on `of_float: false` so a FLOAT
+/// min/max (refused in [`emit_num_builtin`]) never arms the gate — it falls
+/// through to recurse its args (an int min/max can nest inside a float one).
+fn module_uses_int_minmax(module: &Module, want: NumBuiltinOp) -> bool {
+    module_functions(module).any(|f| block_has_int_minmax(&f.body, want))
+}
+
+fn block_has_int_minmax(block: &Block, want: NumBuiltinOp) -> bool {
+    block.stmts.iter().any(|s| stmt_has_int_minmax(s, want))
+        || expr_has_int_minmax(&block.trailing_return, want)
+}
+
+fn stmt_has_int_minmax(s: &Stmt, want: NumBuiltinOp) -> bool {
+    let e = |x| expr_has_int_minmax(x, want);
+    let st = |x| stmt_has_int_minmax(x, want);
+    match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => e(cond) || then_body.iter().any(st) || else_body.iter().any(st),
+        Stmt::While { cond, body } => e(cond) || body.iter().any(st),
+        Stmt::FieldAssign { value, .. } => e(value),
+        Stmt::IndexAssign { indices, value, .. } => indices.iter().any(e) || e(value),
+        Stmt::DictSet { key, value, .. } => e(key) || e(value),
+        Stmt::DelItem { key, .. } => e(key),
+        Stmt::SetAdd { elem, .. }
+        | Stmt::SetRemove { elem, .. }
+        | Stmt::ListAppend { elem, .. }
+        | Stmt::ListRemoveValue { value: elem, .. } => e(elem),
+        Stmt::ListInsert { index, elem, .. } => e(index) || e(elem),
+        Stmt::SideEffectCall { call } => e(call),
+        _ => false,
+    }
+}
+
+fn expr_has_int_minmax(expr: &Expr, want: NumBuiltinOp) -> bool {
+    let e = |x| expr_has_int_minmax(x, want);
+    match expr {
+        // this node IS the int min/max of the kind we gate — fire it (one helper
+        // per op serves every use; a FLOAT min/max keys `of_float: true` and
+        // falls through to recurse its args).
+        Expr::NumBuiltin {
+            op,
+            of_float: false,
+            ..
+        } if *op == want => true,
+        Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
+        Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
+        Expr::Concat { lhs, rhs }
+        | Expr::BinOp { lhs, rhs, .. }
+        | Expr::FloatBinOp { lhs, rhs, .. } => e(lhs) || e(rhs),
+        Expr::UnOp { operand, .. } => e(operand),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => e(cond) || e(then_expr) || e(else_expr),
+        // a min/max of the OTHER op, an `abs`, a float min/max, or a `math.*` can
+        // still NEST a same-op int min/max in an arg (`max(a, min(b, c))`), so
+        // recurse its args.
         Expr::Call { args, .. } | Expr::NumBuiltin { args, .. } => args.iter().any(e),
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
@@ -25815,9 +25980,10 @@ fn emit_unop(
     }
 }
 
-/// PMAT-1338: lower a scalar numeric builtin (`Expr::NumBuiltin` — Python
-/// `abs(x)` / `min(a, b)` / `max(a, b)` / `math.*`). Only `abs` is in the WASM
-/// subset at v0.1.0; everything else refuses honestly.
+/// PMAT-1338/1339: lower a scalar numeric builtin (`Expr::NumBuiltin` — Python
+/// `abs(x)` / `min(a, b, …)` / `max(a, b, …)` / `math.*`). `abs(int|float)` and
+/// the all-INT `min`/`max` are in the WASM subset; a float/bool/str min/max and
+/// every `math.*` op refuse honestly.
 ///
 /// * `abs(float)` → the native `f64.abs` (one instruction). Bit-exact with
 ///   CPython on EVERY IEEE input: `abs(-0.0) == 0.0`, `abs(nan)` is a NaN,
@@ -25874,15 +26040,61 @@ fn emit_num_builtin(
                 )),
             }
         }
-        // The scalar variadic `min(a, b)` / `max(a, b)` — a distinct follow-up.
-        // A FLOAT min/max also needs Python's order-dependent NaN semantics
-        // (`min(1.0, nan) == 1.0` but `min(nan, 1.0)` is nan), which WASM's
-        // `f64.min`/`f64.max` (always NaN-propagating) do NOT match — deferred.
-        NumBuiltinOp::Min | NumBuiltinOp::Max => Err(unsupported(
-            "min(a, b) / max(a, b) — the scalar variadic form is not yet in the \
-             WASM subset (only abs(x) is); a float min/max additionally needs \
-             Python's NaN-order semantics that WASM f64.min/max do not provide",
-        )),
+        // PMAT-1339: the scalar variadic `min(a, b, …)` / `max(a, b, …)` over
+        // INTs. WASM has no `i64.min`/`i64.max`, so each pairwise step folds
+        // through the `$__wasm_{min,max}_i64` `select` helper: emit the first
+        // operand, then for each remaining operand emit it and `call` the helper,
+        // a LEFT fold (`min(a,b,c)` = `min(min(a,b),c)`) matching CPython's
+        // left-to-right reduce. Every operand is emitted exactly once (pushed as a
+        // helper arg), so a side-effecting operand is not double-run. A FLOAT
+        // min/max is REFUSED: it needs Python's order-dependent NaN semantics
+        // (`min(1.0, nan) == 1.0` but `min(nan, 1.0)` is nan) that WASM's
+        // always-NaN-propagating `f64.min`/`f64.max` do NOT match. A `bool`/`str`
+        // operand (i32) is also refused — bool min/max would need an i64 coercion
+        // and str min/max is a heap-pointer content compare, both out of subset.
+        NumBuiltinOp::Min | NumBuiltinOp::Max => {
+            if args.len() < 2 {
+                return Err(unsupported(&format!(
+                    "min()/max() takes at least two arguments but {} were passed",
+                    args.len()
+                )));
+            }
+            let helper = if matches!(op, NumBuiltinOp::Max) {
+                "$__wasm_max_i64"
+            } else {
+                "$__wasm_min_i64"
+            };
+            let refuse = |what: &str| {
+                unsupported(&format!(
+                    "min()/max() over {what} is not in the WASM subset — only an \
+                     all-int (i64) min/max is supported; a float min/max needs \
+                     Python's NaN-order semantics WASM f64.min/max do not provide, \
+                     and a bool/str min/max is a separate lane",
+                ))
+            };
+            // Emit the first operand; its WAT type fixes the whole call's kind
+            // (the frontend already rejected a mixed int/float min/max).
+            match emit_expr(&args[0], scope, out, depth)? {
+                WatTy::I64 => {}
+                WatTy::F64 => return Err(refuse("float (f64) values")),
+                WatTy::I32 => return Err(refuse("a bool/str (i32) value")),
+                WatTy::F32 => return Err(refuse("an f32 value")),
+            }
+            // Fold the tail: each operand pushes one i64, then `call` reduces the
+            // top two to one. A non-i64 tail operand (unreachable given the
+            // frontend's homogeneity check) refuses rather than emit invalid WAT.
+            for arg in &args[1..] {
+                match emit_expr(arg, scope, out, depth)? {
+                    WatTy::I64 => {}
+                    WatTy::F64 => return Err(refuse("float (f64) values")),
+                    WatTy::I32 => return Err(refuse("a bool/str (i32) value")),
+                    WatTy::F32 => return Err(refuse("an f32 value")),
+                }
+                indent(out, depth);
+                writeln!(out, "call {helper}").expect("write");
+            }
+            Ok(WatTy::I64)
+        }
         // The `math.*` builtins: the transcendentals have no bit-exact WASM
         // instruction, and sqrt/floor/ceil/trunc need CPython's domain (sqrt of
         // a negative RAISES) / rounding (→ int) semantics. Refused honestly.
