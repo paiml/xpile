@@ -10014,17 +10014,30 @@ fn fn_name_type_env(f: &Function) -> HashMap<String, Type> {
 ///     the KEY var may also read its paired VALUE var (`v` is `src[k]`, a
 ///     function of `k`).
 ///
+/// PMAT-1315 adds the set-BUILD insert
+///   * `dst.add(e)` with `e` a pure function of the loop variable(s) (the
+///     set-BUILD loop `t.add(x * 2)`, and the shape every set COMPREHENSION
+///     desugars to): set membership dedups, so EQUAL elements repeat an
+///     IDENTICAL idempotent insert and DISTINCT elements commute — the final
+///     membership is invariant under any iteration permutation with NO
+///     injectivity requirement. Unlike the keyed store, `e` may therefore
+///     read ANY loop variable (a nested cross-product `t.add(a + b)` builds
+///     the same membership under any interleaving). `e` must still be
+///     iteration-invariant otherwise: NO accumulator, NO stored-into
+///     dict/set, NO body-`let` temp, NO call — same reasons as the store.
+///
 /// Anything else — a bare reassignment, a guard observing an accumulator, a
 /// `break`/`return`/side-effecting call — makes the result order-dependent and
 /// is refused.
 fn set_iteration_body_order_safe(body: &[Stmt], vars: &HashIterVars) -> Result<(), String> {
-    // `forbidden` = every carried accumulator PLUS every dict stored into in
-    // this body: an expression reading EITHER observes order-dependent
-    // intermediate state, so all reference checks below use the union.
+    // `forbidden` = every carried accumulator PLUS every dict/set stored
+    // into in this body: an expression reading EITHER observes
+    // order-dependent intermediate state, so all reference checks below use
+    // the union.
     let mut forbidden = HashSet::new();
     for s in body {
         collect_assigned_names(s, &mut forbidden);
-        collect_dict_store_dsts(s, &mut forbidden);
+        collect_hash_store_dsts(s, &mut forbidden);
     }
     let mut let_temps = HashSet::new();
     for s in body {
@@ -10078,14 +10091,19 @@ impl HashIterVars {
     }
 }
 
-/// Collect every [`Stmt::DictSet`] target reachable in `s` (recursing through
-/// conditionals and nested loops) — the dicts a hash-order iteration body
-/// stores into. Reading one of these mid-loop observes order-dependent
-/// intermediate contents, so they join the accumulators in the forbidden set.
-fn collect_dict_store_dsts(s: &Stmt, out: &mut HashSet<String>) {
+/// Collect every [`Stmt::DictSet`] and [`Stmt::SetAdd`] target reachable in
+/// `s` (recursing through conditionals and nested loops) — the dicts/sets a
+/// hash-order iteration body stores into. Reading one of these mid-loop
+/// observes order-dependent intermediate contents (a membership probe
+/// `x in t` flips with insertion order just as a keyed read does), so they
+/// join the accumulators in the forbidden set.
+fn collect_hash_store_dsts(s: &Stmt, out: &mut HashSet<String>) {
     match s {
         Stmt::DictSet { dict_name, .. } => {
             out.insert(dict_name.clone());
+        }
+        Stmt::SetAdd { set_name, .. } => {
+            out.insert(set_name.clone());
         }
         Stmt::If {
             then_body,
@@ -10093,15 +10111,15 @@ fn collect_dict_store_dsts(s: &Stmt, out: &mut HashSet<String>) {
             ..
         } => {
             for st in then_body {
-                collect_dict_store_dsts(st, out);
+                collect_hash_store_dsts(st, out);
             }
             for st in else_body {
-                collect_dict_store_dsts(st, out);
+                collect_hash_store_dsts(st, out);
             }
         }
         Stmt::ForEach { body, .. } | Stmt::While { body, .. } => {
             for st in body {
-                collect_dict_store_dsts(st, out);
+                collect_hash_store_dsts(st, out);
             }
         }
         _ => {}
@@ -10201,8 +10219,8 @@ fn set_iter_stmt_order_safe(
             if expr_references_any(cond, forbidden) {
                 return Err(
                     "a conditional guard observes an accumulator or a stored-into \
-                     dict, so which branch runs (and hence the result) depends on \
-                     iteration order"
+                     dict/set, so which branch runs (and hence the result) depends \
+                     on iteration order"
                         .to_string(),
                 );
             }
@@ -10326,9 +10344,48 @@ fn set_iter_stmt_order_safe(
             }
             Ok(())
         }
-        _ => Err("a statement form that is not a commutative reduction or a \
-             loop-var-keyed store (a break/continue/return or a side-effecting \
-             call makes the result depend on iteration order)"
+        // PMAT-1315: the set-BUILD insert `dst.add(e)` (the shape every set
+        // COMPREHENSION desugars to). Set membership DEDUPS, so any pure
+        // element is order-independent: equal elements repeat an IDENTICAL
+        // idempotent insert, distinct elements commute — no injectivity
+        // requirement, hence (unlike the keyed store) `e` may read ANY loop
+        // variable, including a nested one (`t.add(a + b)` builds the same
+        // membership under any interleaving). `e` must still be
+        // iteration-invariant: no accumulator / stored-into dict or set
+        // (order-dependent intermediate content), no body-`let` temp (could
+        // smuggle one), no call (reference mutation mid-iteration,
+        // PMAT-1309).
+        Stmt::SetAdd { set_name, elem } => {
+            if vars.iter_srcs.contains(set_name) {
+                return Err(format!(
+                    "an `add` into `{set_name}` WHILE iterating it — \
+                     mutation-during-iteration has no defined order to preserve"
+                ));
+            }
+            let mut elem_forbidden = forbidden.clone();
+            elem_forbidden.extend(let_temps.iter().cloned());
+            if expr_references_any(elem, &elem_forbidden) {
+                return Err(format!(
+                    "the element added to `{set_name}` reads an accumulator, a \
+                     stored-into dict/set, or a body `let` temp — its value \
+                     would depend on iteration order; only a pure function of \
+                     the loop variable(s) is order-independent"
+                ));
+            }
+            if expr_contains_call(elem) {
+                return Err(format!(
+                    "a call inside the element added to `{set_name}` — a call \
+                     can mutate a dict argument by reference mid-iteration, \
+                     which is order-dependent; bind the call result before the \
+                     loop"
+                ));
+            }
+            Ok(())
+        }
+        _ => Err("a statement form that is not a commutative reduction, a \
+             loop-var-keyed store, or a set-build `add` (a \
+             break/continue/return or a side-effecting call makes the result \
+             depend on iteration order)"
             .to_string()),
     }
 }
@@ -10646,10 +10703,11 @@ fn desugar_foreach_stmts(
                              xpile walks bump-heap storage order (a `del`/`discard` \
                              swaps the last entry into the hole), so only an \
                              order-INDEPENDENT reduction (sum / count / product / \
-                             min / max — a commutative fold) or a loop-var-keyed \
-                             store (`dst[{var}] = <pure fn of {var}>`, PMAT-1314) \
-                             matches CPython. For an order-DEFINED sequence, bind \
-                             `{escape}` and iterate that."
+                             min / max — a commutative fold), a loop-var-keyed \
+                             store (`dst[{var}] = <pure fn of {var}>`, PMAT-1314), \
+                             or a set-build insert (`dst.add(<pure fn of {var}>)`, \
+                             PMAT-1315) matches CPython. For an order-DEFINED \
+                             sequence, bind `{escape}` and iterate that."
                         ))
                     })?;
                 }
@@ -11109,9 +11167,11 @@ fn desugar_foreach_stmts(
                                  `del`/`discard` swaps the last entry into the hole), \
                                  so only an order-INDEPENDENT reduction (sum / count / \
                                  product / min / max — a commutative fold over the \
-                                 (k, v) pairs) or a KEY-keyed store \
+                                 (k, v) pairs), a KEY-keyed store \
                                  (`dst[{first}] = <pure fn of ({first}, {second})>`, \
-                                 PMAT-1314) matches CPython. For an order-DEFINED \
+                                 PMAT-1314), or a set-build insert \
+                                 (`dst.add(<pure fn of ({first}, {second}))>`, \
+                                 PMAT-1315) matches CPython. For an order-DEFINED \
                                  sequence, bind `sorted({src}.items())` and iterate \
                                  that."
                             ))

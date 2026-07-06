@@ -188,6 +188,23 @@ strategic_goals:
         aprender the monorepo template; trueno/aprender-compute in-tree. Pillar E
         governs the in-tree-vs-consumed boundary.
 roadmap:
+- id: PMAT-1315
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1315: [wasm/capability/dict] ORDER-INDEPENDENT set-BUILD inserts — `dst.add(<pure fn of the loop vars>)` joins the PMAT-1292 hash-order whitelist alongside the commutative folds and the PMAT-1314 keyed store, unlocking the set BUILD/TRANSFORM loop (`for x in s: t.add(x * 2)`) over bare / `.keys()` / `.values()` / `.items()` / set sources — and the full `def distinct(src): t = set(); for v in src.values(): t.add(v); return t` boundary pipeline (params PMAT-1309 + returns PMAT-1310). WHY SOUND — and WEAKER-PRECONDITIONED than the keyed store: set membership DEDUPS, so EQUAL elements repeat an IDENTICAL idempotent insert and DISTINCT elements commute — final MEMBERSHIP is permutation-invariant with NO injectivity requirement, hence the element may read ANY loop variable: the nested cross-product `t.add(a + b)` ADMITS where `r[b] = a` refuses (last-write-wins over the outer order), and the degenerate constant `t.add(7)` ADMITS where `r[5] = 3` refuses. Still required (iteration-invariance): NO accumulator, NO stored-into dict/set (SetAdd dsts now join the body-wide forbidden union — `collect_dict_store_dsts` widened to `collect_hash_store_dsts` — so a guard `if x in t:` or fold `acc = acc + len(t)` observing intermediate membership refuses), NO body-`let` temp, NO call. EMIT side: ZERO new code — the admitted insert IS the ordinary `Stmt::SetAdd` (`$__wasm_dict_set_<k>` with the 0-sentinel value, grow + write-back exercised mid-loop past the 16-slot slack) and the PMAT-1309 growth-through-param belt still refuses `dst.add` on a set PARAM after the order gate admits (pinned). FIFTH consecutive already-generic slice: no new Stmt/Expr variant, no frontend edit, no walker edit (SetAdd pre-dates this in all ~30 stmt walkers) — single-crate gate-arm + witness. HONESTY FIND: the set COMPREHENSION `{x * 2 for x in s}` — the exact sugar for this loop — still refuses at the FRONTEND (depyler''s set-comprehension desugar accepts list/range iterables only, refusing Set/Dict-typed sources before the WASM gate ever runs); pinned as a frontend-slice gap, manual loop = the supported spelling.'
+  status: done
+  priority: high
+  created: 2026-07-06T00:00:00Z
+  acceptance_criteria:
+  - "CAPABILITY: `t.add(x * 2)` over a set source, key-copy over a bare dict, distinct-VALUES over `.values()` (duplicates collapse — the set edition of the `seen[v] = 1` idiom), `.items()` pair-sum `t.add(k + v)` + value-only `t.add(v)`, the NESTED cross-product `t.add(a + b)` and outer-var `t.add(a)` (both refused for keyed stores), guarded/filtered builds, build+fold in one body, `t.add(d[k] + k)` (DictGet pure-read vocabulary), constant element, pre-seeded destination, str elements with `has_s` membership, and the FULL dict-param-in/set-return-out `distinct(src)` pipeline (called twice, per-call-fresh) all lower and value-match live CPython."
+  - "WITNESS: new gated crates/xpile-wasm-codegen/tests/set_build_store_witness.rs (10 tests) — 16 zero-arg observables == hand pins == live python3 on IDENTICAL source, all permutation-invariant by construction (len / membership / base-100 folds over a BOUND `sorted(t)` list, so the cross-check cannot flap on set order); headlines: check_pipeline (boundary composition), check_scrambled_src (`discard` swap-into-hole diverges storage order; membership still matches), check_growth (25 inserts from empty relocate past the slack THROUGH the loop write-back), check_distinct_values (the dedup that MAKES the insert order-independent), check_cross_product (the nested relaxation); emit pins on `$__wasm_dict_set_i/s` + `$__wasm_dict_has_i/s` + `$__wasm_dict_pop_i`; MUTATION-VERIFIED (corrupted check_build_double pin fails the executed lane, reverted green)."
+  - "REFUSAL BELT (9 pins): accumulator element, call element, `let`-temp element, `add` into the ITERATED set, `add` into a set PARAM (PMAT-1309 growth belt, post-gate), membership guard on the built set + fold reading `len(t)` (both via the widened forbidden union), and the HONESTY pin that set comprehensions over set/dict sources refuse at the FRONTEND (list/range iterables only) — the manual loop is the supported spelling."
+  - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, cargo test -p xpile-wasm-codegen (116 binaries, 0 failures). Sprint 2026-07-06."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1314
   github_issue: null
   item_type: task
