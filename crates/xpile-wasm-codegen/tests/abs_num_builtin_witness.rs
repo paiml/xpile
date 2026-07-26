@@ -22,9 +22,12 @@
 //! is coerced to int, PMAT-795), and records the choice in `of_float` — so the
 //! backend dispatches `f64.abs` vs the i64 helper with no ambiguity.
 //!
-//! The `math.*` ops REFUSE honestly (the transcendentals have no bit-exact WASM
-//! instruction). A FLOAT/bool/str `min(a,b)`/`max(a,b)` also refuses; the all-INT
-//! `min`/`max` is now in the subset (PMAT-1339 — see `int_minmax_witness.rs`).
+//! `math.sqrt` + the transcendentals REFUSE honestly (no bit-exact WASM
+//! instruction; sqrt of a negative RAISES in CPython where f64.sqrt is NaN). The
+//! ROUNDING `math.floor`/`ceil`/`trunc` are now in the subset (PMAT-1340 — see
+//! `math_rounding_witness.rs`). A FLOAT/bool/str `min(a,b)`/`max(a,b)` also
+//! refuses; the all-INT `min`/`max` is in the subset (PMAT-1339 — see
+//! `int_minmax_witness.rs`).
 //!
 //! ## The load-bearing edges
 //!
@@ -286,15 +289,18 @@ fn non_abs_num_builtins_refuse() {
             "def f(a: float, b: float) -> float:\n    return max(a, b)\n",
             "float (f64)",
         ),
+        // PMAT-1340: the ROUNDING math ops (floor/ceil/trunc) now LOWER natively
+        // (see math_rounding_witness.rs); math.sqrt + the transcendentals still
+        // refuse (NaN-domain / no bit-exact instruction).
         (
             "math.sqrt",
             "import math\ndef f(x: float) -> float:\n    return math.sqrt(x)\n",
-            "math.*",
+            "transcendental",
         ),
         (
-            "math.floor",
-            "import math\ndef f(x: float) -> int:\n    return math.floor(x)\n",
-            "math.*",
+            "math.sin",
+            "import math\ndef f(x: float) -> float:\n    return math.sin(x)\n",
+            "transcendental",
         ),
     ] {
         let err = match emit(src) {
