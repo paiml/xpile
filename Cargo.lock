@@ -1730,6 +1730,7 @@ dependencies = [
  "decy-frontend",
  "depyler-frontend",
  "latex-contract-frontend",
+ "serde",
  "serde_json",
  "serde_yaml",
  "xpile-backend",
