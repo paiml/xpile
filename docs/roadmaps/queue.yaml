@@ -527,12 +527,31 @@ queue:
     'no C FFI boundary to execute — nothing to verify' and exits 0.
   date: '2026-07-29'
 - id: PMAT-1363
-  status: open
+  status: done
   ev_rank: D
-  title: '[D-pool, cut LAST] Annotated-comprehension desugar: `xs: list[int] = [i for i in range(5)]`
-    refuses while `xs = [...]` emits'
-  notes: depyler-frontend/src/lib.rs:7020-7040 wires the comp desugars only into Stmt::Assign; lower_ann_assign
-    at :16890 has no branch.
+  title: '[D-pool, cut LAST] Annotated comprehension vs its annotation: the element-type agreement
+    check that was missing (SHIPPED 2026-07-27, PR #1959)'
+  notes: 'PREMISE WAS STALE AND IS CORRECTED. The original entry read "`xs: list[int] = [i for i
+    in range(5)]` refuses while `xs = [...]` emits", citing depyler-frontend/src/lib.rs:7020-7040.
+    Probed at 3eeaea88 with a force-rebuilt binary: FALSE — BOTH forms emit, by two different
+    lowerings (bare form takes the for-append desugar, annotated form takes lower_value_expecting''s
+    iterator chain). The REAL defect was one level down and worse: nothing compared the annotation
+    against what the comprehension produces, so SIX shapes were accept-then-fail-rustc E0308
+    (list[str]/list[float] over int, list[int] over str, set[str] over int, dict str KEY and str
+    VALUE over int). Now refuses at the lowering stage naming position + both types. Guard is
+    deliberately conservative — only fires when BOTH leaves are confidently-inferred scalars, since
+    infer_type_in_ctx defaults to I64; measured with a 33-shape python3-vs-rustc differential run
+    against patched and unpatched binaries, ZERO false refusals. list[float]-over-int refuses rather
+    than coercing, leaving the OPEN int-float-container-literal-policy owner decision unpre-empted.
+    NEXT PICK for the following fire: the D-pool in reverse-cut order is now PMAT-1364 (range(bool)
+    coercion), PMAT-1365 (list(d)/list(d.keys())/list(d.values()) — its note says if it does NOT land
+    it must appear in the CHANGELOG''s "What still REFUSES"), PMAT-1366 (round(x)), then PMAT-1362
+    (shell-boundary --verify widening). NOTE ON PMAT-1362 specifically: it needs a shell-boundary
+    RETURN-ABI decision the queue does not make — emit_shell_shim returns io::Result<Output>, which
+    no lowered Python `print(_tool())` can consume, so there is no non-vacuous value differential to
+    execute until that convention exists. It also changes DEFAULT --verify behaviour, so it is the
+    wrong thing to land near the Wed 18:00 freeze. Gate touches #1/#2 are merged; #3 is RESERVED for
+    the Thursday release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1364
   status: open
