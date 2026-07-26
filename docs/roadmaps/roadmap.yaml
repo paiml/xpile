@@ -15920,3 +15920,16 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1345
+  github_issue: null
+  item_type: task
+  title: "PMAT-1345: [gate/ledger] ROADMAP-REGISTRATION GATE (XPILE-LEDGER-001; sprint GATE TOUCH #2). Closes the MECHANICAL ROOT CAUSE of the id drift PMAT-1343 had to repair by hand. The local `.git/hooks/pre-commit` 'Documentation synchronization' step guarded `[ -f \"docs/execution/roadmap.md\" ]` — a path that DOES NOT EXIST in this repo (the ledger is docs/roadmaps/roadmap.yaml) — so it took its non-fatal else-branch on every commit ever made and has never once fired. A guard on a dead path is strictly WORSE than no guard: it prints a checkmark it never earned. The hook is repointed, but hooks live under .git/ and are NOT CLONED, so the durable half is a new in-repo test, crates/xpile/tests/roadmap_registration.rs, running inside the REQUIRED workspace-test context. THREE assertions: (1) every docs/roadmaps/queue.yaml row marked `status: done` is registered as a `- id:` row in the ledger — pure text, no git, no runtime, so it can NEVER skip and the gate stays non-vacuous in a shallow checkout or an extracted .crate; (2) the machine form of sprint exit criterion 12 — the `comm -23` of (PMAT ids cited in commit SUBJECTS since the last `v*` tag) against (ids registered in the ledger) must be EMPTY; (3) no path `[ -f ... ]`-guarded by an installed pre-commit hook may be dead, which is the rot signature itself, generalised. CI WIRING: .github/workflows/ci.yml gives workspace-test a `fetch-depth: 0` checkout (full history AND tags) so assertion 2 runs FOR REAL rather than skipping green — under the default depth-1 checkout there is neither history nor tag, and the drift this gate exists to catch would pass unnoticed in CI exactly as PMAT-1268/1269/1277/1281/1283 did. The repo is ~27 MiB packed, so the full fetch is cheap. Assertions 2 and 3 skip-with-reason LOUDLY on stderr (naming the fix) only where the input genuinely is absent — no git binary, a shallow clone, no reachable tag, no installed hook. RED-THEN-GREEN DEMONSTRATED both ways in the PR body: a throwaway `(Refs PMAT-9999)` commit in a detached worktree reds assertion 2 and naming a dead guard path reds assertion 3. Exit MET."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
