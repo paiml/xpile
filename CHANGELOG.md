@@ -9,6 +9,35 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **Negative-integer-LITERAL list index no longer double-normalizes** (PMAT-1351)
+  — a silent wrong VALUE on the read/store/aug paths and an *uncatchable* panic
+  on del/pop. On `xs = [1, 2, 3]`, `xs[-4]` returned `3`, `xs[-5]` returned `2`
+  and `xs[-6]` returned `1` where CPython raises `IndexError` each time; `del
+  xs[-4]` and `xs.pop(-4)` panicked with the native `Vec` message *"removal
+  index (is 18446744073709551615) should be < len (is 3)"*, which carries no
+  `xpile:` prefix — so the typed-`except` discriminator treated it as a
+  non-Python panic and an `except IndexError:` could **not** catch it. The
+  frontend desugared the literal `xs[-k]` to `len(xs) - k` and every backend
+  then applied the CPython normalize `if i < 0 { i += len }` a SECOND time, so
+  an index in the corner `n < k ≤ 2n` landed back in range instead of raising.
+  The four remaining fold sites now pass the raw `LitInt(-k)`, matching what the
+  store side has done since PMAT-863 — the codegen owns the single
+  normalization.
+- **`del xs[i]` and `xs.pop(i)` bounds-check before `Vec::remove`** (PMAT-1351).
+  Found by the audit above: both paths normalized and then handed the result
+  straight to `Vec::remove`, so EVERY out-of-range del/pop — literal or runtime
+  — produced the untagged native panic. They now panic with `xpile: IndexError:
+  list assignment index out of range` / `pop index out of range`, which a typed
+  `except IndexError` catches.
+- **WASM: `xs[len(xs) - k]` no longer traps where CPython reads the tail**
+  (PMAT-1351). The WASM lane carried a compensating un-fold (PMAT-1289) that
+  existed only to undo the frontend fold. With the fold gone, the one shape it
+  still matched was a **user-written** `xs[len(xs) - 4]` — legal Python worth
+  `xs[-1]` — which it rewrote to `-4` and trapped on. The un-fold is deleted;
+  `xs[…]`, `del xs[…]` and `xs.pop(…)` over that shape now all agree with
+  CPython. What used to be one ambiguous HIR shape forcing the emit to *guess*
+  between two readings is now two distinct shapes, so neither backend guesses.
+
 - **`wasi` CI job: pinned wasmtime instead of a self-resolving bootstrap script**
   (PMAT-1370). The job installed its WASI runtime with
   `curl -fsSL https://wasmtime.dev/install.sh | bash`. That script resolves
@@ -36,6 +65,17 @@ meta-HIR and the trait surfaces.
 
 ### Added
 
+- **`neg_index_out_of_range.py` oracle fixture** (PMAT-1351) — exercises all
+  five negative-index paths (read, store, aug, del, pop) plus the `n < k ≤ 2n`
+  corner (`[5].pop(-2)`) under `except IndexError`, byte-comparing ten printed
+  lines against CPython. It proves both the VALUE and the CATCHABILITY, and it
+  is discriminating rather than uniformly `-1`. On the pre-fix tree it prints
+  `3, 3, 3, -1, 1, 2` and then ABORTS with exit 101, where CPython prints
+  `3, -1, 3, -1, -1, 2, -1, 3, -1, -1`: `read_oob` and `aug_oob` return silently
+  wrong values, and `del_oob`'s untagged `removal index (is
+  18446744073709551615)` panic escapes `except IndexError` outright and kills
+  the process, so the last four lines never print at all. No witness floor was
+  bumped — floors are lower bounds, and adding witnesses cannot breach one.
 - **`XPILE-CI-INSTALL-001` — the toolchain-install honesty gate**
   (`crates/xpile/tests/ci_tool_install.rs`, PMAT-1370). Four static tests
   (`std::fs` only — no network, no `gh`, no runner, so it cannot skip):

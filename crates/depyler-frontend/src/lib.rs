@@ -9989,14 +9989,16 @@ fn lower_delete_stmt(ctx: &mut LoweringCtx, d: ast::StmtDelete) -> Result<Stmt, 
     let receiver_ty = ctx.name_types.get(&name).cloned();
     match receiver_ty {
         Some(Type::List(_)) => {
-            // PMAT-570: `del xs[-k]` deletes from the end — resolve the negative
-            // literal to `len(xs) - k` (else `(-k) as usize` → usize::MAX → panic).
+            // PMAT-570 / PMAT-1351: `del xs[-k]` deletes from the end. Pass the
+            // RAW negative literal — the codegen's del path owns the single
+            // `len + neg` normalization AND (PMAT-1351) the bounds check.
+            // (Previously this pre-folded to `len(xs) - k`, which the codegen
+            // then normalized a SECOND time: `del xs[-4]` on a len-3 list
+            // computed `len-4` = −1 and `(−1) as usize` = usize::MAX, panicking
+            // with an UNTAGGED native `Vec::remove` message that no typed
+            // `except IndexError` could catch.)
  let key = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
- Expr::BinOp {
- op: BinOp::Sub,
- lhs: Box::new(Expr::Len(Box::new(Expr::Ident(name.clone())))),
- rhs: Box::new(Expr::LitInt(k)),
-                }
+ Expr::LitInt(-k)
             } else {
  let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
  let idx_ty = infer_type_in_ctx(ctx, &key);
@@ -14701,15 +14703,16 @@ fn lower_aug_assign(
  Ok(out)
                 }
  Some(Type::List(_)) => {
-                    // PMAT-560: negative-literal index `xs[-k] += v` resolves to
-                    // `xs[len(xs) - k]` on both the read and write side (same
-                    // desugar as plain `xs[-k] = v`).
+                    // PMAT-560 / PMAT-1351: negative-literal index `xs[-k] += v`
+                    // passes the RAW literal on both the read and the write side
+                    // (same posture as plain `xs[-k] = v`, PMAT-863) — the
+                    // codegen's `Expr::Index` / `Stmt::IndexAssign` paths each
+                    // own the single `len + neg` normalization and the bounds
+                    // check. Pre-folding to `len(xs) - k` here made the codegen
+                    // normalize a SECOND time, so `xs[-4] += 10` on a len-3 list
+                    // silently read-modify-wrote `xs[2]` where CPython raises.
  let index = if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
- Expr::BinOp {
- op: BinOp::Sub,
- lhs: Box::new(Expr::Len(Box::new(Expr::Ident(receiver.clone())))),
- rhs: Box::new(Expr::LitInt(k)),
-                        }
+ Expr::LitInt(-k)
                     } else {
  let index = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
  if !matches!(infer_type_in_ctx(ctx, &index), Type::I64) {
@@ -18165,32 +18168,21 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     }
                 }
             }
-            // PMAT-502s: negative list index `xs[-k]` → `xs[len(xs) - k]`
-            // (Python's from-the-end indexing). Pure desugar reusing
-            // `Expr::Len` + `BinOp::Sub` + `Expr::Index`, so the resulting
-            // index inherits the C-PY-INT-ARITH checked subtraction. The
-            // collection appears twice (in the length and the index target);
-            // v0.1.0 collections are pure, so the reuse is sound. A negative
-            // literal parses as `UnaryOp(USub, Int(k))`.
+            // PMAT-502s / PMAT-1351: negative list index `xs[-k]` is Python
+            // from-the-end indexing. Pass the RAW negative literal — every
+            // backend's index path does the single `len + neg` normalization
+            // AND the bounds check itself, so the literal must arrive
+            // un-pre-folded. (Previously this desugared to `len(xs) - k`, which
+            // the codegen then normalized a SECOND time: `xs[-4]` on a len-3
+            // list became `len + (len-4)` = 2, silently returning `xs[2]` where
+            // CPython raises IndexError. Same shape as the PMAT-863 store-side
+            // fix.) A negative literal parses as `UnaryOp(USub, Int(k))`.
             if matches!(infer_type_in_ctx(ctx, &collection), Type::List(_)) {
-                if let ast::Expr::UnaryOp(u) = sub.slice.as_ref() {
-                    if matches!(u.op, ast::UnaryOp::USub) {
-                        if let ast::Expr::Constant(c) = u.operand.as_ref() {
-                            if let ast::Constant::Int(k) = &c.value {
-                                if let Ok(k) = k.to_string().parse::<i64>() {
-                                    let index = Expr::BinOp {
-                                        op: BinOp::Sub,
-                                        lhs: Box::new(Expr::Len(Box::new(collection.clone()))),
-                                        rhs: Box::new(Expr::LitInt(k)),
-                                    };
-                                    return Ok(Expr::Index {
-                                        collection: Box::new(collection),
-                                        index: Box::new(index),
-                                    });
-                                }
-                            }
-                        }
-                    }
+                if let Some(k) = neg_literal_int(sub.slice.as_ref()) {
+                    return Ok(Expr::Index {
+                        collection: Box::new(collection),
+                        index: Box::new(Expr::LitInt(-k)),
+                    });
                 }
             }
             // PMAT-502de: general list index — lower the index context-aware
@@ -18903,17 +18895,6 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     {
                         let index = match call.args.first() {
                             None => None,
-                            // PMAT-570: `xs.pop(-k)` removes from the end — resolve
-                            // the negative literal to `len(xs) - k` (else it emits
-                            // `(-k) as usize` → usize::MAX → panic).
-                            Some(a) if neg_literal_int(a).is_some() => {
-                                let k = neg_literal_int(a).unwrap();
-                                Some(Box::new(Expr::BinOp {
-                                    op: BinOp::Sub,
-                                    lhs: Box::new(Expr::Len(Box::new(recv.clone()))),
-                                    rhs: Box::new(Expr::LitInt(k)),
-                                }))
-                            }
                             Some(a) => {
                                 let i = lower_expr_in_ctx(ctx, a.clone())?;
                                 if infer_type_in_ctx(ctx, &i) != Type::I64 {
@@ -18929,9 +18910,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                                 // `(i) as usize` wraps a negative i to usize::MAX
                                 // → Vec::remove panics. Normalize: bind once, then
                                 // `if __pidx < 0 { len + __pidx } else { __pidx }`.
-                                // A non-negative literal needs no guard; negative
-                                // literals are resolved to `len - k` above.
-                                if matches!(i, Expr::LitInt(_)) {
+                                // PMAT-1351: only a NON-NEGATIVE literal skips the
+                                // guard. A negative literal takes the SAME wrap
+                                // (it used to be pre-folded to `len - k`, which the
+                                // wrap then applied a SECOND time — `xs.pop(-4)` on
+                                // a len-3 list reached `(−1) as usize` = usize::MAX
+                                // and panicked with an UNTAGGED `Vec::remove`
+                                // message no typed `except IndexError` could catch).
+                                if matches!(i, Expr::LitInt(n) if n >= 0) {
                                     Some(Box::new(i))
                                 } else {
                                     Some(Box::new(Expr::Block(Box::new(Block {

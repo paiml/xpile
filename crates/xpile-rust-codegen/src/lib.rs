@@ -1466,24 +1466,28 @@ fn emit_stmt_indented(
                     "); if {name}.shift_remove(__k).is_none() {{ {} }} }}",
                     key_error_panic()
                 )?;
-            } else if expr_mentions_ident(key, name) {
-                // PMAT-570: `del xs[-k]` → `xs.remove(len(xs) - k)`; the index
-                // references `xs`, so bind it before the mutable `remove`. (A
-                // literal negative index is frontend-resolved to `len - k`, so it
-                // is non-negative here.)
-                write!(out, "{indent}{{ let __di = (")?;
-                emit_expr(out, key, mode)?;
-                writeln!(out, ") as usize; {name}.remove(__di); }}")?;
             } else {
                 // PMAT-712: a runtime-negative index must wrap like Python
                 // (`i = -1; del xs[i]` removes the last element); the bare
                 // `(i) as usize` underflowed a negative to a huge index → panic.
-                // Bind + normalize, mirroring the read path (PMAT-639).
+                // Bind + normalize, mirroring the read path (PMAT-639). Binding
+                // FIRST also keeps an index that mentions the receiver
+                // (`del xs[len(xs) - 1]`) off `remove`'s mutable borrow (E0502),
+                // which is why this is one path and not two.
+                // PMAT-1351: an OUT-OF-RANGE index must panic with the
+                // `xpile: IndexError:` TAG. Without the check, `del xs[-4]` on a
+                // len-3 list normalized to −1 and `(−1) as usize` = usize::MAX
+                // reached `Vec::remove`, whose native message ("removal index
+                // (is 18446744073709551615) should be < len (is 3)") carries no
+                // `xpile:` prefix — so the typed-`except` discriminator
+                // (PMAT-731) treated it as a non-Python panic and an
+                // `except IndexError:` could NOT catch it, where CPython raises
+                // "list assignment index out of range".
                 write!(out, "{indent}{{ let __di = (")?;
                 emit_expr(out, key, mode)?;
                 writeln!(
                     out,
-                    ") as i64; let __di = if __di < 0 {{ {name}.len() as i64 + __di }} else {{ __di }}; {name}.remove(__di as usize); }}"
+                    ") as i64; let __di = if __di < 0 {{ {name}.len() as i64 + __di }} else {{ __di }}; if __di < 0 || __di as usize >= {name}.len() {{ panic!(\"xpile: IndexError: list assignment index out of range\"); }} {name}.remove(__di as usize); }}"
                 )?;
             }
             Ok(())
@@ -1921,45 +1925,6 @@ fn emit_type(out: &mut String, t: &Type) -> Result<(), CodegenError> {
         }
     }
     Ok(())
-}
-
-/// PMAT-560: does `e` reference the identifier `name`? Used by `IndexAssign` to
-/// detect a self-referential index (e.g. the `xs[len(xs) - k]` negative-index
-/// desugar), whose immutable borrow of the receiver conflicts with the
-/// `index_mut` mutable borrow — such an index is bound to a temp first.
-fn expr_mentions_ident(e: &Expr, name: &str) -> bool {
-    match e {
-        Expr::Ident(n) => n == name,
-        Expr::Len(inner) => expr_mentions_ident(inner, name),
-        Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
-            expr_mentions_ident(lhs, name) || expr_mentions_ident(rhs, name)
-        }
-        Expr::UnOp { operand, .. } => expr_mentions_ident(operand, name),
-        Expr::NumCast { value, .. } => expr_mentions_ident(value, name),
-        Expr::Index { collection, index } => {
-            expr_mentions_ident(collection, name) || expr_mentions_ident(index, name)
-        }
-        // PMAT-609: recurse into conditional + block forms so a normalized pop
-        // index that references the receiver (`{ let __pidx = i; if __pidx < 0 {
-        // recv.len() + __pidx } else { __pidx } }`) is detected as
-        // self-referential (must be bound before the mutable `remove`).
-        Expr::IfExpr {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            expr_mentions_ident(cond, name)
-                || expr_mentions_ident(then_expr, name)
-                || expr_mentions_ident(else_expr, name)
-        }
-        Expr::Block(b) => {
-            b.stmts
-                .iter()
-                .any(|s| matches!(s, Stmt::Let { value, .. } if expr_mentions_ident(value, name)))
-                || expr_mentions_ident(&b.trailing_return, name)
-        }
-        _ => false,
-    }
 }
 
 /// PMAT-730/PMAT-1037: the shared writer for a subscript store through `base`
@@ -4032,25 +3997,28 @@ fn emit_expr(out: &mut String, e: &Expr, mode: bool) -> Result<(), CodegenError>
                     out.push_str(").pop().expect(\"xpile: IndexError: pop from empty list\")");
                 }
             }
-            // PMAT-570: a negative-resolved index (`len(xs) - k`) references the
-            // receiver, conflicting with `remove`'s mutable borrow (E0502) — bind
-            // it first. Positive indices keep the inline form.
+            // PMAT-570: an index that references the receiver (`xs.pop(len(xs)
+            // - 1)`) conflicts with `remove`'s mutable borrow (E0502) — bind it
+            // BEFORE taking the borrow, which is why there is one path here and
+            // not a separate inline form for positive indices.
+            // PMAT-1351: an OUT-OF-RANGE position must panic with the
+            // `xpile: IndexError:` TAG. The index arriving here is already
+            // CPython-normalized (a runtime or NEGATIVE-literal index carries
+            // the frontend's PMAT-609 `if __pidx < 0 { len + __pidx }` wrap; a
+            // non-negative literal needs none), but nothing bounds-checked the
+            // RESULT: `xs.pop(-4)` on a len-3 list normalized to −1 and
+            // `(−1) as usize` = usize::MAX reached `Vec::remove`, whose native
+            // panic carries no `xpile:` prefix — so the typed-`except`
+            // discriminator (PMAT-731) treated it as a non-Python panic and an
+            // `except IndexError:` could NOT catch it, where CPython raises
+            // "pop index out of range". `&mut (…)` binds the receiver ONCE (no
+            // double evaluation) and its borrow spans only this block.
             Some(i) => {
-                let refs_self =
-                    matches!(list.as_ref(), Expr::Ident(n) if expr_mentions_ident(i, n));
-                if refs_self {
-                    out.push_str("{ let __pi = (");
-                    emit_expr(out, i, mode)?;
-                    out.push_str(") as usize; (");
-                    emit_expr(out, list, mode)?;
-                    out.push_str(").remove(__pi) }");
-                } else {
-                    out.push('(');
-                    emit_expr(out, list, mode)?;
-                    out.push_str(").remove((");
-                    emit_expr(out, i, mode)?;
-                    out.push_str(") as usize)");
-                }
+                out.push_str("{ let __pi = (");
+                emit_expr(out, i, mode)?;
+                out.push_str(") as i64; let __pv = &mut (");
+                emit_expr(out, list, mode)?;
+                out.push_str("); if __pi < 0 || __pi as usize >= __pv.len() { panic!(\"xpile: IndexError: pop index out of range\"); } __pv.remove(__pi as usize) }");
             }
         },
         // PMAT-502au: `d.pop(k)` → `(<dict>).remove(&(<key>)).unwrap()`
