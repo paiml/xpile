@@ -161,12 +161,18 @@ jobs:
         run: cargo kani --version
 
       - name: cargo test -p xpile --test kani_verify
-        # Anti-vacuity tripwire (XPILE-RULESET-002 / F9): now that `kani` is a
-        # REQUIRED status context, arm kani_verify.rs to PANIC (not skip) if
-        # `cargo kani` is missing here — so a broken install reds this required
-        # check instead of passing vacuously. Scoped to THIS job only; the
-        # required `workspace-test` job runs the same test without kani by
+        # Anti-vacuity tripwire (XPILE-RULESET-002 / F9): arm kani_verify.rs to
+        # PANIC (not skip) if `cargo kani` is missing here — so a broken install
+        # reds this job instead of passing vacuously. Scoped to THIS job only;
+        # the required `workspace-test` job runs the same test without kani by
         # design and must keep skipping (hence an env var, not CI=true).
+        #
+        # This comment used to read "now that `kani` is a REQUIRED status
+        # context" (PMAT-1370 corrects it). `kani` is ADVISORY — see the
+        # XPILE-ENFORCEMENT ADVISORY-CONTEXTS marker above and `ruleset_drift.rs`.
+        # The claim dated from the six-hour 2026-07-05 four-context flip. The
+        # tripwire is still worth having: it makes a red kani job MEAN something
+        # even though a red kani job does not block a merge.
         env:
           XPILE_REQUIRE_KANI: "1"
         run: cargo test -p xpile --test kani_verify -- --nocapture
@@ -199,9 +205,14 @@ jobs:
       # pulls exactly the pinned v4.15.0.
       - name: Install elan (Lean toolchain manager)
         run: |
+          set -euo pipefail
           curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          # Verify in-step by absolute path (PMAT-1370): an installer that prints
+          # an error and exits 0 must red HERE naming elan, not one step later as
+          # a bare `lake: command not found`. $GITHUB_PATH applies to later steps.
+          "$HOME/.elan/bin/elan" --version
 
       - name: lake build (advisory proof lane)
         working-directory: contracts/lean
@@ -235,10 +246,13 @@ jobs:
 
       - name: Install pmat (pinned prebuilt binary)
         run: |
+          set -euo pipefail
           mkdir -p "$HOME/.pmat"
           curl -fsSL "https://github.com/paiml/paiml-mcp-agent-toolkit/releases/download/${PMAT_VERSION}/pmat-${PMAT_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar xz -C "$HOME/.pmat"
           echo "$HOME/.pmat/pmat-${PMAT_VERSION}-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+          # Verify in-step by absolute path (PMAT-1370).
+          "$HOME/.pmat/pmat-${PMAT_VERSION}-x86_64-unknown-linux-musl/pmat" --version
 
       - name: pmat validate-docs (link integrity)
         run: pmat validate-docs -r . --fail-on-error
@@ -262,6 +276,24 @@ jobs:
   wasi:
     name: wasi
     runs-on: ubuntu-latest
+    env:
+      # Pinned prebuilt release asset, mirroring the `docs` job's PMAT_VERSION
+      # pattern. PMAT-1370: this job used to run
+      # `curl -fsSL https://wasmtime.dev/install.sh | bash`, whose
+      # `get_latest_release()` resolves the version by scraping
+      # `api.github.com/repos/bytecodealliance/wasmtime/releases/latest` with an
+      # UNAUTHENTICATED request. Actions runners share egress IPs, so that call
+      # is rate-limited in bursts; the error body has no `tag_name`, the
+      # installer's `sed` pipeline degrades it to the literal `{`, it prints
+      # `Could not download Wasmtime version '{'` — and EXITS 0. The install step
+      # went green with no wasmtime installed, and the job failed one step later
+      # with `wasmtime: command not found` (exit 127), naming neither the real
+      # cause nor the installer. Observed live on `ccb95a04` (the v0.1.617
+      # release SHA) while the same job was green on `ef53c281` an hour earlier —
+      # i.e. FLAKY, not broken, which is worse. Release-asset downloads are not
+      # API-rate-limited, so fetching the pinned tarball directly removes the
+      # dependency entirely.
+      WASMTIME_VERSION: v47.0.2
     steps:
       - uses: actions/checkout@v4
 
@@ -273,10 +305,18 @@ jobs:
         with:
           prefix-key: "wasi-v0"
 
-      - name: Install wasmtime
+      - name: Install wasmtime (pinned prebuilt binary)
         run: |
-          curl -fsSL https://wasmtime.dev/install.sh | bash
-          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          DIR="wasmtime-${WASMTIME_VERSION}-x86_64-linux"
+          mkdir -p "$HOME/.wasmtime"
+          curl -fsSL "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/${DIR}.tar.xz" \
+            | tar xJ -C "$HOME/.wasmtime"
+          echo "$HOME/.wasmtime/${DIR}" >> "$GITHUB_PATH"
+          # Verify IN THIS STEP, by absolute path: a failed install must red HERE,
+          # naming wasmtime, not one step later as a bare `command not found`.
+          # $GITHUB_PATH only takes effect in SUBSEQUENT steps, hence the path.
+          "$HOME/.wasmtime/${DIR}/wasmtime" --version
 
       - name: emit crate -> wasm32-wasip1 -> wasmtime, diff vs CPython
         run: |
@@ -318,9 +358,14 @@ jobs:
 
       - name: Install elan (Lean toolchain manager)
         run: |
+          set -euo pipefail
           curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          # Verify in-step by absolute path (PMAT-1370): an installer that prints
+          # an error and exits 0 must red HERE naming elan, not one step later as
+          # a bare `lake: command not found`. $GITHUB_PATH applies to later steps.
+          "$HOME/.elan/bin/elan" --version
 
       # Fetch Mathlib's prebuilt oleans (resolves the pinned deps from
       # lake-manifest.json first) so the lane builds in minutes, not the hours a
