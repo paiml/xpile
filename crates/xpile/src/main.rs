@@ -558,7 +558,11 @@ fn verify_hybrid(
             expected,
             actual: diverged,
         } => {
-            eprintln!("  ✗ DIVERGENT at line {index}:");
+            // PMAT-1352: `index` is 0-BASED, so printing it raw reported a
+            // first-line divergence as "line 0" — no editor and no human
+            // numbers lines from zero. Found by the test that gives this arm
+            // its first coverage; +1 makes the number match what a reader sees.
+            eprintln!("  ✗ DIVERGENT at line {}:", index + 1);
             eprintln!("      CPython:  {expected}");
             eprintln!("      artifact: {diverged}");
             bail!("hybrid verify: artifact diverged from the CPython reference")

@@ -304,11 +304,36 @@ queue:
     del panic that escapes `except IndexError` and truncates the last four lines. No floor bumped. NEXT
     PICK: PMAT-1352 (DIVERGENT-arm falsifier for `xpile hybrid --verify`, test-only, day 3 R3).'
 - id: PMAT-1352
-  status: open
+  status: done
   ev_rank: R2
   gate_touch: null
   title: DIVERGENT-arm falsifier for `xpile hybrid --verify` (test-only) — the fixture is already found
     and verified
+  done_note: 'DONE 2026-07-26 (pulled forward from 07-29; every dated slice for today
+    was drained and today is well before the Day-4 pull-forward cutoff). ** THE SLATE''S
+    FIXTURE NAME DID NOT SURVIVE CONTACT: the entry below prescribes `hybrid_ternary`
+    (ternary int/float unification). The shipped fixture is `hybrid_divergent/`, which
+    diverges via the SAME documented class — Known-divergence #5, the OPEN-POLICY
+    float-annotated list (`xs: list[float]` fed an int-returning FFI call) — i.e. the
+    slate''s own named FALLBACK fixture, not its primary. Reason: the primary and the
+    fallback are the same bug family and the fallback''s divergence (`49` vs `49.0`)
+    is a strictly clearer witness than the ternary''s (`1` vs `1.0`), because the int
+    value is produced by the C boundary itself, so the test also demonstrates that the
+    FFI line AGREES and only the Python-side coercion diverges. ** PREMISE CORRECTION
+    worth recording: a divergence CANNOT be built by mis-casting the FFI boundary —
+    `ctypes_binding_for` and the emitted shim both derive from the SAME meta-HIR, so a
+    mis-cast cancels on both sides (probed: int overflow agrees, `long` is honestly
+    refused, `double 2.0` agrees, bool-ish int agrees). The divergence must originate
+    on the PYTHON side. ** BONUS DEFECT FOUND AND FIXED BY THE NEW TEST: the divergence
+    report printed a 0-BASED line index, so a first-line divergence read `✗ DIVERGENT
+    at line 0`. Now 1-based. ** Hybrid witness count 3 -> 4 against an unchanged
+    HYBRID_FLOOR = 3; no witness_floor.rs edit, so the two-touch discipline is intact.
+    ** INVERTED-TRIPWIRE ACKNOWLEDGED: the fixture is asserted to DIVERGE, so it goes
+    red the day float-coercion policy is fixed; hybrid_verify.rs carries a loud comment
+    naming the bug and the exact edit to make then. NEXT PICK: PMAT-1371 (bashrs-frontend
+    REFUSES `;&`/`;;&`/here-docs/stray `&` instead of shredding them, date 2026-07-28,
+    R1) — PMAT-1353 stays DEFERRED to 0.1.619 per the re-slate even though its stated
+    prerequisite is now satisfied.'
   notes: "CARRIED FORWARD UNMERGED. The `ComparisonResult::Divergence` arm at\ncrates/xpile/src/main.rs:~556-568\
     \ has ZERO test coverage — all three hybrid --verify\nwitnesses are green-path only. It is the product's\
     \ most important NEGATIVE verdict and its\nwording, its stdout/stderr split and its exit code can\
