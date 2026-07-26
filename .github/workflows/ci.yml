@@ -48,11 +48,15 @@ jobs:
         run: cargo deny check advisories
 
   # ── workspace-test (intended-required — see enforcement note) ─
-  # Runs the full test suite, INCLUDING the ~424 WASM execution
-  # witnesses: WABT is installed below and `XPILE_REQUIRE_WASM_RUNTIME=1`
-  # makes a missing WABT a hard failure instead of a silent skip
-  # (XPILE-WITNESS-001). Kept a separate job so the failure mode is
-  # visible at a glance (gate vs tests).
+  # Runs the full test suite, INCLUDING the WASM execution witnesses
+  # (795 `#[test]`s across 138 `*_witness.rs` files as of 2026-07-26 —
+  # a dated snapshot; the authoritative count is whatever
+  # `cargo test -p xpile --test witness_floor -- --nocapture` prints,
+  # and its floor is the anti-deletion ratchet). WABT is installed below
+  # and `XPILE_REQUIRE_WASM_RUNTIME=1` makes a missing WABT a hard
+  # failure instead of a silent skip (XPILE-WITNESS-001). Kept a
+  # separate job so the failure mode is visible at a glance
+  # (gate vs tests).
   #
   # ENFORCEMENT NOTE: the paiml org branch-protection ruleset currently
   # lists ONLY `gate` as a required status check — `workspace-test` is NOT

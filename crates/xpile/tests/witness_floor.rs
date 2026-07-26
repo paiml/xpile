@@ -11,11 +11,13 @@
 //! signature the architectural review flagged
 //! (`docs/specifications/fable-architectural-review.md`, XPILE-WITNESS-002).
 //!
-//! Lanes as `(source of the count) -> (current, floor)`. Floors are the review
-//! DoD's stated minimums; each floor is `<=` the current count, so this is
-//! green today and only goes RED on a real regression:
+//! Lanes as `(source of the count) -> (live @ 2026-07-26, floor)`. Floors are
+//! lower bounds re-derived at a sprint's TOUCH points, never per slice; each
+//! floor is `<=` the live count, so this is green today and only goes RED on a
+//! real regression. The `live` figures are a DATED SNAPSHOT, not an invariant —
+//! adding witnesses raises the live count and can never red a floor:
 //!
-//! - wasm: `#[test]`s in `crates/xpile-wasm-codegen/tests/*_witness.rs` -> (444, 400)
+//! - wasm: `#[test]`s in `crates/xpile-wasm-codegen/tests/*_witness.rs` -> (795, 770)
 //! - shell: `#[test]`s in `tests/shell_diff_exec.rs` -> (7, 7)
 //! - rust-differential: `tests/oracle_fixtures/*.py` + `FixtureCfg` rows in `tests/diff_exec.rs` -> (34+10=44, 44)
 //! - hybrid: `#[test]`s in `tests/hybrid_verify{,_float,_multiarg}.rs` -> (3, 3)
@@ -44,15 +46,31 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// ── Floors (review DoD minimums; current counts noted inline) ───────────────
-const WASM_FLOOR: usize = 400; // current 444
-const SHELL_FLOOR: usize = 7; // current 7
-const RUST_DIFF_FLOOR: usize = 44; // current 44 (34 oracle + 10 diff_exec)
-const HYBRID_FLOOR: usize = 3; // current 3
-const WASI_FLOOR: usize = 1; // current 1
-const RUCHY_FLOOR: usize = 7; // current 7 (XPILE-WITNESS-003 curated executing set)
-const FORJAR_FLOOR: usize = 4; // current 4 (XPILE-WITNESS-003 validator-accepted shell corpus)
-const LEAN_FLOOR: usize = 6; // current 6 (XPILE-WITNESS-003 semantic value-function corpus)
+// ── Floors (lower bounds; live counts are a DATED SNAPSHOT, noted inline) ───
+//
+// RE-DERIVE DISCIPLINE (XPILE-WITNESS-002): a floor is bumped only at an
+// explicit sprint TOUCH point, never opportunistically per slice — a slice that
+// ADDS witnesses raises the live count and can never red a floor, so it has no
+// reason to edit this file. Bumping per slice would serialize every capability
+// PR on one file for no gate value. The `// live NNN @ DATE` comments are
+// snapshots recorded at the last TOUCH, not invariants; they are expected to
+// trail the true count between TOUCH points.
+//
+// TOUCH 1 (PMAT-1344, 2026-07-26): WASM_FLOOR 400 -> 770. The old floor was set
+// when the lane had 444 witnesses and was never re-derived across the ~69 WASM
+// slices that landed for 0.1.617, leaving 395 tests of dead slack — ~50% of the
+// corpus could have been deleted without reddening the REQUIRED `workspace-test`
+// context, which is the exact anti-deletion guarantee this manifest exists to
+// provide. 770 leaves 25 of headroom for in-flight churn. Every OTHER lane was
+// already tight at TOUCH 1 and is deliberately left alone.
+const WASM_FLOOR: usize = 770; // live 795 @ 2026-07-26 (TOUCH 1)
+const SHELL_FLOOR: usize = 7; // live 7 @ 2026-07-26 (tight)
+const RUST_DIFF_FLOOR: usize = 44; // live 44 @ 2026-07-26 (34 oracle + 10 diff_exec; tight)
+const HYBRID_FLOOR: usize = 3; // live 3 @ 2026-07-26 (tight)
+const WASI_FLOOR: usize = 1; // live 1 @ 2026-07-26 (tight)
+const RUCHY_FLOOR: usize = 7; // live 7 @ 2026-07-26 (XPILE-WITNESS-003 curated executing set)
+const FORJAR_FLOOR: usize = 4; // live 4 @ 2026-07-26 (XPILE-WITNESS-003 validator-accepted shell corpus)
+const LEAN_FLOOR: usize = 6; // live 6 @ 2026-07-26 (XPILE-WITNESS-003 semantic value-function corpus)
 
 // ── Path helpers ────────────────────────────────────────────────────────────
 fn crate_dir() -> PathBuf {
