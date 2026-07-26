@@ -38,6 +38,10 @@ clap           = { version = "4", features = ["derive"] }
 # PMAT-484: contract_via_roles.rs parses the PTX contract YAML to
 # validate the structured compile_targets.via_roles records.
 serde_yaml              = { workspace = true }
+# PMAT-1350: wasm_contract_surface.rs deserializes the WASM contract's
+# `emit_surface` block into typed rows (serde_yaml already depends on serde,
+# so this adds no crate to the dependency graph — only the derive).
+serde                   = { workspace = true }
 # PMAT-475 (R6): diamond_coverage.rs parses the per-contract Diamond
 # depth report to grandfather the depth-13 gate (new contracts join at
 # depth-1+ without the depth-13 treadmill).

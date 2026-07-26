@@ -21,9 +21,22 @@ metadata:
     Asserts properties of the *emitted WAT text* and (for the executed
     witness) of its *executed numeric output* when assembled and run in a
     wasm runtime. The emitter REFUSES every construct outside the
-    scalar/control subset (str / list / dict / set / struct / tuple /
-    bigint / pointer / print / closures) with a hard error rather than
-    emitting wrong code — a Lean-style honest refusal.
+    DECLARED subset with a hard error rather than emitting wrong code —
+    a Lean-style honest refusal.
+
+    PMAT-1350 (2026-07-26): the declared subset is no longer prose. It is
+    the machine-readable `emit_surface` block below, and it is checked
+    BOTH WAYS by `crates/xpile/tests/wasm_contract_surface.rs`: every
+    `declared` probe must emit, and every `refused` probe must refuse.
+    Until this slice, this paragraph said the emitter refused
+    "str / list / dict / set / struct / tuple / bigint / pointer / print /
+    closures". Five of those ten had shipped — a str-keyed dict program
+    emits, assembles under `wat2wasm` and executes under `wasm-interp`
+    returning the CPython answer. The claim was authored at PMAT-951 when
+    it was true and then decayed silently across ~69 capability slices,
+    because nothing sampled contract capability prose. The two-way gate is
+    the graft that makes this reconciliation durable rather than momentary:
+    widening the emitter without widening `emit_surface` now reds a test.
 
     Semantic posture replicated from the Rust/PTX lanes: i64 arithmetic
     carries the `C-PY-INT-ARITH` overflow posture, and FloorDiv/Mod apply
@@ -86,6 +99,350 @@ compile_targets:
         role: specialist
         crate: xpile-wasm-codegen
 
+# ---------------------------------------------------------------------------
+# PMAT-1350 — THE DECLARED EMIT SURFACE, machine-checked in BOTH directions.
+#
+# This block is the normative definition of "the subset" for this contract.
+# `crates/xpile/tests/wasm_contract_surface.rs` parses it and runs every probe
+# below through the live `xpile_core::default_session()` pipeline — the same
+# frontend + backend the `xpile transpile --target wasm` CLI dispatches
+# through, so it cannot drift from the shipped binary the way prose did.
+#
+#   declared[*].probe  MUST lower to non-empty WAT   (a REFUSED declared
+#                      construct means a capability regressed, or the
+#                      contract over-claims)
+#   refused[*].probe   MUST return Err(BackendError)  (an EMITTING refused
+#                      construct means the contract under-claims, i.e. the
+#                      exact PMAT-1350 failure recurring)
+#
+# HOW TO EXTEND: a slice that widens the emitter MUST add a `declared` entry
+# in the same PR (and delete the corresponding `refused` entry if it had
+# one). That is the whole point — the gate reds otherwise. Probes are the
+# smallest program WITH REAL CONTENT that exercises the construct; an empty
+# or trivially-constant program can lower for reasons unrelated to the
+# construct and would make the entry vacuous.
+# ---------------------------------------------------------------------------
+emit_surface:
+  declared:
+    - id: scalar-int-arith
+      note: "i64 arithmetic under the C-PY-INT-ARITH overflow posture, incl. the Python floor correction for // and %."
+      probe: |
+        def f(a: int, b: int) -> int:
+            return (a * b + 7) // 2 - (a % 3)
+
+    - id: scalar-float-arith
+      note: "f64 arithmetic."
+      probe: |
+        def f(x: float) -> float:
+            return x * 2.0 - 0.25
+
+    - id: scalar-bool-logic
+      note: "Bool lowers to i32 0/1; and/or short-circuit."
+      probe: |
+        def f(a: int, b: int) -> bool:
+            return (a > 0) and (b > 0 or a < 10)
+
+    - id: control-if-while-for
+      note: "Let/Assign/If/elif/else/While/Break/Continue/Return plus for-in-range, arbitrarily nested."
+      probe: |
+        def f(n: int) -> int:
+            t: int = 0
+            for i in range(n):
+                if i % 2 == 0:
+                    t = t + i
+                elif i == 3:
+                    continue
+                else:
+                    t = t - 1
+            while t > 100:
+                t = t - 10
+            return t
+
+    - id: direct-call-and-recursion
+      note: "Direct calls between emitted functions, including self-recursion."
+      probe: |
+        def fact(n: int) -> int:
+            if n <= 1:
+                return 1
+            return n * fact(n - 1)
+
+        def f() -> int:
+            return fact(5)
+
+    - id: num-builtins
+      note: "The int-valued builtin family (abs/min/max) usable as an int operand."
+      probe: |
+        def f(a: int, b: int) -> int:
+            return abs(a) + min(a, b) + max(a, b)
+
+    - id: str-literal-len-index
+      note: "Length-prefixed UTF-8 string runtime in linear memory: literals, len(), indexing."
+      probe: |
+        def f() -> int:
+            s: str = "hello"
+            return len(s) + ord(s[1])
+
+    - id: str-concat-compare
+      note: "Concatenation and structural equality over the string runtime."
+      probe: |
+        def f() -> bool:
+            a: str = "foo"
+            b: str = "bar"
+            return (a + b) == "foobar"
+
+    - id: str-search-family
+      note: "startswith / endswith / `in` / find over the string runtime."
+      probe: |
+        def f() -> bool:
+            s: str = "hello world"
+            return s.startswith("hello") and ("wor" in s)
+
+    - id: str-slice-stepped
+      note: "Stepped slice s[i:j:k] with a CONST step; negative stride requires BOTH bounds omitted (PMAT-1327/1331)."
+      probe: |
+        def f() -> int:
+            s: str = "hello"
+            return len(s[::-1]) + len(s[1:4])
+
+    - id: fstring-interpolation
+      note: "f-string interpolation of int/str/bool operands into the string runtime."
+      probe: |
+        def f(n: int) -> int:
+            s: str = f"n={n}"
+            return len(s)
+
+    - id: list-int-elements
+      note: "list[int] over the bump heap: literal, index read, index store."
+      probe: |
+        def f() -> int:
+            xs: list[int] = [1, 2, 3]
+            xs[0] = 9
+            return xs[0] + xs[2]
+
+    - id: list-float-elements
+      note: "list[float] — f64 elements with a natural f64.load."
+      probe: |
+        def f() -> float:
+            xs: list[float] = [1.5, 2.5]
+            return xs[0] + xs[1]
+
+    - id: list-bool-elements
+      note: "list[bool] — i32 0/1 elements."
+      probe: |
+        def f() -> bool:
+            xs: list[bool] = [True, False]
+            return xs[0]
+
+    - id: list-mutation-family
+      note: "append / insert / pop / pop(i) / del xs[i] / remove — the full Stmt::ListMutate family."
+      probe: |
+        def f() -> int:
+            xs: list[int] = [1, 2, 3]
+            xs.append(4)
+            xs.insert(0, 9)
+            xs.pop()
+            del xs[0]
+            xs.remove(2)
+            return len(xs)
+
+    - id: list-reductions
+      note: "len / sum / min / max over a list."
+      probe: |
+        def f() -> int:
+            xs: list[int] = [3, 1, 2]
+            return sum(xs) + min(xs) + max(xs) + len(xs)
+
+    - id: dict-int-keyed
+      note: "dict[int, int] over the bump heap: literal, keyed read, keyed store, len."
+      probe: |
+        def f() -> int:
+            d: dict[int, int] = {1: 10, 2: 20}
+            d[3] = 30
+            return d[1] + d[3] + len(d)
+
+    - id: dict-str-keyed
+      note: "dict[str, int] — str keys hashed through the string runtime."
+      probe: |
+        def f() -> int:
+            d: dict[str, int] = {"a": 1, "b": 2}
+            return d["a"] + d["b"]
+
+    - id: dict-str-valued
+      note: "dict[K, str] — values stored as an i32 base-pointer in the i64 slot."
+      probe: |
+        def f() -> int:
+            d: dict[str, str] = {"a": "xy"}
+            return len(d["a"])
+
+    - id: dict-bool-valued
+      note: "dict[K, bool] — i32 0/1 widened into the i64 slot, read back as a bool."
+      probe: |
+        def f() -> bool:
+            d: dict[str, bool] = {"a": True}
+            return d["a"]
+
+    - id: dict-float-valued
+      note: "dict[K, float] — f64 bits reinterpreted through the i64 slot."
+      probe: |
+        def f() -> float:
+            d: dict[int, float] = {1: 1.5}
+            return d[1]
+
+    - id: dict-iteration
+      note: "for k in d / d.keys() — insertion-ordered iteration over the keyed table."
+      probe: |
+        def f() -> int:
+            d: dict[str, int] = {"a": 1, "b": 2}
+            t: int = 0
+            for k in d:
+                t = t + d[k]
+            return t
+
+    - id: set-int-elements
+      note: "set[int] — literal, len, membership."
+      probe: |
+        def f() -> int:
+            s: set[int] = {1, 2, 3}
+            return len(s)
+
+    - id: set-str-elements
+      note: "set[str] — elements hashed through the string runtime."
+      probe: |
+        def f() -> int:
+            s: set[str] = {"a", "b"}
+            return len(s)
+
+    - id: set-membership
+      note: "`x in s` over a set."
+      probe: |
+        def f() -> bool:
+            s: set[int] = {1, 2, 3}
+            return 2 in s
+
+    - id: truthiness-reductions
+      note: "any() / all() over the truthiness family (list / set / dict keys / dict values)."
+      probe: |
+        def f() -> bool:
+            xs: list[int] = [1, 2, 0]
+            return any(xs) and not all(xs)
+
+    - id: struct-scalar-fields
+      note: "A class with a straight-line __init__ and SCALAR fields, as an i32 base-pointer local."
+      probe: |
+        class P:
+            def __init__(self, x: int) -> None:
+                self.x = x
+
+        def f() -> int:
+            p = P(5)
+            return p.x
+
+    - id: struct-mutating-method
+      note: "A `&mut self` method storing back into a scalar field."
+      probe: |
+        class P:
+            def __init__(self, x: int) -> None:
+                self.x = x
+
+            def bump(self) -> None:
+                self.x = self.x + 1
+
+        def f() -> int:
+            p = P(1)
+            p.bump()
+            return p.x
+
+  refused:
+    - id: tuple-type
+      note: "Tuples have no heap layout in the WASM lane. Standing refusal since PMAT-951."
+      probe: |
+        def f() -> int:
+            t: tuple[int, int] = (1, 2)
+            return t[0]
+
+    - id: print-statement
+      note: "No host I/O in the emitted module — the WASM lane emits a pure computational module with no import section."
+      probe: |
+        def f() -> None:
+            print("hi")
+
+    - id: closure-lambda
+      note: "No closure conversion; WASM has no first-class function values in this lane."
+      probe: |
+        def f() -> int:
+            g = lambda x: x + 1
+            return g(1)
+
+    - id: bigint-literal
+      stage: frontend
+      note: "An integer literal outside i64 range — bigint promotion is not implemented at v0.1.0. Refused at the FRONTEND (target-independent), not by the WASM backend."
+      probe: |
+        def f() -> int:
+            return 123456789012345678901234567890
+
+    - id: list-of-str
+      note: "list[str] — the biggest compositional hole; blocks s.split() and ','.join(xs). Queued for 0.1.618."
+      probe: |
+        def f() -> int:
+            xs: list[str] = ["a", "b"]
+            return len(xs)
+
+    - id: nested-list
+      note: "list[list[...]] — recursive element kinds are refused."
+      probe: |
+        def f() -> int:
+            xs: list[list[int]] = [[1]]
+            return len(xs)
+
+    - id: nested-dict-value
+      note: "dict[K, dict[...]] / dict[K, list[...]] — recursive value kinds are refused."
+      probe: |
+        def f() -> int:
+            d: dict[str, list[int]] = {}
+            return len(d)
+
+    - id: container-valued-struct-field
+      note: "A struct field holding a container — scalar fields only."
+      probe: |
+        class P:
+            def __init__(self) -> None:
+                self.d: dict[str, int] = {}
+
+        def f() -> int:
+            p = P()
+            return len(p.d)
+
+    - id: set-of-float
+      stage: frontend
+      note: >-
+        set[float]. Refused at the FRONTEND, for ALL targets, with a
+        Rust-lane reason (`f64` is not `Eq`/`Hash`, so it cannot key a
+        Rust HashSet) — the WASM backend never sees it. Recorded here
+        precisely because the distinction is invisible from the CLI:
+        `xpile transpile --target wasm` prints one refusal either way.
+        The WASM lane has its OWN reason to refuse it (an f64-bit-pattern
+        hash is unsound over ±0.0/NaN, the same reason whole-dict `==`
+        over float values refuses), but that reason is currently
+        unreachable and so is NOT what this row witnesses.
+      probe: |
+        def f() -> int:
+            s: set[float] = {1.5}
+            return len(s)
+
+    - id: dict-tuple-key
+      note: "Composite keys have no heap layout — keys are int or str only."
+      probe: |
+        def f() -> int:
+            d: dict[tuple[int, int], int] = {}
+            return len(d)
+
+    - id: str-of-float
+      note: "str(float) needs a dtoa with CPython repr-shortest semantics. Queued for 0.1.618."
+      probe: |
+        def f() -> int:
+            x: float = 1.5
+            return len(str(x))
+
 equations:
   wasm_emission_structure_extensionality_diamond:
     # Tier-defining Diamond equation (depth-1). Machine-checked by the
@@ -137,20 +494,32 @@ equations:
       - "WASM-emitting code carries citation C-COMPILE-RUST-TO-WASM"
 
   out_of_subset_is_refused:
+    # PMAT-1350: "the subset" is now `emit_surface`, not a prose list. The
+    # previous formula enumerated str|list|dict|set|struct as refused; all
+    # five emit. The refused set is `emit_surface.refused`, and BOTH halves
+    # are executed by crates/xpile/tests/wasm_contract_surface.rs.
     formula: |
-      lower(fn_using(str|list|dict|set|struct|tuple|bigint|ptr|print|closure),
-            BackendConfig{target: Wasm})
-        == Err(BackendError::Lower("unsupported construct — …"))
+      ∀ p ∈ emit_surface.refused.
+        lower(p.probe, BackendConfig{target: Wasm})
+          == Err(BackendError::Lower("unsupported construct — …"))
+      ∧
+      ∀ p ∈ emit_surface.declared.
+        lower(p.probe, BackendConfig{target: Wasm}) == Ok(wat) ∧ wat ≠ ""
     domain: |
-      Any function touching a type or construct outside the scalar/control
-      subset.
+      Any function touching a type or construct outside the DECLARED subset
+      (`emit_surface.declared`). The standing refusals are enumerated in
+      `emit_surface.refused`: tuple, print, closures, bigint, list[str],
+      nested list, nested dict value, container-valued struct field,
+      set[float], composite dict key, str(float).
     invariants:
       - "a refused construct yields a hard BackendError, never wrong WAT"
       - "the refusal names the offending construct (honest diagnostic)"
+      - "the DECLARED direction is checked too: a declared construct that stops emitting is a regression, not a tightening"
     preconditions:
       - "BackendConfig.target == Target::Wasm"
     postconditions:
       - "no WAT text is emitted for an out-of-subset function"
+      - "every `emit_surface.declared` probe lowers to non-empty WAT"
 
 proof_obligations:
   - type: postcondition
@@ -195,16 +564,29 @@ falsification_tests:
 
   - id: FALSIFY-COMPILE-WASM-002
     rule: |
-      A construct outside the scalar/control subset MUST be refused with a
-      hard error, NEVER emitted as wrong WAT.
+      A construct outside the DECLARED subset (`emit_surface.declared`)
+      MUST be refused with a hard error, NEVER emitted as wrong WAT.
+      Symmetrically, every construct the contract DECLARES must emit — the
+      contract may neither over-claim nor under-claim the surface.
     prediction: |
-      `lower` returns `Err(BackendError::Lower(...))` naming the construct.
+      For every `emit_surface.refused` probe, `lower` returns
+      `Err(BackendError::Lower(...))` naming the construct; for every
+      `emit_surface.declared` probe, `lower` returns non-empty WAT.
     test: |
+      cargo test -p xpile --test wasm_contract_surface
       cargo test -p xpile-wasm-codegen --lib
     if_fails: |
-      The emitter silently emitted (wrong) code for str/list/dict/struct/
-      etc. — a correctness violation worse than a refusal.
+      One of two failures, and the test message says which. UNDER-CLAIM:
+      a construct listed as refused actually emits — the contract is stale
+      against a capability slice that widened the emitter without widening
+      `emit_surface`. This is the PMAT-1350 failure itself, and it is the
+      one that makes the ship-blocking claim above worthless, because it
+      is the claim readers use to decide what they may rely on.
+      OVER-CLAIM/REGRESSION: a declared construct stopped emitting — a
+      capability regressed, or the declaration was never true.
     ship_blocking: true
     counter_example_classes:
       - silent_miscompile_of_aggregate
       - unsupported_type_emitted
+      - refused_construct_actually_emits
+      - declared_construct_refuses
