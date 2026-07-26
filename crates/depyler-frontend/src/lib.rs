@@ -9525,6 +9525,46 @@ fn lower_for_stmt(ctx: &mut LoweringCtx, mut f: ast::StmtFor) -> Result<Vec<Stmt
         }
     };
 
+    // PMAT-1364: Python's `bool` is an `int` subtype, so `range(True)` == `range(1)`
+    // and `range(False)` is empty. The bounds were passed to the desugar RAW, so a
+    // bool-typed bound emitted `let __forstopN: i64 = b;` (and, in the `reversed`
+    // path, `(b).checked_sub(1i64)`) — accept-then-fail-rustc E0308, on every
+    // backend that shares this meta-HIR (Rust, Ruchy, Lean). Route both bounds
+    // through the SAME `to_i64_operand` helper every other int-position consumer
+    // already uses; it re-infers and is a no-op for a non-bool bound, so this
+    // cannot perturb the existing corpus.
+    //
+    // Order is load-bearing: coerce BEFORE the `reversed` flip below. The flip
+    // wraps each bound in `BinOp::Sub`, which infers as I64 regardless of its
+    // operands, so a coercion applied afterwards would skip the cast entirely and
+    // re-emit `(b).checked_sub(1i64)`.
+    //
+    // The step is a parsed integer LITERAL (`extract_step_literal`), so it has no
+    // bool shape to coerce — `range(0, 6, True)` already refuses with the
+    // non-literal-int-step error rather than silently stepping by 1.
+    let bigint_mode = matches!(ctx.fn_return_type, Type::BigInt);
+    let coerce_bound = |ctx: &LoweringCtx, e: Expr, which: &str| -> Result<Expr, FrontendError> {
+        if infer_type_in_ctx(ctx, &e) != Type::Bool {
+            return Ok(e);
+        }
+        if bigint_mode {
+            // The counter/bound type here is `xpile_bigint::BigInt`, and
+            // `to_i64_operand` only reaches i64 — `let __forstopN: BigInt =
+            // ((b) as i64)` is E0308 just like the raw form. A bool -> BigInt
+            // promotion node does not exist, so REFUSE rather than emit
+            // uncompilable Rust. (`-> BigInt` promotes `int` params to BigInt
+            // but deliberately leaves `bool` params alone, so bool is the only
+            // bound shape that can land here mistyped.)
+            return Err(FrontendError::Lower(format!(
+                "function `{}` uses a `bool` {which} bound in `range(...)` inside a BigInt-mode function — deferred at v0.2.0 (no bool -> BigInt promotion; annotate the bound as `int`)",
+ ctx.fn_name
+            )));
+        }
+        Ok(to_i64_operand(ctx, e))
+    };
+    let start_expr = coerce_bound(ctx, start_expr, "start")?;
+    let stop_expr = coerce_bound(ctx, stop_expr, "stop")?;
+
     // PMAT-502ci: flip a `reversed(range(...))` to a descending range. For a
     // step-1 range `a..b` the reverse is `b-1, b-2, …, a`, i.e. a range with
     // start `b-1`, stop `a-1`, step `-1`. Reusing `BinOp::Sub` keeps the
