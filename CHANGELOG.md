@@ -9,6 +9,35 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **An annotated comprehension whose element type contradicts its annotation now
+  REFUSES instead of emitting Rust that rustc rejects** (PMAT-1363).
+  `xs: list[str] = [i for i in range(5)]` was *accepted* and emitted
+  `let xs: Vec<String> = (0i64..5i64)….collect::<Vec<_>>()` — **rustc E0308**.
+  The annotation is stamped onto the binding while the comprehension lowers
+  independently, and nothing ever compared the two. Six distinct shapes had it:
+  `list` and `set` comprehensions, and `dict` comprehensions in **both** key and
+  value position. Accept-then-fail-rustc is the worst of the three available
+  dispositions — worse than refusing, which costs one clear message, and worse
+  than emitting correct code, because it spends a whole backend round-trip to
+  rediscover what the frontend already knew. The refusal names the position and
+  both types (*"produces values of type I64 where the annotation says Str"*).
+  **The check is deliberately conservative and that is the load-bearing part:**
+  `infer_type_in_ctx` answers `I64` for anything it cannot type, so a conflict
+  is only reported when *both* leaves are confidently-inferred scalars
+  (`int`/`float`/`str`/`bool`) and differ. A non-scalar leaf on either side, or
+  a container-kind mismatch, is not judged at all — the check fires only where
+  the emitted Rust is *certain* to be rejected. 33 shapes were run against the
+  patched and unpatched binaries as a python3-vs-rustc differential to confirm
+  zero false refusals; the 18 agreeing shapes ship as the oracle fixture
+  `ann_comp_types.py`, so the conservatism is enforced rather than asserted.
+  Note `xs: list[float] = [i for i in range(3)]` refuses rather than coercing:
+  CPython prints `1`, not `1.0` (a `float` annotation is non-enforcing — the
+  same fact PMAT-906 already encodes for the scalar path), and the int→float
+  container-literal policy is an **open owner decision**. A refusal is the
+  reversible disposition; coercing would pre-empt that decision. The queue's
+  stated premise for this slice — that the annotated form *refuses* while the
+  bare form emits — was **false at HEAD**: both emit, by two different
+  lowerings, and the real defect was the missing agreement check.
 - **bashrs-frontend REFUSES the four constructs it used to SHRED** (PMAT-1371):
   here-documents, bash fall-through `;&` and `;;&`, and a bare `&` in command
   position. All four exited **0** before this change. **Here-documents are the

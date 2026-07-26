@@ -17048,6 +17048,41 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
  ctx.fn_name
         )));
     }
+    // PMAT-1363: an annotated COMPREHENSION whose element type provably
+    // contradicts the annotation used to be ACCEPTED, emitting Rust that does
+    // not compile. `xs: list[str] = [i for i in range(5)]` emitted
+    // `let xs: Vec<String> = (0i64..5i64)….collect::<Vec<_>>()` — rustc E0308
+    // — and the same held for `set` comps and for `dict` comps in BOTH key and
+    // value position. The annotation is stamped onto the binding while the
+    // comprehension lowers independently, so nothing ever compared the two.
+    // Accept-then-fail-rustc is the worst disposition available: it spends a
+    // whole backend round-trip to rediscover what the frontend already knew.
+    // Refuse here instead, naming the position and both types.
+    //
+    // DELIBERATELY CONSERVATIVE — see `comp_element_type_conflict`: a conflict
+    // is only reported when BOTH sides are confidently-inferred scalars.
+    // `infer_type_in_ctx` answers `I64` for anything it cannot type, so a
+    // non-scalar leaf on either side means "we don't know" and the annotation
+    // keeps being trusted exactly as before.
+    //
+    // NOTE `xs: list[float] = [i for i in range(3)]` REFUSES rather than
+    // coercing. CPython prints `1`, not `1.0` (a `float` annotation is
+    // non-enforcing — the same PMAT-906 fact the scalar path above encodes),
+    // and the int→float container policy is an OPEN owner decision. A refusal
+    // is the reversible disposition; a coercion would pre-empt that decision.
+    if matches!(
+        value_expr.as_ref(),
+        ast::Expr::ListComp(_) | ast::Expr::SetComp(_) | ast::Expr::DictComp(_)
+    ) {
+        if let Some((pos, want, got)) =
+            comp_element_type_conflict(&declared_ty, &infer_type_in_ctx(ctx, &value))
+        {
+            return Err(FrontendError::Lower(format!(
+                "function `{}` annotates `{name}` as {declared_ty:?}, but its comprehension produces {pos} of type {got:?} where the annotation says {want:?} — the annotation and the comprehension must agree (emitting this would fail rustc with E0308)",
+                ctx.fn_name
+            )));
+        }
+    }
     // Annotation is the source of truth for the binding type (an empty
     // DictLit would otherwise infer the wrong K/V). For non-empty
     // values we trust the annotation and let backend compilation catch
@@ -17084,6 +17119,47 @@ fn lower_ann_assign(ctx: &mut LoweringCtx, aa: ast::StmtAnnAssign) -> Result<Stm
         value,
         mutable,
     })
+}
+
+/// PMAT-1363: report a PROVABLE conflict between an annotated binding's
+/// declared type and the type its comprehension initializer actually produces,
+/// as `(position, annotated, produced)`.
+///
+/// The whole point of this helper is what it REFUSES to judge. Only same-kind
+/// containers are compared, and only scalar leaves count: a conflict is
+/// reported when both leaves are in `{int, float, str, bool}` and differ.
+/// Everything else — a struct / list / dict / tuple / `Optional` leaf, or a
+/// container-KIND mismatch — returns `None`, because [`infer_type_in_ctx`]
+/// answers `I64` for anything it cannot type and a refusal must never rest on
+/// that default. The cost of being wrong here is a false refusal of a program
+/// that compiles today, so the check only fires where the emitted Rust is
+/// certain to be rejected by rustc.
+fn comp_element_type_conflict(
+    declared: &Type,
+    produced: &Type,
+) -> Option<(&'static str, Type, Type)> {
+    /// Both leaves confidently inferred, and different.
+    fn scalar_conflict(a: &Type, b: &Type) -> bool {
+        let confident = |t: &Type| matches!(t, Type::I64 | Type::F64 | Type::Str | Type::Bool);
+        confident(a) && confident(b) && a != b
+    }
+    match (declared, produced) {
+        (Type::List(want), Type::List(got)) | (Type::Set(want), Type::Set(got))
+            if scalar_conflict(want, got) =>
+        {
+            Some(("elements", (**want).clone(), (**got).clone()))
+        }
+        (Type::Dict(wk, wv), Type::Dict(gk, gv)) => {
+            if scalar_conflict(wk, gk) {
+                Some(("keys", (**wk).clone(), (**gk).clone()))
+            } else if scalar_conflict(wv, gv) {
+                Some(("values", (**wv).clone(), (**gv).clone()))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 /// PMAT-466 (review #8): true if any expression in the lowered body
