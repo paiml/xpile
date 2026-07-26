@@ -26,10 +26,11 @@
 //! limit `abs(i64::MIN)` / int overflow have; for `inf`/`nan` CPython itself
 //! RAISES), so a trap refuses to fabricate a value rather than emit a wrong one.
 //!
-//! `math.sqrt` and the transcendentals REFUSE: `f64.sqrt(-1.0)` is NaN where
-//! CPython's `math.sqrt(-1.0)` RAISES ValueError — a divergence over a normal
-//! negative input, the same NaN/order class that makes the lane refuse a float
-//! `min`/`max`.
+//! The transcendentals (sin/cos/tan/exp/log/log10/log2) REFUSE — they have no
+//! WASM instruction at all. `math.sqrt` was refused when this slice landed and
+//! is now in the subset too (PMAT-1341: the native `f64.sqrt` behind a
+//! negative-domain trap, where CPython raises ValueError — see
+//! `sqrt_num_builtin_witness.rs`).
 //!
 //! ## The load-bearing edges
 //!
@@ -217,11 +218,11 @@ fn fstring_over_rounding_materialises_via_str_int() {
 // ---- honest refusals (through the FULL pipeline) ------------------------------
 
 #[test]
-fn sqrt_and_transcendentals_and_int_arg_refuse() {
-    // sqrt + transcendentals are out of the WASM subset (NaN-domain / no
-    // bit-exact instruction) — refused, never silently mis-lowered.
+fn transcendentals_and_int_arg_refuse() {
+    // The transcendentals are out of the WASM subset (no instruction → only a
+    // libm-divergent approximation) — refused, never silently mis-lowered.
+    // `math.sqrt` is NOT in this list any more: PMAT-1341 lowers it natively.
     for (label, fname) in [
-        ("sqrt", "sqrt"),
         ("sin", "sin"),
         ("cos", "cos"),
         ("exp", "exp"),
