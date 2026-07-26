@@ -202,3 +202,39 @@ falsification_tests:
     ship_blocking: true
     counter_example_classes:
       - missing_live_shell_shim
+  - id: FALSIFY-FFI-SHELL-SUBPROCESS-003
+    rule: |
+      The emitted shell shim must EXECUTE, not merely string-compare.
+      `xpile hybrid <dir> --verify` on a Python->Shell fixture must
+      build the artifact, spawn the re-emitted POSIX script through the
+      shim, and reproduce the ORIGINAL script's stdout byte-for-byte
+      under `sh`. PMAT-1362: before this, `--verify` filtered
+      `to_lang == C` and printed "no C FFI boundary to execute" on a
+      fixture whose Python->Shell shim had already reconciled, so the
+      shim had NEVER been run.
+    prediction: |
+      Both the flat-command fixture (hybrid_shell, 1 line) and the
+      control-flow fixture (hybrid_shell_exec: for + while + if/else +
+      top-level case, 8 lines) exit 0 with a MATCH verdict. Dropping the
+      PATH prepend makes the artifact panic ("No such file or
+      directory"); perturbing one line of the re-emitted script makes it
+      report `DIVERGENT at line 2` and exit 1.
+    test: |
+      cargo test -p xpile --test hybrid_verify shell_boundary
+    if_fails: |
+      The shim stopped spawning the program, the bashrs frontend/backend
+      round-trip stopped being EXECUTION-faithful for some control-flow
+      construct, or the C-only `--verify` filter came back.
+    ship_blocking: true
+    counter_example_classes:
+      - shim_never_spawned
+      - roundtrip_execution_divergence
+      - c_only_verify_filter_regression
+    scope_caveats: |
+      argv marshalling is NOT covered: no meta-HIR call path yet
+      produces shell arguments, so the generated driver passes `&[]`.
+      `argv_passthrough` therefore remains string-compare-only
+      (FALSIFY-FFI-SHELL-SUBPROCESS-001). Neither is exit-code
+      propagation INTO a Python caller, nor stderr/stdin. The reference
+      is `sh`, not CPython, because a lowered Python `_tool()` call has
+      no shape that consumes `io::Result<Output>`.

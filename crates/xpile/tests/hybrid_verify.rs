@@ -132,3 +132,128 @@ fn hybrid_verify_reports_divergence_and_exits_nonzero() {
         "the differential must have reached the comparison step:\n{stdout}"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PMAT-1362 — the SHELL half of the executing hybrid differential.
+//
+// `verify_hybrid` filtered `to_lang == C`, so the `hybrid_shell` fixture
+// reconciled a real `Python → Shell` shim and then printed "no C FFI boundary
+// to execute — nothing to verify" and exited 0: a green run that had executed
+// NOTHING. The shell lane now builds the artifact, puts the RE-EMITTED script
+// on PATH, runs it, and byte-diffs against the ORIGINAL script under `sh`.
+//
+// NON-VACUITY (both arms demonstrated red before landing, and both are pinned
+// by assertions below):
+//   * drop the PATH prepend → the artifact panics with
+//     "spawning shell boundary `_tool`: No such file or directory", exit 1;
+//   * perturb one line of the re-emitted script → `✗ DIVERGENT at line 2`,
+//     exit 1.
+// So a MATCH here means the artifact really spawned a real program and really
+// read its stdout. The stdout assertions pin the CONTENT, which is what keeps
+// an "empty == empty" match from passing.
+//
+// The reference is `sh`, NOT CPython: a shell boundary is invoked by program
+// name and the shim returns `io::Result<Output>`, which no lowered Python call
+// consumes, so the driver is generated rather than being `app.py`'s `main()`.
+// argv marshalling stays string-compare-only (the driver passes `&[]`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The FLAT-command shell boundary: one `echo`. Locks the verdict line
+/// byte-exactly, the way `hybrid_golden_lock.rs` does for the C lane.
+#[test]
+fn hybrid_verify_executes_the_flat_shell_boundary() {
+    if !tool_available("sh") || !tool_available("cargo") {
+        eprintln!("sh/cargo unavailable — skipping shell hybrid --verify test");
+        return;
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .arg("hybrid")
+        .arg(fixture("hybrid_shell"))
+        .arg("--verify")
+        .output()
+        .expect("run xpile hybrid --verify");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "verify of the shell fixture must exit 0 (MATCH);\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    // The boundary reconciled AND the shell lane was entered — without this a
+    // regression back to the C-only filter would still print a green run.
+    assert!(
+        stdout.contains("_tool : Python → Shell"),
+        "the Python→Shell boundary must reconcile:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("`sh` reference (original _tool) vs executed shim-spawned artifact:"),
+        "the shell differential must have reached the comparison step \
+         (a C-only filter regression prints 'nothing to verify' and exits 0):\n{stdout}"
+    );
+    assert!(
+        stdout.contains("✓ MATCH — stdout byte-identical (1 line(s)): \"running tool\""),
+        "verdict drifted from the golden-locked shell witness:\n{stdout}"
+    );
+}
+
+/// The CONTROL-FLOW shell boundary: `for` + `while` + `if`/`else` + top-level
+/// `case`, i.e. the whole v0.1.0 shell control-flow surface, executed through
+/// the emitted subprocess shim. This is what makes the lane more than a
+/// one-`echo` smoke test — every construct's round-trip has to be
+/// EXECUTION-faithful, not just parse-faithful, for the 8 lines to match.
+#[test]
+fn hybrid_verify_executes_the_control_flow_shell_boundary() {
+    if !tool_available("sh") || !tool_available("cargo") {
+        eprintln!("sh/cargo unavailable — skipping control-flow shell hybrid --verify test");
+        return;
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .arg("hybrid")
+        .arg(fixture("hybrid_shell_exec"))
+        .arg("--verify")
+        .output()
+        .expect("run xpile hybrid --verify");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "verify of the control-flow shell fixture must exit 0 (MATCH);\n\
+         stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    // Byte-locked: all 8 lines, in order. `for` emitted 3, `while` 2, `if` its
+    // then-arm, `case` its first arm. A construct that silently dropped its
+    // body would shorten this and flip the test red.
+    assert!(
+        stdout.contains(
+            "✓ MATCH — stdout byte-identical (8 line(s)): \
+             \"running tool\\nitem alpha\\nitem beta\\nitem gamma\\n\
+             tick 0\\ntick 1\\ncounted to 2\\ncase two\""
+        ),
+        "verdict drifted from the golden-locked control-flow shell witness:\n{stdout}"
+    );
+}
+
+/// A fixture with NO executable boundary must say so honestly — and must not
+/// claim a C-shaped reason for it. `hybrid_pysibling`'s Python→Python import is
+/// dropped by `reconcile`, so there is no boundary at all.
+#[test]
+fn hybrid_verify_reports_nothing_to_verify_without_a_c_shaped_excuse() {
+    let out = Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .arg("hybrid")
+        .arg(fixture("hybrid_pysibling"))
+        .arg("--verify")
+        .output()
+        .expect("run xpile hybrid --verify");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "no boundary is not a failure:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("--verify: no FFI boundary to execute — nothing to verify"),
+        "expected the paradigm-neutral message:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("no C FFI boundary"),
+        "the C-only framing outlived the C-only filter:\n{stdout}"
+    );
+}

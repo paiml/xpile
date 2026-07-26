@@ -250,6 +250,50 @@ meta-HIR and the trait surfaces.
 
 ### Added
 
+- **`xpile hybrid --verify` now EXECUTES the Shell boundary** (PMAT-1362). The
+  `hybrid_shell` fixture reconciled a real `_tool : Python → Shell` shim —
+  `Command::new("_tool")`, citing `C-FFI-SHELL-SUBPROCESS`, live since
+  PMAT-932 — and then `verify_hybrid` filtered `to_lang == SourceLang::C`,
+  printed *"no C FFI boundary to execute — nothing to verify"* and exited **0**.
+  The shell shim had never once been spawned. `verify_hybrid` now dispatches per
+  paradigm: the C lane is unchanged (CPython-via-`ctypes` vs the linked Rust+C
+  artifact), and the new shell lane takes the **original `.sh` under `sh`** as
+  its reference and, as the artifact, the `cargo build`-ed workspace whose
+  generated driver calls each `<sym>_shim(&[])` through the same
+  `use ffi_shims::<sym>_shim as <sym>;` alias bridge the C lane uses — with the
+  xpile-**re-emitted** POSIX script materialized `0755` into `<ws>/bin/` and
+  that directory *prepended* to `PATH`, since the shim spawns by bare program
+  name. Two seams execute at once: the bashrs frontend→backend round-trip and
+  the Rust-side subprocess shim. Both red arms were demonstrated before landing
+  — dropping the `PATH` prepend makes the artifact panic with
+  *"spawning shell boundary `_tool`: No such file or directory"*, and perturbing
+  one line of the re-emitted script reports `✗ DIVERGENT at line 2` — so a MATCH
+  means a real program really ran. The new fixture
+  `tests/fixtures/hybrid_shell_exec/` drives the whole v0.1.0 shell
+  control-flow surface through the shim in one differential (`for`, `while` with
+  `i=$((i + 1))`, `if`/`else`, top-level `case` — 8 stdout lines that only match
+  if every construct's round-trip is *execution*-faithful, not merely
+  parse-faithful). `contracts/ffi-shell-subprocess-v1.yaml` gains
+  `FALSIFY-FFI-SHELL-SUBPROCESS-003`, its **first execution falsifier** (001 and
+  002 are both string-compares over emitted text), carrying an explicit
+  `scope_caveats` block. **What this does NOT cover, stated rather than
+  blurred:** argv marshalling (no meta-HIR call path yet produces shell
+  arguments, so the driver passes `&[]` and `argv_passthrough` stays
+  string-compare-only); stderr/stdin; and exit-code propagation *into* a Python
+  caller. The reference is `sh`, **not** CPython — a shell boundary is invoked
+  by program name and the shim returns `io::Result<Output>`, which no lowered
+  Python `_tool()` call has a shape to consume, so the driver is generated
+  rather than being `app.py`'s `main()`. The same change also fixes a third
+  dishonesty in that code path: the no-boundary message said *"no **C** FFI
+  boundary"* regardless of what the fixture actually held, so a `Python → Cuda`
+  boundary would have been dismissed with a C-shaped excuse; it now names the
+  count and says **nothing was verified** when boundaries exist but none is C or
+  Shell. Quorum is deliberately unchanged — pass A of
+  `count_runtime_witnesses` is a *flat* `read_dir` over `tests/fixtures`, so a
+  fixture in the new subdirectory casts no Runtime vote and
+  `C-FFI-SHELL-SUBPROCESS` stays `Run=0`/`PARTIAL`, exactly where PMAT-1367's
+  `MUST_STAY_UNWITNESSED` roster pins it.
+
 - **DIVERGENT-arm falsifier for `xpile hybrid --verify`** (PMAT-1352). The
   `ComparisonResult::Divergence` arm had **zero** coverage — all three
   pre-existing `--verify` witnesses are green-path only, so nothing proved the

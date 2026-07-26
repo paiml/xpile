@@ -274,6 +274,10 @@ fn hybrid(
     // PMAT-902: retain each Python file's (filename, source) so `--verify` can run
     // the original `main()` under CPython as the differential reference.
     let mut py_sources: Vec<(String, String)> = Vec::new();
+    // PMAT-1362: retain each shell script's (filename, source) so `--verify` can
+    // run the ORIGINAL script under `sh` as the shell lane's reference — the
+    // artifact side spawns the RE-EMITTED script, so both texts are needed.
+    let mut sh_sources: Vec<(String, String)> = Vec::new();
     for src in sources {
         let contents =
             std::fs::read_to_string(&src).with_context(|| format!("reading {}", src.display()))?;
@@ -293,6 +297,7 @@ fn hybrid(
         match module.source_lang {
             SourceLang::C => c_sources.push((fname, contents.clone())),
             SourceLang::Python => py_sources.push((fname, contents.clone())),
+            SourceLang::Shell => sh_sources.push((fname, contents.clone())),
             _ => {}
         }
         modules.push(module);
@@ -377,7 +382,14 @@ fn hybrid(
             }
             // PMAT-902 NORTH STAR: `--verify` runs the executing differential.
             if verify {
-                return verify_hybrid(session, &manifest, &modules, &c_sources, &py_sources);
+                return verify_hybrid(
+                    session,
+                    &manifest,
+                    &modules,
+                    &c_sources,
+                    &py_sources,
+                    &sh_sources,
+                );
             }
             Ok(())
         }
@@ -459,31 +471,85 @@ fn ctypes_binding_for(entry: &FfiEntry, modules: &[Module]) -> Option<CtypesBind
     })
 }
 
-/// PMAT-902 NORTH STAR — the executing hybrid differential. Builds the CPython
-/// reference (the C extension bound via `ctypes`, running the original `app.py`
-/// `main()`), emits + `cargo build`s the hybrid workspace, runs the linked
-/// C+shim artifact, and compares the two stdouts. Match → `Ok(())`; Divergence →
-/// non-zero exit. Graceful-skips (`Ok`) when a toolchain or fixture shape the
-/// check needs is absent, so a constrained CI stays green.
+/// PMAT-902 NORTH STAR — the executing hybrid differential; PMAT-1362 widened
+/// it past the C-only filter.
+///
+/// Two boundary paradigms EXECUTE, each with its own reference (they are not
+/// interchangeable — see the per-lane docs):
+///   * **C** — [`verify_c_boundary`]: CPython-via-`ctypes` vs the linked
+///     Rust+C artifact, driven by the original `app.py` `main()`.
+///   * **Shell** — [`verify_shell_boundary`]: the ORIGINAL `.sh` under `sh` vs
+///     the built artifact whose emitted subprocess shim spawns the RE-EMITTED
+///     script.
+///
+/// Every other `to_lang` (Cuda, Cpp, Python, Ruchy, Rust, Lean, …) still has no
+/// executing reference, so it is reported as not-executed rather than silently
+/// counted as verified. Match → `Ok(())`; Divergence → non-zero exit.
+/// Graceful-skips (`Ok`) when a toolchain or fixture shape the check needs is
+/// absent, so a constrained CI stays green.
 fn verify_hybrid(
     session: &TranspileSession,
     manifest: &FfiManifest,
     modules: &[Module],
     c_sources: &[(String, String)],
     py_sources: &[(String, String)],
+    sh_sources: &[(String, String)],
 ) -> Result<()> {
-    // Only the C boundary path is executed this slice. No C boundary → nothing
-    // to differentially verify.
     let c_entries: Vec<&FfiEntry> = manifest
         .entries
         .iter()
         .filter(|e| e.to_lang == SourceLang::C)
         .collect();
-    if c_entries.is_empty() {
-        println!("  --verify: no C FFI boundary to execute — nothing to verify");
+    let sh_entries: Vec<&FfiEntry> = manifest
+        .entries
+        .iter()
+        .filter(|e| e.to_lang == SourceLang::Shell)
+        .collect();
+    if c_entries.is_empty() && sh_entries.is_empty() {
+        // PMAT-1362: name BOTH executable paradigms so the message stays true
+        // when a fixture has a boundary of some third kind. A `Python → Cuda`
+        // boundary is unverified, not verified — say so.
+        let others = manifest.entries.len();
+        if others == 0 {
+            println!("  --verify: no FFI boundary to execute — nothing to verify");
+        } else {
+            println!(
+                "  --verify: {others} boundary(ies), none of them C or Shell — \
+                 no executing reference exists for the others; NOTHING was verified"
+            );
+        }
         return Ok(());
     }
 
+    if !sh_entries.is_empty() {
+        verify_shell_boundary(
+            session,
+            manifest,
+            modules,
+            &sh_entries,
+            c_sources,
+            sh_sources,
+        )?;
+    }
+    if !c_entries.is_empty() {
+        verify_c_boundary(
+            session, manifest, modules, &c_entries, c_sources, py_sources,
+        )?;
+    }
+    Ok(())
+}
+
+/// The C half of the executing hybrid differential (PMAT-902): CPython (the C
+/// extension bound via `ctypes`, driven by the original `app.py` `main()`) vs
+/// the emitted, `cargo build`-ed, linked Rust+C artifact.
+fn verify_c_boundary(
+    session: &TranspileSession,
+    manifest: &FfiManifest,
+    modules: &[Module],
+    c_entries: &[&FfiEntry],
+    c_sources: &[(String, String)],
+    py_sources: &[(String, String)],
+) -> Result<()> {
     // Toolchain gate — graceful-skip so a constrained runner stays green.
     if !tool_available("cc") || !tool_available("python3") || !tool_available("cargo") {
         println!("  --verify: cc/python3/cargo unavailable — skipping execution");
@@ -498,7 +564,7 @@ fn verify_hybrid(
 
     // ctypes bindings for every C boundary; skip if any type isn't ABI-mappable.
     let mut bindings = Vec::new();
-    for e in &c_entries {
+    for e in c_entries {
         match ctypes_binding_for(e, modules) {
             Some(b) => bindings.push(b),
             None => {
@@ -579,6 +645,249 @@ fn verify_hybrid(
             bail!("hybrid verify: artifact diverged from the CPython reference")
         }
     }
+}
+
+/// PMAT-1362 — the SHELL half of the executing hybrid differential.
+///
+/// **What it proves.** The emitted subprocess shim (`Command::new("<prog>")`,
+/// citing `C-FFI-SHELL-SUBPROCESS`) is compiled into a real `cargo build`-ed
+/// artifact, the artifact is RUN, and it spawns the xpile-RE-EMITTED POSIX
+/// script — whose stdout must be byte-identical to the ORIGINAL `.sh` run
+/// directly under `sh`. Two seams execute at once: the bashrs
+/// frontend→backend round-trip (original script vs re-emitted script) and the
+/// Rust-side subprocess shim (spawn by program name, exit code, captured
+/// stdout). Before this, `--verify` filtered to `to_lang == C` and printed
+/// "no C FFI boundary to execute" on a fixture that had reconciled a real
+/// `Python → Shell` shim.
+///
+/// **What it does NOT prove — read this before widening the claim.**
+///   1. **argv marshalling.** The shim takes `&[&str]`, but no meta-HIR call
+///      path yet produces shell arguments, so the generated driver passes
+///      `&[]`. `argv_passthrough` remains string-compare-only
+///      (`FALSIFY-FFI-SHELL-SUBPROCESS-001`).
+///   2. **The Python caller is not the driver.** A shell boundary is invoked
+///      by PROGRAM NAME and the shim returns `io::Result<Output>`; a lowered
+///      Python `_tool()` call has no shape that consumes that, so the driver
+///      is GENERATED rather than being `app.py`'s `main()`. The C lane's
+///      "CPython reference" framing therefore does not carry over — the
+///      reference here is `sh`, not CPython.
+///   3. **stderr / stdin / non-zero exit into Python.** Only stdout is
+///      diffed; a non-zero exit fails the artifact loudly instead of being
+///      propagated to a Python caller.
+fn verify_shell_boundary(
+    session: &TranspileSession,
+    manifest: &FfiManifest,
+    modules: &[Module],
+    sh_entries: &[&FfiEntry],
+    c_sources: &[(String, String)],
+    sh_sources: &[(String, String)],
+) -> Result<()> {
+    // The artifact spawns the re-emitted script from a workspace-local `bin/`
+    // dir put on PATH, which needs the unix executable bit.
+    if !cfg!(unix) {
+        println!("  --verify: shell boundary execution needs a unix host — skipping");
+        return Ok(());
+    }
+    // Toolchain gate — graceful-skip so a constrained runner stays green. `cc`
+    // is only needed when the same workspace also carries C sources.
+    if !tool_available("sh")
+        || !tool_available("cargo")
+        || (!c_sources.is_empty() && !tool_available("cc"))
+    {
+        println!(
+            "  --verify: sh/cargo (or cc for the C sources) unavailable — skipping shell execution"
+        );
+        return Ok(());
+    }
+
+    let shell_backend = session
+        .backends
+        .iter()
+        .find(|b| b.targets().contains(&Target::Shell))
+        .context("no Shell backend registered")?;
+    let config = BackendConfig {
+        emit_contracts: true,
+        target: Target::Shell,
+        profile: Profile::RustOut,
+        hardware: None,
+    };
+
+    // Pair every shell boundary with (a) its defining Shell module and (b) that
+    // module's ORIGINAL source text. A boundary that cannot be paired is
+    // reported and the whole lane skips — a partial differential would compare
+    // one program's stdout against another's.
+    let mut programs: Vec<(String, String, String)> = Vec::new(); // (prog, original, re-emitted)
+    for e in sh_entries {
+        let Some(m) = modules
+            .iter()
+            .find(|m| m.source_lang == SourceLang::Shell && m.name == e.symbol)
+        else {
+            println!(
+                "  --verify: shell boundary `{}` has no sibling script module — skipping",
+                e.symbol
+            );
+            return Ok(());
+        };
+        let Some((_, original)) = sh_sources.iter().find(|(f, _)| {
+            Path::new(f).file_stem().and_then(|s| s.to_str()) == Some(m.name.as_str())
+        }) else {
+            println!(
+                "  --verify: shell boundary `{}` has no retained source text — skipping",
+                e.symbol
+            );
+            return Ok(());
+        };
+        let emitted = shell_backend
+            .lower(m, &config)
+            .with_context(|| format!("lowering shell module `{}` back to POSIX", m.name))?;
+        programs.push((m.name.clone(), original.clone(), emitted.primary));
+    }
+
+    // Reference: the ORIGINAL scripts, run in boundary order under `sh`.
+    let mut reference = String::new();
+    for (prog, original, _) in &programs {
+        reference.push_str(&run_sh_script(prog, original)?);
+    }
+    let reference = reference.trim_end_matches('\n').to_string();
+
+    // Artifact: the hybrid workspace, with a generated driver that calls each
+    // emitted shim, and the RE-EMITTED scripts materialized on PATH.
+    let ws = std::env::temp_dir().join(format!("xpile_verify_sh_ws_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&ws);
+    let driver = shell_driver_src(sh_entries);
+    manifest
+        .emit_hybrid_workspace(modules, c_sources, &driver, &ws)
+        .map_err(|e| anyhow::anyhow!("workspace emit failed: {e}"))?;
+    let bindir = ws.join("bin");
+    std::fs::create_dir_all(&bindir).context("creating the workspace bin/ dir")?;
+    for (prog, _, emitted) in &programs {
+        let p = bindir.join(prog);
+        std::fs::write(&p, emitted).with_context(|| format!("writing {}", p.display()))?;
+        make_executable(&p)?;
+    }
+
+    let target = ws.join("target");
+    let build = Command::new("cargo")
+        .current_dir(&ws)
+        .arg("build")
+        .arg("--target-dir")
+        .arg(&target)
+        .output()
+        .context("cargo build of the hybrid shell workspace")?;
+    if !build.status.success() {
+        let _ = std::fs::remove_dir_all(&ws);
+        bail!(
+            "hybrid shell artifact failed to build:\n{}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+    }
+    // The shim spawns by PROGRAM NAME, so the re-emitted scripts go on PATH.
+    let path_var = prepend_path(&bindir)?;
+    let run = Command::new(target.join("debug").join("xpile-hybrid-artifact"))
+        .env("PATH", &path_var)
+        .output()
+        .context("running the hybrid shell artifact")?;
+    let _ = std::fs::remove_dir_all(&ws);
+    if !run.status.success() {
+        bail!(
+            "hybrid shell artifact exited {}:\n{}",
+            run.status,
+            String::from_utf8_lossy(&run.stderr)
+        );
+    }
+    let actual = String::from_utf8_lossy(&run.stdout)
+        .trim_end_matches('\n')
+        .to_string();
+
+    let names: Vec<&str> = programs.iter().map(|(p, _, _)| p.as_str()).collect();
+    println!(
+        "  --verify: `sh` reference (original {}) vs executed shim-spawned artifact:",
+        names.join(", ")
+    );
+    match diff_stdout(&reference, &actual) {
+        ComparisonResult::Match => {
+            println!(
+                "  ✓ MATCH — stdout byte-identical ({} line(s)): {reference:?}",
+                reference.lines().count().max(1)
+            );
+            Ok(())
+        }
+        ComparisonResult::Divergence {
+            index,
+            expected,
+            actual: diverged,
+        } => {
+            eprintln!("  ✗ DIVERGENT at line {}:", index + 1);
+            eprintln!("      sh:       {expected}");
+            eprintln!("      artifact: {diverged}");
+            bail!("hybrid verify: shell artifact diverged from the `sh` reference")
+        }
+    }
+}
+
+/// Run one script's ORIGINAL text under `sh` and capture stdout — the shell
+/// lane's reference side. The text is written to a temp file (rather than
+/// `sh -c`) so `$0`/`$@` and a shebang behave as they do for the real file.
+fn run_sh_script(prog: &str, source: &str) -> Result<String> {
+    let p = std::env::temp_dir().join(format!("xpile_verify_ref_{}_{prog}", std::process::id()));
+    std::fs::write(&p, source).with_context(|| format!("writing {}", p.display()))?;
+    let out = Command::new("sh").arg(&p).output();
+    let _ = std::fs::remove_file(&p);
+    let out = out.context("spawning sh for the reference run")?;
+    if !out.status.success() {
+        bail!(
+            "reference `sh {prog}` exited {}:\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// The generated driver for the shell lane's artifact. Calls each boundary's
+/// emitted shim through the workspace's `use ffi_shims::<sym>_shim as <sym>;`
+/// alias — so the alias bridge is exercised exactly as it is on the C lane —
+/// and reprints the captured stdout verbatim. Args are `&[]`: see the
+/// `verify_shell_boundary` docs, item 1.
+fn shell_driver_src(sh_entries: &[&FfiEntry]) -> String {
+    let mut body = String::new();
+    for e in sh_entries {
+        let sym = &e.symbol;
+        body.push_str(&format!(
+            "    let out = {sym}(&[]).unwrap_or_else(|e| panic!(\"spawning shell boundary `{sym}`: {{e}}\"));\n\
+             \x20   if !out.status.success() {{\n\
+             \x20       eprintln!(\"shell boundary `{sym}` exited {{}}\", out.status);\n\
+             \x20       ::std::process::exit(1);\n\
+             \x20   }}\n\
+             \x20   print!(\"{{}}\", String::from_utf8_lossy(&out.stdout));\n"
+        ));
+    }
+    format!("fn main() {{\n{body}}}\n")
+}
+
+/// `chmod +x` on a materialized script. Unix-only by construction — the caller
+/// already skipped the whole lane on a non-unix host.
+fn make_executable(p: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755))
+            .with_context(|| format!("chmod +x {}", p.display()))?;
+    }
+    #[cfg(not(unix))]
+    let _ = p;
+    Ok(())
+}
+
+/// `PATH` with `dir` PREPENDED — the artifact's shim spawns the boundary by
+/// bare program name, so the re-emitted script must win over any same-named
+/// program already installed on the host.
+fn prepend_path(dir: &Path) -> Result<std::ffi::OsString> {
+    let mut entries = vec![dir.to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        entries.extend(std::env::split_paths(&existing));
+    }
+    std::env::join_paths(entries).context("composing PATH for the hybrid shell artifact")
 }
 
 fn print_info(session: &TranspileSession) -> Result<()> {
