@@ -12149,6 +12149,13 @@ fn concat_operand_is_int(e: &Expr, ctx: &HashMap<String, Type>) -> bool {
             of_float,
             ..
         } => !*of_float,
+        // PMAT-1340: `math.floor(x)` / `math.ceil(x)` / `math.trunc(x)` are ALWAYS
+        // int-VALUED (they round a float to a Python `int`, regardless of arg), so
+        // `f"{math.floor(x)}"` materialises via the sign-aware `str(int)` too.
+        Expr::NumBuiltin {
+            op: NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc,
+            ..
+        } => true,
         // The int-VALUED string methods the WASM lane already emits as `i64`:
         // `len(s)` (`CharCount`, PMAT-1148) and the search family (`find` /
         // `rfind` / `count` / `index` / `rindex`). Str-, bool-, and list-valued
@@ -25980,10 +25987,11 @@ fn emit_unop(
     }
 }
 
-/// PMAT-1338/1339: lower a scalar numeric builtin (`Expr::NumBuiltin` — Python
-/// `abs(x)` / `min(a, b, …)` / `max(a, b, …)` / `math.*`). `abs(int|float)` and
-/// the all-INT `min`/`max` are in the WASM subset; a float/bool/str min/max and
-/// every `math.*` op refuse honestly.
+/// PMAT-1338/1339/1340: lower a scalar numeric builtin (`Expr::NumBuiltin` —
+/// Python `abs(x)` / `min(a, b, …)` / `max(a, b, …)` / `math.*`). `abs(int|float)`,
+/// the all-INT `min`/`max`, and the rounding `math.floor`/`ceil`/`trunc` (→ int)
+/// are in the WASM subset; a float/bool/str min/max, `math.sqrt`, and the
+/// transcendentals refuse honestly.
 ///
 /// * `abs(float)` → the native `f64.abs` (one instruction). Bit-exact with
 ///   CPython on EVERY IEEE input: `abs(-0.0) == 0.0`, `abs(nan)` is a NaN,
@@ -26095,13 +26103,62 @@ fn emit_num_builtin(
             }
             Ok(WatTy::I64)
         }
-        // The `math.*` builtins: the transcendentals have no bit-exact WASM
-        // instruction, and sqrt/floor/ceil/trunc need CPython's domain (sqrt of
-        // a negative RAISES) / rounding (→ int) semantics. Refused honestly.
+        // PMAT-1340: the ROUNDING math builtins `math.floor(x)` / `math.ceil(x)`
+        // / `math.trunc(x)`. WASM has a native single-instruction rounding op for
+        // each direction (`f64.floor` toward −∞, `f64.ceil` toward +∞, `f64.trunc`
+        // toward 0), matching CPython's rounding sense exactly. Python's
+        // `math.floor`/`ceil`/`trunc` return an `int`, so the (already-integral)
+        // f64 result is narrowed with `i64.trunc_f64_s` (an integral value → i64
+        // is a no-op truncation, no extra rounding). The frontend
+        // ([`lower_math_call`], PMAT-783) coerces the arg to f64 and the int→float
+        // widen (`NumCast{to_float}`) is NOT in the WASM subset, so an int arg
+        // (`math.floor(5)`) already refuses upstream; the operand here is f64.
+        //
+        // CPython-EXACT over the lane's whole modeled int domain: for a finite x
+        // whose floor/ceil/trunc lands in `[i64::MIN, i64::MAX]` the result equals
+        // CPython's. The ONE boundary — `|value| >= 2**63`, `±inf`, or `nan` — is
+        // where `i64.trunc_f64_s` TRAPS: `2**63` is outside the modeled i64 range
+        // (the same limit `abs(i64::MIN)` / int overflow already have), and for
+        // `inf`/`nan` CPython itself RAISES (OverflowError / ValueError), so a trap
+        // refuses to fabricate a value rather than emit a wrong one.
+        NumBuiltinOp::Floor | NumBuiltinOp::Ceil | NumBuiltinOp::Trunc => {
+            if args.len() != 1 {
+                return Err(unsupported(&format!(
+                    "math.floor/ceil/trunc take exactly one argument but {} were passed",
+                    args.len()
+                )));
+            }
+            match emit_expr(&args[0], scope, out, depth)? {
+                WatTy::F64 => {}
+                other => {
+                    return Err(unsupported(&format!(
+                        "math.floor/ceil/trunc over a non-float ({other:?}) value — the \
+                         frontend widens the arg to f64, so a non-f64 operand is \
+                         unexpected (an int arg refuses upstream: the int→float widen \
+                         is not in the WASM subset)"
+                    )));
+                }
+            }
+            let round = match op {
+                NumBuiltinOp::Floor => "f64.floor",
+                NumBuiltinOp::Ceil => "f64.ceil",
+                _ => "f64.trunc",
+            };
+            indent(out, depth);
+            writeln!(out, "{round}").expect("write");
+            indent(out, depth);
+            // Narrow the integral f64 to the Python `int` result. Traps on the
+            // documented |value| >= 2**63 / inf / nan boundary (see fn docs).
+            writeln!(out, "i64.trunc_f64_s").expect("write");
+            Ok(WatTy::I64)
+        }
+        // `math.sqrt` and the transcendentals: refused honestly. `f64.sqrt` exists
+        // and is bit-exact for x >= 0, but CPython's `math.sqrt(-1.0)` RAISES
+        // ValueError where `f64.sqrt` yields NaN — a divergence over a NORMAL input
+        // (any negative float), the same class of NaN/order mismatch that makes the
+        // lane refuse a float `min`/`max`. sin/cos/tan/exp/ln/log10/log2 have no
+        // bit-exact WASM instruction at all. Both refuse rather than diverge.
         NumBuiltinOp::Sqrt
-        | NumBuiltinOp::Floor
-        | NumBuiltinOp::Ceil
-        | NumBuiltinOp::Trunc
         | NumBuiltinOp::Sin
         | NumBuiltinOp::Cos
         | NumBuiltinOp::Tan
@@ -26109,10 +26166,11 @@ fn emit_num_builtin(
         | NumBuiltinOp::Ln
         | NumBuiltinOp::Log10
         | NumBuiltinOp::Log2 => Err(unsupported(
-            "a math.* numeric builtin (sqrt/floor/ceil/trunc/sin/cos/tan/exp/ln/\
-             log10/log2) is not in the WASM subset — the transcendentals have no \
-             bit-exact WASM instruction and the rounding ops need CPython's \
-             domain/rounding-to-int semantics; only abs(x) is supported",
+            "a math.* transcendental (sqrt/sin/cos/tan/exp/ln/log10/log2) is not in \
+             the WASM subset — the transcendentals have no bit-exact WASM \
+             instruction and math.sqrt of a negative RAISES in CPython where \
+             f64.sqrt yields NaN; only abs(x), min/max, and the rounding ops \
+             (floor/ceil/trunc → int) are supported",
         )),
     }
 }
