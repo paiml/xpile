@@ -19,6 +19,14 @@
 //! PMAT-1289 probe sweep). The user-written verbatim form now traps on that
 //! corner, exactly where the Rust lane's `(len - k) as usize` panics.
 //!
+//! PMAT-1351 UPDATE — the ambiguity is DISSOLVED at the source, so the
+//! PMAT-1289 unwrap is gone. The frontend no longer folds `xs[-k]` into
+//! `len(xs) - k` (it emits `LitInt(-k)`), so the two readings no longer share
+//! an HIR shape and neither backend has to guess: `xs[-k]` traps when
+//! `k > len`, and a user-written `xs[len(xs) - k]` wraps to the tail exactly as
+//! CPython does. The PMAT-1289 compromise — trapping on the user-written form
+//! — was itself a divergence, and it is fixed here rather than tolerated.
+//!
 //! This witness drives int-list kernels over a preloaded fixture and asserts the
 //! executed value VALUE-MATCHES CPython, incl. the out-of-range + too-negative
 //! IndexError traps. Gated on `wasm_runtime_available()`.
@@ -152,31 +160,40 @@ fn negative_list_index_normalizes_and_matches_cpython() {
         return;
     }
 
-    // The `len(xs) - k` shape — PMAT-1289 POSTURE FLIP. This HIR shape is
-    // AMBIGUOUS: the frontend folds the literal `xs[-5]` to it (PMAT-570), and
-    // a user can write `xs[len(xs) - 5]` verbatim; on a 4-element list CPython
-    // raises IndexError for the first and reads 40 for the second. The emit
-    // must pick ONE reading — it now unwraps the shape back to the raw `-5`
-    // (the literal reading), because (a) the literal form dominates real code,
-    // (b) the OLD wrap-to-40 behaviour silently READ where `xs[-5]` raises —
-    // a miscompile, the worse failure mode — and (c) a trap here is exactly
-    // where the RUST lane's `(len - 5) as usize` panics, keeping the two
-    // backends consistent on the ambiguous corner. So: -5 → += 4 → still
-    // negative → IndexError trap.
+    // PMAT-1351 — THE AMBIGUITY IS GONE, so the PMAT-1289 posture flip is
+    // REVERTED. `len(xs) - k` used to be two different programs sharing one HIR
+    // shape (the frontend folded the literal `xs[-k]` INTO it), which forced the
+    // emit to guess; PMAT-1351 stopped the fold, so `xs[-k]` is now `LitInt(-k)`
+    // and `len(xs) - k` can only mean the USER wrote it. Each reading gets its
+    // own assertion below, and each matches CPython exactly — no guess, no
+    // trap-where-CPython-reads.
+    //
+    // Reading A, user-written `xs[len(xs) - 5]` on a 4-list: CPython evaluates
+    // `4 - 5` = -1, wraps to slot 3, reads 40. (This TRAPPED under PMAT-1289.)
     let c1 = kernel("c1", vec![], idx("xs", sub(len("xs"), Expr::LitInt(5))));
     assert_eq!(
         run(&emit_module(&c1).unwrap()),
-        Err(()),
-        "xs[len-5] (the folded xs[-5]) must trap (IndexError) on a 4-list"
+        Ok(40),
+        "user-written xs[len(xs)-5] on a 4-list is CPython xs[-1] == 40"
     );
 
-    // The same shape IN RANGE is unambiguous — both readings agree:
-    // xs[len(xs)-1] == xs[-1] == 40 (unwrap → -1 → += 4 → 3).
+    // Reading B, the source-level `xs[-5]` the frontend now lowers verbatim:
+    // -5 → += 4 → -1, still negative → IndexError trap. Same numbers as
+    // reading A, opposite outcome — which is the whole point of not folding.
+    let c1a = kernel("c1a", vec![], idx("xs", Expr::LitInt(-5)));
+    assert_eq!(
+        run(&emit_module(&c1a).unwrap()),
+        Err(()),
+        "the raw literal xs[-5] must trap (IndexError) on a 4-list"
+    );
+
+    // The same shape IN RANGE: both readings agree — xs[len(xs)-1] == xs[-1]
+    // == 40 (4-1 = 3 direct; or -1 → += 4 → 3).
     let c1b = kernel("c1b", vec![], idx("xs", sub(len("xs"), Expr::LitInt(1))));
     assert_eq!(
         run(&emit_module(&c1b).unwrap()),
         Ok(40),
-        "xs[len-1] (== the folded xs[-1]) should read 40"
+        "xs[len-1] (== xs[-1]) should read 40"
     );
 
     // Store negative LITERAL then read: xs[-1] = 7; return xs[3]  → 7.

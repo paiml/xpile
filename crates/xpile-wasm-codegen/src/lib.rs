@@ -15320,48 +15320,6 @@ fn unwrap_pop_index_normalize(index: &Expr) -> Option<&Expr> {
     }
 }
 
-/// PMAT-1289: match the PMAT-570 negative-literal index rewrite
-/// `len(<receiver>) - k` (with `k ≥ 0` and the SAME receiver being indexed —
-/// `xs.pop(len(ys) - 2)` must NOT match) and return `k`.
-///
-/// The frontend pre-rewrites a NEGATIVE LITERAL index to `len(xs) - k` for the
-/// Rust lane (`Vec` indexing takes a `usize`) in THREE places: a pop index
-/// (`xs.pop(-k)`), a del index (`del xs[-k]`), and a read-side subscript
-/// (`xs[-k]`). The WASM lane's runtimes apply the CPython normalise THEMSELVES
-/// (negative `+= n`, then a bounds trap), so each of those emit sites must
-/// recover the raw `-k` — passing the pre-rewritten value through would
-/// DOUBLE-normalise, silently indexing where CPython raises `IndexError`
-/// whenever `n < k ≤ 2n` (the caught corners: `[5].pop(-2)`,
-/// `del xs[-4]` on 3 elements, `xs[-2]` on 1 element — the last two found by
-/// the PMAT-1289 differential fuzz REFUTING shipped PMAT-1284/PMAT-1001
-/// behaviour). A user-written `xs[len(xs) - k]` is HIR-identical and also
-/// unwraps; on an underflow it traps exactly where the Rust lane's
-/// `(len - k) as usize` panics — the safe, cross-backend-consistent posture
-/// for that ambiguous corner.
-fn neg_literal_index_k(index: &Expr, receiver: &str) -> Option<i64> {
-    let Expr::BinOp {
-        op: BinOp::Sub,
-        lhs,
-        rhs,
-    } = index
-    else {
-        return None;
-    };
-    let Expr::Len(l) = &**lhs else {
-        return None;
-    };
-    let Expr::Ident(n) = &**l else {
-        return None;
-    };
-    if n != receiver {
-        return None;
-    }
-    let Expr::LitInt(k) = &**rhs else {
-        return None;
-    };
-    (*k >= 0).then_some(*k)
-}
-
 /// PMAT-1289: the expression a GATE WALKER should scan inside a pop INDEX —
 /// the RAW index when the frontend's normalize Block wraps it (the same unwrap
 /// `emit_list_pop` performs, so the walkers see exactly what the emit will
@@ -20080,19 +20038,14 @@ fn emit_list_elem_addr(
     // Evaluate the index expression once into the per-function scratch i64
     // local `$__wasm_idx` so it can be reused by both the bounds guard and
     // the address computation without re-evaluating a (possibly effectful)
-    // call. PMAT-1289: a READ-side NEGATIVE-LITERAL `xs[-k]` arrives
-    // pre-rewritten to `len(xs) - k` (PMAT-570, for the Rust lane) — recover
-    // the raw `-k` so the PMAT-1001 normalise below applies ONCE (passing the
-    // rewritten value through double-normalised: `xs[-2]` on a 1-element list
-    // silently read slot 0 where CPython raises `IndexError` — found by the
-    // PMAT-1289 probe sweep; the store side was never folded, and a raw index
-    // is emitted unchanged).
-    if let Some(k) = neg_literal_index_k(index, name) {
-        indent(out, depth);
-        writeln!(out, "i64.const {}", -k).expect("write");
-    } else {
-        emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
-    }
+    // call. PMAT-1351: the index arrives RAW — a negative literal `xs[-k]` is
+    // `LitInt(-k)` — so it is emitted unchanged and the PMAT-1001 normalise
+    // below is the single normalisation. (PMAT-1289 used to recover `-k` from a
+    // frontend `len(xs) - k` pre-rewrite here; that fold is gone, and the
+    // recovery had become actively WRONG for the one shape it still matched — a
+    // USER-written `xs[len(xs) - 4]` on a 3-element list is legal Python worth
+    // `xs[-1]` = the last element, but un-folding it to `-4` trapped.)
+    emit_expr_typed(index, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
     writeln!(out, "local.set ${IDX_SCRATCH}").expect("write");
 
@@ -21127,15 +21080,6 @@ fn emit_list_pop(
             // Shape 3: the PMAT-609 runtime-index normalize Block — emit the
             // RAW inner index; the helper re-applies the identical normalise.
             emit_expr_typed(raw, scope, out, depth, WatTy::I64)?;
-        } else if let Some(k) = neg_literal_index_k(index_expr, name) {
-            // Shape 2: the PMAT-570 negative-literal rewrite `len(xs) - k`
-            // (from `xs.pop(-k)`) — recover the raw `-k` so the helper's
-            // normalise is applied ONCE (a user-written `xs.pop(len(xs) - k)`
-            // is HIR-identical; on an underflow it traps here exactly where
-            // the Rust lane's `(len - k) as usize` panics — the safe,
-            // cross-backend-consistent posture for that corner).
-            indent(out, depth);
-            writeln!(out, "i64.const {}", -k).expect("write");
         } else if matches!(index_expr, Expr::Block(_)) {
             // A Block that is NOT the known normalize shape (a frontend
             // change would land here) — refuse rather than guess.
@@ -23790,20 +23734,15 @@ fn emit_list_delitem(
     };
     // base (i32) ; RAW index typed to i64 (the helper normalises + bounds-checks
     // in signed i64) ; then the shrink-and-shift helper does the work (void
-    // statement). PMAT-1289: a NEGATIVE-LITERAL `del xs[-k]` arrives
-    // pre-rewritten to `len(xs) - k` (PMAT-570, for the Rust lane's `usize`
-    // remove) — recover the raw `-k` so the helper's normalise applies ONCE
-    // (passing the rewritten value through double-normalised: `del xs[-4]` on a
-    // 3-element list silently deleted slot 2 where CPython raises `IndexError`
-    // — REFUTED by the PMAT-1289 differential fuzz).
+    // statement). PMAT-1351: the index arrives RAW — a negative literal
+    // `del xs[-k]` is `LitInt(-k)` — so the helper's normalise-then-trap is the
+    // single normalisation. (PMAT-1289's `len(xs) - k` recovery is gone with the
+    // frontend fold it compensated for; a USER-written `del xs[len(xs) - 4]` on
+    // a 3-element list now deletes the last element, as CPython does, instead of
+    // trapping.)
     indent(out, depth);
     writeln!(out, "local.get ${list_name}").expect("write");
-    if let Some(k) = neg_literal_index_k(index_expr, list_name) {
-        indent(out, depth);
-        writeln!(out, "i64.const {}", -k).expect("write");
-    } else {
-        emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
-    }
+    emit_expr_typed(index_expr, scope, out, depth, WatTy::I64)?;
     indent(out, depth);
     writeln!(out, "call $__wasm_list_delitem").expect("write");
     Ok(())

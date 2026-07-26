@@ -3391,14 +3391,24 @@ fn main() {
     assert_rustc_runs("tuple_negative_index", &rust, driver);
 }
 
-/// PMAT-502s (Tranche 2): negative list index `xs[-k]` → `xs[len(xs) - k]`
-/// (Python from-the-end indexing).
+/// PMAT-502s (Tranche 2): negative list index `xs[-k]` (Python from-the-end
+/// indexing).
+///
+/// PMAT-1351: the emitted SHAPE flipped. This used to desugar in the frontend
+/// to `xs[len(xs) - k]`, which the codegen then normalized a SECOND time — so
+/// the assertion below now pins the RAW literal reaching the single
+/// normalize-and-bounds-check emit instead of the `checked_sub` fold. The
+/// executed values are unchanged (that is the point: `xs[-1]` still reads the
+/// last element); what changes is the OUT-OF-RANGE corner, executed against
+/// CPython by the `neg_index_out_of_range.py` oracle fixture.
 #[test]
 fn neg_index() {
     let rust = xpile_transpile_to_rust("neg_index.py");
     assert!(
-        rust.contains("xs.len() as i64)).checked_sub("),
-        "expected len-relative negative index, got:\n{rust}"
+        rust.contains("let __li: i64 = (-1i64) as i64;")
+            && rust.contains("let __li: i64 = (-2i64) as i64;")
+            && !rust.contains("xs.len() as i64)).checked_sub("),
+        "expected the RAW negative literal to reach the index emit, got:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -3916,8 +3926,15 @@ fn list_pop() {
         rust.contains("(xs).pop().expect(\"xpile: IndexError: pop from empty list\")"),
         "pop last:\n{rust}"
     );
+    // PMAT-1351: the indexed pop binds the receiver once and bounds-checks the
+    // position with the `xpile: IndexError:` TAG before `Vec::remove` (whose
+    // native panic message no typed `except IndexError` could catch).
     assert!(
-        rust.contains("(xs).remove((0i64) as usize)"),
+        rust.contains(
+            "{ let __pi = (0i64) as i64; let __pv = &mut (xs); if __pi < 0 || __pi as usize \
+             >= __pv.len() { panic!(\"xpile: IndexError: pop index out of range\"); } \
+             __pv.remove(__pi as usize) }"
+        ),
         "pop at index:\n{rust}"
     );
     // Param receiver marked mut.
@@ -14539,7 +14556,9 @@ fn aug_subscript_index_once() {
     let rust = xpile_transpile_to_rust("aug_subscript_index_once.py");
     assert!(
         // the side-effecting index is bound to one `__augi` temp (evaluated once)…
-        rust.contains("let __augi0: i64 = (q).remove(")
+        // (PMAT-1351: the pop it binds is now the bounds-checked `__pv` form.)
+        rust.contains("let __augi0: i64 = { let __pi = ")
+            && rust.contains("let __pv = &mut (q);")
             // …while a pure index `i + 1` is duplicated inline (no temp).
             && rust.contains("(i).checked_add(1i64)"),
         "side-effecting subscript-aug index must be bound once; a pure index stays inline:\n{rust}"
