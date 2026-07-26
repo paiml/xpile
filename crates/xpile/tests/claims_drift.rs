@@ -521,6 +521,117 @@ fn roadmap_lean_module_count_matches_lakefile() {
     }
 }
 
+// ── (e) CURRENT.md carries NO bare derived counts ────────────────────
+
+/// Number words this gate recognises as a written-out count, plus the digit
+/// case. `word()`'s table is the emit side; this is the detect side, and it
+/// deliberately includes the small words prose actually reaches for.
+fn is_bare_count(tok: &str) -> bool {
+    let t = tok
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_lowercase();
+    if t.is_empty() {
+        return false;
+    }
+    t.chars().all(|c| c.is_ascii_digit()) || NUMBER_WORDS.contains(&t.as_str())
+}
+
+/// The last whitespace-separated token before byte offset `at`.
+fn token_before(text: &str, at: usize) -> Option<&str> {
+    text[..at].split_whitespace().next_back()
+}
+
+/// PMAT-1348: `docs/status/CURRENT.md` is declared a POINTER file — numbers in
+/// it must be stated as the command that derives them, never typed inline.
+///
+/// The 2026-05-18 demotion of this file to "a thin index" was prose only, and
+/// counts crept straight back in: `27 workspace crates` (live: 31),
+/// `12 contracts` (live: 35), a `12 QUORUM, 0 PARTIAL` line (live: 24/11),
+/// `PTX / WGSL / SPIR-V still scaffolded` (all three emit), and a
+/// `crates.io: xpile 0.0.1 name reservation` (0.1.616 was live). Five false
+/// claims, two months, in the file `docs/status/INDEX.md` calls "the single
+/// source of truth".
+///
+/// A doc rule with no gate is a suggestion — so this is the gate.
+#[test]
+fn current_md_carries_no_bare_derived_counts() {
+    let cur = read("docs/status/CURRENT.md");
+    // Noun phrases whose count is DERIVABLE from the tree. A bare integer or
+    // number-word immediately before one of these is drift waiting to happen.
+    let banned_nouns: &[&str] = &[
+        "workspace crates",
+        "contracts pass",
+        "contracts total",
+        "Kani BMC harnesses",
+        "Kani harnesses",
+        "Lean theorems",
+        "machine-checked modules",
+        "stratum-vote artifacts",
+        "wired Diamond equations",
+        "PRs merged",
+        "QUORUM",
+        "PARTIAL",
+        "UNVERIFIED",
+    ];
+    let mut offences = Vec::new();
+    for noun in banned_nouns {
+        let mut from = 0;
+        while let Some(rel) = cur[from..].find(noun) {
+            let at = from + rel;
+            if let Some(tok) = token_before(&cur, at) {
+                if is_bare_count(tok) {
+                    offences.push(format!("`{tok} {noun}`"));
+                }
+            }
+            from = at + noun.len();
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "docs/status/CURRENT.md carries bare derived count(s): {}. \
+         CURRENT.md is a POINTER file — state the DERIVE COMMAND instead \
+         (see its 'Derive the live numbers' table). Every count typed here \
+         has gone stale; that is why this gate exists.",
+        offences.join(", ")
+    );
+}
+
+/// Regression pin naming the EXACT strings that were live and false, so the
+/// gate above can never be quietly loosened back past them.
+#[test]
+fn current_md_does_not_carry_the_2026_05_stale_claims() {
+    let cur = read("docs/status/CURRENT.md");
+    // (needle, what was actually true when it was found stale on 2026-07-26)
+    let stale: &[(&str, &str)] = &[
+        ("27 workspace crates", "31 crates"),
+        ("12 contracts", "35 contracts"),
+        ("still scaffolded", "PTX, WGSL and SPIR-V all emit"),
+        ("0.0.1", "0.1.616 was published to crates.io"),
+    ];
+    for &(needle, truth) in stale {
+        assert!(
+            !cur.contains(needle),
+            "docs/status/CURRENT.md re-introduced the stale claim {needle:?} \
+             (truth at 2026-07-26: {truth})"
+        );
+    }
+}
+
+/// The `--contracts on` Lean caveat is a CORRECTNESS caveat, not decoration:
+/// the DEFAULT emit does not elaborate. If it is dropped from CURRENT.md the
+/// file silently resumes implying the default is usable Lean.
+#[test]
+fn current_md_discloses_the_lean_default_contracts_caveat() {
+    let cur = read("docs/status/CURRENT.md").to_lowercase();
+    assert!(
+        cur.contains("--contracts off"),
+        "docs/status/CURRENT.md must disclose that the DEFAULT `--contracts on` \
+         Lean emit does not elaborate (`@[xpile_contract \"…\"]` is not a \
+         registered Lean attribute; `lean` exits 1) and that `--contracts off` \
+         is the elaborating form."
+    );
+}
+
 #[test]
 fn roadmap_complete_claims_do_not_cite_planned_items() {
     let roadmap = read("docs/roadmaps/roadmap.yaml");
