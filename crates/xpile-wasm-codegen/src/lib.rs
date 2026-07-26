@@ -12181,8 +12181,20 @@ fn concat_operand_is_int(e: &Expr, ctx: &HashMap<String, Type>) -> bool {
         // over an int `n` is `str(int)` (the sign-aware `$__wasm_int_to_str`
         // renders a leading `-` when needed, though abs is non-negative). A float
         // `abs` (`of_float: true`) is NOT int and stays unwrapped -> refused.
+        //
+        // PMAT-1342: `min(a, b, …)` / `max(a, b, …)` join `abs` on the SAME
+        // `of_float` key — an all-int min/max is i64-valued (a min/max never
+        // leaves its operand set), so `f"{min(a, b)}"` materialises through the
+        // same sign-aware `str(int)`. PMAT-1339 shipped the int min/max emit but
+        // MISSED this touchpoint, so a min/max in a format position refused with
+        // the generic "expression in a string position" message while its `abs`
+        // (PMAT-1338) and `math.floor` (PMAT-1340) neighbours lowered fine — the
+        // gap this adversarial-verify slice REFUTED and closes. A FLOAT min/max
+        // (`of_float: true`) stays unwrapped: it is refused outright by
+        // `emit_num_builtin` (WASM `f64.min`/`max` mismatch CPython's NaN order),
+        // so classifying it int here would only mislabel an already-dead path.
         Expr::NumBuiltin {
-            op: NumBuiltinOp::Abs,
+            op: NumBuiltinOp::Abs | NumBuiltinOp::Min | NumBuiltinOp::Max,
             of_float,
             ..
         } => !*of_float,
