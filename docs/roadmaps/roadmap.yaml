@@ -4111,7 +4111,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-482: [Track4] Offline WGSL/SPIR-V validation gate — naga + spirv-val on CPU (free CI, no GPU)'
-  status: planned
+  status: done
   priority: high
   created: 2026-06-12T00:00:00Z
   acceptance_criteria:
@@ -15824,6 +15824,84 @@ roadmap:
   - "IMPL (single crate — xpile-wasm-codegen/src/lib.rs): `emit_dict_update_helper` (co-emitted in `dict_helpers_for` after `emit_set_algebra_helpers`); `emit_dict_update` + a `Stmt::DictUpdate` arm in `emit_stmt`; `Stmt::DictUpdate { .. }` folded into the `collect_let_locals_stmts` no-new-local list. NO meta-HIR / other-codegen / gate-walker edit — `other = Ident` of the same key kind nests only a leaf name, so the str-layout scanners'' `_ => false` and every `expr_has_*` walker stay correct (the merge carries no new heap/str helper). CITES C-COMPILE-RUST-TO-WASM + C-WASM-HEAP (no new contract/Lean module minted)."
   - "REGRESSION WITNESS: new gated crates/xpile-wasm-codegen/tests/dict_update_witness.rs (6 tests). CONSTRUCT: both `$__wasm_dict_update_<k>` helpers emitted AND called, reuse `$__wasm_dict_set_<k>`, read the value slot at offset 8, str-keyed carries `$__wasm_str_eq`. THREE honest-refusal tests (dict-literal arg, set arg, mismatched key kind). EXECUTED (WABT wat2wasm→wasm-interp + live python3): 15 zero-arg i64 exports VALUE-MATCHING CPython — observed two ways, `len(d)` cardinality AND `d[k]` value — covering overwrite (o's value wins on a shared key), append (o's new key), d's own key kept, a GROW that RELOCATES a size-1 receiver into 5 entries (every prior key survives the write-back), the self-update no-op (`d.update(d)`), the empty-source no-op, and str CONTENT-compare overwrite. PLUS a manual E2E `xpile transpile du_probe.py --target wasm` → wat2wasm → wasm-interp == CPython over int + str keyed `d.update(o)` (len/get/self/grow)."
   - "DONE: full gate green — fmt --all, check --workspace, clippy --workspace --all-targets -D warnings, pv lint contracts/ (0 errors), cargo-deny advisories, `cargo test -p xpile-wasm-codegen` (all witnesses incl. dict_update_witness 6 pass; whole-suite no regression). Sprint 2026-07-05. NEXT dict gaps: `d.update(**kwargs)`/merge-of-many, `.get(k)` Optional (Optional ABI), `.items()`/`.keys()`/`.values()` as a BOUND list value (list[K/V/tuple] ABI, HARD)."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1268
+  github_issue: null
+  item_type: task
+  title: "PMAT-1268: [bashrs] Shell `for … in <items>; do … done` loop parser — the FIRST shell control-flow round-trip; lowers to Stmt::ShellLoop and re-emits byte-identical POSIX through bashrs-backend. Shipped as #1849 (224d617c). Registered retroactively by PMAT-1343 after the pre-commit roadmap guard was found to be testing a non-existent path."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1269
+  github_issue: null
+  item_type: task
+  title: "PMAT-1269: [proof] C-C-FLOAT-ARITH Symbolic stratum — 3 non-vacuous Kani harnesses. Shipped as #1851 (d4a68b66). Registered retroactively by PMAT-1343."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1277
+  github_issue: null
+  item_type: task
+  title: "PMAT-1277: [proof] Kani Symbolic stratum for C-XLATE-PY-CLASS-TO-STRUCT, breadth 21→22. Shipped as #1858 (69b8a67c). Registered retroactively by PMAT-1343."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1281
+  github_issue: null
+  item_type: task
+  title: "PMAT-1281: [bashrs] Recursive NESTED loop parsing — arbitrary loop-in-loop / if-in-loop / loop-in-if nesting through the shell control-flow IR. Shipped as #1861 (f5a7fccc). Registered retroactively by PMAT-1343."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1283
+  github_issue: null
+  item_type: task
+  title: "PMAT-1283: [bashrs] `if COND; then … else … fi` conditionals — new Stmt::ShellIf IR. Shipped as #1864 (8642b245). Registered retroactively by PMAT-1343."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1343
+  github_issue: null
+  item_type: task
+  title: "PMAT-1343: [roadmap/release] SPRINT PLAN for the 2026-07-26..07-31 release window + roadmap-ledger repair. Authors docs/specifications/sub/sprint-6day-2026-07-26.md (a 13-agent design→judge→synthesize plan: 6 read-only tree scouts, 3 candidate orderings, 3 adversarial judges, synthesis; the release-first anchor won 252/300) and refills docs/roadmaps/queue.yaml with the EV-ranked PMAT-1343..1367 slate the autonomous cron pops from. Owner-ratified 2026-07-26: Friday 2026-07-31 ships tag + GitHub release + the full 31-crate crates.io batch; emphasis is TRUTH WORK with the WASM breadth grind CLOSED for the window; full autonomous cron with a roadmap status line every firing. LEDGER REPAIR in the same slice: registers the 5 ids that drifted (PMAT-1268/1269/1277/1281/1283 — all shipped, none registered) and flips PMAT-482 planned→done (shipped as #1877). ROOT CAUSE surfaced for PMAT-1345 to gate: .git/hooks/pre-commit:76 guards on `docs/execution/roadmap.md`, a path that does not exist, so the completeness guard has never once fired."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
