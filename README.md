@@ -72,6 +72,12 @@ def factorial (n : Int) : Int :=
 Lean's `Int` is unbounded, so the same overflow contract holds *by
 construction* — no `checked_*` needed.
 
+> **Caveat — the default Lean emit does not elaborate.** `--contracts on` is
+> the default, and `xpile_contract` is not a registered Lean attribute, so
+> `lean` rejects the output above with `unexpected token; expected ']'`. Pass
+> `--contracts off` for Lean you intend to elaborate. Lean is the only backend
+> affected: every other one cites contracts in comments.
+
 ## Why xpile
 
 - **Faithful by contract.** Emitted code is verified against the source
@@ -241,6 +247,13 @@ annotation-free output; the library equivalent is
 [`xpile_backend::strip_contract_citations`](crates/xpile-backend/src/lib.rs).
 
 ### Universal binary
+
+> **Two DISJOINT WebAssembly paths — they share no code.** `--target wasm`
+> (above) is the native WAT emitter: meta-HIR straight to WebAssembly text, and
+> it does *not* produce a WASI binary. The universal binary below goes through
+> `--emit-crate` → Rust → `wasm32-wasip1`, so it is Rust's toolchain that emits
+> the `.wasm`. A program that builds via this section may still refuse under
+> `--target wasm`, and vice versa.
 
 `--emit-crate` writes a complete Cargo crate. If the program defines `main()`,
 that crate compiles to a **single portable WebAssembly binary** that runs on any
