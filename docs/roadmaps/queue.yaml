@@ -39,13 +39,16 @@ sprint:
     this merge, so the serialization holds] -> #3 PMAT-1346 claims_drift.rs -> #4 PMAT-1347 ruleset_drift.rs+deny.toml+ci.yml:56
     -> #5 PMAT-1348 claims_drift.rs -> #6 PMAT-1350 contracts/*.yaml+probe -> #7 PMAT-1356 changelog_freshness.rs
     -> #8 PMAT-1359 witness_floor.rs TOUCH 2 (inside the release commit)'
-  witness_floor_touches: 'EXACTLY TWO all sprint: PMAT-1344 (initial re-derive, DONE 2026-07-26) and PMAT-1359
-    (final re-derive, inside the release commit). Intermediate slices ADD witnesses and NEVER bump a floor
-    — floors are lower bounds, so adding tests cannot red them. Adding a new *_witness.rs file is NOT
-    a touch. [CORRECTED by PMAT-1344: both fields previously named PMAT-1360 for TOUCH 2, but PMAT-1360
-    is the overlay-purge/dry-run/RELEASE.md slice — TOUCH 2 is carried by PMAT-1359''s own title (''release
-    commit ... + witness-floor re-derive TOUCH 2 (ALL lanes)''), matching sprint plan §4''s serialized-gate-touch
-    list. Do NOT touch witness_floor.rs in PMAT-1360.]'
+  witness_floor_touches: 'EXACTLY TWO PER RELEASE WINDOW. For the 0.1.618 window those are PMAT-1372
+    (TOUCH 1, DONE 2026-07-26 — ADDED the XPILE-WITNESS-004 executing-half floors; bumped NO existing
+    floor value, so it cannot red another branch on rebase) and PMAT-1373 (TOUCH 2, the Thursday release
+    commit, which re-derives ALL lanes INCLUDING the two new ones, WASM_EXEC_FLOOR and WASM_EXEC_PCT_FLOOR).
+    NOTHING ELSE may touch crates/xpile/tests/witness_floor.rs before the tag. Intermediate slices ADD
+    witnesses and NEVER bump a floor — floors are lower bounds, so adding tests cannot red them. Adding
+    a new *_witness.rs file is NOT a touch of this file, but note it now has to carry a runtime probe
+    site or `every_wasm_witness_file_gates_on_the_runtime` reds. [HISTORY: the 0.1.617 window''s two touches
+    were PMAT-1344 (initial re-derive) and PMAT-1359 (release commit, now superseded by PMAT-1373). An
+    earlier revision of this field named PMAT-1360 for TOUCH 2, corrected by PMAT-1344.]'
   prior_release: v0.1.617 shipped 2026-07-26 21:18 (ccb95a04); full A1 sequence in the project-sprint-2026-07-26-release
     memory
   pick_rule: 'Take the lowest-numbered OPEN item whose `date` <= today (ISO). Within a date, ev_rank R1
@@ -698,9 +701,26 @@ queue:
     \ AFTER the last edit."
   date: '2026-07-28'
 - id: PMAT-1372
-  status: open
+  status: done
   ev_rank: R2
   gate_touch: 1
+  done_notes: 'DONE 2026-07-26 (pulled forward from 07-28; no item was dated <= Sun and this is the head
+    of the serial gate chain, so landing it unblocks PMAT-1356 = gate_touch #2). Shipped as three assertions
+    + a manifest split line + 4 anti-vacuity unit tests in crates/xpile/tests/witness_floor.rs; test-only,
+    no product code, no CI change. LIVE FIGURES RE-DERIVED AT cf6009bd, machine-counted: 138 files / 795
+    `#[test]`s / 315 runtime-gated (39%) / 138 of 138 files carry a probe site. The queue''s own premise
+    figure of "361 non-comment call sites" was a SITE count at c3e468d4 and is NOT the gated-TEST count
+    — the live site count at cf6009bd is 463 and the gated-test count is 315; do not conflate them. Floors
+    set at WASM_EXEC_FLOOR=300 and WASM_EXEC_PCT_FLOOR=36 (~5% and ~3.6pt under live). ALL THREE FALSIFIED
+    in a throwaway worktree, each against the old gate: (A) probe sed''d out of abs_num_builtin_witness.rs
+    -> assertion 3 reds naming it, old floor GREEN; (B) +100 emit-only tests -> assertion 2 reds while
+    the old floor RISES to 895 and passes; (C) `if !probe()` -> `if false` in 2 files holds the total at
+    EXACTLY 795 and drops gated to 285 -> assertion 1 reds, old floor GREEN. HONESTY PIN carried into the
+    module header and the roadmap entry: the metric does NOT follow helper calls, so a test gating via
+    a shared `run_case` counts as UNGATED and 39% is a LOWER BOUND on executing tests, never a coverage
+    claim. NEXT PICK: PMAT-1356 (gate_touch #2, now unblocked) — but it is dated 2026-07-29 and its own
+    lane (CHANGELOG) is where PMAT-1349/1354/1355 still sit `in_progress`; on Mon 07-27 the ranked pick
+    is PMAT-1356, else a D-pool item.'
   title: 'WASM witness corpus: floor the EXECUTING half, not just the total — runtime-gated count + per-file
     `>=1 runtime guard` invariant'
   notes: "SPRINT FLOOR TOUCH #1 of 2 (touch #2 is Thursday's release re-derive). STRICTLY SERIAL —\nmust\

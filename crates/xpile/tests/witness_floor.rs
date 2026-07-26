@@ -18,6 +18,7 @@
 //! adding witnesses raises the live count and can never red a floor:
 //!
 //! - wasm: `#[test]`s in `crates/xpile-wasm-codegen/tests/*_witness.rs` -> (795, 770)
+//!   PLUS an EXECUTING-half floor (XPILE-WITNESS-004, below) -> (315 gated / 39%, 300 / 36%)
 //! - shell: `#[test]`s in `tests/shell_diff_exec.rs` -> (7, 7)
 //! - rust-differential: `tests/oracle_fixtures/*.py` + `FixtureCfg` rows in `tests/diff_exec.rs` -> (34+10=44, 44)
 //! - hybrid: `#[test]`s in `tests/hybrid_verify{,_float,_multiarg}.rs` -> (3, 3)
@@ -39,6 +40,43 @@
 //! must exist, carry a witness, gate on an availability probe, and print a
 //! skip notice — asserted by `gpu_lanes_skip_with_reason_never_silently_absent`.
 //!
+//! XPILE-WITNESS-004 — floor the EXECUTING half of the WASM lane, not just the
+//! total. The lane floor above counts `#[test]` attributes and nothing else, so
+//! it is satisfiable by pure static WAT-string assertions: delete 100 executing
+//! witnesses, add 100 emit-only ones, and the total-only floor stays green while
+//! executing coverage silently halves. That is the identical "count went up, so
+//! coverage went up" hole XPILE-WITNESS-002 closed one level up, on the lane 69
+//! of v0.1.617's commits were built on. Three assertions close it:
+//!
+//!   1. `wasm_runtime_gated_witness_floor` — the runtime-gated COUNT has its own
+//!      floor, so a deletion of executing witnesses reds even if emit-only tests
+//!      replace them one-for-one.
+//!   2. `wasm_runtime_gated_fraction_floor` — the gated PERCENTAGE has a floor.
+//!      This is the assertion a total-only floor structurally cannot make: it
+//!      reds when the corpus is PADDED with emit-only tests.
+//!   3. `every_wasm_witness_file_gates_on_the_runtime` — every `*_witness.rs`
+//!      carries at least one non-comment probe site (live 138/138). Strongest
+//!      and cheapest: a brand-new purely-static witness FILE cannot be added
+//!      without a deliberate, visible decision to change this test.
+//!
+//! HONEST DEFINITION OF "runtime-gated" — read this before citing the number.
+//! It means "this `#[test]`'s own body names `wasm_runtime_available(` on a
+//! non-comment line". It is a syntactic proxy that deliberately does NOT follow
+//! helper calls (call-graph reachability would be neither cheap nor reviewable),
+//! so a test that executes via a shared `run_case` helper counts as UNGATED.
+//! The gated count is therefore a strict LOWER BOUND on the executing tests, not
+//! an estimate of them — which is exactly what a floor needs, and why the live
+//! 39% must never be quoted as "39% of WASM witnesses execute". A refactor that
+//! hoists probes into helpers legitimately lowers this metric and will red the
+//! fraction gate; that is a loud, correct prompt to re-derive at a TOUCH point,
+//! not a defect.
+//!
+//! NO CEILING IS PLACED ON EMIT-ONLY TESTS, deliberately. They are refusal
+//! witnesses, gate-tightness checks and static WAT assertions — `PMAT-1350`'s
+//! `wasm_contract_surface.rs` DEPENDS on refusals being tested. A ceiling would
+//! pressure deletion of the tests that pin the emitter's boundary. Floor the
+//! executing count and the fraction; never cap the static half.
+//!
 //! All paths are derived from `CARGO_MANIFEST_DIR` (the `xpile` crate dir,
 //! which Cargo sets for every `cargo test` invocation regardless of CWD), so
 //! the walk is workspace-relative, never absolute-hardcoded.
@@ -56,14 +94,28 @@ use std::path::{Path, PathBuf};
 // snapshots recorded at the last TOUCH, not invariants; they are expected to
 // trail the true count between TOUCH points.
 //
-// TOUCH 1 (PMAT-1344, 2026-07-26): WASM_FLOOR 400 -> 770. The old floor was set
+// 0.1.617 window, TOUCH 1 (PMAT-1344, 2026-07-26): WASM_FLOOR 400 -> 770. The old floor was set
 // when the lane had 444 witnesses and was never re-derived across the ~69 WASM
 // slices that landed for 0.1.617, leaving 395 tests of dead slack — ~50% of the
 // corpus could have been deleted without reddening the REQUIRED `workspace-test`
 // context, which is the exact anti-deletion guarantee this manifest exists to
 // provide. 770 leaves 25 of headroom for in-flight churn. Every OTHER lane was
 // already tight at TOUCH 1 and is deliberately left alone.
+// 0.1.618 window, TOUCH 1 (PMAT-1372, 2026-07-26): no floor above was bumped —
+// the EXECUTING-half floors below were ADDED, so this touch cannot red another
+// in-flight branch on rebase. TOUCH 2 is the Thursday release re-derive
+// (PMAT-1373), which re-derives every lane INCLUDING the two new ones.
 const WASM_FLOOR: usize = 770; // live 795 @ 2026-07-26 (TOUCH 1)
+
+// The probe a WASM witness calls to decide whether it can execute the emitted
+// module. Kept as one named constant so widening the notion of "executes" later
+// is a one-line, reviewable act rather than a loosened grep.
+const RUNTIME_PROBE: &str = "wasm_runtime_available(";
+// XPILE-WITNESS-004 executing-half floors. `live 315 / 39%` is a DATED SNAPSHOT
+// (2026-07-26, TOUCH 1) of a metric that is a LOWER BOUND on executing tests —
+// see the module header before quoting either figure anywhere.
+const WASM_EXEC_FLOOR: usize = 300; // live 315 @ 2026-07-26 (TOUCH 1)
+const WASM_EXEC_PCT_FLOOR: usize = 36; // live 39% @ 2026-07-26 (TOUCH 1)
 const SHELL_FLOOR: usize = 7; // live 7 @ 2026-07-26 (tight)
 const RUST_DIFF_FLOOR: usize = 44; // live 44 @ 2026-07-26 (34 oracle + 10 diff_exec; tight)
 const HYBRID_FLOOR: usize = 3; // live 3 @ 2026-07-26 (tight)
@@ -101,22 +153,72 @@ fn count_lines_containing(src: &str, needle: &str) -> usize {
     src.lines().filter(|l| l.contains(needle)).count()
 }
 
-/// Sum `#[test]` attributes across every `*_witness.rs` file in `dir`.
-fn count_witness_tests_in_dir(dir: &Path) -> usize {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("witness-floor: cannot read dir {}: {e}", dir.display()));
-    let mut total = 0usize;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let is_witness = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.ends_with("_witness.rs"));
-        if is_witness {
-            total += count_test_attrs(&read(&path));
+/// True when `line` is Rust code rather than a line comment (`//`, `///`,
+/// `//!`). Block comments are not modelled: none of the witness files use one
+/// around a probe call, and a syntactic proxy that over-counts a commented-out
+/// probe would only ever make a floor EASIER to satisfy, which is the direction
+/// this gate must not fail in silently. Treating `//`-prefixed lines as
+/// non-code is what stops a doc comment that merely NAMES the probe from
+/// scoring a gate.
+fn is_code_line(line: &str) -> bool {
+    !line.trim_start().starts_with("//")
+}
+
+/// Count non-comment occurrences of `needle`.
+fn count_code_sites(src: &str, needle: &str) -> usize {
+    src.lines()
+        .filter(|l| is_code_line(l) && l.contains(needle))
+        .count()
+}
+
+/// Count the `#[test]`s in `src` whose OWN body names `needle` on a non-comment
+/// line. A test's body runs from its `#[test]` attribute to the next `#[test]`
+/// or EOF, and each test is credited at most once.
+///
+/// Deliberately does NOT follow helper calls — see the module header. A test
+/// that gates via a shared helper counts as ungated, so the result is a strict
+/// LOWER BOUND on the tests that actually execute.
+fn count_tests_referencing(src: &str, needle: &str) -> usize {
+    let mut gated = 0usize;
+    let mut in_test = false;
+    let mut credited = false;
+    for line in src.lines() {
+        if line.trim() == "#[test]" {
+            in_test = true;
+            credited = false;
+            continue;
+        }
+        if in_test && !credited && is_code_line(line) && line.contains(needle) {
+            gated += 1;
+            credited = true;
         }
     }
-    total
+    gated
+}
+
+/// Every `*_witness.rs` in `dir`, sorted by file name so failure messages and
+/// manifest output are deterministic across filesystems.
+fn witness_files_in_dir(dir: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("witness-floor: cannot read dir {}: {e}", dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with("_witness.rs"))
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+/// Sum `#[test]` attributes across every `*_witness.rs` file in `dir`.
+fn count_witness_tests_in_dir(dir: &Path) -> usize {
+    witness_files_in_dir(dir)
+        .iter()
+        .map(|p| count_test_attrs(&read(p)))
+        .sum()
 }
 
 /// Count `*.py` files in `dir`.
@@ -129,8 +231,35 @@ fn count_py_files(dir: &Path) -> usize {
 }
 
 // ── Per-lane counts ─────────────────────────────────────────────────────────
+fn wasm_witness_dir() -> PathBuf {
+    crate_dir().join("../xpile-wasm-codegen/tests")
+}
+
 fn wasm_witness_count() -> usize {
-    count_witness_tests_in_dir(&crate_dir().join("../xpile-wasm-codegen/tests"))
+    count_witness_tests_in_dir(&wasm_witness_dir())
+}
+
+/// `(total #[test]s, tests whose own body gates on the runtime probe)` over the
+/// WASM witness corpus. The second figure is a LOWER BOUND on executing tests.
+fn wasm_witness_split() -> (usize, usize) {
+    let mut total = 0usize;
+    let mut gated = 0usize;
+    for path in witness_files_in_dir(&wasm_witness_dir()) {
+        let src = read(&path);
+        total += count_test_attrs(&src);
+        gated += count_tests_referencing(&src, RUNTIME_PROBE);
+    }
+    (total, gated)
+}
+
+/// `*_witness.rs` files carrying ZERO non-comment probe sites — i.e. files in
+/// which nothing can execute at all. Live: empty (138/138 gate).
+fn wasm_files_without_a_guard() -> Vec<String> {
+    witness_files_in_dir(&wasm_witness_dir())
+        .into_iter()
+        .filter(|p| count_code_sites(&read(p), RUNTIME_PROBE) == 0)
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
+        .collect()
 }
 
 fn shell_witness_count() -> usize {
@@ -252,6 +381,68 @@ fn wasm_witness_floor() {
         n >= WASM_FLOOR,
         "wasm witness floor breached: {n} < {WASM_FLOOR} — a batch of WASM \
          execution witnesses was deleted or silenced (XPILE-WITNESS-002)"
+    );
+}
+
+// ── XPILE-WITNESS-004: floor the EXECUTING half of the WASM lane ────────────
+#[test]
+fn wasm_runtime_gated_witness_floor() {
+    let (total, gated) = wasm_witness_split();
+    eprintln!(
+        "witness-manifest[wasm]: {total} total / {gated} runtime-gated \
+         (floor {WASM_EXEC_FLOOR})"
+    );
+    assert!(
+        gated >= WASM_EXEC_FLOOR,
+        "wasm RUNTIME-GATED witness floor breached: {gated} < {WASM_EXEC_FLOOR} \
+         (of {total} total). Executing witnesses were deleted or their runtime \
+         guard was removed. NOTE the total-only floor ({WASM_FLOOR}) can stay \
+         GREEN through this: swapping executing witnesses for emit-only ones \
+         one-for-one leaves the total untouched while executing coverage drops. \
+         That swap is precisely what this assertion exists to catch \
+         (XPILE-WITNESS-004)"
+    );
+}
+
+#[test]
+fn wasm_runtime_gated_fraction_floor() {
+    let (total, gated) = wasm_witness_split();
+    assert!(
+        total > 0,
+        "wasm witness corpus is empty (XPILE-WITNESS-004)"
+    );
+    let pct = gated * 100 / total;
+    eprintln!(
+        "witness-manifest[wasm]: {pct}% runtime-gated ({gated}/{total}, \
+         floor {WASM_EXEC_PCT_FLOOR}%)"
+    );
+    assert!(
+        pct >= WASM_EXEC_PCT_FLOOR,
+        "wasm runtime-gated FRACTION breached: {pct}% < {WASM_EXEC_PCT_FLOOR}% \
+         ({gated}/{total}). The corpus was padded with emit-only tests — a \
+         total-only floor structurally cannot see this, because padding only \
+         ever raises the total. Either add executing witnesses alongside the \
+         static ones, or (if probes were legitimately hoisted into shared \
+         helpers) re-derive this floor at an explicit TOUCH point and say so in \
+         the commit (XPILE-WITNESS-004)"
+    );
+}
+
+#[test]
+fn every_wasm_witness_file_gates_on_the_runtime() {
+    let unguarded = wasm_files_without_a_guard();
+    let files = witness_files_in_dir(&wasm_witness_dir()).len();
+    eprintln!(
+        "witness-manifest[wasm]: {}/{files} witness files carry a runtime guard",
+        files - unguarded.len()
+    );
+    assert!(
+        unguarded.is_empty(),
+        "these WASM witness files contain NO non-comment `{RUNTIME_PROBE}` site, \
+         so nothing in them can ever execute — they assert on emitted WAT text \
+         only: {unguarded:?}. Adding a purely-static witness file must be a \
+         deliberate decision that edits this test, not a silent dilution of the \
+         lane's execution evidence (XPILE-WITNESS-004)"
     );
 }
 
@@ -402,9 +593,23 @@ fn witness_floor_manifest_emitted() {
         + FORJAR_FLOOR
         + LEAN_FLOOR;
 
+    let (wasm_total, wasm_gated) = wasm_witness_split();
+    let wasm_pct = if wasm_total > 0 {
+        wasm_gated * 100 / wasm_total
+    } else {
+        0
+    };
+
     eprintln!("== XPILE-WITNESS-002 witness-floor manifest ==");
     eprintln!("  lane                executed  floor");
     eprintln!("  wasm                {wasm:>8}  {WASM_FLOOR}");
+    // XPILE-WITNESS-004: the split retires the bare "N witnesses" figure, which
+    // has already produced two provably-wrong numbers in this repo's docs. The
+    // gated half is a LOWER BOUND on executing tests, never a coverage claim.
+    eprintln!(
+        "  wasm  {wasm_total} total / {wasm_gated} runtime-gated \
+         (floor {WASM_EXEC_FLOOR}, {wasm_pct}% vs floor {WASM_EXEC_PCT_FLOOR}%)"
+    );
     eprintln!("  shell               {shell:>8}  {SHELL_FLOOR}");
     eprintln!("  rust-differential   {rustd:>8}  {RUST_DIFF_FLOOR}");
     eprintln!("  hybrid              {hybrid:>8}  {HYBRID_FLOOR}");
@@ -418,4 +623,81 @@ fn witness_floor_manifest_emitted() {
         total >= floor_total,
         "aggregate witness floor breached: {total} < {floor_total} (XPILE-WITNESS-002)"
     );
+}
+
+// ── Anti-vacuity: the counting primitives themselves ────────────────────────
+// Without these, XPILE-WITNESS-004 could pass because `count_tests_referencing`
+// returns a large number for the WRONG reason (e.g. crediting doc comments, or
+// crediting a test for a probe that belongs to the NEXT test).
+mod counting_primitives {
+    use super::{count_code_sites, count_test_attrs, count_tests_referencing, RUNTIME_PROBE};
+
+    #[test]
+    fn a_probe_named_only_in_a_comment_scores_nothing() {
+        let src = "\
+//! Gated on `wasm_runtime_available()` — prose, not code.
+#[test]
+fn t() {
+    // if !wasm_runtime_available() { return; }
+    assert!(wat.contains(\"i64.add\"));
+}
+";
+        assert_eq!(count_test_attrs(src), 1);
+        assert_eq!(count_code_sites(src, RUNTIME_PROBE), 0);
+        assert_eq!(count_tests_referencing(src, RUNTIME_PROBE), 0);
+    }
+
+    #[test]
+    fn an_import_line_is_not_a_probe_site() {
+        // The `use` line names the probe but does not CALL it; the trailing
+        // `(` in the needle is what keeps it from scoring.
+        let src = "use xpile_wasm_codegen::{emit_module, wasm_runtime_available};\n";
+        assert_eq!(count_code_sites(src, RUNTIME_PROBE), 0);
+    }
+
+    #[test]
+    fn each_test_is_credited_at_most_once_and_only_for_its_own_body() {
+        let src = "\
+#[test]
+fn emit_only() {
+    assert!(wat.contains(\"i64.add\"));
+}
+
+#[test]
+fn executes() {
+    if !wasm_runtime_available() {
+        return;
+    }
+    if !wasm_runtime_available() {
+        return;
+    }
+    assert_eq!(run(), 7);
+}
+";
+        assert_eq!(count_test_attrs(src), 2);
+        // Two call sites, but ONE gated test — and the emit-only test that
+        // PRECEDES it must not be credited for a probe below it.
+        assert_eq!(count_code_sites(src, RUNTIME_PROBE), 2);
+        assert_eq!(count_tests_referencing(src, RUNTIME_PROBE), 1);
+    }
+
+    #[test]
+    fn a_helper_gated_test_counts_as_ungated_lower_bound() {
+        // The documented false-negative, pinned so nobody "fixes" it into
+        // call-graph reachability without reading the module header.
+        let src = "\
+fn run_case(py: &str) {
+    if !wasm_runtime_available() {
+        return;
+    }
+}
+
+#[test]
+fn t() {
+    run_case(\"x = 1\");
+}
+";
+        assert_eq!(count_code_sites(src, RUNTIME_PROBE), 1);
+        assert_eq!(count_tests_referencing(src, RUNTIME_PROBE), 0);
+    }
 }
