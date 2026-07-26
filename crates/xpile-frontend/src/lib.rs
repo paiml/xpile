@@ -14,6 +14,20 @@ pub enum FrontendError {
     Parse(String),
     #[error("lowering error: {0}")]
     Lower(String),
+    /// PMAT-1346 (XPILE-FRONTEND-SUBSTANCE-001): the frontend RECOGNISES the
+    /// file but has no lowering for the language at all.
+    ///
+    /// Distinct from [`FrontendError::Parse`] (the user's source is
+    /// malformed) and [`FrontendError::Lower`] (a well-formed construct is
+    /// outside the supported subset): the input may be perfectly valid —
+    /// xpile simply cannot read this language yet. Returning this instead of
+    /// an empty `Ok(Module)` is what turns a missing parser into a LOUD
+    /// refusal with a non-zero exit rather than a silent empty emission,
+    /// which is the one silent-wrong-answer shape the transpile promise
+    /// (`README.md`: "refuses at transpile time with a reason instead of
+    /// emitting code that silently diverges") does not survive.
+    #[error("unimplemented frontend: {0}")]
+    Unimplemented(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -84,6 +98,25 @@ pub trait Frontend: Send + Sync {
             .and_then(|ext| ext.to_str())
             .map(|ext_str| self.extensions().contains(&ext_str))
             .unwrap_or(false)
+    }
+
+    /// PMAT-1346 (XPILE-FRONTEND-SUBSTANCE-001): does this frontend actually
+    /// LOWER its language, or is it registered for ROUTING ONLY — so a
+    /// matching file reaches a specific refusal naming what is unimplemented,
+    /// instead of the generic `no frontend handles .<ext>` message?
+    ///
+    /// Routing-only frontends must not be counted as source languages xpile
+    /// reads (`xpile info`, `README.md`). `ruchy-frontend` is the only one
+    /// today: xpile emits Ruchy but cannot read it.
+    ///
+    /// This is a DECLARATION, and a declaration on its own would be worth
+    /// nothing — a hollow frontend could simply claim `true`. It is
+    /// cross-checked against BEHAVIOUR by
+    /// `crates/xpile/tests/claims_drift.rs`, which runs every registered
+    /// frontend against a real program in its own language and fails if what
+    /// the frontend did disagrees with what it declared here.
+    fn lowers_input(&self) -> bool {
+        true
     }
 
     /// Parse source and lower to meta-HIR.
