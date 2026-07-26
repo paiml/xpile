@@ -9,6 +9,39 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **A `bool` in a `range(...)` bound now coerces to `int` instead of emitting
+  Rust that rustc rejects** (PMAT-1364). Python's `bool` is a subclass of `int`
+  — `True == 1`, `False == 0` — so `range(True)` is `range(1)` and
+  `range(False)` is empty. The desugar handed the lowered bound to the emitter
+  **raw**, so every bool-typed bound produced uncompilable Rust while
+  `xpile transpile` exited **0**: `let __forstop1: i64 = b;` (E0308),
+  `= true;` for `range(True)`, `= (x > 2i64);` for `range(x > 2)`,
+  `let mut __forc0: i64 = b;` for the start position of `range(b, 3)`, and
+  `(b).checked_sub(1i64)` — **E0599**, no such method on `bool` — for both
+  `reversed(range(...))` positions. Measured on the new oracle fixture, the
+  pre-fix emitter exited 0 and rustc then reported **8 errors** (6 × E0308,
+  2 × E0599). The fix routes both bounds through `to_i64_operand`, the *same*
+  helper every other int-position consumer already uses; it re-infers, so it is
+  a no-op on a non-bool bound and cannot perturb the existing corpus.
+  **Ordering is load-bearing:** the coercion runs *before* the `reversed` flip,
+  which rewrites each bound to `<bound> - 1` — a `BinOp::Sub` infers as `I64`
+  whatever its operands are, so a coercion applied afterwards would silently
+  skip exactly the two reversed shapes while every other test still passed.
+  The `step` is parsed as an integer literal, so `range(0, 6, True)` keeps
+  taking the pre-existing non-literal-step refusal rather than silently
+  stepping by 1. **BigInt-mode functions REFUSE instead** of coercing: there
+  the counter type is `xpile_bigint::BigInt` and `to_i64_operand` only reaches
+  i64, so a cast would swap E0308-on-`bool` for E0308-on-`i64`, and no
+  bool → BigInt promotion node exists. (`-> BigInt` promotes `int` params to
+  `BigInt` but deliberately leaves `bool` params alone, which is precisely why
+  `bool` is the only bound shape that can reach the desugar mistyped.) All
+  seven bound positions ship as the oracle fixture `range_bool_bound.py`, which
+  the differential oracle compiles with rustc and diffs against `python3`
+  byte-for-byte; `tests/range_bool_bound.rs` pins the exact emitted binding
+  line for each, the stage of the BigInt refusal, and — the anti-vacuity half —
+  that an ordinary `int` bound is emitted **unchanged**, which an unconditional
+  cast would fail. Because the defect lived in the shared meta-HIR desugar, the
+  Ruchy and Lean lanes carried it too and are fixed by the same change.
 - **An annotated comprehension whose element type contradicts its annotation now
   REFUSES instead of emitting Rust that rustc rejects** (PMAT-1363).
   `xs: list[str] = [i for i in range(5)]` was *accepted* and emitted

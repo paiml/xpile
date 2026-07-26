@@ -554,9 +554,42 @@ queue:
     the Thursday release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1364
-  status: open
+  status: done
   ev_rank: D
-  title: '[D-pool] range(bool) coercion'
+  title: '[D-pool] range(bool) coercion (SHIPPED 2026-07-27)'
+  notes: 'DONE 2026-07-27 (pulled forward from 07-29 under the day<=4 rule; nothing is dated <= today,
+    every ranked slice is merged, and the D-pool reverse-cut order named this next). THE PREMISE HELD
+    THIS TIME — unlike PMAT-1363''s. Confirmed at c43b6d5a with a provenance-checked binary (`.d` file
+    read before trusting it): `for i in range(b)` with `b: bool` emits `let __forstop1: i64 = b;` and
+    `xpile transpile` exits 0. ** SEVEN bound positions, not one: stop-as-param, stop-as-`True`-literal,
+    stop-as-comparison-expr, START of `range(b, 3)`, both bounds at once, and BOTH `reversed(range(...))`
+    positions (which emit `(b).checked_sub(1i64)` = E0599, a different rustc error class). Measured
+    receipt: the pre-fix emitter exits 0 on the new fixture and rustc reports 8 errors (6 E0308 + 2
+    E0599); post-fix rustc is clean and stdout is byte-identical to python3 over 13 printed shapes.
+    ** THE FIX IS ONE HELPER CALL, NOT NEW MACHINERY: `to_i64_operand` already exists and is what every
+    other int-position consumer uses; the range desugar simply never called it. Worth recording as a
+    search pattern — when a coercion bug looks like it needs a new node, first check whether the codebase
+    already has the conditional helper and one consumer skipped it. ** ORDER IS LOAD-BEARING: coerce
+    BEFORE the `reversed` flip. That flip wraps each bound in `BinOp::Sub`, which infers I64 regardless
+    of its operands, so a coercion placed after it silently skips exactly the two reversed shapes while
+    every non-reversed test still passes. Both reversed positions are pinned separately for that reason.
+    ** BIGINT-MODE REFUSES rather than coercing — the counter type there is `xpile_bigint::BigInt` and
+    `to_i64_operand` only reaches i64, so a cast swaps E0308-on-bool for E0308-on-i64. `-> BigInt`
+    promotes int params to BigInt but deliberately leaves bool params alone, which is exactly why bool
+    is the only bound shape that can arrive mistyped. A companion test pins that BigInt-mode range loops
+    over INT bounds still lower, so the refusal test cannot green because BigInt loops are broken in
+    general. ** THE STEP NEEDED NOTHING: `extract_step_literal` parses it as an int literal, so
+    `range(0, 6, True)` already refuses; a test pins that, because widening the step path would have been
+    a NEW silent wrong answer. ** ANTI-VACUITY: `non_bool_bounds_are_emitted_unchanged` is the test that
+    an unconditional blanket cast would fail — note its first draft FALSE-POSITIVED on `range(len(xs))`,
+    which legitimately emits `(xs.len() as i64)`; the fingerprint had to narrow to the NumCast wrapper
+    shape `= ((… ) as i64)`. ** rust-differential live 44 -> 47 against an unchanged RUST_DIFF_FLOOR 44;
+    no floor touched. NEXT PICK: the D-pool in reverse-cut order is now PMAT-1365 (list(d)/list(d.keys())/
+    list(d.values()) — its note says if it does NOT land it must appear in the CHANGELOG''s "What still
+    REFUSES"), then PMAT-1366 (round(x)), then PMAT-1362 (shell-boundary --verify widening, which
+    PMAT-1363''s note flags as needing a shell-boundary RETURN-ABI decision the queue does not make, and
+    which changes DEFAULT --verify behaviour — the wrong thing to land near the Wed 18:00 freeze). Gate
+    touches #1/#2 are merged; #3 is RESERVED for the Thursday release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1365
   status: open
