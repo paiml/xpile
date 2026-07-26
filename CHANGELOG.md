@@ -129,6 +129,62 @@ meta-HIR and the trait surfaces.
   two are indistinguishable — one refusal either way — so without the stage pin
   that row would have passed green on a false reason. Asserting `Err(_)` proves
   nothing about *why*.
+- **`xpile quorum`'s Runtime stratum counts executions, not mentions**
+  (PMAT-1367). `count_runtime_witnesses` was a flat `read_dir` over
+  `crates/xpile/tests/fixtures` whose entire body was
+  `if text.contains(contract_id) { hits += 1 }`. A bare **comment** in a fixture
+  scored a full Runtime vote, while the WASM witness corpus under
+  `crates/xpile-wasm-codegen/tests` — which assembles emitted modules with
+  `wat2wasm` and executes them under `wasm-interp`, inside the **required**
+  `workspace-test` job, with `XPILE_REQUIRE_WASM_RUNTIME=1` turning a missing
+  runtime into a hard panic — scored **zero**. So `C-COMPILE-RUST-TO-WASM` and
+  `C-WASM-HEAP` reported `Run=0` / `PARTIAL` while being the two most-executed
+  contracts in the repo. `xpile quorum` now reports **26 QUORUM / 9 PARTIAL /
+  0 UNVERIFIED** over 35 contracts, up from 24/11/0 — exactly two rows moved,
+  and the number is derived by the command, not typed anywhere.
+
+  The rule is a **widen-only union**. Pass A (fixtures) is byte-identical,
+  including its non-recursive walk, so no existing vote can disappear and the
+  monotonicity is reviewable at a glance. Pass B adds top-level `*.rs` under
+  each repeatable `--witness-dir` (default: `crates/xpile-wasm-codegen/tests`)
+  that **both** names the contract ID **and** carries a non-comment call to one
+  of `RUNTIME_PROBES` — today exactly `wasm_runtime_available(`, the same
+  constant `witness_floor.rs` floors the executing half of the corpus on.
+  Votes union into a `BTreeSet` of canonical paths, so overlapping
+  `--witness-dir` arguments cannot double-count a file.
+
+  **The conjunction is the whole change, and the reason is measured rather than
+  argued.** A naive *"any `crates/*/tests/*.rs` naming the ID"* rule over the
+  live 193-file set flips **ten of the eleven** `PARTIAL` rows, and **eight are
+  unearned**: six come from gate files (`contract_citation_integrity.rs`
+  hardcodes a roster of contract IDs; `lean_pilot_roots.rs` names them in
+  comments — every `Command::new` in them spawns the `xpile` binary itself, so
+  `Command::new` is not a proxy for execution), and two come from
+  `gpu_witness.rs`, which carries a real probe but takes the
+  `NotRun { no-engine }` branch on every CI runner — a vote resting on evidence
+  the required job has never once produced. `tests/quorum.rs` therefore pins
+  those six contracts at `runtime == 0` **and** `status == "PARTIAL"` as
+  mandatory negative assertions; without them the slice would be unfalsifiable
+  and would read as grade inflation. Every one of the eleven `PARTIAL` rows sits
+  at exactly two strata, so *any* Runtime vote flips one — which is precisely
+  why this is the easiest number in the project to inflate by accident.
+
+  The positive assertion is a **floor** (`runtime >= 50`), not `>= 1`, so
+  deleting the witness corpus reds it. `mod quorum_tests` adds the anti-inflation
+  unit tests: a witness naming the ID with no probe scores 0, a probe named only
+  inside a `//` comment scores 0, a file reachable from both passes counts once,
+  and only top-level `*.rs` files may vote. A missing `--witness-dir` now prints
+  a one-line stderr notice naming the path and stays non-fatal, because the
+  default is CWD-relative and `cargo test` runs with CWD = the crate dir — a
+  relative path there would have scored 0 and left the new gate green while
+  measuring nothing.
+
+  **Read the number honestly:** `QUORUM` still means "≥1 vote in ≥3 strata". It
+  does not mean the contract was executed 35 ways, and the two WASM rows still
+  have `Sym=0`. `docs/specifications/sub/provability-roadmap.md` said *"Runtime
+  = fixture files mentioning the contract ID"* beside a two-month-stale
+  *"12 QUORUM / 0 PARTIAL / 0 UNVERIFIED"*; both are corrected, and the live
+  figures are now stated as a derive command rather than typed.
 
 ### Added
 
