@@ -47,7 +47,7 @@ jobs:
       - name: cargo deny check advisories
         run: cargo deny check advisories
 
-  # ── workspace-test (intended-required — see enforcement note) ─
+  # ── workspace-test (REQUIRED — see enforcement note) ─────────
   # Runs the full test suite, INCLUDING the WASM execution witnesses
   # (795 `#[test]`s across 138 `*_witness.rs` files as of 2026-07-26 —
   # a dated snapshot; the authoritative count is whatever
@@ -58,12 +58,33 @@ jobs:
   # separate job so the failure mode is visible at a glance
   # (gate vs tests).
   #
-  # ENFORCEMENT NOTE: the paiml org branch-protection ruleset currently
-  # lists ONLY `gate` as a required status check — `workspace-test` is NOT
-  # yet GitHub-enforced, even though it runs every in-tree differential
-  # witness. Add `workspace-test` to the required contexts at the org
-  # ruleset layer (XPILE-RULESET-001); this comment is the honest state
-  # until that org-level edit lands.
+  # ENFORCEMENT NOTE (PMAT-1347 — re-derived against the LIVE API, and now
+  # GATED so it cannot rot again). The paiml org branch-protection ruleset
+  # 13878864 requires EXACTLY two contexts. Every OTHER job in this file is
+  # ADVISORY: it runs on every PR and goes red on a real regression, but a red
+  # advisory job does NOT block a merge. Do not describe them as merge-blocking.
+  #
+  # The two marker lines below are MACHINE-READ by
+  # `crates/xpile/tests/ruleset_drift.rs` (XPILE-RULESET-DRIFT-001), which
+  # cross-checks them against the committed snapshot
+  # `docs/status/ruleset-13878864.json` and — when a token is available —
+  # against the live `gh api orgs/paiml/rulesets/13878864`. Editing one
+  # without the others REDS the gate. Keep both lists sorted.
+  #
+  # XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test
+  # XPILE-ENFORCEMENT ADVISORY-CONTEXTS: docs, kani, lake-build, lean-models, shader-validate, wasi
+  #
+  # HISTORY, because the failure mode is the point: this note previously read
+  # "`workspace-test` is NOT yet GitHub-enforced" — the exact INVERSE of the
+  # live state — while `docs/status/ruleset-13878864.json` simultaneously
+  # claimed a four-context set `[gate, kani, lake-build, workspace-test]`.
+  # Both were wrong in OPPOSITE directions and both survived three weeks
+  # unnoticed. The 2026-07-05 four-context flip was reverted six hours after
+  # it landed (snapshot `updated_at` 17:35 vs live 23:50, same day), so the
+  # committed snapshot was stale while LOOKING authoritative. Restoring `kani`
+  # + `lake-build` as required is an ORG-ADMIN action and is OWNER-GATED (the
+  # repo-level rulesets endpoint 404s for an org-sourced ruleset); it is
+  # recorded as the `ruleset-reflip` owner decision, not as a task.
   workspace-test:
     name: workspace-test
     runs-on: ubuntu-latest

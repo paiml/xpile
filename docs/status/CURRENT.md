@@ -16,7 +16,9 @@ This file used to enumerate every implemented crate / contract / construct, and 
 - Shell subset supported: POSIX tokenizing (quoted strings, $NAME/${NAME}, $(cmd), backtick subst, NAME=value, pipelines, ShellLoop, special parameters); see CHANGELOG PMAT-037..058
 - Multiple runtime-verified semantic fixtures: factorial, fib, gcd, abs_val, sign, bits, square_plus, range_size, sum_to, for_sum / range_with_start / range_with_step, factorial_iter, bigint_factorial — plus shell `bashrs_realistic_demo.sh` round-tripping byte-identically
 - **43 Kani BMC harnesses** verify on every CI run via dedicated `kani` job + `every_kani_harness_discharges` workspace test (XPILE-QUORUM-006 series PMAT-147..151 added per-equation symbolic coverage for the 5 multi-equation contracts)
-- CI: `gate` + `kani` + `workspace-test` all run on every PR; `gate` is the load-bearing required status check via the org-level ruleset rule (verifiable with `gh api repos/paiml/xpile/rules/branches/main`). `kani` and `workspace-test` are not yet required-status-checks but in practice green on every merged PR — flipping them required is post-v0.1.0 work.
+- CI (**re-derived against the live API 2026-07-26, PMAT-1347** — the previous sentence here was stale in both directions): eight jobs run on every PR, and org ruleset `13878864` requires exactly two of them.
+  <!-- XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test -->
+  **Required (merge-blocking):** `gate`, `workspace-test`. **Advisory (run every PR, red on a real regression, do NOT block a merge):** `kani`, `lake-build`, `docs`, `wasi`, `lean-models`, `shader-validate`. Verify with `gh api repos/paiml/xpile/rules/branches/main`; the claim is pinned by `crates/xpile/tests/ruleset_drift.rs`. Promoting the proof lane to required is an owner-gated org-admin edit — see [`enforcement-handoff.md`](enforcement-handoff.md) §2.
 - crates.io: `xpile 0.0.1` published as a name reservation; v0.1.0+ unreleased
 - 217 PRs merged on `main` (was 184 — the Diamond program shipped 32 PRs at PMAT-226..257 with the Diamond depth-1/2/3/4 milestones + reporter + CI gate + taxonomy doc + Section 28)
 

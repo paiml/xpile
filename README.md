@@ -199,8 +199,14 @@ Every pull request runs:
 | Symbolic | `cargo kani` over every harness in `contracts/kani/` |
 | Docs | `pmat validate-docs` (link integrity) + `pmat demo-score` |
 
-The `gate` job is the required status check for merge. Workflow:
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Two jobs are merge-blocking: **`gate`** (the checklist above minus tests) and
+**`workspace-test`** (the full suite, including the execution witnesses). The
+other six — `kani`, `lake-build`, `docs`, `wasi`, `lean-models`,
+`shader-validate` — run on every PR and go red on a real regression, but are
+**advisory**: they do not block a merge. Notably that includes the proof lane,
+so a failing Kani harness or Lean build is visible without being blocking; see
+[`docs/status/enforcement-handoff.md`](docs/status/enforcement-handoff.md) §2.
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Install
 

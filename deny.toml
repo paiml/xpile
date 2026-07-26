@@ -2,7 +2,13 @@
 all-features = true
 
 [advisories]
-yanked = "warn"
+# PMAT-1347: `deny`, not `warn`. A yanked dependency is a publish-time hazard,
+# not an ecosystem-health note — `cargo publish` resolves against the live
+# index, so a dep yanked between the dry-run and the Friday batch fails the
+# upload partway through a 31-crate DAG (release abort rule A4: no retry at the
+# same version, fix forward at the next patch). No dep is yanked today, so this
+# lands green and only ever fires BEFORE a publish, which is the whole point.
+yanked = "deny"
 # Unmaintained-but-not-vulnerable advisories pulled in via rustpython-parser
 # (depyler-frontend's parser). All are upstream ecosystem health warnings,
 # not security vulnerabilities. Revisit when rustpython-parser modernizes
