@@ -374,6 +374,16 @@ fn the_contract_prose_no_longer_lists_shipped_constructs_as_refused() {
         .split_once("compile_targets:")
         .expect("contract lost its `compile_targets:` section");
 
+    // NORMALISE WHITESPACE FIRST. The claim lives in a YAML block scalar, so
+    // it is hard-wrapped across lines with leading indentation: the literal
+    // sentence is never a contiguous substring of the raw file. A pin written
+    // against the raw text passes no matter what the prose says — a vacuous
+    // green, which is the exact failure class this sprint exists to close.
+    // (This was caught by running the falsification rather than assuming it:
+    // restoring the literal pre-slice prose did NOT red the first version of
+    // this test.)
+    let flat = desc.split_whitespace().collect::<Vec<_>>().join(" ");
+
     // The literal pre-PMAT-1350 claim. Its distinguishing feature is asserting
     // a refusal set that BEGINS with str/list/dict/set/struct — all of which
     // emit. The historical quotation of that sentence inside the PMAT-1350
@@ -384,7 +394,7 @@ fn the_contract_prose_no_longer_lists_shipped_constructs_as_refused() {
         "outside the scalar/control subset (str / list / dict / set / struct",
     ] {
         assert!(
-            !desc.contains(stale),
+            !flat.contains(stale),
             "the pre-PMAT-1350 refusal claim is back in metadata.description: \
              {stale:?}. str/list/dict/set/struct all EMIT — a str-keyed dict \
              program assembles under wat2wasm and executes. Point the prose at \
