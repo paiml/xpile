@@ -115,8 +115,11 @@ enum Cmd {
     /// every contract and tallies per-stratum votes:
     ///   Semantic   = `lean_theorem:` refs in the contract's own YAML
     ///   Symbolic   = `kani_harness:` refs in the contract's own YAML
-    ///   Runtime    = fixture files under tests/fixtures/ that name
-    ///                the contract ID in a comment / docstring
+    ///   Runtime    = the UNION of (a) fixture files under tests/fixtures/
+    ///                that name the contract ID and (b) top-level `*.rs`
+    ///                files under each `--witness-dir` that name the ID AND
+    ///                carry a non-comment runtime-availability probe call
+    ///                (PMAT-1367)
     ///   Extrinsic  = roadmap.yaml work-item mentions (PMAT-032)
     /// Reports per-contract counts + a quorum status:
     ///   QUORUM     (≥1 vote in ≥3 strata)
@@ -127,6 +130,13 @@ enum Cmd {
         contracts_dir: PathBuf,
         #[arg(long, default_value = "crates/xpile/tests/fixtures")]
         fixtures_dir: PathBuf,
+        /// Directory whose top-level `*.rs` files may cast a Runtime vote
+        /// (repeatable; votes are unioned by canonical path, so overlapping
+        /// directories cannot double-count a file). A file votes only when it
+        /// BOTH names the contract ID and carries a non-comment call to one of
+        /// the `RUNTIME_PROBES` — naming the ID alone is not execution.
+        #[arg(long, default_value = "crates/xpile-wasm-codegen/tests")]
+        witness_dir: Vec<PathBuf>,
         #[arg(long, default_value = "docs/roadmaps/roadmap.yaml")]
         roadmap: PathBuf,
         #[arg(long)]
@@ -209,9 +219,10 @@ fn main() -> Result<()> {
         Cmd::Quorum {
             contracts_dir,
             fixtures_dir,
+            witness_dir,
             roadmap,
             json,
-        } => quorum(&contracts_dir, &fixtures_dir, &roadmap, json),
+        } => quorum(&contracts_dir, &fixtures_dir, &witness_dir, &roadmap, json),
         Cmd::Diamond {
             contracts_dir,
             json,
@@ -1585,6 +1596,7 @@ impl QuorumRow {
 fn quorum(
     contracts_dir: &Path,
     fixtures_dir: &Path,
+    witness_dirs: &[PathBuf],
     roadmap_path: &Path,
     json: bool,
 ) -> Result<()> {
@@ -1593,6 +1605,21 @@ fn quorum(
     // that contract's YAML, not from neighbours mentioning it).
     if !contracts_dir.is_dir() {
         bail!("{} is not a directory", contracts_dir.display());
+    }
+    // TRAP (PMAT-1367): a `--witness-dir` that does not exist must never
+    // silently score 0 — the default is CWD-relative and `cargo test` runs
+    // with CWD = the crate dir, so a caller that forgets an absolute path
+    // would get a green gate measuring nothing. Announce it once, up front,
+    // naming the path; non-fatal, because `quorum` is a reporter and a caller
+    // legitimately may point it at a lane that is not checked out.
+    for dir in witness_dirs {
+        if !dir.is_dir() {
+            eprintln!(
+                "xpile quorum: notice — --witness-dir {} is not a directory; \
+                 it contributes 0 Runtime votes",
+                dir.display()
+            );
+        }
     }
     let mut rows: Vec<QuorumRow> = Vec::new();
     for entry in std::fs::read_dir(contracts_dir)? {
@@ -1610,7 +1637,7 @@ fn quorum(
         rows.push(QuorumRow {
             semantic: count_field_occurrences(&contents, "lean_theorem:"),
             symbolic: count_field_occurrences(&contents, "kani_harness:"),
-            runtime: count_runtime_witnesses(&id, fixtures_dir),
+            runtime: count_runtime_witnesses(&id, fixtures_dir, witness_dirs),
             extrinsic: 0, // filled below
             id,
         });
@@ -1646,37 +1673,141 @@ fn count_field_occurrences(contents: &str, field_prefix: &str) -> usize {
         .count()
 }
 
-/// Count fixture files that mention `contract_id` somewhere in their
-/// text. Per-fixture mentions are treated as a single vote (multiple
-/// comment lines inside one fixture still count as 1, mirroring how
-/// `xpile audit` treats one emitted function as one citation). Walks
-/// `*.py` plus any other text files the directory contains.
-fn count_runtime_witnesses(contract_id: &str, fixtures_dir: &Path) -> usize {
-    if !fixtures_dir.is_dir() {
-        return 0;
+/// The runtime-availability probes whose presence marks a witness file as one
+/// that EXECUTES an emitted artifact rather than asserting over its text.
+///
+/// Deliberately an explicit list, not a pattern: widening the notion of
+/// "executes" to another lane is then a one-line reviewable edit rather than a
+/// grep that quietly loosens. `wasm_runtime_available(` is the probe the 138
+/// `crates/xpile-wasm-codegen/tests/*_witness.rs` files call before shelling
+/// out to `wat2wasm` + `wasm-interp`; it is the same constant
+/// `crates/xpile/tests/witness_floor.rs` floors the executing half of the
+/// corpus on (XPILE-WITNESS-004).
+///
+/// NOT widened to the WGSL / SPIR-V `gpu_witness.rs` files. They are real
+/// `DiffExec` witnesses and would pass this filter, but on every CI runner they
+/// take the `NotRun { no-engine }` branch — a Runtime vote resting on evidence
+/// the required `workspace-test` job has never once produced would be exactly
+/// the grade inflation this counter exists to stop.
+const RUNTIME_PROBES: &[&str] = &["wasm_runtime_available("];
+
+/// True when `line` is Rust code rather than a line comment (`//`, `///`,
+/// `//!`). Block comments are not modelled — no witness file wraps a probe call
+/// in one, and over-counting a commented-out probe would only ever ADD a vote,
+/// the direction this counter must not err in. Mirrors the identical helper in
+/// `crates/xpile/tests/witness_floor.rs`, deliberately: the executing-half floor
+/// and the Runtime stratum must agree on what "executes" means.
+fn is_code_line(line: &str) -> bool {
+    !line.trim_start().starts_with("//")
+}
+
+/// Count the files that cast a Runtime vote for `contract_id` (PMAT-1367).
+///
+/// The source set is a WIDEN-ONLY union of two passes, collected into a
+/// `BTreeSet` of canonical paths so a file reachable from more than one pass —
+/// or from two overlapping `--witness-dir` arguments — is one vote, not two:
+///
+/// * **Pass A (unchanged since PMAT-033):** flat files under `fixtures_dir`
+///   whose text mentions `contract_id` anywhere. Kept BYTE-IDENTICAL, including
+///   its non-recursive walk, so the monotonicity of this change is reviewable
+///   at a glance: no existing vote can disappear.
+/// * **Pass B (new):** top-level `*.rs` files under each witness dir that BOTH
+///   mention `contract_id` AND carry a non-comment call to one of
+///   [`RUNTIME_PROBES`].
+///
+/// Pass B's conjunction is the whole point. Naming a contract ID is not
+/// evidence of anything — `crates/xpile/tests/contract_citation_integrity.rs`
+/// hardcodes a roster of IDs and `lean_pilot_roots.rs` names them in comments,
+/// and neither executes an emitted artifact. Nor is spawning a process:
+/// every `Command::new` in those files launches the `xpile` binary itself.
+/// Requiring the probe is what separates "a test that runs an emitted module
+/// under a real runtime" from "a test that mentions a string".
+fn count_runtime_witnesses(
+    contract_id: &str,
+    fixtures_dir: &Path,
+    witness_dirs: &[PathBuf],
+) -> usize {
+    let mut voters: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+    collect_fixture_voters(contract_id, fixtures_dir, &mut voters);
+    for dir in witness_dirs {
+        collect_witness_voters(contract_id, dir, &mut voters);
     }
-    let mut hits = 0usize;
-    if let Ok(entries) = std::fs::read_dir(fixtures_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            if text.contains(contract_id) {
-                hits += 1;
-            }
+    voters.len()
+}
+
+/// Canonicalize for set identity, falling back to the literal path when the
+/// file cannot be resolved (a broken symlink still deserves its own slot rather
+/// than colliding with a neighbour).
+fn vote_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Pass A — fixture files mentioning the contract ID. Behaviourally identical
+/// to the pre-PMAT-1367 counter; only the accumulator changed.
+fn collect_fixture_voters(
+    contract_id: &str,
+    fixtures_dir: &Path,
+    voters: &mut std::collections::BTreeSet<PathBuf>,
+) {
+    if !fixtures_dir.is_dir() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(fixtures_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if text.contains(contract_id) {
+            voters.insert(vote_key(&path));
         }
     }
-    hits
+}
+
+/// Pass B — top-level `*.rs` witness files that name the ID *and* gate on a
+/// runtime-availability probe on a non-comment line.
+fn collect_witness_voters(
+    contract_id: &str,
+    witness_dir: &Path,
+    voters: &mut std::collections::BTreeSet<PathBuf>,
+) {
+    if !witness_dir.is_dir() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(witness_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if !text.contains(contract_id) {
+            continue;
+        }
+        let executes = text
+            .lines()
+            .filter(|l| is_code_line(l))
+            .any(|l| RUNTIME_PROBES.iter().any(|probe| l.contains(probe)));
+        if executes {
+            voters.insert(vote_key(&path));
+        }
+    }
 }
 
 fn print_quorum_text(rows: &[QuorumRow]) {
     println!("xpile quorum — §14.4 N-of-M oracle quorum (PMAT-033)");
     println!(
-        "strata: Semantic (Lean) | Symbolic (Kani) | Runtime (fixtures) | Extrinsic (roadmap)"
+        "strata: Semantic (Lean) | Symbolic (Kani) | \
+         Runtime (fixtures ∪ executing witnesses) | Extrinsic (roadmap)"
     );
     println!();
     println!(
@@ -1795,6 +1926,163 @@ bar:
 ";
         assert_eq!(count_field_occurrences(yaml, "lean_theorem:"), 3);
         assert_eq!(count_field_occurrences(yaml, "kani_harness:"), 0);
+    }
+
+    // ── PMAT-1367 anti-inflation unit tests ─────────────────────────────
+    //
+    // The Runtime stratum is the one an implementer can inflate by accident:
+    // every one of the 11 PARTIAL contracts sits at exactly 2 strata, so ANY
+    // Runtime vote flips a row to QUORUM. These pin the three ways a naive
+    // widen would manufacture votes it did not earn.
+
+    /// Unique scratch dir per test; removed on the way out.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "xpile-quorum-{}-{}-{name}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            std::fs::create_dir_all(&dir).expect("create scratch dir");
+            Self(dir)
+        }
+        fn write(&self, name: &str, body: &str) -> PathBuf {
+            let p = self.0.join(name);
+            std::fs::write(&p, body).expect("write scratch file");
+            p
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A witness that NAMES the contract but never gates on a runtime probe is
+    /// static-text evidence, not execution — zero votes. This is the assertion
+    /// that keeps `contract_citation_integrity.rs`-shaped roster files (which
+    /// name eight IDs and execute nothing emitted) out of the Runtime stratum.
+    #[test]
+    fn witness_naming_the_id_without_a_probe_casts_no_runtime_vote() {
+        let s = Scratch::new("no-probe");
+        s.write(
+            "roster_witness.rs",
+            "//! Names C-WASM-HEAP in a roster and asserts over WAT text.\n\
+             #[test]\n\
+             fn emits() {\n\
+             \x20   let wat = emit(\"C-WASM-HEAP\");\n\
+             \x20   assert!(wat.contains(\"memory\"));\n\
+             }\n",
+        );
+        let empty = Path::new("/nonexistent-fixtures-dir");
+        assert_eq!(
+            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            0,
+            "naming a contract ID is not evidence of executing anything"
+        );
+    }
+
+    /// A probe call that only appears inside a `//!` / `//` comment is a
+    /// mention of the probe, not a call to it. Without this the counter would
+    /// score any file whose module header merely documents the gating rule.
+    #[test]
+    fn probe_named_only_in_a_comment_casts_no_runtime_vote() {
+        let s = Scratch::new("comment-probe");
+        s.write(
+            "commented_witness.rs",
+            "//! C-WASM-HEAP witness.\n\
+             //! Historically this called wasm_runtime_available( ) before executing.\n\
+             #[test]\n\
+             fn emits() {\n\
+             \x20   // wasm_runtime_available() — disabled while WABT is broken\n\
+             \x20   assert!(true);\n\
+             }\n",
+        );
+        let empty = Path::new("/nonexistent-fixtures-dir");
+        assert_eq!(
+            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            0,
+            "a probe named in a comment is not a probe call"
+        );
+    }
+
+    /// Union semantics: the same file reachable from both passes — or from two
+    /// overlapping `--witness-dir` arguments — is ONE vote. A running counter
+    /// instead of a set would double-count here, and `--witness-dir` is
+    /// repeatable precisely so a caller can pass overlapping directories.
+    #[test]
+    fn a_file_in_both_passes_counts_once_not_twice() {
+        let s = Scratch::new("union");
+        s.write(
+            "dual_witness.rs",
+            "//! C-WASM-HEAP\n\
+             #[test]\n\
+             fn runs() {\n\
+             \x20   if !wasm_runtime_available() { return; }\n\
+             }\n",
+        );
+        // Same directory handed in as BOTH the fixtures dir and the witness
+        // dir, and then as the witness dir twice over.
+        assert_eq!(
+            count_runtime_witnesses("C-WASM-HEAP", s.path(), &[s.path().to_path_buf()]),
+            1,
+            "fixtures ∪ witness must dedupe by canonical path"
+        );
+        assert_eq!(
+            count_runtime_witnesses(
+                "C-WASM-HEAP",
+                Path::new("/nonexistent-fixtures-dir"),
+                &[s.path().to_path_buf(), s.path().to_path_buf()],
+            ),
+            1,
+            "a repeated --witness-dir must not double-count"
+        );
+    }
+
+    /// Pass B is top-level and `*.rs`-only: a nested subdirectory and a
+    /// non-Rust file both stay out, so the source set cannot be widened by
+    /// dropping a text file into the corpus.
+    #[test]
+    fn witness_pass_is_top_level_rust_files_only() {
+        let s = Scratch::new("scope");
+        let probe = "//! C-WASM-HEAP\nfn f() { wasm_runtime_available(); }\n";
+        s.write("notes.txt", probe);
+        std::fs::create_dir_all(s.path().join("nested")).expect("nested dir");
+        std::fs::write(s.path().join("nested/deep_witness.rs"), probe).expect("nested witness");
+        let empty = Path::new("/nonexistent-fixtures-dir");
+        assert_eq!(
+            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            0,
+            "only top-level *.rs files under a witness dir may vote"
+        );
+        s.write("real_witness.rs", probe);
+        assert_eq!(
+            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            1
+        );
+    }
+
+    /// A missing witness dir contributes nothing and does not panic (the
+    /// stderr notice is emitted by `quorum` itself, once, not per contract).
+    #[test]
+    fn missing_witness_dir_is_non_fatal_and_scores_zero() {
+        assert_eq!(
+            count_runtime_witnesses(
+                "C-WASM-HEAP",
+                Path::new("/nonexistent-fixtures-dir"),
+                &[PathBuf::from("/nonexistent-witness-dir")],
+            ),
+            0
+        );
     }
 }
 
