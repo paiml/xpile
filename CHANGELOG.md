@@ -9,6 +9,36 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **bashrs-frontend REFUSES the four constructs it used to SHRED** (PMAT-1371):
+  here-documents, bash fall-through `;&` and `;;&`, and a bare `&` in command
+  position. All four exited **0** before this change. **Here-documents are the
+  serious one**, and the only known SILENT wrong answer in the shell lane: there
+  is no here-doc handling in the frontend at all, and `parse_and_lower` trims
+  every source line and drops every blank one *globally*, so a here-doc body was
+  re-tokenized as ordinary commands and space-joined by the backend. `cat <<EOF`
+  over `"  keep  me"` / `""` / `"after blank"` exited 0, produced a script that
+  passed `bash -n` **cleanly**, and executed *differently* from its source —
+  leading and internal whitespace collapsed to `"keep me"` and the blank line
+  deleted. Nothing downstream catches a syntactically valid script that means
+  something else, and here-docs are how shell emits config files, SQL, YAML and
+  usage text. Inside an indented block the backend's `indent_body` additionally
+  tab-prefixed the terminator, giving *"here-document at line 6 delimited by
+  end-of-file"*. The other three failed `bash -n` outright: `a) echo A ;&` put a
+  bare `&` in arm `a`'s body and **swallowed the following arm**; `;;&` left the
+  stray `&` in the next arm's *pattern* slot (a different code path, hence its
+  own witness); a bare `&` on its own line was emitted verbatim. Fixing the
+  global trim would ripple through every parser path, so these refuse and stay
+  v0.2.0 work — with an explicit `FrontendError` naming the construct and the
+  reason, not a shred. **The guards are deliberately narrow, and both boundaries
+  are pinned by positive tests:** here-doc detection is TOKEN-level because
+  `echo "a << b"` round-trips correctly today and a `contains("<<")` guard would
+  regress it; only `&` in *command* position refuses, because a trailing `&` is
+  POSIX background execution and `a) sleep 0 & ;;` round-trips correctly today.
+  This makes CLAUDE.md's and `sub/bashrs-merger.md`'s standing claim that the
+  frontend "refuses with a hard `FrontendError` rather than shredding into
+  barewords" true for the first time; both documents previously described `;&`
+  as merely *"not modelled"*, which read as a gap when it was in fact a defect,
+  and neither mentioned here-docs at all. Both are corrected here.
 - **`hybrid --verify` divergence reports a 1-based line number** (PMAT-1352).
   The comparison index is 0-based and was printed raw, so a divergence on the
   first line of stdout reported *"DIVERGENT at line 0"* — no editor and no human

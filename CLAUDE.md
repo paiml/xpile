@@ -70,24 +70,36 @@ strings) and printed back byte-for-byte — the `[ … ]` test and glob
 metacharacters are NOT modelled structurally (v0.2.0); (b) `case` is
 TOP-LEVEL only — a `case` nested inside a loop/if body refuses (the
 `;`-segment split would mangle arm `;;`; arm bodies THEMSELVES may
-contain nested loops/ifs); (c) `;&`/`;;&` (bash fall-through) is not
-modelled. Everything else refuses with a hard `FrontendError` rather
-than shredding into barewords. The `C-BASHRS-POSIX-IDEMPOTENCE`
+contain nested loops/ifs); (c) `;&`/`;;&` (bash fall-through) is
+REFUSED (PMAT-1371), not modelled — through v0.1.617 it was SHREDDED,
+emitting a bare `&` that failed `bash -n`; (d) HERE-DOCUMENTS
+(`<<EOF`, `<<-EOF`) are REFUSED (PMAT-1371). There is no here-doc
+handling at all: the frontend trims every line and drops blank ones,
+so a here-doc body was re-tokenized as commands and reflowed — through
+v0.1.617 `cat <<EOF` over "  keep  me" exited 0, passed `bash -n`, and
+executed DIFFERENTLY from its source (whitespace collapsed, blank line
+dropped). Detection is TOKEN-level, so `echo "a << b"` still works.
+Everything else refuses with a hard `FrontendError` rather than
+shredding into barewords — a claim that only became true at PMAT-1371;
+before it, the four shapes above plus a bare `&` in command position
+all exited 0. The `C-BASHRS-POSIX-IDEMPOTENCE`
 contract holds for the flat-command subset AND the (nested)
 for/while/until loops, if/then/elif/else conditionals, and top-level
 `case` under its §14.4 stratum coverage — it does NOT certify
-case-in-loop, structural condition/pattern modelling, or `;&`
-fall-through (v0.2.0). Do not claim the frontend "handles ALL POSIX
+case-in-loop, structural condition/pattern modelling, `;&`
+fall-through, or here-documents (v0.2.0). Do not claim the frontend "handles ALL POSIX
 shell" — it handles the flat-command subset plus (nested)
 for/while/until + if/then/elif/else + top-level case (with opaque
 conditions/patterns). See CHANGELOG PMAT-085..092 + PMAT-119 for the
 flat-subset round-trip invariant lock-in series, PMAT-989 for the
 control-flow refusal, PMAT-1268 for `for`, PMAT-1276 for
 `while`/`until`, PMAT-1281 for recursive loop NESTING, PMAT-1283 for
-`if`/`then`/`else`, PMAT-1284 for `elif`, and PMAT-1285 for `case`.
+`if`/`then`/`else`, PMAT-1284 for `elif`, PMAT-1285 for `case`, and
+PMAT-1371 for the `;&`/`;;&`/here-doc/bare-`&` REFUSALS.
 With `case`, the v0.1.0 shell CONTROL-FLOW surface is COMPLETE — only
-structural condition/pattern modelling, case-in-loop, and `;&`
-fall-through remain for the v0.2.0 "real bashrs parser" fold.
+structural condition/pattern modelling, case-in-loop, `;&`
+fall-through, and here-documents remain for the v0.2.0 "real bashrs
+parser" fold, and all four now REFUSE rather than shred.
 
 Concrete workflow when shell artifacts become necessary:
 
