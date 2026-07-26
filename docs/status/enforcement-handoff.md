@@ -1,11 +1,29 @@
 # Enforcement hand-off — the org-gated tail of the fable architectural review
 
-> **STATUS 2026-07-05 — the flip is LIVE.** Org ruleset `13878864` now requires
-> `['gate', 'kani', 'lake-build', 'workspace-test']` (was `['gate']`).
-> XPILE-RULESET-001 ✅ and the ruleset half of XPILE-RULESET-002 ✅ are DONE — the
-> seven merged gates plus the proof lane are now **merge-blocking**, not advisory.
-> Snapshot: [`ruleset-13878864.json`](ruleset-13878864.json). Still open:
-> RULESET-002's `kani_verify` hard-fail companion PR, the SOT-001 governance
+> **STATUS 2026-07-26 (PMAT-1347) — re-derived against the live API. The
+> previous banner on this line was FALSE.** Org ruleset `13878864` requires
+> exactly two contexts:
+>
+> <!-- XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test -->
+> **required (merge-blocking): `gate`, `workspace-test`.**
+> **advisory (run every PR, red on regression, do NOT block a merge):**
+> `kani`, `lake-build`, `docs`, `wasi`, `lean-models`, `shader-validate`.
+>
+> XPILE-RULESET-001 ✅ is DONE and HELD (`workspace-test` is enforced).
+> XPILE-RULESET-002 is **NOT** done: its ruleset half was applied on
+> 2026-07-05 at 17:35 and **reverted the same day at 23:50**, and this file
+> asserted the four-context set for three weeks afterwards because a committed
+> JSON snapshot cannot notice the API moving underneath it. The *repo* half of
+> RULESET-002 ✅ **did** ship — `crates/xpile/tests/kani_verify.rs:149`'s
+> `XPILE_REQUIRE_KANI` tripwire (#1885) — but it hardens a lane that is
+> advisory, so a red proof job still does not block a merge.
+>
+> Snapshot: [`ruleset-13878864.json`](ruleset-13878864.json), now pinned by
+> `crates/xpile/tests/ruleset_drift.rs` (XPILE-RULESET-DRIFT-001) against both
+> the marker lines above and — when a token with org scope is present — the
+> live API. **Still open:** the RULESET-002 org-admin RE-FLIP (owner-gated,
+> tracked as the `ruleset-reflip` owner decision in
+> [`docs/roadmaps/queue.yaml`](../roadmaps/queue.yaml)), the SOT-001 governance
 > decision, and PMAT-487 (GPU runners).
 
 The EV-ranked backlog in [`docs/specifications/fable-architectural-review.md`](../specifications/fable-architectural-review.md)
@@ -29,7 +47,9 @@ runbook + record for that tail.
 
 All seven run under the `workspace-test` (or `gate`) job. Until 2026-07-05 the
 ruleset required only `gate`, so they were advisory-green — red on a bad PR but
-not merge-blocking. **That is now fixed (see the STATUS banner).**
+not merge-blocking. **That half is fixed and held:** `workspace-test` is a
+required context today, so all seven are merge-blocking. What is *not* fixed is
+the proof lane — `kani` and `lake-build` are advisory (see the STATUS banner).
 
 ---
 
@@ -84,22 +104,49 @@ left **false** deliberately — requiring branches be up-to-date with `main` bef
 merge would add rebase churn to the active autonomous cron; promote to `strict`
 only if stale-base merges become a real problem.
 
+> **⚠️ CORRECTION 2026-07-26 (PMAT-1347).** The two paragraphs above describe
+> the edit **as applied on 2026-07-05 at 17:35**, and both verifications were
+> true at that moment. They are no longer true of `kani` + `lake-build`: the
+> ruleset was edited again at **23:50 the same day** and those two contexts were
+> removed. `workspace-test` survived; the proof lane did not. The paragraphs are
+> kept verbatim rather than rewritten because the *procedure* (org endpoint, the
+> `jq` transform, the repo-endpoint 404 gotcha) is still the correct runbook for
+> the re-flip — only the claimed outcome was overtaken. `strict` is still
+> `false`, which is load-bearing for release abort rule **A1b**: green checks do
+> not prove the merged combination was ever tested together.
+>
+> **The lesson, recorded because it generalises past this file:** a receipt for
+> a mutation of an external system decays silently. `ruleset_drift.rs` now
+> re-derives this claim from the live API instead of trusting the receipt.
+
 ---
 
-## 2. XPILE-RULESET-002 (EV rank **4**) — promote the proof lane ✅ ruleset half DONE 2026-07-05
+## 2. XPILE-RULESET-002 (EV rank **4**) — promote the proof lane ⚠️ REVERTED — repo half done, ruleset half OPEN
 
-The ruleset half is done — `lake-build` and `kani` were added in the same edit as
-#1 (verified green on 5/5 recent completed commits before promoting; lake-build
-~16s, kani ~2m — latency-free). An advisory proof lane compounds no confidence.
+**Corrected 2026-07-26 (PMAT-1347).** This section previously read "✅ ruleset
+half DONE". It is not. `lake-build` and `kani` *were* added in the same edit as
+#1 on 2026-07-05 at 17:35 (verified green on 5/5 recent completed commits
+before promoting; lake-build ~16s, kani ~2m — latency-free), and were **removed
+again at 23:50 the same day**. The live required set is `[gate,
+workspace-test]`. An advisory proof lane compounds no confidence, and that is
+the state we are in: **a red `kani` or `lake-build` does not block a merge.**
 
-**Still open — one repo-side companion PR** (normal branch→PR flow): make
-`contracts/kani/kani_verify.rs` **fail, not warn**, when `cargo-kani` is missing
-and `CI=true` — otherwise a runner without kani installed would report
-green-by-absence, re-creating the skip-as-green hole (F9) now that `kani` is a
-required context. Today's CI *does* run kani (it reports success, not skip), so
-the promotion is safe; this companion hardens against a future runner-config
-change making the required `kani` pass vacuously. **This is the one sub-item I can
-still do as an ordinary PR — say the word.**
+**Repo-side companion ✅ SHIPPED** (#1885): `crates/xpile/tests/kani_verify.rs:149`
+fails rather than warns when `cargo kani` is not invocable and
+`XPILE_REQUIRE_KANI` is set — the `kani` job sets it after installing
+kani-verifier. Deliberately keyed on that env var and **not** on `CI=true`,
+which would wedge the required `workspace-test` job on every runner without
+kani. This closes the skip-as-green hole (F9) *within* the lane; it does not
+make the lane blocking.
+
+**Still open — the org-admin RE-FLIP, and it is OWNER-GATED.** Re-adding `kani`
++ `lake-build` requires a `PUT` to `orgs/paiml/rulesets/13878864` (the repo
+endpoint 404s for an org-sourced ruleset) — outside normal repo-push rights and
+outside what the autonomous loop may do. It is tracked as the `ruleset-reflip`
+entry under `owner_decisions` in [`docs/roadmaps/queue.yaml`](../roadmaps/queue.yaml).
+The runbook in §1 above is still the correct procedure. Until it is applied,
+`ruleset_drift.rs` keeps the *description* honest rather than keeping the policy
+right — those are different things, and only the owner can do the second.
 
 **Falsifiers:** (a) a PR adding `sorry` to any pilot Lean module → `lake-build`
 red, merge blocked; (b) a PR inverting one asserted property in an existing kani
@@ -192,6 +239,8 @@ enforcement tail in EV and proceed as ordinary PRs. Status as of 2026-07-05:
 ---
 
 *Generated as the hand-off tail of the autonomous implementation of
-`fable-architectural-review.md`. The one action that most changes the repo's
-safety posture is item #1 — it is a two-minute org-admin edit that turns seven
-already-merged advisory gates into merge-blocking ones.*
+`fable-architectural-review.md`; enforcement claims re-derived against the live
+API on 2026-07-26 (PMAT-1347). The one action that most changes the repo's
+safety posture is now item **#2** — the same two-minute org-admin edit, re-applied,
+this time turning the **proof lane** (`kani` + `lake-build`) from advisory into
+merge-blocking. Item #1's half of that edit is live and holding.*

@@ -51,12 +51,6 @@
             "context": "gate"
           },
           {
-            "context": "kani"
-          },
-          {
-            "context": "lake-build"
-          },
-          {
             "context": "workspace-test"
           }
         ]
@@ -65,12 +59,20 @@
   ],
   "node_id": "RRS_lACkVXNlcs4BaGgJzgDTxlA",
   "created_at": "2026-03-13T13:41:07.383+01:00",
-  "updated_at": "2026-07-05T17:35:13.678+02:00",
+  "updated_at": "2026-07-05T23:50:34.874+02:00",
   "bypass_actors": [
     {
       "actor_id": null,
       "actor_type": "OrganizationAdmin",
       "bypass_mode": "always"
     }
-  ]
+  ],
+  "_links": {
+    "self": {
+      "href": "https://api.github.com/orgs/paiml/rulesets/13878864"
+    },
+    "html": {
+      "href": "http://github.com/organizations/paiml/settings/rules/13878864"
+    }
+  }
 }
