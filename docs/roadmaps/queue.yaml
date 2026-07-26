@@ -5,54 +5,258 @@
 # failure was "what to do next" being a human-prod-shaped decision, so the loop
 # stalled whenever a slice finished. INVARIANT: the loop may end a turn ONLY when
 # this queue is empty AND a refill hunt has been launched. Each firing: pop the
-# top OPEN item, ship it to full-CI-green + release, mark done, chain the next.
+# top OPEN item, ship it to full-CI-green, mark done, chain the next.
 #
-# Ordering = EV (frequency x severity), goal-aligned (R6 contract-integrity and
-# contract-carrying fidelity ahead of contractless breadth). Pulled from the
-# corrected roadmap (memory project-roadmap-goals) + HUNT-V29 (34 confirmed).
+# ---------------------------------------------------------------------------
+# 2026-07-26 REFILL — RELEASE SPRINT, window Sun 2026-07-26 .. Fri 2026-07-31.
+# Canonical plan: docs/specifications/sub/sprint-6day-2026-07-26.md (READ IT).
+# Owner-ratified: (1) Friday ships tag + GitHub release + the full 31-crate
+# crates.io batch; (2) emphasis is TRUTH WORK, the WASM breadth grind is CLOSED
+# for this window — do NOT pick a fifth NumBuiltin or a new capability lane;
+# (3) full autonomous cron, roadmap status line every firing, destructive ops
+# still owner-gated.
+#
+# HOW TO PICK: take the lowest-numbered OPEN item whose `day` is <= today.
+# Within a day, `ev_rank` R1 first. Never start two `gate_touch` items at once —
+# they are STRICTLY SERIAL (#1..#8). If an item carries `abandon`, honour the
+# wall-clock and execute its `downgrade` rather than extending.
+# HARD FREEZE Wed 2026-07-29 18:00 local: after it, no merge may touch
+# crates/*/src, contracts/*.yaml, or any gate — CHANGELOG/version/docs/release
+# mechanics only. Anything unmerged at the freeze rolls to the 0.1.618 lane.
+# ---------------------------------------------------------------------------
 
-updated: 2026-06-22 (V29-1 dict insertion-order VERIFIED+LOCKED → v0.1.584 — ASSESS found the fix already in place, every dict path lowers to indexmap::IndexMap not std HashMap; only the rustc-direct e2e harness blocked verification. The in-tree cargo-test harness links indexmap, so dict_insertion_order_all_paths now pins CPython insertion order end-to-end across views/comprehension/merge; C-XLATE-PY-DICT-TO-HASHMAP tightened (order-independent→insertion-order-preserving). NOT architectural. Prior — V29-2 alias-then-mutate clean-reject stopgap → v0.1.583; full Rc<RefCell> reference layer still architectural; R6-slice3 float-contract still deferred — needs 1 Lean theorem + diamond eq + quorum entry, dedicated slice)
+updated: 2026-07-26 (RELEASE SPRINT refill. Baseline 2ee3630f = origin/main, 102 commits since v0.1.616 (2026-07-04), max registered id PMAT-1342. Prior refill 2026-06-22 (V29-1 dict insertion-order) is fully drained — every item done. This slate is PMAT-1343..1367 and exists to ship v0.1.617 on Friday 2026-07-31 with a release note that is defensible line-by-line. The 102 unreleased commits are ~69 WASM breadth slices whose governing contract still says the emitter REFUSES dict/set/str, whose witness floor tolerates deleting 49% of the corpus, and which have zero CHANGELOG coverage. That gap — not engineering — is the release blocker.)
 invariant: "never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched"
 
+sprint:
+  window: 2026-07-26 .. 2026-07-31
+  plan: docs/specifications/sub/sprint-6day-2026-07-26.md
+  version: 0.1.617
+  baseline_sha: 2ee3630f
+  freeze: 2026-07-29T18:00 local
+  tag_cut: 2026-07-30 (Thu, on a PINNED SHA — release.yml fires cleanroom-publish on tag push, so tagging Thursday buys a real pre-flight with a day of runway)
+  publish: 2026-07-31 (Fri, `cargo publish --workspace` UNPIPED, 31 crates, abort-on-first-failure; hard time-box A6 — if the batch has not STARTED by 16:00 local, ship tag-only and roll the batch to 2026-08-07)
+  blocking_ci_contexts: [gate, workspace-test]   # kani, lake-build, docs, wasi, lean-models, shader-validate are ADVISORY — never claim "CI green" without recording each
+  serial_gate_touches: "#1 PMAT-1344 witness_floor.rs+ci.yml:51 -> #2 PMAT-1345 roadmap_registration.rs -> #3 PMAT-1346 claims_drift.rs -> #4 PMAT-1347 ruleset_drift.rs+deny.toml+ci.yml:56 -> #5 PMAT-1348 claims_drift.rs -> #6 PMAT-1350 contracts/*.yaml+probe -> #7 PMAT-1356 changelog_freshness.rs -> #8 PMAT-1360 witness_floor.rs TOUCH 2 (inside the release commit)"
+  witness_floor_touches: "EXACTLY TWO all sprint: PMAT-1344 (initial re-derive) and PMAT-1360 (final re-derive). Intermediate slices ADD witnesses and NEVER bump a floor — floors are lower bounds, so adding tests cannot red them. Adding a new *_witness.rs file is NOT a touch."
+
 queue:
-  # ---- R6 contract-integrity (the differentiator; finish before breadth) ----
-  - id: R6-slice3
+  # ================= DAY 1 — Sun 2026-07-26 (evening, partial) =================
+  - id: PMAT-1343
     status: done
-    title: "Author C-PY-FLOAT-ARITH contract (Lean theorem + Kani harness + QUORUM, depth-1 Diamond) so float stops emitting uncited; wire float citation in applicable_contracts()"
-    tier: R6
-    notes: "BIG/multi-file (refinement_proofs.rs + kani_verify.rs iterate all contracts). The depth gate already allows a new contract at depth-1 (assert_grandfathered_floor). Reuse c-int-arith-v1.yaml as template. = R8/PMAT-477 too."
-  - id: R6-slice5
-    status: done
-    title: "Citation-integrity gate part (b): per-fixture EXPECTED-contracts so a contract-bearing construct that MISSES its citation fails (currently only no-phantom + slice-1-live are enforced)"
-    tier: R6
-  - id: R6-slice4
-    status: done
-    title: "Author a set type-translation contract (C-XLATE-PY-SET-*) + wire set citation"
-    tier: R6
+    day: 1
+    ev_rank: R1
+    title: "Sprint plan + queue refill + roadmap ledger repair: register the 5 drifted ids (PMAT-1268, 1269, 1277, 1281, 1283) in docs/roadmaps/roadmap.yaml; flip PMAT-482 planned->done (shipped as #1877)"
+    notes: "DONE in the planning PR itself. Max registered is now 1343 — do NOT re-add 1340/1341/1342. Interior holes 1324/1325/1326 exist; do NOT reuse them. Verified: `comm -23 <(git log v0.1.616..HEAD --format=%s | grep -oE 'PMAT-[0-9]+' | sort -u) <(grep -oE '^- id: PMAT-[0-9]+' docs/roadmaps/roadmap.yaml | grep -oE 'PMAT-[0-9]+' | sort -u)` is EMPTY. NEXT PICK: PMAT-1344."
 
-  # ---- HUNT-V29 contract-carrying fidelity (cited+gated by construction) ----
-  - id: V29-4
-    status: done
-    title: "Tuple */+=  lowered as scalar checked_mul/checked_add on a tuple (E0599 / wrong arity); extend try_repeat + lower_aug_assign to element-wise tuple expand"
-    severity: silent-wrong/invalid-rust
-  - id: V29-5
-    status: done
-    title: "int/float ternary inside a list-comp silently widens int elements to f64 (prints N.0); CLEAN-REJECT in comp-element position (heterogeneous list out of scope), consistent with the heterogeneous-list-literal reject"
-    severity: silent-wrong
-  - id: V29-1
-    status: done
-    title: "dict iteration loses CPython insertion order (HashMap, nondeterministic); needs IndexMap-equivalent. BLOCKED on the rustc-direct e2e harness (no external crate link) — needs a no-dep ordered-map OR harness --extern support. Update C-XLATE-PY-DICT-TO-HASHMAP contract to specify insertion order. RESOLVED v0.1.584 (PMAT-885): ASSESS found the FIX already in place — every dict path lowers to indexmap::IndexMap (insertion-ordered), never std HashMap; only the E2E verification was blocked. The in-tree cargo-test harness (assert_rustc_runs) links the workspace indexmap, so the order is now pinned end-to-end by dict_insertion_order_all_paths (literal .keys()/.values()/.items(), insert+append+update, comprehension, {**a,**b} merge — non-sorted insertion order 3,1,2, asserted vs python3). C-XLATE-PY-DICT-TO-HASHMAP tightened: 'order-independent/HashMap' drift corrected to insertion-order-preserving/IndexMap + FALSIFY-XLATE-PY-DICT-003. NOT architectural after all (no no-dep ordered-map needed)."
-    severity: silent-wrong
-    tier: architectural
-  - id: V29-2
-    status: done
-    title: "Object reference semantics (alias-as-move E0382; arg-clone drops mutation); needs Rc<RefCell> reference layer + escape/aliasing analysis. Contained stopgap: detect alias-then-mutate and clean-REJECT instead of miscompiling. SHIPPED v0.1.583: arg-clone-drops-mutation case clean-rejected (PMAT-884) — Clone(Ident) arg into a Param::mutable-mutating callee → `object reference semantics not yet supported`. Conservative (false-negative-preferred); full Rc<RefCell> layer + the alias-as-move E0382 case remain architectural (read-only `b=a` aliasing is a missing-clone bug, not a semantic miscompile, so NOT rejected)."
-    tier: architectural
+  - id: PMAT-1344
+    status: open
+    day: 1
+    ev_rank: R2
+    gate_touch: 1
+    title: "Witness-floor re-derive TOUCH 1: WASM_FLOOR 400 -> 770 (live 788, 18 of margin for Day 2-4 churn); correct the stale `// current 444` at witness_floor.rs:18 and :48 to 788; fix .github/workflows/ci.yml:51 '~424 WASM execution witnesses' -> 788"
+    notes: "388 tests of dead slack on the exact lane 69 of this release's commits were built from — ~49% of the corpus could be deleted without reddening a REQUIRED context. Leave every OTHER lane's floor alone at TOUCH 1 (shell 7/7, rust-diff 44/44, hybrid 3/3, wasi 1/1, ruchy 7/7, forjar 4/4, lean 6/6 are already tight); TOUCH 2 (PMAT-1360) re-derives all lanes incl. RUST_DIFF_FLOOR which PMAT-1351's oracle fixtures raise. Exit: `cargo test -p xpile --test witness_floor -- --nocapture` prints `wasm 788 770`."
 
-  # ---- recurring obligations ----
-  - id: cratesio-friday
-    status: recurring
-    title: "crates.io batch publish (cargo publish --workspace) — LATE Friday only; next 2026-06-26; v0.1.537..current catch-up"
-  - id: hunt-refill
-    status: refill
-    title: "When the OPEN fidelity queue thins, launch a fresh differential hunt (HUNT-V30) to refill — never end on an empty queue without a hunt in flight"
+  - id: PMAT-1345
+    status: open
+    day: 1
+    ev_rank: R3
+    gate_touch: 2
+    title: "Repoint the dead pre-commit roadmap guard + add crates/xpile/tests/roadmap_registration.rs — this is the MECHANICAL ROOT CAUSE of the id drift PMAT-1343 just cleaned up"
+    notes: ".git/hooks/pre-commit:76 guards on `[ -f docs/execution/roadmap.md ]`, a path that DOES NOT EXIST, so the guard has never fired. Repoint to docs/roadmaps/roadmap.yaml AND back it with an in-repo test (hooks are not cloned). Exit: a throwaway commit citing PMAT-9999 reds `cargo test -p xpile --test roadmap_registration`; demonstrate red-then-green in the PR body."
+
+  # ================= DAY 2 — Mon 2026-07-27 — honesty A =================
+  - id: PMAT-1346
+    status: open
+    day: 2
+    ev_rank: R1
+    gate_touch: 3
+    title: "Ruchy frontend REFUSES instead of silently succeeding — the ONLY silent-wrong-answer hole in the repo, sitting on README.md:19's core promise"
+    notes: "crates/ruchy-frontend/src/lib.rs:25-35 returns Ok(Module{ items: Vec::new() }) for ANY .ruchy input, so `xpile transpile foo.ruchy --target rust` prints a header comment and EXITS 0. Zero test debt — no test anywhere feeds a .ruchy file as INPUT. Return a FrontendError naming the unimplemented parser. ALSO fix claims_drift.rs, which derives 'five source languages' from `register_frontend` CALL COUNT — it validates the numeral while the substance is hollow; count SUBSTANTIVE frontends. Exit: `/mnt/nvme-raid0/targets/xpile/debug/xpile transpile /tmp/t.ruchy --target rust; echo $?` prints a refusal and a NON-ZERO exit."
+
+  - id: PMAT-1347
+    status: open
+    day: 2
+    ev_rank: R2
+    gate_touch: 4
+    title: "Enforcement truth sweep + ruleset_drift.rs + deny.toml yanked warn->deny"
+    notes: "The live org ruleset 13878864 requires EXACTLY [gate, workspace-test]; kani and lake-build are ADVISORY. This refutes memory project-fable-review-implemented AND docs/status/ruleset-13878864.json, whose updated_at (2026-07-05T17:35) PRECEDES the live one (23:50 same day) — the four-context flip was reverted six hours later and went undetected for three weeks. Regenerate the snapshot from `gh api orgs/paiml/rulesets/13878864`; fix the INVERTED note at ci.yml:56-62 ('workspace-test is NOT yet GitHub-enforced' — it now is); strike the shipped RULESET-002 item from docs/status/enforcement-handoff.md; add ruleset_drift.rs asserting live-required-set == snapshot (skip-with-reason without a token); flip deny.toml:5 yanked warn->deny (no dep is yanked today so it lands green and only fires on a future yank BEFORE the publish). The org-admin RE-FLIP restoring kani+lake-build is OWNER-GATED (repo endpoint 404s) — surface it as a decision, do NOT attempt it."
+
+  - id: PMAT-1348
+    status: open
+    day: 2
+    ev_rank: R3
+    gate_touch: 5
+    title: "Docs truth-up: docs/status/CURRENT.md, README Lean caveat, wasm-path disambiguation"
+    notes: "CURRENT.md — which docs/status/INDEX.md:3 calls 'the single source of truth' — is 2+ months stale and materially false: 27 vs 31 crates, 12 vs 35 contracts, 'PTX still scaffolded' (PTX is CLI-reachable via --hardware ptx:sm_89 and emits real PTX), 'crates.io 0.0.1 name reservation' (0.1.616 is live). Add the Lean caveat: default `--contracts on` emit does NOT elaborate (@[xpile_contract] is an unregistered Lean attribute — use --contracts off). Disambiguate the README's 'universal .wasm' story, which runs through the DISJOINT --emit-crate -> wasm32-wasip1 path, from `--target wasm`. Extend claims_drift.rs to assert CURRENT.md carries no bare counts. Exit: `grep -n '27 workspace crates\\|12 contracts\\|0\\.0\\.1' docs/status/CURRENT.md` returns nothing."
+
+  - id: PMAT-1349
+    status: open
+    day: 2
+    ev_rank: R4
+    title: "CHANGELOG [Unreleased] skeleton (8 arc headings) + write arcs 1-2 (WASM list surface completion; dict/set hash-container arc)"
+    notes: "CHANGELOG.md [Unreleased] is EMPTY against 102 commits and NOTHING in crates/ or .github/ samples it, so it ships silently. The 0.1.616 entry is 404 lines but its release commit contributed only +46 — the other ~358 came from ~10 incremental commits DURING the cycle. This cycle has 0 of 102. Hence 4 arc-sized commits across Days 2-4, not one Wednesday slice. Verify the arc accounting SUMS to 102 commits. Also open docs/release-notes-0.1.617.draft.md."
+
+  # ================= DAY 3 — Tue 2026-07-28 — honesty B + correctness + north star =========
+  - id: PMAT-1350
+    status: open
+    day: 3
+    ev_rank: R1
+    gate_touch: 6
+    abandon: "2026-07-28T21:00"
+    downgrade: "ship the prose reconciliation alone; file the two-way probe gate as 0.1.618"
+    title: "Reconcile contracts/compile-rust-to-wasm-v1.yaml with the emitter, behind a TWO-WAY probe gate"
+    notes: "Line 24 asserts 'The emitter REFUSES every construct outside the scalar/control subset (str / list / dict / set / struct / tuple / bigint / pointer / print / closures)' and its ship-blocking FALSIFY-COMPILE-WASM-002 at :195-200 says the same. BOTH are falsified by a single CLI probe — a str-keyed dict program emits, assembles under wat2wasm and executes. claims_drift.rs does not sample contract capability prose. ENUMERATE the actual surface (dict/set over {int,str,bool,float} value kinds, string runtime, list scalar + full mutation family, scalar-field structs, control flow); restate the falsifier as 'a construct outside the DECLARED subset MUST refuse'. The TWO-WAY gate is what makes this durable rather than momentary: a test that reds if a construct declared REFUSED actually emits AND reds if an UNDECLARED construct emits. `pv lint contracts/` must stay 0 errors / 0 warnings."
+
+  - id: PMAT-1351
+    status: open
+    day: 3
+    ev_rank: R2
+    abandon: "2026-07-28T23:00"
+    downgrade: "drop entirely and NAME the shape in the CHANGELOG's Known divergences — silence is not an acceptable outcome"
+    title: "Fix the negative-integer-LITERAL list-index double-normalize (silent wrong VALUE + untagged panic)"
+    notes: "On xs=[1,2,3]: xs[-4]->3, xs[-5]->2, xs[-6]->1 where CPython raises IndexError each. `del xs[-4]` / `xs.pop(-4)` panic with an UNTAGGED native message ('removal index (is 18446744073709551615)') that a typed `except IndexError` cannot catch. Literal-only, list-only. Root cause: the frontend folds -4 into len-4 and the runtime normalizes AGAIN. Stop folding the literal; let the single runtime normalization own it. Then AUDIT EVERY neg_literal_int consumer (read, del, pop, store, slice) — PMAT-1289 already shipped two miscompiles from exactly this class. Land all five paths as oracle fixtures. Do NOT bump RUST_DIFF_FLOOR (serial resource — TOUCH 2 captures it)."
+
+  - id: PMAT-1352
+    status: open
+    day: 3
+    ev_rank: R3
+    title: "DIVERGENT-arm falsifier for `xpile hybrid --verify` (test-only)"
+    notes: "The ComparisonResult::Divergence arm at crates/xpile/src/main.rs:560-566 has ZERO test coverage — all three hybrid --verify tests are green-path only. Add a deliberately mis-cast fixture whose C and Python disagree, and assert --verify exits non-zero NAMING the divergence. Prerequisite for PMAT-1353."
+
+  - id: PMAT-1353
+    status: open
+    day: 3
+    ev_rank: R4
+    abandon: "2026-07-28T23:00"
+    downgrade: "keep PMAT-1352 (test-only) and drop the wiring"
+    title: "Wire the RepairLoop into the CLI: `xpile hybrid --verify --repair`"
+    notes: "crates/xpile-agent/src/repair.rs is 931 lines (3 real RepairRule impls + a probe that runs cc, rustc and the linked binary; 18 passing tests) and is COMPLETELY UNREACHABLE: `grep -rn 'RepairLoop' crates/ --include='*.rs' | grep -v crates/xpile-agent/` returns 0 matches. Add xpile-agent to crates/xpile/Cargo.toml; construct a RepairLoop from the reconciled boundary via the existing RepairLoop::ffi_int_boundary / ffi_float_repr constructors; drive it from the Divergence arm proven by PMAT-1352; re-verify after each applied rule and print the converged chain. MANDATORY regression test: default --verify output and exit code are BYTE-IDENTICAL with and without the new dependency. --repair is opt-in and must not alter default behaviour."
+
+  - id: PMAT-1354
+    status: open
+    day: 3
+    ev_rank: R5
+    title: "CHANGELOG arcs 3-5 (any/all truthiness-reduce belt; NumBuiltin lane; stepped string slice)"
+
+  # ================= DAY 4 — Wed 2026-07-29 — FREEZE 18:00 =================
+  - id: PMAT-1355
+    status: open
+    day: 4
+    ev_rank: R1
+    title: "CHANGELOG arcs 6-8 + the THREE MANDATORY SECTIONS: 'What still REFUSES', 'What is NOT merge-blocking', 'Known divergences'"
+    notes: "Arcs 6-8 = bashrs shell control-flow COMPLETE for v0.1.0; Kani Symbolic-stratum breadth 15->24; the fable-architectural-review GATE arc plus this sprint's honesty pass. The three sections are NON-NEGOTIABLE and are the reason this release note is defensible — full enumerations are in sprint-6day-2026-07-26.md PMAT-1355. NOT-merge-blocking must state that the live ruleset requires only [gate, workspace-test] and that the ruchy/lean/forjar exec witnesses EXIST BUT SKIP IN CI (only WABT is installed on workspace-test). Known-divergences must state that set iteration order is deterministic (IndexSet) but NOT CPython-hash-parity, that the default --contracts on Lean emit does not elaborate, and that the §14.4 Runtime stratum counts contract-id MENTIONS in fixtures, not executions — so 24/35 QUORUM must not be read as 'executed 35 ways'."
+
+  - id: PMAT-1356
+    status: open
+    day: 4
+    ev_rank: R2
+    gate_touch: 7
+    title: "CHANGELOG-freshness gate (crates/xpile/tests/changelog_freshness.rs) — the root-cause gate for the 102-commit empty [Unreleased]"
+    notes: "Exit: emptying [Unreleased] reds the test and restoring it greens; demonstrate red-then-green in the PR body."
+
+  - id: PMAT-1357
+    status: open
+    day: 4
+    ev_rank: R3
+    abandon: "2026-07-29T17:00"
+    downgrade: "drop — must beat the 18:00 freeze"
+    title: "First runnable end-to-end native-WASM example + first book page for the lane"
+    notes: "The lane has ZERO examples and ZERO book pages, and the repo's OWN examples/word_count.py and examples/proven-model/model.py BOTH refuse on --target wasm. Add one dict/str example that lowers, assembles under wat2wasm, executes under wasm-interp and matches python3, wired in as a *_witness.rs file (which does NOT touch witness_floor.rs). Exit: `xpile transpile examples/<new>.py --target wasm | wat2wasm - -o /tmp/x.wasm && wasm-interp /tmp/x.wasm --run-all-exports` matches `python3 examples/<new>.py` byte-for-byte."
+
+  - id: PMAT-1358
+    status: open
+    day: 4
+    ev_rank: R4
+    title: "Dunder `other` parameter defaults to Self when unannotated"
+
+  # ================= DAY 5 — Thu 2026-07-30 — CUT AND PUSH THE TAG ============
+  - id: PMAT-1359
+    status: open
+    day: 5
+    ev_rank: R1
+    gate_touch: 8
+    title: "RELEASE COMMIT: bump Cargo.toml:43 to 0.1.617 + refresh Cargo.lock + promote the [Unreleased] heading to [0.1.617] - 2026-07-31 + witness-floor re-derive TOUCH 2 (ALL lanes)"
+    notes: "Version is single-sourced — one line + `cargo check` refreshes 31 Cargo.lock entries. Then the VALIDATION GATE (a checklist, not a PR), then `git tag v0.1.617 <PINNED_SHA>` + `git push origin v0.1.617`. The CHANGELOG heading is dated 2026-07-31 (ship date) while the tag object is created 07-30 — a DELIBERATE one-day skew, disclosed in docs/RELEASE.md. Do NOT create the GitHub release yet. ABORT A1b: if the SHA that was TESTED differs from the SHA being TAGGED (the cron merged something), re-run the full suite on the new SHA or abort the day — strict_required_status_checks_policy is FALSE, so green checks do not prove the merged combination was ever tested together."
+
+  - id: PMAT-1360
+    status: open
+    day: 5
+    ev_rank: R2
+    title: "Purge the stale package overlay, run the local publish dry-run, author docs/RELEASE.md"
+    notes: "/mnt/nvme-raid0/targets/xpile/package/{tmp-registry,tmp-crate} BOTH EXIST RIGHT NOW and produce the documented `no hash listed for <crate> vX` killer. CI purges them (release.yml:69-71); the manual Friday path does not. `rm -rf` both plus stale *-0.1.615/*-0.1.616 package dirs, then `cargo publish --workspace --dry-run --locked` UNPIPED. docs/RELEASE.md documents the 5-step procedure, the overlay purge, the three pre-flights and abort rules A1-A8."
+
+  # ================= DAY 6 — Fri 2026-07-31 — PUBLISH ONLY ====================
+  - id: PMAT-1361
+    status: open
+    day: 6
+    ev_rank: R1
+    title: "PUBLISH: morning re-verify -> `gh release create` -> `cargo publish --workspace` UNPIPED -> sparse-index verification -> ledger close. NO CODE MERGES. NONE."
+    notes: "A1 preconditions ALL must hold before the first upload byte: tag exists on origin; its SHA shows gate+workspace-test SUCCESS; the on-tag clean-room run is SUCCESS; the local dry-run exited 0 unpiped; `XPILE_REQUIRE_WASM_RUNTIME=1 cargo test --workspace` exited 0 on that exact SHA; the release worktree is at the TAG (not main) and `git status --porcelain` is empty. A5 (RECOVERABLE, do NOT abort): `no hash listed for <crate> vX` is the stale overlay — purge and restart from the dry-run. A4 (PARTIAL BATCH): if crate k of 31 fails, STOP; do NOT yank the k-1 already-published (they are valid); do NOT retry at the same version (409); fix forward with a WHOLE-WORKSPACE 0.1.618 next Friday. A6: if the batch has not STARTED by 16:00 local, ship tag-only and roll to 2026-08-07. A7: NO Friday code — a Friday defect means A6, never a same-day hotfix onto the release SHA."
+
+  # ================= D-POOL — pre-designated droppable, cut 1367 FIRST ========
+  # Cut in REVERSE-listed order when a day runs short. These are the ONLY new
+  # capability work permitted this window, and every one is optional.
+  - id: PMAT-1362
+    status: open
+    day: 3
+    ev_rank: D
+    title: "[D-pool, cut 3rd] Shell-boundary widening: lift the C-only filter at crates/xpile/src/main.rs:469 so hybrid --verify executes the Shell boundary"
+    notes: "Changes DEFAULT --verify behaviour on two existing fixtures (unlike --repair, which is opt-in) — hence droppable-at-freeze. Today `hybrid_shell` reconciles a real Python->Shell shim then prints 'no C FFI boundary to execute — nothing to verify' and exits 0."
+  - id: PMAT-1363
+    status: open
+    day: 2
+    ev_rank: D
+    title: "[D-pool, cut LAST] Annotated-comprehension desugar: `xs: list[int] = [i for i in range(5)]` refuses while `xs = [...]` emits"
+    notes: "depyler-frontend/src/lib.rs:7020-7040 wires the comp desugars only into Stmt::Assign; lower_ann_assign at :16890 has no branch."
+  - id: PMAT-1364
+    status: open
+    day: 3
+    ev_rank: D
+    title: "[D-pool] range(bool) coercion"
+  - id: PMAT-1365
+    status: open
+    day: 4
+    ev_rank: D
+    title: "[D-pool] list(d) / list(d.keys()) / list(d.values())"
+    notes: "sorted(d)/sorted(d.keys())/sorted(d.values())/sorted(s) ALL already emit; only the UNSORTED list(d*) form refuses. The gap is S, not HARD. If this does NOT land, it must appear in the CHANGELOG's 'What still REFUSES'."
+  - id: PMAT-1366
+    status: open
+    day: 4
+    ev_rank: D
+    title: "[D-pool] round(x) via f64.nearest + module-level scalar const"
+  - id: PMAT-1367
+    status: open
+    day: 4
+    ev_rank: D
+    abandon: "2026-07-29T21:00"
+    title: "[D-pool, cut FIRST] §14.4 Runtime-stratum counter — WIDEN-ONLY"
+    notes: "crates/xpile/src/main.rs:1630 count_runtime_witnesses is `if text.contains(contract_id) { hits += 1 }` over FIXTURE FILES ONLY, so 788 executing WASM witnesses contribute ZERO runtime votes while a bare comment counts 1. Live quorum: 24/35 QUORUM, 11 PARTIAL, all 11 with sym=0 AND run=0. WIDEN-ONLY constraint is MANDATORY: source set = fixtures OR executing witnesses, NEVER replace, so the change is monotone and cannot regress a contract. Mandatory before/after `xpile quorum --json` diff showing ZERO regressions."
+
+# ---------------------------------------------------------------------------
+# 0.1.618 LANE — seeded Friday after the publish. Do NOT start any of these
+# during the release window.
+# ---------------------------------------------------------------------------
+next_lane:
+  - "list[str] — the biggest compositional hole; blocks s.split(), ','.join(xs) and the repo's own word_count.py. Even the read-only subset is M-L."
+  - "Nested dict values dict[K, dict[...]] and dict-valued struct fields — unblocked by the shipped i32-pointer-in-i64-slot trick, but recursive value-kinds in a release week is the wrong bet."
+  - "d.get(k) -> Optional"
+  - "str(float) dtoa with CPython repr-shortest semantics, and format-specs (XL, multi-slice)"
+  - "print(dict) / dict repr (M and visible, but a codegen change; set repr inherits the unfixable order divergence and stays refused)"
+  - "Kani harnesses for the 11 PARTIAL contracts, including C-COMPILE-RUST-TO-WASM and C-WASM-HEAP which back 69 of this release's commits (note: fable-architectural-review.md:253 lists padding past 24/35 as a do-not-do; std HashMap/HashSet are Kani-HOSTILE — use bit/array structural models)"
+  - "Install elan on the workspace-test runner so the 6 Lean semantic witnesses actually execute in CI (cheap and tempting, but it broadens a REQUIRED job — hence not in a release week)"
+  - "Variable-retype pass (x = 10; x = x / 2) — L/XL, needs a binding-union pass"
+  - "PMAT-952 bidirectional-WASM lift and PMAT-956 provable-model-as-code — the only two genuinely open capability frontiers"
+
+# ---------------------------------------------------------------------------
+# NEEDS A USER DESIGN DECISION before any code — surfaced, not silently picked.
+# ---------------------------------------------------------------------------
+owner_decisions:
+  - id: int-float-container-literal-policy
+    summary: "`list[float] = [1, 2.5]` silently COERCES (compiles, prints [1.0, 2.5] vs CPython [1, 2.5]) while `dict[str,float] = {'a': 1}` and `tuple[float,float] = (1, 2.5)` accept-then-fail rustc with E0308. Coercing dict/tuple trades INVALID_RUST for SILENT_WRONG; refusing matches the OOP-`==` honesty precedent. Pick one policy before any code."
+  - id: ruleset-reflip
+    summary: "Restore kani + lake-build as REQUIRED contexts on org ruleset 13878864. Org-admin only (the repo endpoint 404s). The proof lane is currently advisory, so a red proof job never blocks a merge."
+  - id: lean-attribute-prelude
+    summary: "Register @[xpile_contract] in a Lean prelude so the DEFAULT --contracts on emit elaborates. audit-design.md:201 records this as changing emit standalone-ness plus several frozen expected-string tests — a sprint-wrecker. A doc caveat ships in 0.1.617 instead."
+  - id: cpython-set-hash-order
+    summary: "WONTFIX proposed — run-to-run determinism is already fixed via IndexSet; CPython hash-order parity would ship as a permanent documented divergence."
