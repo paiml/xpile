@@ -7,6 +7,1230 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+## [0.1.617] - 2026-07-26
+
+This release consolidates **107 commits** since `v0.1.616` (2026-07-04 → 2026-07-26;
+`git diff --shortstat v0.1.616..origin/main` = 148 files changed, +57,955 / −3,413), **71**
+of whose subjects name WASM. It is overwhelmingly a native-WASM release: the `list[scalar]`
+lane gains allocating, paired-loop, query and in-place-mutation ops; `dict`/`set` gain
+iteration, reduction, non-int value kinds, merge, and function/method boundaries; strings
+gain constant-step slices; and four scalar numeric-builtin families land. Outside WASM, the
+bashrs shell frontend learns loops, conditionals and `case`; the Kani Symbolic stratum widens
+from 15 to 24 of 35 contracts; and a gate arc makes the repo's own claims falsifiable —
+including a `--target ptx` path that was CLI-unreachable and a `forjar.yaml` emit that
+forjar's own validator rejected. Three shipped defects are fixed and **one is disclosed
+unfixed** (bash `;&` fall-through, below). Nothing here touches the Rust lane's
+negative-index divergences, which are documented under *Known divergences*.
+
+Every figure below was re-derived on 2026-07-26 against `origin/main` @ `0a6ca974`
+(`git fetch origin` first — a cron agent is merging). Capability claims were checked by
+building a `v0.1.616` binary from a pinned `git archive` snapshot and a HEAD binary side by
+side into private target dirs, transpiling the same source through both, then assembling with
+`wat2wasm` and executing with `wasm-interp` against live `python3` 3.13.1.
+
+### Native-WASM `list[scalar]` — allocating, paired-loop, and query ops (PMAT-1254..1275, 13 commits)
+
+Six list constructs that **refused** at `v0.1.616` now lower, assemble and execute under
+`xpile transpile prog.py --target wasm`.
+
+- **List concatenation `a + b`** over `list[int]`/`list[float]`. Either operand may be *any*
+  list-valued expression, not just a bare name: chained `a + b + c`, a list literal
+  (`a + [7, 8]`), `sorted(a) + b`, `reversed(a) + b`, `a[0:2] + b[1:2]`. Emits
+  `$__wasm_list_concat_i64`/`_f64`, allocating off the `$__heap_ptr` bump pointer in the
+  exported linear `mem`.
+- **Slicing `xs[lo:hi]`** with CPython index semantics: negative wrap (`xs[-3:-1]`),
+  out-of-range clamp (`xs[-99:99]`), inverted bounds → empty (`xs[4:2]`), omitted bounds.
+- **`for i, x in enumerate(xs)` and `enumerate(xs, 5)`** — the first paired for-loop the WASM
+  lane lowers.
+- **`for a, b in zip(xs, ys)`**, terminating at the shorter iterable.
+- **`x in xs` / `x not in xs`** — read-only linear scan (`$__wasm_list_contains_{i64,f64}`),
+  no heap growth.
+- **`xs.count(v)` / `xs.index(v)`** — `count` scans every element without short-circuit;
+  `index` returns the first match and traps where CPython raises `ValueError`.
+
+Because concat and slice allocate, reductions and queries compose over *allocated* lists:
+`ys = sorted(a) + b[0:2]` then `sum`/`min`/`max` over `ys` runs in one module and matches
+python3.
+
+**Refusals — state boundaries a user would otherwise assume:**
+
+- Concat and slice are `list[int]`/`list[float]` **only** (8-byte stride); `list[bool]` is
+  refused for both, as are membership, `count` and `index`. `enumerate`/`zip` *do* accept
+  `list[bool]`. `list[str]` and nested lists are refused across the whole family.
+- The *consumers* still require a **named** list even though concat operands do not:
+  `(a + b)[1:3]`, `sorted(a + b)`, `enumerate(a + b)` all refuse — bind to a name first.
+- Stepped **list** slices `xs[i:j:k]` refuse (step 1 only); the `xs[::-1]` reverse idiom works,
+  lowering via `reversed`.
+- `enumerate(xs, start)` needs an **integer-literal** start; a variable start refuses.
+- `a + []` refuses — an empty list literal still needs an element-type annotation
+  (pre-existing frontend gap, not addressed here).
+
+`sum`/`min`/`max`/`any`/`all`/`sorted`/`xs[::-1]` already worked at `v0.1.616`; the
+PMAT-1254/1257/1258 commits add executed witnesses for them (including `min([])` trapping
+where CPython raises `ValueError`), not new capability.
+
+Coverage: **10 new witness files** — none of the ten exists at `v0.1.616` —
+carrying **48 tests**, all passing with WABT present.
+
+### Native-WASM in-place list mutation — ten `Stmt::ListMutate` forms (PMAT-1276..1289, 9 commits)
+
+- **A Python program that mutates a list in place now compiles to WASM.** Ten in-place forms
+  lower and execute: `xs.append(v)`, `xs.pop()`, `xs.pop(i)`, `xs.insert(i, v)`, `del xs[i]`,
+  `xs.remove(v)`, `xs.reverse()`, `xs.sort()`, `xs.sort(reverse=True)`, `xs.clear()`. At
+  `v0.1.616` the WASM list lane was read-only — the tag binary refuses every one of them.
+  Mutations nest freely in `while` / `if` / `for` bodies.
+- **Grow vs. shrink have different preconditions.** `append` and `insert` require a
+  LITERAL-bound local (`xs = []` / `xs = [...]`), the only binding that reserves spare
+  capacity; a param, an alias, or a `sorted`/`reversed`/concat/slice result is refused at
+  compile time rather than overrunning the record (verified: `append` through a param refuses;
+  `append` to `sorted(a)` refuses). Every shrink/reorder (`pop`, `pop(i)`, `del`, `remove`,
+  `sort`, `reverse`, `clear`) has no such precondition and **accepts a param**.
+- **Capacity is bounded and traps loudly.** A literal reserves `len(literal) + 16` slots —
+  verified by execution: `xs = []` takes exactly 16 appends and returns `16`; the 17th traps
+  (`unreachable executed`). This is a documented limit — a program that grows past it traps
+  where CPython would keep growing, never a silent heap overrun.
+- **Python's errors become traps.** `pop()` from an empty list and `remove(v)` for an absent
+  `v` both trap where CPython raises `IndexError` / `ValueError`.
+- **Element-type coverage, honestly.** `list[int]` and `list[float]` get all ten ops.
+  `list[bool]` gets only `append`, `pop()` and `clear()`; `insert`, `del`, `remove`, `sort`,
+  `reverse` and `pop(i)` each refuse it (they shift 8-byte words; the i32-stride twin is
+  deferred). `list[str]` is refused outright. Also still refused: `xs.extend(ys)`, `xs += ys`,
+  and `xs.sort(key=…)` — this family is *not* all of Python's list mutation surface.
+- **Fixed — a SHIPPED negative-index miscompile (PMAT-1289).** The frontend folds a literal
+  `xs[-k]` to `len(xs) - k`, and the WASM emitter normalized that a *second* time at runtime,
+  so any index deeper than `-len(xs)` wrapped back into range instead of failing. The WASM
+  lane now traps: `xs[-4]` over `[1,2,3]` executes `unreachable`. The same double-normalize was
+  caught in the new `del xs[i]` / `pop(i)` paths by this arc's own fuzz before either could
+  ship. **The Rust lane's twin of this bug is NOT fixed** — see *Known divergences* items 1–3.
+- **Witnesses.** Nine WABT-executing witness files (`list_append_witness`, `list_pop_witness`,
+  `list_insert_witness`, `list_delitem_witness`, `list_remove_witness`, `list_reverse_witness`,
+  `list_sort_clear_witness`, `list_pop_index_witness`, `list_mutation_composition_witness`) —
+  none existed at `v0.1.616` — carrying **109 tests**, all green with WABT present and the
+  `XPILE_REQUIRE_WASM_RUNTIME` anti-silent-skip tripwire armed.
+
+### bashrs shell CONTROL FLOW — `for` / `while` / `until` / `if` / `elif` / `else` / `case` (PMAT-1268, 1276, 1281, 1283, 1284, 1285; 6 commits)
+
+Point `xpile transpile foo.sh --target shell` at a script that *branches or loops* and it
+round-trips to executable POSIX. At `v0.1.616` every one of these inputs died on the same hard
+refusal — the tag's `bashrs-frontend/src/lib.rs` still carries
+`"bashrs-frontend: shell control-flow (for/while/if/case) not supported — flat-command subset
+only"`, and that string is gone at HEAD.
+
+Newly accepted, each verified exec-identical to its input under `/bin/sh` and a **fixed point**
+on re-transpile (emitted file → transpile again → byte-identical modulo the `# module:` line):
+
+- `for f in alpha beta gamma; do … done` — the header is *structured*
+  (`LoopKind::For { var: String, items: Vec<Expr> }`).
+- `while COND; do … done` and `until COND; do … done` — `LoopKind::While` / `Until`.
+- `if COND; then … fi`, with or without `else`; the new
+  `Stmt::ShellIf { cond, then_body, else_body }`.
+- `elif` chains — desugared to a nested `ShellIf` in the parent's `else_body` and
+  **re-sugared** by the backend. A hand-written `else` + nested `if … fi` **canonicalises** to
+  `elif` (verified: the nested form emits `elif [ "$1" = "b" ]; then`).
+- `case WORD in PAT1|PAT2) BODY ;; … esac` — the new `Stmt::ShellCase`. Multi-pattern arms
+  (`start|go)`) and glob patterns (`*.txt)`, `?.sh)`) survive verbatim.
+- **Nesting of any mix.** A 5-deep `for → while → if → until → for` nest round-trips
+  exec-identically, and a `for` loop *inside* a `case` arm composes.
+
+Single-line forms are accepted and normalised to block form; indentation is canonicalised to
+tabs, so the emitted file is a *normal form* of the input rather than a byte copy. Every
+emission carries `# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE`.
+
+**Refusals you should not mistake for coverage.**
+
+- **Conditions and patterns are opaque.** A `while` / `until` / `if` / `elif` condition is
+  captured as an `Expr::LitStr` and printed back byte-for-byte; `case` patterns are raw glob
+  strings. The `[ … ]` test and `*`/`?`/`[…]` metacharacters are **not modelled structurally**
+  — nothing analyses, rewrites, or validates them.
+- **`case` is top-level only.** A `case` nested inside a loop or `if` body refuses with
+  `shell case/esac is top-level only — a case nested inside a loop/if body is not supported
+  (the ;-segment split would mangle arm ;; terminators)`. Loops and conditionals *inside* a
+  `case` arm are fine; only the other direction refuses.
+- **Cross-domain backends refuse cleanly.** `--target rust` on a shell input errors with
+  `Rust backend does not lower Stmt::ShellIf — contract C-BASHRS-POSIX-IDEMPOTENCE governs
+  shell conditionals; use --target shell`; `--target wasm` refuses as an unsupported container
+  statement.
+
+**Known defect shipping in this release: bash fall-through arms are shredded, not refused.**
+`;&` and `;;&` are not modelled, and instead of erroring the frontend splits the arm and the
+backend emits a *syntactically invalid* script while exiting 0. Given
+`case "$x" in a) echo one ;& b) echo two ;; esac` — valid bash (`bash -n` exit 0) — xpile exits
+**0** and emits an arm body containing a bare `&` on its own line; `bash -n` on the output fails
+with ``syntax error near unexpected token `&' `` (exit 2). This is a regression in *posture*
+relative to `v0.1.616`, where the blanket control-flow refusal caught these inputs. Do not feed
+`;&`/`;;&` through the shell lane until v0.2.0.
+
+**One diagnostic defect corrected in-arc** (PMAT-1287 skeptic pass): the nested-`case` refusal
+message still claimed `case/esac not supported` and the stray-keyword arm still claimed
+`elif chains and case are not supported yet` — both false once PMAT-1284/1285 landed. Both
+messages now state the true boundary.
+
+Coverage grew with the surface: bashrs-frontend `#[test]`s **62 → 91**, bashrs-backend
+**21 → 26**, and the `shell_diff_exec` execution-witness suite **2 → 7**
+(`shell_diff_demo_{for_loop,while_until_loop,nested_loop,if,case}_round_trip` are new; all 7
+pass).
+
+### Kani Symbolic (BMC) stratum — 15/35 → 24/35 contracts, `xpile quorum` 16 → 24 QUORUM (PMAT-1269/1275/1277/1282, 4 commits)
+
+**No new Python transpiles because of this arc.** All four commits touch only
+`contracts/*.yaml` and `contracts/kani/*.rs`. What changes is what the *verifier* reports about
+code that already compiled. Harness files go **15 → 24** (`git ls-tree v0.1.616 contracts/kani/`
+vs `origin/main`), the nine new ones being `c_float_arith.rs`, `enum_translation.rs`,
+`py_float_arith.rs`, `xlate_py_bool_to_rust_bool.rs`, `xlate_py_class_to_struct.rs`,
+`xlate_py_dict_to_hashmap.rs`, `xlate_py_optional_to_option.rs`,
+`xlate_py_set_to_hashset.rs`, `xlate_py_tuple_to_rust_tuple.rs`.
+
+The user-visible surface is `xpile quorum`, the §14.4 N-of-M oracle **reporter**. Running the
+*same* HEAD binary against the `v0.1.616` `contracts/` + fixtures + roadmap trees prints:
+
+```
+totals: 16 QUORUM, 19 PARTIAL, 0 UNVERIFIED (35 contracts total)
+```
+
+and against today's trees:
+
+```
+totals: 24 QUORUM, 11 PARTIAL, 0 UNVERIFIED (35 contracts total)
+```
+
+Eight contracts flip **PARTIAL → QUORUM** on the Symbolic vote alone — `C-C-FLOAT-ARITH`,
+`C-ENUM-TRANSLATION`, `C-XLATE-PY-BOOL-TO-RUST-BOOL`, `C-XLATE-PY-CLASS-TO-STRUCT`,
+`C-XLATE-PY-DICT-TO-HASHMAP`, `C-XLATE-PY-OPTIONAL-TO-OPTION`, `C-XLATE-PY-SET-TO-HASHSET`,
+`C-XLATE-PY-TUPLE-TO-RUST-TUPLE` — and `C-PY-FLOAT-ARITH` picks up a fourth stratum.
+
+`cargo test -p xpile --test kani_verify -- --nocapture` prints
+`XPILE-QUORUM-002: verified 24 Kani harness file(s) — Symbolic stratum discharged.` and exits 0
+(3 tests). **That is a citation gate, not a proof run**: it checks that each cited harness file
+exists and contains a `#[kani::proof] fn`. Actually running the proofs happens only in the
+advisory `kani` CI job (`cargo-kani 0.67.0` locally).
+
+**Shipped defect corrected.** `contracts/c-c-float-arith-v1.yaml` previously carried an inline
+harness `c_float32_bits_determine_value` whose entire body was `let a: u8 = kani::any(); let b:
+u8 = kani::any(); if a == b { assert_eq!(a, b); }` — a reflexive tautology mentioning no float,
+which would have kept reporting green no matter how badly the C `float`/`double` ABI was
+lowered. It is replaced by `f32::from_bits(x).to_bits() == x` over **all** `u32`, its
+`f64`/`u64` twin, and a `size_of` discrimination.
+
+**The dict and set proofs are structural models, not proofs over `HashMap`/`HashSet`.** std's
+hash containers are Kani-hostile, so `xlate_py_set_to_hashset.rs` proves order-independence,
+dedup/idempotence and membership fidelity over a `u8` membership bitmask, and
+`xlate_py_dict_to_hashmap.rs` proves entry preservation, last-write-wins + cardinality and key
+independence over a `[u8; 4]` value array plus a presence mask. They constrain the container
+*semantics* the emitted type must satisfy, not the emitted type itself — unlike the
+float/bool/optional/tuple/class harnesses, which run over the primitive Rust types xpile
+actually writes.
+
+**Still without a Symbolic vote (11 of 35), so still `PARTIAL`:** `C-COMPILE-RUST-TO-WASM`,
+`C-WASM-HEAP`, `C-COMPILE-RUST-TO-WGSL`, `C-COMPILE-RUST-TO-SPIRV`, `C-COMPILE-SHELL-TO-FORJAR`,
+`C-FFI-SHELL-SUBPROCESS`, `C-PY-EXCEPT-ALLOWLIST`, `C-PY-GENERATOR-EAGER`,
+`C-PY-FILE-IO-ROUNDTRIP`, `C-PY-CONTEXT-MANAGER-EXIT`, and `C-CONST-TRANSLATION` — the last
+deliberately dropped rather than shipped, because the only tractable model was a bit-packing
+that proves its own encoding injective by construction.
+
+**Do not read "24 QUORUM" as 24 machine-checked contracts.** `xpile quorum` counts *string
+mentions*, not executions — see *What is NOT merge-blocking*, §6.
+
+### fable-architectural-review GATE arc — witnesses that execute, gates that block (20 commits)
+
+Nothing here widens the Python surface; it makes the surface already claimed *checkable*, and
+fixes one shipped defect and one unreachable CLI path.
+
+**`--target ptx` is reachable from the CLI for the first time (XPILE-PTX-001).** At `v0.1.616`
+every `BackendConfig` construction site in `crates/xpile/src/main.rs` hardcoded
+`hardware: None`, so `xpile transpile … --target ptx` always died with
+`missing hardware profile for target Ptx`. A new `--hardware` flag plumbs it:
+`--target ptx --hardware ptx` emits `.version 8.0` / `.target sm_80` /
+`.visible .entry xpile_kernel(`; `--hardware ptx:sm_89` emits `.target sm_89`. **Refusals kept
+sharp:** `--target ptx` *without* `--hardware` still refuses; an unknown value fails fast
+(`--hardware cuda` → `unknown --hardware 'cuda'; the CLI plumbs: ptx (optionally ptx:sm_XX,
+e.g. ptx:sm_89)`). PTX is still not validated anywhere in CI — no `ptxas`, no GPU (see below).
+
+**A shipped defect: every emitted `forjar.yaml` was rejected by forjar's own validator
+(XPILE-WITNESS-003).** The machine block emitted only `addr: localhost`, but forjar's `Machine`
+schema requires `hostname`. Verified against the tag binary: the `v0.1.616` emit gives
+`error: YAML parse error: machines.localhost: missing field 'hostname'`, exit 3 — while the
+backend's structural test stayed green, because a shape-check cannot see a missing *required*
+field. Fixed by emitting `hostname: localhost` alongside `addr`; today's emit validates `OK`,
+exit 0. Backstopped twice: a `forjar validate` witness over a 4-shape shell corpus, plus a
+structural assertion inside `xpile-forjar-codegen` that runs in CI where `forjar` is absent.
+
+**WASM witnesses actually run in CI (XPILE-WITNESS-001).** `workspace-test` now installs WABT
+and exports `XPILE_REQUIRE_WASM_RUNTIME=1` (`.github/workflows/ci.yml:95` — the only place it
+is set); `wasm_runtime_available()` gained a tripwire so a dropped install *panics* instead of
+reverting to skip-green. `workspace-test` is one of exactly two merge-blocking contexts (live:
+`gh api repos/paiml/xpile/rules/branches/main` → `["gate","workspace-test"]`). With WABT
+present, `cargo test -p xpile-wasm-codegen --tests` is **942 passing**.
+
+**A witness-floor manifest and a claims-drift gate (XPILE-WITNESS-002 / XPILE-CLAIMS-001).**
+`witness_floor.rs` statically counts execution witnesses per lane and asserts a floor, so
+deleting a corpus reds CI *even on a runner that lacks the toolchain*. Live manifest
+(`cargo test -p xpile --test witness_floor -- --nocapture`): wasm **795** (floor 770),
+rust-differential 44, shell 7, ruchy 7, lean 6, forjar 4, hybrid 3, wasi 1 — **TOTAL 867
+against floor 842**. `claims_drift.rs` derives README's frontend/backend counts from the live
+registry and the `Target` enum, and every module-count literal in `PROVABILITY-INVENTORY.md` /
+`roadmap.yaml` from `lakefile.lean` roots (9 tests, all green). Landing it required fixing real
+live drift.
+
+**Release and contract integrity.** A new `.github/workflows/release.yml` (none existed at
+`v0.1.616`) runs `cargo publish --workspace --dry-run --locked` under an isolated `CARGO_HOME`
+clean room. Its trigger is `workflow_dispatch` + `push: tags: v*` **only — it never runs on a
+pull request**, so the dry-run first executes *after* the tag is pushed. The fast per-PR half
+(`publish_manifest_integrity.rs`) asserts all **34/34** intra-workspace `path = "crates/…"`
+deps carry a `version =`. Contracts carrying `falsification_tests` went **31/35 → 35/35** — the
+four wired are `bashrs-posix-idempotence`, `ffi-shell-subprocess`, `py-float-arith`,
+`xlate-py-set-to-hashset` — and `pv lint contracts/` is `PASS — 0 errors, 0 warnings`.
+
+**First executing witnesses for three string-compare-only lanes (XPILE-WITNESS-003).** Ruchy:
+7 curated fixtures run the full `xpile --target ruchy → ruchy transpile → rustc -O → run` chain
+and byte-diff stdout against CPython. Lean: 6 value functions / 11 proof obligations of the form
+`example : f args = v := by decide`, which *reduces* the emitted definition. **Caveat a user
+hits immediately:** the Lean witness emits `--contracts off` deliberately, because the default
+citation form is a Lean *attribute* — `@[xpile_contract "C-PY-INT-ARITH"]` — registered
+nowhere, so bare `lean` rejects the default output (verified: `--contracts on` → rc=1,
+`--contracts off` → rc=0). A follow-up commit corrected the original "emit a comment instead"
+recommendation: the attribute is deliberate design; what was never wired is the prelude that
+registers it. **All three witnesses skip-with-reason when their toolchain is absent, and hosted
+CI installs only WABT** — so in CI these three lanes are string-compare-plus-skip, and only
+their *corpus sizes* are floored.
+
+**Also in this arc.** An offline `shader-validate` CI job (PMAT-482) puts a WGSL corpus through
+the naga front end and compiles the `@compute` shapes to SPIR-V with no GPU and no skip path,
+plus a "naga still rejects garbage" guard against a vacuous pass (3 tests, green). A kani
+anti-vacuity tripwire (XPILE-RULESET-002) makes a missing `cargo kani` a hard failure — armed
+via `XPILE_REQUIRE_KANI=1` in the `kani` job only (`ci.yml:171`), deliberately not on `CI=true`,
+which would have wedged `workspace-test`. **Honest note:** the `kani` job is *advisory* — the
+live org ruleset requires only `gate` and `workspace-test`. Finally, a discrimination witness
+for the OLS-recognition honesty boundary (PMAT-956): genuine fitted-regression shapes are
+recognised and cite the uniqueness certificate, near-misses are rejected and do not — 9 tests,
+all green.
+
+### Native-WASM hash-container ITERATION and REDUCTION over `dict` / `set` (PMAT-1290..1301, 12 commits)
+
+At `v0.1.616` `dict` and `set` were **keyed-access only**:
+`git show v0.1.616:crates/xpile-wasm-codegen/src/lib.rs` still carries the blanket refusal
+*"for-loop over a dict — dict iteration is not in the WASM subset"*, and that string is gone at
+HEAD. This arc opens the read-only iteration + reduction surface, and ships a **refusal instead
+of a wrong answer** where the semantics are not recoverable.
+
+**Iteration — all four dict views plus bare set/dict:**
+
+- `for x in s` over `set[int]` and `set[str]` — the first hash-container iteration
+  (`{5,1,9,5}` summed → `15`, CPython-exact).
+- `for k in d`, `for k in d.keys()`, `for v in d.values()`, and `for k, v in d.items()` — the
+  paired form binds both slots of a 16-byte entry in one walk (`{3:30,1:10,7:70}` folded as
+  `k*v` → **590**, matching python3).
+- Keys may be **`int` or `str`**; mixed loops over the same dict compose.
+- Mechanism: a counted `while i < d.count` walk over the bump-heap entry table with an
+  `i64.load` at `base+8+i*16` (key) / `offset=8` (value), bounds-trapped per step — no
+  snapshot, no allocation.
+
+**Reduction and materialization:**
+
+- `sum(s)` / `min(s)` / `max(s)` and `sorted(s)` over `set[int]` (`{5,1,9,5}` → `15`/`1`/`9`).
+- `sum(d)` / `min(d)` / `max(d)` / `sorted(d)` over dict **keys**, and the same four over
+  `d.values()` — verified on `{3:30,1:10,7:70}`: the packed key fold is **11010703**,
+  CPython-exact.
+- `sorted()` lowers as `$__wasm_set_to_list_i64` (or the dict-key/value twin) feeding
+  `$__wasm_list_sorted_i64`, so its result is a **real `list[int]`** with defined order:
+  `xs = sorted(s); for x in xs: r = r*10 + x` over `{7,3,5,1,9}` executes to **13579** —
+  exactly CPython.
+- `min()`/`max()` of an empty set or dict executes `unreachable`, mirroring CPython's
+  `ValueError` (verified by execution).
+
+**A shipped defect this arc found and fixed.** PMAT-1290 claimed order-dependent set
+observations were "refused upstream". PMAT-1292's adversarial fuzz refuted that:
+`for x in s: r = r*10 + x` lowered to a plain storage-order walk and silently returned a wrong
+**value**, not a crash. There is no fix that matches CPython (a set has no defined order; the
+bump heap also swaps-last-into-hole on `discard`), so the honest fix is a refusal — verified:
+that exact loop now exits 1 with `order-dependent 'for … in s' over a set`.
+
+**Refusals — where a user would otherwise assume coverage:**
+
+- An **order-dependent** fold over a set *or* a dict refuses with a `sorted(…)`-pointing error:
+  unconditional reassignment, non-commutative accumulation (`r*10+x`, `r-x`), an
+  accumulator-observing guard, and the `d.items()` twin. Only commutative/associative
+  accumulations and the extremum idiom lower. Dict iteration is guarded too even though CPython
+  dicts are insertion-ordered, because a `del` reorders the heap.
+- `d.values()` / `d.items()` iteration over a **`str`-valued** dict refuses; `str`-*keyed* dicts
+  iterate fine.
+- `sorted()` over `set[str]` or `str` dict keys refuses — `list[str]` is not in the WASM list
+  subset.
+- `sum(d.values())` over a **float**-valued dict refuses; `set[float]` refuses at the frontend
+  (`f64` is not `Eq`/`Hash`).
+- A dict **mutated anywhere in the function** (`d[9]=90` or `del d[1]`, before *or* after the
+  loop) cannot be iterated — `for-loop over a MUTATED dict`. Sets have no such restriction.
+
+Witnesses: 12 test files in `crates/xpile-wasm-codegen/tests/` (`set_iteration_witness.rs`,
+`sorted_set_witness.rs`, `set_iteration_order_guard_witness.rs`, `set_reduce_witness.rs`,
+`dict_key_reduce_witness.rs`, `dict_value_reduce_witness.rs`, `dict_key_iteration_witness.rs`,
+`dict_value_iteration_witness.rs`, `dict_keys_view_iteration_witness.rs`,
+`dict_items_iteration_witness.rs`, plus two adversarial fuzz files —
+`dict_set_reduction_fuzz_witness.rs` and `iteration_scramble_fuzz_witness.rs`) carrying **148
+tests**, all green.
+
+### Native-WASM dicts beyond `dict[K, int]` — str/bool/float values + dict-to-dict merge (PMAT-1302..1307 / 1320..1323 / 1328..1331, 14 commits)
+
+At `v0.1.616` the WASM dict runtime stored `i64` integers and nothing else, and two dicts could
+not be combined at all. This arc opens both the value-kind and the dict-to-dict axis.
+
+**`dict[K, str]`** compiles end-to-end. A str value is its `i32` heap pointer zero-extended into
+the existing 8-byte slot (`i64.extend_i32_u` on store, `i32.wrap_i64` on read), needing no new
+runtime helper: reads, `d[k] = v`, `len(d)`, `k in d`, `d.get(k, default)`, `d.pop(k[,
+default])`, `d.setdefault(k, default)`, aug-concat, and composition with the string surface
+(`len(d[k])`, `d[1] + d[2]`, `d[k][1:4]`, f-strings), over int and str keys. A missing key still
+traps rather than returning garbage.
+
+**`d1 == d2` is CONTENT-comparing, not pointer identity** — verified by execution: two
+str-valued dicts holding `"abc"` compare equal even when one was built as a literal and the
+other by concatenation (different heap addresses).
+
+**`dict[K, bool]`** values read back as a real `i32` bool: `if d[k]`, `not d[k]`, `d[k] and
+d[k2]`, the `pop` / `pop(default)` / `setdefault` legs, and `d1 == d2`. `min`/`max`/`sum` over
+`.values()` lower too — Python types `min`/`max` of bools as `bool`, so the result must be
+received as `bool` (`m: bool = max(d.values())` executes and matches); `sum` is an `int`.
+
+**`dict[K, float]`** puts the f64 in the same i64 slot by bit-reinterpret
+(`i64.reinterpret_f64` / `f64.reinterpret_i64`), which is exact, not approximate — verified by
+executing an in-module equality: `-0.0` round-trips as `-0.0`, `1e-300` and `1e300` survive, and
+`0.1 * 3.0` read back through a slot compares `== 0.30000000000000004` (CPython's value)
+returning `1`.
+
+**Dict-to-dict**: `d.update(other)` mutation plus merge CONSTRUCTION via `{**a, **b}` and PEP 584
+`a | b`. Later-source-wins precedence is CPython-exact (verified), `|` leaves its sources
+unmutated, and an update outrunning the destination's slack relocates correctly.
+`len(d.keys())` / `len(d.values())` / `len(d.items())` also lower, as a raw count-header load.
+
+**Refusals shipped deliberately — read before assuming coverage:**
+
+* **`d1 == d2` over `dict[_, float]` REFUSES** — the arc's correctness pin. The shared equality
+  helper compares slots with `i64.eq`, but a float slot holds reinterpreted f64 *bits*:
+  `0.0 == -0.0` (different bits, equal floats) and `nan != nan` (equal bits, unequal floats)
+  would both be answered wrongly. Refused rather than lowered subtly wrong.
+* Mixed-kind `==` (a `dict[int,_]` against a `dict[str,_]`) refuses honestly.
+* `for v in d.values()` / `for k, v in d.items()` refuse over str-valued dicts.
+* `min`/`max`/`sum` over `.values()` refuse for `dict[_, float]` (int and bool are wired).
+  Note this is *not* the same operation as `all(d.values())`, which does lower over float —
+  see the any/all arc.
+* `sorted(d.values())` refuses for str values; `len()` of a view over a dict literal or
+  temporary refuses (receiver must be a named dict); nested dict values remain refused.
+
+One defect was found and closed *within* this release, so no tagged version shipped it: the
+bool-valued `min`/`max(.values())` path (PMAT-1320) returned an `i64` extremum into a `bool`
+(`i32`) position, emitting a module `wat2wasm` rejected outright. PMAT-1328 wraps the extremum
+with `i32.wrap_i64`.
+
+### dict/set across function and method boundaries + dict/set comprehensions (PMAT-1308..1319, 12 commits)
+
+At `v0.1.616` a `dict` or `set` in the WASM lane was trapped inside the function that built it.
+This arc makes hash containers flow across call boundaries in both directions, and lands the
+comprehension sugar over them.
+
+**Dicts and sets now cross function and method boundaries.** A `dict`/`set` parameter rides the
+same i32 base-pointer ABI a list/str/struct param already used, and a `dict`/`set` return flows
+the record back out. Executed and value-matched against `python3`:
+
+- `def build(n: int) -> dict[int, int]` piped into `def total(d: dict[int, int]) -> int` → **30**.
+- `str`-keyed dict params work (`{"a": 1, "b": 2, "c": 3}` summed → **6**).
+- Set params read fine (`for x in xs` over a `set[int]` param → **6**), and a set *return* works
+  when it is a **freshly-built local** (`c = a | b; return c` → `len` **3**).
+- The same both ways across an instance method (`dict_method_param_witness`,
+  `dict_method_return_witness`).
+- Params carry **caller-visible reference semantics**: a helper doing `del d[1]` through its
+  parameter is observed by the caller through its own pointer (**101** for
+  `len_in_callee * 100 + len_in_caller`, matching python3) — `pop`/`del`/`remove`/`discard`/
+  `clear` never relocate the record.
+
+**Refusals you will hit.** *Growth* through a parameter: `d[k] = v` and `s.add(e)` on a
+parameter both refuse — an insert can grow and relocate the record, leaving the caller's base
+pointer stale. **Returning the parameter itself also refuses** (`def uniq(xs: set[int]) ->
+set[int]: return xs` → *"the caller already holds this record under its argument name"*); return
+a freshly-built local instead.
+
+**The ordinary build/transform loop lowers.** The hash-order gate now admits a loop-var-keyed
+store and a set-build insert, not just commutative reductions. Executed:
+
+- `for k in src: dst[k] = src[k] + 1` → **232** (`len*100 + dst[1] + dst[2]`), matching python3.
+- `for k in src: out.add(k % 3)` → **2** distinct elements, matching python3.
+
+Both are order-*independent*, which is what makes them sound: xpile walks bump-heap storage
+order, not CPython insertion order. Anything order-*dependent* refuses with a precise diagnostic
+and a remedy. Iterating a dict *mutated elsewhere in the same function* also refuses.
+
+**Set and dict comprehensions over dict/set sources.** The one- and two-generator desugars now
+accept `Type::Dict` (iterates keys) and `Type::Set` sources, so the sugar produces the same HIR
+as the manual loop and inherits the same belts. Executed and value-matched against `python3`:
+
+- `t = {x * 2 for x in s}` over a set → **3**; `t = {k * 2 for k in d}` over a dict → **2**
+- `t = {k: k * k for k in s}` over a set → `len*10 + t[3]` = **39**
+- `t = {k for k in d if k % 2 == 0}` → **2**; `t = {k: v + 1 for k, v in d.items()}` →
+  `t[1]+t[2]` = **32**
+- two-generator over set sources: `t = {x * y for x in a for y in b}` → **4**
+
+**Note the binding form.** These lower when the destination is an *unannotated* local
+(`t = {…}`). An annotated `out: set[int] = {…}` refuses — the annotated dict/set binding path
+accepts a literal, set algebra, a merge, or a dict/set-returning call, and a comprehension is
+not among them.
+
+A **self-reference clobber belt** refuses `out = {k for k in out}`: the desugar materialises the
+empty destination first, so that read would see the clobbered name.
+
+**Comprehension refusals.** A **list** comprehension over a dict source refuses (list order is
+observable and diverges from bump-heap order); **three or more generators** refuse outright.
+These are backend refusals, not frontend ones: the desugar is target-independent, and the Rust
+lane — whose `IndexMap`/`IndexSet` iteration is deterministic — lowers the forms WASM declines.
+
+Nine executed witness suites ship with the arc (`dict_param_witness`, `dict_return_witness`,
+`dict_method_param_witness`, `dict_method_return_witness`, `dict_iter_store_witness`,
+`set_build_store_witness`, `set_comp_hash_source_witness`, `dict_comp_hash_source_witness`,
+`comp_2gen_hash_source_witness`) — **71 tests**, all passing. Two scheduled adversarial-verify
+slices (PMAT-1313, PMAT-1318) refuted nothing, so no shipped defect was corrected in this arc.
+
+### WASM: constant-step string slices — `s[::2]`, `s[1:4:2]`, `s[::-2]` (PMAT-1327)
+
+A Python function that slices a string **with a step** now compiles to native WASM. At
+`v0.1.616` every such form died at emit; at `v0.1.617` they lower, assemble under `wat2wasm`,
+and execute under `wasm-interp` with CPython-identical results. Verified by execution over
+`"abcde"` and over the multi-byte fixture `"aβcδe"`.
+
+- **Mechanism.** A new `$__wasm_str_slice_step(s, lo, hi, k)` helper reproduces CPython's
+  `PySlice_Unpack` defaults (sentinels chosen by step *sign*) and `PySlice_AdjustIndices`
+  clamping, then materialises a fresh length-prefixed heap string in two passes (size, then
+  copy). Each selected code point is copied **whole**, so it is char-exact, not a byte reversal:
+  `"aβcδe"[1::2]` returns `"βδ"` — **2 chars, 4 bytes**, first code point `ord` 946, all matching
+  live `python3` on the identical source.
+- **Correction to the arc's own headline: `s[::-1]` is *not* new.** It already compiled to WASM
+  at `v0.1.616` — the frontend rewrites `s[::-1]` to a string `Reverse` op before the WASM lane
+  ever sees a step, and it still routes through `$__wasm_str_reverse`. What `v0.1.617` adds is
+  every *other* constant step, including `s[::-2]` and larger negative strides.
+- **Helper gating is exact.** A stepped-only module carries `$__wasm_str_slice_step` and no dead
+  plain-slice helper; a `s[1:4]`/`s[::1]` module carries only `$__wasm_str_slice`; an `s[::-1]`
+  module carries only `$__wasm_str_reverse`.
+
+**Refusals — hard frontend errors, not silent miscompiles:**
+
+- **The step must be an integer literal.** `s[::k]` for a parameter `k` refuses
+  (`zero or non-literal slice step; v0.2.0 requires a non-zero integer literal step`). The
+  *bounds* may be runtime values — only the step is pinned.
+- **`s[::0]`** refuses with the same message (CPython raises `ValueError`).
+- **A negative step executes only with BOTH bounds omitted.** `s[1:4:-1]`, `s[:3:-1]` and
+  `s[3::-1]` all refuse (`negative-step slice with bounds; v0.2.0 supports only the unbounded
+  form 'xs[::-k]'/'s[::-k]'`). This refusal lives in the **frontend**, so it applies to *every*
+  target — `--target rust` refuses these too.
+- **Stepped *list* slices still refuse in WASM**: `xs[::2]` gives `a STEPPED list slice
+  'xs[i:j:k]' — the WASM list subset slices 'xs[lo:hi]' (step 1) only`. This arc is strings only.
+
+Ships with `str_slice_step_witness.rs` (+474 lines, 4 tests, gated on WABT). Cites
+`C-COMPILE-RUST-TO-WASM` + `C-WASM-HEAP`. (`crates/xpile-wasm-codegen/src/lib.rs`, +471/−70.)
+
+### Native-WASM `any()` / `all()` over more container kinds (PMAT-1332..1337, 6 commits)
+
+At `v0.1.616` the WASM lane folded exactly one container: a `list[bool]` bound to a name.
+Everything else — `any(xs)` over a `list[int]`, `all(d.values())`, `any(d)`, `all(s)` — aborted
+the transpile; verified against the tag binary.
+
+What now transpiles and runs (six slices, PRs #1932–#1937), all executed and value-matched
+against live `python3`:
+
+- **`list[int]` / `list[float]`** — folds the raw payload in place via
+  `$__wasm_list_int_truthy_reduce` / `$__wasm_list_float_truthy_reduce` (`i64.ne 0` /
+  `f64.ne 0.0`, 8-byte stride, non-allocating). The predicate is **nonzero, not `> 0`**:
+  `all([-3, 7])` executes `i32:1` (`True`). IEEE falls out for free — `any([-0.0, 0.0])`
+  executes `i32:0` (`False`).
+- **`d.values()`** over int-, bool- and float-valued dicts — verified:
+  `all({1:1.5, 2:0.0}.values())` → `i32:0`, matching CPython `False`. (This is the *truthiness*
+  fold; `sum`/`min`/`max` over float `.values()` remain refused — a different operation.)
+- **`any(d)` / `all(d)` / `any(d.keys())`** over an int-keyed dict — Python's **key** iteration,
+  not values: `any({0: 9})` emits `i32:0`, matching CPython's `False`.
+- **`set[int]`** — `all(s)` materialises the live elements via the shared
+  `$__wasm_set_to_list_i64` and reuses the int fold, so it is correct after `add`/`discard`.
+- **String elements** — `set[str]` and str-keyed dicts fold through one fused helper,
+  `$__wasm_hash_strkey_truthy_reduce`, reading each key's length header out of the 16-byte
+  entry — no `list[str]` materialisation. Python's empty-string falsiness holds exactly:
+  `any({"",""})` → `False`, `all({"0"," "})` → `True`.
+
+Reduces also lower across a function-parameter boundary, nested inside `if` / `while` bodies,
+and composed cross-lane.
+
+**Fixed — `any(s)` / `all(s)` over a set was rejected on every backend.** The frontend only
+materialised a *dict* argument for `any`/`all`, so a `set` argument skipped the truthiness arm
+and the whole function died at lowering. The fix is one `Type::Set(_) => SetToList` arm in
+`depyler-frontend`, so the Rust and Ruchy backends were repaired as a side effect, not just WASM.
+
+**Still refused, honestly** (each verified to abort with a message, never to mis-lower):
+`any`/`all` over a **`list[str]`** (`list element type Str`); over a **str-VALUED** dict's
+`.values()`; over **`d.items()`**; and the lazy **generator** form `any(x > 1 for x in xs)`
+(`any(<generator>) — the WASM subset folds a materialised 'list[bool]' only`). Note the float
+fold's NaN-truthy leg is *unreachable* rather than wrong — `float("nan")` is itself refused by
+the WASM subset.
+
+**Verification.** The arc's own skeptic pass (PMAT-1337) executes and prints
+`73 any/all truthiness observables … NOTHING REFUTED`; all **21 tests** across the six witness
+files pass on a WABT box.
+
+### Native-WASM scalar numeric builtins: `abs`, `min`/`max`, `math.floor`/`ceil`/`trunc`, `math.sqrt` (PMAT-1338..1342, 5 commits)
+
+At `v0.1.616` the WASM backend had **no** numeric-builtin support at all —
+`git show v0.1.616:crates/xpile-wasm-codegen/src/lib.rs | grep -c NumBuiltin` returns `0`
+(HEAD: 70). `v0.1.617` lowers four families natively:
+
+- **`abs(x)`** — `abs(int)` calls a branch-form `$__wasm_abs_i64` helper (operand evaluated
+  once); `abs(float)` is the single native `f64.abs` instruction.
+- **`min(a, b, …)` / `max(a, b, …)`** over ints — variadic, lowered as a LEFT fold of
+  `$__wasm_min_i64` / `$__wasm_max_i64` (`i64.lt_s` + `select`), one `call` per extra operand.
+- **`math.floor(x)` / `math.ceil(x)` / `math.trunc(x)`** — the native `f64.floor` / `f64.ceil` /
+  `f64.trunc`, then `i64.trunc_f64_s` to give Python's `int` result.
+- **`math.sqrt(x)`** — `$__wasm_sqrt_f64`, a domain guard (`x < 0 → unreachable`) around the
+  IEEE-correct `f64.sqrt`.
+
+Verified by execution against live `python3` on identical sources, including nesting and
+composition (`abs(min(a,b))` / `min(abs(a),abs(b))` packed → **904**; `math.floor(math.sqrt(x))`
+→ **3**; `math.sqrt(x*x + y*y)` → **5.0**), a 5-operand variadic fold (`min(5,3,9,1,7)*100 +
+max(...)` → **109**), all three rounding senses on `-2.7` (packed → **−30202**), and the
+signed-zero corner (`math.sqrt(-0.0)` → `-0.0`). Helpers are gated per-op.
+
+**Fixed here, and only here — `f"{min(a, b)}"` refused to lower.** `concat_operand_is_int`,
+which decides which expression gets auto-wrapped in the sign-aware `str(int)` in a format
+position, was threaded for `Abs` (PMAT-1338) and for `Floor|Ceil|Trunc` (PMAT-1340) but **not**
+for `Min|Max` (PMAT-1339). `git show <sha>:crates/xpile-wasm-codegen/src/lib.rs` across the arc
+shows the arm as `NumBuiltinOp::Abs` at `1b18dca8` and `a5243bd5`, becoming
+`NumBuiltinOp::Abs | NumBuiltinOp::Min | NumBuiltinOp::Max` only at `2ee3630f`. A user would
+have seen a refusal for `f"{min(a,b)}"` while `f"{abs(a)}"` in the identical position lowered
+fine — a capability hole, never a miscompile. Introduced and closed inside this release, so no
+tagged version shipped it.
+
+**Refusals — do not assume coverage beyond ints and floats-where-stated:**
+
+- **Float `min`/`max` REFUSES**: WASM's always-NaN-propagating `f64.min`/`f64.max` do not match
+  Python's order-dependent NaN rule (`min(1.0, nan) == 1.0` but `min(nan, 1.0)` is nan). Int
+  `min`/`max` is the whole supported surface.
+- **`bool`/`str` `min`/`max` REFUSES** — an i32 operand is out of subset.
+- **Transcendentals REFUSE** — `math.sin/cos/tan/exp/ln/log10/log2` have no WASM instruction;
+  `math.pow` refuses too. Rather than ship a polynomial that drifts from CPython's libm in the
+  low bits, the backend says no.
+- **`round(x)` REFUSES** — it is not part of this arc, and it has Python's banker's-rounding
+  semantics.
+- **An `int` argument to the math ops REFUSES** — the int→float widen (`float(a)`) is itself
+  not in the WASM subset. Widen at the call site by hand.
+- **A float result in an f-string REFUSES** — `f"{math.sqrt(x)}"` hits the existing
+  `str(float)`/`repr(float)` refusal.
+
+**Boundaries — where WASM traps and where it diverges:**
+
+- `math.sqrt(-1.0)` **traps** (`unreachable executed`) where CPython raises `ValueError`.
+- `math.floor(1e300)` **traps** (`integer overflow`) where CPython returns the exact 301-digit
+  bignum — the i64 result domain is the limit, and a trap is the honest answer.
+- `abs(-2**63)` **silently wraps**: the returned i64 is the bit pattern `0x8000…0`, i.e. `-2**63`
+  as a signed value, where CPython gives `+2**63`. This is the pre-existing i64-domain boundary
+  shared with unary `-x`, and it is a wrap, not a trap — the one place in this arc where a value
+  differs from CPython without any signal.
+
+Witnesses: `crates/xpile-wasm-codegen/tests/{abs_num_builtin,int_minmax,math_rounding,
+sqrt_num_builtin,num_builtin_adversarial_verify}_witness.rs` — 2,322 added lines, **29 tests**,
+all green.
+
+### Release-sprint honesty and gate slices (PMAT-1343..1347, 5 commits)
+
+**`xpile transpile foo.ruchy` no longer lies.** Through `v0.1.616` the Ruchy frontend returned
+`Ok(Module { items: Vec::new(), .. })` for *any* `.ruchy` input, so a real Ruchy program
+transpiled to a bare `// xpile-generated from Ruchy module <stem>` header — and **exited 0**
+(verified against the tag binary). That is a wrong answer delivered successfully, directly under
+README's promise that xpile refuses with a reason instead of emitting code that silently
+diverges. It now refuses on every target:
+
+```
+Error: parse_and_lower failed for t.ruchy
+Caused by:
+    unimplemented frontend: t.ruchy: the Ruchy frontend has no parser — Ruchy is an
+    OUTPUT language only (`--target ruchy`), not an INPUT language. …
+EXIT=1
+```
+
+A new `FrontendError::Unimplemented` carries it — deliberately not `Parse` (the user's source is
+not at fault) and not `Lower` (the whole language is unread). The frontend stays **registered**
+and still claims the `.ruchy` extension so the file reaches that specific refusal.
+
+**Knock-on behaviour, stated plainly.** `--target ruchy` is unaffected and still a full emission.
+Only `.ruchy` **input** refuses. On a mixed tree, `xpile hybrid <dir>` containing a `.ruchy` file
+now exits **1**, and `xpile audit <dir>` lists the file under `errors (1)` while still exiting 0
+(both verified).
+
+**The count that was wrong is now derived from behaviour, not from call sites.**
+`claims_drift.rs` used to validate README's "five source languages" by counting
+`register_frontend(Arc::new(` call sites — it checked the numeral while the substance was
+hollow. It now *runs* every frontend in the live `default_session()` registry against a real
+program in its own language and classifies Lowered / Refused / HOLLOW. The substantive count is
+**four** — python, c, bashrs, wasm. `xpile info` prints `frontends (5 registered, 4 lowering)`
+and marks the Ruchy row `[routing only — INPUT refuses, no parser]`. A registered frontend with
+no probe entry panics. All **9** assertions in that suite pass.
+
+**Two rot-prone gates repaired.**
+
+- `WASM_FLOOR` went **400 → 770**. Machine-derived live count at the sprint's TOUCH 1: **795
+  `#[test]`s across 138 `crates/xpile-wasm-codegen/tests/*_witness.rs` files**, re-derived here
+  and unchanged. The old floor left 395 tests of slack — roughly half the WASM corpus could have
+  been deleted without reddening the `workspace-test` context, which the org ruleset *does*
+  require. Every other lane was already tight (shell 7/7, rust-differential 44/44, hybrid 3/3,
+  wasi 1/1, ruchy 7/7, forjar 4/4, lean 6/6); the manifest totals **867 executed witnesses
+  against a floor of 842**. Bare `// current NNN` comments are replaced with dated
+  `// live NNN @ 2026-07-26 (TOUCH 1)` snapshots plus a re-derive-discipline note.
+- The pre-commit documentation guard was pointed at `docs/execution/roadmap.md`, **a path that
+  does not exist in this repo** (`ls` → No such file); the ledger is `docs/roadmaps/roadmap.yaml`.
+  It had therefore taken its non-fatal else-branch on every commit ever made. The hook is
+  repointed, and because hooks live under `.git/` and are never cloned, the durable half is
+  `crates/xpile/tests/roadmap_registration.rs` (XPILE-LEDGER-001, **3 tests**, all green): every
+  `status: done` queue row must be registered; every `PMAT-NNNN` cited in a commit subject since
+  the last `v*` tag must be registered (**82** distinct ids since `v0.1.616`, drift set empty);
+  and no path `[ -f … ]`-guarded by an installed pre-commit hook may be dead. `workspace-test`
+  gained `fetch-depth: 0` so the history assertion runs for real.
+
+An enforcement truth sweep (PMAT-1347) adds `crates/xpile/tests/ruleset_drift.rs` (4 tests) and
+tightens `deny.toml` to `yanked = "deny"`. `docs/roadmaps/roadmap.yaml` now carries **1294**
+registered ids.
+
+---
+
+---
+
+**The three sections below are mandatory for every xpile release.** They state what the
+toolchain does *not* do, what is *not* enforced, and where generated code does *not* match
+CPython. They are part of the release, not an appendix to it.
+
+### What still REFUSES
+
+Every line below was re-derived by running a HEAD binary built from `origin/main` @ `0a6ca974`.
+Reproduce any of them with:
+
+```sh
+CARGO_TARGET_DIR=/path/to/target cargo build -p xpile --bin xpile
+xpile transpile <file> --target <target> --contracts off; echo "exit=$?"
+```
+
+A refusal here means: **non-zero exit, message on stderr naming the construct, nothing emitted.**
+The one place in this list where xpile does *not* do that is called out under "The one that does
+NOT refuse cleanly" — treat it as a known defect, not a feature.
+
+Two refusal *layers* matter:
+
+* **Frontend refusals** (`Error: parse_and_lower failed …`) fire on **every** target.
+* **WASM-backend refusals** (`Error: backend 'wasm' failed` → `xpile-wasm-codegen: unsupported
+  construct …`) fire **only** on `--target wasm`. The same source lowers fine to Rust.
+
+#### Frontend refusals — every target, no escape hatch
+
+| Construct | Probe | Result |
+|---|---|---|
+| Negative-step slice **with bounds** — `s[5:1:-1]`, `s[3::-1]`, `xs[5:1:-1]` | `def f(s: str) -> str: return s[5:1:-1]` | exit 1: *"uses a negative-step slice with bounds; v0.2.0 supports only the unbounded form `xs[::-k]`/`s[::-k]`"* |
+| Zero or non-literal slice step | `s[::0]`, `s[::k]` for a param `k` | exit 1: *"zero or non-literal slice step; v0.2.0 requires a non-zero integer literal step"* |
+| `print(dict)` | `print({1: 2})` typed `dict[int,int]` | exit 1: *"calls `print(...)` with a `Dict(I64, I64)` argument — only int/str/float/bool/list/tuple (incl. f-strings) are supported at v0.2.0 (dict/set repr deferred)"* |
+| `print(set)` | same shape, `set[int]` | exit 1, same message with `Set(I64)` |
+| `set[float]` / float dict keys | `a: set[float] = {1.5}` | exit 1: *"a float can't key a Rust `HashSet`/`HashMap` (`f64` is not `Eq`/`Hash`)"* |
+| Empty list literal without an annotation | `c: list[int] = a + []` | exit 1: *"empty list literal `[]` requires a type annotation to infer the element type"* |
+| Ruchy as an **input** language | `xpile transpile x.ruchy --target rust` | exit 1: *"the Ruchy frontend has no parser — Ruchy is an OUTPUT language only (`--target ruchy`), not an INPUT language"* |
+
+**Why these are principled, not arbitrary:**
+
+* **`s[::-1]` works; `s[5:1:-1]` does not.** Unbounded negative stride has one CPython-exact
+  adjustment rule the runtime implements; bounded negative stride needs the full
+  `PySlice_AdjustIndices` sign-dependent clamp on *both* endpoints, and getting it 95% right is
+  worse than refusing. `s[::-1]` and `s[::-2]` exit 0 and execute — confirm before assuming the
+  whole family is gone.
+* **`print(set)` can never be made right.** xpile lowers `set` to `indexmap::IndexSet`, which
+  iterates in *insertion* order; CPython iterates in *hash* order. There is no order xpile can
+  pick that reproduces CPython's for arbitrary elements, so any `print(set)` output would be a
+  silent divergence. `print(dict)` rides along on the same deferral, though dict order *is*
+  deterministic in CPython — that one is a genuine subset gap, not an impossibility.
+* **`set[float]`** is refused because the *Rust* lowering target has no `Eq`/`Hash` for `f64`.
+* **Ruchy input changed in this release** — see the sprint arc. Routing is deliberately kept so
+  you get *that* message, not a generic "no frontend handles .ruchy".
+
+#### WASM-backend refusals — `--target wasm` only, Rust lane unaffected
+
+| Construct | Probe | Message (abridged) |
+|---|---|---|
+| `str(float)` / `repr(float)` — including a bare `f"{x}"` over a **float** | `return str(x)` on `x: float` | *"a float→decimal repr (shortest round-trip) is refused; only str(int) is supported"* |
+| Format specs | `return f"{x:04d}"` | *"a bare single-interpolation f-string (`f"{x}"`, no surrounding literal) or a format spec … is not modelled"* |
+| Whole-dict `==` over **float** values | `a == b` on `dict[int, float]` | *"the dict-equality helper compares value slots with `i64.eq`, but a float slot holds reinterpreted f64 BITS"* |
+| Mixed-kind dict `==` | `dict[int,int] == dict[str,int]` | *"binary op Eq over dicts with different key kinds (i vs s)"* |
+| `list[str]` — local, param, **and** return | `xs: list[str] = ["ab"]` | *"list element type Str — the WASM list subset supports list[int]/list[float]/list[bool] only"* |
+| Nested dict values | `dict[int, dict[int,int]]` | *"dict value type Dict(I64, I64) — the WASM dict subset stores i64 integer, bool, …"* |
+| dict-valued struct fields | `self.d: dict[int,int]` | *"the WASM struct subset supports SCALAR fields (i64/i32/f64/f32/bool) only"* |
+| `list(d)`, `list(d.keys())`, `list(d.values())` | `ks: list[int] = list(d)` | *"binding a list local from \<container/aggregate/builtin expression\>"* |
+| `list(s)` over a set | `xs: list[int] = list(s)` | *"`list(s)` over a set — the WASM subset materialises a set to a list only inside `sorted(s)`"* |
+| `d.get(k)` with no default (Optional) | `v = d.get(1)` | *"type Optional(I64) (the WASM emit subset is i64/i32/f64/f32/bool only)"* |
+| Float `min`/`max` | `min(a, b)` on floats | *"a float min/max needs Python's NaN-order semantics WASM f64.min/max do not provide"* |
+| Integer `**` | `return n ** 2` | *"binary op Pow over WASM i64 (not in the scalar/control subset)"* |
+| Float `**` | `a ** b` on floats | *"only + - \* / are in the WASM scalar subset; floordiv/mod/pow/hypot/atan2/log are refused"* |
+| `round(x)` | `return round(x)` on a float | *"expression \<container/aggregate/builtin expression\> (outside the WASM scalar/control subset)"* |
+| `xs.extend(ys)`, `xs += ys` | `a.extend(b)` | *"statement \<container/aggregate statement\> (outside the WASM scalar/control subset)"* |
+| `xs.sort(key=…)` | `a.sort(key=abs)` | *"`sorted(xs, key=…)` — the WASM subset sorts by element value"* |
+| Growth through a dict/set **param** | `d[k] = v` / `s.add(e)` on a param | *"an insert can grow and relocate the record"* |
+| Returning a dict/set **param** | `def uniq(xs: set[int]) -> set[int]: return xs` | *"the caller already holds this record under its argument name"* |
+| Order-dependent set/dict fold | `for x in s: r = r*10 + x` | *"order-dependent `for … in s` over a set"* |
+| Iterating a **mutated** dict | `d[9]=90` anywhere + `for k in d` | *"for-loop over a MUTATED dict"* |
+| Module-level scalar consts | `LIMIT: int = 10` at module scope | *"module-level const `LIMIT` (only scalar/control functions are in the WASM subset)"* |
+| Any `print(...)` at all | `print(1)` | *"statement Print (outside the WASM scalar/control subset)"* |
+
+**Correction to earlier drafts of this list:** a *bare* `f"{x}"` over an **int** operand **does**
+lower (exit 0, verified). It is the float operand and the format spec that refuse.
+
+**Why the interesting ones are principled:**
+
+* **Float `min`/`max`** is the cleanest example in the repo. WASM's `f64.min`/`f64.max` are
+  NaN-propagating; Python's `min`/`max` are *comparison*-based and return the first argument
+  when a NaN is involved. They disagree, so xpile refuses rather than emit two instructions that
+  look right and are wrong on one input class. Integer `min`/`max` **does** work.
+* **Float-valued dict `==`** is the same argument at the storage layer: the value slot is an
+  `i64`, so a float is stored as reinterpreted f64 bits. A blanket `i64.eq` would answer
+  `0.0 == -0.0` as `False` and `nan == nan` as `True` — both backwards.
+* **`list(s)` vs `sorted(s)`** is the set-order argument one layer down. `sorted(s)` re-imposes a
+  total order and so is CPython-matching; a bare `list(s)` would leak xpile's bump-heap order.
+* **`list(d)` / `list(d.keys())` / `list(d.values())` are a weaker case** and should not be sold
+  as principled. CPython dict iteration order *is* deterministic, so these could be implemented;
+  they are refused only because the list-binding lowering accepts a literal, a named list,
+  `sorted(…)`, `reversed(…)`, `a + b`, or a slice, and nothing else. It is a subset gap.
+
+#### The one that does NOT refuse cleanly — bash `;&` / `;;&` case fall-through
+
+The bashrs frontend does **not** model bash's fall-through arm terminators, and it does **not**
+refuse them — it exits **0** and emits syntactically invalid shell:
+
+```sh
+$ cat fall.sh
+case "$x" in
+  a) echo one ;&
+  b) echo two ;;
+esac
+$ bash -n fall.sh; echo $?          # input is valid bash
+0
+$ xpile transpile fall.sh --target shell > fall.out; echo $?
+0
+$ bash -n fall.out
+fall.out: line 8: syntax error near unexpected token `&'
+```
+
+The emitted arm body becomes `echo one` followed by a bare `&` on its own line; `bash -n` exits
+2. The `;;&` variant fails the same way. `CLAUDE.md`'s claim that "everything else refuses with a
+hard `FrontendError` rather than shredding into barewords" is **false for `;&` and `;;&`**. Until
+that is fixed, do not run `.sh` files containing fall-through arms through `--target shell`.
+
+Everything else in the shell lane behaves as documented:
+
+* **`case` nested inside a loop/if refuses cleanly** — exit 1. Top-level `case` round-trips.
+* **Structural shell conditions do NOT refuse.** A `while`/`until`/`if`/`elif` condition and a
+  `case` pattern are captured verbatim and printed back byte-for-byte, so
+  `if [ "$x" = "y" ]; then … elif … else … fi` transpiles at exit 0 and passes `bash -n`. The
+  limitation is that the condition is never *analysed*. Where that bites is leaving the shell
+  lane: `--target rust` exits 1 with *"Rust backend does not lower `Stmt::ShellIf`"*.
+
+#### The two flagship examples under `--target wasm`
+
+Both refuse. Neither refusal is where you would guess:
+
+* **`examples/word_count.py`** — exit 1: *"for-loop over \<container/aggregate/builtin
+  expression\> — the WASM subset iterates a named `list[scalar]`, a list literal, or a string;
+  bind the iterable to a name first."* Binding it first does **not** rescue it —
+  `words: list[str] = text.split()` then hits the `list[str]` wall. `--target rust` exits 0. The
+  blocker is `list[str]`, not the dict.
+* **`examples/proven-model/model.py`** — exit 1: *"statement Print (outside the WASM
+  scalar/control subset)."* The float arithmetic is **not** the problem. The documented
+  universal-binary path for this example is `--emit-crate` + `cargo build --target
+  wasm32-wasip1`, and `xpile transpile examples/proven-model/model.py --emit-crate <dir>` exits
+  **0**. `--target wasm` is a different, narrower lane and cannot print.
+
+#### Corrections to the standing "still refuses" list
+
+Three items are stale — they work at `0a6ca974`, verified by execution, not by emit:
+
+1. **`for k in d` (iterating a dict) is no longer a gap.** Long-standing notes calling
+   for-in-dict "the big HARD gap" are out of date.
+2. **`d.get(k, default)` works** on `--target wasm` (exit 0). Only the *bare* `d.get(k)` — which
+   types as `Optional[int]` — refuses.
+3. **`list[str]` is not "strings in collections are refused."** `set[str]`, `dict[str, str]` and
+   str-keyed / str-valued dicts all transpile at exit 0 on the WASM lane. It is specifically the
+   `list` element type `Str` that is refused, because the list runtime needs a fixed-width
+   element with a natural `*.load`.
+
+One item is newly *worse* than the list implies: **`round(x)` refuses on the WASM lane** even
+though `math.floor`/`ceil`/`trunc(x) -> int` landed in this release and transpile at exit 0.
+
+### What is NOT merge-blocking / not enforced
+
+Every claim below has the command that produces it, re-derived on 2026-07-26 against
+`origin/main` @ `0a6ca974`.
+
+#### 1. Exactly two status contexts are required. Everything else is advisory.
+
+```bash
+gh api orgs/paiml/rulesets/13878864 | jq '.rules[] | select(.type=="required_status_checks").parameters'
+```
+
+→ `required_status_checks: [{"context":"gate"},{"context":"workspace-test"}]`, and:
+
+| Ruleset parameter | Live value | What it means |
+|---|---|---|
+| `strict_required_status_checks_policy` | **`false`** | A PR may merge **without being rebased onto current `main`**. Two individually green PRs can merge into a red `main`. Deliberate (cron rebase churn), but a real hole. |
+| `do_not_enforce_on_create` | `true` | Checks are not enforced on branch-creation pushes. |
+| `required_approving_review_count` | **`0`** | **No human review is required to merge.** |
+| `dismiss_stale_reviews_on_push` / `require_last_push_approval` / `required_review_thread_resolution` | all `false` | — |
+| `bypass_actors` | `[{actor_type: "OrganizationAdmin", bypass_mode: "always"}]` | **Any paiml org admin bypasses the entire ruleset unconditionally.** |
+| `source_type` | `Organization` (`paiml`) | Changes must go through `orgs/paiml/rulesets/13878864`. |
+
+There is **no classic branch protection** as a second layer —
+`gh api repos/paiml/xpile/branches/main/protection` returns `404 Branch not protected`. The
+single org ruleset is the whole of enforcement. The committed snapshot
+`docs/status/ruleset-13878864.json` agrees with live (`[gate, workspace-test]`, `strict: false`,
+`updated_at 2026-07-05T23:50:34+02:00`). A four-context set `[gate, kani, lake-build,
+workspace-test]` was flipped on 2026-07-05 and reverted the same day; anything claiming
+kani/lake-build are required is describing those hours.
+
+#### 2. Advisory CI jobs — they run on every PR, they go red on real regressions, and a red one does not block a merge
+
+From `.github/workflows/ci.yml` (jobs: `gate`, `workspace-test`, `kani`, `lake-build`, `docs`,
+`wasi`, `lean-models`, `shader-validate`) plus `.github/workflows/book.yml`:
+
+- **`kani`** — advisory. It *is* armed against vacuity (`XPILE_REQUIRE_KANI: "1"` at
+  `ci.yml:171` panics rather than skipping if `cargo kani` is missing), but a hard red still
+  merges. **The proof lane is not merge-blocking.**
+- **`lake-build`** (hermetic Lean pilot, `contracts/lean/`) — advisory. **The only job that
+  installs `elan`/Lean for the core proof lane.** A broken proof does not block.
+- **`lean-models`** (Mathlib lane) — advisory.
+- **`docs`** — advisory; makes live HTTP requests, so it is deliberately not required.
+- **`wasi`** (emit-crate → `wasm32-wasip1` → wasmtime → byte-diff vs CPython on
+  `examples/proven-model/model.py`) — advisory. The single universal-binary end-to-end claim is
+  **not** merge-blocking.
+- **`shader-validate`** — advisory.
+- **`cleanroom-publish`** (`.github/workflows/release.yml`) — **does not run on pull requests at
+  all** (`grep -c pull_request .github/workflows/release.yml` → 0). Trigger is
+  `workflow_dispatch` + `push: tags: v*`. The clean-room `cargo publish --workspace --dry-run
+  --locked` therefore first executes **after** the tag is pushed, and the real crates.io upload
+  remains a **manual** Friday batch with no CI gate in front of it.
+
+#### 3. `workspace-test` installs WABT and nothing else — the ruchy / lean / forjar witnesses never execute in CI
+
+The job's only toolchain steps are `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
+and `sudo apt-get install -y wabt` (`ci.yml:116`, the only `apt-get install` line). It does
+**not** install `elan`/Lean, `ruchy`, `forjar`, `wasmtime`, `naga`, `ptxas`/`nvcc`, or Kani.
+
+| Test | Needs | CI behaviour | Corpus size |
+|---|---|---|---|
+| `crates/xpile/tests/ruchy_exec_witness.rs` | `ruchy`, `rustc`, `python3` | prints a skip warning and returns **green** | 7 fixtures |
+| `crates/xpile/tests/lean_elaborate_witness.rs` | `lean` | skip warning, **green** | 6-fn corpus |
+| `crates/xpile/tests/forjar_validate_witness.rs` | `forjar` | skip warning, **green** | 4-script corpus |
+
+None has an `XPILE_REQUIRE_*` tripwire. **XPILE-WITNESS-003's executing evidence for the ruchy,
+Lean, and forjar backends exists only on a workstation that has those binaries installed.** In
+CI, those three lanes are string-compare-plus-skip. The `lake-build` / `lean-models` jobs do
+install Lean, but they run `lake build` — they never invoke `lean_elaborate_witness`.
+
+The same is true of the GPU lanes: `crates/xpile-{ptx,wgsl,spirv}-codegen/tests/gpu_witness.rs`
+and every `ptxas_available()` guard skip-with-reason. `shader-validate` gives WGSL and SPIR-V an
+offline substitute; **PTX has none** — no `ptxas`, no `nvcc`, no GPU on any CI runner. The new
+`--hardware ptx` flag makes PTX *reachable*, not *validated*.
+
+#### 4. `XPILE_REQUIRE_WASM_RUNTIME=1` hard-fails, but only on `workspace-test`, and it does not cover 795 tests
+
+`wasm_runtime_available()` probes `wat2wasm --version` and `wasm-interp --version`; if either is
+unspawnable **and** `XPILE_REQUIRE_WASM_RUNTIME` is set, it `panic!`s. The variable is set in
+exactly one place (`grep -rn XPILE_REQUIRE_WASM_RUNTIME .github/` → `ci.yml:95` plus a comment
+at `ci.yml:56`). Limits:
+
+- **Unset anywhere else.** Local runs and every other job fall back to a silent green skip.
+- **`.output().is_ok()` only checks that the process spawned**, not that it exited 0.
+- **The gate is not 795 tests wide.** Re-derive:
+  ```bash
+  ls crates/xpile-wasm-codegen/tests/*_witness.rs | wc -l                       # 138
+  cat crates/xpile-wasm-codegen/tests/*_witness.rs \
+    | awk '{if ($0 ~ /^[[:space:]]*#\[test\][[:space:]]*$/) c++} END{print c}'  # 795
+  grep -h "wasm_runtime_available()" crates/xpile-wasm-codegen/tests/*_witness.rs \
+    | grep -v '^\s*//' | wc -l                                                  # 361
+  ```
+  **795 `#[test]`s across 138 files**, but only **361 non-comment `wasm_runtime_available()`
+  call sites**. Since a test with no guard (directly or via a file-local helper) has no executed
+  leg, **a large fraction of the 795 assert on emitted WAT text and refusal behaviour only.**
+  Do not read "795 witnesses" as "795 executions."
+
+#### 5. The witness floor is a floor, and it has deliberate slack
+
+`crates/xpile/tests/witness_floor.rs` is the anti-deletion ratchet and it *does* run in the
+required job. Live constants: `WASM_FLOOR = 770` (live 795 → **25 WASM witnesses can be deleted
+without reddening anything**), `SHELL_FLOOR = 7`, `RUST_DIFF_FLOOR = 44`, `HYBRID_FLOOR = 3`,
+`WASI_FLOOR = 1`, `RUCHY_FLOOR = 7`, `FORJAR_FLOOR = 4`, `LEAN_FLOOR = 6`. Floors are bumped only
+at explicit sprint TOUCH points, so they trail reality by design. Before TOUCH 1 (this release)
+`WASM_FLOOR` was **400** against the same corpus — roughly half the WASM lane was deletable
+without a red check for the whole sprint. The `// live NNN @ DATE` comments are dated snapshots,
+not invariants.
+
+Also note what the floor counts for ruchy/forjar/lean: the **size of the fixture list**, not that
+anything executed. A green `witness_floor` is compatible with all three lanes skipping.
+
+#### 6. `xpile quorum` is a reporter that counts string mentions — it is not a gate, and QUORUM does not imply execution
+
+`crates/xpile/src/main.rs` says so in a comment ("This subcommand is a *reporter*, not a gate").
+Nothing in CI invokes it. `count_runtime_witnesses` walks `crates/xpile/tests/fixtures/` (**852**
+files) and counts **files whose raw text contains the contract-ID substring**. It does not
+execute anything and does not check the fixture passed. The other three strata are equally
+textual: Semantic = count of `lean_theorem:` YAML keys in the contract's own file; Symbolic =
+count of `kani_harness:` keys; Extrinsic = `grep -c <id> docs/roadmaps/roadmap.yaml`.
+
+Live output: **totals: 24 QUORUM, 11 PARTIAL, 0 UNVERIFIED (35 contracts total).** The eleven
+**PARTIAL** rows are `C-COMPILE-RUST-TO-WASM` (1/0/**0**/124), `C-WASM-HEAP` (1/0/**0**/115),
+`C-FFI-SHELL-SUBPROCESS` (3/0/0/5), `C-COMPILE-RUST-TO-WGSL` (1/0/0/5), `C-PY-EXCEPT-ALLOWLIST`
+(1/0/0/5), `C-PY-CONTEXT-MANAGER-EXIT` (1/0/0/3), `C-PY-FILE-IO-ROUNDTRIP` (1/0/0/3),
+`C-PY-GENERATOR-EAGER` (1/0/0/3), `C-COMPILE-RUST-TO-SPIRV` (1/0/0/2), `C-CONST-TRANSLATION`
+(1/0/0/2), `C-COMPILE-SHELL-TO-FORJAR` (1/0/0/1).
+
+The headline: **`C-COMPILE-RUST-TO-WASM` — the contract the entire 795-witness WASM lane exists
+to discharge — scores Runtime = 0 and reads PARTIAL**, because its citing files live in
+`crates/xpile-wasm-codegen/tests/`, which `count_runtime_witnesses` never looks at
+(`grep -rl C-COMPILE-RUST-TO-WASM crates/xpile/tests/fixtures | wc -l` → **0**; the same grep
+over `crates/xpile-wasm-codegen/tests` → **110**). Verify the arithmetic on any row, e.g.
+`C-PY-INT-ARITH` 42/9/10/86:
+```bash
+grep -c "^\s*lean_theorem:" contracts/py-int-arith-v1.yaml            # 42
+grep -c "^\s*kani_harness:" contracts/py-int-arith-v1.yaml            # 9
+grep -rl "C-PY-INT-ARITH" crates/xpile/tests/fixtures | wc -l         # 10
+grep -c "C-PY-INT-ARITH" docs/roadmaps/roadmap.yaml                   # 86
+```
+An "Extrinsic vote" is a roadmap.yaml mention. **Do not present "24 QUORUM" as 24 machine-checked
+contracts.**
+
+#### 7. Enforcement self-checks that themselves skip in CI
+
+- **`crates/xpile/tests/ruleset_drift.rs`** (new this release, 4 tests) has a STATIC half
+  (snapshot ⇔ ci.yml marker lines ⇔ job names) that always runs, and a **LIVE half that skips in
+  CI**: Actions' repo-scoped `GITHUB_TOKEN` cannot read an org ruleset.
+  `XPILE_REQUIRE_RULESET_CHECK=1` refuses the skip, and
+  `grep -rn XPILE_REQUIRE_RULESET_CHECK .github/` returns **nothing** — it is a release
+  pre-flight step a human must run. CI therefore verifies that a committed JSON file matches a
+  comment, not that GitHub is configured as claimed.
+- **`crates/xpile/tests/roadmap_registration.rs`**: the commit-subject half skips-with-reason
+  when there is no git repo, on a **shallow clone**, or when **no `v*` tag is reachable from
+  HEAD**. `workspace-test` sets `fetch-depth: 0` specifically to keep it live — remove that one
+  line and the ID-drift check goes quietly vacuous.
+
+#### 8. Quality bars asserted in project docs that CI does not check at all
+
+```bash
+grep -rn "llvm-cov\|coverage\|tarpaulin\|mutants\|mutation" .github/workflows/   # → no matches
+```
+
+- **No test-coverage gate.** The 95%-coverage standard is not measured anywhere in CI.
+- **No mutation-testing gate.** The ≥80% mutation-coverage standard is not measured in CI.
+- **`cargo deny` runs `check advisories` only.** `deny.toml`'s `[licenses]` allow-list and
+  `[bans]` sections are **never evaluated** by the gate. `yanked = "deny"` was tightened this
+  release (PMAT-1347) and *is* in scope.
+- **7 RUSTSEC advisories are explicitly ignored** in `deny.toml`.
+- **`pv lint contracts/`** is blocking, but per project policy only ERRORS fail.
+- The `gate` job runs `cargo check --workspace` (not `--all-targets`); other targets are
+  type-checked only via `cargo clippy --workspace --all-targets` and `cargo test --workspace`.
+
+#### 9. One-line summary for the hostile reviewer
+
+Two contexts block a merge: `gate` (fmt, check, clippy `-D warnings`, `pv lint`,
+`cargo deny check advisories`) and `workspace-test` (`cargo test --workspace` with WABT installed
+and `XPILE_REQUIRE_WASM_RUNTIME=1`). Zero approvals are required, the branch need not be up to
+date with `main`, and any org admin can bypass all of it. Kani, both Lean lanes, docs, the WASI
+universal-binary diff, the shader corpus, and the clean-room publish dry-run are advisory. The
+ruchy, Lean, forjar, PTX, WGSL-device and SPIR-V-device execution witnesses do not execute in CI
+at all — they skip green for missing toolchains, and only their corpus *sizes* are floored.
+
+### Known divergences
+
+Re-derived on 2026-07-26 against `origin/main` @ `0a6ca974`. Toolchain: Python 3.13.1,
+`cargo-kani 0.67.0`, `ruchy 4.2.1`, `wat2wasm`/`wasm-interp` (WABT).
+
+Reproduction recipe used for every Rust-lane item (nothing was written inside the repo):
+
+```
+xpile transpile PROG.py --target rust --contracts off --emit-crate /tmp/c && (cd /tmp/c && cargo run -q)
+python3 -c "import PROG; PROG.main()"          # CPython side
+```
+
+Note: the fixtures define `main()` without an `if __name__ == "__main__"` guard, so
+`python3 PROG.py` prints nothing — you must import and call `main()`.
+
+Classification: **SILENT-WRONG** (compiles, runs, different answer, no diagnostic),
+**INVALID-RUST** (emit does not compile), **HONEST REFUSAL**, **OPEN POLICY**.
+
+#### 1. SILENT-WRONG — negative-integer-**literal** list index READ returns a wrong element instead of raising `IndexError`
+
+```python
+def main() -> None:
+    xs = [1, 2, 3]
+    print(xs[-4])
+```
+
+* CPython: `IndexError: list index out of range`
+* xpile (`--target rust`): prints **`3`**, exit 0
+
+Cause — a **double normalization**. The frontend pre-folds the literal to `len(xs) - k`
+(`crates/depyler-frontend/src/lib.rs`, PMAT-502s), and the codegen then applies its own
+`if idx < 0 { len + idx }` wrap, so the value wraps a *second* time.
+
+Exact blast radius, measured by sweeping `k` over `xs = [1,2,3]`: for a list of length `L`,
+`xs[-k]` silently returns `xs[2L-k]` for **L < k ≤ 2L**; only `k > 2L` reaches the bounds check.
+
+| expression on `[1,2,3]` | CPython | xpile |
+|---|---|---|
+| `xs[-4]` | IndexError | `3` |
+| `xs[-5]` | IndexError | `2` |
+| `xs[-6]` | IndexError | `1` |
+| `xs[-7]` | IndexError | panic `xpile: IndexError: list index out of range` (correct) |
+
+Scope boundaries, all verified:
+* A **runtime** negative index is correct — `k = -4; xs[k]` panics with the tagged message.
+* **Strings are correct** — `"abc"[-4]` panics with `xpile: IndexError: string index out of range`.
+* **The WASM lane is correct** — the same program via `--target wasm` produces
+  `error: unreachable executed`. This defect is Rust-backend (and ruchy-backend) only; PMAT-1289
+  fixed the WASM twin in this release, not the Rust one.
+* The highest PMAT id in `v0.1.616..origin/main` is **PMAT-1347**. Nothing in the range fixes
+  this.
+
+#### 2. SILENT-WRONG — `xs[-k] += v` writes an in-bounds slot instead of raising
+
+```python
+xs = [1, 2, 3]; xs[-4] += 100; print(xs)
+```
+
+* CPython: `IndexError: list index out of range`
+* xpile: prints **`[1, 2, 103]`**, exit 0
+
+Same double-normalize from the aug-assign site. Both halves of the desugared `xs[i] = xs[i] +
+100` are wrapped twice, so they agree with each other and disagree with Python. The in-range
+control is fine.
+
+#### 3. `del xs[-k]` and `xs.pop(-k)` out of range crash with an **untagged** Rust panic
+
+```
+thread 'main' panicked at src/main.rs:5: removal index (is 18446744073709551615) should be < len (is 3)
+```
+
+The pre-folded `len - 4 = -1` is cast straight to `usize`, wrapping to `usize::MAX`, and
+`Vec::remove` panics on its own. Not silent-wrong (the process dies), but the diagnostic is a
+Rust internals leak, not xpile's tagged `xpile: IndexError: …`.
+
+**Counter-example worth knowing (already fixed):** the plain store `xs[-4] = 9` is correct — it
+panics with `xpile: IndexError: list assignment index out of range`, because PMAT-863 changed
+*that* site to pass the raw literal and let codegen normalize once. The read/aug/del/pop sites
+were never given the same treatment. That is the shape of the fix for items 1–3.
+
+#### 4. Set iteration order is deterministic but is **not** CPython's order
+
+```python
+print(list({2, 1, 3}))     # CPython: [1, 2, 3]      xpile: [2, 1, 3]
+print(list({10, 3, 7, 1})) # CPython: [1, 10, 3, 7]  xpile: [10, 3, 7, 1]
+```
+
+Sets lower to `indexmap::IndexSet`, i.e. **insertion order**; CPython uses open-addressed
+hash-slot order. Run-to-run stability is real, so this is not flapping — it is a fixed, different
+order. For **str** sets CPython has no stable order to match at all (`PYTHONHASHSEED` changes
+it). Anything that prints or iterates a set unsorted is unportable by construction; `sorted(s)`
+matches exactly. Dicts are fine: insertion order on both sides.
+
+#### 5. OPEN POLICY — int literals in float-annotated containers: list silently coerces, dict and tuple emit invalid Rust
+
+Three sibling programs, three different outcomes. Python does not enforce annotations at all, so
+CPython keeps the `int`.
+
+| program | CPython | xpile |
+|---|---|---|
+| `xs: list[float] = [1, 2.5]` → `print(xs); print(xs[0])` | `[1, 2.5]` / `1` | **`[1.0, 2.5]` / `1.0`** (SILENT-WRONG output text) |
+| `d: dict[str, float] = {"a": 1}` → `print(d["a"])` | `1` | **INVALID-RUST**: `error[E0308]: mismatched types` |
+| `t: tuple[float, float] = (1, 2.5)` → `print(t[0])` | `1` | **INVALID-RUST**: `error[E0308]: mismatched types` |
+
+This is a **surfaced owner decision**, not a filed bug: the question is whether xpile treats an
+annotation as a *coercion instruction* (current list behaviour, which diverges from CPython's
+repr) or as a *checked assertion* (which would make all three an honest refusal). Whichever is
+chosen, dict and tuple must stop emitting code that does not compile — that half is unambiguously
+broken today.
+
+#### 6. Lean emit does not elaborate under the **default** `--contracts on`
+
+```
+xpile transpile leanfn.py --target lean --contracts on  --out on.lean;  lean on.lean   # rc=1
+xpile transpile leanfn.py --target lean --contracts off --out off.lean; lean off.lean  # rc=0
+```
+
+`on.lean` fails with `on.lean:3:16: error: unexpected token; expected ']'` because
+`emit_contract_citations` writes `@[xpile_contract "C-PY-INT-ARITH"]` and `xpile_contract` is not
+a registered Lean attribute. **`--contracts off` is the elaborate-able emit.** The codegen carries
+this as a documented honesty caveat — registering the attribute needs a separately-imported
+prelude module, and switching to a comment was explicitly rejected (#1899).
+
+#### 7. Every uncaught Python exception becomes a Rust panic: exit **101**, not exit 1
+
+`d = {"a": 1}; d["zz"]` → CPython `KeyError: 'zz'`, exit 1. xpile: `xpile: KeyError: 'zz'`, exit
+**101**, plus the `note: run with RUST_BACKTRACE=1` line on stderr. The message text is faithful,
+but any harness that asserts on exit status or parses stderr will see something different.
+
+#### 8. A **caught** exception still prints the panic message to stderr
+
+```python
+try:
+    x = 1 // 0
+except ZeroDivisionError:
+    print("caught")
+```
+
+stdout matches CPython exactly (`caught`, exit 0). stderr does not: `try/except` lowers to
+`std::panic::catch_unwind` with a message-prefix match, and the default panic hook fires *before*
+the handler, so the run emits `thread 'main' panicked at …: xpile: ZeroDivisionError: integer
+division or modulo by zero` on stderr even though the exception was handled. Verified by stream
+isolation. Consequence — no panic hook is installed, so any Python program that uses exceptions
+for control flow will spray stderr in production.
+
+#### 9. No bigint: `int` is i64 and overflow is a runtime abort
+
+```python
+n = 9223372036854775807; print(n + 1)      # CPython: 9223372036854775808
+```
+
+xpile: `xpile: i64 addition overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not
+yet implemented`, exit 101. An **HONEST REFUSAL** at runtime (checked arithmetic everywhere, no
+silent wraparound), but a hard semantic ceiling. The WASM lane has the matching boundary:
+`math.floor(1e300)` traps with `integer overflow`, and `abs(-2**63)` wraps silently.
+
+#### 10. The Ruchy lane emits code that `ruchy` cannot execute
+
+`--target ruchy` emits Rust-shaped bodies (`Vec<i64>`, `as usize`, `checked_sub`, `println!`)
+inside `fun` declarations. `ruchy check` passes (`✓ Syntax is valid`) but execution fails on the
+simplest list program:
+
+```
+$ ruchy run rsimple.ruchy      # xs = [1,2,3]; print(xs[0])
+Error: Evaluation error: Type error: Cannot cast integer to usize
+$ ruchy run neg_read.ruchy
+Error: Evaluation error: Runtime error: Unknown integer method: checked_sub
+```
+
+So "CPython divergence" is not even measurable for most of this lane. Treat `ruchy check` passing
+as a syntax claim only. (The ruchy lane also inherits divergences 1–3 verbatim, since it shares
+the depyler frontend lowering.) Note the ceiling is the `ruchy 4.2.1` toolchain, not xpile.
+
+#### Verified as matching CPython (probed, do not re-litigate)
+
+At `0a6ca974`: floor division and modulo with negative operands, true division and `**`, float
+`%` and `//`, banker's rounding, `int(-2.7)`, float repr including `0.1+0.2 →
+0.30000000000000004`, code-point-based string `len`/index/slice over non-ASCII and astral
+characters, full-case mappings, out-of-range and negative list *slices*, negative and empty
+`range`, negative repeat counts, `-0.0 == 0.0`, `min`/`max` over `list[str]`, `sorted(...,
+reverse=True)`, f-strings including `f"{n:03d}"`, `str(2.5)`, dict iteration order after
+delete-then-insert.
+
+#### This release's own executed differential
+
+Independently for this CHANGELOG, **81 observables** were transpiled through
+`xpile transpile … --target wasm --contracts off`, assembled with `wat2wasm`, executed under
+`wasm-interp --run-all-exports`, and compared against live `python3` 3.13.1 on the identical
+source — spanning list concat/slice/enumerate/zip/membership/count/index, the ten mutation forms,
+set and dict iteration and reduction, str/bool/float dict values, dict merge and update, dict/set
+parameters and returns, set and dict comprehensions, constant-step string slices (ASCII and
+multi-byte), `any`/`all` over six container shapes, and the four numeric-builtin families.
+Result: **76 value matches, 4 traps where CPython raises (`pop()` on empty, `remove` of an absent
+value, `min` of an empty set, `math.sqrt(-1.0)`), 1 trap where CPython returns a bignum
+(`math.floor(1e300)` — the documented i64 domain limit), and 0 silent wrong answers.** The same
+corpus run against a `v0.1.616` binary built from the tag refuses every capability claimed above.
+
 ## [0.1.616] - 2026-07-04
 
 This release consolidates ~133 commits since v0.1.615, dominated by three arcs:

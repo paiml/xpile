@@ -66,6 +66,15 @@ queue:
     title: "Repoint the dead pre-commit roadmap guard + add crates/xpile/tests/roadmap_registration.rs — this is the MECHANICAL ROOT CAUSE of the id drift PMAT-1343 just cleaned up"
     notes: "DONE 2026-07-26. .git/hooks/pre-commit:76 guarded `[ -f docs/execution/roadmap.md ]`, a path that DOES NOT EXIST, so the guard took its non-fatal else-branch on every commit ever made and never once fired. Hook repointed at docs/roadmaps/roadmap.yaml; because hooks are NOT CLONED the durable gate is crates/xpile/tests/roadmap_registration.rs (XPILE-LEDGER-001) with THREE assertions: (1) STATIC — every queue.yaml `status: done` row is registered in the ledger (no git, no runtime, can never skip, so the gate is non-vacuous even in an extracted .crate); (2) HISTORY — the machine form of exit criterion 12, `comm -23` of ids cited in commit SUBJECTS since the last `v*` tag against registered ids must be EMPTY; (3) HOOK — no `[ -f ... ]` path guarded by an installed pre-commit hook may be dead. ** CI WIRING (the part that makes assertion 2 real): .github/workflows/ci.yml gives workspace-test a `fetch-depth: 0` checkout. The default depth-1 checkout has neither history nor tags, so assertion 2 would have skip-with-reasoned green in CI and caught nothing — the same skip-as-green shape XPILE-WITNESS-002 exists to kill. ~27 MiB packed, so the full fetch is cheap. ** RED-THEN-GREEN demonstrated both ways in the PR body (throwaway `(Refs PMAT-9999)` commit in a DETACHED temp worktree — no branch to delete, no reset, nothing owner-gated; and a dead guard path in the hook). NEXT PICK: PMAT-1346 (GATE TOUCH #3, Day 2 — Ruchy frontend REFUSES instead of silently exiting 0, plus substantive-frontend counting in claims_drift.rs)."
 
+  # ★ CHANGELOG SLICES CLAIMED 2026-07-26 20:35 by the interactive session.
+  # PMAT-1349 / 1354 / 1355 are marked in_progress and are being produced as ONE
+  # adversarially-verified document by a 16-agent workflow (12 git-derived arcs +
+  # the 3 mandatory honesty sections + an assemble/verify pass). DO NOT PICK THEM
+  # and do not edit CHANGELOG.md — you will collide. Skip to the next open id.
+  # RELEASE CHANGE: v0.1.617 now ships TONIGHT (2026-07-26), not Thursday; the
+  # Friday 2026-07-31 release becomes v0.1.618. Owner-directed. The Day-5/6
+  # release slices (PMAT-1359..1361) are likewise driven by the interactive
+  # session — do not pick them either.
   # ================= DAY 2 — Mon 2026-07-27 — honesty A =================
   - id: PMAT-1346
     status: done
@@ -92,7 +101,7 @@ queue:
     notes: "DONE 2026-07-26 (pulled forward into Day 1 under the day<=4 rule; gate touch #4 was merged, so #5 was clear). Exit MET: the grep returns nothing. ** FIVE live falsehoods confirmed against the tree, not assumed: 27 vs 31 crates; 12 vs 35 contracts; a '12 QUORUM, 0 PARTIAL' line vs a live '24 QUORUM, 11 PARTIAL' — the stale line claimed PERFECT stratum coverage while the truth is 11 contracts short, the most misleading claim in the file and one the queue's own summary had NOT flagged; 'PTX / WGSL / SPIR-V still scaffolded' when ALL THREE emit (PTX real .target sm_89, WGSL a real shader subset, SPIR-V real via naga — so the correction is three backends wide, not just PTX); and the crates.io 0.0.1 claim vs a live 0.1.616. Also found stale: 43 vs 101 Kani harnesses, 217 vs 1942 PRs. ** DESIGN CHOICE: the file is NOT re-typed with today's correct numbers — that re-arms the same bomb. Its own 2026-05-18 five-whys ALREADY said 'demote this file to a pointer', and that fix was PROSE ONLY with nothing testing it, which is exactly why counts crept back. Every count is now a DERIVE COMMAND. The Lean-module row points at `cargo test --test lean_pilot_roots` rather than a grep because the naive lakefile grep returns 42 against a true 35 — the documented range landmine, hit live during this slice. ** GATE: claims_drift.rs section (e), 3 tests — no-bare-derived-counts (13 noun phrases; reds on CORRECT counts too, since an accurate count today is stale next week), a stale-string regression pin, and a Lean-caveat presence test. Restoring the LITERAL pre-slice CURRENT.md reds all THREE; the fixed file greens 12/12. ** The PMAT-1347 XPILE-ENFORCEMENT marker in CURRENT.md was PRESERVED VERBATIM — deleting it would erode ruleset_drift.rs's >=2-marker non-vacuity floor. ** NOTE FOR PMAT-1355: the Lean caveat and the two-disjoint-wasm-paths split are now stated in README + CURRENT.md, so the CHANGELOG's 'Known divergences' section can CITE them rather than re-deriving. NEXT PICK: PMAT-1349 (CHANGELOG skeleton + arcs 1-2) — but see the CONCURRENCY note below before taking it."
 
   - id: PMAT-1349
-    status: open
+    status: in_progress
     day: 2
     ev_rank: R4
     title: "CHANGELOG [Unreleased] skeleton (8 arc headings) + write arcs 1-2 (WASM list surface completion; dict/set hash-container arc)"
@@ -135,14 +144,14 @@ queue:
     notes: "crates/xpile-agent/src/repair.rs is 931 lines (3 real RepairRule impls + a probe that runs cc, rustc and the linked binary; 18 passing tests) and is COMPLETELY UNREACHABLE: `grep -rn 'RepairLoop' crates/ --include='*.rs' | grep -v crates/xpile-agent/` returns 0 matches. Add xpile-agent to crates/xpile/Cargo.toml; construct a RepairLoop from the reconciled boundary via the existing RepairLoop::ffi_int_boundary / ffi_float_repr constructors; drive it from the Divergence arm proven by PMAT-1352; re-verify after each applied rule and print the converged chain. MANDATORY regression test: default --verify output and exit code are BYTE-IDENTICAL with and without the new dependency. --repair is opt-in and must not alter default behaviour."
 
   - id: PMAT-1354
-    status: open
+    status: in_progress
     day: 3
     ev_rank: R5
     title: "CHANGELOG arcs 3-5 (any/all truthiness-reduce belt; NumBuiltin lane; stepped string slice)"
 
   # ================= DAY 4 — Wed 2026-07-29 — FREEZE 18:00 =================
   - id: PMAT-1355
-    status: open
+    status: in_progress
     day: 4
     ev_rank: R1
     title: "CHANGELOG arcs 6-8 + the THREE MANDATORY SECTIONS: 'What still REFUSES', 'What is NOT merge-blocking', 'Known divergences'"
