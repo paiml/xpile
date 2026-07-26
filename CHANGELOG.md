@@ -100,6 +100,35 @@ meta-HIR and the trait surfaces.
   everywhere else. `kani` is advisory; the tripwire is still worth having,
   because it makes a red `kani` job *mean* something even though it does not
   block a merge.
+- **`contracts/compile-rust-to-wasm-v1.yaml` no longer asserts that the emitter
+  refuses what it emits** (PMAT-1350). Line 24 read *"The emitter REFUSES every
+  construct outside the scalar/control subset (str / list / dict / set / struct
+  / tuple / bigint / pointer / print / closures)"*, and its ship-blocking
+  `FALSIFY-COMPILE-WASM-002` said the same. Both were falsified by a single CLI
+  probe: `d: dict[str,int] = {'a':1,'b':2}; return d['a']+d['b']` emits,
+  assembles under `wat2wasm`, and `wasm-interp --run-all-exports` prints
+  `f() => i64:3`. Only **5 of the 10** constructs the contract named as refused
+  actually refuse. This was the governing contract for the lane 69 of the
+  v0.1.617 commits were built on, and `claims_drift.rs` does not sample contract
+  capability prose, so nothing caught it.
+
+  The subset is **not** re-typed as corrected prose — that re-arms the identical
+  bomb one capability slice later with a fresher date on it. It is now a
+  machine-readable `emit_surface` block (28 `declared` / 11 `refused` rows, each
+  with an id, a note and a real Python probe) executed **both ways** by
+  `crates/xpile/tests/wasm_contract_surface.rs` against the live
+  `default_session()` — the same frontend+backend dispatch the CLI performs, so
+  it cannot drift from the shipped binary. A slice that widens the emitter must
+  move a row from `refused` to `declared` in the same PR or the gate reds.
+
+  Each `refused` row also declares **which stage** refuses it, and that
+  discriminator earned its keep on run one: `set[float]` is refused at the
+  **frontend** for a target-independent Rust-lane reason (`f64` is not
+  `Eq`/`Hash`, so it cannot key a Rust `HashSet`), *not* by the WASM backend for
+  the ±0.0/NaN bit-pattern reason the row originally claimed. From the CLI the
+  two are indistinguishable — one refusal either way — so without the stage pin
+  that row would have passed green on a false reason. Asserting `Err(_)` proves
+  nothing about *why*.
 
 ### Added
 
@@ -146,6 +175,49 @@ meta-HIR and the trait surfaces.
   download URL actually interpolates, so the pin cannot become decorative. The
   in-step rule was applied across the board — `elan` (×2), `pmat` and `mdbook`
   had the same silent-install shape.
+- **`XPILE-CHANGELOG-001` — the CHANGELOG-freshness gate**
+  (`crates/xpile/tests/changelog_freshness.rs`, PMAT-1356). `v0.1.617` came
+  within hours of shipping with `## [Unreleased]` **empty** against 108 landed
+  commits, because nothing in `crates/` or `.github/workflows/` read the file —
+  an empty release note was not a failure, it was silence. Two static assertions
+  (no git, no runtime, cannot skip): an `[Unreleased]` heading may never stand
+  without a `###` subheading, a bullet and a `PMAT-` citation under it; and the
+  leading heading must be either `[Unreleased]` or the `Cargo.toml`
+  `[workspace.package]` version, which couples the two edits the release commit
+  makes together — bumping the version without promoting the heading reds, and
+  promoting to a version the manifest does not carry reds. The third assertion
+  runs against history: every `PMAT-NNNN` cited in a commit subject since the
+  last `v*` tag whose commit touched `crates/*/src/**` or `contracts/**.yaml`
+  must be named above the released version's heading.
+
+  It is anchored on the **last released tag**, not on the literal string
+  `[Unreleased]`, so the release commit — which promotes that heading away — is
+  safe by construction, and once the next tag lands the same rule forces a fresh
+  `[Unreleased]` section into existence. Scope is a deliberate lower bound:
+  test-only, CI and docs slices are not compelled to appear, because a gate
+  noisy enough to get loosened is worth less than a narrow one that holds. The
+  history half runs for real in CI on the `fetch-depth: 0` checkout PMAT-1345
+  added, and `XPILE_REQUIRE_CHANGELOG_HISTORY=1` turns its skip into a hard
+  failure.
+
+  **It found `PMAT-1350` on its first run** — the WASM-contract reconciliation
+  above, a `contracts/*.yaml` change that landed 15 minutes *after* the
+  `v0.1.617` tag and had no entry anywhere in this file. That entry ships in the
+  same commit as the gate.
+- **`XPILE-WITNESS-004` — floors on the EXECUTING half of the WASM witness
+  corpus** (PMAT-1372). `WASM_FLOOR` counts `#[test]` attributes and nothing
+  else, so the ratchet PMAT-1344 raised was satisfiable by pure static
+  WAT-string assertions: delete 100 executing witnesses, add 100 emit-only ones,
+  and the total-only floor stays green while executing coverage silently halves.
+  Three assertions now floor the runtime-gated **count** (300), the runtime-gated
+  **fraction** (36% — the assertion a total-only floor structurally cannot make,
+  because padding only ever raises the total), and require every witness *file*
+  to carry a probe site (live 138/138). The metric is a documented syntactic
+  proxy: it deliberately does not follow helper calls, so a test gating through
+  a shared helper counts as ungated and the gated count is a strict **lower
+  bound**, never a coverage claim. No ceiling is placed on emit-only tests —
+  they are refusal witnesses, and `wasm_contract_surface.rs` depends on refusals
+  being tested.
 
 
 ## [0.1.617] - 2026-07-26

@@ -401,11 +401,51 @@ queue:
     contract-id MENTIONS in fixtures, not executions — so 24/35 QUORUM must not be read as 'executed 35
     ways'.
 - id: PMAT-1356
-  status: open
+  status: done
   ev_rank: R1
   gate_touch: 2
   title: CHANGELOG-freshness gate (crates/xpile/tests/changelog_freshness.rs) — the root-cause gate for
     the empty [Unreleased]
+  notes_done: 'DONE 2026-07-26 (pulled forward from 07-29 under the day<=4 rule; nothing was dated <= Sun,
+    gate touch #1 PMAT-1372 was merged at 621a3e83, so touch #2 was clear to start). ** THE ENTRY BELOW
+    SAID "the gate should land GREEN on main". IT DID NOT — and that is the slice''s main finding. The
+    history assertion reds on UNMODIFIED origin/main naming exactly PMAT-1350: the WASM-contract
+    reconciliation is a contracts/*.yaml change that landed 15 minutes AFTER the v0.1.617 tag (4355bfb8
+    at 21:21 vs the tag''s 21:06) and had NO entry anywhere in CHANGELOG.md. The premise was written
+    against a WEAKER gate (non-emptiness only); the entry ships in this same commit, with entries for
+    PMAT-1356 and PMAT-1372 alongside it. ** LOAD-BEARING DESIGN CHOICE: the history assertion does NOT
+    anchor on the literal string `## [Unreleased]`. A gate that did would RED THE RELEASE COMMIT, which
+    promotes that heading away — exactly the commit that most needs to pass. It anchors on the last
+    released version (the v* tag) and requires the region ABOVE that version''s heading to describe work
+    landed since it. Mid-cycle that is [Unreleased]; in the release commit it is the promoted [0.1.618]
+    section (same content, renamed heading, still above ## [0.1.617]); once v0.1.618 is tagged it is the
+    NEW [Unreleased] the next cycle''s first slice is forced to create. Falsification (D) SIMULATED
+    THURSDAY''S PMAT-1373 COMMIT END TO END (bump Cargo.toml to 0.1.618 + promote the heading) and
+    confirmed 11/11 green — PMAT-1373 is safe by construction, not by hope. ** THE DECISIVE FALSIFICATION
+    IS (B), not (A): emptying the [Unreleased] BODY reds assertions 1 and 3, but DELETING the heading
+    outright leaves assertions 1 and 2 GREEN (1 goes vacuous by design; 2 sees leading == [0.1.617] ==
+    the workspace version) while assertion 3 reds naming all four ids. That contrast is the whole argument
+    for the history half — a static non-emptiness gate is defeated by deleting the heading it keys on.
+    ** SCOPE IS A DELIBERATE LOWER BOUND, stated in the module header: "shipped source" = crates/*/src/**
+    plus contracts/**.yaml, so test-only/CI/docs slices are NOT compelled to appear. Requiring an entry
+    per test-only slice makes the gate noisy enough to get loosened, and a loosened gate is worth less
+    than a narrow one that holds. ** Floors are a NOT-EMPTY bar (1/1/1), deliberately NOT a size ratchet:
+    the first slice of a new cycle legitimately adds one bullet and a floor of 3 would red it. Strength
+    scales through assertion 3, which grows with the work landed, not through padding constants.
+    ** XPILE_REQUIRE_CHANGELOG_HISTORY=1 turns the skip into a hard failure (mirrors
+    XPILE_REQUIRE_RULESET_CHECK / XPILE_REQUIRE_KANI); verified both ways. ** LESSON RECORDED: a unit test
+    CAUGHT A BUG IN ITSELF on first run — the section-leak check asserted !body.contains("PMAT-1"), a
+    SUBSTRING of PMAT-1234, so it would have passed no matter how badly section_body leaked. When
+    asserting a needle is ABSENT, pick one that is not a prefix of a needle you assert is PRESENT.
+    ** SECOND LESSON: sharing one --target-dir across two worktrees serves a CACHED test binary with the
+    OTHER worktree''s CARGO_MANIFEST_DIR baked in — after removing the falsification worktree the tests
+    failed reading /tmp/wt-cf-falsify/CHANGELOG.md. Give each worktree its own target dir. ** 11 tests
+    (3 assertions + 8 anti-vacuity unit tests). Test-only + CHANGELOG prose; no product code, no CI
+    change, no witness floor touched (floors are lower bounds and witness_floor.rs is the PMAT-1372/1373
+    serial resource). NEXT PICK: on Mon 07-27 the ranked slate is empty until 07-29, so pull forward
+    PMAT-1367 (R3, §14.4 Runtime-stratum counter, WIDEN-ONLY — read its notes in full, the naive widen
+    is explicitly forbidden) or take a D-pool item (PMAT-1362..1366, cut in reverse-listed order). Gate
+    touch #3 is PMAT-1373, the Thursday release commit — do NOT start another gate_touch before it.'
   notes: 'CARRIED FORWARD UNMERGED from the v0.1.617 sprint. Confirmed still absent at c3e468d4:
 
     `ls crates/xpile/tests/ | grep -i changelog` returns NOTHING. This is the gate for the
