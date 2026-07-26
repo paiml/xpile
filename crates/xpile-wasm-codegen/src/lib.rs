@@ -8847,6 +8847,43 @@ const MAX_I64_HELPER: &str = "\
     select)
 ";
 
+/// PMAT-1341: `$__wasm_sqrt_f64(x) = math.sqrt(x)` — the FOURTH `NumBuiltin` op
+/// in the lane, and the only remaining `math.*` with a native WASM instruction.
+/// `f64.sqrt` is IEEE-754 correctly-rounded, exactly like the C `sqrt()` CPython
+/// calls, so for every x in `math.sqrt`'s DOMAIN the result is BIT-identical.
+/// The one place the two disagree is OUT of that domain: CPython's
+/// `math.sqrt(-1.0)` RAISES `ValueError: math domain error` where bare
+/// `f64.sqrt` quietly yields NaN. So the helper GUARDS the domain — `x < 0`
+/// traps (`unreachable`) rather than fabricating a NaN CPython would never
+/// return, the same trap-where-CPython-raises discipline the PMAT-1340 rounding
+/// narrow uses for `inf`/`nan`.
+///
+/// The guard is `f64.lt`, which is FALSE for every non-negative input AND for
+/// NaN, so the three IEEE edges pass through to the instruction and match
+/// CPython exactly: `sqrt(-0.0) == -0.0` (`-0.0 < 0.0` is false; IEEE sqrt
+/// returns `-0.0`), `sqrt(inf) == inf`, and `sqrt(nan)` is a NaN (CPython
+/// returns NaN for a NaN arg — it only raises for a NEGATIVE one). `-inf` IS
+/// negative, so it traps, matching CPython's ValueError.
+///
+/// The operand is pushed as the arg and re-fetched from its slot, so it is
+/// evaluated exactly once at the call site. Reads no memory and allocates
+/// nothing, so it is gated on its OWN `needs_sqrt_f64`, NOT
+/// `needs_heap`/`needs_memory` (self-contained WAT), like [`ABS_I64_HELPER`].
+const SQRT_F64_HELPER: &str = "\
+  ;; __wasm_sqrt_f64(x) = math.sqrt(x). Traps on x<0, where CPython raises
+  ;; ValueError (bare f64.sqrt would return NaN — a value CPython never yields).
+  ;; -0.0/inf/nan are NOT < 0, so they flow through to the IEEE instruction.
+  (func $__wasm_sqrt_f64 (param $x f64) (result f64)
+    local.get $x
+    f64.const 0
+    f64.lt
+    if
+      unreachable
+    end
+    local.get $x
+    f64.sqrt)
+";
+
 const LIST_BOOL_REDUCE_HELPER: &str = "\
   ;; __wasm_list_bool_reduce(base, is_all) = all(xs) if is_all else any(xs), list[bool]
   ;; base → length-prefixed region: i32 count @ base+0, i32 (0/1) elements @ base+8.
@@ -12631,8 +12668,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // rides its OWN gate, NOT `needs_heap`/`needs_memory`. A FLOAT min/max refuses
     // in `emit_num_builtin` (WASM `f64.min`/`max` mismatch CPython's NaN order),
     // so `of_float: true` does NOT arm either gate.
-    let needs_min_i64 = module_uses_int_minmax(module, NumBuiltinOp::Min);
-    let needs_max_i64 = module_uses_int_minmax(module, NumBuiltinOp::Max);
+    let needs_min_i64 = module_uses_num_builtin(module, NumBuiltinOp::Min, Some(false));
+    let needs_max_i64 = module_uses_num_builtin(module, NumBuiltinOp::Max, Some(false));
+    // PMAT-1341: `math.sqrt(x)` (`Expr::NumBuiltin { op: Sqrt }`) calls the
+    // `$__wasm_sqrt_f64` domain-guarded wrapper around the native `f64.sqrt`.
+    // A pure f64→f64 fold (no memory, no `$__alloc`), so it rides its OWN gate,
+    // NOT `needs_heap`/`needs_memory`. Keyed on the op ALONE (`None`) — sqrt's
+    // arg is always widened to f64 by the frontend, so filtering on `of_float`
+    // could only under-detect, and an undeclared helper is a hard wat2wasm fail.
+    let needs_sqrt_f64 = module_uses_num_builtin(module, NumBuiltinOp::Sqrt, None);
     // PMAT-1252: `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`)
     // returns a NEW sorted list via a `$__wasm_list_sorted_*` helper — the FIRST
     // list-VALUED op that ALLOCATES, so it ALSO forces `needs_heap` (via
@@ -13205,6 +13249,14 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     }
     if needs_max_i64 {
         out.push_str(MAX_I64_HELPER);
+    }
+    // PMAT-1341: emit the `math.sqrt` domain-guarded wrapper once, when any
+    // function takes a square root. Self-contained WAT (no memory, no
+    // `$__alloc`), so gated ONLY on its own `needs_sqrt_f64`. The guard traps on
+    // a NEGATIVE arg — where CPython raises ValueError — instead of returning
+    // the NaN a bare `f64.sqrt` would.
+    if needs_sqrt_f64 {
+        out.push_str(SQRT_F64_HELPER);
     }
     // PMAT-1252: emit the list-SORT reduction helpers once, when any function
     // uses `sorted(xs)` over a `list[int]` / `list[float]` (`Expr::Sorted`). Each
@@ -15636,21 +15688,31 @@ fn expr_has_abs_i64(expr: &Expr) -> bool {
 /// [`expr_has_abs_i64`]; a missed sub-expression would leave the helper
 /// undeclared at the `call $__wasm_{min,max}_i64` site (a hard wat2wasm failure —
 /// the recurring gate-hole class, where over-detecting is a harmless unused
-/// function but under-detecting is fatal). Keyed on `of_float: false` so a FLOAT
-/// min/max (refused in [`emit_num_builtin`]) never arms the gate — it falls
-/// through to recurse its args (an int min/max can nest inside a float one).
-fn module_uses_int_minmax(module: &Module, want: NumBuiltinOp) -> bool {
-    module_functions(module).any(|f| block_has_int_minmax(&f.body, want))
+/// function but under-detecting is fatal). `want_float: Some(false)` keys the
+/// int min/max so a FLOAT min/max (refused in [`emit_num_builtin`]) never arms
+/// the gate — it falls through to recurse its args (an int min/max can nest
+/// inside a float one).
+///
+/// PMAT-1341: generalized from the min/max-only form to serve `math.sqrt`'s
+/// `$__wasm_sqrt_f64` gate too — `want_float: None` matches EITHER arg kind
+/// (sqrt is always float-domain, so filtering on `of_float` could only ever
+/// under-detect, and under-detection is the fatal direction). One exhaustive
+/// walker, three gates.
+fn module_uses_num_builtin(module: &Module, want: NumBuiltinOp, want_float: Option<bool>) -> bool {
+    module_functions(module).any(|f| block_has_num_builtin(&f.body, want, want_float))
 }
 
-fn block_has_int_minmax(block: &Block, want: NumBuiltinOp) -> bool {
-    block.stmts.iter().any(|s| stmt_has_int_minmax(s, want))
-        || expr_has_int_minmax(&block.trailing_return, want)
+fn block_has_num_builtin(block: &Block, want: NumBuiltinOp, want_float: Option<bool>) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(|s| stmt_has_num_builtin(s, want, want_float))
+        || expr_has_num_builtin(&block.trailing_return, want, want_float)
 }
 
-fn stmt_has_int_minmax(s: &Stmt, want: NumBuiltinOp) -> bool {
-    let e = |x| expr_has_int_minmax(x, want);
-    let st = |x| stmt_has_int_minmax(x, want);
+fn stmt_has_num_builtin(s: &Stmt, want: NumBuiltinOp, want_float: Option<bool>) -> bool {
+    let e = |x| expr_has_num_builtin(x, want, want_float);
+    let st = |x| stmt_has_num_builtin(x, want, want_float);
     match s {
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Return(value) => e(value),
         Stmt::If {
@@ -15673,17 +15735,20 @@ fn stmt_has_int_minmax(s: &Stmt, want: NumBuiltinOp) -> bool {
     }
 }
 
-fn expr_has_int_minmax(expr: &Expr, want: NumBuiltinOp) -> bool {
-    let e = |x| expr_has_int_minmax(x, want);
+fn expr_has_num_builtin(expr: &Expr, want: NumBuiltinOp, want_float: Option<bool>) -> bool {
+    let e = |x| expr_has_num_builtin(x, want, want_float);
     match expr {
-        // this node IS the int min/max of the kind we gate — fire it (one helper
-        // per op serves every use; a FLOAT min/max keys `of_float: true` and
-        // falls through to recurse its args).
-        Expr::NumBuiltin {
-            op,
-            of_float: false,
-            ..
-        } if *op == want => true,
+        // this node IS the builtin of the kind we gate — fire it (one helper per
+        // op serves every use). `want_float` filters on the arg kind: `Some(false)`
+        // is the int min/max gate (a FLOAT min/max keys `of_float: true` and falls
+        // through to recurse its args), `None` matches EITHER kind (the PMAT-1341
+        // sqrt gate — sqrt is always float-domain, so keying on `of_float` could
+        // only ever UNDER-detect, and an undeclared helper is fatal).
+        Expr::NumBuiltin { op, of_float, .. }
+            if *op == want && want_float.is_none_or(|w| w == *of_float) =>
+        {
+            true
+        }
         Expr::ListMinMax { list, default, .. } => e(list) || default.as_deref().is_some_and(e),
         Expr::Sum { list, start, .. } => e(list) || start.as_deref().is_some_and(e),
         Expr::Concat { lhs, rhs }
@@ -25987,10 +26052,11 @@ fn emit_unop(
     }
 }
 
-/// PMAT-1338/1339/1340: lower a scalar numeric builtin (`Expr::NumBuiltin` —
-/// Python `abs(x)` / `min(a, b, …)` / `max(a, b, …)` / `math.*`). `abs(int|float)`,
-/// the all-INT `min`/`max`, and the rounding `math.floor`/`ceil`/`trunc` (→ int)
-/// are in the WASM subset; a float/bool/str min/max, `math.sqrt`, and the
+/// PMAT-1338/1339/1340/1341: lower a scalar numeric builtin (`Expr::NumBuiltin`
+/// — Python `abs(x)` / `min(a, b, …)` / `max(a, b, …)` / `math.*`).
+/// `abs(int|float)`, the all-INT `min`/`max`, the rounding
+/// `math.floor`/`ceil`/`trunc` (→ int), and `math.sqrt` (native `f64.sqrt`,
+/// domain-guarded) are in the WASM subset; a float/bool/str min/max and the
 /// transcendentals refuse honestly.
 ///
 /// * `abs(float)` → the native `f64.abs` (one instruction). Bit-exact with
@@ -26152,25 +26218,57 @@ fn emit_num_builtin(
             writeln!(out, "i64.trunc_f64_s").expect("write");
             Ok(WatTy::I64)
         }
-        // `math.sqrt` and the transcendentals: refused honestly. `f64.sqrt` exists
-        // and is bit-exact for x >= 0, but CPython's `math.sqrt(-1.0)` RAISES
-        // ValueError where `f64.sqrt` yields NaN — a divergence over a NORMAL input
-        // (any negative float), the same class of NaN/order mismatch that makes the
-        // lane refuse a float `min`/`max`. sin/cos/tan/exp/ln/log10/log2 have no
-        // bit-exact WASM instruction at all. Both refuse rather than diverge.
-        NumBuiltinOp::Sqrt
-        | NumBuiltinOp::Sin
+        // PMAT-1341: `math.sqrt(x)` → `call $__wasm_sqrt_f64`, a DOMAIN-GUARDED
+        // wrapper around the native `f64.sqrt`. WASM's `f64.sqrt` is IEEE-754
+        // correctly-rounded — bit-identical to the C `sqrt()` CPython calls — so
+        // over `math.sqrt`'s domain the result equals CPython's exactly. OUTSIDE
+        // it the two disagree: `math.sqrt(-1.0)` RAISES ValueError in CPython
+        // where bare `f64.sqrt` yields NaN, so the helper TRAPS on `x < 0`
+        // instead of fabricating a value CPython never returns (the same
+        // trap-where-CPython-raises discipline as PMAT-1340's rounding narrow).
+        // `-0.0` / `+inf` / `nan` are NOT `< 0`, so they flow to the instruction
+        // and match CPython (`-0.0`, `inf`, NaN respectively). Like the rounding
+        // ops, the frontend ([`lower_math_call`], PMAT-783) coerces the arg to
+        // f64 and the int→float widen is NOT in the WASM subset, so an int arg
+        // (`math.sqrt(16)`) already refuses upstream; the operand here is f64.
+        NumBuiltinOp::Sqrt => {
+            if args.len() != 1 {
+                return Err(unsupported(&format!(
+                    "math.sqrt takes exactly one argument but {} were passed",
+                    args.len()
+                )));
+            }
+            match emit_expr(&args[0], scope, out, depth)? {
+                WatTy::F64 => {}
+                other => {
+                    return Err(unsupported(&format!(
+                        "math.sqrt over a non-float ({other:?}) value — the frontend \
+                         widens the arg to f64, so a non-f64 operand is unexpected \
+                         (an int arg refuses upstream: the int→float widen is not in \
+                         the WASM subset)"
+                    )));
+                }
+            }
+            indent(out, depth);
+            writeln!(out, "call $__wasm_sqrt_f64").expect("write");
+            Ok(WatTy::F64)
+        }
+        // The transcendentals: refused honestly — sin/cos/tan/exp/ln/log10/log2
+        // have NO WASM instruction at all, so emitting them would mean shipping a
+        // polynomial approximation that diverges from CPython's libm in the low
+        // bits. A refusal, not a silent ulp-off answer.
+        NumBuiltinOp::Sin
         | NumBuiltinOp::Cos
         | NumBuiltinOp::Tan
         | NumBuiltinOp::Exp
         | NumBuiltinOp::Ln
         | NumBuiltinOp::Log10
         | NumBuiltinOp::Log2 => Err(unsupported(
-            "a math.* transcendental (sqrt/sin/cos/tan/exp/ln/log10/log2) is not in \
-             the WASM subset — the transcendentals have no bit-exact WASM \
-             instruction and math.sqrt of a negative RAISES in CPython where \
-             f64.sqrt yields NaN; only abs(x), min/max, and the rounding ops \
-             (floor/ceil/trunc → int) are supported",
+            "a math.* transcendental (sin/cos/tan/exp/ln/log10/log2) is not in the \
+             WASM subset — it has no WASM instruction, so emitting one would mean \
+             a polynomial approximation that diverges from CPython's libm; only \
+             abs(x), min/max, the rounding ops (floor/ceil/trunc → int), and \
+             math.sqrt (native f64.sqrt, domain-guarded) are supported",
         )),
     }
 }
