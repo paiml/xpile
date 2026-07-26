@@ -37,8 +37,8 @@ sprint:
   tag_cut: 2026-07-30 (Thu, on a PINNED SHA — release.yml fires cleanroom-publish on tag push, so tagging Thursday buys a real pre-flight with a day of runway)
   publish: 2026-07-31 (Fri, `cargo publish --workspace` UNPIPED, 31 crates, abort-on-first-failure; hard time-box A6 — if the batch has not STARTED by 16:00 local, ship tag-only and roll the batch to 2026-08-07)
   blocking_ci_contexts: [gate, workspace-test]   # kani, lake-build, docs, wasi, lean-models, shader-validate are ADVISORY — never claim "CI green" without recording each
-  serial_gate_touches: "#1 PMAT-1344 witness_floor.rs+ci.yml:51 -> #2 PMAT-1345 roadmap_registration.rs -> #3 PMAT-1346 claims_drift.rs -> #4 PMAT-1347 ruleset_drift.rs+deny.toml+ci.yml:56 -> #5 PMAT-1348 claims_drift.rs -> #6 PMAT-1350 contracts/*.yaml+probe -> #7 PMAT-1356 changelog_freshness.rs -> #8 PMAT-1360 witness_floor.rs TOUCH 2 (inside the release commit)"
-  witness_floor_touches: "EXACTLY TWO all sprint: PMAT-1344 (initial re-derive) and PMAT-1360 (final re-derive). Intermediate slices ADD witnesses and NEVER bump a floor — floors are lower bounds, so adding tests cannot red them. Adding a new *_witness.rs file is NOT a touch."
+  serial_gate_touches: "#1 PMAT-1344 witness_floor.rs+ci.yml:51 [DONE] -> #2 PMAT-1345 roadmap_registration.rs -> #3 PMAT-1346 claims_drift.rs -> #4 PMAT-1347 ruleset_drift.rs+deny.toml+ci.yml:56 -> #5 PMAT-1348 claims_drift.rs -> #6 PMAT-1350 contracts/*.yaml+probe -> #7 PMAT-1356 changelog_freshness.rs -> #8 PMAT-1359 witness_floor.rs TOUCH 2 (inside the release commit)"
+  witness_floor_touches: "EXACTLY TWO all sprint: PMAT-1344 (initial re-derive, DONE 2026-07-26) and PMAT-1359 (final re-derive, inside the release commit). Intermediate slices ADD witnesses and NEVER bump a floor — floors are lower bounds, so adding tests cannot red them. Adding a new *_witness.rs file is NOT a touch. [CORRECTED by PMAT-1344: both fields previously named PMAT-1360 for TOUCH 2, but PMAT-1360 is the overlay-purge/dry-run/RELEASE.md slice — TOUCH 2 is carried by PMAT-1359's own title ('release commit ... + witness-floor re-derive TOUCH 2 (ALL lanes)'), matching sprint plan §4's serialized-gate-touch list. Do NOT touch witness_floor.rs in PMAT-1360.]"
 
 queue:
   # ================= DAY 1 — Sun 2026-07-26 (evening, partial) =================
@@ -50,12 +50,12 @@ queue:
     notes: "DONE in the planning PR itself. Max registered is now 1343 — do NOT re-add 1340/1341/1342. Interior holes 1324/1325/1326 exist; do NOT reuse them. Verified: `comm -23 <(git log v0.1.616..HEAD --format=%s | grep -oE 'PMAT-[0-9]+' | sort -u) <(grep -oE '^- id: PMAT-[0-9]+' docs/roadmaps/roadmap.yaml | grep -oE 'PMAT-[0-9]+' | sort -u)` is EMPTY. NEXT PICK: PMAT-1344."
 
   - id: PMAT-1344
-    status: open
+    status: done
     day: 1
     ev_rank: R2
     gate_touch: 1
-    title: "Witness-floor re-derive TOUCH 1: WASM_FLOOR 400 -> 770 (live 788, 18 of margin for Day 2-4 churn); correct the stale `// current 444` at witness_floor.rs:18 and :48 to 788; fix .github/workflows/ci.yml:51 '~424 WASM execution witnesses' -> 788"
-    notes: "388 tests of dead slack on the exact lane 69 of this release's commits were built from — ~49% of the corpus could be deleted without reddening a REQUIRED context. Leave every OTHER lane's floor alone at TOUCH 1 (shell 7/7, rust-diff 44/44, hybrid 3/3, wasi 1/1, ruchy 7/7, forjar 4/4, lean 6/6 are already tight); TOUCH 2 (PMAT-1360) re-derives all lanes incl. RUST_DIFF_FLOOR which PMAT-1351's oracle fixtures raise. Exit: `cargo test -p xpile --test witness_floor -- --nocapture` prints `wasm 788 770`."
+    title: "Witness-floor re-derive TOUCH 1: WASM_FLOOR 400 -> 770 (live 795, 25 of margin for Day 2-4 churn); replace the stale `// current 444` at witness_floor.rs:18 and :48 with dated live-795 snapshots + a RE-DERIVE DISCIPLINE comment; fix .github/workflows/ci.yml:51 '~424 WASM execution witnesses'"
+    notes: "DONE 2026-07-26. 395 tests of dead slack on the exact lane 69 of this release's commits were built from — ~50% of the corpus could be deleted without reddening a REQUIRED context. Every OTHER lane left alone at TOUCH 1 (shell 7/7, rust-diff 44/44, hybrid 3/3, wasi 1/1, ruchy 7/7, forjar 4/4, lean 6/6 are already tight); TOUCH 2 (PMAT-1359) re-derives all lanes incl. RUST_DIFF_FLOOR which PMAT-1351's oracle fixtures raise. Exit MET: `cargo test -p xpile --test witness_floor -- --nocapture` prints `wasm 795 770`. ** CORRECTION SHIPPED IN THIS SLICE: the live count is 795 across 138 witness files, NOT the 788/137 the sprint plan stated — verified with the test's own algorithm and confirmed identical at 2ee3630f and cf75777d, so the plan's figure was hand-derived and wrong, exactly the CLAIMS-001 class that produced the stale `// current 444`. 788 is now a BANNED FIGURE alongside 453: PMAT-1349/1354/1355 must cite 795. ** ALSO: sprint-plan §6 criterion 11 ('floor within 10 of live, wasm >= 778') contradicted the ratified 770 AND cadence rule 5's two-touch discipline (a 10-test band forces a bump on nearly every witness-adding slice); widened to 30 / >= 770 with the reasoning recorded inline. NEXT PICK: PMAT-1345 (GATE TOUCH #2, roadmap_registration.rs + repoint the dead pre-commit guard)."
 
   - id: PMAT-1345
     status: open

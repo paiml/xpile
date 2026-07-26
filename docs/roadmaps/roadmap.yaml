@@ -15907,3 +15907,16 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1344
+  github_issue: null
+  item_type: task
+  title: "PMAT-1344: [gate/witness] WITNESS-FLOOR RE-DERIVE, TOUCH 1 of 2 (XPILE-WITNESS-002; sprint GATE TOUCH #1). `WASM_FLOOR` 400 -> 770 against a live 795. The floor was set when the lane held 444 witnesses and was never re-derived across the ~69 native-WASM slices that landed for 0.1.617, so the anti-deletion ratchet carried 395 tests of dead slack — ~50% of the corpus could have been deleted without reddening the REQUIRED `workspace-test` context, which is the exact guarantee the manifest exists to provide. 770 leaves 25 of headroom for Day 2-4 churn; TOUCH 2 (PMAT-1359, inside the release commit) re-derives ALL lanes. Every other lane was already tight (shell 7/7, rust-diff 44/44, hybrid 3/3, wasi 1/1, ruchy 7/7, forjar 4/4, lean 6/6) and is deliberately untouched. CLAIMS CORRECTION shipped in the same slice: the live count is 795 across 138 `*_witness.rs` files, NOT the 788/137 the sprint plan asserted — re-derived with the test's own exact-trim algorithm and confirmed identical at both 2ee3630f and cf75777d, so the plan's number was hand-derived and had drifted from the machine. That is precisely the CLAIMS-001 failure mode that produced the stale `// current 444` this slice removes, so 788 joins 453 as a BANNED FIGURE and the CHANGELOG/release-note slices (PMAT-1349/1354/1355) cite 795. ROT-PROOFING: the bare `// current NNN` comments are replaced with dated `// live NNN @ 2026-07-26 (TOUCH 1)` snapshots plus an explicit RE-DERIVE DISCIPLINE block stating that a floor is a lower bound with deliberate churn headroom, that adding witnesses raises the live count and can NEVER red a floor, and that therefore no capability slice has cause to edit this file — the discipline that keeps witness_floor.rs a two-touch serial resource instead of a per-PR contention point. `.github/workflows/ci.yml:51` '~424 WASM execution witnesses' likewise replaced with a dated 795/138 snapshot that names `cargo test -p xpile --test witness_floor -- --nocapture` as authoritative. Sprint plan §6 criterion 11 ('every lane's floor within 10 of live, wasm >= 778') was ALSO corrected: it contradicted the ratified TOUCH-1 value of 770 and, independently, a 10-test band would force a floor bump on nearly every witness-adding slice, contradicting cadence rule 5's two-touch discipline; widened to 30 / >= 770 with the reasoning recorded inline. Exit MET: the manifest prints `wasm 795 770`."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
