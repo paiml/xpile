@@ -7,6 +7,49 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wasi` CI job: pinned wasmtime instead of a self-resolving bootstrap script**
+  (PMAT-1370). The job installed its WASI runtime with
+  `curl -fsSL https://wasmtime.dev/install.sh | bash`. That script resolves
+  "latest" by scraping `api.github.com/.../releases/latest` **unauthenticated**;
+  Actions runners share egress IPs, so the call is rate-limited in bursts, and
+  the rate-limit body has no `tag_name`, so the installer's `sed` pipeline
+  degrades the whole JSON document to its first character — the literal `{`. It
+  printed `Could not download Wasmtime version '{'` **and exited 0**. The install
+  step went green with nothing installed; the job died one step later on
+  `wasmtime: command not found` (exit 127), an error naming neither the
+  installer nor the cause. This failed live on `ccb95a04` — the SHA tagged
+  `v0.1.617` — while passing on `ef53c281` an hour earlier with no change to the
+  job, i.e. **flaky rather than broken**. Now pinned to `WASMTIME_VERSION`
+  (`v47.0.2`) and fetched as a release asset, which is not API-rate-limited,
+  mirroring the `docs` job's existing `PMAT_VERSION` precedent.
+- **`mdbook` install now uses `curl -f`** (PMAT-1370) — without it curl exits 0
+  on an HTTP 404/429/5xx and pipes the error *page* into `tar`.
+- **`ci.yml` no longer claims `kani` is a required status context** (PMAT-1370).
+  The comment above the `XPILE_REQUIRE_KANI` tripwire was the inverse of the
+  `XPILE-ENFORCEMENT` marker 89 lines above it in the same file — a leftover of
+  the six-hour 2026-07-05 four-context flip that PMAT-1347 reconciled
+  everywhere else. `kani` is advisory; the tripwire is still worth having,
+  because it makes a red `kani` job *mean* something even though it does not
+  block a merge.
+
+### Added
+
+- **`XPILE-CI-INSTALL-001` — the toolchain-install honesty gate**
+  (`crates/xpile/tests/ci_tool_install.rs`, PMAT-1370). Four static tests
+  (`std::fs` only — no network, no `gh`, no runner, so it cannot skip):
+  every step that appends to `$GITHUB_PATH` must invoke the tool it installed
+  *in that same step, by absolute path* (`$GITHUB_PATH` only takes effect in
+  subsequent steps, so a bare `tool --version` there would not even resolve, and
+  a downstream check blames the wrong step); every `curl` in such a step must
+  carry `-f`; no workflow may use `wasmtime.dev/install.sh` or any
+  `releases/latest` URL; and the `wasi` job must pin a concrete `vN.N.N` that a
+  download URL actually interpolates, so the pin cannot become decorative. The
+  in-step rule was applied across the board — `elan` (×2), `pmat` and `mdbook`
+  had the same silent-install shape.
+
+
 ## [0.1.617] - 2026-07-26
 
 This release consolidates **107 commits** since `v0.1.616` (2026-07-04 → 2026-07-26;
