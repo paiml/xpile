@@ -73,7 +73,17 @@ jobs:
       # tripwire: drop the install and the witnesses panic red, never skip green.
       XPILE_REQUIRE_WASM_RUNTIME: "1"
     steps:
+      # fetch-depth: 0 (full history AND tags) is load-bearing, not cosmetic:
+      # `crates/xpile/tests/roadmap_registration.rs` (XPILE-LEDGER-001, PMAT-1345)
+      # compares the PMAT ids cited in commit subjects since the last `v*` tag
+      # against the ids registered in docs/roadmaps/roadmap.yaml. Under the
+      # default depth-1 checkout there is no history and no tag, so that half of
+      # the gate would skip-with-reason and the id drift it exists to catch
+      # would go unnoticed in CI exactly as it did for PMAT-1268/1269/1277/
+      # 1281/1283. The repo is ~27 MiB packed, so the full fetch is cheap.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
 
