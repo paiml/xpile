@@ -9,6 +9,11 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`hybrid --verify` divergence reports a 1-based line number** (PMAT-1352).
+  The comparison index is 0-based and was printed raw, so a divergence on the
+  first line of stdout reported *"DIVERGENT at line 0"* — no editor and no human
+  numbers lines from zero. Found by the test that gives that arm its first
+  coverage.
 - **Negative-integer-LITERAL list index no longer double-normalizes** (PMAT-1351)
   — a silent wrong VALUE on the read/store/aug paths and an *uncatchable* panic
   on del/pop. On `xs = [1, 2, 3]`, `xs[-4]` returned `3`, `xs[-5]` returned `2`
@@ -22,7 +27,10 @@ meta-HIR and the trait surfaces.
   an index in the corner `n < k ≤ 2n` landed back in range instead of raising.
   The four remaining fold sites now pass the raw `LitInt(-k)`, matching what the
   store side has done since PMAT-863 — the codegen owns the single
-  normalization.
+  normalization. This closes items **1, 2 and 3** of the `[0.1.617]` "Known
+  divergences" list below, which described this defect as it shipped in that
+  release; that section is left as written, since it is an accurate record of
+  the tagged version.
 - **`del xs[i]` and `xs.pop(i)` bounds-check before `Vec::remove`** (PMAT-1351).
   Found by the audit above: both paths normalized and then handed the result
   straight to `Vec::remove`, so EVERY out-of-range del/pop — literal or runtime
@@ -65,6 +73,26 @@ meta-HIR and the trait surfaces.
 
 ### Added
 
+- **DIVERGENT-arm falsifier for `xpile hybrid --verify`** (PMAT-1352). The
+  `ComparisonResult::Divergence` arm had **zero** coverage — all three
+  pre-existing `--verify` witnesses are green-path only, so nothing proved the
+  differential can fail, and a differential never observed to go red is
+  indistinguishable from one that always returns Match. The new fixture
+  `tests/fixtures/hybrid_divergent/` asserts a non-zero exit, the `✗ DIVERGENT`
+  verdict, both sides printed side by side, the bail reason, and two
+  non-vacuity conditions (the boundary still reconciled; the differential
+  actually reached the comparison step).
+
+  Worth recording, because it is a property of the design rather than a bug: an
+  FFI **mis-cast cannot** make the two sides disagree. `ctypes_binding_for` and
+  the emitted `extern "C"` shim are both derived from the *same* meta-HIR types,
+  so whatever they get wrong they get wrong identically and it cancels. Probed:
+  an `int` boundary agrees even when the product overflows `int` (both truncate
+  to `1410065408`); a `long` boundary is honestly refused as non-ABI-mappable
+  rather than silently mis-bound; a whole-number `double` return agrees (`2.0`,
+  not Rust's bare `2`); a bool-shaped `int` return agrees. The divergence has to
+  come from the Python side — which is exactly the class this differential
+  exists to catch.
 - **`neg_index_out_of_range.py` oracle fixture** (PMAT-1351) — exercises all
   five negative-index paths (read, store, aug, del, pop) plus the `n < k ≤ 2n`
   corner (`[5].pop(-2)`) under `except IndexError`, byte-comparing ten printed
