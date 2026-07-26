@@ -71,6 +71,15 @@ pub fn default_session() -> TranspileSession {
     // Code lane: frontends
     s.register_frontend(Arc::new(depyler_frontend::PythonFrontend));
     s.register_frontend(Arc::new(decy_frontend::CFrontend));
+    // PMAT-1346 (XPILE-FRONTEND-SUBSTANCE-001): registered for ROUTING ONLY.
+    // Ruchy is an OUTPUT language (`--target ruchy`); `.ruchy` INPUT has no
+    // parser and `parse_and_lower` REFUSES with `FrontendError::Unimplemented`.
+    // The registration is kept deliberately so a `.ruchy` file reaches that
+    // specific refusal instead of the generic `no frontend handles .ruchy`.
+    // It does NOT count toward the README's substantive source-language
+    // numeral — `crates/xpile/tests/claims_drift.rs` derives that by RUNNING
+    // each registered frontend against a real program, not by counting these
+    // call sites.
     s.register_frontend(Arc::new(ruchy_frontend::RuchyFrontend));
     // PMAT-037 / XPILE-BASHRS-MERGER-001: Layer A scaffold. Frontend
     // is registered so the dispatch table recognises `.sh` / `.bash` /

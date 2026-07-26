@@ -15933,3 +15933,16 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1346
+  github_issue: null
+  item_type: task
+  title: "PMAT-1346: [frontend/gate] RUCHY FRONTEND REFUSES (XPILE-FRONTEND-SUBSTANCE-001; sprint GATE TOUCH #3). Closes the ONLY silent-wrong-answer hole in the repo, which sat directly on README.md's lead promise. crates/ruchy-frontend/src/lib.rs returned `Ok(Module { items: Vec::new(), .. })` for ANY .ruchy input, so `xpile transpile foo.ruchy --target rust` printed a header comment and EXITED 0 — a silently empty transpile of a program with real content. An empty module is not a refusal; it is a wrong answer delivered successfully, which is precisely the shape the README excludes ('it refuses at transpile time with a reason instead of emitting code that silently diverges'). Zero test debt existed: no test anywhere fed a .ruchy file as INPUT. FIX: a new FrontendError::Unimplemented variant (distinct from Parse — the user's source is not at fault — and from Lower — the construct is not out-of-subset, the whole LANGUAGE is unread), returned by RuchyFrontend::parse_and_lower naming the missing parser and the offending path. Routing is deliberately RETAINED (`extensions()` still claims `.ruchy`) so the file gets that specific refusal rather than the generic 'no frontend handles .ruchy'; emptying extensions() would make the refusal dead code, which a test pins. GATE HALF: crates/xpile/tests/claims_drift.rs derived README's 'five source languages' from `register_frontend(Arc::new(` CALL-SITE COUNT — it validated the numeral while the substance was hollow, counting ruchy as a source language it could not read. It now RUNS every frontend in the live xpile_core::default_session() registry against a real program in its own language (not an empty file, which would make the probe vacuous against the very bug) and classifies the outcome Lowered / Refused / HOLLOW. Three new assertions: (1) no registered frontend may answer a real program with an empty Ok module — the hollow shape is now impossible to reintroduce; (2) the README numeral equals the SUBSTANTIVE count (python, c, bashrs, wasm = FOUR, corrected from five); (3) a registered-but-refusing frontend must be disclosed as refusing in the README, so the numeral cannot be made right while the story stays wrong. A registered frontend with no probe entry PANICS, so adding a source language cannot silently escape the gate. RED-THEN-GREEN demonstrated in the PR body against the pre-fix hollow body. Exit MET: `xpile transpile <tmp>/t.ruchy --target rust` prints the refusal and exits 1."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -6,11 +6,17 @@
 //! review (`docs/specifications/fable-architectural-review.md`, F8) found
 //! drifting because nothing sampled them:
 //!
-//!  (a) README's "five source languages" / "nine backends" are DERIVED —
-//!      the frontend registry (`crates/xpile-core/src/lib.rs`,
-//!      `register_frontend` calls) and the `Target` enum
-//!      (`crates/xpile-backend/src/lib.rs`) are the source of truth, not a
-//!      hand-typed numeral.
+//!  (a) README's "N source languages" / "nine backends" are DERIVED — the
+//!      live frontend registry (`xpile_core::default_session()`) and the
+//!      `Target` enum (`crates/xpile-backend/src/lib.rs`) are the source of
+//!      truth, not a hand-typed numeral.
+//!      PMAT-1346 (XPILE-FRONTEND-SUBSTANCE-001) hardened the frontend half:
+//!      it used to count `register_frontend(Arc::new(` CALL SITES, which
+//!      validated the numeral while the substance was hollow — `ruchy-frontend`
+//!      was registered, counted, and lowered nothing. It now RUNS each
+//!      registered frontend against a real program in its own language and
+//!      counts only the ones that lower it, plus asserts that none answers a
+//!      real program with an empty `Ok` module.
 //!  (b) EVERY module-count literal in `contracts/lean/PROVABILITY-INVENTORY.md`
 //!      (the line-11 `lake build` reproduce block INCLUDED) equals the
 //!      lakefile root count.
@@ -20,10 +26,12 @@
 //!      in the same ledger (the pillar-D "Wasm lift COMPLETE" vs PMAT-952
 //!      `status: planned` case).
 //!
-//! Like `lean_pilot_roots.rs` this is pure `std::fs` text parsing — no new
-//! dependency, no runtime linkage — so the required `gate` job compiles it
-//! (`clippy --all-targets`) and `workspace-test` runs it (`cargo test
-//! --workspace`), with zero extra CI wiring.
+//! (b)–(d) are pure `std::fs` text parsing. (a) additionally links
+//! `xpile-core` — an EXISTING dependency of this crate, not a new one — to
+//! probe the live frontend registry: a text scan of registration call sites
+//! is exactly what let a hollow frontend pass. Either way the required `gate`
+//! job compiles this (`clippy --all-targets`) and `workspace-test` runs it
+//! (`cargo test --workspace`), with zero extra CI wiring.
 
 use std::collections::HashMap;
 use std::fs;
@@ -111,13 +119,179 @@ fn counts_between(text: &str, prefix: &str, suffix: &str) -> Vec<usize> {
 
 // ── (a) README counts are DERIVED from code ──────────────────────────
 
-/// Registered code-lane frontends = `register_frontend(Arc::new(` call sites
-/// in `xpile-core::default_session`. (The `pub fn register_frontend(&mut …`
-/// definition does not contain `(Arc::new(`, so it is not counted.)
-fn registered_frontend_count() -> usize {
-    read("crates/xpile-core/src/lib.rs")
-        .matches("register_frontend(Arc::new(")
-        .count()
+/// One probe program per registered frontend, keyed by `Frontend::name()`.
+///
+/// PMAT-1346: these are deliberately the *smallest program with real content*
+/// in each language — not empty files. An empty file may legitimately lower to
+/// an empty module, so probing with one would make the substance test vacuous
+/// against exactly the bug it exists to catch.
+const FRONTEND_PROBES: &[(&str, &str, &str)] = &[
+    (
+        "python",
+        "probe.py",
+        "def add(a: int, b: int) -> int:\n    return a + b\n",
+    ),
+    ("c", "probe.c", "int add(int a, int b) { return a + b; }\n"),
+    (
+        "ruchy",
+        "probe.ruchy",
+        "fun add(a: i64, b: i64) -> i64 { a + b }\n",
+    ),
+    ("bashrs", "probe.sh", "echo hello\n"),
+    // The lift is a right-inverse on the `xpile-wasm-codegen` EMIT IMAGE, so
+    // the probe is written in that canonical shape (named func, named params)
+    // rather than in arbitrary hand-rolled WAT.
+    (
+        "wasm",
+        "probe.wat",
+        "(module\n  ;; source module: probe\n  \
+         (func $add (param $a i64) (param $b i64) (result i64)\n    \
+         local.get $a\n    local.get $b\n    i64.add\n  )\n)\n",
+    ),
+];
+
+/// What a registered frontend actually did with a real program in its own
+/// language.
+#[derive(Debug)]
+enum Substance {
+    /// Lowered it to a module with N items — the frontend reads the language.
+    Lowered(usize),
+    /// Refused with a reason — honest, but NOT a source language xpile lowers.
+    Refused(String),
+    /// Returned `Ok` with an EMPTY module: a wrong answer delivered
+    /// successfully. This is the shape PMAT-1346 exists to make impossible.
+    Hollow,
+}
+
+/// Run every registered frontend against its probe. Pure runtime linkage
+/// against the live `default_session()` registry — the same table the CLI
+/// dispatches through, so this cannot drift from the shipped binary the way a
+/// `register_frontend(Arc::new(` call-count text scan could.
+///
+/// The third tuple element is the frontend's own `lowers_input()`
+/// DECLARATION, kept alongside the observed outcome so
+/// [`frontend_lowers_input_declaration_matches_behaviour`] can confront one
+/// with the other.
+fn probe_registered_frontends() -> Vec<(&'static str, Substance)> {
+    probe_registered_frontends_with_declarations()
+        .into_iter()
+        .map(|(n, s, _)| (n, s))
+        .collect()
+}
+
+fn probe_registered_frontends_with_declarations() -> Vec<(&'static str, Substance, bool)> {
+    let session = xpile_core::default_session();
+    session
+        .frontends
+        .iter()
+        .map(|f| {
+            let name = f.name();
+            let declares_lowering = f.lowers_input();
+            let (_, file, source) = FRONTEND_PROBES
+                .iter()
+                .find(|(n, _, _)| *n == name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "registered frontend `{name}` has no entry in FRONTEND_PROBES. \
+                         A new source language must ship a probe program here — \
+                         otherwise this gate silently stops covering it."
+                    )
+                });
+            let outcome = match f.parse_and_lower(&PathBuf::from(file), source) {
+                Ok(m) if m.items.is_empty() => Substance::Hollow,
+                Ok(m) => Substance::Lowered(m.items.len()),
+                Err(e) => Substance::Refused(e.to_string()),
+            };
+            (name, outcome, declares_lowering)
+        })
+        .collect()
+}
+
+/// PMAT-1346: `Frontend::lowers_input()` is a self-report — `xpile info` and
+/// the crate docs both read it. A self-report that nothing checks is exactly
+/// how a hollow frontend got counted as a source language in the first place,
+/// so confront the declaration with what the frontend actually did.
+#[test]
+fn frontend_lowers_input_declaration_matches_behaviour() {
+    for (name, outcome, declared) in probe_registered_frontends_with_declarations() {
+        let observed = matches!(outcome, Substance::Lowered(_));
+        assert_eq!(
+            declared, observed,
+            "frontend `{name}` declares lowers_input() == {declared} but a real \
+             program in its own language produced {outcome:?}. The declaration \
+             is what `xpile info` prints — make it match the behaviour."
+        );
+    }
+}
+
+/// SUBSTANTIVE frontends — the ones that genuinely lower their language.
+/// This, not the registration count, is what "N source languages" means.
+fn substantive_frontends() -> Vec<&'static str> {
+    probe_registered_frontends()
+        .into_iter()
+        .filter(|(_, s)| matches!(s, Substance::Lowered(_)))
+        .map(|(n, _)| n)
+        .collect()
+}
+
+/// PMAT-1346 (XPILE-FRONTEND-SUBSTANCE-001). The load-bearing assertion of
+/// this whole section: no registered frontend may answer a real program with
+/// an empty `Ok` module.
+///
+/// `ruchy-frontend` did exactly that for every `.ruchy` input until PMAT-1346,
+/// so `xpile transpile foo.ruchy --target rust` printed a header comment and
+/// exited 0 — the only silent-wrong-answer hole in the repo, sitting directly
+/// on `README.md`'s lead promise ("it refuses at transpile time with a reason
+/// instead of emitting code that silently diverges"). A frontend must lower
+/// its language or refuse; "succeed emptily" is not a third option.
+#[test]
+fn no_registered_frontend_answers_a_real_program_with_an_empty_module() {
+    let hollow: Vec<&str> = probe_registered_frontends()
+        .into_iter()
+        .filter(|(_, s)| matches!(s, Substance::Hollow))
+        .map(|(n, _)| n)
+        .collect();
+    assert!(
+        hollow.is_empty(),
+        "HOLLOW frontend(s) {hollow:?}: registered, dispatched to, and they \
+         return Ok(Module {{ items: [] }}) for a real program in their own \
+         language — a silently empty transpile with a ZERO exit code. Lower \
+         the language or return a FrontendError naming what is unimplemented."
+    );
+}
+
+/// Non-vacuity: at least one frontend must actually lower something, or the
+/// hollow check above would pass trivially on a registry of pure refusals.
+/// Also checks the two outcomes are *substantive in themselves* — a "lowered"
+/// module has items and a refusal carries a reason.
+#[test]
+fn the_substance_probe_is_not_vacuous() {
+    let probed = probe_registered_frontends();
+    assert!(
+        !probed.is_empty(),
+        "default_session() registered zero frontends — the registry moved"
+    );
+    for (name, outcome) in &probed {
+        match outcome {
+            Substance::Lowered(items) => assert!(
+                *items > 0,
+                "frontend `{name}` reported Lowered(0) — the classifier is broken"
+            ),
+            // A refusal with no reason is only marginally better than a silent
+            // empty module: the user still cannot tell what xpile could not do.
+            Substance::Refused(reason) => assert!(
+                !reason.trim().is_empty(),
+                "frontend `{name}` refused with an EMPTY message — a refusal \
+                 must name what is unimplemented"
+            ),
+            Substance::Hollow => {} // reported by the dedicated test above
+        }
+    }
+    assert!(
+        !substantive_frontends().is_empty(),
+        "no registered frontend lowered its own probe program: {probed:#?}. \
+         Either every frontend regressed, or the probe corpus went stale."
+    );
 }
 
 /// Variants of the `Target` enum in `xpile-backend`.
@@ -145,22 +319,47 @@ fn target_variant_count() -> usize {
     n
 }
 
+/// PMAT-1346: the README numeral is derived from SUBSTANTIVE frontends, not
+/// from `register_frontend` call sites.
+///
+/// The previous form counted registrations, which validated the numeral while
+/// the substance was hollow: `ruchy-frontend` was registered, counted toward
+/// "five source languages", and lowered nothing at all. Counting behaviour
+/// instead means the claim can only be satisfied by a frontend that works.
 #[test]
-fn readme_source_language_count_is_derived_from_frontend_registry() {
-    let frontends = registered_frontend_count();
-    assert!(
-        frontends >= 1,
-        "parsed 0 frontends from crates/xpile-core/src/lib.rs — the \
-         `register_frontend(Arc::new(` anchor moved; update this gate"
-    );
+fn readme_source_language_count_is_derived_from_substantive_frontends() {
+    let substantive = substantive_frontends();
+    let n = substantive.len();
     let readme = read("README.md");
-    let needle = format!("{} source languages", word(frontends));
+    let needle = format!("{} source languages", word(n));
     assert!(
         readme.contains(&needle),
-        "README.md must say '{needle}': {frontends} frontends are registered \
-         in crates/xpile-core/src/lib.rs. Update the README numeral to match \
-         the registry, or the registry to match the claim."
+        "README.md must say '{needle}': {n} registered frontends actually \
+         lower their own language ({substantive:?}). Update the README \
+         numeral to match the behaviour, or make a frontend substantive."
     );
+}
+
+/// A registered-but-refusing frontend is honest only if the README says so.
+/// Otherwise the docs still advertise an input language that refuses every
+/// input — the numeral would be right and the story still wrong.
+#[test]
+fn registered_frontends_that_refuse_are_disclosed_in_the_readme() {
+    let readme = read("README.md").to_lowercase();
+    for (name, outcome) in probe_registered_frontends() {
+        let Substance::Refused(_) = outcome else {
+            continue;
+        };
+        let disclosed = readme
+            .lines()
+            .any(|l| l.contains(name) && l.contains("refuse"));
+        assert!(
+            disclosed,
+            "frontend `{name}` is registered but REFUSES every input, and no \
+             README line mentions both `{name}` and 'refuse'. A registered \
+             language that cannot be read must be disclosed as such."
+        );
+    }
 }
 
 #[test]

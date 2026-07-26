@@ -11,7 +11,7 @@
 [![license](https://img.shields.io/crates/l/xpile.svg)](#license)
 
 **A polyglot transpile workbench where every construct is carried by a
-machine-checked contract.** xpile lowers five source languages through one
+machine-checked contract.** xpile lowers four source languages through one
 canonical meta-HIR and emits to nine backends — so the same program can target
 Rust, WebAssembly, a GPU, or a Lean 4 proof. Its distinguishing promise:
 *transpile-success means the output compiles and matches the source's
@@ -98,16 +98,23 @@ Frontends                        Backends
 ─────────                        ─────────
 Python  ─┐                  ┌─→  Rust          full emission, runtime-verified
 Shell   ─┤                  ├─→  Ruchy         full emission (compiles to Rust)
-Ruchy   ─┼→  meta-HIR  ─→  ─┼─→  WebAssembly   native emission (linear-memory runtime)
-C       ─┤                  ├─→  Shell         POSIX round-trip (flat-command subset)
-WASM    ─┘                  ├─→  PTX / WGSL / SPIR-V   GPU emission, executed on hardware
+C       ─┼→  meta-HIR  ─→  ─┼─→  WebAssembly   native emission (linear-memory runtime)
+WASM    ─┘                  ├─→  Shell         POSIX round-trip (flat-command subset)
+                            ├─→  PTX / WGSL / SPIR-V   GPU emission, executed on hardware
                             ├─→  Lean 4        def / theorem forms
                             └─→  forjar.yaml   infrastructure-as-code
 ```
 
 Python has a full parser; Shell (bashrs) parses the POSIX flat-command subset;
-C, Ruchy, and the WASM lift frontend are narrower. See
-[`xpile info`](#usage) for the live registry.
+C and the WASM lift frontend are narrower. See [`xpile info`](#usage) for the
+live registry.
+
+**Ruchy is an OUTPUT language only.** `--target ruchy` is a full emission, but
+`.ruchy` **input** refuses with a non-zero exit — there is no Ruchy parser
+(PMAT-1346). It is registered purely so `.ruchy` files get that specific
+refusal instead of a generic "no frontend handles" message. Reading Ruchy is
+v0.2.0 work, and until it lands it is not counted among the four source
+languages above.
 
 ### Proof lane
 

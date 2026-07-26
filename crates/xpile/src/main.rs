@@ -571,9 +571,29 @@ fn print_info(session: &TranspileSession) -> Result<()> {
     println!();
 
     println!("Code lane:");
-    println!("  frontends ({}):", session.frontends.len());
+    // PMAT-1346: a routing-only frontend (registered so its extension reaches
+    // a specific refusal, but with no parser) must not be silently counted
+    // among the languages xpile READS. Report both numbers and mark the
+    // refusing entries — `README.md` points here as "the live registry", so
+    // this listing is a claim surface like any other.
+    let lowering = session
+        .frontends
+        .iter()
+        .filter(|f| f.lowers_input())
+        .count();
+    let registered = session.frontends.len();
+    if lowering == registered {
+        println!("  frontends ({registered}):");
+    } else {
+        println!("  frontends ({registered} registered, {lowering} lowering):");
+    }
     for f in &session.frontends {
-        println!("    - {} ({})", f.name(), f.extensions().join(", "));
+        let suffix = if f.lowers_input() {
+            ""
+        } else {
+            "  [routing only — INPUT refuses, no parser]"
+        };
+        println!("    - {} ({}){suffix}", f.name(), f.extensions().join(", "));
     }
     println!("  backends ({}):", session.backends.len());
     for b in &session.backends {
