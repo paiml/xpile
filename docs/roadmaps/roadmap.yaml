@@ -15976,3 +15976,16 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1369
+  github_issue: null
+  item_type: task
+  title: "PMAT-1369: [release] v0.1.617 RELEASE COMMIT — CHANGELOG [0.1.617] + workspace version bump 0.1.616->0.1.617. The CHANGELOG section is 1225 lines produced by a 17-agent adversarially-verified workflow: 12 arcs partitioned from `git log` by subject SCOPE (NOT id range), each arc's capability claims proven by building a v0.1.616 binary from a pinned `git archive` snapshot and transpiling the same source through BOTH binaries side by side, then assembling with wat2wasm and executing under wasm-interp against live python3; plus the three MANDATORY honesty sections (What still REFUSES / What is NOT merge-blocking / Known divergences) probed against the live tree; plus an assemble pass whose explicit job was to DELETE unverifiable claims. 296 claims verified, 87 DROPPED. Banned-figure audit clean: neither 453 nor 788 appears. KEY DISCLOSURES the note makes rather than omits: (a) bash `;&`/`;;&` case fall-through does NOT refuse — it exits 0 and emits a bare `&`, invalid shell that `bash -n` rejects, contradicting the documented refuse-never-shred posture (root cause: arms_text.split(\";;\") in bashrs-frontend/src/lib.rs:1312 never splits `;&`); (b) the 795 WASM #[test]s are NOT 795 EXECUTING witnesses — only ~361 non-comment wasm_runtime_available() call sites gate on the runtime, so a large fraction assert on emitted WAT text only; (c) the live org ruleset requires ONLY [gate, workspace-test], so kani/lake-build are advisory; (d) the Rust lane's negative-integer-LITERAL index family is still silent-wrong for L < k <= 2L and is NOT fixed in this release."
+  status: done
+  priority: high
+  created: 2026-07-26T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
