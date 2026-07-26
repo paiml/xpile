@@ -518,13 +518,24 @@ queue:
     (PUBLISH_EXIT=0, 64s). The v0.1.618 equivalents are PMAT-1373 (tag Thu 07-30) and PMAT-1374 (publish
     Fri 07-31).'
 - id: PMAT-1362
-  status: open
+  status: done
   ev_rank: D
-  title: '[D-pool, cut 3rd] Shell-boundary widening: lift the C-only filter at crates/xpile/src/main.rs:469
-    so hybrid --verify executes the Shell boundary'
-  notes: Changes DEFAULT --verify behaviour on two existing fixtures (unlike --repair, which is opt-in)
-    — hence droppable-at-freeze. Today `hybrid_shell` reconciles a real Python->Shell shim then prints
-    'no C FFI boundary to execute — nothing to verify' and exits 0.
+  title: '[D-pool] Shell-boundary widening: lift the C-only filter at crates/xpile/src/main.rs:469
+    so hybrid --verify executes the Shell boundary (SHIPPED 2026-07-27, pulled forward from 07-29)'
+  notes: 'DONE. `verify_hybrid` now dispatches per paradigm: verify_c_boundary (CPython-via-ctypes,
+    unchanged) and verify_shell_boundary (reference = the ORIGINAL .sh under `sh`; artifact = the
+    cargo-built workspace whose generated driver calls <sym>_shim(&[]) with the RE-EMITTED script
+    0755 in <ws>/bin/ PREPENDED to PATH). Both red arms demonstrated before landing (drop the PATH
+    prepend -> spawn panic; perturb one emitted line -> DIVERGENT at line 2). New control-flow
+    fixture hybrid_shell_exec/ (for + while + if/else + top-level case, 8 lines) plus 3 witnesses
+    appended to hybrid_verify.rs (NOT a new file — witness_floor.rs hardcodes the 3-file hybrid
+    list and is a serial resource); hybrid live 4 -> 7, HYBRID_FLOOR untouched at 3. Contract gains
+    FALSIFY-FFI-SHELL-SUBPROCESS-003, its FIRST execution falsifier, with a scope_caveats block.
+    NOT covered and stated as such: argv marshalling (driver passes &[]), stderr/stdin, exit-code
+    propagation into a Python caller. Quorum deliberately UNCHANGED — pass A of
+    count_runtime_witnesses is a FLAT read_dir, so a subdirectory fixture casts no Runtime vote and
+    C-FFI-SHELL-SUBPROCESS stays Run=0/PARTIAL where quorum.rs MUST_STAY_UNWITNESSED pins it.
+    NEXT PICK: PMAT-1365 (list(d)/list(d.keys())/list(d.values())), then PMAT-1366 (round(x)).'
   date: '2026-07-29'
 - id: PMAT-1363
   status: done
