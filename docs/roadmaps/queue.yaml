@@ -583,11 +583,52 @@ queue:
     shipped two miscompiles from exactly this class. Land all five paths as oracle fixtures. Do NOT bump
     RUST_DIFF_FLOOR (serial resource — TOUCH 2 captures it).'
 - id: PMAT-1371
-  status: open
+  status: done
   ev_rank: R1
   gate_touch: null
   title: 'bashrs-frontend REFUSES the constructs it currently SHREDS: `;&`, `;;&`, here-documents, stray
     `&` — and truths-up the CLAUDE.md / doc-comment posture claim'
+  notes_done: 'DONE 2026-07-26 (pulled forward from 07-28 under the day<=4 rule; today has no
+    dated OPEN item and PMAT-1371 is the lowest-numbered next date at R1. PMAT-1372 shares the
+    date but is gate_touch #1 and stays serial behind it). ALL FIVE SHAPES RE-CONFIRMED at
+    4f1dec6d with a provenance-checked binary BEFORE any edit — the .d file was read to prove the
+    binary came from this worktree, per the stale-target-debug landmine. ** THE HERE-DOC PAIR IS
+    THE FINDING, and it is a different severity class from the other three: `;&`, `;;&` and a bare
+    `&` all produced output that FAILS `bash -n`, so a downstream check could catch them.
+    Here-docs exited 0, passed `bash -n` CLEANLY, and executed DIFFERENTLY from the source —
+    `diff <(bash src.sh) <(bash out.sh)` non-empty, with "  keep  me" collapsed to "keep me" and
+    the blank line deleted. Exit 0 + valid syntax + different meaning is the one shape nothing
+    downstream catches. ** ONE CHOKEPOINT, NOT TWO: the slate sketched mirroring the here-doc
+    guard in both `parse_and_lower`s top-level loop AND `lower_flat_line`. Only the latter is
+    needed — `lower_flat_line` has exactly two call sites (lib.rs:1073 in parse_segment_seq for
+    loop/if/case-arm bodies, and :1480 in the top-level walk) and a here-doc operator always
+    appears on the COMMAND line, which reaches the funnel before any body line is processed. Both
+    the top-level and in-loop shapes are witnessed separately anyway, because they fail
+    DIFFERENTLY (the in-loop one dies on indent_body tab-prefixing the terminator). ** THE
+    TOKENIZE-ERROR CASE IS THE NON-OBVIOUS TRAP, and it is not in the slate: the guard cannot do
+    `tokenize_line(line)?` at the top of `lower_flat_line`. The v0.1.0 tokenizer REJECTS
+    `NAME="Noah Gift"` under its adjacent-quote rule (tokenize_line_rejects_adjacent_quotes),
+    while the assignment branch below tokenizes only `value_part` and handles it fine — so a hard
+    `?` there would have refused every quoted assignment in the repo. The guard fails OPEN on a
+    tokenizer error and lets the existing path report its own more specific error. Probed
+    `NAME="Noah Gift"` end-to-end after the fix to confirm. ** ORDER IS LOAD-BEARING on the `;&`
+    guard (as the slate said, and it holds): it must precede the `;;` split, which consumes the
+    `;;` of `;;&`. One find(";&") catches both spellings; the reported FORM is disambiguated by
+    looking back one char. ** ALL THREE SLATE TRAPS VERIFIED LIVE, NOT ASSUMED: `sleep 0 &` in a
+    case arm round-trips (so the `&` guard is command-position only); `echo "p << q"` works (so
+    the here-doc guard is token-level only); and `case … a) echo "p;&q" ;; esac` ALREADY refused
+    at HEAD, so the naive `;&` match widens no refusal surface. ** TRUTH-UP shipped in the same
+    PR (half the value): CLAUDE.md and parse_case both said `;&` "is not modelled" — which reads
+    as a GAP when it was a DEFECT — while CLAUDE.md simultaneously asserted "Everything else
+    refuses with a hard FrontendError rather than shredding into barewords". That sentence was
+    FALSE for four shapes and is true for the first time at this slice; it now says so explicitly
+    rather than quietly becoming correct. sub/bashrs-merger.md gained a v0.1.0 honesty-caveat
+    bullet; neither document had ever mentioned here-docs. ** 7 tests (5 refusals + 2 positive
+    non-regressions), bashrs-frontend 91 -> 98. All 6 committed bashrs_*.sh fixtures still
+    transpile and pass `bash -n`. SHELL_FLOOR untouched. NEXT PICK: PMAT-1372 (dated 07-28, R2,
+    GATE TOUCH #1 of the sprint — WASM_EXEC_FLOOR, floor the EXECUTING half of the witness
+    corpus). It is the only gate_touch in flight, so it is clear to start; note its floor edit
+    must MERGE before Thursday PMAT-1373 rebases onto it.'
   notes: "FIVE SHAPES CONFIRMED at c3e468d4 with a provenance-verified binary. All exit 0 today:\n  (a)\
     \ `case \"$x\" in a) echo A ;& b) echo B ;; esac` -> emits a bare `&` on its own line\n      in arm\
     \ a's BODY, arm b SWALLOWED into arm a. `bash -n` -> \"syntax error near\n      unexpected token `&'\"\

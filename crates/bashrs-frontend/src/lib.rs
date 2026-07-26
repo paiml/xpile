@@ -605,7 +605,71 @@ fn first_word(s: &str) -> &str {
 /// (`control_flow_keyword(line)` is `None`). Returns `Ok(None)` only
 /// for a line that tokenizes to zero tokens (defensive; the caller's
 /// filtering makes this unreachable in practice).
+///
+/// PMAT-1371: this is the ONE chokepoint for flat-line refusals. Both
+/// call sites route through it — `parse_segment_seq` for loop / `if` /
+/// `case`-arm bodies and the top-level walk in `parse_and_lower` — so a
+/// guard here covers nested and top-level occurrences alike. A here-doc
+/// operator always appears on the COMMAND line, which reaches this
+/// function before any of the here-doc's body lines are processed, so
+/// refusing here happens before the body can be mis-read as commands.
 fn lower_flat_line(line: &str) -> Result<Option<Stmt>, FrontendError> {
+    // PMAT-1371: REFUSE here-documents. There is NO here-doc handling in
+    // this frontend at all: `parse_and_lower` trims every source line and
+    // drops every blank one globally, so a here-doc BODY is re-tokenized
+    // as ordinary commands and space-joined by the backend. That produced
+    // the worst failure shape in the repo — exit 0, `bash -n` on the
+    // output CLEAN, and a semantically WRONG script: `cat <<EOF` over
+    // "  keep  me" / "" / "after blank" emitted a here-doc whose body had
+    // its leading and internal whitespace collapsed and its blank line
+    // deleted. Nothing downstream catches that, and here-docs are how
+    // shell emits config files, SQL, YAML and usage text. Inside an
+    // indented block the backend's `indent_body` additionally tab-prefixed
+    // the terminator, yielding "here-document delimited by end-of-file".
+    // Fixing the global trim is not an option — it ripples through every
+    // parser path. So: refuse, and leave here-docs to v0.2.0.
+    //
+    // Detection is on TOKENS, never the raw line: `echo "a << b"`
+    // round-trips CORRECTLY today, and a `line.contains("<<")` guard would
+    // regress it. Only an unquoted (`Bare`) token opening with `<<` is a
+    // redirection operator — this also covers `<<-` and the `<<` / `EOF`
+    // space-separated spelling.
+    //
+    // A tokenizer ERROR is deliberately NOT treated as a here-doc: the
+    // v0.1.0 tokenizer rejects shapes that the assignment branch below
+    // handles from `value_part` alone (`NAME="Noah Gift"` trips the
+    // adjacent-quote rule), so failing open here preserves those working
+    // paths and lets the existing code report its own, more specific error.
+    if let Ok(tokens) = tokenize_line(line) {
+        if let Some(op) = tokens.iter().find_map(|t| match t {
+            RawToken::Bare(s) if s.starts_with("<<") => Some(s.clone()),
+            _ => None,
+        }) {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: here-document redirection `{op}` is not modelled (v0.2.0); \
+                 refusing rather than silently rewriting the here-doc body. The frontend trims \
+                 every line and drops blank lines, so a here-doc body would round-trip with its \
+                 whitespace collapsed — a SILENT semantic change in a script that still passes \
+                 `bash -n`. Offending line `{line}`."
+            )));
+        }
+    }
+
+    // PMAT-1371: a bare `&` in command position. Emitted verbatim before
+    // this refusal, giving `bash -n` "syntax error near unexpected token
+    // `&'". This is defence-in-depth for the `;&` shred path above and
+    // independently covers a stray `&` on its own line. It must stay
+    // narrow: a TRAILING `&` is POSIX background-execution and round-trips
+    // correctly today (`sleep 0 &`), so only `&` in COMMAND position —
+    // where no command word precedes it — refuses.
+    if first_word(line) == "&" {
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: `&` in command position is not a command; refusing rather than \
+             emitting it verbatim (the emitted script would fail `bash -n` with \
+             \"syntax error near unexpected token `&'\"). Offending line `{line}`."
+        )));
+    }
+
     // PMAT-051: detect `NAME=value` variable assignment at
     // the start of a line. Recognises the canonical POSIX
     // form: one bareword token whose name part is a
@@ -1224,8 +1288,9 @@ fn segments_of(text: &str) -> Vec<String> {
 /// (`;;` between arms, first `)` ending a pattern list) are not
 /// quoting-aware; a `;;` / `)` inside a quoted pattern or a `$(…)`
 /// mis-splits, but that degrades to a downstream parse error → clean
-/// REFUSE, never a silent shred. `;&` / `;;&` (bash fall-through) is not
-/// modelled.
+/// REFUSE, never a silent shred. `;&` / `;;&` (bash fall-through) is
+/// REFUSED (PMAT-1371), not shredded — it is still unmodelled, but the
+/// refusal is explicit rather than a bare `&` emitted into the arm body.
 fn parse_case(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendError> {
     // Collect region lines [start ..= matching `esac`], case-depth aware
     // (a nested `case` opener raises depth so the OUTER `esac` closes the
@@ -1293,6 +1358,31 @@ fn parse_case(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendErr
             ));
         }
     };
+
+    // PMAT-1371: REFUSE bash's fall-through arm terminators `;&` and `;;&`
+    // rather than shredding them. This guard MUST run BEFORE the `;;` split
+    // below: that split consumes the `;;` of `;;&` and leaves a bare `&`
+    // glued to the NEXT arm's pattern, so a guard placed after it would see
+    // only the `;&` form. Before this refusal both forms exited 0 and emitted
+    // a bare `&` as a command (arm `a) echo A ;& b) echo B ;;` swallowed arm
+    // `b` into arm `a`'s body); `bash -n` on the output failed with
+    // "syntax error near unexpected token `&'".
+    //
+    // ONE `find(";&")` catches BOTH forms because `;;&` contains `;&` at
+    // offset 1. A `;&` inside a quoted pattern or body does not reach here:
+    // the (deliberately non-quoting-aware) `;`-segment split already refuses
+    // such an arm downstream, so this guard widens no refusal surface.
+    if let Some(off) = arms_text.find(";&") {
+        let form = if arms_text[..off].ends_with(';') {
+            ";;&"
+        } else {
+            ";&"
+        };
+        return Err(FrontendError::Parse(format!(
+            "bashrs-frontend: bash `case` fall-through `{form}` is not modelled (v0.2.0); \
+             refusing rather than shredding it into barewords. Terminate the arm with `;;`."
+        )));
+    }
 
     // The matched word, lowered through the quoting-aware tokenizer
     // (so `$x` → `ShellVar`, `"$x"` → a QuotedString, …). Exactly one
@@ -3820,6 +3910,156 @@ esac
             )
             .expect_err("unterminated case must be REFUSED");
         assert!(format!("{err:?}").contains("unterminated"));
+    }
+
+    // ---- PMAT-1371: constructs that used to be SHREDDED now REFUSE ----
+    //
+    // Every one of the five negatives below exited 0 before this slice and
+    // produced output that either failed `bash -n` or — worse, for the
+    // here-doc pair — passed `bash -n` while executing DIFFERENTLY from the
+    // source. The two positives pin the boundary: both were verified working
+    // before the guards landed and must stay working, because an
+    // over-broad guard here is a capability regression dressed as honesty.
+
+    #[test]
+    fn parse_and_lower_refuses_case_semi_amp_fallthrough() {
+        // Was: exit 0 emitting a bare `&` inside arm `a`'s body with arm `b`
+        // swallowed into it; `bash -n` on the output → rc=2.
+        let source = "\
+case \"$x\" in
+ a) echo A ;&
+ b) echo B ;;
+esac
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/fa.sh"), source)
+            .expect_err("`;&` fall-through must be REFUSED, not shredded");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("fall-through") && msg.contains(";&"),
+            "refusal must name the fall-through operator, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_case_semi_semi_amp_fallthrough() {
+        // `;;&` takes a DIFFERENT shred path from `;&` — the `;;` split
+        // consumes its own separator and leaves the stray `&` glued to the
+        // next arm's PATTERN slot — so it needs its own witness. The guard
+        // must also report the `;;&` spelling, not `;&`.
+        let source = "\
+case \"$x\" in
+ a) echo A ;;&
+ b) echo B ;;
+esac
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/fb.sh"), source)
+            .expect_err("`;;&` fall-through must be REFUSED, not shredded");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains(";;&"),
+            "refusal must name the `;;&` spelling specifically, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_heredoc() {
+        // THE WORST SHAPE: this used to exit 0 and emit a script that
+        // passes `bash -n` but whose here-doc body had "  keep  me"
+        // collapsed to "keep me" and the blank line deleted. A silent
+        // semantic divergence no downstream check catches.
+        let source = "\
+cat <<EOF
+  keep  me
+
+after blank
+EOF
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/hd.sh"), source)
+            .expect_err("here-doc must be REFUSED, not silently reflowed");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("here-document"),
+            "refusal must name the here-document, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_heredoc_in_loop_body() {
+        // The nested path reaches `lower_flat_line` through
+        // `parse_segment_seq` rather than the top-level walk, so it is a
+        // genuinely distinct route. Before the guard, the backend's
+        // `indent_body` tab-prefixed the `EOF` terminator, producing
+        // "here-document delimited by end-of-file" — a different failure
+        // from the top-level case, which is why both are witnessed.
+        let source = "\
+for i in a b; do
+ cat <<EOF
+ hi
+EOF
+done
+";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/hdl.sh"), source)
+            .expect_err("here-doc in a loop body must be REFUSED");
+        assert!(format!("{err:?}").contains("here-document"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_bare_ampersand() {
+        // Was: emitted verbatim → `bash -n` rc=2.
+        let source = "echo a\n&\necho b\n";
+        let err = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/amp.sh"), source)
+            .expect_err("a bare `&` in command position must be REFUSED");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("command position"),
+            "refusal must name the command-position boundary, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_case_arm_trailing_background_ampersand_still_ok() {
+        // POSITIVE non-regression. A TRAILING `&` is POSIX
+        // background-execution and round-trips correctly; only `&` in
+        // COMMAND position is the fall-through shred. Refusing `&`
+        // generally would have broken this working construct.
+        use xpile_meta_hir::Item;
+        let source = "\
+case \"$x\" in
+ a) sleep 0 & ;;
+ *) echo d ;;
+esac
+";
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/bg.sh"), source)
+            .expect("`cmd &` background execution must still LOWER");
+        assert!(
+            matches!(module.items.first(), Some(Item::Function(_))),
+            "background-`&` case must lower to a function, got: {:?}",
+            module.items
+        );
+    }
+
+    #[test]
+    fn parse_and_lower_double_quoted_heredoc_operator_still_ok() {
+        // POSITIVE non-regression, and the reason the here-doc guard is
+        // TOKEN-level: `<<` inside a double-quoted string is ordinary text
+        // and round-trips today. A `line.contains("<<")` guard would
+        // regress it — the exact inverse of the `;&` guard, where naive
+        // matching is safe.
+        use xpile_meta_hir::Item;
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/qq.sh"), "echo \"p << q\"\n")
+            .expect("`<<` inside double quotes must still LOWER");
+        assert!(
+            matches!(module.items.first(), Some(Item::Function(_))),
+            "quoted `<<` must lower to a function, got: {:?}",
+            module.items
+        );
     }
 
     #[test]
