@@ -17,13 +17,29 @@
 //! WGSL core (the floor every wgpu adapter accepts, no extensions) has
 //! `i32` / `u32` / `f32` / `bool` — and **no 64-bit scalar**. So:
 //!
-//! - `I64` / `CLong` → `i32`. The GPU lane is 32-bit; a Python `int`
-//!   rides an `i32`. This is the documented WGSL-subset posture (the
-//!   analogue of the WASM lane documenting its overflow-trap posture):
-//!   the lane is for GPU compute kernels, where 32-bit integers are the
-//!   native width. (A value exceeding `i32` range is the caller's
-//!   contract to avoid — out of scope for this first increment, exactly
-//!   as variable-index bounds-checking is out of scope in the WASM lane.)
+//! - `I64` → `i32`. A Python `int` (and the C `int` that also lowers to
+//!   `I64`) has no width the SOURCE declared, so mapping it to the
+//!   GPU-native 32-bit integer is a lane CHOICE, not a contradiction of
+//!   anything the user wrote. This is the documented WGSL-subset posture
+//!   (the analogue of the WASM lane documenting its overflow-trap
+//!   posture): the lane is for GPU compute kernels, where 32-bit
+//!   integers are the native width. An out-of-`i32` LITERAL is refused
+//!   (PMAT-1401, `wgsl_int_boundary_witness.rs`); an out-of-range value
+//!   arriving at RUNTIME through a parameter is the caller's contract to
+//!   avoid, exactly as variable-index bounds-checking is out of scope in
+//!   the WASM lane.
+//! - `CLong` is **refused** (PMAT-1404). This is the case `I64` is not:
+//!   `Type::CLong` exists precisely to carry a width the C source
+//!   DECLARED — `long` / `long long` / `int64_t`, kept apart from `I64`
+//!   by `decy-frontend` so the 64 bits survive lowering — and folding it
+//!   into the `I64` arm collapsed the one distinction the type was
+//!   introduced to preserve. Through v0.1.617 `long f(long a)` emitted
+//!   `fn f(a: i32) -> i32` at exit 0, silently halving a declared range,
+//!   while the SAME lane refused to write the literal `3000000000` in
+//!   that same function ("the concrete type `i32` cannot represent the
+//!   abstract value `3000000000` accurately") — it declined to write
+//!   down what it was silently accepting. Every other backend honours
+//!   the declaration: rust `i64`, wasm `i64`, ptx `.s64`.
 //! - `F32` → `f32`, `CUInt` → `u32`, `Bool` → `bool`.
 //! - `F64` is **refused**: WGSL core has no `f64`, and silently
 //!   substituting `f32` would change numeric results — a precision lie
@@ -167,16 +183,36 @@ fn wgsl_ident(name: &str) -> String {
     }
 }
 
+/// The refusal text for a C `long` reaching the WGSL subset (PMAT-1404).
+///
+/// Shared by [`map_type`] and [`map_list_elem_type`] so the scalar and the
+/// `list[…]` element positions cannot drift into stating different reasons
+/// for the same refusal.
+///
+/// It names the OTHER backends' dispositions on purpose: without them a user
+/// reads this as "xpile cannot handle `long`", when the actual claim is
+/// narrower — the GPU lane has no 64-bit integer, and four other lanes do.
+const CLONG_REFUSAL: &str = "C `long` / `long long` / `int64_t` (meta-HIR CLong, 64-bit) — WGSL \
+     core has no 64-bit integer, and narrowing to i32 would silently change \
+     results for any value outside the i32 range. The C source DECLARED the \
+     width, so the WGSL subset refuses it rather than shrink it behind the \
+     user's back — the same posture as `f64` and `unsigned long`. Every other \
+     backend honours the declaration (rust `i64`, wasm `i64`, ptx `.s64`); use \
+     `int` in the C source for the GPU lane, or target one of those instead";
+
 /// Map a meta-HIR [`Type`] to its WGSL scalar type, refusing everything
 /// outside the 32-bit GPU subset.
 fn map_type(ty: &Type) -> Result<WgslTy, BackendError> {
     match ty {
-        // Python `int` (and the C 64-bit ABI sibling) ride an i32 — the
-        // GPU-native integer width. Documented 32-bit-subset posture.
-        Type::I64 | Type::CLong => Ok(WgslTy::I32),
+        // Python `int` (undeclared width) rides an i32 — the GPU-native
+        // integer width. Documented 32-bit-subset posture; see the module
+        // docs for why an UNDECLARED width may be chosen and a DECLARED
+        // one may not.
+        Type::I64 => Ok(WgslTy::I32),
         Type::CUInt => Ok(WgslTy::U32),
         Type::F32 => Ok(WgslTy::F32),
         Type::Bool => Ok(WgslTy::Bool),
+        Type::CLong => Err(unsupported(CLONG_REFUSAL)),
         Type::F64 => Err(unsupported(
             "f64 — WGSL core has no 64-bit float; substituting f32 would \
              change numeric results, so the WGSL subset refuses f64 rather \
@@ -195,9 +231,13 @@ fn map_type(ty: &Type) -> Result<WgslTy, BackendError> {
 /// nested lists, and `list[str]` are refused.
 fn map_list_elem_type(inner: &Type) -> Result<WgslTy, BackendError> {
     match inner {
-        Type::I64 | Type::CLong => Ok(WgslTy::I32),
+        Type::I64 => Ok(WgslTy::I32),
         Type::CUInt => Ok(WgslTy::U32),
         Type::F32 => Ok(WgslTy::F32),
+        // `list[long]` narrows every ELEMENT, so it is refused for the same
+        // reason a scalar `long` is — and stated separately so the refusal
+        // names the position it came from.
+        Type::CLong => Err(unsupported(&format!("list element type — {CLONG_REFUSAL}"))),
         other => Err(unsupported(&format!(
             "list element type {other:?} — the WGSL list subset supports \
              list[int]/list[uint]/list[float32] only (i32/u32/f32 array \
@@ -2044,5 +2084,38 @@ mod tests {
         .expect("a non-recursive intra-module call is in the subset");
         naga_validate_wgsl(&wgsl).expect("should validate");
         assert!(wgsl.contains("return helper(n);"), "{wgsl}");
+    }
+
+    /// PMAT-1404 — the `list[…]` element site refuses `CLong` for the same
+    /// reason the scalar site does.
+    ///
+    /// **This arm is not frontend-reachable today, and saying so is the
+    /// point.** `decy-frontend` cannot parse a subscript at all (`int f(long*
+    /// xs) { return xs[0]; }` fails with "unexpected character `[` in C
+    /// source"), and the Python frontend never produces `Type::CLong` — so no
+    /// CLI path currently delivers a `list[CLong]` here. The CLI-level sweep in
+    /// `crates/xpile/tests/c_long_gpu_width_witness.rs` therefore does NOT
+    /// cover this site, and this unit test over hand-built meta-HIR is what
+    /// does. It guards the fix against the day a frontend does reach it,
+    /// rather than pretending the CLI already exercises it.
+    #[test]
+    fn list_of_clong_is_refused_at_the_element_site() {
+        let err = map_list_elem_type(&Type::CLong)
+            .expect_err("list[CLong] narrows every element to i32 and must refuse");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("list element type"),
+            "the refusal must name the POSITION so it is distinguishable from \
+             the scalar one: {msg}"
+        );
+        assert!(
+            msg.contains("64-bit"),
+            "the refusal must name the WIDTH as the reason: {msg}"
+        );
+        // The accept side, so this is not satisfiable by refusing every list.
+        assert_eq!(
+            map_list_elem_type(&Type::I64).expect("list[int] is in the subset"),
+            WgslTy::I32
+        );
     }
 }

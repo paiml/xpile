@@ -17691,6 +17691,129 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1404
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1404: [honesty/wgsl+spirv] the GPU lanes silently HALVED a C `long`
+    to `i32` at exit 0 — collapsing the one distinction `Type::CLong` exists to
+    carry — while the SAME lane refused to write down the very value it was
+    accepting.'
+  description: '`decy-frontend` introduced `Type::CLong` for exactly one reason,
+    stated in its own module docs: to keep the 64-bit C widths (`long`, `long long`,
+    `int64_t`) apart from `Type::I64`, where the 32-bit C `int` and the width-less
+    Python `int` both land. `xpile-wgsl-codegen/src/wgsl_emit.rs` then folded them
+    straight back together — `Type::I64 | Type::CLong => Ok(WgslTy::I32)` — at BOTH
+    type-map sites (the scalar `map_type` and the `list[…]` `map_list_elem_type`).
+    Measured at b750f0a6 with a force-rebuilt binary: `long f(long a) { return a + 1; }`
+    emitted `fn f(a: i32) -> i32` at EXIT 0. Half the declared domain of `f` cannot
+    be passed to that function at all and no diagnostic said so. SPIR-V inherited it
+    verbatim, since it emits by compiling this same WGSL lowering.
+
+
+    ** WHY THIS IS A DEFECT AND NOT A DOCUMENTED POSTURE. The lane already refuses
+    the other three 64-bit C types, and the `f64` refusal states the doctrine in as
+    many words: "substituting f32 would change numeric results, so the WGSL subset
+    refuses f64 rather than narrow it silently". `unsigned long` (CULong) refuses
+    outright. Signed `long` was the ONE 64-bit type taking the silent narrowing — so
+    the lane was not applying a posture, it had a hole in one.
+
+
+    ** THE RECEIPT THAT NEEDS NO GPU, and the shape worth remembering: the lane
+    REFUSED TO WRITE DOWN WHAT IT SILENTLY ACCEPTED. `long f(long a) { return
+    3000000000; }` refused ("the concrete type `i32` cannot represent the abstract
+    value `3000000000` accurately") while `long f(long a) { return a + 1; }` — whose
+    parameter carries exactly that value at runtime — emitted clean. The LITERAL was
+    caught incidentally, by naga; the PARAMETER was not caught at all, because after
+    `map_type` ran there was nothing left to catch — the type had already got
+    smaller. A validator can only police the values you still ask it about.
+
+
+    ** CROSS-BACKEND RECEIPT: the same source reaches five backends and only the two
+    GPU lanes lost the width — rust `i64`, wasm `i64`, ptx `.s64`. So 64 bits is the
+    correct disposition and the WGSL refusal is a genuine lane limit (WGSL core has
+    no 64-bit integer), not xpile giving up on the source. The refusal text names
+    those three alternatives rather than just saying "unsupported".
+
+
+    ** FIX: `Type::CLong` refuses at both sites, sharing one `CLONG_REFUSAL` const so
+    the scalar and list positions cannot drift into stating different reasons.
+    `Type::I64` is DELIBERATELY left mapping to i32: refusing it would delete the
+    WGSL lane (every Python function lowers through it), and the cases genuinely
+    differ — a Python `int` and a C `int` declare no width in the SOURCE, so choosing
+    the GPU-native 32-bit integer contradicts nothing the user wrote, and the
+    out-of-range LITERAL half is already pinned by PMAT-1401. A C `long` declares 64
+    bits explicitly. That asymmetry is the entire basis of the gate, so the accept
+    side is pinned too.
+
+
+    ** GATE XPILE-CLONG64-001 (crates/xpile/tests/c_long_gpu_width_witness.rs, 5
+    tests, no skip path on any xpile assertion): 18 CLI-path probes (3 spellings x 3
+    positions x 2 lanes) must refuse AND the refusal must name the WIDTH — a generic
+    "unsupported type" leaves a user unable to tell a deliberate width refusal from
+    an unimplemented construct. Each probe carries a FRONTEND-ACCEPTS PRECONDITION:
+    it must first emit successfully on the Rust lane carrying an `i64`, because a
+    probe that fails to PARSE also "refuses" and a sweep counting it would certify
+    the wrong refusal. THAT TRAP FIRED WHILE WRITING THIS FILE — the first
+    `local_decl` probe used a cast `(int)(t + a)` the C frontend does not support,
+    and the test named it rather than passing. The over-refusal side is pinned by C
+    `int`, Python `int` and Python `list[int]` still emitting substantively.
+
+
+    ** HONEST COVERAGE BOUNDARY, stated rather than papered over: the `list[…]`
+    element site is NOT CLI-reachable today. `decy-frontend` cannot parse a subscript
+    at all (`xs[0]` fails with "unexpected character `[` in C source") and the Python
+    frontend never produces `Type::CLong`, so no frontend can deliver a `list[CLong]`
+    there. Adding a CLI probe that "passed" by hitting a PARSE error would be a gate
+    certifying the wrong refusal, so that site is covered instead by a unit test over
+    hand-built meta-HIR (`list_of_clong_is_refused_at_the_element_site`) whose own
+    doc comment says the same thing about its reach.
+
+
+    ** ANTI-VACUITY carried from PMAT-1401: naga validates an EMPTY WGSL module
+    clean, so `is_ok()` is not evidence of an emit. Every acceptance is guarded on
+    SUBSTANCE, and a dedicated test pins that the guard rejects both the empty string
+    and a header-only emit — otherwise a future edit could weaken it to `|_| true`
+    with nothing red.
+
+
+    ** RED-THEN-GREEN, both sites measured independently. Reverting the scalar arm:
+    18 of 18 probes silently narrow, 3 of 5 tests red. The two that stay green are
+    exactly the two that should — the accept-side receipt and the vacuity guard —
+    which is the evidence the fix is not a blanket refusal. Reverting the list arm
+    alone reds the unit test with `list[CLong] narrows every element to i32 and must
+    refuse: I32`.
+
+
+    ** WHY THE EXISTING SWEEPS MISSED IT, continuing PMAT-1401''s finding: that slice
+    swept PYTHON sources through both GPU lanes and explicitly listed "the C ->
+    {wgsl, spirv, ptx} direction" as unswept surface. This is that surface. A C
+    source cannot express the defect in Python — Python has no width declaration to
+    contradict — so no amount of Python fixtures could have found it.
+
+
+    ** NOT a gate_touch (no CI config or shared gate file changed) and NOT a
+    witness_floor.rs touch (no GPU lane carries a floor).
+
+    ** ID RE-FILED 1402 -> 1404 BEFORE ANY PUSH. A concurrent fire merged PR #1991 while this
+    slice was in the gate, and its queue refill claimed PMAT-1402 for a DIFFERENT slice (WASM i64
+    wraparound) plus PMAT-1403 for the refill itself. Main won; this slice was re-filed as PMAT-1404
+    in every artefact and the local commit amended, so NOTHING was published under a collided id and
+    no history was rewritten. ** THE LESSON PMAT-1401 DREW IS NOT ENOUGH, and this is the refinement:
+    it said "claim the id in queue.yaml BEFORE opening the PR". This slice DID that — and still
+    collided, because the claim lived in an unpushed worktree. A claim reserves an id only once it is
+    ON MAIN. Two fires both reading `max(id)+1` from origin/main pick the same number no matter how
+    early each writes it locally. The cheap fix that actually works: re-read origin/main''s max id
+    immediately before the first push, and treat a merge conflict in the ledger as an id-collision
+    signal rather than a text conflict.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1403
   github_issue: null
   item_type: task

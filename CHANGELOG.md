@@ -7,6 +7,65 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The GPU lanes silently halved a C `long` to `i32` (PMAT-1404)
+
+`decy-frontend` introduced `Type::CLong` for exactly one reason, stated in its
+own module docs: to keep the 64-bit C widths (`long`, `long long`, `int64_t`)
+apart from `Type::I64`, where the 32-bit C `int` and the width-less Python
+`int` both land. `xpile-wgsl-codegen` then folded them straight back together —
+
+```rust
+Type::I64 | Type::CLong => Ok(WgslTy::I32),
+```
+
+— collapsing the one distinction the type exists to carry. `long f(long a) {
+return a + 1; }` emitted `fn f(a: i32) -> i32` at **exit 0**. Half the declared
+domain of `f` cannot be passed to that function and nothing said so. SPIR-V
+inherited it verbatim, since it emits by compiling this same WGSL lowering.
+
+This was not a documented posture. The lane already refuses the other three
+64-bit C types, and the `f64` refusal states the doctrine in as many words —
+*"substituting f32 would change numeric results, so the WGSL subset refuses f64
+rather than narrow it silently"*. Signed `long` was the one 64-bit type taking
+the silent narrowing.
+
+**The lane refused to write down what it silently accepted.** `long f(long a) {
+return 3000000000; }` refused with *"the concrete type `i32` cannot represent
+the abstract value `3000000000` accurately"*, while `long f(long a) { return a
++ 1; }` — whose parameter carries exactly that value at runtime — emitted
+clean. The literal was caught incidentally, by naga; the parameter was not
+caught at all, because after `map_type` ran there was nothing left to catch.
+A downstream validator can only police the values you still ask it about, so it
+is not a width gate.
+
+The same source reaches five backends and only the two GPU lanes lost the
+width — rust `i64`, wasm `i64`, ptx `.s64`. So 64 bits is the correct
+disposition and the WGSL refusal is a real lane limit (WGSL core has no 64-bit
+integer), not xpile giving up on the source; the refusal names those three
+alternatives rather than saying "unsupported".
+
+`Type::I64` deliberately still maps to `i32`. Refusing it would delete the WGSL
+lane — every Python function lowers through it — and the cases differ: a Python
+`int` and a C `int` declare no width in the *source*, so choosing the GPU-native
+32-bit integer contradicts nothing the user wrote, and the out-of-range literal
+half is already pinned by PMAT-1401.
+
+New gate **XPILE-CLONG64-001**
+(`crates/xpile/tests/c_long_gpu_width_witness.rs`, 5 tests, no skip path on any
+assertion about xpile) drives 18 CLI-path probes and requires each refusal to
+**name the width** — a generic "unsupported type" leaves a user unable to tell a
+deliberate width refusal from an unimplemented construct. Every probe carries a
+frontend-accepts precondition, because a probe that fails to *parse* also
+"refuses"; that trap fired while writing the file, on a probe using a cast the C
+frontend does not support. The `list[…]` element site is fixed too but is **not
+CLI-reachable** — `decy-frontend` cannot parse a subscript at all — so it is
+covered by a unit test over hand-built meta-HIR that says so, rather than by a
+probe that would have passed on a parse error.
+
+PMAT-1401 swept Python sources through both GPU lanes and listed the C → GPU
+direction as unswept. This is that surface: a C source can express a defect
+Python cannot, because Python has no width declaration to contradict.
+
 ### Roadmap ledger conforms to pmat's schema (PMAT-1400)
 
 `docs/roadmaps/roadmap.yaml` is not xpile's private file — `pmat` owns its
