@@ -44,6 +44,13 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
 
+      # NOTE (PMAT-1409): `advisories` is the only check kind this REQUIRED job
+      # runs. `licenses`, `bans` and `sources` are configured in deny.toml and
+      # run in the ADVISORY `license-scan` job below — deliberately not here,
+      # because `licenses` exits 4 today and would wedge every merge. Which
+      # kinds run where is machine-checked by
+      # `crates/xpile/tests/dependency_license_policy.rs`: a check kind that is
+      # configured but executed by NO job reds that gate.
       - name: cargo deny check advisories
         run: cargo deny check advisories
 
@@ -72,7 +79,7 @@ jobs:
   # without the others REDS the gate. Keep both lists sorted.
   #
   # XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test
-  # XPILE-ENFORCEMENT ADVISORY-CONTEXTS: docs, kani, lake-build, lean-models, shader-validate, wasi
+  # XPILE-ENFORCEMENT ADVISORY-CONTEXTS: docs, kani, lake-build, lean-models, license-scan, shader-validate, wasi
   #
   # HISTORY, because the failure mode is the point: this note previously read
   # "`workspace-test` is NOT yet GitHub-enforced" — the exact INVERSE of the
@@ -410,3 +417,61 @@ jobs:
 
       - name: offline WGSL naga-validate + WGSL->SPIR-V corpus (no GPU)
         run: cargo test -p xpile-spirv-codegen --test offline_validate -- --nocapture
+
+  # ── license-scan (ADVISORY — PMAT-1409) ──────────────────────
+  # deny.toml has configured `[licenses]`, `[bans]` and `[graph]` since the
+  # file was written. Until this job existed NONE of them had ever executed:
+  # ci.yml ran exactly `cargo deny check advisories`, so `cargo deny check
+  # licenses` had never once run in this repo's history. Its first run exits 4.
+  #
+  # MEASURED (2026-07-27, at c0ff1263): NINE rejections — 5x LGPL-3.0-only
+  # (the malachite family, reached as NORMAL deps via rustpython-parser ->
+  # depyler-frontend -> xpile-core -> xpile, i.e. statically linked into the
+  # shipped `xpile` binary), 2x Zlib (foldhash 0.1.5/0.2.0 via hashbrown ->
+  # wgpu), 1x CC0-1.0 linked (hexf-parse via naga -> wgpu) and 1x CC0-1.0
+  # build-only (tiny-keccak, a rustpython-parser build script). Every one is
+  # enumerated with its linkage in `NOTICE.md`.
+  #
+  # WHY THE RAW CHECK IS `continue-on-error` AND THE TRIPWIRE IS NOT:
+  # what to DO about the LGPL is an OWNER DECISION (`lgpl-in-shipped-binary`
+  # in docs/roadmaps/queue.yaml), not a decision this job may make. A job whose
+  # verdict is "still 9 rejections" would be red on every commit forever, and
+  # this repo has already recorded what that buys: `wasi` was RED on ccb95a04,
+  # the exact SHA tagged v0.1.617, and the release was cut anyway (PMAT-1370).
+  # A permanently-red advisory job is exactly as invisible as no job at all.
+  # So the raw check RUNS and its full output is in the log every time, while
+  # the job's PASS/FAIL verdict is the DRIFT tripwire below: the set of
+  # rejected (crate, version, license) triples must equal the set NOTICE.md
+  # enumerates, and each row's `linkage:` claim is re-derived from `cargo
+  # tree`. A tenth rejection, or a documented one vanishing, reds this job.
+  license-scan:
+    name: license-scan
+    runs-on: ubuntu-latest
+    env:
+      # Turns the "cargo-deny is not installed" skip in
+      # dependency_license_policy.rs into a hard failure. Without this the
+      # tripwire would skip-green on a runner where the install step was
+      # deleted — the skip-as-green shape XPILE-WITNESS-002 exists to kill.
+      # Scoped to THIS job: workspace-test has no cargo-deny and must keep
+      # skipping the live half by design.
+      XPILE_REQUIRE_DENY: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "license-scan-v0"
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: drift tripwire — NOTICE.md equals the live rejection set
+        run: cargo test -p xpile --test dependency_license_policy -- --nocapture
+
+      - name: report — cargo deny check licenses bans sources (advisory)
+        # Exits 4 today BY DESIGN; see the block comment above. The output is
+        # the point, not the exit code.
+        continue-on-error: true
+        run: cargo deny check licenses bans sources

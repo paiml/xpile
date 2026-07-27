@@ -7,6 +7,79 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `cargo deny check licenses` had never run — and there is copyleft in the shipped binary (PMAT-1409)
+
+`deny.toml` has configured `[licenses]` and `[bans]` since the file was
+written. `.github/workflows/ci.yml` ran exactly one check kind,
+`cargo deny check advisories`. So the licence policy was neither enforced nor
+violated-and-accepted nor waived: it was **unknown**, while the presence of a
+configured `[licenses]` block made it read as settled. Same shape as the
+unreachable `RepairLoop` and the dead pre-commit hook — declared, never
+executed.
+
+Its first run in this repository's history exits 4. Measured at `c0ff1263`,
+enumerated with linkage in the new root `NOTICE.md`:
+
+- **LGPL-3.0-only — `malachite`, `malachite-base`, `malachite-bigint`,
+  `malachite-nz`, `malachite-q`** — reached as **normal** dependencies via
+  `rustpython-parser → depyler-frontend → xpile-core → xpile`. Copyleft,
+  statically linked into every binary `cargo install xpile` produces, while the
+  workspace declares `MIT OR Apache-2.0`.
+- **CC0-1.0 — `hexf-parse`** (via `naga → wgpu`), linked; **`tiny-keccak`**,
+  build-script only, not linked.
+- **Zlib — `foldhash` 0.1.5 and 0.2.0** (via `hashbrown → wgpu`), linked.
+
+**This release decides nothing about the LGPL.** That is the
+`lgpl-in-shipped-binary` owner decision; `NOTICE.md` lays out the three
+responses (accept + document, replace the parser, or neither) without taking
+one. What ships here is visibility.
+
+Added as the **advisory** `license-scan` job, not to the required `gate`:
+`licenses` exits 4 today and adding it to `gate` would wedge every merge on day
+one. The raw check runs `continue-on-error` so its full output is in the log
+every time, because this repo has already paid for the alternative — `wasi` was
+red on `ccb95a04`, the exact SHA tagged `v0.1.617`, and the release was cut
+anyway. A permanently-red advisory job is exactly as invisible as no job at all.
+
+The job's actual verdict is a drift tripwire,
+`crates/xpile/tests/dependency_license_policy.rs` (XPILE-LICENSE-001), which is
+stratified the way `ruleset_drift.rs` is. The static half cannot skip and
+asserts the root cause directly: **every check kind configured in `deny.toml`
+is executed by some CI job.** Restoring the pre-slice `ci.yml` reds it naming
+`["bans", "licenses"]`. The live half runs `cargo deny --format json` and
+requires the set of rejected `(crate, version, licence)` triples to *equal* the
+set `NOTICE.md` enumerates — both directions, so a new non-permissive
+dependency reds and so does a documented row that has left the graph — and
+re-derives every `linkage:` claim from `cargo tree -e normal`, which is what
+separates "copyleft in the binary" from "copyleft in a build script".
+`XPILE_REQUIRE_DENY=1` on the job turns "cargo-deny not installed" from a
+green skip into a red.
+
+Six falsifications were run rather than argued: pre-slice `ci.yml` (reds),
+deleting a disclosed row (reds), inventing one (reds), reclassifying
+`hexf-parse` as build-only (reds against `cargo tree`), downgrading an LGPL row
+to dev-only (reds), and `XPILE_REQUIRE_DENY=1` with cargo-deny off `PATH`
+(reds).
+
+**The gate's own first CI run failed, and the bug was in the gate.** The
+linkage re-derivation shells out to `cargo tree`, and `ci.yml` sets
+`CARGO_TERM_COLOR: always` workflow-wide — so on a runner the tree arrives
+wrapped in ANSI escapes while locally cargo emits none (it auto-disables colour
+when stdout is not a tty). The matcher walked straight past a line that visibly
+read `└── xpile v0.1.617 (…)` and reported the LGPL crate as unlinked. A green
+local run proved nothing about the runner. Fixed twice over: the child's
+`CARGO_TERM_COLOR` is now pinned to `never` so the input is deterministic
+rather than inherited, and the matcher strips escapes anyway. Both spellings —
+plus the negatives that keep it from degrading into "any line mentioning
+xpile" — are pinned by a unit test that reds without the fix.
+
+**Correction to the queue entry that scheduled this slice:** it recorded "18
+rejections incl. 10x LGPL-3.0-only". The real figure is nine diagnostics over
+nine crates, five of them LGPL. The doubling came from counting
+`grep -c rejected` over the human output, which prints the word twice per
+diagnostic — once in the headline and once in the label. The tripwire parses
+`--format json` for exactly that reason.
+
 ### Every published crate declared its siblings 605 releases stale, and the dry-run could not have caught it (PMAT-1408)
 
 Measured on the live sparse index rather than inferred from the manifest:

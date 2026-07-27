@@ -18402,3 +18402,29 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1409
+  github_issue: null
+  item_type: bug
+  title: "PMAT-1409: [ci/licensing/honesty] `cargo deny check licenses` had NEVER executed in this repository's history — deny.toml configured [licenses] and [bans] from the start while ci.yml ran only `cargo deny check advisories`, so the licence policy was not enforced, not waived, but UNKNOWN. Its first run exits 4, with LGPL-3.0-only copyleft statically linked into the shipped binary."
+  description: "MEASURED UNPIPED at c0ff1263, and the measurement CORRECTS the queue entry that scheduled the slice: nine rejection diagnostics over nine crates (five LGPL-3.0-only, two Zlib, two CC0-1.0), not the '18 rejections incl. 10x LGPL' recorded there. The doubling came from `grep -c rejected` over cargo-deny's HUMAN output, which prints the word once in the headline and once in the label of every diagnostic — a text-count artifact of exactly the class this sprint exists to remove. The tripwire parses `--format json` for that reason.
+
+    ** THE LOAD-BEARING FACT, derived rather than asserted: the malachite family (malachite, malachite-base, malachite-bigint, malachite-nz, malachite-q) is LGPL-3.0-only and reaches the SHIPPED `xpile` binary over NORMAL edges via rustpython-parser -> depyler-frontend -> xpile-core -> xpile, while the workspace declares MIT OR Apache-2.0. `hexf-parse` (CC0-1.0, via naga -> wgpu) and both `foldhash` versions (Zlib, via hashbrown -> wgpu) are also linked; `tiny-keccak` (CC0-1.0) is build-script only and is NOT. The binary/build-only discriminator is `cargo tree -p xpile -e normal -i <crate>@<version>`, and the gate re-runs it per row — a distinction that would otherwise rot into prose.
+
+    ** SCOPED TO VISIBILITY, NOT TO A LICENCE DECISION, exactly as the queue entry directed. What to do about the copyleft stays the `lgpl-in-shipped-binary` owner decision; the new NOTICE.md states all three responses (accept + document, replace the parser, neither) and takes none.
+
+    ** SHIPPED: (1) NOTICE.md at the repo root — the disclosure table, plus derive commands instead of counts (PMAT-1348's rule applied to itself); (2) an ADVISORY `license-scan` CI job, not a `gate` step, because `licenses` exits 4 today and would wedge every merge. Its raw check is `continue-on-error` so the output is in the log every run WITHOUT the job going permanently red — the repo already recorded what permanent red buys: `wasi` was RED on ccb95a04, the exact SHA tagged v0.1.617, and the release was cut anyway. The job's verdict is instead the drift tripwire; (3) crates/xpile/tests/dependency_license_policy.rs (XPILE-LICENSE-001), 7 tests, stratified like ruleset_drift.rs.
+
+    ** THE ROOT-CAUSE ASSERTION is in the STATIC half, which cannot skip: every check kind configured in deny.toml must be executed by SOME job in ci.yml. Restoring the pre-slice ci.yml reds it naming [\"bans\", \"licenses\"] — i.e. the gate would have caught the original defect offline, at the commit that introduced the config. The LIVE half requires the set of cargo-deny-rejected (crate, version, licence) triples to EQUAL the set NOTICE.md enumerates, both directions, and re-derives every linkage claim from `cargo tree`. XPILE_REQUIRE_DENY=1 (set on the new job) turns a missing cargo-deny from a green skip into a red.
+
+    ** SIX FALSIFICATIONS RUN, not argued: pre-slice ci.yml reds the kind-coverage test; deleting the malachite-q row reds (undisclosed); inventing a ghost row reds (stale); reclassifying hexf-parse as build-only reds against cargo tree; downgrading an LGPL row to dev-only reds; XPILE_REQUIRE_DENY=1 with cargo-deny off PATH reds while the unflagged run SKIPs with a printed reason.
+
+    ** DISCLOSED GAP, not silently fixed: no crate's `include` list carries NOTICE.md, so it does not travel inside the published .crate archives. Packaging it would read as accepting option (a) of the owner decision, so it is filed there instead."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
