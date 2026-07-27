@@ -1,21 +1,27 @@
 # xpile autonomous work-queue — the next-pick source of truth.
-# Canonical plan: docs/specifications/sub/sprint-6day-2026-07-26.md
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
 updated: |-
-  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1404 DONE - the WGSL/SPIR-V lanes silently HALVED a C
-  `long` to i32 at exit 0, collapsing the one distinction Type::CLong exists to carry, while the SAME
-  lane refused to write down the value it was accepting (the literal was caught incidentally by naga;
-  the parameter was not caught at all, because after map_type ran the type had already got smaller).
-  Gated by XPILE-CLONG64-001, whose 18 CLI probes each carry a FRONTEND-ACCEPTS PRECONDITION so a
-  parse failure cannot be counted as a width refusal - that trap fired during the slice itself.
-  ** The SCHEDULED queue remains EXHAUSTED until Thu 2026-07-30 (PMAT-1373); gate touch #3 is
-  RESERVED for it. PMAT-1375 is 0.1.619 lane - DO NOT START. Days 2-3 capacity: keep hunting.
+  2026-07-27 (toward v0.1.618 Fri 07-31. Queue REFILLED by PMAT-1403 with the two highest-EV items
+  left: R1 PMAT-1402 (WASM i64 arithmetic silently wraps, 2**64 -> 0, where CPython is
+  arbitrary-precision AND the rust lane already emits checked_mul — same source, two backends, one
+  honest and one lying) and R2 PMAT-1353 (RepairLoop CLI wiring, UN-DEFERRED because its stated
+  blocker landed as PMAT-1352/#1954 and has soaked).
+  ** PMAT-1404 DONE (hunt slice, landed alongside that refill): the WGSL/SPIR-V lanes silently HALVED
+  a C `long` to i32 at exit 0, collapsing the one distinction Type::CLong exists to carry, while the
+  SAME lane refused to write down the value it was accepting — the literal was caught incidentally by
+  naga, the parameter was not caught at all, because after map_type ran the type had already got
+  smaller. Gated by XPILE-CLONG64-001, whose 18 CLI probes each carry a FRONTEND-ACCEPTS PRECONDITION
+  so a parse failure cannot be counted as a width refusal (that trap fired during the slice itself).
   PMAT-1401's unswept-surface item (a) is now CLOSED for wgsl/spirv; PMAT-1404's notes carry the
-  updated list - remaining are --emit-crate/--emit-shims, --contracts off, the C -> PTX direction,
-  the unsigned C widths through the GPU lanes, and the WGSL contract's missing machine-readable type
-  surface. NOT new WASM breadth - that grind is CLOSED for this window.)
+  updated hunt list — remaining are --emit-crate/--emit-shims, --contracts off, the C -> PTX
+  direction, the unsigned C widths through the GPU lanes, and the WGSL contract's missing
+  machine-readable type surface.
+  ** ID COLLISION, TWICE RUNNING: this slice was re-filed 1402 -> 1404 before any push because
+  PMAT-1403's refill claimed 1402 first. Claiming an id in an UNPUSHED queue.yaml reserves nothing —
+  re-read origin/main's max id immediately before the first push. PMAT-1375 is 0.1.619 lane, DO NOT
+  START. NOT new WASM breadth outside PMAT-1402 — that grind is CLOSED for this window.)
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -383,14 +389,6 @@ queue:
     \ -eq N`, NEVER `| grep` — piping masks the exit code and BOTH the exit code and\nthe stdout/stderr\
     \ split are load-bearing here."
   date: '2026-07-29'
-- id: PMAT-1353
-  status: deferred
-  abandon: 2026-07-28T23:00
-  downgrade: keep PMAT-1352 (test-only) and drop the wiring
-  title: 'Wire the RepairLoop into the CLI: `xpile hybrid --verify --repair`'
-  notes: NOT worth a slice this window (EV pass 2026-07-26). The RepairLoop is 931 lines and unreachable,
-    but its PREREQUISITE is a fixture that actually DIVERGES — that is PMAT-1352, which must land and
-    soak first. Wiring an unsoaked repair path in a release week inverts the risk. 0.1.619 lane.
 - id: PMAT-1354
   status: superseded
   notes_superseded: 'SUPERSEDED 2026-07-26. This slice''s CHANGELOG work SHIPPED — it is the [0.1.617]
@@ -2023,150 +2021,143 @@ queue:
   ev_rank: R2
   gate_touch: null
   date: '2026-07-27'
-  title: positional-only parameters (`/`) were SILENTLY DELETED from the signature — the caller's
-    positional args shifted left and rust/wasm/lean/ruchy each compiled AND EXECUTED a different
-    answer than CPython (SHIPPED 2026-07-27)
-  notes: 'PICKED as the lowest-numbered OPEN item dated <= today, R1 within the day being taken
-    already (PMAT-1388 shipped as #1975 before this slate merged).
+  title: positional-only parameters (`/`) were SILENTLY DELETED from the signature — the caller's positional
+    args shifted left and rust/wasm/lean/ruchy each compiled AND EXECUTED a different answer than CPython
+    (SHIPPED 2026-07-27)
+  notes: 'PICKED as the lowest-numbered OPEN item dated <= today, R1 within the day being taken already
+    (PMAT-1388 shipped as #1975 before this slate merged).
 
-    ** THE DEFECT, measured through the shipped CLI at c1d7db19 BEFORE fixing. `def f(a: int, /,
-    b: int = 2) -> int: return b` with `def run(): return f(9)` prints 2 under CPython. `xpile
-    transpile --target rust` exited 0 with ZERO bytes of stderr and emitted `pub fn f(b: i64)`
-    — `a` deleted — with the call site `f(9i64)`, so 9 re-bound to `b`. rustc accepted it and
-    the binary printed 9. The DEFAULTED second parameter is the load-bearing detail: once `a` is
-    dropped the call site has exactly as many arguments as the mutilated signature has
-    parameters, so nothing downstream can notice. wasm/lean/ruchy all exited 0 the same way.
+    ** THE DEFECT, measured through the shipped CLI at c1d7db19 BEFORE fixing. `def f(a: int, /, b: int
+    = 2) -> int: return b` with `def run(): return f(9)` prints 2 under CPython. `xpile transpile --target
+    rust` exited 0 with ZERO bytes of stderr and emitted `pub fn f(b: i64)` — `a` deleted — with the call
+    site `f(9i64)`, so 9 re-bound to `b`. rustc accepted it and the binary printed 9. The DEFAULTED second
+    parameter is the load-bearing detail: once `a` is dropped the call site has exactly as many arguments
+    as the mutilated signature has parameters, so nothing downstream can notice. wasm/lean/ruchy all exited
+    0 the same way.
 
-    ** ROOT CAUSE: crates/depyler-frontend/src/lib.rs lower_function guarded kwonlyargs/kwarg but
-    never read f.args.posonlyargs, and the param loop iterates f.args.args alone. The scope bound
-    in the slate held on re-measurement: desugar_nested_fn and desugar_closure_assign already
-    refused `/`; module-level functions were the only leak.
+    ** ROOT CAUSE: crates/depyler-frontend/src/lib.rs lower_function guarded kwonlyargs/kwarg but never
+    read f.args.posonlyargs, and the param loop iterates f.args.args alone. The scope bound in the slate
+    held on re-measurement: desugar_nested_fn and desugar_closure_assign already refused `/`; module-level
+    functions were the only leak.
 
-    ** THE FIX: its OWN refusal arm naming positional-only parameters and the `/` separator, not
-    an extra disjunct on the keyword-only guard — a caller told "keyword-only args / **kwargs"
-    for a `/` inspects the wrong end of the signature. Splitting refusals by KIND is the standing
-    lesson from PMAT-1371/1377.
+    ** THE FIX: its OWN refusal arm naming positional-only parameters and the `/` separator, not an extra
+    disjunct on the keyword-only guard — a caller told "keyword-only args / **kwargs" for a `/` inspects
+    the wrong end of the signature. Splitting refusals by KIND is the standing lesson from PMAT-1371/1377.
 
-    ** THE WITNESS: crates/xpile/tests/posonly_param_witness.rs (XPILE-POSONLY-001, NEW FILE, so
-    not a gate touch), 4 tests, 0.19s MEASURED via `--nocapture` rather than assumed. Load-bearing
-    assertion is the RELATION the defect violated, not a list of spellings that must refuse: for
-    every probe and every lane, either the frontend refuses or every parameter the `def` declares
-    appears in the emitted signature. That survives `/` ever being SUPPORTED. RED HALF RUN: with
-    the frontend edit stashed it fails with 16 violations (4 `/` probes x 4 lanes) and the
-    refusal-wording test fails too; the 2 controls pass on both sides, which is the shape a real
-    red-then-green has. The execution half transpiles + rustc-compiles + RUNS the `/`-free
-    control and diffs against CPython (both 2; the Rust side printed 9 pre-fix), and prints both
-    observed values plus its wall clock so a reader can tell a differential from a silent skip.
+    ** THE WITNESS: crates/xpile/tests/posonly_param_witness.rs (XPILE-POSONLY-001, NEW FILE, so not a
+    gate touch), 4 tests, 0.19s MEASURED via `--nocapture` rather than assumed. Load-bearing assertion
+    is the RELATION the defect violated, not a list of spellings that must refuse: for every probe and
+    every lane, either the frontend refuses or every parameter the `def` declares appears in the emitted
+    signature. That survives `/` ever being SUPPORTED. RED HALF RUN: with the frontend edit stashed it
+    fails with 16 violations (4 `/` probes x 4 lanes) and the refusal-wording test fails too; the 2 controls
+    pass on both sides, which is the shape a real red-then-green has. The execution half transpiles +
+    rustc-compiles + RUNS the `/`-free control and diffs against CPython (both 2; the Rust side printed
+    9 pre-fix), and prints both observed values plus its wall clock so a reader can tell a differential
+    from a silent skip.
 
-    ** TWO TRAPS HIT AND RECORDED. (a) The first probe corpus named its parameters `a`/`b`; the
-    WAT lane ALWAYS emits an `__wasm_floordiv_i64` helper with `(param $a i64) (param $b i64)`,
-    so the presence check found them in every emission and would have passed VACUOUSLY. Probes
-    renamed to alpha/beta/items. (b) The accepted-pairs vacuity floor is 7, not the obvious 8:
-    the Lean lane refuses the `*args` control for an unrelated pre-existing reason (`for x in
-    xs:` needs a monadic-iteration encoding it does not have). MEASURED, not assumed.
+    ** TWO TRAPS HIT AND RECORDED. (a) The first probe corpus named its parameters `a`/`b`; the WAT lane
+    ALWAYS emits an `__wasm_floordiv_i64` helper with `(param $a i64) (param $b i64)`, so the presence
+    check found them in every emission and would have passed VACUOUSLY. Probes renamed to alpha/beta/items.
+    (b) The accepted-pairs vacuity floor is 7, not the obvious 8: the Lean lane refuses the `*args` control
+    for an unrelated pre-existing reason (`for x in xs:` needs a monadic-iteration encoding it does not
+    have). MEASURED, not assumed.
 
-    ** No gate file touched; witness_floor.rs untouched (2-touch serial resource, second touch
-    reserved for PMAT-1373).
+    ** No gate file touched; witness_floor.rs untouched (2-touch serial resource, second touch reserved
+    for PMAT-1373).
 
-    NEXT PICK: PMAT-1390 (R3, dated today) — `xpile attestations` counting a roadmap PREAMBLE
-    mention as a work item and emitting invalid JSON at rc=0. ★ WHILE MEASURING THIS SLICE a
-    SEPARATE defect in the same file surfaced and is now queued as PMAT-1398: docs/roadmaps/
-    roadmap.yaml has been INVALID YAML since 968d352d (PMAT-1388) — three unescaped apostrophes
-    inside a single-quoted scalar (`xpile''s`, `box''s`, `crate''s` written with ONE quote) end
-    the scalar early, and NO YAML parser can read the file. roadmap_registration.rs did not catch
-    it because all three of its assertions are pure TEXT (`- id:` line matching), so the ledger
-    gate reports registration green over a file that does not parse. Take PMAT-1398 with or
-    before PMAT-1390 — they touch the same reporter surface.'
+    NEXT PICK: PMAT-1390 (R3, dated today) — `xpile attestations` counting a roadmap PREAMBLE mention
+    as a work item and emitting invalid JSON at rc=0. ★ WHILE MEASURING THIS SLICE a SEPARATE defect in
+    the same file surfaced and is now queued as PMAT-1398: docs/roadmaps/ roadmap.yaml has been INVALID
+    YAML since 968d352d (PMAT-1388) — three unescaped apostrophes inside a single-quoted scalar (`xpile''s`,
+    `box''s`, `crate''s` written with ONE quote) end the scalar early, and NO YAML parser can read the
+    file. roadmap_registration.rs did not catch it because all three of its assertions are pure TEXT (`-
+    id:` line matching), so the ledger gate reports registration green over a file that does not parse.
+    Take PMAT-1398 with or before PMAT-1390 — they touch the same reporter surface.'
 - id: PMAT-1398
   status: done
   ev_rank: R3
   gate_touch: null
   date: '2026-07-27'
-  title: docs/roadmaps/roadmap.yaml has been INVALID YAML since 968d352d and the ledger gate did
-    not notice, because all three of roadmap_registration.rs''s assertions are pure TEXT
+  title: docs/roadmaps/roadmap.yaml has been INVALID YAML since 968d352d and the ledger gate did not notice,
+    because all three of roadmap_registration.rs''s assertions are pure TEXT
   notes: 'FOUND WHILE MEASURING PMAT-1389, not by a hunt. Reproduce on main:
 
-    python3 -c "import yaml; yaml.safe_load(open(''docs/roadmaps/roadmap.yaml''))"
-    -> yaml.parser.ParserError: while parsing a block mapping ... expected <block end>
+    python3 -c "import yaml; yaml.safe_load(open(''docs/roadmaps/roadmap.yaml''))" -> yaml.parser.ParserError:
+    while parsing a block mapping ... expected <block end>
 
-    ** THE DEFECT: the PMAT-1388 ledger row''s `description:` is a SINGLE-QUOTED YAML scalar, and
-    three apostrophes inside it are written with ONE quote instead of the doubled `''` YAML
-    requires — `is "xpile''s output, not a hardcoded shader"`, `box''s Vulkan adapter`, `crate''s
-    own dummy_module()`. (Written here doubled; on main they are single.) The first lone quote
-    ENDS the scalar, so everything after it is re-parsed as YAML structure and the file stops
-    loading at the first line that looks like a mapping key (`items: Vec::new() }`). Note the
-    SAME entry escapes correctly four lines earlier (`audit''s`), so this is a slip, not a
-    convention.
+    ** THE DEFECT: the PMAT-1388 ledger row''s `description:` is a SINGLE-QUOTED YAML scalar, and three
+    apostrophes inside it are written with ONE quote instead of the doubled `''` YAML requires — `is "xpile''s
+    output, not a hardcoded shader"`, `box''s Vulkan adapter`, `crate''s own dummy_module()`. (Written
+    here doubled; on main they are single.) The first lone quote ENDS the scalar, so everything after
+    it is re-parsed as YAML structure and the file stops loading at the first line that looks like a mapping
+    key (`items: Vec::new() }`). Note the SAME entry escapes correctly four lines earlier (`audit''s`),
+    so this is a slip, not a convention.
 
-    ** WHY NOTHING CAUGHT IT: crates/xpile/tests/roadmap_registration.rs asserts
-    (1) every done queue item appears as a `- id:` ROW, (2) every cited id since the tag is
-    registered, (3) the pre-commit guard paths exist. All three are `contains` / line matching
-    over the raw text. The ledger gate therefore reports registration GREEN over a file no YAML
-    parser can read — the exact reporter shape PMAT-1385/1386/1387/1390 keep finding, one level
-    up, in the gate rather than the tool. `xpile attestations` and `xpile quorum` also scan this
-    file textually, which is why the CLI does not fail either.
+    ** WHY NOTHING CAUGHT IT: crates/xpile/tests/roadmap_registration.rs asserts (1) every done queue
+    item appears as a `- id:` ROW, (2) every cited id since the tag is registered, (3) the pre-commit
+    guard paths exist. All three are `contains` / line matching over the raw text. The ledger gate therefore
+    reports registration GREEN over a file no YAML parser can read — the exact reporter shape PMAT-1385/1386/1387/1390
+    keep finding, one level up, in the gate rather than the tool. `xpile attestations` and `xpile quorum`
+    also scan this file textually, which is why the CLI does not fail either.
 
-    ** THE FIX (S): double the three apostrophes. THE GATE (the actual slice): a test that
-    PARSES both docs/roadmaps/*.yaml and fails if either does not load. Cheapest honest form is
-    a new test file, NOT an edit to roadmap_registration.rs — that file is a gate and the
-    gate chain is pinned by PMAT-1373''s gate_touch:3 this window. Check whether the workspace
-    already has serde_yaml in dev-deps; if not, a 3-line scalar-quoting linter over the file is
-    still strictly better than nothing, but prefer a real parser.
+    ** THE FIX (S): double the three apostrophes. THE GATE (the actual slice): a test that PARSES both
+    docs/roadmaps/*.yaml and fails if either does not load. Cheapest honest form is a new test file, NOT
+    an edit to roadmap_registration.rs — that file is a gate and the gate chain is pinned by PMAT-1373''s
+    gate_touch:3 this window. Check whether the workspace already has serde_yaml in dev-deps; if not,
+    a 3-line scalar-quoting linter over the file is still strictly better than nothing, but prefer a real
+    parser.
 
-    ** ACCEPTANCE: the reproducer above exits 0; the new test FAILS when any one apostrophe is
-    un-doubled again (run the red half); roadmap_registration.rs still passes UNCHANGED.
+    ** ACCEPTANCE: the reproducer above exits 0; the new test FAILS when any one apostrophe is un-doubled
+    again (run the red half); roadmap_registration.rs still passes UNCHANGED.
 
-    ** DONE 2026-07-27. All three acceptance criteria MET and measured. serde_yaml WAS already
-    a dev-dep of crates/xpile (PMAT-484), so the real parser was available and the 3-line
-    linter fallback was not needed. Gate shipped as crates/xpile/tests/roadmap_ledger_parses.rs
-    (XPILE-LEDGER-002, 4 tests, 0.27 s measured) — a NEW file; roadmap_registration.rs is
-    byte-unchanged, so gate_touch #3 (PMAT-1373) is unperturbed. The fourth assertion is the
-    one with teeth and is not what the queue asked for: it re-derives the ledger id set BOTH
-    ways (the byte-identical `- id: ` text scan XPILE-LEDGER-001 uses, and serde_yaml) and
-    demands equality — a relation between two live implementations, so it cannot go stale as
-    the ledger grows, and it also catches a half-parsing document, a row swallowed into a
-    string scalar, or an `id` nested a level too deep. Vacuity-guarded on both sides (> 1000
-    ids each). File set is GLOBBED from docs/roadmaps/, never hand-listed.
-    RED HALF RUN THREE TIMES, once per apostrophe: each independently reds 3 of 4 new tests,
-    and in EVERY probe `cargo test -p xpile --test roadmap_registration` stayed 3/3 GREEN on
-    the broken file — the gap is measured, not asserted. Repo-wide scan after the fix: 40 of
-    40 YAML files across docs/roadmaps, contracts and .github/workflows parse.
-    NEXT PICK: PMAT-1390 (`xpile attestations` phantom preamble work-item + invalid JSON) —
-    now unblocked, since its own independent reference is a REAL yaml parse of
-    docs/roadmaps/roadmap.yaml, which could not run until this slice landed.'
+    ** DONE 2026-07-27. All three acceptance criteria MET and measured. serde_yaml WAS already a dev-dep
+    of crates/xpile (PMAT-484), so the real parser was available and the 3-line linter fallback was not
+    needed. Gate shipped as crates/xpile/tests/roadmap_ledger_parses.rs (XPILE-LEDGER-002, 4 tests, 0.27
+    s measured) — a NEW file; roadmap_registration.rs is byte-unchanged, so gate_touch #3 (PMAT-1373)
+    is unperturbed. The fourth assertion is the one with teeth and is not what the queue asked for: it
+    re-derives the ledger id set BOTH ways (the byte-identical `- id: ` text scan XPILE-LEDGER-001 uses,
+    and serde_yaml) and demands equality — a relation between two live implementations, so it cannot go
+    stale as the ledger grows, and it also catches a half-parsing document, a row swallowed into a string
+    scalar, or an `id` nested a level too deep. Vacuity-guarded on both sides (> 1000 ids each). File
+    set is GLOBBED from docs/roadmaps/, never hand-listed. RED HALF RUN THREE TIMES, once per apostrophe:
+    each independently reds 3 of 4 new tests, and in EVERY probe `cargo test -p xpile --test roadmap_registration`
+    stayed 3/3 GREEN on the broken file — the gap is measured, not asserted. Repo-wide scan after the
+    fix: 40 of 40 YAML files across docs/roadmaps, contracts and .github/workflows parse. NEXT PICK: PMAT-1390
+    (`xpile attestations` phantom preamble work-item + invalid JSON) — now unblocked, since its own independent
+    reference is a REAL yaml parse of docs/roadmaps/roadmap.yaml, which could not run until this slice
+    landed.'
 - id: PMAT-1390
   status: done
   ev_rank: R3
   gate_touch: null
   date: '2026-07-27'
-  title: '`xpile attestations` counted a roadmap-PREAMBLE mention as a WORK ITEM (69 where 68 exist,
-    printed a nameless `- ` bullet, shipped `""` in JSON) AND emitted INVALID JSON for a quoted id'
+  title: '`xpile attestations` counted a roadmap-PREAMBLE mention as a WORK ITEM (69 where 68 exist, printed
+    a nameless `- ` bullet, shipped `""` in JSON) AND emitted INVALID JSON for a quoted id'
   notes: 'DONE 2026-07-27. Both repros confirmed through the shipped binary at 16cce394 BEFORE any edit,
     exactly as filed: live tally 69 vs a yaml-parser reference of 68, 3 bare bullets, and `- id: "P"`
     producing `"work_item":""P""` that json.load rejects at rc=0. ** FIX: `AttestationMention.work_item`
     is now `Option<String>` — "no enclosing work item" is REPRESENTED rather than encoded as an empty
     string that reads like an id. The preamble mention is RETAINED and DISCLOSED, never dropped: quorum
     scores the whole Extrinsic stratum from `scan_roadmap_for_id(..).len()`, so dropping it would have
-    traded one wrong number for another — the queue entry''s own honest-scope note is what made that
-    the right call. All five raw strings routed through the `escape_json` that already existed; the id
-    gets the sibling `extract_metadata_id` quote-strip; a valueless `- id:` opens no item (the same
-    phantom by another route). `print_attestations_json` split into a String-returning
-    `render_attestations_json` so a test can assert the payload PARSES — it wrote straight to stdout,
-    which is precisely how a substring-matching test passed over invalid JSON. ** WITNESS:
-    crates/xpile/tests/cli_attestation_tally_witness.rs (XPILE-ATTESTTALLY-001, NEW file, not a gate
-    touch), 5 tests + 5 new unit tests, 2.3 s measured. Load-bearing assertion is a RELATION between two
-    live implementations — the reported tally must equal a reference computed by WALKING the
-    serde_yaml-parsed tree (walking, not re-serialising: a folded long scalar could split an id and make
-    the reference agree for the wrong reason). RED HALF: 5/5 fail reverted, 5/5 pass applied. ** LESSON
-    (worth carrying): the first draft of the escaping test passed on BOTH sides — its `"` and `\` landed
-    only in `snippet`, the ONE field already escaped — so it certified nothing about the five raw fields
-    it was named for. Put the special character in the field the defect is actually in. ** DISCLOSED
-    RESIDUAL, deferred to 0.1.619: `attested` still means "mentioned anywhere", so a preamble-only
-    contract counts as attested with zero work-item votes. 0 of 34 live, so nothing flips; the text
-    report now discloses it when nonzero. Changing the attested/unattested semantics has no measurable
-    live effect and is not release-week work. ** quorum output byte-unchanged by construction.
-    NEXT PICK: PMAT-1391 (dated 2026-07-28, R4 — `--target wgsl` exits 0 emitting WGSL the repo''s OWN
-    naga_validate_wgsl rejects). Nothing else is open with date <= 2026-07-27.'
+    traded one wrong number for another — the queue entry''s own honest-scope note is what made that the
+    right call. All five raw strings routed through the `escape_json` that already existed; the id gets
+    the sibling `extract_metadata_id` quote-strip; a valueless `- id:` opens no item (the same phantom
+    by another route). `print_attestations_json` split into a String-returning `render_attestations_json`
+    so a test can assert the payload PARSES — it wrote straight to stdout, which is precisely how a substring-matching
+    test passed over invalid JSON. ** WITNESS: crates/xpile/tests/cli_attestation_tally_witness.rs (XPILE-ATTESTTALLY-001,
+    NEW file, not a gate touch), 5 tests + 5 new unit tests, 2.3 s measured. Load-bearing assertion is
+    a RELATION between two live implementations — the reported tally must equal a reference computed by
+    WALKING the serde_yaml-parsed tree (walking, not re-serialising: a folded long scalar could split
+    an id and make the reference agree for the wrong reason). RED HALF: 5/5 fail reverted, 5/5 pass applied.
+    ** LESSON (worth carrying): the first draft of the escaping test passed on BOTH sides — its `"` and
+    `\` landed only in `snippet`, the ONE field already escaped — so it certified nothing about the five
+    raw fields it was named for. Put the special character in the field the defect is actually in. **
+    DISCLOSED RESIDUAL, deferred to 0.1.619: `attested` still means "mentioned anywhere", so a preamble-only
+    contract counts as attested with zero work-item votes. 0 of 34 live, so nothing flips; the text report
+    now discloses it when nonzero. Changing the attested/unattested semantics has no measurable live effect
+    and is not release-week work. ** quorum output byte-unchanged by construction. NEXT PICK: PMAT-1391
+    (dated 2026-07-28, R4 — `--target wgsl` exits 0 emitting WGSL the repo''s OWN naga_validate_wgsl rejects).
+    Nothing else is open with date <= 2026-07-27.'
 - id: PMAT-1391
   status: done
   ev_rank: R4
@@ -2175,42 +2166,40 @@ queue:
   title: '`--target wgsl` exits 0 emitting WGSL the repo''s OWN `naga_validate_wgsl` REJECTS — sanitize
     the `__`-reserved synthetic identifiers AND wire the validator into `lower()` so the class cannot
     recur'
-  notes: 'DONE 2026-07-27 (PULLED FORWARD from 2026-07-28 — every item dated <= 07-27 was merged and
-    the pick rule permits pulling forward on Day 4 or earlier). All four probes reproduced through the
-    shipped binary at cd3327b7 BEFORE any edit, against a harness built on the repo''s OWN exported
-    `naga_validate_wgsl` (naga 29.0.3): for-range -> REJECT `__forc0`, for-else -> REJECT `__broke0`,
-    self-recursion -> REJECT `declaration of f is recursive`, while-accumulator -> OK. xpile rc=0 and
-    stderr 0 bytes on all four. The fourth is load-bearing — the lane is otherwise SOUND, so the fix is
-    a guard, not a rewrite. ** THE WGSL RULES WERE MEASURED, NOT ASSUMED: probing naga directly shows
-    `__foo`/`___foo` rejected and bare `_` rejected, but `_foo` ACCEPTED — a mangler keyed on "starts
-    with underscore" would have over-reached. ** ORDER HELD as the note pinned: SANITIZER FIRST, THEN
-    WIRE-IN. `wgsl_ident` applied at all SEVEN name-emission sites (fn name, sig params, `var` hoists,
-    let/assign targets, Ident reads, Call callees, and the `<fn>_<param>` buffer binding), then
-    `naga_validate_wgsl` as the last step of `emit_wgsl_module`. transpile_e2e.rs:19906 stayed GREEN and
-    was NOT deleted or weakened — a user-identifier-preserving sanitizer keeps `fn last_i(` and `loop {`
-    intact, exactly as the note predicted. ** SHAPE, NOT A SYNTHETIC LIST: a user param named `__x` is
-    equally illegal, so keying on the frontend''s `__forc`/`__broke`/... family would have been an
-    incomplete fix. depyler-frontend NOT touched (TRAP 1 held — those names are correct for Rust/WASM).
-    ** THE MAPPING IS INJECTIVE and that is the load-bearing half: the naive `__forc0` -> `forc0`
-    collides with a user variable named `forc0`, trading a loud rejection for a SILENT WRONG-VARIABLE
-    READ. Three disjoint reversible output classes; `xpm`, `xpm_u__forc0`, `xpm_e_xpm` are in the test
-    corpus. User names are the IDENTITY case so emitted WGSL stays readable. ** VALIDATING AT
-    `emit_wgsl_module` NOT `try_emit` was deliberate — the production emitter, the wgpu diff-exec
-    witness, the downstream xpile-spirv-codegen consumer and the tests inherit it from ONE choke point,
-    so a future unsanitized emission site fails LOUDLY instead of emitting wrong code. ** RED HALF
-    EXECUTED: with the mangler neutered to identity AND the gate removed, 5 of 7 new tests FAIL. The
-    other 2 are deliberate CONTROLS that pass both ways — one pins naga''s real identifier rules (a
-    future naga bump that relaxes them fails loudly rather than leaving an unjustifiable mangler), the
-    other proves a NON-recursive call still lowers, so the recursion test cannot be satisfied by
-    `Expr::Call` refusing outright. ** TRAP 2 HONOURED: the two pre-existing FALSE claims (wgsl_emit.rs
-    module doc; the e2e test''s "executes exactly on every non-empty input") were RETIRED, not
-    supplemented with a third. ** DISCLOSED RESIDUALS, not claimed fixed: (a) VALID != EXECUTED — the
-    on-adapter witnesses remain gpu_*.rs (still green); (b) reserved WGSL KEYWORDS are not mangled, they
-    now refuse honestly via the gate; (c) the `<fn>_<param>` composite ambiguity is pre-existing and
-    unchanged. ** SCOPE: one product file + two doc corrections. witness_floor.rs untouched (two-touch
-    serial resource, second touch reserved for PMAT-1373). No gate file edited.
-    NEXT PICK: PMAT-1392 (R5, dated 2026-07-28 — WAT lift folds EVERY nonzero `i32.const` to `true`;
-    `i32.const 2` round-trips to `1`, valid WAT, wrong value, exit 0 on all three legs).'
+  notes: 'DONE 2026-07-27 (PULLED FORWARD from 2026-07-28 — every item dated <= 07-27 was merged and the
+    pick rule permits pulling forward on Day 4 or earlier). All four probes reproduced through the shipped
+    binary at cd3327b7 BEFORE any edit, against a harness built on the repo''s OWN exported `naga_validate_wgsl`
+    (naga 29.0.3): for-range -> REJECT `__forc0`, for-else -> REJECT `__broke0`, self-recursion -> REJECT
+    `declaration of f is recursive`, while-accumulator -> OK. xpile rc=0 and stderr 0 bytes on all four.
+    The fourth is load-bearing — the lane is otherwise SOUND, so the fix is a guard, not a rewrite. **
+    THE WGSL RULES WERE MEASURED, NOT ASSUMED: probing naga directly shows `__foo`/`___foo` rejected and
+    bare `_` rejected, but `_foo` ACCEPTED — a mangler keyed on "starts with underscore" would have over-reached.
+    ** ORDER HELD as the note pinned: SANITIZER FIRST, THEN WIRE-IN. `wgsl_ident` applied at all SEVEN
+    name-emission sites (fn name, sig params, `var` hoists, let/assign targets, Ident reads, Call callees,
+    and the `<fn>_<param>` buffer binding), then `naga_validate_wgsl` as the last step of `emit_wgsl_module`.
+    transpile_e2e.rs:19906 stayed GREEN and was NOT deleted or weakened — a user-identifier-preserving
+    sanitizer keeps `fn last_i(` and `loop {` intact, exactly as the note predicted. ** SHAPE, NOT A SYNTHETIC
+    LIST: a user param named `__x` is equally illegal, so keying on the frontend''s `__forc`/`__broke`/...
+    family would have been an incomplete fix. depyler-frontend NOT touched (TRAP 1 held — those names
+    are correct for Rust/WASM). ** THE MAPPING IS INJECTIVE and that is the load-bearing half: the naive
+    `__forc0` -> `forc0` collides with a user variable named `forc0`, trading a loud rejection for a SILENT
+    WRONG-VARIABLE READ. Three disjoint reversible output classes; `xpm`, `xpm_u__forc0`, `xpm_e_xpm`
+    are in the test corpus. User names are the IDENTITY case so emitted WGSL stays readable. ** VALIDATING
+    AT `emit_wgsl_module` NOT `try_emit` was deliberate — the production emitter, the wgpu diff-exec witness,
+    the downstream xpile-spirv-codegen consumer and the tests inherit it from ONE choke point, so a future
+    unsanitized emission site fails LOUDLY instead of emitting wrong code. ** RED HALF EXECUTED: with
+    the mangler neutered to identity AND the gate removed, 5 of 7 new tests FAIL. The other 2 are deliberate
+    CONTROLS that pass both ways — one pins naga''s real identifier rules (a future naga bump that relaxes
+    them fails loudly rather than leaving an unjustifiable mangler), the other proves a NON-recursive
+    call still lowers, so the recursion test cannot be satisfied by `Expr::Call` refusing outright. **
+    TRAP 2 HONOURED: the two pre-existing FALSE claims (wgsl_emit.rs module doc; the e2e test''s "executes
+    exactly on every non-empty input") were RETIRED, not supplemented with a third. ** DISCLOSED RESIDUALS,
+    not claimed fixed: (a) VALID != EXECUTED — the on-adapter witnesses remain gpu_*.rs (still green);
+    (b) reserved WGSL KEYWORDS are not mangled, they now refuse honestly via the gate; (c) the `<fn>_<param>`
+    composite ambiguity is pre-existing and unchanged. ** SCOPE: one product file + two doc corrections.
+    witness_floor.rs untouched (two-touch serial resource, second touch reserved for PMAT-1373). No gate
+    file edited. NEXT PICK: PMAT-1392 (R5, dated 2026-07-28 — WAT lift folds EVERY nonzero `i32.const`
+    to `true`; `i32.const 2` round-trips to `1`, valid WAT, wrong value, exit 0 on all three legs).'
 - id: PMAT-1392
   status: done
   ev_rank: R5
@@ -2244,50 +2233,76 @@ queue:
     \ != 0)'` -> 3, all product code),\nso nothing needs unwinding.\nACCEPTANCE:\n  $X transpile $D/m.wat\
     \ --target wasm; echo $?    # -> 1, message names `i32.const 2`\n  a 0/1 module still round-trips\
     \ at rc=0; add a refusal test AND a round-trip test\n  command cargo test -p xpile-wasm-frontend\n"
-  completion: |
-    DONE 2026-07-27 (Mon, day 1 of the 0.1.618 slate; pulled forward from 07-28 because
+  completion: 'DONE 2026-07-27 (Mon, day 1 of the 0.1.618 slate; pulled forward from 07-28 because
+
     nothing was OPEN dated <= today). Fixed exactly as specified: ONE shared
+
     `lift_i32_const(tok, site)` helper behind all THREE code-identical sites (:557 body,
+
     :877 loop cond, :977 loop body), refusing outside {0,1} with the "outside the lift
+
     subset" phrasing. CLI acceptance MET: `transpile m.wat --target wasm` -> exit 1 naming
+
     `i32.const 2`; `--target rust` refuses identically (same frontend); a 0/1 module still
+
     round-trips at rc=0 and executes to the reference value. 3 tests added to
+
     xpile-wasm-frontend/src/tests.rs, MEASURED executing (6/6 references run under
+
     wasm-interp, reported via eprintln -- not trusted green).
-    ** THE SCOPE CLAIM IN THIS ENTRY WAS VERIFIED, NOT INHERITED: "xpile's own emit never
+
+    ** THE SCOPE CLAIM IN THIS ENTRY WAS VERIFIED, NOT INHERITED: "xpile''s own emit never
+
     puts i32.const N (N not in {0,1}) in the lift-reachable subset" is now MEASURED --
+
     all 847 corpus fixtures swept emit-then-lift (222 emit WASM, 42 lift-reachable),
+
     ZERO i32.const refusals. Complete rather than sampled, because the only new Err path
+
     contains the literal string `i32.const`.
+
     ** OPTIONAL SECOND HALF EXPLICITLY SKIPPED (as this entry permits): the unconditional
+
     `"i32" => Type::Bool` at lib.rs:331 still renders a hand-written `(param $a i32)` as
+
     `bool` on --target rust. It is an emit-image AMBIGUITY (Bool and CUInt both lower to
+
     i32; no correct inverse without an out-of-band signal), NOT a value corruption -- the
+
     WAT round trip is value-preserving either way. Documented in the crate module docs;
+
     belongs to the 0.1.619 lane, not this window.
+
     ** NEXT PICK: nothing is OPEN dated <= 2026-07-27. Pull forward from 07-28 ->
+
     PMAT-1393 (R6, README publishes a FABRICATED `$ xpile quorum` transcript the shipped
+
     binary does not produce). Do NOT start a gate_touch and do NOT touch witness_floor.rs
+
     (TOUCH 2 is reserved for PMAT-1373). HARD FREEZE Wed 2026-07-29 18:00: no crates/*/src
+
     or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit, tag);
+
     2026-07-31 -> PMAT-1374 (publish).
+
+    '
 - id: PMAT-1393
   status: done
   ev_rank: R6
   done_note: 'SHIPPED 2026-07-27 (pulled forward one day; today''s dated slate was drained). Re-derived
-    rather than trusting the note: quorum totals 26/9 corroborated against the tool''s OWN rows
-    (grep -c ''QUORUM *$'' = 26, ''PARTIAL *$'' = 9, sum 35 = ls contracts/*.yaml). README.md''s frozen
-    transcript retired for the DERIVE COMMAND; contracts/README.md table regenerated MECHANICALLY to
-    all 35 rows from the YAML lean_file:/kani_file: bindings. FOUND BEYOND THE NOTE: :84 "all 12
-    harnesses" -> 101 #[kani::proof] fns / 24 files / 24-of-35 contracts, AND the kani job is ADVISORY
-    (the table asserted it runs "on every PR" without saying a red one cannot block a merge); the
-    layout block''s "kani/ — one .rs per contract" was false the same way. LAYER COLUMN DROPPED, NOT
-    FABRICATED: layer 1-5 is not mechanically derivable (kind: kernel maps to L1 OR L2, pattern to L3
-    OR L4, nothing yields L5; only 9 of 35 YAMLs carry metadata.xpile.layer and its value is "compile",
-    not an ordinal) — inventing 35 assignments to fill a column is the same sin. TRAP 1 HELD:
-    claims_drift.rs untouched; its three README assertions (frontend count, backend count, ruchy-refuse
-    disclosure) are disjoint from the Contracts section and stayed green. NEXT PICK: PMAT-1394 (R7,
-    2026-07-29) — the Lean lane returns a VALUE for division by zero (7 // 0 -> 0) at exit 0.'
+    rather than trusting the note: quorum totals 26/9 corroborated against the tool''s OWN rows (grep
+    -c ''QUORUM *$'' = 26, ''PARTIAL *$'' = 9, sum 35 = ls contracts/*.yaml). README.md''s frozen transcript
+    retired for the DERIVE COMMAND; contracts/README.md table regenerated MECHANICALLY to all 35 rows
+    from the YAML lean_file:/kani_file: bindings. FOUND BEYOND THE NOTE: :84 "all 12 harnesses" -> 101
+    #[kani::proof] fns / 24 files / 24-of-35 contracts, AND the kani job is ADVISORY (the table asserted
+    it runs "on every PR" without saying a red one cannot block a merge); the layout block''s "kani/ —
+    one .rs per contract" was false the same way. LAYER COLUMN DROPPED, NOT FABRICATED: layer 1-5 is not
+    mechanically derivable (kind: kernel maps to L1 OR L2, pattern to L3 OR L4, nothing yields L5; only
+    9 of 35 YAMLs carry metadata.xpile.layer and its value is "compile", not an ordinal) — inventing 35
+    assignments to fill a column is the same sin. TRAP 1 HELD: claims_drift.rs untouched; its three README
+    assertions (frontend count, backend count, ruchy-refuse disclosure) are disjoint from the Contracts
+    section and stayed green. NEXT PICK: PMAT-1394 (R7, 2026-07-29) — the Lean lane returns a VALUE for
+    division by zero (7 // 0 -> 0) at exit 0.'
   gate_touch: null
   date: '2026-07-28'
   title: README.md publishes a FABRICATED `$ xpile quorum` transcript (15/20) that the shipped binary
@@ -2361,36 +2376,31 @@ queue:
     ACCEPTANCE:\n  $X transpile $D/z.py --target lean --contracts off; echo $?   # -> 1, message names\
     \ ZeroDivisionError\n  the `a % b` and float `a / 0.0` legs -> 1\n  command cargo test -p xpile-lean-codegen\
     \ && command cargo test -p xpile --test lean_elaborate_witness\n"
-  done_note: 'DONE 2026-07-27 (Mon), PULLED FORWARD from 2026-07-29 under the day<=4 rule — the
-    dated slate had nothing at or before today and PMAT-1394 was the lowest-numbered open item.
-    All three legs reproduced verbatim against lean 4.15.0 at fee39fe3 before any edit, and the
-    two FLOAT results were MEASURED in Lean rather than inferred (float `//` -> inf, float `%` ->
-    `NaN`, which is how Lean spells it — my first draft of the error message said `nan`).
-    ** IMPLEMENTED NARROWER THAN RATIFIED, and better: the ratified text said "a hard
-    BackendError::Lower on `//`, `%` and float `/`", i.e. blanket refusal of the operators. Shipped
-    instead as refuse-unless-PROVABLY-NONZERO-divisor, so `n % 2` and `x / 2.0` still lower. The
-    boundary is not invented — contracts/lean/PyIntArith.lean:607 already states its floor-div and
-    mod theorems under `(hb : b != 0)`, so emission for a possibly-zero divisor was emission outside
-    the region the lane`s own contract proves. Because nothing that still lowers changed, the
-    5-touchpoint contract resync was NOT needed.
-    ** TRAPS 1-3 ALL CONFIRMED LIVE, plus a fourth the entry did not predict: TRAP 2`s pinned test
-    divided by an `Ident`, so it is the shape now refused — retargeted onto a nonzero literal
-    rather than deleted. THE UNPREDICTED ONE: tests/fixtures/asserted.py (`safe_div`, with a
-    hand-written `assert b != 0` one line above `a // b`) was the ONLY red test in 827, and the
-    reason it must still refuse is worth keeping — on this lane an assert lowers to `else panic!`
-    and a Lean panic does NOT abort, so it cannot discharge the divisor obligation, only relocate
-    the same silent divergence. Its e2e test is retargeted onto a divisor-free body so the
-    assert-CHAIN property keeps coverage.
-    ** BLAST RADIUS MEASURED: 87 -> 78 of 812 corpus files lower to Lean; all 9 newly-refused were
-    verified to divide by a runtime value or literal zero (zero over-broad refusals).
-    ** RED HALF RUN: neutering provably_nonzero_divisor to `return true` reds 6/13 lean-codegen unit
-    tests + the e2e gate. The e2e gate pins BOTH halves (8 refused shapes, 4 that must still lower).
-    ** SCOPE: crates/xpile-lean-codegen/src/lib.rs, crates/xpile/tests/transpile_e2e.rs, README.md,
-    docs/specifications/sub/backend-trait.md, CHANGELOG.md, both ledgers. NO contracts/*.yaml, NO
-    gate file, witness_floor.rs UNTOUCHED (neither of the two permitted touches).
-    NEXT PICK: PMAT-1395 (decy `unsigned int` -> WAT i32 result carrying an i64 literal; R8, also
-    dated 07-29, same pull-forward rule applies).'
-
+  done_note: 'DONE 2026-07-27 (Mon), PULLED FORWARD from 2026-07-29 under the day<=4 rule — the dated
+    slate had nothing at or before today and PMAT-1394 was the lowest-numbered open item. All three legs
+    reproduced verbatim against lean 4.15.0 at fee39fe3 before any edit, and the two FLOAT results were
+    MEASURED in Lean rather than inferred (float `//` -> inf, float `%` -> `NaN`, which is how Lean spells
+    it — my first draft of the error message said `nan`). ** IMPLEMENTED NARROWER THAN RATIFIED, and better:
+    the ratified text said "a hard BackendError::Lower on `//`, `%` and float `/`", i.e. blanket refusal
+    of the operators. Shipped instead as refuse-unless-PROVABLY-NONZERO-divisor, so `n % 2` and `x / 2.0`
+    still lower. The boundary is not invented — contracts/lean/PyIntArith.lean:607 already states its
+    floor-div and mod theorems under `(hb : b != 0)`, so emission for a possibly-zero divisor was emission
+    outside the region the lane`s own contract proves. Because nothing that still lowers changed, the
+    5-touchpoint contract resync was NOT needed. ** TRAPS 1-3 ALL CONFIRMED LIVE, plus a fourth the entry
+    did not predict: TRAP 2`s pinned test divided by an `Ident`, so it is the shape now refused — retargeted
+    onto a nonzero literal rather than deleted. THE UNPREDICTED ONE: tests/fixtures/asserted.py (`safe_div`,
+    with a hand-written `assert b != 0` one line above `a // b`) was the ONLY red test in 827, and the
+    reason it must still refuse is worth keeping — on this lane an assert lowers to `else panic!` and
+    a Lean panic does NOT abort, so it cannot discharge the divisor obligation, only relocate the same
+    silent divergence. Its e2e test is retargeted onto a divisor-free body so the assert-CHAIN property
+    keeps coverage. ** BLAST RADIUS MEASURED: 87 -> 78 of 812 corpus files lower to Lean; all 9 newly-refused
+    were verified to divide by a runtime value or literal zero (zero over-broad refusals). ** RED HALF
+    RUN: neutering provably_nonzero_divisor to `return true` reds 6/13 lean-codegen unit tests + the e2e
+    gate. The e2e gate pins BOTH halves (8 refused shapes, 4 that must still lower). ** SCOPE: crates/xpile-lean-codegen/src/lib.rs,
+    crates/xpile/tests/transpile_e2e.rs, README.md, docs/specifications/sub/backend-trait.md, CHANGELOG.md,
+    both ledgers. NO contracts/*.yaml, NO gate file, witness_floor.rs UNTOUCHED (neither of the two permitted
+    touches). NEXT PICK: PMAT-1395 (decy `unsigned int` -> WAT i32 result carrying an i64 literal; R8,
+    also dated 07-29, same pull-forward rule applies).'
 - id: PMAT-1395
   status: done
   ev_rank: R8
@@ -2416,45 +2426,81 @@ queue:
     \  sweep the other decy scalar tokens (`int`, `long`, `double`, `unsigned int`) through\n  wat2wasm\
     \ and record which lower and which refuse\n  command cargo test -p xpile-wasm-codegen && command cargo\
     \ test -p decy-frontend\n"
-  done_note: |-
-    DONE 2026-07-27 (pulled forward from 07-29 — the ranked slate for today was empty and
+  done_note: 'DONE 2026-07-27 (pulled forward from 07-29 — the ranked slate for today was empty and
+
     today is well inside the day<=4 pull-forward window; not a gate_touch, so the strictly-serial
+
     #3 PMAT-1373 release commit is untouched).
-    ** THE ENTRY'S ROOT CAUSE WAS WRONG, and it said so honestly ("find out WHY before patching"):
+
+    ** THE ENTRY''S ROOT CAUSE WAS WRONG, and it said so honestly ("find out WHY before patching"):
+
     PMAT-1378 did NOT miss the CUInt path. Its pre-emit layer is a BINDING-NAME collision belt and
+
     has never checked types. The real cause is that `emit_function` had TWO return paths and only
+
     ONE was type-checked — the early `Stmt::Return` arm called `emit_expr_typed`, the TRAILING
+
     return called the bare `emit_expr`, and the trailing one is the path nearly every C source
+
     takes. Both now funnel through `emit_scalar_ret`.
+
     ** SCOPE IS FIVE SHAPES, NOT ONE: sweeping the WHOLE decy scalar token set through the REAL
+
     assembler found `unsigned int`<-int-lit, `float`<-int-lit, `float`<-float-lit,
+
     `double`<-int-lit and every negated form broken. `int`/`long`/`long long` unaffected (i64 IS an
-    int literal's natural type) and KEPT in the corpus as the CONTROL group, so a blanket-coercion
+
+    int literal''s natural type) and KEPT in the corpus as the CONTROL group, so a blanket-coercion
+
     fix would red. `unsigned long` already refused at the BACKEND, `short`/`char` at the FRONTEND.
+
     ** CHOSE CONVERT over REFUSE (the entry allowed either): the conversion is the one C specifies
+
     for a `return` (C17 6.8.6.4p3) AND the one the Rust backend already performs by suffixing the
+
     literal, so converting makes the two backends AGREE instead of leaving them disagreeing about a
+
     program C defines. Modular for unsigned per C17 6.3.1.3p2 — `-2`->4294967294,
+
     `5000000000`->705032704, both value-matched against live cc. NOTHING WIDENED: a non-literal
+
     mismatch still refuses, and a narrow LOCAL (`unsigned int a = 1;`) still refuses; both
+
     boundaries carry a test so they stay visible rather than becoming folklore.
+
     ** THE STRUCTURAL FINDING, worth more than the fix: all 138 WASM witness files drive the emitter
+
     from PYTHON, and Type::CUInt / Type::F32 / Type::CLong are produced ONLY by decy-frontend — so
+
     the C->WASM lane had a live emitter, a live CLI flag and ZERO witnesses. `emit_surface` in
-    compile-rust-to-wasm-v1.yaml is Python-only too (all 39 probes), so PMAT-1350's two-way gate
+
+    compile-rust-to-wasm-v1.yaml is Python-only too (all 39 probes), so PMAT-1350''s two-way gate
+
     could not have caught it either. New crates/xpile-wasm-codegen/tests/c_scalar_abi_witness.rs
-    (18 probes; decy-frontend added as a dev-dep, no cycle) is the lane's FIRST witness.
+
+    (18 probes; decy-frontend added as a dev-dep, no cycle) is the lane''s FIRST witness.
+
     ** FALSIFICATION (B) IS THE DECISIVE ONE: (A) restoring the pre-slice `emit_expr` call reds 3 of
+
     4 tests including the STATIC pin; (B) a WELL-TYPED but semantically WRONG conversion (clamping
-    instead of C's modular wrap) passes the class gate AND the static pin, and is caught ONLY by the
+
+    instead of C''s modular wrap) passes the class gate AND the static pin, and is caught ONLY by the
+
     cc differential.
+
     ** LESSON FOR THE NEXT EMIT GATE: `Ok(wat) ==> wat2wasm accepts it` is NECESSARY AND NOT
+
     SUFFICIENT. Assembling is not the same as being right — pair the class gate with a VALUE
+
     differential or it certifies syntax only.
+
     ** SIBLING FILED, NOT SWALLOWED: the same literal-vs-declared-type hole exists on the RUST lane
+
     in the opposite direction -> PMAT-1399 below, with a verified repro.
+
     NEXT PICK: PMAT-1396 (doc-only, freeze-legal, R9) or PMAT-1399 (the Rust-lane sibling this slice
-    found and verified).
+
+    found and verified).'
 - id: PMAT-1396
   status: done
   ev_rank: R9
@@ -2484,97 +2530,85 @@ queue:
   outcome: 'DONE 2026-07-27 (#TBD), PULLED FORWARD from 2026-07-29 under the pick_rule (Day 2 <= Day 4;
     no OPEN item was dated <= today). CONFIRMED as reported: 11 tracked `.sh`, zero Makefile/Dockerfile,
     self-contradiction at CLAUDE.md:127. ** TOOK THE ITEM''S TRAP SERIOUSLY AND WENT FURTHER THAN THE
-    SUGGESTED WORDING: the item''s own example text ("...are 11 gated `.sh` fixtures...") would have
-    re-planted a cardinality in the exact file whose cardinality just rotted for 71 days, so the shipped
-    sentence carries NO count and the invariant is ENFORCED instead - new file
-    crates/xpile/tests/shell_artifact_policy_witness.rs (XPILE-SHELLPOLICY-001, 4 tests) re-derives the
-    corpus from `git ls-files` every run: zero Makefile/Dockerfile/*.mk, every shell artifact under a
-    gated prefix, each accepted by bashrs-frontend, emitted shell `sh -n`-clean, re-emit byte-identical,
-    and CLAUDE.md free of the falsified sentence + naming the gate. RED-THEN-GREEN on all four: a tracked
-    Makefile, an ungated root `.sh`, a here-doc fixture (PMAT-1377 refusal), and the reverted doc sentence
-    each red exactly one test. ** MEASURED BEYOND WHAT SHIPPED: source-vs-emitted EXECUTION was compared
-    for all 11 (identical stdout + exit, every one) and emit idempotence held for all 11 - but the
-    execution half is deliberately NOT in the auto-enumerated gate, because auto-enumeration plus
-    auto-execution makes the REQUIRED workspace-test job run whatever `.sh` a future change tracks. That
-    split is stated in CLAUDE.md, the gate''s doc comment and the CHANGELOG rather than glossed.
-    ** NON-VACUITY: assertion 1 is a NEGATIVE over an enumeration; every test first demands the
-    `git ls-files` output contain a known anchor (Cargo.toml) and the corpus test demands a non-empty
-    corpus, so a broken enumeration skips loudly instead of passing. ** NOT a gate_touch, NOT a
-    witness_floor.rs touch. NOT required by changelog_freshness (no crates/*/src or contracts/*.yaml
-    touched) - a CHANGELOG entry was written anyway, per the window''s incremental-CHANGELOG constraint.
-    NEXT PICK: the SCHEDULED queue is now EXHAUSTED until Thu 2026-07-30 (PMAT-1373, release commit) -
-    PMAT-1375 is explicitly 0.1.619 lane, DO NOT START. Days 2-3 remaining capacity should go to the
-    honesty hunt that produced PMAT-1383..1399, or to next_lane[0] (the WASM i64 SHIFT half), NOT to
-    new WASM breadth.'
+    SUGGESTED WORDING: the item''s own example text ("...are 11 gated `.sh` fixtures...") would have re-planted
+    a cardinality in the exact file whose cardinality just rotted for 71 days, so the shipped sentence
+    carries NO count and the invariant is ENFORCED instead - new file crates/xpile/tests/shell_artifact_policy_witness.rs
+    (XPILE-SHELLPOLICY-001, 4 tests) re-derives the corpus from `git ls-files` every run: zero Makefile/Dockerfile/*.mk,
+    every shell artifact under a gated prefix, each accepted by bashrs-frontend, emitted shell `sh -n`-clean,
+    re-emit byte-identical, and CLAUDE.md free of the falsified sentence + naming the gate. RED-THEN-GREEN
+    on all four: a tracked Makefile, an ungated root `.sh`, a here-doc fixture (PMAT-1377 refusal), and
+    the reverted doc sentence each red exactly one test. ** MEASURED BEYOND WHAT SHIPPED: source-vs-emitted
+    EXECUTION was compared for all 11 (identical stdout + exit, every one) and emit idempotence held for
+    all 11 - but the execution half is deliberately NOT in the auto-enumerated gate, because auto-enumeration
+    plus auto-execution makes the REQUIRED workspace-test job run whatever `.sh` a future change tracks.
+    That split is stated in CLAUDE.md, the gate''s doc comment and the CHANGELOG rather than glossed.
+    ** NON-VACUITY: assertion 1 is a NEGATIVE over an enumeration; every test first demands the `git ls-files`
+    output contain a known anchor (Cargo.toml) and the corpus test demands a non-empty corpus, so a broken
+    enumeration skips loudly instead of passing. ** NOT a gate_touch, NOT a witness_floor.rs touch. NOT
+    required by changelog_freshness (no crates/*/src or contracts/*.yaml touched) - a CHANGELOG entry
+    was written anyway, per the window''s incremental-CHANGELOG constraint. NEXT PICK: the SCHEDULED queue
+    is now EXHAUSTED until Thu 2026-07-30 (PMAT-1373, release commit) - PMAT-1375 is explicitly 0.1.619
+    lane, DO NOT START. Days 2-3 remaining capacity should go to the honesty hunt that produced PMAT-1383..1399,
+    or to next_lane[0] (the WASM i64 SHIFT half), NOT to new WASM breadth.'
 - id: PMAT-1399
   status: done
   ev_rank: R10
   gate_touch: null
   date: '2026-07-27'
-  title: The RUST lane has the PMAT-1395 hole in the OPPOSITE direction — a C integer literal
-    outside the declared type's range is emitted VERBATIM with its width suffix, so `--target
-    rust` exits 0 emitting Rust that `rustc` REJECTS
-  notes: |-
-    FOUND AND VERIFIED BY THE PMAT-1395 SWEEP at a31c12b6 — not speculated.
-    REPRO (unpiped; a pipe masks the exit code):
-      D=$(mktemp -d); printf 'unsigned int f(void) { return 5000000000; }\n' > $D/o.c
-      X=/mnt/nvme-raid0/targets/xpile/debug/xpile
-      $X transpile $D/o.c --target rust > $D/o.rs; echo "XP=$?"            # -> 0
-      rustc --crate-type lib --edition 2021 -o $D/o.rlib $D/o.rs; echo $?  # -> 1
-      #   error: literal out of range for `u32`
-      #     5 |     5000000000u32
-      #     = note: the literal does not fit into `u32` whose range is 0..=4294967295
-    GROUND TRUTH (/usr/bin/cc, NOT the bare `cc` — it is shell-ALIASED to `cargo check` in this
-    repo's dev shell and will silently eat a probe): C answers 705032704, i.e. the value converts
-    MODULO 2^32 (C17 6.3.1.3p2) with only a -Woverflow warning. So the emitted literal is BOTH
-    uncompilable AND, once made compilable, the wrong value unless it is wrapped.
-    ROOT CAUSE: the C-emit width table renders a literal as `<digits><lit_suffix>`
-    (`CWidth.lit_suffix`, the u32 row near crates/xpile-rust-codegen/src/lib.rs:5464) with NO range
-    conversion. PMAT-1395 fixed the identical class on the WASM lane by converting at the RETURN
-    site; do the same here. The two lanes MUST agree — cross-backend agreement was the whole
-    argument for converting there rather than refusing.
-    SWEEP BEFORE PATCHING (PMAT-1395's lesson: the one-token framing understated that slice 5x):
-    check EVERY C width the table carries (i32/i64/u32/u64/f32/f64) against both an out-of-range
-    literal and a negated literal, and check the LOCAL and PARAMETER positions as well as the return.
-    TRAP — do not over-red: `float f(void) { return 16777217; }` emits `16777217f32`, which rustc
-    ACCEPTS with rounding, exactly as C rounds. That is NOT a defect. The defect is specific to an
-    INTEGER literal outside the declared INTEGER range.
-    GATE: an emitted-Rust compile check over a C corpus — the `Ok(rust) ==> rustc accepts it` dual of
-    PMAT-1395's `Ok(wat) ==> wat2wasm accepts it` — PAIRED with a value differential against
-    /usr/bin/cc. PMAT-1395 falsification (B) showed a compile-only gate blesses a well-typed but
-    semantically wrong conversion.
-    ACCEPTANCE:
-      the repro compiles under rustc AND the built lib answers 705032704, or the emit REFUSES at
-      exit 1 with a named message
-      command cargo test -p xpile-rust-codegen
-  outcome: 'DONE 2026-07-27 (#TBD). CONFIRMED and BROADER than the report: the sweep (6 C widths x
-    {out-of-range, negated, in-range} x {return, local, call argument, arithmetic operand}, each probe
-    transpiled + rustc-compiled + RUN + value-differentialled against /usr/bin/cc) found the hole in
-    EVERY position at BOTH the i32 and u32 widths, so the fix lands at the single literal emit site
-    (`c_int_lit_render`), not the return site. UNAFFECTED control group held: i64 is the meta-HIR
-    literal''s own width (a wider C constant already refuses at the FRONTEND, "does not fit in i64")
-    and the float widths render `<v>f32`/`<v>f64` — the TRAP the item warned about (`16777217f32`
-    rounding like C) was verified identical to cc and left alone. ** THE PART THE ITEM DID NOT ASK FOR
-    AND THAT MATTERED MOST: converting alone would have swapped one exit-0 lie for a WORSE one. The
-    modular reduction is exact under `+ - * & | ^` and NOT under `/ %`, a comparison, a logical
-    `&& || !` or a controlling expression, where C evaluates the constant at its own wider type first.
-    Those REFUSE. Measured, not reasoned: with the guard removed and the conversion left on, five
-    corpus sources compile cleanly and DISAGREE with live cc (div 352516352 vs 2500000000; mod 5 vs 2;
-    and `>`/`!`/ternary each inverted). ** GATE: EXTENDED crates/xpile/tests/c_truth_witness.rs
+  title: The RUST lane has the PMAT-1395 hole in the OPPOSITE direction — a C integer literal outside
+    the declared type's range is emitted VERBATIM with its width suffix, so `--target rust` exits 0 emitting
+    Rust that `rustc` REJECTS
+  notes: "FOUND AND VERIFIED BY THE PMAT-1395 SWEEP at a31c12b6 — not speculated.\nREPRO (unpiped; a pipe\
+    \ masks the exit code):\n  D=$(mktemp -d); printf 'unsigned int f(void) { return 5000000000; }\\n'\
+    \ > $D/o.c\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  $X transpile $D/o.c --target rust > $D/o.rs;\
+    \ echo \"XP=$?\"            # -> 0\n  rustc --crate-type lib --edition 2021 -o $D/o.rlib $D/o.rs;\
+    \ echo $?  # -> 1\n  #   error: literal out of range for `u32`\n  #     5 |     5000000000u32\n  #\
+    \     = note: the literal does not fit into `u32` whose range is 0..=4294967295\nGROUND TRUTH (/usr/bin/cc,\
+    \ NOT the bare `cc` — it is shell-ALIASED to `cargo check` in this\nrepo's dev shell and will silently\
+    \ eat a probe): C answers 705032704, i.e. the value converts\nMODULO 2^32 (C17 6.3.1.3p2) with only\
+    \ a -Woverflow warning. So the emitted literal is BOTH\nuncompilable AND, once made compilable, the\
+    \ wrong value unless it is wrapped.\nROOT CAUSE: the C-emit width table renders a literal as `<digits><lit_suffix>`\n\
+    (`CWidth.lit_suffix`, the u32 row near crates/xpile-rust-codegen/src/lib.rs:5464) with NO range\n\
+    conversion. PMAT-1395 fixed the identical class on the WASM lane by converting at the RETURN\nsite;\
+    \ do the same here. The two lanes MUST agree — cross-backend agreement was the whole\nargument for\
+    \ converting there rather than refusing.\nSWEEP BEFORE PATCHING (PMAT-1395's lesson: the one-token\
+    \ framing understated that slice 5x):\ncheck EVERY C width the table carries (i32/i64/u32/u64/f32/f64)\
+    \ against both an out-of-range\nliteral and a negated literal, and check the LOCAL and PARAMETER positions\
+    \ as well as the return.\nTRAP — do not over-red: `float f(void) { return 16777217; }` emits `16777217f32`,\
+    \ which rustc\nACCEPTS with rounding, exactly as C rounds. That is NOT a defect. The defect is specific\
+    \ to an\nINTEGER literal outside the declared INTEGER range.\nGATE: an emitted-Rust compile check\
+    \ over a C corpus — the `Ok(rust) ==> rustc accepts it` dual of\nPMAT-1395's `Ok(wat) ==> wat2wasm\
+    \ accepts it` — PAIRED with a value differential against\n/usr/bin/cc. PMAT-1395 falsification (B)\
+    \ showed a compile-only gate blesses a well-typed but\nsemantically wrong conversion.\nACCEPTANCE:\n\
+    \  the repro compiles under rustc AND the built lib answers 705032704, or the emit REFUSES at\n  exit\
+    \ 1 with a named message\n  command cargo test -p xpile-rust-codegen"
+  outcome: 'DONE 2026-07-27 (#TBD). CONFIRMED and BROADER than the report: the sweep (6 C widths x {out-of-range,
+    negated, in-range} x {return, local, call argument, arithmetic operand}, each probe transpiled + rustc-compiled
+    + RUN + value-differentialled against /usr/bin/cc) found the hole in EVERY position at BOTH the i32
+    and u32 widths, so the fix lands at the single literal emit site (`c_int_lit_render`), not the return
+    site. UNAFFECTED control group held: i64 is the meta-HIR literal''s own width (a wider C constant
+    already refuses at the FRONTEND, "does not fit in i64") and the float widths render `<v>f32`/`<v>f64`
+    — the TRAP the item warned about (`16777217f32` rounding like C) was verified identical to cc and
+    left alone. ** THE PART THE ITEM DID NOT ASK FOR AND THAT MATTERED MOST: converting alone would have
+    swapped one exit-0 lie for a WORSE one. The modular reduction is exact under `+ - * & | ^` and NOT
+    under `/ %`, a comparison, a logical `&& || !` or a controlling expression, where C evaluates the
+    constant at its own wider type first. Those REFUSE. Measured, not reasoned: with the guard removed
+    and the conversion left on, five corpus sources compile cleanly and DISAGREE with live cc (div 352516352
+    vs 2500000000; mod 5 vs 2; and `>`/`!`/ternary each inverted). ** GATE: EXTENDED crates/xpile/tests/c_truth_witness.rs
     (XPILE-CTRUTH-001, corpus 47 -> 69) rather than adding a file — it already carries both halves the
     item asked for. Red-then-green both ways: reverting the fix reds 3 tests, property names 11 of 64
     accept-then-reject; removing only the guard reds the EXECUTING half on 5. The five refusing shapes
     are IN the corpus so a future change making them emit is caught by the differential — a refusal is
-    invisible to a compile-only property. ** NOT a witness_floor.rs touch and not a gate_touch.
-    NEXT PICK: no OPEN item is dated <= 2026-07-27; PMAT-1396 (R9, doc-only, freeze-legal) is dated
-    2026-07-29 and may be PULLED FORWARD under the pick_rule (today is Day 2, <= Day 4).'
+    invisible to a compile-only property. ** NOT a witness_floor.rs touch and not a gate_touch. NEXT PICK:
+    no OPEN item is dated <= 2026-07-27; PMAT-1396 (R9, doc-only, freeze-legal) is dated 2026-07-29 and
+    may be PULLED FORWARD under the pick_rule (today is Day 2, <= Day 4).'
 - id: PMAT-1401
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: 'The WGSL lane ACCEPTED `2147483647` and REFUSED `-2147483648` — the two ends of the same
-    i32 range — and blamed an "abstract value `2147483648`" that appears nowhere in the source'
+  title: The WGSL lane ACCEPTED `2147483647` and REFUSED `-2147483648` — the two ends of the same i32
+    range — and blamed an "abstract value `2147483648`" that appears nowhere in the source
   notes: 'DONE 2026-07-27 (Day 2). SELF-DIRECTED under the queue''s own "Days 2-3 capacity: the honesty
     hunt" clause — the SCHEDULED queue is empty until PMAT-1373 on Thu 07-30, and next_lane[0] (the WASM
     i64 SHIFT half) turned out to be ALREADY SHIPPED as PMAT-1379 on the same day that entry was written
@@ -2584,36 +2618,92 @@ queue:
     virtual-register declarations `.reg .s64 %rv<N>` are COMPUTED, verified against a 32-term expression
     at 31 adds / %rv<34>). WGSL/SPIR-V self-validate through naga INSIDE emit_wgsl_module (PMAT-1391 made
     that call unconditional), so `Ok ⟹ naga accepts` holds BY CONSTRUCTION there — recursion and mutual
-    recursion refuse correctly, and the for-loop desugar correctly DUPLICATES the increment before a
-    `continue` rather than stranding it. The GPU lanes are in good shape; the defect was at the type
-    BOUNDARY, which no corpus sampled. ** THE DEFECT: the frontend does not fold unary minus, so
-    `-2147483648` reaches the backend as `UnOp{Neg, LitInt(2147483648)}` and emit_unop emitted a negated
-    CONVERSION `(-(i32(2147483648)))` — an out-of-range magnitude INSIDE the conversion for a value,
-    i32::MIN, that is representable. SPIR-V inherited it verbatim. The INVERSE of PMAT-1395/1399: there
-    an out-of-range literal was emitted anyway, here an in-range one was refused; one root defect, a
-    literal rendered without regard to the width''s actual bounds. ** WHY THE SWEEPS MISSED IT: PMAT-1388
-    sweeps ~800 fixtures through both GPU lanes but asserts a RELATION between them (SPIR-V ⊆ WGSL), which
-    a defect present in BOTH satisfies; offline_validate.rs and ptxas_validate.rs run the REAL validators
-    but over HAND-BUILT meta-HIR, so no Python source reaches them. A relation-gate and a hand-HIR gate
-    can both be green while the CLI path is wrong at a boundary neither corpus contains. ** GATE
-    crates/xpile/tests/wgsl_int_boundary_witness.rs (XPILE-WGSLI32-001), 5 tests, no skip path. Accepted
-    set pinned at BOTH ends of acceptance AND both ends of refusal, so the over-refusal cannot be repaired
-    by widening (that trades exit-1 for silent-wrong — PMAT-1395 falsification (B)); a separate test pins
-    the emitted DECIMAL, the half a compile-only gate cannot give you. ** ANTI-VACUITY MEASURED: naga
-    validates the EMPTY string Ok. A probe harness redirecting stdout to a file validates the file a
-    REFUSED run left empty — this fired TWICE during the hunt itself. Every assertion is guarded on
-    SUBSTANCE, and a test pins the empty-module premise so the guards do not become cargo cult. ** RED:
-    reverting the fix reds 4/5; in-range acceptance 20 -> 15 (exactly i32::MIN x 5 positions) with the
-    refusal count UNCHANGED at 10 — the receipt that nothing was widened. ** NOT a gate_touch, NOT a
-    witness_floor.rs touch (no GPU lane has a floor). NEXT PICK: the scheduled queue is STILL empty until
-    Thu 2026-07-30 (PMAT-1373, release commit; gate touch #3 is RESERVED for it). PMAT-1375 is 0.1.619
+    recursion refuse correctly, and the for-loop desugar correctly DUPLICATES the increment before a `continue`
+    rather than stranding it. The GPU lanes are in good shape; the defect was at the type BOUNDARY, which
+    no corpus sampled. ** THE DEFECT: the frontend does not fold unary minus, so `-2147483648` reaches
+    the backend as `UnOp{Neg, LitInt(2147483648)}` and emit_unop emitted a negated CONVERSION `(-(i32(2147483648)))`
+    — an out-of-range magnitude INSIDE the conversion for a value, i32::MIN, that is representable. SPIR-V
+    inherited it verbatim. The INVERSE of PMAT-1395/1399: there an out-of-range literal was emitted anyway,
+    here an in-range one was refused; one root defect, a literal rendered without regard to the width''s
+    actual bounds. ** WHY THE SWEEPS MISSED IT: PMAT-1388 sweeps ~800 fixtures through both GPU lanes
+    but asserts a RELATION between them (SPIR-V ⊆ WGSL), which a defect present in BOTH satisfies; offline_validate.rs
+    and ptxas_validate.rs run the REAL validators but over HAND-BUILT meta-HIR, so no Python source reaches
+    them. A relation-gate and a hand-HIR gate can both be green while the CLI path is wrong at a boundary
+    neither corpus contains. ** GATE crates/xpile/tests/wgsl_int_boundary_witness.rs (XPILE-WGSLI32-001),
+    5 tests, no skip path. Accepted set pinned at BOTH ends of acceptance AND both ends of refusal, so
+    the over-refusal cannot be repaired by widening (that trades exit-1 for silent-wrong — PMAT-1395 falsification
+    (B)); a separate test pins the emitted DECIMAL, the half a compile-only gate cannot give you. ** ANTI-VACUITY
+    MEASURED: naga validates the EMPTY string Ok. A probe harness redirecting stdout to a file validates
+    the file a REFUSED run left empty — this fired TWICE during the hunt itself. Every assertion is guarded
+    on SUBSTANCE, and a test pins the empty-module premise so the guards do not become cargo cult. **
+    RED: reverting the fix reds 4/5; in-range acceptance 20 -> 15 (exactly i32::MIN x 5 positions) with
+    the refusal count UNCHANGED at 10 — the receipt that nothing was widened. ** NOT a gate_touch, NOT
+    a witness_floor.rs touch (no GPU lane has a floor). NEXT PICK: the scheduled queue is STILL empty
+    until Thu 2026-07-30 (PMAT-1373, release commit; gate touch #3 is RESERVED for it). PMAT-1375 is 0.1.619
     lane, DO NOT START. Days 2-3 remaining capacity: continue the honesty hunt. UNSWEPT SURFACE noted
     during this slice, in rough EV order — (a) the C -> {wgsl, spirv, ptx} direction (this slice swept
     Python sources only; decy-frontend C sources reach the same backends and PMAT-1399 found the C lane
-    is where width defects live); (b) `--emit-crate` and the hybrid `--emit-shims` paths, which no
-    validator-acceptance property covers; (c) `--contracts off` as a distinct emit mode. Do NOT open new
-    WASM breadth — that grind is CLOSED for this window.
-    ** ID-DRIFT: the MERGED subject on main cites (Refs PMAT-1400), not PMAT-1401 — ce7b2855 / PR #1989. A concurrent fire merged #1988 under PMAT-1400 mid-flight; this slice was re-filed as PMAT-1401 everywhere, but the squash took the original PR title. XPILE-LEDGER-001 still passes because PMAT-1400 IS registered (by #1988), which is the point worth knowing: the gate cannot tell a correct citation from a collided one. History NOT rewritten (owner-gated). ** LESSON FOR THE NEXT FIRE: `gh pr edit --title` did NOT change the squash subject of an already-open PR — pass the subject explicitly to `gh pr merge --squash`, or claim the id in queue.yaml BEFORE opening the PR so a concurrent fire cannot take it.'
+    is where width defects live); (b) `--emit-crate` and the hybrid `--emit-shims` paths, which no validator-acceptance
+    property covers; (c) `--contracts off` as a distinct emit mode. Do NOT open new WASM breadth — that
+    grind is CLOSED for this window. ** ID-DRIFT: the MERGED subject on main cites (Refs PMAT-1400), not
+    PMAT-1401 — ce7b2855 / PR #1989. A concurrent fire merged #1988 under PMAT-1400 mid-flight; this slice
+    was re-filed as PMAT-1401 everywhere, but the squash took the original PR title. XPILE-LEDGER-001
+    still passes because PMAT-1400 IS registered (by #1988), which is the point worth knowing: the gate
+    cannot tell a correct citation from a collided one. History NOT rewritten (owner-gated). ** LESSON
+    FOR THE NEXT FIRE: `gh pr edit --title` did NOT change the squash subject of an already-open PR —
+    pass the subject explicitly to `gh pr merge --squash`, or claim the id in queue.yaml BEFORE opening
+    the PR so a concurrent fire cannot take it.'
+- id: PMAT-1402
+  status: open
+  date: '2026-07-27'
+  ev_rank: R1
+  gate_touch: null
+  title: WASM i64 arithmetic SILENTLY WRAPS where CPython is arbitrary-precision and the RUST lane is
+    honest — same source, two backends, one lies
+  notes: "CONFIRMED at origin/main with a provenance-verified binary (built via `command cargo build -p\
+    \ xpile --target-dir <isolated>`; /mnt/nvme-raid0/targets/xpile was POISONED by a worktree build when\
+    \ this was probed).\nREPRO (everything inside a fn — a top-level `print`/`while` refuses honestly\
+    \ for an unrelated reason):\n  def overflow_mul() -> int:\n      x = 1\n      i = 0\n      while i\
+    \ < 64:\n          x = x * 2\n          i = i + 1\n      return x\n  CPython            -> 18446744073709551616\
+    \   (2**64, arbitrary precision)\n  --target rust      -> emits `checked_mul`    (HONEST: overflow\
+    \ is caught)\n  --target wasm      -> wasm-interp `i64:0`    (SILENTLY WRAPS: 2**64 mod 2**64)\nTHE\
+    \ ASYMMETRY IS THE POINT: the same source through two backends gives an honest result on one and a\
+    \ silent wrong answer on the other, so this is not 'Python bigint is out of scope' — the rust lane\
+    \ already decided that question the honest way and wasm did not follow.\nSCOPE: make the WASM lane\
+    \ match the rust lane's honesty. A TRAP on overflow (like the existing negative-domain sqrt trap and\
+    \ the PMAT-1289 index trap) is the cheap correct answer; arbitrary precision is NOT in scope and must\
+    \ not be attempted this window. Cover `*`, `+`, `-` and `**` if it lowers. The `<<`/`>>` half of this\
+    \ family already shipped as PMAT-1379 (it silently masked the shift count to 6 bits) — reuse whatever\
+    \ guard shape that slice used.\nACCEPTANCE: the probe above traps under wasm-interp instead of returning\
+    \ 0, and a *_witness.rs pins it; `--target rust` behaviour is UNCHANGED (regression-assert it).\n\
+    TRAP: witness_floor.rs is a SERIAL RESOURCE and both of its permitted touches this window are spent\
+    \ (PMAT-1372 + the PMAT-1373 release commit) — add witnesses, do NOT bump a floor."
+- id: PMAT-1353
+  status: open
+  date: '2026-07-28'
+  ev_rank: R2
+  gate_touch: null
+  title: 'Wire the RepairLoop into the CLI: `xpile hybrid --verify --repair` — 931 lines and 18 passing
+    tests that NO USER CAN INVOKE'
+  notes: 'UN-DEFERRED 2026-07-27. The deferral reason has EXPIRED and that is the whole justification:
+    it was held back because its prerequisite was a fixture that actually DIVERGES, and that landed this
+    morning as PMAT-1352 (#1954, DIVERGENT-arm falsifier) and has soaked. Re-verify before starting: `grep
+    -rn ''RepairLoop'' crates/ --include=''*.rs'' | grep -v crates/xpile-agent/` must still return ZERO.
+
+    WHY IT IS HIGH EV: this is the north-star differentiator. crates/xpile-agent/src/repair.rs is 931
+    lines with 3 real RepairRule impls and a probe that runs cc + rustc + the linked binary, and it is
+    unreachable from the CLI. Every other slice this window REMOVED a false claim; this ADDS a real capability.
+
+    SCOPE: add xpile-agent to crates/xpile/Cargo.toml; construct the loop from the reconciled boundary
+    via the existing RepairLoop::ffi_int_boundary / ffi_float_repr constructors; drive it from the Divergence
+    arm PMAT-1352 proved reachable; re-verify after each applied rule and print the converged rule chain.
+
+    MANDATORY REGRESSION TEST: default `--verify` output AND exit code must be BYTE-IDENTICAL with and
+    without the new dependency. `--repair` is opt-in and must not alter default behaviour — that is what
+    makes this safe three days before a release.
+
+    ACCEPTANCE: the grep above is NON-EMPTY; `hybrid <diverging-fixture> --verify` exits non-zero naming
+    the divergence; the same with `--repair` exits 0 printing the applied rule chain.'
 - id: PMAT-1404
   status: done
   ev_rank: R1
@@ -2750,15 +2840,15 @@ next_lane:
   returns 0, `-(-2**63)` returns itself. Div-by-zero already TRAPS honestly (i64.div_s), so the lane is
   internally inconsistent about which arithmetic failures it reports. The full fix is overflow-checked
   add/sub/mul/neg helpers that `unreachable` on overflow — L/XL, on the emitter''s hot path, and it touches
-  every existing witness. ** THE SHIFT HALF THIS ENTRY RECOMMENDED DOING FIRST IS ALREADY SHIPPED —
-  PMAT-1379 (b82a9c45, 2026-07-27), the same day this entry was written. VERIFIED at db3359d7, not
-  assumed: the emitted WAT carries `$__wasm_shl_i64` / `$__wasm_shr_i64`, which trap on a negative
-  count, clamp `>>` to 63, and trap `<<` for n >= 64 unless x == 0 — exactly what was prescribed
-  below. A cron fire on 2026-07-27 picked this entry as next_lane[0], probed it, and found the premise
-  already false; the ADD/SUB/MUL/NEG overflow half below is what actually remains. LESSON (PMAT-1363''s,
-  again): probe a queue premise with a force-rebuilt binary before planning against it.
-  [SHIPPED, for the record: `1 << 70` returned 64 because `i64.shl` masks the count to 6 bits, and a
-  NEGATIVE count — Python raises ValueError — masked to a large positive one.]'
+  every existing witness. ** THE SHIFT HALF THIS ENTRY RECOMMENDED DOING FIRST IS ALREADY SHIPPED — PMAT-1379
+  (b82a9c45, 2026-07-27), the same day this entry was written. VERIFIED at db3359d7, not assumed: the
+  emitted WAT carries `$__wasm_shl_i64` / `$__wasm_shr_i64`, which trap on a negative count, clamp `>>`
+  to 63, and trap `<<` for n >= 64 unless x == 0 — exactly what was prescribed below. A cron fire on 2026-07-27
+  picked this entry as next_lane[0], probed it, and found the premise already false; the ADD/SUB/MUL/NEG
+  overflow half below is what actually remains. LESSON (PMAT-1363''s, again): probe a queue premise with
+  a force-rebuilt binary before planning against it. [SHIPPED, for the record: `1 << 70` returned 64 because
+  `i64.shl` masks the count to 6 bits, and a NEGATIVE count — Python raises ValueError — masked to a large
+  positive one.]'
 - list[str] — the biggest compositional hole; blocks s.split(), ','.join(xs) and the repo's own word_count.py.
   Even the read-only subset is M-L.
 - Nested dict values dict[K, dict[...]] and dict-valued struct fields — unblocked by the shipped i32-pointer-in-i64-slot
@@ -2778,21 +2868,19 @@ next_lane:
 owner_decisions:
 - id: ruleset-workspace-test-dropped
   summary: '⚠️ SURFACED 2026-07-27 by the PMAT-1401 cron fire, NOT acted on. XPILE-RULESET-DRIFT-001''s
-    LIVE half reds locally: org ruleset 13878864 now requires only {"gate"} while
-    docs/status/ruleset-13878864.json records {"gate", "workspace-test"}. Live `updated_at` is
-    2026-07-27T13:48:42+02:00 — the change was made DURING that fire, so `workspace-test` is no
-    longer a merge-blocking context and a PR can now merge with it RED. Verified it reproduces on
-    UNMODIFIED main, so it is not slice fallout. CI is unaffected: the live half skips-with-reason
-    under the repo-scoped Actions GITHUB_TOKEN and the 3 STATIC tests pass, so this is visible only
-    where a token carries org scope. ** THE SNAPSHOT WAS DELIBERATELY NOT UPDATED. PMAT-1347''s own
-    recorded lesson is that a receipt committed minutes after an external mutation becomes a
-    stale-but-authoritative-looking record — the 2026-07-05 four-context flip was reverted six hours
-    later and its snapshot misled for three weeks. Re-deriving inside the hour reproduces exactly
-    that. ** DECISION NEEDED: if the drop is intended, re-derive the snapshot AND every
-    `XPILE-ENFORCEMENT REQUIRED-CONTEXTS:` marker, and correct the sprint plan + cron instructions,
-    which both state [gate, workspace-test] as the blocking set. If unintended, restore
-    workspace-test. Until then the sprint continues to require BOTH green before merging — a
-    weakened ruleset is not a licence to merge red.'
+    LIVE half reds locally: org ruleset 13878864 now requires only {"gate"} while docs/status/ruleset-13878864.json
+    records {"gate", "workspace-test"}. Live `updated_at` is 2026-07-27T13:48:42+02:00 — the change was
+    made DURING that fire, so `workspace-test` is no longer a merge-blocking context and a PR can now
+    merge with it RED. Verified it reproduces on UNMODIFIED main, so it is not slice fallout. CI is unaffected:
+    the live half skips-with-reason under the repo-scoped Actions GITHUB_TOKEN and the 3 STATIC tests
+    pass, so this is visible only where a token carries org scope. ** THE SNAPSHOT WAS DELIBERATELY NOT
+    UPDATED. PMAT-1347''s own recorded lesson is that a receipt committed minutes after an external mutation
+    becomes a stale-but-authoritative-looking record — the 2026-07-05 four-context flip was reverted six
+    hours later and its snapshot misled for three weeks. Re-deriving inside the hour reproduces exactly
+    that. ** DECISION NEEDED: if the drop is intended, re-derive the snapshot AND every `XPILE-ENFORCEMENT
+    REQUIRED-CONTEXTS:` marker, and correct the sprint plan + cron instructions, which both state [gate,
+    workspace-test] as the blocking set. If unintended, restore workspace-test. Until then the sprint
+    continues to require BOTH green before merging — a weakened ruleset is not a licence to merge red.'
 - id: int-float-container-literal-policy
   summary: '`list[float] = [1, 2.5]` silently COERCES (compiles, prints [1.0, 2.5] vs CPython [1, 2.5])
     while `dict[str,float] = {''a'': 1}` and `tuple[float,float] = (1, 2.5)` accept-then-fail rustc with
