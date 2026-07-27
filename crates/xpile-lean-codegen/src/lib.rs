@@ -31,7 +31,7 @@
 use std::fmt::Write;
 use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, QuorumStatus, Target};
 use xpile_meta_hir::{
-    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, Stmt, Type, UnOp,
+    BinOp, Block, Expr, FloatOp, Function, Item, Module, Param, SourceLang, Stmt, Type, UnOp,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -42,7 +42,86 @@ pub enum LeanCodegenError {
     Format(#[from] std::fmt::Error),
 }
 
+/// PMAT-1418: refuse any source language this backend was not written for.
+///
+/// The surface mapping at the top of this file is **Python → Lean**, and it is
+/// the only one implemented: Python `int` is unbounded, so `Int` is faithful,
+/// and Python `//` floors, so `Int.fdiv` is faithful. Nothing enforced that.
+/// `emit_module` READ `module.source_lang` — to print it into the header
+/// comment — and then emitted Python semantics regardless, so every other
+/// frontend that reached this backend got a **silent wrong answer** rather
+/// than a refusal. Measured at `e617d97c` on `tests/fixtures/c_int_arith.c`,
+/// comparing this backend against xpile's own C-honest Rust emit of the same
+/// source:
+///
+/// | expression      | `--target rust` (C semantics) | `--target lean` (this backend) |
+/// |-----------------|-------------------------------|--------------------------------|
+/// | `half(-7)`      | `-3` (C `/` truncates)        | `-4`  — `Int.fdiv` **floors**  |
+/// | `poly(50000)`   | `-1794867295` (i32 wraps)     | `2500100001` — `Int` is unbounded |
+/// | `factorial(13)` | `1932053504` (i32 wraps)      | does not elaborate: `fail to show termination`, so Lean falls back to the **`sorry` axiom** |
+///
+/// The first two are silent — `lean` exits 0 and prints a different number.
+/// The third is worse in kind: the PROOF lane emitted a module resting on
+/// `sorry`, in a repo whose contract claim is zero real `sorry` and zero
+/// `axiom`. All three were stamped `@[xpile_contract "C-PY-INT-ARITH"]` — the
+/// *Python* contract, whose own YAML (`contracts/c-int-arith-v1.yaml:10`)
+/// says the C one is "Distinct from C-PY-INT-ARITH (Python int)". The Rust
+/// and Ruchy backends have real C paths and cite `C-C-INT-ARITH`.
+///
+/// `Shell` is refused here too, and that is not redundant with the per-`Stmt`
+/// shell refusals below: those guard the *statements*, so an **item-less**
+/// shell module (a comment-only or empty `.sh`) had no statement to refuse and
+/// fell through the loop to emit a header-only "Lean module" at exit 0 — a
+/// negative over an empty enumeration passes for free.
+///
+/// The match is deliberately exhaustive with no `_` arm: a new `SourceLang`
+/// variant must make an explicit decision here rather than silently inheriting
+/// Python semantics, which is precisely how `C` and `Wasm` arrived.
+fn reject_non_python_source(module: &Module) -> Result<(), LeanCodegenError> {
+    let mismatch = match module.source_lang {
+        // The implemented surface. Python `int` is unbounded and `//` floors,
+        // which is exactly what `Int` / `Int.fdiv` mean.
+        SourceLang::Python => return Ok(()),
+        SourceLang::C | SourceLang::Cpp | SourceLang::Cuda => {
+            "C `int` is 32-bit and WRAPS on overflow, and C `/` truncates toward zero, \
+             while Lean `Int` is arbitrary-precision and this backend emits `Int.fdiv`, \
+             which FLOORS — so `half(-7)` yields -4 here and -3 in C. \
+             Contract C-C-INT-ARITH (not C-PY-INT-ARITH) governs C integer semantics \
+             and this backend has no path that satisfies it"
+        }
+        SourceLang::Wasm => {
+            "WASM `i32`/`i64` are fixed-width and WRAP on overflow, while Lean `Int` is \
+             arbitrary-precision, so an overflowing lifted function evaluates to a \
+             different value here than it does under `wasm-interp`"
+        }
+        SourceLang::Rust => {
+            "Rust integers are fixed-width and panic or wrap on overflow, while Lean \
+             `Int` is arbitrary-precision"
+        }
+        SourceLang::Shell => {
+            "shell has no typed integer surface and contract C-BASHRS-POSIX-IDEMPOTENCE \
+             governs shell constructs; an item-less shell module would otherwise emit an \
+             empty Lean module at exit 0"
+        }
+        SourceLang::Ruchy => {
+            "the Ruchy frontend has no parser, so no Ruchy module is faithful here"
+        }
+        SourceLang::Lean => {
+            "a Lean source module is not re-emitted through the Python→Lean surface; \
+             the Lean code lane lowers to Rust instead"
+        }
+    };
+    Err(LeanCodegenError::Unsupported(format!(
+        "Lean backend does not lower a {:?} source module — {mismatch}. \
+         The Python→Lean surface is the only one implemented; emitting it for \
+         {:?} would produce a SILENT WRONG VALUE rather than a refusal. \
+         Use `--target rust` (which has a real {:?} path) instead.",
+        module.source_lang, module.source_lang, module.source_lang
+    )))
+}
+
 pub fn emit_module(module: &Module) -> Result<String, LeanCodegenError> {
+    reject_non_python_source(module)?;
     let mut out = String::new();
     writeln!(
         out,

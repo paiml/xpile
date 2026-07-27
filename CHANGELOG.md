@@ -7,6 +7,72 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The Lean backend gave C's 32-bit `int` arbitrary-precision semantics, and the audit scored it 100% (PMAT-1418)
+
+`xpile-lean-codegen`'s module doc declares the surface it implements: **Python →
+Lean**. That mapping is faithful only because Python `int` is unbounded (so Lean
+`Int` is right) and Python `//` floors (so `Int.fdiv` is right). Nothing enforced
+the premise. `emit_module` **read** `module.source_lang` — to interpolate it into
+the header comment `-- xpile-generated from C module …` — and then emitted Python
+semantics regardless. The backend announced the mismatch in its own output and
+lowered it anyway.
+
+Measured at `e617d97c` on `crates/xpile/tests/fixtures/c_int_arith.c`, comparing
+the Lean backend against xpile's **own** C-honest Rust emit of the same file:
+
+| expression | `--target rust` (C semantics) | `--target lean` (before) |
+|---|---|---|
+| `half(-7)` | `-3` — C `/` truncates toward zero | **`-4`** — `Int.fdiv` **floors** |
+| `poly(50000)` | `-1794867295` — i32 wraps | **`2500100001`** — `Int` is unbounded |
+| `factorial(13)` | `1932053504` — i32 wraps | **does not elaborate**: `fail to show termination`, so Lean falls back to the **`sorry` axiom** |
+
+The first two are silent: `lean` exits 0 and prints a different number than the C
+program computes. The third is worse in kind — the **proof lane** emitted a module
+resting on `sorry`, in a repo whose standing claim is zero real `sorry` and zero
+`axiom`. All of it was stamped `C-PY-INT-ARITH`, the **Python** contract, on C
+code, when `contracts/c-int-arith-v1.yaml:10` says in its own description that the
+C contract is "Distinct from C-PY-INT-ARITH (Python int)". The Rust and Ruchy
+backends have real C paths and cite `C-C-INT-ARITH`; Lean has no C path at all.
+
+**Why it survived is the sharper half.** `xpile audit … --target lean` over the 11
+tracked `.c` files scored them `{"f1_pct":100.0,"f1_status":"OK"}` — a *perfect*
+citation score, for citing the wrong contract. The audit asks whether a citation
+is **present**, never whether it is the **right one for the source language**, so
+the wrongest lane in the repo carried the highest score and held the whole-corpus
+number up. Removing it moves the Lean F1 from 85.7% to **84.1%** over the same 831
+files: 18 of the 18 citations that disappeared were C-lane ones. 84.1% is the
+first honest measurement of that lane, with nothing wrong-language propping it up.
+
+Two languages reached the backend and got Python semantics — `C`/`.h` and `Wasm`
+(the WAT lift). `Shell` is now refused there too, which is **not** redundant with
+the backend's per-`Stmt` shell refusals: those guard the *statements*, so an
+item-less shell module (a comment-only or empty `.sh`) had nothing to refuse, fell
+through the item loop, and emitted a header-only "Lean module" at exit 0. A
+negative over an empty enumeration passes for free.
+
+**Fixed:** `emit_module` now refuses any non-Python source module, with a message
+naming the specific semantic mismatch and redirecting to a backend that has a real
+path for that language. The `match` is exhaustive with **no `_` arm**, so adding a
+`SourceLang` variant is a compile error rather than a silent inheritance of Python
+semantics — which is exactly how `C` and `Wasm` arrived.
+
+**Gated by** `crates/xpile/tests/lean_source_lang_refusal_witness.rs` (7
+assertions): every tracked `.c`/`.h` file refuses — corpus derived from `git
+ls-files`, no count hard-coded, asserted non-empty first because "every member
+refuses" is free on an empty set; a Python positive control so deleting the
+backend cannot satisfy it; the item-less shell hole specifically; the WAT lift; an
+**executed** differential that compiles and runs the C→Rust emit to pin the three
+values above; that Rust/Ruchy cite `C-C-INT-ARITH` and never `C-PY-INT-ARITH`; and
+a structural check that no `_` arm returns. Red-then-green run for all three
+halves — guard removed reds exactly the 3 refusal assertions and leaves the other
+4 green; flipping the differential to the Lean values reds it; collapsing the last
+match arm to `_` reds the structural one.
+
+**Still open, named rather than fixed:** `every_applicable_contract_is_actually_cited`
+in `contract_citation_integrity.rs` filters its corpus to `.py`, which is why the
+lane where citation drift was total is the one it never read. Widening it is
+0.1.619 work.
+
 ### The book was never in the claims-drift gate's scope (PMAT-1417)
 
 `crates/xpile/tests/claims_drift.rs` exists to stop derived-count doc claims

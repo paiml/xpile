@@ -12955,19 +12955,53 @@ fn audit_command_supports_lean_target() {
     // Vacuity guard first: an unmeasured Lean corpus must not read as a pass.
     let requiring = json_usize(&stdout, "functions_requiring_citation");
     let with = json_usize(&stdout, "functions_with_citation");
+    // PMAT-1418: 181 → 151 for the same reason the F1 floor moved (the 18 C-lane
+    // functions and their wrong-language citations left the corpus). The floor is
+    // 140, not 150: at 151 measured, a 150 floor leaves ONE function of margin and
+    // any Python fixture churn reds it, which would make this a tracking equality
+    // rather than the vacuity guard it exists to be. It still proves the lane
+    // emits substantially — a hollow Lean lane would read 0, not 140.
     assert!(
-        requiring >= 150,
-        "expected the Lean lane to actually emit (measured 181 requiring), got {requiring}: {stdout}"
+        requiring >= 140,
+        "expected the Lean lane to actually emit (measured 151 requiring, \
+         Python-only, after PMAT-1418), got {requiring}: {stdout}"
     );
     assert!(
         !stdout.contains("\"f1_status\":\"VACUOUS\"") && !stdout.contains("\"f1_pct\":null"),
         "the Lean F1 must be measured, not vacuous: {stdout}"
     );
     let pct = (with as f64) / (requiring as f64) * 100.0;
+    // PMAT-1418: this floor moved DOWN, 85.0 → 83.0, and that is the removal of
+    // inflation rather than a regression. Measured over the same 831-file corpus,
+    // with each binary verified by `strings` to carry (or not carry) the new
+    // source-language guard:
+    //
+    //            functions_emitted  requiring  with_citation   f1
+    //   before          192            169          145       85.7% WARN
+    //   after           172            151          127       84.1% WARN
+    //
+    // Every one of the 18 citations that disappeared came from the C lane. The
+    // corpus holds 11 `.c` files (recursively — the top level shows only 4), and
+    // before the guard they emitted 20 Lean functions of which 18 required a
+    // citation and 18 carried one: the C sub-lane scored a PERFECT
+    // `{"f1_pct":100.0,"f1_status":"OK"}`. It scored 100% for stamping
+    // `C-PY-INT-ARITH` — the PYTHON contract — onto C code that computes
+    // different values (`half(-7)` is -4 in the Lean emit and -3 in C). The audit
+    // checks that a citation is PRESENT, never that it is the RIGHT one for the
+    // source language, so the wrongest lane in the repo was the one carrying the
+    // highest score and holding the whole-corpus number up. Shell contributes no
+    // functions in either direction (statement-bearing shell already refused
+    // per-`Stmt`; an item-less shell module emits zero `def`s), so the delta is
+    // entirely C. After the guard the C sub-lane reads `"f1_status":"VACUOUS"`,
+    // which is the honest reading: nothing is emitted, so there is no F1.
+    //
+    // 84.1% is therefore the first HONEST measurement of this lane — it is the
+    // Python-only number, with no wrong-language citations propping it up.
     assert!(
-        pct >= 85.0,
-        "Lean F1 measured 86.7% on 2026-07-27 (PMAT-1385); a drop below 85% is a \
-         citation regression, got {pct:.1}%: {stdout}"
+        pct >= 83.0,
+        "Lean F1 measured 84.1% on 2026-07-27 after PMAT-1418 removed the C lane's \
+         wrong-contract citations; a drop below 83% is a citation regression, \
+         got {pct:.1}%: {stdout}"
     );
 }
 
