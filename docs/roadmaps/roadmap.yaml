@@ -18907,3 +18907,93 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1420
+  title: 'PMAT-1420: [src/docs/gate] MAKEFILE + DOCKERFILE ARE ROUTED TO A FRONTEND THAT HAS NO
+    DIALECT FOR THEM. sub/bashrs-merger.md advertised a routing-table row "`Makefile`, `*.mk` ->
+    bashrs-frontend (Makefile dialect)" and a matching Dockerfile row. Neither dialect exists:
+    BashrsFrontend::parse_and_lower is a POSIX-shell LINE parser that trims every line, drops the
+    blank ones, and lowers each survivor to a top-level Stmt::Cmd. matches_path (PMAT-038) routed
+    all three file kinds into it, so a Makefile was lowered as shell AT EXIT 0 - tab significance
+    trimmed away, target scoping discarded. MEASURED and EXECUTED 2026-07-28 on a Makefile with
+    bareword `all:` (echo + touch out.txt), `clean:` (rm -f out.txt) and `test:` recipes, both
+    sides exit 0 and the emit is `sh -n`-clean: `make` prints "building" and out.txt EXISTS; the
+    emitted shell prints "building" AND "running-tests" and out.txt is GONE - it runs EVERY recipe
+    unconditionally, in one shell, in file order, including the `clean` target make was never
+    asked for, deleting the artifact make had just built. Target-name lines survive as barewords
+    and merely print `all:: not found` to stderr while the script still exits 0. `--target forjar`
+    was the sharper end: it wrapped that same script in a `type: file` at /usr/local/bin/<n>.sh
+    mode 0755 plus a `type: task` that RUNS it - the deployment lane materialising and executing a
+    script whose behaviour differs from its source. Expansion diverges in the dangerous direction
+    too: `$(RM) x` is variable expansion in make and COMMAND SUBSTITUTION in sh.'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30). Generalised
+    PMAT-1419''s matrix sweep, whose standing lead (b) pointed at the REMAINING backends. Lead (b)
+    itself came back STALE-and-honest: `--target ruchy` on C emits `fun half(a: i32) -> i32 {
+    (a).wrapping_div(2i32) }` - real i32 truncating C semantics, not the Python i64 floor-div
+    lowering. THE FINDING WAS THAT THE MATRIX ITSELF WAS MIS-SIZED: PMAT-1419 swept "4x9 frontend x
+    backend" but `xpile transpile` advertises TEN extensions across SIX frontend families - py/pyi,
+    c/h, ruchy, sh/bash/zsh, mk, wat. The `.ruchy`, `.mk` and `.wat` families had never been swept.
+    `.ruchy` and `.wat` refused the probes outright; `.mk` exited 0. LESSON WORTH KEEPING: when a
+    prior sweep reports a matrix DIMENSION, re-derive the dimension from the binary (`transpile
+    x.rs` prints the full extension list in its error) rather than inheriting the number - the
+    unswept cells are where the defect was.'
+  fix: 'REFUSE, per the PMAT-1371/1377 here-doc precedent for this same frontend and PMAT-1395''s
+    rule that coercing shredded output into something that RUNS installs a silent wrong answer.
+    New `build_driver_dialect(path) -> Option<&str>` returns the dialect NAME (so the diagnostic
+    says what is unimplemented, not merely that something failed); a guard at the top of
+    parse_and_lower refuses `*.mk` / `Makefile` / `Dockerfile`. ROUTING IS DELIBERATELY UNCHANGED
+    - matches_path still claims them, so the error reads "there is no Makefile dialect" instead of
+    degrading to "no frontend handles `.mk`", and every pre-existing matches_path witness
+    (bashrs-frontend''s own, plus xpile-core''s exactly-one-frontend dispatch test naming
+    /tmp/Makefile and /tmp/Dockerfile) stays green untouched.'
+  over_refusal_bound: 'MEASURED BEFORE CUTTING, per PMAT-1419''s lesson that over-refusal is the
+    natural failure mode of a refusal fix (three of its cuts were wrong). `git ls-files` tracks
+    ZERO Makefile / Dockerfile / *.mk, and no in-tree parse_and_lower call site passes such a
+    path. That bound is not a snapshot: invariant 1 of shell_artifact_policy_witness.rs
+    (XPILE-SHELLPOLICY-001, PMAT-1396) re-derives it from `git ls-files` on every run, so this arm
+    cannot regress a tracked artifact today or after the next fixture lands. The guard is also
+    pinned NOT to widen past what matches_path claims - `Makefile.in` / `Dockerfile.dev` are
+    explicitly unclaimed by the router (matches_path_rejects_unrelated_files) and the guard must
+    agree, or the two disagree about what this frontend owns.'
+  witness: 'crates/xpile/tests/makefile_dialect_refusal_witness.rs (XPILE-MAKEFILE-DIALECT-001, 4
+    tests) + 3 bashrs-frontend unit tests. NEW witness FILE, so no witness_floor.rs touch. RED HALF
+    RUN THREE TIMES: (1) guard disabled -> the CLI refusal test and the frontend refusal test red
+    while BOTH controls stay green; (2) guard widened to starts_with -> the width test reds, which
+    is what pins Makefile.in/Dockerfile.dev; (3) doc rows reverted to the false claim -> the spec
+    test reds. ANTI-VACUITY IS THE LOAD-BEARING HALF: the refusal corpus is bareword-only (no
+    `$(VAR)`, no quotes, no here-doc) precisely so it lowers CLEANLY as shell, and the SAME BYTES
+    at a `.sh` path are asserted to still emit on both backends - the filename is the only
+    discriminator. Without that control, a frontend that had merely stopped parsing these lines
+    would satisfy the refusal assertion just as well. All six routed paths are individually
+    non-vacuous, not just the first: past the guard, `path` feeds nothing but `module_name`, so
+    with the guard off every build-driver path behaves exactly like the proven-Ok `.sh` case. The
+    EXECUTED make-vs-shell differential correctly stays GREEN under the red half - it measures
+    that the two LANGUAGES disagree, which is the justification for the refusal rather than a test
+    of it - and skips loudly under XPILE_REQUIRE_SH if `make` is absent. SELF-CAUGHT: the spec
+    assertion''s first cut forbade the substring "Makefile dialect" and RED on the very sentence
+    that fixes the claim ("no Makefile dialect exists"); a disclaimer necessarily quotes what it
+    disclaims, so the requirement was re-keyed POSITIVE (the located row must read REFUSED) with a
+    present-row precondition, since a forbidden-substring check survives deleting the row it cares
+    about (PMAT-1417) and a negative over a missing row passes for free (PMAT-1396).'
+  docs: 'Both routing-table rows in docs/specifications/sub/bashrs-merger.md corrected to
+    ROUTED-then-REFUSED plus a note recording the measured divergence, and CLAUDE.md step 2 of the
+    shell-artifact workflow - which PRESCRIBED round-tripping Makefile/Dockerfile through
+    bashrs-frontend, i.e. instructed every agent session to run the shredding path - now says those
+    kinds refuse and a build driver stays out of the tree instead.'
+  still_open: 'Named, not fixed: (a) the REAL fix is a Makefile dialect (target graph, tab-
+    significant recipes, lazy `$(VAR)` expansion, .PHONY, @/- prefixes) and a Dockerfile dialect -
+    both are the v0.2.0 "real bashrs parser" fold, not release-week work; (b) the routed set and
+    shell_artifact_policy_witness.rs''s is_build_driver set DISAGREE - the policy also covers
+    `makefile`, `GNUmakefile` and `Dockerfile*`, which matches_path does not claim, so those reach
+    "no frontend handles" by accident rather than by design; the policy set is the superset, which
+    is the safe direction, but the two should be derived from one place; (c) the `.ruchy` and
+    `.wat` frontend families refused this hunt''s probes and were NOT swept to their own subset
+    ceilings - whether their refusals are principled or incidental is unmeasured.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

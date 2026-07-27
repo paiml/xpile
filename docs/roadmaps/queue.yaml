@@ -2,34 +2,37 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-27 (PMAT-1419 landed from an honesty hunt. The ranked queue is exhausted
-  until Thu 07-30, and BOTH standing leads were probed FIRST and both were STALE - the PMAT-1388
-  wgsl accept-then-fail lead is already fixed (naga refuses recursive fib at exit 1, and spirv
-  inherits that refusal through the WGSL lowering), and the contract_citation corpus-filter lead
-  is explicitly 0.1.619 work. So the hunt generalised PMAT-1418''s shape SIDEWAYS instead of
-  forward: that slice fixed the Lean backend and its own guard doc names the general shape - "which
-  is precisely how C and Wasm arrived" - but it swept only its own lane. Sweeping the full 4x9
-  frontend x backend matrix found the identical defect in the lane carrying ~69 of this release''s
-  commits. THE TELL WAS A BYTE COUNT: `s.c --target wasm` and `s.py --target wasm` were both 1207
-  bytes, then md5-EQUAL - a C source left ZERO trace in the emitted WAT. The WASM backend never
-  referenced module.source_lang at all (the Lean one at least READ it, to print it into a header
-  comment, before ignoring it), and decy lowers C `int` to the SAME Type::I64 Python uses, so
-  source_lang was the only discriminator and nothing consulted it. EXECUTED under wasm-interp vs
-  gcc -O0 on the tracked c_int_arith.c: half(-7) is -3 in C and -4 in wasm, poly(50000) is
-  -1794867295 and 2500100001, factorial(13) is 1932053504 and 6227020800 - all SILENT, since
-  wat2wasm accepts the module and wasm-interp runs it. xpile''s own --target rust agrees with gcc
-  on all three, so the WASM lane diverges from XPILE, not merely from a foreign compiler. LESSON
-  WORTH KEEPING: when a fix is scoped to one lane, the defect''s SIBLINGS are the highest-yield
-  next probe, and cheap structural equalities (byte counts, md5) find them faster than reading
-  code. NEXT PICK: no ranked slice is due until Thu 07-30 (PMAT-1373, the release commit); a fire
-  before then should hunt again rather than pull release mechanics forward - the tag is date-gated
-  by owner ratification and Wed 18:00 is the hard freeze. STANDING LEAD from this slice: the same
-  matrix sweep should be pointed at the REMAINING backends - `--target ruchy` also accepted a C
-  module at exit 0, and although it cites C-C-INT-ARITH correctly it is unverified whether its C
-  path is REAL or inherited from the Rust emitter. Also still open and named-not-fixed: the CLI
-  corpus check added here covers only the C lane, because the other non-Python frontends refuse
-  `--target wasm` for unrelated FRONTEND reasons - vacuous-by-luck at the CLI level, though the
-  per-variant unit tests now cover them. Owner-gated leads unchanged: the proof-lane load-bearing
+updated: '2026-07-28 (PMAT-1420 landed from an honesty hunt. The ranked queue stays exhausted
+  until Thu 07-30 - PMAT-1373, the release commit. This slice started from PMAT-1419''s standing
+  lead (b) and that lead came back STALE-and-honest: the ruchy backend''s C path is REAL, emitting
+  `(a).wrapping_div(2i32)` at i32 width, not the Python i64 floor-div lowering. THE ACTUAL FINDING
+  WAS THAT THE MATRIX WAS MIS-SIZED. PMAT-1419 reported sweeping a "4x9 frontend x backend" matrix;
+  `xpile transpile x.rs` prints its own extension list and it is TEN extensions across SIX frontend
+  families - py/pyi, c/h, ruchy, sh/bash/zsh, mk, wat. The `.ruchy`, `.mk` and `.wat` families had
+  never been swept at all, and the defect was in an unswept cell. `.mk` - and extensionless
+  `Makefile` and `Dockerfile`, routed by PMAT-038''s matches_path override - reached a POSIX-shell
+  LINE parser that trims every line and lowers each survivor to a top-level command, while
+  sub/bashrs-merger.md advertised a "(Makefile dialect)" that has never existed. Tab significance
+  is the whole syntax of a Makefile and the frontend trims it; target scoping is the whole
+  semantics and lowering to top level discards it. EXECUTED, both sides exit 0, emit `sh -n`-clean:
+  `make` builds out.txt, the emit DELETES it, because the emit runs every recipe unconditionally in
+  one shell - including the `clean` target nobody asked for - and prints the `test` recipe''s output
+  too. `--target forjar` wrapped that same script in a file resource at /usr/local/bin/<n>.sh mode
+  0755 with a task to run it. Refused rather than coerced, per PMAT-1371/1377 and PMAT-1395.
+  LESSON WORTH KEEPING: when a prior sweep reports a matrix DIMENSION, re-derive the dimension from
+  the binary rather than inheriting the number - the unswept cells are exactly where the defect
+  was, and the binary was willing to print the true dimension in an error message. SECOND LESSON,
+  self-caught: a forbidden-substring doc check REDS on the disclaimer that fixes the claim, because
+  a disclaimer necessarily quotes what it disclaims - gate such rows POSITIVELY (the located row
+  must read REFUSED) with a present-row precondition. NEXT PICK: no ranked slice is due until Thu
+  07-30 (PMAT-1373); a fire before then should hunt again rather than pull release mechanics
+  forward - the tag is date-gated by owner ratification and Wed 18:00 is the hard freeze. STANDING
+  LEADS: (a) `.ruchy` and `.wat` are the LAST TWO unswept frontend families - both refused this
+  hunt''s probes and neither was swept to its own subset ceiling, so whether those refusals are
+  principled or incidental is unmeasured; (b) the routed build-driver set and
+  shell_artifact_policy_witness.rs''s is_build_driver set disagree (safe direction, two sources of
+  truth); (c) PMAT-1419''s leads on C int->i32 wrapping and the unresolved Python-vs-Rust identity
+  of the WASM lane are both 0.1.619. Owner-gated leads unchanged: the proof-lane load-bearing
   decision, the LGPL decision (needed BEFORE Friday''s publish), and the ruleset-drift decision
   below.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
@@ -3563,6 +3566,48 @@ queue:
     a Rust label, and the label is load-bearing NOWHERE, which is the same condition that let C
     through; (d) the belt reads DECLARED types, so a type reachable only via an inferred expression
     type is unseen.'
+- id: PMAT-1420
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: "`Makefile` / `*.mk` / `Dockerfile` were ROUTED to bashrs-frontend, which has NO dialect
+    for them - a Makefile lowered as POSIX shell at exit 0 and ran the `clean` target `make`
+    was never asked for, deleting the artifact `make` had just built"
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30).
+    PMAT-1419''s standing lead (b) was probed FIRST and came back STALE-and-honest: `--target
+    ruchy` on C emits `(a).wrapping_div(2i32)` at i32 - real C truncating semantics, not the
+    Python i64 floor-div lowering. THE FINDING WAS THAT THE MATRIX WAS MIS-SIZED. PMAT-1419 swept
+    "4x9 frontend x backend"; the binary advertises TEN extensions across SIX frontend families
+    (py/pyi, c/h, ruchy, sh/bash/zsh, mk, wat), so `.ruchy`, `.mk` and `.wat` had never been
+    swept. `.ruchy` and `.wat` refused outright. `.mk` exited 0 - and so did extensionless
+    `Makefile` and `Dockerfile`, routed by PMAT-038''s matches_path override into a POSIX-shell
+    LINE parser that trims every line and lowers each survivor to a top-level Stmt::Cmd.
+    sub/bashrs-merger.md advertised a "(Makefile dialect)" that does not exist. EXECUTED
+    DIFFERENTIAL, both sides exit 0, emit is `sh -n`-clean: `make` prints "building" and out.txt
+    EXISTS; the emit prints "building" AND "running-tests" and out.txt is GONE, because it runs
+    EVERY recipe unconditionally in one shell in file order. `--target forjar` then wrapped that
+    script in a `type: file` at /usr/local/bin/<n>.sh mode 0755 plus a `type: task` that RUNS it.
+    FIX = REFUSE naming the missing dialect (PMAT-1371/1377 here-doc precedent; PMAT-1395 says
+    coercing shredded output into something that runs installs a silent wrong answer). Routing
+    UNCHANGED so the diagnostic names the gap and every pre-existing matches_path witness stays
+    green. OVER-REFUSAL BOUND MEASURED FIRST (PMAT-1419''s lesson): `git ls-files` tracks ZERO
+    build drivers and shell_artifact_policy_witness.rs invariant 1 re-derives that on every run,
+    so the arm cannot regress a tracked artifact. RED HALF RUN 3x (guard off -> refusals red,
+    controls green; guard widened -> the width test reds; doc reverted -> the spec test reds).
+    SELF-CAUGHT: the spec assertion''s first cut forbade the substring "Makefile dialect" and red
+    on the sentence that FIXES the claim - a disclaimer quotes what it disclaims - so it was
+    re-keyed POSITIVE (located row must read REFUSED) with a present-row precondition. CLAUDE.md
+    step 2 of the shell-artifact workflow, which PRESCRIBED round-tripping Makefile/Dockerfile
+    through this path, corrected. No witness floor touched; no gate file edited. NEXT PICK:
+    PMAT-1373 (release commit) on Thu 07-30; a fire before then should hunt again. STANDING LEADS
+    from this slice: (a) the `.ruchy` and `.wat` frontend families refused this hunt''s probes and
+    were NOT swept to their own subset ceilings - whether those refusals are principled or
+    incidental is UNMEASURED, and they are the last two unswept frontend families; (b) the routed
+    build-driver set and shell_artifact_policy_witness.rs''s is_build_driver set DISAGREE (the
+    policy also covers `makefile`, `GNUmakefile`, `Dockerfile*`), safe direction but two sources
+    of truth; (c) PMAT-1419''s leads (a) C int->i32 wrapping lowering and (c) the unresolved
+    Python-vs-Rust identity of the WASM lane remain open, both 0.1.619.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
