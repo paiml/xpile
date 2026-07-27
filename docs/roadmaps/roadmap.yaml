@@ -16864,3 +16864,16 @@ roadmap:
     ** No gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
     PMAT-1373).'
   status: done
+- id: PMAT-1397
+  github_issue: null
+  item_type: task
+  title: "PMAT-1397: [roadmap] v0.1.618 slate EXTENSION — 8 slices (PMAT-1389..1396) from a 30-agent honesty hunt over the surfaces the overnight sweep never touched (wgsl/lean/latex/ptx/forjar/mcp, the six frontends, every gate, docs-vs-tree), every finding attacked by an INDEPENDENT SKEPTIC defaulting to REFUTED. ★ CONVERGENT DISCOVERY: the hunt's R1 — `--target spirv` emitting a BYTE-IDENTICAL 865-byte canned saxpy for EVERY input at rc=0 — was found INDEPENDENTLY by the autonomous cron and fixed as PMAT-1388 (#1975) before this extension merged. Two independent searches converging on one defect is evidence the EV rule is aimed correctly. Scheduled survivors: positional-only `/` params SILENTLY DELETED from signatures; `xpile attestations` counting a roadmap PREAMBLE mention as a work item + invalid JSON at rc=0 (the reporter shape a FOURTH time after PMAT-1385/1386/1387); `--target wgsl` emitting WGSL the repo's OWN naga_validate_wgsl rejects; the WAT lift folding every nonzero `i32.const` to `true`; README publishing a FABRICATED `xpile quorum` transcript (15/20) four lines below the command that prints 26/9, shipping to crates.io Friday; the LEAN lane — the SEMANTIC-stratum oracle — silently returning a value for division by zero. ZERO gate touches, ZERO witness_floor.rs touches. ★ PROCESS NOTE: the first attempt at this commit was caught by the PMAT-1356 changelog-freshness gate — a `git commit --amend` after a `git reset --hard origin/main` amended the CRON'S #1975 commit, absorbing its spirv fix under this id. The gate's 'shipped source' attribution is what surfaced it. Never --amend after a reset to upstream."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
