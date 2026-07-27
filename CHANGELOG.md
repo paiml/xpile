@@ -7,6 +7,66 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The build script baked absolute paths, so `cargo build` broke on unmodified `main` (PMAT-1414)
+
+`cargo build -p xpile --bin xpile` exited non-zero from a clean checkout at
+`origin/main` with **35 `couldn't read` errors**, each naming a contract YAML
+under `/tmp/.../wt-1411/` — a git worktree from an earlier slice, long since
+merged and pruned. Nothing in git explained it, because nothing in git was
+wrong.
+
+**Root cause, two parts, both required.** PMAT-1407's `crates/xpile/build.rs`
+emitted `include_str!("<CARGO_MANIFEST_DIR>/contracts/<name>.yaml")` — an
+absolute path into whichever tree happened to run the build script. And cargo
+gives one `OUT_DIR` per *(package, profile)* per **target directory**, not per
+source tree. This repo's canonical target dir is shared by the main checkout
+and every `git worktree` of it, so the generated file one tree writes is the
+one another tree compiles. Worktree isolation isolates the source, not the
+build.
+
+**The loud half is the lesser half.** Reproduced on a minimal two-tree cargo
+package: with tree A still present, building in tree **B** produced a binary
+that printed tree **A's** payload. Nothing failed, nothing warned. Applied to
+xpile that is a binary reporting on another checkout's contract corpus at exit
+0. Only once tree A was deleted did it become the visible 35-error break.
+
+**The plausible fix is wrong, and was measured before being discarded.**
+`cargo:rerun-if-env-changed=CARGO_MANIFEST_DIR` reads like the exact remedy.
+It does nothing — cargo does not track the variables it injects itself. With
+that line present both failure modes survive verbatim. It is now pinned as the
+**control arm** of the executed differential, so a later reader cannot
+re-adopt it.
+
+**The fix.** `build.rs` stages the corpus into `$OUT_DIR/contracts/` and emits
+`include_str!` paths relative to the generated file, which sits beside them.
+The generated source now names no path outside `OUT_DIR` and is byte-identical
+regardless of who built it or where — making true a reproducibility claim its
+own comment had been making since PMAT-1407. The staging dir is cleared each
+run, so a **deleted** contract cannot survive as an orphaned copy. Confirmed
+end to end: after the fix the main checkout — still carrying the *old*
+`build.rs` — builds against the shared `OUT_DIR` the worktree wrote.
+
+**The gate** — `crates/xpile/tests/build_script_path_independence.rs`
+(XPILE-BUILDGEN-001), 3 tests:
+
+1. every emitted `include_str!` argument is relative (no leading `/`, no `..`,
+   no `C:` drive) and the generated source never mentions this tree's manifest
+   directory. **Red half run:** reverting `build.rs` to the PMAT-1407 version
+   fails this test at the absolute-path assertion, and it passes with the fix;
+2. the embedded bytes equal the on-disk corpus **byte for byte**.
+   `packaged_contracts.rs` test 4 compares two `diamond` *reports*, which
+   catches staleness only where it reaches a printed column; this compares the
+   bytes, so a contract that drifted in an unreported field still reds;
+3. **the property, executed** — the real two-tree differential: same shared
+   target dir, tree A deleted underneath both arms. The absolute-path arm must
+   *fail*, and fail with `couldn't read`; the staged arm must build. The
+   failing arm is what stops the passing arm from proving nothing.
+
+**Scope, honestly.** The published crate is unaffected — one tree, one target
+dir, so those absolute paths always resolved. This is a defect of the
+development configuration this repository documents as canonical, found
+because it broke the release-week build of `main` itself.
+
 ### Every lane's execution witness now runs the DEFAULT CLI flags (PMAT-1411)
 
 `--target lean`'s default emit wrote Lean that `lean` could not parse

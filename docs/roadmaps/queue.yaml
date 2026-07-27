@@ -3251,6 +3251,69 @@ queue:
     this slice reached it (Python `float` is F64); (5) whether `xpile hybrid` and the
     other non-`transpile` subcommands validate their own hardware/profile inputs at
     all.'
+- id: PMAT-1414
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`cargo build` FAILED on an UNMODIFIED `main` with 35 `couldn''t read` errors naming
+    a git worktree that had already been deleted. PMAT-1407''s build script baked ABSOLUTE
+    source paths into `$OUT_DIR/embedded_contracts.rs`, and cargo gives one OUT_DIR per
+    (package, profile) per TARGET DIR — not per source tree. The loud half is the LESSER half:
+    before the tree is deleted, a second tree silently embeds the FIRST tree''s contract bytes
+    at exit 0.'
+  notes: 'DONE 2026-07-27. Picked by an honesty HUNT — the queue again had no open item dated
+    <= today (PMAT-1413 merged as #2006-adjacent; PMAT-1373/1374 are date-gated to 07-30/07-31,
+    PMAT-1375 is the 0.1.619 lane). Unlike the previous hunts this one did NOT have to look for
+    a defect: the mandatory pre-slice force-rebuild of the CLI probe binary FAILED on clean
+    main, and the 35 errors named a directory that no longer existed.
+
+
+    ** THE MECHANISM, both halves required. (a) build.rs emitted
+    `include_str!("<CARGO_MANIFEST_DIR>/contracts/<name>.yaml")`. (b) The local `cargo` is a
+    SHELL FUNCTION that pins `CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/$(basename $(git remote
+    get-url origin) .git)` — it keys on the REMOTE URL, so it resolves to `.../targets/xpile`
+    for the main checkout AND for every `git worktree` of it. The sprint instructions mandate
+    worktree isolation; that isolates the SOURCE, not the BUILD. One OUT_DIR, N trees.
+
+
+    ** THE QUIET HALF IS THE DANGEROUS ONE, and it is why this was not just a build annoyance.
+    On a minimal two-tree reproduction, building in tree B while tree A still existed produced a
+    binary printing tree A''s payload — no error, no warning. For xpile that is a binary
+    reporting on ANOTHER CHECKOUT''s contract corpus at exit 0. The 35-error break only appeared
+    once tree A was pruned.
+
+
+    ** THE PLAUSIBLE FIX IS WRONG AND IS NOW PINNED AS A CONTROL ARM.
+    `cargo:rerun-if-env-changed=CARGO_MANIFEST_DIR` reads like the exact remedy and does
+    NOTHING — cargo does not track the variables it injects itself. Measured: with that line
+    present, both failure modes survive verbatim. The executed differential in
+    `build_script_path_independence.rs` carries it in the failing arm, so a later reader cannot
+    re-adopt it on plausibility.
+
+
+    ** STANDING LESSON, new shape for the honesty ledger: A SHARED CACHE MAKES A GENERATED FILE
+    A CROSS-TREE CHANNEL. Any build script that writes an absolute path into OUT_DIR is
+    publishing its own tree''s identity to every other tree that shares the target dir. The rule
+    is that a generated file must name NOTHING outside OUT_DIR — stage the inputs in and emit
+    relative paths. Corollary for future hunts: when a build breaks with paths you do not
+    recognise, suspect the shared target dir BEFORE suspecting git.
+
+
+    ** NEXT PICK: the queue STILL has no open item dated <= today; PMAT-1373 is 07-30 and
+    PMAT-1374 is 07-31. HARD FREEZE Wed 2026-07-29 18:00 local — Tue 07-28 and Wed morning are
+    the last src-touching windows. SURFACES STILL UNSWEPT (carried forward from PMAT-1413,
+    none of them touched by this slice): (1) the WGSL contract''s missing machine-readable type
+    surface; (2) `--emit-shims`; (3) the C integer-literal SUFFIX forms `1U`/`1L`/`1UL`, which
+    the C frontend refuses at PARSE time — every unsigned/long C probe must use bare literals or
+    it measures the lexer instead of the backend; (4) the PTX `.f32` path, which nothing has
+    reached (Python `float` is F64); (5) whether `xpile hybrid` and the other non-`transpile`
+    subcommands validate their hardware/profile inputs at all. NOT a carried-forward surface:
+    the "are the OTHER build scripts the same shape" question was MEASURED inside this slice
+    rather than deferred — `git ls-files ''*build.rs''` returns exactly ONE file, so the class
+    has one member and it is fixed. Test 4 of the gate re-derives that enumeration on every run
+    so a SECOND build script cannot arrive unexamined; it is an honest text tripwire, not a
+    proof, and its doc says so.'
 - id: PMAT-1373
   status: open
   ev_rank: R1
