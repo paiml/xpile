@@ -914,3 +914,299 @@ fn i32_const_lift_is_value_preserving_or_refuses_execution_differential() {
          / {refused} refused, all 6 references executed under wasm-interp"
     );
 }
+
+// ─── PMAT-1421: bare i64 arithmetic the emit routes through helpers ──
+
+/// Assemble + run a single-export module, returning either the printed
+/// value (`"i64:16"`) or `"TRAP"` when the module traps. The PMAT-1392
+/// helper above asserts `wasm-interp` succeeded, which cannot express the
+/// trap half of this differential — four of the five opcodes below diverge
+/// by TRAPPING, and a differential that panics on a trap reds with
+/// "wasm-interp failed" instead of naming the divergence.
+///
+/// Each call gets its OWN directory: a per-TEST dir races when one body
+/// assembles several modules.
+fn interp_outcome(wat_src: &str, tag: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("xpile-1421-{}-{tag}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create work dir");
+    let wat = dir.join("m.wat");
+    let wasm = dir.join("m.wasm");
+    std::fs::write(&wat, wat_src).expect("write wat");
+
+    let asm = Command::new("wat2wasm")
+        .arg(&wat)
+        .arg("-o")
+        .arg(&wasm)
+        .output()
+        .expect("spawn wat2wasm");
+    // Both legs must be well-formed WAT: a refusal below is xpile's SUBSET
+    // decision and a divergence is a VALUE difference, never bad input.
+    assert!(
+        asm.status.success(),
+        "wat2wasm rejected {tag}:\n{}\n--- src ---\n{wat_src}",
+        String::from_utf8_lossy(&asm.stderr)
+    );
+
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm)
+        .output()
+        .expect("spawn wasm-interp");
+    let out = String::from_utf8_lossy(&run.stdout);
+    let err = String::from_utf8_lossy(&run.stderr);
+    if out.contains("unreachable executed") || err.contains("unreachable executed") {
+        return "TRAP".to_string();
+    }
+    out.lines()
+        .find_map(|l| l.split_once("=> "))
+        .map(|(_, v)| v.trim().to_string())
+        .unwrap_or_else(|| panic!("no exported value for {tag}:\nstdout:{out}\nstderr:{err}"))
+}
+
+/// The corpus: `(mnemonic, lhs, rhs, inside_the_agreeing_domain)`.
+///
+/// The five helper-routed mnemonics appear with operands OUTSIDE the domain
+/// where WASM and Python agree (shift count ≥ 64; arithmetic that overflows
+/// i64), where the two semantics provably differ. The three bitwise
+/// mnemonics are the CONTROL — still bare in the emit, exact under both
+/// semantics — so an "everything refuses" regression cannot pass.
+const BARE_OP_CORPUS: &[(&str, &str, &str, bool)] = &[
+    // helper-routed (PMAT-1379 shifts, PMAT-1402 arithmetic) — must refuse
+    ("i64.shr_s", "1024", "70", false),
+    ("i64.shl", "1", "70", false),
+    ("i64.add", "9223372036854775807", "1", false),
+    ("i64.sub", "-9223372036854775808", "1", false),
+    ("i64.mul", "4611686018427387904", "4", false),
+    // still bare in the emit — must accept AND stay value-preserving
+    ("i64.and", "12", "10", true),
+    ("i64.or", "12", "10", true),
+    ("i64.xor", "12", "10", true),
+];
+
+#[test]
+fn bare_i64_arith_lift_is_value_preserving_or_refuses_execution_differential() {
+    // The load-bearing test: a RELATION over live execution, not a hand-list.
+    // For each mnemonic the reference OUTCOME comes from actually running the
+    // hand-written source module. Then:
+    //   * lift accepted ⟹ the round-tripped module must run to the SAME outcome
+    //   * lift refused  ⟹ the mnemonic must be one the emit no longer produces
+    //
+    // Pre-PMAT-1421 all eight rows were ACCEPTED, and the five helper-routed
+    // ones ran to a different outcome than their source (`i64.shr_s` to
+    // `i64:0` against a reference of `i64:16`; the other four to `TRAP`
+    // against a defined wraparound), so the first arm fails on every one of
+    // them — red-then-green.
+    if !xpile_wasm_codegen::wasm_runtime_available() {
+        eprintln!("SKIP bare-i64 execution differential: WABT not invocable");
+        return;
+    }
+
+    let mut accepted = 0usize;
+    let mut refused = 0usize;
+    let mut diverged: Vec<String> = Vec::new();
+    for (i, (op, lhs, rhs, agrees)) in BARE_OP_CORPUS.iter().enumerate() {
+        let src = format!(
+            "(module\n  ;; source module: b{i}\n  (func $f (result i64)\n    \
+             i64.const {lhs}\n    i64.const {rhs}\n    {op}\n  )\n  \
+             (export \"f\" (func $f))\n)\n"
+        );
+        let reference = interp_outcome(&src, &format!("ref{i}"));
+
+        match lift_wat(&format!("b{i}"), &src) {
+            Ok(m) => {
+                accepted += 1;
+                let observed = interp_outcome(&emit(&m), &format!("rt{i}"));
+                if observed != reference {
+                    diverged.push(format!("{op}: source {reference}, round trip {observed}"));
+                }
+                assert_eq!(
+                    observed, reference,
+                    "{op} {lhs} {rhs}: the lift ACCEPTED the module but the \
+                     round-tripped WAT runs to {observed} where the source runs \
+                     to {reference} — a divergence at exit 0 on every leg"
+                );
+                assert!(
+                    *agrees,
+                    "{op} is routed through a `$__wasm_*` helper by the emit, so \
+                     the bare opcode is outside the lift image and must refuse"
+                );
+            }
+            Err(e) => {
+                refused += 1;
+                assert!(
+                    !*agrees,
+                    "{op} is still emitted bare and is exact under both \
+                     semantics, so refusing it is over-refusal: {e}"
+                );
+                let msg = format!("{e}");
+                assert!(
+                    msg.contains("outside the lift subset"),
+                    "refusal must use the honest-boundary phrasing: {msg}"
+                );
+                assert!(
+                    msg.contains("$__wasm_"),
+                    "refusal must name the helper the emit routes {op} through: {msg}"
+                );
+            }
+        }
+    }
+    assert!(
+        diverged.is_empty(),
+        "accepted-but-divergent rows: {diverged:?}"
+    );
+    // Vacuity guards: neither arm may be empty. An "everything refuses" or
+    // "everything accepts" regression passes every assertion above.
+    assert_eq!(
+        refused, 5,
+        "the five helper-routed mnemonics are outside the lift image"
+    );
+    assert_eq!(
+        accepted, 3,
+        "the three bitwise mnemonics are still emitted bare and stay accepted"
+    );
+    eprintln!(
+        "witness[PMAT-1421]: {accepted} accepted (value-preserving, executed) \
+         / {refused} refused, all 8 references executed under wasm-interp"
+    );
+}
+
+#[test]
+fn helper_routed_bare_ops_refuse_at_all_three_lift_sites() {
+    // The guard lives in `int_binop`, the SINGLE decision point shared by the
+    // straight-line body, the loop condition and the loop body. This pins
+    // that claim per SITE, so re-adding the arm to one path cannot pass.
+    let sites: [(&str, &str); 3] = [
+        (
+            "straight-line body",
+            "(module\n  ;; source module: s\n  (func $f (result i64)\n    \
+             i64.const 1\n    i64.const 2\n    i64.add\n  )\n)",
+        ),
+        (
+            "loop condition",
+            "(module\n  ;; source module: s\n  (func $f (result i64)\n    \
+             (local $x i64)\n    i64.const 0\n    local.set $x\n    \
+             (block $brk (loop $cont\n      i64.const 1\n      i64.const 2\n      \
+             i64.add\n      i32.eqz\n      br_if $brk\n      br $cont\n    ))\n    \
+             local.get $x\n  )\n)",
+        ),
+        (
+            "loop body",
+            "(module\n  ;; source module: s\n  (func $f (result i64)\n    \
+             (local $x i64)\n    i64.const 0\n    local.set $x\n    \
+             (block $brk (loop $cont\n      i32.const 0\n      i32.eqz\n      \
+             br_if $brk\n      i64.const 1\n      i64.const 2\n      i64.add\n      \
+             local.set $x\n      br $cont\n    ))\n    local.get $x\n  )\n)",
+        ),
+    ];
+    for (site, wat) in sites {
+        let Err(err) = lift_wat("s", wat) else {
+            panic!("bare `i64.add` must be refused in the {site}");
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("bare `i64.add`") && msg.contains("$__wasm_add_i64"),
+            "{site}: refusal must name the opcode and its helper, got: {msg}"
+        );
+    }
+}
+
+#[test]
+fn every_helper_routed_mnemonic_names_its_own_helper() {
+    // A refusal COUNT is not attribution (PMAT-1419): assert each mnemonic
+    // resolves to ITS helper, so a copy-paste that names `$__wasm_add_i64`
+    // for all five cannot pass.
+    for (op, helper) in [
+        ("i64.add", "$__wasm_add_i64"),
+        ("i64.sub", "$__wasm_sub_i64"),
+        ("i64.mul", "$__wasm_mul_i64"),
+        ("i64.shl", "$__wasm_shl_i64"),
+        ("i64.shr_s", "$__wasm_shr_i64"),
+    ] {
+        let wat = format!(
+            "(module\n  ;; source module: h\n  (func $f (result i64)\n    \
+             i64.const 8\n    i64.const 2\n    {op}\n  )\n)"
+        );
+        let Err(err) = lift_wat("h", &wat) else {
+            panic!("bare `{op}` must be refused");
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains(&format!("bare `{op}`")) && msg.contains(helper),
+            "`{op}` must be attributed to `{helper}`, got: {msg}"
+        );
+    }
+}
+
+#[test]
+fn the_emit_still_produces_no_bare_helper_routed_mnemonic_in_a_user_body() {
+    // The PREMISE of the refusal, re-derived from the emitter rather than
+    // asserted. If a future slice un-routes `+` back to a bare `i64.add`,
+    // this reds and says the refusal has become over-refusal — the arm must
+    // come back. `$__wasm_*` helper bodies DO contain the bare opcodes and
+    // are skipped wholesale by the lift, so they are excluded here too.
+    let m = module(
+        "premise",
+        vec![
+            func(
+                "arith",
+                vec![p("a", Type::I64), p("b", Type::I64)],
+                Type::I64,
+                Block {
+                    stmts: vec![],
+                    // ((a * b) - a) + b — all three of `*`, `-`, `+`.
+                    trailing_return: binop(
+                        BinOp::Add,
+                        binop(
+                            BinOp::Sub,
+                            binop(BinOp::Mul, ident("a"), ident("b")),
+                            ident("a"),
+                        ),
+                        ident("b"),
+                    ),
+                },
+            ),
+            func(
+                "shifts",
+                vec![p("a", Type::I64), p("b", Type::I64)],
+                Type::I64,
+                Block {
+                    stmts: vec![],
+                    // (a >> b) << b — both `>>` and `<<`.
+                    trailing_return: binop(
+                        BinOp::Shl,
+                        binop(BinOp::Shr, ident("a"), ident("b")),
+                        ident("b"),
+                    ),
+                },
+            ),
+        ],
+    );
+    let wat = emit(&m);
+    let user_bodies: String = wat
+        .split("\n  (func ")
+        .filter(|f| !f.starts_with("$__wasm_"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for op in ["i64.add", "i64.sub", "i64.mul", "i64.shl", "i64.shr_s"] {
+        assert!(
+            !user_bodies.contains(op),
+            "the emit produced a bare `{op}` in a user body — the PMAT-1421 \
+             refusal has become over-refusal and the `int_binop` arm must be \
+             restored:\n{user_bodies}"
+        );
+    }
+    // Vacuity: the fixture really did exercise all five operators.
+    for helper in [
+        "$__wasm_add_i64",
+        "$__wasm_sub_i64",
+        "$__wasm_mul_i64",
+        "$__wasm_shl_i64",
+        "$__wasm_shr_i64",
+    ] {
+        assert!(
+            user_bodies.contains(helper),
+            "fixture must route through `{helper}` or the negative above is \
+             vacuous:\n{user_bodies}"
+        );
+    }
+}

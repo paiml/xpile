@@ -7,6 +7,59 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Five stale inverse arms in the WAT lift gave hand-written WAT Python semantics (PMAT-1421)
+
+The `.wat` frontend maps WAT mnemonics back to meta-HIR operators. Five of those
+arms — bare `i64.add`, `i64.sub`, `i64.mul`, `i64.shl` and `i64.shr_s` — were
+**correct right-inverses when they were written**, and stopped being inverses of
+anything when the emit moved those operators onto helper calls: PMAT-1379
+re-routed `<<`/`>>` through `$__wasm_shl_i64`/`$__wasm_shr_i64`, PMAT-1402
+re-routed `+`/`-`/`*` through `$__wasm_add_i64`/`$__wasm_sub_i64`/`$__wasm_mul_i64`.
+Neither slice deleted the old arms.
+
+Re-derived from the binary rather than assumed, the emit's **user-body** opcode
+set is `i64.{and,or,xor}`, the `i64`/`f64`/`i32` comparisons and
+`f64.{add,sub,mul,div}`. The five bare mnemonics survive only inside the
+`$__wasm_*` prelude, which the lift skips wholesale. So the arms fired **only**
+on WAT the emit does not produce — which is exactly the hand-written and
+third-party input an advertised frontend exists to accept — and gave it Python
+semantics it does not have. WASM masks a shift count modulo 64 and wraps
+arithmetic on overflow; the helpers saturate `>>` to 63 and trap on `<<` ≥ 64
+and on overflow.
+
+Executed under `wasm-interp`, both legs `wat2wasm`-clean, `xpile transpile` at
+exit 0 throughout:
+
+| bare source | source runs to | after the round trip |
+|---|---|---|
+| `1024 i64.shr_s 70` | `16` | **`0`** |
+| `1 i64.shl 70` | `64` | trap |
+| `i64::MAX i64.add 1` | `i64::MIN` | trap |
+| `i64::MIN i64.sub 1` | `i64::MAX` | trap |
+| `2^62 i64.mul 4` | `0` | trap |
+
+The first row is a silent wrong answer; the other four turn a **defined**
+wraparound into a trap. In-domain — shift counts below 64, arithmetic that does
+not overflow — the two semantics agree byte-for-byte, which is what kept the
+divergence out of every fixture. Being a frontend defect it reached all nine
+backends (verified on `--target wasm`, `--target rust` and `--target forjar`).
+
+The five mnemonics now **refuse**, naming the specific helper the emit routes
+each operator through. Coercing instead — picking one of two incompatible
+semantics so the output runs — is the PMAT-1395 failure mode. `int_binop`
+returns a `Result` so the guard sits at the single decision point shared by all
+three lift sites rather than at the three call sites (PMAT-1392's lesson).
+
+Not fixed, and named: a correct lift needs meta-HIR operators that carry WASM
+wraparound semantics. Those do not exist — meta-HIR has one integer arithmetic
+semantics and three source languages disagree with it, the same missing
+distinction as PMAT-1419's C-`int` lead. That is 0.1.619 capability work.
+
+The right-inverse-on-image property could not have caught this: the image
+*shrank*, and a fixed point over the smaller image stays green while the arms
+outside it rot.
+
+
 ### `Makefile`, `*.mk` and `Dockerfile` were routed to a frontend that has no dialect for them (PMAT-1420)
 
 `docs/specifications/sub/bashrs-merger.md` advertised a routing-table row

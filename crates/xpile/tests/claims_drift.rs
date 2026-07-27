@@ -141,12 +141,27 @@ const FRONTEND_PROBES: &[(&str, &str, &str)] = &[
     // The lift is a right-inverse on the `xpile-wasm-codegen` EMIT IMAGE, so
     // the probe is written in that canonical shape (named func, named params)
     // rather than in arbitrary hand-rolled WAT.
+    //
+    // PMAT-1421: this probe used a bare `i64.add` and went STALE by exactly
+    // the drift that slice fixed. PMAT-1402 re-routed `+` through
+    // `$__wasm_add_i64`, so a bare `i64.add` stopped being in the image the
+    // comment above says the probe is written in — the emit produces it only
+    // inside the `$__wasm_*` prelude, which the lift skips wholesale. It kept
+    // passing because the lift still carried a stale inverse arm for the bare
+    // opcode; when that arm was removed (it mis-lifted hand-written WAT to
+    // Python semantics and re-emitted to a different running value), THIS
+    // GATE is what caught the probe. The probe is now in the current image:
+    // the helper is declared so the module is standalone well-formed WAT
+    // (`wat2wasm`-checked), and the lift skips the helper by name and inverts
+    // the `call` — so this still exercises real lowering, not a weaker claim.
     (
         "wasm",
         "probe.wat",
         "(module\n  ;; source module: probe\n  \
+         (func $__wasm_add_i64 (param $x i64) (param $y i64) (result i64)\n    \
+         local.get $x\n    local.get $y\n    i64.add\n  )\n  \
          (func $add (param $a i64) (param $b i64) (result i64)\n    \
-         local.get $a\n    local.get $b\n    i64.add\n  )\n)\n",
+         local.get $a\n    local.get $b\n    call $__wasm_add_i64\n  )\n)\n",
     ),
 ];
 

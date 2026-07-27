@@ -2,39 +2,25 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1420 landed from an honesty hunt. The ranked queue stays exhausted
-  until Thu 07-30 - PMAT-1373, the release commit. This slice started from PMAT-1419''s standing
-  lead (b) and that lead came back STALE-and-honest: the ruchy backend''s C path is REAL, emitting
-  `(a).wrapping_div(2i32)` at i32 width, not the Python i64 floor-div lowering. THE ACTUAL FINDING
-  WAS THAT THE MATRIX WAS MIS-SIZED. PMAT-1419 reported sweeping a "4x9 frontend x backend" matrix;
-  `xpile transpile x.rs` prints its own extension list and it is TEN extensions across SIX frontend
-  families - py/pyi, c/h, ruchy, sh/bash/zsh, mk, wat. The `.ruchy`, `.mk` and `.wat` families had
-  never been swept at all, and the defect was in an unswept cell. `.mk` - and extensionless
-  `Makefile` and `Dockerfile`, routed by PMAT-038''s matches_path override - reached a POSIX-shell
-  LINE parser that trims every line and lowers each survivor to a top-level command, while
-  sub/bashrs-merger.md advertised a "(Makefile dialect)" that has never existed. Tab significance
-  is the whole syntax of a Makefile and the frontend trims it; target scoping is the whole
-  semantics and lowering to top level discards it. EXECUTED, both sides exit 0, emit `sh -n`-clean:
-  `make` builds out.txt, the emit DELETES it, because the emit runs every recipe unconditionally in
-  one shell - including the `clean` target nobody asked for - and prints the `test` recipe''s output
-  too. `--target forjar` wrapped that same script in a file resource at /usr/local/bin/<n>.sh mode
-  0755 with a task to run it. Refused rather than coerced, per PMAT-1371/1377 and PMAT-1395.
-  LESSON WORTH KEEPING: when a prior sweep reports a matrix DIMENSION, re-derive the dimension from
-  the binary rather than inheriting the number - the unswept cells are exactly where the defect
-  was, and the binary was willing to print the true dimension in an error message. SECOND LESSON,
-  self-caught: a forbidden-substring doc check REDS on the disclaimer that fixes the claim, because
-  a disclaimer necessarily quotes what it disclaims - gate such rows POSITIVELY (the located row
-  must read REFUSED) with a present-row precondition. NEXT PICK: no ranked slice is due until Thu
-  07-30 (PMAT-1373); a fire before then should hunt again rather than pull release mechanics
-  forward - the tag is date-gated by owner ratification and Wed 18:00 is the hard freeze. STANDING
-  LEADS: (a) `.ruchy` and `.wat` are the LAST TWO unswept frontend families - both refused this
-  hunt''s probes and neither was swept to its own subset ceiling, so whether those refusals are
-  principled or incidental is unmeasured; (b) the routed build-driver set and
-  shell_artifact_policy_witness.rs''s is_build_driver set disagree (safe direction, two sources of
-  truth); (c) PMAT-1419''s leads on C int->i32 wrapping and the unresolved Python-vs-Rust identity
-  of the WASM lane are both 0.1.619. Owner-gated leads unchanged: the proof-lane load-bearing
-  decision, the LGPL decision (needed BEFORE Friday''s publish), and the ruleset-drift decision
-  below.)'
+updated: '2026-07-28 (PMAT-1421 landed from an honesty hunt. The ranked queue stays exhausted until
+  Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1420''s standing lead (c): `.ruchy`
+  and `.wat` were the last two frontend families never swept to their subset ceilings. `.ruchy` came
+  back HONEST - it is registered "routing only - INPUT refuses, no parser" and `xpile info` prints
+  exactly that. `.wat` is a real lowering frontend and its inverse opcode table had ROTTED: five arms
+  mapping bare `i64.add`/`sub`/`mul`/`shl`/`shr_s` to the high-level meta-HIR operators were correct
+  right-inverses when written, and PMAT-1379 (shifts) then PMAT-1402 (`+`/`-`/`*`) re-routed those
+  operators through `$__wasm_*` helpers without deleting them. Re-derived from the BINARY, the emit
+  only produces those five inside the helper prelude the lift skips, so the arms fired ONLY on
+  hand-written and third-party WAT - the input an advertised frontend exists to accept - and gave it
+  Python semantics: WASM masks a shift count mod 64 and wraps arithmetic, the helpers saturate `>>`
+  to 63 and trap. EXECUTED, both legs wat2wasm-clean, exit 0 throughout: `1024 i64.shr_s 70` runs to
+  16 at the source and 0 after the round trip; the other four turn a defined wraparound into a trap.
+  In-domain the two agree byte-for-byte, which is why no fixture saw it. Refused rather than coerced.
+  LESSON WORTH KEEPING: when a slice MOVES an operator onto a new lowering, the old inverse does not
+  become wrong-and-DEAD - it becomes wrong-and-LIVE for exactly the inputs the new lowering never
+  produces, and a right-inverse-on-image property cannot see it because the image SHRANK and the
+  fixed point over the smaller image stays green. Grep the inverse table on every re-route. The tell
+  was a code comment PMAT-1402 had already written 540 lines above the stale arms.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -1954,6 +1940,54 @@ queue:
     slice. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no crates/*/src
     or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit, witness-floor TOUCH 2);
     2026-07-31 -> PMAT-1374 (publish).'
+- id: PMAT-1421
+  date: '2026-07-28'
+  ev_rank: R1
+  gate_touch: null
+  status: done
+  title: five stale inverse arms in the WAT lift - bare `i64.add`/`sub`/`mul`/`shl`/`shr_s` were
+    mapped to the high-level meta-HIR operators long after the emit stopped producing them, so
+    hand-written WAT got PYTHON semantics and re-emitted to a different running value at exit 0
+    (`1024 i64.shr_s 70` is 16 at the source, 0 after the round trip)
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30).
+    PMAT-1420''s standing lead (c) taken verbatim: `.ruchy` and `.wat` were the last two frontend
+    families never swept to their subset ceilings. `.ruchy` came back HONEST - registered "routing
+    only - INPUT refuses, no parser" and `xpile info` prints exactly that. `.wat` is a real
+    lowering frontend and its opcode table had rotted. THE TELL WAS A CODE COMMENT ALREADY IN THE
+    FILE: lib.rs:719 (PMAT-1402) states that `+`/`-`/`*` "stopped emitting bare
+    i64.add/i64.sub/i64.mul and started emitting these calls" - the fact that falsifies the arms
+    540 lines below was written down and read as a note about the NEW arms, not as a death
+    certificate for the old ones. Re-derived the emit''s user-body opcode set FROM THE BINARY
+    (transpile a Python module using every operator, strip the `$__wasm_*` prelude the lift skips
+    at lib.rs:195): `i64.{and,or,xor}` + comparisons + `f64.{add,sub,mul,div}`. The five bare
+    mnemonics are emitted ONLY inside the prelude, so the arms fired only on input the emit does
+    not produce - exactly the hand-written/third-party WAT the advertised frontend exists for.
+    EXECUTED under wasm-interp, both legs wat2wasm-clean, exit 0 throughout: `1024 i64.shr_s 70`
+    -> 16 vs 0 (SILENT wrong answer, WASM masks the count mod 64 where the helper saturates to
+    63); `1 i64.shl 70` 64 vs trap; i64::MAX+1, i64::MIN-1, 2^62*4 each wrap in WASM and trap in
+    the helper. In-domain the two agree byte-for-byte, which is why no fixture saw it. Frontend
+    defect => reached all 9 backends (verified wasm/rust/forjar). FIX = REFUSE naming the specific
+    helper per mnemonic (PMAT-1395: coercing to one of two incompatible semantics installs a
+    silent wrong answer; PMAT-1392 precedent in this same file for i32.const). `int_binop` now
+    returns Result so the guard is at the SINGLE decision point for all three lift sites.
+    OVER-REFUSAL BOUND MEASURED FIRST: zero tracked `.wat` files, and all 13 pre-existing
+    round-trip fixed-point fixtures stay green - including roundtrip_shift_and_arith, which
+    exercises all five operators via the helpers. RED HALF RUN 3x (arms restored -> 3 tests red
+    with the 16-vs-0 message; guard widened to i64.and -> the differential AND a pre-existing
+    fixture red; premise-test filter/fixture broken -> its negative and its vacuity guard red).
+    STANDING LESSON: when a slice MOVES an operator onto a new lowering, the old inverse does not
+    become wrong-and-DEAD, it becomes wrong-and-LIVE for exactly the inputs the new lowering never
+    produces - and a right-inverse-on-image property CANNOT see it, because the image shrank and
+    the fixed point over the smaller image stays green. Grep the inverse table on every re-route.
+    No witness floor touched; no gate file edited. NEXT PICK: PMAT-1373 (release commit) on Thu
+    07-30; a fire before then should hunt again. STANDING LEADS from this slice: (a) meta-HIR has
+    ONE integer arithmetic semantics and three source languages disagree with it - this and
+    PMAT-1419''s C-int lead (a) are the same missing distinction, 0.1.619; (b) only the BINARY
+    OPERATOR table was swept - `lift_call`, the unary/`i32.eqz` path and the f64 table were read
+    but not swept against a re-derived emit opcode set the same way; (c) PMAT-1392''s deliberate
+    `i32` -> Type::Bool residual is still live, so a hand-written `(param $a i32)` renders as
+    `bool` on --target rust.'
+
 - id: PMAT-1375
   status: open
   ev_rank: DEFERRED
