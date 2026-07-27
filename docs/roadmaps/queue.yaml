@@ -2611,7 +2611,8 @@ queue:
     Python sources only; decy-frontend C sources reach the same backends and PMAT-1399 found the C lane
     is where width defects live); (b) `--emit-crate` and the hybrid `--emit-shims` paths, which no
     validator-acceptance property covers; (c) `--contracts off` as a distinct emit mode. Do NOT open new
-    WASM breadth — that grind is CLOSED for this window.'
+    WASM breadth — that grind is CLOSED for this window.
+    ** ID-DRIFT: the MERGED subject on main cites (Refs PMAT-1400), not PMAT-1401 — ce7b2855 / PR #1989. A concurrent fire merged #1988 under PMAT-1400 mid-flight; this slice was re-filed as PMAT-1401 everywhere, but the squash took the original PR title. XPILE-LEDGER-001 still passes because PMAT-1400 IS registered (by #1988), which is the point worth knowing: the gate cannot tell a correct citation from a collided one. History NOT rewritten (owner-gated). ** LESSON FOR THE NEXT FIRE: `gh pr edit --title` did NOT change the squash subject of an already-open PR — pass the subject explicitly to `gh pr merge --squash`, or claim the id in queue.yaml BEFORE opening the PR so a concurrent fire cannot take it.'
 - id: PMAT-1373
   status: open
   ev_rank: R1

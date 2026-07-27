@@ -17678,7 +17678,10 @@ roadmap:
     ** RED-THEN-GREEN: reverting the fix reds 4 of the 5 tests; the in-range acceptance
     count drops 20 -> 15 (exactly the i32::MIN row in all five positions) while the
     refusal count is UNCHANGED at 10 — the receipt that the fix widened nothing. The
-    fifth test stays green by design: it is about naga''s behaviour, not the fix.'
+    fifth test stays green by design: it is about naga''s behaviour, not the fix.
+
+
+    ** ID-DRIFT DISCLOSURE (recorded so `git log --grep` is not silently empty): this slice''s MERGED commit subject on main cites (Refs PMAT-1400), NOT PMAT-1401 — ce7b2855, PR #1989. A concurrent fire merged #1988 citing PMAT-1400 while #1989 was in flight; the collision was caught and this slice was re-filed as PMAT-1401 in every artefact (roadmap row, CHANGELOG entry, queue row, gate module docs, Cargo.toml comment), but the squash took the ORIGINAL PR title rather than the edited one, so the subject kept the old id. XPILE-LEDGER-001 assertion 2 still PASSES — PMAT-1400 IS registered, by #1988 — which is exactly why this needed writing down: the gate cannot distinguish a correctly-cited id from a collided one. `git log --grep=PMAT-1400` returns TWO slices; the WGSL i32-boundary one is PMAT-1401. History was NOT rewritten (owner-gated).'
   status: done
   priority: medium
   created: 2026-07-27T00:00:00Z
