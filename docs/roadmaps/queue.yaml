@@ -2983,11 +2983,65 @@ queue:
     ** NEXT PICK: PMAT-1409 (R3, dated 2026-07-28) — run `cargo deny check licenses`, which has never
     executed, SCOPED TO VISIBILITY not to a license decision.'
 - id: PMAT-1409
-  status: open
+  status: done
   date: '2026-07-28'
   ev_rank: R3
   title: Run the dependency checks the repo already configured — `cargo deny check licenses` has NEVER
     executed and fails with 18 rejections incl. 10x LGPL-3.0-only in the shipped binary
+  notes_done: 'DONE 2026-07-27 (Day 2, pulled forward from 07-28 under the day<=4 rule; nothing dated
+    <= today was open). SCOPED TO VISIBILITY exactly as directed — no licence decision taken.
+
+    ** THE TITLE''S OWN NUMBERS ARE WRONG AND THE CORRECTION IS PART OF THE SLICE: it is NINE rejection
+    diagnostics over NINE crates (5x LGPL-3.0-only, 2x Zlib, 2x CC0-1.0), not 18 / 10x. The doubling is
+    a `grep -c rejected` artifact — cargo-deny''s HUMAN output prints the word once in the headline and
+    once in the label of every diagnostic, so a text count returns exactly double. Same class as PMAT-1408''s
+    grep and PMAT-1396''s prose cardinality: the fix is to stop counting text. The tripwire parses `--format
+    json`, and its module doc records why.
+
+    ** DERIVED, NOT ASSERTED, and this is the fact that matters: the malachite family (5 crates) is LGPL-3.0-only
+    and reaches the SHIPPED binary over NORMAL edges via rustpython-parser -> depyler-frontend -> xpile-core
+    -> xpile. hexf-parse (CC0-1.0, naga -> wgpu) and foldhash 0.1.5/0.2.0 (Zlib, hashbrown -> wgpu) are
+    ALSO linked; tiny-keccak (CC0-1.0) is build-script only and is NOT. The discriminator is `cargo tree
+    -p xpile -e normal -i <crate>@<version>` and the gate RE-RUNS it per row — "copyleft in the binary"
+    vs "copyleft in a build script" is the whole disclosure and it would otherwise rot into prose.
+
+    ** SHIPPED: (1) NOTICE.md at the root — disclosure table + derive commands INSTEAD of counts (PMAT-1348''s
+    rule applied to the new file itself; a bare "nine rejections" reds its own gate, demonstrated); (2)
+    ADVISORY `license-scan` job — NOT a `gate` step, because `licenses` exits 4 today and would wedge
+    every merge on day one; (3) crates/xpile/tests/dependency_license_policy.rs (XPILE-LICENSE-001), 7
+    tests, stratified like ruleset_drift.rs.
+
+    ** THE `continue-on-error` ON THE RAW CHECK IS A DELIBERATE DESIGN CHOICE, not laziness: a job whose
+    verdict is "still 9 rejections" is red on every commit forever, and PMAT-1370 already recorded what
+    that buys — `wasi` was RED on ccb95a04, the exact SHA tagged v0.1.617, and the release was cut anyway.
+    A permanently-red advisory job is exactly as invisible as no job. So the raw output is in the log
+    every run while the job''s PASS/FAIL is the DRIFT tripwire. A test asserts the TRIPWIRE step is not
+    also continue-on-error, because that single line is the difference between a gate and a decoration.
+
+    ** ROOT-CAUSE ASSERTION lives in the STATIC half (std::fs only, cannot skip): every check kind configured
+    in deny.toml must be EXECUTED by some ci.yml job. Restoring the pre-slice ci.yml reds it naming ["bans",
+    "licenses"] — the gate would have caught the original defect offline, at the commit that added the
+    config. Generalise it: this is the third instance of declared-but-never-executed (unreachable RepairLoop,
+    dead pre-commit hook, unrun deny sections) and the first one with a gate that generalises past its
+    own instance.
+
+    ** SIX FALSIFICATIONS RUN: pre-slice ci.yml; delete the malachite-q row (undisclosed); invent a ghost
+    row (stale); reclassify hexf-parse binary -> build-only (reds against cargo tree); LGPL row -> dev-only;
+    XPILE_REQUIRE_DENY=1 with cargo-deny off PATH (reds, while the unflagged run SKIPs with a printed
+    reason).
+
+    ** PRE-EXISTING RED, NOT SLICE FALLOUT: `ruleset_drift::live_ruleset_matches_the_committed_snapshot`
+    still reds locally on the `ruleset-workspace-test-dropped` owner decision. Unchanged by this slice
+    and skips-with-reason in CI.
+
+    ** DISCLOSED GAP: no crate''s `include` carries NOTICE.md, so it does not ship inside the .crate archives.
+    Packaging it would read as ACCEPTING option (a) of the owner decision, so it is filed there rather
+    than done silently.
+
+    ** NEXT PICK: PMAT-1410 (R4, dated 2026-07-29 — the two exit-0-uncompilable Python shapes: unannotated
+    param in call position, and `from pkg.util import X` silently dropped). Then PMAT-1411 (R5). Both are
+    src-touching, so both must land BEFORE the Wed 18:00 freeze. Gate touch #3 stays RESERVED for the
+    Thursday release commit PMAT-1373.'
   notes: 'MEASURED UNPIPED: `cargo deny check licenses` -> EXIT 4, 18 rejections: 10x LGPL-3.0-only (malachite
     family, reaching the shipped binary as NORMAL deps via rustpython-parser -> depyler-frontend -> xpile-core
     -> xpile), 4x CC0-1.0, 4x Zlib. The workspace declares `license = "MIT OR Apache-2.0"` and there is
@@ -3150,6 +3204,20 @@ queue:
     \ v0.1.618 <PINNED_SHA> && git push origin v0.1.618`. Do NOT create the GitHub\nrelease yet. Also\
     \ purge /mnt/nvme-raid0/targets/xpile/package/{tmp-registry,tmp-crate} and\nrun `cargo publish --workspace\
     \ --dry-run --locked` UNPIPED before the tag push."
+  addenda:
+  - 'PMAT-1408: the version bump is 35 LINES, not `Cargo.toml:43` alone. Every intra-workspace path-dep
+    in `[workspace.dependencies]` now declares the workspace version, and `publish_manifest_integrity.rs`
+    REDS a bump that touches only `[workspace.package].version`. A global replace of the old version
+    string across Cargo.toml does all 35; a comment at the bump site says so.'
+  - 'PMAT-1409: the ADVISORY set gained `license-scan`, so the "What is NOT merge-blocking" section must
+    name SEVEN advisory contexts (docs, kani, lake-build, lean-models, license-scan, shader-validate,
+    wasi), not six — read the `XPILE-ENFORCEMENT ADVISORY-CONTEXTS:` marker at ci.yml, do not retype
+    the list. AND, per the advisory_job_rule above and PMAT-1370''s recorded lesson: run `gh api
+    repos/paiml/xpile/commits/<SHA>/check-runs` on the PINNED SHA and NAME every non-success in the
+    release body — `license-scan` included. Its green means "the licence surface still equals NOTICE.md",
+    NOT "no licence problems": `cargo deny check licenses` exits 4 by design and the LGPL-in-the-shipped-
+    binary owner decision is OPEN. Saying otherwise in a release note would be the exact claim this
+    slice exists to prevent.'
   date: '2026-07-30'
 - id: PMAT-1374
   status: open
@@ -3265,9 +3333,20 @@ owner_decisions:
   summary: WONTFIX proposed — run-to-run determinism is already fixed via IndexSet; CPython hash-order
     parity would ship as a permanent documented divergence.
 - id: lgpl-in-shipped-binary
-  summary: '`cargo deny check licenses` exits 4 with 10x LGPL-3.0-only reaching the SHIPPED binary as
-    normal deps via rustpython-parser -> depyler-frontend -> xpile-core -> xpile, while the workspace
-    declares MIT OR Apache-2.0 and no NOTICE file exists. rustpython-parser is ALSO the sole source of
+  summary: '⚠️ FACTS NOW MEASURED AND GATED BY PMAT-1409 (2026-07-27); THE DECISION IS STILL OPEN AND
+    IS STILL NEEDED BEFORE FRIDAY''S PUBLISH. Corrected count: `cargo deny check licenses` exits 4 with
+    NINE rejections over nine crates — FIVE LGPL-3.0-only (malachite, malachite-base, malachite-bigint,
+    malachite-nz, malachite-q), two Zlib (foldhash 0.1.5/0.2.0), two CC0-1.0 (hexf-parse linked,
+    tiny-keccak build-script only). The earlier "18 / 10x" was a `grep -c rejected` artifact (cargo-deny
+    prints the word twice per diagnostic). All five LGPL crates ARE linked into the shipped binary over
+    NORMAL edges — re-derived per row from `cargo tree -e normal` by
+    crates/xpile/tests/dependency_license_policy.rs, not asserted. NOTICE.md now exists and enumerates
+    every row with its linkage, and the advisory `license-scan` job runs the check on every PR. What is
+    STILL undecided is the response: (a) accept + document — which additionally requires PACKAGING
+    NOTICE.md into the published crates (no crate''s `include` carries it today, deliberately, because
+    doing so would read as taking option (a)) and providing a relink route; (b) replace
+    rustpython-parser; (c) neither. ORIGINAL FRAMING, unchanged: while the workspace
+    declares MIT OR Apache-2.0. rustpython-parser is ALSO the sole source of
     all 7 suppressed RUSTSEC advisories (deny.toml''s own comment says ''Revisit when rustpython-parser
     modernizes its dep graph'', with no ticket). Options: (a) accept + document — add NOTICE, widen the
     allow-list, state the static-link position; (b) replace the parser — multi-month, and it is the Python
