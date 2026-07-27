@@ -17061,3 +17061,87 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1391
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1391: [honesty/wgsl] `xpile transpile --target wgsl` exited 0 emitting WGSL
+    that xpile''s OWN exported `naga_validate_wgsl` REJECTS. Every `for i in range(n)` loop
+    this backend has ever emitted carried the frontend''s `__forc0`/`__forstop1` synthetics
+    into a language that RESERVES the `__` identifier prefix, and `def f(n): return f(n)`
+    emitted a self-recursive `fn` WGSL forbids -- both at exit 0 with an EMPTY stderr,
+    because the production path never called the validator the module doc said it called.'
+  description: 'FIXED. PICKED by pulling forward the lowest-numbered OPEN queue item
+    (dated 2026-07-28) after every item dated <= 2026-07-27 was merged; permitted by the
+    pick rule on Day 4 or earlier.
+    ** REPRODUCED BEFORE ANY EDIT through the shipped binary at cd3327b7, against a harness
+    built on the repo''s own exported `xpile_wgsl_codegen::naga_validate_wgsl` (naga 29.0.3,
+    the Cargo.lock pin) -- NOT against a restatement of the WGSL rules. Four probes, xpile
+    rc=0 and stderr 0 bytes in every case: `for i in range(n)` -> REJECT `Identifier starts
+    with a reserved prefix: __forc0`; `for ... else` -> REJECT `__broke0`; `def f(n): return
+    f(n)` -> REJECT `declaration of f is recursive`; a while-loop accumulator -> OK. The
+    fourth probe is load-bearing: the lane is otherwise SOUND, so this is a missing guard,
+    not a broken lowering, and the fix must not become a rewrite.
+    ** THE WGSL RULES WERE MEASURED, NOT ASSUMED: probing naga directly shows `__foo` and
+    `___foo` rejected (reserved prefix), bare `_` rejected, but `_foo` ACCEPTED. A mangler
+    keyed on "starts with underscore" would have over-reached; it keys on the real rule.
+    ** ROOT CAUSE: `emit_wgsl_module` (crates/xpile-wgsl-codegen/src/wgsl_emit.rs) never
+    called `naga_validate_wgsl`. The module doc''s "Emitted WGSL is checked by
+    naga_validate_wgsl" described the UNIT TESTS only; the production chain
+    `RealWgslEmitter::try_emit -> WgslBackend::lower -> CLI` had no gate at all.
+    ** FIX, in the order the queue note pinned as load-bearing -- SANITIZER FIRST, THEN
+    WIRE-IN. Wiring the validator in ALONE would have turned every `for` loop into a
+    refusal and REDDENED an existing test
+    (crates/xpile/tests/transpile_e2e.rs::transpile_loop_var_leak_range_wasm_traps_wgsl_clean),
+    trading a silent wrong emit for an over-refusal. (a) a new `wgsl_ident` sanitizer applied
+    at ALL SEVEN name-emission sites: fn name, signature params, `var` hoists, `let`/assign
+    targets, `Expr::Ident` reads, `Expr::Call` callees, and the module-scope `<fn>_<param>`
+    storage-buffer binding. (b) `naga_validate_wgsl` as the LAST STEP of `emit_wgsl_module`
+    rather than of the tests.
+    ** THE SANITIZER KEYS ON SHAPE, NOT ON A LIST OF SYNTHETICS: a user param literally
+    named `__x` is EQUALLY illegal WGSL, so mangling only the frontend''s known
+    `__forc`/`__forstop`/`__broke`/`__fe`/`__feset`/`__unpack`/`__augi` family would have
+    been an incomplete fix. The frontend''s own names are UNTOUCHED -- they are correct for
+    the Rust and WASM lanes; the mangle happens at the WGSL emission boundary only.
+    ** THE MAPPING IS INJECTIVE, and that is the load-bearing half. The naive repair
+    `__forc0` -> `forc0` collides with a user variable actually named `forc0`, trading a
+    loud rejection for a SILENT WRONG-VARIABLE READ -- a worse defect than the one being
+    fixed. Three disjoint output classes (`xpm_e_` / `xpm_u_` / identity), each individually
+    reversible, so distinct inputs never collide; the adversarial inputs `xpm`,
+    `xpm_u__forc0` and `xpm_e_xpm` are in the test corpus. User identifiers are the IDENTITY
+    case, so emitted WGSL stays readable (`fn last_i(n: i32)` is byte-unchanged) and only
+    the synthetics are rewritten.
+    ** VALIDATING AT `emit_wgsl_module` RATHER THAN `try_emit` IS DELIBERATE: it makes the
+    guarantee structural. The production emitter, the wgpu diff-exec witness''s general slot,
+    the downstream `xpile-spirv-codegen` consumer and the tests all inherit it from one
+    choke point, and any FUTURE name-emission site added without sanitizing fails loudly
+    instead of emitting wrong code -- the sanitizer has a backstop, not just a review.
+    ** RED HALF EXECUTED, NOT ASSERTED: with `wgsl_ident` neutered to the identity AND the
+    gate removed (the exact pre-slice behaviour), 5 of the 7 new tests FAIL. The other 2 are
+    deliberate CONTROLS that must pass both ways -- one pins naga''s actual identifier rules
+    (so a future naga bump that relaxes them fails loudly instead of leaving a mangler nobody
+    can justify), the other proves a NON-recursive intra-module call still lowers, so the
+    recursion test could not be satisfied by `Expr::Call` simply refusing outright.
+    ** TWO FALSE CLAIMS RETIRED rather than left standing: the wgsl_emit.rs module doc
+    ("Emitted WGSL is checked by naga_validate_wgsl" -- true of tests, false of production)
+    and the e2e test doc''s justification ("a program WGSL executes exactly on every non-empty
+    input" -- that fixture''s output did not previously PARSE). The e2e test needed NO
+    weakening to stay green; its `status.success()` is now transitively a naga parse+typecheck.
+    ** DISCLOSED RESIDUALS, not fixed here and not claimed: (a) this establishes emitted WGSL
+    PARSES AND TYPE-CHECKS, not that it EXECUTES -- the executed-on-adapter witnesses remain
+    the xpile-wgsl-codegen/tests/gpu_*.rs pair, which still pass. (b) reserved WGSL KEYWORDS
+    (a fn named `let`/`var`/`loop`) are NOT mangled; they now refuse HONESTLY via the gate
+    instead of emitting silently-bad WGSL, and widening the mangle is a future increment.
+    (c) the pre-existing ambiguity of the `<fn>_<param>` buffer composite (fn `a_b` + param
+    `c` and fn `a` + param `b_c` both yield `a_b_c`) is UNCHANGED by this slice.
+    ** SCOPE: one product file (crates/xpile-wgsl-codegen/src/wgsl_emit.rs) plus two doc-only
+    corrections. depyler-frontend NOT touched. witness_floor.rs untouched (two-touch serial
+    resource; the second touch is reserved for PMAT-1373). No gate file edited.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

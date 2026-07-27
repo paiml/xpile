@@ -19898,10 +19898,23 @@ fn main() {
 /// abort capability:
 ///   • `--target wasm` → emits an `unreachable` trap guard (WASM's abort)
 ///   • `--target wgsl` → transpiles CLEAN with NO guard (no portable abort;
-///     emitting one would over-refuse a program WGSL executes exactly on every
-///     non-empty input).
+///     emitting one would over-refuse a program inside the WGSL subset).
 /// A `range(n)` loop keeps both lanes inside their scalar/control subset, so
 /// the guard is the ONLY difference. (The Rust `panic!` half is `loop_var_leak`.)
+///
+/// PMAT-1391 — CORRECTION. This comment used to justify the WGSL half with
+/// "a program WGSL executes exactly on every non-empty input". That premise
+/// was FALSE when it was written: the emitted WGSL did not even PARSE. The
+/// `range(n)` desugar produces `__forc0` / `__forstop1` locals and WGSL
+/// reserves the `__` identifier prefix, so this fixture's output was
+/// rejected by xpile's OWN `naga_validate_wgsl` while the CLI exited 0 —
+/// this test's `wgsl.status.success()` passed the whole time because
+/// nothing on the production path ran the validator. PMAT-1391 sanitizes
+/// the identifiers and wires the validator into `emit_wgsl_module`, so
+/// `status.success()` below is now transitively a naga parse+typecheck
+/// assertion. Scope note: that establishes the WGSL is VALID, not that it
+/// has been EXECUTED — this test runs no adapter, and the executed WGSL
+/// witnesses live in `xpile-wgsl-codegen/tests/gpu_*.rs`.
 #[test]
 fn transpile_loop_var_leak_range_wasm_traps_wgsl_clean() {
     let py = fixture("loop_var_leak_range.py");

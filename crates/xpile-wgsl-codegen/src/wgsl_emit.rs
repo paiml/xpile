@@ -61,6 +61,18 @@
 //! (no GPU), the same naga pin `xpile-spirv-codegen` uses. This is a
 //! STRONGER gate than the text-structural [`crate::validate_wgsl`]: naga
 //! actually parses and type-checks the WGSL.
+//!
+//! **PMAT-1391 — this became true of the PRODUCTION path on 2026-07-27.**
+//! Until then the sentence above described the unit tests only: nothing
+//! on the `xpile transpile --target wgsl` path ever called the validator,
+//! so `--target wgsl` exited 0 emitting WGSL this crate's own exported
+//! gate rejected (a `for i in range(n)` loop desugars to `__forc0` /
+//! `__forstop1` locals, and WGSL reserves the `__` identifier prefix;
+//! `def f(n): return f(n)` emitted a recursive `fn`, which WGSL forbids).
+//! The check is now the last step of [`emit_wgsl_module`], so every
+//! caller of the real lowering inherits it, and the reserved-prefix
+//! family is fixed at the source by [`wgsl_ident`] rather than merely
+//! detected.
 
 use std::fmt::Write as _;
 
@@ -102,6 +114,57 @@ fn unsupported(what: &str) -> BackendError {
     BackendError::Lower(format!(
         "xpile-wgsl-codegen: unsupported construct — {what}"
     ))
+}
+
+/// PMAT-1391 — sanitize a meta-HIR name into a legal WGSL identifier.
+///
+/// WGSL reserves two identifier shapes (both confirmed against the naga
+/// pin, not assumed): an identifier may not START with `__`, and may not
+/// be exactly `_`. A single leading underscore (`_foo`) is legal.
+///
+/// This matters because the depyler frontend desugars loops into
+/// synthetic locals named `__forc0` / `__forstop1` / `__broke0` (see
+/// `crates/depyler-frontend/src/lib.rs`). Those names are CORRECT for
+/// the Rust and WASM lanes and must not change there — so the fix is a
+/// mangle at the WGSL emission boundary, applied at every site that
+/// writes a name into the output. A user identifier literally spelled
+/// `__x` is equally illegal, so this sanitizes by SHAPE, not by a
+/// hardcoded list of the frontend's synthetics.
+///
+/// ## The mapping is INJECTIVE — a mangled name can never alias a user name
+///
+/// Sanitizing only the offending names would be an incomplete fix: a
+/// naive `__forc0` → `forc0` collides with a user variable actually
+/// named `forc0`, trading an honest naga rejection for a silent
+/// wrong-variable read. So the mapping is total and injective:
+///
+/// | input starts with | output              | output starts with |
+/// |-------------------|---------------------|--------------------|
+/// | `xpm`             | `xpm_e_` + input    | `xpm_e_`           |
+/// | `_`               | `xpm_u` + input     | `xpm_u_`           |
+/// | anything else     | input (unchanged)   | neither            |
+///
+/// The three output classes are pairwise disjoint (rows 1 and 2 differ
+/// at byte 4, `e` vs `u`; row 3 can start with neither `xpm` nor `_`),
+/// and each row is individually reversible by stripping its prefix.
+/// Therefore distinct inputs always produce distinct outputs, and the
+/// common case — every identifier a user would plausibly write — is the
+/// identity, so emitted WGSL stays readable.
+///
+/// Reserved WGSL KEYWORDS (`var`, `let`, `loop`, …) are deliberately NOT
+/// mangled: a function or variable named `let` is vanishingly rare, and
+/// the `naga_validate_wgsl` gate now wired into [`emit_wgsl_module`]
+/// turns it into an honest exit-1 refusal that names the keyword rather
+/// than a silent wrong emit. Widening the mangle to keywords is a
+/// future increment, not a correctness hole.
+fn wgsl_ident(name: &str) -> String {
+    if name.starts_with("xpm") {
+        format!("xpm_e_{name}")
+    } else if name.starts_with('_') {
+        format!("xpm_u{name}")
+    } else {
+        name.to_string()
+    }
 }
 
 /// Map a meta-HIR [`Type`] to its WGSL scalar type, refusing everything
@@ -285,13 +348,43 @@ pub fn emit_wgsl_module(module: &Module) -> Result<String, BackendError> {
              functions; an empty module would produce no entry point)",
         ));
     }
+
+    // PMAT-1391 — the emission-boundary gate. Until this slice the module
+    // doc's "Emitted WGSL is checked by `naga_validate_wgsl`" was true only
+    // of the unit tests: the PRODUCTION path (`RealWgslEmitter::try_emit` →
+    // `WgslBackend::lower` → `xpile transpile --target wgsl`) never called
+    // the validator, so `--target wgsl` exited 0 handing the user WGSL this
+    // repo's own exported gate rejects. Validating HERE rather than in
+    // `try_emit` makes the guarantee structural: every caller of the real
+    // lowering — the production emitter, the wgpu diff-exec witness's
+    // general slot, and the tests — inherits it from one choke point.
+    //
+    // A rejection is an honest `BackendError::Lower` naming naga's reason,
+    // which is what turns the recursion case (`def f(n): return f(n)` →
+    // `declaration of `f` is recursive`) from a silent exit-0 wrong emit
+    // into an exit-1 refusal. It is also the BACKSTOP for `wgsl_ident`: if
+    // some future name-emission site is added without sanitizing, the
+    // failure mode is a loud refusal, never wrong code.
+    naga_validate_wgsl(&out).map_err(|e| {
+        BackendError::Lower(format!(
+            "xpile-wgsl-codegen: emitted WGSL failed naga validation — {e}"
+        ))
+    })?;
     Ok(out)
 }
 
 /// The module-scope storage-buffer var name for a `list` parameter:
 /// `<fnname>_<paramname>`, unique across functions.
+///
+/// PMAT-1391: sanitized through [`wgsl_ident`], so a function or param
+/// whose name starts with `_` still yields a legal WGSL module-scope
+/// identifier. The composite is built from the RAW names and mangled as
+/// a whole, so the single call site here is the only place the buffer
+/// name is spelled — every consumer (`emit_wgsl_module`'s binding decl,
+/// `emit_index`'s read, `Stmt::IndexAssign`'s store) reads it back from
+/// the `Scope` already sanitized.
 fn buffer_var(fn_name: &str, param: &str) -> String {
-    format!("{fn_name}_{param}")
+    wgsl_ident(&format!("{fn_name}_{param}"))
 }
 
 /// Emit one WGSL `fn` for `f`.
@@ -344,7 +437,13 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
     // these so a later `Assign` (including inside a loop) is legal.
     for (name, wt) in &scope.locals {
         if needs_var.contains(name) {
-            writeln!(body, "  var {name}: {ty};", ty = wt.keyword()).expect("write");
+            writeln!(
+                body,
+                "  var {name}: {ty};",
+                name = wgsl_ident(name),
+                ty = wt.keyword()
+            )
+            .expect("write");
         }
     }
     for stmt in &f.body.stmts {
@@ -380,13 +479,19 @@ fn emit_function(f: &Function) -> Result<String, BackendError> {
     // Assemble the signature.
     let mut out = String::new();
     writeln!(out, "// xpile-contract: {CONTRACT_ID}").expect("write");
-    write!(out, "fn {}(", f.name).expect("write");
+    write!(out, "fn {}(", wgsl_ident(&f.name)).expect("write");
     let mut first = true;
     for (name, wt) in &sig_params {
         if !first {
             out.push_str(", ");
         }
-        write!(out, "{name}: {ty}", ty = wt.keyword()).expect("write");
+        write!(
+            out,
+            "{name}: {ty}",
+            name = wgsl_ident(name),
+            ty = wt.keyword()
+        )
+        .expect("write");
         first = false;
     }
     out.push(')');
@@ -545,9 +650,15 @@ fn emit_stmt(
             if needs_var.contains(name) {
                 // Reassigned later → hoisted as a `var` up front; here just
                 // assign the initial value (the `var` decl already happened).
-                writeln!(out, "{name} = {buf};").expect("write");
+                writeln!(out, "{name} = {buf};", name = wgsl_ident(name)).expect("write");
             } else {
-                writeln!(out, "let {name}: {ty} = {buf};", ty = wt.keyword()).expect("write");
+                writeln!(
+                    out,
+                    "let {name}: {ty} = {buf};",
+                    name = wgsl_ident(name),
+                    ty = wt.keyword()
+                )
+                .expect("write");
             }
             Ok(())
         }
@@ -563,7 +674,7 @@ fn emit_stmt(
                 )));
             }
             indent(out, depth);
-            writeln!(out, "{name} = {buf};").expect("write");
+            writeln!(out, "{name} = {buf};", name = wgsl_ident(name)).expect("write");
             Ok(())
         }
         // PMAT-979: `xs[i] = v` over a `list[scalar]` PARAMETER — a real
@@ -735,7 +846,9 @@ fn emit_expr(e: &Expr, scope: &Scope, out: &mut String) -> Result<WgslTy, Backen
     match e {
         Expr::Ident(name) => {
             let wt = scope.ty_of(name)?;
-            out.push_str(name);
+            // The `Scope` stays keyed by the RAW meta-HIR name (so lookup
+            // is unaffected); only the emitted spelling is sanitized.
+            out.push_str(&wgsl_ident(name));
             Ok(wt)
         }
         Expr::LitInt(v) => {
@@ -794,7 +907,7 @@ fn emit_expr(e: &Expr, scope: &Scope, out: &mut String) -> Result<WgslTy, Backen
             // mismatch, we report the dominant scalar (i32) and let naga's
             // validation be the backstop. (A float/bool-returning call used
             // in a typed position that disagrees is caught by naga.)
-            write!(out, "{callee}(").expect("write");
+            write!(out, "{callee}(", callee = wgsl_ident(callee)).expect("write");
             for (i, a) in args.iter().enumerate() {
                 if i > 0 {
                     out.push_str(", ");
@@ -1668,5 +1781,240 @@ mod tests {
     fn empty_module_refused() {
         let err = emit_wgsl_module(&module(vec![])).unwrap_err();
         assert!(matches!(err, BackendError::Lower(_)));
+    }
+
+    // ── PMAT-1391: reserved-prefix sanitizing + the emission-boundary gate ──
+
+    /// The RED half, pinned against naga itself rather than asserted:
+    /// these are exactly the identifier shapes WGSL forbids. If a future
+    /// naga bump relaxes either rule this test fails loudly and the
+    /// mangler's justification gets re-derived instead of assumed.
+    #[test]
+    fn naga_really_does_reject_the_shapes_wgsl_ident_exists_to_fix() {
+        // `__`-prefixed — the frontend's `__forc0` / `__forstop1` /
+        // `__broke0` desugar family.
+        assert!(naga_validate_wgsl("fn __forc0() -> i32 { return 1; }").is_err());
+        // bare `_`.
+        assert!(naga_validate_wgsl("fn f() -> i32 { let _: i32 = 1; return _; }").is_err());
+        // ...while a SINGLE leading underscore is legal, so the mangler
+        // must not over-reach and rewrite `_foo`.
+        assert!(naga_validate_wgsl("fn _foo() -> i32 { return 1; }").is_ok());
+    }
+
+    /// `wgsl_ident` is TOTAL (every output is a legal WGSL identifier)
+    /// and INJECTIVE (no two distinct inputs collide). Injectivity is the
+    /// load-bearing half: a naive `__forc0` → `forc0` would silently
+    /// alias a user variable actually named `forc0`.
+    #[test]
+    fn wgsl_ident_is_legal_and_injective() {
+        let inputs = [
+            // frontend synthetics
+            "__forc0",
+            "__forstop1",
+            "__broke0",
+            "__fe0",
+            "__feset0",
+            "__unpack0",
+            "__augi0",
+            // ordinary user names — must be preserved verbatim
+            "s",
+            "i",
+            "last_i",
+            "forc0",
+            "n",
+            // user names that are THEMSELVES illegal WGSL
+            "__x",
+            "___y",
+            // adversarial: names shaped like the mangler's own output
+            "xpm",
+            "xpm_u__forc0",
+            "xpm_e_xpm",
+            "_leading",
+        ];
+
+        let mut seen: Vec<(String, String)> = Vec::new();
+        for input in inputs {
+            let out = wgsl_ident(input);
+            // TOTAL: the output is a legal WGSL identifier. Checked
+            // against naga, not against a restatement of the rule.
+            assert!(
+                naga_validate_wgsl(&format!("fn {out}() -> i32 {{ return 1; }}")).is_ok(),
+                "wgsl_ident({input:?}) = {out:?} is not a legal WGSL identifier"
+            );
+            // INJECTIVE.
+            if let Some((prev_in, _)) = seen.iter().find(|(_, o)| *o == out) {
+                panic!("wgsl_ident collision: {prev_in:?} and {input:?} both map to {out:?}");
+            }
+            seen.push((input.to_string(), out));
+        }
+
+        // The common case is the IDENTITY, so emitted WGSL stays readable.
+        for plain in ["s", "i", "last_i", "forc0", "n"] {
+            assert_eq!(wgsl_ident(plain), plain);
+        }
+        // ...and the collision the naive fix would have caused does not
+        // happen: the synthetic and the user name stay distinct.
+        assert_ne!(wgsl_ident("__forc0"), wgsl_ident("forc0"));
+    }
+
+    /// The production regression: a `for i in range(n)` loop desugars to
+    /// `__forc0` / `__forstop1` locals. Before PMAT-1391 this emitted at
+    /// exit 0 and the repo's OWN `naga_validate_wgsl` rejected the result
+    /// with "Identifier starts with a reserved prefix: `__forc0`".
+    #[test]
+    fn desugared_loop_counter_names_are_sanitized_and_naga_validates() {
+        // fn last_i(n) { var __forc0; __forc0 = 0; while (__forc0 < n) { __forc0 = __forc0 + 1 } return __forc0 }
+        let f = Function {
+            name: "last_i".into(),
+            params: vec![param("n", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![
+                    Stmt::Let {
+                        name: "__forc0".into(),
+                        ty: Type::I64,
+                        value: Expr::LitInt(0),
+                        mutable: true,
+                    },
+                    Stmt::While {
+                        cond: binop(BinOp::Lt, ident("__forc0"), ident("n")),
+                        body: vec![Stmt::Assign {
+                            name: "__forc0".into(),
+                            value: binop(BinOp::Add, ident("__forc0"), Expr::LitInt(1)),
+                        }],
+                    },
+                ],
+                trailing_return: ident("__forc0"),
+            },
+        };
+        // `lower_and_naga` asserts the naga round-trip; with the gate now
+        // inside `emit_wgsl_module` the `.expect` would already fire.
+        let wgsl = lower_and_naga(f);
+        // No emitted identifier starts with `__`. Checked over TOKENS so
+        // the assertion cannot be satisfied by the substring appearing
+        // mid-identifier (`xpm_u__forc0` legitimately contains `__`).
+        for tok in wgsl.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
+            assert!(
+                !tok.starts_with("__"),
+                "emitted a reserved-prefix identifier {tok:?}:\n{wgsl}"
+            );
+        }
+        // The USER-facing name survives untouched — the sanitizer is
+        // surgical, not a blanket rename.
+        assert!(wgsl.contains("fn last_i(n: i32)"), "{wgsl}");
+        assert!(wgsl.contains("xpm_u__forc0"), "{wgsl}");
+    }
+
+    /// A user parameter literally named `__x` is EQUALLY illegal WGSL, so
+    /// sanitizing only the frontend's known synthetics would be an
+    /// incomplete fix. `wgsl_ident` keys on SHAPE, so this works too.
+    #[test]
+    fn user_written_double_underscore_param_is_sanitized_too() {
+        let f = Function {
+            name: "__k".into(),
+            params: vec![param("__x", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: binop(BinOp::Add, ident("__x"), Expr::LitInt(1)),
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(wgsl.contains("fn xpm_u__k(xpm_u__x: i32)"), "{wgsl}");
+    }
+
+    /// A `list[scalar]` param binds a MODULE-SCOPE `var<storage>` whose
+    /// name is the `<fn>_<param>` composite — a separate emission site
+    /// with its own reserved-prefix exposure.
+    #[test]
+    fn storage_buffer_binding_name_is_sanitized() {
+        let f = Function {
+            name: "__k".into(),
+            params: vec![
+                param("xs", Type::List(Box::new(Type::I64))),
+                param("i", Type::I64),
+            ],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::Index {
+                    collection: Box::new(ident("xs")),
+                    index: Box::new(ident("i")),
+                },
+            },
+        };
+        let wgsl = lower_and_naga(f);
+        assert!(
+            wgsl.contains("var<storage, read> xpm_u__k_xs: array<i32>"),
+            "{wgsl}"
+        );
+        assert!(wgsl.contains("xpm_u__k_xs[u32(i)]"), "{wgsl}");
+    }
+
+    /// The other half of the slice: the emission-boundary gate. A
+    /// self-recursive function is legal meta-HIR (and legal Rust/WASM)
+    /// but ILLEGAL WGSL — naga rejects `declaration of `f` is recursive`.
+    /// Before PMAT-1391 `emit_wgsl_module` returned Ok and the CLI exited
+    /// 0 handing the user WGSL no adapter would accept.
+    #[test]
+    fn recursive_function_is_an_honest_refusal_not_a_silent_bad_emit() {
+        let f = Function {
+            name: "f".into(),
+            params: vec![param("n", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::Call {
+                    callee: "f".into(),
+                    args: vec![ident("n")],
+                },
+            },
+        };
+        let err = emit_wgsl_module(&module(vec![Item::Function(f)])).unwrap_err();
+        let BackendError::Lower(msg) = &err else {
+            panic!("expected BackendError::Lower, got {err:?}");
+        };
+        // The refusal must NAME the construct — an opaque "lowering
+        // failed" would be a regression in a different direction.
+        assert!(
+            msg.contains("recursive"),
+            "refusal should name why naga rejected it: {msg}"
+        );
+    }
+
+    /// The gate must not be a no-op that greens everything: a NON-
+    /// recursive call through the same `Expr::Call` path still emits.
+    /// Without this, the test above would also pass if `Expr::Call` had
+    /// simply started refusing outright.
+    #[test]
+    fn non_recursive_call_still_lowers() {
+        let callee = Function {
+            name: "helper".into(),
+            params: vec![param("a", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: binop(BinOp::Add, ident("a"), Expr::LitInt(1)),
+            },
+        };
+        let caller = Function {
+            name: "top".into(),
+            params: vec![param("n", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::Call {
+                    callee: "helper".into(),
+                    args: vec![ident("n")],
+                },
+            },
+        };
+        let wgsl = emit_wgsl_module(&module(vec![
+            Item::Function(callee),
+            Item::Function(caller),
+        ]))
+        .expect("a non-recursive intra-module call is in the subset");
+        naga_validate_wgsl(&wgsl).expect("should validate");
+        assert!(wgsl.contains("return helper(n);"), "{wgsl}");
     }
 }

@@ -2159,52 +2159,49 @@ queue:
     NEXT PICK: PMAT-1391 (dated 2026-07-28, R4 — `--target wgsl` exits 0 emitting WGSL the repo''s OWN
     naga_validate_wgsl rejects). Nothing else is open with date <= 2026-07-27.'
 - id: PMAT-1391
-  status: open
+  status: done
   ev_rank: R4
   gate_touch: null
   date: '2026-07-28'
   title: '`--target wgsl` exits 0 emitting WGSL the repo''s OWN `naga_validate_wgsl` REJECTS — sanitize
     the `__`-reserved synthetic identifiers AND wire the validator into `lower()` so the class cannot
     recur'
-  notes: "TWO reported findings, ONE slice: the identifier family and the recursion case are BOTH caught\
-    \ by\nthe same wire-in, which I PROVED by executing the repo's own exported gate.\nMEASURED with a\
-    \ harness built against `xpile_wgsl_codegen::naga_validate_wgsl` (naga 29.0.3, the\nCargo.lock pin).\
-    \ All four probes, xpile rc=0 / stderr 0 bytes in every case:\n  for i in range(1)      -> REPO-GATE-REJECT:\
-    \ Identifier starts with a reserved prefix: `__forc0`\n  for ... else           -> REPO-GATE-REJECT:\
-    \ Identifier starts with a reserved prefix: `__broke0`\n  def f(n): return f(n)  -> REPO-GATE-REJECT:\
-    \ declaration of `f` is recursive\n  while-loop accumulator -> REPO-GATE-OK        <- the lane is\
-    \ otherwise SOUND; this is a guard,\n                                                   not a rewrite\n\
-    Reproduce the harness (`cargo` is a shell FUNCTION — `command cargo` is required):\n  V=$(mktemp -d)/v;\
-    \ mkdir -p $V/src\n  printf '[package]\\nname=\"v\"\\nversion=\"0.0.0\"\\nedition=\"2021\"\\n[dependencies]\\\
-    nxpile-wgsl-codegen = { path = \"/home/noah/src/xpile/crates/xpile-wgsl-codegen\" }\\n[workspace]\\\
-    n' > $V/Cargo.toml\n  cat > $V/src/main.rs <<'EOF'\n  use std::io::Read;\n  fn main(){let mut s=String::new();std::io::stdin().read_to_string(&mut\
-    \ s).unwrap();\n    match xpile_wgsl_codegen::naga_validate_wgsl(&s){Ok(())=>println!(\"REPO-GATE-OK\"\
-    ),\n    Err(e)=>{println!(\"REPO-GATE-REJECT: {e}\");std::process::exit(2);}}}\n  EOF\n  (cd $V &&\
-    \ command cargo build --quiet --target-dir $V/t)\nORDER IS LOAD-BEARING — SANITIZER FIRST, THEN WIRE-IN.\
-    \ Wiring the validator in ALONE turns every\n`for` loop into a refusal and REDS an existing test:\n\
-    \  crates/xpile/tests/transpile_e2e.rs:19906 `transpile_loop_var_leak_range_wasm_traps_wgsl_clean`\n\
-    \  asserts `wgsl.status.success()` AND `wgsl_src.contains(\"fn last_i(\") && ... (\"loop {\")` on\n\
-    \  fixtures/loop_var_leak_range.py. I emitted it: the WGSL contains `var __forc0` and\n  `let __forstop1`\
-    \ and the repo gate REJECTS it. Its doc comment claims WGSL \"executes exactly on\n  every non-empty\
-    \ input\" — that premise is FALSE and the CHANGELOG should say so.\n  A user-identifier-preserving\
-    \ sanitizer keeps BOTH assertions green (`fn last_i(` and `loop {`\n  survive), so land the sanitizer\
-    \ in the SAME commit as the wire-in.\nFIX (M): a WGSL identifier-mangling helper applied at EVERY\
-    \ name-emission site in the 1672-line\ncrates/xpile-wgsl-codegen/src/wgsl_emit.rs — var decls, reads,\
-    \ writes, params, and the module-scope\n`<fn>_<param>` storage-buffer binding names — plus a collision\
-    \ rule so a mangled name cannot alias a\nuser identifier (a user param literally named `__x` is EQUALLY\
-    \ illegal, so sanitizing only the\nfrontend's synthetics is an incomplete fix). Then call the already-exported\
-    \ `naga_validate_wgsl`\n(lib.rs:38) at the end of `RealWgslEmitter::try_emit` / `WgslBackend::lower`\
-    \ (lib.rs:108) and map\n`NagaValidationError` -> `BackendError::Lower`. Recursion then becomes an\
-    \ HONEST refusal.\nTRAP 1: do NOT change the synthetic names in crates/depyler-frontend/src/lib.rs:401/439\
-    \ — `__forc`,\n`__forstop`, `__broke`, `__fe`, `__feset`, `__unpack`, `__augi` are correct for the\
-    \ Rust/WASM lanes.\nMangle at the WGSL emission boundary only. (`__fe`/`__feset` are unreachable today\
-    \ only because\n`for x in xs:` is refused — they surface the moment the subset widens.)\nTRAP 2: the\
-    \ module doc at wgsl_emit.rs:13 already CLAIMS \"never wrong code\" and :55-65 already\nCLAIMS \"\
-    Emitted WGSL is checked by `naga_validate_wgsl`\". Both are false on the production path\ntoday; the\
-    \ commit makes them true — do not add a third claim.\nTRAP 3: `--contracts off` changes nothing (verified).\
-    \ Do not chase the citation.\nACCEPTANCE:\n  every probe above -> REPO-GATE-OK, or xpile rc=1 with\
-    \ a construct-naming message\n  command cargo test -p xpile-wgsl-codegen && command cargo test -p\
-    \ xpile --test transpile_e2e\n  (the 19906 test must stay GREEN, not be deleted)\n"
+  notes: 'DONE 2026-07-27 (PULLED FORWARD from 2026-07-28 — every item dated <= 07-27 was merged and
+    the pick rule permits pulling forward on Day 4 or earlier). All four probes reproduced through the
+    shipped binary at cd3327b7 BEFORE any edit, against a harness built on the repo''s OWN exported
+    `naga_validate_wgsl` (naga 29.0.3): for-range -> REJECT `__forc0`, for-else -> REJECT `__broke0`,
+    self-recursion -> REJECT `declaration of f is recursive`, while-accumulator -> OK. xpile rc=0 and
+    stderr 0 bytes on all four. The fourth is load-bearing — the lane is otherwise SOUND, so the fix is
+    a guard, not a rewrite. ** THE WGSL RULES WERE MEASURED, NOT ASSUMED: probing naga directly shows
+    `__foo`/`___foo` rejected and bare `_` rejected, but `_foo` ACCEPTED — a mangler keyed on "starts
+    with underscore" would have over-reached. ** ORDER HELD as the note pinned: SANITIZER FIRST, THEN
+    WIRE-IN. `wgsl_ident` applied at all SEVEN name-emission sites (fn name, sig params, `var` hoists,
+    let/assign targets, Ident reads, Call callees, and the `<fn>_<param>` buffer binding), then
+    `naga_validate_wgsl` as the last step of `emit_wgsl_module`. transpile_e2e.rs:19906 stayed GREEN and
+    was NOT deleted or weakened — a user-identifier-preserving sanitizer keeps `fn last_i(` and `loop {`
+    intact, exactly as the note predicted. ** SHAPE, NOT A SYNTHETIC LIST: a user param named `__x` is
+    equally illegal, so keying on the frontend''s `__forc`/`__broke`/... family would have been an
+    incomplete fix. depyler-frontend NOT touched (TRAP 1 held — those names are correct for Rust/WASM).
+    ** THE MAPPING IS INJECTIVE and that is the load-bearing half: the naive `__forc0` -> `forc0`
+    collides with a user variable named `forc0`, trading a loud rejection for a SILENT WRONG-VARIABLE
+    READ. Three disjoint reversible output classes; `xpm`, `xpm_u__forc0`, `xpm_e_xpm` are in the test
+    corpus. User names are the IDENTITY case so emitted WGSL stays readable. ** VALIDATING AT
+    `emit_wgsl_module` NOT `try_emit` was deliberate — the production emitter, the wgpu diff-exec
+    witness, the downstream xpile-spirv-codegen consumer and the tests inherit it from ONE choke point,
+    so a future unsanitized emission site fails LOUDLY instead of emitting wrong code. ** RED HALF
+    EXECUTED: with the mangler neutered to identity AND the gate removed, 5 of 7 new tests FAIL. The
+    other 2 are deliberate CONTROLS that pass both ways — one pins naga''s real identifier rules (a
+    future naga bump that relaxes them fails loudly rather than leaving an unjustifiable mangler), the
+    other proves a NON-recursive call still lowers, so the recursion test cannot be satisfied by
+    `Expr::Call` refusing outright. ** TRAP 2 HONOURED: the two pre-existing FALSE claims (wgsl_emit.rs
+    module doc; the e2e test''s "executes exactly on every non-empty input") were RETIRED, not
+    supplemented with a third. ** DISCLOSED RESIDUALS, not claimed fixed: (a) VALID != EXECUTED — the
+    on-adapter witnesses remain gpu_*.rs (still green); (b) reserved WGSL KEYWORDS are not mangled, they
+    now refuse honestly via the gate; (c) the `<fn>_<param>` composite ambiguity is pre-existing and
+    unchanged. ** SCOPE: one product file + two doc corrections. witness_floor.rs untouched (two-touch
+    serial resource, second touch reserved for PMAT-1373). No gate file edited.
+    NEXT PICK: PMAT-1392 (R5, dated 2026-07-28 — WAT lift folds EVERY nonzero `i32.const` to `true`;
+    `i32.const 2` round-trips to `1`, valid WAT, wrong value, exit 0 on all three legs).'
 - id: PMAT-1392
   status: open
   ev_rank: R5
