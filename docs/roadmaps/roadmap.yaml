@@ -16240,3 +16240,58 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1379
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1379: [honesty/correctness] WASM `<<`/`>>` SILENTLY MASKED the shift count to 6 bits -
+    four measured wrong answers, now honest. Found by taking the queue''s own `next_lane` entry #1 (the
+    i64 honesty debt) on Day 2 after the D-pool was exhausted and the only remaining OPEN queue items
+    were the date-gated release pair PMAT-1373/1374; the entry explicitly carves the SHIFT half out as
+    "SEPARABLE AND MUCH SMALLER, do this one first" and off the emitter''s hot path, while the FULL overflow
+    fix (checked add/sub/mul/neg) stays deferred as L/XL. THE DEFECT: `BinOp::Shl`/`Shr` over i64 lowered
+    to a bare `i64.shl`/`i64.shr_s`, and those instructions take the count MODULO 64. Measured against
+    live python3 THROUGH THE SHIPPED CLI (xpile transpile --target wasm -> wat2wasm -> wasm-interp), not
+    a library entry point: `1 << 70` returned 64 (70 & 63 == 6) vs CPython 1180591620717411303424; `1024
+    >> 70` returned 16 vs 0; `8 << -1` and `8 >> -1` each returned 0 where CPython raises ValueError.
+    The masking cases are wrong EVEN UNDER FIXED-WIDTH semantics - nothing about a 64-bit word makes `x
+    << 70` mean `x << 6` - so this was not the documented arbitrary-precision wart. THE FIX: both shifts
+    route through `$__wasm_shl_i64` / `$__wasm_shr_i64`, taking the posture the lane''s `i64.div_s` zero-divisor
+    trap already takes - a count Python REJECTS traps, a count whose fixed-width answer is EXACT is computed
+    exactly. Negative count -> `unreachable` (the ValueError analogue). `>>` with n >= 64 clamps to 63,
+    which is EXACT not approximate: an arithmetic right shift that far is 0 for x >= 0 and -1 for x <
+    0, precisely CPython''s answer for an arbitrary-precision x (witnessed for i64::MIN, i64::MAX and
+    n = i64::MAX). `<<` with n >= 64 yields 0 when x == 0 (the one representable case, so it must NOT
+    trap) and `unreachable` otherwise. SCOPE PINNED AS NARROW, NOT ASSERTED TO BE: this is the shift COUNT
+    only; a count in 0..=63 still uses the raw instruction, so `1 << 63` still WRAPS to i64::MIN against
+    CPython''s 9223372036854775808. That residual is asserted OUT LOUD by `shl_in_range_overflow_is_a_known_residual`,
+    which reds the day it changes, rather than left as an unwritten implication. THE GATING IS THE INSTRUCTIVE
+    HALF: the first cut emitted the helpers unconditionally beside FLOOR_HELPERS and thereby put an `unreachable`
+    into EVERY module the backend produces, which red the pre-existing `len_of_list_param_reads_header`
+    ("len needs no trap") - a real signal, and weakening that assertion to accommodate the change would
+    have been the wrong direction. The obvious alternative, a `module_uses_shift` walker beside the existing
+    `module_uses_list_sum`, is exactly the walker-parity liability this repo has been bitten by: miss
+    one nesting position (a shift in a while body, a comprehension, a method) and the module emits `call
+    $__wasm_shl_i64` against a function never laid down, which wat2wasm then refuses. Instead the item
+    bodies are emitted into a `body` buffer FIRST and the gate reads the `call $__wasm_shl_i64` sites
+    it is gating - it observes the exact bytes it guards and cannot drift by construction, the same discipline
+    `check_emitted_identifiers_unique` (PMAT-1378) uses. WITNESSES: crates/xpile-wasm-codegen/tests/shift_count_witness.rs,
+    5 tests - 2 CONSTRUCT (routing through the helpers, with the raw-mnemonic count taken over INSTRUCTION
+    lines because the helpers'' own `;;` comments name both mnemonics and a substring count scores them
+    twice; plus the shiftless-module gate asserting NEITHER helper and NO trap appear) and 3 runtime-gated
+    EXECUTION tests covering the 4 silent-wrong-answer cases, 13 exact out-of-range arms, 12 in-range
+    regression values each checked against live python3, and the pinned residual. The runner parses the
+    printed token as u64 and REINTERPRETS at i64 (wasm-interp prints integer exports UNSIGNED) and uses
+    a per-CALL unique temp dir via an AtomicUsize, not a per-TEST one. FIVE MUTANTS RUN. WASM witness
+    count live 837 -> 842 against an unchanged WASM_FLOOR = 770; runtime-gated 330 -> 333 against WASM_EXEC_FLOOR
+    = 300 (counts MEASURED by running the manifest, not read off the `// live 795 @ 2026-07-26` snapshot
+    comment in witness_floor.rs). NO witness floor touched - the two permitted 0.1.618 touches remain
+    PMAT-1372 and PMAT-1373. No CI change, no contract change, no gate value changed.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

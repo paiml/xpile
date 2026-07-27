@@ -983,6 +983,29 @@ queue:
     `runtime_abort: true` profile. (i) is a genuine silent-wrong-answer class but the fix is
     overflow-checked arithmetic across every i64 op -- an L/XL change to the emitter's hot path, wrong to
     land in a release week. SEEDED for 0.1.619; the shift-count half is separable and much smaller.
+- id: PMAT-1379
+  status: done
+  ev_rank: R1
+  title: 'NEXT-LANE PULL-FORWARD: WASM `<<`/`>>` silently MASKED the shift count to 6 bits — `1 << 70`
+    returned 64, `8 >> -1` returned 0 where CPython raises ValueError'
+  notes: 'DONE 2026-07-27 (Day 2). PICKED because the queue was EMPTY for today — every Day-1..3 slice
+    and the whole D-pool are merged, and the only OPEN items were the date-gated release pair PMAT-1373
+    (Thu) / PMAT-1374 (Fri), which must NOT be pulled forward. Per the queue `invariant` (a turn ends
+    only on a genuine block or empty-queue+hunt-launched) and the STANDING EV RULE (a fix converting a
+    SILENT WRONG ANSWER into an honest refusal outranks new capability), took `next_lane` entry #1 — the
+    i64 honesty debt — restricted to the half that entry itself carves out as "SEPARABLE AND MUCH SMALLER,
+    do this one first" and off the emitter''s hot path. The FULL overflow fix (checked add/sub/mul/neg,
+    L/XL, touches every witness) REMAINS DEFERRED to 0.1.619 and is still listed in next_lane.
+    Four divergences measured against live python3 through the SHIPPED CLI, all now honest: 1 << 70 (was
+    64) traps; 1024 >> 70 (was 16) is 0; 8 << -1 and 8 >> -1 (both were 0) trap. Helpers gated on the
+    emitted CALL SITES, not a hand-rolled walker — the walker-parity trap. RESIDUAL PINNED, NOT HIDDEN:
+    1 << 63 still wraps to i64::MIN and `shl_in_range_overflow_is_a_known_residual` asserts it so the
+    lane cannot read as fully honest about shifts. 5 witnesses; wasm 837 -> 842 (floor 770, untouched),
+    runtime-gated 330 -> 333 (floor 300, untouched).
+    NEXT PICK: nothing is OPEN before Thursday. The next fire should either take a further next_lane
+    truth item (the SHIFT half is now done; the remaining i64 overflow half is L/XL and should NOT land
+    before the Wed 18:00 freeze) or run an adversarial verify pass over the 0.1.618 lane. On 2026-07-30
+    take PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2).'
 - id: PMAT-1373
   status: open
   ev_rank: R1
