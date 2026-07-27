@@ -2,21 +2,35 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-27 (PMAT-1417 landed from an honesty hunt — the ranked queue remains exhausted
-  through 07-29 and the only OPEN items are the release-mechanics pair PMAT-1373 (Thu 07-30) and
-  PMAT-1374 (Fri 07-31) plus the DEFERRED 0.1.619-lane PMAT-1375. Per this file''s own invariant, a
-  fire that finds the queue empty for today runs an honesty hunt rather than idling; PMAT-1415,
-  PMAT-1416 and now PMAT-1417 all came from one. PMAT-1417 found the SCOPE shape: claims_drift.rs
-  is a gate that genuinely works, pointed at exactly two files (README.md, docs/status/CURRENT.md),
-  while the published mdBook — the document a `cargo install xpile` user actually reads — carried
-  the very strings that gate forbids in CURRENT.md, PLUS the Lean citation form PMAT-1405 had
-  removed the day before and a UNIVERSAL Diamond-depth claim 22 of 35 contracts do not satisfy.
-  When a gate is scoped to a FILE rather than to a CLAIM CLASS, the class keeps rotting everywhere
-  else. NEXT PICK: no code slice is due until Thu 07-30 (PMAT-1373). A fire before then should hunt
-  again rather than pull release mechanics forward — the tag is date-gated by owner ratification and
-  Wed 18:00 is the hard freeze. Standing hunt leads that are NOT queued because they are owner-gated
-  or next-sprint: the proof-lane load-bearing decision, the LGPL decision (needed BEFORE Friday''s
-  publish), and the ruleset-drift decision below.)'
+updated: '2026-07-28 (PMAT-1418 landed from an honesty hunt, taking the standing lead recorded in
+  PMAT-1388''s notes — and the lead UNDERSTATED it. The note said the Lean backend had no C emit
+  path and so stamped the PYTHON contract C-PY-INT-ARITH on C code; that is true and is the LESSER
+  half. The greater half is that the emit is a SILENT WRONG VALUE: measured against xpile''s own
+  C-honest Rust emit of the same fixture, half(-7) is -3 in C and -4 in Lean (Int.fdiv FLOORS where
+  C `/` truncates), poly(50000) is -1794867295 in C and 2500100001 in Lean (Int is unbounded), and
+  factorial(13) does not ELABORATE at all — `fail to show termination`, so Lean falls back to the
+  SORRY AXIOM, in the PROOF lane, in a repo whose standing claim is zero real sorry. THE SHAPE, and
+  the reason it survived 100+ commits: `xpile audit --target lean` scored the 11 tracked .c files
+  {"f1_pct":100.0,"f1_status":"OK"} — a PERFECT score for citing the WRONG contract, because the
+  audit asks whether a citation is PRESENT and never whether it is the RIGHT ONE FOR THE SOURCE
+  LANGUAGE. A metric that cannot tell "cited correctly" from "cited at all" reports its BEST number
+  exactly where the defect is WORST, and the wrongest lane in the repo was holding the corpus number
+  up (85.7% -> 84.1% once removed; all 18 vanished citations were C-lane). Generalising the lead
+  found a SECOND language doing the same thing (the WAT lift) and a THIRD hole of a different kind:
+  an item-less shell module had no statement for the per-Stmt shell refusals to catch, fell through
+  the item loop, and emitted a header-only "Lean module" at exit 0 — a negative over an EMPTY
+  enumeration passes for free. Fix is a module-level guard whose match is EXHAUSTIVE WITH NO `_`
+  ARM, so the next SourceLang variant is a COMPILE error instead of a silent inheritance.
+  NEXT PICK: no code slice is due until Thu 07-30 (PMAT-1373). A fire before then should hunt again
+  rather than pull release mechanics forward — the tag is date-gated by owner ratification and Wed
+  18:00 is the hard freeze. STANDING LEAD, characterized but NOT taken (0.1.619, and the natural
+  successor to this slice): `every_applicable_contract_is_actually_cited` at
+  contract_citation_integrity.rs:441 filters its corpus to `.py`, which is precisely why the lane
+  where citation drift was TOTAL is the one it never read — widen it to the C lane and check the
+  paradigm, not just the presence. SECOND STANDING LEAD, still untaken from PMAT-1388: `--target
+  wgsl` on fib.py exits 0 emitting WGSL that naga REJECTS (WGSL forbids recursion) —
+  accept-then-fail-downstream. Owner-gated leads unchanged: the proof-lane load-bearing decision,
+  the LGPL decision (needed BEFORE Friday''s publish), and the ruleset-drift decision below.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
