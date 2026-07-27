@@ -1054,6 +1054,60 @@ queue:
     adversarial verify pass over a lane this session did NOT sweep (the Rust oracle lane and the
     decy/C frontend are the two untouched by PMAT-1377/1378/1379/1380), or further CHANGELOG polish.
     Do NOT start a gate_touch. On 2026-07-30 take PMAT-1373.
+- id: PMAT-1381
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`--target rust` EXITED 0 emitting Rust that `rustc` REJECTS (E0425) for any local first
+    bound inside an `if`/`elif`/`else` branch and read after the statement (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED by executing PMAT-1380's own next-pick note: the queue is empty before Thursday and that
+    note names an adversarial verify pass over "the Rust oracle lane and the decy/C frontend, the two
+    untouched by PMAT-1377/1378/1379/1380". Swept the Rust oracle lane with a 253-probe
+    python3-vs-(xpile -> rustc -> run) differential harness.
+    ** THE FINDING: Python binds at FUNCTION scope, so `if c: y = 5` then `print(y)` is legal Python.
+    The emitted `Stmt::If` is a Rust BLOCK, so the `let` dies at the closing brace, but the frontend
+    left the name in `ctx.bound` — so the later read lowered to a bare `Ident` and the CLI exited 0
+    on Rust that rustc rejects with E0425. 14 shapes measured: if-only over int/str/float/list,
+    else-only, elif-without-else, nested if-in-if, if-in-for, for-in-if, read-in-a-later-block,
+    read-in-an-expression, read-in-a-return, and BOTH multi-statement if/else shapes.
+    ** THE REPO ALREADY HAD THE DOCTRINE AND THE MACHINERY: PMAT-1092 poisons names first bound
+    inside a statement-form `try` (`ctx.try_dead`) and refuses a later read with the scoping truth.
+    The `try` arm was done; the `if` arm never was. The fix is that mechanism applied to
+    `lower_if_stmt`'s general path (snapshot/withdraw/poison -> `ctx.if_dead`), ~30 lines. GENERAL
+    RULE worth carrying: when a lane already refuses one instance of a class, grep for the SIBLING
+    constructs before assuming the class is closed — this is the third time (PMAT-1377 finished
+    PMAT-1371's here-doc refusal, PMAT-1342 finished the NumBuiltin belt's middle slice).
+    ** ONE SHAPE FIXED RATHER THAN REFUSED: `if c: y = 5` then `y = 9` then `print(y)` now compiles
+    and prints 9 (withdrawal makes the post-`if` assignment emit a fresh function-scope `let`).
+    Shipped as an oracle fixture so CPython byte-diffs it every CI cycle.
+    ** WITNESS IS A PROPERTY, NOT A MESSAGE PIN: XPILE-RUSTSCOPE-001 asserts
+    `Ok(rust) ==> rustc accepts it` over a 23-source corpus — a per-shape refusal assertion cannot
+    catch the NEXT shape that leaks. Its non-regression half EXECUTES all 9 still-accepted shapes and
+    byte-diffs vs CPython, and deliberately includes the loop-TARGET leak and the PMAT-1038
+    straight-line hoist, the two shapes the withdrawal must not take with it. 827 e2e tests green.
+    ** 3 RESIDUALS PINNED, NOT HIDDEN (PMAT-1379 posture), each with a test asserting today's wrong
+    behaviour: `for..else` and dict/set-valued loop locals still accept-then-fail E0425; and — worse,
+    a SILENT WRONG ANSWER — where the PMAT-1038 hoist fires it seeds a default that survives the
+    ZERO-ITERATION path, so a never-entered loop prints `0` where CPython raises UnboundLocalError.
+    That last one had lived only in a source comment since PMAT-1038; it is now in the CHANGELOG
+    Known-divergences section with an executing witness behind it.
+    ** NEGATIVE RESULTS (do not re-derive): the Rust lane is markedly healthier than the WASM lane.
+    i64 overflow PANICS honestly naming the contract instead of wrapping silently; float `%` and `//`
+    are Python FLOOR semantics over every sign combination; div-by-zero and every probed container
+    error path trap where CPython raises; format-specs, bin/hex/oct, banker's rounding, sorted/min/max
+    and the whole aliasing family (which REFUSES, incl. mutable default args) agree with CPython.
+    ** A HARNESS TRAP RE-LEARNED: the first witness run reported the KNOWN-GOOD if-expression shape as
+    accept-then-fail, with rustc failing to LINK its own object files. The scratch dir was keyed on
+    (tag, pid), not per CALL, so parallel tests wiped each other. Per-CALL unique temp dirs, again.
+    ** NO gate file touched — gate touch #3 is reserved for PMAT-1373 and witness_floor.rs is the
+    two-touch serial resource; adding a witness file and oracle fixtures raises live counts only.
+    NEXT PICK: nothing is OPEN before Thursday. The decy/C frontend is now the only lane named by
+    PMAT-1380's note that is still unswept — take that, or extend this sweep to the loop residuals
+    (the `for..else` / dict-local E0425 pair is the smaller half; the zero-iteration silent default
+    needs a maybe-unbound guard and is L, so NOT before the Wed 18:00 freeze). Do NOT start a
+    gate_touch. On 2026-07-30 take PMAT-1373.
 - id: PMAT-1373
   status: open
   ev_rank: R1

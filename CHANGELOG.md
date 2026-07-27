@@ -9,6 +9,50 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`--target rust` exited 0 emitting Rust that `rustc` REJECTS, for any local
+  first bound inside an `if` branch** (PMAT-1381). Python binds at **function**
+  scope, so `if c: y = 5` followed by `print(y)` is legal Python. The emitted
+  `Stmt::If` is a Rust **block**, so the `let` dies at the closing brace — but
+  the frontend left the name in scope anyway, so the later read lowered to a
+  bare identifier and the CLI exited 0 on Rust the compiler rejects with
+  `E0425`. This is the same accept-then-fail class PMAT-1378 closed for the
+  WASM lane, found the same way: a 253-probe `python3`-vs-(`xpile` → `rustc` →
+  run) differential sweep of the Rust oracle lane, through the shipped CLI.
+  **14 shapes** were affected — if-only (annotated and bare, over `int`, `str`,
+  `float`, `list`), else-only, `elif`-without-`else`, nested if-in-if,
+  if-inside-`for`, `for`-inside-if, a read in a later block, a read inside an
+  expression, a read in a `return`, and **both** multi-statement `if`/`else`
+  shapes (bound on every Python path, but a multi-statement branch takes the
+  general `Stmt::If` path rather than the if-expression one, so the binding was
+  still block-scoped).
+  **The repo already had the doctrine and the machinery.** PMAT-1092 poisons
+  names first bound inside a statement-form `try` and refuses a later read with
+  the scoping truth; the `try` arm was done and the `if` arm never was. The fix
+  is that mechanism applied to `lower_if_stmt`'s general path — snapshot the
+  scope, withdraw every name first bound in a branch, poison it, and refuse a
+  later read naming both the binding and the pre-bind workaround. The
+  if-as-let path returns *before* the poisoning, so every branch-parity chain
+  that already emitted a function-scope `let y = if c { … } else { … };` is
+  untouched, and all 827 e2e tests stay green.
+  **One shape was fixed rather than refused:** `if c: y = 5` then `y = 9` then
+  `print(y)` now compiles and prints `9` (it was `E0425`), because withdrawing
+  the branch binding lets the post-`if` assignment emit a fresh function-scope
+  `let`. It ships as an oracle fixture, so CPython byte-diffs it every CI cycle.
+  **The witness is a property, not a message pin.** `XPILE-RUSTSCOPE-001`
+  asserts `Ok(rust) ⟹ rustc accepts it` over a 23-source corpus, because a
+  per-shape refusal assertion cannot catch the *next* shape that leaks. Its
+  non-regression half **executes** all 9 still-accepted shapes and byte-diffs
+  them against CPython — including the loop-target leak (`for i in …` then
+  `print(i)`) and the PMAT-1038 straight-line loop hoist, the two shapes the
+  withdrawal must not take with it.
+  **The loop half is NOT fixed, and is pinned rather than implied.** Three
+  residuals each carry a test asserting today's behaviour, so a later fix trips
+  loudly: `for … else` and dict/set-valued loop locals still exit 0 into
+  `E0425` (the PMAT-1038 hoist declines an `orelse`, and covers list/primitive
+  types only); and where that hoist *does* fire it seeds a default that
+  survives the zero-iteration path — a **silent wrong answer**, now stated in
+  Known divergences below.
+
 - **WASM shifts silently masked their count to 6 bits — four wrong answers,
   now honest** (PMAT-1379). `<<`/`>>` over `int` lowered to a bare `i64.shl` /
   `i64.shr_s`, and those instructions take the shift count **modulo 64**. So
@@ -753,7 +797,24 @@ inside the shifts themselves — `1 << 63` wrapping to `i64::MIN` for an in-rang
 count — is asserted out loud by
 `shift_count_witness.rs::shl_in_range_overflow_is_a_known_residual`.
 
-**2. Two Rust-lane float-coercion divergences, both reproduced today.**
+**2. A never-entered loop prints a default in the Rust lane where CPython
+raises `UnboundLocalError`.** Python leaks a loop-body binding to function
+scope, so `while n > 0: y = n` followed by `print(y)` is legal Python that
+raises at the *read* when the loop never ran. The PMAT-1038 hoist rescues the
+straight-line case by pre-declaring `let mut y: i64 = 0;` before the loop — and
+that seeded default survives the zero-iteration path, so the emitted binary
+prints `0` where CPython raises. This is a **silent wrong answer**, and it is
+the residual half of PMAT-1381: the `if` family of the same block-scope class
+now refuses honestly, and the loop family does not. It had lived only in a
+source comment ("same PMAT-838/1015 empty-iterable tradeoff") since PMAT-1038;
+`rust_scope_witness.rs::empty_iteration_loop_hoist_default_is_a_known_silent_divergence`
+now asserts it out loud, alongside two louder siblings that exit 0 into `rustc`
+`E0425` rather than diverging — a `for … else` body binding, and a
+dict/set-valued loop local. The real fix is a maybe-unbound guard that
+reproduces `UnboundLocalError` at the read, which is L and was the wrong change
+for a release week; it joins the 0.1.619 lane.
+
+**3. Two Rust-lane float-coercion divergences, both reproduced today.**
 `print(1 if x > 0 else 2.5)` prints `1.0` where CPython prints `1`, and
 `xs: list[float] = [1.0, 2.0]` / `xs.append(49)` / `print(xs[2])` prints `49.0`
 where CPython prints `49`. Both were surfaced by PMAT-1352 and both are
@@ -767,7 +828,7 @@ which is also why PMAT-1363's new comprehension guard *refuses*
 second shape as an executing witness, with a loud comment naming what to change
 the day the policy lands.
 
-**3. Set iteration order is deterministic but is not CPython's.** Sets lower to
+**4. Set iteration order is deterministic but is not CPython's.** Sets lower to
 `indexmap::IndexSet`, so a program's output is stable run to run — the
 flapping-oracle problem is fixed. The order is **insertion** order, which is not
 CPython's hash order. `print(set)` stays refused in the WASM lane for the same
@@ -775,7 +836,7 @@ reason; a dict view materialised in a module that also removes a key or builds a
 set refuses module-wide (PMAT-1365) rather than silently observing an order that
 diverges. WONTFIX is proposed for hash-order parity.
 
-**4. The default `--contracts on` Lean emit does not elaborate.** Every backend
+**5. The default `--contracts on` Lean emit does not elaborate.** Every backend
 cites its contracts in comments except Lean, which emits
 `@[xpile_contract "C-PY-INT-ARITH"]` — an attribute no Lean prelude registers,
 so `lean` rejects the file. `--contracts off` emits clean, elaborating Lean.
@@ -783,7 +844,7 @@ Registering the attribute in a prelude changes emit standalone-ness and several
 frozen expected-string tests, so it ships as this caveat again rather than as a
 release-week refactor.
 
-**5. `26 QUORUM / 9 PARTIAL` must not be read as "executed 35 ways".** Derive it
+**6. `26 QUORUM / 9 PARTIAL` must not be read as "executed 35 ways".** Derive it
 with `xpile quorum`. PMAT-1367 changed what the §14.4 Runtime stratum counts:
 it *used* to count fixture files that merely **mentioned** a contract id, and it
 now **also** counts top-level witness `*.rs` files that both name the id and
@@ -794,7 +855,7 @@ carry between 1 and 11 votes that are still **mentions**. `quorum.rs` pins six
 contracts as `MUST_STAY_UNWITNESSED` so the counter cannot inflate itself. The
 honest reading is: two contracts are executed heavily, the rest are cited.
 
-**6. The witness floors are lower bounds, not a coverage claim.** Live counts
+**7. The witness floors are lower bounds, not a coverage claim.** Live counts
 this release, from `cargo test -p xpile --test witness_floor -- --nocapture`:
 wasm 842 (floor 770) of which 333 are runtime-gated (floor 300, 39% vs a 36%
 floor), shell 10 (7), rust-differential 47 (44), hybrid 7 (3), wasi 1 (1),
