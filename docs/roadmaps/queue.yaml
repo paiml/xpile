@@ -2314,7 +2314,7 @@ queue:
     \ in README.md or contracts/README.md that `xpile quorum` / `ls contracts/*.yaml`\ncontradicts. Re-derive\
     \ with the commands above; do NOT copy the figures in this note.\n"
 - id: PMAT-1394
-  status: open
+  status: done
   ev_rank: R7
   gate_touch: null
   date: '2026-07-29'
@@ -2352,6 +2352,36 @@ queue:
     ACCEPTANCE:\n  $X transpile $D/z.py --target lean --contracts off; echo $?   # -> 1, message names\
     \ ZeroDivisionError\n  the `a % b` and float `a / 0.0` legs -> 1\n  command cargo test -p xpile-lean-codegen\
     \ && command cargo test -p xpile --test lean_elaborate_witness\n"
+  done_note: 'DONE 2026-07-27 (Mon), PULLED FORWARD from 2026-07-29 under the day<=4 rule — the
+    dated slate had nothing at or before today and PMAT-1394 was the lowest-numbered open item.
+    All three legs reproduced verbatim against lean 4.15.0 at fee39fe3 before any edit, and the
+    two FLOAT results were MEASURED in Lean rather than inferred (float `//` -> inf, float `%` ->
+    `NaN`, which is how Lean spells it — my first draft of the error message said `nan`).
+    ** IMPLEMENTED NARROWER THAN RATIFIED, and better: the ratified text said "a hard
+    BackendError::Lower on `//`, `%` and float `/`", i.e. blanket refusal of the operators. Shipped
+    instead as refuse-unless-PROVABLY-NONZERO-divisor, so `n % 2` and `x / 2.0` still lower. The
+    boundary is not invented — contracts/lean/PyIntArith.lean:607 already states its floor-div and
+    mod theorems under `(hb : b != 0)`, so emission for a possibly-zero divisor was emission outside
+    the region the lane`s own contract proves. Because nothing that still lowers changed, the
+    5-touchpoint contract resync was NOT needed.
+    ** TRAPS 1-3 ALL CONFIRMED LIVE, plus a fourth the entry did not predict: TRAP 2`s pinned test
+    divided by an `Ident`, so it is the shape now refused — retargeted onto a nonzero literal
+    rather than deleted. THE UNPREDICTED ONE: tests/fixtures/asserted.py (`safe_div`, with a
+    hand-written `assert b != 0` one line above `a // b`) was the ONLY red test in 827, and the
+    reason it must still refuse is worth keeping — on this lane an assert lowers to `else panic!`
+    and a Lean panic does NOT abort, so it cannot discharge the divisor obligation, only relocate
+    the same silent divergence. Its e2e test is retargeted onto a divisor-free body so the
+    assert-CHAIN property keeps coverage.
+    ** BLAST RADIUS MEASURED: 87 -> 78 of 812 corpus files lower to Lean; all 9 newly-refused were
+    verified to divide by a runtime value or literal zero (zero over-broad refusals).
+    ** RED HALF RUN: neutering provably_nonzero_divisor to `return true` reds 6/13 lean-codegen unit
+    tests + the e2e gate. The e2e gate pins BOTH halves (8 refused shapes, 4 that must still lower).
+    ** SCOPE: crates/xpile-lean-codegen/src/lib.rs, crates/xpile/tests/transpile_e2e.rs, README.md,
+    docs/specifications/sub/backend-trait.md, CHANGELOG.md, both ledgers. NO contracts/*.yaml, NO
+    gate file, witness_floor.rs UNTOUCHED (neither of the two permitted touches).
+    NEXT PICK: PMAT-1395 (decy `unsigned int` -> WAT i32 result carrying an i64 literal; R8, also
+    dated 07-29, same pull-forward rule applies).'
+
 - id: PMAT-1395
   status: open
   ev_rank: R8

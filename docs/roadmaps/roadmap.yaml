@@ -17281,3 +17281,79 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1394
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1394: [honesty/lean] the Lean lane — the repo''s SEMANTIC-stratum oracle
+    — silently returned a VALUE for division by zero: `7 // 0` elaborated to `0`, `7
+    % 0` to `7`, `1.0 / 0.0` to `inf`, all at `lean` exit 0, while Python raises ZeroDivisionError.
+    `//`, `%` and float `/` now REFUSE unless the divisor is a provably-nonzero literal.'
+  description: 'Reproduced against lean 4.15.0 at fee39fe3, all three legs, no runtime
+    parameter needed: `xpile transpile z.py --target lean --contracts off` exited 0
+    emitting `def f : Int := (Int.fdiv (7: Int) (0: Int))`, and `lean` printed `0`
+    and exited 0. `7 % 0` -> `Int.fmod` -> `7`. `1.0 / 0.0` -> `((1: Float) / (0:
+    Float))` -> `inf`. Float `//` -> `Float.floor (a / 0.0)` -> `inf`; float `%` ->
+    the floor formula -> `NaN` (both MEASURED in Lean, not inferred).
+
+    ** WHY THIS LANE MATTERS MOST: the Lean backend is the SEMANTIC-stratum oracle,
+    the thing other correctness claims are justified BY. It was already refusing
+    `try`/`except ZeroDivisionError` with "no Lean counterpart" — i.e. it refused the
+    HANDLER while silently miscompiling the RAISER. The same meta-HIR through
+    `--target rust` emits `panic!("xpile: ZeroDivisionError: integer division or
+    modulo by zero")` and aborts, so the divergence was lane-local, not a meta-HIR gap.
+
+    ** REFUSAL, NOT A PANIC GUARD, for a MEASURED reason: a Lean `panic!` does NOT
+    produce a non-zero exit — it prints to stderr and returns the type''s default (so
+    Int division would still answer `0`) — and it would make the emission opaque to
+    the `by decide` semantic witness the lane depends on. Porting the Rust guard
+    would have bought a stderr line and no exit-code parity.
+
+    ** THE REFUSAL BOUNDARY IS NOT INVENTED: contracts/lean/PyIntArith.lean:607
+    already states its floor-div and mod equivalence theorems under the hypothesis
+    `(hb : b ≠ 0)`. Emitting for a possibly-zero divisor was emitting OUTSIDE the
+    region the lane''s own contract proves. Refusing exactly `NOT provably-nonzero`
+    realigns codegen with contract — and changes NOTHING about what still lowers, so
+    no contracts/*.yaml or Diamond-theorem 5-touchpoint resync was needed (that is
+    what kept this inside a pre-freeze day).
+
+    ** NOT A LITERAL-ZERO-ONLY GUARD. `a // b` with a runtime divisor is refused
+    too. A guard that caught only the literal `0` would be a guard for one ARGUMENT,
+    not for the operator — the recurring shape in this repo''s honesty ledger.
+    `provably_nonzero_divisor` does NO range analysis: literals and negated literals
+    only (`-2` arrives as `UnOp::Neg` over `LitInt(2)`, so the recursion is
+    load-bearing and has its own test), and `a // (1 + 1)` is refused because
+    pretending to fold would be pretending to analyse.
+
+    ** ALL FIVE divisor sites in the crate are covered, enumerated rather than
+    assumed: `BinOp::FloorDiv`, `BinOp::Mod`, `FloatOp::Div`, `FloatOp::FloorDiv`,
+    `FloatOp::Mod`. Augmented assignment needs no separate site — `x %= period`
+    routes through the same arm (verified via float_floordiv_mod.py).
+
+    ** AN `assert b != 0` ABOVE THE DIVISION DOES NOT DISCHARGE THE OBLIGATION on
+    this lane, because the assert lowers to `else panic!` and a Lean panic does not
+    abort. This is why tests/fixtures/asserted.py (`safe_div`, whose author wrote the
+    precondition by hand) now refuses, and it is recorded in the retargeted test.
+
+    ** BLAST RADIUS MEASURED, not estimated: 87 -> 78 of the 812-file corpus lower to
+    Lean. All 9 newly-refused fixtures were confirmed to divide by a runtime value or
+    a literal zero (asserted, gcd x2, floordiv_mod_signs, int_div_zero, mod_mul_i128,
+    float_floordiv_mod, float_floordiv_semantics, float_mod_fmod) — zero over-broad
+    refusals. Exactly ONE test of 827 in `-p xpile` was red
+    (assert_lean_emits_if_then_panic_chain); it is RETARGETED onto a divisor-free
+    program so the assert-chain property it pinned keeps its coverage rather than
+    being deleted, and the pinned unit test that asserted `Int.fdiv` for an `Ident`
+    divisor now pins it on a nonzero literal.
+
+    ** RED-HALF DEMONSTRATED: neutering `provably_nonzero_divisor` to `return true`
+    reds 6 of the 13 lean-codegen unit tests plus the e2e gate; restoring greens all
+    13. The e2e gate asserts BOTH halves — 8 refused shapes (3 literal-zero legs + 5
+    runtime-divisor forms across int and float) AND 4 shapes that must still lower.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

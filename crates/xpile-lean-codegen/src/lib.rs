@@ -12,6 +12,14 @@
 //!   `if c { a } else { b }` (expr) → `if c then a else b`
 //!   `a // b` (FloorDiv)  → `Int.fdiv a b`  (Python floor semantics)
 //!   `a %  b` (Mod)       → `Int.fmod a b`
+//!                          ⚠ PMAT-1394: BOTH only when the divisor is a
+//!                          PROVABLY-NONZERO literal. Lean is total, so
+//!                          `Int.fdiv a 0` is `0` and `Int.fmod a 0` is `a`
+//!                          where Python raises ZeroDivisionError — and
+//!                          `lean` exits 0, so the divergence is silent. Any
+//!                          other divisor (runtime, or the literal `0`) is
+//!                          REFUSED; same for float `/`, `//` and `%`. See
+//!                          `reject_zero_divisor`.
 //!   logical `and`/`or`   → `&&` / `||`
 //!   unary `-x` / `not x` → `(-x)` / `(!x)`
 //!   call `f(args)`       → `(f arg1 arg2)` (Lean juxtaposition, parenthesized)
@@ -1042,7 +1050,12 @@ fn emit_block(out: &mut String, block: &Block) -> Result<(), LeanCodegenError> {
 /// Non-assert stmts (Let, Assign) emit linearly via `emit_stmt`;
 /// they fall through to the recursive tail.
 ///
-/// Shape on `safe_div` (the asserted.py fixture):
+/// Shape on `safe_div`, formerly the asserted.py fixture. PMAT-1394 NOTE: this
+/// exact program no longer lowers — its `a // b` has a runtime divisor, and an
+/// `assert b != 0` does NOT discharge that obligation on this lane, because a
+/// Lean `panic!` returns the type's default instead of aborting (`lean` still
+/// exits 0). The shape below is retained because it documents the assert
+/// CHAIN, which is unchanged for divisor-free bodies.
 ///
 /// ```lean
 /// def safe_div (a : Int) (b : Int) : Int :=
@@ -1405,7 +1418,9 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
         Expr::LitFloat(v) => write!(out, "({}: Float)", v)?,
         Expr::FloatBinOp { op, lhs, rhs } => match op {
             // PMAT-502br: Python float floor-division → `Float.floor (a / b)`.
+            // PMAT-1394: divides, so the divisor must be provably nonzero.
             FloatOp::FloorDiv => {
+                reject_zero_divisor(rhs, "//", "Float.floor (a / 0.0)` is `inf")?;
                 out.push_str("(Float.floor (");
                 emit_expr(out, lhs)?;
                 out.push_str(" / ");
@@ -1413,7 +1428,9 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                 out.push_str("))");
             }
             // PMAT-502br: Python float modulo → `a - b * Float.floor (a / b)`.
+            // PMAT-1394: divides, so the divisor must be provably nonzero.
             FloatOp::Mod => {
+                reject_zero_divisor(rhs, "%", "a - 0.0 * Float.floor (a / 0.0)` is `NaN")?;
                 out.push('(');
                 emit_expr(out, lhs)?;
                 out.push_str(" - ");
@@ -1442,6 +1459,10 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
                 ));
             }
             FloatOp::Add | FloatOp::Sub | FloatOp::Mul | FloatOp::Div => {
+                // PMAT-1394: only `Div` divides; the other three are total.
+                if matches!(op, FloatOp::Div) {
+                    reject_zero_divisor(rhs, "/", "a / 0.0` is `inf")?;
+                }
                 let sym = match op {
                     FloatOp::Add => "+",
                     FloatOp::Sub => "-",
@@ -2011,13 +2032,93 @@ fn emit_unop(out: &mut String, op: UnOp, operand: &Expr) -> Result<(), LeanCodeg
     Ok(())
 }
 
+/// PMAT-1394: is `e` a divisor Lean can be *trusted* with — i.e. one this
+/// backend can see is nonzero without any runtime information?
+///
+/// Only literals qualify. A negation of a provably-nonzero literal is itself
+/// provably nonzero (`-2` arrives as `UnOp::Neg` over `LitInt(2)`, not as
+/// `LitInt(-2)`, so the recursion is load-bearing, not decoration). Everything
+/// else — an `Ident`, a call, any arithmetic subtree — is *not* provably
+/// nonzero, because this backend performs no range analysis. Being wrong in
+/// the permissive direction here is precisely the bug PMAT-1394 fixes, so the
+/// answer is `false` by default.
+fn provably_nonzero_divisor(e: &Expr) -> bool {
+    match e {
+        Expr::LitInt(v) => *v != 0,
+        Expr::LitFloat(v) => *v != 0.0,
+        Expr::UnOp {
+            op: UnOp::Neg,
+            operand,
+        } => provably_nonzero_divisor(operand),
+        _ => false,
+    }
+}
+
+/// PMAT-1394: refuse a division whose divisor is not provably nonzero.
+///
+/// Python raises `ZeroDivisionError` for `x // 0`, `x % 0` and `x / 0.0`. Lean
+/// is a TOTAL language: it has no exception to raise, so its division
+/// primitives return a value instead — and every one of them disagrees with
+/// Python. Measured against lean 4.15.0:
+///
+/// ```text
+///   def f : Int   := (Int.fdiv (7: Int) (0: Int))     #eval f  =>  0     (Python: raises)
+///   def g : Int   := (Int.fmod (7: Int) (0: Int))     #eval g  =>  7     (Python: raises)
+///   def h : Float := ((1: Float) / (0: Float))        #eval h  =>  inf   (Python: raises)
+/// ```
+///
+/// `lean` exits 0 on all three, so the divergence is SILENT. That matters more
+/// on this lane than on any other: the Lean backend is the repo's
+/// SEMANTIC-stratum oracle, the thing other correctness claims are justified
+/// *by*.
+///
+/// The fix is a refusal, not a guard, for two measured reasons:
+///
+///  1. A Lean `panic!` does NOT produce a non-zero exit — it prints to stderr
+///     and returns the type's default (so `Int` division would still answer
+///     `0`). Porting the Rust backend's `panic!` guard would buy a stderr line
+///     and no exit-code parity, while making the emission opaque to the
+///     `by decide` semantic witness the lane depends on.
+///  2. The refusal boundary is not invented here. `contracts/lean/PyIntArith.lean`
+///     already states its floor-div and mod equivalence theorems under the
+///     hypothesis `(hb : b ≠ 0)`. Emission for a possibly-zero divisor was
+///     therefore emission OUTSIDE the region the lane's own contract proves.
+///     Refusing exactly `¬ provably-nonzero` realigns the codegen with the
+///     contract, and changes nothing about the code that still lowers — so no
+///     `contracts/*.yaml` / Diamond-theorem resync is required.
+///
+/// The Rust and Ruchy lanes are unaffected: they emit an explicit
+/// `panic!("xpile: ZeroDivisionError: ...")` guard and abort with a non-zero
+/// status, which is why the message points there.
+fn reject_zero_divisor(rhs: &Expr, py_op: &str, lean_result: &str) -> Result<(), LeanCodegenError> {
+    if provably_nonzero_divisor(rhs) {
+        return Ok(());
+    }
+    // Split the diagnostic by KIND: a literal `0` is a definite miscompile,
+    // an unknown divisor is an unprovable one. Same refusal, different truth.
+    let why = if matches!(rhs, Expr::LitInt(0)) || matches!(rhs, Expr::LitFloat(v) if *v == 0.0) {
+        "the divisor is the literal `0`"
+    } else {
+        "the divisor is not a provably-nonzero literal, so it may be zero at runtime"
+    };
+    Err(LeanCodegenError::Unsupported(format!(
+        "Python `{py_op}` raises ZeroDivisionError on a zero divisor, and {why}. Lean is total \
+         and has no exception to raise: `{lean_result}`, and `lean` exits 0, so the emission \
+         would DISAGREE with Python silently. This is the same `b ≠ 0` hypothesis \
+         contracts/lean/PyIntArith.lean already requires of its floor-div and mod equivalence \
+         theorems. Use `--target rust` or `--target ruchy` (both emit an explicit \
+         ZeroDivisionError panic guard), or make the divisor a nonzero literal."
+    )))
+}
+
 /// Binary ops:
 ///   - Arithmetic add/sub/mul: `+ - *`
 ///   - Comparisons: `== != < <= > >=`
 ///   - Logical: `&& ||`
 ///   - Python-floor division and modulo: `Int.fdiv` / `Int.fmod`
 ///     (NOT Lean's `/` and `%` on Int — those use T-division and
-///     diverge from Python on negative operands.)
+///     diverge from Python on negative operands.) PMAT-1394: only emitted
+///     for a provably-nonzero divisor; see `reject_zero_divisor`.
 fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(), LeanCodegenError> {
     match op {
         BinOp::Add => emit_infix(out, lhs, " + ", rhs),
@@ -2031,8 +2132,18 @@ fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(),
         BinOp::GtEq => emit_infix(out, lhs, " >= ", rhs),
         BinOp::And => emit_infix(out, lhs, " && ", rhs),
         BinOp::Or => emit_infix(out, lhs, " || ", rhs),
-        BinOp::FloorDiv => emit_prefix2(out, "Int.fdiv", lhs, rhs),
-        BinOp::Mod => emit_prefix2(out, "Int.fmod", lhs, rhs),
+        // PMAT-1394: `//` and `%` only lower when the divisor is PROVABLY
+        // nonzero. `Int.fdiv a 0` is `0` and `Int.fmod a 0` is `a` — total,
+        // silent, and wrong against Python's ZeroDivisionError. See
+        // `reject_zero_divisor`.
+        BinOp::FloorDiv => {
+            reject_zero_divisor(rhs, "//", "Int.fdiv a 0` is `0")?;
+            emit_prefix2(out, "Int.fdiv", lhs, rhs)
+        }
+        BinOp::Mod => {
+            reject_zero_divisor(rhs, "%", "Int.fmod a 0` is `a")?;
+            emit_prefix2(out, "Int.fmod", lhs, rhs)
+        }
         // Bitwise: Lean 4 core provides Int.land / Int.lor / Int.xor for
         // the bool-ops and Int has HShiftLeft / HShiftRight instances
         // taking Nat. We coerce rhs via `.toNat` for shifts (matches
@@ -2161,37 +2272,186 @@ mod tests {
         assert!(!lean.contains("fun "));
     }
 
-    #[test]
-    fn floordiv_uses_int_fdiv_not_division_operator() {
+    /// Helper for the PMAT-1394 divisor tests: `a <op> <rhs>` over one `I64`
+    /// param `a`.
+    fn int_div_module(op: BinOp, rhs: Expr) -> Module {
         let f = Function {
             name: "fdiv".into(),
-            params: vec![
-                Param {
-                    name: "a".into(),
-                    ty: Type::I64,
-                    mutable: false,
-                },
-                Param {
-                    name: "b".into(),
-                    ty: Type::I64,
-                    mutable: false,
-                },
-            ],
+            params: vec![Param {
+                name: "a".into(),
+                ty: Type::I64,
+                mutable: false,
+            }],
             return_type: Type::I64,
             body: Expr::BinOp {
-                op: BinOp::FloorDiv,
+                op,
                 lhs: Box::new(Expr::Ident("a".into())),
-                rhs: Box::new(Expr::Ident("b".into())),
+                rhs: Box::new(rhs),
             }
             .into(),
         };
-        let m = module_with("fixture", vec![Item::Function(f)]);
+        module_with("fixture", vec![Item::Function(f)])
+    }
+
+    /// Helper for the PMAT-1394 float divisor tests: `a <op> <rhs>` over one
+    /// `F64` param `a`.
+    fn float_div_module(op: FloatOp, rhs: Expr) -> Module {
+        let f = Function {
+            name: "fdiv".into(),
+            params: vec![Param {
+                name: "a".into(),
+                ty: Type::F64,
+                mutable: false,
+            }],
+            return_type: Type::F64,
+            body: Expr::FloatBinOp {
+                op,
+                lhs: Box::new(Expr::Ident("a".into())),
+                rhs: Box::new(rhs),
+            }
+            .into(),
+        };
+        module_with("fixture", vec![Item::Function(f)])
+    }
+
+    #[test]
+    fn floordiv_uses_int_fdiv_not_division_operator() {
+        // PMAT-1394: the divisor is now a nonzero LITERAL. The original form
+        // of this test divided by an `Ident` and is the exact shape that is
+        // now refused (see `floordiv_by_runtime_divisor_is_refused`), but the
+        // property it pinned — Python `//` must lower to `Int.fdiv` (floor
+        // semantics), never Lean's T-division `/` — is unchanged and still
+        // needs pinning on whatever DOES lower.
+        let m = int_div_module(BinOp::FloorDiv, Expr::LitInt(3));
         let lean = emit_module(&m).expect("emit ok");
         assert!(
             lean.contains("Int.fdiv"),
             "Python `//` must use Int.fdiv (floor semantics): got\n{lean}"
         );
         assert!(!lean.contains(" / "));
+    }
+
+    /// PMAT-1394: `a % <nonzero literal>` still lowers — the guard must not
+    /// swallow the whole operator.
+    #[test]
+    fn mod_by_nonzero_literal_still_lowers() {
+        let m = int_div_module(BinOp::Mod, Expr::LitInt(2));
+        let lean = emit_module(&m).expect("emit ok");
+        assert!(
+            lean.contains("Int.fmod"),
+            "`a % 2` must still lower to Int.fmod: got\n{lean}"
+        );
+    }
+
+    /// PMAT-1394: a NEGATED nonzero literal is provably nonzero. `-2` arrives
+    /// as `UnOp::Neg` over `LitInt(2)`, so this is the case that fails if the
+    /// recursion in `provably_nonzero_divisor` is dropped.
+    #[test]
+    fn floordiv_by_negated_nonzero_literal_still_lowers() {
+        let m = int_div_module(
+            BinOp::FloorDiv,
+            Expr::UnOp {
+                op: UnOp::Neg,
+                operand: Box::new(Expr::LitInt(2)),
+            },
+        );
+        let lean = emit_module(&m).expect("emit ok");
+        assert!(
+            lean.contains("Int.fdiv"),
+            "`a // -2` must still lower: got\n{lean}"
+        );
+    }
+
+    /// PMAT-1394 (the reproduced bug, int floor-div leg): `7 // 0` used to
+    /// emit `(Int.fdiv (7: Int) (0: Int))`, which `lean` elaborates to `0` at
+    /// exit 0 while Python raises ZeroDivisionError.
+    #[test]
+    fn floordiv_by_literal_zero_is_refused() {
+        let m = int_div_module(BinOp::FloorDiv, Expr::LitInt(0));
+        let err = emit_module(&m).expect_err("`a // 0` must be refused");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("ZeroDivisionError"),
+            "refusal must name ZeroDivisionError: {msg}"
+        );
+        assert!(
+            msg.contains("the divisor is the literal `0`"),
+            "a literal zero must be diagnosed as a literal zero, not as unprovable: {msg}"
+        );
+    }
+
+    /// PMAT-1394 (int mod leg): `7 % 0` used to elaborate to `7`.
+    #[test]
+    fn mod_by_literal_zero_is_refused() {
+        let m = int_div_module(BinOp::Mod, Expr::LitInt(0));
+        let err = emit_module(&m).expect_err("`a % 0` must be refused");
+        assert!(err.to_string().contains("ZeroDivisionError"));
+    }
+
+    /// PMAT-1394: the SEVERE half. A runtime divisor cannot be shown nonzero
+    /// by this backend, so it must refuse too — a guard that only catches the
+    /// literal `0` is a guard for one ARGUMENT, not for the operator.
+    #[test]
+    fn floordiv_by_runtime_divisor_is_refused() {
+        let m = int_div_module(BinOp::FloorDiv, Expr::Ident("b".into()));
+        let err = emit_module(&m).expect_err("`a // b` must be refused");
+        let msg = err.to_string();
+        assert!(msg.contains("ZeroDivisionError"), "{msg}");
+        assert!(
+            msg.contains("may be zero at runtime"),
+            "an unknown divisor must be diagnosed as unprovable: {msg}"
+        );
+    }
+
+    /// PMAT-1394: a nonzero-looking ARITHMETIC divisor is still refused —
+    /// `provably_nonzero_divisor` does no range analysis and must not pretend
+    /// to. (`b - b` is the witness that constant folding would be unsound.)
+    #[test]
+    fn floordiv_by_arithmetic_divisor_is_refused() {
+        let m = int_div_module(
+            BinOp::FloorDiv,
+            Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(Expr::LitInt(1)),
+                rhs: Box::new(Expr::LitInt(1)),
+            },
+        );
+        emit_module(&m).expect_err("`a // (1 + 1)` must be refused (no range analysis)");
+    }
+
+    /// PMAT-1394 (float legs). Lean measured at 4.15.0: `a / 0.0` => `inf`,
+    /// `Float.floor (a / 0.0)` => `inf`, the float-mod formula => `NaN`; Python
+    /// raises ZeroDivisionError for all three.
+    #[test]
+    fn float_division_by_literal_zero_is_refused() {
+        for op in [FloatOp::Div, FloatOp::FloorDiv, FloatOp::Mod] {
+            let m = float_div_module(op, Expr::LitFloat(0.0));
+            let msg = emit_module(&m)
+                .map(|lean| panic!("{op:?} by 0.0 must be refused, got:\n{lean}"))
+                .unwrap_err()
+                .to_string();
+            assert!(msg.contains("ZeroDivisionError"), "{op:?}: {msg}");
+            assert!(
+                msg.contains("the divisor is the literal `0`"),
+                "{op:?}: literal 0.0 must be diagnosed as a literal zero: {msg}"
+            );
+        }
+    }
+
+    /// PMAT-1394: float division by a runtime divisor is refused, and by a
+    /// nonzero literal still lowers.
+    #[test]
+    fn float_division_divisor_boundary() {
+        for op in [FloatOp::Div, FloatOp::FloorDiv, FloatOp::Mod] {
+            let refused = float_div_module(op, Expr::Ident("b".into()));
+            let msg = emit_module(&refused)
+                .expect_err("float division by a runtime divisor must be refused")
+                .to_string();
+            assert!(msg.contains("ZeroDivisionError"), "{op:?}: {msg}");
+
+            let ok = float_div_module(op, Expr::LitFloat(2.0));
+            emit_module(&ok).unwrap_or_else(|e| panic!("{op:?} by 2.0 must still lower: {e}"));
+        }
     }
 
     #[test]

@@ -55,7 +55,7 @@ The fourth invariant is what makes Layer 5 load-bearing: a backend cannot emit a
 |---|---|---|---|
 | `xpile-rust-codegen` | `RustBackend` | `Target::Rust` | **Real** (PR #6 MVP; expanded #11/#12/#13/#15/#19/#20/#21) |
 | `xpile-ruchy-codegen` | `RuchyBackend` | `Target::Ruchy` | **Real** (PR #7); same Python subset emits `fun … -> T { … }` |
-| `xpile-lean-codegen` | `LeanBackend` | `Target::Lean` | **Real** (PR #14); emits `def name (…) : T :=` with `Int.fdiv` / `Int.fmod` |
+| `xpile-lean-codegen` | `LeanBackend` | `Target::Lean` | **Real** (PR #14); emits `def name (…) : T :=` with `Int.fdiv` / `Int.fmod` — PMAT-1394: `//`, `%` and float `/` only for a **provably-nonzero literal** divisor, else REFUSED (Lean is total: `Int.fdiv a 0` is `0`, `Int.fmod a 0` is `a`, float `a / 0.0` is `inf`, all where Python raises `ZeroDivisionError`, and `lean` exits 0) |
 | `bashrs-backend` | `BashrsBackend` | `Target::Shell` | **Real** (PMAT-039 MVP; expanded across PMAT-039..058 + PMAT-085..092 polish); emits POSIX `sh` for every Layer B IR variant |
 | `xpile-ptx-codegen` | `PtxBackend` | `Target::Ptx` | Scaffold + Layer-5 compile contract at full §14.4 QUORUM (PMAT-074/075) |
 | `xpile-wgsl-codegen` | `WgslBackend` | `Target::Wgsl` | Scaffold |
