@@ -18155,3 +18155,16 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1412
+  github_issue: null
+  item_type: task
+  title: "PMAT-1412: [roadmap/assessment] Post-assessment queue refill + owner-decision register. A 13-agent project assessment (7 survey dimensions, 3 gap lenses, 2 adversarial critics that REFUTED 13 proposed items and ADDED 14 nobody surfaced) produced a release-integrity NOW list for v0.1.618. Queued PMAT-1407..1411: package contracts into the published crate (xpile-0.1.617.crate has 916 entries and ZERO contract YAMLs, so quorum/diamond/attestations all exit 1 for every installed user while working from a git checkout); the inter-crate version skew (34x version = 0.1.12 at workspace 0.1.617, which `cargo publish --dry-run` cannot catch because ^0.1.12 is satisfiable); RUN the dependency checks deny.toml already configures (`cargo deny check licenses` -> EXIT 4, 18 rejections, 10x LGPL-3.0-only in the shipped binary, never once executed by CI) SCOPED TO VISIBILITY not to a license decision; refuse the two exit-0-uncompilable Python shapes; and assert every execution witness exercises the DEFAULT CLI flags (PMAT-1405 shipped because the Lean lane's own witness passed `--contracts off`, leaving the default path ungated in every lane). PMAT-1406 — the highest-severity item, a subprocess.run inside a class method silently discarded so an `rm -rf` became a no-op at exit 0 — was fixed and merged as #1996 before this refill. FOUR OWNER DECISIONS registered, the sharpest being that NO proof in this repo can be turned red by a wrong lowering: contracts/lean/*.lean imports only `Lake` across all 36 modules and the Kani harness links nothing from the workspace, so 489 Lean theorems and 108 Kani proofs verify hand-written re-implementations rather than the emitter — making the central claim UNFALSIFIABLE, which is worse than false."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
