@@ -18428,3 +18428,29 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1410
+  github_issue: null
+  item_type: bug
+  title: "PMAT-1410: [frontend/honesty] two verified exit-0-uncompilable Python shapes REFUSED — a parameter used in CALL position lowered to `i64` and emitted a call against it (rustc E0618), and every `from X import Y` was SILENTLY DROPPED so the bound name resolved to nothing (rustc E0425). Both reproduce from two lines of Python; the second was NOT limited to third-party modules — `from math import sqrt` was E0425 while `import math` + `math.sqrt(x)` compiled."
+  description: "MEASURED on the pre-fix binary, both at EXIT 0, both directly refuting the README's central promise.
+
+    ** (a) PARAMETER IN CALL POSITION -> E0618. `def apply(f, x: int): return f(x)` emitted `pub fn apply(f: i64, x: i64) -> i64 { f(x) }`. The frontend defaults an unannotated parameter to `Type::I64`; the refusal for RETURNING a callable existed, the mirror-image refusal for RECEIVING one did not. Measurement WIDENED the queue's shape: the ANNOTATED spelling `f: int` has the identical defect, so the new check keys on the CALL, not on the absence of an annotation. No parameter type xpile models is callable — `Callable[[int], int]` is itself rejected by `parse_type_annotation` — with exactly one exemption, PMAT-770's callable-instance protocol, where a parameter annotated with a user class registering `__call__` lowers to `(a).__call__(x)`. That exemption is EXECUTED in the witness (emitted Rust asserted to contain `__call__(x)`, rustc exit 0), not asserted.
+
+    ** (b) `from X import Y` SILENTLY DROPPED -> E0425. `is_skippable_import` dropped every `ImportFrom` on the theory that a module's USES are decided at the call/attribute site. True for the QUALIFIED form (`os.getcwd()` errors there); false for the `from`-form, which binds a BARE name. Refusal allowlists only the seven annotation-and-decorator modules whose names are consumed by the frontend and never survive as runtime values (`__future__`, `typing`, `typing_extensions`, `dataclasses`, `enum`, `abc`, `collections.abc`). RELATIVE imports (level >= 1) stay exempt — those are PMAT-896's modelled hybrid FFI-boundary shape, not a dropped name. A real module system is XL and out of scope; refusing is the interim.
+
+    ** WITNESS: crates/xpile/tests/call_target_resolution_witness.rs (XPILE-CALLTARGET-001), 7 tests, 22 sources. Load-bearing assertion is the PROPERTY `Ok(rust) ==> rustc accepts it` over BOTH corpora, so it catches the NEXT shape that leaks rather than pinning one message. RED HALF RUN: with the two calls disabled, 4 of 7 tests fail and the property reports 7 accept-then-fail of 22 (5x E0618, 2x E0425).
+
+    ** NON-VACUITY, because a refusal satisfies a compile-only property for free: the 8 refused sources that are legal Python are EXECUTED under CPython, so 'xpile refuses it' is a statement about xpile's coverage and not about a broken probe. The 12 STILL_ACCEPTED sources are compiled AND executed against CPython stdout, so an over-firing refusal cannot hide.
+
+    ** A VACUOUS PROBE WAS FOUND AND REMOVED during the slice: a positional-only (`f, x, /`) entry passed `is_err()` on the pre-fix binary too, because posonly params refuse EARLIER with their own message. Keyword-only is the same. `check_fn` still scans `posonlyargs`/`kwonlyargs` for correctness if those land, and both the code and the witness state that those arms are UNREACHABLE today and claim no coverage.
+
+    ** DISCLOSED BEHAVIOUR CHANGE, not a pure defect fix: `from collections import deque` / `from os import getcwd` with the name UNUSED exited 0 and COMPILED before, and now refuse. The import was silently dropped either way and any USE of the name was E0425, but sources that used to compile now do not."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

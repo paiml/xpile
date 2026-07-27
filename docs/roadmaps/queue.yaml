@@ -3073,7 +3073,7 @@ queue:
     ACCEPTANCE: the advisory job runs and reports; NOTICE exists; the owner decision is recorded, not
     silently made.'
 - id: PMAT-1410
-  status: open
+  status: done
   date: '2026-07-29'
   ev_rank: R4
   title: Refuse the two verified exit-0-uncompilable Python shapes (unannotated param in call position;
@@ -3090,6 +3090,30 @@ queue:
 
     ACCEPTANCE: both shapes exit non-zero with a message naming the construct; a witness pins each; no
     currently-compiling fixture regresses (run the full rust-diff corpus).'
+  done_note: 'SHIPPED 2026-07-27 (Day 2). Both shapes refuse; witness
+    crates/xpile/tests/call_target_resolution_witness.rs (XPILE-CALLTARGET-001), 7 tests / 22 sources.
+    RED HALF RUN: with the two calls disabled, 4 of 7 tests fail and the property reports 7
+    accept-then-fail of 22 (5x E0618, 2x E0425).
+
+    MEASUREMENT CORRECTED THE ENTRY TWICE, both widenings: (1) shape (a) is NOT specific to an
+    unannotated param — the annotated `f: int` spelling is identically exit-0-then-E0618, so the check
+    keys on the CALL; (2) shape (b) is NOT specific to non-stdlib — `from math import sqrt` was E0425
+    too, while `import math` + `math.sqrt(x)` compiled, so the allowlist is the seven
+    annotation-and-decorator modules, not "stdlib".
+
+    A VACUOUS PROBE WAS FOUND AND REMOVED: a positional-only entry passed `is_err()` pre-fix as well,
+    because posonly params refuse earlier. Keyword-only is the same. Both arms are documented
+    UNREACHABLE and claim no coverage.
+
+    DISCLOSED BEHAVIOUR CHANGE: `from collections import deque` / `from os import getcwd` with the name
+    UNUSED exited 0 and COMPILED before, and now refuse.
+
+    ACCEPTANCE MET: both shapes exit non-zero naming the construct; a witness pins each; the full
+    rust-diff corpus (oracle_differential + diff_exec) is green — no currently-compiling fixture
+    regressed.
+
+    NEXT PICK: PMAT-1411 (R5) — assert every execution witness exercises the DEFAULT CLI flags.'
+
 - id: PMAT-1411
   status: open
   date: '2026-07-29'

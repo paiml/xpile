@@ -7,6 +7,81 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Two exit-0-uncompilable Python shapes now REFUSE (PMAT-1410)
+
+Both reproduce from two lines of Python, both exited **0** through v0.1.617,
+and both directly refute the README's central promise. Their common cause is a
+**call target that does not resolve in the emitted Rust**.
+
+**(a) A parameter used in call position → `error[E0618]`.** An unannotated
+parameter defaults to `Type::I64`, so
+
+```python
+def apply(f, x: int) -> int:
+    return f(x)
+```
+
+emitted `pub fn apply(f: i64, x: i64) -> i64 { f(x) }` — `rustc`: *expected
+function, found `i64`*. The refusal for **returning** a callable already
+existed; the mirror-image refusal for **receiving** one did not.
+
+Measuring the shape widened it: the *annotated* spelling `f: int` has the
+identical defect, so the new check keys on the **call**, not on the absence of
+an annotation. No parameter type xpile models is callable — `Callable[[int],
+int]` is itself rejected by `parse_type_annotation` — with exactly one
+exemption: PMAT-770's callable-instance protocol, where a parameter annotated
+with a user class registering `__call__` lowers to `(a).__call__(x)`. That
+exemption is *executed* in the witness, not asserted.
+
+**(b) `from X import Y` was silently dropped → `error[E0425]`.** Every
+`ImportFrom` was discarded on the theory that whether a module's *uses* are
+supported is decided at the call/attribute site. That holds for the
+**qualified** form — an unsupported `os.getcwd()` errors there — but not for
+the `from`-form, which binds a **bare name**:
+
+```python
+from pkg.util import double
+
+def main() -> int:
+    return double(3)
+```
+
+emitted `double(3i64)` against nothing. This was **not** limited to
+third-party modules: `from math import sqrt` + `sqrt(x)` was E0425 too, while
+`import math` + `math.sqrt(x)` compiled. The refusal allowlists only the seven
+annotation-and-decorator modules whose names the frontend consumes and which
+never survive as runtime values (`__future__`, `typing`, `typing_extensions`,
+`dataclasses`, `enum`, `abc`, `collections.abc`). **Relative** imports
+(level ≥ 1) stay exempt — those are PMAT-896's modelled hybrid FFI-boundary
+shape, not a dropped name. A real module system is XL and out of scope;
+refusing is the defensible interim.
+
+**Witness:** `crates/xpile/tests/call_target_resolution_witness.rs`
+(XPILE-CALLTARGET-001) — 7 tests over 22 sources. The load-bearing assertion is
+the *property* `Ok(rust) ⟹ rustc accepts it` over **both** corpora, so it
+catches the next shape that leaks rather than pinning one message. **The red
+half was run:** with the two calls disabled, 4 of 7 tests fail and the property
+reports **7 accept-then-fail of 22** (5× E0618, 2× E0425).
+
+A refusal satisfies a compile-only property *for free*, so the 8 refused
+sources that are legal Python are **executed under CPython** — that is what
+makes "xpile refuses it" a statement about xpile's coverage rather than about a
+broken probe. The 12 still-accepted sources are compiled **and** executed
+against CPython stdout, so an over-firing refusal cannot hide.
+
+**A vacuous probe was found and removed mid-slice.** A positional-only
+(`f, x, /`) entry passed `is_err()` on the *pre-fix* binary too, because
+positional-only parameters refuse earlier with their own message; keyword-only
+is the same. `check_fn` still scans `posonlyargs`/`kwonlyargs` so the check is
+correct if those land, and both the code and the witness state that those arms
+are unreachable today and claim no coverage for them.
+
+**Disclosed behaviour change, not a pure defect fix:** `from collections import
+deque` / `from os import getcwd` with the imported name **unused** exited 0 and
+*compiled* before, and now refuse. The import was silently dropped either way,
+and any *use* of the name was E0425 — but sources that used to compile no
+longer do.
+
 ### `cargo deny check licenses` had never run — and there is copyleft in the shipped binary (PMAT-1409)
 
 `deny.toml` has configured `[licenses]` and `[bans]` since the file was

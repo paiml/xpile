@@ -3517,6 +3517,13 @@ impl Frontend for PythonFrontend {
         let enums = Rc::new(enum_map);
         let mutating_methods = Rc::new(mutating_method_set);
 
+        // PMAT-1410: two AST-level refusals, both of which previously exited 0
+        // emitting Rust that does not compile. Run on `suite` BEFORE the loop
+        // consumes it, and AFTER the class pre-pass so the parameter check can
+        // consult `struct_methods` for the `__call__` protocol (PMAT-770).
+        reject_param_in_call_position(&suite, &struct_methods)?;
+        reject_unmodelled_absolute_import(&suite)?;
+
         // PMAT-896: detect cross-language FFI boundaries (relative sibling
         // imports) BEFORE the loop consumes `suite`. Borrow now, move below.
         let ffi_boundaries = detect_ffi_boundaries(&suite);
@@ -4425,6 +4432,379 @@ fn walk_stmt_exprs(
 /// blanket `ImportFrom` skip subsumes it harmlessly.)
 fn is_skippable_import(stmt: &ast::Stmt) -> bool {
     matches!(stmt, ast::Stmt::Import(_) | ast::Stmt::ImportFrom(_))
+}
+
+/// PMAT-1410(b): the modules whose `from … import …` names are consumed by the
+/// FRONTEND — as annotations, decorators or base classes — and therefore never
+/// survive into emitted code as runtime values. `from typing import Optional`
+/// is safe to drop because `Optional` only ever appears in an annotation slot
+/// that `parse_type_annotation` reads directly; `from math import sqrt` is NOT,
+/// because `sqrt(x)` lowers to a call to a name nothing defines.
+///
+/// This list is deliberately SHORT and is about the emitted-name lifetime, not
+/// about "stdlib vs third-party": `math` is stdlib and is still excluded, since
+/// only the QUALIFIED form (`import math` + `math.sqrt(x)`) is modelled.
+const TYPE_ONLY_IMPORT_MODULES: &[&str] = &[
+    "__future__",
+    "typing",
+    "typing_extensions",
+    "dataclasses",
+    "enum",
+    "abc",
+    "collections.abc",
+];
+
+/// PMAT-1410(b): refuse `from <module> import <names>` for any absolute module
+/// outside [`TYPE_ONLY_IMPORT_MODULES`].
+///
+/// Until now every `ImportFrom` was silently DROPPED by [`is_skippable_import`]
+/// on the theory that "whether a given module's *uses* are supported is decided
+/// at the call/attribute site". That is true for the QUALIFIED form — an
+/// unsupported `os.getcwd()` errors at the attribute site — but false for the
+/// `from`-form, which binds a BARE name: `from pkg.util import double` followed
+/// by `double(3)` lowered to a free call `double(3i64)` against nothing, so
+/// `xpile transpile` exited 0 emitting Rust that fails with `error[E0425]:
+/// cannot find function `double` in this scope`. The same held for stdlib:
+/// `from math import sqrt` + `sqrt(x)` was E0425 too, while `import math` +
+/// `math.sqrt(x)` compiled.
+///
+/// A real module system is XL and explicitly out of scope; refusing is the
+/// defensible interim. RELATIVE imports (`from ._core import square_sum`,
+/// level >= 1) are exempt — those are the modelled hybrid FFI-boundary shape
+/// that [`detect_ffi_boundaries`] turns into an [`FfiBoundary`], not a dropped
+/// name.
+fn reject_unmodelled_absolute_import(suite: &[ast::Stmt]) -> Result<(), FrontendError> {
+    for stmt in suite {
+        let ast::Stmt::ImportFrom(imp) = stmt else {
+            continue;
+        };
+        // `level` is the leading-dot count; >= 1 is relative (the FFI shape).
+        if imp.level.as_ref().is_some_and(|lvl| lvl.to_u32() >= 1) {
+            continue;
+        }
+        // `from . import x` is level 1 with `module: None`, so it is already
+        // exempted above; a `None` module at level 0 is not constructible.
+        let Some(module) = imp.module.as_ref() else {
+            continue;
+        };
+        let module = module.as_str();
+        if TYPE_ONLY_IMPORT_MODULES.contains(&module) {
+            continue;
+        }
+        let names: Vec<&str> = imp.names.iter().map(|a| a.name.as_str()).collect();
+        let plural = if names.len() == 1 { "" } else { "s" };
+        return Err(FrontendError::Lower(format!(
+            "`from {module} import {}` is not supported — xpile has no module system, so a \
+             `from`-import binds bare name{plural} ({}) that nothing in the emitted code defines \
+             (rustc `error[E0425]: cannot find … in this scope`). Only annotation-and-decorator \
+             modules may be imported this way ({}). For a stdlib module xpile models, use the \
+             QUALIFIED form (`import math` + `math.sqrt(x)`, which compiles — `from math import \
+             sqrt` does not); otherwise inline the definition into this file (PMAT-1410)",
+            names.join(", "),
+            names.join(", "),
+            TYPE_ONLY_IMPORT_MODULES.join(", "),
+        )));
+    }
+    Ok(())
+}
+
+/// PMAT-1410(a): refuse a function that calls one of its own PARAMETERS —
+/// `def apply(f, x: int): return f(x)`.
+///
+/// No parameter type xpile models is callable in the emitted Rust. An
+/// unannotated parameter defaults to `Type::I64` (see the `sig_map` pre-pass),
+/// an `int`/`float`/`bool`/`str` annotation is a scalar, and the one genuinely
+/// callable annotation — `Callable[[int], int]` — is already rejected by
+/// `parse_type_annotation`. So `f(x)` emitted `f(x)` against `f: i64` and
+/// `xpile transpile` exited 0 producing `error[E0618]: expected function, found
+/// `i64``. The refusal for RETURNING a callable existed; the mirror-image
+/// refusal for RECEIVING one did not.
+///
+/// Two exemptions keep previously-working code working:
+///  * `self` / `cls` — the implicit receiver, never a value call;
+///  * a parameter annotated with a user class that registers `__call__`, which
+///    is Python's callable-instance protocol and IS modelled (PMAT-770) — the
+///    call routes to `Expr::MethodCall { method: "__call__" }`.
+///
+/// A parameter shadowed by a nested `def` of the same name is also skipped: the
+/// nested definition, not the parameter, is what the call resolves to.
+fn reject_param_in_call_position(
+    suite: &[ast::Stmt],
+    struct_methods: &HashMap<String, Vec<(String, Type)>>,
+) -> Result<(), FrontendError> {
+    /// Names `stmts` uses in CALL position with a bare-`Name` callee. An
+    /// attribute call (`obj.m()`) or a subscript call is not a bare name and is
+    /// deliberately not collected.
+    fn called_names_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {
+        use ast::Stmt as S;
+        match s {
+            S::Assign(a) => called_names_expr(&a.value, out),
+            S::AnnAssign(aa) => {
+                if let Some(v) = &aa.value {
+                    called_names_expr(v, out);
+                }
+            }
+            S::AugAssign(a) => called_names_expr(&a.value, out),
+            S::Return(r) => {
+                if let Some(v) = &r.value {
+                    called_names_expr(v, out);
+                }
+            }
+            S::Expr(e) => called_names_expr(&e.value, out),
+            S::If(i) => {
+                called_names_expr(&i.test, out);
+                for st in i.body.iter().chain(&i.orelse) {
+                    called_names_stmt(st, out);
+                }
+            }
+            S::While(w) => {
+                called_names_expr(&w.test, out);
+                for st in w.body.iter().chain(&w.orelse) {
+                    called_names_stmt(st, out);
+                }
+            }
+            S::For(f) => {
+                called_names_expr(&f.iter, out);
+                for st in f.body.iter().chain(&f.orelse) {
+                    called_names_stmt(st, out);
+                }
+            }
+            S::With(w) => {
+                for item in &w.items {
+                    called_names_expr(&item.context_expr, out);
+                }
+                for st in &w.body {
+                    called_names_stmt(st, out);
+                }
+            }
+            S::Assert(a) => {
+                called_names_expr(&a.test, out);
+                if let Some(m) = &a.msg {
+                    called_names_expr(m, out);
+                }
+            }
+            S::Raise(r) => {
+                if let Some(e) = &r.exc {
+                    called_names_expr(e, out);
+                }
+            }
+            S::Try(t) => {
+                for st in t.body.iter().chain(&t.orelse).chain(&t.finalbody) {
+                    called_names_stmt(st, out);
+                }
+                for h in &t.handlers {
+                    let ast::ExceptHandler::ExceptHandler(eh) = h;
+                    for st in &eh.body {
+                        called_names_stmt(st, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn called_names_expr(e: &ast::Expr, out: &mut HashSet<String>) {
+        use ast::Expr as E;
+        match e {
+            E::Call(c) => {
+                if let E::Name(n) = c.func.as_ref() {
+                    out.insert(n.id.to_string());
+                }
+                called_names_expr(&c.func, out);
+                for a in &c.args {
+                    called_names_expr(a, out);
+                }
+                for kw in &c.keywords {
+                    called_names_expr(&kw.value, out);
+                }
+            }
+            E::BinOp(b) => {
+                called_names_expr(&b.left, out);
+                called_names_expr(&b.right, out);
+            }
+            E::UnaryOp(u) => called_names_expr(&u.operand, out),
+            E::BoolOp(b) => {
+                for v in &b.values {
+                    called_names_expr(v, out);
+                }
+            }
+            E::NamedExpr(n) => called_names_expr(&n.value, out),
+            E::Compare(c) => {
+                called_names_expr(&c.left, out);
+                for c2 in &c.comparators {
+                    called_names_expr(c2, out);
+                }
+            }
+            E::Subscript(s) => {
+                called_names_expr(&s.value, out);
+                called_names_expr(&s.slice, out);
+            }
+            E::Attribute(a) => called_names_expr(&a.value, out),
+            E::JoinedStr(j) => {
+                for v in &j.values {
+                    called_names_expr(v, out);
+                }
+            }
+            E::FormattedValue(f) => {
+                called_names_expr(&f.value, out);
+                if let Some(spec) = &f.format_spec {
+                    called_names_expr(spec, out);
+                }
+            }
+            E::IfExp(i) => {
+                called_names_expr(&i.test, out);
+                called_names_expr(&i.body, out);
+                called_names_expr(&i.orelse, out);
+            }
+            E::Lambda(l) => called_names_expr(&l.body, out),
+            E::List(l) => {
+                for el in &l.elts {
+                    called_names_expr(el, out);
+                }
+            }
+            E::Tuple(t) => {
+                for el in &t.elts {
+                    called_names_expr(el, out);
+                }
+            }
+            E::Set(s) => {
+                for el in &s.elts {
+                    called_names_expr(el, out);
+                }
+            }
+            E::Dict(d) => {
+                for k in d.keys.iter().flatten() {
+                    called_names_expr(k, out);
+                }
+                for v in &d.values {
+                    called_names_expr(v, out);
+                }
+            }
+            E::ListComp(c) => {
+                called_names_expr(&c.elt, out);
+                comp_generators(&c.generators, out);
+            }
+            E::SetComp(c) => {
+                called_names_expr(&c.elt, out);
+                comp_generators(&c.generators, out);
+            }
+            E::GeneratorExp(c) => {
+                called_names_expr(&c.elt, out);
+                comp_generators(&c.generators, out);
+            }
+            E::DictComp(c) => {
+                called_names_expr(&c.key, out);
+                called_names_expr(&c.value, out);
+                comp_generators(&c.generators, out);
+            }
+            E::Starred(s) => called_names_expr(&s.value, out),
+            E::Slice(s) => {
+                for part in [&s.lower, &s.upper, &s.step].into_iter().flatten() {
+                    called_names_expr(part, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn comp_generators(gens: &[ast::Comprehension], out: &mut HashSet<String>) {
+        for g in gens {
+            called_names_expr(&g.iter, out);
+            for cond in &g.ifs {
+                called_names_expr(cond, out);
+            }
+        }
+    }
+
+    /// Names bound by a nested `def` directly in `body` — those shadow a
+    /// same-named parameter at every call site below them.
+    fn nested_def_names(body: &[ast::Stmt]) -> HashSet<String> {
+        body.iter()
+            .filter_map(|s| match s {
+                ast::Stmt::FunctionDef(f) => Some(f.name.to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn check_fn(
+        f: &ast::StmtFunctionDef,
+        struct_methods: &HashMap<String, Vec<(String, Type)>>,
+    ) -> Result<(), FrontendError> {
+        let mut called = HashSet::new();
+        for s in &f.body {
+            called_names_stmt(s, &mut called);
+        }
+        let shadowed = nested_def_names(&f.body);
+        // `posonlyargs` / `kwonlyargs` are scanned so the check stays correct
+        // if those parameter kinds land, but BOTH refuse earlier today with
+        // their own "not supported at v0.1.0" messages — so those two arms are
+        // currently UNREACHABLE and the witness deliberately claims no
+        // coverage for them (a probe using `/` or `*` would pass without ever
+        // reaching this code).
+        let params = f
+            .args
+            .posonlyargs
+            .iter()
+            .chain(&f.args.args)
+            .chain(&f.args.kwonlyargs);
+        for a in params {
+            let name = a.def.arg.as_str();
+            if name == "self" || name == "cls" || shadowed.contains(name) {
+                continue;
+            }
+            if !called.contains(name) {
+                continue;
+            }
+            // PMAT-770: a parameter annotated with a user class that defines
+            // `__call__` IS callable — the call lowers to that method.
+            let callable_instance = a
+                .def
+                .annotation
+                .as_deref()
+                .and_then(|ann| match ann {
+                    ast::Expr::Name(n) => struct_methods.get(n.id.as_str()),
+                    _ => None,
+                })
+                .is_some_and(|ms| ms.iter().any(|(m, _)| m == "__call__"));
+            if callable_instance {
+                continue;
+            }
+            let annotated = a.def.annotation.is_some();
+            let lowers_to = if annotated {
+                "a scalar"
+            } else {
+                "`i64` (the default for an unannotated parameter)"
+            };
+            return Err(FrontendError::Lower(format!(
+                "function `{}` calls its own parameter `{name}(…)` — higher-order functions are \
+                 not supported at v0.1.0. `{name}` lowers to {lowers_to}, so the emitted Rust \
+                 calls a non-function (rustc `error[E0618]: expected function, found `i64``). \
+                 Annotating it does not help: `Callable[...]` is itself rejected, and RETURNING \
+                 a callable is rejected for the same reason. Call the target function directly \
+                 at the call site, or inline its body (PMAT-1410)",
+                f.name.as_str()
+            )));
+        }
+        // Nested `def`s and methods get the same check.
+        walk(&f.body, struct_methods)
+    }
+
+    fn walk(
+        stmts: &[ast::Stmt],
+        struct_methods: &HashMap<String, Vec<(String, Type)>>,
+    ) -> Result<(), FrontendError> {
+        for s in stmts {
+            match s {
+                ast::Stmt::FunctionDef(f) => check_fn(f, struct_methods)?,
+                ast::Stmt::ClassDef(c) => walk(&c.body, struct_methods)?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    walk(suite, struct_methods)
 }
 
 /// True iff `stmt` is exactly `from __future__ import annotations`.
