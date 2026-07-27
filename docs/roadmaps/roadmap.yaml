@@ -18997,3 +18997,108 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1421
+  title: 'PMAT-1421: [src] FIVE STALE INVERSE ARMS IN THE WAT LIFT: bare `i64.add`/`sub`/`mul`/
+    `shl`/`shr_s` were mapped to the high-level meta-HIR operators long after the emit STOPPED
+    producing them, so hand-written and third-party WAT got PYTHON semantics it does not have and
+    re-emitted to a DIFFERENT running value at exit 0. The arms were correct right-inverses when
+    written. PMAT-1379 re-routed `<<`/`>>` through `$__wasm_shl_i64`/`$__wasm_shr_i64` and
+    PMAT-1402 re-routed `+`/`-`/`*` through `$__wasm_add_i64`/`$__wasm_sub_i64`/`$__wasm_mul_i64`;
+    NEITHER slice deleted the now-dead bare arms. Re-derived from the binary (not assumed): the
+    emit`s user-body opcode set is `i64.{and,or,xor}` + the i64/f64/i32 comparisons +
+    `f64.{add,sub,mul,div}`; the five bare mnemonics appear ONLY inside the `$__wasm_*` prelude,
+    which the lift skips wholesale at lib.rs:195. So the arms could no longer invert anything the
+    emit produces - they fired ONLY on input the emit does not generate, which is precisely the
+    hand-written and third-party WAT the advertised `.wat` frontend exists to accept. WASM defines
+    `i64.shl`/`i64.shr_s` to MASK the shift count modulo 64 and `i64.{add,sub,mul}` to WRAP on
+    overflow; the helpers implement Python (`>>` saturates the count to 63, `<<` traps at >= 64,
+    arithmetic traps on overflow). EXECUTED DIFFERENTIAL under wasm-interp, both legs
+    wat2wasm-clean, transpile at exit 0: `1024 i64.shr_s 70` runs to 16 at the source and 0 after
+    the round trip - a SILENT wrong answer; `1 i64.shl 70` (64), `i64::MAX i64.add 1` (wraps to
+    i64::MIN), `i64::MIN i64.sub 1` (wraps to i64::MAX) and `2^62 i64.mul 4` (wraps to 0) each
+    turn a DEFINED wraparound into a trap. IN-DOMAIN (shift counts < 64, non-overflowing
+    arithmetic) the two semantics agree byte-for-byte - which is exactly what kept the divergence
+    silent and out of every fixture. The wrong lift is frontend-level, so it reached ALL NINE
+    backends: verified on --target wasm, --target rust (`shr70` lowered to the Python clamp-to-63
+    form, `addmax` to `checked_add(..).expect(..)`) and --target forjar.'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30, PMAT-1373). Took
+    PMAT-1420''s standing lead (c) verbatim - the `.ruchy` and `.wat` frontend families were the
+    last two never swept to their own subset ceilings. `.ruchy` is registered "routing only - INPUT
+    refuses, no parser" and `xpile info` says so on its own line, which is honest. `.wat` is a real
+    lowering frontend, and sweeping its opcode table against the emit''s ACTUAL user-body opcode
+    set - re-derived by transpiling a Python module exercising every operator and stripping the
+    `$__wasm_*` prelude - is what surfaced the five dead arms. THE TELL WAS A CODE COMMENT: lib.rs
+    line 719 already stated that `+`/`-`/`*` "stopped emitting bare `i64.add`/`i64.sub`/`i64.mul`
+    and started emitting these calls" - the fact that falsifies the arms 540 lines below it was
+    written down, in this file, by PMAT-1402, and read as a note about the NEW arms rather than as
+    a death certificate for the old ones. LESSON WORTH KEEPING: when a slice MOVES an operator onto
+    a new lowering, the old inverse does not become wrong-and-dead, it becomes wrong-and-LIVE for
+    exactly the inputs the new lowering never produces. Grep the inverse table on every re-route,
+    and note that the right-inverse-on-image property CANNOT see this class: the image shrank, and
+    a fixed point over the smaller image stays green while the arms outside it rot.'
+  fix: 'REFUSE the five bare mnemonics, per PMAT-1395 (coercing output into something that RUNS by
+    picking one of two incompatible semantics installs a silent wrong answer) and the PMAT-1392
+    precedent in this same file for `i32.const` outside the 0/1 bool encoding. `int_binop` now
+    returns `Result<Option<BinOp>, FrontendError>`: `Ok(None)` = "not a binary op" (caller tries
+    `float_binop`, then refuses), `Err` = "a binary op the lift must NOT invert". Making it a
+    Result rather than guarding at the call sites is deliberate and is PMAT-1392''s lesson applied
+    to the arithmetic table - `int_binop` is the SINGLE decision point shared by all three lift
+    sites (straight-line body, loop condition, loop body), so the guard cannot be added to one arm
+    and forgotten in the other two; a per-site test pins that. The diagnostic names the SPECIFIC
+    helper for the SPECIFIC mnemonic (a refusal count is not attribution - PMAT-1419), states the
+    mask/wrap-vs-saturate/trap disagreement, and quotes the executed 16-vs-0 number. A correct
+    lift needs meta-HIR operators carrying WASM wraparound semantics, which do not exist: named as
+    0.1.619 capability work, not faked here.'
+  tests: 'FOUR witnesses in crates/xpile-wasm-frontend/src/tests.rs, alongside the PMAT-1392 ones
+    they are modelled on. (1) bare_i64_arith_lift_is_value_preserving_or_refuses_execution_
+    differential - the load-bearing one: a RELATION over live execution, not a hand-list. For each
+    of 8 mnemonics the reference OUTCOME comes from RUNNING the hand-written source module under
+    wasm-interp; accepted => the round-tripped module must run to the SAME outcome, refused => the
+    mnemonic must be one the emit no longer produces. It needed its OWN interp helper: the
+    PMAT-1392 one asserts wasm-interp succeeded, which cannot express the trap half - four of the
+    five diverge by TRAPPING, and a differential that panics on a trap reds with "wasm-interp
+    failed" instead of naming the divergence, so `interp_outcome` returns the value OR "TRAP" and
+    the relation compares outcomes. Per-CALL temp dir, not per-test. Vacuity guards assert BOTH
+    arms non-empty with exact counts (5 refused / 3 accepted), so neither an everything-refuses nor
+    an everything-accepts regression passes. (2) helper_routed_bare_ops_refuse_at_all_three_lift_
+    sites. (3) every_helper_routed_mnemonic_names_its_own_helper - a copy-paste naming
+    `$__wasm_add_i64` for all five cannot pass. (4) the_emit_still_produces_no_bare_helper_routed_
+    mnemonic_in_a_user_body - the refusal''s PREMISE, re-derived from the emitter rather than
+    asserted, so a future slice that un-routes `+` back to a bare `i64.add` reds and says the
+    refusal has become over-refusal; its own vacuity guard requires the fixture to route through
+    all five helpers. RED HALF RUN THREE TIMES: (a) arms restored -> all three refusal tests red
+    and the differential names "runs to i64:0 where the source runs to i64:16"; (b) guard WIDENED
+    to `i64.and` -> the differential reds on the accept arm AND the pre-existing
+    roundtrip_shift_and_arith reds, i.e. over-refusal is caught twice; (c) the premise test''s
+    `$__wasm_` filter removed -> its negative reds, and dropping the shifts from its fixture reds
+    its vacuity guard. OVER-REFUSAL BOUND MEASURED FIRST (PMAT-1419''s lesson): zero tracked `.wat`
+    files (`git ls-files "*.wat"`), and all 13 pre-existing round-trip fixed-point fixtures -
+    including roundtrip_shift_and_arith, which exercises all five operators via the helpers - stay
+    green untouched. 23/23 pass; the differential is EXECUTED not skipped (verified by running it
+    with --nocapture and reading its witness line, per the standing "measure a witness''s runtime"
+    rule).'
+  docs: 'The frontend''s module-level doc had two claims this falsifies. The "What the lift
+    recovers" bullet said "`i64.*` / `f64.*` / `i32.*` arithmetic & comparison ops -> the matching
+    BinOp / FloatOp" - a wildcard that read as complete and covered the five dead arms; it now
+    enumerates the ops the emit ACTUALLY still produces bare and points at the refusal. A new
+    lossy-posture bullet records the shape, the executed 16-vs-0 number, the in-domain agreement
+    that made it silent, and the 0.1.619 exit. CHANGELOG entry under [Unreleased].'
+  still_open: 'Named, not fixed: (a) the REAL fix is meta-HIR operators carrying WASM wraparound
+    semantics (a `WrappingAdd`/`MaskedShl` family, or a per-module semantics tag), so WAT-sourced
+    arithmetic lifts to something with WASM''s meaning instead of Python''s - 0.1.619 capability
+    work, and it is the same missing distinction as PMAT-1419''s C-int lead (a), which wants i32
+    wrapping for the same reason: meta-HIR has ONE integer arithmetic semantics and three source
+    languages disagree with it; (b) the audit this slice did was of the BINARY OPERATOR table only
+    - `lift_call`, the unary/`i32.eqz` path and the f64 table were read but not swept the same way
+    against a re-derived emit opcode set; (c) the `i32` -> Type::Bool mapping PMAT-1392 recorded as
+    a deliberate residual is still there, so a hand-written `(param $a i32)` still renders as
+    `bool` on --target rust; (d) `.ruchy` remains routing-only, which `xpile info` discloses.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

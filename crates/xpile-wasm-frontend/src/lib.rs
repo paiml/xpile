@@ -23,8 +23,14 @@
 //!       `i32.const 0`/`i32.const 1` → [`Expr::LitBool`] (the emit's bool
 //!       encoding). Any OTHER `i32.const` literal is **refused**, not
 //!       folded — see the lossy-posture section below.
-//!     * `i64.*` / `f64.*` / `i32.*` arithmetic & comparison ops → the
-//!       matching [`BinOp`] / [`FloatOp`].
+//!     * The bare `i64` / `f64` / `i32` ops the emit still produces in a
+//!       user body — `i64.{and,or,xor}`, the `i64`/`f64`/`i32` comparisons
+//!       and `f64.{add,sub,mul,div}` — → the matching [`BinOp`] /
+//!       [`FloatOp`]. Bare `i64.{add,sub,mul,shl,shr_s}` are **refused**
+//!       (PMAT-1421): the emit routes those five operators through
+//!       `$__wasm_*` helpers, so the bare opcode is outside the image and
+//!       carries WASM (mask/wrap) semantics the high-level operator does
+//!       not have — see the lossy-posture section below.
 //!     * `call $__wasm_floordiv_i64` / `$__wasm_floormod_i64` → the
 //!       Python floor [`BinOp::FloorDiv`] / [`BinOp::Mod`] (the emit's
 //!       helper calls, lifted back to the high-level op).
@@ -81,6 +87,22 @@
 //!   hand-written `(param $a i32)` as `bool` on `--target rust`. That one is
 //!   a genuine emit-image ambiguity (`Bool` and `CUInt` both lower to `i32`),
 //!   not a value corruption — the WAT round trip stays value-preserving.
+//! - **Bare `i64.{add,sub,mul,shl,shr_s}` are REFUSED** (PMAT-1421). These
+//!   five had inverse arms written when the emit produced the bare opcode;
+//!   PMAT-1379 re-routed `<<`/`>>` and PMAT-1402 re-routed `+`/`-`/`*`
+//!   through `$__wasm_*` helpers, and neither slice deleted the stale arms.
+//!   They then fired only on WAT the emit does NOT produce — hand-written
+//!   and third-party input — and gave it Python semantics: WASM masks a
+//!   shift count modulo 64 and wraps arithmetic on overflow, where the
+//!   helpers saturate `>>` to 63 and trap on `<<` ≥ 64 and on overflow.
+//!   Executed under `wasm-interp` with both legs `wat2wasm`-clean and
+//!   transpile at exit 0, `1024 i64.shr_s 70` ran to **16** at the source
+//!   and **0** after the round trip; the other four turned a defined
+//!   wraparound into a trap. In-domain (shift counts < 64, non-overflowing
+//!   arithmetic) the two agree exactly, which is what made the divergence
+//!   silent. Refusing follows PMAT-1395 — coercing to one of two
+//!   incompatible semantics installs a wrong answer; a correct lift needs
+//!   meta-HIR operators carrying WASM wraparound semantics (0.1.619).
 //! - **Names** survive only because the emit kept them (`$x`); a stripped
 //!   WAT would lose them.
 //! - **Non-canonical control flow** — any block/loop/branch nesting OUTSIDE
@@ -633,7 +655,7 @@ fn lift_block_inner(
             }
             // ── arithmetic / comparison binary ops ──
             other => {
-                if let Some(op) = int_binop(other) {
+                if let Some(op) = int_binop(other)? {
                     let (lhs, rhs) = pop2(&mut stack, instr)?;
                     stack.push(Expr::BinOp {
                         op,
@@ -966,7 +988,7 @@ fn lift_loop_cond(
                 *pos += 2;
             }
             other => {
-                if let Some(op) = int_binop(other) {
+                if let Some(op) = int_binop(other)? {
                     let (lhs, rhs) = pop2(&mut stack, instr)?;
                     stack.push(Expr::BinOp {
                         op,
@@ -1096,7 +1118,7 @@ fn lift_loop_body(
                 }
             }
             other => {
-                if let Some(op) = int_binop(other) {
+                if let Some(op) = int_binop(other)? {
                     let (lhs, rhs) = pop2(&mut stack, instr)?;
                     stack.push(Expr::BinOp {
                         op,
@@ -1253,24 +1275,95 @@ fn count_local_sets(body: &[String]) -> HashMap<String, usize> {
 
 /// Map an i64/i32 WAT binary-op mnemonic to its meta-HIR [`BinOp`]. The
 /// inverse of `xpile-wasm-codegen`'s `emit_binop` instruction table.
-fn int_binop(instr: &str) -> Option<BinOp> {
-    Some(match instr {
-        "i64.add" => BinOp::Add,
-        "i64.sub" => BinOp::Sub,
-        "i64.mul" => BinOp::Mul,
+///
+/// `Ok(None)` means "not a binary op at all" — the caller tries
+/// [`float_binop`] next, then refuses. `Err` means "a binary op the lift
+/// must NOT invert": see [`refuse_helper_routed`]. Returning a `Result`
+/// rather than guarding at the call sites is deliberate — PMAT-1392's
+/// lesson, applied to the arithmetic table. This function is the SINGLE
+/// decision point for all three lift sites (straight-line body, loop
+/// condition, loop body), so the guard cannot be added to one arm and
+/// forgotten in the other two.
+fn int_binop(instr: &str) -> Result<Option<BinOp>, FrontendError> {
+    Ok(Some(match instr {
+        // PMAT-1421: the five mnemonics the emit STOPPED producing in user
+        // bodies (PMAT-1379 for the shifts, PMAT-1402 for `+`/`-`/`*`).
+        // They are no longer the inverse of anything — see
+        // [`refuse_helper_routed`] for the executed divergence.
+        "i64.add" | "i64.sub" | "i64.mul" | "i64.shl" | "i64.shr_s" => {
+            return Err(refuse_helper_routed(instr))
+        }
         "i64.and" => BinOp::BitAnd,
         "i64.or" => BinOp::BitOr,
         "i64.xor" => BinOp::BitXor,
-        "i64.shl" => BinOp::Shl,
-        "i64.shr_s" => BinOp::Shr,
         "i64.eq" | "f64.eq" | "i32.eq" => BinOp::Eq,
         "i64.ne" | "f64.ne" | "i32.ne" => BinOp::NotEq,
         "i64.lt_s" | "f64.lt" => BinOp::Lt,
         "i64.le_s" | "f64.le" => BinOp::LtEq,
         "i64.gt_s" | "f64.gt" => BinOp::Gt,
         "i64.ge_s" | "f64.ge" => BinOp::GtEq,
-        _ => return None,
-    })
+        _ => return Ok(None),
+    }))
+}
+
+/// The honest boundary for a BARE i64 arithmetic mnemonic whose operator the
+/// emit routes through a `$__wasm_*` helper (PMAT-1421).
+///
+/// These five arms were written when the emit DID produce the bare opcode,
+/// and they were correct right-inverses then. PMAT-1379 re-routed `<<`/`>>`
+/// through `$__wasm_shl_i64`/`$__wasm_shr_i64` and PMAT-1402 re-routed
+/// `+`/`-`/`*` through `$__wasm_add_i64`/`$__wasm_sub_i64`/`$__wasm_mul_i64`;
+/// neither slice deleted the now-stale bare arms. Re-derived from the binary,
+/// the emit's user-body opcode set is `i64.{and,or,xor}` + the comparisons —
+/// these five appear ONLY inside the `$__wasm_*` prelude, which the lift skips
+/// wholesale. So the arms could no longer inverse anything the emit produces;
+/// they fired only on hand-written / third-party WAT, and gave it PYTHON
+/// semantics it does not have.
+///
+/// The two semantics genuinely differ, and the difference is not cosmetic —
+/// executed under `wasm-interp`, both legs `wat2wasm`-clean, transpile at
+/// exit 0:
+///
+/// | bare source                      | source runs to | re-emit runs to |
+/// |----------------------------------|----------------|-----------------|
+/// | `1024 i64.shr_s 70`              | `16`           | `0`             |
+/// | `1 i64.shl 70`                   | `64`           | trap            |
+/// | `i64::MAX i64.add 1`             | `i64::MIN`     | trap            |
+/// | `i64::MIN i64.sub 1`             | `i64::MAX`     | trap            |
+/// | `2^62 i64.mul 4`                 | `0`            | trap            |
+///
+/// WASM defines `i64.shl`/`i64.shr_s` to MASK the shift count modulo 64 and
+/// `i64.{add,sub,mul}` to WRAP on overflow. The helpers implement Python:
+/// `>>` saturates the count to 63, `<<` traps at ≥ 64, and the arithmetic
+/// traps on overflow. In-domain the two agree exactly (verified: shifts < 64
+/// and non-overflowing arithmetic round-trip byte-identically), so the
+/// divergence is precisely the edge — which is what makes it a silent wrong
+/// answer rather than a visible failure.
+///
+/// Refusing rather than coercing follows PMAT-1395: making the output *run*
+/// by picking one of two incompatible semantics installs a silent wrong
+/// answer. A correct lift needs meta-HIR operators carrying WASM wraparound
+/// semantics, which do not exist (0.1.619 capability work).
+fn refuse_helper_routed(instr: &str) -> FrontendError {
+    let helper = match instr {
+        "i64.add" => "$__wasm_add_i64",
+        "i64.sub" => "$__wasm_sub_i64",
+        "i64.mul" => "$__wasm_mul_i64",
+        "i64.shl" => "$__wasm_shl_i64",
+        _ => "$__wasm_shr_i64",
+    };
+    FrontendError::Lower(format!(
+        "bare `{instr}` is outside the lift subset — the lift inverts the \
+         `xpile-wasm-codegen` image, and the emit routes this operator through \
+         `call {helper}` (PMAT-1379 for the shifts, PMAT-1402 for `+`/`-`/`*`), \
+         never the bare opcode. The two disagree at the edge: WASM masks a shift \
+         count modulo 64 and wraps arithmetic on overflow, where the helper \
+         saturates `>>` to 63 and traps on `<<` ≥ 64 and on overflow — so \
+         lifting `{instr}` to the high-level operator re-emits WAT that RUNS to \
+         a different value (`1024 i64.shr_s 70` is 16 at the source and 0 after \
+         the round trip). It is refused rather than mis-lifted; use \
+         `call {helper}` for the Python-semantics operator"
+    ))
 }
 
 /// Map an f64 WAT arithmetic mnemonic to its meta-HIR [`FloatOp`].
