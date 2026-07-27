@@ -1,4 +1,4 @@
-//! XPILE-PTX-CAP-001 (PMAT-1406) — `--hardware ptx:<cap>` may not thread an
+//! XPILE-PTX-CAP-001 (PMAT-1407) — `--hardware ptx:<cap>` may not thread an
 //! arbitrary string into the emitted `.target` directive.
 //!
 //! ## What was measured (force-rebuilt binary at 997abe19, ptxas 13.0.48)
@@ -82,7 +82,7 @@ fn scratch(tag: &str) -> PathBuf {
 }
 
 /// THE RED HALF. Each of these exited 0 emitting unassemblable PTX before
-/// PMAT-1406; each must now refuse.
+/// PMAT-1407; each must now refuse.
 #[test]
 fn malformed_compute_capability_refuses_instead_of_emitting() {
     let dir = scratch("refuse");
@@ -152,7 +152,7 @@ fn real_architecture_spellings_are_still_accepted() {
         assert!(
             out.status.success(),
             "`--hardware ptx:{cap}` is a REAL target and must still emit \
-             (refusing it would trade PMAT-1406's defect for a worse one).\n\
+             (refusing it would trade PMAT-1407's defect for a worse one).\n\
              stderr:\n{}",
             String::from_utf8_lossy(&out.stderr)
         );
@@ -165,7 +165,7 @@ fn real_architecture_spellings_are_still_accepted() {
     }
 }
 
-/// PMAT-1406's SECOND defect, independent of the grammar: the ISA version is
+/// PMAT-1407's SECOND defect, independent of the grammar: the ISA version is
 /// DERIVED from the capability, and the derivation parsed with
 /// `strip_prefix("sm_").parse::<u32>()` — which fails on the arch-variant
 /// suffix. So `sm_120a` (Blackwell, needs ISA >= 8.8) silently fell back to

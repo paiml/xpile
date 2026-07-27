@@ -1712,7 +1712,7 @@ fn parse_hardware(s: Option<&str>) -> Result<Option<HwProfile>> {
     match kind {
         "ptx" => {
             let compute_capability = if cap.is_empty() { "sm_80" } else { cap }.to_string();
-            // PMAT-1406: fail fast at the flag, with the flag's own wording.
+            // PMAT-1407: fail fast at the flag, with the flag's own wording.
             // The AUTHORITATIVE refusal is in `xpile_ptx_codegen::emit`
             // (library callers bypass this function entirely) — this call
             // shares that one grammar rather than restating it, so the two

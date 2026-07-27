@@ -2918,7 +2918,7 @@ queue:
     parse time ("expected Semi, found Ident(\"UL\")") — an honest refusal, but it
     means every unsigned/long C probe must use bare literals or it measures the
     lexer instead of the backend.'
-- id: PMAT-1406
+- id: PMAT-1407
   status: done
   ev_rank: R1
   gate_touch: null
@@ -2966,6 +2966,18 @@ queue:
     individually BEFORE the grammar was written, and the accepting half of the witness
     pins them so a later tightening cannot silently narrow the lane. PMAT-1395''s
     lesson generalised: a fix for "emits garbage" can install "refuses what works".
+
+
+    ** PMAT ID COLLISION, and the mitigation that failed. This slice was authored as
+    PMAT-1406 and RENUMBERED to 1407 mid-flight: a concurrent cron fire took the same
+    max(id)+1 and merged FIRST as #1996 (the bashrs class-method drop). The recorded
+    mitigation is "claim the id in queue.yaml BEFORE opening the PR" — it does NOT
+    work, because the claim only becomes visible to the other fire when it is PUSHED,
+    and both fires pick their id long before that. What actually caught it was the
+    MERGE CONFLICT on the shared `- id:` header in roadmap.yaml plus the identical
+    trailing field block, which is a structural collision detector rather than a
+    convention. Force-push is owner-gated, so the branch commit still says 1406; the
+    SQUASH SUBJECT carries 1407, which is what lands on main.
 
 
     ** NEXT PICK: the queue STILL has no open item dated <= today; PMAT-1373 is

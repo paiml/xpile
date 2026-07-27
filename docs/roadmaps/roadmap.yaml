@@ -18145,7 +18145,20 @@ roadmap:
 - id: PMAT-1406
   github_issue: null
   item_type: bug
-  title: 'PMAT-1406: [ptx/honesty] `--hardware ptx:<ANY STRING>` exited 0 threading
+  title: "PMAT-1406: [shell/honesty] A `subprocess.run` inside a Python CLASS METHOD was SILENTLY DISCARDED and `--target shell` exited 0 emitting a script whose own header read '(no commands — the module has no renderable shell statements)'. Verified end-to-end with `class Cleaner: def wipe(self): subprocess.run([\"rm\",\"-rf\",\"/tmp/some-target\"])` -> rc=0, ZERO `rm` in the output. A DESTRUCTIVE COMMAND SILENTLY BECOMING A NO-OP is the worst instance of the exit-0-while-wrong class this release has been sweeping. ROOT CAUSE (crates/bashrs-backend/src/lib.rs:484): the emit loop was `let Item::Function(f) = item else { continue; };`, so every non-function item was skipped without a word — and a Python `class` lowers to `Item::Struct { name, fields, methods: Vec<Function>, frozen, order }`, whose `methods` are real Functions carrying exactly the `Stmt::Cmd`s this backend exists to emit. It slipped past PMAT-1383 because that slice's refusal lives INSIDE `collect_emittable`, one level BELOW where the item was dropped — the refusal was unreachable, not absent. FIX: the arm is now an EXHAUSTIVE match. Const/Enum continue (they carry no statements, so nothing is dropped); Struct runs each method body through PMAT-1383's own `collect_emittable` walker and REFUSES, naming the class, the method and the command count, if any command would be lost. Emitting them flat was rejected as the fix: it would strip the receiver and reorder effects, which is a worse answer than an error. A class whose methods hold no commands is NOT an error — refusing there would be over-broad, since nothing is being dropped. NON-VACUITY PROVEN: restoring the original `let ... else { continue }` reds `class_method_with_a_command_refuses_instead_of_dropping_it` (27 passed / 1 failed) and restoring the fix greens 28/28. Found by the completeness critic of a 13-agent project assessment — no capability lens ranked it, and it was the single highest-severity open defect in the tree."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1407
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1407: [ptx/honesty] `--hardware ptx:<ANY STRING>` exited 0 threading
     the string VERBATIM into the emitted `.target` directive — `ptx:bogus` wrote
     `.target bogus` and `ptx:''sm_80 ; rm''` wrote a PTX SYNTAX ERROR, neither of
     which any assembler accepts. The guard the emitter''s own doc NAMED for exactly

@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 xpile-core     = { workspace = true }
 xpile-backend  = { workspace = true }
-# PMAT-1406: `parse_hardware` refuses a malformed `--hardware ptx:<cap>` using
+# PMAT-1407: `parse_hardware` refuses a malformed `--hardware ptx:<cap>` using
 # the codegen crate's own `validate_compute_capability`, so the CLI's grammar
 # and the emitter's grammar are ONE function and cannot drift. The
 # AUTHORITATIVE refusal stays at the `emit_kernel` choke point (library callers

@@ -78,7 +78,7 @@ pub const PTX_VERSION: &str = "8.0";
 /// in the contract's sm_80..sm_90 range assembles for the 8.0 floor, so the
 /// floor is kept for them (no churn to the existing RTX 4090 / sm_89 witness).
 ///
-/// The ARCHITECTURE-SPECIFIC spellings count too (PMAT-1406). `sm_120a` is a
+/// The ARCHITECTURE-SPECIFIC spellings count too (PMAT-1407). `sm_120a` is a
 /// real Blackwell target, not a typo: ptxas accepts the `sm_MNa` / `sm_MNf`
 /// variant forms alongside the plain `sm_MN`. The original parse was
 /// `strip_prefix("sm_").parse::<u32>()`, which fails on the trailing letter,
@@ -106,7 +106,7 @@ pub fn ptx_version_for(compute_capability: &str) -> &'static str {
     }
 }
 
-/// PMAT-1406 — a compute capability that cannot be a well-formed PTX
+/// PMAT-1407 — a compute capability that cannot be a well-formed PTX
 /// `.target` operand.
 ///
 /// [`emit_kernel`] threads the capability VERBATIM into the `.target`
@@ -136,12 +136,12 @@ impl std::fmt::Display for InvalidComputeCapability {
 
 impl std::error::Error for InvalidComputeCapability {}
 
-/// PMAT-1406 — is `cap` a syntactically well-formed PTX `.target` operand?
+/// PMAT-1407 — is `cap` a syntactically well-formed PTX `.target` operand?
 ///
 /// Accepts `sm_<digits>` and `compute_<digits>`, each optionally carrying a
 /// single architecture-variant suffix `a` or `f` (`sm_90a`, `sm_120a`,
 /// `sm_100f`). Every one of those spellings was assembled by ptxas 13.0
-/// during PMAT-1406 — this grammar is MEASURED, not guessed, which matters
+/// during PMAT-1407 — this grammar is MEASURED, not guessed, which matters
 /// because a naive digits-only check would refuse `sm_90a`, a REAL Hopper
 /// architecture.
 ///
@@ -896,7 +896,7 @@ fn walk_stmt_exprs(
 /// an `ld.global`. A kernel of bare scalar params keeps the original implicit
 /// element-wise lowering below.
 pub fn emit_kernel(f: &Function, compute_capability: &str) -> Result<String, BackendError> {
-    // PMAT-1406 — THE choke point. `compute_capability` is written verbatim
+    // PMAT-1407 — THE choke point. `compute_capability` is written verbatim
     // into `.target` by both this function and `emit_array_kernel` (which is
     // private and reached only via the delegation below), so refusing here
     // covers every real PTX emission in the crate. Validate BEFORE any

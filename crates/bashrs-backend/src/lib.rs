@@ -479,10 +479,62 @@ impl Backend for BashrsBackend {
 
         let mut emitted_commands = 0usize;
         for item in &module.items {
-            // PMAT-502bj: module-level constants are not part of the shell
-            // domain — skip them (the bashrs lane only walks functions).
-            let Item::Function(f) = item else {
-                continue;
+            // PMAT-1406: this used to be `let Item::Function(f) = item else
+            // { continue; };`, which skipped EVERY non-function item without a
+            // word. `Item::Struct` — what a Python `class` lowers to — carries
+            // its methods in `methods: Vec<Function>`, and those bodies hold
+            // exactly the `Stmt::Cmd`s this backend exists to emit. So a
+            // `subprocess.run(["rm", "-rf", …])` inside a method vanished into
+            // an empty script at exit 0, under a header comment that read
+            // "(no commands — the module has no renderable shell statements)".
+            //
+            // That is the same silent-drop class PMAT-1383 fixed INSIDE a
+            // function body via `collect_emittable`. The refusal was simply
+            // unreachable one level up: nothing that is not an
+            // `Item::Function` ever got there.
+            //
+            // The match below is exhaustive on purpose — a new `Item` variant
+            // must be classified rather than silently inheriting `continue`.
+            let f = match item {
+                Item::Function(f) => f,
+
+                // Module-level constants are genuinely not part of the shell
+                // domain (PMAT-502bj), and an enum carries no statements.
+                // Skipping these drops nothing.
+                Item::Const { .. } | Item::Enum { .. } => continue,
+
+                // A Python class. Its methods are real functions whose bodies
+                // can contain shell commands, but this backend has no class
+                // model — v0.1.0 emits one flat command list with no scoping,
+                // so there is nowhere correct to put a method's commands.
+                // REFUSE rather than drop them. Emitting them flat would
+                // silently strip the receiver and reorder effects, which is a
+                // worse answer than an error.
+                Item::Struct { name, methods, .. } => {
+                    for m in methods {
+                        // Reuse PMAT-1383's walker: it errors on statement
+                        // kinds this backend cannot render, and otherwise
+                        // reports what it WOULD have emitted.
+                        let (emittable, _) = collect_emittable(
+                            &m.name,
+                            &m.body,
+                            module.source_lang != xpile_meta_hir::SourceLang::Shell,
+                        )?;
+                        if !emittable.is_empty() {
+                            return Err(BackendError::Lower(format!(
+                                "bashrs-backend: class `{name}` method `{}` contains {} shell \
+                                 command(s), and the v0.1.0 shell backend has no class model — \
+                                 refusing rather than dropping them. Move the commands into a \
+                                 module-level `def`, which this backend does emit. (PMAT-1406: \
+                                 before this refusal the commands were silently discarded and the \
+                                 emitted script claimed it had no renderable statements.)",
+                                m.name,
+                                emittable.len()
+                            )));
+                        }
+                    }
+                    continue;
+                }
             };
             // PMAT-040: walk every function's body for `Stmt::Cmd`.
             // PMAT-039's bashrs-frontend produces a single
@@ -1344,6 +1396,115 @@ mod tests {
         assert!(
             msg.contains("stage is not a Stmt::Cmd"),
             "error should explain the v0.1.0 stage shape constraint: {msg}"
+        );
+    }
+
+    /// PMAT-1406 — a Python `class` lowers to `Item::Struct`, whose `methods`
+    /// are real `Function`s. The emit loop matched only `Item::Function`, so a
+    /// `subprocess.run(...)` inside a method was DISCARDED and the emitted
+    /// script claimed "(no commands — the module has no renderable shell
+    /// statements)" at exit 0.
+    ///
+    /// Verified end-to-end before the fix with
+    /// `class Cleaner: def wipe(self): subprocess.run(["rm","-rf",...])`:
+    /// rc=0, zero `rm` in the output. A destructive command silently becoming
+    /// a no-op is the worst instance of the exit-0-while-wrong class, and it
+    /// slipped past PMAT-1383 because that refusal lives INSIDE
+    /// `collect_emittable`, one level below where the item was dropped.
+    #[test]
+    fn class_method_with_a_command_refuses_instead_of_dropping_it() {
+        use xpile_meta_hir::{Block, Expr, Function, Item, Stmt, Type};
+        let wipe = Function {
+            name: "wipe".into(),
+            params: vec![],
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![Stmt::Cmd {
+                    program: "rm".into(),
+                    args: vec![Expr::LitStr("-rf".into()), Expr::LitStr("/tmp/t".into())],
+                }],
+                trailing_return: Expr::Unit,
+            },
+        };
+        let module = Module {
+            name: "m".into(),
+            source_lang: xpile_meta_hir::SourceLang::Python,
+            items: vec![Item::Struct {
+                name: "Cleaner".into(),
+                fields: vec![],
+                methods: vec![wipe],
+                frozen: false,
+                order: false,
+            }],
+            ffi_boundaries: vec![],
+        };
+        let config = BackendConfig {
+            emit_contracts: true,
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let err = BashrsBackend
+            .lower(&module, &config)
+            .expect_err("a command inside a class method must REFUSE, never silently vanish");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Cleaner") && msg.contains("wipe"),
+            "the refusal must name the class and the method so the user can find it: {msg}"
+        );
+        assert!(
+            msg.contains("no class model"),
+            "the refusal must say WHY, not just that it failed: {msg}"
+        );
+    }
+
+    /// The other half of PMAT-1406: the refusal must not swallow the case that
+    /// already worked. A module-level `def` still emits its commands, and a
+    /// class with no commands in any method is not an error — nothing is being
+    /// dropped there, so refusing would be over-broad.
+    #[test]
+    fn module_level_function_still_emits_and_an_empty_class_is_not_an_error() {
+        use xpile_meta_hir::{Block, Expr, Function, Item, Stmt, Type};
+        let build = Function {
+            name: "build".into(),
+            params: vec![],
+            return_type: Type::Unit,
+            body: Block {
+                stmts: vec![Stmt::Cmd {
+                    program: "echo".into(),
+                    args: vec![Expr::LitStr("hello".into())],
+                }],
+                trailing_return: Expr::Unit,
+            },
+        };
+        let module = Module {
+            name: "m".into(),
+            source_lang: xpile_meta_hir::SourceLang::Python,
+            items: vec![
+                Item::Struct {
+                    name: "Empty".into(),
+                    fields: vec![],
+                    methods: vec![],
+                    frozen: false,
+                    order: false,
+                },
+                Item::Function(build),
+            ],
+            ffi_boundaries: vec![],
+        };
+        let config = BackendConfig {
+            emit_contracts: true,
+            target: Target::Shell,
+            profile: Profile::RustOut,
+            hardware: None,
+        };
+        let art = BashrsBackend
+            .lower(&module, &config)
+            .expect("a command-free class must not block a module-level def");
+        let script = &art.primary;
+        assert!(
+            script.contains("echo hello"),
+            "the module-level function's command must still emit: {script}"
         );
     }
 
