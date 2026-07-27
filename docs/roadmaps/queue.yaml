@@ -4,17 +4,18 @@
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
 updated: |-
-  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1401 DONE - the WGSL/SPIR-V lanes accepted i32::MAX
-  and REFUSED i32::MIN, the two ends of the same range, blaming a literal absent from the source;
-  the INVERSE of PMAT-1395/1399 and one root defect with them. Gated by XPILE-WGSLI32-001, which
-  pins BOTH ends of acceptance AND both ends of refusal so the over-refusal cannot be repaired by
-  widening. ** next_lane[0] IS CORRECTED IN THIS PR: the WASM i64 SHIFT half it told the next fire
-  to do first had ALREADY SHIPPED as PMAT-1379 on the same day it was written - probe a queue
-  premise with a force-rebuilt binary before planning against it (PMAT-1363's lesson, again).
-  The SCHEDULED queue remains EXHAUSTED until Thu 2026-07-30 (PMAT-1373); gate touch #3 is
-  RESERVED for it. PMAT-1375 is 0.1.619 lane - DO NOT START. Days 2-3 capacity: keep hunting -
-  PMAT-1401's notes list the unswept surface it found (C -> GPU lanes; --emit-crate/--emit-shims;
-  --contracts off). NOT new WASM breadth - that grind is CLOSED for this window.)
+  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1404 DONE - the WGSL/SPIR-V lanes silently HALVED a C
+  `long` to i32 at exit 0, collapsing the one distinction Type::CLong exists to carry, while the SAME
+  lane refused to write down the value it was accepting (the literal was caught incidentally by naga;
+  the parameter was not caught at all, because after map_type ran the type had already got smaller).
+  Gated by XPILE-CLONG64-001, whose 18 CLI probes each carry a FRONTEND-ACCEPTS PRECONDITION so a
+  parse failure cannot be counted as a width refusal - that trap fired during the slice itself.
+  ** The SCHEDULED queue remains EXHAUSTED until Thu 2026-07-30 (PMAT-1373); gate touch #3 is
+  RESERVED for it. PMAT-1375 is 0.1.619 lane - DO NOT START. Days 2-3 capacity: keep hunting.
+  PMAT-1401's unswept-surface item (a) is now CLOSED for wgsl/spirv; PMAT-1404's notes carry the
+  updated list - remaining are --emit-crate/--emit-shims, --contracts off, the C -> PTX direction,
+  the unsigned C widths through the GPU lanes, and the WGSL contract's missing machine-readable type
+  surface. NOT new WASM breadth - that grind is CLOSED for this window.)
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -2613,6 +2614,73 @@ queue:
     validator-acceptance property covers; (c) `--contracts off` as a distinct emit mode. Do NOT open new
     WASM breadth — that grind is CLOSED for this window.
     ** ID-DRIFT: the MERGED subject on main cites (Refs PMAT-1400), not PMAT-1401 — ce7b2855 / PR #1989. A concurrent fire merged #1988 under PMAT-1400 mid-flight; this slice was re-filed as PMAT-1401 everywhere, but the squash took the original PR title. XPILE-LEDGER-001 still passes because PMAT-1400 IS registered (by #1988), which is the point worth knowing: the gate cannot tell a correct citation from a collided one. History NOT rewritten (owner-gated). ** LESSON FOR THE NEXT FIRE: `gh pr edit --title` did NOT change the squash subject of an already-open PR — pass the subject explicitly to `gh pr merge --squash`, or claim the id in queue.yaml BEFORE opening the PR so a concurrent fire cannot take it.'
+- id: PMAT-1404
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'The WGSL/SPIR-V lanes silently HALVED a C `long` to `i32` at exit 0, collapsing the one
+    distinction `Type::CLong` exists to carry — while the SAME lane refused to write down the value
+    it was accepting'
+  notes: 'DONE 2026-07-27 (Day 2). SELF-DIRECTED under the queue''s "Days 2-3 capacity: the honesty hunt"
+    clause, taking unswept-surface item (a) that PMAT-1401 named on its way out: the C -> {wgsl, spirv,
+    ptx} direction. THE ID WAS CLAIMED IN THIS FILE BEFORE THE PR WAS OPENED, per PMAT-1401''s own
+    closing lesson about the PMAT-1400 collision. ** THE DEFECT: decy-frontend introduced Type::CLong
+    for exactly one purpose, stated in its own module docs — to keep the 64-bit C widths (long / long
+    long / int64_t) APART from Type::I64, where the 32-bit C `int` and the width-less Python `int` both
+    land. wgsl_emit.rs folded them straight back together (`Type::I64 | Type::CLong => Ok(WgslTy::I32)`)
+    at BOTH type-map sites. `long f(long a) { return a + 1; }` emitted `fn f(a: i32) -> i32` at EXIT 0;
+    half the declared domain of f cannot be passed to that function and nothing said so. SPIR-V
+    inherited it verbatim. ** NOT a documented posture: the lane already refuses the other three 64-bit
+    C types, and the f64 refusal states the doctrine verbatim ("substituting f32 would change numeric
+    results, so the WGSL subset refuses f64 rather than narrow it silently"). Signed `long` was the ONE
+    64-bit type taking the silent narrowing. ** THE SHAPE WORTH REMEMBERING — IT REFUSED TO WRITE DOWN
+    WHAT IT SILENTLY ACCEPTED: `return 3000000000;` inside a `long` function refused ("the concrete type
+    i32 cannot represent the abstract value 3000000000 accurately") while the `long` PARAMETER carrying
+    exactly that value emitted clean. The literal was caught incidentally BY NAGA; the parameter was not
+    caught at all, because after map_type ran there was nothing left to catch — the type had already got
+    smaller. A validator can only police the values you still ask it about, so a downstream validator is
+    NOT a width gate. ** CROSS-BACKEND RECEIPT: same source, five backends, only the two GPU lanes lost
+    the width (rust i64, wasm i64, ptx .s64) — so 64 bits is correct and the WGSL refusal is a real lane
+    limit, not xpile giving up. The refusal names those three alternatives. ** FIX refuses CLong at both
+    sites via one shared CLONG_REFUSAL const; Type::I64 DELIBERATELY still maps to i32 (refusing it would
+    delete the lane — every Python function lowers through it — and an UNDECLARED width contradicts
+    nothing the user wrote; the literal half is already PMAT-1401''s). ** GATE XPILE-CLONG64-001
+    (crates/xpile/tests/c_long_gpu_width_witness.rs, 5 tests, no skip path on any xpile assertion), 18
+    CLI-path probes; the refusal must NAME THE WIDTH, not merely be an Err. Each probe carries a
+    FRONTEND-ACCEPTS PRECONDITION (must emit i64 on the Rust lane first) because a probe that fails to
+    PARSE also "refuses" — THAT TRAP FIRED HERE: the first local_decl probe used a cast the C frontend
+    does not support and the test NAMED it rather than passing. ** HONEST COVERAGE BOUNDARY: the list[…]
+    element site is NOT CLI-reachable (decy cannot parse `xs[0]` at all; Python never makes CLong), so it
+    is covered by a hand-built-meta-HIR unit test that says so in its own doc comment, NOT by a CLI probe
+    that would have "passed" on a parse error. ** RED-THEN-GREEN both sites independently: scalar revert
+    = 18/18 probes narrow, 3 of 5 tests red (the 2 that stay green are exactly the accept-side receipt
+    and the vacuity guard — the evidence this is not a blanket refusal); list revert reds the unit test.
+    ** NOT a gate_touch, NOT a witness_floor.rs touch (no GPU lane has a floor). ** NEXT PICK: the
+    scheduled queue is STILL empty until Thu 2026-07-30 (PMAT-1373, the release commit; gate touch #3 is
+    RESERVED for it). PMAT-1375 is 0.1.619 lane, DO NOT START. Days 2-3 remaining capacity: continue the
+    honesty hunt on the surface PMAT-1401 listed, now with (a) CLOSED for the wgsl/spirv half — REMAINING
+    are (b) `--emit-crate` and the hybrid `--emit-shims` paths, which no validator-acceptance property
+    covers, and (c) `--contracts off` as a distinct emit mode. NEWLY SURFACED HERE, in rough EV order:
+    (d) the C -> PTX direction was NOT swept for width defects (ptx maps CLong to .s64, which is right,
+    but nothing pins it and `--hardware` is CLI-required so no existing corpus reaches it); (e) the
+    `unsigned` C widths (CUInt/CULong) through the GPU lanes — CUInt -> u32 accepts, and a mixed
+    `unsigned + int` add already refuses, but no gate pins either; (f) contracts/compile-rust-to-wgsl-v1.yaml
+    has NO machine-readable type surface at all, unlike the WASM contract whose subset is checked both
+    ways (PMAT-1342) — so no contract asserts which types this lane accepts. Do NOT open new WASM breadth;
+    that grind is CLOSED for this window.
+
+    ** ID RE-FILED 1402 -> 1404 BEFORE ANY PUSH. A concurrent fire merged PR #1991 while this
+    slice was in the gate, and its queue refill claimed PMAT-1402 for a DIFFERENT slice (WASM i64
+    wraparound) plus PMAT-1403 for the refill itself. Main won; this slice was re-filed as PMAT-1404
+    in every artefact and the local commit amended, so NOTHING was published under a collided id and
+    no history was rewritten. ** THE LESSON PMAT-1401 DREW IS NOT ENOUGH, and this is the refinement:
+    it said "claim the id in queue.yaml BEFORE opening the PR". This slice DID that — and still
+    collided, because the claim lived in an unpushed worktree. A claim reserves an id only once it is
+    ON MAIN. Two fires both reading `max(id)+1` from origin/main pick the same number no matter how
+    early each writes it locally. The cheap fix that actually works: re-read origin/main''s max id
+    immediately before the first push, and treat a merge conflict in the ledger as an id-collision
+    signal rather than a text conflict.'
 - id: PMAT-1373
   status: open
   ev_rank: R1
