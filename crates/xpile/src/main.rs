@@ -996,6 +996,34 @@ fn transpile(
         bail!("--emit-crate produces a Rust crate; use it with --target rust (got {target:?})");
     }
 
+    // PMAT-1385: `--out` and `--emit-crate` are two different output
+    // destinations, and the write path below returns on `--emit-crate`
+    // FIRST — so passing both wrote the crate, silently dropped `--out`,
+    // and exited 0. The caller had asked for a file that was never created.
+    if emit_crate.is_some() && out.is_some() {
+        bail!(
+            "--out and --emit-crate are two different output destinations; pass one \
+             (--emit-crate writes a crate directory, --out writes a single file)"
+        );
+    }
+
+    // PMAT-1385: the CLI's `--hardware` grammar only builds a PTX profile
+    // (see `parse_hardware`), so on any other target it was accepted and then
+    // ignored — `--target rust --hardware ptx:sm_89` exited 0 emitting plain
+    // Rust, with nothing said about the compute capability the caller asked
+    // for. SPIR-V and WGSL already refuse a foreign `HwProfile` from inside
+    // their backends; this makes the whole flag honest at the CLI boundary
+    // and names the target that ignored it. The VALUE is parsed FIRST so a
+    // misspelling still reports as one, on every target.
+    let hw = parse_hardware(hardware)?;
+    if hw.is_some() && target != Target::Ptx {
+        bail!(
+            "--hardware supplies a PTX compute capability and is consumed by --target ptx only; \
+             {target:?} ignores it — drop --hardware (got `{}`)",
+            hardware.unwrap_or_default()
+        );
+    }
+
     let module = frontend
         .parse_and_lower_profiled(input, &source, lowering_profile_for(target))
         .with_context(|| format!("parse_and_lower failed for {}", input.display()))?;
@@ -1019,8 +1047,9 @@ fn transpile(
         // XPILE-PTX-001: `--hardware ptx[:sm_XX]` supplies the PTX compute
         // capability so `--target ptx` is CLI-reachable (was hardcoded `None`,
         // making every `transpile --target ptx` refuse with MissingHardware).
-        // Omitting `--hardware` keeps the prior `None` for all other targets.
-        hardware: parse_hardware(hardware)?,
+        // Omitting `--hardware` keeps the prior `None` for all other targets;
+        // PMAT-1385 refuses it on them rather than ignoring it.
+        hardware: hw,
         // PMAT-956: `--contracts off` suppresses citation emission. The config
         // drives it, so every `Backend::lower` honours it directly (rather than
         // a post-emit strip). Default `on` keeps every citation across the
@@ -1235,22 +1264,47 @@ struct AuditReport {
 }
 
 impl AuditReport {
-    fn coverage_pct(&self) -> f64 {
+    /// The F1 ratio, or `None` when the denominator is 0 — i.e. when the
+    /// corpus contains no function the citation pipeline is supposed to fire
+    /// on, because every file failed to lower or none did citable work.
+    ///
+    /// PMAT-1385: this used to return a flat `100.0` for the 0 denominator
+    /// ("vacuously satisfied, so a small corpus doesn't trip the falsifier").
+    /// The convention itself is defensible; reporting it through the SAME
+    /// channel as a measured ratio is not. A corpus that was never measured
+    /// then looked, in text, in `--json`, and in the exit status, exactly like
+    /// one measured at ceiling. Callers now have to handle the `None` and say
+    /// so — see [`AuditReport::f1_status`].
+    fn coverage_pct(&self) -> Option<f64> {
         if self.functions_requiring_citation == 0 {
-            // No applicable functions in the corpus → metric is
-            // vacuously satisfied. 100% by convention so that a
-            // small / empty corpus doesn't trip the falsifier.
-            return 100.0;
+            return None;
         }
-        (self.functions_with_citation as f64) / (self.functions_requiring_citation as f64) * 100.0
+        Some(
+            (self.functions_with_citation as f64) / (self.functions_requiring_citation as f64)
+                * 100.0,
+        )
+    }
+
+    /// The ratio as it is DISPLAYED, truncated toward zero at one decimal.
+    ///
+    /// PMAT-1385: the reporters printed `{:.1}`, which ROUNDS — so 2166 of
+    /// 2167 cited (99.954%) rendered as a flat `100.0%`, a ceiling claim for a
+    /// corpus with a miss in it. Truncating can only understate, never
+    /// overstate, which is the right direction for a coverage metric: 99.954
+    /// now shows as `99.9%` and the missing citation is visible.
+    fn display_pct(&self) -> Option<f64> {
+        self.coverage_pct().map(|p| (p * 10.0).floor() / 10.0)
     }
 
     /// F1 status per the roadmap's targets:
     ///   ≥ 95% → OK    (target reached)
     ///   < 95% but ≥ 50% → WARN (below target, above falsifier)
     ///   < 50%  → FAIL (falsifier tripped — the citation pipeline is performative)
+    ///   nothing measured → VACUOUS (PMAT-1385 — *not* OK)
     fn f1_status(&self) -> &'static str {
-        let pct = self.coverage_pct();
+        let Some(pct) = self.coverage_pct() else {
+            return "VACUOUS";
+        };
         if pct >= 95.0 {
             "OK"
         } else if pct >= 50.0 {
@@ -1272,8 +1326,39 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
         );
     }
 
+    // PMAT-1385: refuse before reporting. `collect_source_files` returns an
+    // empty vec for a path that is neither a file nor a directory, so a
+    // typo'd or renamed corpus path used to scan 0 files and print a ceiling
+    // F1 with exit 0 — a CI dashboard pointed at a moved directory reported a
+    // perfect falsifier score indefinitely. A bad path is an INPUT error (the
+    // `transpile` subcommand has always treated it as one); an unmeasurable
+    // but real corpus is a measurement OUTCOME and is reported, not refused.
+    if !path.exists() {
+        bail!(
+            "audit path {} does not exist — nothing was scanned, so there is no F1 to report",
+            path.display()
+        );
+    }
+
     let mut report = AuditReport::default();
     let sources = collect_source_files(session, path);
+    if sources.is_empty() {
+        let mut exts: Vec<&str> = session
+            .frontends
+            .iter()
+            .flat_map(|f| f.extensions().iter().copied())
+            .collect();
+        exts.sort_unstable();
+        exts.dedup();
+        bail!(
+            "audit found no source file under {} — xpile recognises {}; nothing was scanned, so there is no F1 to report",
+            path.display(),
+            exts.iter()
+                .map(|e| format!(".{e}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
     for src in sources {
         report.files_scanned += 1;
         let contents = match std::fs::read_to_string(&src) {
@@ -1437,9 +1522,19 @@ fn function_has_citation(source: &str, function_name: &str, target: Target) -> b
     for (i, line) in lines.iter().enumerate() {
         let stripped = line.trim_start();
         let is_decl = prefixes.iter().any(|p| {
-            stripped.starts_with(p)
-                && (stripped[p.len()..].starts_with(&needle)
-                    || stripped[p.len()..].starts_with(&needle_space))
+            if !stripped.starts_with(p) {
+                return false;
+            }
+            // PMAT-1385: a Python/C name that collides with a Rust keyword is
+            // emitted as a RAW identifier (`def move` → `pub fn r#move`, and
+            // Ruchy does the same). Matching the bare name missed every such
+            // declaration, so the function was counted in the F1 denominator
+            // and never found in the numerator — the citation was emitted, the
+            // detector just could not see it. That is an under-count of the
+            // metric, i.e. the reporter reporting a number that is not true.
+            let rest = &stripped[p.len()..];
+            let rest = rest.strip_prefix("r#").unwrap_or(rest);
+            rest.starts_with(&needle) || rest.starts_with(&needle_space)
         });
         if !is_decl {
             continue;
@@ -1470,11 +1565,21 @@ fn print_audit_text(report: &AuditReport, target: Target) {
         report.functions_requiring_citation
     );
     println!("  with citation       : {}", report.functions_with_citation);
-    println!(
-        "  coverage (F1)       : {:.1}%   [{}]",
-        report.coverage_pct(),
-        report.f1_status()
-    );
+    match report.display_pct() {
+        Some(pct) => println!(
+            "  coverage (F1)       : {:.1}%   [{}]",
+            pct,
+            report.f1_status()
+        ),
+        // PMAT-1385: no denominator ⇒ no ratio. Printing `100.0% [OK]` here
+        // made an unmeasured corpus read as a measured, perfect one.
+        None => {
+            println!("  coverage (F1)       : n/a      [{}]", report.f1_status());
+            println!(
+                "                        (no function in the scanned corpus requires a citation — nothing was measured)"
+            );
+        }
+    }
     if report.over_citations > 0 {
         println!(
             "  over-citations      : {}  (codegen bug?)",
@@ -1500,16 +1605,23 @@ fn print_audit_json(report: &AuditReport, target: Target) {
     // sub/provability-roadmap.md §1.1 says we report: F1 + scan
     // metadata + parse-error count. XPILE-FALSIFY-002 added the
     // `functions_requiring_citation` denominator and the
-    // `over_citations` sanity field.
+    // `over_citations` sanity field. PMAT-1385 made `f1_pct` NULLABLE: a
+    // dashboard reading this payload cannot otherwise tell a corpus measured
+    // at ceiling from one that was never measured, and every unmeasured
+    // corpus used to arrive as `"f1_pct":100.0,"f1_status":"OK"`.
+    let pct = match report.display_pct() {
+        Some(p) => format!("{p:.1}"),
+        None => "null".to_string(),
+    };
     println!(
-        "{{\"target\":\"{:?}\",\"files_scanned\":{},\"functions_emitted\":{},\"functions_requiring_citation\":{},\"functions_with_citation\":{},\"over_citations\":{},\"f1_pct\":{:.1},\"f1_status\":\"{}\",\"errors\":{}}}",
+        "{{\"target\":\"{:?}\",\"files_scanned\":{},\"functions_emitted\":{},\"functions_requiring_citation\":{},\"functions_with_citation\":{},\"over_citations\":{},\"f1_pct\":{},\"f1_status\":\"{}\",\"errors\":{}}}",
         target,
         report.files_scanned,
         report.functions_emitted,
         report.functions_requiring_citation,
         report.functions_with_citation,
         report.over_citations,
-        report.coverage_pct(),
+        pct,
         report.f1_status(),
         report.parse_errors.len()
     );

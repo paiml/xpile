@@ -16595,3 +16595,73 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1385
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1385: [honesty/CLI-reporter] `xpile audit` -- the repo''s OWN falsifier F1 reporter
+    -- printed `coverage (F1): 100.0% [OK]` and exited 0 for corpora it NEVER MEASURED: a path
+    that does not exist, a directory with no recognised source, and a corpus where every file
+    failed to lower. Four of the repo''s own audit tests were passing a RELATIVE path that does
+    not resolve from an integration test''s CWD, so all four had been asserting on that vacuous
+    100% for their whole lifetime -- including the one written to make a missed citation "show
+    up as a numeric drop".'
+  description: '** THE DEFECT (3 shapes, all exit 0, all reported as a perfect falsifier score):
+    (a) `xpile audit /nope` -> `files scanned: 0`, `coverage (F1): 100.0% [OK]`, rc=0 -- a CI
+    dashboard pointed at a typo''d or renamed corpus reports a perfect score indefinitely;
+    (b) a real directory holding no file xpile recognises -> same; the single-FILE spelling
+    (`xpile audit notes.txt`) too;
+    (c) a corpus where every file FAILED to lower -> `files scanned: 1, functions emitted: 0`,
+    100.0% OK, and in `--json` the failures collapse to `"errors":1` beside `"f1_status":"OK"`.
+    The flat 100 is `coverage_pct()`''s 0-denominator convention ("vacuously satisfied"). The
+    convention is defensible; reporting it through the SAME channel as a measured ratio is not --
+    an unmeasured corpus was indistinguishable from one measured at ceiling in text, in JSON, and
+    in the exit status.
+    ** SECOND FINDING, sharper than the first, and found only by fixing the first: the four
+    `audit_command_*` tests in transpile_e2e.rs passed the literal `"crates/xpile/tests/fixtures"`,
+    but an integration test runs with CWD at the PACKAGE root, so that resolved to
+    `crates/xpile/crates/xpile/tests/fixtures` -- NONEXISTENT. They were green on the vacuous
+    100%. `audit_command_f1_is_100_percent_on_current_fixture_corpus_rust`, whose own comment says
+    it pins the number "so a regression that misses a citation OR mis-classifies a function shows
+    up as a numeric drop", would have stayed green if the citation pipeline had emitted NOTHING.
+    Re-derived against the corpus they had never read (825 files): Rust 2167/2167 = 100.0% OK with
+    4 over-citations (the test asserted 0); Lean 157/181 = 86.7% WARN (the test asserted OK).
+    ** THIRD FINDING, an under-count inside the metric itself: a Python/C name colliding with a
+    Rust keyword is emitted as a RAW identifier (`def move` -> `pub fn r#move`; Ruchy the same).
+    `function_has_citation` matched the bare name, missed the declaration, and counted the function
+    in the denominator and never the numerator -- the citation WAS emitted. Fixed by stripping a
+    leading `r#`; Rust/Ruchy 2166 -> 2167 with citation, so the corpus F1 is now a TRUE 100.0%
+    rather than a 99.954% that `{:.1}` ROUNDED UP to it. The reporters now truncate toward zero
+    (`display_pct`), which can only understate.
+    ** FOURTH AND FIFTH, same class, on `transpile`: `--out` + `--emit-crate` wrote the crate,
+    SILENTLY DROPPED `--out` and exited 0 (the emit path returns on `--emit-crate` first, so the
+    file the caller named was never created); and `--hardware` only ever builds a PTX profile, so
+    `--target rust --hardware ptx:sm_89` was accepted, IGNORED, and exited 0 emitting plain Rust.
+    Both refuse now; the `--hardware` VALUE is parsed first so a misspelling still reports as one.
+    ** THE FIX, split by kind: a bad path / an empty scan is an INPUT error and refuses (as
+    `transpile` has always treated a missing input); a real corpus that measures nothing is an
+    OUTCOME and is REPORTED -- status `VACUOUS`, text `n/a`, JSON `"f1_pct":null` -- so `audit`
+    stays a reporter without claiming a ceiling.
+    ** WITNESS XPILE-AUDITHON-001 (crates/xpile/tests/cli_audit_honesty_witness.rs, 9 tests): the
+    property `a NUMERIC F1 is reported only when functions_requiring_citation > 0`, asserted over
+    the whole probe corpus INCLUDING the measurable row, with vacuity guards on both sides (the
+    measurable row must rest on a non-zero denominator; each refusal row must actually reach the
+    reporter). Verified RED without the fix: 6 of 7 failed, and only the measurable control passed.
+    No external toolchain, so no skip path -- runtime 1.57s, measured, not assumed.
+    ** RESIDUAL PINNED, NOT HIDDEN: the 4 over-citations are real -- `c_bitwise.c` (1), `c_if.c` (2)
+    and `hybrid_missing/` (1) emit `// xpile-contract: C-C-INT-ARITH` on functions whose
+    `applicable_contracts()` is empty (comparison + assignment only). Whether that is the C backend
+    citing per-module or `applicable_contracts()` under-modelling C comparison is a separate
+    question; pinned as a CEILING (<= 4) so it can only shrink. Also honest about the truncation
+    guard: no corpus available today has a ratio whose third decimal rounds it up a tenth, so that
+    assertion holds under both truncation and rounding -- it is a guard, not a proof.
+    ** NO gate file touched; crates/xpile/tests/witness_floor.rs untouched (two-touch serial
+    resource, PMAT-1372 / PMAT-1373).'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -12583,6 +12583,26 @@ fn bigint_implicit_promotion_ruchy_emits_full_factorial() {
     );
 }
 
+/// The fixture corpus, as an ABSOLUTE path.
+///
+/// PMAT-1385: the four audit tests below passed the string
+/// `"crates/xpile/tests/fixtures"`, but an integration test runs with its CWD
+/// at the PACKAGE root (`crates/xpile`), so that resolved to
+/// `crates/xpile/crates/xpile/tests/fixtures` — a path that does not exist.
+/// `xpile audit` answered `100.0% [OK]` with exit 0 for it (0 required
+/// citations ⇒ the vacuous-100% convention), so all four assertions passed
+/// while auditing NOTHING. The one named
+/// `audit_command_f1_is_100_percent_on_current_fixture_corpus_rust` — written,
+/// per its own comment, to make a missed citation "show up as a numeric drop"
+/// — would have stayed green if the citation pipeline had emitted nothing at
+/// all. Anchoring on `CARGO_MANIFEST_DIR` (as `fixture()` above already does)
+/// makes the path CWD-independent, and each test now carries a vacuity guard
+/// on the denominator so a corpus that measures nothing can never read as a
+/// pass again.
+fn fixture_corpus() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
 /// PMAT-011: validates contract citations are emitted next to functions
 /// whose body uses ops the contract governs, and *not* emitted next to
 /// pure comparison / logical functions.
@@ -12599,7 +12619,8 @@ fn bigint_implicit_promotion_ruchy_emits_full_factorial() {
 // expected fields.
 #[test]
 fn audit_command_reports_f1_on_fixture_corpus() {
-    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures"]);
+    let corpus = fixture_corpus();
+    let out = run_xpile(&["audit", corpus.to_str().unwrap()]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         out.status.success(),
@@ -12622,11 +12643,18 @@ fn audit_command_reports_f1_on_fixture_corpus() {
         stdout.contains("[OK]") || stdout.contains("[WARN]") || stdout.contains("[FAIL]"),
         "expected status tag, got:\n{stdout}"
     );
+    // PMAT-1385 vacuity guard: every assertion above is satisfied by the
+    // report for an EMPTY scan. Pin that the corpus was actually walked.
+    assert!(
+        !stdout.contains("files scanned       : 0") && !stdout.contains("VACUOUS"),
+        "the corpus must actually have been scanned:\n{stdout}"
+    );
 }
 
 #[test]
 fn audit_command_json_output_has_required_fields() {
-    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--json"]);
+    let corpus = fixture_corpus();
+    let out = run_xpile(&["audit", corpus.to_str().unwrap(), "--json"]);
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).expect("utf8");
     // Hand-rolled JSON — verify each required field appears in order.
@@ -12656,9 +12684,22 @@ fn audit_command_json_output_has_required_fields() {
 // pin it to the exact expected value (with rounding tolerance) so a
 // regression that misses a citation OR mis-classifies a function shows
 // up as a numeric drop, not a vibes-based "looks worse".
+//
+// PMAT-1385 re-derived every number here against the corpus this test had
+// never actually read (measured 2026-07-27, 825 files):
+//   requiring citation 2167, with citation 2167 → F1 100.0% OK
+//   over_citations 4    ← this test asserted 0 and never saw it
+// The 4 over-citations are REAL and are named in the assertion below rather
+// than asserted away: `c_bitwise.c` (1), `c_if.c` (2) and the
+// `hybrid_missing/` pair (1) emit `// xpile-contract: C-C-INT-ARITH` on
+// functions whose `applicable_contracts()` is empty (comparison + assignment
+// only). Whether the over-cite is the C backend citing per-module or
+// `applicable_contracts()` under-modelling C comparison is a separate
+// question; it is pinned as a CEILING so it can only shrink.
 #[test]
 fn audit_command_f1_is_100_percent_on_current_fixture_corpus_rust() {
-    let out = run_xpile(&["audit", "crates/xpile/tests/fixtures", "--json"]);
+    let corpus = fixture_corpus();
+    let out = run_xpile(&["audit", corpus.to_str().unwrap(), "--json"]);
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).expect("utf8");
     assert!(
@@ -12669,10 +12710,34 @@ fn audit_command_f1_is_100_percent_on_current_fixture_corpus_rust() {
         stdout.contains("\"f1_status\":\"OK\""),
         "expected F1 status OK, got: {stdout}"
     );
+    // Vacuity guard (PMAT-1385): 100.0% is only meaningful over a real
+    // denominator. Before the path repair this payload read
+    // `"functions_requiring_citation":0,"f1_pct":100.0,"f1_status":"OK"`.
+    let requiring = json_usize(&stdout, "functions_requiring_citation");
     assert!(
-        stdout.contains("\"over_citations\":0"),
-        "expected zero over-citations (codegen would be wrongly citing a comparison-only fn), got: {stdout}"
+        requiring >= 2000,
+        "expected the whole corpus in the denominator (measured 2167), got {requiring}: {stdout}"
     );
+    let over = json_usize(&stdout, "over_citations");
+    assert!(
+        over <= 4,
+        "over-citations must not grow past the 4 pinned by PMAT-1385 \
+         (c_bitwise.c 1, c_if.c 2, hybrid_missing 1), got {over}: {stdout}"
+    );
+}
+
+/// Pull an integer field out of the audit's hand-rolled JSON payload.
+fn json_usize(json: &str, field: &str) -> usize {
+    let key = format!("\"{field}\":");
+    let rest = json
+        .split(&key)
+        .nth(1)
+        .unwrap_or_else(|| panic!("field `{field}` missing from: {json}"));
+    rest.chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap_or_else(|_| panic!("field `{field}` is not an integer in: {json}"))
 }
 
 // PMAT-027 / PMAT-009-FOLLOWUP: Lean target now handles
@@ -12716,9 +12781,21 @@ fn audit_command_supports_lean_target() {
     // form is `@[xpile_contract "..."]` (structured attribute parsed
     // by Lean's elaborator); the audit recognises it alongside
     // Rust/Ruchy's `// xpile-contract:` comment form.
+    //
+    // PMAT-1385: this test asserted `"f1_status":"OK"` and got it from the
+    // vacuous-100% convention, because the corpus path did not exist. The Lean
+    // lane's REAL number, measured 2026-07-27 over the same 825 files: 204
+    // functions emitted, 181 requiring a citation, 157 carrying one → 86.7%,
+    // status WARN — below the ≥95% target, above the <50% falsifier. The Lean
+    // backend refuses far more of the corpus than the Rust one (733 errors vs
+    // 97), so the emitted set is small and a single uncited shape moves the
+    // metric. The claim "all arithmetic functions carry @[xpile_contract]" was
+    // never measured and is not true today; what is pinned instead is that the
+    // lane is MEASURED, is not below the falsifier, and does not regress.
+    let corpus = fixture_corpus();
     let out = run_xpile(&[
         "audit",
-        "crates/xpile/tests/fixtures",
+        corpus.to_str().unwrap(),
         "--target",
         "lean",
         "--json",
@@ -12733,9 +12810,22 @@ fn audit_command_supports_lean_target() {
         stdout.contains("\"target\":\"Lean\""),
         "expected Lean target in JSON, got: {stdout}"
     );
+    // Vacuity guard first: an unmeasured Lean corpus must not read as a pass.
+    let requiring = json_usize(&stdout, "functions_requiring_citation");
+    let with = json_usize(&stdout, "functions_with_citation");
     assert!(
-        stdout.contains("\"f1_status\":\"OK\""),
-        "expected F1 OK for Lean (all arithmetic functions carry @[xpile_contract \"...\"]), got: {stdout}"
+        requiring >= 150,
+        "expected the Lean lane to actually emit (measured 181 requiring), got {requiring}: {stdout}"
+    );
+    assert!(
+        !stdout.contains("\"f1_status\":\"VACUOUS\"") && !stdout.contains("\"f1_pct\":null"),
+        "the Lean F1 must be measured, not vacuous: {stdout}"
+    );
+    let pct = (with as f64) / (requiring as f64) * 100.0;
+    assert!(
+        pct >= 85.0,
+        "Lean F1 measured 86.7% on 2026-07-27 (PMAT-1385); a drop below 85% is a \
+         citation regression, got {pct:.1}%: {stdout}"
     );
 }
 
