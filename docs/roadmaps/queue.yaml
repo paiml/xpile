@@ -1447,6 +1447,69 @@ queue:
     toward PMAT-1373. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
     Wed 18:00: no crates/*/src or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373
     (release commit, gate_touch 3, witness-floor TOUCH 2); 2026-07-31 -> PMAT-1374 (publish).
+- id: PMAT-1388
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`xpile transpile <ANY FILE> --target spirv` exited 0 emitting a SPIR-V binary for
+    a program the user NEVER WROTE -- the general emitter discarded its `Module` and always
+    compiled the hardcoded saxpy fixture, so 6 categorically different inputs (2 of them
+    REFUSED by the WGSL lowering this lane reuses) produced BYTE-IDENTICAL output; corpus-wide
+    SPIR-V accepted 716 fixtures against WGSL''s 39 (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1387''s next-pick item (a), the 4 pinned over-citations.
+    Measuring them led one level out -- see NEXT PICK below, which carries the over-citation
+    finding forward with its root cause now identified and measured.
+    ** THE DEFECT, measured through the shipped CLI at f74ebe61 BEFORE fixing:
+    `SpirvSaxpyGeneralEmitter::try_emit` bound its module to `_module` and discarded it. add.py,
+    fib.py, sign.py, cmp.py, a Python f64 fn and c_bitwise.c ALL emitted sha256 `421b318e...`.
+    Two of those are REFUSED by `--target wgsl` -- the exact lowering this lane is documented to
+    reuse. 716 of 802 corpus fixtures accepted vs WGSL''s 39: 677 programs "compiled" that its
+    own front half rejected. Strongest form of the exit-0-but-false shape: the ENTIRE artifact
+    is unrelated to the input.
+    ** THE FIX: the module becomes a parameter (`real_wgsl_for(module)`); the lane is exactly as
+    wide as the WGSL subset, refusing WITH the WGSL reason. The @compute harness is derived from
+    the module''s own entry fn (name + element type) instead of hardcoded saxpy/f32; no
+    unambiguous element-shaped entry -> bare entry-point-free SPIR-V (naga accepts it -- probed,
+    63/69 words). The hand-written `fma` specialist now returns `None` for any other module
+    (the documented shape-filter protocol), so a user program is never quorum-paired with an
+    unrelated reference shader and reported `Multi`.
+    ** WITNESS XPILE-SPIRVFID-001 (6 tests, 0.97 s MEASURED, no skip path). Load-bearing
+    assertion is a RELATION BETWEEN TWO LIVE LANES, not a hand-list: spirv-accepted must be a
+    SUBSET of wgsl-accepted. Vacuity-guarded both sides (each >= 10). RED-THEN-GREEN on
+    unmodified origin/main: 4 of 6 fail naming 677 offenders, the 1 that passes is the CONTROL.
+    ** CLASS GATE (PMAT-1386 lesson): 9 emitters hold `try_emit(_module, ...)`. Swept
+    EMPIRICALLY through the CLI, not by reading constructors -- WGSL and WASM vary with input,
+    every PTX target refuses at the CLI, so SPIR-V was the only CLI-reachable member. A 6th test
+    now reds if ANY target emits identical artifacts for two different programs.
+    ** GPU witness pinned byte-identical (real_wgsl_for(saxpy) == the old general_real_wgsl()),
+    and the saxpy module still pairs BOTH emitters -- asserted next to the decline so the
+    decline cannot pass vacuously.
+    NEXT PICK (two, in EV order, both found and measured by this slice; nothing is OPEN in the
+    queue before Thursday):
+    (a) `Function::applicable_contracts()` is PARADIGM-BLIND. It is a `Function` method and
+    `SourceLang` lives on `Module`, so every C-lifted function''s "required" contract is the
+    PYTHON one: 19 of 2168 corpus functions have required-ids DISJOINT from emitted-ids
+    (required `C-PY-INT-ARITH`, emitted `C-C-INT-ARITH`) yet count in `xpile audit`''s
+    NUMERATOR, because `function_has_citation` matches the PRESENCE of any `// xpile-contract:`
+    line and never which id. So "Rust 2167/2167 = 100.0% [OK]" means "has A citation", not "has
+    ITS citation". The 4 over-citations PMAT-1385 pinned are the same root cause from the other
+    side (a C fn with no arithmetic requires nothing but is cited). WORSE, and the sharpest
+    piece: the LEAN backend has NO C emit path, so `--target lean` on c_bitwise.c emits
+    arbitrary-precision Lean `Int` stamped `@[xpile_contract "C-PY-INT-ARITH"]` -- the PYTHON
+    contract, from the PROOF lane, on C code, where that contract''s own YAML says it is
+    "Distinct from C-PY-INT-ARITH (Python int)". Rust and Ruchy have real C paths and cite
+    C-C-INT-ARITH. Split by KIND: Lean should REFUSE a SourceLang::C module (it would emit
+    Python semantics); `applicable_contracts` should take the paradigm; the audit numerator
+    should require the REQUIRED id; and `every_applicable_contract_is_actually_cited` -- the
+    gate that exists for exactly this drift -- filters to `.py` at
+    contract_citation_integrity.rs:441, which is why the lane where the drift is TOTAL is the
+    one it never reads.
+    (b) `--target wgsl` on fib.py exits 0 emitting WGSL that naga REJECTS (WGSL forbids
+    recursion) -- accept-then-fail-downstream, one lane over from this slice.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
+    crates/*/src or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit,
+    witness-floor TOUCH 2); 2026-07-31 -> PMAT-1374 (publish).'
 - id: PMAT-1373
   status: open
   ev_rank: R1

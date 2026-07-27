@@ -232,45 +232,116 @@ pub fn general_metahir_module() -> Module {
     }
 }
 
-/// Drive xpile's REAL emission to get the general-side compute shader.
+/// PMAT-1388: the function a `@compute` dispatch harness can call per
+/// element — returned as `(fn name, WGSL element type)`.
 ///
-/// Calls [`emit_wgsl_module`] on [`general_metahir_module`] — the REAL
-/// PMAT-970 meta-HIR → WGSL lowering — then wraps the emitted scalar
-/// `saxpy` function (the load-bearing, real-compiler-emitted arithmetic)
-/// in a thin `@compute @workgroup_size(64)` dispatch harness exposing the
-/// binding-0-in / binding-1-out storage-buffer contract the witness
-/// drives. The returned WGSL is then compiled to SPIR-V via naga and run.
+/// The harness reads one scalar from a storage buffer, calls the function,
+/// and writes one scalar back, so it can only wrap a module whose emitted
+/// entry is unambiguous and element-shaped: **exactly one** function, taking
+/// **one** parameter whose type equals the return type. Anything else
+/// (several functions — which is the entry? — a multi-parameter function, a
+/// mixed-type signature) gets NO harness and is emitted as a bare SPIR-V
+/// module of the compiled functions, which naga accepts (an entry-point-free
+/// SPIR-V module is a valid library module).
+///
+/// The WGSL lane lowers meta-HIR `I64` to WGSL `i32` (WGSL core has no 64-bit
+/// integer), so the buffer element type follows the *emitted* type, not the
+/// meta-HIR one.
+fn dispatch_entry(module: &Module) -> Option<(&str, &'static str)> {
+    let mut fns = module.items.iter().filter_map(|i| match i {
+        Item::Function(f) => Some(f),
+        _ => None,
+    });
+    let f = fns.next()?;
+    if fns.next().is_some() {
+        return None;
+    }
+    if f.params.len() != 1 {
+        return None;
+    }
+    let elem = match (&f.params[0].ty, &f.return_type) {
+        (Type::F32, Type::F32) => "f32",
+        (Type::I64, Type::I64) => "i32",
+        _ => return None,
+    };
+    Some((f.name.as_str(), elem))
+}
+
+/// Drive xpile's REAL emission to get the compute shader for **`module`**.
+///
+/// PMAT-1388: this used to be `general_real_wgsl()`, which took NO argument
+/// and always lowered the hardcoded [`general_metahir_module`]. The general
+/// SPIR-V emitter called it with the caller's `Module` bound to `_module`, so
+/// `xpile transpile <anything> --target spirv` exited 0 emitting a SPIR-V
+/// binary for `2.0*x + 1.0` — a program the user never wrote. Six
+/// categorically different inputs (including two the WGSL sibling REFUSES)
+/// produced byte-identical SPIR-V. The module is now a parameter and the
+/// saxpy module is just one caller of it.
+///
+/// Calls [`emit_wgsl_module`] on the given module — the REAL PMAT-970
+/// meta-HIR → WGSL lowering — then, when the module has a
+/// [`dispatch_entry`], wraps the emitted scalar function (the load-bearing,
+/// real-compiler-emitted arithmetic) in a thin `@compute @workgroup_size(64)`
+/// dispatch harness exposing the binding-0-in / binding-1-out storage-buffer
+/// contract the GPU witness drives. The returned WGSL is then compiled to
+/// SPIR-V via naga.
 ///
 /// This is the REAL path: the arithmetic is xpile's output, only the
 /// per-element dispatch shell is added (the GPU analogue of `extern "C"`
 /// glue around a real lowered function).
-pub fn general_real_wgsl() -> Result<String, String> {
-    let module = general_metahir_module();
-    let emitted = emit_wgsl_module(&module)
-        .map_err(|e| format!("xpile emit_wgsl_module (general saxpy) failed: {e:?}"))?;
-    // Sanity: the REAL lowering must have produced the scalar saxpy fn.
-    if !emitted.contains(&format!("fn {GENERAL_FN}(")) {
-        return Err(format!(
-            "xpile emit_wgsl_module did not emit `fn {GENERAL_FN}(` — got:\n{emitted}"
-        ));
-    }
+pub fn real_wgsl_for(module: &Module) -> Result<String, String> {
+    let emitted = emit_wgsl_module(module).map_err(|e| {
+        format!(
+            "xpile emit_wgsl_module refused module `{}`: {e:?}",
+            module.name
+        )
+    })?;
+    let Some((entry, elem)) = dispatch_entry(module) else {
+        return Ok(emitted);
+    };
     // Thin dispatch harness around the REAL emitted function. The harness
-    // declares the in/out storage buffers and calls xpile's `saxpy` once
-    // per element; the arithmetic lives entirely in the emitted fn.
+    // declares the in/out storage buffers and calls xpile's entry function
+    // once per element; the arithmetic lives entirely in the emitted fn.
     let harness = format!(
-        "@group(0) @binding(0) var<storage, read> inp: array<f32>;\n\
-         @group(0) @binding(1) var<storage, read_write> outp: array<f32>;\n\
+        "@group(0) @binding(0) var<storage, read> inp: array<{elem}>;\n\
+         @group(0) @binding(1) var<storage, read_write> outp: array<{elem}>;\n\
          \n\
          @compute @workgroup_size(64)\n\
          fn {ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3<u32>) {{\n\
          \x20   let i = gid.x;\n\
          \x20   if (i < arrayLength(&inp)) {{\n\
          \x20       // dispatch the REAL xpile-emitted scalar fn per element\n\
-         \x20       outp[i] = {GENERAL_FN}(inp[i]);\n\
+         \x20       outp[i] = {entry}(inp[i]);\n\
          \x20   }}\n\
          }}\n"
     );
     Ok(format!("{emitted}\n{harness}"))
+}
+
+/// The witness's own general-side WGSL: [`real_wgsl_for`] over
+/// [`general_metahir_module`], with the sanity check that the REAL lowering
+/// actually produced the scalar `saxpy` fn.
+pub fn general_real_wgsl() -> Result<String, String> {
+    let module = general_metahir_module();
+    let wgsl = real_wgsl_for(&module)
+        .map_err(|e| format!("xpile emit_wgsl_module (general saxpy) failed: {e}"))?;
+    if !wgsl.contains(&format!("fn {GENERAL_FN}(")) {
+        return Err(format!(
+            "xpile emit_wgsl_module did not emit `fn {GENERAL_FN}(` — got:\n{wgsl}"
+        ));
+    }
+    Ok(wgsl)
+}
+
+/// PMAT-1388: `true` when `module` is structurally the very module the
+/// hardcoded `fma` specialist is a hand-written variant of.
+///
+/// [`Module`] does not implement `PartialEq`, but it derives `Debug`, whose
+/// rendering is a total structural encoding of the tree — so comparing the
+/// two renderings is an exact structural equality test with no new
+/// dependency and no hand-written (and therefore drift-prone) field walk.
+pub fn is_general_saxpy_module(module: &Module) -> bool {
+    format!("{module:?}") == format!("{:?}", general_metahir_module())
 }
 
 /// SPIR-V execution binds to the native **Vulkan** backend specifically —
