@@ -7,6 +7,76 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The book was never in the claims-drift gate's scope (PMAT-1417)
+
+`crates/xpile/tests/claims_drift.rs` exists to stop derived-count doc claims
+from rotting. PMAT-1346 pointed it at `README.md`; PMAT-1348 pointed it at
+`docs/status/CURRENT.md` and pinned the exact stale strings it had carried.
+Both were repaired. **`book/src/` — the mdBook a `cargo install xpile` user
+actually reads — was in neither.**
+
+So it rotted, and the strings PMAT-1348 pinned as stale-and-forbidden in one
+file were live in the published one. Measured at `a0959aa9`:
+
+| Claim in `book/src/` | Live |
+|---|---|
+| "Seven frontends — Python, C, **C++, Rust, Lean 4**, Ruchy, Shell" | Three of those have no frontend crate and no registration; `wasm`, which does, was absent |
+| "seven backends" | nine |
+| "12 contracts at **full quorum**" | 35 contracts, **9 at PARTIAL** |
+| `$ xpile --version` → `xpile 0.1.0` | `0.1.617` |
+| "a **27-crate** workspace, published at v0.1.0" | 31 crates at 0.1.617 |
+| C frontend "🚧 Scaffold"; PTX/WGSL "🚧 Scaffold"; SPIR-V "🚧 Planned (not yet a crate)" | all four emit |
+| Lean emit cites `@[xpile_contract "<ID>"]` | a `/-- xpile-contract: … -/` docstring |
+| "depth-1..13 UNIVERSAL — all 12 contracts have ≥13 Diamond categories" | 22 of 35 contracts carry exactly **1** |
+
+Two of those are worse than staleness.
+
+**The Lean attribute.** PMAT-1405 removed `@[xpile_contract "<ID>"]` *the day
+before* — no Lean prelude registers that attribute, so the emit it produced did
+not parse, and `--contracts on` is the CLI default. The book kept it in two
+`--target lean` transcripts and `tutorials/python-to-lean.md` argued for it in
+prose: "**`@[xpile_contract "C-PY-INT-ARITH"]` is a real Lean attribute.** Not a
+comment." That is the negation of the finding that removed it.
+
+**depth-13 UNIVERSAL.** `concepts/diamond-substrate.md` defines the term — "the
+substrate is at depth-N UNIVERSAL when *every* contract has at least N distinct
+Diamond theorem categories" — and then claimed depth-13 two paragraphs later.
+`diamond_coverage.rs` deliberately **grandfathers** the depth-13 floor to a
+named 13-contract set so new contracts can join at depth-1+ without paying a
+treadmill. That is a sound engineering decision; what was unsound was a page
+restating a property of thirteen contracts as a property of all of them.
+
+Also repaired outside the book: the **crates.io `description`** in
+`crates/xpile/Cargo.toml` (it advertised C++/Rust/Lean as *input* languages —
+the most public claim surface the repo has), the **`xpile-spec.md` Status
+line**, whose own preceding paragraph declares drift against the code a
+contract defect to fail in CI, and the `sub/references.md` self-row.
+
+**The fix is the derive relationship, not the numerals** — section (e)'s own
+rule, applied to itself. Eight new assertions re-derive every claim on each run
+from the live registry (`default_session()`), the live emit (the shipped binary,
+executed), and the live tree. The corpus is *walked* from `book/src/`, so a page
+added later is covered the moment it lands, and no count is hard-coded anywhere.
+
+**All eight were run red.** Each defect was reintroduced, the test observed
+`FAILED`, and the defect reverted — and the red half **refuted the first cut**:
+`page.contains(flag)` stayed *green* after both the `wasm` and `forjar` rows
+were deleted from the backend roster, because neighbouring rows still contained
+those substrings inside `xpile-wasm-codegen` and `xpile-forjar-codegen`. A
+roster gate that survives deleting the row it requires is not a gate; it is now
+a whole-word match inside a markdown table row. The single exemption
+(`book/src/changelog.md`, a dated release log) asserts the file still carries
+its dated heading and that the exemption did not swallow the corpus.
+
+**Not swept, disclosed.** The same scan finds bare derived counts in
+`docs/specifications/**` design prose (`phased-rollout.md`, `ci-gates.md`,
+`pmat-integration.md`, `migration.md`, `cli.md`, `backend-trait.md`,
+`meta-hir.md`, `audit-design.md`, and `xpile-spec.md`'s §-status history lists).
+Those sit under dated "what shipped at v0.1.0" headings, where a frozen numeral
+is a record rather than a claim, so they are deliberately left alone and left
+ungated. The gate covers present-tense claim surfaces.
+
+
 ### The anti-vacuity tripwire whose arming mechanism never existed (PMAT-1416)
 
 `crates/xpile/tests/ruleset_drift.rs`, in the skip branch of

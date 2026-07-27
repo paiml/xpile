@@ -12,17 +12,32 @@ A backend reads a `MetaHirModule` and emits an artifact in some target
 language. Backends never see other backends; they all read from
 meta-HIR.
 
-## Status at v0.1.0
+## Status
 
-| Backend | Target | Status | Crate |
+`xpile info` prints this table live from the `Target` enum the CLI
+actually dispatches through — prefer it to this page.
+
+| Backend | `--target` | Status | Crate |
 |---|---|---|---|
-| Rust    | Rust 2021 | ✅ **Real emission** (Python-floor semantics, `.checked_*()` for `C-PY-INT-ARITH`) | `xpile-rust-codegen` |
-| Ruchy   | Ruchy | ✅ **Real emission** (same overflow semantics; compiles to Rust) | `xpile-ruchy-codegen` |
-| Lean 4  | Lean 4 | ✅ **Real emission** (`def`, `Int.fdiv`/`Int.fmod`; `Int` is unbounded) | `xpile-lean-codegen` |
-| Shell   | POSIX `sh` | ✅ **Real emission** (round-trip with bashrs-frontend) | `bashrs-backend` |
-| PTX     | NVIDIA PTX | 🚧 Scaffold + Layer-5 contract (QUORUM) | `xpile-ptx-codegen` |
-| WGSL    | WGSL | 🚧 Scaffold | `xpile-wgsl-codegen` |
-| SPIR-V  | SPIR-V | 🚧 Planned | (not yet a crate) |
+| Rust    | `rust` | ✅ **Real emission** (Python-floor semantics, `.checked_*()` for `C-PY-INT-ARITH`) | `xpile-rust-codegen` |
+| Ruchy   | `ruchy` | ✅ **Real emission** (same overflow semantics; compiles to Rust) | `xpile-ruchy-codegen` |
+| Lean 4  | `lean` | ✅ **Real emission** (`def`, `Int.fdiv`/`Int.fmod`; `Int` is unbounded) | `xpile-lean-codegen` |
+| Shell   | `bashrs` | ✅ **Real emission** (round-trip with bashrs-frontend) | `bashrs-backend` |
+| WASM    | `wasm` | ✅ **Real emission** (WebAssembly text; assembled and executed in CI) | `xpile-wasm-codegen` |
+| PTX     | `ptx` | ✅ **Real emission** — `--hardware ptx:<sm_XX>` is **required** to reach it | `xpile-ptx-codegen` |
+| WGSL    | `wgsl` | ✅ **Real emission** (scalar subset) | `xpile-wgsl-codegen` |
+| SPIR-V  | `spirv` | ✅ **Real emission** (scalar subset) | `xpile-spirv-codegen` |
+| forjar  | `forjar` | ✅ **Real emission** from **shell-origin** modules; refuses Python-origin input with a reason | `xpile-forjar-codegen` |
+
+The proof lane registers two contract backends, `lean-theorem` and
+`latex`, which render contract YAML rather than programs.
+
+A ✅ here means "emits for its supported subset", not "emits for every
+program" — each backend refuses constructs outside its subset with a
+message naming the governing contract and, where one exists, a better
+`--target`. That refusal *is* the guarantee; see the
+[shell round-trip tutorial](../tutorials/shell-roundtrip.md) for a
+worked example of the message.
 
 ## Rust backend — what's emitted
 
@@ -48,11 +63,17 @@ The Lean backend produces:
 
 - `def` declarations with `Int`/`Nat`/typed parameters
 - `Int.fdiv` and `Int.fmod` for `//` and `%`
-- `@[xpile_contract "<ID>"]` attribute above each emitted definition
+- a `/-- xpile-contract: <ID>[, <ID>]* -/` docstring above each emitted
+  definition (one comma-separated docstring, because Lean permits at
+  most one per declaration). Through v0.1.617 this was an
+  `@[xpile_contract "<ID>"]` attribute, which no Lean prelude registers
+  and which therefore made the default emit unparseable — PMAT-1405
+  replaced it, and `crates/xpile/tests/lean_default_emit_witness.rs`
+  now runs `lean` on the default emit rather than asserting about it.
 
 Because Lean's `Int` is unbounded, `C-PY-INT-ARITH` is satisfied **by
 construction** — no overflow checks are needed. The emitted Lean is
-typically the most concise of the three real backends.
+typically the most concise emit xpile produces.
 
 ## Shell backend — what's emitted
 

@@ -6,16 +6,19 @@ xpile is a CLI + library that takes a source file in one language and
 emits an equivalent program in another, with the *equivalence* itself
 pinned down as a machine-checked contract.
 
-Seven frontends — Python, C, C++, Rust, Ruchy, Lean 4, Shell — share a
-single canonical **meta-HIR** and dispatch through seven backends —
-Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4, Shell. A **proof lane** parallel
-to the code lane round-trips between LaTeX, Lean 4 theorems, and mdBook
-through the same YAML contract substrate.
+Four source languages — Python, C, Shell, WebAssembly text — share a
+single canonical **meta-HIR** and dispatch through nine backends —
+Rust, Ruchy, PTX, WGSL, SPIR-V, WebAssembly, Lean 4, Shell, forjar YAML.
+A fifth frontend, Ruchy, is registered for routing but **refuses every
+`.ruchy` input** — there is no Ruchy parser, so reading Ruchy is a
+non-zero exit with a reason, not a silent empty transpile. A **proof
+lane** parallel to the code lane round-trips between LaTeX, Lean 4
+theorems, and mdBook through the same YAML contract substrate.
 
-The repository ships with 12 contracts at full quorum (`pv lint` PASS, 0
-errors), 638 stratum-vote artifacts (Lean theorems + Kani BMC harnesses),
-and eleven UNIVERSAL Diamond milestones — every contract has paired
-algebraic theorems at depths 3 through 13.
+Run `xpile info` for the live registry and `xpile quorum` for the live
+per-contract stratum table and its QUORUM / PARTIAL / UNVERIFIED
+totals. Not every contract is discharged: the totals line reports how
+many reach §14.4 quorum and how many are still PARTIAL.
 
 ## Why xpile exists
 
@@ -34,11 +37,12 @@ those hybrid flows tractable. The same C-PY-INT-ARITH contract that
 governs the Python-int → Rust-i64 overflow lane also governs the
 Python-int → Lean-Int proof-lane shadow.
 
-## What you can do at v0.1.0
+## What you can do today
 
 - `xpile transpile factorial.py` → emit Rust with overflow checks
 - `xpile transpile factorial.py --target ruchy` → emit Ruchy
 - `xpile transpile factorial.py --target lean` → emit a Lean 4 `def`
+- `xpile transpile factorial.py --target wasm` → emit WebAssembly text
 - `xpile transpile script.sh --target shell` → POSIX-shell round-trip
 - `xpile info`, `xpile diamond`, `xpile quorum` — inspect the substrate
 

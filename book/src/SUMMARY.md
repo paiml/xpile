@@ -24,7 +24,7 @@
 - [CLI commands](reference/cli.md)
 - [Frontends](reference/frontends.md)
 - [Backends](reference/backends.md)
-- [Contracts at v0.1.0](reference/contracts.md)
+- [Contracts — the founding twelve](reference/contracts.md)
 
 # Contributing
 

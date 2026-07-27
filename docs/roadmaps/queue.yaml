@@ -2,23 +2,21 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-27 (PMAT-1416 landed from an honesty hunt — the ranked queue is exhausted
-  through 07-29 and the only OPEN items left are the release-mechanics pair PMAT-1373 (Thu 07-30)
-  and PMAT-1374 (Fri 07-31) plus the DEFERRED 0.1.619-lane PMAT-1375. Per this file''s own
-  invariant, a fire that finds the queue empty for today runs an honesty hunt rather than idling;
-  PMAT-1415 and now PMAT-1416 both came from one. PMAT-1416 found the shape the sprint exists to
-  buy down: `ruleset_drift.rs` credited "the release pre-flight (docs/RELEASE.md)" with arming
-  XPILE_REQUIRE_RULESET_CHECK, and that file did not exist — so the live-enforcement half of
-  XPILE-RULESET-DRIFT-001 had only ever skipped green. Measuring widened it: 5 of the 8 tripwires
-  the corpus reads were armed by NOTHING. docs/RELEASE.md now exists (which also unblocks
-  PMAT-1373, whose notes cite it as the date-skew disclosure surface, and satisfies sprint exit
-  criterion 16) behind XPILE-RELEASE-PREFLIGHT-001, a count-free gate that re-derives the tripwire
-  set from git ls-files. NEXT PICK: no code slice is due until Thu 07-30 (PMAT-1373). A fire before
-  then should hunt again rather than pull release mechanics forward — the tag is date-gated by
-  owner ratification and Wed 18:00 is the hard freeze. Standing hunt leads that are NOT queued
-  because they are owner-gated or next-sprint: the proof-lane load-bearing decision, the LGPL
-  decision (needed BEFORE Friday''s publish), and the ruleset-drift decision below.)'
-
+updated: '2026-07-27 (PMAT-1417 landed from an honesty hunt — the ranked queue remains exhausted
+  through 07-29 and the only OPEN items are the release-mechanics pair PMAT-1373 (Thu 07-30) and
+  PMAT-1374 (Fri 07-31) plus the DEFERRED 0.1.619-lane PMAT-1375. Per this file''s own invariant, a
+  fire that finds the queue empty for today runs an honesty hunt rather than idling; PMAT-1415,
+  PMAT-1416 and now PMAT-1417 all came from one. PMAT-1417 found the SCOPE shape: claims_drift.rs
+  is a gate that genuinely works, pointed at exactly two files (README.md, docs/status/CURRENT.md),
+  while the published mdBook — the document a `cargo install xpile` user actually reads — carried
+  the very strings that gate forbids in CURRENT.md, PLUS the Lean citation form PMAT-1405 had
+  removed the day before and a UNIVERSAL Diamond-depth claim 22 of 35 contracts do not satisfy.
+  When a gate is scoped to a FILE rather than to a CLAIM CLASS, the class keeps rotting everywhere
+  else. NEXT PICK: no code slice is due until Thu 07-30 (PMAT-1373). A fire before then should hunt
+  again rather than pull release mechanics forward — the tag is date-gated by owner ratification and
+  Wed 18:00 is the hard freeze. Standing hunt leads that are NOT queued because they are owner-gated
+  or next-sprint: the proof-lane load-bearing decision, the LGPL decision (needed BEFORE Friday''s
+  publish), and the ruleset-drift decision below.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -3470,6 +3468,37 @@ queue:
     (XPILE-RELEASE-PREFLIGHT-001, 4 tests, count-free, red half run 4/4). RULESET_CHECK is armed at a
     RECORD-DO-NOT-BLOCK tier — do NOT re-derive the snapshot to green it. No gate file edited; no
     emitter change. Unblocks PMAT-1373.'
+- id: PMAT-1417
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: "book/src/ was never in the claims-drift gate's scope — the published mdBook advertised
+    three frontends that do not exist, omitted two backends that do, documented the Lean citation
+    form PMAT-1405 removed the day before, and claimed a UNIVERSAL Diamond depth 22 of 35 contracts
+    do not hold"
+  notes: 'SHIPPED 2026-07-27 from an honesty hunt (ranked queue exhausted through 07-29).
+    claims_drift.rs was pointed at exactly README.md (PMAT-1346) and docs/status/CURRENT.md
+    (PMAT-1348); the strings PMAT-1348 pinned as FORBIDDEN in CURRENT.md were LIVE in book/src/.
+    Measured, not asserted: "Seven frontends" incl. C++/Rust/Lean 4 (no crate, no registration)
+    while omitting wasm; "seven backends" (9); "12 contracts at full quorum" (35, 9 PARTIAL); a
+    pinned `xpile 0.1.0` --version transcript; "27-crate workspace"; C/PTX/WGSL/SPIR-V marked
+    scaffold-or-planned (all four emit); @[xpile_contract] in two --target lean transcripts plus
+    prose asserting it "is a real Lean attribute. Not a comment." (PMAT-1405 removed it BECAUSE no
+    prelude registers it, so the DEFAULT emit did not parse); "depth-1..13 UNIVERSAL" against a
+    page-local definition requiring EVERY contract (22 of 35 carry 1 — diamond_coverage.rs
+    grandfathers the floor to a named set, by design). Also repaired the crates.io description
+    (advertised C++/Rust/Lean as INPUT languages), the xpile-spec.md Status line (whose own
+    preceding paragraph calls drift a contract defect), and sub/references.md''s self-row. 8 new
+    DERIVE-RELATIONSHIP assertions + an anti-vacuity corpus check; corpus WALKED from book/src/ so
+    a new page is covered on landing; no count hard-coded. RED HALF RUN 8/8 — and it REFUTED
+    the first cut: page.contains(flag) stayed GREEN after deleting the wasm and forjar rows, because
+    xpile-wasm-codegen / xpile-forjar-codegen supplied the substrings; replaced with a whole-word
+    match inside a markdown table row. DISCLOSED NOT SWEPT: bare derived counts remain in
+    docs/specifications/** design prose under dated "what shipped at v0.1.0" headings, where a
+    frozen numeral is a record rather than a claim — deliberately left ungated. NEXT PICK: no
+    code slice is due until Thu 07-30 (PMAT-1373); a fire before then should hunt again rather than
+    pull release mechanics forward.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

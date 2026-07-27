@@ -12,9 +12,16 @@ This installs the `xpile` CLI binary into `~/.cargo/bin/`. Requires Rust
 Verify:
 
 ```bash
-$ xpile --version
-xpile 0.1.0
+xpile --version
 ```
+
+It prints `xpile <version>` for the release you just installed. No
+version is pinned in this book: a transcript with a numeral in it goes
+stale the next time the workspace is published, which is exactly how
+this page came to claim `xpile 0.1.0` for two months after 0.1.6xx was
+live. Compare against
+[crates.io/crates/xpile](https://crates.io/crates/xpile) for the
+current release.
 
 ## From source
 
@@ -31,8 +38,9 @@ to reading the `contracts/` directory next to the working directory.
 
 ## Workspace crates
 
-xpile is structured as a 27-crate workspace; all crates are published
-to crates.io at v0.1.0. To use a sub-crate as a library:
+xpile is structured as a 31-crate workspace, published to crates.io as
+one lockstep batch — every member carries the same version as the
+`xpile` CLI. To use a sub-crate as a library:
 
 ```toml
 # Cargo.toml

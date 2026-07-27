@@ -25,19 +25,31 @@ def factorial(n: int) -> int:
 $ xpile transpile factorial.py --target lean
 -- xpile-generated from Python module factorial
 
-@[xpile_contract "C-PY-INT-ARITH"]
+/-- xpile-contract: C-PY-INT-ARITH -/
 def factorial (n : Int) : Int :=
   if (n <= (1: Int)) then (1: Int) else (n * (factorial (n - (1: Int))))
 ```
 
 A few things to notice:
 
-1. **`@[xpile_contract "C-PY-INT-ARITH"]` is a real Lean attribute.**
-   Not a comment. The
+1. **`/-- xpile-contract: C-PY-INT-ARITH -/` is a Lean docstring, not a
+   line comment.** The
    [`C-XPILE-CONTRACT-BACKEND-TRAIT`](../reference/contracts.md#c-xpile-contract-backend-trait)
    contract forbids regex-over-body citations and requires
-   format-native structured constructs. In Lean that's `@[...]`; in
-   LaTeX it's `\xpileContract{...}{...}`.
+   format-native structured constructs; a docstring is one, and
+   `Lean.findDocString? env `factorial` retrieves the citation out of
+   the *elaborated environment* by declaration name.
+
+   Through v0.1.617 this lane emitted `@[xpile_contract "…"]` instead.
+   That form reads as more structured and was strictly worse:
+   `xpile_contract` is registered as a Lean attribute nowhere, so `lean`
+   rejected the file with a parse error — and since `--contracts on` is
+   the CLI **default**, `--target lean` was the one backend whose
+   default output its own toolchain could not read. PMAT-1405 replaced
+   it with the docstring, which elaborates standalone with no `import`.
+   The attribute form survives only in the *contract-rendering* lane
+   (contract YAML → Lean theorem text), whose output is prose and is
+   never elaborated.
 2. **`Int`, not `Int64`.** Lean's `Int` is unbounded. The
    `C-PY-INT-ARITH` contract is satisfied **by construction** —
    nothing to discharge, no overflow checks emitted, no slow-path

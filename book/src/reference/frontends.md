@@ -10,21 +10,39 @@ A frontend reads a source file and lowers it to xpile's canonical
 **meta-HIR**. Frontends never see other frontends; they all funnel
 through meta-HIR.
 
-## Status at v0.1.0
+## Status
 
-| Frontend | Extensions | Status | Crate |
-|---|---|---|---|
-| Python | `.py`, `.pyi` | ✅ **Real parser** | `depyler-frontend` |
-| Shell  | `.sh`, `.bash`, `.zsh`, `.mk` | ✅ **Real POSIX parser** | `bashrs-frontend` |
-| C      | `.c`, `.h` | 🚧 Scaffold | `decy-frontend` |
-| Ruchy  | `.ruchy` | 🚧 Scaffold | `ruchy-frontend` |
+`xpile info` prints this table live from the registry the CLI actually
+dispatches through — prefer it to this page.
 
-Two more frontends ship as workspace members but live in the
-`xpile-frontend` shared trait crate:
+The **Name** column is the key `xpile info` prints, not a display label.
 
-- C++ — planned
-- Rust — scaffold
-- Lean 4 — scaffold (sub-spec: [`sub/lean-bidirectional.md`](https://github.com/paiml/xpile/blob/main/docs/specifications/sub/lean-bidirectional.md))
+| Frontend | Name | Extensions | Status | Crate |
+|---|---|---|---|---|
+| Python | `python` | `.py`, `.pyi` | ✅ **Real parser** | `depyler-frontend` |
+| C      | `c` | `.c`, `.h` | ✅ **Real parser** | `decy-frontend` |
+| Shell  | `bashrs` | `.sh`, `.bash`, `.zsh`, `.mk` | ✅ **Real POSIX parser** | `bashrs-frontend` |
+| WASM   | `wasm` | `.wat` | ✅ **Real parser** (lossy lift) | `xpile-wasm-frontend` |
+| Ruchy  | `ruchy` | `.ruchy` | ⛔ **Routing only — refuses every input** | `ruchy-frontend` |
+
+The proof lane registers one contract frontend, LaTeX math
+(`latex-contract-frontend`), which reads contract sources rather than
+programs.
+
+**Ruchy is registered but has no parser.** It exists so that a
+`.ruchy` input gets a named refusal instead of a generic "no frontend
+handles this extension" — `xpile transpile x.ruchy --target rust`
+exits non-zero with a reason. It does *not* mean Ruchy input works;
+Ruchy is a fully supported **output** target (see
+[backends](backends.md)). Nothing here silently returns an empty
+module: `crates/xpile/tests/claims_drift.rs` runs every registered
+frontend against a real program in its own language and fails if one
+answers with `Ok(Module { items: [] })`.
+
+**There is no C++, Rust, or Lean 4 frontend.** This page claimed all
+three as "planned"/"scaffold" workspace members; no such crate exists
+and none is registered. Lean 4 and LaTeX appear in the *proof* lane and
+Rust appears as a *backend*, which is where the confusion came from.
 
 ## Python frontend — what's supported
 
