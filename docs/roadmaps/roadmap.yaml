@@ -17219,3 +17219,65 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1393
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1393: [honesty/docs] README.md published a FABRICATED `$ xpile quorum`
+    transcript (15 QUORUM / 20 PARTIAL) four lines after telling the reader to run
+    the command, which prints 26/9; contracts/README.md was stuck at "12 contracts,
+    100% at QUORUM" with a 12-row table over a 35-contract substrate, and its
+    stratum prose was STRUCTURALLY wrong, not merely stale. Both files are the
+    crates.io / GitHub landing pages and ship Friday.'
+  description: '** THE DEFECT: README.md:151 pasted `totals: 15 QUORUM, 20 PARTIAL,
+    0 UNVERIFIED (35 contracts total)` inside a `$ xpile quorum` transcript. The
+    shipped binary prints `26 QUORUM, 9 PARTIAL`. Re-derived, and corroborated
+    against the tool''s OWN ROWS rather than taking its totals line on faith:
+    `grep -c ''QUORUM *$''` = 26, `grep -c ''PARTIAL *$''` = 9, 26+9 = 35 =
+    `ls contracts/*.yaml | wc -l`. Stale since da150d15 (#1809); NOT a duplicate of
+    PMAT-1386 (`git show 903d7aab^:README.md` proves 15/20 predates that fix).
+    ** contracts/README.md was FIVE falsehoods, one of them structural: (a) :11 and
+    :16 "12 contracts at v0.1.0"; (b) :18 "12 contracts, 100% at §14.4 QUORUM" ->
+    live 74.3% (9 PARTIAL); (c) :18 claimed the non-four-stratum contracts reach
+    QUORUM via "Semantic + Symbolic + Extrinsic" -- live C-COMPILE-RUST-TO-WASM is
+    Sem 1 / Sym 0 / Run 113 / Ext 126 and reaches QUORUM THROUGH RUNTIME. The lane
+    carrying the largest Runtime witness corpus in the repo has ZERO Symbolic votes,
+    so the sentence was wrong about the MECHANISM, not just the count; (d) :84 "all
+    12 harnesses" -> 101 `#[kani::proof]` fns across 24 files covering 24 of 35
+    contracts, and the job is ADVISORY (live ruleset requires only gate +
+    workspace-test), which the table did not say; (e) :90 "12 of 12 at Bronze" and
+    :92 "the 10 contracts currently at 3-stratum QUORUM" -> 35 and 11.
+    ** THE FIX (doc-only, freeze-legal, landed before the Thursday tag): retire the
+    frozen transcript in favour of the DERIVE COMMAND (the CURRENT.md doctrine --
+    publish the command, not a number); regenerate the contracts/README.md table to
+    all 35 rows MECHANICALLY from the `lean_file:` / `kani_file:` bindings in the
+    YAML itself, with `—` marking the 11 contracts that have no Kani harness;
+    rewrite the stratum prose from the live rows as a DATED snapshot (the
+    witness_floor.rs anti-rot idiom) naming the WASM pair explicitly as the
+    counterexample to the old prose.
+    ** CROSS-CORROBORATION that makes the table self-checking: the 11 contracts with
+    no `kani_file:` binding are EXACTLY the 11 that `xpile quorum` scores Sym=0, and
+    35 - 11 = 24 = `ls contracts/kani/*.rs | wc -l`. Three independent derivations
+    agree, so a future drift in any one of them is visible against the other two.
+    ** LAYER COLUMN DELIBERATELY DROPPED, not fabricated: the 1-5 taxonomy is not
+    mechanically derivable (spec:233-234 maps `kind: kernel` to Layer 1 OR 2 and
+    `pattern` to 3 OR 4, and no `kind` yields Layer 5; only 9 of 35 YAMLs carry
+    `metadata.xpile.layer`, valued "compile" not an ordinal). Inventing 35 layer
+    assignments to fill a column would have been the same sin this slice removes.
+    The spec stays authoritative for the taxonomy.
+    ** SCOPE: two Markdown files. No crates/*/src, no contracts/*.yaml, no gate
+    file. crates/xpile/tests/claims_drift.rs UNTOUCHED (TRAP 1 -- widening
+    `current_md_carries_no_bare_derived_counts` from one path to a file list is the
+    DURABLE fix and it is a GATE TOUCH; this window''s serial chain is full and
+    PMAT-1373''s ordinal is pinned). Seeded for 0.1.619. witness_floor.rs untouched.
+    ** RESIDUAL: both READMEs remain ungated -- nothing in crates/ or .github reads
+    contracts/README.md (`grep -rln ''contracts/README'' crates .github` is empty).
+    The dated-snapshot + derive-command form is a mitigation, not a gate.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

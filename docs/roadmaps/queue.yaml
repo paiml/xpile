@@ -2263,8 +2263,22 @@ queue:
     or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit, tag);
     2026-07-31 -> PMAT-1374 (publish).
 - id: PMAT-1393
-  status: open
+  status: done
   ev_rank: R6
+  done_note: 'SHIPPED 2026-07-27 (pulled forward one day; today''s dated slate was drained). Re-derived
+    rather than trusting the note: quorum totals 26/9 corroborated against the tool''s OWN rows
+    (grep -c ''QUORUM *$'' = 26, ''PARTIAL *$'' = 9, sum 35 = ls contracts/*.yaml). README.md''s frozen
+    transcript retired for the DERIVE COMMAND; contracts/README.md table regenerated MECHANICALLY to
+    all 35 rows from the YAML lean_file:/kani_file: bindings. FOUND BEYOND THE NOTE: :84 "all 12
+    harnesses" -> 101 #[kani::proof] fns / 24 files / 24-of-35 contracts, AND the kani job is ADVISORY
+    (the table asserted it runs "on every PR" without saying a red one cannot block a merge); the
+    layout block''s "kani/ — one .rs per contract" was false the same way. LAYER COLUMN DROPPED, NOT
+    FABRICATED: layer 1-5 is not mechanically derivable (kind: kernel maps to L1 OR L2, pattern to L3
+    OR L4, nothing yields L5; only 9 of 35 YAMLs carry metadata.xpile.layer and its value is "compile",
+    not an ordinal) — inventing 35 assignments to fill a column is the same sin. TRAP 1 HELD:
+    claims_drift.rs untouched; its three README assertions (frontend count, backend count, ruchy-refuse
+    disclosure) are disjoint from the Contracts section and stayed green. NEXT PICK: PMAT-1394 (R7,
+    2026-07-29) — the Lean lane returns a VALUE for division by zero (7 // 0 -> 0) at exit 0.'
   gate_touch: null
   date: '2026-07-28'
   title: README.md publishes a FABRICATED `$ xpile quorum` transcript (15/20) that the shipped binary
