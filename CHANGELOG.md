@@ -9,6 +9,64 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`xpile transpile --target wgsl` exited 0 emitting WGSL that xpile's OWN
+  exported validator rejects** (PMAT-1391). Two independent shapes, one root
+  cause — the production path never ran the gate the module documentation
+  said it ran.
+
+  `for i in range(n)` desugars, in the depyler frontend, to synthetic locals
+  named `__forc0` / `__forstop1`; `for … else` adds `__broke0`. WGSL reserves
+  the `__` identifier prefix, so every `for`-loop this backend has ever
+  emitted was rejected by `xpile_wgsl_codegen::naga_validate_wgsl` —
+  `Identifier starts with a reserved prefix: '__forc0'` — while the CLI
+  reported success with an empty stderr. Separately, `def f(n): return f(n)`
+  emitted a self-recursive WGSL `fn`, which the language forbids
+  (`declaration of 'f' is recursive`), also at exit 0. Measured against the
+  naga 29.0.3 `Cargo.lock` pin; a `while`-loop accumulator validated clean
+  both before and after, so the lane was otherwise sound — this is a missing
+  guard, not a broken lowering.
+
+  Both are fixed at the emission boundary. A new `wgsl_ident` sanitizer is
+  applied at all seven name-emission sites (fn name, signature params, `var`
+  hoists, `let`/assign targets, ident reads, call callees, and the
+  module-scope `<fn>_<param>` storage-buffer binding). It keys on identifier
+  SHAPE, not on a list of the frontend's synthetics, because a user parameter
+  literally named `__x` is equally illegal WGSL. The mapping is **injective**:
+  the naive repair `__forc0` → `forc0` would silently alias a user variable
+  actually named `forc0`, trading a loud rejection for a wrong-variable read.
+  User identifiers are the identity case, so `fn last_i(n: i32)` still reads
+  as `fn last_i(n: i32)` and only the synthetics are rewritten
+  (`xpm_u__forc0`). The frontend's names are untouched — `__forc*` is correct
+  for the Rust and WASM lanes.
+
+  `naga_validate_wgsl` is now the last step of `emit_wgsl_module` rather than
+  of the unit tests, so the production emitter, the wgpu diff-exec witness's
+  general slot, the downstream `xpile-spirv-codegen` consumer and the tests
+  all inherit the guarantee from one choke point — and any future
+  name-emission site added without sanitizing fails loudly instead of
+  emitting wrong code. Recursion becomes an honest exit-1 refusal naming
+  naga's reason.
+
+  **Scope, stated precisely.** This establishes that emitted WGSL *parses and
+  type-checks*, not that it *executes*: the executed-on-adapter witnesses
+  remain the `xpile-wgsl-codegen/tests/gpu_*.rs` pair. Reserved WGSL
+  *keywords* (a function named `let`, `var`, `loop`) are deliberately not
+  mangled — they now refuse honestly via the gate rather than emitting
+  silently-bad WGSL; widening the mangle to keywords is a future increment.
+  The pre-existing ambiguity of the `<fn>_<param>` buffer composite (function
+  `a_b` + param `c` and function `a` + param `b_c` both yield `a_b_c`) is
+  unchanged by this slice and not claimed fixed.
+
+  Two false claims are retired rather than left standing. The
+  `wgsl_emit.rs` module doc asserted "Emitted WGSL is checked by
+  `naga_validate_wgsl`" — true of the tests, false of production, and now
+  true of both. And `transpile_e2e.rs`'s
+  `transpile_loop_var_leak_range_wasm_traps_wgsl_clean` justified its WGSL
+  half with "a program WGSL executes exactly on every non-empty input"; that
+  fixture's output did not previously parse. Its `status.success()` assertion
+  is now transitively a naga parse+typecheck, which is why the test needed no
+  weakening to stay green.
+
 - **`xpile attestations` counted a roadmap *preamble* mention as a work item,
   and emitted invalid JSON — both at exit 0** (PMAT-1390). The Extrinsic-stratum
   scoreboard reported `C-PY-INT-ARITH  87 mentions across 69 work item(s)` where
