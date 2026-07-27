@@ -18599,3 +18599,128 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1416
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1416: [release/honesty] `ruleset_drift.rs`''s skip branch credited
+    "the release pre-flight (docs/RELEASE.md)" with setting
+    XPILE_REQUIRE_RULESET_CHECK=1 to refuse the skip — `docs/RELEASE.md` did not
+    exist and NOTHING set that variable, so the enforcement claim could only ever
+    skip green. Measuring it widened the finding: 5 of the 8 anti-vacuity tripwires
+    the corpus reads were armed by nothing at all.'
+  description: 'MEASURED, not inferred. crates/xpile/tests/ruleset_drift.rs:294-299
+    sits in the skip branch of live_ruleset_matches_the_committed_snapshot — a test
+    that runs in the REQUIRED workspace-test job — and reads: "Anti-vacuity tripwire.
+    Reading an ORG ruleset needs a token with org scope, which Actions'' repo-scoped
+    GITHUB_TOKEN does not have — so this test legitimately skips in CI and the STATIC
+    half above is what runs there. The release pre-flight (docs/RELEASE.md) sets
+    XPILE_REQUIRE_RULESET_CHECK=1 to refuse the skip."
+
+    WHAT WAS ACTUALLY THERE. `git ls-files | grep -i release` returned exactly one
+    path, .github/workflows/release.yml. docs/RELEASE.md did not exist. No tracked
+    file, no workflow, and not the sprint driver (/home/noah/.config/xpile-sprint/run.sh)
+    set XPILE_REQUIRE_RULESET_CHECK. So the compensating control the comment names
+    had never run, and the live-enforcement half of XPILE-RULESET-DRIFT-001 had
+    skipped green in every automated run it ever had.
+
+    THE SHAPE. A disclosed skip standing in front of a mechanism that does not exist
+    is still a false pass — and it is worse than an undisclosed skip, because it
+    reads as mitigated. The repo has now hit this class often enough to name it.
+
+    NOT HYPOTHETICAL. The org ruleset 13878864 drifted on 2026-07-27 (workspace-test
+    dropped from the required set, so a PR can merge with it RED). What caught it was
+    a cron fire that happened to hold an org-scoped token, not the pre-flight the
+    comment credits. Arming the tripwire by hand reproduces the red exactly:
+    XPILE_REQUIRE_RULESET_CHECK=1 cargo test -p xpile --test ruleset_drift fails with
+    left {"gate"} / right {"gate", "workspace-test"} while the other 3 tests pass.
+
+    THE MEASUREMENT WIDENED IT (the queued characterization is a lower bound, again).
+    The citation names one tripwire. Deriving the set from read sites across
+    `git ls-files ''*.rs''` found EIGHT: WASM_RUNTIME, KANI, DENY, CC, SH, RUCHY,
+    CHANGELOG_HISTORY, RULESET_CHECK. Only the first three are armed anywhere — all
+    in .github/workflows/ci.yml (lines 102, 184, 457). The other FIVE were armed by
+    nothing in the repo, so the anti-vacuity half of five separate witnesses was
+    unreachable. Four of the five PASS when armed — measured before docs/RELEASE.md
+    was written, so the pre-flight is achievable rather than aspirational:
+    XPILE_REQUIRE_CC=1 XPILE_REQUIRE_SH=1 XPILE_REQUIRE_RUCHY=1
+    XPILE_REQUIRE_CHANGELOG_HISTORY=1 over c_truth_witness, shell_crossdomain_witness,
+    ruchy_run_witness and changelog_freshness is 31 passed / 0 failed (cc=/usr/bin/gcc,
+    sh=/usr/bin/sh, ruchy 4.2.1). The fifth is the live drift above.
+
+    THE FIX, TWO PARTS. (1) docs/RELEASE.md now exists and is the real procedure:
+    cadence, the DELIBERATE one-day tag/CHANGELOG date skew (release.yml fires on
+    `push: tags: v*`, so cleanroom-publish cannot gate the tag it fires on — tagging
+    Thursday converts it into a pre-flight with a day of runway, at the cost of the
+    tag object and the CHANGELOG heading disagreeing on purpose), the tripwire table
+    with its two tiers, the three pre-flights, the overlay purge, abort rules A1-A8
+    plus A1b, the crates.io User-Agent verification trap that fired on v0.1.617, and
+    a slip/partial-batch ledger. It follows CURRENT.md''s no-hand-typed-counts rule:
+    every number is the command that derives it. XPILE_REQUIRE_RULESET_CHECK is armed
+    at a RECORD-DO-NOT-BLOCK tier, deliberately: the ruleset is owner-controlled state
+    outside this repo, so a red there reports someone else''s change rather than a
+    defect in the artifact being shipped — and the doc says in as many words not to
+    re-derive the snapshot to make it green, because a receipt rewritten to match the
+    mutation it was supposed to detect is worse than a red one (the 2026-07-05 flip
+    misled this repo for three weeks doing exactly that).
+
+    (2) crates/xpile/tests/release_preflight_witness.rs (XPILE-RELEASE-PREFLIGHT-001),
+    4 tests, NO COUNT ANYWHERE — the tripwire set is re-derived from git ls-files on
+    every run, so a ninth tripwire is covered the day it lands rather than the day
+    someone remembers a list. Asserted: (1) every tripwire the corpus READS is ARMED,
+    by a workflow env key or a runnable NAME=1 in docs/RELEASE.md; (2) the doc arms no
+    tripwire nothing reads (the inverse false green — coverage on paper); (3) any test
+    source that CITES docs/RELEASE.md has the tripwires it reads actually armed there,
+    which is the broken citation generalized. Reads are distinguished from prose by
+    the `("` that precedes a string literal argument, and workflow COMMENT lines are
+    stripped before scanning — ci.yml describes XPILE_REQUIRE_WASM_RUNTIME=1 in a
+    comment several jobs away from where it sets it, and counting that as arming would
+    let a deleted env: key pass on the strength of the surviving comment.
+
+    RED HALF RUN, all four, each firing on exactly the right tests. (a) Deleting
+    docs/RELEASE.md reds all 4. (b) Removing the XPILE_REQUIRE_RULESET_CHECK=1 command
+    — i.e. reproducing the original defect exactly — reds tests 1 and 3 and leaves 2
+    and 4 green. (c) Appending a phantom XPILE_REQUIRE_NOSUCHTHING=1 reds only test 2.
+    (d) Deleting abort rule A5 and the overlay-purge fragments reds only test 4. Green
+    restored after each, verified by an empty `git diff --stat`.
+
+    THE GATE CAUGHT TWO DEFECTS IN ITSELF BEFORE IT CAUGHT ANYTHING ELSE. Tests 1-3
+    are universals over a derived set — the shape that passes for free when the
+    derivation returns nothing — so each requires its set to be non-empty and test 1
+    requires a known anchor. (a) That anchor caught the first draft''s name-extraction
+    guard comparing the SUFFIX length against the length of the `XPILE_REQUIRE_` prefix
+    it had already consumed, so only CHANGELOG_HISTORY (17 chars) survived and the
+    other seven were silently dropped; without the anchor the universal would have
+    ranged over one element and passed. (b) Because the corpus is `git ls-files`, a
+    witness is invisible to the scan until it is COMMITTED — so the gate first ran
+    against itself only after `git commit`, and went RED: a doc comment illustrated the
+    read spelling with a literal env::var_os call on a placeholder name, which is by
+    construction indistinguishable from a real read site, and the placeholder was
+    reported as a tripwire armed by nothing. Both properties are kept and documented in
+    the module header: a new witness''s tripwire is checked from the commit that adds
+    it and not before, and A GATE THAT SCANS SOURCE FOR CALL SITES MUST NOT PRINT CALL
+    SITES. The red half was re-run after the file became tracked, since tracking
+    changes the corpus: R1 and R2 still fire on exactly the same tests.
+
+    WHAT THIS GATE DELIBERATELY DOES NOT DO. It does not RUN the pre-flight. Arming
+    RULESET_CHECK needs an org-scoped credential CI lacks and arming RUCHY needs a
+    toolchain workspace-test deliberately does not install, so a gate that executed
+    the pre-flight would itself skip in CI — reproducing the defect one level up.
+    Test 4 is therefore a STRUCTURAL presence check over the document (abort rules,
+    overlay purge, skew disclosure, User-Agent trap); it proves the sections are there
+    and cannot prove the prose around them is true. The executable claim is 1-3, and
+    the module header says so.
+
+    SCOPE. No emitter behaviour changed, no test was weakened, and no gate file was
+    edited — ruleset_drift.rs''s comment is now TRUE as written, so it needed no
+    change. Unblocks PMAT-1373 (Thu 07-30), whose notes already cite docs/RELEASE.md
+    as the disclosure surface for the date skew, and satisfies sprint exit criterion
+    16.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

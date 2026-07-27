@@ -2,14 +2,23 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-27 (PMAT-1415 landed from an honesty hunt; the ranked queue is exhausted through 07-29. Post-assessment refill. A 13-agent project assessment — 7 survey dimensions, 3 gap
-  lenses, 2 adversarial critics that REFUTED 13 proposed items and ADDED 14 nobody surfaced — produced
-  a release-integrity NOW list. PMAT-1406 (the highest-severity item: a `subprocess.run` inside a class
-  method silently discarded, so an `rm -rf` became a no-op at exit 0) is already SHIPPED as #1996. These
-  five are the rest of the NOW tier, ordered by the standing EV rule. The assessment''s BIGGEST SINGLE
-  THING — that NO proof in the repo can be turned red by a wrong lowering, because contracts/lean/*.lean
-  imports only `Lake` and the Kani harness links nothing from the workspace — is NOT queued here: it is
-  gated on the owner''s narrowing decision and is a NEXT-sprint L, not a pre-release slice.)'
+updated: '2026-07-27 (PMAT-1416 landed from an honesty hunt — the ranked queue is exhausted
+  through 07-29 and the only OPEN items left are the release-mechanics pair PMAT-1373 (Thu 07-30)
+  and PMAT-1374 (Fri 07-31) plus the DEFERRED 0.1.619-lane PMAT-1375. Per this file''s own
+  invariant, a fire that finds the queue empty for today runs an honesty hunt rather than idling;
+  PMAT-1415 and now PMAT-1416 both came from one. PMAT-1416 found the shape the sprint exists to
+  buy down: `ruleset_drift.rs` credited "the release pre-flight (docs/RELEASE.md)" with arming
+  XPILE_REQUIRE_RULESET_CHECK, and that file did not exist — so the live-enforcement half of
+  XPILE-RULESET-DRIFT-001 had only ever skipped green. Measuring widened it: 5 of the 8 tripwires
+  the corpus reads were armed by NOTHING. docs/RELEASE.md now exists (which also unblocks
+  PMAT-1373, whose notes cite it as the date-skew disclosure surface, and satisfies sprint exit
+  criterion 16) behind XPILE-RELEASE-PREFLIGHT-001, a count-free gate that re-derives the tripwire
+  set from git ls-files. NEXT PICK: no code slice is due until Thu 07-30 (PMAT-1373). A fire before
+  then should hunt again rather than pull release mechanics forward — the tag is date-gated by
+  owner ratification and Wed 18:00 is the hard freeze. Standing hunt leads that are NOT queued
+  because they are owner-gated or next-sprint: the proof-lane load-bearing decision, the LGPL
+  decision (needed BEFORE Friday''s publish), and the ruleset-drift decision below.)'
+
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -3443,6 +3452,24 @@ queue:
 
     A7: NO Friday code. A Friday defect means A6, never a same-day hotfix onto the release SHA.'
   date: '2026-07-31'
+- id: PMAT-1416
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'docs/RELEASE.md — the release pre-flight that `ruleset_drift.rs` names as its anti-vacuity
+    arming mechanism had never existed; 5 of 8 XPILE_REQUIRE_* tripwires were armed by nothing'
+  notes: 'SHIPPED 2026-07-27 from an honesty hunt (queue empty for the day). Measured: `git ls-files
+    | grep -i release` returned only .github/workflows/release.yml, and nothing anywhere set
+    XPILE_REQUIRE_RULESET_CHECK — so the live half of XPILE-RULESET-DRIFT-001 could only skip green,
+    while the org ruleset had ACTUALLY drifted on 2026-07-27. Widened on measurement (lower-bound
+    rule, again): 8 tripwires read, only WASM_RUNTIME/KANI/DENY armed; CC/SH/RUCHY/CHANGELOG_HISTORY
+    all PASS when armed, RULESET_CHECK reds on the live drift. Shipped docs/RELEASE.md (procedure,
+    date-skew disclosure, two-tier tripwire table, 3 pre-flights, overlay purge, A1-A8+A1b,
+    User-Agent trap, slip ledger; no hand-typed counts) + crates/xpile/tests/release_preflight_witness.rs
+    (XPILE-RELEASE-PREFLIGHT-001, 4 tests, count-free, red half run 4/4). RULESET_CHECK is armed at a
+    RECORD-DO-NOT-BLOCK tier — do NOT re-derive the snapshot to green it. No gate file edited; no
+    emitter change. Unblocks PMAT-1373.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
