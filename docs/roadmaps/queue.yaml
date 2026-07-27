@@ -2069,7 +2069,7 @@ queue:
     gate reports registration green over a file that does not parse. Take PMAT-1398 with or
     before PMAT-1390 — they touch the same reporter surface.'
 - id: PMAT-1398
-  status: open
+  status: done
   ev_rank: R3
   gate_touch: null
   date: '2026-07-27'
@@ -2105,7 +2105,26 @@ queue:
     still strictly better than nothing, but prefer a real parser.
 
     ** ACCEPTANCE: the reproducer above exits 0; the new test FAILS when any one apostrophe is
-    un-doubled again (run the red half); roadmap_registration.rs still passes UNCHANGED.'
+    un-doubled again (run the red half); roadmap_registration.rs still passes UNCHANGED.
+
+    ** DONE 2026-07-27. All three acceptance criteria MET and measured. serde_yaml WAS already
+    a dev-dep of crates/xpile (PMAT-484), so the real parser was available and the 3-line
+    linter fallback was not needed. Gate shipped as crates/xpile/tests/roadmap_ledger_parses.rs
+    (XPILE-LEDGER-002, 4 tests, 0.27 s measured) — a NEW file; roadmap_registration.rs is
+    byte-unchanged, so gate_touch #3 (PMAT-1373) is unperturbed. The fourth assertion is the
+    one with teeth and is not what the queue asked for: it re-derives the ledger id set BOTH
+    ways (the byte-identical `- id: ` text scan XPILE-LEDGER-001 uses, and serde_yaml) and
+    demands equality — a relation between two live implementations, so it cannot go stale as
+    the ledger grows, and it also catches a half-parsing document, a row swallowed into a
+    string scalar, or an `id` nested a level too deep. Vacuity-guarded on both sides (> 1000
+    ids each). File set is GLOBBED from docs/roadmaps/, never hand-listed.
+    RED HALF RUN THREE TIMES, once per apostrophe: each independently reds 3 of 4 new tests,
+    and in EVERY probe `cargo test -p xpile --test roadmap_registration` stayed 3/3 GREEN on
+    the broken file — the gap is measured, not asserted. Repo-wide scan after the fix: 40 of
+    40 YAML files across docs/roadmaps, contracts and .github/workflows parse.
+    NEXT PICK: PMAT-1390 (`xpile attestations` phantom preamble work-item + invalid JSON) —
+    now unblocked, since its own independent reference is a REAL yaml parse of
+    docs/roadmaps/roadmap.yaml, which could not run until this slice landed.'
 - id: PMAT-1390
   status: open
   ev_rank: R3

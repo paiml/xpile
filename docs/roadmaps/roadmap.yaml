@@ -16844,12 +16844,12 @@ roadmap:
     ** FOUND ONLY BY MAKING THE EMITTER READ ITS INPUT, and worth recording on its own: the
     §29 EXECUTED VULKAN WITNESS was handing the backend `Module { name: "saxpy_spirv_kernel",
     items: Vec::new() }` -- NO FUNCTIONS AT ALL -- while its module doc claimed the arithmetic
-    is "xpile's output, not a hardcoded shader". It asserted on a shader it had supplied no
+    is "xpile''s output, not a hardcoded shader". It asserted on a shader it had supplied no
     input for, which is exactly why it could not have caught this defect. It now passes
     `general_metahir_module()`, the module whose lowering it prints and executes; re-run on this
-    box's Vulkan adapter it still reports a real `DiffExecResult::Match` at max_abs_diff=0 --
+    box''s Vulkan adapter it still reports a real `DiffExecResult::Match` at max_abs_diff=0 --
     EXECUTED, verified by reading the witness output, not inferred from a green exit. The
-    crate's own `dummy_module()` had the same item-less shape and is now a real function.
+    crate''s own `dummy_module()` had the same item-less shape and is now a real function.
     ** SAXPY WITNESS PATH PINNED. `real_wgsl_for(general_metahir_module())` is asserted
     byte-identical to what `general_real_wgsl()` produced pre-slice, so the executed Vulkan GPU
     witness (PMAT-960/977/988) attests the same artifact it did before; the two emitters still
@@ -16938,17 +16938,49 @@ roadmap:
     968d352d and the ledger gate did not notice -- all three of roadmap_registration.rs''s
     assertions are pure TEXT (`- id:` line matching), so it reports registration GREEN over a
     file no YAML parser can read. Found while measuring PMAT-1389, not by a hunt.'
-  description: 'QUEUED, NOT YET FIXED -- registered now so the finding is not re-derived.
-    Reproduce on main: `python3 -c "import yaml;
-    yaml.safe_load(open(''docs/roadmaps/roadmap.yaml''))"` -> ParserError. The PMAT-1388 row''s
-    `description:` is a single-quoted YAML scalar and three apostrophes inside it are written
-    with ONE quote instead of the doubled `` '' `` YAML requires; the first lone quote ends the
-    scalar and the rest is re-parsed as structure. The same entry escapes correctly four lines
-    earlier, so it is a slip rather than a convention. The fix is to double the three
-    apostrophes; the SLICE is a test that PARSES both docs/roadmaps/*.yaml, authored as a NEW
-    test file rather than an edit to roadmap_registration.rs, which is a gate and is pinned by
-    PMAT-1373''s gate_touch:3 this window.'
-  status: open
+  description: 'FIXED. Reproduced on main at ef392e05: `python3 -c "import yaml;
+    yaml.safe_load(open(''docs/roadmaps/roadmap.yaml''))"` -> ParserError at line 16787,
+    "expected <block end>". The PMAT-1388 row''s `description:` is a single-quoted YAML scalar
+    and three apostrophes inside it were written with ONE quote instead of the doubled `` '' ``
+    that a single-quoted scalar requires -- `is "xpile''s output, not a hardcoded shader"`,
+    `box''s Vulkan adapter`, `crate''s own dummy_module()`. The first lone quote ENDS the
+    scalar, so the remaining prose is re-parsed as YAML structure and the document dies at the
+    first line that looks like a mapping key. The same entry escapes `audit''s` correctly four
+    lines earlier, so it is a slip rather than a convention.
+    ** WHY NOTHING CAUGHT IT, which is the part worth keeping: all three assertions of
+    crates/xpile/tests/roadmap_registration.rs (XPILE-LEDGER-001) are pure TEXT -- `contains`
+    and `- id: ` line-prefix matching over the raw bytes -- and `xpile attestations` /
+    `xpile quorum` scan the same file textually. The entire toolchain therefore reported the
+    ledger GREEN over a file no YAML parser could read. Same exit-0-but-false shape as
+    PMAT-1385/1386/1387/1390, one level up: in the GATE rather than in the tool. A text scan
+    cannot distinguish a document from a plausible-looking pile of lines.
+    ** THE SLICE is the gate, not the three-character fix: crates/xpile/tests/roadmap_ledger_parses.rs
+    (XPILE-LEDGER-002, 4 tests, 0.27 s MEASURED), a NEW file rather than an edit to
+    roadmap_registration.rs, which is a gate pinned by PMAT-1373''s gate_touch:3 this window.
+    (1) every `*.yaml`/`*.yml` under docs/roadmaps/ loads in `serde_yaml`, with the file set
+    GLOBBED from the directory rather than hand-listed, so a file added later is covered the
+    day it lands; (2) `roadmap:` is a sequence of mappings each carrying a non-empty scalar
+    `id`, with no id registered twice; (3) the same for `queue:`; (4) the load-bearing one --
+    the ledger''s PMAT id set is re-derived BOTH ways, by the byte-identical `- id: ` text scan
+    XPILE-LEDGER-001 uses and by `serde_yaml`, and the two must be EQUAL. That is a relation
+    between two live implementations, not a hand-copied expected value, so it cannot go stale
+    as the ledger grows and it fails on the whole class (a truncated document, a row swallowed
+    into a string scalar, an `id` nested a level too deep). Vacuity-guarded on BOTH sides
+    (each view must see > 1000 ids) so an empty-vs-empty agreement cannot pass.
+    ** RED-THEN-GREEN, executed three times: un-doubling EACH of the three apostrophes
+    independently reds 3 of the 4 new tests -- and in all three probes
+    `cargo test -p xpile --test roadmap_registration` stays 3/3 GREEN on the broken file, which
+    is the measured demonstration of the gap this closes rather than an assertion about it.
+    `serde_yaml` is already a dev-dep (PMAT-484), so no crate joins the graph; no git, no
+    network, no runtime, so the gate can never skip -- it runs for real in the REQUIRED
+    workspace-test context even in a shallow clone or an extracted .crate.
+    ** SCOPE, honestly: this gates PARSEABILITY and structural shape, not CONTENT. A row with a
+    truthful `id` and a fabricated `description` still passes, as it should -- that is the
+    claims-drift lane. contracts/*.yaml are unaffected (already covered by `pv lint`); all 40
+    YAML files across docs/roadmaps, contracts and .github/workflows were measured parseable
+    after the fix. No gate file edited; witness_floor.rs untouched (two-touch serial resource,
+    second touch reserved for PMAT-1373).'
+  status: done
   priority: high
   created: 2026-07-27T00:00:00Z
   acceptance_criteria: []
