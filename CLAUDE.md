@@ -35,9 +35,24 @@ These are tailored to xpile. `certeza` (mentioned in the global CLAUDE.md) is ap
 
 ## Shell / Makefile / Dockerfile artifacts
 
-xpile currently has zero `.sh` / `.bash` / `.zsh` / `Makefile` /
-`Dockerfile` files. **Don't introduce them without routing through
-bashrs**. The bashrs merger shipped early — `crates/bashrs-frontend/`
+xpile tracks zero `Makefile` / `Dockerfile` files, and every tracked
+`.sh` / `.bash` / `.zsh` file is a gated fixture or example under
+`crates/xpile/tests/fixtures/` or `crates/xpile/examples/inputs/` that
+round-trips through bashrs-frontend → bashrs-backend with an idempotent
+emit. **Don't introduce shell artifacts outside that regime.** Both
+halves are ENFORCED, not asserted:
+`crates/xpile/tests/shell_artifact_policy_witness.rs`
+(XPILE-SHELLPOLICY-001, PMAT-1396) re-derives the set from
+`git ls-files` on every run. **No count is hard-coded anywhere** — the
+prose count this replaced ("zero `.sh` files", written 2026-05-17 and
+falsified eight hours later by the first fixture) read as satisfied for
+71 days while this same section named one of those fixtures by
+filename. The gate checks STRUCTURE — frontend-accepted, `sh -n`-clean,
+re-emit is a fixed point — over the WHOLE tracked corpus; EXECUTED
+round-trips with pinned stdout cover the curated demo subset in
+`crates/xpile/tests/shell_diff_exec.rs`.
+
+The bashrs merger shipped early — `crates/bashrs-frontend/`
 and `crates/bashrs-backend/` exist as workspace members alongside
 `crates/depyler-frontend/` etc. as of v0.1.0 (PMAT-037..058 +
 PMAT-085..092 + PMAT-119 polish; see

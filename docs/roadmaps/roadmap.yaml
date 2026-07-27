@@ -17517,3 +17517,68 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1396
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1396: [honesty/docs] CLAUDE.md opened its shell-policy section claiming
+    xpile "has zero `.sh` / `.bash` / `.zsh` / `Makefile` / `Dockerfile` files" while
+    11 `.sh` files were tracked and the same section named one of them by filename
+    89 lines later — false for 71 days, and the bashrs-gate policy was CONDITIONED
+    on that count.'
+  description: 'REPRO at 760fe1ed: `git show origin/main:CLAUDE.md | sed -n ''38p''`
+    prints the zero-artifact sentence; `git ls-files | grep -cE ''\.(sh|bash|zsh)$''`
+    prints 11; `grep -n ''bashrs_realistic_demo.sh'' CLAUDE.md` prints line 127. The
+    Makefile/Dockerfile half of the sentence was and remains TRUE.
+
+
+    ARCHAEOLOGY: written by da2cfff0 2026-05-17 11:19:33, true at the time; e63b75f5
+    (#83, PMAT-052) added the first .sh at 19:33:05 the SAME DAY. The severity is not
+    the wrong number — CLAUDE.md is the file every agent session loads first, and the
+    whole "don''t introduce shell artifacts without routing through bashrs" policy was
+    CONDITIONED on that count, so the policy''s premise had stopped holding while the
+    policy read as satisfied.
+
+
+    ** FIX: state the INVARIANT, never a cardinality. Restating "11" reproduces the
+    defect in a smaller font (the count grew by three on 2026-07-27 alone). CLAUDE.md
+    now says: zero tracked Makefile/Dockerfile, and every tracked shell artifact is a
+    gated fixture/example under crates/xpile/{tests/fixtures,examples/inputs} that
+    round-trips through bashrs-frontend -> bashrs-backend with an idempotent emit.
+
+
+    ** GATE (NEW FILE, not a gate_touch and not a witness_floor touch):
+    crates/xpile/tests/shell_artifact_policy_witness.rs, XPILE-SHELLPOLICY-001. It
+    re-derives the corpus from `git ls-files` every run and hard-codes no count.
+    Asserts (1) zero tracked Makefile/Dockerfile/*.mk, (2) every tracked
+    .sh/.bash/.zsh under a gated prefix, (3) each accepted by bashrs-frontend, (4) the
+    emitted shell `sh -n`-clean, (5) re-emit byte-identical — C-BASHRS-POSIX-IDEMPOTENCE
+    over the whole corpus rather than a curated list, and (6) CLAUDE.md no longer
+    carries the falsified sentence and names the gate. RED-THEN-GREEN, all four tests:
+    a tracked Makefile, an ungated root-level .sh, a here-doc fixture the frontend
+    refuses (PMAT-1377), and the reverted doc sentence each red exactly one test.
+
+
+    ** SCOPE STATED HONESTLY: the gate checks STRUCTURE, not execution. Execution
+    equivalence WAS measured over all 11 tracked artifacts while writing this slice
+    (source vs emitted: identical stdout and exit for every one, and emit idempotent
+    for every one), but auto-enumeration PLUS auto-execution would make the REQUIRED
+    workspace-test job run whatever .sh a future change happens to track — a worse
+    hazard than the one being closed. Executed round-trips with pinned stdout remain
+    in crates/xpile/tests/shell_diff_exec.rs over the curated demo subset, and
+    CLAUDE.md states that split and no more.
+
+
+    ** NON-VACUITY: assertion 1 is a NEGATIVE over an enumeration, the classic shape
+    that passes for free when the enumeration returns nothing. Every test first
+    requires the `git ls-files` output to contain a known-tracked anchor (Cargo.toml),
+    and the corpus test requires the shell corpus to be non-empty; a missing git skips
+    loudly with a reason.'
+  status: done
+  priority: medium
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

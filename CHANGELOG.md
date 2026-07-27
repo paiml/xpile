@@ -9,6 +9,55 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`CLAUDE.md` — the file every agent session in this repo loads first —
+  opened its shell-policy section with a claim the same file contradicted
+  89 lines later** (PMAT-1396):
+
+  ```console
+  $ git show origin/main:CLAUDE.md | sed -n '38p'
+  xpile currently has zero `.sh` / `.bash` / `.zsh` / `Makefile` /
+  $ git ls-files | grep -cE '\.(sh|bash|zsh)$'
+  11
+  $ grep -n 'bashrs_realistic_demo.sh' CLAUDE.md
+  127:   Bashrs-backend round-trips through `bashrs_realistic_demo.sh`
+  ```
+
+  The sentence was written by `da2cfff0` on 2026-05-17 11:19:33 and was true
+  then; `e63b75f5` (#83, PMAT-052) added the first `.sh` at 19:33:05 **the
+  same day**. It stayed false for 71 days. What made it worth a slice is not
+  the wrong number: the whole "don't introduce shell artifacts without
+  routing through bashrs" policy was *conditioned* on that number, so the
+  policy's own premise had quietly stopped holding while the policy read as
+  satisfied.
+
+  **Restating the count would reproduce the defect in a smaller font** — it
+  grew by three on 2026-07-27 alone. The corrected text states the invariant
+  instead, and the invariant is now enforced rather than asserted by the new
+  `crates/xpile/tests/shell_artifact_policy_witness.rs`
+  (XPILE-SHELLPOLICY-001), which re-derives the corpus from `git ls-files`
+  on every run and hard-codes no cardinality anywhere. It asserts: zero
+  tracked `Makefile`/`Dockerfile`; every tracked `.sh`/`.bash`/`.zsh` under
+  `crates/xpile/tests/fixtures/` or `crates/xpile/examples/inputs/`; each one
+  accepted by bashrs-frontend; the emitted shell `sh -n`-clean; and re-emit a
+  byte-identical fixed point (`C-BASHRS-POSIX-IDEMPOTENCE` over the corpus,
+  not over a curated list someone must remember to extend). All four
+  assertions were driven red-then-green: a tracked `Makefile`, an ungated
+  root-level `.sh`, a here-doc fixture the frontend refuses (PMAT-1377), and
+  the reverted doc sentence each red exactly one test.
+
+  **Scope stated honestly.** The gate checks *structure*, not execution. It
+  does not run the artifacts, even though execution equivalence was measured
+  to hold for all 11 while writing this — auto-enumeration plus
+  auto-execution would have the required `workspace-test` job run whatever
+  `.sh` a future change happens to track, a worse hazard than the one being
+  closed. Executed round-trips with pinned stdout stay in
+  `crates/xpile/tests/shell_diff_exec.rs` over the curated demo subset, and
+  `CLAUDE.md` now says exactly that split and no more. A negative over an
+  enumeration passes for free when the enumeration returns nothing, so every
+  test first requires the file list to contain a known-tracked anchor and the
+  corpus test requires the corpus to be non-empty; a missing `git` skips
+  loudly rather than reporting a checkmark it did not earn.
+
 - **`--target rust` on a C source exited 0 emitting Rust that `rustc`
   REJECTS — an integer literal outside its declared type's range**
   (PMAT-1399). The `--target rust` dual of PMAT-1395, found by that slice's
