@@ -3,10 +3,17 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-26 (v0.1.617 SHIPPED 21:18 — tag ccb95a04, 31/31 crates live, 108 commits, 1225-line
-  CHANGELOG. Re-slated for v0.1.618 (Fri 2026-07-31) by a 6-agent EV workflow that re-verified every premise
-  against the live tree. STANDING EV RULE: a fix converting a SILENT WRONG ANSWER into an honest refusal
-  outranks new capability.)'
+updated: '2026-07-27 (v0.1.617 shipped 2026-07-26 21:18, tag ccb95a04, 31/31 crates live; toward v0.1.618
+  Fri 2026-07-31. The ranked slate DRAINED overnight — 24 commits, including a self-directed HONESTY
+  SWEEP that found 9 silent-wrong / unmeasured-claim defects across wasm/rust/C/shell/ruchy/audit/quorum/hybrid
+  (PMAT-1379..1388, all SHIPPED). EXTENDED 2026-07-27 by PMAT-1397: a 30-agent hunt over the surfaces
+  that sweep never touched (the spirv/wgsl/lean/latex/ptx/forjar/mcp backends, the six frontends, every
+  gate, and docs-vs-tree), with EVERY finding attacked by an independent skeptic defaulting to REFUTED;
+  findings that turned out to be honest refusals mis-reported as silent wrong answers were DROPPED rather
+  than scheduled. That hunt''s R1 — `--target spirv` emitting a BYTE-IDENTICAL canned saxpy for EVERY
+  input at rc=0 — was picked up and SHIPPED as PMAT-1388 before this extension landed, so the extension
+  slate proper is PMAT-1389..1396. STANDING EV RULE: a fix converting a SILENT WRONG ANSWER into an honest
+  refusal outranks new capability.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -1510,6 +1517,285 @@ queue:
     Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
     crates/*/src or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit,
     witness-floor TOUCH 2); 2026-07-31 -> PMAT-1374 (publish).'
+- id: PMAT-1389
+  status: open
+  ev_rank: R2
+  gate_touch: null
+  date: '2026-07-27'
+  title: positional-only parameters (`/`) are SILENTLY DELETED from the signature — the caller's positional
+    args shift left and rust/wasm/lean/ruchy all return a different answer than CPython
+  notes: "Best EV-per-byte in the sweep: a ONE-PREDICATE edit that kills a clean-compiling,\ncleanly-EXECUTING\
+    \ wrong answer on FOUR backends from a single frontend hole.\nSHARPENED REPRO (I re-ran it at f74ebe61;\
+    \ the DEFAULTED variant is the load-bearing one):\n  D=$(mktemp -d); cd $D\n  printf 'def f(a: int,\
+    \ /, b: int = 2) -> int:\\n    return b\\n\\ndef run() -> int:\\n    return f(9)\\n' > m.py\n  python3\
+    \ -c \"import sys;sys.path.insert(0,'$D');import m;print(m.run())\"     # -> 2\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n\
+    \  $X transpile $D/m.py --target rust --contracts off > m.rs 2>m.err\n  echo \"rc=$? stderr=$(wc -c\
+    \ <m.err)\"                                          # -> rc=0 stderr=0\n  cat m.rs   # -> pub fn\
+    \ f(b: i64) -> i64 { b }   <- `a` DELETED\n             #    pub fn run() -> i64 { f(9i64) } <- 9\
+    \ re-binds to `b`\n  { cat m.rs; echo 'fn main(){ println!(\"{}\", run()); }'; } > mf.rs\n  rustc\
+    \ --edition 2021 mf.rs --out-dir od && ./od/mf                           # -> 9   (python3: 2)\nROOT\
+    \ CAUSE: crates/depyler-frontend/src/lib.rs:6033 guards `kwonlyargs`/`kwarg` but NOT\n`posonlyargs`;\
+    \ the param loop at :6059 iterates `f.args.args` and `f.args.posonlyargs` is never\nread for module-level\
+    \ functions.\nFIX (S): extend the :6033 disjunction with `|| !f.args.posonlyargs.is_empty()` and reuse\
+    \ the\nwording of the nested-fn refusal that ALREADY EXISTS one screen away at lib.rs:16095.\nSCOPE\
+    \ BOUND (verified, encode as tests): nested fn with `/` already refuses (:16095); lambda\nwith `/`\
+    \ already refuses (:16287); a class method accidentally refuses (`self` lands in\nposonlyargs -> \"\
+    has no `self` first parameter\"). ONLY module-level functions leak.\nTRAP: `*args` is handled CORRECTLY\
+    \ today (`def total(*args: int)` -> `pub fn total(args: Vec<i64>)`,\npython3 and the lowered form\
+    \ both give 6). Do NOT touch the vararg path.\nACCEPTANCE:\n  $X transpile $D/m.py --target rust;\
+    \ echo $?          # -> 1, message names positional-only `/`\n  for t in wasm lean ruchy; do $X transpile\
+    \ $D/m.py --target $t; echo \"$t=$?\"; done   # all 1\n  command cargo test -p depyler-frontend &&\
+    \ command cargo test -p xpile --test transpile_e2e\n"
+- id: PMAT-1390
+  status: open
+  ev_rank: R3
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`xpile attestations` counts a roadmap-PREAMBLE mention as a WORK ITEM (69 where 68 exist, prints
+    a nameless `- ` bullet, ships `""` in JSON) AND emits INVALID JSON for a quoted id'
+  notes: "TWO defects, ONE function family, ONE file, ONE PR — do not split.\nThe PMAT-1385/1386 shape\
+    \ exactly: a reporter printing a number it did not measure.\nSHARPENED REPRO A — the phantom is the\
+    \ ONLY attester (I re-ran it; 2 files, 5 lines, exit 0):\n  D=$(mktemp -d); mkdir -p $D/contracts\n\
+    \  printf 'metadata:\\n  id: C-FOO\\n' > $D/contracts/foo.yaml\n  printf 'strategic_goals:\\n  note:\
+    \ mentions C-FOO in the preamble\\nroadmap:\\n- id: PMAT-1\\n  title: unrelated\\n' > $D/roadmap.yaml\n\
+    \  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  $X attestations --roadmap $D/roadmap.yaml --contracts-dir\
+    \ $D/contracts; echo \"rc=$?\"\n  # OBSERVED rc=0:  \"C-FOO   1 mentions across  1 work item(s)\"\
+    \ + a bare \"      - \" bullet\n  #                 \"totals: 1/1 contracts attested\"\n  # REFERENCE:\
+    \ ZERO work items mention C-FOO.\nLIVE TREE: `$X attestations | sed -n '279p'` -> \"C-PY-INT-ARITH\
+    \  87 mentions across 69 work item(s)\";\nindependent reference via a REAL yaml parser (not grep)\
+    \ ->\n  python3 -c \"import yaml; d=yaml.safe_load(open('docs/roadmaps/roadmap.yaml')); print(len([i\
+    \ for i in d['roadmap'] if 'C-PY-INT-ARITH' in yaml.safe_dump(i)]))\"\n  -> 68.  Same off-by-one:\
+    \ C-PY-FLOAT-ARITH 11 vs 10, C-XLATE-PY-CLASS-TO-STRUCT 5 vs 4.\n  `$X attestations | grep -c '^ \
+    \     - $'` -> 3 bare bullets.\nSHARPENED REPRO B — INVALID JSON with NO exotic filename (content-driven,\
+    \ verified):\n  printf 'roadmap:\\n- id: \"P\"\\n  c: C-FOO\\n' > $D/min.yaml\n  $X attestations --roadmap\
+    \ $D/min.yaml --contracts-dir $D/contracts --json > $D/m.json; echo \"rc=$?\"  # 0\n  grep -o '\"\
+    work_item\":\"[^,]*' $D/m.json      # -> \"work_item\":\"\"P\"\"\n  python3 -c \"import json;json.load(open('$D/m.json'))\"\
+    \   # -> JSONDecodeError\nROOT CAUSES (crates/xpile/src/main.rs):\n  (a) :1826 `scan_roadmap_for_id`\
+    \ starts `current_item` as `String::new()` and only reassigns on a\n      column-0 `- id: ` line,\
+    \ so every mention in the `strategic_goals` preamble (lines 1..189;\n      `roadmap:` is 190, first\
+    \ `- id:` is 191) is attributed to work item `\"\"`, which both printers\n      fold into the unique-work-item\
+    \ BTreeSet (:1861-1869 text, :1919-1924 JSON).\n  (b) :1894-1948 hand-rolls JSON and routes ONLY `snippet`\
+    \ through the `escape_json` that already\n      exists at :1954. Raw: `roadmap_path` (:1908-1912),\
+    \ `work_items` (:1919), `work_item` (:1926),\n      `c.id` (:1934), `unattested` (:1943).\n  (c) :1830\
+    \ takes the id as `line.strip_prefix(\"- id: \")` VERBATIM, unlike the sibling\n      `extract_metadata_id`\
+    \ at :1812 which does `.trim_matches('\"')`.\nFIX (S): skip a mention while `current_item.is_empty()`\
+    \ (or bucket preamble mentions under an\nexplicit \"(preamble — not a work item)\" line that does\
+    \ NOT count); route all five strings through\n`escape_json`; give :1830 the same `.trim_matches('\"\
+    ')`.\nTRAP: the existing unit test at main.rs:2004 uses a fixture that STARTS at `roadmap:` and therefore\n\
+    cannot catch (a) — the new test's fixture MUST have a preamble mentioning the id.\nHONEST SCOPE (skeptic's\
+    \ deflation, keep it in the CHANGELOG): `xpile quorum` derives Extrinsic from\n`scan_roadmap_for_id(...).len()`\
+    \ (mention COUNT, main.rs:2152), which this does NOT perturb, and no\nlive contract is attested ONLY\
+    \ by the phantom — nothing flips attested/unattested today.\nACCEPTANCE:\n  repro A -> \"0 work item(s)\"\
+    \ (or an explicit preamble bucket), no bare `- ` bullet, no `\"\"` in JSON\n  repro B -> `python3\
+    \ -c \"import json;json.load(...)\"` exits 0\n  $X attestations | grep -c '^      - $'   # -> 0\n\
+    \  $X attestations --json | python3 -c \"import json,sys;json.load(sys.stdin);print('VALID')\"\n"
+- id: PMAT-1391
+  status: open
+  ev_rank: R4
+  gate_touch: null
+  date: '2026-07-28'
+  title: '`--target wgsl` exits 0 emitting WGSL the repo''s OWN `naga_validate_wgsl` REJECTS — sanitize
+    the `__`-reserved synthetic identifiers AND wire the validator into `lower()` so the class cannot
+    recur'
+  notes: "TWO reported findings, ONE slice: the identifier family and the recursion case are BOTH caught\
+    \ by\nthe same wire-in, which I PROVED by executing the repo's own exported gate.\nMEASURED with a\
+    \ harness built against `xpile_wgsl_codegen::naga_validate_wgsl` (naga 29.0.3, the\nCargo.lock pin).\
+    \ All four probes, xpile rc=0 / stderr 0 bytes in every case:\n  for i in range(1)      -> REPO-GATE-REJECT:\
+    \ Identifier starts with a reserved prefix: `__forc0`\n  for ... else           -> REPO-GATE-REJECT:\
+    \ Identifier starts with a reserved prefix: `__broke0`\n  def f(n): return f(n)  -> REPO-GATE-REJECT:\
+    \ declaration of `f` is recursive\n  while-loop accumulator -> REPO-GATE-OK        <- the lane is\
+    \ otherwise SOUND; this is a guard,\n                                                   not a rewrite\n\
+    Reproduce the harness (`cargo` is a shell FUNCTION — `command cargo` is required):\n  V=$(mktemp -d)/v;\
+    \ mkdir -p $V/src\n  printf '[package]\\nname=\"v\"\\nversion=\"0.0.0\"\\nedition=\"2021\"\\n[dependencies]\\\
+    nxpile-wgsl-codegen = { path = \"/home/noah/src/xpile/crates/xpile-wgsl-codegen\" }\\n[workspace]\\\
+    n' > $V/Cargo.toml\n  cat > $V/src/main.rs <<'EOF'\n  use std::io::Read;\n  fn main(){let mut s=String::new();std::io::stdin().read_to_string(&mut\
+    \ s).unwrap();\n    match xpile_wgsl_codegen::naga_validate_wgsl(&s){Ok(())=>println!(\"REPO-GATE-OK\"\
+    ),\n    Err(e)=>{println!(\"REPO-GATE-REJECT: {e}\");std::process::exit(2);}}}\n  EOF\n  (cd $V &&\
+    \ command cargo build --quiet --target-dir $V/t)\nORDER IS LOAD-BEARING — SANITIZER FIRST, THEN WIRE-IN.\
+    \ Wiring the validator in ALONE turns every\n`for` loop into a refusal and REDS an existing test:\n\
+    \  crates/xpile/tests/transpile_e2e.rs:19906 `transpile_loop_var_leak_range_wasm_traps_wgsl_clean`\n\
+    \  asserts `wgsl.status.success()` AND `wgsl_src.contains(\"fn last_i(\") && ... (\"loop {\")` on\n\
+    \  fixtures/loop_var_leak_range.py. I emitted it: the WGSL contains `var __forc0` and\n  `let __forstop1`\
+    \ and the repo gate REJECTS it. Its doc comment claims WGSL \"executes exactly on\n  every non-empty\
+    \ input\" — that premise is FALSE and the CHANGELOG should say so.\n  A user-identifier-preserving\
+    \ sanitizer keeps BOTH assertions green (`fn last_i(` and `loop {`\n  survive), so land the sanitizer\
+    \ in the SAME commit as the wire-in.\nFIX (M): a WGSL identifier-mangling helper applied at EVERY\
+    \ name-emission site in the 1672-line\ncrates/xpile-wgsl-codegen/src/wgsl_emit.rs — var decls, reads,\
+    \ writes, params, and the module-scope\n`<fn>_<param>` storage-buffer binding names — plus a collision\
+    \ rule so a mangled name cannot alias a\nuser identifier (a user param literally named `__x` is EQUALLY\
+    \ illegal, so sanitizing only the\nfrontend's synthetics is an incomplete fix). Then call the already-exported\
+    \ `naga_validate_wgsl`\n(lib.rs:38) at the end of `RealWgslEmitter::try_emit` / `WgslBackend::lower`\
+    \ (lib.rs:108) and map\n`NagaValidationError` -> `BackendError::Lower`. Recursion then becomes an\
+    \ HONEST refusal.\nTRAP 1: do NOT change the synthetic names in crates/depyler-frontend/src/lib.rs:401/439\
+    \ — `__forc`,\n`__forstop`, `__broke`, `__fe`, `__feset`, `__unpack`, `__augi` are correct for the\
+    \ Rust/WASM lanes.\nMangle at the WGSL emission boundary only. (`__fe`/`__feset` are unreachable today\
+    \ only because\n`for x in xs:` is refused — they surface the moment the subset widens.)\nTRAP 2: the\
+    \ module doc at wgsl_emit.rs:13 already CLAIMS \"never wrong code\" and :55-65 already\nCLAIMS \"\
+    Emitted WGSL is checked by `naga_validate_wgsl`\". Both are false on the production path\ntoday; the\
+    \ commit makes them true — do not add a third claim.\nTRAP 3: `--contracts off` changes nothing (verified).\
+    \ Do not chase the citation.\nACCEPTANCE:\n  every probe above -> REPO-GATE-OK, or xpile rc=1 with\
+    \ a construct-naming message\n  command cargo test -p xpile-wgsl-codegen && command cargo test -p\
+    \ xpile --test transpile_e2e\n  (the 19906 test must stay GREEN, not be deleted)\n"
+- id: PMAT-1392
+  status: open
+  ev_rank: R5
+  gate_touch: null
+  date: '2026-07-28'
+  title: WAT lift folds EVERY nonzero `i32.const` to `true` — `i32.const 2` round-trips to `i32.const
+    1`, valid WAT, wrong value, exit 0 on every leg
+  notes: "SHARPENED REPRO (I re-ran it end to end; one line of WAT):\n  D=$(mktemp -d); cd $D\n  printf\
+    \ '(module (func $f (result i32) i32.const 2) (export \"f\" (func $f)))\\n' > m.wat\n  wat2wasm m.wat\
+    \ -o m.wasm && wasm-interp --run-all-exports m.wasm; echo \"REF=$?\"   # f() => i32:2, 0\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n\
+    \  $X transpile $D/m.wat --target wasm > rt.wat; echo \"XP=$?\"                        # 0\n  wat2wasm\
+    \ rt.wat -o rt.wasm && wasm-interp --run-all-exports rt.wasm; echo \"RUN=$?\" # f() => i32:1, 0\n\
+    DIFFERENTIAL: reference 2, xpile 1, exit 0 on ALL THREE legs, and the emitted WAT is VALID —\nwat2wasm\
+    \ ACCEPTS it, so nothing downstream catches the corruption. `i32.const -5` (reference\n4294967291)\
+    \ likewise becomes 1.\nCONTRAST — every neighbouring out-of-image construct ALREADY refuses at exit\
+    \ 1 with a precise\n\"outside the lift subset\" message: `i32.add`, `i32.div_s`, `i32.popcnt`, `drop`,\
+    \ `(memory 1)`.\n`i32.const` is the ONE unguarded hole in an otherwise strict lift.\nFIX (S): crates/xpile-wasm-frontend/src/lib.rs\
+    \ — THREE code-identical sites, not one:\n  :557 (straight-line body), :877 (loop condition), :977\
+    \ (loop body), all\n  `stack.push(Expr::LitBool(v != 0));`. Guard with `v == 0 || v == 1`, else return\n\
+    \  `FrontendError::Lower` reusing the \"outside the lift subset\" phrasing already used 5x in the\
+    \ file.\n  Best as one shared helper called from all three.\nSCOPE BOUNDS (measured, put them in the\
+    \ CHANGELOG — do not over-claim):\n  * value FLOW is fine: `(func $ident (param $a i32) (result i32)\
+    \ local.get $a)` round-trips\n    value-preserving. The wasm-leg corruption is EXACTLY `i32.const\
+    \ N` for N not in {0,1}.\n  * xpile's own emit never puts `i32.const N` (N not in {0,1}) in the lift-reachable\
+    \ subset, so the\n    self-round-trip fixed point is NOT broken. The defect is confined to hand-written\
+    \ / third-party\n    `.wat` — which IS an advertised frontend (main.rs:1236 `\"wasm\" | \"wat\"`).\n\
+    \  * `i64` and `f64` lift CORRECTLY today; do not touch them.\nOPTIONAL SECOND HALF (say so explicitly\
+    \ if you skip it): the unconditional `\"i32\" => Ok(Type::Bool)`\nat :331 makes EVERY i32 param/result\
+    \ lift as `bool` on `--target rust`\n(`pub fn ident(a: bool) -> bool`). That is a TYPE corruption,\
+    \ broader than the const fold.\nTRAP: no existing test asserts the current fold (`grep -c 'LitBool(v\
+    \ != 0)'` -> 3, all product code),\nso nothing needs unwinding.\nACCEPTANCE:\n  $X transpile $D/m.wat\
+    \ --target wasm; echo $?    # -> 1, message names `i32.const 2`\n  a 0/1 module still round-trips\
+    \ at rc=0; add a refusal test AND a round-trip test\n  command cargo test -p xpile-wasm-frontend\n"
+- id: PMAT-1393
+  status: open
+  ev_rank: R6
+  gate_touch: null
+  date: '2026-07-28'
+  title: README.md publishes a FABRICATED `$ xpile quorum` transcript (15/20) that the shipped binary
+    contradicts (26/9) four lines after telling you to run it; contracts/README.md is stuck at 12 of 35
+    contracts — both land on crates.io Friday
+  notes: "DOC-ONLY. Freeze-legal (docs are permitted after Wed 18:00), but land it BEFORE the Thursday\
+    \ tag so\nthe crates.io / GitHub landing page is not false at publish.\nSHARPENED REPRO (I re-ran\
+    \ the tool leg):\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  grep -n 'totals: 15 QUORUM' README.md\n\
+    \  #  151:  totals: 15 QUORUM, 20 PARTIAL, 0 UNVERIFIED (35 contracts total)\n  $X quorum | tail -2\
+    \                       # totals: 26 QUORUM, 9 PARTIAL, 0 UNVERIFIED (35 total)\n  # corroborate the\
+    \ TOOL against its own rows, do not take the totals line on faith:\n  $X quorum > /tmp/q.txt\n  grep\
+    \ -c 'QUORUM *$' /tmp/q.txt            # 26\n  grep -c 'PARTIAL *$' /tmp/q.txt           # 9\n  ls\
+    \ contracts/*.yaml | wc -l               # 35 == 26+9\ncontracts/README.md is FOUR separate falsehoods:\n\
+    \  :11 \"contract substrate (12 contracts at v0.1.0)\"   -> 35 contracts, workspace version 0.1.617\n\
+    \  :18 \"**12 contracts, 100% at §14.4 QUORUM.**\"        -> 74.3% (9 PARTIAL)\n  :18 stratum prose\
+    \ is STRUCTURALLY wrong, not just stale: it says the non-four-stratum contracts\n      reach QUORUM\
+    \ via \"Semantic + Symbolic + Extrinsic\", but live C-COMPILE-RUST-TO-WASM is\n      Sym 0 / Run 113\
+    \ — it reaches QUORUM through RUNTIME.  (`grep C-COMPILE-RUST-TO-WASM /tmp/q.txt`)\n  :90 \"12 of\
+    \ 12 contracts at Bronze\"; the layer table has 12 rows (`grep -c '^| [0-9]'`).\nFIX (doc-only this\
+    \ window): retire the README.md:151 transcript in favour of the DERIVE COMMAND\n(the CURRENT.md doctrine\
+    \ — publish the command, not a frozen number); regenerate the\ncontracts/README.md layer table to\
+    \ 35 rows; rewrite the :18 stratum prose from the live\n`xpile quorum` rows; correct \"v0.1.0\" to\
+    \ the workspace version.\nTRAP 1 — DO NOT TOUCH crates/xpile/tests/claims_drift.rs THIS WINDOW. Widening\n\
+    `current_md_carries_no_bare_derived_counts` (:558, scoped to `read(\"docs/status/CURRENT.md\")`) from\n\
+    one path to a file list is the DURABLE fix and it is a GATE TOUCH; this window's serial chain is\n\
+    FULL (#1 PMAT-1372, #2 PMAT-1356, #3 PMAT-1373 on Thursday) and PMAT-1373's ordinal is pinned.\nSeeded\
+    \ for 0.1.619. `grep -rln 'contracts/README' crates .github` returns NOTHING today.\nTRAP 2: the sibling\
+    \ regression pin at claims_drift.rs:605 already lists (\"12 contracts\",\n\"35 contracts\") as a KNOWN\
+    \ stale claim for CURRENT.md — the identical string is live and ungated one\ndirectory over. Do not\
+    \ \"fix\" it by editing that pin.\nTRAP 3: this is NOT a duplicate of PMAT-1386. `git show 903d7aab^:README.md`\
+    \ proves 15/20 predates\nthat fix; 26 was the correct repo-root answer both before and after. Stale\
+    \ from da150d15 (#1809);\ncontracts/README.md untouched since ee3c1e3f (#115).\nACCEPTANCE: no number\
+    \ in README.md or contracts/README.md that `xpile quorum` / `ls contracts/*.yaml`\ncontradicts. Re-derive\
+    \ with the commands above; do NOT copy the figures in this note.\n"
+- id: PMAT-1394
+  status: open
+  ev_rank: R7
+  gate_touch: null
+  date: '2026-07-29'
+  title: 'the LEAN lane — the repo''s SEMANTIC-stratum oracle — silently returns a value for division
+    by zero: `7 // 0` elaborates to `0`, `7 % 0` to `7`, `1.0 / 0.0` to `inf`, all at exit 0'
+  notes: "LAST src day before the Wed 18:00 HARD FREEZE. ABORT RULE: if this is not MERGED by Wed 16:00,\n\
+    drop it to 0.1.619 rather than rushing a semantic-oracle change into a freeze.\nSHARPENED REPRO (I\
+    \ re-ran it against real lean 4.15.0; a LITERAL zero, no runtime parameter needed):\n  D=$(mktemp\
+    \ -d); printf 'def f() -> int:\\n    return 7 // 0\\n' > $D/z.py\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n\
+    \  $X transpile $D/z.py --target lean --contracts off > $D/z.lean; echo \"xpile=$?\"   # 0\n  cat\
+    \ $D/z.lean            # def f : Int := (Int.fdiv (7: Int) (0: Int))\n  printf '\\n#eval f\\n' >>\
+    \ $D/z.lean\n  lean $D/z.lean; echo \"lean=$?\"                                                  \
+    \   # prints 0, rc 0\n  python3 -c \"exec(open('$D/z.py').read()); print(f())\"                  \
+    \            # ZeroDivisionError\nOther two legs, same shape: `a % b` -> `(Int.fmod a b)`, `#eval\
+    \ f 7 0` => 7;\n`a / 0.0` -> `(a / (0: Float))`, `#eval f 1.0` => inf.\nCONTRAST — the SAME meta-HIR\
+    \ through `--target rust` gets it right and says so (I re-ran it):\n  $X transpile $D/z.py --target\
+    \ rust --contracts off | grep panic\n  -> if __fb == 0 { panic!(\"xpile: ZeroDivisionError: integer\
+    \ division or modulo by zero\"); }\nDECISIVE COROBORATION — the lane already refuses exception machinery,\
+    \ so a refusal here is\nCONSISTENT with its own posture: wrapping the same expression in `try/except\
+    \ ZeroDivisionError`\ngives rc=1, \"Python `try`/`except` lowers to Rust `catch_unwind` ... with no\
+    \ Lean counterpart\".\nIt refuses the HANDLER while silently miscompiling the RAISER.\n** PREFER THE\
+    \ REFUSAL, NOT THE PANIC GUARD. Measured: Lean `panic!` does NOT give a non-zero exit —\na failing\
+    \ `assert` lowers to `panic! \"xpile: assertion failed\"`, prints PANIC to stderr, returns the\ndefault\
+    \ (0), and `lean` STILL exits 0. So porting the Rust guard buys a loud stderr line, not\nexit-code\
+    \ parity. A hard `BackendError::Lower` on `//`, `%` and float `/` (crates/xpile-lean-codegen/\nsrc/lib.rs:2034-2035\
+    \ plus the Float `Div` arm) is the honest, contained fix — and it changes NO\nemitted semantics, so\
+    \ contracts/lean/PyIntArith.lean and its Diamond theorem do NOT need the\n5-touchpoint sync. That\
+    \ is what keeps this slice inside a pre-freeze day.\nTRAP 1: `--contracts off` is REQUIRED for a clean\
+    \ demo. With the default `--contracts on` the\n`@[xpile_contract \"...\"]` attribute makes lean emit\
+    \ `error: unexpected token; expected ']'` and exit\n1 — a SEPARATE already-adjudicated issue (#1899)\
+    \ that MASKS this one.\nTRAP 2: a unit test at crates/xpile-lean-codegen/src/lib.rs:2182-2192 PINS\
+    \ `Int.fdiv` emission\n(\"Python `//` must use Int.fdiv (floor semantics)\"). It must be inverted\
+    \ to assert the refusal.\nTRAP 3 (checked): crates/xpile/tests/lean_elaborate_witness.rs's 6 cases\
+    \ are add / sub / lin / sq /\nis_zero / lt — NO division. The witness does NOT constrain this fix.\n\
+    ACCEPTANCE:\n  $X transpile $D/z.py --target lean --contracts off; echo $?   # -> 1, message names\
+    \ ZeroDivisionError\n  the `a % b` and float `a / 0.0` legs -> 1\n  command cargo test -p xpile-lean-codegen\
+    \ && command cargo test -p xpile --test lean_elaborate_witness\n"
+- id: PMAT-1395
+  status: open
+  ev_rank: R8
+  gate_touch: null
+  date: '2026-07-29'
+  title: decy `unsigned int` lowers to a WAT `i32` result carrying an `i64` literal — `--target wasm`
+    exits 0 emitting WAT that `wat2wasm` REJECTS (the PMAT-1378 class on a path PMAT-1378 missed)
+  notes: "NOT from the ranked survivor list — a skeptic flagged it as a bonus and I REPRODUCED it at f74ebe61.\n\
+    SHARPENED REPRO (one line of C):\n  D=$(mktemp -d); printf 'unsigned int f(void) { return 2; }\\n'\
+    \ > $D/u.c\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  $X transpile $D/u.c --target wasm > $D/u.wat;\
+    \ echo \"XP=$?\"      # -> 0\n  wat2wasm $D/u.wat -o $D/u.wasm                                   #\
+    \ -> rejects:\n  #   u.wat:48:5: error: type mismatch in implicit return, expected [i32] but got [i64]\n\
+    \  #       i64.const 2\nROOT CAUSE: crates/xpile-wasm-codegen/src/lib.rs:17992 `Type::CUInt => Ok(WatTy::I32)`\
+    \ while the\ninteger-literal lowering emits `i64.const`. PMAT-1378 added the pre-emit validation layer\
+    \ to this\ncrate but the CUInt path evidently escapes it — find out WHY before patching, because the\
+    \ answer\ndetermines whether other decy scalar ABI tokens (CLong / CDouble) have the same hole.\n\
+    FIX (S): either wrap the literal for a CUInt-typed return (`i32.wrap_i64` / emit `i32.const`\ndirectly),\
+    \ or refuse CUInt on the wasm lane with a named message. Refusal is acceptable and cheaper;\nsay which\
+    \ you chose in the CHANGELOG.\nTRAP: verify against the REAL tool, unpiped — `wat2wasm u.wat -o u.wasm;\
+    \ echo $?`. A pipe masks the\nexit code (this repo has been bitten: feedback-pipe-masks-exit-code).\n\
+    ACCEPTANCE:\n  $X transpile $D/u.c --target wasm && wat2wasm $D/u.wat -o $D/u.wasm; echo $?   # 0\
+    \ (fixed)\n  OR $X transpile $D/u.c --target wasm; echo $?                                   # 1 (refused)\n\
+    \  sweep the other decy scalar tokens (`int`, `long`, `double`, `unsigned int`) through\n  wat2wasm\
+    \ and record which lower and which refuse\n  command cargo test -p xpile-wasm-codegen && command cargo\
+    \ test -p decy-frontend\n"
+- id: PMAT-1396
+  status: open
+  ev_rank: R9
+  gate_touch: null
+  date: '2026-07-29'
+  title: CLAUDE.md:38 says xpile "has zero `.sh` / `.bash` / `.zsh` / Makefile / Dockerfile files" — 11
+    `.sh` files are tracked, and line 127 names one of them by filename
+  notes: "DOC-ONLY, one line, freeze-legal — deliberately LAST so it can land after Wed 18:00.\nLowest\
+    \ severity in the scheduled set, scheduled only because CLAUDE.md is the file EVERY agent\nsession\
+    \ in this repo loads first, and the whole bashrs-gate policy is conditioned on this count.\nREPRO:\n\
+    \  git show origin/main:CLAUDE.md | sed -n '38p'\n  git ls-files | grep -cE '\\.(sh|bash|zsh)$|(^|/)(Makefile|Dockerfile)$'\
+    \   # -> 11\n  grep -n 'bashrs_realistic_demo.sh' CLAUDE.md                             # -> 127 (self-contradiction)\n\
+    ARCHAEOLOGY: written by da2cfff0 2026-05-17 11:19:33 and TRUE then (`git ls-tree -r da2cfff0` has\
+    \ no\n.sh); e63b75f5 (#83, PMAT-052) added the first .sh at 19:33:05 the SAME DAY. False for 71 days.\n\
+    The Makefile/Dockerfile HALF of the sentence is still true — keep it.\nNEGATIVE RESULT worth preserving\
+    \ in the corrected text (I re-verified it, all 11 files):\n  for f in $(git ls-files | grep -E '\\\
+    .sh$'); do\n    /mnt/nvme-raid0/targets/xpile/debug/xpile transpile \"$f\" --target shell >/dev/null\
+    \ 2>&1 \\\n      && echo \"rc=0 $f\" || echo \"FAIL $f\"; done      # -> rc=0 for all 11, zero shredding\n\
+    So the POLICY's spirit holds; only the stated count is false. State the invariant that is actually\n\
+    true, e.g. \"xpile's only shell artifacts are 11 gated `.sh` fixtures/examples under\ncrates/xpile/{tests/fixtures,examples/inputs},\
+    \ every one of which round-trips through\nbashrs-frontend -> bashrs-backend; there are zero `Makefile`\
+    \ / `Dockerfile` files.\"\nTRAP: do NOT hard-code 11 into a test. The count grew by 3 today alone.\
+    \ If you want a gate, assert\nthe ROUND-TRIP invariant over `git ls-files | grep '\\.sh$'`, not the\
+    \ cardinality — and that would be\na NEW test file, not a gate touch. Optional; the doc fix alone\
+    \ is the slice.\nACCEPTANCE: CLAUDE.md:38 no longer contradicts CLAUDE.md:127; `pv lint contracts/`\
+    \ still clean.\n"
 - id: PMAT-1373
   status: open
   ev_rank: R1

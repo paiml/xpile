@@ -16864,3 +16864,16 @@ roadmap:
     ** No gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
     PMAT-1373).'
   status: done
+- id: PMAT-1397
+  github_issue: null
+  item_type: task
+  title: "PMAT-1397: [roadmap] v0.1.618 slate EXTENSION — 8 slices (PMAT-1389..1396) from a 30-agent honesty hunt over the surfaces the overnight sweep never touched (wgsl/lean/latex/ptx/forjar/mcp backends, the six frontends, every gate, docs-vs-tree), every finding attacked by an INDEPENDENT SKEPTIC defaulting to REFUTED. ★ CONVERGENT-DISCOVERY NOTE: the hunt's R1 — `--target spirv` emitting a BYTE-IDENTICAL 865-byte canned saxpy for EVERY input at rc=0 (reproduced by 4 skeptics AND by hand: 0-byte file, trivial int fn, unrelated float fn all md5 b2ba80a09d7803dff7d5ed76c4792b74, zero non-comment lines, while sibling WGSL refuses at rc=1) — was found INDEPENDENTLY by the autonomous cron and fixed as PMAT-1388 (#1975, with a 299-line cli_spirv_input_fidelity_witness) before this extension merged. Two independent searches converging on the same defect is evidence the EV rule is pointed correctly, not evidence of duplication. Scheduled survivors: positional-only `/` params SILENTLY DELETED from signatures (emitted rust/wasm/lean/ruchy compiles AND executes with wrong arity); `xpile attestations` counting a roadmap PREAMBLE mention as a work item + invalid JSON at rc=0 (the PMAT-1385/1386/1387 reporter shape a FOURTH time); `--target wgsl` emitting WGSL the repo's OWN naga_validate_wgsl rejects (one wire-in kills three classes); the WAT lift folding every nonzero `i32.const` to `true`; README publishing a FABRICATED `xpile quorum` transcript (15/20) four lines below the command that prints 26/9, which ships to crates.io Friday; the LEAN lane — the SEMANTIC-stratum oracle — silently returning a value for division by zero, where a proof could certify a false theorem. ZERO gate touches, ZERO witness_floor.rs touches: the gate chain is pinned by PMAT-1373's gate_touch:3 and the floor's second permitted touch this window is reserved for the release commit."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
