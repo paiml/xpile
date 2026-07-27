@@ -920,6 +920,28 @@ queue:
     \ that file. If it stays green the gate is vacuous.\nNote the old gate is green either way (WASM_FLOOR\
     \ 770 is untouched by that edit) — that\ncontrast IS the argument for this slice."
   date: '2026-07-28'
+- id: PMAT-1377
+  status: done
+  ev_rank: R1
+  title: 'VERIFY-PASS FINDING: complete the PMAT-1371 here-doc refusal — `cat<<EOF` / `cat 0<<EOF` /
+    `cat<<-EOF` still SHREDDED (SHIPPED 2026-07-27)'
+  date: '2026-07-27'
+  notes: |
+    NOT a planned queue item -- the product of an ADVERSARIAL VERIFY pass run on Day 2 after the D-pool
+    was exhausted and the only remaining OPEN items were the date-gated release pair. Recorded here so
+    the provenance is explicit: the sprint's own rule is "pick from the queue, not from judgment", and
+    this is the one sanctioned exception the queue note for PMAT-1366 named (a verify pass over
+    already-shipped 0.1.618 work), justified by the standing EV rule that converting a SILENT WRONG
+    ANSWER into an honest refusal outranks new capability.
+    FINDING: PMAT-1371's here-doc guard matched a Bare token STARTING WITH `<<`, i.e. only the
+    space-separated `cat <<EOF`. The tokenizer splits on whitespace alone, so `cat<<EOF` (attached),
+    `cat 0<<EOF` (fd-prefixed) and `cat<<-EOF` hid the operator inside a longer token and exited 0 --
+    flat, `bash -n` CLEAN and executing DIFFERENTLY; nested in a loop/if, emitting a script that did
+    not parse. Fix = `contains("<<")` with `$((` exempted so the arithmetic LEFT SHIFT survives
+    (execution-witnessed via a new fixture, not asserted). Both mutants RUN in both directions.
+    METHOD NOTE for later verify passes: the productive question was not "is the refusal correct?" but
+    "what SPELLINGS of the refused construct exist, and does the detector see each one?" A guard keyed
+    on a token PREFIX is suspect whenever the tokenizer does not split operators.
 - id: PMAT-1373
   status: open
   ev_rank: R1

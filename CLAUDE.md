@@ -73,12 +73,20 @@ TOP-LEVEL only — a `case` nested inside a loop/if body refuses (the
 contain nested loops/ifs); (c) `;&`/`;;&` (bash fall-through) is
 REFUSED (PMAT-1371), not modelled — through v0.1.617 it was SHREDDED,
 emitting a bare `&` that failed `bash -n`; (d) HERE-DOCUMENTS
-(`<<EOF`, `<<-EOF`) are REFUSED (PMAT-1371). There is no here-doc
-handling at all: the frontend trims every line and drops blank ones,
-so a here-doc body was re-tokenized as commands and reflowed — through
-v0.1.617 `cat <<EOF` over "  keep  me" exited 0, passed `bash -n`, and
-executed DIFFERENTLY from its source (whitespace collapsed, blank line
-dropped). Detection is TOKEN-level, so `echo "a << b"` still works.
+(`<<EOF`, `<<-EOF`) are REFUSED (PMAT-1371 + **PMAT-1377**). There is
+no here-doc handling at all: the frontend trims every line and drops
+blank ones, so a here-doc body was re-tokenized as commands and
+reflowed — through v0.1.617 `cat <<EOF` over "  keep  me" exited 0,
+passed `bash -n`, and executed DIFFERENTLY from its source (whitespace
+collapsed, blank line dropped). ⚠️ PMAT-1371's refusal was INCOMPLETE
+and PMAT-1377 finished it: the guard matched a token *starting with*
+`<<`, i.e. only the space-separated spelling, so `cat<<EOF` (attached),
+`cat 0<<EOF` (fd-prefixed) and `cat<<-EOF` still shredded — and nested
+in a loop/if body they emitted a script that did not even parse (the
+terminator got tab-prefixed). The scan is now `contains("<<")` over
+`Bare` tokens, with `$((…))` exempted so the arithmetic LEFT SHIFT
+`$((1<<2))` keeps working (execution-witnessed, not asserted).
+Detection is TOKEN-level, so `echo "a << b"` still works.
 Everything else refuses with a hard `FrontendError` rather than
 shredding into barewords — a claim that only became true at PMAT-1371;
 before it, the four shapes above plus a bare `&` in command position
@@ -95,7 +103,8 @@ flat-subset round-trip invariant lock-in series, PMAT-989 for the
 control-flow refusal, PMAT-1268 for `for`, PMAT-1276 for
 `while`/`until`, PMAT-1281 for recursive loop NESTING, PMAT-1283 for
 `if`/`then`/`else`, PMAT-1284 for `elif`, PMAT-1285 for `case`, and
-PMAT-1371 for the `;&`/`;;&`/here-doc/bare-`&` REFUSALS.
+PMAT-1371 for the `;&`/`;;&`/here-doc/bare-`&` REFUSALS, and PMAT-1377
+for COMPLETING the here-doc refusal (attached / fd-prefixed spellings).
 With `case`, the v0.1.0 shell CONTROL-FLOW surface is COMPLETE — only
 structural condition/pattern modelling, case-in-loop, `;&`
 fall-through, and here-documents remain for the v0.2.0 "real bashrs

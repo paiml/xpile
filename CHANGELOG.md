@@ -9,6 +9,42 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **The here-document refusal now covers the here-documents people actually
+  write** (PMAT-1377). PMAT-1371 shipped a guard that matched a `Bare` token
+  *starting with* `<<` — which is only the space-separated spelling
+  `cat <<EOF`. The v0.1.0 tokenizer splits on **whitespace alone** and does not
+  split an operator off a word, so anything glued to the operator hid inside a
+  longer token and sailed straight past. Three ordinary spellings still
+  reproduced the exact defect PMAT-1371 was written to close: `cat<<EOF`
+  (attached), `cat 0<<EOF` / `cat 1<<EOF` (explicit fd), and `cat<<-EOF` (both,
+  with tab-stripping). **Each exited 0.** Flat, the emitted script passed
+  `bash -n` *clean* and executed **differently** — a body of `"  keep  me"` /
+  `""` / `"after blank"` came back as `"keep me"` / `"after blank"`, leading and
+  internal whitespace collapsed and the blank line deleted. That is the silent
+  wrong answer, the worst disposition available. Nested inside a `for`/`if`
+  body it was worse still: `indent_body` tab-prefixed the terminator, so the
+  emitted script did not even parse (*"here-document delimited by
+  end-of-file"*). The scan is now `contains("<<")` over `Bare` tokens.
+  **The one `<<` that is not a redirection is exempted, and that exemption is
+  load-bearing:** PMAT-090 captures a whole `$((…))` arithmetic expansion as a
+  *single* `Bare` token, so a naive `contains` would have refused every left
+  shift in the language. `$((` is skipped before the operator scan, and the
+  exemption is proven by **execution** — the new `bashrs_arith_shift_demo.sh`
+  fixture round-trips and its arithmetic is evaluated by `/bin/sh`, since an
+  emit-only assertion would still pass if the operator were mangled into
+  something the shell computed differently. The assignment form `x=$((1<<2))`
+  is pinned separately because it reaches the guard by a different route (the
+  full-line tokenize trips the adjacent-bareword rule, the guard fails open,
+  and the assignment branch handles it from `value_part` alone). Escaped
+  `a\<\<b` survives too — the backslashes sit between the two `<`, so the
+  token never contains the two-character operator. **Both mutants were run**:
+  reverting to `starts_with` reds the suite (under-refusal), and dropping the
+  `$((` exemption reds it too (over-refusal), at both the unit and the CLI /
+  execution level. Found by an adversarial verify pass over already-shipped
+  0.1.618 work, not by a new failure report; `CLAUDE.md`'s bashrs scope
+  paragraph is corrected in the same commit, since it asserted the refusal was
+  complete.
+
 - **A `bool` in a `range(...)` bound now coerces to `int` instead of emitting
   Rust that rustc rejects** (PMAT-1364). Python's `bool` is a subclass of `int`
   — `True == 1`, `False == 0` — so `range(True)` is `range(1)` and

@@ -631,9 +631,39 @@ fn lower_flat_line(line: &str) -> Result<Option<Stmt>, FrontendError> {
     //
     // Detection is on TOKENS, never the raw line: `echo "a << b"`
     // round-trips CORRECTLY today, and a `line.contains("<<")` guard would
-    // regress it. Only an unquoted (`Bare`) token opening with `<<` is a
-    // redirection operator — this also covers `<<-` and the `<<` / `EOF`
-    // space-separated spelling.
+    // regress it. Only an unquoted (`Bare`) token can carry the redirection
+    // operator — a `DoubleQuoted` / `SingleQuoted` / `CommandSubst` token is
+    // literal text.
+    //
+    // PMAT-1377: the scan is `contains("<<")`, NOT `starts_with("<<")`.
+    // The `starts_with` form shipped at PMAT-1371 only saw the
+    // SPACE-SEPARATED spelling `cat <<EOF`, because the v0.1.0 tokenizer
+    // splits on whitespace ALONE — it does not split operators off a word.
+    // So three ordinary spellings walked straight past the guard and
+    // reproduced the exact defect PMAT-1371 was written to close:
+    //
+    //   * `cat<<EOF`     -> one token `cat<<EOF`  (no space before the operator)
+    //   * `cat 0<<EOF`   -> one token `0<<EOF`    (an explicit fd number)
+    //   * `cat<<-EOF`    -> one token `cat<<-EOF` (both at once)
+    //
+    // Each exited 0. Flat, the emitted script passed `bash -n` CLEAN and
+    // executed DIFFERENTLY (a body of "  keep  me" / "" / "after blank"
+    // came back as "keep me" / "after blank" — leading and internal
+    // whitespace collapsed, blank line deleted). Nested in a `for`/`if`
+    // body it was worse: `indent_body` tab-prefixed the terminator, so the
+    // emitted script did not even parse ("here-document delimited by
+    // end-of-file"). Both are witnessed below.
+    //
+    // The ONE `<<` that is not a redirection is the arithmetic LEFT SHIFT
+    // inside `$((…))`, which PMAT-090 captures VERBATIM as a single `Bare`
+    // token opening with `$((`. `echo $((1 << 2))` and the tight
+    // `$((1<<2))` both round-trip today, so that shape is exempted BEFORE
+    // the operator scan rather than being caught and refused. (The
+    // ASSIGNMENT form `x=$((1<<2))` never reaches the scan at all: the
+    // full-line tokenize trips the "adjacent to a bareword" rule and the
+    // guard fails open, exactly as designed below.) An escaped `a\<\<b`
+    // also survives — the backslashes sit between the two `<`, so the
+    // token does not contain the two-character operator.
     //
     // A tokenizer ERROR is deliberately NOT treated as a here-doc: the
     // v0.1.0 tokenizer rejects shapes that the assignment branch below
@@ -642,15 +672,18 @@ fn lower_flat_line(line: &str) -> Result<Option<Stmt>, FrontendError> {
     // paths and lets the existing code report its own, more specific error.
     if let Ok(tokens) = tokenize_line(line) {
         if let Some(op) = tokens.iter().find_map(|t| match t {
-            RawToken::Bare(s) if s.starts_with("<<") => Some(s.clone()),
+            // PMAT-1377: `$((…))` arithmetic expansion — `<<` here is a left
+            // shift, not a redirection. Skip it and keep scanning.
+            RawToken::Bare(s) if s.starts_with("$((") => None,
+            RawToken::Bare(s) if s.contains("<<") => Some(s.clone()),
             _ => None,
         }) {
             return Err(FrontendError::Parse(format!(
-                "bashrs-frontend: here-document redirection `{op}` is not modelled (v0.2.0); \
-                 refusing rather than silently rewriting the here-doc body. The frontend trims \
-                 every line and drops blank lines, so a here-doc body would round-trip with its \
-                 whitespace collapsed — a SILENT semantic change in a script that still passes \
-                 `bash -n`. Offending line `{line}`."
+                "bashrs-frontend: here-document redirection in token `{op}` is not modelled \
+                 (v0.2.0); refusing rather than silently rewriting the here-doc body. The \
+                 frontend trims every line and drops blank lines, so a here-doc body would \
+                 round-trip with its whitespace collapsed — a SILENT semantic change in a \
+                 script that still passes `bash -n`. Offending line `{line}`."
             )));
         }
     }
@@ -4005,6 +4038,86 @@ done
             .parse_and_lower(&PathBuf::from("/tmp/hdl.sh"), source)
             .expect_err("here-doc in a loop body must be REFUSED");
         assert!(format!("{err:?}").contains("here-document"));
+    }
+
+    #[test]
+    fn parse_and_lower_refuses_heredoc_attached_and_fd_prefixed_spellings() {
+        // PMAT-1377 — THE HOLE PMAT-1371 LEFT. Its guard matched a `Bare`
+        // token that STARTS WITH `<<`, i.e. only the space-separated
+        // `cat <<EOF`. The v0.1.0 tokenizer splits on WHITESPACE alone and
+        // does not split an operator off a word, so anything glued to the
+        // operator hid it inside a longer token and sailed past.
+        //
+        // Every spelling below exited 0 before this fix. The flat ones
+        // reproduced PMAT-1371's exact headline defect — `bash -n` CLEAN on
+        // the emitted script, which then ran DIFFERENTLY (a body of
+        // "  keep  me" / "" / "after blank" came back as "keep me" /
+        // "after blank"). The nested ones were worse: `indent_body`
+        // tab-prefixed the terminator, so the emitted script did not parse.
+        for (label, source) in [
+            ("attached", "cat<<EOF\n  keep  me\n\nafter blank\nEOF\n"),
+            ("fd 0", "cat 0<<EOF\n  keep  me\nEOF\n"),
+            ("fd 1", "cat 1<<EOF\nx\nEOF\n"),
+            ("attached tab-strip", "cat<<-EOF\n\tx\n\tEOF\n"),
+            (
+                "attached in a for body",
+                "for f in a b; do\n cat<<EOF\n x y\nEOF\ndone\n",
+            ),
+            (
+                "fd-prefixed in an if body",
+                "if true; then\n cat 0<<EOF\n x y\nEOF\nfi\n",
+            ),
+        ] {
+            let err = match BashrsFrontend.parse_and_lower(&PathBuf::from("/tmp/hdx.sh"), source) {
+                Err(e) => e,
+                Ok(m) => panic!(
+                    "`{label}` here-doc spelling was ACCEPTED and lowered to {} item(s) — \
+                     the PMAT-1371 guard has a hole again",
+                    m.items.len()
+                ),
+            };
+            let msg = format!("{err:?}");
+            assert!(
+                msg.contains("here-document"),
+                "`{label}` must refuse AS A HERE-DOCUMENT (a generic parse failure would \
+                 not tell the user what to do), got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_and_lower_arith_shift_is_not_a_heredoc() {
+        // PMAT-1377, the RED half of the widening. PMAT-090 captures a whole
+        // `$((…))` arithmetic expansion as ONE `Bare` token, so widening the
+        // scan from `starts_with("<<")` to `contains("<<")` put every LEFT
+        // SHIFT in the blast radius. `$((` is exempted before the scan, and
+        // these must keep lowering.
+        //
+        // The ASSIGNMENT form reaches the guard by a DIFFERENT route: the
+        // full-line tokenize trips the "adjacent to a bareword" rule, the
+        // guard fails open, and the assignment branch handles it from
+        // `value_part` alone — so it is pinned separately rather than
+        // assumed to follow from the command form.
+        use xpile_meta_hir::Item;
+        for (label, source) in [
+            ("spaced shift", "echo $((1 << 2))\n"),
+            ("tight shift", "echo $((1<<2))\n"),
+            ("right shift", "echo $((8 >> 1))\n"),
+            ("assignment-form shift", "x=$((1<<2))\necho $x\n"),
+            ("escaped angles", "echo a\\<\\<b\n"),
+            ("single-quoted", "echo 'a << b'\n"),
+        ] {
+            let module = BashrsFrontend
+                .parse_and_lower(&PathBuf::from("/tmp/ok.sh"), source)
+                .unwrap_or_else(|e| {
+                    panic!("`{label}` is NOT a here-document and must still LOWER, got: {e:?}")
+                });
+            assert!(
+                matches!(module.items.first(), Some(Item::Function(_))),
+                "`{label}` must lower to a function, got: {:?}",
+                module.items
+            );
+        }
     }
 
     #[test]
