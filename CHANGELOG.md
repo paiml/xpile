@@ -7,6 +7,40 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `--target shell` silently discarded commands inside class methods (PMAT-1406)
+
+A `subprocess.run(...)` inside a Python **class method** was dropped and the
+emitter exited **0**, writing a script whose own header claimed
+`(no commands — the module has no renderable shell statements)`. Verified
+end to end:
+
+```python
+import subprocess
+class Cleaner:
+    def wipe(self) -> None:
+        subprocess.run(["rm", "-rf", "/tmp/some-target"])
+```
+
+produced a five-line script containing no `rm`, at exit 0. A destructive
+command silently becoming a no-op is the worst instance of the
+exit-0-while-wrong class.
+
+**Root cause** (`crates/bashrs-backend/src/lib.rs`): the emit loop was
+`let Item::Function(f) = item else { continue; };`, so every non-function item
+was skipped without a word — and a Python `class` lowers to `Item::Struct`,
+whose `methods` are real `Function`s carrying exactly the `Stmt::Cmd`s this
+backend exists to emit. It survived PMAT-1383 because that slice's refusal
+lives *inside* `collect_emittable`, one level below where the item was
+dropped: the refusal was unreachable, not absent.
+
+The arm is now an **exhaustive match**. `Const`/`Enum` continue (they carry no
+statements). `Struct` runs each method body through PMAT-1383's own walker and
+**refuses**, naming the class, the method and the command count, if any command
+would be lost. Emitting them flat was rejected — it would strip the receiver
+and reorder effects, a worse answer than an error. A class whose methods hold
+no commands is not an error; refusing there would be over-broad.
+
+
 ### The default `--target lean` emit now elaborates (PMAT-1405)
 
 `--contracts on` is the CLI **default**. Under it the Lean code lane emitted
