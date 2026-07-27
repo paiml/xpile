@@ -12610,7 +12610,10 @@ fn fixture_corpus() -> PathBuf {
 /// Each host language uses the form named in
 /// `sub/contract-frontend-trait.md`'s citation grid:
 ///   * Rust + Ruchy: `// xpile-contract: C-PY-INT-ARITH`
-///   * Lean: `@[xpile_contract "C-PY-INT-ARITH"]`
+///   * Lean (CODE lane): `/-- xpile-contract: C-PY-INT-ARITH -/` — a docstring,
+///     structured AND parseable (PMAT-1405; the grid's original
+///     `@[xpile_contract "..."]` attribute is registered nowhere, so `lean`
+///     rejected the emit). The contract-RENDERING lane keeps the attribute.
 // PMAT-015 / XPILE-FALSIFY-001: validates the `xpile audit` CLI
 // surface. Runs the audit against the fixture corpus, parses both
 // text and JSON outputs, asserts the F1 metric is computed and
@@ -12923,10 +12926,17 @@ fn lean_refuses_division_by_a_divisor_it_cannot_prove_nonzero() {
 
 #[test]
 fn audit_command_supports_lean_target() {
-    // XPILE-FALSIFY-002 added Lean target support. Lean's citation
-    // form is `@[xpile_contract "..."]` (structured attribute parsed
-    // by Lean's elaborator); the audit recognises it alongside
-    // Rust/Ruchy's `// xpile-contract:` comment form.
+    // XPILE-FALSIFY-002 added Lean target support. The Lean CODE lane's
+    // citation form is a `/-- xpile-contract: ... -/` docstring (PMAT-1405 —
+    // structured, resolvable by declaration name via `Lean.findDocString?`, AND
+    // parseable; it was `@[xpile_contract "..."]`, which `lean` rejected
+    // outright); the audit recognises it alongside Rust/Ruchy's
+    // `// xpile-contract:` comment form.
+    //
+    // PMAT-1405: this test is the one that would catch `function_has_citation`'s
+    // Lean marker drifting away from the emitter. Leave the marker on the old
+    // attribute and every Lean function scores UNCITED, dropping the metric
+    // from 86.7% through the <50% falsifier floor.
     //
     // PMAT-1385: this test asserted `"f1_status":"OK"` and got it from the
     // vacuous-100% convention, because the corpus path did not exist. The Lean
@@ -13003,8 +13013,8 @@ fn arithmetic_function_emits_contract_citation_lean() {
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("@[xpile_contract \"C-PY-INT-ARITH\"]\ndef add"),
-        "expected Lean structured attribute before def, got:\n{stdout}"
+        stdout.contains("/-- xpile-contract: C-PY-INT-ARITH -/\ndef add"),
+        "expected the Lean citation docstring immediately before def, got:\n{stdout}"
     );
 }
 
@@ -13037,7 +13047,7 @@ fn while_function_citation_appears_on_helper_too_lean() {
     let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let citation = "@[xpile_contract \"C-PY-INT-ARITH\"]";
+    let citation = "/-- xpile-contract: C-PY-INT-ARITH -/";
     let count = stdout.matches(citation).count();
     assert_eq!(
         count, 2,

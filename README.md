@@ -58,13 +58,13 @@ One meta-HIR, many backends:
 
 ```bash
 $ xpile transpile factorial.py --target ruchy   # → Ruchy   (compiles to Rust)
-$ xpile transpile factorial.py --target lean    # → Lean 4  (def + @[xpile_contract] attr)
+$ xpile transpile factorial.py --target lean    # → Lean 4  (def + citation docstring)
 $ xpile transpile factorial.py --target wasm    # → native WebAssembly text
 ```
 
 ```lean
 -- --target lean
-@[xpile_contract "C-PY-INT-ARITH"]
+/-- xpile-contract: C-PY-INT-ARITH -/
 def factorial (n : Int) : Int :=
   if (n <= (1: Int)) then (1: Int) else (n * (factorial (n - (1: Int))))
 ```
@@ -72,11 +72,21 @@ def factorial (n : Int) : Int :=
 Lean's `Int` is unbounded, so the same overflow contract holds *by
 construction* — no `checked_*` needed.
 
-> **Caveat — the default Lean emit does not elaborate.** `--contracts on` is
-> the default, and `xpile_contract` is not a registered Lean attribute, so
-> `lean` rejects the output above with `unexpected token; expected ']'`. Pass
-> `--contracts off` for Lean you intend to elaborate. Lean is the only backend
-> affected: every other one cites contracts in comments.
+The citation is a Lean **docstring**, so it is structured — recoverable by
+declaration name via `Lean.findDocString? env `factorial`, not by a regex over
+the source — *and* the emit elaborates standalone, with no prelude to import.
+`crates/xpile/tests/lean_default_emit_witness.rs` measures both against `lean`
+itself (PMAT-1405).
+
+> **Fixed in 0.1.618 (PMAT-1405) — the default Lean emit used not to
+> elaborate.** Through v0.1.617 this lane emitted `@[xpile_contract "…"]`, and
+> `xpile_contract` is a registered Lean attribute nowhere, so `lean` rejected the
+> default output with `unexpected token; expected ']'` while `xpile` exited 0 —
+> the only backend whose default output its own toolchain could not read. The
+> workaround was `--contracts off`; it is no longer needed. The
+> contract-*rendering* lane (contract YAML → Lean theorem text) still uses the
+> `@[xpile_contract …]` attribute, which its governing contracts specify and
+> which is never elaborated as a live attribute.
 >
 > **Caveat — the Lean lane refuses division it cannot prove is safe (PMAT-1394).**
 > Lean is a total language, so it has no `ZeroDivisionError` to raise:

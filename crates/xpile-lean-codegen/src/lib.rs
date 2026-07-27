@@ -105,27 +105,61 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), LeanCodegenError>
     Ok(())
 }
 
-/// PMAT-011: emit Lean structured attributes for each applicable
-/// contract. `@[xpile_contract "<ID>"]` is the form named in
-/// `sub/contract-frontend-trait.md`'s citation grid — the INTENT is a
-/// structured attribute Lean's elaborator can resolve by name (rather than
-/// regex over body text).
+/// PMAT-011 / PMAT-1405: emit the applicable contracts as a Lean **docstring**
+/// attached to the declaration — `/-- xpile-contract: <ID>[, <ID>]* -/`.
 ///
-/// HONESTY CAVEAT (verified 2026-07-05 by `lean_elaborate_witness.rs` and
-/// `docs/specifications/audit-design.md` §7): `xpile_contract` is NOT actually a
-/// REGISTERED Lean attribute anywhere, so bare `lean` REJECTS the emitted
-/// attribute (`unexpected token; expected ']'`) and `--contracts on` Lean does
-/// not elaborate standalone. The `contracts/lean/*` proof modules sidestep this
-/// by mentioning `@[xpile_contract …]` only in PROSE, never as a live attribute.
-/// Registering it must happen in a SEPARATELY-IMPORTED module (an in-file
-/// `registerBuiltinAttribute` fails with `unknown attribute`), so wiring genuine
-/// Lean-native resolution is a prelude+import design task — NOT a switch to a
-/// comment, which would abandon the deliberate structured-attribute form. Until
-/// that prelude exists, `--contracts off` is the elaborate-able emit.
+/// WHY A DOCSTRING AND NOT `@[xpile_contract "<ID>"]` (PMAT-1405, 2026-07-27).
+/// The attribute form was chosen for the citation grid in
+/// `sub/contract-frontend-trait.md` because the INTENT is a *structured* form
+/// Lean's elaborator resolves BY NAME, rather than a regex over body text. That
+/// intent was never realised and the cost was paid on every default invocation:
+///
+///   * `xpile_contract` is registered as a Lean attribute NOWHERE, so `lean`
+///     rejected the emit with a PARSE error (`unexpected token; expected ']'`).
+///     `--contracts on` is the CLI DEFAULT, so `xpile transpile x.py --target
+///     lean` exited 0 writing a file its own toolchain could not read — and
+///     `--target lean` was the only backend whose default output was not
+///     consumable by the tool it targets.
+///   * The promised name resolution therefore returned NOTHING: no elaborated
+///     environment ever contained the citation, because no such file elaborated.
+///
+/// A docstring delivers the intent the attribute only promised, and does it
+/// today with no prelude:
+///
+///   * it PARSES and elaborates standalone — MEASURED, not asserted, by
+///     `crates/xpile/tests/lean_default_emit_witness.rs`, which runs `lean` on
+///     the DEFAULT (`--contracts on`) emit plus `by decide` obligations;
+///   * it is STRUCTURED and resolvable BY DECLARATION NAME out of the elaborated
+///     environment via `Lean.findDocString? env `f` — the same witness asserts
+///     that retrieval returns the citation text, so the grid's structured claim
+///     is now backed by Lean's own API rather than by a regex over the source;
+///   * the emit stays SELF-CONTAINED. The previously-planned fix (register the
+///     attribute in a separately-imported prelude — an in-file
+///     `registerBuiltinAttribute` fails) would have forced an `import` into
+///     every emitted file and cost that standalone-ness.
+///
+/// So the docstring strictly dominates both the status quo and the prelude
+/// plan, and is not the "switch to a comment" that `audit-design.md` §7 rejected
+/// — a line comment is invisible to the elaborated environment, which is exactly
+/// the property being preserved here.
+///
+/// SCOPE: this is the CODE lane (`--target lean`, meta-HIR → Lean `def`) only.
+/// The CONTRACT-RENDERING lane (`xpile-lean-contract-backend`, contract YAML →
+/// Lean theorem text) keeps `@[xpile_contract …]`: that form is specified by
+/// `contracts/xlate-rust-fn-to-lean-thm-v1.yaml` and
+/// `contracts/xpile-contract-backend-trait-v1.yaml`, and its output is never
+/// elaborated as a live attribute (`contracts/lean/*` mention it in PROSE only),
+/// so it has no parse failure to fix.
+///
+/// Lean permits at most ONE docstring per declaration — two stacked `/-- … -/`
+/// blocks are a parse error (measured) — so multiple applicable contracts are
+/// emitted as one comma-separated docstring, not one block each.
 fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), LeanCodegenError> {
-    for id in f.applicable_contracts() {
-        writeln!(out, "@[xpile_contract \"{id}\"]")?;
+    let ids = f.applicable_contracts();
+    if ids.is_empty() {
+        return Ok(());
     }
+    writeln!(out, "/-- xpile-contract: {} -/", ids.join(", "))?;
     Ok(())
 }
 

@@ -142,12 +142,21 @@ fn default_quorum_status() -> QuorumStatus {
 
 /// PMAT-956: the comment/annotation forms every backend uses to emit a
 /// `xpile-contract` citation. Rust/Ruchy/PTX/WGSL/SPIR-V use `//`, WAT uses
-/// `;;`, shell/forjar `#`, one lane `--`, and Lean the `@[xpile_contract …]`
-/// attribute. Used by [`strip_contract_citations`].
+/// `;;`, shell/forjar `#`, one lane `--`, the Lean CODE lane a docstring
+/// (`/-- xpile-contract: … -/`, PMAT-1405) and the Lean CONTRACT-RENDERING lane
+/// the `@[xpile_contract …]` attribute. Used by [`strip_contract_citations`].
+///
+/// PMAT-1405: `/-- xpile-contract` must be listed even though `-- xpile-contract`
+/// is a substring of it. [`strip_contract_citations`] cuts at the EARLIEST
+/// marker on the line and drops the line only when nothing but whitespace
+/// precedes that cut; matching `-- xpile-contract` at index 1 of
+/// `/-- xpile-contract: C-X -/` would take the INLINE branch and leave a stray
+/// `/` line behind. Pinned by `lean_docstring_citation_is_stripped_whole`.
 const CITATION_MARKERS: &[&str] = &[
     "// xpile-contract",
     ";; xpile-contract",
     "# xpile-contract",
+    "/-- xpile-contract",
     "-- xpile-contract",
     "@[xpile_contract",
 ];
@@ -649,6 +658,26 @@ mod strip_citation_tests {
     #[test]
     fn drops_lean_attribute_citation_lines() {
         let src = "@[xpile_contract \"C-PY-INT-ARITH\"]\ndef f := 1\n";
+        assert_eq!(strip_contract_citations(src), "def f := 1\n");
+    }
+
+    /// PMAT-1405: the Lean CODE lane cites via a docstring. The whole line must
+    /// go — not just the part from `-- xpile-contract` onward, which would leave
+    /// a stray `/` behind. This is the regression that the `/-- xpile-contract`
+    /// entry in `CITATION_MARKERS` exists to prevent: remove it and this test
+    /// reds with `"/\ndef f := 1"`.
+    #[test]
+    fn lean_docstring_citation_is_stripped_whole() {
+        let src = "/-- xpile-contract: C-PY-INT-ARITH -/\ndef f := 1\n";
+        assert_eq!(strip_contract_citations(src), "def f := 1\n");
+    }
+
+    /// PMAT-1405: multiple applicable contracts share ONE docstring (Lean
+    /// rejects stacked `/-- … -/` blocks), so the multi-id form must strip
+    /// whole too.
+    #[test]
+    fn lean_docstring_citation_with_multiple_ids_is_stripped_whole() {
+        let src = "/-- xpile-contract: C-PY-INT-ARITH, C-CONST-TRANSLATION -/\ndef f := 1\n";
         assert_eq!(strip_contract_citations(src), "def f := 1\n");
     }
 

@@ -2858,6 +2858,66 @@ queue:
     early each writes it locally. The cheap fix that actually works: re-read origin/main''s max id
     immediately before the first push, and treat a merge conflict in the ledger as an id-collision
     signal rather than a text conflict.'
+- id: PMAT-1405
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'The DEFAULT `--target lean` emit exited 0 writing Lean that does not PARSE —
+    `@[xpile_contract "…"]` is a registered Lean attribute NOWHERE. The only backend
+    whose default output its own toolchain could not read; documented in THREE places
+    and gated in ZERO, while the lane''s own semantic witness passed `--contracts off`.'
+  notes: 'DONE 2026-07-27. Found by an honesty HUNT after the queue drained for today
+    (PMAT-1353 merged as #1994; nothing else open with date <= 2026-07-27, and
+    PMAT-1373/1374 are date-gated to 07-30/07-31). Swept the surface PMAT-1404 left
+    open: `--emit-crate` (HONEST — refuses all 8 non-rust targets by name, emits a
+    crate that `cargo build`s and cross-builds to wasm32-wasip1), `--contracts off`
+    (HONEST — 0 citations remaining on all 6 emitting backends), unsigned C widths
+    through the GPU/WASM lanes (HONEST — CULong/CUInt refuse with a named type;
+    `--target rust` correctly emits `wrapping_*`, which IS C''s defined modular
+    semantics for unsigned). The Lean DEFAULT emit was the one that lied.
+
+
+    ** THE FIX IS A LEAN DOCSTRING and the argument matters, because
+    audit-design.md §7 had explicitly ruled out "switch to a comment" and
+    prescribed a separately-imported prelude instead. §7 weighed only TWO options;
+    the docstring is a third that dominates both — it PARSES standalone AND is
+    resolvable by declaration name via `Lean.findDocString?`, which is the exact
+    structured Lean-native resolution the attribute was chosen for and never
+    delivered (nothing registers it, so no file carrying it ever elaborated, so no
+    environment ever held it). A LINE COMMENT FAILS that retrieval — measured, not
+    argued — so this is not the rejected comment fix; and it keeps the emit
+    self-contained, which the prelude fix would have spent on a mandatory `import`.
+
+
+    ** STANDING LESSON (the reason this is a truth-work slice and not a Lean slice):
+    DISCLOSURE IS NOT A GATE. The defect was written down in three places and
+    enforced by none, and the lane''s semantic oracle passed `--contracts off`, so a
+    green 6/6 corpus certified a flag combination the default invocation never
+    takes. When a witness routes AROUND a broken path, it measures nothing about it
+    — the new witness passes NO `--contracts` flag at all, so a change to the
+    default VALUE reds too.
+
+
+    ** ALSO FOUND, second-order: the CODE lane was never contract-bound to the
+    attribute. The invariant is guarded by `config.format == LeanTheorem` and
+    neither governing contract mentions `Target::Lean`, so example 02''s "required by
+    C-XPILE-CONTRACT-BACKEND-TRAIT" was itself false. The contract-RENDERING lane is
+    untouched and keeps the attribute.
+
+
+    ** NEXT PICK: the queue again has NO open item dated <= today. PMAT-1373
+    (release commit) is 07-30 and PMAT-1374 (publish) 07-31; PMAT-1375 is the
+    0.1.619 lane, DO NOT START. HARD FREEZE is Wed 2026-07-29 18:00 local — after it
+    no merge may touch crates/*/src, contracts/*.yaml or any gate. Tue 07-28 and Wed
+    (pre-18:00) are free for another honesty hunt. UNSWEPT SURFACE LEFT BY THIS
+    SLICE: the C -> PTX direction (needs `--hardware ptx:sm_89`; every C probe here
+    stopped at "missing hardware profile" so PTX got NO coverage this slice), the
+    WGSL contract''s missing machine-readable type surface, `--emit-shims`, and the C
+    integer-literal SUFFIX forms `1U`/`1L`/`1UL`, which the C frontend REFUSES at
+    parse time ("expected Semi, found Ident(\"UL\")") — an honest refusal, but it
+    means every unsigned/long C probe must use bare literals or it measures the
+    lexer instead of the backend.'
 - id: PMAT-1373
   status: open
   ev_rank: R1

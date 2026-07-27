@@ -1732,8 +1732,8 @@ fn parse_hardware(s: Option<&str>) -> Result<Option<HwProfile>> {
 // table, run the full transpile pipeline and parse the emitted output
 // for function declarations + their immediately-preceding citation
 // comments. The metric is computed per-backend because the citation
-// syntax differs (Rust/Ruchy use `// xpile-contract:`, Lean uses
-// `@[xpile_contract "..."]`); this CLI exposes the Rust/Ruchy form
+// syntax differs (Rust/Ruchy use `// xpile-contract:`, the Lean CODE lane
+// a `/-- xpile-contract: ... -/` docstring — PMAT-1405); this CLI exposes the Rust/Ruchy form
 // since they share a regex. Lean coverage is a follow-up.
 
 #[derive(Debug, Default, Clone)]
@@ -1812,9 +1812,10 @@ impl AuditReport {
 
 fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) -> Result<()> {
     let target = parse_target(target_str)?;
-    // F1 now supports Rust, Ruchy, AND Lean — XPILE-FALSIFY-002 added
-    // Lean's `@[xpile_contract "..."]` attribute as a recognised
-    // citation form. PTX / WGSL / SPIR-V citations are XPILE-FALSIFY-003+.
+    // F1 now supports Rust, Ruchy, AND Lean — XPILE-FALSIFY-002 added the
+    // Lean citation form (PMAT-1405: a `/-- xpile-contract: ... -/` docstring,
+    // previously the unparseable `@[xpile_contract "..."]` attribute).
+    // PTX / WGSL / SPIR-V citations are XPILE-FALSIFY-003+.
     if !matches!(target, Target::Rust | Target::Ruchy | Target::Lean) {
         bail!(
             "`xpile audit` supports --target rust | ruchy | lean; {target:?} citation form not yet known — follow-up XPILE-FALSIFY-003"
@@ -1988,9 +1989,16 @@ fn walk_dir(dir: &Path, known_exts: &[&str], out: &mut Vec<PathBuf>) {
 /// preceding its declaration in `source`. Per-target signature shapes
 /// and citation forms (XPILE-FALSIFY-002 added Lean):
 ///
-///   Rust:  `// xpile-contract: <ID>`   prefix `pub fn <name>(`
-///   Ruchy: `// xpile-contract: <ID>`   prefix `fun <name>(`
-///   Lean:  `@[xpile_contract "<ID>"]`  prefix `def <name> (` / `partial def <name> (`
+///   Rust:  `// xpile-contract: <ID>`      prefix `pub fn <name>(`
+///   Ruchy: `// xpile-contract: <ID>`      prefix `fun <name>(`
+///   Lean:  `/-- xpile-contract: <ID> -/`  prefix `def <name> (` / `partial def <name> (`
+///
+/// PMAT-1405: the Lean marker was `@[xpile_contract`. The code lane now cites
+/// with a docstring, because the attribute is registered as a Lean attribute
+/// nowhere and `lean` rejected the default emit outright. This marker must move
+/// with the emitter — leaving it on the attribute would score every Lean
+/// function UNCITED and collapse the audit metric through the falsifier floor,
+/// which `audit_command_supports_lean_target` pins.
 ///
 /// Walks backward from the declaration through blank lines to allow
 /// for pretty-printer whitespace insertion. The walk stops at the
@@ -2007,7 +2015,7 @@ fn function_has_citation(source: &str, function_name: &str, target: Target) -> b
     };
     let citation_marker = match target {
         Target::Rust | Target::Ruchy => "// xpile-contract:",
-        Target::Lean => "@[xpile_contract",
+        Target::Lean => "/-- xpile-contract:",
         _ => return false,
     };
     let needle = format!("{function_name}(");
