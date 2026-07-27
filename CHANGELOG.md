@@ -7,6 +7,81 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### WASM i64 arithmetic silently wrapped where the Rust lane was honest (PMAT-1402)
+
+```python
+def overflow_mul() -> int:
+    x = 1
+    i = 0
+    while i < 64:
+        x = x * 2
+        i = i + 1
+    return x
+```
+
+| lane            | result                                        |
+|-----------------|-----------------------------------------------|
+| CPython         | `18446744073709551616`                        |
+| `--target rust` | `checked_mul(…).expect("… overflow; …")`       |
+| `--target wasm` | `i64:0` at **exit 0**                          |
+
+**The asymmetry is what makes this a defect rather than a scope decision.** The
+same meta-HIR module through two backends: one fails loudly, the other returns
+a wrong number successfully. The Rust lane had already settled "Python bigint
+is out of scope" the honest way. WASM did not follow, and `x * 2` sixty-four
+times came back as `2**64 mod 2**64`.
+
+The lane's own source said otherwise. `emit_binop`'s arithmetic arms were
+introduced by the comment *"arithmetic over i64 — checked overflow trap
+posture"* directly above three bare wrapping instructions, and
+`contracts/compile-rust-to-wasm-v1.yaml` said *"i64 arithmetic carries the
+`C-PY-INT-ARITH` overflow posture"*. Note what PMAT-1350's two-way contract
+gate could and could not see: it reconciles the CONSTRUCT surface — what
+lowers, what refuses — and is structurally blind to SEMANTIC posture, so this
+lane satisfied it in full while computing a wrong value.
+
+Unary `-x` carried the same shape one level down: the emission site claimed
+*"checked-overflow on i64::MIN matches the Rust lane (negation of MIN traps)"*
+above an `i64.const -1` + bare `i64.mul`, so `-i64::MIN` answered `i64::MIN`.
+
+`+`, `-`, `*` and unary `-` now route through `$__wasm_add_i64` /
+`$__wasm_sub_i64` / `$__wasm_mul_i64`, each trapping with `unreachable` — the
+WAT analogue of the Rust lane's panicking `expect` — exactly when the true
+result leaves i64. Add and subtract use the sign-bit test; multiply uses the
+divide-back (`x != 0 && (x*y)/x != y`), which is exact in both directions and
+whose one un-evaluable input, `i64::MIN * -1`, traps inside `i64.div_s` — the
+correct answer for that input. The helpers are gated INDIVIDUALLY on call
+sites read back out of the emitted body, so a module that only adds does not
+acquire a multiply's trap and an arithmetic-free module stays trap-free.
+
+**A latent PMAT-1379 breakage surfaced and is repaired here.** That slice moved
+`<<`/`>>` onto helpers without adding the matching arms to
+`xpile-wasm-frontend`'s `lift_call`, so `emit(lift(emit(M)))` — the WAT lift's
+right-inverse property — has been broken for every shifting module since it
+merged. Nothing went red because no round-trip fixture shifted.
+`roundtrip_shift_and_arith` now exercises all five helper-routed operators at
+once.
+
+**What still wraps, stated rather than implied.** `1 << 63` still returns
+`i64::MIN`: PMAT-1379 fixed the shift COUNT and this slice did not reopen the
+shift VALUE. `abs(i64::MIN)` remains the documented `$__wasm_abs_i64` wrap.
+`**` does not lower at all and refuses. All three are pinned by executed
+witnesses — `shl_residual_and_mul_disagree_on_the_same_value` runs
+`2 * (1 << 62)` against `1 << 63`, the same mathematical value, and records
+that the multiply now traps on it while the shift does not. The prose in
+`shift_count_witness.rs` that handed its residual to "the general i64-overflow
+work" has been corrected, because that work is this slice and it did not close
+it.
+
+Witnesses: `crates/xpile-wasm-codegen/tests/i64_overflow_witness.rs`, 10 tests
+— 5 construct (two-backend confrontation, raw-instruction containment,
+per-helper gating, unary routing, the `**` refusal) and 5 runtime-gated
+execution (the repro plus its non-trapping 2\*\*62 control, 26 boundary arms,
+negation, a 30-case live-`python3` differential, the surviving shift
+disagreement). WASM witness count 842 → 857 against an unchanged
+`WASM_FLOOR = 770`; runtime-gated 333 → 340 against `WASM_EXEC_FLOOR = 300`,
+measured by running the manifest. No witness floor touched.
+
 ### The GPU lanes silently halved a C `long` to `i32` (PMAT-1404)
 
 `decy-frontend` introduced `Type::CLong` for exactly one reason, stated in its

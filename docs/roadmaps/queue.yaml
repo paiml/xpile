@@ -2654,7 +2654,7 @@ queue:
     pass the subject explicitly to `gh pr merge --squash`, or claim the id in queue.yaml BEFORE opening
     the PR so a concurrent fire cannot take it.'
 - id: PMAT-1402
-  status: open
+  status: done
   date: '2026-07-27'
   ev_rank: R1
   gate_touch: null
@@ -2677,7 +2677,27 @@ queue:
     \ guard shape that slice used.\nACCEPTANCE: the probe above traps under wasm-interp instead of returning\
     \ 0, and a *_witness.rs pins it; `--target rust` behaviour is UNCHANGED (regression-assert it).\n\
     TRAP: witness_floor.rs is a SERIAL RESOURCE and both of its permitted touches this window are spent\
-    \ (PMAT-1372 + the PMAT-1373 release commit) — add witnesses, do NOT bump a floor."
+    \ (PMAT-1372 + the PMAT-1373 release commit) — add witnesses, do NOT bump a floor.\nDONE 2026-07-27.\
+    \ `+`/`-`/`*` and unary `-` route through $__wasm_add_i64 / $__wasm_sub_i64 / $__wasm_mul_i64, each\
+    \ trapping on overflow; gated INDIVIDUALLY on call sites read back out of the emitted body. `**` does\
+    \ NOT lower (no emit_binop arm) and its refusal is PINNED rather than left to silence. Witnesses:\
+    \ crates/xpile-wasm-codegen/tests/i64_overflow_witness.rs, 10 tests (5 construct + 5 runtime-gated),\
+    \ incl. a ONE-MODULE-TWO-BACKENDS confrontation — xpile-rust-codegen is now a dev-dep of\
+    \ xpile-wasm-codegen because an ASYMMETRY is only assertable where both lanes are in scope. wasm 842\
+    \ -> 857 total / 333 -> 340 gated, MEASURED by running the manifest; NO floor touched.\n** FOUND EN\
+    \ ROUTE AND FIXED HERE: PMAT-1379 moved `<<`/`>>` onto helpers and never added the matching lift_call\
+    \ arms, so emit(lift(emit(M))) was BROKEN for every shifting module since it merged — no fixture\
+    \ shifted. roundtrip_shift_and_arith now covers all five helper-routed operators; red-then-green\
+    \ measured.\n** STILL WRAPS, pinned by an EXECUTED disagreement rather than prose: `1 << 63` (shift\
+    \ VALUE; PMAT-1379 fixed the COUNT only) and abs(i64::MIN). shift_count_witness.rs's residual note\
+    \ handed ownership to 'the general i64-overflow work' — i.e. THIS slice — and has been corrected so\
+    \ it stops pointing at a shipped slice. Candidate 0.1.619 lane.\n** OWNER-GATED FINDING, SURFACED NOT\
+    \ ACTED ON: live_ruleset_matches_the_committed_snapshot reds on a CLEAN origin/main checkout — the\
+    \ live org ruleset 13878864 now requires only {gate}; docs/status/ruleset-13878864.json records\
+    \ {gate, workspace-test}. Branch protection was weakened outside this repo. Re-deriving the snapshot\
+    \ would RATIFY the weakening, which is the exact failure PMAT-1347 exists to catch, so it was not\
+    \ done. The live half skips in CI (repo-scoped GITHUB_TOKEN cannot read an org ruleset), so no\
+    \ required context is red. NEXT PICK: PMAT-1353 (date 2026-07-28, R2 — RepairLoop CLI wiring)."
 - id: PMAT-1353
   status: open
   date: '2026-07-28'

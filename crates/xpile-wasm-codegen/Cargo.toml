@@ -27,3 +27,9 @@ xpile-frontend = { workspace = true }
 # emitting WAT that `wat2wasm` rejects survived. No cycle: decy-frontend depends
 # on xpile-frontend + xpile-meta-hir, never on this backend.
 decy-frontend = { workspace = true }
+# PMAT-1402: the RUST backend, so `i64_overflow_witness.rs` can put the SAME
+# meta-HIR module through both lanes in one test and assert they agree on
+# overflow. The defect that slice fixed was precisely an ASYMMETRY between the
+# two backends, and an asymmetry is only assertable where both are in scope.
+# No cycle: xpile-rust-codegen depends on xpile-backend + xpile-meta-hir only.
+xpile-rust-codegen = { workspace = true }

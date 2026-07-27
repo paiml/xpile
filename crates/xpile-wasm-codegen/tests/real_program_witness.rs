@@ -249,9 +249,14 @@ fn real_weighted_sum_program_executes_in_wasm_and_matches_cpython() {
         kernel_wat.contains("f64.mul") && kernel_wat.contains("f64.add"),
         "xs[i]*w + total → f64 arithmetic:\n{kernel_wat}"
     );
+    // PMAT-1402: this asserted `i64.add` until `+` started routing through
+    // `$__wasm_add_i64`. Left alone it would still have PASSED — the helper's
+    // own body contains `i64.add` — so it would have gone on reporting
+    // "i = i + 1 lowered" while matching bytes the kernel never emitted.
+    // Assert the CALL SITE, which only the kernel can produce.
     assert!(
-        kernel_wat.contains("i64.add"),
-        "i = i + 1 → i64 arithmetic:\n{kernel_wat}"
+        kernel_wat.contains("call $__wasm_add_i64"),
+        "i = i + 1 → checked i64 arithmetic:\n{kernel_wat}"
     );
     assert!(
         kernel_wat.contains("unreachable"),

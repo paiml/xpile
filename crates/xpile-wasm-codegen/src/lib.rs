@@ -7415,6 +7415,135 @@ const SHIFT_HELPERS: &str = "\
   )
 ";
 
+/// PMAT-1402: Python `+` / `-` / `*` over i64, in WAT — the ARITHMETIC half of
+/// the i64 honesty debt PMAT-1379 opened.
+///
+/// The raw `i64.add`/`i64.sub`/`i64.mul` WRAP on signed overflow, silently.
+/// The comment above this lane's `emit_binop` arms said "checked overflow trap
+/// posture" while emitting exactly those three bare instructions, so
+///
+/// ```python
+/// def overflow_mul() -> int:
+///     x = 1
+///     i = 0
+///     while i < 64:
+///         x = x * 2
+///         i = i + 1
+///     return x
+/// ```
+///
+/// exited 0 and answered `0` under `wasm-interp` where CPython answers
+/// `18446744073709551616`.
+///
+/// WHAT MAKES THIS A DEFECT AND NOT A SCOPE DECISION: the SAME source through
+/// `--target rust` emits `checked_mul(…).expect("xpile: i64 multiplication
+/// overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet
+/// implemented")` — the Rust lane already answered "Python bigint is out of
+/// scope" the honest way, by failing loudly. One backend lied and the other did
+/// not. These helpers make the WASM lane take the Rust lane's posture: an
+/// `unreachable` trap is the WAT analogue of that `expect` panic.
+///
+/// Arbitrary precision is NOT in scope here and is not attempted. `**` does not
+/// reach this code at all — `BinOp::Pow` over i64 has no arm in `emit_binop`
+/// and falls through to the honest refusal (pinned by
+/// `pow_over_i64_is_refused_not_wrapped`).
+const ADD_HELPER: &str = "\
+  ;; __wasm_add_i64(x, y) = x + y  (Python +, overflow TRAPS)
+  (func $__wasm_add_i64 (param $x i64) (param $y i64) (result i64)
+    (local $r i64)
+    local.get $x
+    local.get $y
+    i64.add
+    local.set $r
+    ;; Signed add overflows iff both operands share a sign that the result
+    ;; does not: ((x ^ r) & (y ^ r)) < 0.
+    local.get $x
+    local.get $r
+    i64.xor
+    local.get $y
+    local.get $r
+    i64.xor
+    i64.and
+    i64.const 0
+    i64.lt_s
+    if
+      unreachable
+    end
+    local.get $r
+  )
+";
+
+/// PMAT-1402: Python `-` over i64. See [`ADD_HELPER`] for why this exists.
+const SUB_HELPER: &str = "\
+  ;; __wasm_sub_i64(x, y) = x - y  (Python -, overflow TRAPS)
+  (func $__wasm_sub_i64 (param $x i64) (param $y i64) (result i64)
+    (local $r i64)
+    local.get $x
+    local.get $y
+    i64.sub
+    local.set $r
+    ;; Signed subtract overflows iff the operands differ in sign and the
+    ;; result takes the SUBTRAHEND's: ((x ^ y) & (x ^ r)) < 0.
+    local.get $x
+    local.get $y
+    i64.xor
+    local.get $x
+    local.get $r
+    i64.xor
+    i64.and
+    i64.const 0
+    i64.lt_s
+    if
+      unreachable
+    end
+    local.get $r
+  )
+";
+
+/// PMAT-1402: Python `*` over i64, and the operand-times-`-1` form unary `-x`
+/// lowers to. See [`ADD_HELPER`] for why this exists.
+///
+/// The check is the classic divide-back: with `x != 0`, `x * y` overflowed iff
+/// `(x * y) / x != y`. It is EXACT in both directions. No false positive: when
+/// the product fits, `r` is the true product and truncating division recovers
+/// `y`. No false negative: overflow means `r - x*y = k·2^64` for some `k != 0`,
+/// so `|r - x*y| >= 2^64 > |x|`, while `trunc(r/x) == y` requires
+/// `|r - x*y| < |x|`.
+///
+/// The one input the divide-back cannot evaluate is `x == -1, y == i64::MIN`:
+/// there `r == i64::MIN` and `i64.div_s` TRAPS on `i64::MIN / -1`. That trap is
+/// the correct answer — `2^63` is exactly the overflow this helper exists to
+/// catch — so it is relied upon rather than pre-empted, and
+/// `mul_min_by_negative_one_traps` pins it.
+const MUL_HELPER: &str = "\
+  ;; __wasm_mul_i64(x, y) = x * y  (Python *, overflow TRAPS)
+  (func $__wasm_mul_i64 (param $x i64) (param $y i64) (result i64)
+    (local $r i64)
+    ;; x == 0 short-circuits to 0 AND guards the divide-back below.
+    local.get $x
+    i64.eqz
+    if (result i64)
+      i64.const 0
+    else
+      local.get $x
+      local.get $y
+      i64.mul
+      local.set $r
+      ;; r / x must recover y. i64.div_s itself traps on (i64::MIN, -1),
+      ;; which is precisely an overflow — the trap there is the answer.
+      local.get $r
+      local.get $x
+      i64.div_s
+      local.get $y
+      i64.ne
+      if
+        unreachable
+      end
+      local.get $r
+    end
+  )
+";
+
 /// PMAT-1248: the list-INT-SUM helper — Python `sum(xs)` over a `list[int]`.
 /// `base` is an i32 pointer to a length-prefixed region (i32 element count @
 /// base+0, packed i64 elements @ base+8, the PMAT-968 list ABI). It folds
@@ -13664,6 +13793,20 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // "this function needs no trap" unassertable anywhere in the suite.
     if body.contains("call $__wasm_shl_i64") || body.contains("call $__wasm_shr_i64") {
         out.push_str(SHIFT_HELPERS);
+    }
+    // PMAT-1402: the checked `+`/`-`/`*` helpers, gated the same way and for
+    // the same reason — they carry `unreachable`, and a module that does no
+    // i64 arithmetic must stay trap-free. Gated INDIVIDUALLY (they are
+    // mutually independent, none calls another), so a module that only adds
+    // does not carry a dead multiply.
+    if body.contains("call $__wasm_add_i64") {
+        out.push_str(ADD_HELPER);
+    }
+    if body.contains("call $__wasm_sub_i64") {
+        out.push_str(SUB_HELPER);
+    }
+    if body.contains("call $__wasm_mul_i64") {
+        out.push_str(MUL_HELPER);
     }
     out.push_str(&body);
     writeln!(out, ")").expect("write");
@@ -26738,11 +26881,16 @@ fn emit_unop(
             indent(out, depth);
             match t {
                 WatTy::I64 => {
-                    // -x == 0 - x; checked-overflow on i64::MIN matches the
-                    // Rust lane (negation of MIN traps).
+                    // PMAT-1402: `-x == x * -1`, through the CHECKED multiply.
+                    // This comment used to claim "checked-overflow on i64::MIN
+                    // matches the Rust lane (negation of MIN traps)" above a
+                    // bare `i64.mul`, which WRAPS: `-i64::MIN` answered
+                    // `i64::MIN` where the Rust lane emits `checked_neg()
+                    // .expect(…)`. `$__wasm_mul_i64(i64::MIN, -1)` now traps
+                    // via the divide-back, so the claim is finally true.
                     writeln!(out, "i64.const -1\n").expect("write");
                     indent(out, depth);
-                    writeln!(out, "i64.mul").expect("write");
+                    writeln!(out, "call $__wasm_mul_i64").expect("write");
                 }
                 WatTy::I32 => {
                     return Err(unsupported("unary negation of a bool/i32 value"));
@@ -27548,9 +27696,22 @@ fn emit_binop(
     // Comparisons yield i32 (bool); arithmetic/bitwise yield the operand type.
     let (instr, result) = match (op, ty) {
         // ── arithmetic over i64 — checked overflow trap posture ──
-        (BinOp::Add, WatTy::I64) => ("i64.add", WatTy::I64),
-        (BinOp::Sub, WatTy::I64) => ("i64.sub", WatTy::I64),
-        (BinOp::Mul, WatTy::I64) => ("i64.mul", WatTy::I64),
+        // PMAT-1402: this comment was here BEFORE the behaviour was, sitting
+        // above three bare wrapping instructions. `+`/`-`/`*` now route
+        // through the checked helpers, matching what `--target rust` has
+        // always emitted (`checked_add`/`checked_sub`/`checked_mul`).
+        (BinOp::Add, WatTy::I64) => {
+            writeln!(out, "call $__wasm_add_i64").expect("write");
+            return Ok(WatTy::I64);
+        }
+        (BinOp::Sub, WatTy::I64) => {
+            writeln!(out, "call $__wasm_sub_i64").expect("write");
+            return Ok(WatTy::I64);
+        }
+        (BinOp::Mul, WatTy::I64) => {
+            writeln!(out, "call $__wasm_mul_i64").expect("write");
+            return Ok(WatTy::I64);
+        }
         // FloorDiv / Mod need the floor correction — handled below.
         (BinOp::FloorDiv, WatTy::I64) => {
             writeln!(out, "call $__wasm_floordiv_i64").expect("write");

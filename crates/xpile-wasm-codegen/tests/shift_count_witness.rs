@@ -31,9 +31,13 @@
 //! SCOPE — asserted, not hidden. This slice fixes the shift COUNT only. A
 //! count in `0..=63` still uses the raw instruction, so `1 << 63` still
 //! WRAPS to `i64::MIN`. `shl_in_range_overflow_is_a_known_residual` PINS
-//! that residual so it is machine-recorded rather than quietly implied; it
-//! belongs to the general i64-overflow work (checked add/sub/mul/neg), which
-//! is L/XL and sits on the emitter's hot path.
+//! that residual so it is machine-recorded rather than quietly implied.
+//!
+//! ⚠️ PMAT-1402 UPDATE: this header used to hand the residual to "the general
+//! i64-overflow work (checked add/sub/mul/neg)". That work shipped as
+//! PMAT-1402 and did NOT close it — it fixed `emit_binop`'s arithmetic arms
+//! and left the shift helpers alone. The residual is open and now has no
+//! assigned owner; see the corrected note on that test.
 //!
 //! Gated on `wasm_runtime_available()` like every other execution witness.
 
@@ -163,6 +167,17 @@ fn shifts_route_through_the_count_honest_helpers() {
 /// would put a trap in every module the backend produces (which is exactly
 /// what made `len_of_list_param_reads_header`'s "len needs no trap"
 /// assertion unassertable on the first cut of this slice).
+/// PMAT-1402 SPLIT THE TWO ASSERTIONS THAT USED TO SHARE ONE PROBE. The probe
+/// was `2 + 3`, and once `+` started routing through `$__wasm_add_i64` (which
+/// carries its own `unreachable`) the "no trap at all" half went red — for a
+/// reason that has nothing to do with shifts. Collapsing the two would have
+/// lost one of them, so each now gets the probe it is actually about:
+///
+/// * the SHIFT-ABSENCE half keeps the arithmetic probe, and is now STRONGER
+///   than before: it proves the shift helpers stay out even of a module that
+///   DOES pull in a sibling helper.
+/// * the NO-TRAP half moves to a probe with no i64 arithmetic in it, which is
+///   the only module shape for which "carries no trap" is still a true claim.
 #[test]
 fn shift_helpers_are_absent_from_a_shiftless_module() {
     let m = Module {
@@ -188,9 +203,39 @@ fn shift_helpers_are_absent_from_a_shiftless_module() {
         !wat.contains("__wasm_shl_i64") && !wat.contains("__wasm_shr_i64"),
         "a shiftless module must not carry the shift helpers:\n{wat}"
     );
+    // ... and the arithmetic helper it DOES use is present, so the assertion
+    // above is not passing because the module is empty.
+    assert!(
+        wat.contains("__wasm_add_i64"),
+        "the probe must actually exercise the checked-add helper, else the \
+         shift-absence assertion is vacuous:\n{wat}"
+    );
+}
+
+/// CONSTRUCT: a module that does no i64 arithmetic and no shifting carries NO
+/// trap at all — the property every gated helper in this backend has to
+/// preserve (`len_of_list_param_reads_header`'s "len needs no trap" depends on
+/// it). PMAT-1402 split this out of the test above; see its doc comment.
+#[test]
+fn a_module_with_no_arithmetic_and_no_shift_carries_no_trap() {
+    let m = Module {
+        name: "bare".into(),
+        source_lang: SourceLang::Rust,
+        items: vec![Item::Function(Function {
+            name: "bare".into(),
+            params: vec![],
+            return_type: Type::I64,
+            body: Block {
+                stmts: vec![],
+                trailing_return: Expr::LitInt(5),
+            },
+        })],
+        ffi_boundaries: Vec::new(),
+    };
+    let wat = emit_module(&m).expect("bare module lowers");
     assert!(
         !wat.contains("unreachable"),
-        "a shiftless module must carry no trap at all:\n{wat}"
+        "a module with no arithmetic and no shift must carry no trap at all:\n{wat}"
     );
 }
 
@@ -340,9 +385,19 @@ fn in_range_shift_counts_are_unregressed() {
 /// `1 << 63` is in range for the count, so it takes the raw `i64.shl` and
 /// WRAPS to `i64::MIN`, while CPython answers `9223372036854775808`. That is
 /// still a silent wrong answer and this test says so out loud rather than
-/// letting the lane read as fully honest about shifts. It flips to a trap
-/// when the general overflow-checked arithmetic lands, at which point this
-/// expectation is the thing that must be updated.
+/// letting the lane read as fully honest about shifts.
+///
+/// ⚠️ PMAT-1402 CORRECTED THIS NOTE. It used to say the residual "flips to a
+/// trap when the general overflow-checked arithmetic lands" — and that work
+/// HAS landed (checked `+`/`-`/`*`/unary-`-`, see `i64_overflow_witness.rs`)
+/// without flipping it, because that slice touched `emit_binop`'s arithmetic
+/// arms and deliberately did not reopen the shift helpers. Leaving the
+/// original wording would have left a promise pointing at a shipped slice,
+/// which reads as "already handled". The residual is REAL and OPEN: the shift
+/// VALUE is unchecked, and `shl_residual_and_mul_disagree_on_the_same_value`
+/// (in `i64_overflow_witness.rs`) executes `2 * (1 << 62)` against `1 << 63` —
+/// the same mathematical value — to record that the multiply now traps on it
+/// and the shift still wraps. Closing it means editing both tests together.
 #[test]
 fn shl_in_range_overflow_is_a_known_residual() {
     if !wasm_runtime_available() {
