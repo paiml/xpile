@@ -16295,3 +16295,58 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1380
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1380: [honesty/release] The THREE MANDATORY CHANGELOG sections for v0.1.618 - "What
+    still REFUSES", "What is NOT merge-blocking", "Known divergences" - written INCREMENTALLY on Day
+    2 rather than inside Thursday''s release commit, with every claim RE-DERIVED against the live tree
+    instead of copied from the sprint plan. PICKED because the queue was EMPTY for 2026-07-27: every
+    dated slice and the whole D-pool are merged and the only OPEN items are the date-gated release
+    pair PMAT-1373 (Thu) / PMAT-1374 (Fri), which must not be pulled forward; PMAT-1366''s next-pick
+    note names CHANGELOG/docs polish for the 0.1.618 note as the sanctioned work for exactly this
+    situation, and the window''s standing constraint is "write the CHANGELOG INCREMENTALLY". The three
+    sections are the largest content dependency of PMAT-1373, and Thursday is meant to be reserved.
+    ** THE SPRINT PLAN''S OWN PRESCRIBED TEXT WAS STALE, which is the finding: PMAT-1355/PMAT-1373
+    direct the Known-divergences section to state that "the 14.4 Runtime stratum counts contract-id
+    MENTIONS in fixtures, not executions". PMAT-1367 changed that three slices ago - the stratum now
+    ALSO counts witness files that name the id AND call a runtime-availability probe. Copying the
+    prescribed sentence would have shipped a CLAIMS-001 falsehood in the release note whose whole
+    purpose is to prevent them. The section states the true, more useful shape instead: the widen is
+    partial, so of the 18 contracts carrying a Runtime vote exactly TWO (C-COMPILE-RUST-TO-WASM 113,
+    C-WASM-HEAP 93) are backed by executions and the other 16 carry 1-11 MENTIONS - derived from
+    `xpile quorum --json`, not assumed. ** EVERY OTHER CLAIM RE-DERIVED THROUGH THE SHIPPED CLI: six
+    cross-lane refusals probed live (ruchy-as-source, attached here-doc, case-nested-in-loop,
+    annotated-comprehension mismatch, duplicate top-level def, reserved __wasm_ name); the 13 refused
+    / 31 declared emit_surface rows read out of the contract YAML; REQUIRED=[gate, workspace-test] and
+    the 6 advisory contexts read from the ci.yml enforcement markers and the committed ruleset
+    snapshot; the single `apt-get install -y wabt` line that makes the ruchy/lean/forjar witnesses
+    skip in CI; release.yml''s dispatch+tag-only trigger; both PMAT-1352 Rust-lane float-coercion
+    divergences RE-RUN end to end (python3 vs rustc: 1 vs 1.0, 49 vs 49.0); the Lean
+    @[xpile_contract] non-elaboration re-emitted both ways; and all eight witness-lane counts taken
+    by RUNNING the manifest (wasm 842/333, shell 10, rust-diff 47, hybrid 7, wasi 1, ruchy 7, forjar
+    4, lean 6) rather than read off the touch-point snapshot comments. ** A DERIVE COMMAND ACCOMPANIES
+    EVERY COUNT, per the PMAT-1348 doctrine - re-typing today''s correct numbers as prose re-arms the
+    same bomb with a fresher date on it. ** THE SLICE ALSO CAUGHT ITS OWN ERROR BEFORE COMMIT: the
+    draft asserted the modulo helper is `$__wasm_mod_i64`; the emitted WAT says `$__wasm_floormod_i64`.
+    Verifying a name you are about to print is cheaper than a release note that misnames its own
+    runtime. ** BACKED BY A DIFFERENTIAL VERIFY PASS run in the same session (77 CPython-vs-artifact
+    probes through xpile -> wat2wasm -> wasm-interp) whose NEGATIVE results are recorded in the
+    section so they are not re-derived: integer // and % over every sign combination match Python
+    FLOOR semantics (not C truncation); all 16 container error paths TRAP where CPython raises;
+    out-of-range slice bounds agree; float + - * / including infinities/subnormals/div-by-zero agree;
+    and the entire non-ASCII string surface agrees on CODE POINTS, not UTF-8 bytes - the divergence
+    the length-prefixed UTF-8 ABI could plausibly have had and does not. The one silent-wrong-answer
+    class found is the ALREADY-KNOWN and deliberately-deferred i64 overflow family, now stated as
+    divergence #1 with its measured values. ** NO gate file touched: the queue reserves gate touch #3
+    for Thursday''s PMAT-1373, and witness_floor.rs is the two-touch serial resource. CHANGELOG.md +
+    ledger + queue only; no product code, no contract change, no CI change.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
