@@ -262,9 +262,18 @@ $ xpile transpile script.sh    --target shell # POSIX shell round-trip
 $ xpile transpile model.py --emit-crate ./out # emit a complete, buildable crate
 $ xpile transpile factorial.py --contracts off # suppress the // xpile-contract: citations
 $ xpile hybrid ./project --verify             # cross-language build + differential check
-$ xpile quorum                                # contract oracle-quorum report
-$ xpile diamond                               # Diamond-tier coverage report
+$ xpile diamond                               # Diamond-tier coverage report (works anywhere)
+$ xpile quorum                                # oracle-quorum report (needs a checkout — see below)
 ```
+
+The contract corpus is **compiled into the binary**, so `xpile diamond` reports
+on the 35 contracts of the release you installed from any directory. `xpile
+quorum` and `xpile attestations` additionally tally the Runtime and Extrinsic
+strata out of the development tree (`docs/roadmaps/roadmap.yaml`, the fixture
+corpus), which is not part of an installed release — run those from a checkout,
+or point them at one with `--roadmap` / `--fixtures-dir`. They refuse rather
+than scoring an unreadable stratum `0`, because a report that silently drops a
+whole stratum is a wrong answer at exit 0 (PMAT-1386, PMAT-1407).
 
 By default, every emitted construct is annotated with its `// xpile-contract:`
 citations across the applicable taxonomy layers (L1 semantics, L2 translation,

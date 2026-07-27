@@ -7,6 +7,64 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The contract corpus never shipped — `diamond`/`quorum`/`attestations` exited 1 for every installed user (PMAT-1407)
+
+The README leads with `cargo install xpile` and then advertises the three
+contract reporters as the project's anti-rot device. Measured on the published
+`xpile-0.1.617.crate`: **954 packaged entries, 837 of them test fixtures, and
+zero contract YAMLs.** All three subcommands resolve `--contracts-dir` (default
+`contracts`) relative to the process CWD, so from any directory that is not an
+xpile checkout they exited **1** with `Error: contracts is not a directory` —
+naming a path the user never supplied. They worked perfectly from a git
+checkout, which is exactly why it survived: the development path never
+exercises the shipped one.
+
+**The obvious fix does not work, and makes things worse.** Adding
+`include = ["contracts/**/*.yaml", ...]` to `crates/xpile/Cargo.toml` was
+executed and measured: it matches **nothing** (include globs are rooted at the
+package dir; `contracts/` is at the workspace root, and the `../../` spelling
+does not reach outside the package either), *and* `include` is **authoritative**
+— adding it cut the package from 954 entries to **7**, dropping all 837
+fixtures, at exit 0. Packaging alone could not have fixed it regardless: a
+`.crate` only puts files where the *compiler* can see them, and `cargo install`
+discards the build directory, so a runtime file read still finds nothing.
+
+The corpus is now **compiled into the binary**. `crates/xpile/contracts` is a
+symlink to the canonical workspace-root `contracts/` (no byte is duplicated in
+git; `cargo package` dereferences it into real regular files, verified
+byte-identical in the tarball), and `build.rs` enumerates that directory and
+emits `include_str!` calls — enumerated, never a hand-written list, so adding a
+contract needs no second edit. Resolution order is: an existing
+`--contracts-dir` wins (a checkout behaves **byte-identically** — verified by
+differential over all three reporters in both text and `--json`); an absent
+*default* falls back to the embedded corpus and **announces it on stderr**; an
+absent *explicit* path is still an error, since quietly reporting on a different
+corpus than the one asked for would be a wrong answer at exit 0.
+
+**Scope, stated honestly.** `xpile diamond` is now fully correct from an
+installed binary — every column it prints derives from contract YAML text
+alone — and exits 0 anywhere. `xpile quorum` and `xpile attestations` also
+tally the Runtime and Extrinsic strata out of the development tree, which is
+not part of an installed release; they still refuse, but now name the *real*
+missing evidence (`docs/roadmaps/roadmap.yaml`) instead of blaming the
+contracts directory. The refusal is deliberate and was kept: PMAT-1386
+established that scoring an unreadable stratum `0` collapses 702 roadmap
+mentions to zero and drops 10 of 35 contracts from QUORUM to PARTIAL, silently,
+at exit 0. The 2.7 MB roadmap is deliberately **not** embedded — it is a
+development ledger, and a snapshot of it would answer a different question than
+the one the reporter asks.
+
+Gated by `crates/xpile/tests/packaged_contracts.rs` (XPILE-PACKAGE-001), six
+tests, no hard-coded count anywhere — both corpora are re-derived from the
+filesystem on every run. The load-bearing one executes the real binary from a
+directory that is not a checkout and asserts its `diamond --json` is
+byte-identical to the same binary run inside one, so a stale, truncated or
+empty embedded corpus fails no matter which part of the mechanism broke. One
+test exists solely to reject the plausible-but-wrong `include` fix above.
+Falsified three ways: deleting the symlink fails the build with a message
+naming the cause, adding an `include` key reds the manifest test, and restoring
+the pre-slice resolution reds exactly the two behavioural tests.
+
 ### `--target shell` silently discarded commands inside class methods (PMAT-1406)
 
 A `subprocess.run(...)` inside a Python **class method** was dropped and the

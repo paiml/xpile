@@ -18276,3 +18276,109 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1407
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1407: [packaging/honesty] the contract corpus NEVER SHIPPED — measured
+    on the published xpile-0.1.617.crate, 954 packaged entries, 837 of them test
+    fixtures, and ZERO contract YAMLs, so `xpile diamond` / `quorum` /
+    `attestations` all exited 1 with `contracts is not a directory` for every user
+    who ran the README''s own `cargo install xpile`, while working perfectly from a
+    git checkout'
+  description: 'All three reporters resolve `--contracts-dir` (default `contracts`)
+    RELATIVE TO THE PROCESS CWD. From any directory that is not an xpile checkout
+    they exited 1 naming a path the user never supplied — implying a broken install
+    rather than a checkout-scoped command. It survived because the development path
+    never exercises the shipped one: from the repo root all three are green.
+
+
+    ** THE QUEUED FIX WAS FALSIFIED BEFORE BEING WRITTEN, and the falsification is
+    the most useful thing in this slice. The entry proposed "one `include =
+    ["contracts/**/*.yaml", ...]` in crates/xpile/Cargo.toml" as the best-ROI
+    one-liner. Executed and MEASURED, it does two harmful things and zero useful
+    ones: (a) it matches NOTHING — `include` globs are rooted at the PACKAGE dir
+    and `contracts/` is at the WORKSPACE root; the `../../contracts/**/*.yaml`
+    spelling matches nothing either, because `cargo package` does not reach outside
+    the package root; and (b) `include` is AUTHORITATIVE — adding it cut the
+    package from 954 entries to SEVEN, dropping all 837 fixtures, at exit 0. A
+    dedicated test now rejects any `include` key with that measurement in its
+    failure message.
+
+
+    ** AND PACKAGING ALONE COULD NEVER HAVE FIXED IT. A `.crate` only puts files
+    where the COMPILER can see them; `cargo install` copies the binary to
+    ~/.cargo/bin and discards the build directory, so a runtime file read still has
+    nothing to open. The corpus has to be in the BINARY. This is the difference
+    between the queued premise (packaging) and the actual fix (embedding), and it
+    is why the "one line" framing was wrong in kind, not just in detail.
+
+
+    ** MECHANISM: `crates/xpile/contracts` is a SYMLINK to the canonical
+    workspace-root `contracts/`, which puts the YAMLs inside the package root
+    without duplicating a byte in git (a copy would be a drift bomb against `pv
+    lint contracts/` and every gate). `cargo package` dereferences it into real
+    regular files — VERIFIED in the produced tarball (`-rw-r--r--`, not a symlink
+    entry, byte-identical to canonical, 35/35). `build.rs` ENUMERATES that
+    directory and emits `include_str!` calls, so adding a contract needs no second
+    edit; it hard-fails on an empty corpus. Verified END TO END for a registry
+    consumer: the `cargo package` verify build ran build.rs against the UNPACKED
+    crate and generated 35 `include_str!` entries resolving to the unpacked files.
+    Crate size 560 KB -> 1.24 MB, far under the crates.io 10 MB limit; all 837
+    fixtures retained (1062 entries).
+
+
+    ** RESOLUTION ORDER, each arm reasoned: an existing `--contracts-dir` wins, so
+    a checkout is BYTE-IDENTICAL (verified by differential over all three reporters
+    in text AND `--json` — 43/43/595 lines and 2874/4464/725602 bytes, all
+    identical, exit codes matched); an absent DEFAULT falls back to the embedded
+    corpus and ANNOUNCES it on stderr, because the two corpora can legitimately
+    differ (an installed 0.1.618 binary run inside a newer checkout); an absent
+    EXPLICIT path is still an error, since quietly reporting on a corpus other than
+    the one asked for is a wrong answer at exit 0.
+
+
+    ** SCOPE IS A DELIBERATE, STATED LOWER BOUND. `xpile diamond` is now FULLY
+    correct from an installed binary and exits 0 anywhere — every column it prints
+    derives from contract YAML text alone. `quorum` and `attestations` also tally
+    the Runtime and Extrinsic strata out of the development tree, which is not part
+    of an installed release; they STILL REFUSE, but now name the REAL missing
+    evidence (`docs/roadmaps/roadmap.yaml`) instead of blaming the contracts dir.
+    Keeping the refusal is the point, not a shortfall: PMAT-1386 established that
+    scoring an unreadable stratum 0 collapses 702 roadmap mentions to zero and
+    drops 10 of 35 contracts QUORUM -> PARTIAL, silently, at exit 0. The 2.7 MB
+    roadmap is deliberately NOT embedded — it is a development ledger, and a
+    snapshot would answer a different question than the reporter asks. The queue''s
+    stated acceptance ("`xpile quorum` exits 0") is therefore NOT met and must not
+    be: satisfying it literally would have required exactly the silent-wrong-answer
+    PMAT-1386 removed.
+
+
+    ** GATE crates/xpile/tests/packaged_contracts.rs (XPILE-PACKAGE-001), 6 tests,
+    NO hard-coded count anywhere — both corpora are re-derived from the filesystem
+    every run (PMAT-1396''s rule). The load-bearing test executes the real binary
+    from a directory that is not a checkout and asserts its `diamond --json` is
+    byte-identical to the same binary run inside one, so a stale, truncated or
+    empty embedded corpus reds regardless of which part of the mechanism broke; a
+    corpus-size floor keeps two identical EMPTY reports from satisfying it.
+    FALSIFIED THREE WAYS: (A) delete the symlink -> the BUILD fails with a message
+    naming the cause; (B) add an `include` key -> the manifest test reds alone (5
+    passed, 1 failed); (C) restore the pre-slice resolution -> exactly the two
+    BEHAVIOURAL tests red (4 passed, 2 failed), which is the direct measurement
+    that the product change, not the test scaffolding, is what repairs the bug.
+
+
+    ** NOTE: `cargo package -p xpile` verify fails on this tree for a PRE-EXISTING
+    reason unrelated to this slice — it resolves path deps to the PUBLISHED 0.1.617,
+    which lacks this cycle''s unmerged sibling changes (`validate_compute_capability`,
+    `wrapper_native` visibility). CONFIRMED IDENTICAL on unmodified main rather than
+    assumed. It resolves at Thursday''s workspace-wide 0.1.618 bump; `--no-verify`
+    packaging is clean.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
