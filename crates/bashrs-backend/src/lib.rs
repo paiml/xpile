@@ -306,6 +306,138 @@ fn render_substituted_stmt(s: &Stmt) -> Result<String, BackendError> {
     }
 }
 
+/// PMAT-1383: a short, source-language-flavoured label for a meta-HIR
+/// `Stmt` the shell lane cannot render.
+///
+/// The refusal diagnostic quotes this rather than `{:?}`: a dropped
+/// `Stmt::If` carries its whole sub-tree, and a page of Debug output
+/// buries the one thing the user needs to see — *which Python
+/// construct* has no shell rendering.
+fn unrenderable_stmt_label(s: &Stmt) -> &'static str {
+    match s {
+        Stmt::Return(_) => "`return`",
+        Stmt::If { .. } => "`if` / `elif` / `else`",
+        Stmt::While { .. } => "`while` loop",
+        Stmt::ForEach { .. } | Stmt::ForEachPair { .. } | Stmt::ForEachZip3 { .. } => "`for` loop",
+        Stmt::Continue => "`continue`",
+        Stmt::Break => "`break`",
+        Stmt::Print { .. } => "`print(...)`",
+        Stmt::Let { .. } | Stmt::Assign { .. } | Stmt::LetTuple { .. } => "variable assignment",
+        Stmt::Assert { .. } => "`assert`",
+        Stmt::Raise { .. } => "`raise`",
+        Stmt::TryCatch { .. } => "`try` / `except`",
+        Stmt::ClosureLet { .. } | Stmt::NestedFn { .. } => "nested function / closure",
+        Stmt::FileWrite { .. } => "file write",
+        Stmt::SideEffectCall { .. } => "call statement",
+        _ => "container mutation or other statement",
+    }
+}
+
+/// PMAT-1383: classify a function body for the shell lane, refusing
+/// anything that has no shell rendering instead of dropping it.
+///
+/// **This replaces a silent `filter`.** Through v0.1.617 `lower` kept
+/// the six renderable `Stmt` kinds and threw the other 35 away without
+/// a word, so `xpile transpile x.py --target shell` exited 0 emitting
+/// a script that executed DIFFERENTLY from its source — measured, not
+/// assumed: `print("hello")` emitted an empty script; a `while` /
+/// `for` loop wrapping `subprocess.run` emitted NOTHING (the loop was
+/// dropped whole, body included); an `if`-guarded command vanished
+/// while its unguarded siblings emitted, silently erasing the
+/// condition; and a `raise` after a command was erased, turning a
+/// Python exit-1 into a shell exit-0. The bashrs *frontend* only
+/// produces renderable statements, so the shell→shell round-trip
+/// never saw this — it fired only from the Python cross-domain
+/// direction, which is the lane `CLAUDE.md`'s own workflow item 3
+/// advertises.
+///
+/// The one exemption is the function's **return value**, because a
+/// Python function is being modelled as a straight-line command
+/// SCRIPT. Note where that value lives: depyler's lowering invariant
+/// is "exactly one final return", and meta-HIR carries it as
+/// `Block::trailing_return` — an `Expr` OUTSIDE `stmts` — so both
+/// canonical cross-domain fixtures end in `return 0` without ever
+/// producing a `Stmt::Return`. Checking only the statement list would
+/// leave that whole path unchecked, which is why `block` is taken
+/// here rather than `&[Stmt]`. The exemption is narrow:
+///
+///  * `Expr::Unit` (a `-> None` function, and bashrs-frontend's
+///    synthetic `main`) drops nothing, so it is silently fine.
+///  * an integer literal is accepted but DISCLOSED in the emitted
+///    script (second tuple field), because the script's exit status
+///    is its last command's, not that integer. A comment cannot
+///    change stdout or kill a `.`-sourcing parent the way an
+///    injected `exit` would.
+///  * anything else (`return x`, `return f()`, `return a + b`)
+///    computes something the script does not, and via a call can
+///    drop observable output, so it REFUSES.
+///
+/// A `Stmt::Return` inside the statement list is an early exit — real
+/// control flow with no shell rendering — and refuses like any other
+/// unrenderable statement.
+///
+/// Returns the renderable statements in source order plus an optional
+/// disclosure comment line.
+///
+/// `disclose_return` is false for a `SourceLang::Shell` module: there
+/// the enclosing function is bashrs-frontend's SYNTHETIC `main`, whose
+/// `trailing_return` is a structural `LitInt(0)` with no `return` in
+/// the source at all. Disclosing it would print a claim about the
+/// user's script that the script does not make — the same
+/// stale-claim class the honesty gates exist to catch — and would put
+/// a spurious line in the shell→shell round-trip.
+fn collect_emittable<'a>(
+    fn_name: &str,
+    block: &'a xpile_meta_hir::Block,
+    disclose_return: bool,
+) -> Result<(Vec<&'a Stmt>, Option<String>), BackendError> {
+    let mut emittable: Vec<&Stmt> = Vec::new();
+    let mut note: Option<String> = None;
+    for s in &block.stmts {
+        match s {
+            Stmt::Cmd { .. }
+            | Stmt::Pipeline { .. }
+            | Stmt::ShellAssign { .. }
+            | Stmt::ShellLoop { .. }
+            | Stmt::ShellIf { .. }
+            | Stmt::ShellCase { .. } => emittable.push(s),
+            other => {
+                return Err(BackendError::Lower(format!(
+                    "bashrs-backend cannot render {} (statement {} of function `{fn_name}`) as \
+                     POSIX shell; the shell lane renders only a straight-line command sequence — \
+                     `subprocess.run([...])` calls, pipelines, shell assignments, and shell \
+                     loops / conditionals / case — optionally followed by a final `return`. \
+                     Emitting the surrounding commands and dropping this one would produce a \
+                     script that runs differently from its source, so the whole emit refuses.",
+                    unrenderable_stmt_label(other),
+                    emittable.len() + 1,
+                )));
+            }
+        }
+    }
+    match &block.trailing_return {
+        Expr::Unit => {}
+        Expr::LitInt(n) if disclose_return => {
+            note = Some(format!(
+                "# note: `{fn_name}` ends in `return {n}`, which is NOT modelled — \
+                 this script's exit status is its last command's"
+            ));
+        }
+        Expr::LitInt(_) => {}
+        other => {
+            return Err(BackendError::Lower(format!(
+                "bashrs-backend cannot render the return value of function `{fn_name}` \
+                 ({other:?}) as POSIX shell; the shell lane models a function as a script, \
+                 which has no return value. Only `return <int literal>` (disclosed in a \
+                 comment) and a `-> None` function are accepted — a computed return value \
+                 would be silently discarded, and one containing a call would drop the \
+                 output that call produces."
+            )));
+        }
+    }
+    Ok((emittable, note))
+}
+
 pub struct BashrsBackend;
 
 impl Backend for BashrsBackend {
@@ -373,22 +505,17 @@ impl Backend for BashrsBackend {
             // single line. Pipelines compose Cmd stages, so the
             // per-stage rendering reuses the same `program args...`
             // format used for top-level Cmd.
-            let emittable: Vec<&Stmt> = f
-                .body
-                .stmts
-                .iter()
-                .filter(|s| {
-                    matches!(
-                        s,
-                        Stmt::Cmd { .. }
-                            | Stmt::Pipeline { .. }
-                            | Stmt::ShellLoop { .. }
-                            | Stmt::ShellIf { .. }
-                            | Stmt::ShellCase { .. }
-                            | Stmt::ShellAssign { .. }
-                    )
-                })
-                .collect();
+            //
+            // PMAT-1383: this walk used to be a silent `filter` that
+            // kept the renderable statements and discarded the other
+            // 35 `Stmt` kinds without a word. `collect_emittable`
+            // REFUSES instead — see its doc comment for the four
+            // execution-witnessed divergences that produced.
+            let (emittable, return_note) = collect_emittable(
+                &f.name,
+                &f.body,
+                module.source_lang != xpile_meta_hir::SourceLang::Shell,
+            )?;
             if emittable.is_empty() {
                 continue;
             }
@@ -413,6 +540,12 @@ impl Backend for BashrsBackend {
                 }
                 emitted_commands += 1;
             }
+            // PMAT-1383: disclose an ignored trailing `return <int>`
+            // in place, after the function's commands.
+            if let Some(note) = return_note {
+                writeln!(primary, "{note}")
+                    .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
+            }
         }
         if emitted_commands == 0 {
             // Genuinely empty input — the module produced zero
@@ -422,7 +555,15 @@ impl Backend for BashrsBackend {
             // empty input; non-empty input renders real shell above).
             writeln!(
                 primary,
-                "# (no commands — empty script or parse produced 0 Stmt::Cmd)"
+                // PMAT-1383: the old parenthetical claimed "parse
+                // produced 0 Stmt::Cmd", which was false for e.g.
+                // `def f() -> int: return 0` — that parses to one
+                // renderable-free function. Nothing is dropped in
+                // that case (the return value is disclosed
+                // separately, and every unrenderable statement now
+                // refuses upstream), but the diagnostic must not
+                // assert something the tree contradicts.
+                "# (no commands — the module has no renderable shell statements)"
             )
             .map_err(|e| BackendError::Lower(format!("write failed: {e}")))?;
         }

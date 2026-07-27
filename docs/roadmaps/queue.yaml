@@ -1150,6 +1150,67 @@ queue:
     a gate_touch and do NOT touch witness_floor.rs. On 2026-07-30 take PMAT-1373 (release commit,
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 
+- id: PMAT-1383
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`--target shell` exited 0 emitting a script that RAN DIFFERENTLY from its Python source --
+    the backend SILENTLY DROPPED 35 of 41 Stmt kinds (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED by executing PMAT-1382's own next-pick note, which names the Python->shell cross-domain
+    path as a lane none of PMAT-1380/1381/1382 swept. The queue is empty before Thursday.
+    ** THE DEFECT: BashrsBackend::lower filtered each function body to the six renderable Stmt kinds
+    (Cmd / Pipeline / ShellAssign / ShellLoop / ShellIf / ShellCase) and discarded the other 35
+    WITHOUT A WORD. Six divergences, execution-witnessed against live CPython through the shipped
+    CLI: `print("hello")` -> empty script; an assignment between two commands shredded the middle;
+    an `if`-guarded command VANISHED while its unguarded siblings emitted (condition erased, script
+    still LOOKED faithful -- the sharpest of the six); `while` and `for` wrapping subprocess.run
+    each emitted NOTHING (loop dropped whole, body included); and a `raise` after a command turned a
+    Python exit-1 into a shell exit-0. All six exited 0.
+    ** WHY IT SURVIVED: bashrs-frontend produces ONLY renderable statements, so the shell->shell
+    round-trip -- which is what every existing shell witness exercises -- never touched the hole. It
+    was reachable only from the Python direction, i.e. the exact lane CLAUDE.md's workflow item 3
+    advertises. General lesson: a round-trip witness certifies the round trip, not the emitter.
+    ** SECOND, DISJOINT DROP PATH: meta-HIR keeps a function's return value in
+    `Block::trailing_return`, an Expr OUTSIDE `stmts`. A walk over the statement list alone leaves
+    it unchecked, and `return 1 + 2` was discarded by the same silence. Found only because the
+    first fix's disclosure comment did not appear on the canonical fixture -- the ABSENCE of
+    expected output is a signal; chase it.
+    ** THE FIX: collect_emittable refuses, naming the construct + statement position + function. An
+    integer trailing_return is kept (both canonical fixtures end in `return 0`) and DISCLOSED as a
+    comment -- not an injected `exit`, which would change a `.`-sourcing parent's control flow.
+    Disclosure is SUPPRESSED for SourceLang::Shell: there the LitInt(0) is bashrs-frontend's
+    synthetic `main` and printing a claim about a `return` the user never wrote is the same
+    stale-claim class the honesty gates hunt. The false "(no commands -- ... parse produced 0
+    Stmt::Cmd)" parenthetical corrected: `def f() -> int: return 7` parses to statements.
+    ** WITNESS XPILE-SHELLX-001 (crates/xpile/tests/shell_crossdomain_witness.rs, 5 tests, 12-source
+    corpus): the property `exit 0 ==> `sh -n` accepts it AND stdout + exit status byte-match
+    CPython`, asserted over the WHOLE corpus INCLUDING the refused rows, so a future change that
+    starts accepting one is immediately checked for correctness instead of quietly going green. The
+    executing half is load-bearing, not decorative: every pre-fix script was valid POSIX, so a
+    syntax-only witness stays green through the entire defect. The refusal half asserts the FRONTEND
+    still lowers each source BEFORE pinning BackendError::Lower. XPILE_REQUIRE_SH=1 tripwire.
+    ** WITNESS-OF-THE-WITNESS -- carry this one: the first draft probed for the shell with `sh -c`
+    (no operand), which exits 2, so all 5 tests SKIPPED GREEN on a machine with a working /bin/sh --
+    the exact skip-as-green shape XPILE-WITNESS-002 exists to kill, reproduced inside the witness
+    written to prevent it. Caught by noticing 5 tests finished in 0.01s (four python3 spawns cannot)
+    and re-running with --nocapture to READ FOR the SKIP line. POSIX `sh` has no `--version`; probe
+    with `sh -c true`. A witness's own toolchain gate is untested code -- measure its RUNTIME, never
+    trust its green.
+    ** RESIDUAL PINNED: a function with no renderable statement and an integer trailing_return
+    (`def f() -> int: return 7`) still emits an empty script. Nothing a script could express is
+    dropped, and the empty-case comment no longer claims otherwise.
+    ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+    PMAT-1373). The shell lane counts only tests/shell_diff_exec.rs, so the new witness file moves
+    no floor.
+    NEXT PICK: nothing is OPEN before Thursday. Five lanes are now swept (bashrs, WASM, Rust oracle,
+    decy/C, Python->shell). A Tue/Wed fire should sweep the ONE remaining unswept emit path -- the
+    ruchy/lean/forjar string-compare backends -- or extend a pinned residual, or do CHANGELOG
+    polish. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
+    crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
+    gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
+
 - id: PMAT-1373
   status: open
   ev_rank: R1
