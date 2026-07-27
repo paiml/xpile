@@ -998,6 +998,34 @@ fn emit_unop(
 ) -> Result<WgslTy, BackendError> {
     match op {
         UnOp::Neg => {
+            // PMAT-1400 — FOLD a negated integer LITERAL into the conversion
+            // instead of negating the conversion's result.
+            //
+            // The Python frontend does NOT fold unary minus: `-2147483648`
+            // arrives as `UnOp{Neg, LitInt(2147483648)}`. The generic path
+            // below emits `(-(i32(2147483648)))`, whose INNER conversion is
+            // out of range even though the value being denoted, i32::MIN, is
+            // perfectly representable. naga rejected it — so the lane
+            // accepted i32::MAX and refused i32::MIN, blaming an "abstract
+            // value `2147483648`" that appears nowhere in the user's source.
+            //
+            // Folding is EXACT, not a coercion: for every other magnitude
+            // `i32(-n)` and `(-(i32(n)))` denote the same value, and a
+            // magnitude genuinely outside i32 still fails the SAME naga range
+            // check — now naming the value the user actually wrote. That
+            // distinction is the PMAT-1395/1399 lesson: an over-refusal must
+            // be fixed by denoting the right value, never by widening what is
+            // accepted.
+            if let Expr::LitInt(v) = operand {
+                // `checked_neg` guards i64::MIN, whose magnitude has no i64
+                // representation; it falls through to the generic path, where
+                // it refuses at naga exactly as before (it is far outside i32
+                // either way).
+                if let Some(neg) = v.checked_neg() {
+                    write!(out, "i32({neg})").expect("write");
+                    return Ok(WgslTy::I32);
+                }
+            }
             let mut buf = String::new();
             let t = emit_expr(operand, scope, &mut buf)?;
             match t {

@@ -17582,3 +17582,78 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1400
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1400: [honesty/wgsl+spirv] the WGSL lane ACCEPTED `2147483647` and
+    REFUSED `-2147483648` — the two ends of the same i32 range — and blamed an
+    "abstract value `2147483648`" that appears nowhere in the user''s source.'
+  description: 'The INVERSE of PMAT-1395 (WASM) and PMAT-1399 (Rust from C). There a
+    literal outside the target width was emitted anyway, producing output the assembler
+    rejects; here a literal INSIDE the target width was refused. Both are one root
+    defect — a literal rendered without regard to the target width''s actual bounds.
+
+
+    ** REPRO at db3359d7 with a force-rebuilt binary: `def f(a: int, b: int) -> int:
+    return a + -2147483648` under `xpile transpile --target wgsl` exits 1 with "the
+    concrete type `i32` cannot represent the abstract value `2147483648` accurately",
+    while the same program with `2147483647` emits. `--target spirv` inherits it
+    verbatim (that lane emits by compiling this module''s own WGSL lowering).
+
+
+    ** ROOT CAUSE: the Python frontend does not fold unary minus, so `-2147483648`
+    reaches the backend as `UnOp{Neg, LitInt(2147483648)}`. `emit_unop` emitted a
+    NEGATED CONVERSION — `(-(i32(2147483648)))` — putting an out-of-range magnitude
+    inside the conversion even though the value denoted, i32::MIN, is representable.
+    The Rust lane survives the same meta-HIR shape because it renders `checked_neg()`
+    on an i64, where the magnitude fits.
+
+
+    ** FIX at the single emit site: fold `Neg(LitInt(n))` to `i32(-n)`. Folding is
+    EXACT rather than a coercion — for every other magnitude the two forms denote the
+    same value, and a magnitude genuinely outside i32 fails the SAME naga range check,
+    now naming the value the user actually wrote (`-2147483649`, not `2147483649`).
+    `checked_neg` guards i64::MIN, which falls through to the unchanged path.
+
+
+    ** WHY THE EXISTING SWEEPS MISSED IT: PMAT-1388 sweeps ~800 fixtures through both
+    GPU lanes but asserts a RELATION between them (SPIR-V accepts a subset of WGSL) —
+    a defect present in BOTH lanes satisfies it. `xpile-spirv-codegen/tests/
+    offline_validate.rs` and `xpile-ptx-codegen/tests/ptxas_validate.rs` do run the
+    real validators, but over HAND-BUILT meta-HIR, so no Python source reaches them
+    and no fixture carries an i32-boundary literal.
+
+
+    ** GATE: crates/xpile/tests/wgsl_int_boundary_witness.rs (XPILE-WGSLI32-001), 5
+    tests. The accepted set is pinned at BOTH ends of acceptance AND both ends of
+    refusal — i32::MIN-1 and i32::MAX+1 must still refuse — so the over-refusal cannot
+    be "repaired" by widening what is accepted, which would trade an exit-1 lie for a
+    silent wrong answer (PMAT-1395 falsification (B)). A separate test pins the emitted
+    DECIMAL, the half a compile-only gate cannot provide: a well-typed emit can still
+    denote the wrong value. Probes span five syntactic positions (return, binop
+    operand, local init, comparison, loop bound), and the SPIR-V leg is verified
+    end-to-end through naga''s spv backend rather than inferred from the WGSL result.
+
+
+    ** ANTI-VACUITY, measured not asserted: `naga_validate_wgsl("")` returns Ok — an
+    EMPTY WGSL module validates clean. A probe harness that redirects stdout to a file
+    and validates the file therefore reports a REFUSED program as passing, because the
+    shell creates the file before the emit fails. That fired TWICE during this slice''s
+    investigation. Every assertion is guarded on SUBSTANCE (the probe''s own function
+    must be present), never on is_ok() alone, and a dedicated test pins the empty-module
+    premise so the guards do not decay into cargo cult if naga''s behaviour changes.
+
+
+    ** RED-THEN-GREEN: reverting the fix reds 4 of the 5 tests; the in-range acceptance
+    count drops 20 -> 15 (exactly the i32::MIN row in all five positions) while the
+    refusal count is UNCHANGED at 10 — the receipt that the fix widened nothing. The
+    fifth test stays green by design: it is about naga''s behaviour, not the fix.'
+  status: done
+  priority: medium
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

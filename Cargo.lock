@@ -1742,6 +1742,7 @@ dependencies = [
  "xpile-frontend",
  "xpile-meta-hir",
  "xpile-oracle",
+ "xpile-wgsl-codegen",
 ]
 
 [[package]]

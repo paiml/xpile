@@ -4,13 +4,17 @@
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
 updated: |-
-  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1396 DONE and PULLED FORWARD - the CLAUDE.md
-  shell-artifact claim, false for 71 days, replaced by an ENFORCED invariant rather than a
-  corrected count: new gate XPILE-SHELLPOLICY-001 re-derives the corpus from `git ls-files`
-  and hard-codes no cardinality, so the next fixture cannot re-falsify the doc. The SCHEDULED
-  queue is now EXHAUSTED until Thu 2026-07-30 (PMAT-1373). PMAT-1375 is 0.1.619 lane - DO NOT
-  START. Days 2-3 capacity: the honesty hunt (PMAT-1383..1399 lineage) or next_lane[0], the
-  WASM i64 SHIFT half. NOT new WASM breadth - that grind is CLOSED for this window.)
+  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1400 DONE - the WGSL/SPIR-V lanes accepted i32::MAX
+  and REFUSED i32::MIN, the two ends of the same range, blaming a literal absent from the source;
+  the INVERSE of PMAT-1395/1399 and one root defect with them. Gated by XPILE-WGSLI32-001, which
+  pins BOTH ends of acceptance AND both ends of refusal so the over-refusal cannot be repaired by
+  widening. ** next_lane[0] IS CORRECTED IN THIS PR: the WASM i64 SHIFT half it told the next fire
+  to do first had ALREADY SHIPPED as PMAT-1379 on the same day it was written - probe a queue
+  premise with a force-rebuilt binary before planning against it (PMAT-1363's lesson, again).
+  The SCHEDULED queue remains EXHAUSTED until Thu 2026-07-30 (PMAT-1373); gate touch #3 is
+  RESERVED for it. PMAT-1375 is 0.1.619 lane - DO NOT START. Days 2-3 capacity: keep hunting -
+  PMAT-1400's notes list the unswept surface it found (C -> GPU lanes; --emit-crate/--emit-shims;
+  --contracts off). NOT new WASM breadth - that grind is CLOSED for this window.)
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -2563,6 +2567,51 @@ queue:
     invisible to a compile-only property. ** NOT a witness_floor.rs touch and not a gate_touch.
     NEXT PICK: no OPEN item is dated <= 2026-07-27; PMAT-1396 (R9, doc-only, freeze-legal) is dated
     2026-07-29 and may be PULLED FORWARD under the pick_rule (today is Day 2, <= Day 4).'
+- id: PMAT-1400
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'The WGSL lane ACCEPTED `2147483647` and REFUSED `-2147483648` — the two ends of the same
+    i32 range — and blamed an "abstract value `2147483648`" that appears nowhere in the source'
+  notes: 'DONE 2026-07-27 (Day 2). SELF-DIRECTED under the queue''s own "Days 2-3 capacity: the honesty
+    hunt" clause — the SCHEDULED queue is empty until PMAT-1373 on Thu 07-30, and next_lane[0] (the WASM
+    i64 SHIFT half) turned out to be ALREADY SHIPPED as PMAT-1379 on the same day that entry was written
+    (probed, not assumed; next_lane[0] is corrected in this PR). ** THE HUNT PATH IS WORTH RECORDING because
+    most of it found NOTHING and that is the useful part: PTX was swept with ~35 generated Python probes
+    x ptxas -arch=sm_80 (every Ok assembles; arity is respected, multi-function and zero-param refuse;
+    virtual-register declarations `.reg .s64 %rv<N>` are COMPUTED, verified against a 32-term expression
+    at 31 adds / %rv<34>). WGSL/SPIR-V self-validate through naga INSIDE emit_wgsl_module (PMAT-1391 made
+    that call unconditional), so `Ok ⟹ naga accepts` holds BY CONSTRUCTION there — recursion and mutual
+    recursion refuse correctly, and the for-loop desugar correctly DUPLICATES the increment before a
+    `continue` rather than stranding it. The GPU lanes are in good shape; the defect was at the type
+    BOUNDARY, which no corpus sampled. ** THE DEFECT: the frontend does not fold unary minus, so
+    `-2147483648` reaches the backend as `UnOp{Neg, LitInt(2147483648)}` and emit_unop emitted a negated
+    CONVERSION `(-(i32(2147483648)))` — an out-of-range magnitude INSIDE the conversion for a value,
+    i32::MIN, that is representable. SPIR-V inherited it verbatim. The INVERSE of PMAT-1395/1399: there
+    an out-of-range literal was emitted anyway, here an in-range one was refused; one root defect, a
+    literal rendered without regard to the width''s actual bounds. ** WHY THE SWEEPS MISSED IT: PMAT-1388
+    sweeps ~800 fixtures through both GPU lanes but asserts a RELATION between them (SPIR-V ⊆ WGSL), which
+    a defect present in BOTH satisfies; offline_validate.rs and ptxas_validate.rs run the REAL validators
+    but over HAND-BUILT meta-HIR, so no Python source reaches them. A relation-gate and a hand-HIR gate
+    can both be green while the CLI path is wrong at a boundary neither corpus contains. ** GATE
+    crates/xpile/tests/wgsl_int_boundary_witness.rs (XPILE-WGSLI32-001), 5 tests, no skip path. Accepted
+    set pinned at BOTH ends of acceptance AND both ends of refusal, so the over-refusal cannot be repaired
+    by widening (that trades exit-1 for silent-wrong — PMAT-1395 falsification (B)); a separate test pins
+    the emitted DECIMAL, the half a compile-only gate cannot give you. ** ANTI-VACUITY MEASURED: naga
+    validates the EMPTY string Ok. A probe harness redirecting stdout to a file validates the file a
+    REFUSED run left empty — this fired TWICE during the hunt itself. Every assertion is guarded on
+    SUBSTANCE, and a test pins the empty-module premise so the guards do not become cargo cult. ** RED:
+    reverting the fix reds 4/5; in-range acceptance 20 -> 15 (exactly i32::MIN x 5 positions) with the
+    refusal count UNCHANGED at 10 — the receipt that nothing was widened. ** NOT a gate_touch, NOT a
+    witness_floor.rs touch (no GPU lane has a floor). NEXT PICK: the scheduled queue is STILL empty until
+    Thu 2026-07-30 (PMAT-1373, release commit; gate touch #3 is RESERVED for it). PMAT-1375 is 0.1.619
+    lane, DO NOT START. Days 2-3 remaining capacity: continue the honesty hunt. UNSWEPT SURFACE noted
+    during this slice, in rough EV order — (a) the C -> {wgsl, spirv, ptx} direction (this slice swept
+    Python sources only; decy-frontend C sources reach the same backends and PMAT-1399 found the C lane
+    is where width defects live); (b) `--emit-crate` and the hybrid `--emit-shims` paths, which no
+    validator-acceptance property covers; (c) `--contracts off` as a distinct emit mode. Do NOT open new
+    WASM breadth — that grind is CLOSED for this window.'
 - id: PMAT-1373
   status: open
   ev_rank: R1
@@ -2632,11 +2681,15 @@ next_lane:
   returns 0, `-(-2**63)` returns itself. Div-by-zero already TRAPS honestly (i64.div_s), so the lane is
   internally inconsistent about which arithmetic failures it reports. The full fix is overflow-checked
   add/sub/mul/neg helpers that `unreachable` on overflow — L/XL, on the emitter''s hot path, and it touches
-  every existing witness. SEPARABLE AND MUCH SMALLER, do this one first: the SHIFT half. `1 << 70` returns
-  64 because `i64.shl` masks the count to 6 bits — wrong even under fixed-width semantics, where 0 is
-  the defensible answer — and a NEGATIVE count (Python raises ValueError) masks to a large positive one.
-  `x >> n` for n >= 64 is fixable EXACTLY by clamping to 63, which reproduces CPython for both signs;
-  `x << n` for n >= 64 always overflows i64 unless x == 0, so it traps. Neither needs the hot path.'
+  every existing witness. ** THE SHIFT HALF THIS ENTRY RECOMMENDED DOING FIRST IS ALREADY SHIPPED —
+  PMAT-1379 (b82a9c45, 2026-07-27), the same day this entry was written. VERIFIED at db3359d7, not
+  assumed: the emitted WAT carries `$__wasm_shl_i64` / `$__wasm_shr_i64`, which trap on a negative
+  count, clamp `>>` to 63, and trap `<<` for n >= 64 unless x == 0 — exactly what was prescribed
+  below. A cron fire on 2026-07-27 picked this entry as next_lane[0], probed it, and found the premise
+  already false; the ADD/SUB/MUL/NEG overflow half below is what actually remains. LESSON (PMAT-1363''s,
+  again): probe a queue premise with a force-rebuilt binary before planning against it.
+  [SHIPPED, for the record: `1 << 70` returned 64 because `i64.shl` masks the count to 6 bits, and a
+  NEGATIVE count — Python raises ValueError — masked to a large positive one.]'
 - list[str] — the biggest compositional hole; blocks s.split(), ','.join(xs) and the repo's own word_count.py.
   Even the read-only subset is M-L.
 - Nested dict values dict[K, dict[...]] and dict-valued struct fields — unblocked by the shipped i32-pointer-in-i64-slot
@@ -2654,6 +2707,23 @@ next_lane:
 - PMAT-952 bidirectional-WASM lift and PMAT-956 provable-model-as-code — the only two genuinely open capability
   frontiers
 owner_decisions:
+- id: ruleset-workspace-test-dropped
+  summary: '⚠️ SURFACED 2026-07-27 by the PMAT-1400 cron fire, NOT acted on. XPILE-RULESET-DRIFT-001''s
+    LIVE half reds locally: org ruleset 13878864 now requires only {"gate"} while
+    docs/status/ruleset-13878864.json records {"gate", "workspace-test"}. Live `updated_at` is
+    2026-07-27T13:48:42+02:00 — the change was made DURING that fire, so `workspace-test` is no
+    longer a merge-blocking context and a PR can now merge with it RED. Verified it reproduces on
+    UNMODIFIED main, so it is not slice fallout. CI is unaffected: the live half skips-with-reason
+    under the repo-scoped Actions GITHUB_TOKEN and the 3 STATIC tests pass, so this is visible only
+    where a token carries org scope. ** THE SNAPSHOT WAS DELIBERATELY NOT UPDATED. PMAT-1347''s own
+    recorded lesson is that a receipt committed minutes after an external mutation becomes a
+    stale-but-authoritative-looking record — the 2026-07-05 four-context flip was reverted six hours
+    later and its snapshot misled for three weeks. Re-deriving inside the hour reproduces exactly
+    that. ** DECISION NEEDED: if the drop is intended, re-derive the snapshot AND every
+    `XPILE-ENFORCEMENT REQUIRED-CONTEXTS:` marker, and correct the sprint plan + cron instructions,
+    which both state [gate, workspace-test] as the blocking set. If unintended, restore
+    workspace-test. Until then the sprint continues to require BOTH green before merging — a
+    weakened ruleset is not a licence to merge red.'
 - id: int-float-container-literal-policy
   summary: '`list[float] = [1, 2.5]` silently COERCES (compiles, prints [1.0, 2.5] vs CPython [1, 2.5])
     while `dict[str,float] = {''a'': 1}` and `tuple[float,float] = (1, 2.5)` accept-then-fail rustc with
