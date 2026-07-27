@@ -3,10 +3,10 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-26 (v0.1.617 SHIPPED 21:18 — tag ccb95a04, 31/31 crates live, 108 commits, 1225-line
-  CHANGELOG. Re-slated for v0.1.618 (Fri 2026-07-31) by a 6-agent EV workflow that re-verified every premise
-  against the live tree. STANDING EV RULE: a fix converting a SILENT WRONG ANSWER into an honest refusal
-  outranks new capability.)'
+updated: '2026-07-27 (toward v0.1.618 Fri 07-31. Ranked slate drained overnight — 26 commits since v0.1.617
+  incl. a self-directed HONESTY SWEEP. EXTENDED by a 30-agent hunt over the UNSWEPT surfaces, every finding
+  attacked by a skeptic defaulting to REFUTED. The hunt''s R1 (spirv canned-output) was found INDEPENDENTLY
+  by the cron and fixed as PMAT-1388 / #1975 before this extension merged, so it is omitted here.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -39,16 +39,16 @@ sprint:
     this merge, so the serialization holds] -> #3 PMAT-1346 claims_drift.rs -> #4 PMAT-1347 ruleset_drift.rs+deny.toml+ci.yml:56
     -> #5 PMAT-1348 claims_drift.rs -> #6 PMAT-1350 contracts/*.yaml+probe -> #7 PMAT-1356 changelog_freshness.rs
     -> #8 PMAT-1359 witness_floor.rs TOUCH 2 (inside the release commit)'
-  witness_floor_touches: 'EXACTLY TWO PER RELEASE WINDOW. For the 0.1.618 window those are PMAT-1372
-    (TOUCH 1, DONE 2026-07-26 — ADDED the XPILE-WITNESS-004 executing-half floors; bumped NO existing
-    floor value, so it cannot red another branch on rebase) and PMAT-1373 (TOUCH 2, the Thursday release
-    commit, which re-derives ALL lanes INCLUDING the two new ones, WASM_EXEC_FLOOR and WASM_EXEC_PCT_FLOOR).
-    NOTHING ELSE may touch crates/xpile/tests/witness_floor.rs before the tag. Intermediate slices ADD
-    witnesses and NEVER bump a floor — floors are lower bounds, so adding tests cannot red them. Adding
-    a new *_witness.rs file is NOT a touch of this file, but note it now has to carry a runtime probe
-    site or `every_wasm_witness_file_gates_on_the_runtime` reds. [HISTORY: the 0.1.617 window''s two touches
-    were PMAT-1344 (initial re-derive) and PMAT-1359 (release commit, now superseded by PMAT-1373). An
-    earlier revision of this field named PMAT-1360 for TOUCH 2, corrected by PMAT-1344.]'
+  witness_floor_touches: 'EXACTLY TWO PER RELEASE WINDOW. For the 0.1.618 window those are PMAT-1372 (TOUCH
+    1, DONE 2026-07-26 — ADDED the XPILE-WITNESS-004 executing-half floors; bumped NO existing floor value,
+    so it cannot red another branch on rebase) and PMAT-1373 (TOUCH 2, the Thursday release commit, which
+    re-derives ALL lanes INCLUDING the two new ones, WASM_EXEC_FLOOR and WASM_EXEC_PCT_FLOOR). NOTHING
+    ELSE may touch crates/xpile/tests/witness_floor.rs before the tag. Intermediate slices ADD witnesses
+    and NEVER bump a floor — floors are lower bounds, so adding tests cannot red them. Adding a new *_witness.rs
+    file is NOT a touch of this file, but note it now has to carry a runtime probe site or `every_wasm_witness_file_gates_on_the_runtime`
+    reds. [HISTORY: the 0.1.617 window''s two touches were PMAT-1344 (initial re-derive) and PMAT-1359
+    (release commit, now superseded by PMAT-1373). An earlier revision of this field named PMAT-1360 for
+    TOUCH 2, corrected by PMAT-1344.]'
   prior_release: v0.1.617 shipped 2026-07-26 21:18 (ccb95a04); full A1 sequence in the project-sprint-2026-07-26-release
     memory
   pick_rule: 'Take the lowest-numbered OPEN item whose `date` <= today (ISO). Within a date, ev_rank R1
@@ -200,7 +200,11 @@ queue:
     (CHANGELOG skeleton + arcs 1-2) — but see the CONCURRENCY note below before taking it.'
 - id: PMAT-1349
   status: superseded
-  notes_superseded: 'SUPERSEDED 2026-07-26. This slice''s CHANGELOG work SHIPPED — it is the [0.1.617] section of CHANGELOG.md, written into the release commit ccb95a04 under PMAT-1368/1369 by the concurrent interactive session that claimed the lane in PR #1948. The `in_progress` marker was left stale by that hand-off and was misleading the next-pick rule: verify against `git log --grep=PMAT-1368` and the arc headings under `## [0.1.617]`, not against this status field.'
+  notes_superseded: 'SUPERSEDED 2026-07-26. This slice''s CHANGELOG work SHIPPED — it is the [0.1.617]
+    section of CHANGELOG.md, written into the release commit ccb95a04 under PMAT-1368/1369 by the concurrent
+    interactive session that claimed the lane in PR #1948. The `in_progress` marker was left stale by
+    that hand-off and was misleading the next-pick rule: verify against `git log --grep=PMAT-1368` and
+    the arc headings under `## [0.1.617]`, not against this status field.'
   ev_rank: R4
   title: CHANGELOG [Unreleased] skeleton (8 arc headings) + write arcs 1-2 (WASM list surface completion;
     dict/set hash-container arc)
@@ -313,31 +317,26 @@ queue:
   gate_touch: null
   title: DIVERGENT-arm falsifier for `xpile hybrid --verify` (test-only) — the fixture is already found
     and verified
-  done_note: 'DONE 2026-07-26 (pulled forward from 07-29; every dated slice for today
-    was drained and today is well before the Day-4 pull-forward cutoff). ** THE SLATE''S
-    FIXTURE NAME DID NOT SURVIVE CONTACT: the entry below prescribes `hybrid_ternary`
-    (ternary int/float unification). The shipped fixture is `hybrid_divergent/`, which
-    diverges via the SAME documented class — Known-divergence #5, the OPEN-POLICY
-    float-annotated list (`xs: list[float]` fed an int-returning FFI call) — i.e. the
-    slate''s own named FALLBACK fixture, not its primary. Reason: the primary and the
-    fallback are the same bug family and the fallback''s divergence (`49` vs `49.0`)
-    is a strictly clearer witness than the ternary''s (`1` vs `1.0`), because the int
-    value is produced by the C boundary itself, so the test also demonstrates that the
-    FFI line AGREES and only the Python-side coercion diverges. ** PREMISE CORRECTION
-    worth recording: a divergence CANNOT be built by mis-casting the FFI boundary —
-    `ctypes_binding_for` and the emitted shim both derive from the SAME meta-HIR, so a
-    mis-cast cancels on both sides (probed: int overflow agrees, `long` is honestly
-    refused, `double 2.0` agrees, bool-ish int agrees). The divergence must originate
-    on the PYTHON side. ** BONUS DEFECT FOUND AND FIXED BY THE NEW TEST: the divergence
-    report printed a 0-BASED line index, so a first-line divergence read `✗ DIVERGENT
-    at line 0`. Now 1-based. ** Hybrid witness count 3 -> 4 against an unchanged
-    HYBRID_FLOOR = 3; no witness_floor.rs edit, so the two-touch discipline is intact.
-    ** INVERTED-TRIPWIRE ACKNOWLEDGED: the fixture is asserted to DIVERGE, so it goes
-    red the day float-coercion policy is fixed; hybrid_verify.rs carries a loud comment
-    naming the bug and the exact edit to make then. NEXT PICK: PMAT-1371 (bashrs-frontend
-    REFUSES `;&`/`;;&`/here-docs/stray `&` instead of shredding them, date 2026-07-28,
-    R1) — PMAT-1353 stays DEFERRED to 0.1.619 per the re-slate even though its stated
-    prerequisite is now satisfied.'
+  done_note: 'DONE 2026-07-26 (pulled forward from 07-29; every dated slice for today was drained and
+    today is well before the Day-4 pull-forward cutoff). ** THE SLATE''S FIXTURE NAME DID NOT SURVIVE
+    CONTACT: the entry below prescribes `hybrid_ternary` (ternary int/float unification). The shipped
+    fixture is `hybrid_divergent/`, which diverges via the SAME documented class — Known-divergence #5,
+    the OPEN-POLICY float-annotated list (`xs: list[float]` fed an int-returning FFI call) — i.e. the
+    slate''s own named FALLBACK fixture, not its primary. Reason: the primary and the fallback are the
+    same bug family and the fallback''s divergence (`49` vs `49.0`) is a strictly clearer witness than
+    the ternary''s (`1` vs `1.0`), because the int value is produced by the C boundary itself, so the
+    test also demonstrates that the FFI line AGREES and only the Python-side coercion diverges. ** PREMISE
+    CORRECTION worth recording: a divergence CANNOT be built by mis-casting the FFI boundary — `ctypes_binding_for`
+    and the emitted shim both derive from the SAME meta-HIR, so a mis-cast cancels on both sides (probed:
+    int overflow agrees, `long` is honestly refused, `double 2.0` agrees, bool-ish int agrees). The divergence
+    must originate on the PYTHON side. ** BONUS DEFECT FOUND AND FIXED BY THE NEW TEST: the divergence
+    report printed a 0-BASED line index, so a first-line divergence read `✗ DIVERGENT at line 0`. Now
+    1-based. ** Hybrid witness count 3 -> 4 against an unchanged HYBRID_FLOOR = 3; no witness_floor.rs
+    edit, so the two-touch discipline is intact. ** INVERTED-TRIPWIRE ACKNOWLEDGED: the fixture is asserted
+    to DIVERGE, so it goes red the day float-coercion policy is fixed; hybrid_verify.rs carries a loud
+    comment naming the bug and the exact edit to make then. NEXT PICK: PMAT-1371 (bashrs-frontend REFUSES
+    `;&`/`;;&`/here-docs/stray `&` instead of shredding them, date 2026-07-28, R1) — PMAT-1353 stays DEFERRED
+    to 0.1.619 per the re-slate even though its stated prerequisite is now satisfied.'
   notes: "CARRIED FORWARD UNMERGED. The `ComparisonResult::Divergence` arm at\ncrates/xpile/src/main.rs:~556-568\
     \ has ZERO test coverage — all three hybrid --verify\nwitnesses are green-path only. It is the product's\
     \ most important NEGATIVE verdict and its\nwording, its stdout/stderr split and its exit code can\
@@ -385,12 +384,20 @@ queue:
     soak first. Wiring an unsoaked repair path in a release week inverts the risk. 0.1.619 lane.
 - id: PMAT-1354
   status: superseded
-  notes_superseded: 'SUPERSEDED 2026-07-26. This slice''s CHANGELOG work SHIPPED — it is the [0.1.617] section of CHANGELOG.md, written into the release commit ccb95a04 under PMAT-1368/1369 by the concurrent interactive session that claimed the lane in PR #1948. The `in_progress` marker was left stale by that hand-off and was misleading the next-pick rule: verify against `git log --grep=PMAT-1368` and the arc headings under `## [0.1.617]`, not against this status field.'
+  notes_superseded: 'SUPERSEDED 2026-07-26. This slice''s CHANGELOG work SHIPPED — it is the [0.1.617]
+    section of CHANGELOG.md, written into the release commit ccb95a04 under PMAT-1368/1369 by the concurrent
+    interactive session that claimed the lane in PR #1948. The `in_progress` marker was left stale by
+    that hand-off and was misleading the next-pick rule: verify against `git log --grep=PMAT-1368` and
+    the arc headings under `## [0.1.617]`, not against this status field.'
   ev_rank: R5
   title: CHANGELOG arcs 3-5 (any/all truthiness-reduce belt; NumBuiltin lane; stepped string slice)
 - id: PMAT-1355
   status: superseded
-  notes_superseded: 'SUPERSEDED 2026-07-26. This slice''s CHANGELOG work SHIPPED — it is the [0.1.617] section of CHANGELOG.md, written into the release commit ccb95a04 under PMAT-1368/1369 by the concurrent interactive session that claimed the lane in PR #1948. The `in_progress` marker was left stale by that hand-off and was misleading the next-pick rule: verify against `git log --grep=PMAT-1368` and the arc headings under `## [0.1.617]`, not against this status field.'
+  notes_superseded: 'SUPERSEDED 2026-07-26. This slice''s CHANGELOG work SHIPPED — it is the [0.1.617]
+    section of CHANGELOG.md, written into the release commit ccb95a04 under PMAT-1368/1369 by the concurrent
+    interactive session that claimed the lane in PR #1948. The `in_progress` marker was left stale by
+    that hand-off and was misleading the next-pick rule: verify against `git log --grep=PMAT-1368` and
+    the arc headings under `## [0.1.617]`, not against this status field.'
   ev_rank: R1
   title: 'CHANGELOG arcs 6-8 + the THREE MANDATORY SECTIONS: ''What still REFUSES'', ''What is NOT merge-blocking'',
     ''Known divergences'''
@@ -409,46 +416,45 @@ queue:
   gate_touch: 2
   title: CHANGELOG-freshness gate (crates/xpile/tests/changelog_freshness.rs) — the root-cause gate for
     the empty [Unreleased]
-  notes_done: 'DONE 2026-07-26 (pulled forward from 07-29 under the day<=4 rule; nothing was dated <= Sun,
-    gate touch #1 PMAT-1372 was merged at 621a3e83, so touch #2 was clear to start). ** THE ENTRY BELOW
-    SAID "the gate should land GREEN on main". IT DID NOT — and that is the slice''s main finding. The
-    history assertion reds on UNMODIFIED origin/main naming exactly PMAT-1350: the WASM-contract
-    reconciliation is a contracts/*.yaml change that landed 15 minutes AFTER the v0.1.617 tag (4355bfb8
-    at 21:21 vs the tag''s 21:06) and had NO entry anywhere in CHANGELOG.md. The premise was written
-    against a WEAKER gate (non-emptiness only); the entry ships in this same commit, with entries for
-    PMAT-1356 and PMAT-1372 alongside it. ** LOAD-BEARING DESIGN CHOICE: the history assertion does NOT
-    anchor on the literal string `## [Unreleased]`. A gate that did would RED THE RELEASE COMMIT, which
-    promotes that heading away — exactly the commit that most needs to pass. It anchors on the last
-    released version (the v* tag) and requires the region ABOVE that version''s heading to describe work
-    landed since it. Mid-cycle that is [Unreleased]; in the release commit it is the promoted [0.1.618]
-    section (same content, renamed heading, still above ## [0.1.617]); once v0.1.618 is tagged it is the
-    NEW [Unreleased] the next cycle''s first slice is forced to create. Falsification (D) SIMULATED
-    THURSDAY''S PMAT-1373 COMMIT END TO END (bump Cargo.toml to 0.1.618 + promote the heading) and
-    confirmed 11/11 green — PMAT-1373 is safe by construction, not by hope. ** THE DECISIVE FALSIFICATION
-    IS (B), not (A): emptying the [Unreleased] BODY reds assertions 1 and 3, but DELETING the heading
-    outright leaves assertions 1 and 2 GREEN (1 goes vacuous by design; 2 sees leading == [0.1.617] ==
-    the workspace version) while assertion 3 reds naming all four ids. That contrast is the whole argument
-    for the history half — a static non-emptiness gate is defeated by deleting the heading it keys on.
-    ** SCOPE IS A DELIBERATE LOWER BOUND, stated in the module header: "shipped source" = crates/*/src/**
-    plus contracts/**.yaml, so test-only/CI/docs slices are NOT compelled to appear. Requiring an entry
-    per test-only slice makes the gate noisy enough to get loosened, and a loosened gate is worth less
-    than a narrow one that holds. ** Floors are a NOT-EMPTY bar (1/1/1), deliberately NOT a size ratchet:
-    the first slice of a new cycle legitimately adds one bullet and a floor of 3 would red it. Strength
-    scales through assertion 3, which grows with the work landed, not through padding constants.
-    ** XPILE_REQUIRE_CHANGELOG_HISTORY=1 turns the skip into a hard failure (mirrors
-    XPILE_REQUIRE_RULESET_CHECK / XPILE_REQUIRE_KANI); verified both ways. ** LESSON RECORDED: a unit test
-    CAUGHT A BUG IN ITSELF on first run — the section-leak check asserted !body.contains("PMAT-1"), a
-    SUBSTRING of PMAT-1234, so it would have passed no matter how badly section_body leaked. When
-    asserting a needle is ABSENT, pick one that is not a prefix of a needle you assert is PRESENT.
-    ** SECOND LESSON: sharing one --target-dir across two worktrees serves a CACHED test binary with the
-    OTHER worktree''s CARGO_MANIFEST_DIR baked in — after removing the falsification worktree the tests
-    failed reading /tmp/wt-cf-falsify/CHANGELOG.md. Give each worktree its own target dir. ** 11 tests
-    (3 assertions + 8 anti-vacuity unit tests). Test-only + CHANGELOG prose; no product code, no CI
-    change, no witness floor touched (floors are lower bounds and witness_floor.rs is the PMAT-1372/1373
-    serial resource). NEXT PICK: on Mon 07-27 the ranked slate is empty until 07-29, so pull forward
-    PMAT-1367 (R3, §14.4 Runtime-stratum counter, WIDEN-ONLY — read its notes in full, the naive widen
-    is explicitly forbidden) or take a D-pool item (PMAT-1362..1366, cut in reverse-listed order). Gate
-    touch #3 is PMAT-1373, the Thursday release commit — do NOT start another gate_touch before it.'
+  notes_done: 'DONE 2026-07-26 (pulled forward from 07-29 under the day<=4 rule; nothing was dated <=
+    Sun, gate touch #1 PMAT-1372 was merged at 621a3e83, so touch #2 was clear to start). ** THE ENTRY
+    BELOW SAID "the gate should land GREEN on main". IT DID NOT — and that is the slice''s main finding.
+    The history assertion reds on UNMODIFIED origin/main naming exactly PMAT-1350: the WASM-contract reconciliation
+    is a contracts/*.yaml change that landed 15 minutes AFTER the v0.1.617 tag (4355bfb8 at 21:21 vs the
+    tag''s 21:06) and had NO entry anywhere in CHANGELOG.md. The premise was written against a WEAKER
+    gate (non-emptiness only); the entry ships in this same commit, with entries for PMAT-1356 and PMAT-1372
+    alongside it. ** LOAD-BEARING DESIGN CHOICE: the history assertion does NOT anchor on the literal
+    string `## [Unreleased]`. A gate that did would RED THE RELEASE COMMIT, which promotes that heading
+    away — exactly the commit that most needs to pass. It anchors on the last released version (the v*
+    tag) and requires the region ABOVE that version''s heading to describe work landed since it. Mid-cycle
+    that is [Unreleased]; in the release commit it is the promoted [0.1.618] section (same content, renamed
+    heading, still above ## [0.1.617]); once v0.1.618 is tagged it is the NEW [Unreleased] the next cycle''s
+    first slice is forced to create. Falsification (D) SIMULATED THURSDAY''S PMAT-1373 COMMIT END TO END
+    (bump Cargo.toml to 0.1.618 + promote the heading) and confirmed 11/11 green — PMAT-1373 is safe by
+    construction, not by hope. ** THE DECISIVE FALSIFICATION IS (B), not (A): emptying the [Unreleased]
+    BODY reds assertions 1 and 3, but DELETING the heading outright leaves assertions 1 and 2 GREEN (1
+    goes vacuous by design; 2 sees leading == [0.1.617] == the workspace version) while assertion 3 reds
+    naming all four ids. That contrast is the whole argument for the history half — a static non-emptiness
+    gate is defeated by deleting the heading it keys on. ** SCOPE IS A DELIBERATE LOWER BOUND, stated
+    in the module header: "shipped source" = crates/*/src/** plus contracts/**.yaml, so test-only/CI/docs
+    slices are NOT compelled to appear. Requiring an entry per test-only slice makes the gate noisy enough
+    to get loosened, and a loosened gate is worth less than a narrow one that holds. ** Floors are a NOT-EMPTY
+    bar (1/1/1), deliberately NOT a size ratchet: the first slice of a new cycle legitimately adds one
+    bullet and a floor of 3 would red it. Strength scales through assertion 3, which grows with the work
+    landed, not through padding constants. ** XPILE_REQUIRE_CHANGELOG_HISTORY=1 turns the skip into a
+    hard failure (mirrors XPILE_REQUIRE_RULESET_CHECK / XPILE_REQUIRE_KANI); verified both ways. ** LESSON
+    RECORDED: a unit test CAUGHT A BUG IN ITSELF on first run — the section-leak check asserted !body.contains("PMAT-1"),
+    a SUBSTRING of PMAT-1234, so it would have passed no matter how badly section_body leaked. When asserting
+    a needle is ABSENT, pick one that is not a prefix of a needle you assert is PRESENT. ** SECOND LESSON:
+    sharing one --target-dir across two worktrees serves a CACHED test binary with the OTHER worktree''s
+    CARGO_MANIFEST_DIR baked in — after removing the falsification worktree the tests failed reading /tmp/wt-cf-falsify/CHANGELOG.md.
+    Give each worktree its own target dir. ** 11 tests (3 assertions + 8 anti-vacuity unit tests). Test-only
+    + CHANGELOG prose; no product code, no CI change, no witness floor touched (floors are lower bounds
+    and witness_floor.rs is the PMAT-1372/1373 serial resource). NEXT PICK: on Mon 07-27 the ranked slate
+    is empty until 07-29, so pull forward PMAT-1367 (R3, §14.4 Runtime-stratum counter, WIDEN-ONLY — read
+    its notes in full, the naive widen is explicitly forbidden) or take a D-pool item (PMAT-1362..1366,
+    cut in reverse-listed order). Gate touch #3 is PMAT-1373, the Thursday release commit — do NOT start
+    another gate_touch before it.'
   notes: 'CARRIED FORWARD UNMERGED from the v0.1.617 sprint. Confirmed still absent at c3e468d4:
 
     `ls crates/xpile/tests/ | grep -i changelog` returns NOTHING. This is the gate for the
@@ -520,49 +526,46 @@ queue:
 - id: PMAT-1362
   status: done
   ev_rank: D
-  title: '[D-pool] Shell-boundary widening: lift the C-only filter at crates/xpile/src/main.rs:469
-    so hybrid --verify executes the Shell boundary (SHIPPED 2026-07-27, pulled forward from 07-29)'
-  notes: 'DONE. `verify_hybrid` now dispatches per paradigm: verify_c_boundary (CPython-via-ctypes,
-    unchanged) and verify_shell_boundary (reference = the ORIGINAL .sh under `sh`; artifact = the
-    cargo-built workspace whose generated driver calls <sym>_shim(&[]) with the RE-EMITTED script
-    0755 in <ws>/bin/ PREPENDED to PATH). Both red arms demonstrated before landing (drop the PATH
-    prepend -> spawn panic; perturb one emitted line -> DIVERGENT at line 2). New control-flow
-    fixture hybrid_shell_exec/ (for + while + if/else + top-level case, 8 lines) plus 3 witnesses
-    appended to hybrid_verify.rs (NOT a new file — witness_floor.rs hardcodes the 3-file hybrid
-    list and is a serial resource); hybrid live 4 -> 7, HYBRID_FLOOR untouched at 3. Contract gains
-    FALSIFY-FFI-SHELL-SUBPROCESS-003, its FIRST execution falsifier, with a scope_caveats block.
-    NOT covered and stated as such: argv marshalling (driver passes &[]), stderr/stdin, exit-code
-    propagation into a Python caller. Quorum deliberately UNCHANGED — pass A of
-    count_runtime_witnesses is a FLAT read_dir, so a subdirectory fixture casts no Runtime vote and
-    C-FFI-SHELL-SUBPROCESS stays Run=0/PARTIAL where quorum.rs MUST_STAY_UNWITNESSED pins it.
-    NEXT PICK: PMAT-1365 (list(d)/list(d.keys())/list(d.values())), then PMAT-1366 (round(x)).'
+  title: '[D-pool] Shell-boundary widening: lift the C-only filter at crates/xpile/src/main.rs:469 so
+    hybrid --verify executes the Shell boundary (SHIPPED 2026-07-27, pulled forward from 07-29)'
+  notes: 'DONE. `verify_hybrid` now dispatches per paradigm: verify_c_boundary (CPython-via-ctypes, unchanged)
+    and verify_shell_boundary (reference = the ORIGINAL .sh under `sh`; artifact = the cargo-built workspace
+    whose generated driver calls <sym>_shim(&[]) with the RE-EMITTED script 0755 in <ws>/bin/ PREPENDED
+    to PATH). Both red arms demonstrated before landing (drop the PATH prepend -> spawn panic; perturb
+    one emitted line -> DIVERGENT at line 2). New control-flow fixture hybrid_shell_exec/ (for + while
+    + if/else + top-level case, 8 lines) plus 3 witnesses appended to hybrid_verify.rs (NOT a new file
+    — witness_floor.rs hardcodes the 3-file hybrid list and is a serial resource); hybrid live 4 -> 7,
+    HYBRID_FLOOR untouched at 3. Contract gains FALSIFY-FFI-SHELL-SUBPROCESS-003, its FIRST execution
+    falsifier, with a scope_caveats block. NOT covered and stated as such: argv marshalling (driver passes
+    &[]), stderr/stdin, exit-code propagation into a Python caller. Quorum deliberately UNCHANGED — pass
+    A of count_runtime_witnesses is a FLAT read_dir, so a subdirectory fixture casts no Runtime vote and
+    C-FFI-SHELL-SUBPROCESS stays Run=0/PARTIAL where quorum.rs MUST_STAY_UNWITNESSED pins it. NEXT PICK:
+    PMAT-1365 (list(d)/list(d.keys())/list(d.values())), then PMAT-1366 (round(x)).'
   date: '2026-07-29'
 - id: PMAT-1363
   status: done
   ev_rank: D
-  title: '[D-pool, cut LAST] Annotated comprehension vs its annotation: the element-type agreement
-    check that was missing (SHIPPED 2026-07-27, PR #1959)'
-  notes: 'PREMISE WAS STALE AND IS CORRECTED. The original entry read "`xs: list[int] = [i for i
-    in range(5)]` refuses while `xs = [...]` emits", citing depyler-frontend/src/lib.rs:7020-7040.
-    Probed at 3eeaea88 with a force-rebuilt binary: FALSE — BOTH forms emit, by two different
-    lowerings (bare form takes the for-append desugar, annotated form takes lower_value_expecting''s
-    iterator chain). The REAL defect was one level down and worse: nothing compared the annotation
-    against what the comprehension produces, so SIX shapes were accept-then-fail-rustc E0308
-    (list[str]/list[float] over int, list[int] over str, set[str] over int, dict str KEY and str
-    VALUE over int). Now refuses at the lowering stage naming position + both types. Guard is
-    deliberately conservative — only fires when BOTH leaves are confidently-inferred scalars, since
-    infer_type_in_ctx defaults to I64; measured with a 33-shape python3-vs-rustc differential run
-    against patched and unpatched binaries, ZERO false refusals. list[float]-over-int refuses rather
-    than coercing, leaving the OPEN int-float-container-literal-policy owner decision unpre-empted.
-    NEXT PICK for the following fire: the D-pool in reverse-cut order is now PMAT-1364 (range(bool)
-    coercion), PMAT-1365 (list(d)/list(d.keys())/list(d.values()) — its note says if it does NOT land
-    it must appear in the CHANGELOG''s "What still REFUSES"), PMAT-1366 (round(x)), then PMAT-1362
-    (shell-boundary --verify widening). NOTE ON PMAT-1362 specifically: it needs a shell-boundary
-    RETURN-ABI decision the queue does not make — emit_shell_shim returns io::Result<Output>, which
-    no lowered Python `print(_tool())` can consume, so there is no non-vacuous value differential to
-    execute until that convention exists. It also changes DEFAULT --verify behaviour, so it is the
-    wrong thing to land near the Wed 18:00 freeze. Gate touches #1/#2 are merged; #3 is RESERVED for
-    the Thursday release commit PMAT-1373.'
+  title: '[D-pool, cut LAST] Annotated comprehension vs its annotation: the element-type agreement check
+    that was missing (SHIPPED 2026-07-27, PR #1959)'
+  notes: 'PREMISE WAS STALE AND IS CORRECTED. The original entry read "`xs: list[int] = [i for i in range(5)]`
+    refuses while `xs = [...]` emits", citing depyler-frontend/src/lib.rs:7020-7040. Probed at 3eeaea88
+    with a force-rebuilt binary: FALSE — BOTH forms emit, by two different lowerings (bare form takes
+    the for-append desugar, annotated form takes lower_value_expecting''s iterator chain). The REAL defect
+    was one level down and worse: nothing compared the annotation against what the comprehension produces,
+    so SIX shapes were accept-then-fail-rustc E0308 (list[str]/list[float] over int, list[int] over str,
+    set[str] over int, dict str KEY and str VALUE over int). Now refuses at the lowering stage naming
+    position + both types. Guard is deliberately conservative — only fires when BOTH leaves are confidently-inferred
+    scalars, since infer_type_in_ctx defaults to I64; measured with a 33-shape python3-vs-rustc differential
+    run against patched and unpatched binaries, ZERO false refusals. list[float]-over-int refuses rather
+    than coercing, leaving the OPEN int-float-container-literal-policy owner decision unpre-empted. NEXT
+    PICK for the following fire: the D-pool in reverse-cut order is now PMAT-1364 (range(bool) coercion),
+    PMAT-1365 (list(d)/list(d.keys())/list(d.values()) — its note says if it does NOT land it must appear
+    in the CHANGELOG''s "What still REFUSES"), PMAT-1366 (round(x)), then PMAT-1362 (shell-boundary --verify
+    widening). NOTE ON PMAT-1362 specifically: it needs a shell-boundary RETURN-ABI decision the queue
+    does not make — emit_shell_shim returns io::Result<Output>, which no lowered Python `print(_tool())`
+    can consume, so there is no non-vacuous value differential to execute until that convention exists.
+    It also changes DEFAULT --verify behaviour, so it is the wrong thing to land near the Wed 18:00 freeze.
+    Gate touches #1/#2 are merged; #3 is RESERVED for the Thursday release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1364
   status: done
@@ -574,33 +577,32 @@ queue:
     read before trusting it): `for i in range(b)` with `b: bool` emits `let __forstop1: i64 = b;` and
     `xpile transpile` exits 0. ** SEVEN bound positions, not one: stop-as-param, stop-as-`True`-literal,
     stop-as-comparison-expr, START of `range(b, 3)`, both bounds at once, and BOTH `reversed(range(...))`
-    positions (which emit `(b).checked_sub(1i64)` = E0599, a different rustc error class). Measured
-    receipt: the pre-fix emitter exits 0 on the new fixture and rustc reports 8 errors (6 E0308 + 2
-    E0599); post-fix rustc is clean and stdout is byte-identical to python3 over 13 printed shapes.
-    ** THE FIX IS ONE HELPER CALL, NOT NEW MACHINERY: `to_i64_operand` already exists and is what every
-    other int-position consumer uses; the range desugar simply never called it. Worth recording as a
-    search pattern — when a coercion bug looks like it needs a new node, first check whether the codebase
-    already has the conditional helper and one consumer skipped it. ** ORDER IS LOAD-BEARING: coerce
-    BEFORE the `reversed` flip. That flip wraps each bound in `BinOp::Sub`, which infers I64 regardless
-    of its operands, so a coercion placed after it silently skips exactly the two reversed shapes while
-    every non-reversed test still passes. Both reversed positions are pinned separately for that reason.
-    ** BIGINT-MODE REFUSES rather than coercing — the counter type there is `xpile_bigint::BigInt` and
-    `to_i64_operand` only reaches i64, so a cast swaps E0308-on-bool for E0308-on-i64. `-> BigInt`
-    promotes int params to BigInt but deliberately leaves bool params alone, which is exactly why bool
-    is the only bound shape that can arrive mistyped. A companion test pins that BigInt-mode range loops
-    over INT bounds still lower, so the refusal test cannot green because BigInt loops are broken in
-    general. ** THE STEP NEEDED NOTHING: `extract_step_literal` parses it as an int literal, so
-    `range(0, 6, True)` already refuses; a test pins that, because widening the step path would have been
-    a NEW silent wrong answer. ** ANTI-VACUITY: `non_bool_bounds_are_emitted_unchanged` is the test that
-    an unconditional blanket cast would fail — note its first draft FALSE-POSITIVED on `range(len(xs))`,
-    which legitimately emits `(xs.len() as i64)`; the fingerprint had to narrow to the NumCast wrapper
-    shape `= ((… ) as i64)`. ** rust-differential live 44 -> 47 against an unchanged RUST_DIFF_FLOOR 44;
-    no floor touched. NEXT PICK: the D-pool in reverse-cut order is now PMAT-1365 (list(d)/list(d.keys())/
+    positions (which emit `(b).checked_sub(1i64)` = E0599, a different rustc error class). Measured receipt:
+    the pre-fix emitter exits 0 on the new fixture and rustc reports 8 errors (6 E0308 + 2 E0599); post-fix
+    rustc is clean and stdout is byte-identical to python3 over 13 printed shapes. ** THE FIX IS ONE HELPER
+    CALL, NOT NEW MACHINERY: `to_i64_operand` already exists and is what every other int-position consumer
+    uses; the range desugar simply never called it. Worth recording as a search pattern — when a coercion
+    bug looks like it needs a new node, first check whether the codebase already has the conditional helper
+    and one consumer skipped it. ** ORDER IS LOAD-BEARING: coerce BEFORE the `reversed` flip. That flip
+    wraps each bound in `BinOp::Sub`, which infers I64 regardless of its operands, so a coercion placed
+    after it silently skips exactly the two reversed shapes while every non-reversed test still passes.
+    Both reversed positions are pinned separately for that reason. ** BIGINT-MODE REFUSES rather than
+    coercing — the counter type there is `xpile_bigint::BigInt` and `to_i64_operand` only reaches i64,
+    so a cast swaps E0308-on-bool for E0308-on-i64. `-> BigInt` promotes int params to BigInt but deliberately
+    leaves bool params alone, which is exactly why bool is the only bound shape that can arrive mistyped.
+    A companion test pins that BigInt-mode range loops over INT bounds still lower, so the refusal test
+    cannot green because BigInt loops are broken in general. ** THE STEP NEEDED NOTHING: `extract_step_literal`
+    parses it as an int literal, so `range(0, 6, True)` already refuses; a test pins that, because widening
+    the step path would have been a NEW silent wrong answer. ** ANTI-VACUITY: `non_bool_bounds_are_emitted_unchanged`
+    is the test that an unconditional blanket cast would fail — note its first draft FALSE-POSITIVED on
+    `range(len(xs))`, which legitimately emits `(xs.len() as i64)`; the fingerprint had to narrow to the
+    NumCast wrapper shape `= ((… ) as i64)`. ** rust-differential live 44 -> 47 against an unchanged RUST_DIFF_FLOOR
+    44; no floor touched. NEXT PICK: the D-pool in reverse-cut order is now PMAT-1365 (list(d)/list(d.keys())/
     list(d.values()) — its note says if it does NOT land it must appear in the CHANGELOG''s "What still
-    REFUSES"), then PMAT-1366 (round(x)), then PMAT-1362 (shell-boundary --verify widening, which
-    PMAT-1363''s note flags as needing a shell-boundary RETURN-ABI decision the queue does not make, and
-    which changes DEFAULT --verify behaviour — the wrong thing to land near the Wed 18:00 freeze). Gate
-    touches #1/#2 are merged; #3 is RESERVED for the Thursday release commit PMAT-1373.'
+    REFUSES"), then PMAT-1366 (round(x)), then PMAT-1362 (shell-boundary --verify widening, which PMAT-1363''s
+    note flags as needing a shell-boundary RETURN-ABI decision the queue does not make, and which changes
+    DEFAULT --verify behaviour — the wrong thing to land near the Wed 18:00 freeze). Gate touches #1/#2
+    are merged; #3 is RESERVED for the Thursday release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1365
   status: done
@@ -608,38 +610,54 @@ queue:
   title: '[D-pool] list(d) / list(d.keys()) / list(d.values()) (SHIPPED 2026-07-27)'
   notes: 'DONE. The premise held — no new WAT helper was minted: the keys view reuses `$__wasm_set_to_list_i64`
     and the values view `$__wasm_dict_values_to_list_i64`, the same two materialisers `sorted(d)` already
-    calls, minus the sort step. What the note did NOT anticipate is the ONLY interesting part: this is the
-    FIRST ORDER-OBSERVING dict materialisation (sum/min/max are commutative folds, sorted re-sorts — all
-    order-BLIND), so the answer IS the bump-heap storage order and is CPython-exact only while that equals
-    INSERTION order. It does, because `$__wasm_dict_set_<k>` is update-in-place-else-append-at-count; but a
-    REMOVAL (swap-last-into-hole) or a `set` (xpile-insertion vs CPython-hash iteration) breaks it, so both
-    now refuse MODULE-wide via `module_dict_order_offender`. Also threaded `Expr::Clone(inner) => e(inner)`
-    into the two view gate walkers + `expr_has_heap_op` — `list(d.keys())` arrives as `Clone(DictView{..})`
+    calls, minus the sort step. What the note did NOT anticipate is the ONLY interesting part: this is
+    the FIRST ORDER-OBSERVING dict materialisation (sum/min/max are commutative folds, sorted re-sorts
+    — all order-BLIND), so the answer IS the bump-heap storage order and is CPython-exact only while that
+    equals INSERTION order. It does, because `$__wasm_dict_set_<k>` is update-in-place-else-append-at-count;
+    but a REMOVAL (swap-last-into-hole) or a `set` (xpile-insertion vs CPython-hash iteration) breaks
+    it, so both now refuse MODULE-wide via `module_dict_order_offender`. Also threaded `Expr::Clone(inner)
+    => e(inner)` into the two view gate walkers + `expr_has_heap_op` — `list(d.keys())` arrives as `Clone(DictView{..})`
     and an unthreaded walker would `call` an undeclared materialiser. 21 executed witnesses (WABT vs live
-    python3) incl. the anti-vacuity insertion-vs-sorted probe; contract gains a declared AND a refused row.
-    NEXT PICK: PMAT-1366 (the last D-pool item), then the Thu 07-30 release commit PMAT-1373.'
+    python3) incl. the anti-vacuity insertion-vs-sorted probe; contract gains a declared AND a refused
+    row. NEXT PICK: PMAT-1366 (the last D-pool item), then the Thu 07-30 release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1366
   status: done
   ev_rank: D
   title: '[D-pool] round(x) via f64.nearest + module-level scalar const (SHIPPED 2026-07-27)'
   date: '2026-07-29'
-  notes: |
-    DONE 2026-07-27 (Day 2, pulled forward from the 07-29 D-pool slot). BOTH halves shipped in one PR:
+  notes: 'DONE 2026-07-27 (Day 2, pulled forward from the 07-29 D-pool slot). BOTH halves shipped in one
+    PR:
+
     (a) `Expr::RoundToInt` -> `f64.nearest` + `i64.trunc_f64_s` (IEEE roundToIntegralTiesToEven IS
-    Python's banker's rounding; the half-away-from-zero mutant was RUN and reds); (b) `Item::Const`
+
+    Python''s banker''s rounding; the half-away-from-zero mutant was RUN and reds); (b) `Item::Const`
+
     (int/bool/float) -> immutable `(global $NAME <ty> (<ty>.const v))` + a `global.get` fallback in
+
     `Expr::Ident` (the `(mut ...)` mutant was RUN and reds). 2-arg `round(x, n)` refuses with a
+
     SPECIFIC message whose justification is computed, not asserted. Contract gains DECLARED
+
     `round-to-int` + `module-scalar-const` and REFUSED `round-to-digits`; both red halves of
+
     wasm_contract_surface.rs were RUN. 71 new executed observables; WASM 795 -> 827, gated 315 -> 326,
+
     floors UNTOUCHED.
+
     NEXT PICK: the D-pool is now EXHAUSTED and the only OPEN queue items are the date-gated release
+
     pair -- PMAT-1373 (Thu 2026-07-30, tag cut) and PMAT-1374 (Fri 2026-07-31, publish). Days 3 (Tue)
+
     and the pre-freeze half of Day 4 (Wed, HARD FREEZE 18:00) have NO scheduled code work. Per the
+
     sprint rules a cron fire on those days should NOT invent new capability scope: prefer CHANGELOG /
+
     docs polish for the 0.1.618 note, or a verify pass over an already-shipped 0.1.618 slice. Any
+
     genuinely new capability idea belongs in `next_lane` for 0.1.619, not in this window.
+
+    '
 - id: PMAT-1367
   status: done
   ev_rank: R3
@@ -648,38 +666,38 @@ queue:
   downgrade: cut entirely and roll to 0.1.619 — it is a reporter, nothing ships differently
   title: '[CUT FIRST] §14.4 Runtime-stratum counter — WIDEN-ONLY to executing WASM witnesses, with MANDATORY
     negative assertions'
-  notes_done: 'DONE 2026-07-26 (Day 1; PULLED FORWARD from 07-29 under the day<=4 rule — every item
-    dated <= today was already merged, and PMAT-1349/1354/1355 are stale in_progress markers whose
-    CHANGELOG work actually shipped inside the v0.1.617 release commit ccb95a04. R3 outranks the D-pool,
-    so this was the pick, not PMAT-1362.). NO downgrade taken — the full widen plus both gate halves
-    shipped, well inside the abandon clock. ** RESULT: 26 QUORUM / 9 PARTIAL / 0 UNVERIFIED over 35, up
-    from 24/11/0 — EXACTLY the two flips the entry predicted, no more. ** THE ENTRY WAS RIGHT ABOUT THE
-    HAZARD AND I VERIFIED IT RATHER THAN QUOTING IT: a python simulation of the naive "any
-    crates/*/tests/*.rs naming the id" rule over the live 193-file set reproduces the 10-of-11 flip with
-    per-file provenance — six unearned rows come from contract_citation_integrity.rs (a hardcoded roster
-    of ids) and lean_pilot_roots.rs (ids in comments), two from gpu_witness.rs. Worth recording because it
-    is recursive: quorum.rs itself now names all six negatives in MUST_STAY_UNWITNESSED, so under the
-    naive rule THE TEST PINNING THE NEGATIVES would become a vote source for them. ** BOTH HALVES
-    FALSIFIED WITHOUT EDITING THE TREE, which is the cheap trick worth reusing: `xpile quorum
-    --witness-dir /nonexistent` collapses both WASM rows to Run=0/PARTIAL and totals to 24/11/0 (positives
-    non-vacuous), and `--witness-dir crates/xpile/tests` adds ZERO votes because nothing there passes the
-    probe filter (the conjunction is load-bearing, not decorative). A revert-based red demo would have
-    risked the `git checkout -- file` wipe; a CLI probe over a flag surface cannot. ** SECOND HOSTILE
-    CHECK PASSED: git diff shows ZERO files under crates/xpile-wasm-codegen/ — the counter learned to read
-    the corpus; the corpus was not edited to be countable. ** Design notes: pass A byte-identical
-    (non-recursive walk included) so monotonicity is reviewable at a glance; BTreeSet of CANONICAL paths,
-    so a repeated --witness-dir cannot double-count; RUNTIME_PROBES is an explicit const list, so widening
-    to another lane is one reviewable line. NOT lane-widened to WGSL/SPIR-V — gpu_witness.rs carries a
-    real probe but takes NotRun{no-engine} on every runner. ** TRAP 1 CLOSED WITH A TEST, not a comment:
-    the CWD-relative default would have scored 0 silently under `cargo test`, so quorum now prints a
-    one-line stderr notice naming the missing dir (once, not per-contract) and a test pins both the notice
-    and the exit-0. ** Docs: provability-roadmap.md:103 corrected on both counts (the "Runtime = fixture
-    files" definition AND the two-month-stale 12/0/0); live figures now stated as a DERIVE COMMAND.
-    CURRENT.md needed NO change — it already states the derive command, so claims_drift.rs banned_nouns
-    was never at risk. ** NEXT PICK: nothing is dated <= 2026-07-27 and Days 2-3 are still ahead, so the
-    next fire should take the D-pool in reverse-cut order under the day<=4 rule — PMAT-1363 (annotated
-    comprehension, cut LAST, so highest-value of the pool) — or, if a gate lane is preferred, note that
-    gate touches #1 and #2 are merged and #3 is RESERVED for the Thursday release commit PMAT-1373.'
+  notes_done: 'DONE 2026-07-26 (Day 1; PULLED FORWARD from 07-29 under the day<=4 rule — every item dated
+    <= today was already merged, and PMAT-1349/1354/1355 are stale in_progress markers whose CHANGELOG
+    work actually shipped inside the v0.1.617 release commit ccb95a04. R3 outranks the D-pool, so this
+    was the pick, not PMAT-1362.). NO downgrade taken — the full widen plus both gate halves shipped,
+    well inside the abandon clock. ** RESULT: 26 QUORUM / 9 PARTIAL / 0 UNVERIFIED over 35, up from 24/11/0
+    — EXACTLY the two flips the entry predicted, no more. ** THE ENTRY WAS RIGHT ABOUT THE HAZARD AND
+    I VERIFIED IT RATHER THAN QUOTING IT: a python simulation of the naive "any crates/*/tests/*.rs naming
+    the id" rule over the live 193-file set reproduces the 10-of-11 flip with per-file provenance — six
+    unearned rows come from contract_citation_integrity.rs (a hardcoded roster of ids) and lean_pilot_roots.rs
+    (ids in comments), two from gpu_witness.rs. Worth recording because it is recursive: quorum.rs itself
+    now names all six negatives in MUST_STAY_UNWITNESSED, so under the naive rule THE TEST PINNING THE
+    NEGATIVES would become a vote source for them. ** BOTH HALVES FALSIFIED WITHOUT EDITING THE TREE,
+    which is the cheap trick worth reusing: `xpile quorum --witness-dir /nonexistent` collapses both WASM
+    rows to Run=0/PARTIAL and totals to 24/11/0 (positives non-vacuous), and `--witness-dir crates/xpile/tests`
+    adds ZERO votes because nothing there passes the probe filter (the conjunction is load-bearing, not
+    decorative). A revert-based red demo would have risked the `git checkout -- file` wipe; a CLI probe
+    over a flag surface cannot. ** SECOND HOSTILE CHECK PASSED: git diff shows ZERO files under crates/xpile-wasm-codegen/
+    — the counter learned to read the corpus; the corpus was not edited to be countable. ** Design notes:
+    pass A byte-identical (non-recursive walk included) so monotonicity is reviewable at a glance; BTreeSet
+    of CANONICAL paths, so a repeated --witness-dir cannot double-count; RUNTIME_PROBES is an explicit
+    const list, so widening to another lane is one reviewable line. NOT lane-widened to WGSL/SPIR-V —
+    gpu_witness.rs carries a real probe but takes NotRun{no-engine} on every runner. ** TRAP 1 CLOSED
+    WITH A TEST, not a comment: the CWD-relative default would have scored 0 silently under `cargo test`,
+    so quorum now prints a one-line stderr notice naming the missing dir (once, not per-contract) and
+    a test pins both the notice and the exit-0. ** Docs: provability-roadmap.md:103 corrected on both
+    counts (the "Runtime = fixture files" definition AND the two-month-stale 12/0/0); live figures now
+    stated as a DERIVE COMMAND. CURRENT.md needed NO change — it already states the derive command, so
+    claims_drift.rs banned_nouns was never at risk. ** NEXT PICK: nothing is dated <= 2026-07-27 and Days
+    2-3 are still ahead, so the next fire should take the D-pool in reverse-cut order under the day<=4
+    rule — PMAT-1363 (annotated comprehension, cut LAST, so highest-value of the pool) — or, if a gate
+    lane is preferred, note that gate touches #1 and #2 are merged and #3 is RESERVED for the Thursday
+    release commit PMAT-1373.'
   notes: "CARRIED FORWARD. Rewritten notes — the original entry cites the BANNED figure 788; DELETE\n\
     that sentence from queue.yaml while editing the file.\n\nDERIVED at c3e468d4: `xpile quorum` prints\
     \ `totals: 24 QUORUM, 11 PARTIAL, 0 UNVERIFIED\n(35 contracts total)`; `C-COMPILE-RUST-TO-WASM 1 0\
@@ -754,47 +772,43 @@ queue:
   gate_touch: null
   title: 'bashrs-frontend REFUSES the constructs it currently SHREDS: `;&`, `;;&`, here-documents, stray
     `&` — and truths-up the CLAUDE.md / doc-comment posture claim'
-  notes_done: 'DONE 2026-07-26 (pulled forward from 07-28 under the day<=4 rule; today has no
-    dated OPEN item and PMAT-1371 is the lowest-numbered next date at R1. PMAT-1372 shares the
-    date but is gate_touch #1 and stays serial behind it). ALL FIVE SHAPES RE-CONFIRMED at
-    4f1dec6d with a provenance-checked binary BEFORE any edit — the .d file was read to prove the
-    binary came from this worktree, per the stale-target-debug landmine. ** THE HERE-DOC PAIR IS
-    THE FINDING, and it is a different severity class from the other three: `;&`, `;;&` and a bare
-    `&` all produced output that FAILS `bash -n`, so a downstream check could catch them.
-    Here-docs exited 0, passed `bash -n` CLEANLY, and executed DIFFERENTLY from the source —
-    `diff <(bash src.sh) <(bash out.sh)` non-empty, with "  keep  me" collapsed to "keep me" and
-    the blank line deleted. Exit 0 + valid syntax + different meaning is the one shape nothing
-    downstream catches. ** ONE CHOKEPOINT, NOT TWO: the slate sketched mirroring the here-doc
-    guard in both `parse_and_lower`s top-level loop AND `lower_flat_line`. Only the latter is
-    needed — `lower_flat_line` has exactly two call sites (lib.rs:1073 in parse_segment_seq for
-    loop/if/case-arm bodies, and :1480 in the top-level walk) and a here-doc operator always
-    appears on the COMMAND line, which reaches the funnel before any body line is processed. Both
-    the top-level and in-loop shapes are witnessed separately anyway, because they fail
-    DIFFERENTLY (the in-loop one dies on indent_body tab-prefixing the terminator). ** THE
-    TOKENIZE-ERROR CASE IS THE NON-OBVIOUS TRAP, and it is not in the slate: the guard cannot do
-    `tokenize_line(line)?` at the top of `lower_flat_line`. The v0.1.0 tokenizer REJECTS
-    `NAME="Noah Gift"` under its adjacent-quote rule (tokenize_line_rejects_adjacent_quotes),
-    while the assignment branch below tokenizes only `value_part` and handles it fine — so a hard
-    `?` there would have refused every quoted assignment in the repo. The guard fails OPEN on a
-    tokenizer error and lets the existing path report its own more specific error. Probed
-    `NAME="Noah Gift"` end-to-end after the fix to confirm. ** ORDER IS LOAD-BEARING on the `;&`
-    guard (as the slate said, and it holds): it must precede the `;;` split, which consumes the
-    `;;` of `;;&`. One find(";&") catches both spellings; the reported FORM is disambiguated by
-    looking back one char. ** ALL THREE SLATE TRAPS VERIFIED LIVE, NOT ASSUMED: `sleep 0 &` in a
-    case arm round-trips (so the `&` guard is command-position only); `echo "p << q"` works (so
-    the here-doc guard is token-level only); and `case … a) echo "p;&q" ;; esac` ALREADY refused
-    at HEAD, so the naive `;&` match widens no refusal surface. ** TRUTH-UP shipped in the same
-    PR (half the value): CLAUDE.md and parse_case both said `;&` "is not modelled" — which reads
-    as a GAP when it was a DEFECT — while CLAUDE.md simultaneously asserted "Everything else
-    refuses with a hard FrontendError rather than shredding into barewords". That sentence was
-    FALSE for four shapes and is true for the first time at this slice; it now says so explicitly
-    rather than quietly becoming correct. sub/bashrs-merger.md gained a v0.1.0 honesty-caveat
-    bullet; neither document had ever mentioned here-docs. ** 7 tests (5 refusals + 2 positive
-    non-regressions), bashrs-frontend 91 -> 98. All 6 committed bashrs_*.sh fixtures still
-    transpile and pass `bash -n`. SHELL_FLOOR untouched. NEXT PICK: PMAT-1372 (dated 07-28, R2,
-    GATE TOUCH #1 of the sprint — WASM_EXEC_FLOOR, floor the EXECUTING half of the witness
-    corpus). It is the only gate_touch in flight, so it is clear to start; note its floor edit
-    must MERGE before Thursday PMAT-1373 rebases onto it.'
+  notes_done: 'DONE 2026-07-26 (pulled forward from 07-28 under the day<=4 rule; today has no dated OPEN
+    item and PMAT-1371 is the lowest-numbered next date at R1. PMAT-1372 shares the date but is gate_touch
+    #1 and stays serial behind it). ALL FIVE SHAPES RE-CONFIRMED at 4f1dec6d with a provenance-checked
+    binary BEFORE any edit — the .d file was read to prove the binary came from this worktree, per the
+    stale-target-debug landmine. ** THE HERE-DOC PAIR IS THE FINDING, and it is a different severity class
+    from the other three: `;&`, `;;&` and a bare `&` all produced output that FAILS `bash -n`, so a downstream
+    check could catch them. Here-docs exited 0, passed `bash -n` CLEANLY, and executed DIFFERENTLY from
+    the source — `diff <(bash src.sh) <(bash out.sh)` non-empty, with "  keep  me" collapsed to "keep
+    me" and the blank line deleted. Exit 0 + valid syntax + different meaning is the one shape nothing
+    downstream catches. ** ONE CHOKEPOINT, NOT TWO: the slate sketched mirroring the here-doc guard in
+    both `parse_and_lower`s top-level loop AND `lower_flat_line`. Only the latter is needed — `lower_flat_line`
+    has exactly two call sites (lib.rs:1073 in parse_segment_seq for loop/if/case-arm bodies, and :1480
+    in the top-level walk) and a here-doc operator always appears on the COMMAND line, which reaches the
+    funnel before any body line is processed. Both the top-level and in-loop shapes are witnessed separately
+    anyway, because they fail DIFFERENTLY (the in-loop one dies on indent_body tab-prefixing the terminator).
+    ** THE TOKENIZE-ERROR CASE IS THE NON-OBVIOUS TRAP, and it is not in the slate: the guard cannot do
+    `tokenize_line(line)?` at the top of `lower_flat_line`. The v0.1.0 tokenizer REJECTS `NAME="Noah Gift"`
+    under its adjacent-quote rule (tokenize_line_rejects_adjacent_quotes), while the assignment branch
+    below tokenizes only `value_part` and handles it fine — so a hard `?` there would have refused every
+    quoted assignment in the repo. The guard fails OPEN on a tokenizer error and lets the existing path
+    report its own more specific error. Probed `NAME="Noah Gift"` end-to-end after the fix to confirm.
+    ** ORDER IS LOAD-BEARING on the `;&` guard (as the slate said, and it holds): it must precede the
+    `;;` split, which consumes the `;;` of `;;&`. One find(";&") catches both spellings; the reported
+    FORM is disambiguated by looking back one char. ** ALL THREE SLATE TRAPS VERIFIED LIVE, NOT ASSUMED:
+    `sleep 0 &` in a case arm round-trips (so the `&` guard is command-position only); `echo "p << q"`
+    works (so the here-doc guard is token-level only); and `case … a) echo "p;&q" ;; esac` ALREADY refused
+    at HEAD, so the naive `;&` match widens no refusal surface. ** TRUTH-UP shipped in the same PR (half
+    the value): CLAUDE.md and parse_case both said `;&` "is not modelled" — which reads as a GAP when
+    it was a DEFECT — while CLAUDE.md simultaneously asserted "Everything else refuses with a hard FrontendError
+    rather than shredding into barewords". That sentence was FALSE for four shapes and is true for the
+    first time at this slice; it now says so explicitly rather than quietly becoming correct. sub/bashrs-merger.md
+    gained a v0.1.0 honesty-caveat bullet; neither document had ever mentioned here-docs. ** 7 tests (5
+    refusals + 2 positive non-regressions), bashrs-frontend 91 -> 98. All 6 committed bashrs_*.sh fixtures
+    still transpile and pass `bash -n`. SHELL_FLOOR untouched. NEXT PICK: PMAT-1372 (dated 07-28, R2,
+    GATE TOUCH #1 of the sprint — WASM_EXEC_FLOOR, floor the EXECUTING half of the witness corpus). It
+    is the only gate_touch in flight, so it is clear to start; note its floor edit must MERGE before Thursday
+    PMAT-1373 rebases onto it.'
   notes: "FIVE SHAPES CONFIRMED at c3e468d4 with a provenance-verified binary. All exit 0 today:\n  (a)\
     \ `case \"$x\" in a) echo A ;& b) echo B ;; esac` -> emits a bare `&` on its own line\n      in arm\
     \ a's BODY, arm b SWALLOWED into arm a. `bash -n` -> \"syntax error near\n      unexpected token `&'\"\
@@ -877,10 +891,10 @@ queue:
     set at WASM_EXEC_FLOOR=300 and WASM_EXEC_PCT_FLOOR=36 (~5% and ~3.6pt under live). ALL THREE FALSIFIED
     in a throwaway worktree, each against the old gate: (A) probe sed''d out of abs_num_builtin_witness.rs
     -> assertion 3 reds naming it, old floor GREEN; (B) +100 emit-only tests -> assertion 2 reds while
-    the old floor RISES to 895 and passes; (C) `if !probe()` -> `if false` in 2 files holds the total at
-    EXACTLY 795 and drops gated to 285 -> assertion 1 reds, old floor GREEN. HONESTY PIN carried into the
-    module header and the roadmap entry: the metric does NOT follow helper calls, so a test gating via
-    a shared `run_case` counts as UNGATED and 39% is a LOWER BOUND on executing tests, never a coverage
+    the old floor RISES to 895 and passes; (C) `if !probe()` -> `if false` in 2 files holds the total
+    at EXACTLY 795 and drops gated to 285 -> assertion 1 reds, old floor GREEN. HONESTY PIN carried into
+    the module header and the roadmap entry: the metric does NOT follow helper calls, so a test gating
+    via a shared `run_case` counts as UNGATED and 39% is a LOWER BOUND on executing tests, never a coverage
     claim. NEXT PICK: PMAT-1356 (gate_touch #2, now unblocked) — but it is dated 2026-07-29 and its own
     lane (CHANGELOG) is where PMAT-1349/1354/1355 still sit `in_progress`; on Mon 07-27 the ranked pick
     is PMAT-1356, else a D-pool item.'
@@ -923,66 +937,121 @@ queue:
 - id: PMAT-1377
   status: done
   ev_rank: R1
-  title: 'VERIFY-PASS FINDING: complete the PMAT-1371 here-doc refusal — `cat<<EOF` / `cat 0<<EOF` /
-    `cat<<-EOF` still SHREDDED (SHIPPED 2026-07-27)'
+  title: 'VERIFY-PASS FINDING: complete the PMAT-1371 here-doc refusal — `cat<<EOF` / `cat 0<<EOF` / `cat<<-EOF`
+    still SHREDDED (SHIPPED 2026-07-27)'
   date: '2026-07-27'
-  notes: |
-    NOT a planned queue item -- the product of an ADVERSARIAL VERIFY pass run on Day 2 after the D-pool
+  notes: 'NOT a planned queue item -- the product of an ADVERSARIAL VERIFY pass run on Day 2 after the
+    D-pool
+
     was exhausted and the only remaining OPEN items were the date-gated release pair. Recorded here so
-    the provenance is explicit: the sprint's own rule is "pick from the queue, not from judgment", and
+
+    the provenance is explicit: the sprint''s own rule is "pick from the queue, not from judgment", and
+
     this is the one sanctioned exception the queue note for PMAT-1366 named (a verify pass over
+
     already-shipped 0.1.618 work), justified by the standing EV rule that converting a SILENT WRONG
+
     ANSWER into an honest refusal outranks new capability.
-    FINDING: PMAT-1371's here-doc guard matched a Bare token STARTING WITH `<<`, i.e. only the
+
+    FINDING: PMAT-1371''s here-doc guard matched a Bare token STARTING WITH `<<`, i.e. only the
+
     space-separated `cat <<EOF`. The tokenizer splits on whitespace alone, so `cat<<EOF` (attached),
+
     `cat 0<<EOF` (fd-prefixed) and `cat<<-EOF` hid the operator inside a longer token and exited 0 --
+
     flat, `bash -n` CLEAN and executing DIFFERENTLY; nested in a loop/if, emitting a script that did
+
     not parse. Fix = `contains("<<")` with `$((` exempted so the arithmetic LEFT SHIFT survives
+
     (execution-witnessed via a new fixture, not asserted). Both mutants RUN in both directions.
+
     METHOD NOTE for later verify passes: the productive question was not "is the refusal correct?" but
+
     "what SPELLINGS of the refused construct exist, and does the detector see each one?" A guard keyed
+
     on a token PREFIX is suspect whenever the tokenizer does not split operators.
+
+    '
 - id: PMAT-1378
   status: done
   ev_rank: R1
   title: 'VERIFY-PASS FINDING: `--target wasm` exited 0 emitting WAT that `wat2wasm` REJECTS — refuse
     duplicate top-level bindings and reserved runtime names (SHIPPED 2026-07-27)'
   date: '2026-07-27'
-  notes: |
-    NOT a planned queue item -- the SECOND product of the Day-2 adversarial verify posture, after
-    PMAT-1377. Same provenance rule applies: the queue's ranked slate for 2026-07-27 was empty (the
+  notes: 'NOT a planned queue item -- the SECOND product of the Day-2 adversarial verify posture, after
+
+    PMAT-1377. Same provenance rule applies: the queue''s ranked slate for 2026-07-27 was empty (the
+
     D-pool exhausted at PMAT-1366, the only OPEN items being the date-gated release pair PMAT-1373/1374),
-    and the standing EV rule -- a fix converting a SILENT WRONG ANSWER into an honest refusal outranks new
+
+    and the standing EV rule -- a fix converting a SILENT WRONG ANSWER into an honest refusal outranks
+    new
+
     capability -- selects a verify pass over already-shipped 0.1.618 work.
+
     METHOD: a DIFFERENTIAL harness, not a re-read. 91 probes across three rounds, each running live
-    python3 against the emitted artifact (WASM: xpile -> wat2wasm -> wasm-interp, values reinterpreted at
+
+    python3 against the emitted artifact (WASM: xpile -> wat2wasm -> wasm-interp, values reinterpreted
+    at
+
     the declared width because wasm-interp prints integers UNSIGNED). Round 1+2 (49 + 41 shell probes)
+
     found NOTHING in the bashrs lane -- worth recording as a negative result, since PMAT-1371/1377 have
+
     now been differentially exercised over redirections, logical operators, subshells, function
+
     definitions, comments, line continuations, quoting edges, globs, parameter expansion, multi-line
+
     quotes and deep control-flow nesting, and every non-OK case was an honest REFUSE. Round 3 turned the
+
     same harness on the newest WASM slices and found this.
+
     FINDING: five shapes exited 0 with unassemblable WAT (dup `def`, dup const x2 spellings, `__heap_ptr`
+
     const beside a heap user, `__wasm_*` fn beside its helper), and two MIXED shapes (def+const of one
+
     name) ASSEMBLED CLEANLY and then disagreed with CPython about what the name is. Fixed by a
+
     top-level-binding uniqueness check, a wholesale reserved-prefix refusal, and a post-emit
+
     duplicate-identifier BELT with its own unit tests. Four mutants run (3 / 2 / 2 / 1 red).
-    PROCESS NOTE, worth one line because it will recur: the first draft of this slice's roadmap entry
+
+    PROCESS NOTE, worth one line because it will recur: the first draft of this slice''s roadmap entry
+
     quoted the WASM witness count as "795 -> 805", read off the `// live 795 @ 2026-07-26 (TOUCH 1)`
-    comment in witness_floor.rs. That comment is a TOUCH-POINT SNAPSHOT and the file's own header says it
+
+    comment in witness_floor.rs. That comment is a TOUCH-POINT SNAPSHOT and the file''s own header says
+    it
+
     is EXPECTED to trail the live count between touches. Live was 827 -> 837. MEASURE by running the
+
     manifest (`cargo test -p xpile --test witness_floor -- --nocapture`); never quote the snapshot.
-    NEGATIVE RESULTS WORTH NOT RE-DERIVING (same harness, same session): PMAT-1365's `list(d)` family and
-    PMAT-1366's module consts + `round(x)` are CLEAN over 35 probes -- including the aliasing question
-    (`xs = list(d)` then mutating `d`), CPython's round-half-to-EVEN at 0.5/1.5/2.5/-0.5/-1.5, and const
+
+    NEGATIVE RESULTS WORTH NOT RE-DERIVING (same harness, same session): PMAT-1365''s `list(d)` family
+    and
+
+    PMAT-1366''s module consts + `round(x)` are CLEAN over 35 probes -- including the aliasing question
+
+    (`xs = list(d)` then mutating `d`), CPython''s round-half-to-EVEN at 0.5/1.5/2.5/-0.5/-1.5, and const
+
     reads in range bounds / while conditions / list literals / dict keys / f-strings. Two REAL divergences
+
     were found and deliberately NOT actioned: (i) i64 WRAPAROUND -- `2**63-1 + 1`, `2**62 * 4` and
+
     `-(-2**63)` all silently wrap where Python has bignums, and `1 << 70` returns 64 because `i64.shl`
+
     masks the shift count to 6 bits (wrong even under fixed-width semantics, where 0 is the defensible
-    answer); (ii) `round(1e19)` traps on i64 overflow. (ii) is an honest trap under the lane's
+
+    answer); (ii) `round(1e19)` traps on i64 overflow. (ii) is an honest trap under the lane''s
+
     `runtime_abort: true` profile. (i) is a genuine silent-wrong-answer class but the fix is
-    overflow-checked arithmetic across every i64 op -- an L/XL change to the emitter's hot path, wrong to
+
+    overflow-checked arithmetic across every i64 op -- an L/XL change to the emitter''s hot path, wrong
+    to
+
     land in a release week. SEEDED for 0.1.619; the shift-count half is separable and much smaller.
+
+    '
 - id: PMAT-1379
   status: done
   ev_rank: R1
@@ -995,583 +1064,876 @@ queue:
     SILENT WRONG ANSWER into an honest refusal outranks new capability), took `next_lane` entry #1 — the
     i64 honesty debt — restricted to the half that entry itself carves out as "SEPARABLE AND MUCH SMALLER,
     do this one first" and off the emitter''s hot path. The FULL overflow fix (checked add/sub/mul/neg,
-    L/XL, touches every witness) REMAINS DEFERRED to 0.1.619 and is still listed in next_lane.
-    Four divergences measured against live python3 through the SHIPPED CLI, all now honest: 1 << 70 (was
-    64) traps; 1024 >> 70 (was 16) is 0; 8 << -1 and 8 >> -1 (both were 0) trap. Helpers gated on the
-    emitted CALL SITES, not a hand-rolled walker — the walker-parity trap. RESIDUAL PINNED, NOT HIDDEN:
-    1 << 63 still wraps to i64::MIN and `shl_in_range_overflow_is_a_known_residual` asserts it so the
-    lane cannot read as fully honest about shifts. 5 witnesses; wasm 837 -> 842 (floor 770, untouched),
-    runtime-gated 330 -> 333 (floor 300, untouched).
-    NEXT PICK: nothing is OPEN before Thursday. The next fire should either take a further next_lane
-    truth item (the SHIFT half is now done; the remaining i64 overflow half is L/XL and should NOT land
-    before the Wed 18:00 freeze) or run an adversarial verify pass over the 0.1.618 lane. On 2026-07-30
-    take PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2).'
+    L/XL, touches every witness) REMAINS DEFERRED to 0.1.619 and is still listed in next_lane. Four divergences
+    measured against live python3 through the SHIPPED CLI, all now honest: 1 << 70 (was 64) traps; 1024
+    >> 70 (was 16) is 0; 8 << -1 and 8 >> -1 (both were 0) trap. Helpers gated on the emitted CALL SITES,
+    not a hand-rolled walker — the walker-parity trap. RESIDUAL PINNED, NOT HIDDEN: 1 << 63 still wraps
+    to i64::MIN and `shl_in_range_overflow_is_a_known_residual` asserts it so the lane cannot read as
+    fully honest about shifts. 5 witnesses; wasm 837 -> 842 (floor 770, untouched), runtime-gated 330
+    -> 333 (floor 300, untouched). NEXT PICK: nothing is OPEN before Thursday. The next fire should either
+    take a further next_lane truth item (the SHIFT half is now done; the remaining i64 overflow half is
+    L/XL and should NOT land before the Wed 18:00 freeze) or run an adversarial verify pass over the 0.1.618
+    lane. On 2026-07-30 take PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2).'
 - id: PMAT-1380
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: 'The THREE MANDATORY CHANGELOG sections for v0.1.618, written INCREMENTALLY on Day 2 with
-    every claim re-derived against the live tree (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED because the queue was EMPTY for today -- every dated slice and the whole D-pool are merged
+  title: The THREE MANDATORY CHANGELOG sections for v0.1.618, written INCREMENTALLY on Day 2 with every
+    claim re-derived against the live tree (SHIPPED 2026-07-27)
+  notes: 'PICKED because the queue was EMPTY for today -- every dated slice and the whole D-pool are merged
+
     and the only OPEN items are the date-gated release pair PMAT-1373 (Thu) / PMAT-1374 (Fri), which
-    must NOT be pulled forward. PMAT-1366's next-pick note names exactly this situation and directs
-    CHANGELOG / docs polish for the 0.1.618 note; the window's standing constraint is "write the
+
+    must NOT be pulled forward. PMAT-1366''s next-pick note names exactly this situation and directs
+
+    CHANGELOG / docs polish for the 0.1.618 note; the window''s standing constraint is "write the
+
     CHANGELOG INCREMENTALLY". The three sections are the largest content dependency of PMAT-1373 and
+
     Thursday is meant to be a reserved day, so writing them Monday converts release-day drafting into
+
     release-day review.
-    ** THE FINDING: the sprint plan's OWN PRESCRIBED TEXT for one of the three sections is STALE.
+
+    ** THE FINDING: the sprint plan''s OWN PRESCRIBED TEXT for one of the three sections is STALE.
+
     PMAT-1355 / PMAT-1373 both direct Known-divergences to state that "the 14.4 Runtime stratum
+
     counts contract-id MENTIONS in fixtures, not executions". PMAT-1367 changed that three slices ago
+
     -- the stratum now ALSO counts witness files that name the id AND call a runtime-availability
+
     probe. Copying the prescribed sentence would have shipped a CLAIMS-001 falsehood inside the
+
     section whose entire purpose is to prevent them. The shipped text states the true and more useful
+
     shape, derived from `xpile quorum --json`: the widen is PARTIAL, so of the 18 contracts carrying
+
     a Runtime vote exactly TWO are backed by executions (C-COMPILE-RUST-TO-WASM 113, C-WASM-HEAP 93)
-    and the other 16 carry 1-11 MENTIONS. GENERAL RULE for PMAT-1373: the slate's prescribed CHANGELOG
+
+    and the other 16 carry 1-11 MENTIONS. GENERAL RULE for PMAT-1373: the slate''s prescribed CHANGELOG
+
     text is a CHECKLIST OF TOPICS, not copy -- re-derive each claim, because the slate was written
+
     before the slices that changed the facts.
+
     ** Every other claim re-derived through the shipped CLI, not quoted: six cross-lane refusals
+
     probed live; 13 refused / 31 declared emit_surface rows read from the contract YAML; REQUIRED =
+
     [gate, workspace-test] + the 6 advisory contexts from the ci.yml markers and the committed ruleset
-    snapshot; the single `apt-get install -y wabt` line; release.yml's dispatch+tag-only trigger; BOTH
+
+    snapshot; the single `apt-get install -y wabt` line; release.yml''s dispatch+tag-only trigger; BOTH
+
     PMAT-1352 Rust-lane float divergences re-run end to end (1 vs 1.0, 49 vs 49.0); the Lean
+
     @[xpile_contract] non-elaboration re-emitted both ways; all eight witness-lane counts taken by
+
     RUNNING the manifest (wasm 842/333, shell 10, rust-diff 47, hybrid 7, wasi 1, ruchy 7, forjar 4,
+
     lean 6) rather than read off the touch-point snapshot comments.
+
     ** Backed by a 77-probe differential verify pass (python3 vs xpile -> wat2wasm -> wasm-interp) run
+
     in the same session. NEGATIVE RESULTS RECORDED IN THE SECTION so they are not re-derived: integer
+
     // and % match Python FLOOR semantics over every sign combination; all 16 container error paths
+
     TRAP where CPython raises; float + - * / incl. inf/subnormal/div-by-zero agree; and the whole
+
     non-ASCII string surface agrees on CODE POINTS, not UTF-8 bytes. The only silent-wrong-answer
+
     class found is the already-known, deliberately-deferred i64 overflow family (divergence #1).
+
     ** A draft error caught before commit, worth one line: the text asserted `$__wasm_mod_i64`; the
+
     emitted WAT says `$__wasm_floormod_i64`. Verify a runtime name before printing it in a release note.
-    ** NO gate file touched -- gate touch #3 is reserved for Thursday's PMAT-1373 and witness_floor.rs
+
+    ** NO gate file touched -- gate touch #3 is reserved for Thursday''s PMAT-1373 and witness_floor.rs
+
     is the two-touch serial resource. CHANGELOG.md + roadmap.yaml + queue.yaml only.
+
     NEXT PICK: nothing is OPEN before Thursday. A further fire today/Tue/Wed should take another
+
     adversarial verify pass over a lane this session did NOT sweep (the Rust oracle lane and the
+
     decy/C frontend are the two untouched by PMAT-1377/1378/1379/1380), or further CHANGELOG polish.
+
     Do NOT start a gate_touch. On 2026-07-30 take PMAT-1373.
+
+    '
 - id: PMAT-1381
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: '`--target rust` EXITED 0 emitting Rust that `rustc` REJECTS (E0425) for any local first
-    bound inside an `if`/`elif`/`else` branch and read after the statement (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED by executing PMAT-1380's own next-pick note: the queue is empty before Thursday and that
+  title: '`--target rust` EXITED 0 emitting Rust that `rustc` REJECTS (E0425) for any local first bound
+    inside an `if`/`elif`/`else` branch and read after the statement (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1380''s own next-pick note: the queue is empty before Thursday and
+    that
+
     note names an adversarial verify pass over "the Rust oracle lane and the decy/C frontend, the two
+
     untouched by PMAT-1377/1378/1379/1380". Swept the Rust oracle lane with a 253-probe
+
     python3-vs-(xpile -> rustc -> run) differential harness.
+
     ** THE FINDING: Python binds at FUNCTION scope, so `if c: y = 5` then `print(y)` is legal Python.
+
     The emitted `Stmt::If` is a Rust BLOCK, so the `let` dies at the closing brace, but the frontend
+
     left the name in `ctx.bound` — so the later read lowered to a bare `Ident` and the CLI exited 0
+
     on Rust that rustc rejects with E0425. 14 shapes measured: if-only over int/str/float/list,
+
     else-only, elif-without-else, nested if-in-if, if-in-for, for-in-if, read-in-a-later-block,
+
     read-in-an-expression, read-in-a-return, and BOTH multi-statement if/else shapes.
+
     ** THE REPO ALREADY HAD THE DOCTRINE AND THE MACHINERY: PMAT-1092 poisons names first bound
+
     inside a statement-form `try` (`ctx.try_dead`) and refuses a later read with the scoping truth.
+
     The `try` arm was done; the `if` arm never was. The fix is that mechanism applied to
-    `lower_if_stmt`'s general path (snapshot/withdraw/poison -> `ctx.if_dead`), ~30 lines. GENERAL
+
+    `lower_if_stmt`''s general path (snapshot/withdraw/poison -> `ctx.if_dead`), ~30 lines. GENERAL
+
     RULE worth carrying: when a lane already refuses one instance of a class, grep for the SIBLING
+
     constructs before assuming the class is closed — this is the third time (PMAT-1377 finished
-    PMAT-1371's here-doc refusal, PMAT-1342 finished the NumBuiltin belt's middle slice).
+
+    PMAT-1371''s here-doc refusal, PMAT-1342 finished the NumBuiltin belt''s middle slice).
+
     ** ONE SHAPE FIXED RATHER THAN REFUSED: `if c: y = 5` then `y = 9` then `print(y)` now compiles
+
     and prints 9 (withdrawal makes the post-`if` assignment emit a fresh function-scope `let`).
+
     Shipped as an oracle fixture so CPython byte-diffs it every CI cycle.
+
     ** WITNESS IS A PROPERTY, NOT A MESSAGE PIN: XPILE-RUSTSCOPE-001 asserts
+
     `Ok(rust) ==> rustc accepts it` over a 23-source corpus — a per-shape refusal assertion cannot
+
     catch the NEXT shape that leaks. Its non-regression half EXECUTES all 9 still-accepted shapes and
+
     byte-diffs vs CPython, and deliberately includes the loop-TARGET leak and the PMAT-1038
+
     straight-line hoist, the two shapes the withdrawal must not take with it. 827 e2e tests green.
-    ** 3 RESIDUALS PINNED, NOT HIDDEN (PMAT-1379 posture), each with a test asserting today's wrong
+
+    ** 3 RESIDUALS PINNED, NOT HIDDEN (PMAT-1379 posture), each with a test asserting today''s wrong
+
     behaviour: `for..else` and dict/set-valued loop locals still accept-then-fail E0425; and — worse,
+
     a SILENT WRONG ANSWER — where the PMAT-1038 hoist fires it seeds a default that survives the
+
     ZERO-ITERATION path, so a never-entered loop prints `0` where CPython raises UnboundLocalError.
+
     That last one had lived only in a source comment since PMAT-1038; it is now in the CHANGELOG
+
     Known-divergences section with an executing witness behind it.
+
     ** NEGATIVE RESULTS (do not re-derive): the Rust lane is markedly healthier than the WASM lane.
+
     i64 overflow PANICS honestly naming the contract instead of wrapping silently; float `%` and `//`
+
     are Python FLOOR semantics over every sign combination; div-by-zero and every probed container
-    error path trap where CPython raises; format-specs, bin/hex/oct, banker's rounding, sorted/min/max
+
+    error path trap where CPython raises; format-specs, bin/hex/oct, banker''s rounding, sorted/min/max
+
     and the whole aliasing family (which REFUSES, incl. mutable default args) agree with CPython.
+
     ** A HARNESS TRAP RE-LEARNED: the first witness run reported the KNOWN-GOOD if-expression shape as
+
     accept-then-fail, with rustc failing to LINK its own object files. The scratch dir was keyed on
+
     (tag, pid), not per CALL, so parallel tests wiped each other. Per-CALL unique temp dirs, again.
+
     ** NO gate file touched — gate touch #3 is reserved for PMAT-1373 and witness_floor.rs is the
+
     two-touch serial resource; adding a witness file and oracle fixtures raises live counts only.
+
     NEXT PICK: nothing is OPEN before Thursday. The decy/C frontend is now the only lane named by
-    PMAT-1380's note that is still unswept — take that, or extend this sweep to the loop residuals
+
+    PMAT-1380''s note that is still unswept — take that, or extend this sweep to the loop residuals
+
     (the `for..else` / dict-local E0425 pair is the smaller half; the zero-iteration silent default
+
     needs a maybe-unbound guard and is L, so NOT before the Wed 18:00 freeze). Do NOT start a
+
     gate_touch. On 2026-07-30 take PMAT-1373.
+
+    '
 - id: PMAT-1382
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: 'VERIFY-PASS FINDING: the C lane had NO TRUTH-VALUE BRIDGE -- `!a` emitted the BITWISE
-    invert, so `!5` returned -6 where gcc returns 0 (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED by executing PMAT-1381's own next-pick note: the queue is empty before Thursday and that
-    note names the decy/C frontend as "the only lane named by PMAT-1380's note that is still
+  title: 'VERIFY-PASS FINDING: the C lane had NO TRUTH-VALUE BRIDGE -- `!a` emitted the BITWISE invert,
+    so `!5` returned -6 where gcc returns 0 (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1381''s own next-pick note: the queue is empty before Thursday and
+    that
+
+    note names the decy/C frontend as "the only lane named by PMAT-1380''s note that is still
+
     unswept". Swept it with a 129-probe gcc-vs-(xpile -> rustc -> run) differential harness.
+
     ** FOUR defects, THREE of them SILENT WRONG ANSWERS that compiled cleanly: C `!x` emitting the
+
     bitwise invert (byte-identical to the `~x` arm); a leading-zero literal taking a base-10 parse
+
     (`010` -> 10, gcc 8); and "widest wins" retyping a function across the INT/FLOAT boundary,
-    deleting C's truncating conversion (`int f(double a){ return a; }` -> 3.9, gcc 3). Plus a
+
+    deleting C''s truncating conversion (`int f(double a){ return a; }` -> 3.9, gcc 3). Plus a
+
     ten-shape accept-then-reject class (int conditions, int `&&`/`||`, truth-as-value, and a
+
     reassigned PARAMETER emitting a non-`mut` binding). Root cause is single: C has no boolean type,
-    so ints and truth values mix freely in BOTH directions, and `emit_c_binop`'s own comment
+
+    so ints and truth values mix freely in BOTH directions, and `emit_c_binop`''s own comment
+
     asserted the opposite. Comment corrected in place.
+
     ** HARNESS TRAP, worth carrying: the first run reported 9 divergences; 5 were the HARNESS. A
+
     separate driver translation unit silently defaults every callee to `int f()`, faking divergences
-    on `long`/`unsigned`/`double` returns. Compile the C side as ONE TU. Worse, the harness's own
+
+    on `long`/`unsigned`/`double` returns. Compile the C side as ONE TU. Worse, the harness''s own
+
     `(long long)` cast MASKED a real defect -- it truncated the f64 3.9 that `int f(double a)`
+
     wrongly returned into the 3 that gcc prints, so the int/float bug read as MATCH until probed
-    directly. A differential's normalisation can hide exactly the class it is hunting.
+
+    directly. A differential''s normalisation can hide exactly the class it is hunting.
+
     ** WITNESS XPILE-CTRUTH-001 (crates/xpile/tests/c_truth_witness.rs, 8 tests) is the PMAT-1381
+
     shape: the PROPERTY `Ok(rust) ==> rustc accepts it` over 47 sources, plus an EXECUTING half that
+
     byte-compares against `cc`. The executing half is load-bearing, not decorative: `!(x)`
+
     type-checked perfectly, so a type-check-only witness stays green through the whole defect.
+
     47/47 accepted, compiled and agreeing with gcc. Six mutants, six RED. `XPILE_REQUIRE_CC=1`
+
     tripwire so a missing toolchain fails instead of skipping green.
+
     ** TWO RESIDUALS PINNED, NOT HIDDEN: `int` param widened to i64 in a `long` function
+
     (value-preserving), and `int` param retyped u32 in an `unsigned` function (the call becomes
+
     unspellable rather than mis-computed).
+
     ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource).
+
     NEXT PICK: nothing is OPEN before Thursday. All four lanes named across PMAT-1380/1381 have now
+
     been swept (bashrs, WASM, Rust oracle, decy/C). A further fire Tue/Wed should either sweep a
+
     lane none of these touched (the ruchy/lean/forjar string-compare backends, or the
+
     Python->shell cross-domain path), extend a pinned residual, or do CHANGELOG polish. Do NOT start
+
     a gate_touch and do NOT touch witness_floor.rs. On 2026-07-30 take PMAT-1373 (release commit,
+
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 
+    '
 - id: PMAT-1383
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: '`--target shell` exited 0 emitting a script that RAN DIFFERENTLY from its Python source --
-    the backend SILENTLY DROPPED 35 of 41 Stmt kinds (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED by executing PMAT-1382's own next-pick note, which names the Python->shell cross-domain
+  title: '`--target shell` exited 0 emitting a script that RAN DIFFERENTLY from its Python source -- the
+    backend SILENTLY DROPPED 35 of 41 Stmt kinds (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1382''s own next-pick note, which names the Python->shell cross-domain
+
     path as a lane none of PMAT-1380/1381/1382 swept. The queue is empty before Thursday.
+
     ** THE DEFECT: BashrsBackend::lower filtered each function body to the six renderable Stmt kinds
+
     (Cmd / Pipeline / ShellAssign / ShellLoop / ShellIf / ShellCase) and discarded the other 35
+
     WITHOUT A WORD. Six divergences, execution-witnessed against live CPython through the shipped
+
     CLI: `print("hello")` -> empty script; an assignment between two commands shredded the middle;
+
     an `if`-guarded command VANISHED while its unguarded siblings emitted (condition erased, script
+
     still LOOKED faithful -- the sharpest of the six); `while` and `for` wrapping subprocess.run
+
     each emitted NOTHING (loop dropped whole, body included); and a `raise` after a command turned a
+
     Python exit-1 into a shell exit-0. All six exited 0.
+
     ** WHY IT SURVIVED: bashrs-frontend produces ONLY renderable statements, so the shell->shell
+
     round-trip -- which is what every existing shell witness exercises -- never touched the hole. It
-    was reachable only from the Python direction, i.e. the exact lane CLAUDE.md's workflow item 3
+
+    was reachable only from the Python direction, i.e. the exact lane CLAUDE.md''s workflow item 3
+
     advertises. General lesson: a round-trip witness certifies the round trip, not the emitter.
-    ** SECOND, DISJOINT DROP PATH: meta-HIR keeps a function's return value in
+
+    ** SECOND, DISJOINT DROP PATH: meta-HIR keeps a function''s return value in
+
     `Block::trailing_return`, an Expr OUTSIDE `stmts`. A walk over the statement list alone leaves
+
     it unchecked, and `return 1 + 2` was discarded by the same silence. Found only because the
-    first fix's disclosure comment did not appear on the canonical fixture -- the ABSENCE of
+
+    first fix''s disclosure comment did not appear on the canonical fixture -- the ABSENCE of
+
     expected output is a signal; chase it.
+
     ** THE FIX: collect_emittable refuses, naming the construct + statement position + function. An
+
     integer trailing_return is kept (both canonical fixtures end in `return 0`) and DISCLOSED as a
-    comment -- not an injected `exit`, which would change a `.`-sourcing parent's control flow.
-    Disclosure is SUPPRESSED for SourceLang::Shell: there the LitInt(0) is bashrs-frontend's
+
+    comment -- not an injected `exit`, which would change a `.`-sourcing parent''s control flow.
+
+    Disclosure is SUPPRESSED for SourceLang::Shell: there the LitInt(0) is bashrs-frontend''s
+
     synthetic `main` and printing a claim about a `return` the user never wrote is the same
+
     stale-claim class the honesty gates hunt. The false "(no commands -- ... parse produced 0
+
     Stmt::Cmd)" parenthetical corrected: `def f() -> int: return 7` parses to statements.
+
     ** WITNESS XPILE-SHELLX-001 (crates/xpile/tests/shell_crossdomain_witness.rs, 5 tests, 12-source
+
     corpus): the property `exit 0 ==> `sh -n` accepts it AND stdout + exit status byte-match
+
     CPython`, asserted over the WHOLE corpus INCLUDING the refused rows, so a future change that
+
     starts accepting one is immediately checked for correctness instead of quietly going green. The
+
     executing half is load-bearing, not decorative: every pre-fix script was valid POSIX, so a
+
     syntax-only witness stays green through the entire defect. The refusal half asserts the FRONTEND
+
     still lowers each source BEFORE pinning BackendError::Lower. XPILE_REQUIRE_SH=1 tripwire.
+
     ** WITNESS-OF-THE-WITNESS -- carry this one: the first draft probed for the shell with `sh -c`
+
     (no operand), which exits 2, so all 5 tests SKIPPED GREEN on a machine with a working /bin/sh --
+
     the exact skip-as-green shape XPILE-WITNESS-002 exists to kill, reproduced inside the witness
+
     written to prevent it. Caught by noticing 5 tests finished in 0.01s (four python3 spawns cannot)
+
     and re-running with --nocapture to READ FOR the SKIP line. POSIX `sh` has no `--version`; probe
-    with `sh -c true`. A witness's own toolchain gate is untested code -- measure its RUNTIME, never
+
+    with `sh -c true`. A witness''s own toolchain gate is untested code -- measure its RUNTIME, never
+
     trust its green.
+
     ** RESIDUAL PINNED: a function with no renderable statement and an integer trailing_return
+
     (`def f() -> int: return 7`) still emits an empty script. Nothing a script could express is
+
     dropped, and the empty-case comment no longer claims otherwise.
+
     ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+
     PMAT-1373). The shell lane counts only tests/shell_diff_exec.rs, so the new witness file moves
+
     no floor.
+
     NEXT PICK: nothing is OPEN before Thursday. Five lanes are now swept (bashrs, WASM, Rust oracle,
+
     decy/C, Python->shell). A Tue/Wed fire should sweep the ONE remaining unswept emit path -- the
+
     ruchy/lean/forjar string-compare backends -- or extend a pinned residual, or do CHANGELOG
+
     polish. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
+
     crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
+
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 
+    '
 - id: PMAT-1384
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: '`ruchy run` on an xpile-emitted `.ruchy` exited 0 having EXECUTED NOTHING -- the emitter
-    never called `main`, and the lane''s own honest-scope comment counted those clean exits as
-    executions (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED by executing PMAT-1383's next-pick note, which names the ruchy/lean/forjar
+  title: '`ruchy run` on an xpile-emitted `.ruchy` exited 0 having EXECUTED NOTHING -- the emitter never
+    called `main`, and the lane''s own honest-scope comment counted those clean exits as executions (SHIPPED
+    2026-07-27)'
+  notes: 'PICKED by executing PMAT-1383''s next-pick note, which names the ruchy/lean/forjar
+
     string-compare backends as the ONE remaining unswept emit path. The queue is empty before
+
     Thursday.
+
     ** FORJAR AND LEAN ARE HONEST -- swept in the same pass, recorded so the next fire does not
-    re-derive it. forjar's `render_command_sequence` ends in an `other =>` arm that refuses every
+
+    re-derive it. forjar''s `render_command_sequence` ends in an `other =>` arm that refuses every
+
     non-command Stmt BY NAME (and refuses loops/conditionals with a specific idempotence-guard
+
     rationale); lean refuses a non-Ident trailing return, a multi-while function, and statements
+
     after the while. Neither carries the PMAT-1383 silent-drop shape.
+
     ** THE DEFECT WAS IN RUCHY, and not in the emitted CODE but in what the emitted MODULE does
-    under the target toolchain's OWN runner. `ruchy run` evaluates a module as a sequence of
+
+    under the target toolchain''s OWN runner. `ruchy run` evaluates a module as a sequence of
+
     top-level items and only auto-invokes `main` when `main` is the SOLE item. xpile emitted
+
     `fun main() -> () { ... }` and never called it, so any module with a helper function alongside
+
     `main` DEFINED everything and RAN NOTHING. Five execution-witnessed rows over
+
     tests/oracle_fixtures (ruchy v4.2.1): recursion (CPython 120/3628800), optional_flow (0/8),
+
     optional_guard_continue (8/2), range_bool_bound (8 lines), str_and_fstring (4 lines) -- every
+
     one exit 0 with EMPTY stdout.
+
     ** THE FIX: `emit_module` emits the entry-point invocation `main()` when the module defines a
+
     zero-parameter `main`. Each of the five now fails LOUDLY (rc=1) naming a real ruchy-interpreter
+
     limitation (`Unknown integer method: checked_sub`, `Cannot cast boolean to i64`, ...).
+
     ** MEASURED over all 38 fixtures, before -> after: emit 38->38, `ruchy check` 18->18, `ruchy
+
     run` exit-0 7->2, of which correct 1->1. The exit-0 count DROPPING is the point: five of the
+
     seven were false. Parse acceptance unchanged, so the trailing call costs nothing.
+
     ** BOTH other paths verified against the live toolchain, NOT assumed: a sole-`main` module does
+
     NOT double-run, and `ruchy transpile` DROPS a bare top-level call, so all 8 fixtures completing
+
     the Ruchy->Rust->rustc chain emit identical Rust and identical output.
+
     ** SECOND, DISJOINT FIX -- a false claim inside the comment written to be honest:
+
     ruchy_exec_witness.rs said "`ruchy run` (interpret) executes 5/34". It counted EXIT 0 as
+
     execution and 5 of those had run nothing. Corrected and re-derived on the live 38-fixture
+
     corpus. The same sweep found RUCHY_EXECUTABLE_FIXTURES UNDER-claiming -- if_branch_rebound
+
     completes the chain and matches CPython and had never been added; 7 -> 8.
+
     ** WITNESS XPILE-RUCHYRUN-001 (crates/xpile/tests/ruchy_run_witness.rs, 4 tests): the property
-    `rc == 0 ==> stdout byte-matches CPython`, asserted over the WHOLE corpus INCLUDING today's
+
+    `rc == 0 ==> stdout byte-matches CPython`, asserted over the WHOLE corpus INCLUDING today''s
+
     failing rows, with vacuity guards on BOTH sides. Verified RED without the fix (3 of 4 fail,
+
     naming exactly the five fixtures). XPILE_REQUIRE_RUCHY=1 tripwire.
+
     ** HARNESS-BEFORE-SUBJECT, carry this one: my first sweep ran each fixture bare under python3
+
     and got EMPTY expected output for all 38 -- the fixtures define `main()` and do NOT call it
+
     (the xpile_oracle convention). Empty-expected AGREES with the very defect under test, so the
+
     broken harness reported every fixture as diverging in the WRONG direction. Same class as the
+
     crates.io User-Agent trap: uniform failure across N independent items means the harness is
+
     broken, not the subject.
+
     ** RESIDUAL PINNED: fstr_str_precision still exits 0 with WRONG output under `ruchy run` -- the
+
     interpreter echoes the format spec `{:.3}` back literally (wrapped in quote runs) instead of
+
     truncating to `[hel]`. A ruchy-INTERPRETER limitation, proven NOT to be an xpile miscompile by
+
     the same fixture matching CPython through `ruchy transpile` -> rustc. Held in
+
     KNOWN_INTERPRETER_DIVERGENCES so a ruchy release fixing it REDS the witness.
+
     ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+
     PMAT-1373). Ruchy lane live 8 vs floor 7 -- floors are lower bounds.
+
     NEXT PICK: nothing is OPEN before Thursday and ALL SIX emit lanes are now swept (bashrs, WASM,
+
     Rust oracle, decy/C, Python->shell, ruchy/lean/forjar). A Tue/Wed fire should extend a pinned
-    residual (the PMAT-1383 empty-script residual, or this one's KNOWN_INTERPRETER_DIVERGENCES if
-    ruchy ships a fix), sweep a NON-emit surface (the CLI's own flag/exit-code honesty, or the
-    xpile-contract-backend), or do CHANGELOG polish toward PMAT-1373's three mandatory sections. Do
+
+    residual (the PMAT-1383 empty-script residual, or this one''s KNOWN_INTERPRETER_DIVERGENCES if
+
+    ruchy ships a fix), sweep a NON-emit surface (the CLI''s own flag/exit-code honesty, or the
+
+    xpile-contract-backend), or do CHANGELOG polish toward PMAT-1373''s three mandatory sections. Do
+
     NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
+
     crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
+
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 
+    '
 - id: PMAT-1385
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: '`xpile audit` -- the repo''s OWN falsifier F1 reporter -- printed `100.0% [OK]` and exited
-    0 for corpora it NEVER MEASURED, and four of the repo''s own audit tests were reading that
-    number on a path that does not exist (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED by executing PMAT-1384's next-pick note, which names the CLI's own flag/exit-code honesty
+  title: '`xpile audit` -- the repo''s OWN falsifier F1 reporter -- printed `100.0% [OK]` and exited 0
+    for corpora it NEVER MEASURED, and four of the repo''s own audit tests were reading that number on
+    a path that does not exist (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1384''s next-pick note, which names the CLI''s own flag/exit-code honesty
+
     as a NON-emit surface none of the six emit-lane sweeps touched. The queue is empty before
+
     Thursday.
+
     ** THE DEFECT (3 shapes, all exit 0, all a perfect falsifier score): a path that DOES NOT EXIST;
+
     a real directory holding no recognised source (and the single-FILE spelling `xpile audit
+
     notes.txt`); and a corpus where EVERY file failed to lower (`--json` collapses those to
-    `"errors":1` beside `"f1_status":"OK"`). The flat 100 is `coverage_pct()`'s 0-denominator
+
+    `"errors":1` beside `"f1_status":"OK"`). The flat 100 is `coverage_pct()`''s 0-denominator
+
     convention. The convention is defensible; reporting it through the SAME channel as a measured
+
     ratio is not -- an unmeasured corpus was indistinguishable from one measured at ceiling in text,
+
     in JSON, and in the exit status.
+
     ** THE FIX splits by KIND: a bad path / empty scan is an INPUT error and REFUSES (as `transpile`
+
     always has); a real corpus that measures nothing is an OUTCOME and is REPORTED -- status
+
     VACUOUS, text `n/a`, JSON `"f1_pct":null`. `audit` stays a reporter without claiming a ceiling.
+
     ** SECOND FINDING, sharper, and found ONLY by fixing the first: the four `audit_command_*` tests
-    passed the literal "crates/xpile/tests/fixtures", but an integration test's CWD is the PACKAGE
+
+    passed the literal "crates/xpile/tests/fixtures", but an integration test''s CWD is the PACKAGE
+
     root, so it resolved to `crates/xpile/crates/xpile/tests/fixtures` -- NONEXISTENT. All four were
+
     green on the vacuous 100%. `audit_command_f1_is_100_percent_on_current_fixture_corpus_rust`,
+
     whose comment says it pins the number so a missed citation "shows up as a numeric drop", would
+
     have stayed green if the pipeline emitted NOTHING. Re-derived on the 825-file corpus they had
+
     never read: Rust 2167/2167 = 100.0% OK with over_citations 4 (the test asserted 0); Lean 157/181
+
     = 86.7% WARN (the test asserted OK). Path anchored on CARGO_MANIFEST_DIR + a denominator vacuity
-    guard per test. General lesson, a variant of PMAT-1383's: a test that asserts on a REPORTER is
-    only as good as the reporter's willingness to say "I measured nothing".
+
+    guard per test. General lesson, a variant of PMAT-1383''s: a test that asserts on a REPORTER is
+
+    only as good as the reporter''s willingness to say "I measured nothing".
+
     ** THIRD FINDING, an under-count inside the metric: a name colliding with a Rust keyword emits
+
     as a RAW identifier (`def move` -> `pub fn r#move`; ruchy the same). `function_has_citation`
+
     matched the bare name, missed the decl, and counted the function in the denominator and never
+
     the numerator -- the citation WAS emitted. Strip a leading `r#`: 2166 -> 2167, so the Rust lane
+
     is now a TRUE 100.0% rather than a 99.954% that `{:.1}` ROUNDED UP. Reporters now TRUNCATE
+
     (`display_pct`), which can only understate.
+
     ** FOURTH/FIFTH, same class, on `transpile`: `--out FILE --emit-crate DIR` wrote the crate,
+
     SILENTLY DROPPED `--out`, exit 0 (the emit path returns on --emit-crate first); `--hardware`
+
     only ever builds a PTX profile, so `--target rust --hardware ptx:sm_89` was accepted, IGNORED,
+
     exit 0. Both refuse now; the VALUE is parsed first so a misspelling still reports as one.
+
     ** WITNESS XPILE-AUDITHON-001 (crates/xpile/tests/cli_audit_honesty_witness.rs, 9 tests):
+
     `a NUMERIC F1 is reported only when functions_requiring_citation > 0`, over the whole probe
+
     corpus incl. the measurable row, vacuity-guarded on both sides. Verified RED without the fix
+
     (6 of 7 fail; only the measurable control passes). No toolchain, so NO skip path -- runtime
+
     1.57s, measured (the PMAT-1383 skip-as-green lesson applied preemptively).
+
     ** RESIDUAL PINNED: the 4 over-citations are REAL -- c_bitwise.c (1), c_if.c (2),
+
     hybrid_missing/ (1) emit `// xpile-contract: C-C-INT-ARITH` on functions whose
+
     `applicable_contracts()` is empty (comparison + assignment only). C backend citing per-module,
+
     or `applicable_contracts()` under-modelling C comparison? Separate question; pinned as a CEILING
+
     (<= 4) so it can only shrink. Also honest: no corpus today has a ratio whose third decimal
+
     rounds up a tenth, so the truncation assertion holds under BOTH truncation and rounding -- a
+
     guard, not a proof.
+
     ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+
     PMAT-1373).
+
     NEXT PICK: still nothing OPEN before Thursday. Remaining unswept NON-emit surfaces, in EV order:
+
     (a) the OTHER three reporters -- `quorum`, `attestations`, `diamond` -- for the same
+
     vacuity/exit-code shape (they refuse a missing dir, but nobody has checked what they report for
+
     a dir that EXISTS and contains nothing, or whether a 0-vote stratum reads as a pass); (b) the
-    4 over-citations above; (c) `xpile hybrid --verify`'s documented graceful-skip-exit-0 (a
+
+    4 over-citations above; (c) `xpile hybrid --verify`''s documented graceful-skip-exit-0 (a
+
     skip-as-green shape by design -- check it discloses); (d) CHANGELOG polish toward PMAT-1373.
+
     Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
+
     crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
+
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
+
+    '
 - id: PMAT-1386
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: 'The OTHER three §14.4 reporters: `quorum` scored the whole Extrinsic stratum at 0 for a
-    `--roadmap` that does not exist (702 mentions -> 0, QUORUM 26 -> 16, exit 0); `--fixtures-dir`
-    silently dropped 32 of 239 Runtime votes where `--witness-dir` announced; `quorum`+`diamond`
-    scored a contract universe they never discovered where `attestations` refuses it
-    (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED by executing PMAT-1385's next-pick note item (a) -- the other three reporters
+  title: 'The OTHER three §14.4 reporters: `quorum` scored the whole Extrinsic stratum at 0 for a `--roadmap`
+    that does not exist (702 mentions -> 0, QUORUM 26 -> 16, exit 0); `--fixtures-dir` silently dropped
+    32 of 239 Runtime votes where `--witness-dir` announced; `quorum`+`diamond` scored a contract universe
+    they never discovered where `attestations` refuses it (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1385''s next-pick note item (a) -- the other three reporters
+
     (`quorum`, `attestations`, `diamond`) for the same vacuity/exit-code shape. The queue has
+
     nothing OPEN before Thursday.
+
     ** THE DEFECT (3 shapes, all exit 0, all measured on the live tree BEFORE fixing):
+
     (1) `quorum` read `--roadmap` with `.unwrap_or_default()`, so a nonexistent path scored the
+
     ENTIRE Extrinsic stratum at 0 for EVERY contract -- 702 live mentions -> 0, and 10 of 35
+
     contracts fell QUORUM -> PARTIAL (26 -> 16), with no stderr and rc=0. The default is
+
     CWD-relative: the exact trap PMAT-1367 wrote a `--witness-dir` notice for, on the sibling
+
     path args of the SAME function. (2) `--fixtures-dir <nonexistent>` silently lost 32 of the
+
     239 live Runtime votes with NO notice -- an asymmetry inside one union. (3) an empty
+
     contract universe scored as a clean board on `quorum` (`0 QUORUM, 0 PARTIAL, 0 UNVERIFIED
+
     (0 contracts total)`, `{"contracts":[]}`) and `diamond`, while `attestations` bails.
-    ** THE FIX splits by KIND (PMAT-1385's doctrine) and makes the three reporters AGREE rather
+
+    ** THE FIX splits by KIND (PMAT-1385''s doctrine) and makes the three reporters AGREE rather
+
     than inventing a fourth posture: unreadable `--roadmap` + empty universe REFUSE, reusing
-    `attestations`'s existing message shape; a missing `--fixtures-dir` gets the same one-line
+
+    `attestations`''s existing message shape; a missing `--fixtures-dir` gets the same one-line
+
     non-fatal notice `--witness-dir` already had, for the reason PMAT-1367 recorded (either half
+
     of a union may legitimately be absent). An EXISTING roadmap that mentions nothing still
+
     reports `extrinsic: 0` -- an honest zero stays distinguishable from an unread one.
+
     ** WITNESS XPILE-REPORTERVAC-001 (crates/xpile/tests/cli_reporter_vacuity_witness.rs, 6
+
     tests). RED without the fix: the 3 defect tests fail, the 3 control/agreement tests pass in
+
     BOTH directions -- the correct shape. Vacuity-guarded on both sides (live corpus must show a
+
     non-zero Extrinsic total, non-zero Diamond total, strictly larger Runtime total), so a change
+
     that makes the reporters refuse EVERYTHING cannot pass. One test asserts the CONSEQUENCE, not
+
     the mechanism: zeroing Extrinsic must move a contract off QUORUM or the stratum is not
+
     load-bearing and the refusal is theatre. No toolchain, no skip path -- runtime 3.31s,
+
     MEASURED (PMAT-1383 lesson).
+
     ** GENERAL LESSON, third instance of it this window: a guard written for ONE argument is not
+
     a guard for the FUNCTION. PMAT-1367 correctly identified "a nonexistent path must never
+
     silently score 0" and then applied it to exactly one of the three path arguments it holds.
+
     When a fix names a class, sweep every member of the class in the same slice.
-    ** SCOPE HONESTY: vacuity/exit-code shape only. Does NOT revisit `RUNTIME_PROBES`'s notion of
-    "executes", nor PMAT-1385's 4 pinned over-citations. `attestations`'s test-file
+
+    ** SCOPE HONESTY: vacuity/exit-code shape only. Does NOT revisit `RUNTIME_PROBES`''s notion of
+
+    "executes", nor PMAT-1385''s 4 pinned over-citations. `attestations`''s test-file
+
     skip-if-no-roadmap path is unreachable on this repo and was left alone.
+
     ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+
     PMAT-1373).
+
     NEXT PICK: still nothing OPEN before Thursday. Remaining named non-emit surfaces, in EV
-    order: (a) `xpile hybrid --verify`'s documented graceful-skip-exit-0 -- a skip-as-green shape
+
+    order: (a) `xpile hybrid --verify`''s documented graceful-skip-exit-0 -- a skip-as-green shape
+
     BY DESIGN, so check it DISCLOSES rather than that it refuses; (b) the 4 over-citations
+
     PMAT-1385 pinned as a ceiling (C backend citing per-module vs `applicable_contracts()`
+
     under-modelling C comparison); (c) CHANGELOG polish toward PMAT-1373. Do NOT start a
+
     gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no crates/*/src or
+
     contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit, gate_touch 3,
+
     witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
+
+    '
 - id: PMAT-1387
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: '`xpile hybrid --verify` -- the PMAT-902 NORTH STAR executing differential -- printed
-    `✓ MATCH — stdout byte-identical (1 line(s)): ""` and exited 0 for a run in which NOTHING
-    was observed and the FFI boundary was never called; BOTH lanes (SHIPPED 2026-07-27)'
-  notes: |
-    PICKED by executing PMAT-1386's next-pick note item (a): `xpile hybrid --verify`'s
+  title: '`xpile hybrid --verify` -- the PMAT-902 NORTH STAR executing differential -- printed `✓ MATCH
+    — stdout byte-identical (1 line(s)): ""` and exited 0 for a run in which NOTHING was observed and
+    the FFI boundary was never called; BOTH lanes (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1386''s next-pick note item (a): `xpile hybrid --verify`''s
+
     documented graceful-skip-exit-0, checked for DISCLOSURE rather than refusal. Queue has
+
     nothing OPEN before Thursday.
+
     ** THE NOTE POINTED AT THE WRONG HALF, which is worth recording. Every documented SKIP
+
     path does disclose (toolchain gate, no-`main()` gate, non-ABI-mappable gate all print a
+
     reason and exit 0). The hole was in the PASS path they fall through to: both lanes ended
+
     in an unguarded `ComparisonResult::Match => println!("✓ MATCH …")`, so an EMPTY reference
+
     made byte-identity hold TRIVIALLY. Measured at 903d7aab on both lanes before fixing --
+
     a C fixture with `main(): pass`, and a shell fixture with an EMPTY `_tool.sh`, each print
+
     `✓ MATCH — stdout byte-identical (1 line(s)): ""` at exit 0. The `.max(1)` even claimed
+
     one line compared where zero were. GENERAL FORM: when checking whether a skip discloses,
+
     also check what the skip FALLS THROUGH TO -- a disclosed skip in front of a false pass is
+
     still a false pass.
-    ** THE FIX is PMAT-1385's split-by-KIND one level down: ENVIRONMENT absence stays a
+
+    ** THE FIX is PMAT-1385''s split-by-KIND one level down: ENVIRONMENT absence stays a
+
     disclosed skip at exit 0; a VACUOUS differential REFUSES non-zero. Narrow on purpose --
+
     fires only on Match-with-empty-reference, so a non-empty reference vs an empty artifact
+
     stays a `Divergence` with its side-by-side diagnostic.
-    ** CONSOLIDATION: one shared `differential_verdict` for both lanes (PMAT-1386's "make them
-    agree, don't add a fourth posture"). Divergence labels padded to 9 columns rather than
+
+    ** CONSOLIDATION: one shared `differential_verdict` for both lanes (PMAT-1386''s "make them
+
+    agree, don''t add a fourth posture"). Divergence labels padded to 9 columns rather than
+
     hardcoded, keeping `CPython:  [1, 2.5]` byte-identical for the PMAT-1352 test.
-    ** ALSO FIXED: `verify_hybrid`'s not-executed report for non-C/non-Shell boundaries lived
+
+    ** ALSO FIXED: `verify_hybrid`''s not-executed report for non-C/non-Shell boundaries lived
+
     INSIDE the both-empty arm, so a mixed manifest verified the C half and never mentioned the
-    rest -- contradicting the function's own doc comment. Now unconditional. LATENT and said
+
+    rest -- contradicting the function''s own doc comment. Now unconditional. LATENT and said
+
     so: no reachable fixture exercises it (the only other liftable input is `.wat`, and a WASM
+
     boundary fails LOUDLY at shim emission), so it ships as a doc-truth fix with NO test
+
     rather than a witnessed one.
+
     ** WITNESS XPILE-HYBRIDVAC-001 (crates/xpile/tests/hybrid_verify_vacuity_witness.rs,
+
     6 tests, 1.29 s MEASURED) + fixtures hybrid_vacuous_c/, hybrid_vacuous_shell/. 3 of 6 are
+
     controls (a fix that refused everything, or that swallowed the DIVERGENT arm, fails them);
-    a 6th pins the fixtures as actually vacuous so they can't be "repaired" into passing.
+
+    a 6th pins the fixtures as actually vacuous so they can''t be "repaired" into passing.
+
     ** RUNTIME FALSIFIED, NOT TRUSTED (PMAT-1383): 1.29 s is too fast for five cold cargo
+
     builds, so the build was checked directly -- `PATH` without cargo takes the disclosed skip,
+
     and `/tmp/xpile_verify_ws_<pid>` materialises mid-run. The artifact crate has no deps.
+
     ** SCOPE: a non-empty MATCH still does not prove a boundary was CALLED, only that both
+
     hosts agreed on what was printed. Call instrumentation, not an output predicate -- 0.1.619.
+
     ** No gate file touched; witness_floor.rs untouched (2-touch serial resource).
+
     NEXT PICK: still nothing OPEN before Thursday. Remaining named non-emit surfaces, EV order:
+
     (a) the 4 over-citations PMAT-1385 pinned as a shrink-only ceiling (C backend citing
+
     per-module vs `applicable_contracts()` under-modelling C comparison); (b) the uncalled-
+
     boundary residual above, if it can be done without instrumentation; (c) CHANGELOG polish
+
     toward PMAT-1373. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
+
     Wed 18:00: no crates/*/src or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373
+
     (release commit, gate_touch 3, witness-floor TOUCH 2); 2026-07-31 -> PMAT-1374 (publish).
+
+    '
 - id: PMAT-1388
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: '`xpile transpile <ANY FILE> --target spirv` exited 0 emitting a SPIR-V binary for
-    a program the user NEVER WROTE -- the general emitter discarded its `Module` and always
-    compiled the hardcoded saxpy fixture, so 6 categorically different inputs (2 of them
-    REFUSED by the WGSL lowering this lane reuses) produced BYTE-IDENTICAL output; corpus-wide
-    SPIR-V accepted 716 fixtures against WGSL''s 39 (SHIPPED 2026-07-27)'
-  notes: 'PICKED by executing PMAT-1387''s next-pick item (a), the 4 pinned over-citations.
-    Measuring them led one level out -- see NEXT PICK below, which carries the over-citation
-    finding forward with its root cause now identified and measured.
-    ** THE DEFECT, measured through the shipped CLI at f74ebe61 BEFORE fixing:
-    `SpirvSaxpyGeneralEmitter::try_emit` bound its module to `_module` and discarded it. add.py,
-    fib.py, sign.py, cmp.py, a Python f64 fn and c_bitwise.c ALL emitted sha256 `421b318e...`.
-    Two of those are REFUSED by `--target wgsl` -- the exact lowering this lane is documented to
-    reuse. 716 of 802 corpus fixtures accepted vs WGSL''s 39: 677 programs "compiled" that its
-    own front half rejected. Strongest form of the exit-0-but-false shape: the ENTIRE artifact
-    is unrelated to the input.
-    ** THE FIX: the module becomes a parameter (`real_wgsl_for(module)`); the lane is exactly as
-    wide as the WGSL subset, refusing WITH the WGSL reason. The @compute harness is derived from
-    the module''s own entry fn (name + element type) instead of hardcoded saxpy/f32; no
-    unambiguous element-shaped entry -> bare entry-point-free SPIR-V (naga accepts it -- probed,
-    63/69 words). The hand-written `fma` specialist now returns `None` for any other module
-    (the documented shape-filter protocol), so a user program is never quorum-paired with an
-    unrelated reference shader and reported `Multi`.
-    ** WITNESS XPILE-SPIRVFID-001 (6 tests, 0.97 s MEASURED, no skip path). Load-bearing
-    assertion is a RELATION BETWEEN TWO LIVE LANES, not a hand-list: spirv-accepted must be a
-    SUBSET of wgsl-accepted. Vacuity-guarded both sides (each >= 10). RED-THEN-GREEN on
-    unmodified origin/main: 4 of 6 fail naming 677 offenders, the 1 that passes is the CONTROL.
-    ** CLASS GATE (PMAT-1386 lesson): 9 emitters hold `try_emit(_module, ...)`. Swept
-    EMPIRICALLY through the CLI, not by reading constructors -- WGSL and WASM vary with input,
-    every PTX target refuses at the CLI, so SPIR-V was the only CLI-reachable member. A 6th test
-    now reds if ANY target emits identical artifacts for two different programs.
-    ** GPU witness pinned byte-identical (real_wgsl_for(saxpy) == the old general_real_wgsl()),
-    and the saxpy module still pairs BOTH emitters -- asserted next to the decline so the
-    decline cannot pass vacuously.
-    NEXT PICK (two, in EV order, both found and measured by this slice; nothing is OPEN in the
-    queue before Thursday):
-    (a) `Function::applicable_contracts()` is PARADIGM-BLIND. It is a `Function` method and
-    `SourceLang` lives on `Module`, so every C-lifted function''s "required" contract is the
-    PYTHON one: 19 of 2168 corpus functions have required-ids DISJOINT from emitted-ids
-    (required `C-PY-INT-ARITH`, emitted `C-C-INT-ARITH`) yet count in `xpile audit`''s
-    NUMERATOR, because `function_has_citation` matches the PRESENCE of any `// xpile-contract:`
-    line and never which id. So "Rust 2167/2167 = 100.0% [OK]" means "has A citation", not "has
-    ITS citation". The 4 over-citations PMAT-1385 pinned are the same root cause from the other
-    side (a C fn with no arithmetic requires nothing but is cited). WORSE, and the sharpest
-    piece: the LEAN backend has NO C emit path, so `--target lean` on c_bitwise.c emits
-    arbitrary-precision Lean `Int` stamped `@[xpile_contract "C-PY-INT-ARITH"]` -- the PYTHON
-    contract, from the PROOF lane, on C code, where that contract''s own YAML says it is
-    "Distinct from C-PY-INT-ARITH (Python int)". Rust and Ruchy have real C paths and cite
-    C-C-INT-ARITH. Split by KIND: Lean should REFUSE a SourceLang::C module (it would emit
-    Python semantics); `applicable_contracts` should take the paradigm; the audit numerator
-    should require the REQUIRED id; and `every_applicable_contract_is_actually_cited` -- the
-    gate that exists for exactly this drift -- filters to `.py` at
-    contract_citation_integrity.rs:441, which is why the lane where the drift is TOTAL is the
-    one it never reads.
-    (b) `--target wgsl` on fib.py exits 0 emitting WGSL that naga REJECTS (WGSL forbids
-    recursion) -- accept-then-fail-downstream, one lane over from this slice.
-    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
-    crates/*/src or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit,
-    witness-floor TOUCH 2); 2026-07-31 -> PMAT-1374 (publish).'
-- id: PMAT-1373
-  status: open
-  ev_rank: R1
-  gate_touch: 3
-  title: 'RELEASE COMMIT v0.1.618: version bump + [Unreleased] -> [0.1.618] + witness-floor re-derive
-    TOUCH 2 (ALL lanes) + tag on a PINNED SHA'
-  notes: "THURSDAY 2026-07-30. NO src merges. Reserve the day; nothing L/XL lands.\nVersion is single-sourced\
-    \ at Cargo.toml:43 — one line + `cargo check` refreshes all 31\nCargo.lock entries. Promote `## [Unreleased]`\
-    \ to `## [0.1.618] - 2026-07-31` (ship date;\nthe tag OBJECT is created 07-30 — a DELIBERATE one-day\
-    \ skew, disclosed in docs/RELEASE.md).\nWitness-floor re-derive TOUCH 2, all lanes. Current values\
-    \ at c3e468d4 (re-derive, do not\ncopy): WASM 770 (live 795), SHELL 7 (tight), RUST_DIFF 44 (tight;\
-    \ PMAT-1351's 5 oracle\nfixtures take live to 49), HYBRID 3 (tight; PMAT-1352 takes live to 4), WASI\
-    \ 1, RUCHY 7,\nFORJAR 4, LEAN 6. Plus PMAT-1372's new WASM_EXEC_FLOOR.\nMANDATORY THREE CHANGELOG\
-    \ SECTIONS (non-negotiable, carried from PMAT-1355's doctrine):\n\"What still REFUSES\", \"What is\
-    \ NOT merge-blocking\", \"Known divergences\".\n  - NOT-merge-blocking MUST state: the live org ruleset\
-    \ requires only [gate, workspace-test];\n    kani, lake-build, docs, wasi, lean-models, shader-validate\
-    \ are ADVISORY; the\n    ruchy/lean/forjar exec witnesses EXIST BUT SKIP IN CI (workspace-test installs\
-    \ wabt and\n    nothing else — verified: it is the file's only `apt-get install` line);\n    cleanroom-publish\
-    \ does not run on PRs.\n  - Known-divergences MUST add the TWO NEW Rust-lane findings surfaced by\
-    \ PMAT-1352:\n    `1 if c else 2.5` prints 1.0 where CPython prints 1, and `list[float].append(int)`\
-    \ then\n    reading the element prints 49.0 where CPython prints 49.\nABORT A1b: if the SHA that was\
-    \ TESTED differs from the SHA being TAGGED (the cron merged\nsomething), re-run the full suite on\
-    \ the new SHA or abort the day —\nstrict_required_status_checks_policy is FALSE, so green checks do\
-    \ not prove the merged\ncombination was ever tested together.\nRe-measure `cargo test -p xpile` rather\
-    \ than assuming either the green or the red state\nrecorded in PMAT-1359's notes; disclosing a caveat\
-    \ that no longer exists is the same\nCLAIMS-001 falsehood in the opposite direction.\nThen `git tag\
-    \ v0.1.618 <PINNED_SHA> && git push origin v0.1.618`. Do NOT create the GitHub\nrelease yet. Also\
-    \ purge /mnt/nvme-raid0/targets/xpile/package/{tmp-registry,tmp-crate} and\nrun `cargo publish --workspace\
-    \ --dry-run --locked` UNPIPED before the tag push."
-  date: '2026-07-30'
-- id: PMAT-1374
-  status: open
-  ev_rank: R1
-  gate_touch: null
-  title: 'PUBLISH v0.1.618: morning re-verify -> `gh release create` -> `cargo publish --workspace` UNPIPED
-    -> sparse-index verification -> ledger close. NO CODE MERGES.'
-  notes: 'FRIDAY 2026-07-31. A1 preconditions ALL hold before the first upload byte: the tag exists on
-
-    origin; its SHA shows gate + workspace-test SUCCESS; the on-tag clean-room run is SUCCESS;
-
-    the local dry-run exited 0 UNPIPED; `XPILE_REQUIRE_WASM_RUNTIME=1 cargo test --workspace`
-
-    exited 0 on that exact SHA; the release worktree is at the TAG (not main) and
-
-    `git status --porcelain` is EMPTY.
-
-    A5 (RECOVERABLE, do NOT abort): `no hash listed for <crate> vX` is the stale package overlay
-
-    — purge and restart from the dry-run.
-
-    A4 (PARTIAL BATCH): if crate k of 31 fails, STOP; do NOT yank the k-1 already published (they
-
-    are valid); do NOT retry at the same version (409); fix forward with a WHOLE-WORKSPACE
-
-    0.1.619 next Friday.
-
-    A6: if the batch has not STARTED by 16:00 local, ship tag-only and roll the batch to
-
-    2026-08-07.
-
-    A7: NO Friday code. A Friday defect means A6, never a same-day hotfix onto the release SHA.'
-  date: '2026-07-31'
+  title: '`xpile transpile <ANY FILE> --target spirv` exited 0 emitting a SPIR-V binary for a program
+    the user NEVER WROTE -- the general emitter discarded its `Module` and always compiled the hardcoded
+    saxpy fixture, so 6 categorically different inputs (2 of them REFUSED by the WGSL lowering this lane
+    reuses) produced BYTE-IDENTICAL output; corpus-wide SPIR-V accepted 716 fixtures against WGSL''s 39
+    (SHIPPED 2026-07-27)'
+  notes: 'PICKED by executing PMAT-1387''s next-pick item (a), the 4 pinned over-citations. Measuring
+    them led one level out -- see NEXT PICK below, which carries the over-citation finding forward with
+    its root cause now identified and measured. ** THE DEFECT, measured through the shipped CLI at f74ebe61
+    BEFORE fixing: `SpirvSaxpyGeneralEmitter::try_emit` bound its module to `_module` and discarded it.
+    add.py, fib.py, sign.py, cmp.py, a Python f64 fn and c_bitwise.c ALL emitted sha256 `421b318e...`.
+    Two of those are REFUSED by `--target wgsl` -- the exact lowering this lane is documented to reuse.
+    716 of 802 corpus fixtures accepted vs WGSL''s 39: 677 programs "compiled" that its own front half
+    rejected. Strongest form of the exit-0-but-false shape: the ENTIRE artifact is unrelated to the input.
+    ** THE FIX: the module becomes a parameter (`real_wgsl_for(module)`); the lane is exactly as wide
+    as the WGSL subset, refusing WITH the WGSL reason. The @compute harness is derived from the module''s
+    own entry fn (name + element type) instead of hardcoded saxpy/f32; no unambiguous element-shaped entry
+    -> bare entry-point-free SPIR-V (naga accepts it -- probed, 63/69 words). The hand-written `fma` specialist
+    now returns `None` for any other module (the documented shape-filter protocol), so a user program
+    is never quorum-paired with an unrelated reference shader and reported `Multi`. ** WITNESS XPILE-SPIRVFID-001
+    (6 tests, 0.97 s MEASURED, no skip path). Load-bearing assertion is a RELATION BETWEEN TWO LIVE LANES,
+    not a hand-list: spirv-accepted must be a SUBSET of wgsl-accepted. Vacuity-guarded both sides (each
+    >= 10). RED-THEN-GREEN on unmodified origin/main: 4 of 6 fail naming 677 offenders, the 1 that passes
+    is the CONTROL. ** CLASS GATE (PMAT-1386 lesson): 9 emitters hold `try_emit(_module, ...)`. Swept
+    EMPIRICALLY through the CLI, not by reading constructors -- WGSL and WASM vary with input, every PTX
+    target refuses at the CLI, so SPIR-V was the only CLI-reachable member. A 6th test now reds if ANY
+    target emits identical artifacts for two different programs. ** GPU witness pinned byte-identical
+    (real_wgsl_for(saxpy) == the old general_real_wgsl()), and the saxpy module still pairs BOTH emitters
+    -- asserted next to the decline so the decline cannot pass vacuously. NEXT PICK (two, in EV order,
+    both found and measured by this slice; nothing is OPEN in the queue before Thursday): (a) `Function::applicable_contracts()`
+    is PARADIGM-BLIND. It is a `Function` method and `SourceLang` lives on `Module`, so every C-lifted
+    function''s "required" contract is the PYTHON one: 19 of 2168 corpus functions have required-ids DISJOINT
+    from emitted-ids (required `C-PY-INT-ARITH`, emitted `C-C-INT-ARITH`) yet count in `xpile audit`''s
+    NUMERATOR, because `function_has_citation` matches the PRESENCE of any `// xpile-contract:` line and
+    never which id. So "Rust 2167/2167 = 100.0% [OK]" means "has A citation", not "has ITS citation".
+    The 4 over-citations PMAT-1385 pinned are the same root cause from the other side (a C fn with no
+    arithmetic requires nothing but is cited). WORSE, and the sharpest piece: the LEAN backend has NO
+    C emit path, so `--target lean` on c_bitwise.c emits arbitrary-precision Lean `Int` stamped `@[xpile_contract
+    "C-PY-INT-ARITH"]` -- the PYTHON contract, from the PROOF lane, on C code, where that contract''s
+    own YAML says it is "Distinct from C-PY-INT-ARITH (Python int)". Rust and Ruchy have real C paths
+    and cite C-C-INT-ARITH. Split by KIND: Lean should REFUSE a SourceLang::C module (it would emit Python
+    semantics); `applicable_contracts` should take the paradigm; the audit numerator should require the
+    REQUIRED id; and `every_applicable_contract_is_actually_cited` -- the gate that exists for exactly
+    this drift -- filters to `.py` at contract_citation_integrity.rs:441, which is why the lane where
+    the drift is TOTAL is the one it never reads. (b) `--target wgsl` on fib.py exits 0 emitting WGSL
+    that naga REJECTS (WGSL forbids recursion) -- accept-then-fail-downstream, one lane over from this
+    slice. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no crates/*/src
+    or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit, witness-floor TOUCH 2);
+    2026-07-31 -> PMAT-1374 (publish).'
 - id: PMAT-1375
   status: open
   ev_rank: DEFERRED
@@ -1647,18 +2009,359 @@ queue:
     ceiling is ruchy''s own toolchain — making an upstream release cadence a merge blocker imports
 
     someone else''s schedule into this repo''s merge queue.'
+- id: PMAT-1389
+  status: open
+  ev_rank: R2
+  gate_touch: null
+  date: '2026-07-27'
+  title: positional-only parameters (`/`) are SILENTLY DELETED from the signature — the caller's positional
+    args shift left and rust/wasm/lean/ruchy all return a different answer than CPython
+  notes: "Best EV-per-byte in the sweep: a ONE-PREDICATE edit that kills a clean-compiling,\ncleanly-EXECUTING\
+    \ wrong answer on FOUR backends from a single frontend hole.\nSHARPENED REPRO (I re-ran it at f74ebe61;\
+    \ the DEFAULTED variant is the load-bearing one):\n  D=$(mktemp -d); cd $D\n  printf 'def f(a: int,\
+    \ /, b: int = 2) -> int:\\n    return b\\n\\ndef run() -> int:\\n    return f(9)\\n' > m.py\n  python3\
+    \ -c \"import sys;sys.path.insert(0,'$D');import m;print(m.run())\"     # -> 2\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n\
+    \  $X transpile $D/m.py --target rust --contracts off > m.rs 2>m.err\n  echo \"rc=$? stderr=$(wc -c\
+    \ <m.err)\"                                          # -> rc=0 stderr=0\n  cat m.rs   # -> pub fn\
+    \ f(b: i64) -> i64 { b }   <- `a` DELETED\n             #    pub fn run() -> i64 { f(9i64) } <- 9\
+    \ re-binds to `b`\n  { cat m.rs; echo 'fn main(){ println!(\"{}\", run()); }'; } > mf.rs\n  rustc\
+    \ --edition 2021 mf.rs --out-dir od && ./od/mf                           # -> 9   (python3: 2)\nROOT\
+    \ CAUSE: crates/depyler-frontend/src/lib.rs:6033 guards `kwonlyargs`/`kwarg` but NOT\n`posonlyargs`;\
+    \ the param loop at :6059 iterates `f.args.args` and `f.args.posonlyargs` is never\nread for module-level\
+    \ functions.\nFIX (S): extend the :6033 disjunction with `|| !f.args.posonlyargs.is_empty()` and reuse\
+    \ the\nwording of the nested-fn refusal that ALREADY EXISTS one screen away at lib.rs:16095.\nSCOPE\
+    \ BOUND (verified, encode as tests): nested fn with `/` already refuses (:16095); lambda\nwith `/`\
+    \ already refuses (:16287); a class method accidentally refuses (`self` lands in\nposonlyargs -> \"\
+    has no `self` first parameter\"). ONLY module-level functions leak.\nTRAP: `*args` is handled CORRECTLY\
+    \ today (`def total(*args: int)` -> `pub fn total(args: Vec<i64>)`,\npython3 and the lowered form\
+    \ both give 6). Do NOT touch the vararg path.\nACCEPTANCE:\n  $X transpile $D/m.py --target rust;\
+    \ echo $?          # -> 1, message names positional-only `/`\n  for t in wasm lean ruchy; do $X transpile\
+    \ $D/m.py --target $t; echo \"$t=$?\"; done   # all 1\n  command cargo test -p depyler-frontend &&\
+    \ command cargo test -p xpile --test transpile_e2e\n"
+- id: PMAT-1390
+  status: open
+  ev_rank: R3
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`xpile attestations` counts a roadmap-PREAMBLE mention as a WORK ITEM (69 where 68 exist, prints
+    a nameless `- ` bullet, ships `""` in JSON) AND emits INVALID JSON for a quoted id'
+  notes: "TWO defects, ONE function family, ONE file, ONE PR — do not split.\nThe PMAT-1385/1386 shape\
+    \ exactly: a reporter printing a number it did not measure.\nSHARPENED REPRO A — the phantom is the\
+    \ ONLY attester (I re-ran it; 2 files, 5 lines, exit 0):\n  D=$(mktemp -d); mkdir -p $D/contracts\n\
+    \  printf 'metadata:\\n  id: C-FOO\\n' > $D/contracts/foo.yaml\n  printf 'strategic_goals:\\n  note:\
+    \ mentions C-FOO in the preamble\\nroadmap:\\n- id: PMAT-1\\n  title: unrelated\\n' > $D/roadmap.yaml\n\
+    \  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  $X attestations --roadmap $D/roadmap.yaml --contracts-dir\
+    \ $D/contracts; echo \"rc=$?\"\n  # OBSERVED rc=0:  \"C-FOO   1 mentions across  1 work item(s)\"\
+    \ + a bare \"      - \" bullet\n  #                 \"totals: 1/1 contracts attested\"\n  # REFERENCE:\
+    \ ZERO work items mention C-FOO.\nLIVE TREE: `$X attestations | sed -n '279p'` -> \"C-PY-INT-ARITH\
+    \  87 mentions across 69 work item(s)\";\nindependent reference via a REAL yaml parser (not grep)\
+    \ ->\n  python3 -c \"import yaml; d=yaml.safe_load(open('docs/roadmaps/roadmap.yaml')); print(len([i\
+    \ for i in d['roadmap'] if 'C-PY-INT-ARITH' in yaml.safe_dump(i)]))\"\n  -> 68.  Same off-by-one:\
+    \ C-PY-FLOAT-ARITH 11 vs 10, C-XLATE-PY-CLASS-TO-STRUCT 5 vs 4.\n  `$X attestations | grep -c '^ \
+    \     - $'` -> 3 bare bullets.\nSHARPENED REPRO B — INVALID JSON with NO exotic filename (content-driven,\
+    \ verified):\n  printf 'roadmap:\\n- id: \"P\"\\n  c: C-FOO\\n' > $D/min.yaml\n  $X attestations --roadmap\
+    \ $D/min.yaml --contracts-dir $D/contracts --json > $D/m.json; echo \"rc=$?\"  # 0\n  grep -o '\"\
+    work_item\":\"[^,]*' $D/m.json      # -> \"work_item\":\"\"P\"\"\n  python3 -c \"import json;json.load(open('$D/m.json'))\"\
+    \   # -> JSONDecodeError\nROOT CAUSES (crates/xpile/src/main.rs):\n  (a) :1826 `scan_roadmap_for_id`\
+    \ starts `current_item` as `String::new()` and only reassigns on a\n      column-0 `- id: ` line,\
+    \ so every mention in the `strategic_goals` preamble (lines 1..189;\n      `roadmap:` is 190, first\
+    \ `- id:` is 191) is attributed to work item `\"\"`, which both printers\n      fold into the unique-work-item\
+    \ BTreeSet (:1861-1869 text, :1919-1924 JSON).\n  (b) :1894-1948 hand-rolls JSON and routes ONLY `snippet`\
+    \ through the `escape_json` that already\n      exists at :1954. Raw: `roadmap_path` (:1908-1912),\
+    \ `work_items` (:1919), `work_item` (:1926),\n      `c.id` (:1934), `unattested` (:1943).\n  (c) :1830\
+    \ takes the id as `line.strip_prefix(\"- id: \")` VERBATIM, unlike the sibling\n      `extract_metadata_id`\
+    \ at :1812 which does `.trim_matches('\"')`.\nFIX (S): skip a mention while `current_item.is_empty()`\
+    \ (or bucket preamble mentions under an\nexplicit \"(preamble — not a work item)\" line that does\
+    \ NOT count); route all five strings through\n`escape_json`; give :1830 the same `.trim_matches('\"\
+    ')`.\nTRAP: the existing unit test at main.rs:2004 uses a fixture that STARTS at `roadmap:` and therefore\n\
+    cannot catch (a) — the new test's fixture MUST have a preamble mentioning the id.\nHONEST SCOPE (skeptic's\
+    \ deflation, keep it in the CHANGELOG): `xpile quorum` derives Extrinsic from\n`scan_roadmap_for_id(...).len()`\
+    \ (mention COUNT, main.rs:2152), which this does NOT perturb, and no\nlive contract is attested ONLY\
+    \ by the phantom — nothing flips attested/unattested today.\nACCEPTANCE:\n  repro A -> \"0 work item(s)\"\
+    \ (or an explicit preamble bucket), no bare `- ` bullet, no `\"\"` in JSON\n  repro B -> `python3\
+    \ -c \"import json;json.load(...)\"` exits 0\n  $X attestations | grep -c '^      - $'   # -> 0\n\
+    \  $X attestations --json | python3 -c \"import json,sys;json.load(sys.stdin);print('VALID')\"\n"
+- id: PMAT-1391
+  status: open
+  ev_rank: R4
+  gate_touch: null
+  date: '2026-07-28'
+  title: '`--target wgsl` exits 0 emitting WGSL the repo''s OWN `naga_validate_wgsl` REJECTS — sanitize
+    the `__`-reserved synthetic identifiers AND wire the validator into `lower()` so the class cannot
+    recur'
+  notes: "TWO reported findings, ONE slice: the identifier family and the recursion case are BOTH caught\
+    \ by\nthe same wire-in, which I PROVED by executing the repo's own exported gate.\nMEASURED with a\
+    \ harness built against `xpile_wgsl_codegen::naga_validate_wgsl` (naga 29.0.3, the\nCargo.lock pin).\
+    \ All four probes, xpile rc=0 / stderr 0 bytes in every case:\n  for i in range(1)      -> REPO-GATE-REJECT:\
+    \ Identifier starts with a reserved prefix: `__forc0`\n  for ... else           -> REPO-GATE-REJECT:\
+    \ Identifier starts with a reserved prefix: `__broke0`\n  def f(n): return f(n)  -> REPO-GATE-REJECT:\
+    \ declaration of `f` is recursive\n  while-loop accumulator -> REPO-GATE-OK        <- the lane is\
+    \ otherwise SOUND; this is a guard,\n                                                   not a rewrite\n\
+    Reproduce the harness (`cargo` is a shell FUNCTION — `command cargo` is required):\n  V=$(mktemp -d)/v;\
+    \ mkdir -p $V/src\n  printf '[package]\\nname=\"v\"\\nversion=\"0.0.0\"\\nedition=\"2021\"\\n[dependencies]\\\
+    nxpile-wgsl-codegen = { path = \"/home/noah/src/xpile/crates/xpile-wgsl-codegen\" }\\n[workspace]\\\
+    n' > $V/Cargo.toml\n  cat > $V/src/main.rs <<'EOF'\n  use std::io::Read;\n  fn main(){let mut s=String::new();std::io::stdin().read_to_string(&mut\
+    \ s).unwrap();\n    match xpile_wgsl_codegen::naga_validate_wgsl(&s){Ok(())=>println!(\"REPO-GATE-OK\"\
+    ),\n    Err(e)=>{println!(\"REPO-GATE-REJECT: {e}\");std::process::exit(2);}}}\n  EOF\n  (cd $V &&\
+    \ command cargo build --quiet --target-dir $V/t)\nORDER IS LOAD-BEARING — SANITIZER FIRST, THEN WIRE-IN.\
+    \ Wiring the validator in ALONE turns every\n`for` loop into a refusal and REDS an existing test:\n\
+    \  crates/xpile/tests/transpile_e2e.rs:19906 `transpile_loop_var_leak_range_wasm_traps_wgsl_clean`\n\
+    \  asserts `wgsl.status.success()` AND `wgsl_src.contains(\"fn last_i(\") && ... (\"loop {\")` on\n\
+    \  fixtures/loop_var_leak_range.py. I emitted it: the WGSL contains `var __forc0` and\n  `let __forstop1`\
+    \ and the repo gate REJECTS it. Its doc comment claims WGSL \"executes exactly on\n  every non-empty\
+    \ input\" — that premise is FALSE and the CHANGELOG should say so.\n  A user-identifier-preserving\
+    \ sanitizer keeps BOTH assertions green (`fn last_i(` and `loop {`\n  survive), so land the sanitizer\
+    \ in the SAME commit as the wire-in.\nFIX (M): a WGSL identifier-mangling helper applied at EVERY\
+    \ name-emission site in the 1672-line\ncrates/xpile-wgsl-codegen/src/wgsl_emit.rs — var decls, reads,\
+    \ writes, params, and the module-scope\n`<fn>_<param>` storage-buffer binding names — plus a collision\
+    \ rule so a mangled name cannot alias a\nuser identifier (a user param literally named `__x` is EQUALLY\
+    \ illegal, so sanitizing only the\nfrontend's synthetics is an incomplete fix). Then call the already-exported\
+    \ `naga_validate_wgsl`\n(lib.rs:38) at the end of `RealWgslEmitter::try_emit` / `WgslBackend::lower`\
+    \ (lib.rs:108) and map\n`NagaValidationError` -> `BackendError::Lower`. Recursion then becomes an\
+    \ HONEST refusal.\nTRAP 1: do NOT change the synthetic names in crates/depyler-frontend/src/lib.rs:401/439\
+    \ — `__forc`,\n`__forstop`, `__broke`, `__fe`, `__feset`, `__unpack`, `__augi` are correct for the\
+    \ Rust/WASM lanes.\nMangle at the WGSL emission boundary only. (`__fe`/`__feset` are unreachable today\
+    \ only because\n`for x in xs:` is refused — they surface the moment the subset widens.)\nTRAP 2: the\
+    \ module doc at wgsl_emit.rs:13 already CLAIMS \"never wrong code\" and :55-65 already\nCLAIMS \"\
+    Emitted WGSL is checked by `naga_validate_wgsl`\". Both are false on the production path\ntoday; the\
+    \ commit makes them true — do not add a third claim.\nTRAP 3: `--contracts off` changes nothing (verified).\
+    \ Do not chase the citation.\nACCEPTANCE:\n  every probe above -> REPO-GATE-OK, or xpile rc=1 with\
+    \ a construct-naming message\n  command cargo test -p xpile-wgsl-codegen && command cargo test -p\
+    \ xpile --test transpile_e2e\n  (the 19906 test must stay GREEN, not be deleted)\n"
+- id: PMAT-1392
+  status: open
+  ev_rank: R5
+  gate_touch: null
+  date: '2026-07-28'
+  title: WAT lift folds EVERY nonzero `i32.const` to `true` — `i32.const 2` round-trips to `i32.const
+    1`, valid WAT, wrong value, exit 0 on every leg
+  notes: "SHARPENED REPRO (I re-ran it end to end; one line of WAT):\n  D=$(mktemp -d); cd $D\n  printf\
+    \ '(module (func $f (result i32) i32.const 2) (export \"f\" (func $f)))\\n' > m.wat\n  wat2wasm m.wat\
+    \ -o m.wasm && wasm-interp --run-all-exports m.wasm; echo \"REF=$?\"   # f() => i32:2, 0\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n\
+    \  $X transpile $D/m.wat --target wasm > rt.wat; echo \"XP=$?\"                        # 0\n  wat2wasm\
+    \ rt.wat -o rt.wasm && wasm-interp --run-all-exports rt.wasm; echo \"RUN=$?\" # f() => i32:1, 0\n\
+    DIFFERENTIAL: reference 2, xpile 1, exit 0 on ALL THREE legs, and the emitted WAT is VALID —\nwat2wasm\
+    \ ACCEPTS it, so nothing downstream catches the corruption. `i32.const -5` (reference\n4294967291)\
+    \ likewise becomes 1.\nCONTRAST — every neighbouring out-of-image construct ALREADY refuses at exit\
+    \ 1 with a precise\n\"outside the lift subset\" message: `i32.add`, `i32.div_s`, `i32.popcnt`, `drop`,\
+    \ `(memory 1)`.\n`i32.const` is the ONE unguarded hole in an otherwise strict lift.\nFIX (S): crates/xpile-wasm-frontend/src/lib.rs\
+    \ — THREE code-identical sites, not one:\n  :557 (straight-line body), :877 (loop condition), :977\
+    \ (loop body), all\n  `stack.push(Expr::LitBool(v != 0));`. Guard with `v == 0 || v == 1`, else return\n\
+    \  `FrontendError::Lower` reusing the \"outside the lift subset\" phrasing already used 5x in the\
+    \ file.\n  Best as one shared helper called from all three.\nSCOPE BOUNDS (measured, put them in the\
+    \ CHANGELOG — do not over-claim):\n  * value FLOW is fine: `(func $ident (param $a i32) (result i32)\
+    \ local.get $a)` round-trips\n    value-preserving. The wasm-leg corruption is EXACTLY `i32.const\
+    \ N` for N not in {0,1}.\n  * xpile's own emit never puts `i32.const N` (N not in {0,1}) in the lift-reachable\
+    \ subset, so the\n    self-round-trip fixed point is NOT broken. The defect is confined to hand-written\
+    \ / third-party\n    `.wat` — which IS an advertised frontend (main.rs:1236 `\"wasm\" | \"wat\"`).\n\
+    \  * `i64` and `f64` lift CORRECTLY today; do not touch them.\nOPTIONAL SECOND HALF (say so explicitly\
+    \ if you skip it): the unconditional `\"i32\" => Ok(Type::Bool)`\nat :331 makes EVERY i32 param/result\
+    \ lift as `bool` on `--target rust`\n(`pub fn ident(a: bool) -> bool`). That is a TYPE corruption,\
+    \ broader than the const fold.\nTRAP: no existing test asserts the current fold (`grep -c 'LitBool(v\
+    \ != 0)'` -> 3, all product code),\nso nothing needs unwinding.\nACCEPTANCE:\n  $X transpile $D/m.wat\
+    \ --target wasm; echo $?    # -> 1, message names `i32.const 2`\n  a 0/1 module still round-trips\
+    \ at rc=0; add a refusal test AND a round-trip test\n  command cargo test -p xpile-wasm-frontend\n"
+- id: PMAT-1393
+  status: open
+  ev_rank: R6
+  gate_touch: null
+  date: '2026-07-28'
+  title: README.md publishes a FABRICATED `$ xpile quorum` transcript (15/20) that the shipped binary
+    contradicts (26/9) four lines after telling you to run it; contracts/README.md is stuck at 12 of 35
+    contracts — both land on crates.io Friday
+  notes: "DOC-ONLY. Freeze-legal (docs are permitted after Wed 18:00), but land it BEFORE the Thursday\
+    \ tag so\nthe crates.io / GitHub landing page is not false at publish.\nSHARPENED REPRO (I re-ran\
+    \ the tool leg):\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  grep -n 'totals: 15 QUORUM' README.md\n\
+    \  #  151:  totals: 15 QUORUM, 20 PARTIAL, 0 UNVERIFIED (35 contracts total)\n  $X quorum | tail -2\
+    \                       # totals: 26 QUORUM, 9 PARTIAL, 0 UNVERIFIED (35 total)\n  # corroborate the\
+    \ TOOL against its own rows, do not take the totals line on faith:\n  $X quorum > /tmp/q.txt\n  grep\
+    \ -c 'QUORUM *$' /tmp/q.txt            # 26\n  grep -c 'PARTIAL *$' /tmp/q.txt           # 9\n  ls\
+    \ contracts/*.yaml | wc -l               # 35 == 26+9\ncontracts/README.md is FOUR separate falsehoods:\n\
+    \  :11 \"contract substrate (12 contracts at v0.1.0)\"   -> 35 contracts, workspace version 0.1.617\n\
+    \  :18 \"**12 contracts, 100% at §14.4 QUORUM.**\"        -> 74.3% (9 PARTIAL)\n  :18 stratum prose\
+    \ is STRUCTURALLY wrong, not just stale: it says the non-four-stratum contracts\n      reach QUORUM\
+    \ via \"Semantic + Symbolic + Extrinsic\", but live C-COMPILE-RUST-TO-WASM is\n      Sym 0 / Run 113\
+    \ — it reaches QUORUM through RUNTIME.  (`grep C-COMPILE-RUST-TO-WASM /tmp/q.txt`)\n  :90 \"12 of\
+    \ 12 contracts at Bronze\"; the layer table has 12 rows (`grep -c '^| [0-9]'`).\nFIX (doc-only this\
+    \ window): retire the README.md:151 transcript in favour of the DERIVE COMMAND\n(the CURRENT.md doctrine\
+    \ — publish the command, not a frozen number); regenerate the\ncontracts/README.md layer table to\
+    \ 35 rows; rewrite the :18 stratum prose from the live\n`xpile quorum` rows; correct \"v0.1.0\" to\
+    \ the workspace version.\nTRAP 1 — DO NOT TOUCH crates/xpile/tests/claims_drift.rs THIS WINDOW. Widening\n\
+    `current_md_carries_no_bare_derived_counts` (:558, scoped to `read(\"docs/status/CURRENT.md\")`) from\n\
+    one path to a file list is the DURABLE fix and it is a GATE TOUCH; this window's serial chain is\n\
+    FULL (#1 PMAT-1372, #2 PMAT-1356, #3 PMAT-1373 on Thursday) and PMAT-1373's ordinal is pinned.\nSeeded\
+    \ for 0.1.619. `grep -rln 'contracts/README' crates .github` returns NOTHING today.\nTRAP 2: the sibling\
+    \ regression pin at claims_drift.rs:605 already lists (\"12 contracts\",\n\"35 contracts\") as a KNOWN\
+    \ stale claim for CURRENT.md — the identical string is live and ungated one\ndirectory over. Do not\
+    \ \"fix\" it by editing that pin.\nTRAP 3: this is NOT a duplicate of PMAT-1386. `git show 903d7aab^:README.md`\
+    \ proves 15/20 predates\nthat fix; 26 was the correct repo-root answer both before and after. Stale\
+    \ from da150d15 (#1809);\ncontracts/README.md untouched since ee3c1e3f (#115).\nACCEPTANCE: no number\
+    \ in README.md or contracts/README.md that `xpile quorum` / `ls contracts/*.yaml`\ncontradicts. Re-derive\
+    \ with the commands above; do NOT copy the figures in this note.\n"
+- id: PMAT-1394
+  status: open
+  ev_rank: R7
+  gate_touch: null
+  date: '2026-07-29'
+  title: 'the LEAN lane — the repo''s SEMANTIC-stratum oracle — silently returns a value for division
+    by zero: `7 // 0` elaborates to `0`, `7 % 0` to `7`, `1.0 / 0.0` to `inf`, all at exit 0'
+  notes: "LAST src day before the Wed 18:00 HARD FREEZE. ABORT RULE: if this is not MERGED by Wed 16:00,\n\
+    drop it to 0.1.619 rather than rushing a semantic-oracle change into a freeze.\nSHARPENED REPRO (I\
+    \ re-ran it against real lean 4.15.0; a LITERAL zero, no runtime parameter needed):\n  D=$(mktemp\
+    \ -d); printf 'def f() -> int:\\n    return 7 // 0\\n' > $D/z.py\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n\
+    \  $X transpile $D/z.py --target lean --contracts off > $D/z.lean; echo \"xpile=$?\"   # 0\n  cat\
+    \ $D/z.lean            # def f : Int := (Int.fdiv (7: Int) (0: Int))\n  printf '\\n#eval f\\n' >>\
+    \ $D/z.lean\n  lean $D/z.lean; echo \"lean=$?\"                                                  \
+    \   # prints 0, rc 0\n  python3 -c \"exec(open('$D/z.py').read()); print(f())\"                  \
+    \            # ZeroDivisionError\nOther two legs, same shape: `a % b` -> `(Int.fmod a b)`, `#eval\
+    \ f 7 0` => 7;\n`a / 0.0` -> `(a / (0: Float))`, `#eval f 1.0` => inf.\nCONTRAST — the SAME meta-HIR\
+    \ through `--target rust` gets it right and says so (I re-ran it):\n  $X transpile $D/z.py --target\
+    \ rust --contracts off | grep panic\n  -> if __fb == 0 { panic!(\"xpile: ZeroDivisionError: integer\
+    \ division or modulo by zero\"); }\nDECISIVE COROBORATION — the lane already refuses exception machinery,\
+    \ so a refusal here is\nCONSISTENT with its own posture: wrapping the same expression in `try/except\
+    \ ZeroDivisionError`\ngives rc=1, \"Python `try`/`except` lowers to Rust `catch_unwind` ... with no\
+    \ Lean counterpart\".\nIt refuses the HANDLER while silently miscompiling the RAISER.\n** PREFER THE\
+    \ REFUSAL, NOT THE PANIC GUARD. Measured: Lean `panic!` does NOT give a non-zero exit —\na failing\
+    \ `assert` lowers to `panic! \"xpile: assertion failed\"`, prints PANIC to stderr, returns the\ndefault\
+    \ (0), and `lean` STILL exits 0. So porting the Rust guard buys a loud stderr line, not\nexit-code\
+    \ parity. A hard `BackendError::Lower` on `//`, `%` and float `/` (crates/xpile-lean-codegen/\nsrc/lib.rs:2034-2035\
+    \ plus the Float `Div` arm) is the honest, contained fix — and it changes NO\nemitted semantics, so\
+    \ contracts/lean/PyIntArith.lean and its Diamond theorem do NOT need the\n5-touchpoint sync. That\
+    \ is what keeps this slice inside a pre-freeze day.\nTRAP 1: `--contracts off` is REQUIRED for a clean\
+    \ demo. With the default `--contracts on` the\n`@[xpile_contract \"...\"]` attribute makes lean emit\
+    \ `error: unexpected token; expected ']'` and exit\n1 — a SEPARATE already-adjudicated issue (#1899)\
+    \ that MASKS this one.\nTRAP 2: a unit test at crates/xpile-lean-codegen/src/lib.rs:2182-2192 PINS\
+    \ `Int.fdiv` emission\n(\"Python `//` must use Int.fdiv (floor semantics)\"). It must be inverted\
+    \ to assert the refusal.\nTRAP 3 (checked): crates/xpile/tests/lean_elaborate_witness.rs's 6 cases\
+    \ are add / sub / lin / sq /\nis_zero / lt — NO division. The witness does NOT constrain this fix.\n\
+    ACCEPTANCE:\n  $X transpile $D/z.py --target lean --contracts off; echo $?   # -> 1, message names\
+    \ ZeroDivisionError\n  the `a % b` and float `a / 0.0` legs -> 1\n  command cargo test -p xpile-lean-codegen\
+    \ && command cargo test -p xpile --test lean_elaborate_witness\n"
+- id: PMAT-1395
+  status: open
+  ev_rank: R8
+  gate_touch: null
+  date: '2026-07-29'
+  title: decy `unsigned int` lowers to a WAT `i32` result carrying an `i64` literal — `--target wasm`
+    exits 0 emitting WAT that `wat2wasm` REJECTS (the PMAT-1378 class on a path PMAT-1378 missed)
+  notes: "NOT from the ranked survivor list — a skeptic flagged it as a bonus and I REPRODUCED it at f74ebe61.\n\
+    SHARPENED REPRO (one line of C):\n  D=$(mktemp -d); printf 'unsigned int f(void) { return 2; }\\n'\
+    \ > $D/u.c\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  $X transpile $D/u.c --target wasm > $D/u.wat;\
+    \ echo \"XP=$?\"      # -> 0\n  wat2wasm $D/u.wat -o $D/u.wasm                                   #\
+    \ -> rejects:\n  #   u.wat:48:5: error: type mismatch in implicit return, expected [i32] but got [i64]\n\
+    \  #       i64.const 2\nROOT CAUSE: crates/xpile-wasm-codegen/src/lib.rs:17992 `Type::CUInt => Ok(WatTy::I32)`\
+    \ while the\ninteger-literal lowering emits `i64.const`. PMAT-1378 added the pre-emit validation layer\
+    \ to this\ncrate but the CUInt path evidently escapes it — find out WHY before patching, because the\
+    \ answer\ndetermines whether other decy scalar ABI tokens (CLong / CDouble) have the same hole.\n\
+    FIX (S): either wrap the literal for a CUInt-typed return (`i32.wrap_i64` / emit `i32.const`\ndirectly),\
+    \ or refuse CUInt on the wasm lane with a named message. Refusal is acceptable and cheaper;\nsay which\
+    \ you chose in the CHANGELOG.\nTRAP: verify against the REAL tool, unpiped — `wat2wasm u.wat -o u.wasm;\
+    \ echo $?`. A pipe masks the\nexit code (this repo has been bitten: feedback-pipe-masks-exit-code).\n\
+    ACCEPTANCE:\n  $X transpile $D/u.c --target wasm && wat2wasm $D/u.wat -o $D/u.wasm; echo $?   # 0\
+    \ (fixed)\n  OR $X transpile $D/u.c --target wasm; echo $?                                   # 1 (refused)\n\
+    \  sweep the other decy scalar tokens (`int`, `long`, `double`, `unsigned int`) through\n  wat2wasm\
+    \ and record which lower and which refuse\n  command cargo test -p xpile-wasm-codegen && command cargo\
+    \ test -p decy-frontend\n"
+- id: PMAT-1396
+  status: open
+  ev_rank: R9
+  gate_touch: null
+  date: '2026-07-29'
+  title: CLAUDE.md:38 says xpile "has zero `.sh` / `.bash` / `.zsh` / Makefile / Dockerfile files" — 11
+    `.sh` files are tracked, and line 127 names one of them by filename
+  notes: "DOC-ONLY, one line, freeze-legal — deliberately LAST so it can land after Wed 18:00.\nLowest\
+    \ severity in the scheduled set, scheduled only because CLAUDE.md is the file EVERY agent\nsession\
+    \ in this repo loads first, and the whole bashrs-gate policy is conditioned on this count.\nREPRO:\n\
+    \  git show origin/main:CLAUDE.md | sed -n '38p'\n  git ls-files | grep -cE '\\.(sh|bash|zsh)$|(^|/)(Makefile|Dockerfile)$'\
+    \   # -> 11\n  grep -n 'bashrs_realistic_demo.sh' CLAUDE.md                             # -> 127 (self-contradiction)\n\
+    ARCHAEOLOGY: written by da2cfff0 2026-05-17 11:19:33 and TRUE then (`git ls-tree -r da2cfff0` has\
+    \ no\n.sh); e63b75f5 (#83, PMAT-052) added the first .sh at 19:33:05 the SAME DAY. False for 71 days.\n\
+    The Makefile/Dockerfile HALF of the sentence is still true — keep it.\nNEGATIVE RESULT worth preserving\
+    \ in the corrected text (I re-verified it, all 11 files):\n  for f in $(git ls-files | grep -E '\\\
+    .sh$'); do\n    /mnt/nvme-raid0/targets/xpile/debug/xpile transpile \"$f\" --target shell >/dev/null\
+    \ 2>&1 \\\n      && echo \"rc=0 $f\" || echo \"FAIL $f\"; done      # -> rc=0 for all 11, zero shredding\n\
+    So the POLICY's spirit holds; only the stated count is false. State the invariant that is actually\n\
+    true, e.g. \"xpile's only shell artifacts are 11 gated `.sh` fixtures/examples under\ncrates/xpile/{tests/fixtures,examples/inputs},\
+    \ every one of which round-trips through\nbashrs-frontend -> bashrs-backend; there are zero `Makefile`\
+    \ / `Dockerfile` files.\"\nTRAP: do NOT hard-code 11 into a test. The count grew by 3 today alone.\
+    \ If you want a gate, assert\nthe ROUND-TRIP invariant over `git ls-files | grep '\\.sh$'`, not the\
+    \ cardinality — and that would be\na NEW test file, not a gate touch. Optional; the doc fix alone\
+    \ is the slice.\nACCEPTANCE: CLAUDE.md:38 no longer contradicts CLAUDE.md:127; `pv lint contracts/`\
+    \ still clean.\n"
+- id: PMAT-1373
+  status: open
+  ev_rank: R1
+  gate_touch: 3
+  title: 'RELEASE COMMIT v0.1.618: version bump + [Unreleased] -> [0.1.618] + witness-floor re-derive
+    TOUCH 2 (ALL lanes) + tag on a PINNED SHA'
+  notes: "THURSDAY 2026-07-30. NO src merges. Reserve the day; nothing L/XL lands.\nVersion is single-sourced\
+    \ at Cargo.toml:43 — one line + `cargo check` refreshes all 31\nCargo.lock entries. Promote `## [Unreleased]`\
+    \ to `## [0.1.618] - 2026-07-31` (ship date;\nthe tag OBJECT is created 07-30 — a DELIBERATE one-day\
+    \ skew, disclosed in docs/RELEASE.md).\nWitness-floor re-derive TOUCH 2, all lanes. Current values\
+    \ at c3e468d4 (re-derive, do not\ncopy): WASM 770 (live 795), SHELL 7 (tight), RUST_DIFF 44 (tight;\
+    \ PMAT-1351's 5 oracle\nfixtures take live to 49), HYBRID 3 (tight; PMAT-1352 takes live to 4), WASI\
+    \ 1, RUCHY 7,\nFORJAR 4, LEAN 6. Plus PMAT-1372's new WASM_EXEC_FLOOR.\nMANDATORY THREE CHANGELOG\
+    \ SECTIONS (non-negotiable, carried from PMAT-1355's doctrine):\n\"What still REFUSES\", \"What is\
+    \ NOT merge-blocking\", \"Known divergences\".\n  - NOT-merge-blocking MUST state: the live org ruleset\
+    \ requires only [gate, workspace-test];\n    kani, lake-build, docs, wasi, lean-models, shader-validate\
+    \ are ADVISORY; the\n    ruchy/lean/forjar exec witnesses EXIST BUT SKIP IN CI (workspace-test installs\
+    \ wabt and\n    nothing else — verified: it is the file's only `apt-get install` line);\n    cleanroom-publish\
+    \ does not run on PRs.\n  - Known-divergences MUST add the TWO NEW Rust-lane findings surfaced by\
+    \ PMAT-1352:\n    `1 if c else 2.5` prints 1.0 where CPython prints 1, and `list[float].append(int)`\
+    \ then\n    reading the element prints 49.0 where CPython prints 49.\nABORT A1b: if the SHA that was\
+    \ TESTED differs from the SHA being TAGGED (the cron merged\nsomething), re-run the full suite on\
+    \ the new SHA or abort the day —\nstrict_required_status_checks_policy is FALSE, so green checks do\
+    \ not prove the merged\ncombination was ever tested together.\nRe-measure `cargo test -p xpile` rather\
+    \ than assuming either the green or the red state\nrecorded in PMAT-1359's notes; disclosing a caveat\
+    \ that no longer exists is the same\nCLAIMS-001 falsehood in the opposite direction.\nThen `git tag\
+    \ v0.1.618 <PINNED_SHA> && git push origin v0.1.618`. Do NOT create the GitHub\nrelease yet. Also\
+    \ purge /mnt/nvme-raid0/targets/xpile/package/{tmp-registry,tmp-crate} and\nrun `cargo publish --workspace\
+    \ --dry-run --locked` UNPIPED before the tag push."
+  date: '2026-07-30'
+- id: PMAT-1374
+  status: open
+  ev_rank: R1
+  gate_touch: null
+  title: 'PUBLISH v0.1.618: morning re-verify -> `gh release create` -> `cargo publish --workspace` UNPIPED
+    -> sparse-index verification -> ledger close. NO CODE MERGES.'
+  notes: 'FRIDAY 2026-07-31. A1 preconditions ALL hold before the first upload byte: the tag exists on
+
+    origin; its SHA shows gate + workspace-test SUCCESS; the on-tag clean-room run is SUCCESS;
+
+    the local dry-run exited 0 UNPIPED; `XPILE_REQUIRE_WASM_RUNTIME=1 cargo test --workspace`
+
+    exited 0 on that exact SHA; the release worktree is at the TAG (not main) and
+
+    `git status --porcelain` is EMPTY.
+
+    A5 (RECOVERABLE, do NOT abort): `no hash listed for <crate> vX` is the stale package overlay
+
+    — purge and restart from the dry-run.
+
+    A4 (PARTIAL BATCH): if crate k of 31 fails, STOP; do NOT yank the k-1 already published (they
+
+    are valid); do NOT retry at the same version (409); fix forward with a WHOLE-WORKSPACE
+
+    0.1.619 next Friday.
+
+    A6: if the batch has not STARTED by 16:00 local, ship tag-only and roll the batch to
+
+    2026-08-07.
+
+    A7: NO Friday code. A Friday defect means A6, never a same-day hotfix onto the release SHA.'
+  date: '2026-07-31'
 next_lane:
 - 'WASM i64 OVERFLOW is a SILENT WRONG ANSWER (measured by the PMAT-1378 differential pass, 2026-07-27;
   deliberately NOT actioned in a release week). Python ints are arbitrary precision; the lane maps them
   to i64 and wraps without a word: `9223372036854775807 + 1` returns -9223372036854775808, `2**62 * 4`
   returns 0, `-(-2**63)` returns itself. Div-by-zero already TRAPS honestly (i64.div_s), so the lane is
   internally inconsistent about which arithmetic failures it reports. The full fix is overflow-checked
-  add/sub/mul/neg helpers that `unreachable` on overflow — L/XL, on the emitter''s hot path, and it
-  touches every existing witness. SEPARABLE AND MUCH SMALLER, do this one first: the SHIFT half. `1 << 70`
-  returns 64 because `i64.shl` masks the count to 6 bits — wrong even under fixed-width semantics, where
-  0 is the defensible answer — and a NEGATIVE count (Python raises ValueError) masks to a large positive
-  one. `x >> n` for n >= 64 is fixable EXACTLY by clamping to 63, which reproduces CPython for both
-  signs; `x << n` for n >= 64 always overflows i64 unless x == 0, so it traps. Neither needs the hot path.'
+  add/sub/mul/neg helpers that `unreachable` on overflow — L/XL, on the emitter''s hot path, and it touches
+  every existing witness. SEPARABLE AND MUCH SMALLER, do this one first: the SHIFT half. `1 << 70` returns
+  64 because `i64.shl` masks the count to 6 bits — wrong even under fixed-width semantics, where 0 is
+  the defensible answer — and a NEGATIVE count (Python raises ValueError) masks to a large positive one.
+  `x >> n` for n >= 64 is fixable EXACTLY by clamping to 63, which reproduces CPython for both signs;
+  `x << n` for n >= 64 always overflows i64 unless x == 0, so it traps. Neither needs the hot path.'
 - list[str] — the biggest compositional hole; blocks s.split(), ','.join(xs) and the repo's own word_count.py.
   Even the read-only subset is M-L.
 - Nested dict values dict[K, dict[...]] and dict-valued struct fields — unblocked by the shipped i32-pointer-in-i64-slot
