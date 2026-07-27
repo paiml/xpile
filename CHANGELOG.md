@@ -9,6 +9,103 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`xpile audit` reported `100.0% [OK]` for corpora it never measured — and
+  four of the repo's own audit tests had been reading that number for their
+  whole lifetime** (PMAT-1385). `xpile audit` is the project's own falsifier
+  reporter: it computes F1 (Layer-1 contract-citation coverage) over a corpus,
+  and its `--json` payload is documented as feeding CI dashboards and the
+  `XPILE-SOTA-XXX` dossier. Three shapes, all measured 2026-07-27 through the
+  shipped CLI, all exiting **0** with a perfect score:
+
+  | probe | reported |
+  |---|---|
+  | `xpile audit /nope/nowhere` (path does not exist) | `files scanned: 0`, `coverage (F1): 100.0% [OK]`, rc=0 |
+  | a real directory holding no file xpile recognises | same — as does `xpile audit notes.txt` |
+  | a corpus where every file failed to lower | `files scanned: 1`, `functions emitted: 0`, `100.0% [OK]`; in `--json` the failures collapse to `"errors":1` beside `"f1_status":"OK"` |
+
+  The flat 100 came from `coverage_pct()`'s zero-denominator convention
+  ("vacuously satisfied, so a small corpus doesn't trip the falsifier"). The
+  convention is defensible; reporting it through the **same channel** as a
+  measured ratio is not — an unmeasured corpus was indistinguishable from one
+  measured at ceiling in the text output, in the JSON, and in the exit status.
+  A CI job pointed at a typo'd or renamed corpus path reported a perfect
+  falsifier score indefinitely.
+
+  The fix splits by kind. A bad path or an empty scan is an **input** error and
+  now refuses (`transpile` has always treated a missing input that way). A real
+  corpus that measures nothing is an **outcome** and is still reported — status
+  `VACUOUS`, text `n/a`, JSON `"f1_pct":null` — so `audit` stays a reporter
+  without ever claiming a ceiling it did not measure.
+
+- **The four `audit_command_*` tests were auditing a path that does not exist**
+  (PMAT-1385, found only by fixing the above). They passed the literal
+  `"crates/xpile/tests/fixtures"`, but an integration test runs with its CWD at
+  the **package** root, so that resolved to
+  `crates/xpile/crates/xpile/tests/fixtures` — nonexistent. All four were green
+  on the vacuous 100%. The one named
+  `audit_command_f1_is_100_percent_on_current_fixture_corpus_rust`, whose own
+  comment says it pins the number "so a regression that misses a citation **or**
+  mis-classifies a function shows up as a numeric drop", would have stayed green
+  if the citation pipeline had emitted nothing at all. Re-derived against the
+  corpus they had never read (825 files):
+
+  | lane | measured 2026-07-27 | the test asserted |
+  |---|---|---|
+  | Rust  | 2167/2167 = **100.0% OK**, `over_citations` **4** | `over_citations: 0` |
+  | Lean  | 157/181 = **86.7% WARN** | `f1_status: OK` |
+
+  Every assertion is re-derived from those numbers, the path is anchored on
+  `CARGO_MANIFEST_DIR`, and each test now carries a **vacuity guard** on the
+  denominator, so a corpus that measures nothing can never read as a pass again.
+  The Lean claim "all arithmetic functions carry `@[xpile_contract …]`" was
+  never measured and is not true today; what is pinned instead is that the lane
+  is measured, is above the falsifier, and does not regress.
+
+- **The F1 metric under-counted every function whose name is a Rust keyword**
+  (PMAT-1385). A Python or C name that collides with a Rust keyword is emitted
+  as a **raw identifier** — `def move` → `pub fn r#move`, and Ruchy does the
+  same. `function_has_citation` matched the bare name, so it never found the
+  declaration: the function landed in the F1 denominator and never in the
+  numerator, even though the citation **was** emitted directly above it. With
+  the `r#` prefix stripped, the corpus goes 2166 → 2167 cited, which makes the
+  Rust lane a **true** 100.0% rather than a 99.954% that `{:.1}` had been
+  **rounding up** to it. The reporters now truncate toward zero (`display_pct`),
+  which can only understate. Honest limit: no corpus available today has a ratio
+  whose third decimal rounds it up a tenth, so the accompanying assertion holds
+  under both truncation and rounding — it is a guard against a future corpus,
+  not a proof that the change took effect.
+
+- **`xpile transpile` accepted two flags and then silently ignored one**
+  (PMAT-1385). `--out FILE --emit-crate DIR` wrote the crate, **dropped
+  `--out`**, and exited 0 — the file the caller named was never created,
+  because the emit path returns on `--emit-crate` first. And `--hardware` only
+  ever builds a PTX profile, so `--target rust --hardware ptx:sm_89` was
+  accepted, ignored, and exited 0 emitting plain Rust with nothing said about
+  the compute capability that was asked for (SPIR-V and WGSL already refused a
+  foreign `HwProfile` from inside their backends; every other target ignored
+  it). Both refuse now, naming the target that cannot consume the flag. The
+  `--hardware` **value** is parsed first, so a misspelling still reports as a
+  misspelling on every target.
+
+  New witness **XPILE-AUDITHON-001**
+  (`crates/xpile/tests/cli_audit_honesty_witness.rs`, 9 tests) holds the
+  property *a numeric F1 is reported only when
+  `functions_requiring_citation > 0`* over the whole probe corpus, including the
+  measurable row, with vacuity guards on both sides: the measurable row must
+  rest on a non-zero denominator, and each refusal row must actually reach the
+  reporter rather than fail for some unrelated reason. Verified red without the
+  fix — 6 of 7 failed and only the measurable control passed. The subject is the
+  shipped binary and fixtures written to a temp dir, so there is no toolchain
+  gate and no skip path; runtime 1.57s, measured rather than assumed.
+
+  **Residual pinned, not hidden**: the 4 over-citations are real. `c_bitwise.c`
+  (1), `c_if.c` (2) and `hybrid_missing/` (1) emit
+  `// xpile-contract: C-C-INT-ARITH` on functions whose `applicable_contracts()`
+  is empty — comparison and assignment only. Whether that is the C backend
+  citing per-module or `applicable_contracts()` under-modelling C comparison is
+  a separate question; it is pinned as a **ceiling** (≤ 4) so it can only
+  shrink.
+
 - **`ruchy run` on an xpile-emitted `.ruchy` exited 0 having executed
   NOTHING** (PMAT-1384). `ruchy run` is the target toolchain's own runner and
   the obvious thing to do with a `.ruchy` file. It evaluates a module as a

@@ -1276,6 +1276,71 @@ queue:
     crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 
+- id: PMAT-1385
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`xpile audit` -- the repo''s OWN falsifier F1 reporter -- printed `100.0% [OK]` and exited
+    0 for corpora it NEVER MEASURED, and four of the repo''s own audit tests were reading that
+    number on a path that does not exist (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED by executing PMAT-1384's next-pick note, which names the CLI's own flag/exit-code honesty
+    as a NON-emit surface none of the six emit-lane sweeps touched. The queue is empty before
+    Thursday.
+    ** THE DEFECT (3 shapes, all exit 0, all a perfect falsifier score): a path that DOES NOT EXIST;
+    a real directory holding no recognised source (and the single-FILE spelling `xpile audit
+    notes.txt`); and a corpus where EVERY file failed to lower (`--json` collapses those to
+    `"errors":1` beside `"f1_status":"OK"`). The flat 100 is `coverage_pct()`'s 0-denominator
+    convention. The convention is defensible; reporting it through the SAME channel as a measured
+    ratio is not -- an unmeasured corpus was indistinguishable from one measured at ceiling in text,
+    in JSON, and in the exit status.
+    ** THE FIX splits by KIND: a bad path / empty scan is an INPUT error and REFUSES (as `transpile`
+    always has); a real corpus that measures nothing is an OUTCOME and is REPORTED -- status
+    VACUOUS, text `n/a`, JSON `"f1_pct":null`. `audit` stays a reporter without claiming a ceiling.
+    ** SECOND FINDING, sharper, and found ONLY by fixing the first: the four `audit_command_*` tests
+    passed the literal "crates/xpile/tests/fixtures", but an integration test's CWD is the PACKAGE
+    root, so it resolved to `crates/xpile/crates/xpile/tests/fixtures` -- NONEXISTENT. All four were
+    green on the vacuous 100%. `audit_command_f1_is_100_percent_on_current_fixture_corpus_rust`,
+    whose comment says it pins the number so a missed citation "shows up as a numeric drop", would
+    have stayed green if the pipeline emitted NOTHING. Re-derived on the 825-file corpus they had
+    never read: Rust 2167/2167 = 100.0% OK with over_citations 4 (the test asserted 0); Lean 157/181
+    = 86.7% WARN (the test asserted OK). Path anchored on CARGO_MANIFEST_DIR + a denominator vacuity
+    guard per test. General lesson, a variant of PMAT-1383's: a test that asserts on a REPORTER is
+    only as good as the reporter's willingness to say "I measured nothing".
+    ** THIRD FINDING, an under-count inside the metric: a name colliding with a Rust keyword emits
+    as a RAW identifier (`def move` -> `pub fn r#move`; ruchy the same). `function_has_citation`
+    matched the bare name, missed the decl, and counted the function in the denominator and never
+    the numerator -- the citation WAS emitted. Strip a leading `r#`: 2166 -> 2167, so the Rust lane
+    is now a TRUE 100.0% rather than a 99.954% that `{:.1}` ROUNDED UP. Reporters now TRUNCATE
+    (`display_pct`), which can only understate.
+    ** FOURTH/FIFTH, same class, on `transpile`: `--out FILE --emit-crate DIR` wrote the crate,
+    SILENTLY DROPPED `--out`, exit 0 (the emit path returns on --emit-crate first); `--hardware`
+    only ever builds a PTX profile, so `--target rust --hardware ptx:sm_89` was accepted, IGNORED,
+    exit 0. Both refuse now; the VALUE is parsed first so a misspelling still reports as one.
+    ** WITNESS XPILE-AUDITHON-001 (crates/xpile/tests/cli_audit_honesty_witness.rs, 9 tests):
+    `a NUMERIC F1 is reported only when functions_requiring_citation > 0`, over the whole probe
+    corpus incl. the measurable row, vacuity-guarded on both sides. Verified RED without the fix
+    (6 of 7 fail; only the measurable control passes). No toolchain, so NO skip path -- runtime
+    1.57s, measured (the PMAT-1383 skip-as-green lesson applied preemptively).
+    ** RESIDUAL PINNED: the 4 over-citations are REAL -- c_bitwise.c (1), c_if.c (2),
+    hybrid_missing/ (1) emit `// xpile-contract: C-C-INT-ARITH` on functions whose
+    `applicable_contracts()` is empty (comparison + assignment only). C backend citing per-module,
+    or `applicable_contracts()` under-modelling C comparison? Separate question; pinned as a CEILING
+    (<= 4) so it can only shrink. Also honest: no corpus today has a ratio whose third decimal
+    rounds up a tenth, so the truncation assertion holds under BOTH truncation and rounding -- a
+    guard, not a proof.
+    ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+    PMAT-1373).
+    NEXT PICK: still nothing OPEN before Thursday. Remaining unswept NON-emit surfaces, in EV order:
+    (a) the OTHER three reporters -- `quorum`, `attestations`, `diamond` -- for the same
+    vacuity/exit-code shape (they refuse a missing dir, but nobody has checked what they report for
+    a dir that EXISTS and contains nothing, or whether a 0-vote stratum reads as a pass); (b) the
+    4 over-citations above; (c) `xpile hybrid --verify`'s documented graceful-skip-exit-0 (a
+    skip-as-green shape by design -- check it discloses); (d) CHANGELOG polish toward PMAT-1373.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
+    crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
+    gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 - id: PMAT-1373
   status: open
   ev_rank: R1
