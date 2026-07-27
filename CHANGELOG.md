@@ -7,11 +7,40 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Roadmap ledger conforms to pmat's schema (PMAT-1400)
+
+`docs/roadmaps/roadmap.yaml` is not xpile's private file — `pmat` owns its
+schema, and the repo mandates `pmat query` as its code-search path. But the
+ledger had drifted into **eight `item_type` variants and three `status` values
+pmat does not accept**, and one unknown variant fails the whole parse. The
+result: `pmat work list` exited **4** on every version of this ledger, valid
+YAML or not, so the pre-commit hook's own `pmat work start <ID>` advice could
+never have worked.
+
+Three layers, each hidden behind the last — 78 `item_type` rows, 51 `status`
+rows, and 2 rows appended with no `status` field at all. Normalised to pmat
+3.24.2's vocabulary (`capability`->`feature`, `correctness`/`fix`->`bug`,
+`provability`->`enhancement`, `verification`/`verify`/`test`->`task`;
+`obsolete`->`cancelled`, `in_progress`->`inprogress`, `open`->`todo`). Nothing
+is lost: no code reads `item_type`, and the finer distinction is already carried
+by the bracketed title tag (`[rust/capability]`, `[wasm/verification/dict]`).
+
+New gate **XPILE-LEDGER-003** (`crates/xpile/tests/roadmap_pmat_schema.rs`)
+pins the vocabulary, the required-field set, and a non-vacuity floor. It does
+**not** shell out to `pmat` — that would skip green wherever pmat is absent,
+which is every CI runner — so the accepted values are inlined from pmat's own
+error text and checked with `serde_yaml` alone.
+
+The sibling gates missed this because XPILE-LEDGER-001 matches raw text and is
+blind to schema, while XPILE-LEDGER-002 proves the bytes are YAML — and they
+were. **Parsing is not conforming.**
+
+
 ### Fixed
 
 - **The WGSL lane accepted `2147483647` and refused `-2147483648` — the two
   ends of the same `i32` range — blaming a literal the user never wrote**
-  (PMAT-1400):
+  (PMAT-1401):
 
   ```console
   $ printf 'def f(a: int, b: int) -> int:\n    return a + 2147483647\n' > ok.py
@@ -61,7 +90,7 @@ meta-HIR and the trait surfaces.
 ### Added
 
 - **`crates/xpile/tests/wgsl_int_boundary_witness.rs` (XPILE-WGSLI32-001)** —
-  the gate for the above (PMAT-1400). Five tests, no skip path (naga is a
+  the gate for the above (PMAT-1401). Five tests, no skip path (naga is a
   library), inside the required `workspace-test` context.
 
   The accepted set is pinned at both ends of acceptance **and** both ends of

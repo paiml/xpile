@@ -4,7 +4,7 @@
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
 updated: |-
-  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1400 DONE - the WGSL/SPIR-V lanes accepted i32::MAX
+  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1401 DONE - the WGSL/SPIR-V lanes accepted i32::MAX
   and REFUSED i32::MIN, the two ends of the same range, blaming a literal absent from the source;
   the INVERSE of PMAT-1395/1399 and one root defect with them. Gated by XPILE-WGSLI32-001, which
   pins BOTH ends of acceptance AND both ends of refusal so the over-refusal cannot be repaired by
@@ -13,7 +13,7 @@ updated: |-
   premise with a force-rebuilt binary before planning against it (PMAT-1363's lesson, again).
   The SCHEDULED queue remains EXHAUSTED until Thu 2026-07-30 (PMAT-1373); gate touch #3 is
   RESERVED for it. PMAT-1375 is 0.1.619 lane - DO NOT START. Days 2-3 capacity: keep hunting -
-  PMAT-1400's notes list the unswept surface it found (C -> GPU lanes; --emit-crate/--emit-shims;
+  PMAT-1401's notes list the unswept surface it found (C -> GPU lanes; --emit-crate/--emit-shims;
   --contracts off). NOT new WASM breadth - that grind is CLOSED for this window.)
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
@@ -2567,7 +2567,7 @@ queue:
     invisible to a compile-only property. ** NOT a witness_floor.rs touch and not a gate_touch.
     NEXT PICK: no OPEN item is dated <= 2026-07-27; PMAT-1396 (R9, doc-only, freeze-legal) is dated
     2026-07-29 and may be PULLED FORWARD under the pick_rule (today is Day 2, <= Day 4).'
-- id: PMAT-1400
+- id: PMAT-1401
   status: done
   ev_rank: R1
   gate_touch: null
@@ -2708,7 +2708,7 @@ next_lane:
   frontiers
 owner_decisions:
 - id: ruleset-workspace-test-dropped
-  summary: '⚠️ SURFACED 2026-07-27 by the PMAT-1400 cron fire, NOT acted on. XPILE-RULESET-DRIFT-001''s
+  summary: '⚠️ SURFACED 2026-07-27 by the PMAT-1401 cron fire, NOT acted on. XPILE-RULESET-DRIFT-001''s
     LIVE half reds locally: org ruleset 13878864 now requires only {"gate"} while
     docs/status/ruleset-13878864.json records {"gate", "workspace-test"}. Live `updated_at` is
     2026-07-27T13:48:42+02:00 — the change was made DURING that fire, so `workspace-test` is no

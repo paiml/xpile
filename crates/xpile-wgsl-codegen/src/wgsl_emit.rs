@@ -998,7 +998,7 @@ fn emit_unop(
 ) -> Result<WgslTy, BackendError> {
     match op {
         UnOp::Neg => {
-            // PMAT-1400 — FOLD a negated integer LITERAL into the conversion
+            // PMAT-1401 — FOLD a negated integer LITERAL into the conversion
             // instead of negating the conversion's result.
             //
             // The Python frontend does NOT fold unary minus: `-2147483648`

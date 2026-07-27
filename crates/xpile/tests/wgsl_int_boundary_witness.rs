@@ -1,4 +1,4 @@
-//! XPILE-WGSLI32-001 (PMAT-1400) — the WGSL/SPIR-V lanes accept EXACTLY the
+//! XPILE-WGSLI32-001 (PMAT-1401) — the WGSL/SPIR-V lanes accept EXACTLY the
 //! i32 range, and the literal they emit DENOTES the value the user wrote.
 //!
 //! ## What was wrong
@@ -150,7 +150,7 @@ fn is_substantive(wgsl: &str) -> bool {
 /// THE load-bearing assertion: the accepted set is exactly `[i32::MIN,
 /// i32::MAX]`, pinned at both edges of acceptance AND both edges of refusal.
 ///
-/// Before PMAT-1400 the `i32::MIN` rows refused in all five positions while
+/// Before PMAT-1401 the `i32::MIN` rows refused in all five positions while
 /// the `i32::MAX` rows emitted — 5 offenders out of 20 probes.
 #[test]
 fn wgsl_accepts_exactly_the_i32_range() {
@@ -209,7 +209,7 @@ fn wgsl_accepts_exactly_the_i32_range() {
     // `left: 15, right: 20`.
     assert!(
         offenders.is_empty(),
-        "PMAT-1400: the WGSL lane's accepted set does not match the i32 range \
+        "PMAT-1401: the WGSL lane's accepted set does not match the i32 range \
          it claims to target ({} offender(s)):\n  {}",
         offenders.len(),
         offenders.join("\n  ")
