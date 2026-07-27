@@ -16536,3 +16536,62 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1384
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1384: [honesty/ruchy-lane] `ruchy run` on an xpile-emitted `.ruchy` exited 0 having
+    EXECUTED NOTHING. `ruchy run` only auto-invokes `main` when `main` is the module''s SOLE item;
+    xpile emitted `fun main()` and never called it, so any module with a helper function alongside
+    `main` DEFINED everything and RAN nothing -- exit 0, empty stdout, where CPython printed real
+    output. Five execution-witnessed rows over tests/oracle_fixtures (ruchy v4.2.1, 2026-07-27):
+    recursion (120/3628800), optional_flow (0/8), optional_guard_continue (8/2), range_bool_bound
+    (8 lines), str_and_fstring (4 lines) -- every one rc=0 with EMPTY output. FIX: emit_module emits
+    the entry-point invocation `main()` when a zero-param `main` exists, so each instead fails
+    LOUDLY (rc=1) naming a real ruchy-interpreter limitation. ALSO corrected a stale-and-wrong claim
+    in the lane''s own honest-scope comment: "`ruchy run` (interpret) executes 5/34" counted EXIT 0
+    as execution, and 5 of those clean exits ran nothing.'
+  description: 'Executes PMAT-1383''s next-pick note, which names the ruchy/lean/forjar
+    string-compare backends as the one remaining unswept emit path. The forjar and lean codegens
+    were swept in the same pass and are HONEST -- forjar''s render_command_sequence refuses every
+    non-command Stmt by name and lean refuses non-Ident trailing returns / multi-while functions, so
+    neither carries the PMAT-1383 silent-drop shape. The defect was in ruchy, and not in the emitted
+    CODE but in what the emitted MODULE does under the target toolchain''s own runner.
+    ** RE-MEASURED over all 38 oracle fixtures (ruchy v4.2.1): emit 38->38, `ruchy check` (parse)
+    18->18, `ruchy run` exit-0 7->2, of which correct 1->1. The exit-0 count DROPPING is the point:
+    five of the seven were false. Parse acceptance is unchanged, so the trailing call costs nothing.
+    ** BOTH other paths verified against the live toolchain, not assumed: a sole-`main` module does
+    NOT double-run (ruchy prints once with the explicit call present), and `ruchy transpile` DROPS a
+    bare top-level call, so all 8 fixtures completing the Ruchy->Rust->rustc chain emit identical
+    Rust and identical output before and after.
+    ** WITNESS XPILE-RUCHYRUN-001 (crates/xpile/tests/ruchy_run_witness.rs, 4 tests): the property
+    `rc == 0 ==> stdout byte-matches CPython`, asserted over the WHOLE corpus INCLUDING the rows
+    that fail today, so a change that starts executing one is immediately checked for CORRECTNESS
+    instead of quietly going green. The executing half is load-bearing -- every pre-fix module was
+    valid ruchy and every one exited 0, so a syntax- or exit-status-only check stays green through
+    the entire defect. Verified RED without the fix: 3 of 4 tests fail naming exactly the five
+    fixtures. Vacuity guards on both sides (a clean-run set that empties, or a failure set that
+    empties, fails the test). XPILE_REQUIRE_RUCHY=1 tripwire.
+    ** SECOND FINDING, the CPython side of my own first sweep was broken: the fixtures define
+    `main()` and do NOT call it, so running them bare yields EMPTY output -- which AGREES with the
+    defect under test and reported every fixture as diverging in the wrong direction. Caught by the
+    expected column being empty for all 38. General rule (a variant of the crates.io User-Agent
+    lesson): when a differential reports UNIFORM failure across N independent items, debug the
+    HARNESS before the subject.
+    ** RESIDUAL PINNED, NOT HIDDEN: fstr_str_precision still exits 0 with wrong output under `ruchy
+    run` (`""""["""{:.3}"""""]""` vs `[hel]`) -- a ruchy-INTERPRETER limitation, proven not to be an
+    xpile miscompile by the same fixture matching through `ruchy transpile` -> rustc. Recorded in
+    KNOWN_INTERPRETER_DIVERGENCES so a ruchy release fixing it REDS the witness.
+    ** RUCHY_EXECUTABLE_FIXTURES was UNDER-claiming: if_branch_rebound completes the chain and
+    matches CPython and had never been added. 7 -> 8 (live 8, floor 7).
+    ** NO gate file touched; crates/xpile/tests/witness_floor.rs untouched (two-touch serial
+    resource, PMAT-1372 / PMAT-1373) -- the ruchy lane counts RUCHY_EXECUTABLE_FIXTURES entries and
+    floors are lower bounds, so 7->8 raises the live count without a floor edit.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

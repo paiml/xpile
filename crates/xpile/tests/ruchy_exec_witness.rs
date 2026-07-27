@@ -19,16 +19,30 @@
 //! for `-` in the Ruchy emitter's BinOp mapping flips an output and reds this
 //! gate, which a string-compare against a frozen expectation cannot catch.
 //!
-//! HONEST SCOPE (why curated, not all 34 fixtures): ruchy v4.2.1 executes only a
-//! SUBSET of what xpile emits. Measured over the 34 `oracle_fixtures/` (2026-07-05,
-//! `ruchy` v4.2.1): `xpile --target ruchy` emits 34/34, but `ruchy check` (parse)
-//! accepts 16/34, `ruchy run` (interpret) executes 5/34, and this
-//! `ruchy transpile`→`rustc`→run chain completes 7/34. The chain's two ceilings
-//! are ruchy-toolchain limitations, NOT xpile bugs:
+//! HONEST SCOPE (why curated, not all fixtures): ruchy v4.2.1 executes only a
+//! SUBSET of what xpile emits. Re-measured over all 38 `oracle_fixtures/`
+//! (2026-07-27, `ruchy` v4.2.1, PMAT-1384 — the 2026-07-05 figures below were
+//! stale on the corpus size AND wrong on one count): `xpile --target ruchy`
+//! emits 38/38, `ruchy check` (parse) accepts 18/38, and this
+//! `ruchy transpile`→`rustc`→run chain completes 8/38 — every one matching
+//! CPython. The chain's two ceilings are ruchy-toolchain limitations, NOT
+//! xpile bugs:
 //!   * the interpreter lacks Rust methods the emitter uses (`checked_add`, …);
 //!   * `ruchy transpile` DROPS the parentheses xpile emits around
 //!     `(__r < 0) != (__fb < 0)` (floor-div / modulo), producing a chained
 //!     comparison rustc rejects.
+//!
+//! THE CORRECTED COUNT. This header used to read "`ruchy run` (interpret)
+//! executes 5/34". That number counted EXIT 0 as execution. It was false in the
+//! way that matters: `ruchy run` only auto-invokes `main` when `main` is the
+//! module's sole item, xpile emitted no entry-point call, and 5 of those clean
+//! exits had run NOTHING and printed NOTHING. PMAT-1384 emits the `main()`
+//! invocation, which drops the exit-0 count from 7 to 2 — 1 correct
+//! (`if_branch_rebound`) and 1 pinned interpreter divergence
+//! (`fstr_str_precision`, whose format-spec output is wrong under the
+//! interpreter but correct through THIS chain). `crates/xpile/tests/
+//! ruchy_run_witness.rs` (XPILE-RUCHYRUN-001) now holds `ruchy run` to
+//! `exit 0 ==> stdout matches CPython` so the count cannot silently rot again.
 //!
 //! Every fixture that DOES complete the chain matches CPython byte-for-byte —
 //! i.e. where Ruchy can run xpile's output, xpile's semantics are correct. Full
@@ -44,11 +58,19 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use xpile_oracle::{diff_stdout, ComparisonResult, PythonOracle};
 
-/// Fixtures verified (2026-07-05, ruchy v4.2.1) to complete the
-/// ruchy→rust→rustc→run chain AND match CPython. Each MUST keep doing both.
+/// Fixtures verified to complete the ruchy→rust→rustc→run chain AND match
+/// CPython. Each MUST keep doing both.
+///
+/// Re-swept 2026-07-27 (PMAT-1384, ruchy v4.2.1) over all 38 fixtures:
+/// `if_branch_rebound` also completes and matches and was simply never added,
+/// so the gate was under-claiming its own coverage. The sweep also confirmed
+/// the entry-point call PMAT-1384 appends is invisible here — `ruchy transpile`
+/// drops a bare top-level call, so all 8 emit identical Rust and identical
+/// output before and after.
 const RUCHY_EXECUTABLE_FIXTURES: &[&str] = &[
     "alt_form_radix",
     "fstr_str_precision",
+    "if_branch_rebound",
     "optional_flow",
     "optional_guard_continue",
     "optional_list_literal",
