@@ -18276,6 +18276,32 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1414
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1414: [build/honesty] `cargo build` FAILED on an UNMODIFIED `main` with 35 `couldn''t read` errors naming a git worktree that had already been deleted. PMAT-1407''s build script baked ABSOLUTE source paths into `$OUT_DIR/embedded_contracts.rs`, and cargo gives one OUT_DIR per (package, profile) per TARGET DIR — not per source tree. Every worktree of this repo shares one target dir, so the generated file one tree writes is the one another tree compiles. The loud half is the lesser half: before the tree is deleted, the second tree silently embeds the FIRST tree''s contract bytes at exit 0.'
+  description: 'MEASURED, not inferred. At 118b90d9, `cargo build -p xpile --bin xpile` from /home/noah/src/xpile exited non-zero with 35 errors of the form `couldn''t read /tmp/claude-1000/-home-noah-src-xpile/wt-1411/crates/xpile/contracts/<name>.yaml: No such file or directory`. wt-1411 was a worktree from an earlier slice, merged and pruned. The working tree was clean and at origin/main; nothing in git explained it.
+
+ROOT CAUSE, in two parts, both required. (a) PMAT-1407''s `crates/xpile/build.rs` emitted `include_str!("<CARGO_MANIFEST_DIR>/contracts/<name>.yaml")` — an absolute path into whichever tree ran the script. (b) The local `cargo` is a shell function that pins `CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/$(basename $(git remote get-url origin) .git)`, so it resolves to `.../targets/xpile` for the main checkout AND for every `git worktree` of it — the isolation the sprint instructions mandate is isolation of the SOURCE, not of the build. One OUT_DIR, N trees.
+
+BOTH FAILURE MODES REPRODUCED on a minimal two-tree cargo package (zero deps, seconds to run), and the quiet one is worse: building in tree B, with tree A still present, produced a binary that printed tree A''s payload. Nothing failed. Applied to xpile that is a binary reporting on another checkout''s contract corpus at exit 0. Only after tree A was deleted did it become the visible 35-error break.
+
+THE PLAUSIBLE FIX IS WRONG, and was measured before being discarded. `cargo:rerun-if-env-changed=CARGO_MANIFEST_DIR` reads like the exact remedy — re-run the script when the manifest dir changes. It does nothing: cargo does not track the variables it injects itself. With that line present, both failure modes survive verbatim. It is now PINNED as the control arm of the executed differential, so a later reader cannot re-adopt it.
+
+THE FIX. build.rs stages the corpus into `$OUT_DIR/contracts/` and emits `include_str!` paths relative to the generated file, which lives beside them. The generated source then names no path outside OUT_DIR and is byte-identical regardless of who built it or where — making true a reproducibility claim its own comment had been making since PMAT-1407. The staging dir is cleared each run so a DELETED contract cannot survive as an orphaned copy. Confirmed end to end: after the fix the main checkout, still carrying the OLD build.rs, builds against the shared OUT_DIR that the worktree wrote.
+
+THE GATE — `crates/xpile/tests/build_script_path_independence.rs` (XPILE-BUILDGEN-001), 3 tests. (1) Every emitted `include_str!` argument is relative — no leading `/`, no `..`, no `C:` drive — and the generated source does not mention this tree''s manifest dir in any spelling. RED HALF RUN: reverting build.rs to the PMAT-1407 version fails this test at the absolute-path assertion and passes it with the fix. (2) The embedded bytes equal the on-disk corpus byte for byte. `packaged_contracts.rs` test 4 already compared two `diamond` REPORTS, which catches staleness only where it reaches a printed column; this compares the bytes, so a contract that drifted in an unreported field still reds. (3) THE PROPERTY, EXECUTED: the real two-tree differential, same shared target dir, tree A deleted underneath both arms. The absolute-path arm must FAIL and must fail with `couldn''t read`; the staged arm must build. The failing arm is what stops the passing arm from proving nothing.
+
+SCOPE, honestly. The published crate is unaffected — one tree, one target dir, so the absolute paths always resolved. This is a defect of the DEVELOPMENT configuration this repository documents as canonical, found because it broke the release-week build of `main` itself.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1407
   github_issue: null
   item_type: bug
