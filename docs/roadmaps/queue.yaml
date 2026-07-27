@@ -4,12 +4,13 @@
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
 updated: |-
-  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1395 DONE — the C->WASM scalar-ABI return path,
-  the FIRST slice to touch a lane that had a live emitter, a live CLI flag and ZERO witnesses:
-  every one of the 138 WASM witness files drives the emitter from Python, and CUInt/F32/CLong
-  come only from decy. Its sweep also found the RUST-lane sibling, filed as PMAT-1399 rather
-  than swallowed. Remaining before the Thu tag: PMAT-1396 (doc-only, freeze-legal) and
-  PMAT-1399.)
+  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1396 DONE and PULLED FORWARD - the CLAUDE.md
+  shell-artifact claim, false for 71 days, replaced by an ENFORCED invariant rather than a
+  corrected count: new gate XPILE-SHELLPOLICY-001 re-derives the corpus from `git ls-files`
+  and hard-codes no cardinality, so the next fixture cannot re-falsify the doc. The SCHEDULED
+  queue is now EXHAUSTED until Thu 2026-07-30 (PMAT-1373). PMAT-1375 is 0.1.619 lane - DO NOT
+  START. Days 2-3 capacity: the honesty hunt (PMAT-1383..1399 lineage) or next_lane[0], the
+  WASM i64 SHIFT half. NOT new WASM breadth - that grind is CLOSED for this window.)
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -2450,7 +2451,7 @@ queue:
     NEXT PICK: PMAT-1396 (doc-only, freeze-legal, R9) or PMAT-1399 (the Rust-lane sibling this slice
     found and verified).
 - id: PMAT-1396
-  status: open
+  status: done
   ev_rank: R9
   gate_touch: null
   date: '2026-07-29'
@@ -2475,6 +2476,31 @@ queue:
     \ cardinality — and that would be\na NEW test file, not a gate touch. Optional; the doc fix alone\
     \ is the slice.\nACCEPTANCE: CLAUDE.md:38 no longer contradicts CLAUDE.md:127; `pv lint contracts/`\
     \ still clean.\n"
+  outcome: 'DONE 2026-07-27 (#TBD), PULLED FORWARD from 2026-07-29 under the pick_rule (Day 2 <= Day 4;
+    no OPEN item was dated <= today). CONFIRMED as reported: 11 tracked `.sh`, zero Makefile/Dockerfile,
+    self-contradiction at CLAUDE.md:127. ** TOOK THE ITEM''S TRAP SERIOUSLY AND WENT FURTHER THAN THE
+    SUGGESTED WORDING: the item''s own example text ("...are 11 gated `.sh` fixtures...") would have
+    re-planted a cardinality in the exact file whose cardinality just rotted for 71 days, so the shipped
+    sentence carries NO count and the invariant is ENFORCED instead - new file
+    crates/xpile/tests/shell_artifact_policy_witness.rs (XPILE-SHELLPOLICY-001, 4 tests) re-derives the
+    corpus from `git ls-files` every run: zero Makefile/Dockerfile/*.mk, every shell artifact under a
+    gated prefix, each accepted by bashrs-frontend, emitted shell `sh -n`-clean, re-emit byte-identical,
+    and CLAUDE.md free of the falsified sentence + naming the gate. RED-THEN-GREEN on all four: a tracked
+    Makefile, an ungated root `.sh`, a here-doc fixture (PMAT-1377 refusal), and the reverted doc sentence
+    each red exactly one test. ** MEASURED BEYOND WHAT SHIPPED: source-vs-emitted EXECUTION was compared
+    for all 11 (identical stdout + exit, every one) and emit idempotence held for all 11 - but the
+    execution half is deliberately NOT in the auto-enumerated gate, because auto-enumeration plus
+    auto-execution makes the REQUIRED workspace-test job run whatever `.sh` a future change tracks. That
+    split is stated in CLAUDE.md, the gate''s doc comment and the CHANGELOG rather than glossed.
+    ** NON-VACUITY: assertion 1 is a NEGATIVE over an enumeration; every test first demands the
+    `git ls-files` output contain a known anchor (Cargo.toml) and the corpus test demands a non-empty
+    corpus, so a broken enumeration skips loudly instead of passing. ** NOT a gate_touch, NOT a
+    witness_floor.rs touch. NOT required by changelog_freshness (no crates/*/src or contracts/*.yaml
+    touched) - a CHANGELOG entry was written anyway, per the window''s incremental-CHANGELOG constraint.
+    NEXT PICK: the SCHEDULED queue is now EXHAUSTED until Thu 2026-07-30 (PMAT-1373, release commit) -
+    PMAT-1375 is explicitly 0.1.619 lane, DO NOT START. Days 2-3 remaining capacity should go to the
+    honesty hunt that produced PMAT-1383..1399, or to next_lane[0] (the WASM i64 SHIFT half), NOT to
+    new WASM breadth.'
 - id: PMAT-1399
   status: done
   ev_rank: R10
