@@ -2880,11 +2880,49 @@ queue:
     ("expected Semi, found Ident(\"UL\")") — an honest refusal, but it means every unsigned/long C probe
     must use bare literals or it measures the lexer instead of the backend.'
 - id: PMAT-1407
-  status: open
+  status: done
   date: '2026-07-27'
   ev_rank: R1
   title: Package contracts/**/*.yaml into the published crate — `quorum`/`diamond`/`attestations` exit
     1 for anyone who ran the README's own `cargo install xpile`
+  notes_done: 'DONE 2026-07-27. ** THE QUEUED FIX WAS FALSIFIED. The entry called
+    for "one `include = [...]` in crates/xpile/Cargo.toml" as the best-ROI one-liner.
+    Executed and measured, it (a) matches NOTHING (include globs are rooted at the
+    PACKAGE dir; contracts/ is at the WORKSPACE root, and ../../ does not reach outside
+    the package root either) and (b) is AUTHORITATIVE — adding it cut the package from
+    954 entries to SEVEN, dropping all 837 fixtures, at exit 0. A dedicated test now
+    rejects any `include` key carrying that measurement in its message. ** AND PACKAGING
+    ALONE COULD NOT HAVE FIXED IT AT ALL: a .crate only puts files where the COMPILER
+    can see them, and `cargo install` discards the build dir, so a runtime read still
+    finds nothing. The premise was wrong in KIND (packaging) not in detail; the fix is
+    EMBEDDING. ** MECHANISM: crates/xpile/contracts -> ../../contracts symlink (no byte
+    duplicated in git; cargo dereferences it into real regular files — verified in the
+    tarball, byte-identical, 35/35) + build.rs enumerating it into include_str! calls.
+    Verified for a REGISTRY consumer end to end: the package verify build ran build.rs
+    against the UNPACKED crate and emitted 35 include_str! entries resolving to the
+    unpacked files. 560 KB -> 1.24 MB crate, far under the 10 MB limit, all 837 fixtures
+    retained. ** A CHECKOUT IS BYTE-IDENTICAL — differential over all three reporters in
+    text AND --json, exit codes matched. ** SCOPE, STATED: `diamond` now exits 0 anywhere
+    and is FULLY correct (its every column derives from contract YAML text alone). The
+    queue''s stated acceptance that `quorum` exit 0 is NOT met AND MUST NOT BE — quorum
+    and attestations also tally Runtime/Extrinsic out of the development tree, and
+    satisfying it literally would require exactly the silent-wrong-answer PMAT-1386
+    removed (702 mentions -> 0; 10 of 35 QUORUM -> PARTIAL at exit 0). They still refuse,
+    now naming the REAL missing evidence (roadmap.yaml) instead of blaming the contracts
+    dir. The 2.7 MB roadmap is deliberately NOT embedded. ** GATE
+    crates/xpile/tests/packaged_contracts.rs (XPILE-PACKAGE-001), 6 tests, no hard-coded
+    count — both corpora re-derived from the filesystem every run; the load-bearing one
+    executes the binary OUTSIDE a checkout and pins its `diamond --json` byte-identical
+    to the same binary inside one. Falsified 3 ways (delete symlink -> BUILD fails naming
+    the cause; add `include` -> manifest test reds alone; restore pre-slice resolution ->
+    exactly the 2 behavioural tests red). ** NOTE: `cargo package -p xpile` verify fails
+    on this tree PRE-EXISTINGLY (path deps resolve to published 0.1.617, which lacks this
+    cycle''s sibling changes) — CONFIRMED identical on unmodified main, resolves at
+    Thursday''s workspace-wide bump. ** NEXT PICK: PMAT-1408 (R2, dated 2026-07-28 —
+    inter-crate version skew, 34x `version = "0.1.12"` at workspace 0.1.617; a release-lane
+    item worth landing before Thursday''s tag), then PMAT-1409 (R3, `cargo deny check
+    licenses` has never run). Gate touch #3 is RESERVED for the Thursday release commit
+    PMAT-1373 — do not start another gate_touch.'
   notes: 'MEASURED: xpile-0.1.617.crate has 916 entries and ZERO contract YAMLs (899 of the 916 are test
     fixtures). So the three subcommands the README leads with as its anti-rot device all exit 1 for every
     installed user, while working perfectly from a git checkout — which is why nobody noticed.
