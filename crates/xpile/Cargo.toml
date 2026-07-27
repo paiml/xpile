@@ -20,6 +20,14 @@ path = "src/main.rs"
 [dependencies]
 xpile-core     = { workspace = true }
 xpile-backend  = { workspace = true }
+# PMAT-1406: `parse_hardware` refuses a malformed `--hardware ptx:<cap>` using
+# the codegen crate's own `validate_compute_capability`, so the CLI's grammar
+# and the emitter's grammar are ONE function and cannot drift. The
+# AUTHORITATIVE refusal stays at the `emit_kernel` choke point (library callers
+# never reach `parse_hardware`); this is only the fail-fast wrapper.
+# Already in the graph transitively via xpile-core (verified with `cargo tree
+# -i`), so this adds no node to the publish DAG — it makes the use direct.
+xpile-ptx-codegen = { workspace = true }
 xpile-meta-hir = { workspace = true }
 # PMAT-897 (Sprint-2 Tier 2): the `xpile hybrid <dir>` command reconciles the
 # dispatched modules' FFI boundaries into a manifest (Phase 1 + Phase 2).

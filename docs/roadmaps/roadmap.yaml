@@ -18142,3 +18142,111 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1406
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1406: [ptx/honesty] `--hardware ptx:<ANY STRING>` exited 0 threading
+    the string VERBATIM into the emitted `.target` directive — `ptx:bogus` wrote
+    `.target bogus` and `ptx:''sm_80 ; rm''` wrote a PTX SYNTAX ERROR, neither of
+    which any assembler accepts. The guard the emitter''s own doc NAMED for exactly
+    this case (`validate_ptx`) has ZERO production call sites AND could not have
+    caught it. Plus: the ISA-version derivation dropped the arch-variant suffix, so
+    the REAL Blackwell targets `sm_100a`/`sm_120a`/`sm_121a` emitted `.version 8.0`
+    and were hard-rejected by ptxas.'
+  description: '`emit::emit_kernel` writes `compute_capability` VERBATIM into the
+    `.target` directive (its own doc comment at :808 says so), and nothing validated
+    it. Measured at 997abe19 with a force-rebuilt binary against ptxas 13.0.48, every
+    one of these exited 0: `--hardware ptx:bogus` -> `.target bogus` ("Target
+    architecture not defined"); `ptx:''not a cap!!''` -> `.target not a cap!!`;
+    `ptx:''sm_80 ; rm''` -> `.target sm_80 ; rm`, a PTX PARSE error ("Parsing error
+    near '';''"); `ptx:sm_1` -> "Unsupported .target ''sm_1''". The PTX lane is the
+    one lane a previous adversarial pass (2026-06-25) certified as "real", which is
+    why this surface was worth sweeping — PMAT-1405 explicitly recorded it as
+    getting NO coverage.
+
+
+    ** THE NAMED GUARD WAS ABSENT AND ALSO INCAPABLE — both halves matter. `emit.rs`
+    documented the non-`sm_<num>` fallback as "`validate_ptx` and the real `ptxas`
+    are the downstream oracles either way". (a) `validate_ptx` has ZERO production
+    call sites: every caller is a `#[cfg(test)]` fn or a `tests/` file — the
+    PMAT-1391 shape, the validator the doc says it runs that only the tests call.
+    (b) Even wired in it could not catch this, BY CONSTRUCTION: it compares the
+    EMITTED `.target` against the REQUESTED capability, so for `ptx:bogus` expected
+    == found == `bogus` and it returns `Ok(())`. So "call the existing validator"
+    was the wrong fix and was measured to be wrong before being discarded.
+
+
+    ** SECOND, INDEPENDENT DEFECT — the arch-variant suffix. `ptx_version_for`
+    parsed with `strip_prefix("sm_").and_then(parse::<u32>)`, which FAILS on the
+    trailing letter of the architecture-specific spellings. `sm_100a` / `sm_120a` /
+    `sm_121a` are REAL Blackwell targets; they fell through to the `PTX_VERSION`
+    8.0 floor and emitted a module ptxas hard-rejects: `PTX .version 8.0 does not
+    support .target sm_120a`. This is the SAME defect class PMAT-963 fixed for the
+    non-suffixed spelling — the suffixed spelling was missed. `sm_90a` (Hopper)
+    correctly stays on 8.0, so the `>= 100` family boundary is unchanged and pinned.
+
+
+    ** THE GRAMMAR IS MEASURED, NOT GUESSED — this is the load-bearing care in the
+    slice. The obvious implementation, `sm_` + digits only, is WRONG: `sm_90a`,
+    `sm_100a`, `sm_120a`, `sm_121a` and `compute_90` are REAL targets that ptxas
+    13.0.48 assembles clean (verified individually before the validator was
+    written). Shipping the naive check would have traded this defect for a worse
+    one — refusing hardware that works. `validate_compute_capability` accepts
+    `sm_<digits>` and `compute_<digits>`, each with an optional single
+    architecture-variant suffix `a`/`f`.
+
+
+    ** DELIBERATE, STATED NON-GOAL: this checks SHAPE, not EXISTENCE. `sm_999` is
+    shape-valid and still passes; it emits syntactically valid PTX that ptxas
+    rejects cleanly with "Unsupported .target ''sm_999''". Refusing it would require
+    an allow-list of every NVIDIA architecture, which goes stale on the next
+    generation — the exact rot PMAT-963 avoided by DERIVING `.version` rather than
+    hard-coding it. The division of labour is written into the function''s docs:
+    xpile refuses what can never be valid PTX SYNTAX, ptxas is the
+    architecture-EXISTENCE oracle. Nothing in the crate claims otherwise.
+
+
+    ** CHOKE POINT, not a restated guard (PMAT-1391''s lesson). The check runs at
+    the top of `emit::emit_kernel`, which is the single function every real PTX
+    emission passes through — `emit_array_kernel` is private and reached only by
+    delegation from it, and the three `PtxBackend` lower paths all call it. The CLI
+    `parse_hardware` calls the SAME function for a fail-fast error worded for the
+    flag, rather than restating the grammar, so the two cannot drift.
+
+
+    ** GATE: crates/xpile/tests/ptx_capability_witness.rs, 5 tests. The RED half
+    (10 malformed capabilities refuse, name the problem, and emit no `.target`);
+    the ACCEPTING half (11 real spellings incl. sm_90a/sm_120a/compute_90 still
+    emit) which is the OVER-REFUSAL guard and would red on a digits-only grammar;
+    the ISA-version half; the sm_80-fallback half (`--hardware ptx` / `ptx:` are
+    unchanged); and a LIBRARY-level test asserting `emit_kernel` itself refuses,
+    with the SAME kernel emitting Ok at a valid capability so the refusal is
+    attributable to the capability and not to the kernel being unsupported.
+
+
+    ** FALSIFIED, ALL THREE WAYS, by reverting each half and RUNNING the suite:
+    (A) drop the suffix-strip -> `arch_variant_suffix_derives_the_right_isa_version`
+    reds alone (4 passed, 1 failed); (B) drop the choke-point call -> the malformed
+    and library tests red (3 passed, 2 failed); (C) keep the CLI guard but remove
+    the LIBRARY one -> the CLI test stays GREEN while
+    `library_emit_path_refuses_independently_of_the_cli` reds alone (4 passed, 1
+    failed), which is the direct measurement that the library check is the
+    authoritative one and not decoration.
+
+
+    ** RELEASE-WEEK BLAST RADIUS: additive-refusal only. Every previously VALID
+    invocation is byte-identical (the accepting half pins 11 spellings); the only
+    behaviour changes are (1) malformed capabilities now exit 1 instead of 0, and
+    (2) `sm_1XXa` targets emit `.version 8.8` instead of an 8.0 module that no
+    assembler would take. `xpile-ptx-codegen` becomes a DIRECT dep of `xpile`; it
+    was already transitive via `xpile-core` (verified with `cargo tree -i`), so the
+    publish DAG gains no node.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
