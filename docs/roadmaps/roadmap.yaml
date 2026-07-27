@@ -18382,3 +18382,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1408
+  github_issue: null
+  item_type: bug
+  title: "PMAT-1408: [packaging/honesty] Every published xpile crate declared its 26-27 in-workspace siblings at `^0.1.12` while the workspace was at 0.1.617 — a 605-release skew that `cargo publish --dry-run` structurally CANNOT catch, because under Cargo's 0.x semver `^0.1.12` means `>=0.1.12, <0.2.0` and 0.1.617 satisfies it. The manifest was valid; only the number in it was wrong."
+  description: "MEASURED ON THE LIVE SPARSE INDEX, not inferred from this file: `curl https://index.crates.io/xp/il/xpile-core | tail -1` shows `\"vers\":\"0.1.617\"` alongside 26 sibling requirements every one of which reads `^0.1.12`. The root manifest carried 34 such lines. CONSEQUENCE: a downstream lockfile pinning `xpile-frontend 0.1.12` still satisfies `xpile-core 0.1.617`'s requirement, so `cargo build` resolves and compiles a pair separated by 605 releases of meta-HIR drift — a combination that was never built and never tested. Nothing in the release lane could catch it: the clean-room `cargo publish --workspace --dry-run --locked` gate passed on every one of those releases, and passed correctly, because packaging validity is not version correctness. FIX: all 34 intra-workspace path-deps now declare the workspace version. `[workspace.dependencies]` entries cannot inherit `[workspace.package].version` (inheritance flows workspace -> member only; there is no `version.workspace = true` inside the workspace table), so the number is necessarily duplicated and can only be held honest by a gate.
+
+    ** GATE crates/xpile/tests/publish_manifest_integrity.rs — the existing file already asserted every path-dep carries *a* `version =`; it now also asserts that version EQUALS `[workspace.package].version`. 4 tests. The check is factored into pure functions over a manifest STRING so the red half is RUN, not asserted: `the_skew_detector_reds_on_a_deliberately_skewed_dep` feeds a synthetic manifest carrying exactly the v0.1.617 defect, pins the offender count at 2 (a commented-out dep and a version-less dep must NOT be counted — the latter belongs to the sibling test, and double-reporting would make one fix look like two), and then repairs the fixture and requires the detector to CLEAR, so a detector that flags everything unconditionally cannot pass. `declared_version_ignores_hyphenated_lookalike_keys` pins the boundary bug that would otherwise read `rust-version = \"1.93\"` as the workspace version and flag all 34 real deps.
+
+    ** FALSIFIED ON THE REAL MANIFEST, not only the fixture: re-introducing `version = \"0.1.12\"` on the single `xpile-frontend` line reds `every_workspace_path_dep_matches_the_workspace_version` alone (3 passed / 1 failed) with the offending line and its declared version named, and — the point of the slice — that same tree still resolves and builds, which is precisely why the dry-run never objected.
+
+    ** RESIDUAL, DISCLOSED RATHER THAN FIXED: the requirement is still a caret, so `xpile-core 0.1.617` admits `xpile-frontend 0.1.618`. That window is ONE release wide and only reachable via an explicit downstream pin, versus the 605-release window it replaces. Tightening to `=0.1.617` would forbid downstream from ever mixing and is a separate owner decision. Also unchanged: a release version bump must now edit 35 lines rather than 1, which is the gate's purpose — Thursday's v0.1.618 bump reds the PR if it touches only `[workspace.package].version`. A comment at the bump site states this."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -7,6 +7,53 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Every published crate declared its siblings 605 releases stale, and the dry-run could not have caught it (PMAT-1408)
+
+Measured on the live sparse index rather than inferred from the manifest:
+
+```
+$ curl -H 'User-Agent: …' https://index.crates.io/xp/il/xpile-core | tail -1
+{"vers":"0.1.617", "deps":[ …26 siblings, every one "req":"^0.1.12"… ]}
+```
+
+The root manifest carried 34 intra-workspace path-deps pinned at
+`version = "0.1.12"` while `[workspace.package] version` had reached
+`0.1.617`. Under Cargo's 0.x semver `^0.1.12` means `>=0.1.12, <0.2.0`, which
+`0.1.617` satisfies — so **a downstream lockfile pinning `xpile-frontend
+0.1.12` still satisfies `xpile-core 0.1.617`'s requirement**, and `cargo build`
+resolves and compiles a pair separated by 605 releases of meta-HIR drift. A
+combination that was never built and never tested.
+
+The clean-room `cargo publish --workspace --dry-run --locked` gate passed on
+every one of those releases, and passed *correctly*: packaging validity is not
+version correctness. The manifest was well-formed; only the number in it was
+wrong. That is the whole reason this survived 605 releases — there was no gate
+whose green could have been a lie, because no gate was looking.
+
+All 34 now declare the workspace version. `[workspace.dependencies]` entries
+**cannot** inherit `[workspace.package].version` (inheritance flows
+workspace → member; there is no `version.workspace = true` inside the workspace
+table itself), so the number is necessarily duplicated and can only be kept
+honest by a gate — `crates/xpile/tests/publish_manifest_integrity.rs`, which
+already asserted every path-dep carries *a* version and now asserts it is the
+*right* version. The red half is run rather than asserted: a synthetic manifest
+carrying exactly this defect must flag exactly its two skewed deps (not the
+commented-out one, not the version-less one — that failure belongs to the
+sibling test), and the repaired fixture must clear the detector, so a detector
+that flags everything unconditionally cannot pass. Falsified on the real
+manifest too: re-skewing one line reds that test alone, 3 passed / 1 failed —
+while the tree still builds.
+
+**Residual, disclosed rather than fixed:** the requirement is still a caret, so
+`0.1.617` admits `0.1.618`. That window is one release wide and reachable only
+via an explicit downstream pin, versus the 605-release window it replaces.
+Tightening to `=0.1.617` would forbid downstream from ever mixing sibling
+versions and is a separate decision.
+
+**Consequence for releases:** a version bump now edits 35 lines, not one. A
+bump touching only `[workspace.package].version` turns the PR red. That is the
+gate working, and a comment at the bump site says so.
+
 ### The contract corpus never shipped — `diamond`/`quorum`/`attestations` exited 1 for every installed user (PMAT-1407)
 
 The README leads with `cargo install xpile` and then advertises the three
