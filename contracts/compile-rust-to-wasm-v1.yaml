@@ -367,6 +367,35 @@ emit_surface:
             p.bump()
             return p.x
 
+    # PMAT-1366 (2026-07-27) — the 1-arg `round(x)`. `f64.nearest` is IEEE
+    # roundToIntegralTiesToEven, which is EXACTLY Python's banker's rounding
+    # (round(2.5) == 2, round(3.5) == 4) — unlike Rust's half-away-from-zero
+    # `f64::round`, which the Rust lane has to spell `round_ties_even()`.
+    # The integral result narrows to the Python `int` with `i64.trunc_f64_s`.
+    - id: round-to-int
+      note: "1-arg round(x) over a float -> int, via the native round-half-to-EVEN f64.nearest."
+      probe: |
+        def f(x: float) -> int:
+            return round(x) + round(2.5)
+
+    # PMAT-1366 (2026-07-27) — module-level scalar constants. Before this
+    # slice a single `NAME = <literal>` at module scope took the WHOLE module
+    # out of the lane. Each now emits once as an IMMUTABLE
+    # `(global $NAME <ty> (<ty>.const v))`; reads are `global.get`. The
+    # frontend refuses any param/local that would shadow one, so nothing can
+    # rebind it and `global.set` is never emitted.
+    - id: module-scalar-const
+      note: "Module-level int/bool/float constants as immutable WASM globals, read via global.get."
+      probe: |
+        SCALE: int = 7
+        RATE: float = 2.5
+        ON: bool = True
+
+        def f(n: int) -> int:
+            if ON:
+                return n * SCALE + round(RATE)
+            return 0
+
   refused:
     - id: tuple-type
       note: "Tuples have no heap layout in the WASM lane. Standing refusal since PMAT-951."
@@ -473,6 +502,21 @@ emit_surface:
             del d[3]
             ks: list[int] = list(d)
             return ks[0]
+
+    - id: round-to-digits
+      note: >-
+        PMAT-1366, the RED half of `round-to-int`. The 1-arg `round(x)` is one
+        native instruction; the 2-arg `round(x, n)` is NOT the same problem.
+        CPython (and the Rust lane, PMAT-502al) get decimal rounding right by
+        formatting to `n` places with round-half-to-even and reparsing — the
+        WASM subset has no dtoa/strtod. The obvious `x*10**n` scale-round-unscale
+        is NOT equivalent: it rounds the BINARY image of the scaled value, so
+        `round(2.675, 2)` would answer 2.68 where CPython answers 2.67. Refused
+        rather than approximated. `round(int, n)` is refused for the same reason
+        (it needs `10**(-n)` scaling in i128 to stay overflow-honest).
+      probe: |
+        def f(x: float) -> float:
+            return round(x, 2)
 
 equations:
   wasm_emission_structure_extensionality_diamond:

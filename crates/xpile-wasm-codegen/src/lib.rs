@@ -641,7 +641,9 @@ fn collect_expr_literals(e: &Expr, out: &mut Vec<String>) {
             collect_expr_literals(index, out);
         }
         Expr::Len(c) => collect_expr_literals(c, out),
-        Expr::Ord { value } | Expr::Chr { value } => collect_expr_literals(value, out),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            collect_expr_literals(value, out)
+        }
         Expr::StrCharAt { string, index } => {
             collect_expr_literals(string, out);
             collect_expr_literals(index, out);
@@ -11073,6 +11075,8 @@ fn expr_contains_call(e: &Expr) -> bool {
         }
         // PMAT-1338: `abs(...)`'s arg can host a call (`abs(bump(c))`).
         Expr::NumBuiltin { args, .. } => args.iter().any(expr_contains_call),
+        // PMAT-1366: `round(...)`'s operand can host a call (`round(scale(c))`).
+        Expr::RoundToInt { value } => expr_contains_call(value),
         _ => false,
     }
 }
@@ -11958,12 +11962,24 @@ fn desugar_foreach_stmts(
 // `StrFormat`, not a `Concat`) and any format spec (`f"{x:>5}"`) stay refused.
 fn normalize_module_fstring_ints(module: &Module) -> Module {
     let mut m = module.clone();
+    // PMAT-1366: seed the classifier with the module-level scalar consts, so
+    // `f"{SCALE}"` over an int const auto-stringifies through `str(int)` like a
+    // param or local of the same type would. A param/local SHADOWS it, because
+    // the per-function seeding below inserts over this base map.
+    let mod_consts: HashMap<String, Type> = m
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            Item::Const { name, ty, .. } => Some((name.clone(), ty.clone())),
+            _ => None,
+        })
+        .collect();
     for item in &mut m.items {
         match item {
-            Item::Function(f) => normalize_fn_fstring_ints(f),
+            Item::Function(f) => normalize_fn_fstring_ints(f, &mod_consts),
             Item::Struct { methods, .. } => {
                 for f in methods {
-                    normalize_fn_fstring_ints(f);
+                    normalize_fn_fstring_ints(f, &mod_consts);
                 }
             }
             _ => {}
@@ -11972,11 +11988,12 @@ fn normalize_module_fstring_ints(module: &Module) -> Module {
     m
 }
 
-fn normalize_fn_fstring_ints(f: &mut Function) {
-    // name → declared type, from params + every `let` in the body (a shadowing
-    // `let` overrides the param binding). Only the int (`I64`/`CLong`) entries
-    // matter to the classifier, but collecting all keeps the check one lookup.
-    let mut ctx: HashMap<String, Type> = HashMap::new();
+fn normalize_fn_fstring_ints(f: &mut Function, mod_consts: &HashMap<String, Type>) {
+    // name → declared type, from the module consts (PMAT-1366) + params + every
+    // `let` in the body (a shadowing param/`let` overrides the outer binding).
+    // Only the int (`I64`/`CLong`) entries matter to the classifier, but
+    // collecting all keeps the check one lookup.
+    let mut ctx: HashMap<String, Type> = mod_consts.clone();
     for p in &f.params {
         ctx.insert(p.name.clone(), p.ty.clone());
     }
@@ -12160,7 +12177,13 @@ fn concat_operand_is_int(e: &Expr, ctx: &HashMap<String, Type>) -> bool {
     match e {
         Expr::LitInt(_) => true,
         Expr::Ident(n) => matches!(ctx.get(n), Some(Type::I64) | Some(Type::CLong)),
-        Expr::Len(_) | Expr::Ord { .. } => true,
+        // PMAT-1366: `round(x)` (1-arg) is ALWAYS int-VALUED — Python's built-in
+        // `round` returns an `int` regardless of the operand — so `f"{round(x)}"`
+        // materialises through the sign-aware `str(int)` helper, exactly like its
+        // `math.floor`/`ceil`/`trunc` neighbours below. Threading this classifier
+        // is the PMAT-1342 lesson (`min`/`max` shipped the emit but MISSED this
+        // touchpoint, so a format-position use refused while its siblings worked).
+        Expr::Len(_) | Expr::Ord { .. } | Expr::RoundToInt { .. } => true,
         Expr::BinOp { op, .. } => concat_binop_is_int(*op),
         // PMAT-1169: an int-valued UNARY operator over an int operand is itself
         // int — Python `-x` (`UnOp::Neg`) and `~x` (`UnOp::BitNot`) are both
@@ -12412,6 +12435,12 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // (PMAT-1311) instance method, so call sites kind-check dict/set
     // arguments (see `check_heap_call_args`).
     let heap_sigs = build_heap_sig_registry(module);
+    // PMAT-1366: the module's scalar `Item::Const`s, each an IMMUTABLE WASM
+    // global. Collected (and validated) BEFORE any function lowers, so an
+    // unrepresentable const refuses up front instead of at the first reference.
+    let mod_consts = collect_module_consts(module)?;
+    let const_tys: Vec<(String, WatTy)> =
+        mod_consts.iter().map(|c| (c.name.clone(), c.ty)).collect();
     let regs = Registries {
         literals: &literals,
         structs: &structs,
@@ -12424,6 +12453,9 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         // materialisations (`list(d)` / `list(d.keys())` / `list(d.values())`)
         // are CPython-exact only while nothing perturbs a dict's insertion order.
         dict_order_offender: module_dict_order_offender(module),
+        // PMAT-1366: `(name, WAT type)` of every module-level scalar const, so a
+        // reference that is NOT a local resolves to `global.get $NAME`.
+        const_tys: &const_tys,
     };
     // PMAT-1307: an `==`/`!=` over str-VALUED dicts routes to the
     // `$__wasm_dict_eq_sv_<k>` twin, whose value compare calls
@@ -12870,6 +12902,28 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // can lower to a constant `i32.const <base>` pointer.
     if !literals.is_empty() {
         out.push_str(&emit_str_literal_data(&literals));
+    }
+    // PMAT-1366: lay down the module-level scalar constants as IMMUTABLE WASM
+    // globals, BEFORE the `$__heap_ptr` mutable global and every function — a
+    // `global.get $NAME` in a body then resolves by name (globals and locals are
+    // separate WAT index spaces, so a same-named local still shadows correctly).
+    if !mod_consts.is_empty() {
+        writeln!(
+            out,
+            "  ;; PMAT-1366: module-level scalar constants (Python `NAME = <literal>`) \
+             as immutable globals"
+        )
+        .expect("write");
+        for c in &mod_consts {
+            writeln!(
+                out,
+                "  (global ${} {} ({}))",
+                c.name,
+                c.ty.keyword(),
+                c.wat_init
+            )
+            .expect("write");
+        }
     }
     // PMAT-993: emit the bump allocator (a mutable `$__heap_ptr` global +
     // `$__alloc`) once, when the module materialises any new string. Gated on
@@ -13461,11 +13515,10 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
                 let f_wat = emit_function(f, &regs, &f.name)?;
                 out.push_str(&f_wat);
             }
-            Item::Const { name, .. } => {
-                return Err(unsupported(&format!(
-                    "module-level const `{name}` (only scalar/control functions are in the WASM subset)"
-                )));
-            }
+            // PMAT-1366: a module-level scalar const emits NO function WAT — it
+            // was laid down above as an immutable `(global …)` (and validated by
+            // `collect_module_consts`, which refuses anything unrepresentable).
+            Item::Const { .. } => {}
             // PMAT-996 (slice 4): a struct DEFINITION emits no WAT of its own —
             // it is pure layout (recorded in `structs`). PMAT-1023: its METHODS
             // now DO emit, each as an ordinary WAT function `$<Struct>.<method>`
@@ -13634,6 +13687,9 @@ fn expr_touches_str(e: &Expr) -> bool {
             expr_touches_str(lhs) || expr_touches_str(rhs)
         }
         Expr::UnOp { operand, .. } => expr_touches_str(operand),
+        // PMAT-1366: `round(x)` is int-valued, but its operand may reach a
+        // string (`round(float_of(len(s)))`), so recurse rather than answer no.
+        Expr::RoundToInt { value } => expr_touches_str(value),
         Expr::IfExpr {
             cond,
             then_expr,
@@ -13831,7 +13887,9 @@ fn expr_has_str_slice(e: &Expr, stepped: bool) -> bool {
             expr_has_str_slice(recv, stepped) || args.iter().any(|e| expr_has_str_slice(e, stepped))
         }
         Expr::Len(c) => expr_has_str_slice(c, stepped),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_slice(value, stepped),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            expr_has_str_slice(value, stepped)
+        }
         Expr::StrCharAt { string, index } => {
             expr_has_str_slice(string, stepped) || expr_has_str_slice(index, stepped)
         }
@@ -13998,7 +14056,9 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
             expr_has_int_to_str(recv) || args.iter().any(expr_has_int_to_str)
         }
         Expr::Len(c) => expr_has_int_to_str(c),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_int_to_str(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            expr_has_int_to_str(value)
+        }
         Expr::StrCharAt { string, index } => {
             expr_has_int_to_str(string) || expr_has_int_to_str(index)
         }
@@ -14489,7 +14549,9 @@ fn expr_uses_str_method(e: &Expr, op: StrMethodOp) -> bool {
             expr_uses_str_method(collection, op) || expr_uses_str_method(index, op)
         }
         Expr::Len(c) => expr_uses_str_method(c, op),
-        Expr::Ord { value } | Expr::Chr { value } => expr_uses_str_method(value, op),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            expr_uses_str_method(value, op)
+        }
         Expr::StrCharAt { string, index } => {
             expr_uses_str_method(string, op) || expr_uses_str_method(index, op)
         }
@@ -14642,7 +14704,9 @@ fn expr_has_str_contains(e: &Expr) -> bool {
             expr_has_str_contains(collection) || expr_has_str_contains(index)
         }
         Expr::Len(c) => expr_has_str_contains(c),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_contains(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            expr_has_str_contains(value)
+        }
         Expr::StrCharAt { string, index } => {
             expr_has_str_contains(string) || expr_has_str_contains(index)
         }
@@ -14799,7 +14863,7 @@ fn expr_has_list_sum(expr: &Expr, want_float: bool) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -14923,7 +14987,7 @@ fn expr_has_list_minmax(expr: &Expr, want_float: bool) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -15036,7 +15100,7 @@ fn expr_has_list_contains(expr: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -15326,7 +15390,7 @@ fn expr_has_list_query(expr: &Expr, want_index: bool) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -15517,7 +15581,7 @@ fn expr_has_list_pop_index(expr: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -15617,7 +15681,7 @@ fn expr_has_bool_reduce(expr: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -15725,7 +15789,7 @@ fn expr_has_abs_i64(expr: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -15845,7 +15909,7 @@ fn expr_has_num_builtin(expr: &Expr, want: NumBuiltinOp, want_float: Option<bool
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -15961,7 +16025,7 @@ fn expr_has_list_sorted(expr: &Expr, want_float: bool) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -16091,7 +16155,7 @@ fn expr_has_set_to_list(expr: &Expr) -> bool {
             false
         }
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -16256,7 +16320,7 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
             false
         }
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -16391,7 +16455,7 @@ fn expr_has_list_reversed(expr: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -16503,7 +16567,7 @@ fn expr_has_list_concat(expr: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::Slice {
             collection, lo, hi, ..
@@ -16626,7 +16690,7 @@ fn expr_has_list_slice(expr: &Expr) -> bool {
         Expr::MethodCall { obj, args, .. } => e(obj) || args.iter().any(e),
         Expr::Index { collection, index } => e(collection) || e(index),
         Expr::Len(c) => e(c),
-        Expr::Ord { value } | Expr::Chr { value } => e(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => e(value),
         Expr::StrCharAt { string, index } => e(string) || e(index),
         Expr::StrMethod { recv, args, .. } => e(recv) || args.iter().any(e),
         Expr::StrContains { haystack, needle } => e(haystack) || e(needle),
@@ -16735,7 +16799,9 @@ fn expr_has_str_repeat(e: &Expr) -> bool {
             expr_has_str_repeat(collection) || expr_has_str_repeat(index)
         }
         Expr::Len(c) => expr_has_str_repeat(c),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_repeat(value),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            expr_has_str_repeat(value)
+        }
         Expr::StrCharAt { string, index } => {
             expr_has_str_repeat(string) || expr_has_str_repeat(index)
         }
@@ -16897,7 +16963,9 @@ fn expr_has_str_method_2arg(e: &Expr, target: StrMethodOp) -> bool {
             expr_has_str_method_2arg(collection, target) || expr_has_str_method_2arg(index, target)
         }
         Expr::Len(c) => expr_has_str_method_2arg(c, target),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_method_2arg(value, target),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            expr_has_str_method_2arg(value, target)
+        }
         Expr::StrCharAt { string, index } => {
             expr_has_str_method_2arg(string, target) || expr_has_str_method_2arg(index, target)
         }
@@ -17123,7 +17191,9 @@ fn expr_has_str_eq(e: &Expr, scan: &StrEqScan<'_>) -> bool {
             expr_has_str_eq(collection, scan) || expr_has_str_eq(index, scan)
         }
         Expr::Len(c) => expr_has_str_eq(c, scan),
-        Expr::Ord { value } | Expr::Chr { value } => expr_has_str_eq(value, scan),
+        Expr::Ord { value } | Expr::Chr { value } | Expr::RoundToInt { value } => {
+            expr_has_str_eq(value, scan)
+        }
         Expr::StrCharAt { string, index } => {
             expr_has_str_eq(string, scan) || expr_has_str_eq(index, scan)
         }
@@ -17385,6 +17455,9 @@ fn expr_has_heap_op(e: &Expr) -> bool {
             }
             other => expr_has_heap_op(other),
         },
+        // PMAT-1366: `round(x)` allocates nothing itself (`f64.nearest` +
+        // `i64.trunc_f64_s`), but its operand may (`round(xs[0] + chr_len)`).
+        Expr::RoundToInt { value } => expr_has_heap_op(value),
         // PMAT-1023: a method CALL allocates nothing at the call site (the
         // called body is scanned separately via `module_functions`), but its
         // args may (`c.set(Point(1, 2))`).
@@ -17582,6 +17655,71 @@ impl WatTy {
 
 /// Map a meta-HIR [`Type`] to its WAT value type, refusing everything
 /// outside the scalar subset.
+/// PMAT-1366: one module-level scalar constant, lowered to an IMMUTABLE WASM
+/// global. `wat_init` is the constant initialiser expression (`i64.const 7` /
+/// `i32.const 1` / `f64.const 2.5`) — WASM globals take a *constant* init
+/// expression, and [`Item::Const`](xpile_meta_hir::Item)'s value is always a
+/// folded numeric/bool LITERAL (the frontend's `try_const_decl` folds `-5` into
+/// a single negative literal and rejects everything else), so the mapping is
+/// total, not best-effort.
+struct ModConst {
+    name: String,
+    ty: WatTy,
+    wat_init: String,
+}
+
+/// PMAT-1366: collect the module's `Item::Const` scalars, refusing anything the
+/// WASM subset cannot represent as a global.
+///
+/// A Python module-level `NAME = <literal>` is a *constant* — nothing in the
+/// supported subset can rebind it, so an IMMUTABLE global is the exact encoding
+/// (`global.set` is never emitted, and `wat2wasm` would reject one anyway).
+/// Shadowing does not arise: the frontend REFUSES both a parameter and a
+/// function-local assignment that shadows a module const (it cannot emit a Rust
+/// binding that shadows a `const`), so the const/local ambiguity is settled
+/// upstream. [`Scope::const_ty`] is still consulted only AFTER
+/// [`Scope::ty_of`] misses — defence in depth, not a live path.
+///
+/// Only `int` / `bool` / `float` land here: `try_const_decl` (PMAT-502bj) types
+/// a const `I64` / `Bool` / `F64` and nothing else, so a `str` const is not even
+/// built as an `Item::Const`. A non-literal value would need a start-function
+/// initialiser (WASM globals take only constant expressions) — refused, not
+/// approximated.
+fn collect_module_consts(module: &Module) -> Result<Vec<ModConst>, BackendError> {
+    let mut out = Vec::new();
+    for item in &module.items {
+        let Item::Const { name, ty, value } = item else {
+            continue;
+        };
+        let wt = map_type(ty).map_err(|e| {
+            unsupported(&format!(
+                "module-level const `{name}`: {} — only int/bool/float constants \
+                 are in the WASM subset",
+                e.to_string().trim_start_matches("unsupported construct — ")
+            ))
+        })?;
+        let wat_init = match (wt, value) {
+            (WatTy::I64, Expr::LitInt(v)) => format!("i64.const {v}"),
+            (WatTy::I32, Expr::LitBool(b)) => format!("i32.const {}", i32::from(*b)),
+            (WatTy::F64, Expr::LitFloat(v)) => format!("f64.const {}", wat_float_literal(*v)),
+            _ => {
+                return Err(unsupported(&format!(
+                    "module-level const `{name}` whose value is not a folded \
+                     int/bool/float LITERAL — a WASM global takes a CONSTANT init \
+                     expression, so a computed initialiser is refused rather than \
+                     approximated"
+                )));
+            }
+        };
+        out.push(ModConst {
+            name: name.clone(),
+            ty: wt,
+            wat_init,
+        });
+    }
+    Ok(out)
+}
+
 fn map_type(ty: &Type) -> Result<WatTy, BackendError> {
     match ty {
         // 64-bit signed integer (and the C 64-bit-ABI sibling).
@@ -17815,6 +17953,11 @@ struct Scope<'a> {
     /// PMAT-1311 instance methods by `<Struct>.<method>`) — call sites
     /// kind-check dict/set arguments against the callee's declared kinds.
     heap_sigs: &'a HeapSigRegistry,
+    /// PMAT-1366: `(name, WAT type)` of every module-level scalar `Item::Const`,
+    /// each an immutable `(global $NAME …)`. A body reference that misses
+    /// [`Scope::locals`] resolves here to a `global.get` — see
+    /// [`Scope::const_ty`] for why this is NOT merged into `ty_of`.
+    const_tys: &'a [(String, WatTy)],
     /// The function's return WAT type (drives `return` checking).
     ret: WatTy,
     /// Whether the return type is the unit/void shape (no value).
@@ -17946,6 +18089,20 @@ impl Scope<'_> {
             .ok_or_else(|| unsupported(&format!("reference to unbound name `{name}`")))
     }
 
+    /// PMAT-1366: the WAT type of `name` if it is a module-level scalar const
+    /// (an immutable `(global …)`), else `None`. Consulted ONLY after
+    /// [`Scope::ty_of`] misses (the frontend already refuses a param/local that
+    /// shadows a const, so this ordering is defence in depth). Deliberately NOT
+    /// folded into `ty_of`: the two `Stmt::Let`/`Stmt::Assign` callers must keep
+    /// resolving LOCALS only, so no assignment can ever become a store through
+    /// the immutable global.
+    fn const_ty(&self, name: &str) -> Option<WatTy> {
+        self.const_tys
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, t)| *t)
+    }
+
     /// The element WAT type if `name` is a `list[scalar]` base-pointer,
     /// else `None`. Drives [`Expr::Index`] load-shape selection.
     fn list_elem_of(&self, name: &str) -> Option<WatTy> {
@@ -18063,6 +18220,10 @@ struct Registries<'a> {
     /// module by [`module_dict_order_offender`]; gates the order-OBSERVING
     /// materialisations `list(d)` / `list(d.keys())` / `list(d.values())`.
     dict_order_offender: Option<&'static str>,
+    /// PMAT-1366: `(name, WAT type)` for every module-level scalar `Item::Const`,
+    /// each emitted once as an IMMUTABLE `(global $NAME <ty> (<ty>.const v))`.
+    /// A body reference that is not a LOCAL resolves here to `global.get`.
+    const_tys: &'a [(String, WatTy)],
 }
 
 fn emit_function(
@@ -18079,6 +18240,7 @@ fn emit_function(
         str_rets,
         heap_sigs,
         dict_order_offender,
+        const_tys,
     } = *regs;
     // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
     // base-pointer of the newly-materialised length-prefixed string in linear
@@ -18148,6 +18310,7 @@ fn emit_function(
         str_rets,
         heap_sigs,
         dict_order_offender,
+        const_tys,
         literals,
         ret,
         ret_is_unit,
@@ -19295,10 +19458,24 @@ fn emit_expr(
 ) -> Result<WatTy, BackendError> {
     match e {
         Expr::Ident(name) => {
-            let wt = scope.ty_of(name)?;
-            indent(out, depth);
-            writeln!(out, "local.get ${name}").expect("write");
-            Ok(wt)
+            match scope.ty_of(name) {
+                Ok(wt) => {
+                    indent(out, depth);
+                    writeln!(out, "local.get ${name}").expect("write");
+                    Ok(wt)
+                }
+                // PMAT-1366: not a local → it may be a module-level scalar const,
+                // which lives in the GLOBAL index space. Checked SECOND so a
+                // same-named param/local shadows the const (Python's scoping).
+                Err(unbound) => match scope.const_ty(name) {
+                    Some(wt) => {
+                        indent(out, depth);
+                        writeln!(out, "global.get ${name}").expect("write");
+                        Ok(wt)
+                    }
+                    None => Err(unbound),
+                },
+            }
         }
         Expr::LitInt(v) => {
             indent(out, depth);
@@ -19780,6 +19957,27 @@ fn emit_expr(
         // returns an int (a code point), so it needs no result string. Any
         // other `ord` operand (e.g. `ord(chr(n))`) is refused.
         Expr::Ord { value } => emit_ord(value, scope, out, depth),
+        // PMAT-1366: `round(x)` over a float → the nearest Python `int`. See
+        // [`emit_round_to_int`] for why `f64.nearest` is the CPython-exact
+        // instruction (both are round-half-to-EVEN) and where it traps.
+        Expr::RoundToInt { value } => emit_round_to_int(value, scope, out, depth),
+        // PMAT-1366: the TWO-argument `round(x, n)` forms stay refused, and say
+        // WHY rather than falling into the generic "builtin expression" message.
+        // `round(float, n)` is DECIMAL rounding: CPython (and the Rust lane,
+        // PMAT-502al) get it right by formatting to `n` places with
+        // round-half-to-even and parsing back — the WASM subset has no dtoa/strtod,
+        // and the obvious `x*10**n` scale-round-unscale is NOT equivalent (it
+        // rounds the binary image of the scaled value, so `round(2.675, 2)`
+        // answers 2.68 where CPython answers 2.67). `round(int, n)` needs
+        // `10**(-n)` scaling in i128 to stay overflow-honest. Both are separate
+        // slices, not one-instruction lowerings.
+        Expr::RoundToDigits { .. } | Expr::RoundIntToDigits { .. } => Err(unsupported(
+            "the 2-argument `round(x, n)` is not in the WASM subset — only the \
+             1-argument `round(x)` (native f64.nearest, round-half-to-even) is \
+             supported; decimal rounding needs the format-and-reparse CPython \
+             itself uses (no dtoa/strtod here), and a `10**n` scale-round-unscale \
+             would silently disagree (round(2.675, 2) is 2.67, not 2.68)",
+        )),
         // PMAT-994 (slice 3a): `s[i]` used AS a 1-char string (a `StrCharAt`
         // NOT wrapped in `ord`) now materialises a NEW 1-char heap string (the
         // `chr` mirror, copying byte `i` of the string-valued base). Its result
@@ -22662,6 +22860,9 @@ fn expr_contains_dict_pop(e: &Expr) -> bool {
         Expr::ToStr { value, .. } => expr_contains_dict_pop(value),
         Expr::Len(inner) => expr_contains_dict_pop(inner),
         Expr::Ord { value } => expr_contains_dict_pop(value),
+        // PMAT-1366: `round(d.pop(k))` — the operand is single-evaluated by
+        // `emit_round_to_int`, but the SCAN must still see the pop.
+        Expr::RoundToInt { value } => expr_contains_dict_pop(value),
         Expr::UnOp { operand, .. } => expr_contains_dict_pop(operand),
         Expr::StrCharAt { string, index } => {
             expr_contains_dict_pop(string) || expr_contains_dict_pop(index)
@@ -26424,6 +26625,58 @@ fn emit_num_builtin(
              math.sqrt (native f64.sqrt, domain-guarded) are supported",
         )),
     }
+}
+
+/// PMAT-1366: lower `round(x)` over a **float** (`Expr::RoundToInt`) — the
+/// FIFTH rounding instruction in the lane, joining PMAT-1340's
+/// `math.floor`/`ceil`/`trunc`.
+///
+/// WASM's `f64.nearest` is IEEE-754 `roundToIntegralTiesToEven` — round-half-to-
+/// **EVEN**, which is EXACTLY what Python's built-in `round` does
+/// (`round(2.5) == 2`, `round(3.5) == 4`, `round(-2.5) == -2`). This is the one
+/// place where the naive Rust lowering would be WRONG: `f64::round` is
+/// half-away-from-**zero** (`2.5 -> 3`), which is why the Rust/Ruchy lanes emit
+/// `round_ties_even()` (see [`Expr::RoundToInt`](xpile_meta_hir::Expr)). WASM
+/// needs no such correction — the single native instruction already agrees.
+///
+/// Python's 1-arg `round` returns an `int`, so the (already-integral) f64 is
+/// narrowed with `i64.trunc_f64_s`, the same narrow PMAT-1340 uses: for an
+/// integral value that is a no-op truncation, adding no second rounding. The
+/// boundary is likewise identical — `|round(x)| >= 2**63`, `±inf`, and `nan`
+/// TRAP, where `2**63` is outside the lane's modeled i64 domain and CPython
+/// itself RAISES (`OverflowError` / `ValueError`) for `inf`/`nan`. A trap
+/// refuses to fabricate a value rather than emit a wrong one.
+///
+/// `round(int)` never reaches here — the frontend (PMAT-502ak) folds it to the
+/// identity — and the 2-arg `round(x, n)` forms (`Expr::RoundToDigits` /
+/// `Expr::RoundIntToDigits`) stay REFUSED: both need decimal `10**n` scaling
+/// (and, for `n >= 0`, Rust's round-half-to-even float FORMATTING) that the
+/// WASM subset has no dtoa for. The operand here is always f64; a non-f64 is
+/// unexpected and refuses rather than emitting ill-typed WAT.
+fn emit_round_to_int(
+    value: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<WatTy, BackendError> {
+    match emit_expr(value, scope, out, depth)? {
+        WatTy::F64 => {}
+        other => {
+            return Err(unsupported(&format!(
+                "round() over a non-float ({other:?}) value — the frontend folds \
+                 `round(int)` to the identity, so a non-f64 operand is unexpected"
+            )));
+        }
+    }
+    indent(out, depth);
+    // Round-half-to-EVEN, matching Python's `round` exactly (unlike Rust's
+    // half-away-from-zero `f64::round`).
+    writeln!(out, "f64.nearest").expect("write");
+    indent(out, depth);
+    // Narrow the integral f64 to the Python `int` result. Traps on the
+    // documented |value| >= 2**63 / inf / nan boundary (see fn docs).
+    writeln!(out, "i64.trunc_f64_s").expect("write");
+    Ok(WatTy::I64)
 }
 
 /// PMAT-994: `true` if `e` is a string-VALUED binop operand — a str-name

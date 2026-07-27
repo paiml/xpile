@@ -620,10 +620,26 @@ queue:
     NEXT PICK: PMAT-1366 (the last D-pool item), then the Thu 07-30 release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1366
-  status: open
+  status: done
   ev_rank: D
-  title: '[D-pool] round(x) via f64.nearest + module-level scalar const'
+  title: '[D-pool] round(x) via f64.nearest + module-level scalar const (SHIPPED 2026-07-27)'
   date: '2026-07-29'
+  notes: |
+    DONE 2026-07-27 (Day 2, pulled forward from the 07-29 D-pool slot). BOTH halves shipped in one PR:
+    (a) `Expr::RoundToInt` -> `f64.nearest` + `i64.trunc_f64_s` (IEEE roundToIntegralTiesToEven IS
+    Python's banker's rounding; the half-away-from-zero mutant was RUN and reds); (b) `Item::Const`
+    (int/bool/float) -> immutable `(global $NAME <ty> (<ty>.const v))` + a `global.get` fallback in
+    `Expr::Ident` (the `(mut ...)` mutant was RUN and reds). 2-arg `round(x, n)` refuses with a
+    SPECIFIC message whose justification is computed, not asserted. Contract gains DECLARED
+    `round-to-int` + `module-scalar-const` and REFUSED `round-to-digits`; both red halves of
+    wasm_contract_surface.rs were RUN. 71 new executed observables; WASM 795 -> 827, gated 315 -> 326,
+    floors UNTOUCHED.
+    NEXT PICK: the D-pool is now EXHAUSTED and the only OPEN queue items are the date-gated release
+    pair -- PMAT-1373 (Thu 2026-07-30, tag cut) and PMAT-1374 (Fri 2026-07-31, publish). Days 3 (Tue)
+    and the pre-freeze half of Day 4 (Wed, HARD FREEZE 18:00) have NO scheduled code work. Per the
+    sprint rules a cron fire on those days should NOT invent new capability scope: prefer CHANGELOG /
+    docs polish for the 0.1.618 note, or a verify pass over an already-shipped 0.1.618 slice. Any
+    genuinely new capability idea belongs in `next_lane` for 0.1.619, not in this window.
 - id: PMAT-1367
   status: done
   ev_rank: R3
