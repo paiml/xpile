@@ -53,21 +53,28 @@ The README describes both; they share no code:
 
 A program that runs through path 2 may still refuse on path 1.
 
-### Lean emit caveat — the default does NOT elaborate
+### Lean emit — the default elaborates (fixed 2026-07-27, PMAT-1405)
 
-`--contracts on` is the **default**, and it emits contract citations as a Lean
-attribute:
+`--contracts on` is the **default**, and the Lean CODE lane cites via a Lean
+**docstring**:
 
 ```lean
-@[xpile_contract "C-PY-INT-ARITH"]
+/-- xpile-contract: C-PY-INT-ARITH -/
 def add (a : Int) (b : Int) : Int := (a + b)
 ```
 
-`xpile_contract` is **not a registered Lean attribute**, so `lean` exits 1 with
-`unexpected token; expected ']'`. For Lean output you intend to elaborate, use
-`--contracts off`. Registering the attribute in a prelude is an open owner
-decision (`lean-attribute-prelude`), not an oversight; every other backend cites
-contracts in comments, which is why only Lean is affected.
+`lean` accepts this, and the citation stays *structured*: it is resolvable by
+declaration name through Lean's own `Lean.findDocString?`, which a line comment
+would not be. Gated by `crates/xpile/tests/lean_default_emit_witness.rs`.
+
+**Superseded:** through v0.1.617 this lane cited with `@[xpile_contract "…"]`,
+`xpile_contract` was a registered Lean attribute nowhere, and `lean` exited 1
+with `unexpected token; expected ']'` while `xpile` exited 0 — so `--contracts
+off` was the only elaborating form. That is no longer true, and this file said
+otherwise for a day; `claims_drift.rs` now pins the retired wording so it cannot
+come back. The open owner decision `lean-attribute-prelude` concerns the
+CONTRACT-RENDERING lane (`xpile-lean-contract-backend`), which still emits the
+attribute and is never elaborated.
 
 ## CI enforcement
 

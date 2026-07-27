@@ -7,6 +7,76 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Every lane's execution witness now runs the DEFAULT CLI flags (PMAT-1411)
+
+`--target lean`'s default emit wrote Lean that `lean` could not parse
+(PMAT-1405), and it shipped **from the lane that had just been swept** — because
+`lean_elaborate_witness.rs`, the Lean lane's own semantic oracle, passes
+`--contracts off`. The corpus certified a flag combination no user takes. This
+closes the class rather than the instance.
+
+**What was measured first.** Exactly four test files passed a non-default
+`--contracts`. Three were decorative: the flag was removed from
+`ptx_capability_witness.rs`, `posonly_param_witness.rs` and `transpile_e2e.rs`
+and all of their tests still pass. Lean is the one real deviation. Every lane's
+DEFAULT emit was then run through its real toolchain — `rustc`, `wat2wasm`,
+`lean`, `ruchy`, `ptxas`, `sh -n`, `forjar validate` all accept it. **No second
+PMAT-1405 was live.**
+
+**The gate** — `crates/xpile/tests/default_flag_witness.rs`
+(XPILE-DEFAULTFLAGS-001), 4 tests:
+
+1. the `transpile` subcommand's defaulted options are **derived from `main.rs`**
+   and pinned to `{target: rust, contracts: on}`, so flipping a default reds the
+   premise instead of silently re-basing every assertion below it;
+2. per lane: the DEFAULT emit exits 0, its real toolchain accepts it, **and** the
+   citation channel is live (default carries `xpile-contract:`, `off` strips it)
+   — without that third clause a backend that stopped citing entirely would pass
+   on the toolchain check alone;
+3. the lane table is checked against the target list parsed out of the **live
+   binary's own rejection message**, so a tenth backend cannot be registered
+   without a lane;
+4. the class gate: any test passing a non-default `--contracts` must declare it
+   and name a `DEFAULT-PATH-COVERED-BY:` witness that exists, probes the same
+   target, and does not itself deviate.
+
+**Red half, run per lane.** A corrupted artifact was injected one lane at a time
+and rejected by `rustc`, `wat2wasm`, `lean`, `ruchy`, `ptxas` and `forjar`.
+`sh -n` did **not** red at first — the injected token was a syntactically valid
+command word — so the shell probe was re-run with a real syntax error, which
+does red. The gate's doc now says plainly that the shell oracle catches
+non-**parsing** output only; execution is `shell_diff_exec.rs`'s claim.
+
+**The enforcer's own guard was vacuous, and the red half is what caught it.**
+The gate file is exempt from its own deviation rule (it passes `--contracts off`
+as the differential's control arm), conditioned on its default arm still
+existing. Written the obvious way, that guard searched for the literal
+`emit(lane, &dir, &[])` — which also occurs in the guard's **own assertion
+message**, so deleting the default arm kept it green. The needle is now
+assembled at runtime. Reading the code would not have found this.
+
+**Measured asymmetry, recorded rather than asserted away.** The PTX lane inlines
+no `xpile-contract:` citation under either setting: `--contracts on|off` emit
+byte-identical PTX, its citations living only on `Artifact.citations`. 8 of 9
+lanes inline. PTX is pinned as `StructuralOnly`, and a change that starts
+inlining reds the gate.
+
+### The inverse defect: a green test enforcing a retired caveat (PMAT-1411)
+
+Found by the same sweep. `docs/status/CURRENT.md` still stated that
+`xpile_contract` is not a registered Lean attribute, that `lean` exits 1, and
+that `--contracts off` is the elaborating form. PMAT-1405 had changed the
+citation form to a `/-- xpile-contract: … -/` docstring the day before, and
+`lean` exits 0 on the default emit (measured). Worse,
+`claims_drift.rs::current_md_discloses_the_lean_default_contracts_caveat`
+**required** the stale sentence to be present — a passing test holding a false
+claim in place.
+
+Disclosing a caveat that has been retired is the same CLAIMS-001 falsehood as
+omitting a live one, pointing the other way. The test is inverted: the retired
+wording is now forbidden, and the positive claim — that the default emit
+elaborates — rests on `lean_default_emit_witness.rs`, which runs `lean`.
+
 ### Two exit-0-uncompilable Python shapes now REFUSE (PMAT-1410)
 
 Both reproduce from two lines of Python, both exited **0** through v0.1.617,

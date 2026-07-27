@@ -35,6 +35,14 @@
 //! exactly why the defect above lived for three weeks with the corpus green.
 //! See `docs/specifications/audit-design.md` §7.
 //!
+//! XPILE-DEFAULT-FLAGS: DEVIATES --contracts=off on the lean lane — this is the
+//! ANNOTATION-FREE semantic oracle; `by decide` obligations are appended to the
+//! emitted text, and the citation form is the other witness's subject, not this
+//! one's. DEFAULT-PATH-COVERED-BY: crates/xpile/tests/lean_default_emit_witness.rs
+//! (asserts the DEFAULT `--target lean` emit elaborates, cites, and resolves by
+//! declaration name). Enforced by `default_flag_witness.rs`
+//! (XPILE-DEFAULTFLAGS-001, PMAT-1411): drop this pair and that gate reds.
+//!
 //! SCOPE: the Lean lane lowers only VALUE functions (arithmetic / comparison /
 //! bool) — it refuses `None`-returning (void) functions, statement-form
 //! `if`/`else` (Lean uses the if-EXPRESSION form), and unproven recursion (Lean's

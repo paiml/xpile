@@ -18454,3 +18454,29 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1411
+  github_issue: null
+  item_type: bug
+  title: "PMAT-1411: [ci/honesty] every lane's execution witness now runs the DEFAULT CLI flags, and the DEFAULT emit is checked against that lane's own toolchain — plus the inverse defect the sweep found: CURRENT.md still documented the Lean `--contracts on` breakage PMAT-1405 had already fixed, and a green claims_drift test was ENFORCING the stale claim."
+  description: "PMAT-1405 (`--target lean`'s DEFAULT emit wrote Lean `lean` could not parse) shipped FROM the lane that had just been swept, because `lean_elaborate_witness.rs` — the lane's semantic oracle — passes `--contracts off`. The corpus certified a flag combination no user takes. This closes the CLASS.
+
+    ** MEASURED FIRST, on a force-rebuilt binary. Exactly four test files passed a non-default `--contracts`: lean_elaborate_witness (2 sites), ptx_capability_witness (2), posonly_param_witness (1), transpile_e2e (2). Three of the four were DECORATIVE — the flag was removed and all 837 of their tests still pass — leaving Lean as the one real deviation. Every lane's DEFAULT emit was then run through its real toolchain: rustc, wat2wasm, lean, ruchy, ptxas, sh -n, forjar validate all ACCEPT it (naga absent on this box; wgsl/spirv skip-with-reason). No second PMAT-1405 was live.
+
+    ** WITNESS: crates/xpile/tests/default_flag_witness.rs (XPILE-DEFAULTFLAGS-001), 4 tests. (1) the defaulted `transpile` options are DERIVED from main.rs and pinned to {target: rust, contracts: on}, so a flip reds the premise instead of silently re-basing everything; (2) per lane — DEFAULT emit exits 0, its real toolchain accepts it, and the citation channel is LIVE (default carries `xpile-contract:`, `off` strips it) so a backend that stopped citing cannot pass on the toolchain clause alone; (3) the lane table is checked against the target list parsed out of the LIVE BINARY's own rejection message, so a tenth backend cannot be registered without a lane; (4) the CLASS gate — any test passing a non-default `--contracts` must declare it AND name a DEFAULT-PATH-COVERED-BY witness that exists, probes the same target, and does not itself deviate.
+
+    ** RED HALF RUN PER LANE, not once: a corrupted artifact was injected one lane at a time and rejected by rustc, wat2wasm, lean, ruchy, ptxas and forjar. `sh -n` did NOT red on the first attempt — the injected token was a syntactically valid command word — so the shell probe was re-run with a real syntax error, which reds. The doc now says the shell oracle catches non-PARSING output only; execution is shell_diff_exec.rs's claim. The 4 static red halves (missing declaration, dangling cover pointer, dropped lane, PTX misclassified) all fire.
+
+    ** THE ENFORCER'S OWN GUARD WAS VACUOUS AND THE RED HALF CAUGHT IT. This file is exempt from its own deviation rule (it passes `--contracts off` as the differential's CONTROL arm), conditioned on its DEFAULT arm still existing. Written the obvious way the guard searched for the literal `emit(lane, &dir, &[])` — which ALSO occurs in the guard's own assertion MESSAGE, so deleting the default arm kept it GREEN. The needle is now assembled at runtime so it appears nowhere as a literal. Reading the code would not have found this; running the red half did.
+
+    ** MEASURED ASYMMETRY, RECORDED NOT ASSERTED AWAY: the PTX lane inlines NO `xpile-contract:` citation under EITHER setting — `--contracts on|off` emit BYTE-IDENTICAL PTX, its citations living only on Artifact.citations. 8 of 9 lanes inline; PTX is pinned as `Citations::StructuralOnly` and a change that starts inlining reds the gate.
+
+    ** THE INVERSE DEFECT, found by the sweep and fixed here. docs/status/CURRENT.md still said `xpile_contract` is not a registered Lean attribute, `lean` exits 1, and `--contracts off` is the elaborating form. PMAT-1405 changed the citation form to a `/-- xpile-contract: … -/` docstring the DAY BEFORE; `lean` exits 0 on the default emit (measured). Worse, claims_drift.rs::current_md_discloses_the_lean_default_contracts_caveat REQUIRED the stale text — a green test enforcing a false claim. The test is INVERTED to pin the retired wording as forbidden, and the positive claim now rests on lean_default_emit_witness.rs, which RUNS lean."
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
