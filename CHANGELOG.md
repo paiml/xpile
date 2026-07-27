@@ -9,6 +9,55 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **WASM shifts silently masked their count to 6 bits — four wrong answers,
+  now honest** (PMAT-1379). `<<`/`>>` over `int` lowered to a bare `i64.shl` /
+  `i64.shr_s`, and those instructions take the shift count **modulo 64**. So
+  `1 << 70` returned `64` (because `70 & 63 == 6`) where CPython returns
+  `1180591620717411303424`, and `1024 >> 70` returned `16` where CPython
+  returns `0`. Nothing about a 64-bit word makes `x << 70` mean `x << 6`:
+  this was wrong *even under fixed-width semantics*, where `0` or a trap are
+  the only defensible answers. A **negative** count was worse — Python raises
+  `ValueError`, while the emitted module masked `-1` to `63` and returned a
+  value. All four were measured against live `python3`, through the shipped
+  CLI (`xpile transpile --target wasm` → `wat2wasm` → `wasm-interp`), not
+  through a library entry point. Both shifts now route through
+  `$__wasm_shl_i64` / `$__wasm_shr_i64`, which take the posture the lane's
+  `i64.div_s` zero-divisor trap already takes: **a count Python rejects
+  traps, and a count whose fixed-width answer is exact is computed exactly.**
+  A negative count is `unreachable` (the `ValueError` analogue). `>>` with
+  `n >= 64` clamps to 63, which is not an approximation — an arithmetic right
+  shift that far is `0` for `x >= 0` and `-1` for `x < 0`, exactly what
+  CPython returns for an arbitrary-precision `x`, and the witness pins that
+  for `i64::MIN`, `i64::MAX` and `n = i64::MAX`. `<<` with `n >= 64` yields
+  `0` when `x == 0` (the one representable case, so it must *not* trap) and
+  `unreachable` otherwise, since every non-zero `x` overflows i64.
+  **The scope is pinned as narrow, not asserted to be.** This is the shift
+  **count** only; a count in `0..=63` still uses the raw instruction, so
+  `1 << 63` still wraps to `i64::MIN` against CPython's
+  `9223372036854775808`. That residual is *asserted out loud* by
+  `shl_in_range_overflow_is_a_known_residual`, which fails the day it changes,
+  rather than being left as an unwritten implication — it belongs to the
+  general i64-overflow work (checked add/sub/mul/neg), which is L/XL and sits
+  on the emitter's hot path. **The helpers are gated on the call sites they
+  serve, not on a hand-rolled AST walk.** The first cut emitted them
+  unconditionally and put an `unreachable` into every module the backend
+  produces, which red `len_of_list_param_reads_header`'s "len needs no trap"
+  assertion — a real signal, not noise. The obvious fix, a `module_uses_shift`
+  walker beside the existing `module_uses_list_sum`, is a parity liability:
+  miss one nesting position and the module calls a helper that was never laid
+  down. So the item bodies are emitted into a buffer first and the gate reads
+  the `call $__wasm_shl_i64` sites it is gating — it observes the exact bytes
+  it guards, the same discipline `check_emitted_identifiers_unique` uses.
+  Witnesses: `crates/xpile-wasm-codegen/tests/shift_count_witness.rs`, 5 tests
+  — 2 construct (routing, plus the shiftless-module gate) and 3 runtime-gated
+  execution tests covering 4 silent-wrong-answer cases, 13 exact out-of-range
+  arms, 12 in-range regression values checked against live `python3`, and the
+  pinned residual. WASM witness count live 837 → 842 against an unchanged
+  `WASM_FLOOR = 770`; runtime-gated 330 → 333 against `WASM_EXEC_FLOOR = 300`.
+  NO witness floor touched — the two permitted 0.1.618 touches remain
+  PMAT-1372 and PMAT-1373. No CI change, no contract change, no gate value
+  changed.
+
 - **`xpile transpile --target wasm` no longer exits 0 with a module `wat2wasm`
   rejects** (PMAT-1378). `crates/xpile/tests/wasm_contract_surface.rs` states
   the lane's claim in its own header — an emitted program "assembles under

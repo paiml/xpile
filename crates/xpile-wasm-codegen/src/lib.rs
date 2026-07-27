@@ -7332,6 +7332,89 @@ const FLOOR_HELPERS: &str = "\
   )
 ";
 
+/// PMAT-1379: Python shift helpers, in WAT — the shift-COUNT half of the
+/// i64 honesty debt.
+///
+/// The raw WASM `i64.shl`/`i64.shr_s` MASK the shift count to its low 6
+/// bits, so `1 << 70` silently returned `64` (70 & 63 == 6) and
+/// `1024 >> 70` silently returned `16`. That is wrong even under
+/// fixed-width semantics — nothing about a 64-bit word makes `x << 70`
+/// mean `x << 6` — and a NEGATIVE count, which Python answers with
+/// `ValueError`, masked to a large positive one and returned a value.
+/// Four silent wrong answers, all measured against live `python3`.
+///
+/// The posture here matches the lane's existing `i64.div_s` zero-divisor
+/// trap: a count Python rejects TRAPS, and a count whose fixed-width answer
+/// is exact is COMPUTED exactly.
+///
+/// * negative count → `unreachable` (the `ValueError` analogue).
+/// * `>>` with `n >= 64` → clamp to 63. An arithmetic right shift by 63
+///   is `0` for `x >= 0` and `-1` for `x < 0`, which is exactly what
+///   CPython returns for an arbitrary-precision `x` shifted that far. This
+///   arm is EXACT, not an approximation.
+/// * `<<` with `n >= 64` → `0` when `x == 0` (the one representable case),
+///   `unreachable` otherwise, because every non-zero `x` overflows i64.
+///
+/// SCOPE, stated honestly: this fixes the shift COUNT only. A shift whose
+/// count is in `0..=63` still uses the raw instruction, so `1 << 63` still
+/// WRAPS to `i64::MIN` rather than trapping. That residual belongs to the
+/// general i64-overflow work (checked add/sub/mul/neg), which is L/XL, sits
+/// on the emitter's hot path, and is deliberately not in this slice.
+const SHIFT_HELPERS: &str = "\
+  ;; __wasm_shl_i64(x, n) = x << n  (Python <<, shift-COUNT honest)
+  (func $__wasm_shl_i64 (param $x i64) (param $n i64) (result i64)
+    ;; Python raises ValueError on a negative shift count.
+    local.get $n
+    i64.const 0
+    i64.lt_s
+    if
+      unreachable
+    end
+    ;; n >= 64: i64.shl would MASK the count to 6 bits. The only value
+    ;; representable in i64 is 0 << n == 0; every non-zero x overflows.
+    local.get $n
+    i64.const 64
+    i64.ge_s
+    if (result i64)
+      local.get $x
+      i64.const 0
+      i64.eq
+      if (result i64)
+        i64.const 0
+      else
+        unreachable
+      end
+    else
+      local.get $x
+      local.get $n
+      i64.shl
+    end
+  )
+  ;; __wasm_shr_i64(x, n) = x >> n  (Python >>, arithmetic, shift-COUNT honest)
+  (func $__wasm_shr_i64 (param $x i64) (param $n i64) (result i64)
+    ;; Python raises ValueError on a negative shift count.
+    local.get $n
+    i64.const 0
+    i64.lt_s
+    if
+      unreachable
+    end
+    local.get $x
+    ;; n >= 64 saturates to 63: an arithmetic right shift that far yields 0
+    ;; for x >= 0 and -1 for x < 0 — the same answer CPython gives for an
+    ;; arbitrary-precision x. i64.shr_s alone would MASK the count instead.
+    local.get $n
+    i64.const 63
+    i64.le_s
+    if (result i64)
+      local.get $n
+    else
+      i64.const 63
+    end
+    i64.shr_s
+  )
+";
+
 /// PMAT-1248: the list-INT-SUM helper — Python `sum(xs)` over a `list[int]`.
 /// `base` is an i32 pointer to a length-prefixed region (i32 element count @
 /// base+0, packed i64 elements @ base+8, the PMAT-968 list ABI). It folds
@@ -13515,11 +13598,24 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // divisor (`i64.div_s`/`i64.rem_s` already trap on 0, matching the
     // Python ZeroDivisionError posture).
     out.push_str(FLOOR_HELPERS);
+    // PMAT-1379: the shift helpers are gated, but NOT on a hand-rolled
+    // `module_uses_*` walk like the list/dict helpers above. Every such
+    // walker is a parity liability — miss one nesting position (a shift in
+    // a `while` body, a comprehension, a method) and the module emits
+    // `call $__wasm_shl_i64` against a function that was never laid down,
+    // which `wat2wasm` then refuses.
+    //
+    // Instead the item bodies are emitted into `body` FIRST and the gate
+    // reads the call sites it is gating. It observes the exact bytes it
+    // guards, so it cannot drift out of sync with the emitter by
+    // construction — the same discipline `check_emitted_identifiers_unique`
+    // uses at the end of this function.
+    let mut body = String::new();
     for item in &module.items {
         match item {
             Item::Function(f) => {
                 let f_wat = emit_function(f, &regs, &f.name)?;
-                out.push_str(&f_wat);
+                body.push_str(&f_wat);
             }
             // PMAT-1366: a module-level scalar const emits NO function WAT — it
             // was laid down above as an immutable `(global …)` (and validated by
@@ -13551,7 +13647,7 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
                         format!("{name}::{}", m.name)
                     };
                     let m_wat = emit_function(m, &regs, &wat_name)?;
-                    out.push_str(&m_wat);
+                    body.push_str(&m_wat);
                 }
             }
             Item::Enum { name, .. } => {
@@ -13561,6 +13657,15 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
             }
         }
     }
+    // PMAT-1379: lay the shift helpers down ONLY when a call site for them
+    // was actually emitted. They carry `unreachable` (the Python
+    // `ValueError`/overflow analogue), so emitting them unconditionally
+    // would put a trap in every module the backend produces and make
+    // "this function needs no trap" unassertable anywhere in the suite.
+    if body.contains("call $__wasm_shl_i64") || body.contains("call $__wasm_shr_i64") {
+        out.push_str(SHIFT_HELPERS);
+    }
+    out.push_str(&body);
     writeln!(out, ")").expect("write");
     // PMAT-1378: the BELT. `check_module_binding_names` covers every collision
     // cause known TODAY; this scan covers the ones a future helper introduces.
@@ -27345,8 +27450,16 @@ fn emit_binop(
         (BinOp::BitAnd, WatTy::I64) => ("i64.and", WatTy::I64),
         (BinOp::BitOr, WatTy::I64) => ("i64.or", WatTy::I64),
         (BinOp::BitXor, WatTy::I64) => ("i64.xor", WatTy::I64),
-        (BinOp::Shl, WatTy::I64) => ("i64.shl", WatTy::I64),
-        (BinOp::Shr, WatTy::I64) => ("i64.shr_s", WatTy::I64),
+        // PMAT-1379: shifts route through the count-honest helpers, NOT the
+        // raw `i64.shl`/`i64.shr_s`, which mask the count to 6 bits.
+        (BinOp::Shl, WatTy::I64) => {
+            writeln!(out, "call $__wasm_shl_i64").expect("write");
+            return Ok(WatTy::I64);
+        }
+        (BinOp::Shr, WatTy::I64) => {
+            writeln!(out, "call $__wasm_shr_i64").expect("write");
+            return Ok(WatTy::I64);
+        }
         // ── comparisons over i64 → i32 bool ──
         (BinOp::Eq, WatTy::I64) => ("i64.eq", WatTy::I32),
         (BinOp::NotEq, WatTy::I64) => ("i64.ne", WatTy::I32),
