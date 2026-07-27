@@ -16989,3 +16989,75 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1390
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1390: [honesty/reporter] `xpile attestations` counted a roadmap PREAMBLE
+    mention as a WORK ITEM and emitted INVALID JSON, both at exit 0. The live tally read
+    `C-PY-INT-ARITH 87 mentions across 69 work item(s)` where a real YAML parse finds 68,
+    printed three NAMELESS `- ` bullets, and shipped `"work_items":[""]`; a plain
+    YAML-quoted work-item id (`- id: "P"`) produced `"work_item":""P""`, which json.load
+    rejects. The reporter shape a FOURTH time after PMAT-1385/1386/1387: a number printed
+    that was never measured.'
+  description: 'FIXED. PICKED as the lowest-numbered OPEN queue item dated <= 2026-07-27.
+    Both defects reproduced through the shipped binary at 16cce394 BEFORE any edit, on a
+    two-file five-line synthetic corpus and on the live tree.
+    ** ROOT CAUSE (a): `scan_roadmap_for_id` (crates/xpile/src/main.rs) seeded
+    `current_item` as `String::new()` and only reassigned on a column-0 `- id: ` line.
+    docs/roadmaps/roadmap.yaml opens with ~189 lines of `strategic_goals:` prose -- the
+    `roadmap:` key is line 190, the first `- id:` is 191 -- so EVERY preamble mention was
+    attributed to a work item whose id is the empty string, and both printers folded that
+    into the unique-work-item BTreeSet. Live effect measured: 3 contracts over-counted by
+    exactly one (C-PY-INT-ARITH 69 vs 68, C-PY-FLOAT-ARITH 11 vs 10,
+    C-XLATE-PY-CLASS-TO-STRUCT 5 vs 4) and 3 nameless bullets. +1 no matter how many
+    preamble lines mention the id, which is why it stayed plausible for months.
+    ** ROOT CAUSE (b): of the six strings in the hand-rolled `--json` payload only
+    `snippet` was routed through the `escape_json` that already existed in the same file.
+    `roadmap_path`, `work_items`, `work_item`, `id` and `unattested` were interpolated raw.
+    ** ROOT CAUSE (c): the work-item id was taken as `strip_prefix("- id: ")` VERBATIM,
+    unlike the sibling `extract_metadata_id` which strips quotes -- the input that made (b)
+    fire with nothing exotic.
+    ** THE FIX: `AttestationMention.work_item` becomes `Option<String>`, so "no enclosing
+    work item" is REPRESENTED rather than encoded as an empty string that reads as an id.
+    A preamble mention is RETAINED in `mentions` and DISCLOSED on its own line, never
+    dropped: `xpile quorum` derives the whole Extrinsic stratum from
+    `scan_roadmap_for_id(..).len()` (the mention COUNT), so discarding it would have traded
+    one wrong number for another. All five raw strings now go through `escape_json`; the
+    id gets the sibling quote-strip; a valueless `- id:` opens no item rather than
+    reinventing the phantom by another route. `print_attestations_json` was split into a
+    String-returning `render_attestations_json` so a test can assert the payload PARSES --
+    it previously wrote straight to stdout, which is why a substring-matching test passed
+    over a payload no JSON reader accepts.
+    ** THE WITNESS: crates/xpile/tests/cli_attestation_tally_witness.rs
+    (XPILE-ATTESTTALLY-001, a NEW file, so not a gate touch), 5 tests + 5 new unit tests in
+    main.rs, 2.3 s measured. The load-bearing assertion is a RELATION between two live
+    implementations, not a hand-copied expected value: for EVERY contract the reported
+    work-item tally must equal an independent reference computed by walking the
+    `serde_yaml`-parsed roadmap tree. That cannot go stale as the ledger grows. The
+    reference WALKS the parsed tree rather than re-serialising it, because re-serialisation
+    can fold a long scalar across lines and split an id, which would make the reference
+    agree with the line-scan under test for the wrong reason. Both sides vacuity-guarded
+    (>= 10 contracts, busiest contract >= 10 work items).
+    ** RED HALF RUN: with the src edit reverted, 5/5 fail; with it applied, 5/5 pass. The
+    first draft of the escape test passed on BOTH sides -- its specials landed only in
+    `snippet`, the one field already escaped -- and was strengthened to carry a quote in
+    the contract ID itself, which reaches `id` and `unattested`. A witness that greens
+    before the fix certifies nothing.
+    ** DISCLOSED RESIDUAL, not fixed here: `attested` still means "mentioned anywhere in
+    the roadmap", so a contract named ONLY in the preamble counts as attested while
+    carrying zero work-item votes. That is 0 of 34 contracts on the live corpus today, so
+    nothing flips; the text report now says so explicitly when it is not zero. Changing the
+    attested/unattested SEMANTICS is a separate call with no measurable live effect this
+    window -- deferred to 0.1.619 rather than churned on a release week.
+    ** SCOPE: one file for the fix (crates/xpile/src/main.rs), one new test file. No gate
+    file edited; witness_floor.rs untouched (two-touch serial resource, second touch
+    reserved for PMAT-1373). `xpile quorum` output is byte-unchanged by construction.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

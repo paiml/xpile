@@ -1702,9 +1702,21 @@ struct ContractAttestation {
 #[derive(Debug)]
 struct AttestationMention {
     /// The `id:` of the enclosing work item — usually `PMAT-NNN`.
-    /// Empty string if the mention appears outside any work-item
-    /// block (rare; would mean a top-level YAML key).
-    work_item: String,
+    ///
+    /// `None` when the mention lies OUTSIDE every work-item block —
+    /// in `docs/roadmaps/roadmap.yaml` that is the `strategic_goals:`
+    /// preamble (lines 1..189; `roadmap:` is line 190 and the first
+    /// `- id:` is 191). PMAT-1390: this was an empty `String`, which
+    /// both printers folded into the unique-work-item set as if it
+    /// were a work item named "". The live tally read
+    /// `C-PY-INT-ARITH 87 mentions across 69 work item(s)` when a real
+    /// YAML parser counts 68, and the text printer emitted a nameless
+    /// `      - ` bullet for the phantom. A preamble mention is a REAL
+    /// mention of the contract — it is just not an attestation by a
+    /// work item, so it is retained in `mentions` (and therefore in
+    /// the count `quorum` scores the Extrinsic stratum from) and
+    /// excluded from the work-item tally.
+    work_item: Option<String>,
     line: usize,
     snippet: String,
 }
@@ -1825,11 +1837,19 @@ fn extract_metadata_id(contents: &str) -> Option<String> {
 /// `roadmap:`, with each item starting at column 2 (`- id: PMAT-...`).
 fn scan_roadmap_for_id(roadmap: &str, contract_id: &str) -> Vec<AttestationMention> {
     let mut out = Vec::new();
-    let mut current_item: String = String::new();
+    let mut current_item: Option<String> = None;
     for (idx, line) in roadmap.lines().enumerate() {
         // Detect a new work item header: `- id: PMAT-NNN`.
         if let Some(rest) = line.strip_prefix("- id: ") {
-            current_item = rest.trim().to_string();
+            // PMAT-1390: quote-strip exactly as the sibling
+            // `extract_metadata_id` does. A YAML-quoted id (`- id: "P"`)
+            // was taken VERBATIM, so the quotes landed unescaped inside
+            // the hand-rolled JSON string and produced `"work_item":""P""`
+            // — a payload `json.load` rejects, at exit 0.
+            let id = rest.trim().trim_matches('"').trim_matches('\'').trim();
+            // An `- id:` with no value leaves us outside a named item
+            // rather than inventing one called "".
+            current_item = (!id.is_empty()).then(|| id.to_string());
         }
         if line.contains(contract_id) {
             out.push(AttestationMention {
@@ -1840,6 +1860,18 @@ fn scan_roadmap_for_id(roadmap: &str, contract_id: &str) -> Vec<AttestationMenti
         }
     }
     out
+}
+
+/// The distinct work items that attest a contract. A mention with no
+/// enclosing work item (`None` — the roadmap preamble) is NOT one, which
+/// is the whole of PMAT-1390: this used to collect `m.work_item.as_str()`
+/// over a `String` whose empty value stood for "no work item", so the
+/// preamble contributed a phantom item to the set.
+fn unique_work_items(mentions: &[AttestationMention]) -> std::collections::BTreeSet<&str> {
+    mentions
+        .iter()
+        .filter_map(|m| m.work_item.as_deref())
+        .collect()
 }
 
 fn print_attestations_text(report: &AttestationReport) {
@@ -1854,8 +1886,7 @@ fn print_attestations_text(report: &AttestationReport) {
         println!("  (no attestations found)");
     } else {
         for c in &report.contracts {
-            let unique_items: std::collections::BTreeSet<&str> =
-                c.mentions.iter().map(|m| m.work_item.as_str()).collect();
+            let unique_items = unique_work_items(&c.mentions);
             println!(
                 "  {:<40}  {:>3} mentions across {:>2} work item(s)",
                 c.id,
@@ -1864,6 +1895,17 @@ fn print_attestations_text(report: &AttestationReport) {
             );
             for w in &unique_items {
                 println!("      - {w}");
+            }
+            // PMAT-1390: preamble mentions are disclosed, not dropped and
+            // not counted. Dropping them would silently lower the mention
+            // total that `quorum` scores the Extrinsic stratum from;
+            // counting them printed a nameless `      - ` bullet.
+            let preamble = c.mentions.iter().filter(|m| m.work_item.is_none()).count();
+            if preamble > 0 {
+                println!(
+                    "      ({preamble} mention(s) outside every work item — roadmap \
+                     preamble, not an attestation)"
+                );
             }
         }
     }
@@ -1885,6 +1927,23 @@ fn print_attestations_text(report: &AttestationReport) {
         "totals: {attested}/{} contracts attested, {total_mentions} total mention(s)",
         report.contracts_scanned
     );
+    // PMAT-1390, DISCLOSED RESIDUAL: `attested` still means "mentioned
+    // anywhere in the roadmap", so a contract named ONLY in the preamble
+    // is counted here while carrying zero work-item votes. That is 0 of 35
+    // contracts on the live corpus today, which is why this line does not
+    // print there — but it is a real shape and the reader is told rather
+    // than left to infer it from a `0 work item(s)` row above.
+    let preamble_only = report
+        .contracts
+        .iter()
+        .filter(|c| unique_work_items(&c.mentions).is_empty())
+        .count();
+    if preamble_only > 0 {
+        println!(
+            "note: {preamble_only} of those {attested} are mentioned ONLY outside a work item \
+             (roadmap preamble) and carry ZERO Extrinsic votes."
+        );
+    }
     println!(
         "stratum: Extrinsic — per ruchy 5.0 §14.4, this counts toward the N-of-M oracle quorum \
          alongside Semantic (Lean), Symbolic (Kani), Runtime (diff_exec)."
@@ -1892,59 +1951,92 @@ fn print_attestations_text(report: &AttestationReport) {
 }
 
 fn print_attestations_json(report: &AttestationReport) {
-    // Hand-rolled JSON, same posture as `print_audit_json`. Schema:
-    //   {
-    //     "contracts_scanned": N,
-    //     "roadmap_path": "...",
-    //     "contracts": [{
-    //       "id": "...", "mention_count": N,
-    //       "work_items": [...],
-    //       "mentions": [{"work_item": "...", "line": N, "snippet": "..."}]
-    //     }],
-    //     "unattested": ["...", ...]
-    //   }
+    print!("{}", render_attestations_json(report));
+}
+
+/// Render the `--json` payload as a String so a test can assert it PARSES.
+/// PMAT-1390 split this out of `print_attestations_json`: the printer wrote
+/// straight to stdout, so nothing in-process could hold the bytes, and the
+/// invalid-JSON defect below shipped unnoticed under a test that only
+/// substring-matched the payload.
+///
+/// Hand-rolled JSON, same posture as `print_audit_json`. Schema:
+///   {
+///     "contracts_scanned": N,
+///     "roadmap_path": "...",
+///     "contracts": [{
+///       "id": "...", "mention_count": N,
+///       "work_items": [...],
+///       "preamble_mentions": N,
+///       "mentions": [{"work_item": "..."|null, "line": N, "snippet": "..."}]
+///     }],
+///     "unattested": ["...", ...]
+///   }
+///
+/// PMAT-1390: only `snippet` was routed through `escape_json`. `roadmap_path`,
+/// `work_items`, `work_item`, `id` and `unattested` were interpolated RAW, so
+/// any `"` or `\` reaching them broke the payload — reproduced with nothing
+/// exotic, a plain YAML-quoted work-item id (`- id: "P"`) emitted
+/// `"work_item":""P""` at exit 0. Every string now goes through `escape_json`;
+/// `\u{22}` is written `\"`, so a value that legitimately contains a quote
+/// survives as data instead of terminating the string.
+fn render_attestations_json(report: &AttestationReport) -> String {
+    let mut out = String::new();
     let mut first = true;
-    print!(
+    out.push_str(&format!(
         "{{\"contracts_scanned\":{},\"roadmap_path\":\"{}\",\"contracts\":[",
         report.contracts_scanned,
-        report.roadmap_path.display()
-    );
+        escape_json(&report.roadmap_path.display().to_string())
+    ));
     for c in &report.contracts {
         if !first {
-            print!(",");
+            out.push(',');
         }
         first = false;
-        let unique_items: std::collections::BTreeSet<&str> =
-            c.mentions.iter().map(|m| m.work_item.as_str()).collect();
-        let items_json: Vec<String> = unique_items.iter().map(|w| format!("\"{w}\"")).collect();
+        let unique_items = unique_work_items(&c.mentions);
+        let items_json: Vec<String> = unique_items
+            .iter()
+            .map(|w| format!("\"{}\"", escape_json(w)))
+            .collect();
+        let preamble = c.mentions.iter().filter(|m| m.work_item.is_none()).count();
         let mention_json: Vec<String> = c
             .mentions
             .iter()
             .map(|m| {
+                // `null`, not `""` — a mention with no enclosing work item is
+                // reported as having none, rather than as one whose id is the
+                // empty string.
+                let item = match &m.work_item {
+                    Some(w) => format!("\"{}\"", escape_json(w)),
+                    None => "null".to_string(),
+                };
                 format!(
-                    "{{\"work_item\":\"{}\",\"line\":{},\"snippet\":\"{}\"}}",
-                    m.work_item,
+                    "{{\"work_item\":{},\"line\":{},\"snippet\":\"{}\"}}",
+                    item,
                     m.line,
                     escape_json(&m.snippet)
                 )
             })
             .collect();
-        print!(
-            "{{\"id\":\"{}\",\"mention_count\":{},\"work_items\":[{}],\"mentions\":[{}]}}",
-            c.id,
+        out.push_str(&format!(
+            "{{\"id\":\"{}\",\"mention_count\":{},\"work_items\":[{}],\
+             \"preamble_mentions\":{},\"mentions\":[{}]}}",
+            escape_json(&c.id),
             c.mentions.len(),
             items_json.join(","),
+            preamble,
             mention_json.join(",")
-        );
+        ));
     }
-    print!("],\"unattested\":[");
+    out.push_str("],\"unattested\":[");
     let unattested_json: Vec<String> = report
         .unattested
         .iter()
-        .map(|u| format!("\"{u}\""))
+        .map(|u| format!("\"{}\"", escape_json(u)))
         .collect();
-    print!("{}", unattested_json.join(","));
-    println!("]}}");
+    out.push_str(&unattested_json.join(","));
+    out.push_str("]}\n");
+    out
 }
 
 /// Minimal JSON-string escape. Handles backslash, double-quote, and
@@ -2010,13 +2102,132 @@ roadmap:
 ";
         let mentions = scan_roadmap_for_id(yaml, "C-FOO");
         assert_eq!(mentions.len(), 2);
-        assert!(mentions.iter().all(|m| m.work_item == "PMAT-200"));
+        assert!(mentions
+            .iter()
+            .all(|m| m.work_item.as_deref() == Some("PMAT-200")));
     }
 
     #[test]
     fn scan_roadmap_returns_empty_when_id_absent() {
         let yaml = "- id: PMAT-1\n  title: 'foo'\n";
         assert!(scan_roadmap_for_id(yaml, "C-NOT-PRESENT").is_empty());
+    }
+
+    /// PMAT-1390. The fixture above starts AT `roadmap:` and therefore
+    /// cannot reach the defect: it has no preamble, so `current_item` is
+    /// already set by the time any mention is seen. The live
+    /// `docs/roadmaps/roadmap.yaml` opens with 189 lines of
+    /// `strategic_goals:` prose that mentions contract ids freely, and
+    /// every one of those mentions was attributed to a work item whose id
+    /// is the empty string.
+    #[test]
+    fn a_preamble_mention_belongs_to_no_work_item() {
+        let yaml = "\
+strategic_goals:
+  note: mentions C-FOO in the preamble
+roadmap:
+- id: PMAT-1
+  title: unrelated
+";
+        let mentions = scan_roadmap_for_id(yaml, "C-FOO");
+        // The mention is REAL and is retained — `quorum` scores the
+        // Extrinsic stratum from this count, so dropping it would trade
+        // one wrong number for another.
+        assert_eq!(mentions.len(), 1, "the preamble mention must be retained");
+        assert_eq!(
+            mentions[0].work_item, None,
+            "a preamble mention has no enclosing work item"
+        );
+        // The bug, stated as the property that failed: the tally.
+        assert_eq!(
+            unique_work_items(&mentions).len(),
+            0,
+            "ZERO work items attest C-FOO here; pre-PMAT-1390 this was 1"
+        );
+    }
+
+    /// PMAT-1390: the preamble phantom is only ever ONE extra item no
+    /// matter how many preamble lines mention the id, which is why the
+    /// live over-count was exactly +1 (69 reported, 68 real) and stayed
+    /// small enough to look plausible for months.
+    #[test]
+    fn many_preamble_mentions_still_add_no_work_item() {
+        let yaml = "\
+strategic_goals:
+  a: C-FOO here
+  b: C-FOO again
+  c: C-FOO once more
+roadmap:
+- id: PMAT-1
+  title: 'real attestation of C-FOO'
+";
+        let mentions = scan_roadmap_for_id(yaml, "C-FOO");
+        assert_eq!(mentions.len(), 4);
+        let items = unique_work_items(&mentions);
+        assert_eq!(items.len(), 1);
+        assert!(items.contains("PMAT-1"));
+    }
+
+    /// PMAT-1390: `- id: "P"` was taken verbatim, quotes included, unlike
+    /// the sibling `extract_metadata_id` which strips them.
+    #[test]
+    fn scan_roadmap_strips_quotes_from_a_work_item_id() {
+        for yaml in [
+            "roadmap:\n- id: \"P\"\n  c: C-FOO\n",
+            "roadmap:\n- id: 'P'\n  c: C-FOO\n",
+        ] {
+            let mentions = scan_roadmap_for_id(yaml, "C-FOO");
+            assert_eq!(mentions.len(), 1);
+            assert_eq!(mentions[0].work_item.as_deref(), Some("P"), "yaml: {yaml}");
+        }
+    }
+
+    /// PMAT-1390: a valueless `- id:` header must not invent an item
+    /// named "" — that is the same phantom by another route.
+    #[test]
+    fn a_valueless_id_header_opens_no_work_item() {
+        let yaml = "roadmap:\n- id: \n  c: C-FOO\n";
+        let mentions = scan_roadmap_for_id(yaml, "C-FOO");
+        assert_eq!(mentions.len(), 1);
+        assert_eq!(mentions[0].work_item, None);
+    }
+
+    /// PMAT-1390: the `--json` payload must be parseable. Asserted here on
+    /// the two inputs that broke it — a preamble mention (`""` work item)
+    /// and a quoted id (unescaped `"`) — plus a path and a snippet that
+    /// carry a quote and a backslash directly.
+    #[test]
+    fn render_attestations_json_escapes_every_string_field() {
+        let roadmap = "\
+strategic_goals:
+  note: C-FOO in the preamble
+roadmap:
+- id: \"P\"
+  title: 'a \\ backslash and a \" quote near C-FOO'
+";
+        let report = AttestationReport {
+            contracts_scanned: 2,
+            roadmap_path: PathBuf::from("/tmp/we\"ird\\path.yaml"),
+            contracts: vec![ContractAttestation {
+                id: "C-FOO".to_string(),
+                mentions: scan_roadmap_for_id(roadmap, "C-FOO"),
+            }],
+            unattested: vec!["C-QUO\"TE".to_string()],
+        };
+        let json = render_attestations_json(&report);
+        // The gate: it PARSES. `serde_json` is a dev-dependency of the
+        // xpile package, so this costs nothing at build time.
+        let v: serde_json::Value = serde_json::from_str(&json)
+            .unwrap_or_else(|e| panic!("payload is not JSON: {e}\n{json}"));
+        let c = &v["contracts"][0];
+        assert_eq!(c["mention_count"], 2);
+        assert_eq!(c["preamble_mentions"], 1);
+        assert_eq!(c["work_items"], serde_json::json!(["P"]));
+        // The preamble mention reports `null`, never `""`.
+        assert!(c["mentions"][0]["work_item"].is_null());
+        assert_eq!(c["mentions"][1]["work_item"], "P");
+        assert_eq!(v["roadmap_path"], "/tmp/we\"ird\\path.yaml");
+        assert_eq!(v["unattested"], serde_json::json!(["C-QUO\"TE"]));
     }
 }
 

@@ -9,6 +9,60 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`xpile attestations` counted a roadmap *preamble* mention as a work item,
+  and emitted invalid JSON — both at exit 0** (PMAT-1390). The Extrinsic-stratum
+  scoreboard reported `C-PY-INT-ARITH  87 mentions across 69 work item(s)` where
+  a real YAML parse of the same file finds 68, printed three nameless `      - `
+  bullets, and shipped `"work_items":[""]`. `scan_roadmap_for_id` seeded the
+  enclosing work item as `String::new()` and only reassigned on a column-0
+  `- id: ` line; `docs/roadmaps/roadmap.yaml` opens with ~189 lines of
+  `strategic_goals:` prose (`roadmap:` is line 190, the first `- id:` is 191)
+  that mention contract ids freely, so every one of those was attributed to a
+  work item whose id is the empty string — which both printers folded into the
+  unique-work-item set. The over-count is `+1` however many preamble lines
+  mention the id, which is why it read as plausible for months. Same `+1` on
+  `C-PY-FLOAT-ARITH` (11 vs 10) and `C-XLATE-PY-CLASS-TO-STRUCT` (5 vs 4).
+
+  The second defect needed no exotic input. Of the six strings in the
+  hand-rolled `--json` payload only `snippet` went through the `escape_json`
+  that already existed in the same file; `roadmap_path`, `work_items`,
+  `work_item`, `id` and `unattested` were interpolated raw. A plain YAML-quoted
+  work-item id (`- id: "P"`, taken verbatim — unlike the sibling
+  `extract_metadata_id`, which strips quotes) emitted `"work_item":""P""`,
+  which `json.load` rejects, at exit 0.
+
+  `work_item` is now `Option<String>`, so *no enclosing work item* is
+  represented rather than encoded as an empty string that reads like an id.
+  The preamble mention is **retained and disclosed**, not dropped: `xpile
+  quorum` derives the entire Extrinsic stratum from
+  `scan_roadmap_for_id(..).len()`, so discarding it would have traded one wrong
+  number for another. Every string now goes through `escape_json`;
+  `print_attestations_json` was split into a `String`-returning
+  `render_attestations_json` so a test can assert the payload *parses* — it
+  wrote straight to stdout before, which is how a substring-matching test
+  passed over bytes no JSON reader accepts.
+
+  `crates/xpile/tests/cli_attestation_tally_witness.rs` (XPILE-ATTESTTALLY-001,
+  a **new** file, so not a gate touch; 5 tests, 2.3 s measured) holds the
+  relation the defect violated rather than a copied expected value: for every
+  contract, the reported work-item tally must equal an independent reference
+  computed by walking the `serde_yaml`-parsed roadmap tree. It walks the tree
+  instead of re-serialising it, since re-serialisation can fold a long scalar
+  and split an id — agreeing with the line-scan under test for the wrong
+  reason. Both sides are vacuity-guarded. Red half run: 5/5 fail with the fix
+  reverted, 5/5 pass with it applied. The first draft of the escaping test
+  passed on *both* sides — its specials landed only in `snippet`, the one field
+  already escaped — and was strengthened to put a quote in the contract id
+  itself.
+
+  Stated honestly: `attested` still means "mentioned anywhere in the roadmap",
+  so a contract named only in the preamble counts as attested while carrying
+  zero work-item votes. That is 0 of 34 contracts on the live corpus, so
+  nothing flips today, and the text report now says so explicitly when it is
+  not zero; changing the attested/unattested *semantics* is deferred rather
+  than churned on a release week. `xpile quorum` output is byte-unchanged by
+  construction.
+
 - **`docs/roadmaps/roadmap.yaml` was invalid YAML for five commits and the
   ledger gate reported it green the whole time** (PMAT-1398). The PMAT-1388
   ledger row's `description:` is a single-quoted YAML scalar, and three
