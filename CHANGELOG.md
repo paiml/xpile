@@ -9,6 +9,67 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`ruchy run` on an xpile-emitted `.ruchy` exited 0 having executed
+  NOTHING** (PMAT-1384). `ruchy run` is the target toolchain's own runner and
+  the obvious thing to do with a `.ruchy` file. It evaluates a module as a
+  sequence of top-level items and only **auto-invokes `main` when `main` is the
+  module's sole item**. `xpile-ruchy-codegen` emitted `fun main() -> () { … }`
+  and never called it, so every module carrying a helper function alongside
+  `main` **defined everything and ran nothing** — exiting 0 with empty stdout
+  where CPython printed real output. Measured 2026-07-27 through the shipped
+  CLI (ruchy v4.2.1) against live CPython, not asserted:
+
+  | `tests/oracle_fixtures/` | `python3` (first lines) | `ruchy run`     |
+  |---------------------------|-------------------------|-----------------|
+  | `recursion`               | `120` / `3628800`       | rc=0, *(empty)* |
+  | `optional_flow`           | `0` / `8`               | rc=0, *(empty)* |
+  | `optional_guard_continue` | `8` / `2`               | rc=0, *(empty)* |
+  | `range_bool_bound`        | 8 lines                 | rc=0, *(empty)* |
+  | `str_and_fstring`         | 4 lines                 | rc=0, *(empty)* |
+
+  `emit_module` now emits the entry-point invocation `main()` when the module
+  defines a zero-parameter `main`. Each of the five above instead fails
+  **loudly** (rc=1) naming a real ruchy-interpreter limitation — `Unknown
+  integer method: checked_sub`, `Cannot cast boolean to i64`, … — rather than
+  returning a clean, wrong, empty answer. Re-measured over the whole 38-fixture
+  corpus: emit 38 → 38, `ruchy check` (parse) 18 → 18, **`ruchy run` exit 0
+  7 → 2**, of which correct 1 → 1. The exit-0 count *dropping* is the point:
+  five of the seven were false. Both other paths were verified against ruchy
+  v4.2.1 rather than assumed — a sole-`main` module does **not** double-run,
+  and `ruchy transpile` drops a bare top-level call, so the
+  Ruchy→Rust→`rustc` chain emits identical Rust and identical output.
+
+  **Residual pinned, not hidden**: the one remaining exit-0 divergence is
+  `fstr_str_precision`, which prints `""""["""{:.3}"""""]""` where CPython
+  prints `[hel]`. That is a ruchy-**interpreter** limitation, not an xpile
+  miscompile — the emitted `format!("{:.3}", s)` is correct Rust, and the same
+  fixture byte-matches CPython through the `ruchy transpile` → `rustc` chain.
+  It is listed in `KNOWN_INTERPRETER_DIVERGENCES`, so a future ruchy release
+  fixing it turns the witness **red** and forces the disclosure to be
+  re-derived.
+
+  New witness **XPILE-RUCHYRUN-001**
+  (`crates/xpile/tests/ruchy_run_witness.rs`, 4 tests) holds the property
+  `rc == 0 ⟹ stdout byte-matches CPython` over the **whole** corpus, including
+  rows that fail today, so a change that starts executing one is immediately
+  checked for correctness instead of quietly going green. The executing half is
+  load-bearing: every pre-fix module was valid ruchy and every one exited 0, so
+  a syntax- or exit-status-only check stays green through the entire defect.
+  Verified red without the fix (3 of 4 tests fail, naming exactly the five
+  fixtures). `XPILE_REQUIRE_RUCHY=1` tripwire; skips with a reason in CI, which
+  installs wabt and nothing else (see PMAT-1375's `backend-exec` job).
+
+- **A stale, and wrong, count in the Ruchy lane's own honest-scope
+  disclosure** (PMAT-1384). `ruchy_exec_witness.rs` claimed "``ruchy run``
+  (interpret) executes 5/34". It counted **exit 0 as execution**, and 5 of
+  those clean exits had run nothing at all — a false claim inside the comment
+  block written to be honest about scope. Corrected and re-derived against the
+  live 38-fixture corpus. The same sweep found the curated executing set
+  **under-claiming**: `if_branch_rebound` completes the Ruchy→Rust→`rustc`
+  chain and matches CPython and had simply never been added, so
+  `RUCHY_EXECUTABLE_FIXTURES` goes 7 → 8 (live 8, floor 7 — no
+  `witness_floor.rs` touch; floors are lower bounds).
+
 - **`--target shell` emitted a script that RAN DIFFERENTLY from its Python
   source, and exited 0 doing it** (PMAT-1383). `BashrsBackend::lower` walked
   each function body through a `filter` that kept the six renderable `Stmt`

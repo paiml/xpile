@@ -1211,6 +1211,71 @@ queue:
     crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 
+- id: PMAT-1384
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`ruchy run` on an xpile-emitted `.ruchy` exited 0 having EXECUTED NOTHING -- the emitter
+    never called `main`, and the lane''s own honest-scope comment counted those clean exits as
+    executions (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED by executing PMAT-1383's next-pick note, which names the ruchy/lean/forjar
+    string-compare backends as the ONE remaining unswept emit path. The queue is empty before
+    Thursday.
+    ** FORJAR AND LEAN ARE HONEST -- swept in the same pass, recorded so the next fire does not
+    re-derive it. forjar's `render_command_sequence` ends in an `other =>` arm that refuses every
+    non-command Stmt BY NAME (and refuses loops/conditionals with a specific idempotence-guard
+    rationale); lean refuses a non-Ident trailing return, a multi-while function, and statements
+    after the while. Neither carries the PMAT-1383 silent-drop shape.
+    ** THE DEFECT WAS IN RUCHY, and not in the emitted CODE but in what the emitted MODULE does
+    under the target toolchain's OWN runner. `ruchy run` evaluates a module as a sequence of
+    top-level items and only auto-invokes `main` when `main` is the SOLE item. xpile emitted
+    `fun main() -> () { ... }` and never called it, so any module with a helper function alongside
+    `main` DEFINED everything and RAN NOTHING. Five execution-witnessed rows over
+    tests/oracle_fixtures (ruchy v4.2.1): recursion (CPython 120/3628800), optional_flow (0/8),
+    optional_guard_continue (8/2), range_bool_bound (8 lines), str_and_fstring (4 lines) -- every
+    one exit 0 with EMPTY stdout.
+    ** THE FIX: `emit_module` emits the entry-point invocation `main()` when the module defines a
+    zero-parameter `main`. Each of the five now fails LOUDLY (rc=1) naming a real ruchy-interpreter
+    limitation (`Unknown integer method: checked_sub`, `Cannot cast boolean to i64`, ...).
+    ** MEASURED over all 38 fixtures, before -> after: emit 38->38, `ruchy check` 18->18, `ruchy
+    run` exit-0 7->2, of which correct 1->1. The exit-0 count DROPPING is the point: five of the
+    seven were false. Parse acceptance unchanged, so the trailing call costs nothing.
+    ** BOTH other paths verified against the live toolchain, NOT assumed: a sole-`main` module does
+    NOT double-run, and `ruchy transpile` DROPS a bare top-level call, so all 8 fixtures completing
+    the Ruchy->Rust->rustc chain emit identical Rust and identical output.
+    ** SECOND, DISJOINT FIX -- a false claim inside the comment written to be honest:
+    ruchy_exec_witness.rs said "`ruchy run` (interpret) executes 5/34". It counted EXIT 0 as
+    execution and 5 of those had run nothing. Corrected and re-derived on the live 38-fixture
+    corpus. The same sweep found RUCHY_EXECUTABLE_FIXTURES UNDER-claiming -- if_branch_rebound
+    completes the chain and matches CPython and had never been added; 7 -> 8.
+    ** WITNESS XPILE-RUCHYRUN-001 (crates/xpile/tests/ruchy_run_witness.rs, 4 tests): the property
+    `rc == 0 ==> stdout byte-matches CPython`, asserted over the WHOLE corpus INCLUDING today's
+    failing rows, with vacuity guards on BOTH sides. Verified RED without the fix (3 of 4 fail,
+    naming exactly the five fixtures). XPILE_REQUIRE_RUCHY=1 tripwire.
+    ** HARNESS-BEFORE-SUBJECT, carry this one: my first sweep ran each fixture bare under python3
+    and got EMPTY expected output for all 38 -- the fixtures define `main()` and do NOT call it
+    (the xpile_oracle convention). Empty-expected AGREES with the very defect under test, so the
+    broken harness reported every fixture as diverging in the WRONG direction. Same class as the
+    crates.io User-Agent trap: uniform failure across N independent items means the harness is
+    broken, not the subject.
+    ** RESIDUAL PINNED: fstr_str_precision still exits 0 with WRONG output under `ruchy run` -- the
+    interpreter echoes the format spec `{:.3}` back literally (wrapped in quote runs) instead of
+    truncating to `[hel]`. A ruchy-INTERPRETER limitation, proven NOT to be an xpile miscompile by
+    the same fixture matching CPython through `ruchy transpile` -> rustc. Held in
+    KNOWN_INTERPRETER_DIVERGENCES so a ruchy release fixing it REDS the witness.
+    ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+    PMAT-1373). Ruchy lane live 8 vs floor 7 -- floors are lower bounds.
+    NEXT PICK: nothing is OPEN before Thursday and ALL SIX emit lanes are now swept (bashrs, WASM,
+    Rust oracle, decy/C, Python->shell, ruchy/lean/forjar). A Tue/Wed fire should extend a pinned
+    residual (the PMAT-1383 empty-script residual, or this one's KNOWN_INTERPRETER_DIVERGENCES if
+    ruchy ships a fix), sweep a NON-emit surface (the CLI's own flag/exit-code honesty, or the
+    xpile-contract-backend), or do CHANGELOG polish toward PMAT-1373's three mandatory sections. Do
+    NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
+    crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
+    gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
+
 - id: PMAT-1373
   status: open
   ev_rank: R1

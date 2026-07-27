@@ -308,6 +308,34 @@ pub fn emit_module(module: &Module) -> Result<String, RuchyCodegenError> {
             }
         }
     }
+    // PMAT-1384: emit the ENTRY-POINT INVOCATION. `ruchy run` evaluates a
+    // `.ruchy` file as a sequence of top-level items and only auto-invokes
+    // `main` when it is the module's SOLE item. Every emitted module with a
+    // helper function alongside `main` therefore DEFINED everything and RAN
+    // NOTHING — `ruchy run` exited 0 printing empty where CPython printed
+    // real output (measured 2026-07-27, ruchy v4.2.1, over
+    // tests/oracle_fixtures: recursion, optional_flow,
+    // optional_guard_continue, range_bool_bound, str_and_fstring all exited 0
+    // with NO stdout). Exit 0 + wrong output is the silent-wrong-answer class
+    // the honesty lane exists to remove: with the call emitted, each instead
+    // fails LOUDLY (rc=1) naming a real ruchy-interpreter limitation, or runs
+    // correctly.
+    //
+    // Safe on both other paths, verified against ruchy v4.2.1 rather than
+    // assumed:
+    //   * sole-`main` modules do NOT double-run (`ruchy run` prints once with
+    //     the explicit call present) — `if_branch_rebound` still byte-matches
+    //     CPython;
+    //   * `ruchy transpile` (the Ruchy→Rust→rustc chain the XPILE-WITNESS-003
+    //     fixtures use) DROPS a bare top-level call, so the generated Rust and
+    //     its output are unchanged.
+    if module
+        .items
+        .iter()
+        .any(|i| matches!(i, Item::Function(f) if f.name == "main" && f.params.is_empty()))
+    {
+        writeln!(out, "main()")?;
+    }
     Ok(out)
 }
 
