@@ -2010,34 +2010,102 @@ queue:
 
     someone else''s schedule into this repo''s merge queue.'
 - id: PMAT-1389
-  status: open
+  status: done
   ev_rank: R2
   gate_touch: null
   date: '2026-07-27'
-  title: positional-only parameters (`/`) are SILENTLY DELETED from the signature — the caller's positional
-    args shift left and rust/wasm/lean/ruchy all return a different answer than CPython
-  notes: "Best EV-per-byte in the sweep: a ONE-PREDICATE edit that kills a clean-compiling,\ncleanly-EXECUTING\
-    \ wrong answer on FOUR backends from a single frontend hole.\nSHARPENED REPRO (I re-ran it at f74ebe61;\
-    \ the DEFAULTED variant is the load-bearing one):\n  D=$(mktemp -d); cd $D\n  printf 'def f(a: int,\
-    \ /, b: int = 2) -> int:\\n    return b\\n\\ndef run() -> int:\\n    return f(9)\\n' > m.py\n  python3\
-    \ -c \"import sys;sys.path.insert(0,'$D');import m;print(m.run())\"     # -> 2\n  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n\
-    \  $X transpile $D/m.py --target rust --contracts off > m.rs 2>m.err\n  echo \"rc=$? stderr=$(wc -c\
-    \ <m.err)\"                                          # -> rc=0 stderr=0\n  cat m.rs   # -> pub fn\
-    \ f(b: i64) -> i64 { b }   <- `a` DELETED\n             #    pub fn run() -> i64 { f(9i64) } <- 9\
-    \ re-binds to `b`\n  { cat m.rs; echo 'fn main(){ println!(\"{}\", run()); }'; } > mf.rs\n  rustc\
-    \ --edition 2021 mf.rs --out-dir od && ./od/mf                           # -> 9   (python3: 2)\nROOT\
-    \ CAUSE: crates/depyler-frontend/src/lib.rs:6033 guards `kwonlyargs`/`kwarg` but NOT\n`posonlyargs`;\
-    \ the param loop at :6059 iterates `f.args.args` and `f.args.posonlyargs` is never\nread for module-level\
-    \ functions.\nFIX (S): extend the :6033 disjunction with `|| !f.args.posonlyargs.is_empty()` and reuse\
-    \ the\nwording of the nested-fn refusal that ALREADY EXISTS one screen away at lib.rs:16095.\nSCOPE\
-    \ BOUND (verified, encode as tests): nested fn with `/` already refuses (:16095); lambda\nwith `/`\
-    \ already refuses (:16287); a class method accidentally refuses (`self` lands in\nposonlyargs -> \"\
-    has no `self` first parameter\"). ONLY module-level functions leak.\nTRAP: `*args` is handled CORRECTLY\
-    \ today (`def total(*args: int)` -> `pub fn total(args: Vec<i64>)`,\npython3 and the lowered form\
-    \ both give 6). Do NOT touch the vararg path.\nACCEPTANCE:\n  $X transpile $D/m.py --target rust;\
-    \ echo $?          # -> 1, message names positional-only `/`\n  for t in wasm lean ruchy; do $X transpile\
-    \ $D/m.py --target $t; echo \"$t=$?\"; done   # all 1\n  command cargo test -p depyler-frontend &&\
-    \ command cargo test -p xpile --test transpile_e2e\n"
+  title: positional-only parameters (`/`) were SILENTLY DELETED from the signature — the caller's
+    positional args shifted left and rust/wasm/lean/ruchy each compiled AND EXECUTED a different
+    answer than CPython (SHIPPED 2026-07-27)
+  notes: 'PICKED as the lowest-numbered OPEN item dated <= today, R1 within the day being taken
+    already (PMAT-1388 shipped as #1975 before this slate merged).
+
+    ** THE DEFECT, measured through the shipped CLI at c1d7db19 BEFORE fixing. `def f(a: int, /,
+    b: int = 2) -> int: return b` with `def run(): return f(9)` prints 2 under CPython. `xpile
+    transpile --target rust` exited 0 with ZERO bytes of stderr and emitted `pub fn f(b: i64)`
+    — `a` deleted — with the call site `f(9i64)`, so 9 re-bound to `b`. rustc accepted it and
+    the binary printed 9. The DEFAULTED second parameter is the load-bearing detail: once `a` is
+    dropped the call site has exactly as many arguments as the mutilated signature has
+    parameters, so nothing downstream can notice. wasm/lean/ruchy all exited 0 the same way.
+
+    ** ROOT CAUSE: crates/depyler-frontend/src/lib.rs lower_function guarded kwonlyargs/kwarg but
+    never read f.args.posonlyargs, and the param loop iterates f.args.args alone. The scope bound
+    in the slate held on re-measurement: desugar_nested_fn and desugar_closure_assign already
+    refused `/`; module-level functions were the only leak.
+
+    ** THE FIX: its OWN refusal arm naming positional-only parameters and the `/` separator, not
+    an extra disjunct on the keyword-only guard — a caller told "keyword-only args / **kwargs"
+    for a `/` inspects the wrong end of the signature. Splitting refusals by KIND is the standing
+    lesson from PMAT-1371/1377.
+
+    ** THE WITNESS: crates/xpile/tests/posonly_param_witness.rs (XPILE-POSONLY-001, NEW FILE, so
+    not a gate touch), 4 tests, 0.19s MEASURED via `--nocapture` rather than assumed. Load-bearing
+    assertion is the RELATION the defect violated, not a list of spellings that must refuse: for
+    every probe and every lane, either the frontend refuses or every parameter the `def` declares
+    appears in the emitted signature. That survives `/` ever being SUPPORTED. RED HALF RUN: with
+    the frontend edit stashed it fails with 16 violations (4 `/` probes x 4 lanes) and the
+    refusal-wording test fails too; the 2 controls pass on both sides, which is the shape a real
+    red-then-green has. The execution half transpiles + rustc-compiles + RUNS the `/`-free
+    control and diffs against CPython (both 2; the Rust side printed 9 pre-fix), and prints both
+    observed values plus its wall clock so a reader can tell a differential from a silent skip.
+
+    ** TWO TRAPS HIT AND RECORDED. (a) The first probe corpus named its parameters `a`/`b`; the
+    WAT lane ALWAYS emits an `__wasm_floordiv_i64` helper with `(param $a i64) (param $b i64)`,
+    so the presence check found them in every emission and would have passed VACUOUSLY. Probes
+    renamed to alpha/beta/items. (b) The accepted-pairs vacuity floor is 7, not the obvious 8:
+    the Lean lane refuses the `*args` control for an unrelated pre-existing reason (`for x in
+    xs:` needs a monadic-iteration encoding it does not have). MEASURED, not assumed.
+
+    ** No gate file touched; witness_floor.rs untouched (2-touch serial resource, second touch
+    reserved for PMAT-1373).
+
+    NEXT PICK: PMAT-1390 (R3, dated today) — `xpile attestations` counting a roadmap PREAMBLE
+    mention as a work item and emitting invalid JSON at rc=0. ★ WHILE MEASURING THIS SLICE a
+    SEPARATE defect in the same file surfaced and is now queued as PMAT-1398: docs/roadmaps/
+    roadmap.yaml has been INVALID YAML since 968d352d (PMAT-1388) — three unescaped apostrophes
+    inside a single-quoted scalar (`xpile''s`, `box''s`, `crate''s` written with ONE quote) end
+    the scalar early, and NO YAML parser can read the file. roadmap_registration.rs did not catch
+    it because all three of its assertions are pure TEXT (`- id:` line matching), so the ledger
+    gate reports registration green over a file that does not parse. Take PMAT-1398 with or
+    before PMAT-1390 — they touch the same reporter surface.'
+- id: PMAT-1398
+  status: open
+  ev_rank: R3
+  gate_touch: null
+  date: '2026-07-27'
+  title: docs/roadmaps/roadmap.yaml has been INVALID YAML since 968d352d and the ledger gate did
+    not notice, because all three of roadmap_registration.rs''s assertions are pure TEXT
+  notes: 'FOUND WHILE MEASURING PMAT-1389, not by a hunt. Reproduce on main:
+
+    python3 -c "import yaml; yaml.safe_load(open(''docs/roadmaps/roadmap.yaml''))"
+    -> yaml.parser.ParserError: while parsing a block mapping ... expected <block end>
+
+    ** THE DEFECT: the PMAT-1388 ledger row''s `description:` is a SINGLE-QUOTED YAML scalar, and
+    three apostrophes inside it are written with ONE quote instead of the doubled `''` YAML
+    requires — `is "xpile''s output, not a hardcoded shader"`, `box''s Vulkan adapter`, `crate''s
+    own dummy_module()`. (Written here doubled; on main they are single.) The first lone quote
+    ENDS the scalar, so everything after it is re-parsed as YAML structure and the file stops
+    loading at the first line that looks like a mapping key (`items: Vec::new() }`). Note the
+    SAME entry escapes correctly four lines earlier (`audit''s`), so this is a slip, not a
+    convention.
+
+    ** WHY NOTHING CAUGHT IT: crates/xpile/tests/roadmap_registration.rs asserts
+    (1) every done queue item appears as a `- id:` ROW, (2) every cited id since the tag is
+    registered, (3) the pre-commit guard paths exist. All three are `contains` / line matching
+    over the raw text. The ledger gate therefore reports registration GREEN over a file no YAML
+    parser can read — the exact reporter shape PMAT-1385/1386/1387/1390 keep finding, one level
+    up, in the gate rather than the tool. `xpile attestations` and `xpile quorum` also scan this
+    file textually, which is why the CLI does not fail either.
+
+    ** THE FIX (S): double the three apostrophes. THE GATE (the actual slice): a test that
+    PARSES both docs/roadmaps/*.yaml and fails if either does not load. Cheapest honest form is
+    a new test file, NOT an edit to roadmap_registration.rs — that file is a gate and the
+    gate chain is pinned by PMAT-1373''s gate_touch:3 this window. Check whether the workspace
+    already has serde_yaml in dev-deps; if not, a 3-line scalar-quoting linter over the file is
+    still strictly better than nothing, but prefer a real parser.
+
+    ** ACCEPTANCE: the reproducer above exits 0; the new test FAILS when any one apostrophe is
+    un-doubled again (run the red half); roadmap_registration.rs still passes UNCHANGED.'
 - id: PMAT-1390
   status: open
   ev_rank: R3

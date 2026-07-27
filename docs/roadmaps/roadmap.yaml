@@ -16877,3 +16877,83 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1389
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1389: [honesty/frontend] positional-only parameters (everything left of a `/`)
+    were SILENTLY DELETED from the emitted signature. `lower_function` guarded `kwonlyargs`
+    and `kwarg` but never read `posonlyargs`, and its param loop iterates `f.args.args`
+    alone, so each call site''s positional arguments shifted left onto whatever parameters
+    remained -- and the result COMPILED and EXECUTED. `def f(a: int, /, b: int = 2) -> int:
+    return b` called as `f(9)` is 2 under CPython and printed 9 from the emitted Rust, at
+    exit 0 with an empty stderr, on the rust/wasm/lean/ruchy lanes at once.'
+  description: 'PICKED as the lowest-numbered OPEN item dated <= today. Measured through the
+    shipped CLI at c1d7db19 before fixing: `xpile transpile m.py --target rust` exited 0 with
+    ZERO bytes of stderr and emitted `pub fn f(b: i64) -> i64 { b }` with the call site
+    `f(9i64)`. rustc accepted it; the binary printed 9. The DEFAULTED second parameter is the
+    load-bearing detail -- once `a` is dropped the call site has exactly as many arguments as
+    the mutilated signature has parameters, so nothing downstream can notice. This is the
+    cheapest instance of the window''s recurring shape: one frontend predicate, four backends,
+    a clean-compiling and cleanly-executing wrong answer.
+    ** THE FIX: a refusal arm of its OWN naming positional-only parameters and the `/`
+    separator, rather than an extra disjunct on the keyword-only guard -- a caller told
+    "keyword-only args / **kwargs" for a `/` inspects the wrong end of the signature.
+    Splitting refusals by KIND is the standing lesson from PMAT-1371/1377. The scope bound
+    from the slate held on re-measurement: `desugar_nested_fn` and `desugar_closure_assign`
+    already refused `/`, so module-level functions were the only leak, and the `*args` path
+    (handled CORRECTLY today) is untouched.
+    ** THE WITNESS: crates/xpile/tests/posonly_param_witness.rs (XPILE-POSONLY-001, a NEW
+    file, so not a gate touch), 4 tests, 0.19 s MEASURED with `--nocapture` rather than
+    assumed. The load-bearing assertion is the RELATION the defect violated, not a list of
+    spellings that must refuse: for every probe and every lane, either the frontend refuses or
+    every parameter the `def` line declares appears in the emitted signature. That stays true
+    if `/` is ever SUPPORTED instead of going stale. RED HALF RUN: with the frontend edit
+    stashed it fails with 16 violations (4 `/` probes x 4 lanes) and the refusal-wording test
+    fails as well, while both controls pass on both sides -- the shape a real red-then-green
+    has. The execution half transpiles, rustc-compiles, RUNS the `/`-free control and diffs it
+    against CPython (both print 2; the Rust side printed 9 pre-fix), printing both observed
+    values and its wall clock so a reader can tell a differential from a silent skip. Two
+    `depyler-frontend` unit tests cover the refusal and the over-refusal guard.
+    ** TWO TRAPS HIT AND RECORDED. (a) The first probe corpus named its parameters `a`/`b`;
+    the WAT lane ALWAYS emits an `__wasm_floordiv_i64` helper with `(param $a i64) (param $b
+    i64)`, so the presence check found them in every emission and would have passed VACUOUSLY.
+    Probes renamed to alpha/beta/items. (b) The accepted-pairs vacuity floor is 7, not the
+    obvious 8: the Lean lane refuses the `*args` control for an unrelated pre-existing reason
+    (`for x in xs:` needs a monadic-iteration encoding that lane does not have). Measured.
+    ** No gate file touched; witness_floor.rs untouched (two-touch serial resource, second
+    touch reserved for PMAT-1373).'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1398
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1398: [honesty/ledger] docs/roadmaps/roadmap.yaml has been INVALID YAML since
+    968d352d and the ledger gate did not notice -- all three of roadmap_registration.rs''s
+    assertions are pure TEXT (`- id:` line matching), so it reports registration GREEN over a
+    file no YAML parser can read. Found while measuring PMAT-1389, not by a hunt.'
+  description: 'QUEUED, NOT YET FIXED -- registered now so the finding is not re-derived.
+    Reproduce on main: `python3 -c "import yaml;
+    yaml.safe_load(open(''docs/roadmaps/roadmap.yaml''))"` -> ParserError. The PMAT-1388 row''s
+    `description:` is a single-quoted YAML scalar and three apostrophes inside it are written
+    with ONE quote instead of the doubled `` '' `` YAML requires; the first lone quote ends the
+    scalar and the rest is re-parsed as structure. The same entry escapes correctly four lines
+    earlier, so it is a slip rather than a convention. The fix is to double the three
+    apostrophes; the SLICE is a test that PARSES both docs/roadmaps/*.yaml, authored as a NEW
+    test file rather than an edit to roadmap_registration.rs, which is a gate and is pinned by
+    PMAT-1373''s gate_touch:3 this window.'
+  status: open
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

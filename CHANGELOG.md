@@ -9,6 +9,52 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **Positional-only parameters (everything left of a `/`) were silently deleted
+  from the emitted signature, and the emitted code compiled and executed with
+  the wrong answer** (PMAT-1389). `lower_function` in `depyler-frontend`
+  guarded `kwonlyargs` and `kwarg` but never read `posonlyargs`, and its
+  parameter loop iterates `f.args.args` alone. Every parameter left of a `/`
+  vanished from the signature and each call site's positional arguments shifted
+  left onto whichever parameters remained. Measured through the shipped CLI at
+  `c1d7db19`:
+
+  ```text
+  def f(a: int, /, b: int = 2) -> int:      python3 -> 2
+      return b
+  def run() -> int:
+      return f(9)
+
+  xpile transpile m.py --target rust        rc=0, 0 bytes of stderr
+    pub fn f(b: i64) -> i64 { b }           <- `a` gone
+    pub fn run() -> i64 { f(9i64) }         <- 9 re-binds to `b`
+  rustc m.rs && ./m                         -> 9      (CPython: 2)
+  ```
+
+  The defaulted second parameter is what made this survive every downstream
+  check: after `a` is dropped, the call site has exactly as many arguments as
+  the mutilated signature has parameters, so the emitted Rust *compiles*. The
+  same hole reached the wasm, lean and ruchy lanes — one frontend predicate,
+  four backends emitting a clean-compiling, cleanly-executing wrong answer at
+  exit 0.
+
+  `/` now refuses, as its own arm rather than an extra disjunct on the
+  keyword-only guard: a caller told "keyword-only args / \*\*kwargs" for a `/`
+  would inspect the wrong end of the signature. The nested-function and lambda
+  paths already refused `/`; module-level functions were the only leak.
+  `*args` is handled correctly today and is untouched.
+
+  Gated by `crates/xpile/tests/posonly_param_witness.rs` (XPILE-POSONLY-001, 4
+  tests, 0.19 s measured) plus two `depyler-frontend` unit tests. The
+  load-bearing assertion is the *relation the defect violated* rather than a
+  list of spellings that must refuse — for every probe and every lane, either
+  the frontend refuses or every parameter the `def` line declares appears in
+  the emitted signature — so it stays true if `/` is ever supported instead of
+  going stale. On unmodified `main` it fails with 16 violations (four `/`
+  probes × four lanes). The red half is executed: the `/`-free spelling of the
+  same program is transpiled, compiled with `rustc`, run, and compared against
+  CPython (both print `2`; the Rust side printed `9` before the fix), so the
+  refusal cannot have been bought by killing the lane.
+
 - **`xpile transpile <anything> --target spirv` exited `0` emitting a SPIR-V
   binary for a program the user never wrote** (PMAT-1388). The SPIR-V lane's
   general emitter bound its `Module` argument to `_module` and discarded it,
