@@ -6587,3 +6587,127 @@ fn binding_name_check_is_order_independent() {
         .to_string();
     assert!(err.contains("`A` is bound more than once"), "{err}");
 }
+
+// ─── PMAT-1419: source-language guard ────────────────────────────────
+//
+// The emitted integer lowering is PYTHON's (unbounded `int`, and a
+// `$__wasm_floordiv_i64` helper whose own generated comment reads
+// `(Python //)`). `emit_module` never read `module.source_lang`, so every
+// other frontend that reached this backend got Python semantics SILENTLY —
+// measured on the tracked `c_int_arith.c`, `half(-7)` returned -4 where both
+// `gcc` and xpile's own `--target rust` return -3. These tests pin the guard
+// per `SourceLang` variant, constructing the module directly so that each
+// refusal is attributable to the LANGUAGE rather than to some unsupported
+// construct tripping first.
+
+fn module_in(lang: SourceLang, items: Vec<Item>) -> Module {
+    Module {
+        name: "m".into(),
+        source_lang: lang,
+        items,
+        ffi_boundaries: Vec::new(),
+    }
+}
+
+#[test]
+fn refused_source_languages_name_the_language_and_redirect() {
+    // The SAME item set in each case — a plainly supported `add(a, b)`, which
+    // Python emits fine (see the positive control below) — so a refusal here
+    // can only be coming from the source-language guard.
+    for lang in [SourceLang::Shell, SourceLang::Ruchy, SourceLang::Lean] {
+        let m = module_in(lang, vec![Item::Function(add_fn())]);
+        let err = emit_module(&m).expect_err("guard must refuse").to_string();
+        assert!(
+            err.contains("WASM backend does not lower a"),
+            "{lang:?} must be refused BY THE SOURCE-LANGUAGE GUARD, not incidentally \
+             by an unsupported construct — otherwise a module made only of supported \
+             constructs would still emit Python semantics. Got: {err}"
+        );
+        assert!(
+            err.contains("--target rust"),
+            "{lang:?} refusal must redirect to a backend with a real path; got: {err}"
+        );
+    }
+}
+
+#[test]
+fn c_family_integer_arithmetic_is_refused_but_the_scalar_return_path_is_not() {
+    // SPLIT BY KIND. C is NOT refused wholesale: PMAT-1395 built a real C
+    // scalar-ABI RETURN path and value-matched it against `cc`. Every probe in
+    // that corpus is a LITERAL return, which is exactly why it never observed
+    // the arithmetic divergence. So arithmetic must refuse and literal returns
+    // must keep emitting — asserting only the first would let a blanket
+    // refusal (which deletes a witnessed capability) pass this test.
+    for lang in [SourceLang::C, SourceLang::Cpp, SourceLang::Cuda] {
+        let arith = module_in(lang, vec![Item::Function(add_fn())]);
+        let err = emit_module(&arith)
+            .expect_err("C-family integer arithmetic must refuse")
+            .to_string();
+        assert!(
+            err.contains("does not lower INTEGER ARITHMETIC"),
+            "{lang:?} arithmetic must be refused by the integer-semantics belt, \
+             naming the divergence rather than the language: {err}"
+        );
+
+        // The PMAT-1395 shape: a literal return, no arithmetic. Must still emit.
+        let lit = module_in(
+            lang,
+            vec![Item::Function(Function {
+                name: "f".into(),
+                params: Vec::new(),
+                return_type: Type::I64,
+                body: Block {
+                    stmts: Vec::new(),
+                    trailing_return: Expr::LitInt(2),
+                },
+            })],
+        );
+        assert!(
+            emit_module(&lit).is_ok(),
+            "{lang:?} literal returns are the PMAT-1395 scalar-ABI path, verified \
+             against the real C compiler — this guard must not delete them"
+        );
+    }
+}
+
+#[test]
+fn python_and_the_wat_lift_are_still_lowered() {
+    // POSITIVE CONTROL. Without this, a guard that refused EVERYTHING would
+    // satisfy the two tests above.
+    for lang in [SourceLang::Python, SourceLang::Wasm] {
+        let m = module_in(lang, vec![Item::Function(add_fn())]);
+        assert!(
+            emit_module(&m).is_ok(),
+            "{lang:?} is a faithful surface for this backend and must still emit \
+             (Wasm is the lift's round-trip fixed point `emit(lift(emit(M))) == \
+             emit(M)`, whose image is this backend's OWN emit)"
+        );
+    }
+}
+
+#[test]
+fn rust_labelled_modules_are_still_lowered() {
+    // `SourceLang::Rust` is THIS LANE'S OWN label — its contract is
+    // `C-COMPILE-RUST-TO-WASM` and 107 sites across 75 witness files in this
+    // crate build Rust-labelled modules. An earlier cut of the guard admitted
+    // Rust only when integer-free; that broke `dict_clear_witness` and friends,
+    // which is how the true extent of the labelling was measured.
+    let m = module_in(SourceLang::Rust, vec![Item::Function(add_fn())]);
+    assert!(
+        emit_module(&m).is_ok(),
+        "Rust-labelled modules carrying integer arithmetic are the bulk of this \
+         crate's witness corpus and must keep lowering"
+    );
+}
+
+#[test]
+fn the_diffexec_general_module_still_emits_through_the_guard() {
+    // Directly exercise the one in-tree producer of `SourceLang::Rust`
+    // modules, rather than trusting the reconstruction above to match it.
+    let wat = general_module_wat();
+    assert!(
+        wat.starts_with("(module"),
+        "the differential witness's own module must survive the guard; got: {}",
+        &wat[..wat.len().min(120)]
+    );
+}

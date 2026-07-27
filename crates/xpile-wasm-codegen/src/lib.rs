@@ -180,7 +180,8 @@ use xpile_backend::{
 use xpile_contracts::ContractId;
 use xpile_meta_hir::{
     BinOp, Block, DictViewKind, Expr, FloatOp, Function, Item, ListMutateOp, ListQueryOp, Module,
-    NumBuiltinOp, PairIterKind, Param, SetOp, SetPredOp, SortKey, Stmt, StrMethodOp, Type, UnOp,
+    NumBuiltinOp, PairIterKind, Param, SetOp, SetPredOp, SortKey, SourceLang, Stmt, StrMethodOp,
+    Type, UnOp,
 };
 
 mod wasm_diffexec;
@@ -12583,6 +12584,12 @@ fn try_fold_strformat_to_concat(fmt: &str, args: &[Expr]) -> Option<Expr> {
 /// any other item kind is refused (no enum/const in the scalar/control
 /// subset).
 pub fn emit_module(module: &Module) -> Result<String, BackendError> {
+    // PMAT-1419: refuse a source language whose integer semantics this backend
+    // does not implement. Runs BEFORE every other check so the diagnostic names
+    // the source LANGUAGE rather than whatever construct happens to trip first
+    // — a C module used to reach the Python lowering and exit 0 with a
+    // different number.
+    reject_unsupported_source_lang(module)?;
     // PMAT-1378: refuse a module whose TOP-LEVEL binding names cannot survive
     // the trip into a WAT index space — a duplicate `def`/const, or a name
     // reserved by the emitted runtime. Both shapes used to exit 0 with a WAT
@@ -13815,7 +13822,193 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
     // It reads the bytes actually about to be handed to `wat2wasm`, so it
     // cannot drift away from what is emitted.
     check_emitted_identifiers_unique(&out)?;
+    // PMAT-1419: the C integer-semantics belt. Same posture as the scan above —
+    // it reads the bytes actually emitted, so it cannot drift away from what is
+    // produced, and it cannot be fooled by an expression shape nobody thought
+    // to enumerate. Scans `body` (the USER functions) and NOT `out`, because
+    // `out` also carries the runtime prelude, whose `$__wasm_floormod_i64`
+    // helper internally calls `$__wasm_floordiv_i64` — scanning the whole
+    // module matched that and refused even `int f(void) { return 2; }`.
+    reject_c_integer_arithmetic(module, &body)?;
     Ok(out)
+}
+
+/// C/Python integer DIVISION divergence — refused unconditionally for a C-family
+/// module, because floor-vs-truncate differs even on compile-time CONSTANTS:
+/// `-7 / 2` is -3 in C and -4 under these helpers, with no runtime value
+/// involved. A rule that only looked at value-dependent code would miss it.
+const C_DIVERGENT_DIV_OPS: &[&str] = &[
+    "call $__wasm_floordiv_i64",
+    "call $__wasm_floormod_i64",
+    "i64.div_s",
+    "i64.rem_s",
+];
+
+/// C/Python integer WIDTH divergence — 64-bit here, 32-bit-and-wrapping in C.
+/// Refused only for a function that also reads a runtime value (`local.get`),
+/// because a constant expression is EXACT: `return -2;` lowers to
+/// `i64.const 2 / i64.const -1 / call $__wasm_mul_i64` and means -2 in both
+/// languages. That constant-negation shape is precisely the PMAT-1395
+/// `i_neg` / `ll_neg` probes, which are value-matched against the real C
+/// compiler and must keep emitting.
+const C_DIVERGENT_WIDTH_OPS: &[&str] = &[
+    "call $__wasm_add_i64",
+    "call $__wasm_sub_i64",
+    "call $__wasm_mul_i64",
+    "i64.add",
+    "i64.sub",
+    "i64.mul",
+];
+
+/// PMAT-1419: refuse a C-family module whose emitted WAT performs INTEGER
+/// ARITHMETIC, because this backend has only Python's integer semantics.
+///
+/// This is deliberately NARROWER than refusing C outright. PMAT-1395 built a
+/// real C scalar-ABI return path — `unsigned int` → `i32`, `float` → `f32`,
+/// `double` → `f64`, at the DECLARED width — and pinned it with an executed
+/// witness that value-matches against `cc` running the identical C source.
+/// That path is correct and stays. But every probe in that corpus is a LITERAL
+/// return; not one performs arithmetic, which is why the divergence below
+/// survived it.
+///
+/// Measured at `c0b52d0f` on the tracked `tests/fixtures/c_int_arith.c`,
+/// executed under `wasm-interp` against `gcc -O0` (xpile's own `--target rust`
+/// agrees with `gcc` on all three, so this is the WASM lane diverging from
+/// xpile itself):
+///
+/// | expression      | `gcc` / `--target rust`   | `--target wasm` (before)     |
+/// |-----------------|---------------------------|------------------------------|
+/// | `half(-7)`      | `-3` (C `/` truncates)    | `-4` — the helper FLOORS     |
+/// | `poly(50000)`   | `-1794867295` (i32 wraps) | `2500100001` — i64, no wrap  |
+/// | `factorial(13)` | `1932053504` (i32 wraps)  | `6227020800` — i64, no wrap  |
+///
+/// All three were SILENT: `wat2wasm` accepted the module and `wasm-interp` ran
+/// it. The emit was byte-identical to the emit of the equivalent PYTHON source,
+/// so the C file's semantics left no trace in the output at all.
+///
+/// REFUSING rather than coercing is PMAT-1395's own lesson: making the output
+/// merely *appear* is how a silent wrong answer gets installed. A correct C
+/// lowering means narrowing to `i32` with `wrapping_*` and truncating division
+/// — which is exactly what the Rust backend's `SourceLang::C` path does, and
+/// what this backend would need before it can accept C arithmetic.
+///
+/// Scans the emitted USER function bodies, NOT the whole module: the runtime
+/// prelude's own `$__wasm_floormod_i64` helper contains a
+/// `call $__wasm_floordiv_i64`, so scanning the full module text matched the
+/// prelude and refused even an arithmetic-free `int f(void) { return 2; }`.
+fn reject_c_integer_arithmetic(module: &Module, wat: &str) -> Result<(), BackendError> {
+    if !matches!(
+        module.source_lang,
+        SourceLang::C | SourceLang::Cpp | SourceLang::Cuda
+    ) {
+        return Ok(());
+    }
+    // WHICH C TYPES ACTUALLY DIVERGE — the reason this is type-aware rather
+    // than a pure instruction scan. `decy-frontend` maps C `int` (32 bits) onto
+    // `Type::I64`, so it is emitted 64 bits wide and does NOT wrap where C
+    // does. But C `long` / `long long` are `Type::CLong` and genuinely ARE
+    // 64-bit, so i64 is the CORRECT width for them — an earlier cut refused
+    // `long f(long a) { return a + 1; }` and `c_long_gpu_width_witness`
+    // correctly red, since PMAT-1404's WGSL refusal is only defensible while
+    // the non-GPU lanes DO honour the declared 64-bit width.
+    let mentions_c_int32 = module_mentions_type(module, |t| matches!(t, Type::I64));
+    // Truncation-vs-flooring differs for any SIGNED C integer, 32- or 64-bit.
+    // Unsigned operands agree (both round toward zero when non-negative).
+    let mentions_signed_c_int =
+        module_mentions_type(module, |t| matches!(t, Type::I64 | Type::CLong));
+
+    // PER FUNCTION for the runtime-value condition: `c_scalar_abi_witness`
+    // emits its whole probe corpus as ONE module, so a module-wide
+    // `local.get` test armed the width rule for sibling functions that are
+    // pure literal returns and refused the entire corpus.
+    for func in wat.split("(func ").skip(1) {
+        let divergence = if mentions_signed_c_int {
+            C_DIVERGENT_DIV_OPS
+                .iter()
+                .find(|op| func.contains(**op))
+                .map(|op| (*op, "FLOORING division — C `/` and `%` TRUNCATE toward zero, so `-7 / 2` is -3 in C and -4 here, and this differs even for compile-time constants"))
+        } else {
+            None
+        };
+        let divergence = divergence.or_else(|| {
+            // Constants are exact, so the 32-bit wrap is only observable once a
+            // runtime value participates: `return -2;` lowers via
+            // `call $__wasm_mul_i64` yet means -2 in both languages (the
+            // PMAT-1395 `i_neg` probe).
+            if !mentions_c_int32 || !func.contains("local.get") {
+                return None;
+            }
+            C_DIVERGENT_WIDTH_OPS
+                .iter()
+                .find(|op| func.contains(**op))
+                .map(|op| (*op, "64-bit arithmetic on a C `int` — C `int` is 32-bit and WRAPS on overflow, so `poly(50000)` is -1794867295 in C and 2500100001 here"))
+        });
+        let Some((op, why)) = divergence else {
+            continue;
+        };
+        return Err(unsupported(&format!(
+            "WASM backend does not lower INTEGER ARITHMETIC from a {:?} source module — \
+         the emitted WAT contains `{op}`, which carries PYTHON integer semantics: {why}. \
+         The module would exit 0 returning a different number than the C program computes \
+         (measured on tests/fixtures/c_int_arith.c under `wasm-interp` vs `gcc`: \
+         `half(-7)` -> -4 here and -3 there; `poly(50000)` -> 2500100001 here and \
+         -1794867295 there; xpile's own `--target rust` agrees with `gcc` on both). \
+         Contract C-C-INT-ARITH governs C integer semantics, not the emitted \
+         C-COMPILE-RUST-TO-WASM, and this backend has no path that satisfies it — a \
+         correct one must narrow C `int` to `i32` with wrapping, as the Rust backend's \
+         C path does. UNAFFECTED and still lowering: the C scalar-ABI RETURN path \
+         (PMAT-1395), and the declared 64-bit widths `long` / `long long` (PMAT-1404), \
+         for which i64 is already correct. Use `--target rust` for C `int` arithmetic.",
+            module.source_lang
+        )));
+    }
+    Ok(())
+}
+
+/// Does any DECLARED type in `module` satisfy `pred`?
+///
+/// Covers function signatures and `let` bindings, recursing through nested
+/// blocks and through container/pointer component types. Declared types are
+/// what distinguishes C `int` from C `long` here — the EMITTED WAT cannot, since
+/// both land on `i64`, which is exactly why this check cannot be a text scan.
+///
+/// KNOWN LIMIT, stated rather than implied: a type reachable only through an
+/// expression's inferred type (never named in a signature or `let`) is not
+/// seen. Every shape in the tracked C corpus declares its integer types.
+fn module_mentions_type(module: &Module, pred: impl Fn(&Type) -> bool + Copy) -> bool {
+    fn ty_matches(ty: &Type, pred: impl Fn(&Type) -> bool + Copy) -> bool {
+        if pred(ty) {
+            return true;
+        }
+        match ty {
+            Type::List(inner) | Type::Set(inner) | Type::Optional(inner) => ty_matches(inner, pred),
+            Type::Dict(k, v) => ty_matches(k, pred) || ty_matches(v, pred),
+            Type::Tuple(ts) => ts.iter().any(|t| ty_matches(t, pred)),
+            Type::Ptr { pointee, .. } => ty_matches(pointee, pred),
+            _ => false,
+        }
+    }
+    fn stmts_match(stmts: &[Stmt], pred: impl Fn(&Type) -> bool + Copy) -> bool {
+        stmts.iter().any(|s| match s {
+            Stmt::Let { ty, .. } => ty_matches(ty, pred),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => stmts_match(then_body, pred) || stmts_match(else_body, pred),
+            Stmt::While { body, .. } => stmts_match(body, pred),
+            _ => false,
+        })
+    }
+    module.items.iter().any(|item| match item {
+        Item::Function(f) => {
+            ty_matches(&f.return_type, pred)
+                || f.params.iter().any(|p| ty_matches(&p.ty, pred))
+                || stmts_match(&f.body.stmts, pred)
+        }
+        Item::Const { ty, .. } => ty_matches(ty, pred),
+        Item::Struct { .. } | Item::Enum { .. } => false,
+    })
 }
 
 /// PMAT-1378: reserved WAT identifiers — the names the emitted RUNTIME defines
@@ -13872,6 +14065,110 @@ const RESERVED_WAT_NAMES: &[&str] = &["__heap_ptr", "__alloc"];
 /// `__heap_ptr` is untouched and keeps working — WAT locals and globals are
 /// separate index spaces, so there is nothing to collide, and refusing them
 /// would be over-refusal. Both are pinned as green witnesses.
+/// PMAT-1419: refuse any source language whose integer semantics this backend
+/// does not implement.
+///
+/// The implemented surface is **Python → WAT**: Python `int` is unbounded and
+/// `//` floors, which is what the emitted `$__wasm_floordiv_i64` helper means
+/// — its own generated comment reads `(Python //)`. Nothing enforced that.
+/// Unlike the Lean backend (which at least READ `module.source_lang` to print
+/// it into a header comment before ignoring it — PMAT-1418), this backend
+/// never referenced `source_lang` **at all**, so every frontend that reached
+/// it got Python semantics silently.
+///
+/// `decy-frontend` lowers C `int` — a 32-bit, truncating-division, wrapping
+/// type — to [`Type::I64`], and per that variant's own documentation the Rust
+/// backend "narrows it to `i32` on the `SourceLang::C` emit path". There is no
+/// such path here, and `source_lang` is the ONLY discriminator: the meta-HIR
+/// types are identical. So C reached the Python lowering and exited 0.
+///
+/// SCOPE. C is NOT refused wholesale by this function: PMAT-1395 built a real
+/// C scalar-ABI RETURN path and pinned it with an executed witness that
+/// value-matches against `cc`. Only C integer ARITHMETIC diverges, and that is
+/// caught after emission by [`reject_c_integer_arithmetic`]. Refusing all C
+/// here would have deleted a working, witnessed capability — the corpus that
+/// witness runs is entirely literal returns, which is why it never observed
+/// the arithmetic divergence.
+///
+/// Measured at `c0b52d0f` on the tracked `tests/fixtures/c_int_arith.c`,
+/// executing the emitted module under `wasm-interp` against `gcc -O0` on the
+/// same fixture (xpile's own `--target rust` emit agrees with gcc on all
+/// three, so this is the WASM lane diverging from xpile, not just from C):
+///
+/// | expression      | `gcc` / `--target rust` | `--target wasm` (this backend) |
+/// |-----------------|-------------------------|--------------------------------|
+/// | `half(-7)`      | `-3` (C `/` truncates)  | `-4` — `floordiv` **floors**   |
+/// | `poly(50000)`   | `-1794867295` (i32 wraps) | `2500100001` — i64, no wrap  |
+/// | `factorial(13)` | `1932053504` (i32 wraps)  | `6227020800` — i64, no wrap  |
+///
+/// All three are SILENT: `wat2wasm` accepts the module and `wasm-interp` runs
+/// it, so the lane produced a different number at exit 0 rather than refusing.
+/// Every emitted function additionally cited `C-COMPILE-RUST-TO-WASM` — a
+/// *Rust*-to-WASM compile contract — on C source, while the C integer family
+/// is governed by `C-C-INT-ARITH`.
+///
+/// Two source languages are genuinely faithful here and stay allowed:
+///
+/// * `Python` — the implemented surface.
+/// * `Wasm` — the WAT lift's round-trip fixed point `emit(lift(emit(M))) ==
+///   emit(M)` (PMAT-954). Its image is xpile's OWN emit, so the semantics are
+///   this backend's by construction. Verified still byte-identical here.
+/// * `Rust` — this lane's own label for a lowered module: its Layer-5 contract
+///   is `C-COMPILE-RUST-TO-WASM` and 107 sites across 75 witness files build
+///   `SourceLang::Rust` modules. No Rust FRONTEND exists, so no user input
+///   reaches it. See the arm itself for what that leaves unresolved.
+///
+/// The match is deliberately exhaustive with no `_` arm: a new [`SourceLang`]
+/// variant must make an explicit decision here rather than silently inheriting
+/// Python semantics, which is precisely how `C` arrived.
+fn reject_unsupported_source_lang(module: &Module) -> Result<(), BackendError> {
+    let mismatch: &str = match module.source_lang {
+        // The implemented surface: unbounded `int`, flooring `//`.
+        SourceLang::Python => return Ok(()),
+        // Faithful by construction — the lift only inverts this backend's emit.
+        SourceLang::Wasm => return Ok(()),
+        // ALLOWED, and deliberately NOT restricted. An earlier cut of this guard
+        // admitted `Rust` only for integer-free modules, on the theory that the
+        // sole producer was `wasm_diffexec`'s F64-only differential module. That
+        // is false: 107 sites across 75 files in this crate's own witness corpus
+        // construct `SourceLang::Rust` modules carrying integer arithmetic, and
+        // the lane's Layer-5 contract is literally `C-COMPILE-RUST-TO-WASM`. So
+        // `Rust` is this lane's INTENDED label for a lowered module, not a stray.
+        //
+        // What that leaves unresolved, named here rather than papered over: those
+        // same witness modules are PYTHON programs (they value-match against
+        // CPython) emitted through a lowering whose own helper comment says
+        // `(Python //)`, while wearing a `Rust` label and citing a Rust→WASM
+        // contract. Nothing is WRONG today — no Rust FRONTEND exists, so no user
+        // input reaches this arm, and `.py` input arrives as `SourceLang::Python`
+        // — but the label is not load-bearing anywhere, which is precisely the
+        // condition that let `C` through. Deciding whether this lane is
+        // Python→WASM or Rust→WASM is 0.1.619 work.
+        SourceLang::Rust => return Ok(()),
+        SourceLang::C | SourceLang::Cpp | SourceLang::Cuda => return Ok(()),
+        SourceLang::Shell => {
+            "shell has no typed integer surface and contract C-BASHRS-POSIX-IDEMPOTENCE \
+             governs shell constructs; an item-less shell module would otherwise emit a \
+             statement-free `(module …)` at exit 0"
+        }
+        SourceLang::Ruchy => {
+            "the Ruchy frontend has no parser, so no Ruchy module is faithful here"
+        }
+        SourceLang::Lean => {
+            "a Lean source module is not re-emitted through the Python→WAT surface; \
+             the Lean code lane lowers to Rust instead"
+        }
+    };
+    Err(unsupported(&format!(
+        "WASM backend does not lower a {:?} source module — {mismatch}. The Python→WAT \
+         surface is the only integer lowering implemented; emitting it for {:?} would \
+         produce a SILENT WRONG VALUE (a module `wat2wasm` accepts and `wasm-interp` runs, \
+         returning a different number) rather than a refusal. Use `--target rust`, which \
+         has a real {:?} path, instead.",
+        module.source_lang, module.source_lang, module.source_lang
+    )))
+}
+
 fn check_module_binding_names(module: &Module) -> Result<(), BackendError> {
     let mut seen: Vec<&str> = Vec::new();
     for item in &module.items {

@@ -18826,3 +18826,84 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1419
+  title: 'PMAT-1419: [src/gate] WASM BACKEND C-INTEGER-SEMANTICS BELT - the shape PMAT-1418 fixed
+    in the Lean lane, still live in the lane carrying ~69 of this release''s commits.
+    xpile-wasm-codegen implements exactly ONE integer lowering and it is PYTHON''s: `int` is
+    unbounded, `//` floors, and the emitted helper''s own generated comment reads
+    `__wasm_floordiv_i64(a, b) = floor(a / b)  (Python //)`. Where the Lean backend at least READ
+    module.source_lang before ignoring it, this backend never referenced source_lang AT ALL.
+    decy-frontend maps C `int` - 32-bit, truncating, wrapping - onto the SAME Type::I64 Python
+    uses, and per that variant''s OWN documentation the Rust backend "narrows it to i32 on the
+    SourceLang::C emit path"; there is no such path here, so source_lang was the only
+    discriminator and nothing consulted it. MEASURED at c0b52d0f on the tracked
+    tests/fixtures/c_int_arith.c, EXECUTED under wasm-interp against gcc -O0, with xpile''s own
+    --target rust agreeing with gcc on all three (so the WASM lane diverges from XPILE, not merely
+    from a foreign compiler): half(-7) = -3 in C and -4 in wasm; poly(50000) = -1794867295 (i32
+    wraps) and 2500100001; factorial(13) = 1932053504 and 6227020800. ALL THREE SILENT - wat2wasm
+    ACCEPTS the module and wasm-interp RUNS it. Sharpest tell: the C emit was BYTE-IDENTICAL
+    (md5-equal) to the emit of the equivalent PYTHON source, i.e. the C file''s semantics left ZERO
+    trace; and every emitted function cited C-COMPILE-RUST-TO-WASM, a RUST-to-WASM contract, on C
+    source governed by C-C-INT-ARITH. ** THE SCOPE STORY IS THE REAL CONTENT OF THIS ENTRY. THREE
+    successive cuts were WRONG and each was caught by a PRE-EXISTING witness, which is the honest
+    receipt that the lane''s existing gates work. (1) Refusing SourceLang::C WHOLESALE deleted a
+    REAL capability: PMAT-1395 had already built a C -> WASM scalar-ABI RETURN path with an
+    EXECUTED witness value-matched against `cc`, and its own probe corpus named the regression
+    ("these probes stopped emitting: i_neg, ll_neg ... a refusal here is a capability REGRESSION,
+    not a tightening"). The C lane was NOT untested - the gap was the corpus SHAPE: every probe is
+    a LITERAL RETURN, so it could not observe an arithmetic divergence. (2) Restricting the
+    SourceLang::Rust arm to integer-free modules broke dict_clear_witness and others; MEASURING
+    that found 107 sites across 75 files in this crate''s own witness corpus building
+    SourceLang::Rust modules, and the lane''s Layer-5 contract is literally C-COMPILE-RUST-TO-WASM
+    - so Rust is this lane''s INTENDED label, and the restriction was withdrawn rather than
+    relabelling 107 sites on a guess. (3) A pure INSTRUCTION scan refused
+    `long f(long a) { return a + 1; }`, reddening c_long_gpu_width_witness - C `long` is
+    Type::CLong and genuinely 64-bit, so i64 is the CORRECT width for it, and PMAT-1404''s WGSL
+    refusal is only defensible while the non-GPU lanes DO honour the declared width. ** WHAT
+    SHIPPED: a belt keyed on DECLARED TYPES, not on instructions, because the emitted WAT cannot
+    tell C `int` from C `long` - both land on i64, which is the whole defect. DIVISION
+    (floordiv/floormod/div_s/rem_s) refuses whenever a SIGNED C integer (I64 or CLong) is declared,
+    unconditionally, because floor-vs-truncate differs on compile-time CONSTANTS too (`-7 / 2` is
+    -3 in C and -4 here with no runtime value - a value-dependence rule alone would have emitted
+    that at exit 0). WIDTH (checked add/sub/mul helpers, raw i64.add/sub/mul) refuses only when
+    Type::I64 (C `int`) is declared AND the emitting function reads a runtime value, since a
+    constant expression is EXACT - `return -2;` lowers via `call $__wasm_mul_i64` yet means -2 in
+    both languages, which IS the i_neg probe. The runtime-value test is PER FUNCTION:
+    c_scalar_abi_witness emits its whole corpus as ONE module, so a module-wide test armed the
+    rule for sibling literal-return functions and refused the corpus. Also found while
+    implementing: scanning the whole emitted module matched the runtime PRELUDE, whose
+    $__wasm_floormod_i64 helper internally calls $__wasm_floordiv_i64, so even
+    `int f(void) { return 2; }` refused - the scan reads USER function bodies only. Kept: a
+    reject_unsupported_source_lang guard running before everything else, exhaustive over SourceLang
+    with NO `_` arm so a new variant is a COMPILE error; Shell/Ruchy/Lean refuse outright;
+    Python/Rust/Wasm allowed (Wasm is PMAT-954''s lift round-trip fixed point, asserted
+    byte-for-byte since OVER-refusing is this fix''s natural failure mode and it happened three
+    times). WITNESS crates/xpile/tests/wasm_source_lang_refusal_witness.rs (9 tests) + 3
+    per-variant unit tests. Asserts the refusals AND the over-refusal controls: c_int_arith.c
+    refuses naming the divergence; constant-folded division refuses; the PMAT-1395 scalar-return
+    shapes still lower; `long a + 1` still lowers while `long a / 2` and `int a + 1` refuse;
+    ATTRIBUTION - the C frontend still ACCEPTS what the backend refuses; Python still emits the
+    flooring helper; the WAT fixed point still holds byte-for-byte; an EXECUTED differential
+    showing `-7 // 2` = -4 through the WASM lane and `x / 2` = -3 through the Rust lane; and a
+    structural no-wildcard-arm check. RED HALF RUN TWICE: disabling the belt reds 3 witness tests +
+    1 unit test. The first corpus assertion (`refused > 0`) stayed GREEN under the red half -
+    tracked C files refuse for unrelated reasons, so a bare refusal count certifies nothing -
+    re-keyed to count only belt-ATTRIBUTED refusals, which then reds. The executed differential
+    correctly stays GREEN under the red half: it measures that the two LANGUAGES disagree, which is
+    the justification for the belt rather than a test of it. NO witness floor touched. STILL OPEN,
+    named not fixed: (a) the REAL fix is to lower C `int` arithmetic CORRECTLY - narrow to i32 with
+    wrapping, as the Rust backend already does - 0.1.619 capability work; (b) the belt reads
+    DECLARED types (signatures, let bindings), so a type reachable only through an inferred
+    expression type is not seen - every shape in the tracked C corpus declares its integer types;
+    (c) whether this lane is Python->WASM or Rust->WASM is genuinely unresolved - its contract says
+    Rust, its witness corpus is Python programs value-matched against CPython wearing a Rust label,
+    and the label is load-bearing nowhere, which is the same condition that let C through.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
