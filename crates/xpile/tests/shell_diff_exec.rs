@@ -151,6 +151,45 @@ const IF_DEMO_EXPECTED: &str = "big\nnot-three\npicked 2\ngrade-b";
 /// deterministic.
 const CASE_DEMO_EXPECTED: &str = "bee-or-cee\nstep 1\nstep 2";
 
+/// PMAT-1377 expected output of `bashrs_arith_shift_demo.sh`: `1 << 2` and
+/// the tight `1<<2` are both 4; `x=$((3<<3))` is 24; `8 >> 1` is 4; the
+/// quoted `<<` stays literal text. Byte-for-byte deterministic.
+const ARITH_SHIFT_DEMO_EXPECTED: &str = "4\n4\n24\n4\na << b";
+
+/// PMAT-1377: the here-doc spellings that walked PAST the PMAT-1371 guard.
+/// Each is a real here-document; each MUST refuse. `(label, source)`.
+///
+/// The guard shipped at PMAT-1371 matched a `Bare` token that *starts with*
+/// `<<`, which is only the space-separated `cat <<EOF` spelling. The v0.1.0
+/// tokenizer splits on WHITESPACE alone — it does not split an operator off
+/// a word — so anything glued to the operator hid it inside a longer token.
+const HEREDOC_EVASION_SPELLINGS: &[(&str, &str)] = &[
+    // No space between the command word and the operator.
+    (
+        "attached `cat<<EOF`",
+        "cat<<EOF\n  keep  me\n\nafter blank\nEOF\n",
+    ),
+    // An explicit file descriptor number in front of the operator.
+    (
+        "fd-prefixed `cat 0<<EOF`",
+        "cat 0<<EOF\n  keep  me\n\nafter blank\nEOF\n",
+    ),
+    ("fd-prefixed `cat 1<<EOF`", "cat 1<<EOF\nx\nEOF\n"),
+    // Both at once, with the tab-stripping `<<-` variant.
+    ("attached tab-strip `cat<<-EOF`", "cat<<-EOF\n\tx\n\tEOF\n"),
+    // Nested in a loop body — a DIFFERENT parser route (`parse_segment_seq`),
+    // and a worse failure: `indent_body` tab-prefixed the terminator, so the
+    // emitted script did not even parse.
+    (
+        "attached, nested in a for body",
+        "for f in a b; do\n  cat<<EOF\n  x  y\nEOF\ndone\n",
+    ),
+    (
+        "fd-prefixed, nested in an if body",
+        "if true; then\n  cat 0<<EOF\n  x  y\nEOF\nfi\n",
+    ),
+];
+
 #[test]
 fn shell_diff_demo_realistic_shell_input_round_trip() {
     // PMAT-052: a `.sh` fixture that exercises every Layer B
@@ -385,4 +424,116 @@ fn shell_diff_demo_cpython_vs_bashrs_emit_agree() {
         py_out.contains("starting") && py_out.contains("done"),
         "expected `starting` and `done` lines in output; got: {py_out}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// PMAT-1377 — the here-doc refusal actually covers the here-docs people write.
+// ---------------------------------------------------------------------------
+
+/// EXECUTION witness that the arithmetic LEFT SHIFT survives the widened
+/// here-doc guard.
+///
+/// PMAT-1377 changed the operator scan from `starts_with("<<")` to
+/// `contains("<<")`. PMAT-090 captures a whole `$((…))` arithmetic expansion
+/// as ONE `Bare` token, so that widening put every left shift in the blast
+/// radius — a naive `contains` would have refused `$((1 << 2))` outright.
+///
+/// This is asserted by RUNNING the round-tripped script, not by inspecting the
+/// emitted text: an emit-only check would still pass if the operator were
+/// mangled into something the shell then evaluated differently.
+#[test]
+fn shell_diff_demo_arith_shift_round_trip() {
+    if !have_python_and_sh() {
+        eprintln!(
+            "warning: skipping PMAT-1377 arith-shift round-trip — /bin/sh not on \
+             PATH. CI environments with /bin/sh will still run this gate."
+        );
+        return;
+    }
+    let sh_path = fixture("bashrs_arith_shift_demo.sh");
+    let actual = run_shell(&sh_path).expect("shell run");
+    assert_eq!(
+        actual, ARITH_SHIFT_DEMO_EXPECTED,
+        "bashrs arithmetic-shift demo output diverged. Either the widened \
+         here-doc guard is now over-refusing `$((…))`, or the shift operator \
+         stopped round-tripping verbatim.\n\
+         === expected ===\n{ARITH_SHIFT_DEMO_EXPECTED}\n\
+         === actual  ===\n{actual}"
+    );
+    // Anti-vacuity: pin the computed values, so a fixture that silently
+    // stopped evaluating its arithmetic cannot pass on degenerate output.
+    assert!(
+        actual.contains("24") && actual.contains("a << b"),
+        "expected the assignment-form shift (24) and the quoted literal to \
+         survive; got: {actual}"
+    );
+}
+
+/// Every here-doc spelling that walked PAST the PMAT-1371 guard now refuses —
+/// asserted through the SHIPPED CLI, so it pins the binary a user runs rather
+/// than a library entry point.
+///
+/// Before this slice each of these exited **0**. Flat, the emitted script
+/// passed `bash -n` clean and executed DIFFERENTLY (a body of `"  keep  me"` /
+/// `""` / `"after blank"` came back as `"keep me"` / `"after blank"` — leading
+/// and internal whitespace collapsed, blank line deleted). Nested in a
+/// `for`/`if` body it was worse: the terminator was tab-prefixed, so the
+/// emitted script did not parse at all.
+#[test]
+fn shell_heredoc_evasion_spellings_all_refuse() {
+    let dir = std::env::temp_dir().join(format!("xpile-heredoc-evasion-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create work dir");
+    for (i, (label, src)) in HEREDOC_EVASION_SPELLINGS.iter().enumerate() {
+        let path = dir.join(format!("evade{i}.sh"));
+        std::fs::write(&path, src).expect("write fixture");
+        let out = Command::new(bin())
+            .args(["transpile", path.to_str().unwrap(), "--target", "shell"])
+            .output()
+            .expect("spawn xpile");
+        assert!(
+            !out.status.success(),
+            "{label} must be REFUSED, but `xpile transpile` exited 0 and emitted:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("here-document"),
+            "{label} must refuse AS A HERE-DOCUMENT (a generic parse failure would \
+             not tell the user what to do), got: {stderr}"
+        );
+    }
+}
+
+/// The guard must not have become "refuse anything containing `<<`". Each of
+/// these carries a `<<` that is NOT a redirection and must still transpile.
+/// This is the RED half of the widening: it is what a `line.contains("<<")`
+/// implementation would fail.
+#[test]
+fn shell_non_redirection_double_angle_still_transpiles() {
+    let dir = std::env::temp_dir().join(format!("xpile-heredoc-ok-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create work dir");
+    for (i, (label, src)) in [
+        ("double-quoted `<<`", "echo \"a << b\"\n"),
+        ("single-quoted `<<`", "echo 'a << b'\n"),
+        ("spaced arithmetic shift", "echo $((1 << 2))\n"),
+        ("tight arithmetic shift", "echo $((1<<2))\n"),
+        ("assignment-form shift", "x=$((1<<2))\necho $x\n"),
+        ("escaped angles", "echo a\\<\\<b\n"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let path = dir.join(format!("ok{i}.sh"));
+        std::fs::write(&path, src).expect("write fixture");
+        let out = Command::new(bin())
+            .args(["transpile", path.to_str().unwrap(), "--target", "shell"])
+            .output()
+            .expect("spawn xpile");
+        assert!(
+            out.status.success(),
+            "{label} is NOT a here-document and must still transpile; the widened \
+             guard is over-refusing. stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }
