@@ -250,6 +250,49 @@ meta-HIR and the trait surfaces.
 
 ### Added
 
+- **Native-WASM `round(x)` — the one rounding op where the obvious lowering is
+  wrong — and module-level scalar CONSTANTS as immutable WASM globals**
+  (PMAT-1366). Two independent widenings, both previously hard refusals.
+  **`round(x)`**: `Expr::RoundToInt` was handled *nowhere* in the WASM backend,
+  so `round(x)` fell into the generic "unsupported expression" message. It now
+  lowers to two native instructions — `f64.nearest` then `i64.trunc_f64_s`.
+  `f64.nearest` is IEEE `roundToIntegralTiesToEven`, which is **exactly**
+  Python's banker's rounding (`round(0.5) == 0`, `round(2.5) == 2`,
+  `round(3.5) == 4`, `round(-2.5) == -2`). This is the single place in the
+  rounding family where the naive encoding diverges: Rust's `f64::round` is
+  half-away-from-**zero** (which is why the Rust/Ruchy lanes must spell
+  `round_ties_even()`), and the other obvious WASM encoding, `f64.floor(x +
+  0.5)`, answers `3` for `round(2.5)`. The witness carries **every** half-way
+  tie in both signs precisely so that mutation is caught — swapping in the
+  half-away-from-zero form reds the suite, verified before landing. The narrow
+  traps on `|value| >= 2**63` / `±inf` / `nan`, the same boundary PMAT-1340's
+  `math.floor`/`ceil`/`trunc` narrow has and the same place CPython itself
+  raises. **Module-level constants**: a single `MAX = 100` at module scope used
+  to take the *whole* module out of the WASM lane, however scalar the functions
+  below it were. Each `int`/`bool`/`float` const now emits once as an immutable
+  `(global $NAME <ty> (<ty>.const v))` laid down before the bump-heap global,
+  and a body reference resolves `local.get` first, then `global.get`.
+  Immutability is exact rather than convenient: the frontend already **refuses**
+  both a parameter and a function-local assignment that would shadow a module
+  const, so nothing in the supported subset can rebind one and `global.set` is
+  never emitted — both refusals are pinned as tests, and turning the global
+  `(mut …)` reds the suite. The int consts are threaded into the f-string
+  int-classifier, so `f"{MAX}"` auto-stringifies through `str(int)` exactly like
+  a param — the PMAT-1342 touchpoint a new int-valued node is most likely to
+  miss. **Still refused, with a message that says why:** the 2-argument
+  `round(x, n)`. Decimal rounding is not a scaling problem — CPython (and the
+  Rust lane) format to `n` places with round-half-to-even and reparse, and the
+  WASM subset has no dtoa/strtod; a `x*10**n` scale-round-unscale would answer
+  `2.68` for `round(2.675, 2)` where CPython answers `2.67`, which the test
+  *computes* rather than asserts. Two new declared rows (`round-to-int`,
+  `module-scalar-const`) and one new refused row (`round-to-digits`) in
+  `contracts/compile-rust-to-wasm-v1.yaml`, executed in both directions by
+  PMAT-1350's `wasm_contract_surface.rs` — and both red halves were run
+  (a `refused` probe that emits, and a `declared` probe that refuses, each fails
+  the gate). 71 new executed observables across two witness files; WASM witness
+  count live 795 → 827 and runtime-gated 315 → 326, against unchanged floors.
+  No witness floor touched — the two permitted 0.1.618 touches remain PMAT-1372
+  and PMAT-1373.
 - **Native-WASM `list(d)` / `list(d.keys())` / `list(d.values())` — the first
   ORDER-OBSERVING dict materialisation, admitted only where the order is
   provably CPython's** (PMAT-1365). Every dict→list materialisation shipped
