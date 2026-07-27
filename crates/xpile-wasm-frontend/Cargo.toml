@@ -14,7 +14,8 @@ xpile-meta-hir = { workspace = true }
 
 [dev-dependencies]
 # The emit half — the round-trip fixed-point witness checks that
-# `emit(lift(emit(M))) == emit(M)` (the lift is a right-inverse of emit
-# on its WAT image). Dev-only: the frontend itself has no codegen dep.
+# `emit(lift(emit(M))) == emit(M)` (the lift is a right-inverse of emit on
+# the part of its WAT image the lift accepts; PMAT-1422 measured the hole
+# at `not` and float `/`). Dev-only: the frontend itself has no codegen dep.
 xpile-wasm-codegen = { workspace = true }
 xpile-backend = { workspace = true }

@@ -25,12 +25,14 @@
 //!       folded — see the lossy-posture section below.
 //!     * The bare `i64` / `f64` / `i32` ops the emit still produces in a
 //!       user body — `i64.{and,or,xor}`, the `i64`/`f64`/`i32` comparisons
-//!       and `f64.{add,sub,mul,div}` — → the matching [`BinOp`] /
+//!       and `f64.{add,sub,mul}` — → the matching [`BinOp`] /
 //!       [`FloatOp`]. Bare `i64.{add,sub,mul,shl,shr_s}` are **refused**
-//!       (PMAT-1421): the emit routes those five operators through
-//!       `$__wasm_*` helpers, so the bare opcode is outside the image and
-//!       carries WASM (mask/wrap) semantics the high-level operator does
-//!       not have — see the lossy-posture section below.
+//!       (PMAT-1421) and bare `f64.div` is **refused** (PMAT-1422): the
+//!       emit routes those five operators through `$__wasm_*` helpers and
+//!       guards every float division against a zero divisor, so each bare
+//!       opcode is outside the image and carries WASM (mask/wrap/IEEE)
+//!       semantics the high-level operator does not have — see the
+//!       lossy-posture section below.
 //!     * `call $__wasm_floordiv_i64` / `$__wasm_floormod_i64` → the
 //!       Python floor [`BinOp::FloorDiv`] / [`BinOp::Mod`] (the emit's
 //!       helper calls, lifted back to the high-level op).
@@ -54,8 +56,10 @@
 //! ## Structured control-flow recovery (PMAT-959)
 //!
 //! The lift now inverts the **canonical control shapes** the emit produces,
-//! recursively (the right-inverse-on-image property still holds — it only
-//! needs to invert what `xpile-wasm-codegen` emits, not arbitrary WASM):
+//! recursively (the right-inverse property is scoped to what
+//! `xpile-wasm-codegen` emits, not arbitrary WASM — minus the two emitted
+//! constructs PMAT-1422 measured as unliftable; see the correctness-witness
+//! section):
 //!
 //!   * `(block $brk (loop $cont <cond> i32.eqz br_if $brk <body> br $cont))`
 //!     → [`Stmt::While`] — the `i32.eqz`+`br_if $brk` guard is stripped to
@@ -103,6 +107,20 @@
 //!   silent. Refusing follows PMAT-1395 — coercing to one of two
 //!   incompatible semantics installs a wrong answer; a correct lift needs
 //!   meta-HIR operators carrying WASM wraparound semantics (0.1.619).
+//! - **Bare `f64.div` is REFUSED** (PMAT-1422) — the f64 analogue of the
+//!   arm above, and the finding of the table sweep PMAT-1421's standing
+//!   lead (b) asked for. PMAT-1002 had already written down that a bare
+//!   WASM `f64.div` is IEEE 754 (`1.0/0.0` → `inf`, `0.0/0.0` → `NaN`)
+//!   where Python's `/` raises `ZeroDivisionError`, and made the emit guard
+//!   EVERY float division against a zero divisor and trap. So the emit
+//!   never produces a bare `f64.div` (verified from the binary for a
+//!   variable, a parameter and a literal divisor) and this arm fired only
+//!   on hand-written / third-party WAT, handing it Python semantics.
+//!   Executed under `wasm-interp`, both legs `wat2wasm`-clean and transpile
+//!   at exit 0: `1.0 f64.div 0.0` ran to **inf** at the source and
+//!   **trapped** after the round trip; `0.0 f64.div 0.0` ran to **nan** and
+//!   trapped. A non-zero divisor agrees exactly, which is why no fixture
+//!   saw it. See [`refuse_ieee_div`].
 //! - **Names** survive only because the emit kept them (`$x`); a stripped
 //!   WAT would lose them.
 //! - **Non-canonical control flow** — any block/loop/branch nesting OUTSIDE
@@ -115,13 +133,31 @@
 //!
 //! ## Correctness witness
 //!
-//! The lift is a **right-inverse of emit on its WAT image** — pinned by
-//! executed round-trip fixed-point tests in `tests.rs`:
-//! `emit(lift(emit(M))) == emit(M)` for every straight-line scalar AND
-//! structured-control fixture (a `while` sum, an `if`/`else` max, an
-//! if-expr, and a nested loop+if). (A full `lift(emit(M)) == M` is *not*
-//! claimed — the type collapse above makes the lift lossy; the fixed point
-//! is the honest, checkable invariant.)
+//! The lift is a **right-inverse of emit on the part of its WAT image the
+//! lift accepts** — pinned by executed round-trip fixed-point tests in
+//! `tests.rs`: `emit(lift(emit(M))) == emit(M)` for every straight-line
+//! scalar AND structured-control fixture (a `while` sum, an `if`/`else`
+//! max, an if-expr, and a nested loop+if). (A full `lift(emit(M)) == M` is
+//! *not* claimed — the type collapse above makes the lift lossy; the fixed
+//! point is the honest, checkable invariant.)
+//!
+//! **That qualifier is load-bearing and was missing until PMAT-1422**, which
+//! measured the gap instead of assuming it away. Re-derived from the binary
+//! over the emitted-construct corpus, `emit → lift` succeeds for `+ - *`,
+//! `// %`, `<< >>`, `& | ^`, the int and float comparisons, `bool ==`, float
+//! `+`, `while`, `if/else` and short-circuit `and` — and **refuses two**:
+//!
+//!   * `not` — the emit lowers it to `i32.eqz`, which the lift handles ONLY
+//!     inside a loop condition (where it is the negation guard) and refuses
+//!     in a straight-line or loop body.
+//!   * float `/` — the emit's zero-divisor guard ends in `unreachable`,
+//!     which the lift refuses.
+//!
+//! Both refuse honestly (hard [`FrontendError::Lower`], exit 1), so neither
+//! is a wrong answer; but the unqualified "right-inverse on its WAT image"
+//! claim was false, and it is what kept the hole invisible. Closing it needs
+//! meta-HIR representatives for a unary `not` and a trap (0.1.619) — see
+//! [`in_image_uninverted`].
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -663,7 +699,7 @@ fn lift_block_inner(
                         rhs: Box::new(rhs),
                     });
                     *pos += 1;
-                } else if let Some(fop) = float_binop(other) {
+                } else if let Some(fop) = float_binop(other)? {
                     let (lhs, rhs) = pop2(&mut stack, instr)?;
                     stack.push(Expr::FloatBinOp {
                         op: fop,
@@ -996,7 +1032,7 @@ fn lift_loop_cond(
                         rhs: Box::new(rhs),
                     });
                     *pos += 1;
-                } else if let Some(fop) = float_binop(other) {
+                } else if let Some(fop) = float_binop(other)? {
                     let (lhs, rhs) = pop2(&mut stack, instr)?;
                     stack.push(Expr::FloatBinOp {
                         op: fop,
@@ -1126,7 +1162,7 @@ fn lift_loop_body(
                         rhs: Box::new(rhs),
                     });
                     *pos += 1;
-                } else if let Some(fop) = float_binop(other) {
+                } else if let Some(fop) = float_binop(other)? {
                     let (lhs, rhs) = pop2(&mut stack, instr)?;
                     stack.push(Expr::FloatBinOp {
                         op: fop,
@@ -1174,6 +1210,23 @@ fn stmts_only(stmts: Vec<Stmt>, stack: Vec<Expr>, what: &str) -> Result<Vec<Stmt
 /// not the canonical while idiom, or a raw stack-machine branch xpile's emit
 /// never produces — anything outside the `xpile-wasm-codegen` image).
 fn refuse_control(instr: &str) -> FrontendError {
+    // PMAT-1422: `i32.eqz` and `unreachable` are IN the emit image — they are
+    // the lowering of `not` and of the emit's own trap guards. Telling their
+    // author they wrote "an arbitrary stack-machine branch" is false, and it
+    // hid the fact that `emit(M)` for those two constructs cannot be lifted
+    // at all. Name the real reason instead. (Closing the hole needs meta-HIR
+    // representatives — a unary `not` and a trap statement — which do not
+    // exist yet; 0.1.619 capability work.)
+    if let Some(construct) = in_image_uninverted(instr) {
+        return FrontendError::Lower(format!(
+            "WAT instruction `{instr}` IS inside the `xpile-wasm-codegen` emit image \
+             ({construct}), but the lift has no meta-HIR representative for it, so \
+             `emit(M)` for that construct does not round-trip (PMAT-1422 measured the \
+             hole at exactly these two instructions over the emitted-construct corpus). \
+             It is refused rather than silently dropped; a correct lift needs a unary \
+             `not` and a trap statement in meta-HIR (0.1.619)"
+        ));
+    }
     FrontendError::Lower(format!(
         "WAT instruction `{instr}` is outside the lift subset — the lift inverts the \
          `xpile-wasm-codegen` image (the straight-line scalar subset plus the canonical \
@@ -1181,6 +1234,25 @@ fn refuse_control(instr: &str) -> FrontendError {
          PMAT-959); an arbitrary stack-machine branch / non-canonical `(block …)` / \
          `br_table` outside that image is refused rather than mis-reconstructed"
     ))
+}
+
+/// The two instructions the emit DOES produce in a user body but the lift
+/// cannot invert (PMAT-1422). Re-derived from the binary, not asserted: over
+/// the emitted-construct corpus, `emit → lift` succeeds for every construct
+/// except `not` and float `/`, which fail on exactly these two mnemonics.
+///
+/// Note the inversion this exposes — before PMAT-1422 the lift REJECTED the
+/// emit's own guarded division (on the `unreachable`) while ACCEPTING and
+/// corrupting a hand-written bare `f64.div`. See [`refuse_ieee_div`].
+fn in_image_uninverted(instr: &str) -> Option<&'static str> {
+    match instr {
+        "i32.eqz" => Some("it is how the emit lowers a boolean `not`"),
+        "unreachable" => Some(
+            "it is how the emit traps — the `//`/`%` and float-`/` zero-divisor \
+             guards and the checked-arithmetic helpers all end in it",
+        ),
+        _ => None,
+    }
 }
 
 /// Lift one `i32.const` operand — the SINGLE decision point for all three
@@ -1369,14 +1441,81 @@ fn refuse_helper_routed(instr: &str) -> FrontendError {
 /// Map an f64 WAT arithmetic mnemonic to its meta-HIR [`FloatOp`].
 /// (f64 *comparisons* lift to a [`BinOp`] via [`int_binop`], matching the
 /// emit, which routes them through `Expr::BinOp`.)
-fn float_binop(instr: &str) -> Option<FloatOp> {
-    Some(match instr {
+///
+/// `Ok(None)` means "not a float binary op at all" — the caller refuses.
+/// `Err` means "a float binary op the lift must NOT invert": see
+/// [`refuse_ieee_div`]. Returning a `Result` rather than guarding at the
+/// call sites mirrors [`int_binop`] (PMAT-1421) — this is the SINGLE
+/// decision point for all three lift sites (straight-line body, loop
+/// condition, loop body), so the guard cannot be added to one arm and
+/// forgotten in the other two.
+fn float_binop(instr: &str) -> Result<Option<FloatOp>, FrontendError> {
+    Ok(Some(match instr {
         "f64.add" => FloatOp::Add,
         "f64.sub" => FloatOp::Sub,
         "f64.mul" => FloatOp::Mul,
-        "f64.div" => FloatOp::Div,
-        _ => return None,
-    })
+        // PMAT-1422: the emit NEVER produces a bare `f64.div` — every `/`
+        // is guarded (PMAT-1002). See [`refuse_ieee_div`].
+        "f64.div" => return Err(refuse_ieee_div()),
+        _ => return Ok(None),
+    }))
+}
+
+/// The honest boundary for a BARE `f64.div` (PMAT-1422) — the f64 analogue
+/// of [`refuse_helper_routed`], and found by the sweep PMAT-1421's standing
+/// lead (b) asked for (its binary-operator table was swept; the f64 table
+/// was not).
+///
+/// `FloatOp::Div` is **Python's** `/`, and PMAT-1002 already wrote down why
+/// that is not WASM's `f64.div`: CPython raises `ZeroDivisionError` where
+/// IEEE 754 returns `inf`/`NaN`. The emit encodes that difference — it
+/// guards EVERY float division against a zero divisor and traps, verified
+/// from the binary across all three divisor shapes (variable, parameter,
+/// literal):
+///
+/// ```wat
+/// local.set $__wasm_fdiv_d
+/// local.get $__wasm_fdiv_d
+/// f64.const 0.0
+/// f64.eq
+/// if
+///   unreachable
+/// end
+/// local.get $__wasm_fdiv_d
+/// f64.div
+/// ```
+///
+/// So a bare `f64.div` is outside the emit image, and this arm could only
+/// ever fire on hand-written / third-party WAT — the input an advertised
+/// `.wat` frontend exists to accept. Executed under `wasm-interp`, both legs
+/// `wat2wasm`-clean and transpile at exit 0:
+///
+/// | bare source          | source runs to | re-emit runs to |
+/// |----------------------|----------------|-----------------|
+/// | `1.0 f64.div 0.0`    | `inf`          | trap            |
+/// | `0.0 f64.div 0.0`    | `nan`          | trap            |
+/// | `6.0 f64.div 3.0`    | `2.0`          | `2.0`           |
+///
+/// A non-zero divisor agrees exactly, which is what made the divergence
+/// silent — no fixture divided by zero. Refusing rather than coercing
+/// follows PMAT-1395: making the output *run* by picking one of two
+/// incompatible semantics installs a wrong answer. A correct lift needs a
+/// meta-HIR float operator carrying IEEE (non-trapping) division, which does
+/// not exist (0.1.619 capability work).
+fn refuse_ieee_div() -> FrontendError {
+    FrontendError::Lower(
+        "bare `f64.div` is outside the lift subset — the lift inverts the \
+         `xpile-wasm-codegen` image, and the emit routes float division through a \
+         zero-divisor guard (`f64.eq` + `unreachable`, PMAT-1002) before the \
+         `f64.div`, never the bare opcode. The two disagree exactly at a zero \
+         divisor: WASM's `f64.div` is IEEE 754 and returns `inf`/`NaN`, where \
+         meta-HIR's `FloatOp::Div` is Python's `/` and raises `ZeroDivisionError` \
+         (the emit's trap) — so lifting a bare `f64.div` to the high-level \
+         operator re-emits WAT that RUNS to a different result (`1.0 / 0.0` is \
+         `inf` at the source and a trap after the round trip). It is refused \
+         rather than mis-lifted"
+            .to_string(),
+    )
 }
 
 #[cfg(test)]

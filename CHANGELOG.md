@@ -7,6 +7,73 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### A bare `f64.div` lifted to Python's `/`: `1.0/0.0` is `inf` at the source and a trap after the round trip (PMAT-1422)
+
+Found by taking PMAT-1421's standing lead (b) verbatim — that slice swept the WAT
+lift's **binary-operator** table and explicitly recorded that `lift_call`, the
+unary/`i32.eqz` path and the **f64 table** had been read but not swept the same
+way. Sweeping the f64 table found the same shape one type over.
+
+`FloatOp::Div` is **Python's** `/`, and PMAT-1002 had already written down why
+that is not WASM's `f64.div`: CPython raises `ZeroDivisionError` where IEEE 754
+returns `inf`/`NaN`. That slice made the emit guard **every** float division
+against a zero divisor and trap. Re-derived from the binary rather than assumed —
+for a variable, a parameter and a literal divisor alike — the emit therefore never
+produces a bare `f64.div`, so the lift's `f64.div` arm could only ever fire on
+hand-written and third-party WAT: exactly the input an advertised `.wat` frontend
+exists to accept.
+
+Executed under `wasm-interp`, both legs `wat2wasm`-clean and `xpile transpile` at
+exit 0 on every leg:
+
+| bare source       | source runs to | after the xpile round trip |
+|-------------------|----------------|----------------------------|
+| `1.0 f64.div 0.0` | `inf`          | **trap**                   |
+| `0.0 f64.div 0.0` | `nan`          | **trap**                   |
+| `6.0 f64.div 3.0` | `2.0`          | `2.0`                      |
+
+A non-zero divisor agrees exactly, which is why no fixture caught it. Refusing
+rather than coercing follows PMAT-1395: making the output *run* by picking one of
+two incompatible semantics installs a silent wrong answer. The guard lives in
+`float_binop`, which now returns a `Result` so it is the **single** decision point
+for all three lift sites (straight-line body, loop condition, loop body) — the
+same structure PMAT-1421 gave `int_binop`.
+
+**The tell was in the repository already.** PMAT-1421's own commit message quotes
+the emit's user-body opcode set as including `f64.{add,sub,mul,div}`. That is true
+of the *token* and false of the *bare opcode*, and the distinction is the whole
+defect. `float_divzero_witness.rs` states the IEEE-vs-Python divergence in its
+first paragraph; it witnesses the emit half, and the lift half was never written.
+
+### The lift refuses two constructs the emit produces, and the docs said otherwise (PMAT-1422)
+
+The same sweep measured `emit → lift` over the emitted-construct corpus and found
+the round trip fails for **two** constructs: `not` (the emit lowers it to
+`i32.eqz`, which the lift handles only inside a loop condition, where it is the
+negation guard) and float `/` (whose zero-divisor guard ends in `unreachable`).
+Everything else round-trips: `+ - *`, `// %`, `<< >>`, `& | ^`, the int and float
+comparisons, `bool ==`, float `+`, `while`, `if`/`else` and short-circuit `and`.
+
+Both refuse honestly — a hard `FrontendError::Lower` at exit 1 — so neither is a
+wrong answer. But four places claimed the lift is "a right-inverse of emit on its
+WAT image" with no qualifier, and it is not; the fixture corpus could not falsify
+the claim because none of its fixtures used either construct. The claim is now
+scoped in all four (`xpile-wasm-frontend` lib + tests docs, its `Cargo.toml`, and
+`SourceLang::Wasm` in `xpile-meta-hir`) and, more usefully, **enforced**:
+`the_emit_image_round_trip_hole_is_exactly_not_and_float_div` reds in both
+directions — if the hole is closed the doc must drop it, if it widens the doc must
+grow.
+
+Note the inversion this exposed. Before this slice the lift **rejected** the
+emit's own guarded division (on the `unreachable`) while **accepting and
+corrupting** a hand-written bare `f64.div`. And the refusal message told the
+author of an `i32.eqz` that they had written "an arbitrary stack-machine branch /
+non-canonical `(block …)` / `br_table`" — false, and it is what kept the hole
+looking like out-of-image input rather than a gap. Both now name the real reason.
+
+Closing the hole needs meta-HIR representatives for a unary `not` and a trap;
+that is 0.1.619 capability work, recorded as such rather than papered over.
+
 ### Five stale inverse arms in the WAT lift gave hand-written WAT Python semantics (PMAT-1421)
 
 The `.wat` frontend maps WAT mnemonics back to meta-HIR operators. Five of those

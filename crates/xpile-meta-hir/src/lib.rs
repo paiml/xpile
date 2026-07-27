@@ -50,7 +50,11 @@ pub enum SourceLang {
     /// (`if`/`block`/`loop`) is refused at this first cut (deferred to
     /// PMAT-952). The lift's correctness is pinned by an executed
     /// round-trip **fixed-point** witness: `emit(lift(emit(M))) ==
-    /// emit(M)` (the lift is a right-inverse of emit on its WAT image).
+    /// emit(M)` — the lift is a right-inverse of emit on the part of its
+    /// WAT image the lift accepts. PMAT-1422 measured that qualifier
+    /// rather than assuming it away: `emit → lift` refuses exactly two
+    /// emitted constructs, `not` (lowered to `i32.eqz`) and float `/`
+    /// (whose zero-divisor guard ends in `unreachable`).
     /// See `project-bidirectional-wasm`.
     Wasm,
 }

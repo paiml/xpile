@@ -2,25 +2,31 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1421 landed from an honesty hunt. The ranked queue stays exhausted until
-  Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1420''s standing lead (c): `.ruchy`
-  and `.wat` were the last two frontend families never swept to their subset ceilings. `.ruchy` came
-  back HONEST - it is registered "routing only - INPUT refuses, no parser" and `xpile info` prints
-  exactly that. `.wat` is a real lowering frontend and its inverse opcode table had ROTTED: five arms
-  mapping bare `i64.add`/`sub`/`mul`/`shl`/`shr_s` to the high-level meta-HIR operators were correct
-  right-inverses when written, and PMAT-1379 (shifts) then PMAT-1402 (`+`/`-`/`*`) re-routed those
-  operators through `$__wasm_*` helpers without deleting them. Re-derived from the BINARY, the emit
-  only produces those five inside the helper prelude the lift skips, so the arms fired ONLY on
-  hand-written and third-party WAT - the input an advertised frontend exists to accept - and gave it
-  Python semantics: WASM masks a shift count mod 64 and wraps arithmetic, the helpers saturate `>>`
-  to 63 and trap. EXECUTED, both legs wat2wasm-clean, exit 0 throughout: `1024 i64.shr_s 70` runs to
-  16 at the source and 0 after the round trip; the other four turn a defined wraparound into a trap.
-  In-domain the two agree byte-for-byte, which is why no fixture saw it. Refused rather than coerced.
-  LESSON WORTH KEEPING: when a slice MOVES an operator onto a new lowering, the old inverse does not
-  become wrong-and-DEAD - it becomes wrong-and-LIVE for exactly the inputs the new lowering never
-  produces, and a right-inverse-on-image property cannot see it because the image SHRANK and the
-  fixed point over the smaller image stays green. Grep the inverse table on every re-route. The tell
-  was a code comment PMAT-1402 had already written 540 lines above the stale arms.)'
+updated: '2026-07-28 (PMAT-1422 landed from an honesty hunt. The ranked queue stays exhausted until
+  Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1421''s standing lead (b) verbatim:
+  that slice swept the WAT lift''s BINARY-OPERATOR table and wrote down that `lift_call`, the
+  unary/`i32.eqz` path and the F64 TABLE had been read but NOT swept against a re-derived emit opcode
+  set the same way. Sweeping the f64 table found the same stale-inverse shape one type over. PMAT-1002
+  had already established that WASM''s `f64.div` is IEEE 754 (`1.0/0.0` -> inf, `0.0/0.0` -> NaN) where
+  Python''s `/` raises ZeroDivisionError, and made the emit guard EVERY float division against a zero
+  divisor and trap - so re-derived from the BINARY (variable, parameter and literal divisor alike) the
+  emit never produces a BARE `f64.div`, and the lift''s arm fired ONLY on hand-written and third-party
+  WAT. EXECUTED, both legs wat2wasm-clean, exit 0 throughout: `1.0 f64.div 0.0` runs to `inf` at the
+  source and TRAPS after the round trip; `0.0 f64.div 0.0` runs to `nan` and traps; `6.0 f64.div 3.0`
+  agrees, which is why no fixture saw it. Refused rather than coerced. SECOND HALF: `emit -> lift` was
+  MEASURED over the emitted-construct corpus rather than assumed, and it refuses two constructs the
+  emit produces - `not` (`i32.eqz`) and float `/` (`unreachable`) - while FOUR live places claimed an
+  unqualified "right-inverse of emit on its WAT image". Both refuse honestly at exit 1, so neither is a
+  wrong answer, but the claim was false and the fixture corpus could not falsify it because no fixture
+  used either construct. Now scoped in all four AND enforced by a witness that reds in both directions.
+  LESSONS WORTH KEEPING: (1) the tell was in the repo TWICE - PMAT-1421''s own commit message quoted
+  the emit''s user-body opcode set as including `f64.{add,sub,mul,div}`, which is true of the TOKEN and
+  false of the BARE opcode, and that distinction was the whole defect; a prior slice''s summary of a
+  set is not a substitute for re-deriving it. (2) A premise test must be keyed on the REAL premise: for
+  the i64 mnemonics the premise was "no bare `i64.add` in a user body", but a user body DOES contain
+  the token `f64.div`, so here it had to be "no UNGUARDED `f64.div`". (3) A refusal message that
+  MISDESCRIBES its input hides a gap - `i32.eqz` was being told it was "an arbitrary stack-machine
+  branch", which made an emit-image hole read as out-of-image input.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -1987,6 +1993,53 @@ queue:
     but not swept against a re-derived emit opcode set the same way; (c) PMAT-1392''s deliberate
     `i32` -> Type::Bool residual is still live, so a hand-written `(param $a i32)` renders as
     `bool` on --target rust.'
+
+- id: PMAT-1422
+  date: '2026-07-28'
+  ev_rank: R1
+  gate_touch: null
+  status: done
+  title: a bare `f64.div` lifted to Python's `/` - the WAT lift's f64 table carried the same
+    stale-inverse shape PMAT-1421 fixed one type over, so `1.0/0.0` runs to `inf` at the source
+    and TRAPS after the round trip, at exit 0 on every leg; and `emit -> lift` refuses two
+    constructs the emit produces (`not`, float `/`) while four places claimed an unqualified
+    right-inverse on the whole image
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30).
+    PMAT-1421''s standing lead (b) taken VERBATIM: that slice swept the BINARY-OPERATOR table and
+    recorded that `lift_call`, the unary/`i32.eqz` path and the F64 TABLE had been read but not
+    swept against a re-derived emit opcode set. Same method - transpile a Python module using
+    every operator, strip the `$__wasm_*` prelude the lift skips, diff the emit''s user-body
+    opcode set against every lift arm. THE TELL WAS IN THE REPO TWICE: PMAT-1421''s own commit
+    message quotes the emit''s user-body set as including `f64.{add,sub,mul,div}` (true of the
+    TOKEN, false of the BARE opcode - that distinction IS the defect), and float_divzero_witness.rs
+    (PMAT-1002) states the IEEE-vs-Python divergence in its first paragraph, witnessing the EMIT
+    half while the LIFT half was never written. EXECUTED under wasm-interp, both legs
+    wat2wasm-clean, transpile exit 0: `1.0 f64.div 0.0` -> `inf` vs TRAP, `0.0 f64.div 0.0` ->
+    `nan` vs TRAP, `6.0 f64.div 3.0` -> 2.0 vs 2.0. A non-zero divisor agrees exactly, which is
+    why no fixture saw it. FIX = REFUSE, naming the emit''s zero-divisor guard (PMAT-1395), with
+    `float_binop` returning Result so the guard is at the SINGLE decision point for all three lift
+    sites. SECOND HALF: measured `emit -> lift` over the emitted-construct corpus - it refuses
+    exactly `not` (`i32.eqz`) and float `/` (`unreachable`) and round-trips everything else; the
+    unqualified "right-inverse of emit on its WAT image" claim in FOUR live places is now scoped
+    AND enforced by a witness that reds in both directions. Also swept and HONEST: `i32.eq`/
+    `i32.ne` are produced bare by the emit for `bool ==` so those arms are live and correct;
+    f64.add/sub/mul are bare and exact under both semantics. OVER-REFUSAL BOUND MEASURED FIRST:
+    zero tracked `.wat` files and no test anywhere lifts an `f64.div`. RED HALF RUN 3x (arm
+    restored -> differential reds naming `source f64:inf, round trip TRAP`; guard widened to
+    f64.mul -> over-refusal control reds; in-image message reverted -> hole test reds). Witness
+    RUNTIME measured not trusted (PMAT-1383). No witness floor touched; no gate file edited. NOTE
+    the pre-existing `ruleset_drift` red (owner-gated, see owner_decisions) reproduces on
+    UNMODIFIED main and is unrelated; it skips-with-reason in CI. NEXT PICK: PMAT-1373 (release
+    commit) on Thu 07-30; a fire before then should hunt again. STANDING LEADS from this slice:
+    (a) meta-HIR has ONE arithmetic semantics and the source languages disagree - the missing IEEE
+    (non-trapping) float division is the float analogue of PMAT-1421''s missing WASM-wraparound
+    integer operators, and PMAT-1419''s C-int lead is the third face of it; ONE 0.1.619 design,
+    not three; (b) closing the round-trip hole needs meta-HIR representatives for a unary `not`
+    and a TRAP statement; (c) PMAT-1421''s lead (c) is UNTOUCHED - the deliberate `i32` ->
+    Type::Bool residual still renders a hand-written `(param $a i32)` as `bool` on --target rust;
+    (d) `lift_call`''s non-helper arm and the f32 type mapping (no operator arms at all) were read
+    during this sweep but never driven with an executed differential - they are what is left of
+    lead (b).'
 
 - id: PMAT-1375
   status: open
