@@ -1,10 +1,20 @@
-# Contracts at v0.1.0
+# Contracts — the founding twelve
 
-All 12 contracts that ship at v0.1.0, in source order. Each row links
-to the contract YAML, its Lean theorems, and its Kani harness.
+The twelve contracts that shipped at v0.1.0, in source order. Each
+entry links to the contract YAML, its Lean theorems, and its Kani
+harness.
 
-`pv lint contracts/` → PASS, **0 errors and 0 warnings**.
-`xpile quorum` → 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED.
+**This page is not the full population.** The substrate has grown well
+past twelve; `ls contracts/*.yaml` is the live set and `xpile quorum`
+prints one row per contract with its per-stratum votes and status. The
+entries below are annotated in a depth this page cannot sustain for
+every contract, so it stays scoped to the founding set rather than
+silently going stale — which is what it did do, presenting itself as
+"all N contracts" for two months while the tree grew.
+
+`pv lint contracts/` → PASS with **0 errors**, enforced in the
+pre-push gate. Run `xpile quorum` for the live QUORUM / PARTIAL /
+UNVERIFIED totals; PARTIAL is routinely non-zero.
 
 | Contract | `pv` kind | Layer × Lane | What it pins down |
 |---|---|---|---|
@@ -129,6 +139,8 @@ GIL acquire/release at the boundary, error-propagation rules for
 
 The deepest layer — emitted PTX must respect the `mma.sync` shape
 constraints, `cp.async` pipelining, and SMEM budget. Diamond depth:
-**20**. The PTX backend at v0.1.0 ships as a scaffold; the contract
-holds the placeholder pinned down for the real implementation to
-discharge.
+**20**. The PTX backend shipped as a scaffold at v0.1.0; it now emits
+real PTX — `xpile transpile k.py --target ptx --hardware ptx:sm_80`
+produces a `.version` / `.target` / `.visible .entry` module for the
+scalar element-wise + control subset. `--hardware` is **required** to
+reach this backend; without a compute capability it refuses.

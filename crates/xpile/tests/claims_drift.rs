@@ -692,3 +692,550 @@ fn roadmap_complete_claims_do_not_cite_planned_items() {
         }
     }
 }
+
+// ── (f) the BOOK is a LIVE claim surface, not a v0.1.0 snapshot ──────
+
+// Sections (a) and (e) point the derived-count machinery at exactly two
+// files: `README.md` and `docs/status/CURRENT.md`. `book/src/` — the
+// mdBook a `cargo install xpile` user actually reads — was never in scope,
+// and drifted exactly the way an ungated claim surface does (PMAT-1417):
+//
+//   * `introduction.md` opened with "Seven frontends — Python, C, C++,
+//     Rust, Ruchy, Lean 4, Shell". Three of those seven have no frontend
+//     crate and no registration; `wasm`, which does, was missing. The same
+//     paragraph said "seven backends" (nine) and "12 contracts at full
+//     quorum" (35 contracts, 9 of them PARTIAL).
+//   * `installation.md` printed a `$ xpile --version` → `xpile 0.1.0`
+//     transcript, and called the workspace 27 crates "published at v0.1.0".
+//   * `reference/frontends.md` marked the C frontend a scaffold (it emits),
+//     omitted `wasm`, and listed C++/Rust/Lean 4 as workspace-member
+//     frontends under a sentence that said "Two more" before three bullets.
+//   * `reference/backends.md` listed 7 of 9 backends, called PTX/WGSL a
+//     scaffold and SPIR-V "not yet a crate" (all three emit), and
+//     documented the Lean citation as `@[xpile_contract "<ID>"]` — the form
+//     PMAT-1405 had removed the day before *because* no Lean prelude
+//     registers it, so the default `--target lean` emit did not parse.
+//     `tutorials/python-to-lean.md` went further and asserted the attribute
+//     "is a real Lean attribute. Not a comment."
+//
+// The correction is not to retype the numerals. Section (e)'s own lesson is
+// that a typed count is drift waiting to happen, so what is enforced here is
+// the DERIVE relationship: every claim below is re-derived from the live
+// registry, the live emit, or the live tree on each run, and the book is
+// required to agree with it or to state the command instead.
+
+/// Every `*.md` under `book/src/`, recursively, as (repo-relative path,
+/// contents). Walks the tree rather than naming files, so a page added later
+/// is covered the moment it lands — the failure mode being repaired is a
+/// claim surface that nothing enumerates.
+fn book_pages() -> Vec<(String, String)> {
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let entries =
+            fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+        let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        paths.sort(); // deterministic order, so a failure message is stable
+        for p in paths {
+            if p.is_dir() {
+                walk(&p, root, out);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("md") {
+                let rel = p
+                    .strip_prefix(root)
+                    .expect("book page under workspace root")
+                    .to_string_lossy()
+                    .into_owned();
+                let body = fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+                out.push((rel, body));
+            }
+        }
+    }
+    let root = workspace_root();
+    let mut out = Vec::new();
+    walk(&root.join("book/src"), &root, &mut out);
+    out
+}
+
+/// `--target` flag names of every registered backend — what `xpile info`
+/// prints under `backends (N)`, read from the same `default_session()` the
+/// CLI dispatches through.
+fn registered_backend_flags() -> Vec<String> {
+    xpile_core::default_session()
+        .backends
+        .iter()
+        .map(|b| b.name().to_string())
+        .collect()
+}
+
+/// Names of every registered frontend, substantive or not.
+fn registered_frontend_names() -> Vec<String> {
+    xpile_core::default_session()
+        .frontends
+        .iter()
+        .map(|f| f.name().to_string())
+        .collect()
+}
+
+/// Does `needle` occur in some MARKDOWN TABLE ROW of `page` as a whole word?
+///
+/// Both halves matter. **Table row** (a line starting with `|`) is where a
+/// roster page states its roster; an incidental mention in prose is not an
+/// entry. **Whole word**, with `-` counted as a word character, is what stops
+/// `wasm` from being "found" inside `xpile-wasm-codegen` — the first cut of
+/// this gate used a bare `page.contains()` and stayed GREEN when both the
+/// `wasm` and `forjar` rows were deleted, because the codegen crate names in
+/// neighbouring rows still contained the substrings. A roster gate that
+/// survives deleting the row it is supposed to require is not a gate.
+fn table_row_names(page: &str, needle: &str) -> bool {
+    let is_word = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    let hay = page.to_lowercase();
+    let needle = needle.to_lowercase();
+    hay.lines()
+        .filter(|l| l.trim_start().starts_with('|'))
+        .any(|row| {
+            let mut from = 0;
+            while let Some(rel) = row[from..].find(&needle) {
+                let at = from + rel;
+                let end = at + needle.len();
+                let before_ok = row[..at].chars().next_back().is_none_or(|c| !is_word(c));
+                let after_ok = row[end..].chars().next().is_none_or(|c| !is_word(c));
+                if before_ok && after_ok {
+                    return true;
+                }
+                from = at + 1;
+            }
+            false
+        })
+}
+
+/// Anti-vacuity for the whole section: every assertion below is a scan over
+/// this corpus, and a scan over nothing passes for free.
+#[test]
+fn the_book_corpus_is_not_empty() {
+    let pages = book_pages();
+    assert!(
+        pages.len() > 1,
+        "book_pages() found {} page(s) under book/src/ — the book moved or \
+         the walker broke, and every (f) assertion is now vacuous",
+        pages.len()
+    );
+    for (rel, body) in &pages {
+        assert!(
+            !body.trim().is_empty(),
+            "book page {rel} is empty — it cannot be carrying the claims this \
+             section checks"
+        );
+    }
+}
+
+/// The backends reference must name every registered backend's `--target`
+/// flag. It listed 7 of 9 (no `wasm`, no `forjar`) while both emitted.
+#[test]
+fn book_backend_reference_names_every_registered_backend() {
+    let page = read("book/src/reference/backends.md");
+    let flags = registered_backend_flags();
+    assert!(
+        !flags.is_empty(),
+        "default_session() registered zero backends — the registry moved"
+    );
+    let missing: Vec<&String> = flags
+        .iter()
+        .filter(|f| !table_row_names(&page, f))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "book/src/reference/backends.md does not name registered backend \
+         target(s) {missing:?}. The page presents itself as the backend \
+         roster; a backend the CLI dispatches to and the book omits is a \
+         capability the reader cannot discover. Live registry: {flags:?}"
+    );
+}
+
+/// …and the frontends reference must name every registered frontend. It
+/// omitted `wasm` entirely.
+#[test]
+fn book_frontend_reference_names_every_registered_frontend() {
+    let page = read("book/src/reference/frontends.md");
+    let names = registered_frontend_names();
+    assert!(
+        !names.is_empty(),
+        "default_session() registered zero frontends — the registry moved"
+    );
+    let missing: Vec<&String> = names
+        .iter()
+        .filter(|n| !table_row_names(&page, n))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "book/src/reference/frontends.md does not name registered frontend(s) \
+         {missing:?}. Live registry: {names:?}"
+    );
+}
+
+/// The inverse direction, and the one that caught C++/Rust/Lean 4: the book
+/// may not advertise a frontend CRATE that does not exist in the tree. The
+/// page listed `crates/cpp-frontend`-shaped claims in prose ("C++ — planned",
+/// "Rust — scaffold", "Lean 4 — scaffold") as *workspace members*, which they
+/// have never been.
+#[test]
+fn book_frontend_reference_names_no_frontend_crate_that_does_not_exist() {
+    let page = read("book/src/reference/frontends.md");
+    let crates_dir = workspace_root().join("crates");
+    let existing: Vec<String> = fs::read_dir(&crates_dir)
+        .unwrap_or_else(|e| panic!("read_dir crates/: {e}"))
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        existing.iter().any(|c| c.ends_with("-frontend")),
+        "no `*-frontend` crate found under crates/ — the layout moved and \
+         this gate would pass vacuously"
+    );
+    // Every `<word>-frontend` token the page cites IN CODE FONT must be a real
+    // directory. The backtick requirement is what distinguishes a crate
+    // citation (the table's Crate column) from a prose link target such as
+    // `contributing/adding-a-frontend.md`, which is a page, not a crate.
+    let mut cited = Vec::new();
+    for span in page.split('`').skip(1).step_by(2) {
+        for tok in span.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
+            if tok.ends_with("-frontend") && tok.len() > "-frontend".len() {
+                cited.push(tok.to_string());
+            }
+        }
+    }
+    assert!(
+        !cited.is_empty(),
+        "book/src/reference/frontends.md cites no `*-frontend` crate at all — \
+         the table lost its Crate column and this gate stopped covering it"
+    );
+    let phantom: Vec<&String> = cited.iter().filter(|c| !existing.contains(c)).collect();
+    assert!(
+        phantom.is_empty(),
+        "book/src/reference/frontends.md advertises frontend crate(s) \
+         {phantom:?} that do not exist under crates/. A source language the \
+         book lists and the tree does not implement is the exact claim this \
+         section exists to stop. Existing: {existing:?}"
+    );
+}
+
+/// A `--version` transcript is a numeral, and a numeral in prose is not
+/// re-derived when the workspace is published. `installation.md` printed
+/// `xpile 0.1.0` under a "Verify:" heading for every release after v0.1.0.
+///
+/// The rule is REMOVAL, not correction (section (e)'s rule): no book page may
+/// pin a version transcript at all — not even the current one, which would
+/// simply red this gate at the next release bump and teach the next author to
+/// retype it.
+#[test]
+fn book_pins_no_version_transcript() {
+    let live = env!("CARGO_PKG_VERSION");
+    let mut offences = Vec::new();
+    for (rel, body) in book_pages() {
+        for (n, line) in body.lines().enumerate() {
+            // The exact shape `xpile --version` prints: `xpile <semver>` with
+            // nothing before it on the line.
+            let Some(rest) = line.trim_start().strip_prefix("xpile ") else {
+                continue;
+            };
+            let ver = rest.trim();
+            let parts: Vec<&str> = ver.split('.').collect();
+            if parts.len() == 3
+                && parts
+                    .iter()
+                    .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+            {
+                offences.push(format!("{rel}:{}: `{}`", n + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "book page(s) pin a `xpile <version>` transcript: {}. The live \
+         version is {live} and it changes every release, so a pinned \
+         transcript is stale by construction — describe the output instead \
+         of reproducing it.",
+        offences.join(", ")
+    );
+}
+
+/// Same rule for the other transcript the book pasted: `xpile quorum`'s
+/// totals line. `concepts/contracts.md` carried
+/// `totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)` while
+/// the live totals had moved on and PARTIAL was no longer zero — a pasted
+/// transcript asserting completeness the substrate had not kept.
+#[test]
+fn book_pastes_no_derived_totals_transcript() {
+    let mut offences = Vec::new();
+    for (rel, body) in book_pages() {
+        for (n, line) in body.lines().enumerate() {
+            let t = line.trim();
+            if !t.starts_with("totals:") {
+                continue;
+            }
+            // A placeholder form (`<N> QUORUM`) is the encouraged spelling and
+            // cannot go stale; only digits are drift.
+            if t.chars().any(|c| c.is_ascii_digit()) {
+                offences.push(format!("{rel}:{}: `{t}`", n + 1));
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "book page(s) paste a derived `totals:` transcript with literal \
+         numerals: {}. Run the command in the text and show the SHAPE \
+         (`totals: <N> QUORUM, …`); the numbers move every sprint.",
+        offences.join(", ")
+    );
+}
+
+/// The Lean citation form the book shows must be the form the backend
+/// EMITS — derived by running the shipped binary, not typed here.
+///
+/// PMAT-1405 replaced `@[xpile_contract "<ID>"]` with a
+/// `/-- xpile-contract: <ID> -/` docstring because no Lean prelude registers
+/// that attribute, so the DEFAULT `--target lean` emit did not parse. The
+/// book kept showing the attribute in two `--target lean` transcripts and
+/// asserted in prose that it "is a real Lean attribute. Not a comment."
+///
+/// Deriving both sides means a revert of PMAT-1405 flips this gate
+/// automatically rather than leaving the book pinned to whichever form
+/// happened to be true when someone last read it.
+#[test]
+fn book_lean_transcripts_carry_the_live_citation_form() {
+    let dir = std::env::temp_dir().join(format!("xpile-claims1417-lean-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("create {}: {e}", dir.display()));
+    let src = dir.join("probe.py");
+    fs::write(&src, "def probe(n: int) -> int:\n    return n + 1\n").expect("write probe");
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .args([
+            "transpile",
+            src.to_str().expect("utf-8 path"),
+            "--target",
+            "lean",
+        ])
+        .output()
+        .expect("run xpile transpile --target lean");
+    assert!(
+        out.status.success(),
+        "`xpile transpile probe.py --target lean` failed ({}), so the live \
+         citation form could not be derived and this gate would be vacuous. \
+         stderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let emit = String::from_utf8(out.stdout).expect("utf-8 emit");
+    let cite = emit
+        .lines()
+        .find(|l| l.contains("xpile-contract") || l.contains("xpile_contract"))
+        .unwrap_or_else(|| {
+            panic!("the default `--target lean` emit carries NO contract citation:\n{emit}")
+        });
+
+    // Which spelling does the live emitter use? Derived, never assumed.
+    let emits_docstring = cite.contains("/--") && cite.contains("xpile-contract");
+    let emits_attribute = cite.contains("@[xpile_contract");
+    assert!(
+        emits_docstring ^ emits_attribute,
+        "cannot classify the live Lean citation form from {cite:?} — update \
+         this gate rather than letting it guess"
+    );
+
+    // Book pages that reproduce a `--target lean` transcript. Identified by
+    // the command itself so a new tutorial is covered automatically.
+    let mut checked = 0usize;
+    let mut offences = Vec::new();
+    for (rel, body) in book_pages() {
+        let lines: Vec<&str> = body.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if !line.contains("--target lean") {
+                continue;
+            }
+            // The transcript is the rest of this fenced block.
+            let mut block = Vec::new();
+            for l in &lines[i + 1..] {
+                if l.trim_start().starts_with("```") {
+                    break;
+                }
+                block.push(*l);
+            }
+            if block.is_empty() {
+                continue;
+            }
+            checked += 1;
+            let text = block.join("\n");
+            if !text.contains("xpile-contract") && !text.contains("xpile_contract") {
+                continue; // a transcript that shows no citation claims nothing
+            }
+            let shows_attribute = text.contains("@[xpile_contract");
+            let shows_docstring = text.contains("/-- xpile-contract");
+            if emits_docstring && shows_attribute {
+                offences.push(format!(
+                    "{rel}:{}: transcript shows `@[xpile_contract …]` but the \
+                     backend emits {cite:?}",
+                    i + 1
+                ));
+            }
+            if emits_attribute && shows_docstring {
+                offences.push(format!(
+                    "{rel}:{}: transcript shows a docstring but the backend \
+                     emits {cite:?}",
+                    i + 1
+                ));
+            }
+        }
+    }
+    assert!(
+        checked > 0,
+        "no book page reproduces a `--target lean` transcript — either the \
+         tutorials were removed or the fence scanner broke; either way this \
+         gate is covering nothing"
+    );
+    assert!(
+        offences.is_empty(),
+        "book Lean transcript(s) show a citation form the backend does not \
+         emit: {}. The live emit line is {cite:?}.",
+        offences.join(", ")
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// A book that says "full quorum" while contracts sit at PARTIAL is making
+/// the one claim this repository exists to be trustworthy about.
+///
+/// Both sides derived: the PARTIAL population from the contract YAMLs' own
+/// stratum references, the claim from the book text.
+#[test]
+fn book_claims_no_total_quorum_while_any_contract_is_partial() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .args(["quorum", "--contracts-dir"])
+        .arg(workspace_root().join("contracts"))
+        .current_dir(workspace_root())
+        .output()
+        .expect("run xpile quorum");
+    assert!(
+        out.status.success(),
+        "`xpile quorum` failed ({}), so the live PARTIAL count could not be \
+         derived and this gate would be vacuous. stderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8 quorum report");
+    let totals = report
+        .lines()
+        .find(|l| l.trim_start().starts_with("totals:"))
+        .unwrap_or_else(|| panic!("`xpile quorum` printed no totals line:\n{report}"));
+    let partial = counts_between(totals, ", ", " PARTIAL")
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("could not parse a PARTIAL count from {totals:?}"));
+    if partial == 0 {
+        return; // the claim would be true; nothing to forbid
+    }
+    // Phrases that assert TOTAL discharge. Each was live in the book while
+    // PARTIAL was non-zero.
+    let banned = [
+        "full quorum",
+        "100% QUORUM",
+        "100% §14.4",
+        "all at QUORUM",
+        "0 PARTIAL",
+    ];
+    let mut offences = Vec::new();
+    let mut scanned = 0usize;
+    for (rel, body) in book_pages() {
+        // `book/src/changelog.md` is a DATED release log: "v0.1.0 — 12
+        // contracts at 100% QUORUM" was true of v0.1.0 and stays true of it.
+        // The exemption is one file and is checked to really be that file, so
+        // it cannot quietly widen into "the book is exempt".
+        if rel == "book/src/changelog.md" {
+            assert!(
+                body.contains("## v0.1.0"),
+                "book/src/changelog.md is exempted here as a dated release \
+                 log, but it no longer carries a dated `## v0.1.0` heading — \
+                 re-justify the exemption or drop it"
+            );
+            continue;
+        }
+        scanned += 1;
+        for (n, line) in body.lines().enumerate() {
+            for b in banned {
+                if line.contains(b) {
+                    offences.push(format!("{rel}:{}: `{b}`", n + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        scanned > 1,
+        "the exemption swallowed the corpus: only {scanned} page(s) scanned"
+    );
+    assert!(
+        offences.is_empty(),
+        "the book claims TOTAL §14.4 quorum — {} — but `xpile quorum` reports \
+         {partial} contract(s) at PARTIAL. Totals line: {}",
+        offences.join(", "),
+        totals.trim()
+    );
+}
+
+/// The Diamond page defines **depth-N UNIVERSAL** as "*every* contract has at
+/// least N distinct Diamond theorem categories" and then claimed
+/// "depth-1..13 UNIVERSAL — all 12 contracts have ≥13 Diamond categories".
+///
+/// By the page's own definition that had stopped being true: new contracts
+/// join at depth-1+ (`diamond_coverage.rs` grandfathers the depth-13 gate on
+/// purpose), so the universal depth over the WHOLE population is set by the
+/// shallowest contract, not by the deep core. The claim was a statement about
+/// all contracts backed by a property of thirteen of them.
+///
+/// Derived from `xpile diamond --json`, so it tracks the substrate instead of
+/// pinning a milestone.
+#[test]
+fn book_claims_no_universal_depth_the_substrate_does_not_hold() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .args(["diamond", "--json", "--contracts-dir"])
+        .arg(workspace_root().join("contracts"))
+        .current_dir(workspace_root())
+        .output()
+        .expect("run xpile diamond --json");
+    assert!(
+        out.status.success(),
+        "`xpile diamond --json` failed ({}), so the live universal depth could \
+         not be derived and this gate would be vacuous. stderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8 diamond report");
+    // Minimal extraction, no serde_json shape to keep in sync: every contract
+    // row carries a `"diamond_count":<N>`, and the universal depth is their
+    // minimum.
+    let counts = counts_between(&report, "\"diamond_count\":", ",");
+    assert!(
+        !counts.is_empty(),
+        "parsed 0 `diamond_count` fields out of `xpile diamond --json` — the \
+         JSON shape moved; update this gate rather than letting it pass on \
+         an empty set:\n{report}"
+    );
+    let universal = *counts.iter().min().expect("non-empty");
+
+    // A claim of the form "depth-N UNIVERSAL" for N > the live universal depth.
+    let mut offences = Vec::new();
+    for (rel, body) in book_pages() {
+        for (n, line) in body.lines().enumerate() {
+            for claimed in counts_between(line, "depth-", " UNIVERSAL") {
+                if claimed > universal {
+                    offences.push(format!("{rel}:{}: claims depth-{claimed} UNIVERSAL", n + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "the book claims a UNIVERSAL depth the substrate does not hold — {} — \
+         but the shallowest contract carries {universal} Diamond \
+         categor{}, so depth-{universal} is the live universal depth. Say \
+         which SUBSET is deep, or lift the shallow contracts.",
+        offences.join(", "),
+        if universal == 1 { "y" } else { "ies" }
+    );
+}

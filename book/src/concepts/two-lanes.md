@@ -69,6 +69,15 @@ structured constructs**, never regex over body text:
 - In LaTeX: `\xpileContract{C-PY-INT-ARITH}{Python int arithmetic}`.
 - In mdBook: a structured HTML comment.
 
+Those are the **`ContractBackend`** forms — contract YAML rendered to
+theorem text or LaTeX, which is read as prose and never elaborated. The
+**code lane** is separate: `xpile transpile x.py --target lean` cites
+with a `/-- xpile-contract: … -/` docstring, because a file that `lean`
+must actually parse cannot carry an attribute no prelude registers (see
+[Reference: backends](../reference/backends.md#lean-4-backend--whats-emitted)).
+Both are structured; only the docstring is resolvable out of a live
+elaborated environment.
+
 This is *the* design decision that makes the proof lane robust against
 edit churn — see the
 [`C-XPILE-CONTRACT-BACKEND-TRAIT`](../reference/contracts.md#c-xpile-contract-backend-trait)

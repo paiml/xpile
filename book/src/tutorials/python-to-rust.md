@@ -87,16 +87,19 @@ Same source, proof lane:
 $ xpile transpile factorial.py --target lean
 -- xpile-generated from Python module factorial
 
-@[xpile_contract "C-PY-INT-ARITH"]
+/-- xpile-contract: C-PY-INT-ARITH -/
 def factorial (n : Int) : Int :=
   if (n <= (1: Int)) then (1: Int) else (n * (factorial (n - (1: Int))))
 ```
 
-Notice the **`@[xpile_contract "C-PY-INT-ARITH"]` attribute** — this is
-the proof-lane analogue of the `//` citation in the Rust output. Both
-sides of the dual emission carry the same contract ID, so any
+Notice the **`/-- xpile-contract: C-PY-INT-ARITH -/` docstring** — this
+is the proof-lane analogue of the `//` citation in the Rust output.
+Both sides of the dual emission carry the same contract ID, so any
 downstream analyzer (a doc generator, a citation graph, the audit
-falsifier) can join the two.
+falsifier) can join the two — and on the Lean side it joins through
+`Lean.findDocString?` on the elaborated environment rather than a regex
+over the file. (Through v0.1.617 this was an `@[xpile_contract "…"]`
+attribute; see [Python → Lean](python-to-lean.md) for why it changed.)
 
 Lean's `Int` is unbounded, so the contract is satisfied **by
 construction** — no `.checked_*()` calls needed. The same contract,

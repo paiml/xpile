@@ -100,12 +100,17 @@ For each contract, tallies votes across the four strata:
 
 - **Semantic** — `lean_theorem:` refs in the contract YAML
 - **Symbolic** — `kani_harness:` refs in the contract YAML
-- **Runtime** — fixtures under `tests/fixtures/` mentioning the
-  contract ID
+- **Runtime** — the union of fixtures under `tests/fixtures/`
+  mentioning the contract ID and top-level `*.rs` files under each
+  `--witness-dir` that mention it *and* carry a runtime-availability
+  probe call (naming the ID alone is not execution)
 - **Extrinsic** — roadmap work items mentioning the contract ID
 
-A contract is **QUORUM** when ≥1 vote arrives from ≥3 strata. At
-v0.1.0 all 12 contracts are at QUORUM.
+A contract is **QUORUM** when ≥1 vote arrives from ≥3 strata,
+**PARTIAL** at 1–2, **UNVERIFIED** at 0. The command's last line is the
+live totals — read it there rather than from this page. Not every
+contract is at quorum; the PARTIAL count is routinely non-zero as new
+contracts land ahead of their Lean or Kani votes.
 
 ## `xpile audit`
 

@@ -6,7 +6,7 @@
 
 | Repo | Role | Notes |
 |---|---|---|
-| [`paiml/xpile`](https://github.com/paiml/xpile) | This repo | Polyglot transpile workbench — v0.1.0, 12 contracts at 100% §14.4 QUORUM, 27 workspace crates, 4 real backends (Rust/Ruchy/Lean/Shell) |
+| [`paiml/xpile`](https://github.com/paiml/xpile) | This repo | Polyglot transpile workbench. Derive the live figures rather than reading them here: `xpile info` (frontends/backends), `xpile quorum` (per-contract §14.4 strata + QUORUM/PARTIAL totals — PARTIAL is routinely non-zero), `ls contracts/*.yaml`, `cargo metadata --no-deps` (workspace members), `xpile --version` |
 | [`paiml/aprender`](https://github.com/paiml/aprender) | ML framework + provable-contracts source | `aprender-contracts` crate produces `pv` |
 | [`paiml/provable-contracts`](https://github.com/paiml/provable-contracts) | Canonical `pv-spec.md` and contract framework | The reference for this spec structure |
 | [`paiml/depyler`](https://github.com/paiml/depyler) | Python → Rust transpiler | depyler-frontend in-tree as `crates/depyler-frontend/` (per [migration.md](migration.md) PMAT-097); legacy repo still exists as separate downstream consumer at v0.1.0 |

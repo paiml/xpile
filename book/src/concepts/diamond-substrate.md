@@ -20,10 +20,10 @@ A contract can be discharged at increasing levels of confidence:
 | Tier | Meaning | Example |
 |---|---|---|
 | **Bronze** | The equation type-checks by construction (`rfl` proof) | Every Layer-1 equation gets a Bronze theorem for free |
-| **Silver** | The equation holds for the *intended canonical implementation* | 42 equations at Silver as of v0.1.0 |
-| **Gold** | The equation holds as a **subtype refinement** — any value satisfying preconditions also satisfies postconditions | 12/12 contracts at Gold |
-| **Platinum** | The equation holds **up to observational equivalence** — the contract is closed under composition | 12/12 contracts at Platinum |
-| **Diamond** | Additional **algebraic** theorems proving deeper invariants (extensionality, completeness, identity, round-trips) | 171 wired Diamond theorems at depth-13 UNIVERSAL |
+| **Silver** | The equation holds for the *intended canonical implementation* | reached by the founding-twelve equations |
+| **Gold** | The equation holds as a **subtype refinement** — any value satisfying preconditions also satisfies postconditions | reached across the founding twelve |
+| **Platinum** | The equation holds **up to observational equivalence** — the contract is closed under composition | reached across the founding twelve |
+| **Diamond** | Additional **algebraic** theorems proving deeper invariants (extensionality, completeness, identity, round-trips) | `xpile diamond` for the live per-contract count |
 
 Higher tiers strictly entail lower tiers. Bronze is by construction;
 Diamond is by careful axiomatization.
@@ -34,14 +34,27 @@ A Diamond program isn't proved in one go — it grows monotonically. We
 say the substrate is at **depth-N UNIVERSAL** when *every* contract has
 at least N distinct Diamond theorem categories.
 
-| Depth | Status at v0.1.0 |
-|---|---|
-| depth-1..13 | **UNIVERSAL** — all 12 contracts have ≥13 Diamond categories |
-| depth-14+ | 2 contracts: `C-PY-INT-ARITH` (depth-21) and `C-COMPILE-RUST-TO-PTX-MMA` (depth-20) |
+**Read the universal depth off `xpile diamond`, not off this page.** The
+totals block prints how many contracts sit at each `depth-N+`; the
+universal depth is the largest N whose count still equals
+`contracts_total`.
 
-Eleven UNIVERSAL milestones (depth-3 through depth-13) have been
-achieved, each via a "broadening sweep" that extends a previously
-narrow-deep contract pattern out to the full 12-contract substrate.
+Eleven UNIVERSAL milestones (depth-3 through depth-13) were achieved
+over the **founding twelve** contracts, each via a "broadening sweep"
+that extended a previously narrow-deep pattern out to the whole
+substrate of the day. That deep core is still there — a group of
+contracts carries ≥13 Diamond categories, and two go past depth-20.
+
+But the substrate has since grown well past twelve, and
+`crates/xpile/tests/diamond_coverage.rs` deliberately **grandfathers**
+the depth-13 gate: a new contract joins at depth-1+ rather than paying
+a depth-13 treadmill on arrival. So over the *whole* population the
+universal depth is far lower than the deep core's — most contracts
+carry a single Diamond category. This page said "depth-1..13
+UNIVERSAL — all 12 contracts have ≥13 Diamond categories" long after
+that stopped describing every contract, which under the definition
+directly above it is the difference between a claim about all
+contracts and a claim about thirteen of them.
 
 ## The 13 recurring templates
 
@@ -84,20 +97,27 @@ xpile diamond — Diamond-tier coverage (PMAT-249)
   C-NOTATION-LATEX-MATH-TO-EQUATION             13  depth-13
   ...
 
-totals: 171 Diamond theorems across 12 contracts
-  depth-1+..depth-13+: 12 contracts each (UNIVERSAL)
-  depth-14+..depth-20+: 2 contracts each
-  depth-21+: 1 contract
+totals: <N> Diamond theorems across <N> contracts
+  depth-1+: <N> contracts, depth-2+: <N> contracts, ...
 ```
 
+The totals block is reproduced here as a **shape**, not as numbers. A
+pasted numeral is a claim that nothing re-derives, and the numerals
+that used to sit here (`171 Diamond theorems across 12 contracts`,
+`depth-1+..depth-13+: 12 contracts each (UNIVERSAL)`) outlived the tree
+they described by twenty-three contracts.
+
 JSON output is available via `xpile diamond --json` and is parsed by
-the CI gate `crates/xpile/tests/diamond_coverage.rs`. The gate has 22
-integration tests covering depth-1..depth-13 UNIVERSAL invariants —
-**any regression fails the build**.
+the CI gate `crates/xpile/tests/diamond_coverage.rs`, which holds the
+depth-13 floor over a **named, grandfathered set** of contracts — the
+ones that had reached it when the gate was written. A contract outside
+that set is deliberately not checked against the floor, so the gate
+protects the deep core against regression and does not claim anything
+about the rest.
 
 ## What comes next
 
 - [Tutorial: Python → Rust](../tutorials/python-to-rust.md) — the
   complete `C-PY-INT-ARITH` story, from spec to emit.
-- [Reference: contracts](../reference/contracts.md) — the 12-contract
+- [Reference: contracts](../reference/contracts.md) — the founding-twelve
   catalogue with links to Lean theorems and Kani harnesses.

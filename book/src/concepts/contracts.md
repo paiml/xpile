@@ -18,8 +18,10 @@ fact about the transpile pipeline. Each file declares:
 - **equations** — the actual statements being claimed
 - **stratum_votes** — which oracles have ratified each statement
 
-`pv lint contracts/` validates every YAML against the published schema.
-At v0.1.0, all 12 contracts pass with **0 errors and 0 warnings**.
+`pv lint contracts/` validates every YAML against the published schema
+and must report **0 errors** — it runs in the pre-push gate, so a
+contract that does not lint cannot land. Run it for the live count and
+warning tally.
 
 ## The 5 layers
 
@@ -31,9 +33,10 @@ At v0.1.0, all 12 contracts pass with **0 errors and 0 warnings**.
 | 4 | **Hybrid** | Cross-language boundaries | `C-FFI-CPYTHON-EXT` — CPython C extensions |
 | 5 | **Compile** | Backend code-generation invariants | `C-COMPILE-RUST-TO-PTX-MMA` — PTX emission |
 
-Every layer has both a code-lane and a proof-lane shadow. At v0.1.0
-there are **12 contracts** spanning all 5 layers; see the
-[reference table](../reference/contracts.md) for the full list.
+Every layer has both a code-lane and a proof-lane shadow. `ls
+contracts/*.yaml` is the live population — it spans all 5 layers and
+grows most sprints; see the
+[reference table](../reference/contracts.md) for the annotated list.
 
 ## The 4-stratum quorum
 
@@ -47,16 +50,20 @@ Per the ruchy 5.0 §14.4 **N-of-M oracle quorum** rule, a contract is
 | **Runtime** | Diff-exec / fixture runs | files under `tests/fixtures/` referencing the contract ID |
 | **Extrinsic** | Human-attested mentions | references to the contract ID in `docs/roadmaps/roadmap.yaml` work items |
 
-At v0.1.0:
+`xpile quorum` prints one row per contract and ends with a totals line:
 
 ```text
-$ xpile quorum
-  ... (12 contracts, all at QUORUM)
-  totals: 12 QUORUM, 0 PARTIAL, 0 UNVERIFIED (12 contracts total)
+totals: <N> QUORUM, <N> PARTIAL, <N> UNVERIFIED (<N> contracts total)
 ```
 
-— 638 stratum-vote artifacts total (285 Semantic + 53 Symbolic + 15
-Runtime + 285 Extrinsic).
+No numerals are reproduced here on purpose. This page carried a pasted
+totals line — twelve contracts, all of them at quorum, none partial —
+for two months after the substrate had grown past it, and every numeral
+in it was wrong by the end. A transcript is a claim, and a claim in
+prose is not re-derived when the tree moves. Run the command.
+**Not every contract is at quorum**: a contract that lands
+before its Lean theorem or Kani harness sits at PARTIAL until the
+missing stratum votes, and the totals line is where that shows.
 
 ## Why YAML (not Lean)?
 

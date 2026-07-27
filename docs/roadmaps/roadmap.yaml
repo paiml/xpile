@@ -18724,3 +18724,51 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1417
+  title: 'PMAT-1417: [docs/gate] BOOK CLAIMS-DRIFT GATE (XPILE-CLAIMS-001 section (f)). The
+    derived-count machinery added by PMAT-1346/1348 is pointed at exactly TWO files - README.md
+    and docs/status/CURRENT.md. book/src/ - the mdBook a `cargo install xpile` user actually
+    reads - was never in scope, and drifted the way an ungated claim surface does. MEASURED,
+    not asserted: introduction.md opened with ''Seven frontends - Python, C, C++, Rust, Ruchy,
+    Lean 4, Shell'' (C++/Rust/Lean 4 have NO frontend crate and NO registration; wasm, which
+    does, was absent), ''seven backends'' (nine), and ''12 contracts at full quorum'' (35
+    contracts, 9 at PARTIAL). installation.md printed a `$ xpile --version` -> `xpile 0.1.0`
+    transcript and called the workspace 27 crates published at v0.1.0 (31 at 0.1.617). reference/frontends.md
+    marked the C frontend a scaffold (it emits), omitted wasm, and listed C++/Rust/Lean 4
+    as workspace-member frontends under a sentence reading ''Two more'' before THREE bullets.
+    reference/backends.md listed 7 of 9 targets, called PTX/WGSL scaffolds and SPIR-V ''not
+    yet a crate'' (all three emit), and documented the Lean citation as the @[xpile_contract
+    ...] attribute - the form PMAT-1405 had removed the DAY BEFORE because no Lean prelude
+    registers it, so the DEFAULT --target lean emit did not parse; tutorials/python-to-lean.md
+    went further and asserted in prose that the attribute ''is a real Lean attribute. Not
+    a comment.'' concepts/diamond-substrate.md claimed ''depth-1..13 UNIVERSAL - all 12 contracts
+    have >=13 Diamond categories'' while defining UNIVERSAL as EVERY contract having >=N -
+    live, 22 of 35 contracts carry exactly 1, because diamond_coverage.rs deliberately GRANDFATHERS
+    the depth-13 floor to a named set. Also repaired: the crates.io description in crates/xpile/Cargo.toml
+    (advertised C++/Rust/Lean as INPUT languages), the xpile-spec.md Status line (a spec whose
+    own preceding paragraph declares drift against the code a contract defect), and the sub/references.md
+    self-row. THE FIX IS THE DERIVE RELATIONSHIP, NOT THE NUMERALS (section (e)''s own rule):
+    8 new assertions in claims_drift.rs re-derive every claim per run from the live registry
+    (default_session()), the live emit (the shipped binary, RUN), and the live tree - book_backend_reference_names_every_registered_backend,
+    book_frontend_reference_names_every_registered_frontend, book_frontend_reference_names_no_frontend_crate_that_does_not_exist,
+    book_pins_no_version_transcript, book_pastes_no_derived_totals_transcript, book_lean_transcripts_carry_the_live_citation_form,
+    book_claims_no_total_quorum_while_any_contract_is_partial, book_claims_no_universal_depth_the_substrate_does_not_hold,
+    plus the_book_corpus_is_not_empty. The corpus is WALKED from book/src/ so a page added
+    later is covered on landing; no count is hard-coded anywhere. RED-THEN-GREEN RUN FOR ALL
+    EIGHT (each defect reintroduced, test observed FAILED, defect reverted) - and the red
+    half REFUTED the first cut: page.contains(flag) stayed GREEN after deleting the wasm and
+    forjar rows, because neighbouring rows named xpile-wasm-codegen and xpile-forjar-codegen.
+    Replaced with table_row_names(), which requires a whole-word match (''-'' counted as a
+    word char) inside a markdown table row. The one exemption, book/src/changelog.md as a
+    DATED release log, asserts the file still carries its dated heading and that the scan
+    did not swallow the corpus. Runs inside the REQUIRED workspace-test context with zero
+    new CI wiring.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

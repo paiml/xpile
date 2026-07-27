@@ -4,7 +4,9 @@
 
 **Canonical spec.** This is the ONE spec. All other specs are sub-specs under `sub/`, linked from the table of contents. Anything in `legacy/` is archived and not authoritative. Drift between this spec and the code, contracts, or sub-specs is a contract defect — fail it in CI.
 
-**Status:** v0.1.0 — **transpiles end-to-end with semantic round-trip verification AND 100% §14.4 contract QUORUM coverage**. 27 workspace crates compile clean; `aprender-contracts` (the `pv` library) wired from crates.io 0.33; **12 contracts pass `pv lint` and all 12 reach §14.4 N-of-M QUORUM** via paired Lean refinement theorems + Kani BMC harnesses (Bronze tier); four real backends (Rust, Ruchy, Lean 4, Shell/bashrs); recursive Python (`factorial(10) == 3628800`, etc.) AND iterative Python (`sum_to(100) == 5050`, `factorial_iter(10) == 3628800`) both run correctly through CI. See [Section 23 — Status](#23-status) and `CHANGELOG.md`.
+**Status:** transpiles end-to-end with semantic round-trip verification, under §14.4 contract QUORUM coverage that is **partial, not total** — new contracts land ahead of their Lean or Kani votes and sit at PARTIAL until the missing stratum arrives. `aprender-contracts` (the `pv` library) is wired from crates.io; `pv lint contracts/` must report 0 errors and is enforced in the pre-push gate; recursive Python (`factorial(10) == 3628800`) AND iterative Python (`sum_to(100) == 5050`, `factorial_iter(10) == 3628800`) both run correctly through CI.
+
+This line carries **no counts on purpose.** It read `v0.1.0 — … 27 workspace crates … 12 contracts pass `pv lint` and all 12 reach §14.4 N-of-M QUORUM … four real backends` for two months past the point where every one of those numerals was false, in a spec whose own paragraph above declares drift against the code a contract defect. Derive them instead: `xpile info` (frontends/backends), `xpile quorum` (per-contract strata + QUORUM/PARTIAL/UNVERIFIED totals), `ls contracts/*.yaml`, `cargo metadata --no-deps`, `xpile --version`. See [Section 23 — Status](#23-status) and `CHANGELOG.md`.
 
 **Foundations:**
 
