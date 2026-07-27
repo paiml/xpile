@@ -16489,3 +16489,50 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1383
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1383: [honesty/shell-lane] `xpile transpile x.py --target shell` exited 0 emitting a
+    script that RAN DIFFERENTLY from its source. BashrsBackend::lower filtered each function body to
+    the six renderable Stmt kinds and DISCARDED the other 35 silently. Six execution-witnessed
+    divergences against live CPython: print -> empty script; an assignment between two commands
+    shredded the middle; an `if`-guarded command vanished while its unguarded siblings emitted
+    (condition erased, script still LOOKED faithful); a `while` or `for` wrapping subprocess.run
+    emitted NOTHING (loop dropped whole, body included); and a `raise` after a command turned a
+    Python exit-1 into a shell exit-0. Reachable ONLY from the Python direction -- bashrs-frontend
+    produces nothing unrenderable, so the shell->shell round-trip never saw it. Second, disjoint
+    drop path: Block::trailing_return is an Expr OUTSIDE stmts, so `return 1 + 2` was discarded by
+    the same silence. FIXED: collect_emittable refuses, naming the construct + statement position +
+    function; an integer trailing_return is kept (both canonical fixtures end in `return 0`) and
+    DISCLOSED as a comment -- suppressed on SourceLang::Shell, where the LitInt(0) is
+    bashrs-frontend''s synthetic main and no source `return` exists to disclose. The false
+    "parse produced 0 Stmt::Cmd" parenthetical corrected. WITNESS XPILE-SHELLX-001
+    (crates/xpile/tests/shell_crossdomain_witness.rs, 5 tests, 12-source corpus): the property
+    `exit 0 ==> `sh -n` accepts it AND stdout+exit status byte-match CPython`, asserted over the
+    WHOLE corpus including refused rows. Executing half is load-bearing -- every pre-fix script was
+    valid POSIX, so a syntax-only witness stays green through the whole defect. Refusal half asserts
+    the FRONTEND still lowers each source before pinning BackendError::Lower. XPILE_REQUIRE_SH=1
+    tripwire.'
+  description: 'Executes PMAT-1382''s next-pick note, which names the Python->shell cross-domain path
+    as a lane none of PMAT-1380/1381/1382 swept. No gate file touched; crates/xpile/tests/witness_floor.rs
+    untouched (two-touch serial resource, PMAT-1372 / PMAT-1373). The shell lane counts only
+    tests/shell_diff_exec.rs, so the new witness file moves no floor.
+    ** WITNESS-OF-THE-WITNESS: the first draft of shell_crossdomain_witness.rs probed for the shell
+    with `sh -c` (no operand) and SKIPPED GREEN on a machine with a working /bin/sh -- the exact
+    skip-as-green shape XPILE-WITNESS-002 exists to kill, reproduced inside the witness written to
+    prevent it. Caught by noticing 5 tests finished in 0.01s (four python3 spawns cannot) and
+    re-running with --nocapture to read for the SKIP line. POSIX `sh` has no `--version`; probe with
+    `sh -c true`. General rule: a witness''s own toolchain gate is untested code -- measure its
+    RUNTIME, do not trust its green.
+    ** RESIDUAL PINNED, NOT HIDDEN: a function whose body has no renderable statement and an integer
+    trailing_return (e.g. `def f() -> int: return 7`) still emits an empty script. Nothing is
+    dropped that a script could express, and the empty-case comment no longer claims otherwise.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

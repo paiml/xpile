@@ -9,6 +9,59 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`--target shell` emitted a script that RAN DIFFERENTLY from its Python
+  source, and exited 0 doing it** (PMAT-1383). `BashrsBackend::lower` walked
+  each function body through a `filter` that kept the six renderable `Stmt`
+  kinds — `Cmd` / `Pipeline` / `ShellAssign` / `ShellLoop` / `ShellIf` /
+  `ShellCase` — and **discarded the other 35 without a word**. The bashrs
+  *frontend* only ever produces renderable statements, so the shell→shell
+  round-trip never saw this; the hole was reachable only from the Python
+  direction — the cross-domain lane `CLAUDE.md`'s own workflow item 3
+  advertises. Measured through the shipped CLI against live CPython, not
+  asserted:
+
+  | Python source                             | `python3`  | emitted `sh` |
+  |-------------------------------------------|------------|--------------|
+  | `print("hello")`                          | `hello`    | *(empty)*    |
+  | `run(a); x = 5; print(x); run(b)`         | `a b 5`    | `a b`        |
+  | `run(before); if 1 < 2: run(guarded)`     | 3 lines    | 2 lines      |
+  | `while i < 2: run(loop)`                  | `loop`×2   | *(empty)*    |
+  | `for i in range(2): run(iter)`            | `iter`×2   | *(empty)*    |
+  | `run(before); raise ValueError(...)`      | rc=1       | rc=0         |
+
+  Every one exited 0. The `if` row is the sharpest: the guarded command
+  disappeared while its unguarded siblings emitted, so the script *looked* like
+  a faithful translation and silently erased the condition. The loop rows
+  dropped the loop whole, body included, leaving a script whose only content was
+  the comment `# (no commands — empty script or parse produced 0 Stmt::Cmd)` —
+  itself false, since the parse produced statements. That parenthetical is
+  corrected too.
+
+  A **second, disjoint drop path**: meta-HIR carries a function's return value
+  as `Block::trailing_return`, an `Expr` *outside* `stmts`, so a walk over the
+  statement list alone leaves it unchecked — `return 1 + 2` was discarded the
+  same silent way. It now refuses unless it is an integer literal, which is
+  kept (both canonical cross-domain fixtures end in `return 0`) and **disclosed
+  in the emitted script**, because a script's exit status is its last command's,
+  not that integer. The disclosure is a comment, not an injected `exit`: a
+  comment cannot change stdout or kill a `.`-sourcing parent. It is suppressed
+  for `SourceLang::Shell` modules, where the `LitInt(0)` is bashrs-frontend's
+  synthetic `main` and no `return` exists in the user's script to disclose.
+
+  Everything else now **refuses** with a diagnostic naming the construct, its
+  statement position and its function. Witness `XPILE-SHELLX-001`
+  (`crates/xpile/tests/shell_crossdomain_witness.rs`, 5 tests over a 12-source
+  corpus) asserts the property *`exit 0` ⟹ the emitted script passes `sh -n`
+  **and** its stdout and exit status byte-match CPython* over the whole corpus,
+  refused rows included — so a future change that starts accepting one of them
+  is immediately checked for correctness rather than quietly going green. The
+  executing half is load-bearing: every pre-fix script above is valid POSIX, so
+  a syntax-only witness stays green through the entire defect. The refusal half
+  asserts the **frontend still lowers** each source before pinning
+  `BackendError::Lower`, so it cannot go vacuous if an unrelated frontend change
+  starts rejecting the input. `XPILE_REQUIRE_SH=1` turns a missing `sh` /
+  `python3` into a failure instead of a skip.
+
 - **The C lane had no truth-value bridge: `!a` emitted the *bitwise* invert, so
   `!5` returned `-6` where gcc returns `0`** (PMAT-1382). C has no boolean
   type. A comparison, `&&`/`||` and `!` all have type `int` and yield `0`/`1`,
