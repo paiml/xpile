@@ -9,6 +9,48 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`xpile quorum` scored the entire Extrinsic stratum at `0` for a `--roadmap`
+  path that does not exist, and `quorum` / `diamond` scored a contract universe
+  they never discovered** (PMAT-1386). The three §14.4 scoreboards —
+  `xpile quorum`, `xpile diamond`, `xpile attestations` — disagreed about what
+  an unmeasurable input is. All three shapes exited **0**; all three numbers
+  below were measured through the shipped CLI on 2026-07-27 before the fix:
+
+  | probe | live | reported |
+  |---|---|---|
+  | `quorum --roadmap <nonexistent>` | 702 Extrinsic mentions, 26 QUORUM | **0 mentions, 16 QUORUM** — `"extrinsic":0` on all 35 contracts, no stderr |
+  | `quorum --fixtures-dir <nonexistent>` | 239 Runtime votes | **207** — 32 votes gone, no notice |
+  | `quorum` / `diamond` over a dir with no contract YAML | — | `0 QUORUM, 0 PARTIAL, 0 UNVERIFIED (0 contracts total)` and `{"contracts":[]}` |
+
+  The first was `std::fs::read_to_string(roadmap_path).unwrap_or_default()` —
+  the read error was swallowed and a whole stratum read as a measured zero.
+  Its default is CWD-relative, which is precisely the trap PMAT-1367 wrote a
+  stderr notice for on `--witness-dir`; the other two path arguments of the
+  *same function* had no such guard. The third is the PMAT-1385 shape one level
+  up: a consumer reading `unverified == 0` sees a clean board over a universe
+  that was never discovered, and `attestations` had always refused that exact
+  input.
+
+  The fix splits by **kind** and makes the three reporters *agree* rather than
+  adding a fourth posture. An unreadable `--roadmap` and an empty contract
+  universe are **input errors** and now refuse, reusing `attestations`'s
+  existing message. A missing `--fixtures-dir` is a legitimately-absent half of
+  a **union** and gets the same one-line non-fatal stderr notice `--witness-dir`
+  already carried, for the reason PMAT-1367 recorded. A roadmap that *exists*
+  and mentions no contract still reports `extrinsic: 0` — an honest zero stays
+  distinguishable from an unread one, which is the entire point of the split.
+
+  Witness `XPILE-REPORTERVAC-001`
+  (`crates/xpile/tests/cli_reporter_vacuity_witness.rs`, 6 tests, 3.31 s, no
+  skip path). Verified RED without the fix: the three defect tests fail and the
+  three control/agreement tests pass in both directions. Every property is
+  vacuity-guarded on both sides, so a change that makes the reporters refuse
+  *everything* cannot pass the file; one test asserts the **consequence** —
+  zeroing Extrinsic must move at least one contract off QUORUM, or the stratum
+  is not load-bearing and the refusal would be theatre. Not in scope: the
+  `RUNTIME_PROBES` notion of "executes", and the four over-citations PMAT-1385
+  pinned as a shrink-only ceiling.
+
 - **`xpile audit` reported `100.0% [OK]` for corpora it never measured — and
   four of the repo's own audit tests had been reading that number for their
   whole lifetime** (PMAT-1385). `xpile audit` is the project's own falsifier
