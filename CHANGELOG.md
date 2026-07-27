@@ -40,6 +40,56 @@ would be lost. Emitting them flat was rejected — it would strip the receiver
 and reorder effects, a worse answer than an error. A class whose methods hold
 no commands is not an error; refusing there would be over-broad.
 
+### `--hardware ptx:<cap>` no longer copies an arbitrary string into `.target` (PMAT-1413)
+
+`emit_kernel` threads the compute capability **verbatim** into the emitted
+`.target` directive, and nothing checked it. Every one of these exited **0**:
+
+```console
+$ xpile transpile k.py --target ptx --hardware 'ptx:bogus' | grep '^\.target'
+.target bogus
+$ ptxas out.ptx -o /dev/null
+ptxas fatal: Target architecture not defined at start of PTX file
+
+$ xpile transpile k.py --target ptx --hardware 'ptx:sm_80 ; rm' | grep '^\.target'
+.target sm_80 ; rm            # a PTX *syntax* error
+```
+
+**The guard the code named was absent — and could not have worked.** `emit.rs`
+documented the fallback for a non-`sm_<num>` capability as "`validate_ptx` and
+the real `ptxas` are the downstream oracles either way". Both halves were false:
+`validate_ptx` has **zero** production call sites (every caller is a
+`#[cfg(test)]` fn or a `tests/` file), and even wired in it compares the
+*emitted* `.target` against the *requested* capability — so for `ptx:bogus`
+expected == found == `bogus` and it returns `Ok(())` by construction. "Call the
+existing validator" was measured to be the wrong fix before it was discarded.
+
+**A second, independent defect: the ISA version dropped the arch-variant
+suffix.** `ptx_version_for` parsed with `strip_prefix("sm_").parse::<u32>()`,
+which fails on the trailing letter of the architecture-specific spellings. The
+real Blackwell targets `sm_100a` / `sm_120a` / `sm_121a` fell back to the 8.0
+floor and emitted a module ptxas hard-rejects — `PTX .version 8.0 does not
+support .target sm_120a`. Same defect class PMAT-963 fixed for the non-suffixed
+spelling; the suffixed spelling was missed.
+
+**The grammar is measured, not guessed.** The obvious check — `sm_` plus digits
+— is wrong: `sm_90a`, `sm_100a`, `sm_120a`, `sm_121a` and `compute_90` are *real*
+targets that ptxas 13.0.48 assembles, so a digits-only rule would have traded
+this defect for a worse one. `validate_compute_capability` accepts
+`sm_<digits>` / `compute_<digits>` with an optional `a`/`f` variant suffix, and
+runs at the `emit_kernel` choke point every real emission passes through; the
+CLI calls that same function rather than restating the grammar.
+
+**Deliberate non-goal, stated rather than implied:** this checks *shape*, not
+*existence*. `sm_999` still passes and ptxas rejects it cleanly with
+`Unsupported .target 'sm_999'`. An allow-list of every NVIDIA architecture would
+go stale on the next generation — the rot PMAT-963 avoided by deriving `.version`
+instead of hard-coding it. xpile refuses what can never be valid PTX syntax;
+ptxas is the architecture-existence oracle.
+
+Gated by `crates/xpile/tests/ptx_capability_witness.rs` (5 tests), including an
+over-refusal guard that pins the 11 real spellings and would red on a
+digits-only grammar.
 
 ### The default `--target lean` emit now elaborates (PMAT-1405)
 

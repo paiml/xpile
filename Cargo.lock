@@ -1743,6 +1743,7 @@ dependencies = [
  "xpile-frontend",
  "xpile-meta-hir",
  "xpile-oracle",
+ "xpile-ptx-codegen",
  "xpile-wgsl-codegen",
 ]
 

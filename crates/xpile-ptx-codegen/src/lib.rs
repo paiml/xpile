@@ -39,7 +39,10 @@ mod emit;
 mod ptx_diffexec;
 mod rustc_nvptx;
 pub use cuda_diffexec::{cuda_toolchain_available, NvccCudaDiffExecEngine, FIXTURE_INPUT};
-pub use emit::{emit_kernel, ptx_version_for, KERNEL_NAME, PTX_VERSION};
+pub use emit::{
+    emit_kernel, ptx_version_for, validate_compute_capability, InvalidComputeCapability,
+    KERNEL_NAME, PTX_VERSION,
+};
 pub use ptx_diffexec::PtxDiffExecEngine;
 // PMAT-997: the 3rd categorically-independent §29 PTX emitter — nightly rustc's
 // nvptx64-nvidia-cuda target (LLVM NVPTX back-end). External subprocess, gated.
