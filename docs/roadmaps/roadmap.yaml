@@ -19102,3 +19102,82 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1422
+  title: 'PMAT-1422: [src] A BARE `f64.div` LIFTED TO PYTHON''S `/`: the WAT lift''s f64 table carried
+    the same stale-inverse shape PMAT-1421 fixed one type over, and `1.0/0.0` runs to `inf` at the source
+    and TRAPS after the xpile round trip, at exit 0 on every leg. PMAT-1002 had already established that
+    WASM''s `f64.div` is IEEE 754 (`1.0/0.0` -> inf, `0.0/0.0` -> NaN) where Python''s `/` raises ZeroDivisionError,
+    and made the emit guard EVERY float division against a zero divisor and trap. Re-derived from the
+    BINARY for a variable, a parameter and a literal divisor alike: the emit therefore never produces
+    a BARE `f64.div`, so the lift''s `f64.div` -> FloatOp::Div arm could only ever fire on hand-written
+    / third-party WAT - exactly the input an advertised `.wat` frontend exists to accept - and handed
+    it Python semantics. SECOND HALF, same sweep: `emit -> lift` was MEASURED over the emitted-construct
+    corpus and REFUSES two constructs the emit produces - `not` (lowered to `i32.eqz`, handled only inside
+    a loop condition where it is the negation guard) and float `/` (whose guard ends in `unreachable`).
+    Both refuse honestly at exit 1, but FOUR places claimed the lift is ''a right-inverse of emit on its
+    WAT image'' with no qualifier, and the fixture corpus could not falsify that because no fixture used
+    either construct.'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30, PMAT-1373). Took PMAT-1421''s
+    standing lead (b) VERBATIM: that slice swept the lift''s BINARY-OPERATOR table and recorded that `lift_call`,
+    the unary/`i32.eqz` path and the F64 TABLE had been read but not swept against a re-derived emit opcode
+    set the same way. Method identical to PMAT-1421: transpile a Python module exercising every operator,
+    strip the `$__wasm_*` prelude the lift skips, and diff the emit''s user-body opcode set against every
+    lift arm. THE TELL WAS IN THE REPOSITORY TWICE. (1) PMAT-1421''s OWN commit message quotes the emit''s
+    user-body set as including `f64.{add,sub,mul,div}` - true of the TOKEN, false of the BARE opcode,
+    and that distinction is the entire defect. (2) float_divzero_witness.rs (PMAT-1002) states the IEEE-vs-Python
+    divergence in its first paragraph; it witnesses the EMIT half and the LIFT half was never written.
+    Also swept and found HONEST: `i32.eq`/`i32.ne` ARE produced bare by the emit (for `bool ==`) so those
+    arms are live and correct; `f64.{add,sub,mul}` are bare and exact under both semantics; f32 has no
+    arm at all.'
+  fix: 'REFUSE a bare `f64.div`, naming the zero-divisor guard the emit uses instead (PMAT-1395: coercing
+    output into something that RUNS by picking one of two incompatible semantics installs a SILENT wrong
+    answer; PMAT-1421 precedent in this same file). `float_binop` now returns `Result<Option<FloatOp>,
+    FrontendError>` so the guard sits at the SINGLE decision point shared by all three lift sites (straight-line
+    body, loop condition, loop body) - the structure PMAT-1421 gave `int_binop` - rather than at three
+    call sites where one can be forgotten. SEPARATELY, `refuse_control` no longer tells the author of
+    an `i32.eqz`/`unreachable` that they wrote ''an arbitrary stack-machine branch / non-canonical (block
+    ...) / br_table'': both are squarely INSIDE the emit image, and the false message is what made the
+    hole read as out-of-image input rather than a gap. NO coercion, NO routing change, NO witness floor
+    touched, NO gate file edited.'
+  tests: 'FOUR witnesses in crates/xpile-wasm-frontend/src/tests.rs (mirroring the PMAT-1421 set). (1)
+    `bare_f64_div_lift_is_value_preserving_or_refuses_execution_differential` - a RELATION over LIVE execution,
+    not a hand-list: for each of 6 rows the reference outcome comes from running the hand-written source
+    under wasm-interp, then accepted => the round trip must run to the SAME outcome, refused => the mnemonic
+    must be one the emit never produces bare. The corpus includes `f64.div 6.0 3.0`, which AGREES - so
+    the per-MNEMONIC boundary is explicit rather than incidental - plus f64.add/sub/mul as controls, so
+    an ''everything refuses'' regression cannot pass. Vacuity guards pin 3 accepted / 3 refused. (2) `bare_f64_div_refuses_at_all_three_lift_sites`.
+    (3) `the_emit_still_guards_every_float_division_in_a_user_body` - the PREMISE, re-derived from the
+    EMITTER. NOTE THE SHAPE DIFFERENCE from PMAT-1421''s premise test: a user body DOES contain the token
+    `f64.div`, so ''no f64.div in a user body'' would be FALSE; the real premise is ''no UNGUARDED f64.div'',
+    and it is asserted that way, with a vacuity guard that the fixture emitted a division at all. (4)
+    `the_emit_image_round_trip_hole_is_exactly_not_and_float_div` - the enforcement half of the corrected
+    doc claim, 7 rows through emit->lift, reds in BOTH directions. RED HALF RUN 3x: arm restored -> the
+    differential reds naming `source f64:inf, round trip TRAP`; guard widened to `f64.mul` -> the over-refusal
+    control reds; the in-image message reverted -> the hole test reds. Witness RUNTIME measured, not trusted
+    (PMAT-1383): the differential prints ''all 6 references executed under wasm-interp'' past the skip
+    return, and does so with and without XPILE_REQUIRE_WASM_RUNTIME=1.'
+  docs: 'The unqualified ''right-inverse of emit on its WAT image'' claim appeared in FOUR live places
+    and is now scoped in all four: xpile-wasm-frontend/src/lib.rs (module doc), its tests.rs module doc,
+    its Cargo.toml dev-dependency comment, and `SourceLang::Wasm` in xpile-meta-hir. The lib.rs op enumeration
+    said the emit produces `f64.{add,sub,mul,div}` bare in a user body - corrected to `f64.{add,sub,mul}`
+    with the div refusal recorded alongside PMAT-1421''s five. A new lossy-posture bullet carries the
+    executed inf/nan-vs-trap table. CHANGELOG carries both halves. The doc claim is ENFORCED by witness
+    (4) above rather than merely reworded - PMAT-1417''s lesson.'
+  still_open: 'Named, not fixed: (a) CLOSING the round-trip hole needs meta-HIR representatives for a
+    unary `not` and a TRAP statement - 0.1.619 capability work, and it is why `not`/float-`/` refuse rather
+    than lift; (b) a correct bare-`f64.div` lift needs a meta-HIR float operator carrying IEEE (non-trapping)
+    division, the float analogue of PMAT-1421''s still-open WASM-wraparound integer operators - both are
+    the SAME missing distinction: meta-HIR has ONE arithmetic semantics and the source languages disagree
+    with it; (c) PMAT-1421''s lead (c) is UNTOUCHED - the deliberate `i32` -> Type::Bool residual still
+    renders a hand-written `(param $a i32)` as `bool` on --target rust; (d) `lift_call`''s non-helper
+    arm and the f32 type mapping (which has no operator arms at all) were read during this sweep but not
+    driven with an executed differential.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

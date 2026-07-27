@@ -1,11 +1,19 @@
 //! Round-trip fixed-point witness for the WAT lift (PMAT-954).
 //!
 //! The lift is lossy, so we do NOT claim `lift(emit(M)) == M`. The honest,
-//! checkable invariant is that the lift is a **right-inverse of emit on its
-//! WAT image**: `emit(lift(emit(M))) == emit(M)`. Each fixture below builds
-//! a straight-line scalar meta-HIR module, emits WAT, lifts it back, and
-//! asserts the re-emitted WAT is byte-identical — an executed proof that the
-//! lift reconstructs every instruction the emit produced.
+//! checkable invariant is that the lift is a **right-inverse of emit on the
+//! part of its WAT image the lift accepts**: `emit(lift(emit(M))) ==
+//! emit(M)`. Each fixture below builds a straight-line scalar meta-HIR
+//! module, emits WAT, lifts it back, and asserts the re-emitted WAT is
+//! byte-identical — an executed proof that the lift reconstructs every
+//! instruction the emit produced.
+//!
+//! That qualifier is PMAT-1422's, and it is measured, not hedged:
+//! `the_emit_image_round_trip_hole_is_exactly_not_and_float_div` pins the
+//! set of emitted constructs the lift refuses at exactly `not` and float
+//! `/`. A fixture corpus cannot establish an unqualified claim about the
+//! whole image — none of the fixtures below used either construct, which is
+//! why the unqualified version survived here for so long.
 
 use super::*;
 use std::path::Path;
@@ -1209,4 +1217,388 @@ fn the_emit_still_produces_no_bare_helper_routed_mnemonic_in_a_user_body() {
              vacuous:\n{user_bodies}"
         );
     }
+}
+
+// ─── PMAT-1422: bare `f64.div`, and the measured emit-image hole ─────────
+
+/// The f64 corpus: `(mnemonic, lhs, rhs, still_bare_in_the_emit)`.
+///
+/// `f64.div` appears three times — with a zero divisor (where WASM's IEEE
+/// `inf`/`NaN` and Python's `ZeroDivisionError` provably differ) AND with an
+/// ordinary divisor (where they agree exactly). Both must refuse: the lift
+/// sees an OPCODE, not a runtime divisor, so the boundary is per-mnemonic.
+/// The agreeing row is what makes that explicit rather than incidental.
+///
+/// `f64.{add,sub,mul}` are the CONTROL — still emitted bare and exact under
+/// both semantics (IEEE 754 doubles either way), so an "everything refuses"
+/// regression cannot pass.
+const BARE_F64_CORPUS: &[(&str, &str, &str, bool)] = &[
+    // guarded by the emit (PMAT-1002) — must refuse
+    ("f64.div", "1.0", "0.0", false),
+    ("f64.div", "0.0", "0.0", false),
+    ("f64.div", "6.0", "3.0", false),
+    // still bare in the emit — must accept AND stay value-preserving
+    ("f64.add", "1.5", "2.25", true),
+    ("f64.sub", "1.5", "2.25", true),
+    ("f64.mul", "1.5", "2.25", true),
+];
+
+#[test]
+fn bare_f64_div_lift_is_value_preserving_or_refuses_execution_differential() {
+    // Same RELATION as the PMAT-1421 differential, over live execution:
+    //   * lift accepted ⟹ the round-tripped module runs to the SAME outcome
+    //   * lift refused  ⟹ the mnemonic is one the emit never produces bare
+    //
+    // Pre-PMAT-1422 all six rows were ACCEPTED, and the two zero-divisor rows
+    // ran to a different outcome than their source (`inf` → TRAP, `nan` →
+    // TRAP), so the first arm fails on both — red-then-green. The third
+    // `f64.div` row (`6.0/3.0`) agreed even then, which is exactly why no
+    // fixture caught this.
+    if !xpile_wasm_codegen::wasm_runtime_available() {
+        eprintln!("SKIP bare-f64 execution differential: WABT not invocable");
+        return;
+    }
+
+    let mut accepted = 0usize;
+    let mut refused = 0usize;
+    let mut diverged: Vec<String> = Vec::new();
+    for (i, (op, lhs, rhs, still_bare)) in BARE_F64_CORPUS.iter().enumerate() {
+        let src = format!(
+            "(module\n  ;; source module: f{i}\n  (func $f (result f64)\n    \
+             f64.const {lhs}\n    f64.const {rhs}\n    {op}\n  )\n  \
+             (export \"f\" (func $f))\n)\n"
+        );
+        let reference = interp_outcome(&src, &format!("fref{i}"));
+
+        match lift_wat(&format!("f{i}"), &src) {
+            Ok(m) => {
+                accepted += 1;
+                let observed = interp_outcome(&emit(&m), &format!("frt{i}"));
+                if observed != reference {
+                    diverged.push(format!(
+                        "{op} {lhs} {rhs}: source {reference}, round trip {observed}"
+                    ));
+                }
+                assert_eq!(
+                    observed, reference,
+                    "{op} {lhs} {rhs}: the lift ACCEPTED the module but the \
+                     round-tripped WAT runs to {observed} where the source runs \
+                     to {reference} — a divergence at exit 0 on every leg"
+                );
+                assert!(
+                    *still_bare,
+                    "{op} is guarded by the emit (PMAT-1002), so the bare opcode \
+                     is outside the lift image and must refuse"
+                );
+            }
+            Err(e) => {
+                refused += 1;
+                assert!(
+                    !*still_bare,
+                    "{op} is still emitted bare and is exact under both \
+                     semantics, so refusing it is over-refusal: {e}"
+                );
+                let msg = format!("{e}");
+                assert!(
+                    msg.contains("outside the lift subset"),
+                    "refusal must use the honest-boundary phrasing: {msg}"
+                );
+                assert!(
+                    msg.contains("f64.eq") && msg.contains("unreachable"),
+                    "refusal must name the zero-divisor guard the emit uses \
+                     instead of the bare opcode: {msg}"
+                );
+            }
+        }
+    }
+    assert!(
+        diverged.is_empty(),
+        "accepted-but-divergent rows: {diverged:?}"
+    );
+    // Vacuity guards: neither arm may be empty.
+    assert_eq!(refused, 3, "every `f64.div` row is outside the lift image");
+    assert_eq!(
+        accepted, 3,
+        "f64 add/sub/mul are still emitted bare and stay accepted"
+    );
+    eprintln!(
+        "witness[PMAT-1422]: {accepted} accepted (value-preserving, executed) \
+         / {refused} refused, all 6 references executed under wasm-interp"
+    );
+}
+
+#[test]
+fn bare_f64_div_refuses_at_all_three_lift_sites() {
+    // The guard lives in `float_binop`, the SINGLE decision point shared by
+    // the straight-line body, the loop condition and the loop body. Pinned
+    // per SITE so re-adding the arm to one path cannot pass.
+    let sites: [(&str, &str); 3] = [
+        (
+            "straight-line body",
+            "(module\n  ;; source module: s\n  (func $f (result f64)\n    \
+             f64.const 1.0\n    f64.const 0.0\n    f64.div\n  )\n)",
+        ),
+        (
+            "loop condition",
+            "(module\n  ;; source module: s\n  (func $f (result f64)\n    \
+             (local $x f64)\n    f64.const 0.0\n    local.set $x\n    \
+             (block $brk (loop $cont\n      f64.const 1.0\n      f64.const 0.0\n      \
+             f64.div\n      i32.eqz\n      br_if $brk\n      br $cont\n    ))\n    \
+             local.get $x\n  )\n)",
+        ),
+        (
+            "loop body",
+            "(module\n  ;; source module: s\n  (func $f (result f64)\n    \
+             (local $x f64)\n    f64.const 0.0\n    local.set $x\n    \
+             (block $brk (loop $cont\n      i32.const 0\n      i32.eqz\n      \
+             br_if $brk\n      f64.const 1.0\n      f64.const 0.0\n      f64.div\n      \
+             local.set $x\n      br $cont\n    ))\n    local.get $x\n  )\n)",
+        ),
+    ];
+    for (site, wat) in sites {
+        let Err(err) = lift_wat("s", wat) else {
+            panic!("bare `f64.div` must be refused in the {site}");
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("bare `f64.div`") && msg.contains("ZeroDivisionError"),
+            "{site}: refusal must name the opcode and the semantics it does \
+             not carry, got: {msg}"
+        );
+    }
+}
+
+#[test]
+fn the_emit_still_guards_every_float_division_in_a_user_body() {
+    // The PREMISE of the refusal, re-derived from the EMITTER rather than
+    // asserted. Note the shape difference from the PMAT-1421 premise test: a
+    // user body DOES contain the token `f64.div` — what makes the bare opcode
+    // out-of-image is that the emit always precedes it with the zero-divisor
+    // guard. Asserting "no `f64.div` in a user body" would be false; asserting
+    // "no UNGUARDED `f64.div`" is the real premise. If a future slice drops
+    // the guard, this reds and says the refusal has become over-refusal.
+    let m = module(
+        "premise",
+        vec![func(
+            "d",
+            vec![p("x", Type::F64), p("y", Type::F64)],
+            Type::F64,
+            Block {
+                stmts: vec![],
+                trailing_return: Expr::FloatBinOp {
+                    op: xpile_meta_hir::FloatOp::Div,
+                    lhs: Box::new(ident("x")),
+                    rhs: Box::new(ident("y")),
+                },
+            },
+        )],
+    );
+    let wat = emit(&m);
+    let user_bodies: String = wat
+        .split("\n  (func ")
+        .filter(|f| !f.starts_with("$__wasm_"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    // Vacuity: the fixture really did emit a division.
+    assert!(
+        user_bodies.contains("f64.div"),
+        "fixture must emit an `f64.div` or the guard assertion below is \
+         vacuous:\n{user_bodies}"
+    );
+    let before = user_bodies
+        .split("f64.div")
+        .next()
+        .expect("split always yields a first segment");
+    assert!(
+        before.contains("f64.eq") && before.contains("unreachable"),
+        "the emit produced an UNGUARDED `f64.div` in a user body — the \
+         PMAT-1422 refusal has become over-refusal and the `float_binop` arm \
+         must be restored:\n{user_bodies}"
+    );
+}
+
+/// The two instructions the emit produces in a user body that the lift
+/// cannot invert, MEASURED rather than restated (PMAT-1422).
+///
+/// This is the enforcement half of the corrected module-doc claim. Until
+/// PMAT-1422 the docs said the lift is "a right-inverse of emit on its WAT
+/// image" with no qualifier, and the fixed-point fixtures could not falsify
+/// it because none of them used `not` or float `/`. Each row below builds a
+/// meta-HIR module, emits it, and lifts the emit's OWN output back.
+///
+/// It reds in BOTH directions on purpose: if the hole is closed (a meta-HIR
+/// `not` / trap arrives), the `Err` rows fail and the doc must drop them; if
+/// the hole WIDENS, an `Ok` row fails and the doc must grow.
+#[test]
+fn the_emit_image_round_trip_hole_is_exactly_not_and_float_div() {
+    let bool_p = || vec![p("a", Type::Bool)];
+    let f64_pp = || vec![p("x", Type::F64), p("y", Type::F64)];
+    let i64_pp = || vec![p("a", Type::I64), p("b", Type::I64)];
+
+    let cases: Vec<(&str, bool, Module)> = vec![
+        // ── the hole: emitted, but not liftable ──
+        (
+            "not",
+            false,
+            module(
+                "h",
+                vec![func(
+                    "f",
+                    bool_p(),
+                    Type::Bool,
+                    Block {
+                        stmts: vec![],
+                        trailing_return: Expr::UnOp {
+                            op: xpile_meta_hir::UnOp::Not,
+                            operand: Box::new(ident("a")),
+                        },
+                    },
+                )],
+            ),
+        ),
+        (
+            "float /",
+            false,
+            module(
+                "h",
+                vec![func(
+                    "f",
+                    f64_pp(),
+                    Type::F64,
+                    Block {
+                        stmts: vec![],
+                        trailing_return: Expr::FloatBinOp {
+                            op: xpile_meta_hir::FloatOp::Div,
+                            lhs: Box::new(ident("x")),
+                            rhs: Box::new(ident("y")),
+                        },
+                    },
+                )],
+            ),
+        ),
+        // ── the controls: emitted AND liftable ──
+        (
+            "int +",
+            true,
+            module(
+                "h",
+                vec![func(
+                    "f",
+                    i64_pp(),
+                    Type::I64,
+                    Block {
+                        stmts: vec![],
+                        trailing_return: binop(BinOp::Add, ident("a"), ident("b")),
+                    },
+                )],
+            ),
+        ),
+        (
+            "int //",
+            true,
+            module(
+                "h",
+                vec![func(
+                    "f",
+                    i64_pp(),
+                    Type::I64,
+                    Block {
+                        stmts: vec![],
+                        trailing_return: binop(BinOp::FloorDiv, ident("a"), ident("b")),
+                    },
+                )],
+            ),
+        ),
+        (
+            "int &",
+            true,
+            module(
+                "h",
+                vec![func(
+                    "f",
+                    i64_pp(),
+                    Type::I64,
+                    Block {
+                        stmts: vec![],
+                        trailing_return: binop(BinOp::BitAnd, ident("a"), ident("b")),
+                    },
+                )],
+            ),
+        ),
+        (
+            "float +",
+            true,
+            module(
+                "h",
+                vec![func(
+                    "f",
+                    f64_pp(),
+                    Type::F64,
+                    Block {
+                        stmts: vec![],
+                        trailing_return: Expr::FloatBinOp {
+                            op: xpile_meta_hir::FloatOp::Add,
+                            lhs: Box::new(ident("x")),
+                            rhs: Box::new(ident("y")),
+                        },
+                    },
+                )],
+            ),
+        ),
+        (
+            "comparison",
+            true,
+            module(
+                "h",
+                vec![func(
+                    "f",
+                    i64_pp(),
+                    Type::Bool,
+                    Block {
+                        stmts: vec![],
+                        trailing_return: binop(BinOp::Lt, ident("a"), ident("b")),
+                    },
+                )],
+            ),
+        ),
+    ];
+
+    let mut holes: Vec<&str> = Vec::new();
+    for (label, liftable, m) in &cases {
+        let wat = emit(m);
+        let got = lift_wat(&m.name, &wat);
+        if got.is_err() {
+            holes.push(label);
+        }
+        assert_eq!(
+            got.is_ok(),
+            *liftable,
+            "`{label}`: emit → lift is {}, expected {}. The module doc's \
+             right-inverse claim is scoped to exactly the measured hole \
+             (`not` and float `/`); if this changed, the doc changed too.\n\
+             --- emitted ---\n{wat}\n--- lift ---\n{got:?}",
+            if got.is_ok() { "OK" } else { "REFUSED" },
+            if *liftable { "OK" } else { "REFUSED" },
+        );
+    }
+    assert_eq!(
+        holes,
+        vec!["not", "float /"],
+        "the measured emit-image hole must stay exactly these two constructs"
+    );
+
+    // The refusals must name the REAL reason. Before PMAT-1422 both were
+    // reported as "an arbitrary stack-machine branch / non-canonical
+    // `(block …)` / `br_table`", which is false — `i32.eqz` and `unreachable`
+    // are squarely inside the emit image.
+    for (label, _, m) in cases.iter().filter(|(_, ok, _)| !ok) {
+        let err = lift_wat(&m.name, &emit(m)).expect_err("hole row must refuse");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("IS inside the `xpile-wasm-codegen` emit image"),
+            "`{label}`: the refusal must say the instruction is IN the image, \
+             not blame an arbitrary stack-machine branch: {msg}"
+        );
+    }
+    eprintln!("witness[PMAT-1422]: emit-image round-trip hole measured at {holes:?}");
 }
