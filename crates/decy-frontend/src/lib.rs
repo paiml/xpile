@@ -298,9 +298,27 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                     toks.push(Tok::FNum(v));
                 } else {
                     let s = &src[start..i];
-                    let v: i64 = s
-                        .parse()
-                        .map_err(|_| format!("integer literal `{s}` does not fit in i64"))?;
+                    // PMAT-1382: a C integer literal with a LEADING ZERO is
+                    // OCTAL (C17 6.4.4.1), not decimal. Through v0.1.617 this
+                    // branch ran a base-10 `parse()` over the whole run, so
+                    // `010` lifted as 10 and the CLI exited 0 emitting Rust
+                    // that computes a DIFFERENT VALUE than the C it was given
+                    // (gcc: 8). Hex (`0xff`) never reaches here — the `x` ends
+                    // the digit run and the parser refuses the stray ident —
+                    // so leading-zero-plus-digits is exactly the octal case.
+                    let v: i64 = if s.len() > 1 && s.starts_with('0') {
+                        i64::from_str_radix(&s[1..], 8).map_err(|_| {
+                            format!(
+                                "integer literal `{s}` has a leading zero, so C reads it as \
+                                 OCTAL, but `{}` is not a valid octal digit string (C octal \
+                                 digits are 0-7)",
+                                &s[1..]
+                            )
+                        })?
+                    } else {
+                        s.parse()
+                            .map_err(|_| format!("integer literal `{s}` does not fit in i64"))?
+                    };
                     toks.push(Tok::Num(v));
                 }
             }

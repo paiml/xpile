@@ -9,6 +9,64 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **The C lane had no truth-value bridge: `!a` emitted the *bitwise* invert, so
+  `!5` returned `-6` where gcc returns `0`** (PMAT-1382). C has no boolean
+  type. A comparison, `&&`/`||` and `!` all have type `int` and yield `0`/`1`,
+  and conversely any scalar is a legal controlling expression — `if (a)` means
+  `if (a != 0)`. Rust's `bool` is a distinct type in **both** directions, and no
+  bridge existed. The emitter's own comment asserted the opposite: that a
+  comparison is "correct for `if`/`&&`/`||` operand positions, which is where
+  the C frontend places them". It places them wherever C does, which is anywhere
+  an `int` may appear. That comment is corrected in place rather than deleted.
+  Found by a 129-probe `gcc`-vs-(`xpile` → `rustc` → run) differential sweep of
+  the decy/C frontend — the last lane named by PMAT-1380's next-pick note that
+  PMAT-1377/1378/1379/1381 had not swept — run through the shipped CLI.
+  **Three silent wrong answers**, each of which compiled cleanly and returned a
+  different number than gcc:
+  1. C `!x` lowered to Rust `!(x)`, **byte identical** to the `~x` arm, so
+     `int f(int a) { return !a; }` returned `-6` for `a = 5` where gcc returns
+     `0`. Only `!(-1)` agreed, by coincidence.
+  2. A **leading-zero integer literal is octal** in C (C17 6.4.4.1) but took a
+     base-10 `parse()`: `010` computed `10` where gcc computes `8`. `08` now
+     refuses by *naming* the octal reading rather than guessing a base.
+  3. The "widest wins" width pick silently retyped a whole function across the
+     **int/float boundary**, deleting C's truncating conversion:
+     `int trunc_it(double a) { return a; }` returned `3.9` where gcc returns
+     `3`, and `double f(int b)` retyped its *parameter*, so no C-shaped caller
+     could call it. This now **refuses**. The width doc comment already called a
+     mixed-width function "a deferred edge"; nothing enforced it. Uniformly-float
+     functions still transpile — the refusal is narrow, and that is asserted both
+     ways.
+
+  **Ten accept-then-reject shapes** (exit 0, `rustc` rejects) — the class
+  PMAT-1378 closed for WASM and PMAT-1381 for the Rust lane: int conditions in
+  `if`/`while`/ternary and int `&&`/`||` operands (`E0308`); a truth value used
+  as an int — `return a < b;`, `(a < b) + 10`, `a & b == 0` (`E0308`/`E0599`);
+  and a **reassigned parameter**, the idiomatic C countdown
+  `while (n) { n = n - 1; }`, emitting a non-`mut` binding (`E0384`) because
+  decy's `mark_mutable` reaches only `Stmt::Let` locals and never the parameter
+  list. Short-circuit order is preserved — witnessed by `a && g(a)` not dividing
+  by zero when `a` is `0`.
+
+  **The witness is a property, not a message pin.** `XPILE-CTRUTH-001`
+  (`crates/xpile/tests/c_truth_witness.rs`, 8 tests) asserts
+  `Ok(rust) ⟹ rustc accepts it` over a 47-source corpus, because a per-shape
+  assertion cannot catch the *next* shape that leaks. Its **executing** half
+  compiles the same C with `cc` and byte-compares stdout — load-bearing here,
+  not decorative: emitting `!(x)` type-checked perfectly, so a type-check-only
+  witness would have stayed green through the entire defect. 47/47 accepted,
+  compiled, and agreeing with gcc byte-for-byte; six mutants run, all six red.
+  `XPILE_REQUIRE_CC=1` makes a missing C compiler a failure rather than a skip.
+
+  **A harness trap worth recording**, because it cut both ways. The first run
+  reported nine divergences and **five were the harness**: a separate driver
+  translation unit silently defaults every callee to `int f()`, faking
+  divergences on `long`/`unsigned`/`double` returns. Worse, the harness's own
+  `(long long)` normalisation *masked* a real defect — it truncated the `3.9`
+  that `int f(double a)` wrongly returned into the `3` gcc prints, so divergence
+  (3) read as a match until it was probed directly. A differential's
+  normalisation can hide exactly the class it is hunting.
+
 - **`--target rust` exited 0 emitting Rust that `rustc` REJECTS, for any local
   first bound inside an `if` branch** (PMAT-1381). Python binds at **function**
   scope, so `if c: y = 5` followed by `print(y)` is legal Python. The emitted
@@ -865,6 +923,19 @@ quote the `// live NNN @ DATE` comments in `witness_floor.rs` — they are
 touch-point snapshots and are *expected* to trail the live count between the two
 permitted floor touches per release.
 
+**8. Two C-lane width residuals, pinned rather than refused** (PMAT-1382).
+The C→Rust path emits one scalar width per function. Across the *signed
+integer* widths that is value-preserving, but two mixed cases are not, and both
+are asserted out loud by `c_truth_witness.rs` so that closing either one reds
+the test rather than passing silently. (a) An `int` parameter in a `long`
+function is emitted `i64`, so a caller may pass a value no C caller could;
+value-preserving for in-range inputs, which is why it is not grouped with the
+int/float case that now refuses. (b) An `int` parameter in an `unsigned`
+function is emitted `u32`: C's usual arithmetic conversions make
+`f(-1, 0) == 4294967295`, while the emitted signature cannot express that call
+at all. Neither silently *mis-computes* a value — the call is simply
+unspellable — which is why they are pinned residuals and not refusals.
+
 **Negative results from this cycle's differential passes, recorded so they are
 not re-derived.** Across roughly 170 CPython-vs-artifact probes run over
 PMAT-1377/1378/1379 and a further pass on 2026-07-27, the following came back
@@ -883,7 +954,15 @@ which is the divergence the length-prefixed UTF-8 ABI could plausibly have had
 and does not. The bashrs lane came back clean over 90 probes covering
 redirections, logical operators, subshells, function definitions, comments, line
 continuations, quoting edges, globs, parameter expansion and deep control-flow
-nesting: every non-OK case was an honest refusal.
+nesting: every non-OK case was an honest refusal. The decy/C lane, swept over 129 gcc
+differential probes on 2026-07-27 (PMAT-1382), refuses a wide surface **honestly**
+and that was re-confirmed rather than assumed: preprocessor directives,
+`for`/`do-while`/`switch`/`goto`, arrays, structs, typedefs, globals, casts,
+`sizeof`, the comma operator, compound assignment, `++`, `char`/`short` types,
+character literals and hex/suffixed literals all fail with a lowering error rather
+than shredding. Its integer `/` and `%` already matched C **truncation** over every
+sign combination, and the PMAT-964 bitwise/shift precedence chain is correct as
+written — `a + b << c`, `a | b & c` and `a & b == 0` all group as C groups them.
 
 
 ## [0.1.617] - 2026-07-26

@@ -5518,6 +5518,29 @@ fn c_function_width(f: &Function) -> CWidth {
     }
 }
 
+/// PMAT-1382: names assigned (`x = e;`) anywhere in `stmts`, recursing into
+/// `while`/`if` bodies. A PARAMETER in this set must be emitted `mut`; decy's
+/// own `mark_mutable` covers only `Stmt::Let` locals, so params were missed.
+fn c_collect_reassigned(stmts: &[Stmt], out: &mut std::collections::HashSet<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { name, .. } => {
+                out.insert(name.clone());
+            }
+            Stmt::While { body, .. } => c_collect_reassigned(body, out),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                c_collect_reassigned(then_body, out);
+                c_collect_reassigned(else_body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Does any `let` in `stmts` (recursing into `while`/`if` bodies) declare a
 /// local of type `want`? Drives the PMAT-909/910 "widest wins" width pick.
 fn c_stmts_have_ty(stmts: &[Stmt], want: &Type) -> bool {
@@ -5556,6 +5579,45 @@ fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
         )));
     }
     let w = c_function_width(f);
+    // PMAT-1382: "widest wins" retypes the WHOLE function to one scalar width.
+    // Across the signed integer widths that is value-preserving (an `int` fits
+    // in `i64`; only the wrap width moves). Across the INT/FLOAT boundary it is
+    // NOT: it silently deletes C's truncating float→int conversion. Through
+    // v0.1.617 `int trunc_it(double a) { return a; }` emitted
+    // `pub fn trunc_it(a: f64) -> f64 { a }`, so the CLI exited 0 on Rust that
+    // compiles and returns 3.9 where gcc returns 3 — and a `double f(int b)`
+    // retyped its PARAMETER, so no C-shaped caller could even call it. The
+    // width doc comment already called a mixed-width function "a deferred
+    // edge"; nothing enforced it. Refuse rather than mis-emit.
+    if w.is_float {
+        let int_ty = |t: &Type| matches!(t, Type::I64 | Type::CLong | Type::CUInt | Type::CULong);
+        let offender = if int_ty(&f.return_type) {
+            Some(format!("return type {:?}", f.return_type))
+        } else {
+            f.params
+                .iter()
+                .find(|p| int_ty(&p.ty))
+                .map(|p| format!("parameter `{}` of type {:?}", p.name, p.ty))
+                .or_else(|| {
+                    [Type::I64, Type::CLong, Type::CUInt, Type::CULong]
+                        .iter()
+                        .find(|t| c_stmts_have_ty(&f.body.stmts, t))
+                        .map(|t| format!("a local of type {t:?}"))
+                })
+        };
+        if let Some(offender) = offender {
+            return Err(CodegenError::Unsupported(format!(
+                "C function `{}` mixes the float width `{}` with an integer type \
+                 ({offender}) — the C→Rust emit path rides ONE scalar width per \
+                 function, which would silently retype that integer as `{}` and \
+                 DROP C's truncating conversion (`int f(double a) {{ return a; }}` \
+                 returns 3 in C but would return 3.9). C's usual arithmetic \
+                 conversions are not modelled; keep the function uniformly float \
+                 or uniformly integer",
+                f.name, w.rust_ty, w.rust_ty
+            )));
+        }
+    }
     if w.is_float {
         // PMAT-912: a C `double`/`float` function obeys IEEE f64/f32
         // arithmetic, NOT the two's-complement wrapping `C-C-INT-ARITH`
@@ -5581,12 +5643,23 @@ fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
         // C int/long arithmetic is governed by the on-disk C-C-INT-ARITH.
         writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
     }
+    // PMAT-1382: C parameters are ordinary mutable locals, and decy's
+    // `mark_mutable` only reaches `Stmt::Let` — so a REASSIGNED parameter
+    // (`while (a) { a = a - 1; }`, the idiomatic C countdown) emitted a
+    // non-`mut` binding and the CLI exited 0 on Rust rustc rejects with E0384.
+    let mut reassigned = std::collections::HashSet::new();
+    c_collect_reassigned(&f.body.stmts, &mut reassigned);
     write!(out, "pub fn {}(", f.name)?;
     for (i, p) in f.params.iter().enumerate() {
         if i > 0 {
             write!(out, ", ")?;
         }
-        write!(out, "{}: {}", p.name, w.rust_ty)?;
+        let m = if reassigned.contains(&p.name) {
+            "mut "
+        } else {
+            ""
+        };
+        write!(out, "{m}{}: {}", p.name, w.rust_ty)?;
     }
     writeln!(out, ") -> {} {{", w.rust_ty)?;
     for stmt in &f.body.stmts {
@@ -5627,8 +5700,10 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str, w: CWidth) -> Result
             Ok(())
         }
         Stmt::While { cond, body } => {
+            // PMAT-1382: a C controlling expression — `while (n)` means
+            // `while (n != 0)`, and Rust demands a `bool`.
             write!(out, "{indent}while ")?;
-            emit_c_expr(out, cond, w)?;
+            emit_c_truth(out, cond, w)?;
             writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
             for s in body {
@@ -5644,8 +5719,10 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str, w: CWidth) -> Result
             then_body,
             else_body,
         } => {
+            // PMAT-1382: a C controlling expression — `if (a)` means
+            // `if (a != 0)`, and Rust demands a `bool`.
             write!(out, "{indent}if ")?;
-            emit_c_expr(out, cond, w)?;
+            emit_c_truth(out, cond, w)?;
             writeln!(out, " {{")?;
             let inner = format!("{indent}    ");
             for s in then_body {
@@ -5668,7 +5745,70 @@ fn emit_c_stmt(out: &mut String, stmt: &Stmt, indent: &str, w: CWidth) -> Result
     }
 }
 
+/// PMAT-1382: does this C expression emit as a Rust `bool` rather than as the
+/// function's arithmetic width?
+///
+/// C has NO boolean type: a comparison, a logical `&&`/`||` and a logical `!`
+/// all have type `int` and yield `0`/`1`, and CONVERSELY any scalar is a legal
+/// controlling expression (`if (a)` means `a != 0`). Rust's `bool` is a
+/// distinct type in both directions, so the C→Rust path needs an explicit
+/// bridge at every position where the two typings disagree. Through v0.1.617
+/// there was none: `emit_c_binop`'s own comment asserted comparisons only ever
+/// land "in `if`/`&&`/`||` operand positions, which is where the C frontend
+/// places them" — but the frontend places them wherever C does, which is
+/// anywhere an `int` may appear.
+fn c_expr_is_rust_bool(e: &Expr) -> bool {
+    match e {
+        Expr::BinOp { op, .. } => matches!(
+            op,
+            BinOp::Eq
+                | BinOp::NotEq
+                | BinOp::Lt
+                | BinOp::LtEq
+                | BinOp::Gt
+                | BinOp::GtEq
+                | BinOp::And
+                | BinOp::Or
+        ),
+        Expr::UnOp { op: UnOp::Not, .. } => true,
+        _ => false,
+    }
+}
+
+/// PMAT-1382: emit `e` in a CONTROLLING position (an `if`/`while` condition, a
+/// ternary condition, or a `&&`/`||`/`!` operand), where Rust demands a `bool`.
+/// A C expression that is already a truth value emits as-is; any other scalar
+/// takes C's own `!= 0` truthiness test at the function's width.
+fn emit_c_truth(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError> {
+    if c_expr_is_rust_bool(e) {
+        return emit_c_expr_inner(out, e, w);
+    }
+    write!(out, "(")?;
+    emit_c_expr_inner(out, e, w)?;
+    write!(out, ") != 0{}", w.lit_suffix)?;
+    Ok(())
+}
+
+/// PMAT-1382: emit `e` in a VALUE position, at the function's arithmetic width.
+/// A C truth value has type `int`, so a Rust `bool` is cast back to the width.
+/// `bool as f64` is NOT legal Rust (only `bool as <integer>` is), so the float
+/// widths route through `i32` — matching C, where `!x` and `a < b` are `int`
+/// before the usual arithmetic conversions widen them.
 fn emit_c_expr(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError> {
+    if c_expr_is_rust_bool(e) {
+        write!(out, "((")?;
+        emit_c_expr_inner(out, e, w)?;
+        if w.is_float {
+            write!(out, ") as i32 as {})", w.rust_ty)?;
+        } else {
+            write!(out, ") as {})", w.rust_ty)?;
+        }
+        return Ok(());
+    }
+    emit_c_expr_inner(out, e, w)
+}
+
+fn emit_c_expr_inner(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError> {
     match e {
         // PMAT-909/910/911: the literal suffix tracks the function width
         // (`i32` for C `int`, `i64` for `long`/`int64_t`, `f64` for `double`,
@@ -5701,9 +5841,15 @@ fn emit_c_expr(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError
                 emit_c_expr(out, operand, w)?;
                 write!(out, ").wrapping_neg()")?;
             }
+            // PMAT-1382: C logical `!x` is `x == 0` — an `int` 0/1, NOT a
+            // bitwise invert. Through v0.1.617 it emitted Rust `!(x)`, BYTE
+            // IDENTICAL to the `~x` arm below, so `!5` returned -6 where C
+            // returns 0 — a silent wrong answer that compiled cleanly. The
+            // operand takes C's own truthiness test, and `c_expr_is_rust_bool`
+            // reports this node as a `bool` so a value position casts it back.
             UnOp::Not => {
                 write!(out, "!(")?;
-                emit_c_expr(out, operand, w)?;
+                emit_c_truth(out, operand, w)?;
                 write!(out, ")")?;
             }
             // PMAT-502fb: bitwise invert — Rust `!` on a signed integer.
@@ -5718,8 +5864,11 @@ fn emit_c_expr(out: &mut String, e: &Expr, w: CWidth) -> Result<(), CodegenError
             then_expr,
             else_expr,
         } => {
+            // PMAT-1382: the C ternary's condition is a CONTROLLING expression
+            // (`a ? x : y` means `a != 0 ? x : y`), so it takes the truth
+            // bridge; the two arms are values at the function's width.
             write!(out, "if ")?;
-            emit_c_expr(out, cond, w)?;
+            emit_c_truth(out, cond, w)?;
             write!(out, " {{ ")?;
             emit_c_expr(out, then_expr, w)?;
             write!(out, " }} else {{ ")?;
@@ -5754,9 +5903,14 @@ fn emit_c_binop(
     w: CWidth,
 ) -> Result<(), CodegenError> {
     // Arithmetic: wrapping (C signed overflow is UB → deterministic
-    // two's-complement). Comparisons / logicals: plain infix, producing
-    // a Rust `bool` (correct for `if`/`&&`/`||` operand positions, which
-    // is where the C frontend places them). The `wrapping_*` methods are
+    // two's-complement). Comparisons / logicals: plain infix, producing a Rust
+    // `bool`. PMAT-1382 CORRECTED the claim that used to stand here — that a
+    // comparison is "correct for `if`/`&&`/`||` operand positions, which is
+    // where the C frontend places them". It is not where C places them: C has
+    // no boolean type, so `a < b` is an `int` usable in arithmetic, and any
+    // `int` is usable as a condition. `emit_c_expr` / `emit_c_truth` bridge
+    // both directions; this function's job is only the raw operator. The
+    // `wrapping_*` methods are
     // width-agnostic in syntax — they wrap at the operand's width (i32 or
     // the PMAT-909 i64) without a suffix change.
     let wrapping = |out: &mut String, method: &str| -> Result<(), CodegenError> {
@@ -5771,6 +5925,22 @@ fn emit_c_binop(
         emit_c_expr(out, lhs, w)?;
         write!(out, " {sym} ")?;
         emit_c_expr(out, rhs, w)?;
+        Ok(())
+    };
+    // PMAT-1382: `&&`/`||`, whose operands are CONTROLLING expressions rather
+    // than values. Fully parenthesized so the `!= 0` tests the truth bridge
+    // introduces cannot regroup against Rust's own precedence.
+    let truth_infix = |out: &mut String,
+                       lhs: &Expr,
+                       sym: &str,
+                       rhs: &Expr,
+                       w: CWidth|
+     -> Result<(), CodegenError> {
+        write!(out, "(")?;
+        emit_c_truth(out, lhs, w)?;
+        write!(out, ") {sym} (")?;
+        emit_c_truth(out, rhs, w)?;
+        write!(out, ")")?;
         Ok(())
     };
     // PMAT-964: a FULLY-parenthesized infix `(lhs OP rhs)` for the C bitwise
@@ -5834,8 +6004,13 @@ fn emit_c_binop(
         BinOp::LtEq => infix(out, "<=")?,
         BinOp::Gt => infix(out, ">")?,
         BinOp::GtEq => infix(out, ">=")?,
-        BinOp::And => infix(out, "&&")?,
-        BinOp::Or => infix(out, "||")?,
+        // PMAT-1382: C `&&`/`||` take CONTROLLING operands (`a && b` means
+        // `a != 0 && b != 0`) and yield an `int` 0/1. Through v0.1.617 the
+        // operands went through the value emitter, so an integer operand
+        // produced Rust `a && b` on two `i32`s — the CLI exited 0 on Rust
+        // rustc rejects with E0308. Short-circuit order is preserved.
+        BinOp::And => truth_infix(out, lhs, "&&", rhs, w)?,
+        BinOp::Or => truth_infix(out, lhs, "||", rhs, w)?,
         // PMAT-964: C bitwise `& | ^` are integer-only — invalid on a float
         // operand (a C type error). Refuse on the float widths rather than
         // mis-emit. On the integer widths they are TOTAL (no overflow), so a
