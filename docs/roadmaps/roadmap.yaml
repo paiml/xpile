@@ -16350,3 +16350,67 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1381
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1381: [honesty/rust-lane] `--target rust` EXITED 0 emitting Rust that `rustc` REJECTS
+    (E0425) whenever a local was FIRST bound inside an `if`/`elif`/`else` branch and read after the
+    statement. Python binds at FUNCTION scope, so `if c: y = 5` then `print(y)` is legal Python; the
+    emitted `Stmt::If` is a Rust BLOCK, so the `let` dies at the closing brace. The frontend left the
+    name in `ctx.bound` anyway, so the later read lowered to a bare `Ident` with no binding in scope.
+    This is the SAME accept-then-fail class PMAT-1378 closed for the WASM lane, and the repo already
+    had the doctrine and the machinery for it: PMAT-1092 poisons names first bound inside a
+    statement-form `try` (`ctx.try_dead`) and refuses a later read with the scoping truth. The `try`
+    arm was done; the `if` arm never was. FOUND by a 253-probe python3-vs-(xpile -> rustc -> run)
+    differential sweep of the Rust oracle lane, the lane PMAT-1377/1378/1379/1380 did not touch.
+    ** THE FIX mirrors PMAT-1092 exactly: `lower_if_stmt`s general path snapshots `ctx.bound` /
+    `ctx.name_types` before lowering the branches, withdraws every name FIRST bound inside either
+    branch afterwards, and records it in a new `ctx.if_dead`; a later read of a still-unbound poisoned
+    name refuses naming the binding and the pre-bind workaround. The if-as-let path
+    (`lower_if_stmt_as_lets`) returns BEFORE the poisoning, so every branch-parity chain that already
+    emitted a function-scope `let y = if c { .. } else { .. };` is untouched.
+    ** 14 shapes converted from accept-then-fail to honest refusal: if-only (annotated and bare, over
+    int/str/float/list), else-only, elif-without-else, nested if-in-if, if-inside-for, for-inside-if,
+    read-in-a-later-block, read-in-an-expression, read-in-a-return, and BOTH multi-statement if/else
+    shapes (bound on every Python path, but a multi-statement branch takes the general `Stmt::If` path
+    rather than the if-expression one, so the binding was still block-scoped).
+    ** ONE SHAPE WAS FIXED RATHER THAN REFUSED: `if c: y = 5` followed by `y = 9` then `print(y)`.
+    Withdrawing the branch binding makes the post-`if` assignment emit a fresh function-scope `let`,
+    so it now compiles and prints 9 (it was E0425 before). Shipped as an oracle fixture
+    (tests/oracle_fixtures/if_branch_rebound.py) so CPython byte-diffs it on every CI cycle.
+    ** THE WITNESS IS A PROPERTY, NOT A MESSAGE PIN: XPILE-RUSTSCOPE-001
+    (crates/xpile/tests/rust_scope_witness.rs, 7 tests) asserts `Ok(rust) ==> rustc accepts it` over
+    a 23-source corpus, because a per-shape refusal assertion cannot catch the NEXT shape that leaks.
+    Its non-regression half EXECUTES all 9 still-accepted shapes and byte-diffs them against CPython,
+    so a refusal that over-fired (or that silently changed an emitted VALUE) reds it; the corpus
+    deliberately includes the loop-TARGET leak (`for i in ..` then `print(i)`) and the PMAT-1038
+    straight-line loop hoist, the two shapes the withdrawal must NOT take with it.
+    ** THREE RESIDUALS PINNED, NOT HIDDEN (the PMAT-1379 posture), each with an executing test that
+    asserts today''s wrong behaviour on purpose so a later fix trips loudly: (1) `for .. else` still
+    accept-then-fails E0425 (the PMAT-1038 hoist declines a loop with an `orelse`); (2) a
+    dict/set-valued loop local still accept-then-fails E0425 (the hoist covers list/primitive types
+    only); (3) worse and NOT a refusal - where the hoist DOES fire it seeds a primitive default that
+    survives the ZERO-ITERATION path, so a never-entered loop prints `0` where CPython raises
+    UnboundLocalError. (3) is a SILENT WRONG ANSWER; it is disclosed in the CHANGELOG
+    Known-divergences section rather than left in a source comment, which is where it had lived since
+    PMAT-1038 ("Same PMAT-838/1015 empty-iterable tradeoff").
+    ** NEGATIVE RESULTS RECORDED so the sweep is not repeated: the Rust lane is markedly healthier
+    than the WASM lane on arithmetic. i64 overflow is an HONEST runtime panic naming the contract
+    (add/sub/mul/pow/neg/abs/shl), not the silent wraparound the WASM lane has; float `%` and `//`
+    implement Python FLOOR semantics over every sign combination; float and integer div-by-zero, and
+    every container error path probed, trap where CPython raises; format-specs, bin/hex/oct,
+    banker''s rounding, sorted/min/max, and the whole aliasing family (which REFUSES, including
+    mutable default arguments and shared inner containers) all agree with CPython.
+    ** NO gate file touched - gate touch #3 is reserved for Thursday''s PMAT-1373, and
+    crates/xpile/tests/witness_floor.rs is the two-touch serial resource (PMAT-1372 / PMAT-1373).
+    Adding a `*_witness.rs` file and oracle fixtures raises live counts only, and floors are lower
+    bounds, so no floor moves.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

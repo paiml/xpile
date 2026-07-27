@@ -285,6 +285,23 @@ struct LoweringCtx {
     /// truth. A later rebinding re-enters `bound` and naturally un-poisons
     /// (the read check only fires for names not currently bound).
     try_dead: HashMap<String, TryDead>,
+    /// PMAT-1381: names whose FIRST binding is inside a general (statement-form)
+    /// `if`/`elif`/`else` branch. Python binds at FUNCTION scope, so the name
+    /// leaks past the `if`; the emitted `Stmt::If` is a Rust BLOCK, so the `let`
+    /// dies at the closing brace. A later read therefore emitted `y` with no
+    /// binding in scope and `--target rust` EXITED 0 on Rust that `rustc`
+    /// REJECTS with E0425 — the accept-then-fail shape PMAT-1378 closed for
+    /// WASM. CPython's semantics are path-dependent (a maybe-unset local: the
+    /// read raises `UnboundLocalError` exactly when no binding branch ran),
+    /// which the value model cannot express, so a later read of a
+    /// still-unbound poisoned name refuses at lowering with the scoping truth.
+    /// Exactly the [`LoweringCtx::try_dead`] mechanism (PMAT-1092) applied to
+    /// the `if` family; like it, a later REBINDING re-enters `bound` and
+    /// naturally un-poisons (the check only fires for names not currently
+    /// bound). The if-as-let path ([`lower_if_stmt_as_lets`]) returns BEFORE
+    /// this poisoning, so every branch-parity chain that already emitted a
+    /// function-scope `let y = if c { … } else { … };` is untouched.
+    if_dead: HashSet<String>,
     /// PMAT-1160: first-use element/K-V type for every local initialised with an
     /// EMPTY collection (`name = []` / `{}` / `list()` / `dict()` / `set()`).
     /// Computed by a pre-pass ([`collect_empty_collection_types`]) that scans the
@@ -540,6 +557,8 @@ impl LoweringCtx {
             pending_leak_flag: None,
             leak_flag_consumed: false,
             try_dead: HashMap::new(),
+            // PMAT-1381: populated by the general `Stmt::If` path in `lower_if_stmt`.
+            if_dead: HashSet::new(),
             // PMAT-1160: populated after construction by a forward scan that needs
             // the fully-built ctx as its type oracle (see `lower_function_def`).
             empty_coll_types: HashMap::new(),
@@ -12563,6 +12582,11 @@ fn lower_if_stmt(
     let narrow = if_body_none_narrow_target(ctx, &if_stmt.test)
         .or_else(|| if_truthy_narrow_target(ctx, &if_stmt.test));
     let added = matches!(&narrow, Some(n) if ctx.narrowed_some.insert(n.clone()));
+    // PMAT-1381: snapshot the live scope so branch-local FIRST bindings can be
+    // withdrawn again below. Taken AFTER the condition lowers (a walrus in the
+    // condition hoists to a real function-scope `let` above and must survive).
+    let saved_bound = ctx.bound.clone();
+    let saved_types = ctx.name_types.clone();
     let mut then_body = Vec::new();
     for s in if_stmt.body {
         then_body.extend(lower_block_stmt(ctx, s)?);
@@ -12575,6 +12599,24 @@ fn lower_if_stmt(
     let mut else_body = Vec::new();
     for s in if_stmt.orelse {
         else_body.extend(lower_block_stmt(ctx, s)?);
+    }
+    // PMAT-1381: a name FIRST bound in either branch is emitted as a `let`
+    // INSIDE the Rust `if`/`else` block, so it does not survive the statement —
+    // but Python leaks it to function scope. Leaving it in `ctx.bound` made a
+    // later read lower to a bare `Ident`, and `--target rust` exited 0 emitting
+    // Rust that `rustc` rejects with E0425 (measured across if-only, else-only,
+    // elif-without-else, nested-if and multi-statement if/else shapes). Withdraw
+    // those names and poison them: a later read while still unbound now refuses
+    // with the scoping truth instead of shipping uncompilable Rust, and a later
+    // REBINDING (`y = 9` after the `if`) re-enters `bound`, un-poisons, and
+    // emits a correct function-scope `let` — that shape now WORKS.
+    let branch_new: Vec<String> = ctx.bound.difference(&saved_bound).cloned().collect();
+    if !branch_new.is_empty() {
+        ctx.bound = saved_bound;
+        ctx.name_types = saved_types;
+        for n in branch_new {
+            ctx.if_dead.insert(n);
+        }
     }
     Ok(vec![Stmt::If {
         cond,
@@ -21898,6 +21940,23 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
                     ctx.fn_name
                 )),
             })
+        }
+        // PMAT-1381: the same shape for the `if` family. A name FIRST bound
+        // inside a general (statement-form) `if`/`elif`/`else` branch does not
+        // survive the emitted Rust block, while Python leaks it to function
+        // scope — so this read used to emit a bare `Ident` and `--target rust`
+        // EXITED 0 on Rust that `rustc` rejects with E0425. CPython is
+        // path-dependent here (the read raises UnboundLocalError exactly when
+        // no binding branch ran), which the value model cannot express: refuse
+        // with the scoping truth rather than ship uncompilable Rust.
+        ast::Expr::Name(n)
+            if !ctx.bound.contains(n.id.as_str()) && ctx.if_dead.contains(n.id.as_str()) =>
+        {
+            let name = n.id.as_str();
+            Err(FrontendError::Lower(format!(
+                "function `{}`: `{name}` is first bound inside an `if`/`elif`/`else` branch and read after the `if` — the branches compile to block-scoped Rust blocks, so the binding does not survive them (CPython leaks it to function scope but leaves it path-dependently unset, raising UnboundLocalError when no binding branch ran — which the value model cannot express). Bind `{name}` before the `if` (e.g. `{name} = <default>`) and reassign it in the branches",
+                ctx.fn_name
+            )))
         }
         // PMAT-502el: `math.<const>` attribute read (`math.pi`/`math.e`/
         // `math.tau`) → a float literal. Non-`math` attribute reads fall
