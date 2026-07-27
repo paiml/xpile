@@ -2952,8 +2952,18 @@ queue:
     ACCEPTANCE: `grep -c ''0\.1\.12'' Cargo.toml` is 0; the extended gate reds on a deliberately skewed
     dep. Do before Friday''s 31-crate publish — it silently breaks the day anything goes 0.2.0.
 
-    ** DONE 2026-07-27 (Day 2), PR #2001. All 34 path-deps now declare 0.1.617; `grep -c ''0\.1\.12''
-    Cargo.toml` is 0. `version.workspace = true` is NOT available inside `[workspace.dependencies]`
+    ** DONE 2026-07-27 (Day 2), PR #2001. All 34 path-deps now declare 0.1.617.
+
+    ** ⚠️ THE LITERAL ACCEPTANCE GREP RETURNS 1, NOT 0, AND THAT IS CORRECT. The single remaining match
+    is Cargo.toml:47 — prose inside the new bump-discipline COMMENT, which names the historical value
+    to explain what went wrong. Zero DEPENDENCY DECLARATIONS match: `grep -n ''path = "crates/''
+    Cargo.toml | grep -c ''0\.1\.12''` is 0, and that is the measurement the acceptance line was a proxy
+    for. Recorded rather than satisfied by deleting the explanation, per PMAT-1396''s rule: do not
+    condition a policy on a text COUNT. The gate, not the grep, is the enforcement — it compares each
+    dep''s declared version against `[workspace.package].version` structurally, so it stays correct at
+    0.1.618 and at 0.2.0, where a `0\.1\.12` grep would silently pass forever.
+
+    ** `version.workspace = true` is NOT available inside `[workspace.dependencies]`
     (inheritance flows workspace -> member only), so the number is necessarily duplicated and the gate
     is the only thing holding it honest. publish_manifest_integrity.rs is 4 tests: the new equality
     assert, a RUN red half over a synthetic manifest carrying exactly this defect (offender count pinned
