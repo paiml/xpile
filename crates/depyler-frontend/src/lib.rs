@@ -6030,6 +6030,27 @@ fn lower_function_def(
             f.name
         )));
     }
+    // PMAT-1389: positional-only parameters (everything left of a `/` in the
+    // signature) live in `f.args.posonlyargs`, a list this lowering never
+    // reads — the param loop below iterates `f.args.args` alone. Without this
+    // guard they were SILENTLY DELETED from the emitted signature and every
+    // caller's positional arguments shifted left onto the parameters that
+    // remained, so `def f(a: int, /, b: int = 2) -> int: return b` called as
+    // `f(9)` returned `2` under CPython and `9` from the emitted Rust — which
+    // compiled and ran cleanly, at exit 0, on the rust/wasm/lean/ruchy lanes.
+    // Refused as its OWN kind rather than folded into the keyword-only arm
+    // below: the two are different Python features and a caller who reads
+    // "keyword-only args / **kwargs" for a `/` would look at the wrong half of
+    // the signature. The nested-fn (`desugar_nested_fn`) and lambda
+    // (`desugar_closure_assign`) paths already refused `/`; module-level
+    // functions were the only leak.
+    if !f.args.posonlyargs.is_empty() {
+        return Err(FrontendError::Lower(format!(
+            "function `{}` uses positional-only parameters (the `/` separator) — not supported at v0.1.0; \
+             remove the `/` so every parameter is an ordinary positional-or-keyword parameter",
+            f.name
+        )));
+    }
     if !f.args.kwonlyargs.is_empty() || f.args.kwarg.is_some() {
         return Err(FrontendError::Lower(format!(
             "function `{}` uses keyword-only args / **kwargs — not supported at v0.1.0",
@@ -27743,6 +27764,57 @@ mod tests {
                 assert!(msg.contains("decorator"), "unexpected msg: {}", msg);
             }
             _ => panic!("expected Lower error"),
+        }
+    }
+
+    /// PMAT-1389: `posonlyargs` is a separate list from `args` in the Python
+    /// AST, and this lowering only ever read `args`. Everything left of a `/`
+    /// was therefore dropped from the signature and the call site's arguments
+    /// shifted left onto whatever remained — `def f(a, /, b=2): return b`
+    /// called as `f(9)` returns `2` in CPython and returned `9` from the
+    /// emitted Rust, which compiled and ran cleanly at exit 0.
+    #[test]
+    fn rejects_positional_only_parameters() {
+        for src in [
+            "def f(a: int, /, b: int = 2) -> int:\n    return b\n",
+            "def g(a: int, b: int, /) -> int:\n    return a\n",
+            "def one(a: int, /) -> int:\n    return a\n",
+        ] {
+            let err = PythonFrontend
+                .parse_and_lower(&PathBuf::from("fixture.py"), src)
+                .expect_err("a `/` separator should fail at v0.1.0");
+            match err {
+                FrontendError::Lower(msg) => {
+                    assert!(
+                        msg.contains("positional-only"),
+                        "the refusal must name the feature it refused, got: {msg}"
+                    );
+                    // Its own arm, not folded into the keyword-only guard: a
+                    // reader told "keyword-only args / **kwargs" would inspect
+                    // the wrong end of the signature.
+                    assert!(
+                        !msg.contains("keyword-only"),
+                        "a `/` was reported as a keyword-only problem: {msg}"
+                    );
+                }
+                other => panic!("expected Lower error, got {other:?}"),
+            }
+        }
+    }
+
+    /// Over-refusal guard for the arm above: the neighbouring parameter kinds
+    /// must still lower. `*args` in particular is handled CORRECTLY today
+    /// (`def total(*args: int)` → `total(args: Vec<i64>)`) and was explicitly
+    /// out of scope.
+    #[test]
+    fn positional_only_refusal_leaves_the_neighbouring_kinds_alone() {
+        for src in [
+            "def f(a: int, b: int = 2) -> int:\n    return b\n",
+            "def total(*args: int) -> int:\n    s = 0\n    for a in args:\n        s = s + a\n    return s\n",
+        ] {
+            PythonFrontend
+                .parse_and_lower(&PathBuf::from("fixture.py"), src)
+                .expect("plain positional / *args must still lower after PMAT-1389");
         }
     }
 
