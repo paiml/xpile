@@ -20,3 +20,10 @@ xpile-meta-hir = { workspace = true }
 [dev-dependencies]
 depyler-frontend = { workspace = true }
 xpile-frontend = { workspace = true }
+# PMAT-1395: the C frontend, so `c_scalar_abi_witness.rs` can drive the C→WASM
+# lane. `Type::CUInt` / `Type::F32` / `Type::CLong` are produced ONLY by decy —
+# no Python annotation reaches them — so a Python-only witness corpus left the
+# whole C scalar-ABI return path untested, which is how a `--target wasm` exit-0
+# emitting WAT that `wat2wasm` rejects survived. No cycle: decy-frontend depends
+# on xpile-frontend + xpile-meta-hir, never on this backend.
+decy-frontend = { workspace = true }

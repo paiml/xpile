@@ -3,10 +3,13 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-27 (toward v0.1.618 Fri 07-31. Ranked slate drained overnight — 26 commits since v0.1.617
-  incl. a self-directed HONESTY SWEEP. EXTENDED by a 30-agent hunt over the UNSWEPT surfaces, every finding
-  attacked by a skeptic defaulting to REFUTED. The hunt''s R1 (spirv canned-output) was found INDEPENDENTLY
-  by the cron and fixed as PMAT-1388 / #1975 before this extension merged, so it is omitted here.)'
+updated: |-
+  2026-07-27 (toward v0.1.618 Fri 07-31. PMAT-1395 DONE — the C->WASM scalar-ABI return path,
+  the FIRST slice to touch a lane that had a live emitter, a live CLI flag and ZERO witnesses:
+  every one of the 138 WASM witness files drives the emitter from Python, and CUInt/F32/CLong
+  come only from decy. Its sweep also found the RUST-lane sibling, filed as PMAT-1399 rather
+  than swallowed. Remaining before the Thu tag: PMAT-1396 (doc-only, freeze-legal) and
+  PMAT-1399.)
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -2383,7 +2386,7 @@ queue:
     dated 07-29, same pull-forward rule applies).'
 
 - id: PMAT-1395
-  status: open
+  status: done
   ev_rank: R8
   gate_touch: null
   date: '2026-07-29'
@@ -2407,6 +2410,45 @@ queue:
     \  sweep the other decy scalar tokens (`int`, `long`, `double`, `unsigned int`) through\n  wat2wasm\
     \ and record which lower and which refuse\n  command cargo test -p xpile-wasm-codegen && command cargo\
     \ test -p decy-frontend\n"
+  done_note: |-
+    DONE 2026-07-27 (pulled forward from 07-29 — the ranked slate for today was empty and
+    today is well inside the day<=4 pull-forward window; not a gate_touch, so the strictly-serial
+    #3 PMAT-1373 release commit is untouched).
+    ** THE ENTRY'S ROOT CAUSE WAS WRONG, and it said so honestly ("find out WHY before patching"):
+    PMAT-1378 did NOT miss the CUInt path. Its pre-emit layer is a BINDING-NAME collision belt and
+    has never checked types. The real cause is that `emit_function` had TWO return paths and only
+    ONE was type-checked — the early `Stmt::Return` arm called `emit_expr_typed`, the TRAILING
+    return called the bare `emit_expr`, and the trailing one is the path nearly every C source
+    takes. Both now funnel through `emit_scalar_ret`.
+    ** SCOPE IS FIVE SHAPES, NOT ONE: sweeping the WHOLE decy scalar token set through the REAL
+    assembler found `unsigned int`<-int-lit, `float`<-int-lit, `float`<-float-lit,
+    `double`<-int-lit and every negated form broken. `int`/`long`/`long long` unaffected (i64 IS an
+    int literal's natural type) and KEPT in the corpus as the CONTROL group, so a blanket-coercion
+    fix would red. `unsigned long` already refused at the BACKEND, `short`/`char` at the FRONTEND.
+    ** CHOSE CONVERT over REFUSE (the entry allowed either): the conversion is the one C specifies
+    for a `return` (C17 6.8.6.4p3) AND the one the Rust backend already performs by suffixing the
+    literal, so converting makes the two backends AGREE instead of leaving them disagreeing about a
+    program C defines. Modular for unsigned per C17 6.3.1.3p2 — `-2`->4294967294,
+    `5000000000`->705032704, both value-matched against live cc. NOTHING WIDENED: a non-literal
+    mismatch still refuses, and a narrow LOCAL (`unsigned int a = 1;`) still refuses; both
+    boundaries carry a test so they stay visible rather than becoming folklore.
+    ** THE STRUCTURAL FINDING, worth more than the fix: all 138 WASM witness files drive the emitter
+    from PYTHON, and Type::CUInt / Type::F32 / Type::CLong are produced ONLY by decy-frontend — so
+    the C->WASM lane had a live emitter, a live CLI flag and ZERO witnesses. `emit_surface` in
+    compile-rust-to-wasm-v1.yaml is Python-only too (all 39 probes), so PMAT-1350's two-way gate
+    could not have caught it either. New crates/xpile-wasm-codegen/tests/c_scalar_abi_witness.rs
+    (18 probes; decy-frontend added as a dev-dep, no cycle) is the lane's FIRST witness.
+    ** FALSIFICATION (B) IS THE DECISIVE ONE: (A) restoring the pre-slice `emit_expr` call reds 3 of
+    4 tests including the STATIC pin; (B) a WELL-TYPED but semantically WRONG conversion (clamping
+    instead of C's modular wrap) passes the class gate AND the static pin, and is caught ONLY by the
+    cc differential.
+    ** LESSON FOR THE NEXT EMIT GATE: `Ok(wat) ==> wat2wasm accepts it` is NECESSARY AND NOT
+    SUFFICIENT. Assembling is not the same as being right — pair the class gate with a VALUE
+    differential or it certifies syntax only.
+    ** SIBLING FILED, NOT SWALLOWED: the same literal-vs-declared-type hole exists on the RUST lane
+    in the opposite direction -> PMAT-1399 below, with a verified repro.
+    NEXT PICK: PMAT-1396 (doc-only, freeze-legal, R9) or PMAT-1399 (the Rust-lane sibling this slice
+    found and verified).
 - id: PMAT-1396
   status: open
   ev_rank: R9
@@ -2433,6 +2475,47 @@ queue:
     \ cardinality — and that would be\na NEW test file, not a gate touch. Optional; the doc fix alone\
     \ is the slice.\nACCEPTANCE: CLAUDE.md:38 no longer contradicts CLAUDE.md:127; `pv lint contracts/`\
     \ still clean.\n"
+- id: PMAT-1399
+  status: open
+  ev_rank: R10
+  gate_touch: null
+  date: '2026-07-27'
+  title: The RUST lane has the PMAT-1395 hole in the OPPOSITE direction — a C integer literal
+    outside the declared type's range is emitted VERBATIM with its width suffix, so `--target
+    rust` exits 0 emitting Rust that `rustc` REJECTS
+  notes: |-
+    FOUND AND VERIFIED BY THE PMAT-1395 SWEEP at a31c12b6 — not speculated.
+    REPRO (unpiped; a pipe masks the exit code):
+      D=$(mktemp -d); printf 'unsigned int f(void) { return 5000000000; }\n' > $D/o.c
+      X=/mnt/nvme-raid0/targets/xpile/debug/xpile
+      $X transpile $D/o.c --target rust > $D/o.rs; echo "XP=$?"            # -> 0
+      rustc --crate-type lib --edition 2021 -o $D/o.rlib $D/o.rs; echo $?  # -> 1
+      #   error: literal out of range for `u32`
+      #     5 |     5000000000u32
+      #     = note: the literal does not fit into `u32` whose range is 0..=4294967295
+    GROUND TRUTH (/usr/bin/cc, NOT the bare `cc` — it is shell-ALIASED to `cargo check` in this
+    repo's dev shell and will silently eat a probe): C answers 705032704, i.e. the value converts
+    MODULO 2^32 (C17 6.3.1.3p2) with only a -Woverflow warning. So the emitted literal is BOTH
+    uncompilable AND, once made compilable, the wrong value unless it is wrapped.
+    ROOT CAUSE: the C-emit width table renders a literal as `<digits><lit_suffix>`
+    (`CWidth.lit_suffix`, the u32 row near crates/xpile-rust-codegen/src/lib.rs:5464) with NO range
+    conversion. PMAT-1395 fixed the identical class on the WASM lane by converting at the RETURN
+    site; do the same here. The two lanes MUST agree — cross-backend agreement was the whole
+    argument for converting there rather than refusing.
+    SWEEP BEFORE PATCHING (PMAT-1395's lesson: the one-token framing understated that slice 5x):
+    check EVERY C width the table carries (i32/i64/u32/u64/f32/f64) against both an out-of-range
+    literal and a negated literal, and check the LOCAL and PARAMETER positions as well as the return.
+    TRAP — do not over-red: `float f(void) { return 16777217; }` emits `16777217f32`, which rustc
+    ACCEPTS with rounding, exactly as C rounds. That is NOT a defect. The defect is specific to an
+    INTEGER literal outside the declared INTEGER range.
+    GATE: an emitted-Rust compile check over a C corpus — the `Ok(rust) ==> rustc accepts it` dual of
+    PMAT-1395's `Ok(wat) ==> wat2wasm accepts it` — PAIRED with a value differential against
+    /usr/bin/cc. PMAT-1395 falsification (B) showed a compile-only gate blesses a well-typed but
+    semantically wrong conversion.
+    ACCEPTANCE:
+      the repro compiles under rustc AND the built lib answers 705032704, or the emit REFUSES at
+      exit 1 with a named message
+      command cargo test -p xpile-rust-codegen
 - id: PMAT-1373
   status: open
   ev_rank: R1

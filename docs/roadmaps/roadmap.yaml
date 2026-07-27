@@ -17357,3 +17357,86 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1395
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1395: [honesty/wasm] `--target wasm` on a C source exited 0 emitting
+    WAT that `wat2wasm` REJECTS — `unsigned int f(void) { return 2; }` emitted an
+    `i64.const` under an `(result i32)` header. Five shapes across three decy scalar
+    ABI tokens; the trailing return was the ONE unchecked return path in the emitter.'
+  description: 'Reproduced at a31c12b6 with one line of C: `printf ''unsigned int f(void)
+    { return 2; }'' > u.c; xpile transpile u.c --target wasm > u.wat` exits 0, and
+    `wat2wasm u.wat -o u.wasm` fails with "type mismatch in implicit return, expected
+    [i32] but got [i64]".
+
+    ** ROOT CAUSE: `emit_function` had TWO return paths and only ONE was type-checked.
+    The early `Stmt::Return` arm called `emit_expr_typed(.., scope.ret)`; the TRAILING
+    return — the path a normal single-`return` C function takes, i.e. nearly every C
+    source — called the bare, UNCHECKED `emit_expr`. A literal therefore lowered at
+    its OWN natural WAT type instead of the function''s DECLARED one. Both sites now
+    funnel through one `emit_scalar_ret`, and that unification IS the fix.
+
+    ** THE WORK ITEM''S PREMISE WAS WRONG AND IS CORRECTED: it said PMAT-1378 "added
+    the pre-emit validation layer to this crate but the CUInt path evidently escapes
+    it". That layer is a BINDING-NAME collision belt; it has never checked types, so
+    there was nothing to escape. Checking before patching is what turned a one-token
+    patch into the five-shape fix.
+
+    ** SCOPE MEASURED BY SWEEPING THE WHOLE TOKEN SET through the real assembler, not
+    reasoned from one example. BROKEN: `unsigned int` <- int literal, `float` <- int
+    literal, `float` <- float literal, `double` <- int literal, plus every negated
+    form. UNAFFECTED: `int` / `long` / `long long` (i64 IS an int literal''s natural
+    type — the control group, kept in the corpus so a blanket-coercion fix would red).
+    ALREADY HONEST: `unsigned long` refuses at the BACKEND, `short` / `char` at the
+    FRONTEND.
+
+    ** FIXED BY CONVERTING, NOT REFUSING, for a cross-backend reason: the conversion
+    a literal `return` needs is the one C already specifies (C17 6.8.6.4p3, as-if by
+    assignment) and it is the SAME one the Rust backend has always performed by
+    suffixing the literal (`2u32` / `2f64` / `2.5f32`). Converting makes the WASM lane
+    AGREE with the Rust lane; refusing would have left two backends disagreeing about
+    a program C defines. Unsigned conversion is modular (C17 6.3.1.3p2), matching the
+    crate''s own documented CUInt posture: `-2` -> 4294967294, `5000000000` ->
+    705032704, both value-matched against live `cc`.
+
+    ** NOTHING WIDENED: a NON-literal whose type does not match still refuses via
+    `emit_expr_typed`, and a narrow LOCAL (`unsigned int a = 1;`) still refuses with
+    an honest type mismatch. Both boundaries carry a test so they stay visible rather
+    than becoming folklore.
+
+    ** WHY NOTHING CAUGHT IT — the structural finding: all 138 WASM witness files
+    drive the emitter from PYTHON, and `Type::CUInt` / `Type::F32` / `Type::CLong` are
+    produced ONLY by decy-frontend (no Python annotation reaches them). The C->WASM
+    lane had a live emitter, a live CLI flag and ZERO witnesses. The same holds for
+    `contracts/compile-rust-to-wasm-v1.yaml`''s `emit_surface`: all 39 probes are
+    Python, so PMAT-1350''s two-way gate could not have seen this either. New witness
+    `crates/xpile-wasm-codegen/tests/c_scalar_abi_witness.rs` is the lane''s first —
+    18 probes, `decy-frontend` added as a dev-dep (no cycle).
+
+    ** THREE ASSERTIONS, deliberately not one: (1) the CLASS gate `Ok(wat) ==>
+    wat2wasm accepts it`, per probe — the one that would have caught this on the day
+    the CUInt lowering landed, and that catches the next family member without anyone
+    predicting it; (2) a VALUE differential against the real C compiler running the
+    identical source; (3) a STATIC declared-width pin that CANNOT skip, so the file
+    does not go quietly green on a runner without WABT (XPILE-WITNESS-002).
+
+    ** FALSIFIED TWO WAYS, and the second is the decisive one: (A) restoring the
+    pre-slice `emit_expr` call reds 3 of 4 tests INCLUDING the static pin; (B) a
+    WELL-TYPED but semantically WRONG conversion (clamping instead of C''s modular
+    wrap) passes the class gate AND the static pin and is caught ONLY by the
+    differential — proof that assembling is not the same as being right.
+
+    ** SIBLING DEFECT FOUND AND FILED, NOT SILENTLY KEPT: the same literal-vs-declared
+    -type hole exists on the RUST lane in the opposite direction — `unsigned int
+    f(void) { return 5000000000; }` emits `5000000000u32`, which rustc REJECTS
+    ("literal out of range for `u32`"), where C gives 705032704. Filed as PMAT-1399
+    with the verified repro rather than folded into this slice.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
