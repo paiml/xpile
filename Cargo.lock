@@ -1967,6 +1967,7 @@ dependencies = [
 name = "xpile-wasm-codegen"
 version = "0.1.617"
 dependencies = [
+ "decy-frontend",
  "depyler-frontend",
  "xpile-backend",
  "xpile-contracts",

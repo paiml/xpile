@@ -9,6 +9,65 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`--target wasm` on a C source exited 0 emitting WAT that `wat2wasm`
+  REJECTS** (PMAT-1395). One line of C reproduced it:
+
+  ```console
+  $ printf 'unsigned int f(void) { return 2; }\n' > u.c
+  $ xpile transpile u.c --target wasm > u.wat ; echo $?
+  0
+  $ wat2wasm u.wat -o u.wasm
+  u.wat:48:5: error: type mismatch in implicit return, expected [i32] but got [i64]
+      i64.const 2
+  ```
+
+  `emit_function` had **two** return paths and only one was type-checked. The
+  early `Stmt::Return` arm went through `emit_expr_typed`; the *trailing*
+  return — the path a normal single-`return` C function takes — went through
+  the bare, unchecked `emit_expr`, so a literal lowered at its own natural WAT
+  type rather than the function's declared one. Both sites now funnel through
+  one `emit_scalar_ret`, and that unification is the fix.
+
+  **Five shapes across three decy scalar ABI tokens**, measured by sweeping the
+  whole token set through the real assembler rather than reasoning about one:
+  `unsigned int` ← int literal, `float` ← int literal, `float` ← float literal,
+  `double` ← int literal, and the negated forms. `int` / `long` / `long long`
+  were unaffected only because `i64` happens to be an int literal's natural
+  type; `unsigned long` already refused honestly at the backend, and
+  `short` / `char` at the frontend.
+
+  Fixed by **converting**, not refusing. The conversion applied to a literal is
+  the one C already specifies for a `return` (C17 6.8.6.4p3, as-if by
+  assignment) and it is the same one the Rust backend has always performed by
+  suffixing the literal (`2u32` / `2f64` / `2.5f32`) — so this makes the WASM
+  lane *agree with the Rust lane* rather than inventing a third answer.
+  Unsigned conversion is modular (C17 6.3.1.3p2), matching this crate's
+  documented `CUInt` posture: `-2` → `4294967294`, `5000000000` → `705032704`,
+  both value-matched against live `cc`. A **non-literal** whose type does not
+  match still refuses via `emit_expr_typed`, so nothing was widened; likewise a
+  narrow *local* (`unsigned int a = 1;`) still refuses with an honest type
+  mismatch, and that boundary is pinned by a test so it stays visible.
+
+  **The premise recorded in the work item was wrong and is corrected here:**
+  PMAT-1378's pre-emit validation layer did not "miss" the `CUInt` path. That
+  layer is a *binding-name* collision belt; it has never checked types, so
+  there was nothing for this path to escape.
+
+  **Why nothing caught it:** every one of the 138 WASM witness files drove the
+  emitter from **Python**, and `Type::CUInt` / `Type::F32` / `Type::CLong` are
+  produced *only* by `decy-frontend` — no Python annotation reaches them. The
+  C→WASM lane had a live emitter, a live CLI flag and zero witnesses. The same
+  is true of `contracts/compile-rust-to-wasm-v1.yaml`'s `emit_surface` table:
+  all 39 probes are Python, so the two-way gate added in PMAT-1350 could not
+  have seen this either. New witness `c_scalar_abi_witness.rs` is the lane's
+  first, with 18 probes and three assertions — an `Ok(wat) ⟹ wat2wasm accepts`
+  class gate, a value differential against the real C compiler, and a static
+  declared-width pin that cannot skip when WABT is absent. Falsification
+  confirmed the differential earns its keep independently: restoring the
+  pre-slice `emit_expr` call reds 3 of 4 tests, while a *well-typed but
+  semantically wrong* conversion (clamping instead of C's modular wrap) passes
+  the class gate and the static pin and is caught only by the differential.
+
 - **The Lean lane — the repo's semantic-stratum oracle — silently returned a
   VALUE for division by zero** (PMAT-1394). `xpile transpile z.py --target lean
   --contracts off` exited 0 on `return 7 // 0`, emitting

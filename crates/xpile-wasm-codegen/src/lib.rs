@@ -18229,6 +18229,13 @@ struct Scope<'a> {
     /// by [`emit_heap_ret`] (an i32-typed anything-else would be a silent
     /// pointer miscompile).
     ret_heap: Option<HeapParamSig>,
+    /// PMAT-1395: the DECLARED meta-HIR return type when it is a plain scalar
+    /// (`None` for unit/str/struct/dict/set, which have their own return
+    /// lowerings). [`Scope::ret`] alone is not enough: `WatTy::I32` is the
+    /// carrier for BOTH `Type::CUInt` and `Type::Bool`, and the literal
+    /// conversion a `return` needs is defined by the C/Python type, not by the
+    /// carrier. Drives [`emit_scalar_ret`].
+    ret_scalar_ty: Option<Type>,
 }
 
 impl Scope<'_> {
@@ -18576,6 +18583,19 @@ fn emit_function(
         ret,
         ret_is_unit,
         ret_heap,
+        // PMAT-1395: only a PLAIN SCALAR return carries a declared type here.
+        // str/struct/dict/set/unit returns ride an i32 base-pointer (or
+        // nothing) and are lowered by `emit_str_expr` / `emit_heap_ret` /
+        // dropped, so a literal conversion never applies to them.
+        ret_scalar_ty: if ret_is_unit
+            || ret_is_str
+            || ret_heap.is_some()
+            || matches!(f.return_type, Type::Struct(_))
+        {
+            None
+        } else {
+            Some(f.return_type.clone())
+        },
     };
     // Params are locals 0..n. A `list[scalar]` param (PMAT-966) rides an
     // `i32` base-pointer into linear memory; its element type is recorded
@@ -18664,7 +18684,12 @@ fn emit_function(
         // kind-matched NON-param dict/set local (validated, never a bare i32).
         emit_heap_ret(&f.body.trailing_return, &scope, &mut body, 2)?;
     } else {
-        emit_expr(&f.body.trailing_return, &scope, &mut body, 2)?;
+        // PMAT-1395: the TRAILING return is emitted at the DECLARED type, the
+        // same as the early `Stmt::Return` arm. It used to call the untyped
+        // `emit_expr` here, which is how a C `unsigned int`/`float`/`double`
+        // function returning a bare literal shipped `i64.const` under a
+        // non-i64 `(result …)` header at exit 0.
+        emit_scalar_ret(&f.body.trailing_return, &scope, &mut body, 2)?;
     }
 
     // Now assemble the (func) header with signature + local decls.
@@ -19263,7 +19288,10 @@ fn emit_stmt(
                 // the trailing one — a kind-matched NON-param dict/set local.
                 emit_heap_ret(e, scope, out, depth)?;
             } else {
-                emit_expr_typed(e, scope, out, depth, scope.ret)?;
+                // PMAT-1395: same lowering as the trailing return — an early
+                // `return <literal>` from a `CUInt`/`F32`/`F64` function
+                // converts the literal instead of type-mismatching.
+                emit_scalar_ret(e, scope, out, depth)?;
             }
             indent(out, depth);
             writeln!(out, "return").expect("write");
@@ -19370,6 +19398,92 @@ fn emit_stmt(
 /// (A light static check — the meta-HIR doesn't carry per-expr types, so
 /// the emitter infers the WAT type from operands and validates against
 /// the binding/return site.)
+/// PMAT-1395: emit a SCALAR `return` value at the function's DECLARED type.
+///
+/// Both return sites — the trailing expression in [`emit_function`] and the
+/// early `Stmt::Return` arm — funnel through here, and that unification IS the
+/// fix. Before this slice the early return went through [`emit_expr_typed`]
+/// while the trailing one went through the bare, UNCHECKED [`emit_expr`]; since
+/// a C function body is normally a single `return`, the unchecked path was the
+/// one nearly every C source took. `unsigned int f(void) { return 2; }` emitted
+/// `i64.const 2` under an `(result i32)` header and the CLI exited 0 with WAT
+/// that `wat2wasm` REJECTS ("type mismatch in implicit return, expected [i32]
+/// but got [i64]"). Same shape for `float`/`double` returning an int literal
+/// and for `float` returning a `double` literal — five broken shapes across
+/// three decy scalar ABI tokens.
+///
+/// The conversion applied to a literal is the one C already specifies for a
+/// `return` (C17 6.8.6.4p3 — the value is converted as if by assignment), and
+/// it is the SAME conversion the Rust backend has always performed by suffixing
+/// the literal (`2u32` / `2f64` / `2.5f32`). So this makes the WASM lane agree
+/// with the Rust lane rather than inventing a third answer:
+///
+///   * `CUInt` ← int literal: converted modulo 2³² (C17 6.3.1.3p2 — unsigned
+///     conversion is DEFINED-modular, not UB; the same posture this crate's
+///     header already records for `CUInt` arithmetic), emitted as an
+///     `i32.const` bit pattern.
+///   * `F64` / `F32` ← int literal, `F32` ← float literal: converted to the
+///     nearest representable value, exactly as C and as rustc's own literal
+///     parsing.
+///
+/// A non-literal whose type does not match still REFUSES via
+/// [`emit_expr_typed`] — this widens nothing. `return -2` from an `unsigned
+/// int` is folded here too (a `Neg` over a literal is still a constant); any
+/// other expression shape is left to the honest type-mismatch refusal.
+fn emit_scalar_ret(
+    e: &Expr,
+    scope: &Scope,
+    out: &mut String,
+    depth: usize,
+) -> Result<(), BackendError> {
+    if let Some(instr) = ret_literal_conversion(e, scope.ret_scalar_ty.as_ref()) {
+        indent(out, depth);
+        writeln!(out, "{instr}").expect("write");
+        return Ok(());
+    }
+    emit_expr_typed(e, scope, out, depth, scope.ret)
+}
+
+/// PMAT-1395: the constant VALUE of `e` if it is a numeric literal (or a `-`
+/// over one), else `None`. Deliberately shallow — a constant-folder is not what
+/// this slice is for; the point is to catch the literal shapes a C `return`
+/// actually produces.
+fn const_numeric(e: &Expr) -> Option<Result<i64, f64>> {
+    match e {
+        Expr::LitInt(v) => Some(Ok(*v)),
+        Expr::LitFloat(v) => Some(Err(*v)),
+        Expr::UnOp {
+            op: UnOp::Neg,
+            operand,
+        } => match const_numeric(operand)? {
+            Ok(i) => Some(Ok(i.wrapping_neg())),
+            Err(f) => Some(Err(-f)),
+        },
+        _ => None,
+    }
+}
+
+/// PMAT-1395: the WAT instruction that materialises literal `e` at the DECLARED
+/// return type `ret_ty`, or `None` when no conversion is needed (the literal
+/// already lowers to the right WAT type) or possible (not a literal / not a
+/// scalar return). Returning `None` leaves the normal typed path in charge, so
+/// this can only ever REPLACE an instruction that `wat2wasm` would reject.
+fn ret_literal_conversion(e: &Expr, ret_ty: Option<&Type>) -> Option<String> {
+    let value = const_numeric(e)?;
+    match (ret_ty?, value) {
+        // `unsigned int` ← int literal: C's modular conversion. `as u32 as i32`
+        // keeps the BIT PATTERN while landing in the range `i32.const` accepts.
+        (Type::CUInt, Ok(i)) => Some(format!("i32.const {}", i as u32 as i32)),
+        // float ← int literal, and f32 ← f64 literal: round-to-nearest, as C.
+        (Type::F64, Ok(i)) => Some(format!("f64.const {}", wat_float_literal(i as f64))),
+        (Type::F32, Ok(i)) => Some(format!("f32.const {}", wat_float_literal(i as f32 as f64))),
+        (Type::F32, Err(f)) => Some(format!("f32.const {}", wat_float_literal(f as f32 as f64))),
+        // Every other pairing already agrees (`I64`/`CLong` ← int literal,
+        // `F64` ← float literal) or is not a conversion this slice models.
+        _ => None,
+    }
+}
+
 fn emit_expr_typed(
     e: &Expr,
     scope: &Scope,
