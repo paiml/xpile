@@ -10,12 +10,24 @@
 //! **Architecture (mirrors `xpile_wgsl_codegen::WgslBackend`, PMAT-950).**
 //! [`SpirvBackend`] wraps a [`MultiEmitterBackend`] so emission routes
 //! through the §29 general/specialist quorum framework. The single-emitter
-//! constructor holds one real [`SpirvSaxpyGeneralEmitter`] in the general
+//! constructor holds one real [`SpirvGeneralEmitter`] in the general
 //! slot; the witness constructor holds two REAL emitters
-//! ([`SpirvSaxpyGeneralEmitter`] + [`SpirvSaxpySpecialistEmitter`]) that
+//! ([`SpirvGeneralEmitter`] + [`SpirvSaxpySpecialistEmitter`]) that
 //! reuse the WGSL `2.0*x + 1.0` / `fma` shaders, compile each to SPIR-V,
 //! and (with a Vulkan adapter present) run BOTH on the GPU under the
 //! [`SpirvDiffExecEngine`].
+//!
+//! **PMAT-1388 — the emitted SPIR-V is the CALLER'S program.** Until this
+//! slice the general emitter took `_module` and discarded it, always
+//! compiling the hardcoded `spirv_saxpy_general` fixture: six categorically
+//! different inputs (a Python `add`, a Python `fib`, a Python f64 function,
+//! a bitwise C module, …) produced *byte-identical* SPIR-V at exit 0, two of
+//! them inputs the WGSL sibling this lane is defined to reuse REFUSES
+//! outright. The lane is now exactly as wide as that WGSL subset: what WGSL
+//! lowers, this compiles; what WGSL refuses, this refuses with that reason.
+//! The `fma` specialist — a hand-written variant of one specific arithmetic —
+//! declines to vote on anything but that arithmetic's module, so a user
+//! program is never quorum-matched against an unrelated reference shader.
 //!
 //! Layer 5 compile contract: `contracts/compile-rust-to-spirv-v1.yaml`
 //! (`C-COMPILE-RUST-TO-SPIRV`), proof lane
@@ -32,8 +44,8 @@ use xpile_meta_hir::Module;
 
 mod spirv_diffexec;
 pub use spirv_diffexec::{
-    general_metahir_module, general_real_wgsl, vulkan_adapter_available, SpirvDiffExecEngine,
-    EXPECTED_OUTPUT, FIXTURE_INPUT,
+    general_metahir_module, general_real_wgsl, is_general_saxpy_module, real_wgsl_for,
+    vulkan_adapter_available, SpirvDiffExecEngine, EXPECTED_OUTPUT, FIXTURE_INPUT,
 };
 
 /// The Layer-5 compile contract every emitted SPIR-V artifact cites.
@@ -168,14 +180,11 @@ impl Default for SpirvBackend {
 }
 
 impl SpirvBackend {
-    /// Single-emitter constructor: one real SPIR-V emitter (the reused
-    /// WGSL `2.0*x + 1.0` compiled to SPIR-V) in the general slot.
+    /// Single-emitter constructor: one real SPIR-V emitter — the caller's
+    /// module lowered to WGSL and compiled to SPIR-V — in the general slot.
     pub fn new() -> Self {
         Self {
-            inner: MultiEmitterBackend::new_single(
-                Target::Spirv,
-                Box::new(SpirvSaxpyGeneralEmitter),
-            ),
+            inner: MultiEmitterBackend::new_single(Target::Spirv, Box::new(SpirvGeneralEmitter)),
         }
     }
 
@@ -183,7 +192,7 @@ impl SpirvBackend {
     ///
     /// Sibling of [`xpile_wgsl_codegen::WgslBackend::new_wgpu_diffexec_witness`].
     /// Builds a `SpirvBackend` whose `MultiEmitterBackend` carries two REAL
-    /// SPIR-V emitters — [`SpirvSaxpyGeneralEmitter`] (reused WGSL
+    /// SPIR-V emitters — [`SpirvGeneralEmitter`] (reused WGSL
     /// `2.0*x + 1.0` → SPIR-V) and [`SpirvSaxpySpecialistEmitter`] (reused
     /// WGSL `fma` → SPIR-V) — under `QuorumPolicy::DiffExec`, with a
     /// [`SpirvDiffExecEngine`] installed when a Vulkan adapter is present.
@@ -200,7 +209,7 @@ impl SpirvBackend {
     pub fn new_spirv_diffexec_witness() -> Self {
         let mut inner = MultiEmitterBackend::new_with_specialist(
             Target::Spirv,
-            Box::new(SpirvSaxpyGeneralEmitter),
+            Box::new(SpirvGeneralEmitter),
             Box::new(SpirvSaxpySpecialistEmitter),
             QuorumPolicy::DiffExec { tolerance: 1.0e-3 },
         );
@@ -259,30 +268,39 @@ fn emit_from_wgsl(wgsl: &str) -> Result<EmittedText, BackendError> {
 
 /// General SPIR-V emitter — PMAT-977: drives xpile's REAL emission
 /// (`meta-HIR → xpile_wgsl_codegen::emit_wgsl_module → @compute harness`),
-/// then compiles the real WGSL to SPIR-V via naga. The `2.0*x + 1.0`
-/// arithmetic is xpile's output, not a hardcoded shader.
-struct SpirvSaxpyGeneralEmitter;
+/// then compiles the real WGSL to SPIR-V via naga. The arithmetic is
+/// xpile's output, not a hardcoded shader.
+///
+/// PMAT-1388: **of the CALLER'S module.** Until this slice `try_emit` bound
+/// the module to `_module` and discarded it, always compiling the hardcoded
+/// `spirv_saxpy_general` fixture — so `xpile transpile <anything> --target
+/// spirv` exited 0 emitting SPIR-V for `2.0*x + 1.0`, a program the user
+/// never wrote, even for inputs the WGSL sibling REFUSES. The SPIR-V lane is
+/// now exactly as wide as the WGSL subset it is defined to reuse: what WGSL
+/// lowers, this compiles; what WGSL refuses, this refuses with that reason.
+struct SpirvGeneralEmitter;
 
-impl TargetEmitter for SpirvSaxpyGeneralEmitter {
+impl TargetEmitter for SpirvGeneralEmitter {
     fn name(&self) -> &str {
-        "spirv-saxpy-general"
+        "spirv-general"
     }
 
     fn try_emit(
         &self,
-        _module: &Module,
+        module: &Module,
         config: &BackendConfig,
     ) -> Option<Result<EmittedText, BackendError>> {
         if let Some(Err(e)) = check_hardware(config) {
             return Some(Err(e));
         }
-        // REAL path: xpile lowers the general meta-HIR module to WGSL, then
-        // we compile that to SPIR-V. A real-emit failure is a hard refusal.
-        let wgsl = match spirv_diffexec::general_real_wgsl() {
+        // REAL path: xpile lowers THIS module to WGSL, then we compile that
+        // to SPIR-V. A real-emit failure is a hard refusal.
+        let wgsl = match spirv_diffexec::real_wgsl_for(module) {
             Ok(w) => w,
             Err(e) => {
                 return Some(Err(BackendError::Lower(format!(
-                    "xpile real WGSL emission (general saxpy) failed: {e}"
+                    "xpile-spirv-codegen emits by compiling this module's own WGSL \
+                     lowering (WGSL -> naga -> spv), and that lowering refused it: {e}"
                 ))))
             }
         };
@@ -292,6 +310,13 @@ impl TargetEmitter for SpirvSaxpyGeneralEmitter {
 
 /// Specialist SPIR-V emitter — reuses the WGSL `fma(2.0, inp[i], 1.0)`
 /// compute shader (same semantics, categorically different SPIR-V).
+///
+/// PMAT-1388: it is a HAND-WRITTEN variant of ONE specific arithmetic, so it
+/// can only cast a quorum vote on the module that computes that arithmetic.
+/// For any other module it declines (`None`) — the documented `TargetEmitter`
+/// protocol for "my shape filter does not match" — and the quorum honestly
+/// reports `Single` instead of pairing the user's program against an
+/// unrelated reference shader and calling the two a Match.
 struct SpirvSaxpySpecialistEmitter;
 
 impl TargetEmitter for SpirvSaxpySpecialistEmitter {
@@ -301,9 +326,12 @@ impl TargetEmitter for SpirvSaxpySpecialistEmitter {
 
     fn try_emit(
         &self,
-        _module: &Module,
+        module: &Module,
         config: &BackendConfig,
     ) -> Option<Result<EmittedText, BackendError>> {
+        if !spirv_diffexec::is_general_saxpy_module(module) {
+            return None;
+        }
         if let Some(Err(e)) = check_hardware(config) {
             return Some(Err(e));
         }
@@ -317,11 +345,33 @@ mod tests {
     use xpile_backend::{Profile, QuorumStatus};
     use xpile_meta_hir::SourceLang;
 
+    /// A REAL single-function module. PMAT-1388: this used to be an
+    /// item-LESS module, which was harmless only because the emitter
+    /// discarded its input — every assertion below passed on the hardcoded
+    /// saxpy fixture no matter what was handed in. With the emitter reading
+    /// its input, the fixture has to be something a compiler could compile.
     fn dummy_module() -> Module {
+        use xpile_meta_hir::{Block, Expr, Function, Item, Param, Type};
         Module {
             name: "spirv_kernel".into(),
             source_lang: SourceLang::Rust,
-            items: Vec::new(),
+            items: vec![Item::Function(Function {
+                name: "triple".into(),
+                params: vec![Param {
+                    name: "x".into(),
+                    ty: Type::I64,
+                    mutable: false,
+                }],
+                return_type: Type::I64,
+                body: Block {
+                    stmts: vec![],
+                    trailing_return: Expr::BinOp {
+                        op: xpile_meta_hir::BinOp::Mul,
+                        lhs: Box::new(Expr::Ident("x".into())),
+                        rhs: Box::new(Expr::LitInt(3)),
+                    },
+                },
+            })],
             ffi_boundaries: Vec::new(),
         }
     }
@@ -379,11 +429,98 @@ mod tests {
         assert_eq!(
             artifact.quorum_status,
             QuorumStatus::Single {
-                emitter: "spirv-saxpy-general".to_string()
+                emitter: "spirv-general".to_string()
             }
         );
         assert!(artifact.primary.contains("SPIR-V"));
         assert!(artifact.citations.iter().any(|c| c.as_str() == CONTRACT_ID));
+        // PMAT-1388: the summary inlines the WGSL that was compiled. It must
+        // be THIS module's lowering, not the saxpy fixture's.
+        assert!(
+            artifact.primary.contains("fn triple(") && artifact.primary.contains("(x * i32(3))"),
+            "emitted SPIR-V must be compiled from the CALLER's module, got:\n{}",
+            artifact.primary
+        );
+        assert!(
+            !artifact.primary.contains("saxpy"),
+            "the hardcoded saxpy fixture leaked into an unrelated module's emission:\n{}",
+            artifact.primary
+        );
+    }
+
+    /// PMAT-1388: the `fma` specialist is a hand-written variant of ONE
+    /// arithmetic. Pairing it against an unrelated user module and reporting
+    /// `Multi` would claim a two-emitter agreement that was never computed,
+    /// so it declines and the quorum honestly degrades to `Single`.
+    #[test]
+    fn specialist_declines_to_vote_on_an_unrelated_module() {
+        let backend = SpirvBackend::new_spirv_diffexec_witness();
+        let artifact = backend.lower(&dummy_module(), &spirv_config()).unwrap();
+        assert_eq!(
+            artifact.quorum_status,
+            QuorumStatus::Single {
+                emitter: "spirv-general".to_string()
+            },
+            "an unrelated module must not be quorum-paired with the saxpy reference"
+        );
+        // …and it DOES vote on the module it is a variant of (without which
+        // the decline above would be vacuous — it would pass if the
+        // specialist never fired at all).
+        let saxpy = backend
+            .lower(&general_metahir_module(), &spirv_config())
+            .unwrap();
+        match saxpy.quorum_status {
+            QuorumStatus::Multi { ref emitters, .. } => {
+                assert_eq!(emitters.len(), 2, "got {emitters:?}");
+            }
+            other => panic!("saxpy module must still pair both emitters, got {other:?}"),
+        }
+    }
+
+    /// PMAT-1388: a construct the WGSL lane refuses must REFUSE here, not
+    /// exit 0 with a canned shader. `f64` is the WGSL lane's own documented
+    /// refusal (WGSL core has no 64-bit float).
+    #[test]
+    fn backend_refuses_what_the_wgsl_lowering_refuses() {
+        use xpile_meta_hir::{Block, Expr, Function, Item, Param, Type};
+        let m = Module {
+            name: "f64_kernel".into(),
+            source_lang: SourceLang::Rust,
+            items: vec![Item::Function(Function {
+                name: "widen".into(),
+                params: vec![Param {
+                    name: "x".into(),
+                    ty: Type::F64,
+                    mutable: false,
+                }],
+                return_type: Type::F64,
+                body: Block {
+                    stmts: vec![],
+                    trailing_return: Expr::Ident("x".into()),
+                },
+            })],
+            ffi_boundaries: Vec::new(),
+        };
+        let err = SpirvBackend::new().lower(&m, &spirv_config()).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("WGSL") && msg.contains("f64"),
+            "refusal must name the WGSL lowering and the offending construct, got: {msg}"
+        );
+    }
+
+    /// PMAT-1388 anti-regression: the witness's general-side WGSL is now
+    /// produced by the module-taking `real_wgsl_for`, and must be
+    /// byte-identical to what the no-argument helper produced before, or the
+    /// GPU witness is executing something new without saying so.
+    #[test]
+    fn saxpy_general_wgsl_is_the_real_wgsl_for_the_saxpy_module() {
+        let via_module = real_wgsl_for(&general_metahir_module()).unwrap();
+        let via_helper = general_real_wgsl().unwrap();
+        assert_eq!(via_module, via_helper);
+        assert!(via_helper.contains("fn saxpy(x: f32) -> f32"));
+        assert!(via_helper.contains("outp[i] = saxpy(inp[i]);"));
+        assert!(via_helper.contains("array<f32>"));
     }
 
     #[test]

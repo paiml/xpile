@@ -25,19 +25,30 @@
 //! box the engine RUNS BOTH emitters' SPIR-V on the adapter and asserts the
 //! executed outputs agree → a real `DiffExecResult::Match`.
 
+//! ## PMAT-1388 — the witness now HANDS the backend the module it attests
+//!
+//! PMAT-977's claim above was true of the *emitter* but untestable by *this
+//! witness*: `kernel_module()` returned a module named `saxpy_spirv_kernel`
+//! with `items: Vec::new()` — no functions at all — and the general emitter
+//! discarded its argument and re-derived the saxpy module internally. So the
+//! witness asserted on a shader it had supplied no input for, and could not
+//! have detected the emitter ignoring that input (PMAT-1388: it did, for
+//! every program). The witness now passes `general_metahir_module()` — the
+//! very module whose lowering it prints and executes — so the assertions
+//! below are about a compilation of something the test actually provided.
+
 use xpile_backend::{
     Artifact, Backend, BackendConfig, DiffExecResult, HwProfile, Profile, QuorumStatus, Target,
 };
-use xpile_meta_hir::{Module, SourceLang};
-use xpile_spirv_codegen::{general_real_wgsl, vulkan_adapter_available, SpirvBackend};
+use xpile_meta_hir::Module;
+use xpile_spirv_codegen::{
+    general_metahir_module, general_real_wgsl, vulkan_adapter_available, SpirvBackend,
+};
 
+/// The module under test — the REAL meta-HIR `saxpy` module whose lowering
+/// this witness prints, compiles to SPIR-V and executes on Vulkan.
 fn kernel_module() -> Module {
-    Module {
-        name: "saxpy_spirv_kernel".into(),
-        source_lang: SourceLang::Rust,
-        items: Vec::new(),
-        ffi_boundaries: Vec::new(),
-    }
+    general_metahir_module()
 }
 
 fn spirv_config() -> BackendConfig {
@@ -123,7 +134,7 @@ fn spirv_diffexec_executes_on_vulkan_and_matches() {
         } => {
             assert_eq!(emitters.len(), 2, "general + specialist both ran");
             assert!(
-                emitters.iter().any(|e| e == "spirv-saxpy-general"),
+                emitters.iter().any(|e| e == "spirv-general"),
                 "general emitter must be reported, got {emitters:?}"
             );
             assert!(

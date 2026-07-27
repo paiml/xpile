@@ -16782,3 +16782,85 @@ roadmap:
     slice. No gate file touched; witness_floor.rs untouched (two-touch serial resource,
     PMAT-1372 / PMAT-1373).'
   status: done
+- id: PMAT-1388
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1388: [honesty/spirv] `xpile transpile <ANY FILE> --target spirv` exited 0
+    emitting a SPIR-V binary for a program the user NEVER WROTE. The general emitter bound its
+    `Module` to `_module` and discarded it, always compiling the hardcoded
+    `spirv_saxpy_general` fixture -- so six categorically different inputs, TWO of them inputs
+    the WGSL lowering this lane is defined to REUSE refuses outright, produced BYTE-IDENTICAL
+    SPIR-V. Corpus-wide: SPIR-V accepted 716 fixtures where WGSL accepted 39.'
+  description: 'PICKED by executing PMAT-1387''s next-pick note. That note named the 4 pinned
+    over-citations as item (a); measuring them led one level out. The C-lane over-citation is
+    real and its root cause is that `Function::applicable_contracts()` is PARADIGM-BLIND
+    (`SourceLang` lives on `Module`, so every C function''s "required" contract is the PYTHON
+    one -- 19 of 2168 corpus functions have required-ids DISJOINT from emitted-ids yet count in
+    `xpile audit`''s numerator, because the detector matches the PRESENCE of any citation). While
+    sweeping every target for that mislabel, `--target spirv` turned out to be emitting a canned
+    shader for every input, which strictly dominates it in severity, so THAT is this slice. The
+    C-lane paradigm-blindness is written up in the queue as the next pick, unfixed and named.
+    ** THE DEFECT, measured through the shipped CLI at f74ebe61 BEFORE fixing. `add.py`,
+    `fib.py`, `sign.py`, `cmp.py`, a Python f64 function and the bitwise C module
+    `c_bitwise.c` all emitted SPIR-V with sha256 prefix `421b318e...` -- identical. Two of those
+    (`c_bitwise.c`: `Shl` is outside the WGSL subset; the f64 one: WGSL core has no 64-bit
+    float) are REFUSED by `--target wgsl`, the exact lowering the SPIR-V lane is documented to
+    reuse. Corpus-wide the lane accepted 716 of 802 fixtures against WGSL''s 39, i.e. 677
+    programs were "compiled" that its own front half had rejected. This is the strongest form of
+    the exit-0-but-false shape: not one construct mistranslated, but the ENTIRE artifact
+    unrelated to the input. Shipped to a Vulkan pipeline it runs someone else''s shader.
+    ** THE FIX makes the module a parameter (`general_real_wgsl()` -> `real_wgsl_for(module)`),
+    so the lane is exactly as wide as the WGSL subset it reuses: what WGSL lowers, this
+    compiles; what WGSL refuses, this refuses WITH THAT REASON. The `@compute` dispatch harness
+    is derived from the module''s own entry function (name + element type) instead of being
+    hardcoded to `saxpy`/`f32`; a module with no unambiguous element-shaped entry (several
+    functions -- which is the entry? -- a multi-parameter or mixed-type signature) emits as a
+    bare entry-point-free SPIR-V module, which naga accepts as a valid library module. Verified
+    directly rather than assumed: naga compiles entry-point-free WGSL (63 and 69 words for the
+    i32/f32 probes).
+    ** THE SPECIALIST NOW DECLINES. `SpirvSaxpySpecialistEmitter` is a HAND-WRITTEN `fma`
+    variant of ONE arithmetic; pairing it against an arbitrary user module and reporting
+    `QuorumStatus::Multi` would claim a two-emitter agreement that was never computed. It now
+    returns `None` -- the documented `TargetEmitter` "my shape filter does not match" protocol --
+    for anything but that module, and the quorum honestly degrades to `Single`. Shape equality
+    is `format!("{:?}")` against `general_metahir_module()`: `Module` has no `PartialEq`, and the
+    derived `Debug` rendering is a TOTAL structural encoding, so this is exact structural
+    equality with no new dependency and no drift-prone hand-written field walk.
+    ** WITNESS XPILE-SPIRVFID-001 (crates/xpile/tests/cli_spirv_input_fidelity_witness.rs,
+    6 tests, 0.97 s MEASURED). The load-bearing assertion is a RELATION BETWEEN TWO LIVE LANES,
+    not a hand-listed set of refusals: the SPIR-V lane''s accepted set must be a SUBSET of the
+    WGSL lane''s, since it emits by compiling that lane''s output. That cannot drift as either
+    subset widens, and it is exactly what the defect violated. Vacuity-guarded on BOTH sides
+    (each lane must accept >= 10 of the corpus) so a "fix" that refused everything fails.
+    RED-THEN-GREEN on unmodified origin/main: 4 of 6 FAIL naming 677 offenders, and the one that
+    passes there is the CONTROL -- the correct shape.
+    ** CLASS GATE, per the PMAT-1386 lesson that a fix naming a class must sweep every member.
+    Nine emitters across the PTX/CUDA/WASM/WGSL/SPIR-V lanes hold a `try_emit(_module, ...)`
+    today. Swept empirically through the CLI rather than by reading constructors: WGSL and WASM
+    both VARY with their input, every PTX target REFUSES at the CLI (consistent with the
+    2026-07-05 audit''s "PTX CLI-unreachable"), so the SPIR-V lane was the only CLI-reachable
+    member. A sixth test now fails if ANY target emits the same artifact for two different
+    programs, so the class stays at zero.
+    ** FOUND ONLY BY MAKING THE EMITTER READ ITS INPUT, and worth recording on its own: the
+    §29 EXECUTED VULKAN WITNESS was handing the backend `Module { name: "saxpy_spirv_kernel",
+    items: Vec::new() }` -- NO FUNCTIONS AT ALL -- while its module doc claimed the arithmetic
+    is "xpile's output, not a hardcoded shader". It asserted on a shader it had supplied no
+    input for, which is exactly why it could not have caught this defect. It now passes
+    `general_metahir_module()`, the module whose lowering it prints and executes; re-run on this
+    box's Vulkan adapter it still reports a real `DiffExecResult::Match` at max_abs_diff=0 --
+    EXECUTED, verified by reading the witness output, not inferred from a green exit. The
+    crate's own `dummy_module()` had the same item-less shape and is now a real function.
+    ** SAXPY WITNESS PATH PINNED. `real_wgsl_for(general_metahir_module())` is asserted
+    byte-identical to what `general_real_wgsl()` produced pre-slice, so the executed Vulkan GPU
+    witness (PMAT-960/977/988) attests the same artifact it did before; the two emitters still
+    pair as `Multi` on that module, asserted alongside the decline so the decline cannot pass
+    vacuously.
+    ** POST-FIX MEASUREMENT: 27 corpus fixtures emit SPIR-V, all 27 outputs DISTINCT; the
+    previously-canned inputs refuse naming the WGSL construct or the naga rejection
+    (`fib.py` -> `declaration of `fib` is recursive`).
+    ** RESIDUAL, FOUND AND NOT FIXED: `--target wgsl` on `fib.py` still exits 0 emitting WGSL
+    that naga REJECTS (WGSL forbids recursion) -- the same accept-then-fail-downstream shape one
+    lane over. Named in the queue for the next slice, not silently dropped.
+    ** No gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+    PMAT-1373).'
+  status: done
