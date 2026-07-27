@@ -16665,3 +16665,62 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1386
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1386: [honesty/CLI-reporter] the other three §14.4 reporters disagreed about what
+    an unmeasurable input is. `xpile quorum` read its `--roadmap` with `.unwrap_or_default()`, so
+    a path that does not exist scored the ENTIRE Extrinsic stratum at 0 for EVERY contract at
+    exit 0 -- 702 live mentions collapsed to 0 and 10 of 35 contracts fell QUORUM -> PARTIAL,
+    with no notice. `--fixtures-dir` (half of the Runtime union) silently dropped 32 of 239
+    Runtime votes while its sibling `--witness-dir` announced the same absence. And `quorum` +
+    `diamond` printed a zero-row scoreboard (`0 QUORUM, 0 PARTIAL, 0 UNVERIFIED (0 contracts
+    total)`, `{"contracts":[]}`) for a contract universe they never discovered, where
+    `attestations` refuses the identical input.'
+  description: 'Follow-on to PMAT-1385, taken from its own next-pick note (item (a): the OTHER
+    three reporters for the same vacuity/exit-code shape). The queue has nothing OPEN before
+    Thursday 2026-07-30.
+    ** THE DEFECT, three shapes, all exit 0, all measured on the live tree before fixing:
+    (1) `xpile quorum --roadmap <nonexistent>` -- `std::fs::read_to_string(..).unwrap_or_default()`
+    swallowed the read error and every contract reported `"extrinsic":0`. Live totals went 702
+    mentions -> 0 and QUORUM 26 -> 16. The default is CWD-relative, which is the exact trap
+    PMAT-1367 wrote a stderr notice for on `--witness-dir`; the sibling path arguments in the
+    same function had none. (2) `--fixtures-dir <nonexistent>` silently lost 32 of the 239 live
+    Runtime votes with no notice, an asymmetry with `--witness-dir` in the same union.
+    (3) an empty contract universe (a real directory holding a file with no `metadata.id:`)
+    scored as a clean board on `quorum` and `diamond` -- a consumer reading `unverified == 0`
+    sees a pass over a universe that was never discovered -- while `attestations` has always
+    bailed on it.
+    ** THE FIX splits by KIND, exactly as PMAT-1385 did, and makes the three reporters AGREE
+    rather than inventing a fourth posture: an unreadable `--roadmap` and an empty contract
+    universe are INPUT errors and REFUSE (`attestations`''s existing message and behaviour,
+    reused verbatim in shape); a missing `--fixtures-dir` is a legitimately-absent half of a
+    UNION and gets the same one-line stderr notice `--witness-dir` already had, non-fatal, for
+    the reason PMAT-1367 recorded. An EXISTING roadmap that mentions no contract still reports
+    `extrinsic: 0` -- an honest zero stays distinguishable from an unread one, which is the
+    whole point of the split.
+    ** WITNESS XPILE-REPORTERVAC-001 (crates/xpile/tests/cli_reporter_vacuity_witness.rs, 6
+    tests). Verified RED without the fix: the 3 defect tests fail and the 3 control/agreement
+    tests pass in both directions, which is the correct shape. Every property is vacuity-guarded
+    on BOTH sides -- the live corpus must measure a non-zero Extrinsic total, a non-zero Diamond
+    total and a strictly larger Runtime total -- so a change that makes the reporters refuse
+    EVERYTHING cannot pass this file. One test asserts the CONSEQUENCE rather than the
+    mechanism: zeroing Extrinsic must move at least one contract off QUORUM, or the stratum the
+    reporter reads is not load-bearing and the refusal would be theatre. No external toolchain,
+    so no skip path -- runtime 3.31s, measured, not assumed (the PMAT-1383 skip-as-green lesson).
+    ** SCOPE HONESTY: this is the vacuity/exit-code shape only. It does NOT revisit whether the
+    Runtime probe list (`RUNTIME_PROBES`) is the right notion of "executes", nor the 4
+    over-citations PMAT-1385 pinned as a ceiling. `attestations` retains its own documented
+    skip-if-no-roadmap path in its test file; that path is unreachable on this repo and was left
+    alone.
+    ** NO gate file touched; crates/xpile/tests/witness_floor.rs untouched (two-touch serial
+    resource, PMAT-1372 / PMAT-1373).'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

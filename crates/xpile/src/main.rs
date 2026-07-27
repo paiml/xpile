@@ -2033,6 +2033,11 @@ fn quorum(
     // would get a green gate measuring nothing. Announce it once, up front,
     // naming the path; non-fatal, because `quorum` is a reporter and a caller
     // legitimately may point it at a lane that is not checked out.
+    //
+    // PMAT-1386: `--fixtures-dir` is the OTHER half of the Runtime union and
+    // had no such notice — a missing fixtures dir silently dropped 32 of the
+    // live corpus's 239 Runtime votes at exit 0. Same argument, same posture,
+    // same wording: announce once, do not abort. The asymmetry was the bug.
     for dir in witness_dirs {
         if !dir.is_dir() {
             eprintln!(
@@ -2041,6 +2046,13 @@ fn quorum(
                 dir.display()
             );
         }
+    }
+    if !fixtures_dir.is_dir() {
+        eprintln!(
+            "xpile quorum: notice — --fixtures-dir {} is not a directory; \
+             it contributes 0 Runtime votes",
+            fixtures_dir.display()
+        );
     }
     let mut rows: Vec<QuorumRow> = Vec::new();
     for entry in std::fs::read_dir(contracts_dir)? {
@@ -2063,8 +2075,30 @@ fn quorum(
             id,
         });
     }
+    // PMAT-1386: an empty contract universe is an INPUT error, not an outcome.
+    // `attestations` has always refused it; `quorum` printed a zero-row table
+    // and `{"contracts":[]}` at exit 0, whose "0 UNVERIFIED" total reads to a
+    // consumer as a clean pass over a universe that was never measured. Same
+    // refusal, same shape, so the three reporters agree.
+    if rows.is_empty() {
+        bail!(
+            "no contract IDs discovered under {} — expected at least one *.yaml file \
+             with a `metadata.id:` field",
+            contracts_dir.display()
+        );
+    }
     // Fill Extrinsic via the same scanner attestations() uses.
-    let roadmap = std::fs::read_to_string(roadmap_path).unwrap_or_default();
+    //
+    // PMAT-1386: this was `.unwrap_or_default()`, so a `--roadmap` path that
+    // does not exist scored the ENTIRE Extrinsic stratum at 0 for EVERY
+    // contract — silently, at exit 0. Measured on the live tree: 702 mentions
+    // collapsed to 0 and 10 of 35 contracts fell QUORUM -> PARTIAL. The
+    // default is CWD-relative, the same trap PMAT-1367 guarded `--witness-dir`
+    // against. Unlike a witness dir this is the SOLE source of a whole
+    // stratum, so it refuses rather than warns — which is what `attestations`
+    // has always done with the identical argument.
+    let roadmap = std::fs::read_to_string(roadmap_path)
+        .with_context(|| format!("read roadmap {}", roadmap_path.display()))?;
     for row in rows.iter_mut() {
         row.extrinsic = scan_roadmap_for_id(&roadmap, &row.id).len();
     }
@@ -2580,6 +2614,16 @@ fn diamond(contracts_dir: &Path, json: bool) -> Result<()> {
             id,
             diamond_count: count_diamond_theorems(&contents),
         });
+    }
+    // PMAT-1386: same refusal as `quorum` / `attestations`. A zero-row Diamond
+    // table read as "0 Diamond theorems across 0 contracts" at exit 0 — a
+    // depth report over a universe that was never discovered.
+    if rows.is_empty() {
+        bail!(
+            "no contract IDs discovered under {} — expected at least one *.yaml file \
+             with a `metadata.id:` field",
+            contracts_dir.display()
+        );
     }
     rows.sort_by(|a, b| {
         b.diamond_count

@@ -1341,6 +1341,60 @@ queue:
     Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no
     crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit,
     gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
+- id: PMAT-1386
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'The OTHER three §14.4 reporters: `quorum` scored the whole Extrinsic stratum at 0 for a
+    `--roadmap` that does not exist (702 mentions -> 0, QUORUM 26 -> 16, exit 0); `--fixtures-dir`
+    silently dropped 32 of 239 Runtime votes where `--witness-dir` announced; `quorum`+`diamond`
+    scored a contract universe they never discovered where `attestations` refuses it
+    (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED by executing PMAT-1385's next-pick note item (a) -- the other three reporters
+    (`quorum`, `attestations`, `diamond`) for the same vacuity/exit-code shape. The queue has
+    nothing OPEN before Thursday.
+    ** THE DEFECT (3 shapes, all exit 0, all measured on the live tree BEFORE fixing):
+    (1) `quorum` read `--roadmap` with `.unwrap_or_default()`, so a nonexistent path scored the
+    ENTIRE Extrinsic stratum at 0 for EVERY contract -- 702 live mentions -> 0, and 10 of 35
+    contracts fell QUORUM -> PARTIAL (26 -> 16), with no stderr and rc=0. The default is
+    CWD-relative: the exact trap PMAT-1367 wrote a `--witness-dir` notice for, on the sibling
+    path args of the SAME function. (2) `--fixtures-dir <nonexistent>` silently lost 32 of the
+    239 live Runtime votes with NO notice -- an asymmetry inside one union. (3) an empty
+    contract universe scored as a clean board on `quorum` (`0 QUORUM, 0 PARTIAL, 0 UNVERIFIED
+    (0 contracts total)`, `{"contracts":[]}`) and `diamond`, while `attestations` bails.
+    ** THE FIX splits by KIND (PMAT-1385's doctrine) and makes the three reporters AGREE rather
+    than inventing a fourth posture: unreadable `--roadmap` + empty universe REFUSE, reusing
+    `attestations`'s existing message shape; a missing `--fixtures-dir` gets the same one-line
+    non-fatal notice `--witness-dir` already had, for the reason PMAT-1367 recorded (either half
+    of a union may legitimately be absent). An EXISTING roadmap that mentions nothing still
+    reports `extrinsic: 0` -- an honest zero stays distinguishable from an unread one.
+    ** WITNESS XPILE-REPORTERVAC-001 (crates/xpile/tests/cli_reporter_vacuity_witness.rs, 6
+    tests). RED without the fix: the 3 defect tests fail, the 3 control/agreement tests pass in
+    BOTH directions -- the correct shape. Vacuity-guarded on both sides (live corpus must show a
+    non-zero Extrinsic total, non-zero Diamond total, strictly larger Runtime total), so a change
+    that makes the reporters refuse EVERYTHING cannot pass. One test asserts the CONSEQUENCE, not
+    the mechanism: zeroing Extrinsic must move a contract off QUORUM or the stratum is not
+    load-bearing and the refusal is theatre. No toolchain, no skip path -- runtime 3.31s,
+    MEASURED (PMAT-1383 lesson).
+    ** GENERAL LESSON, third instance of it this window: a guard written for ONE argument is not
+    a guard for the FUNCTION. PMAT-1367 correctly identified "a nonexistent path must never
+    silently score 0" and then applied it to exactly one of the three path arguments it holds.
+    When a fix names a class, sweep every member of the class in the same slice.
+    ** SCOPE HONESTY: vacuity/exit-code shape only. Does NOT revisit `RUNTIME_PROBES`'s notion of
+    "executes", nor PMAT-1385's 4 pinned over-citations. `attestations`'s test-file
+    skip-if-no-roadmap path is unreachable on this repo and was left alone.
+    ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+    PMAT-1373).
+    NEXT PICK: still nothing OPEN before Thursday. Remaining named non-emit surfaces, in EV
+    order: (a) `xpile hybrid --verify`'s documented graceful-skip-exit-0 -- a skip-as-green shape
+    BY DESIGN, so check it DISCLOSES rather than that it refuses; (b) the 4 over-citations
+    PMAT-1385 pinned as a ceiling (C backend citing per-module vs `applicable_contracts()`
+    under-modelling C comparison); (c) CHANGELOG polish toward PMAT-1373. Do NOT start a
+    gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no crates/*/src or
+    contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit, gate_touch 3,
+    witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
 - id: PMAT-1373
   status: open
   ev_rank: R1
