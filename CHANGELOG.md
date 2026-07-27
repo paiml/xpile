@@ -9,6 +9,64 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **The Lean lane — the repo's semantic-stratum oracle — silently returned a
+  VALUE for division by zero** (PMAT-1394). `xpile transpile z.py --target lean
+  --contracts off` exited 0 on `return 7 // 0`, emitting
+  `def f : Int := (Int.fdiv (7: Int) (0: Int))`; `lean` (4.15.0) printed `0` and
+  exited 0, where Python raises `ZeroDivisionError`. Same shape on `7 % 0` → `7`
+  and `1.0 / 0.0` → `inf`; float `//` → `inf` and float `%` → `NaN` (both
+  measured in Lean, not inferred). No runtime parameter was needed — a literal
+  zero reproduced it.
+
+  This mattered most on this lane precisely because it is the semantic oracle
+  other correctness claims are justified *by*. It was already refusing
+  `try`/`except ZeroDivisionError` for having "no Lean counterpart" — so it
+  refused the *handler* while silently miscompiling the *raiser*. The same
+  meta-HIR through `--target rust` emits
+  `panic!("xpile: ZeroDivisionError: …")` and aborts, so the divergence was
+  lane-local.
+
+  Fixed as a **refusal, not a panic guard**, for a measured reason: a Lean
+  `panic!` does not produce a non-zero exit — it prints to stderr and returns
+  the type's default, so `Int` division would still answer `0` — and it would
+  make the emission opaque to the `by decide` semantic witness the lane depends
+  on. `//`, `%` and float `/` now lower only when the divisor is a
+  **provably-nonzero literal**; every other divisor is refused with an error
+  naming `ZeroDivisionError` and pointing at `--target rust` / `--target ruchy`.
+
+  The boundary is not invented here: `contracts/lean/PyIntArith.lean` already
+  states its floor-div and mod equivalence theorems under the hypothesis
+  `(hb : b ≠ 0)`, so emission for a possibly-zero divisor was emission *outside*
+  the region the lane's own contract proves. Nothing that still lowers changed,
+  so no `contracts/*.yaml` or Diamond-theorem resync was required.
+
+  Deliberately **not** a literal-zero-only guard: `a // b` with a runtime
+  divisor is refused too, since a guard for one argument is not a guard for the
+  operator. `provably_nonzero_divisor` does no range analysis — literals and
+  negated literals only (`-2` arrives as `UnOp::Neg` over `LitInt(2)`, so the
+  recursion has its own test), and `a // (1 + 1)` is refused rather than folded.
+  All five divisor sites in the crate are covered, enumerated rather than
+  assumed: `BinOp::FloorDiv`, `BinOp::Mod`, `FloatOp::Div`,
+  `FloatOp::FloorDiv`, `FloatOp::Mod`. Augmented assignment (`x %= period`)
+  needs no separate site — it routes through the same arm.
+
+  Note one consequence worth stating plainly: an `assert b != 0` written one
+  line above the division does *not* lift the refusal, because on this lane an
+  assert lowers to `else panic!` and a Lean panic does not abort. That is why
+  `tests/fixtures/asserted.py` (`safe_div`, whose author wrote the precondition
+  by hand) no longer lowers to Lean.
+
+  **Capability delta, measured rather than estimated:** 87 → 78 of the 812-file
+  corpus lower to Lean. All 9 newly-refused fixtures were confirmed to divide by
+  a runtime value or a literal zero, so there are no over-broad refusals.
+  Exactly one test of 827 in `-p xpile` was red; it is retargeted onto a
+  divisor-free program so the assert-chain property it pinned keeps its
+  coverage. Red half run: neutering the predicate to `return true` reds 6 of the
+  13 lean-codegen unit tests plus the new e2e gate, which pins both halves — 8
+  refused shapes (3 literal-zero legs plus 5 runtime-divisor forms across int
+  and float) and 4 that must still lower. Rust, Ruchy and every other backend
+  are unaffected.
+
 - **The WAT lift folded EVERY nonzero `i32.const` to `true`, so
   `xpile transpile m.wat` returned a valid module that computes a DIFFERENT
   value** (PMAT-1392). `(func $f (result i32) i32.const 2)` round-tripped to

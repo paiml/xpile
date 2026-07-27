@@ -12740,14 +12740,35 @@ fn json_usize(json: &str, field: &str) -> usize {
         .unwrap_or_else(|_| panic!("field `{field}` is not an integer in: {json}"))
 }
 
-// PMAT-027 / PMAT-009-FOLLOWUP: Lean target now handles
-// `Stmt::Assert` via recursive `if cond then <rest> else panic!`
-// emission. The asserted.py fixture used to fail Lean lowering;
-// now it produces valid Lean syntax.
+// PMAT-027 / PMAT-009-FOLLOWUP: Lean target handles `Stmt::Assert` via
+// recursive `if cond then <rest> else panic!` emission.
+//
+// PMAT-1394 RETARGETED THIS TEST. It used `asserted.py`, whose body is
+// `assert b != 0; assert a >= 0; return a // b` — a RUNTIME divisor, which the
+// Lean lane now refuses. The assert-chain property is unchanged and is still
+// pinned here, on a divisor-free program; the division half moved to
+// `lean_refuses_division_by_a_divisor_it_cannot_prove_nonzero`.
+//
+// Why the `assert b != 0` does NOT discharge the divisor obligation, even
+// though it is written one line above the division: on this lane an assert
+// lowers to `else panic!`, and a Lean `panic!` does not abort — it returns the
+// type's default (`0` for `Int`) and `lean` still exits 0. So the assert
+// cannot make the divisor provably nonzero; it only relocates the same silent
+// divergence. Discharging it would need the assert to be a real abort (it is
+// not) or flow-sensitive range analysis (this backend has none).
 #[test]
 fn assert_lean_emits_if_then_panic_chain() {
-    let py = fixture("asserted.py");
-    let out = run_xpile(&["transpile", py.to_str().unwrap(), "--target", "lean"]);
+    let dir = std::env::temp_dir().join("xpile-1394-assert-chain");
+    std::fs::create_dir_all(&dir).expect("mkdir temp");
+    let py_path = dir.join("asserted_nodiv.py");
+    // Same two asserts as asserted.py, with the division replaced by a total
+    // op so the test pins the assert lowering and nothing else.
+    std::fs::write(
+        &py_path,
+        "def safe_sub(a: int, b: int) -> int:\n    assert b != 0\n    assert a >= 0\n    return a - b\n",
+    )
+    .expect("write temp py");
+    let out = run_xpile(&["transpile", py_path.to_str().unwrap(), "--target", "lean"]);
     assert!(
         out.status.success(),
         "Lean + assert should succeed (PMAT-027); stderr: {}",
@@ -12770,9 +12791,134 @@ fn assert_lean_emits_if_then_panic_chain() {
         "expected 2 `else panic!` tails (one per assert), got {panic_count} in:\n{stdout}"
     );
     assert!(
-        stdout.contains("(Int.fdiv a b)"),
+        stdout.contains("(a - b)"),
         "expected the original trailing return to remain in the innermost then-branch, got:\n{stdout}"
     );
+}
+
+/// PMAT-1394: the Lean lane — the repo's SEMANTIC-stratum oracle — must REFUSE
+/// a division it cannot prove is zero-divisor-free, rather than emitting Lean
+/// that runs to a different answer than Python at exit 0.
+///
+/// Measured against lean 4.15.0 before the fix, all three at `lean` exit 0:
+///
+/// ```text
+///   7 // 0    -> (Int.fdiv (7: Int) (0: Int))    #eval => 0     Python: raises
+///   7 %  0    -> (Int.fmod (7: Int) (0: Int))    #eval => 7     Python: raises
+///   1.0 / 0.0 -> ((1: Float) / (0: Float))       #eval => inf   Python: raises
+/// ```
+///
+/// The CONTRAST that makes this a defect rather than a documented gap: the same
+/// meta-HIR through `--target rust` emits an explicit
+/// `panic!("xpile: ZeroDivisionError: ...")` guard, and the Lean lane already
+/// REFUSES `try`/`except ZeroDivisionError` — it was refusing the HANDLER while
+/// silently miscompiling the RAISER.
+#[test]
+fn lean_refuses_division_by_a_divisor_it_cannot_prove_nonzero() {
+    let dir = std::env::temp_dir().join("xpile-1394-divzero");
+    std::fs::create_dir_all(&dir).expect("mkdir temp");
+
+    // (source, description) — the three reproduced legs, then the SEVERE
+    // runtime-divisor form, which is the one a literal-zero-only guard would
+    // have let through.
+    let refused: &[(&str, &str)] = &[
+        ("def f() -> int:\n    return 7 // 0\n", "int // literal 0"),
+        ("def f() -> int:\n    return 7 % 0\n", "int % literal 0"),
+        (
+            "def f() -> float:\n    return 1.0 / 0.0\n",
+            "float / literal 0.0",
+        ),
+        (
+            "def f(a: int, b: int) -> int:\n    return a // b\n",
+            "int // runtime divisor",
+        ),
+        (
+            "def f(a: int, b: int) -> int:\n    return a % b\n",
+            "int % runtime divisor",
+        ),
+        (
+            "def f(a: float, b: float) -> float:\n    return a / b\n",
+            "float / runtime divisor",
+        ),
+        (
+            "def f(a: float, b: float) -> float:\n    return a // b\n",
+            "float // runtime divisor",
+        ),
+        (
+            "def f(a: float, b: float) -> float:\n    return a % b\n",
+            "float % runtime divisor",
+        ),
+    ];
+    for (i, (src, what)) in refused.iter().enumerate() {
+        let p = dir.join(format!("refuse_{i}.py"));
+        std::fs::write(&p, src).expect("write temp py");
+        let out = run_xpile(&[
+            "transpile",
+            p.to_str().unwrap(),
+            "--target",
+            "lean",
+            "--contracts",
+            "off",
+        ]);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !out.status.success(),
+            "{what}: the Lean lane must REFUSE, not emit. Got exit 0 and:\n{stdout}"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("ZeroDivisionError"),
+            "{what}: the refusal must name ZeroDivisionError, got:\n{stderr}"
+        );
+    }
+
+    // The other half of a real gate: what MUST still lower. A nonzero literal
+    // divisor is provably safe, so refusing it would be an over-broad guard
+    // masquerading as a fix.
+    let accepted: &[(&str, &str, &str)] = &[
+        (
+            "def f(n: int) -> int:\n    return n % 2\n",
+            "Int.fmod",
+            "int % nonzero literal",
+        ),
+        (
+            "def f(n: int) -> int:\n    return n // 2\n",
+            "Int.fdiv",
+            "int // nonzero literal",
+        ),
+        (
+            "def f(n: int) -> int:\n    return n // -2\n",
+            "Int.fdiv",
+            "int // negated nonzero literal",
+        ),
+        (
+            "def f(x: float) -> float:\n    return x / 2.0\n",
+            " / ",
+            "float / nonzero literal",
+        ),
+    ];
+    for (i, (src, needle, what)) in accepted.iter().enumerate() {
+        let p = dir.join(format!("accept_{i}.py"));
+        std::fs::write(&p, src).expect("write temp py");
+        let out = run_xpile(&[
+            "transpile",
+            p.to_str().unwrap(),
+            "--target",
+            "lean",
+            "--contracts",
+            "off",
+        ]);
+        assert!(
+            out.status.success(),
+            "{what}: must still lower; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(needle),
+            "{what}: expected `{needle}` in:\n{stdout}"
+        );
+    }
 }
 
 #[test]

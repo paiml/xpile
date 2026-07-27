@@ -77,6 +77,19 @@ construction* — no `checked_*` needed.
 > `lean` rejects the output above with `unexpected token; expected ']'`. Pass
 > `--contracts off` for Lean you intend to elaborate. Lean is the only backend
 > affected: every other one cites contracts in comments.
+>
+> **Caveat — the Lean lane refuses division it cannot prove is safe (PMAT-1394).**
+> Lean is a total language, so it has no `ZeroDivisionError` to raise:
+> `Int.fdiv a 0` evaluates to `0`, `Int.fmod a 0` to `a`, and float `a / 0.0` to
+> `inf` — and `lean` exits 0 on all three, so a divergence from Python would be
+> silent. `--target lean` therefore emits `//`, `%` and float `/` only when the
+> divisor is a **provably-nonzero literal**, and refuses with a named error
+> otherwise (including for a runtime divisor such as `a // b`). `--target rust`
+> and `--target ruchy` are unaffected: they emit an explicit
+> `panic!("xpile: ZeroDivisionError: …")` guard and abort. Note that an
+> `assert b != 0` above the division does *not* lift the refusal — on this lane
+> an assert lowers to `else panic!`, and a Lean `panic!` returns the type's
+> default rather than aborting.
 
 ## Why xpile
 
