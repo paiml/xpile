@@ -17805,6 +17805,15 @@ roadmap:
     early each writes it locally. The cheap fix that actually works: re-read origin/main''s max id
     immediately before the first push, and treat a merge conflict in the ledger as an id-collision
     signal rather than a text conflict.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-1403
   github_issue: null
   item_type: task
