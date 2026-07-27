@@ -9,6 +9,55 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`xpile hybrid --verify` — the PMAT-902 NORTH STAR differential — reported
+  `✓ MATCH` and exited `0` for a run in which nothing was observed and the FFI
+  boundary was never called** (PMAT-1387). Both executing lanes ended their
+  comparison in an unguarded `ComparisonResult::Match => println!("✓ MATCH …")`.
+  When the *reference* side produced no output, both sides were the empty
+  string, byte-identity held trivially, and the check printed a green verdict
+  over zero evidence. Measured through the shipped CLI on 2026-07-27, at
+  `903d7aab`, on both lanes:
+
+  | fixture | reference side | reported | exit |
+  |---|---|---|---|
+  | C lane — `square_sum` boundary, `main()` is `pass` | CPython, prints nothing | `✓ MATCH — stdout byte-identical (1 line(s)): ""` | **0** |
+  | Shell lane — `_tool` boundary, empty `_tool.sh` | `sh`, prints nothing | `✓ MATCH — stdout byte-identical (1 line(s)): ""` | **0** |
+
+  The C function could have returned anything; the bashrs round-trip could have
+  shredded the script. Neither was exercised. The `.max(1)` on the line count
+  even asserted that **one** line had been compared when zero had.
+
+  An empty reference is not agreement, it is the absence of evidence, so the
+  verdict now **refuses** (non-zero) rather than skipping — the PMAT-1385
+  split-by-kind doctrine applied one level down. A missing toolchain is an
+  *environment* absence and keeps its disclosed graceful skip; a vacuous
+  differential is a *fixture* defect on a check the operator explicitly asked
+  for, and the verdict it would otherwise print is false. The guard is
+  deliberately narrow: it fires only on `Match`-with-empty-reference, so a
+  non-empty reference against an empty artifact is still a `Divergence` with its
+  side-by-side diagnostic intact.
+
+  Both lanes now share one `differential_verdict` helper, so the C and Shell
+  verdicts agree by construction instead of by two copies staying in sync — the
+  same consolidation PMAT-1386 applied to the §14.4 reporters. Two smaller
+  truths were fixed in passing: the not-executed report for non-C/non-Shell
+  boundaries was printed **only** when no C or Shell boundary existed, so a
+  mixed manifest verified the C half and never mentioned the rest (it is now
+  unconditional, matching what `verify_hybrid`'s own doc comment had claimed);
+  and the line count is now the real count.
+
+  Witness `XPILE-HYBRIDVAC-001`
+  (`crates/xpile/tests/hybrid_verify_vacuity_witness.rs`, 6 tests, 1.29 s), with
+  new fixtures `hybrid_vacuous_c/` and `hybrid_vacuous_shell/`. Three of the six
+  are controls that fail if the guard reds a real differential or reclassifies
+  the `DIVERGENT` arm, and a sixth pins the fixtures as *actually* vacuous so
+  they cannot be "repaired" into passing for the wrong reason. The executing
+  path was falsified rather than assumed: removing `cargo` from `PATH` takes the
+  disclosed graceful skip, and the temp workspace materialises mid-run.
+  **Still not proven, stated plainly:** a non-empty `MATCH` shows the two hosts
+  agreed on the output produced — not that every reconciled boundary was
+  *called*. That needs call instrumentation, not an output predicate.
+
 - **`xpile quorum` scored the entire Extrinsic stratum at `0` for a `--roadmap`
   path that does not exist, and `quorum` / `diamond` scored a contract universe
   they never discovered** (PMAT-1386). The three §14.4 scoreboards —

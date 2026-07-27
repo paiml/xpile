@@ -1395,6 +1395,58 @@ queue:
     gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 18:00: no crates/*/src or
     contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit, gate_touch 3,
     witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
+- id: PMAT-1387
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`xpile hybrid --verify` -- the PMAT-902 NORTH STAR executing differential -- printed
+    `✓ MATCH — stdout byte-identical (1 line(s)): ""` and exited 0 for a run in which NOTHING
+    was observed and the FFI boundary was never called; BOTH lanes (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED by executing PMAT-1386's next-pick note item (a): `xpile hybrid --verify`'s
+    documented graceful-skip-exit-0, checked for DISCLOSURE rather than refusal. Queue has
+    nothing OPEN before Thursday.
+    ** THE NOTE POINTED AT THE WRONG HALF, which is worth recording. Every documented SKIP
+    path does disclose (toolchain gate, no-`main()` gate, non-ABI-mappable gate all print a
+    reason and exit 0). The hole was in the PASS path they fall through to: both lanes ended
+    in an unguarded `ComparisonResult::Match => println!("✓ MATCH …")`, so an EMPTY reference
+    made byte-identity hold TRIVIALLY. Measured at 903d7aab on both lanes before fixing --
+    a C fixture with `main(): pass`, and a shell fixture with an EMPTY `_tool.sh`, each print
+    `✓ MATCH — stdout byte-identical (1 line(s)): ""` at exit 0. The `.max(1)` even claimed
+    one line compared where zero were. GENERAL FORM: when checking whether a skip discloses,
+    also check what the skip FALLS THROUGH TO -- a disclosed skip in front of a false pass is
+    still a false pass.
+    ** THE FIX is PMAT-1385's split-by-KIND one level down: ENVIRONMENT absence stays a
+    disclosed skip at exit 0; a VACUOUS differential REFUSES non-zero. Narrow on purpose --
+    fires only on Match-with-empty-reference, so a non-empty reference vs an empty artifact
+    stays a `Divergence` with its side-by-side diagnostic.
+    ** CONSOLIDATION: one shared `differential_verdict` for both lanes (PMAT-1386's "make them
+    agree, don't add a fourth posture"). Divergence labels padded to 9 columns rather than
+    hardcoded, keeping `CPython:  [1, 2.5]` byte-identical for the PMAT-1352 test.
+    ** ALSO FIXED: `verify_hybrid`'s not-executed report for non-C/non-Shell boundaries lived
+    INSIDE the both-empty arm, so a mixed manifest verified the C half and never mentioned the
+    rest -- contradicting the function's own doc comment. Now unconditional. LATENT and said
+    so: no reachable fixture exercises it (the only other liftable input is `.wat`, and a WASM
+    boundary fails LOUDLY at shim emission), so it ships as a doc-truth fix with NO test
+    rather than a witnessed one.
+    ** WITNESS XPILE-HYBRIDVAC-001 (crates/xpile/tests/hybrid_verify_vacuity_witness.rs,
+    6 tests, 1.29 s MEASURED) + fixtures hybrid_vacuous_c/, hybrid_vacuous_shell/. 3 of 6 are
+    controls (a fix that refused everything, or that swallowed the DIVERGENT arm, fails them);
+    a 6th pins the fixtures as actually vacuous so they can't be "repaired" into passing.
+    ** RUNTIME FALSIFIED, NOT TRUSTED (PMAT-1383): 1.29 s is too fast for five cold cargo
+    builds, so the build was checked directly -- `PATH` without cargo takes the disclosed skip,
+    and `/tmp/xpile_verify_ws_<pid>` materialises mid-run. The artifact crate has no deps.
+    ** SCOPE: a non-empty MATCH still does not prove a boundary was CALLED, only that both
+    hosts agreed on what was printed. Call instrumentation, not an output predicate -- 0.1.619.
+    ** No gate file touched; witness_floor.rs untouched (2-touch serial resource).
+    NEXT PICK: still nothing OPEN before Thursday. Remaining named non-emit surfaces, EV order:
+    (a) the 4 over-citations PMAT-1385 pinned as a shrink-only ceiling (C backend citing
+    per-module vs `applicable_contracts()` under-modelling C comparison); (b) the uncalled-
+    boundary residual above, if it can be done without instrumentation; (c) CHANGELOG polish
+    toward PMAT-1373. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
+    Wed 18:00: no crates/*/src or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373
+    (release commit, gate_touch 3, witness-floor TOUCH 2); 2026-07-31 -> PMAT-1374 (publish).
 - id: PMAT-1373
   status: open
   ev_rank: R1

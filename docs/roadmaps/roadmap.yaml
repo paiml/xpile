@@ -16724,3 +16724,61 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1387
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1387: [honesty/hybrid-verify] `xpile hybrid --verify` -- the PMAT-902 NORTH STAR
+    executing differential -- reported `✓ MATCH — stdout byte-identical (1 line(s)): ""` and
+    exited 0 for a run in which NOTHING was observed and the reconciled FFI boundary was never
+    called. Both lanes (C and Shell) ended in an unguarded `ComparisonResult::Match` arm, so an
+    empty reference side made byte-identity hold TRIVIALLY. The `.max(1)` line count asserted
+    that one line had been compared when zero had.'
+  description: 'PICKED from PMAT-1386''s next-pick note item (a) -- `xpile hybrid --verify`''s
+    documented graceful-skip-exit-0, checked for DISCLOSURE rather than refusal. The queue has
+    nothing OPEN before Thursday 2026-07-30.
+    ** THE DEFECT, measured through the shipped CLI at 903d7aab BEFORE fixing, on BOTH lanes:
+    a `hybrid_sum`-shaped fixture whose `main()` body is `pass` (C lane), and one whose
+    `_tool.sh` is EMPTY (shell lane), each print
+    `  ✓ MATCH — stdout byte-identical (1 line(s)): ""` and exit 0. The C function could have
+    returned anything and the bashrs frontend->backend round-trip could have shredded the
+    script; neither was exercised. The graceful skips were all disclosed (the toolchain gate,
+    the no-`main()` gate, the non-ABI-mappable gate all print a reason) -- the hole was not in
+    the SKIP paths the note pointed at but in the PASS path they fall through to.
+    ** THE FIX applies PMAT-1385''s split-by-KIND doctrine one level down. An ENVIRONMENT
+    absence (no cc/python3/cargo/sh) stays a disclosed graceful skip at exit 0. A VACUOUS
+    differential is a FIXTURE defect on a check the operator explicitly asked for, and the
+    verdict it would otherwise print is FALSE -- so it REFUSES, non-zero, naming the reference
+    side that produced nothing. Deliberately narrow: the guard fires only on
+    Match-with-empty-reference, so a non-empty reference against an empty artifact stays a
+    `Divergence` and keeps its more informative side-by-side diagnostic.
+    ** CONSOLIDATION: both lanes now share one `differential_verdict` helper, so the C and
+    Shell verdicts agree BY CONSTRUCTION rather than by two copies staying in sync -- the same
+    move PMAT-1386 made across the three §14.4 reporters. The divergence labels are padded to
+    9 columns instead of hardcoded per lane, which keeps `CPython:  [1, 2.5]` /
+    `artifact: [1.0, 2.5]` byte-identical for the PMAT-1352 test that pins it.
+    ** TWO SMALLER TRUTHS FIXED IN PASSING. (1) `verify_hybrid`''s doc comment claimed every
+    non-C/non-Shell `to_lang` "is reported as not-executed rather than silently counted as
+    verified", but the report lived INSIDE the both-empty arm -- a manifest with one C boundary
+    and three `Python -> Cuda` boundaries verified the C one and never mentioned the other
+    three. Now unconditional, so the documented claim is true. LATENT, stated honestly: no
+    reachable fixture exercises it today, because the only other input language that lifts to a
+    reconcilable sibling is `.wat` and a WASM boundary fails LOUDLY at shim emission -- so it
+    carries no test and is a doc-truth fix, not a witnessed one. (2) `.max(1)` removed; the
+    line count is now the real count.
+    ** WITNESS XPILE-HYBRIDVAC-001 (crates/xpile/tests/hybrid_verify_vacuity_witness.rs,
+    6 tests, 1.29 s MEASURED not assumed), plus fixtures hybrid_vacuous_c/ and
+    hybrid_vacuous_shell/. Three of the six are CONTROLS -- a "fix" that refused every
+    `--verify`, or that reclassified the DIVERGENT arm as vacuous, fails them -- and a sixth
+    pins the two fixtures as ACTUALLY vacuous (empty `.sh`, no `print(`, boundary still
+    present) so they cannot be "repaired" into passing for the wrong reason.
+    ** THE EXECUTING PATH WAS FALSIFIED, NOT ASSUMED (PMAT-1383 lesson). The whole witness runs
+    in 1.29 s, which is too fast for five cold `cargo build`s, so the build was checked
+    directly instead of trusted: removing `cargo` from PATH takes the disclosed
+    "cc/python3/cargo unavailable" skip, and `/tmp/xpile_verify_ws_<pid>` materialises mid-run.
+    The artifact crate is dependency-free, which is why it really is that fast.
+    ** SCOPE HONESTY: a non-empty MATCH still does NOT prove every reconciled boundary was
+    CALLED -- only that the two hosts agreed on the output that was produced. Detecting an
+    uncalled boundary needs call instrumentation, not an output predicate, and is not in this
+    slice. No gate file touched; witness_floor.rs untouched (two-touch serial resource,
+    PMAT-1372 / PMAT-1373).'
+  status: done
