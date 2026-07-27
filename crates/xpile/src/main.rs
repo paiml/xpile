@@ -484,9 +484,16 @@ fn ctypes_binding_for(entry: &FfiEntry, modules: &[Module]) -> Option<CtypesBind
 ///
 /// Every other `to_lang` (Cuda, Cpp, Python, Ruchy, Rust, Lean, …) still has no
 /// executing reference, so it is reported as not-executed rather than silently
-/// counted as verified. Match → `Ok(())`; Divergence → non-zero exit.
-/// Graceful-skips (`Ok`) when a toolchain or fixture shape the check needs is
-/// absent, so a constrained CI stays green.
+/// counted as verified — PMAT-1387 made that unconditional; it used to be
+/// printed only when NO C or Shell boundary existed, so a mixed manifest
+/// verified the C half and never mentioned the rest.
+///
+/// Match → `Ok(())`; Divergence → non-zero exit; VACUOUS (an empty reference,
+/// so byte-identity holds trivially) → non-zero exit, see
+/// [`differential_verdict`]. Graceful-skips (`Ok`) when a toolchain or fixture
+/// shape the check needs is absent, so a constrained CI stays green — an
+/// ENVIRONMENT absence is disclosed and skipped; a differential that observed
+/// nothing is refused.
 fn verify_hybrid(
     session: &TranspileSession,
     manifest: &FfiManifest,
@@ -505,18 +512,30 @@ fn verify_hybrid(
         .iter()
         .filter(|e| e.to_lang == SourceLang::Shell)
         .collect();
+    // PMAT-1387: the not-executed report is a property of the FUNCTION, not of
+    // one branch of it. It used to live ONLY inside the both-empty arm, so a
+    // manifest holding one C boundary *and* three `Python → Cuda` boundaries
+    // verified the C one, printed `✓ MATCH`, exited 0, and never mentioned the
+    // other three — contradicting this function's own doc claim two paragraphs
+    // up. Report the unverifiable remainder unconditionally, before any lane
+    // runs, so the count is stated whether or not an executing lane exists.
+    // (PMAT-1386's lesson, third instance: a guard written for one case is not
+    // a guard for the function.)
+    let others = manifest.entries.len() - c_entries.len() - sh_entries.len();
+    if others > 0 {
+        println!(
+            "  --verify: {others} boundary(ies) are neither C nor Shell — \
+             no executing reference exists for them; they were NOT verified"
+        );
+    }
     if c_entries.is_empty() && sh_entries.is_empty() {
         // PMAT-1362: name BOTH executable paradigms so the message stays true
         // when a fixture has a boundary of some third kind. A `Python → Cuda`
         // boundary is unverified, not verified — say so.
-        let others = manifest.entries.len();
         if others == 0 {
             println!("  --verify: no FFI boundary to execute — nothing to verify");
         } else {
-            println!(
-                "  --verify: {others} boundary(ies), none of them C or Shell — \
-                 no executing reference exists for the others; NOTHING was verified"
-            );
+            println!("  --verify: no C or Shell boundary to execute — NOTHING was verified");
         }
         return Ok(());
     }
@@ -622,11 +641,57 @@ fn verify_c_boundary(
 
     // Differential verdict.
     println!("  --verify: CPython reference (from {py_name}) vs executed C+shim artifact:");
-    match diff_stdout(&reference, &actual) {
+    differential_verdict(&reference, &actual, "CPython:", "the CPython reference")
+}
+
+/// PMAT-1387 — the shared Match/Vacuous/Divergent verdict for BOTH executing
+/// lanes, so the two agree by construction rather than by two copies staying in
+/// sync (PMAT-1386's doctrine: make the reporters agree, don't invent a fourth
+/// posture).
+///
+/// **The defect this exists to close.** Both lanes previously reported
+/// `ComparisonResult::Match` as `✓ MATCH` unconditionally and exited 0. When the
+/// reference side produced NO output — a `main()` whose body is `pass`, or an
+/// empty `.sh` — both sides were the empty string, so byte-identity held
+/// TRIVIALLY and `--verify`, the PMAT-902 NORTH STAR check, printed
+/// `✓ MATCH — stdout byte-identical (1 line(s)): ""` for a run in which the
+/// reconciled FFI boundary was never called and nothing whatsoever was observed.
+/// The `.max(1)` even asserted a line count of 1 for zero lines. An empty
+/// reference is not agreement; it is the ABSENCE of evidence, and a differential
+/// that cannot be distinguished from one that never ran must not be reported as
+/// a pass. It REFUSES (non-zero), because `--verify` was explicitly asked for
+/// and the answer it would otherwise give is false — this is a fixture defect,
+/// not the environment-absence kind that earns a graceful skip.
+///
+/// **Deliberately narrow.** The guard fires only on the `Match`-with-empty-
+/// reference combination. A non-empty reference against an empty artifact is
+/// still a `Divergence`, which is a real, more informative finding and keeps its
+/// side-by-side diagnostic. A non-empty MATCH still does NOT prove every
+/// reconciled boundary was CALLED — only that the two hosts agreed on the output
+/// that was produced. That residual is out of scope here; it needs call
+/// instrumentation, not an output predicate.
+fn differential_verdict(
+    reference: &str,
+    actual: &str,
+    ref_label: &str,
+    bail_subject: &str,
+) -> Result<()> {
+    match diff_stdout(reference, actual) {
+        ComparisonResult::Match if reference.is_empty() => {
+            eprintln!(
+                "  ✗ VACUOUS — both sides produced NO output, so byte-identity holds \
+                 trivially and nothing was observed"
+            );
+            eprintln!(
+                "      the reference side must print something the artifact can be \
+                 compared against; a silent `main()` / empty script exercises no boundary"
+            );
+            bail!("hybrid verify: VACUOUS differential — {bail_subject} produced no output, so nothing was verified")
+        }
         ComparisonResult::Match => {
             println!(
                 "  ✓ MATCH — stdout byte-identical ({} line(s)): {reference:?}",
-                reference.lines().count().max(1)
+                reference.lines().count()
             );
             Ok(())
         }
@@ -640,9 +705,11 @@ fn verify_c_boundary(
             // numbers lines from zero. Found by the test that gives this arm
             // its first coverage; +1 makes the number match what a reader sees.
             eprintln!("  ✗ DIVERGENT at line {}:", index + 1);
-            eprintln!("      CPython:  {expected}");
+            // `artifact:` is 9 columns, so the reference label pads to 9 too —
+            // the two values stay aligned for whichever lane is reporting.
+            eprintln!("      {ref_label:<9} {expected}");
             eprintln!("      artifact: {diverged}");
-            bail!("hybrid verify: artifact diverged from the CPython reference")
+            bail!("hybrid verify: artifact diverged from {bail_subject}")
         }
     }
 }
@@ -804,25 +871,7 @@ fn verify_shell_boundary(
         "  --verify: `sh` reference (original {}) vs executed shim-spawned artifact:",
         names.join(", ")
     );
-    match diff_stdout(&reference, &actual) {
-        ComparisonResult::Match => {
-            println!(
-                "  ✓ MATCH — stdout byte-identical ({} line(s)): {reference:?}",
-                reference.lines().count().max(1)
-            );
-            Ok(())
-        }
-        ComparisonResult::Divergence {
-            index,
-            expected,
-            actual: diverged,
-        } => {
-            eprintln!("  ✗ DIVERGENT at line {}:", index + 1);
-            eprintln!("      sh:       {expected}");
-            eprintln!("      artifact: {diverged}");
-            bail!("hybrid verify: shell artifact diverged from the `sh` reference")
-        }
-    }
+    differential_verdict(&reference, &actual, "sh:", "the `sh` reference")
 }
 
 /// Run one script's ORIGINAL text under `sh` and capture stdout — the shell
