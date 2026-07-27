@@ -20,7 +20,9 @@
 //!       [`Stmt::Let`] (first write of a declared local) or
 //!       [`Stmt::Assign`].
 //!     * `i64.const` → [`Expr::LitInt`], `f64.const` → [`Expr::LitFloat`],
-//!       `i32.const` → [`Expr::LitBool`] (0/1, the emit's bool encoding).
+//!       `i32.const 0`/`i32.const 1` → [`Expr::LitBool`] (the emit's bool
+//!       encoding). Any OTHER `i32.const` literal is **refused**, not
+//!       folded — see the lossy-posture section below.
 //!     * `i64.*` / `f64.*` / `i32.*` arithmetic & comparison ops → the
 //!       matching [`BinOp`] / [`FloatOp`].
 //!     * `call $__wasm_floordiv_i64` / `$__wasm_floormod_i64` → the
@@ -54,6 +56,19 @@
 //!   (a `CLong` is indistinguishable), `i32`→`Bool` (a `CUInt` / a raw
 //!   bool flag are indistinguishable), `f64`→`F64`, `f32`→`F32`. The
 //!   high-level Python/Rust type is irreversibly gone.
+//! - **`i32.const` outside `{0, 1}` is REFUSED** (PMAT-1392). In the emit
+//!   image an `i32` IS the 0/1 bool encoding and an integer literal is an
+//!   `i64`, so there is no meta-HIR representative for `i32.const 2`. Until
+//!   PMAT-1392 the lift folded every nonzero literal to `true`, so
+//!   `i32.const 2` re-emitted as `i32.const 1` — valid WAT that `wat2wasm`
+//!   accepts and `wasm-interp` runs to a DIFFERENT value (2 → 1; `-5` → 1
+//!   against a reference of 4294967291), at exit 0 on every leg. Refusing is
+//!   the honest boundary; `.wat` is an advertised frontend, so hand-written
+//!   and third-party WAT reach this path. RESIDUAL, deliberately NOT fixed
+//!   here: the `i32` → [`Type::Bool`] *type* mapping below still renders a
+//!   hand-written `(param $a i32)` as `bool` on `--target rust`. That one is
+//!   a genuine emit-image ambiguity (`Bool` and `CUInt` both lower to `i32`),
+//!   not a value corruption — the WAT round trip stays value-preserving.
 //! - **Names** survive only because the emit kept them (`$x`); a stripped
 //!   WAT would lose them.
 //! - **Non-canonical control flow** — any block/loop/branch nesting OUTSIDE
@@ -550,11 +565,7 @@ fn lift_block_inner(
                 *pos += 2;
             }
             "i32.const" => {
-                let v: i64 = peek_slice(toks, *pos + 1)?
-                    .parse()
-                    .map_err(|_| FrontendError::Parse("bad i32.const literal".to_string()))?;
-                // In the emit image an i32.const is the 0/1 bool encoding.
-                stack.push(Expr::LitBool(v != 0));
+                stack.push(lift_i32_const(peek_slice(toks, *pos + 1)?, "")?);
                 *pos += 2;
             }
             "f64.const" => {
@@ -871,10 +882,10 @@ fn lift_loop_cond(
                 *pos += 2;
             }
             "i32.const" => {
-                let v: i64 = peek_slice(toks, *pos + 1)?
-                    .parse()
-                    .map_err(|_| FrontendError::Parse("bad i32.const in loop cond".to_string()))?;
-                stack.push(Expr::LitBool(v != 0));
+                stack.push(lift_i32_const(
+                    peek_slice(toks, *pos + 1)?,
+                    " in loop condition",
+                )?);
                 *pos += 2;
             }
             "f64.const" => {
@@ -971,10 +982,10 @@ fn lift_loop_body(
                 *pos += 2;
             }
             "i32.const" => {
-                let v: i64 = peek_slice(toks, *pos + 1)?
-                    .parse()
-                    .map_err(|_| FrontendError::Parse("bad i32.const in loop body".to_string()))?;
-                stack.push(Expr::LitBool(v != 0));
+                stack.push(lift_i32_const(
+                    peek_slice(toks, *pos + 1)?,
+                    " in loop body",
+                )?);
                 *pos += 2;
             }
             "f64.const" => {
@@ -1083,6 +1094,46 @@ fn refuse_control(instr: &str) -> FrontendError {
          structured-control shapes `while`/`if`/`if-expr`/`return`/`break`/`continue`, \
          PMAT-959); an arbitrary stack-machine branch / non-canonical `(block …)` / \
          `br_table` outside that image is refused rather than mis-reconstructed"
+    ))
+}
+
+/// Lift one `i32.const` operand — the SINGLE decision point for all three
+/// call sites (straight-line body, loop condition, loop body), so the guard
+/// cannot be added to one arm and forgotten in the other two.
+///
+/// In the `xpile-wasm-codegen` image an `i32` IS the 0/1 bool encoding (an
+/// integer is an `i64`), so `0`/`1` invert to `LitBool` and nothing else
+/// inverts at all. PMAT-1392: the old `LitBool(v != 0)` fold silently
+/// mapped EVERY nonzero literal to `true`, so `i32.const 2` re-emitted as
+/// `i32.const 1` — VALID WAT that `wat2wasm` accepts and `wasm-interp` runs
+/// to a DIFFERENT value (2 → 1, and `-5` → 1 against a reference of
+/// 4294967291), at exit 0 on every leg. A literal outside `{0, 1}` is a
+/// genuine 32-bit integer the lift has no meta-HIR representative for, so it
+/// is refused here rather than mis-lifted — the same honest-boundary rule
+/// the neighbouring `i32.add` / `i32.popcnt` / `drop` / `(memory …)` shapes
+/// already follow.
+fn lift_i32_const(tok: &str, site: &str) -> Result<Expr, FrontendError> {
+    let v: i64 = tok
+        .parse()
+        .map_err(|_| FrontendError::Parse(format!("bad i32.const literal{site}")))?;
+    match v {
+        0 => Ok(Expr::LitBool(false)),
+        1 => Ok(Expr::LitBool(true)),
+        _ => Err(refuse_i32_const(v, site)),
+    }
+}
+
+/// The honest boundary for an `i32.const` outside the 0/1 bool encoding
+/// (PMAT-1392) — see [`lift_i32_const`].
+fn refuse_i32_const(v: i64, site: &str) -> FrontendError {
+    FrontendError::Lower(format!(
+        "`i32.const {v}`{site} is outside the lift subset — the lift inverts the \
+         `xpile-wasm-codegen` image, in which an `i32` is the 0/1 bool encoding \
+         and an integer literal is an `i64`; only `i32.const 0` and `i32.const 1` \
+         invert (to `false`/`true`). Folding `{v}` to a bool would re-emit \
+         `i32.const 1` — valid WAT that runs to a DIFFERENT value than the \
+         source — so it is refused rather than mis-lifted; use `i64.const {v}` \
+         for an integer literal"
     ))
 }
 

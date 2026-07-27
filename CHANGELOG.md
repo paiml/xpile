@@ -9,6 +9,58 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **The WAT lift folded EVERY nonzero `i32.const` to `true`, so
+  `xpile transpile m.wat` returned a valid module that computes a DIFFERENT
+  value** (PMAT-1392). `(func $f (result i32) i32.const 2)` round-tripped to
+  `i32.const 1`: `wasm-interp` runs the source to `i32:2` and the xpile
+  output to `i32:1`, with exit 0 on all three legs — emit, `wat2wasm`, and
+  execution. `i32.const -5` (reference `4294967291`) likewise became `1`.
+  Because the emitted WAT is well-formed, nothing downstream could catch it;
+  this is the sharpest form of the exit-0-but-false shape, and `.wat` is an
+  advertised frontend (`xpile transpile foo.wat`), so hand-written and
+  third-party WAT reached it.
+
+  Root cause was a bare `Expr::LitBool(v != 0)` at three code-identical
+  sites — straight-line body, loop condition, loop body. In the
+  `xpile-wasm-codegen` image an `i32` IS the 0/1 bool encoding and an integer
+  literal is an `i64`, so `0`/`1` invert to `false`/`true` and nothing else
+  has a meta-HIR representative at all. All three sites now route through one
+  `lift_i32_const` helper that refuses anything outside `{0, 1}` with a
+  `FrontendError::Lower` — the same honest boundary the neighbouring
+  `i32.add` / `i32.popcnt` / `drop` / `(memory …)` shapes already used;
+  `i32.const` was the one unguarded hole in an otherwise strict lift.
+
+  Scope, measured rather than asserted: **the fix narrows nothing xpile
+  itself emits.** Sweeping all 847 corpus fixtures (222 emit WASM, 42 of
+  those are lift-reachable) produces **zero** `i32.const` refusals, so the
+  self-round-trip fixed point is untouched — and since the only new `Err`
+  path carries the string `i32.const`, that count is a complete check, not a
+  sample. Value FLOW was never affected (`local.get $a` round-trips
+  value-preserving), and `i64`/`f64` lifted correctly before and are not
+  touched.
+
+  The witness is a RELATION over live execution, not a hand-list: for each
+  literal the reference value comes from actually running the source under
+  `wat2wasm` + `wasm-interp`, then *accepted ⟹ the round-tripped module runs
+  to the SAME value* and *refused ⟹ the reference is outside the bool
+  encoding*, with both arms vacuity-guarded so neither "accept everything"
+  nor "refuse everything" can pass. A second test derives its three mutants
+  from LIVE emit (one `i32.const` per lift site, count asserted) so each site
+  is hit precisely, and pairs every refusal with a `i32.const 1` control at
+  the same position — a guard that killed a whole arm would fail. Red half
+  executed, not asserted: against unmodified `origin/main` both tests fail,
+  naming `LitBool(true)` for `i32.const 2` and the `i32:1` vs `i32:2`
+  divergence.
+
+  **Disclosed residual, deliberately not fixed here:** the unconditional
+  `"i32" => Type::Bool` mapping still renders a hand-written
+  `(param $a i32)` as `bool` on `--target rust`. That is a genuine
+  emit-image ambiguity — `Bool` and `CUInt` both lower to `i32`, so no
+  correct inverse exists without an out-of-band signal — and unlike the
+  const fold it does not corrupt a value: the WAT round trip stays
+  value-preserving. It is recorded in the crate's module docs and queued for
+  0.1.619 rather than papered over.
+
 - **`xpile transpile --target wgsl` exited 0 emitting WGSL that xpile's OWN
   exported validator rejects** (PMAT-1391). Two independent shapes, one root
   cause — the production path never ran the gate the module documentation
