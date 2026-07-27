@@ -2,35 +2,36 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1418 landed from an honesty hunt, taking the standing lead recorded in
-  PMAT-1388''s notes — and the lead UNDERSTATED it. The note said the Lean backend had no C emit
-  path and so stamped the PYTHON contract C-PY-INT-ARITH on C code; that is true and is the LESSER
-  half. The greater half is that the emit is a SILENT WRONG VALUE: measured against xpile''s own
-  C-honest Rust emit of the same fixture, half(-7) is -3 in C and -4 in Lean (Int.fdiv FLOORS where
-  C `/` truncates), poly(50000) is -1794867295 in C and 2500100001 in Lean (Int is unbounded), and
-  factorial(13) does not ELABORATE at all — `fail to show termination`, so Lean falls back to the
-  SORRY AXIOM, in the PROOF lane, in a repo whose standing claim is zero real sorry. THE SHAPE, and
-  the reason it survived 100+ commits: `xpile audit --target lean` scored the 11 tracked .c files
-  {"f1_pct":100.0,"f1_status":"OK"} — a PERFECT score for citing the WRONG contract, because the
-  audit asks whether a citation is PRESENT and never whether it is the RIGHT ONE FOR THE SOURCE
-  LANGUAGE. A metric that cannot tell "cited correctly" from "cited at all" reports its BEST number
-  exactly where the defect is WORST, and the wrongest lane in the repo was holding the corpus number
-  up (85.7% -> 84.1% once removed; all 18 vanished citations were C-lane). Generalising the lead
-  found a SECOND language doing the same thing (the WAT lift) and a THIRD hole of a different kind:
-  an item-less shell module had no statement for the per-Stmt shell refusals to catch, fell through
-  the item loop, and emitted a header-only "Lean module" at exit 0 — a negative over an EMPTY
-  enumeration passes for free. Fix is a module-level guard whose match is EXHAUSTIVE WITH NO `_`
-  ARM, so the next SourceLang variant is a COMPILE error instead of a silent inheritance.
-  NEXT PICK: no code slice is due until Thu 07-30 (PMAT-1373). A fire before then should hunt again
-  rather than pull release mechanics forward — the tag is date-gated by owner ratification and Wed
-  18:00 is the hard freeze. STANDING LEAD, characterized but NOT taken (0.1.619, and the natural
-  successor to this slice): `every_applicable_contract_is_actually_cited` at
-  contract_citation_integrity.rs:441 filters its corpus to `.py`, which is precisely why the lane
-  where citation drift was TOTAL is the one it never read — widen it to the C lane and check the
-  paradigm, not just the presence. SECOND STANDING LEAD, still untaken from PMAT-1388: `--target
-  wgsl` on fib.py exits 0 emitting WGSL that naga REJECTS (WGSL forbids recursion) —
-  accept-then-fail-downstream. Owner-gated leads unchanged: the proof-lane load-bearing decision,
-  the LGPL decision (needed BEFORE Friday''s publish), and the ruleset-drift decision below.)'
+updated: '2026-07-27 (PMAT-1419 landed from an honesty hunt. The ranked queue is exhausted
+  until Thu 07-30, and BOTH standing leads were probed FIRST and both were STALE - the PMAT-1388
+  wgsl accept-then-fail lead is already fixed (naga refuses recursive fib at exit 1, and spirv
+  inherits that refusal through the WGSL lowering), and the contract_citation corpus-filter lead
+  is explicitly 0.1.619 work. So the hunt generalised PMAT-1418''s shape SIDEWAYS instead of
+  forward: that slice fixed the Lean backend and its own guard doc names the general shape - "which
+  is precisely how C and Wasm arrived" - but it swept only its own lane. Sweeping the full 4x9
+  frontend x backend matrix found the identical defect in the lane carrying ~69 of this release''s
+  commits. THE TELL WAS A BYTE COUNT: `s.c --target wasm` and `s.py --target wasm` were both 1207
+  bytes, then md5-EQUAL - a C source left ZERO trace in the emitted WAT. The WASM backend never
+  referenced module.source_lang at all (the Lean one at least READ it, to print it into a header
+  comment, before ignoring it), and decy lowers C `int` to the SAME Type::I64 Python uses, so
+  source_lang was the only discriminator and nothing consulted it. EXECUTED under wasm-interp vs
+  gcc -O0 on the tracked c_int_arith.c: half(-7) is -3 in C and -4 in wasm, poly(50000) is
+  -1794867295 and 2500100001, factorial(13) is 1932053504 and 6227020800 - all SILENT, since
+  wat2wasm accepts the module and wasm-interp runs it. xpile''s own --target rust agrees with gcc
+  on all three, so the WASM lane diverges from XPILE, not merely from a foreign compiler. LESSON
+  WORTH KEEPING: when a fix is scoped to one lane, the defect''s SIBLINGS are the highest-yield
+  next probe, and cheap structural equalities (byte counts, md5) find them faster than reading
+  code. NEXT PICK: no ranked slice is due until Thu 07-30 (PMAT-1373, the release commit); a fire
+  before then should hunt again rather than pull release mechanics forward - the tag is date-gated
+  by owner ratification and Wed 18:00 is the hard freeze. STANDING LEAD from this slice: the same
+  matrix sweep should be pointed at the REMAINING backends - `--target ruchy` also accepted a C
+  module at exit 0, and although it cites C-C-INT-ARITH correctly it is unverified whether its C
+  path is REAL or inherited from the Rust emitter. Also still open and named-not-fixed: the CLI
+  corpus check added here covers only the C lane, because the other non-Python frontends refuse
+  `--target wasm` for unrelated FRONTEND reasons - vacuous-by-luck at the CLI level, though the
+  per-variant unit tests now cover them. Owner-gated leads unchanged: the proof-lane load-bearing
+  decision, the LGPL decision (needed BEFORE Friday''s publish), and the ruleset-drift decision
+  below.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -3513,6 +3514,55 @@ queue:
     frozen numeral is a record rather than a claim — deliberately left ungated. NEXT PICK: no
     code slice is due until Thu 07-30 (PMAT-1373); a fire before then should hunt again rather than
     pull release mechanics forward.'
+- id: PMAT-1419
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: "the WASM backend never read `source_lang` AT ALL, so C `int` ARITHMETIC reached the
+    PYTHON lowering and exited 0 with a different number - byte-identical to the Python emit,
+    accepted by wat2wasm, run by wasm-interp"
+  notes: 'SHIPPED 2026-07-27 from an honesty hunt (ranked queue exhausted until Thu 07-30; both
+    standing leads probed FIRST and BOTH were stale - the PMAT-1388 wgsl accept-then-fail lead is
+    already fixed (naga refuses recursive fib at exit 1, spirv inherits it), and the
+    contract_citation corpus-filter lead is explicitly 0.1.619). Generalised PMAT-1418''s shape
+    SIDEWAYS by sweeping the 4x9 frontend x backend matrix. THE TELL WAS A BYTE COUNT: `s.c
+    --target wasm` and `s.py --target wasm` were both 1207 bytes, then md5-EQUAL - the C file''s
+    semantics left zero trace. EXECUTED under wasm-interp vs gcc -O0 on the tracked c_int_arith.c:
+    half(-7) -3 vs -4, poly(50000) -1794867295 vs 2500100001, factorial(13) 1932053504 vs
+    6227020800; xpile''s OWN --target rust agrees with gcc on all three. GPU siblings probed and
+    HONEST (wgsl refuses via naga, spirv inherits, ptx refuses the construct). ** THE LESSON IS THE
+    SCOPE STORY: THREE successive cuts were WRONG and each was caught by a PRE-EXISTING witness.
+    (1) Refusing C wholesale deleted PMAT-1395''s REAL C scalar-ABI RETURN path (executed,
+    value-matched against `cc`); its probe corpus named the regression by test. The C lane was NOT
+    untested - the gap was the corpus SHAPE: all literal returns, so it could not observe
+    arithmetic. (2) Restricting the Rust arm to integer-free modules broke dict_clear_witness;
+    measuring found 107 SourceLang::Rust sites across 75 witness files and a lane contract literally
+    named C-COMPILE-RUST-TO-WASM, so the restriction was WITHDRAWN rather than relabelling 107 sites
+    on a guess. (3) A pure INSTRUCTION scan refused `long f(long a){return a+1;}` and red
+    c_long_gpu_width_witness - C `long` is genuinely 64-bit, so i64 is CORRECT for it. Shipped
+    belt is keyed on DECLARED TYPES (the emitted WAT cannot tell C `int` from C `long` - both are
+    i64, which IS the defect): DIVISION refuses whenever a signed C integer is declared, even for
+    CONSTANTS (`-7 / 2` is -3 vs -4 with no runtime value); WIDTH refuses only when Type::I64 is
+    declared AND the emitting function reads a runtime value, PER FUNCTION (c_scalar_abi_witness
+    emits its whole corpus as one module). Also: scanning the whole module matched the runtime
+    PRELUDE (floormod calls floordiv) and refused `int f(void){return 2;}`; scan reads USER bodies
+    only. RED HALF RUN TWICE - the first corpus assertion (`refused > 0`) stayed GREEN with the belt
+    disabled because tracked C files refuse for unrelated reasons; re-keyed to belt-ATTRIBUTED
+    refusals. The executed differential correctly stays green under the red half (it measures that
+    the LANGUAGES disagree - the justification, not the test). No witness floor touched. NOTE: the
+    pre-existing `ruleset_drift` red (owner-gated, see owner_decisions) reproduces on UNMODIFIED
+    main and is unrelated; it skips-with-reason in CI. NEXT PICK: still no ranked slice due until
+    Thu 07-30 (PMAT-1373, the release commit). A fire before then should hunt again. STANDING LEADS
+    from this slice: (a) lower C `int` arithmetic CORRECTLY - narrow to i32 with wrapping, as the
+    Rust backend does - 0.1.619 capability work; (b) run the same matrix sweep against the REMAINING
+    backends: `--target ruchy` also accepted a C module at exit 0, and although it cites
+    C-C-INT-ARITH correctly it is UNVERIFIED whether its C path is real or inherited from the Rust
+    emitter; (c) whether the WASM lane is Python->WASM or Rust->WASM is genuinely unresolved - its
+    contract says Rust, its witness corpus is Python programs value-matched against CPython wearing
+    a Rust label, and the label is load-bearing NOWHERE, which is the same condition that let C
+    through; (d) the belt reads DECLARED types, so a type reachable only via an inferred expression
+    type is unseen.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
