@@ -78,17 +78,99 @@ pub const PTX_VERSION: &str = "8.0";
 /// in the contract's sm_80..sm_90 range assembles for the 8.0 floor, so the
 /// floor is kept for them (no churn to the existing RTX 4090 / sm_89 witness).
 ///
-/// A non-`sm_<num>` capability falls back to the floor — `validate_ptx` and
-/// the real `ptxas` are the downstream oracles either way.
+/// The ARCHITECTURE-SPECIFIC spellings count too (PMAT-1413). `sm_120a` is a
+/// real Blackwell target, not a typo: ptxas accepts the `sm_MNa` / `sm_MNf`
+/// variant forms alongside the plain `sm_MN`. The original parse was
+/// `strip_prefix("sm_").parse::<u32>()`, which fails on the trailing letter,
+/// so `sm_100a` / `sm_120a` / `sm_121a` silently fell back to the 8.0 floor
+/// and emitted a module ptxas hard-rejects — measured against ptxas 13.0:
+/// `PTX .version 8.0 does not support .target sm_120a`. The suffix is
+/// stripped before the family test so those land on 8.8 with their
+/// non-suffixed twins. `sm_90a` (Hopper) stays on 8.0 and assembles, so the
+/// `>= 100` boundary is unchanged.
+///
+/// A capability that is not a well-formed `.target` token never reaches here:
+/// [`validate_compute_capability`] refuses it at the top of [`emit_kernel`].
 pub fn ptx_version_for(compute_capability: &str) -> &'static str {
     let major_minor = compute_capability
         .strip_prefix("sm_")
+        .or_else(|| compute_capability.strip_prefix("compute_"))
+        // `sm_120a` / `sm_120f` — the arch-variant suffix is not part of the
+        // family number.
+        .map(|n| n.trim_end_matches(['a', 'f']))
         .and_then(|n| n.parse::<u32>().ok());
     match major_minor {
         // Blackwell (sm_100 / sm_120 / sm_121, …) needs ISA ≥ 8.8.
         Some(cc) if cc >= 100 => "8.8",
         _ => PTX_VERSION,
     }
+}
+
+/// PMAT-1413 — a compute capability that cannot be a well-formed PTX
+/// `.target` operand.
+///
+/// [`emit_kernel`] threads the capability VERBATIM into the `.target`
+/// directive, so an unchecked string is copied straight into the emitted
+/// assembly. Before this gate, `--hardware ptx:bogus` exited 0 emitting
+/// `.target bogus`, and `--hardware 'ptx:sm_80 ; rm'` emitted
+/// `.target sm_80 ; rm` — a PTX *syntax error*. No assembler accepts either.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidComputeCapability {
+    /// The rejected capability, verbatim.
+    pub got: String,
+}
+
+impl std::fmt::Display for InvalidComputeCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "compute capability `{}` is not a well-formed PTX `.target` \
+             (expected `sm_<digits>`, `compute_<digits>`, optionally with an \
+             architecture-variant suffix `a`/`f` — e.g. sm_80, sm_89, sm_121, \
+             sm_120a, compute_90). It is threaded verbatim into the `.target` \
+             directive, so an arbitrary string emits PTX no assembler accepts",
+            self.got
+        )
+    }
+}
+
+impl std::error::Error for InvalidComputeCapability {}
+
+/// PMAT-1413 — is `cap` a syntactically well-formed PTX `.target` operand?
+///
+/// Accepts `sm_<digits>` and `compute_<digits>`, each optionally carrying a
+/// single architecture-variant suffix `a` or `f` (`sm_90a`, `sm_120a`,
+/// `sm_100f`). Every one of those spellings was assembled by ptxas 13.0
+/// during PMAT-1413 — this grammar is MEASURED, not guessed, which matters
+/// because a naive digits-only check would refuse `sm_90a`, a REAL Hopper
+/// architecture.
+///
+/// ** WHAT THIS DELIBERATELY DOES NOT DO — state it rather than imply full
+/// validation. This checks SHAPE, not EXISTENCE. `sm_999` is shape-valid and
+/// still passes; it emits syntactically valid PTX that ptxas rejects cleanly
+/// with `Unsupported .target 'sm_999'`. Refusing it would require xpile to
+/// carry an allow-list of every NVIDIA architecture, which goes stale on the
+/// next generation — the exact rot PMAT-963 avoided by DERIVING `.version`
+/// instead of hard-coding it. The division of labour is: xpile refuses what
+/// can never be valid PTX syntax, `ptxas` is the architecture-existence
+/// oracle. Nothing in this crate claims otherwise.
+pub fn validate_compute_capability(cap: &str) -> Result<(), InvalidComputeCapability> {
+    let invalid = || InvalidComputeCapability {
+        got: cap.to_string(),
+    };
+    let digits = cap
+        .strip_prefix("sm_")
+        .or_else(|| cap.strip_prefix("compute_"))
+        .ok_or_else(invalid)?;
+    // At most one trailing architecture-variant letter.
+    let digits = match digits.strip_suffix(['a', 'f']) {
+        Some(rest) => rest,
+        None => digits,
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(invalid());
+    }
+    Ok(())
 }
 
 /// The kernel entry-point name. Bit-identical to the nvcc CUDA-C
@@ -814,6 +896,13 @@ fn walk_stmt_exprs(
 /// an `ld.global`. A kernel of bare scalar params keeps the original implicit
 /// element-wise lowering below.
 pub fn emit_kernel(f: &Function, compute_capability: &str) -> Result<String, BackendError> {
+    // PMAT-1413 — THE choke point. `compute_capability` is written verbatim
+    // into `.target` by both this function and `emit_array_kernel` (which is
+    // private and reached only via the delegation below), so refusing here
+    // covers every real PTX emission in the crate. Validate BEFORE any
+    // signature analysis: a malformed capability is malformed regardless of
+    // what the kernel looks like.
+    validate_compute_capability(compute_capability).map_err(|e| refuse(&e.to_string()))?;
     // Route by parameter shape. ALL-list → the explicit array kernel;
     // ALL-scalar → the implicit scalar kernel. A mix is refused (the two
     // calling conventions don't compose into one element-wise kernel).

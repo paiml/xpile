@@ -2971,6 +2971,87 @@ queue:
     WHY IT RANKS: strictly cheaper than mutation testing and it would have caught defect #21 before a
     human did. Nobody proposed this in the gap analysis — it came out of asking why the newest defect
     escaped the newest sweep.'
+- id: PMAT-1413
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: '`--hardware ptx:<ANY STRING>` exited 0 threading the string VERBATIM into the
+    emitted `.target` — `ptx:bogus` wrote `.target bogus`, `ptx:''sm_80 ; rm''` wrote a
+    PTX syntax error. The guard the emitter''s own doc NAMED for this case has ZERO
+    production call sites AND could not have caught it. Plus the ISA-version
+    derivation dropped the arch-variant suffix, so the REAL sm_100a/sm_120a/sm_121a
+    emitted `.version 8.0` and ptxas hard-rejected them.'
+  notes: 'DONE 2026-07-27. Picked by an honesty HUNT: the queue again had no open item
+    dated <= today (PMAT-1405 merged as #1995; PMAT-1373/1374 are date-gated to
+    07-30/07-31, PMAT-1375 is the 0.1.619 lane). This swept the FIRST surface
+    PMAT-1405 named as unswept — the PTX lane, which got NO coverage there because
+    every C probe stopped at "missing hardware profile".
+
+
+    ** WHAT WAS PROBED AND FOUND HONEST, so the next hunt does not re-walk it: PTX
+    genuinely READS its input (add/sub/mul/const each emit their own opcode — not the
+    `_module` never-read-input shape); kernel ARITY is handled (1/2/3/4 params each
+    emit the right signature, 0 params refuses); FloorDiv/mod/bitwise/shift refuse by
+    name; every emitted module for a valid capability ptxas-ASSEMBLES clean. The C ->
+    PTX direction works for int/long. TWO honest gaps recorded but NOT actioned: C
+    `float`/`double` -> ptx refuses with a MISLEADING message ("integer op Add in a
+    float-typed kernel") even though the same kernel from PYTHON emits `.f64` fine and
+    `--target rust` proves the C frontend types it correctly — a diagnostic-quality +
+    capability gap, exit 1 either way, so not a truth defect; and C `int` vs `long`
+    both emit `.s64` (the frontend maps C `int` to `Type::I64` BY DESIGN, documented
+    in PMAT-1404 — not a defect, do not "fix" it).
+
+
+    ** THE STANDING LESSON: THE NAMED GUARD WAS ABSENT AND ALSO INCAPABLE. Checking
+    only the first half would have produced a confident WRONG fix. `emit.rs` said
+    "`validate_ptx` and the real `ptxas` are the downstream oracles either way";
+    `validate_ptx` turned out to have zero production call sites (PMAT-1391 shape) AND
+    to compare emitted-vs-REQUESTED, so it returns Ok for `bogus` by construction.
+    When a doc names a guard, grep the call sites AND read what the guard actually
+    compares — wiring in an incapable validator would have closed the ticket while
+    leaving the hole open.
+
+
+    ** SECOND STANDING LESSON: THE OBVIOUS VALIDATOR OVER-REFUSES. `sm_` + digits is
+    the natural implementation and it rejects `sm_90a`/`sm_120a`/`compute_90`, which
+    are REAL and which ptxas 13.0.48 assembles. Each accepted spelling was assembled
+    individually BEFORE the grammar was written, and the accepting half of the witness
+    pins them so a later tightening cannot silently narrow the lane. PMAT-1395''s
+    lesson generalised: a fix for "emits garbage" can install "refuses what works".
+
+
+    ** PMAT ID COLLISION, TWICE, and the mitigation that failed. This slice was
+    authored as PMAT-1406, renumbered to 1407, and finally landed as PMAT-1413: a concurrent cron fire took the same
+    max(id)+1 and merged FIRST as #1996 (the bashrs class-method drop). The recorded
+    mitigation is "claim the id in queue.yaml BEFORE opening the PR" — it does NOT
+    work, because the claim only becomes visible to the other fire when it is PUSHED,
+    and both fires pick their id long before that. What actually caught it was the
+    MERGE CONFLICT on the shared `- id:` header in roadmap.yaml plus the identical
+    trailing field block, which is a structural collision detector rather than a
+    convention. The SECOND collision was worse and a different shape: #1998
+    (PMAT-1412) was a queue REFILL that claimed a whole BLOCK, PMAT-1407..1411, for
+    work not yet started — so the renumber target was taken by a reservation rather
+    than by a merged slice, and re-picking max(id)+1 would have collided again.
+    Force-push is owner-gated, so the branch commits still say 1406/1407; the SQUASH
+    SUBJECT carries 1413, which is what lands on main. LESSON: when a fire renumbers
+    after a collision, re-read the queue for RESERVED id BLOCKS, not just for merged
+    ids — max(merged id)+1 is not the same as the next free id.
+
+
+    ** NEXT PICK: the queue STILL has no open item dated <= today; PMAT-1373 is
+    07-30 and PMAT-1374 is 07-31. HARD FREEZE Wed 2026-07-29 18:00 local — after it
+    no merge may touch crates/*/src, contracts/*.yaml or any gate, so Tue 07-28 and
+    Wed morning are the last src-touching windows. SURFACE STILL UNSWEPT after this
+    slice: (1) the WGSL contract''s missing machine-readable type surface (PMAT-1405
+    named it; still open); (2) `--emit-shims`; (3) the C integer-literal SUFFIX forms
+    `1U`/`1L`/`1UL`, which the C frontend REFUSES at parse time ("expected Semi, found
+    Ident(\"UL\")") — an honest refusal, but every unsigned/long C probe must use
+    bare literals or it measures the lexer instead of the backend; (4) the PTX
+    `.f32` path — the module doc lists F32 as a supported element type and NOTHING in
+    this slice reached it (Python `float` is F64); (5) whether `xpile hybrid` and the
+    other non-`transpile` subcommands validate their own hardware/profile inputs at
+    all.'
 - id: PMAT-1373
   status: open
   ev_rank: R1
