@@ -9,6 +9,50 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`docs/roadmaps/roadmap.yaml` was invalid YAML for five commits and the
+  ledger gate reported it green the whole time** (PMAT-1398). The PMAT-1388
+  ledger row's `description:` is a single-quoted YAML scalar, and three
+  apostrophes inside it were written with one quote instead of the doubled `''`
+  the format requires (`xpile's output`, `box's Vulkan adapter`, `crate's own
+  dummy_module()`). The first lone quote *ends* the scalar, so the rest of the
+  prose is re-parsed as YAML structure and the document dies at the first line
+  that looks like a mapping key. The same entry escapes `audit''s` correctly
+  four lines earlier — a slip, not a convention.
+
+  Why nothing noticed is the part worth recording. All three assertions of
+  `roadmap_registration.rs` (XPILE-LEDGER-001) are pure **text** — `contains`
+  and `- id: ` line-prefix matching over raw bytes — and `xpile attestations`
+  and `xpile quorum` scan the same file textually. So the whole toolchain
+  reported the ledger registration-green over a file no YAML parser could read.
+  That is the same exit-0-but-false shape as PMAT-1385/1386/1387, one level up:
+  in the *gate* rather than in the tool.
+
+  The slice is the gate, not the three-character fix.
+  `crates/xpile/tests/roadmap_ledger_parses.rs` (XPILE-LEDGER-002, 4 tests,
+  0.27 s measured) is a **new** file — `roadmap_registration.rs` is
+  byte-unchanged, since it is a gate pinned by PMAT-1373's `gate_touch: 3` this
+  window. It asserts that every `*.yaml` under `docs/roadmaps/` loads in
+  `serde_yaml` (file set globbed from the directory, never hand-listed);
+  that `roadmap:` and `queue:` are sequences of mappings each carrying a
+  non-empty scalar `id`, no id twice; and — the load-bearing one — that the
+  ledger's id set is **equal** when re-derived both ways, by the byte-identical
+  `- id: ` text scan XPILE-LEDGER-001 uses and by the parser. That last one is
+  a relation between two live implementations rather than a hand-copied
+  expected value, so it cannot go stale as the ledger grows, and it fails on
+  the whole class: a truncated document, a row swallowed into a string scalar,
+  an `id` nested one level too deep. Both sides are vacuity-guarded at > 1000
+  ids so an empty-vs-empty agreement cannot pass.
+
+  The red half is run three times, once per apostrophe: each un-doubling
+  independently reds 3 of the 4 new tests, and in **every** probe
+  `cargo test -p xpile --test roadmap_registration` stayed 3/3 green on the
+  broken file — the gap is measured rather than asserted. `serde_yaml` was
+  already a dev-dependency (PMAT-484), so no crate joins the graph, and the
+  gate uses no git, no network and no runtime, so it cannot skip. Scope stated
+  honestly: this gates parseability and structural shape, not content — a row
+  with a truthful `id` and a fabricated `description` still passes, which is
+  the claims-drift lane's job.
+
 - **Positional-only parameters (everything left of a `/`) were silently deleted
   from the emitted signature, and the emitted code compiled and executed with
   the wrong answer** (PMAT-1389). `lower_function` in `depyler-frontend`
