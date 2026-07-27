@@ -7,6 +7,81 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The WASM lane gave C's 32-bit `int` Python's integer semantics, and the emit was byte-identical to the Python one (PMAT-1419)
+
+The same shape [PMAT-1418](#the-lean-backend-gave-cs-32-bit-int-arbitrary-precision-semantics-and-the-audit-scored-it-100-pmat-1418)
+fixed in the Lean lane, still live in the lane that carries most of this
+release's commits and the executing witnesses in the required CI job.
+
+`xpile-wasm-codegen` implements exactly **one** integer lowering and it is
+Python's: `int` is unbounded, `//` floors, and the emitted helper's own generated
+comment reads `;; __wasm_floordiv_i64(a, b) = floor(a / b)  (Python //)`. Where
+the Lean backend at least *read* `module.source_lang` before ignoring it, this
+backend never referenced `source_lang` **at all**. `decy-frontend` maps C `int` —
+32-bit, truncating, wrapping — onto the **same** `Type::I64` Python uses, and per
+that variant's own documentation the Rust backend "narrows it to `i32` on the
+`SourceLang::C` emit path". There is no such path here, so `source_lang` was the
+only discriminator and nothing consulted it.
+
+Measured at `c0b52d0f` on the tracked `crates/xpile/tests/fixtures/c_int_arith.c`,
+**executed** under `wasm-interp` against `gcc -O0`. xpile's own `--target rust`
+agrees with `gcc` on all three, so this is the WASM lane diverging from xpile
+itself, not merely from a foreign compiler:
+
+| expression | `gcc` / `--target rust` | `--target wasm` (before) |
+|---|---|---|
+| `half(-7)` | `-3` — C `/` truncates toward zero | **`-4`** — the helper **floors** |
+| `poly(50000)` | `-1794867295` — i32 wraps | **`2500100001`** — i64, no wrap |
+| `factorial(13)` | `1932053504` — i32 wraps | **`6227020800`** — i64, no wrap |
+
+Every one is **silent**: `wat2wasm` accepts the module and `wasm-interp` runs it,
+so the lane returned a different number at exit 0 rather than refusing. The tell
+was a byte count — `s.c --target wasm` and `s.py --target wasm` were both 1207
+bytes, then md5-equal. The C file's semantics left **zero trace** in the output.
+Every emitted function additionally cited `C-COMPILE-RUST-TO-WASM`, a *Rust*-to-WASM
+compile contract, on C source that `C-C-INT-ARITH` governs.
+
+**Three successive cuts of the fix were wrong, and each was caught by a
+pre-existing witness** — which is the honest receipt that this lane's gates work:
+
+1. Refusing `SourceLang::C` wholesale **deleted a real capability**. PMAT-1395 had
+   already built a C→WASM scalar-ABI *return* path and pinned it with an executed
+   witness that value-matches against `cc` compiling the identical source. Its
+   probe corpus named the regression: *"a refusal here is a capability REGRESSION,
+   not a tightening"*. The C lane was **not** untested — the gap was the corpus
+   **shape**: every probe is a literal return, so it could not observe an
+   arithmetic divergence.
+2. Restricting the `SourceLang::Rust` arm to integer-free modules broke
+   `dict_clear_witness`. Measuring that found **107 `SourceLang::Rust` sites across
+   75 witness files**, and the lane's contract is literally
+   `C-COMPILE-RUST-TO-WASM` — so the restriction was **withdrawn** rather than
+   relabelling 107 sites on a guess.
+3. A pure *instruction* scan refused `long f(long a) { return a + 1; }` and redded
+   `c_long_gpu_width_witness` — C `long` is genuinely 64-bit, so `i64` is the
+   **correct** width for it, and PMAT-1404's WGSL refusal is only defensible while
+   the non-GPU lanes honour the declared width.
+
+What shipped is keyed on **declared types**, because the emitted WAT cannot tell C
+`int` from C `long` — both land on `i64`, which is the whole defect. Division
+refuses whenever a signed C integer is declared, *unconditionally*, since
+floor-vs-truncate differs on compile-time constants too (`-7 / 2` is -3 in C and
+-4 here with no runtime value involved). Width refuses only when `Type::I64` is
+declared **and** the emitting function reads a runtime value, per function —
+`return -2;` lowers via `call $__wasm_mul_i64` yet means -2 in both languages.
+Fixed en route: scanning the whole emitted module matched the runtime **prelude**,
+whose `$__wasm_floormod_i64` helper internally calls `$__wasm_floordiv_i64`, so
+even `int f(void) { return 2; }` refused.
+
+Refusing rather than coercing is PMAT-1395's own lesson. The real fix — narrow C
+`int` to `i32` with wrapping, as the Rust backend already does — is 0.1.619 work
+and is recorded as such, not implied to be done.
+
+**What still refuses, and what deliberately does not:** C `int` arithmetic and
+signed C division refuse; the PMAT-1395 scalar-ABI return path, the declared
+64-bit `long` widths, Python, and the WAT lift's round-trip fixed point all still
+lower. The guard's `match` over `SourceLang` carries no `_` arm, so a new variant
+is a compile error rather than a silent inheritance of Python semantics.
+
 ### The Lean backend gave C's 32-bit `int` arbitrary-precision semantics, and the audit scored it 100% (PMAT-1418)
 
 `xpile-lean-codegen`'s module doc declares the surface it implements: **Python →
