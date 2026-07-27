@@ -7,6 +7,91 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The anti-vacuity tripwire whose arming mechanism never existed (PMAT-1416)
+
+`crates/xpile/tests/ruleset_drift.rs`, in the skip branch of
+`live_ruleset_matches_the_committed_snapshot` — a test that runs in the
+**required** `workspace-test` job — said:
+
+> Anti-vacuity tripwire. […] this test legitimately skips in CI and the STATIC
+> half above is what runs there. The release pre-flight (docs/RELEASE.md) sets
+> `XPILE_REQUIRE_RULESET_CHECK=1` to refuse the skip.
+
+**`docs/RELEASE.md` did not exist.** `git ls-files | grep -i release` returned
+exactly one path, `.github/workflows/release.yml`. No tracked file, no
+workflow, and not the sprint driver set `XPILE_REQUIRE_RULESET_CHECK`. So the
+live-enforcement half of XPILE-RULESET-DRIFT-001 had skipped green in every
+automated run it ever had, and the compensating control its own comment named
+had never run.
+
+**A disclosed skip standing in front of a mechanism that does not exist is
+still a false pass** — and worse than an undisclosed one, because it reads as
+mitigated.
+
+**Not hypothetical.** Org ruleset 13878864 drifted on 2026-07-27:
+`workspace-test` dropped out of the required set, so a PR can merge with it
+red. What noticed was a cron fire that happened to hold an org-scoped token,
+not the pre-flight the comment credits. Arming the tripwire by hand reproduces
+the red exactly.
+
+**Measuring it widened the finding.** The citation names one tripwire; deriving
+the set from read sites across `git ls-files '*.rs'` found **eight**. Only
+`WASM_RUNTIME`, `KANI` and `DENY` were armed anywhere (all in `ci.yml`). The
+other five — `RULESET_CHECK`, `CC`, `SH`, `RUCHY`, `CHANGELOG_HISTORY` — were
+armed by nothing, so the anti-vacuity half of five separate witnesses was
+unreachable. Four of the five pass when armed (measured before the document was
+written, so the pre-flight is achievable rather than aspirational); the fifth is
+the live drift above.
+
+**The fix.** `docs/RELEASE.md` is now the real procedure — cadence, the
+deliberate one-day tag/CHANGELOG date skew, the tripwire table and its two
+tiers, three pre-flights, the overlay purge, abort rules A1–A8 plus A1b, the
+crates.io `User-Agent` verification trap that fired on v0.1.617, and a
+slip ledger. It carries no hand-typed counts, same rule as `CURRENT.md`.
+`XPILE_REQUIRE_RULESET_CHECK` is armed at a **record-do-not-block** tier on
+purpose: the ruleset is owner-controlled state outside this repo, so a red
+there reports someone else's change, not a defect in the artifact being
+shipped — and the document says in as many words not to re-derive the snapshot
+to make it green.
+
+**The gate** — `crates/xpile/tests/release_preflight_witness.rs`
+(XPILE-RELEASE-PREFLIGHT-001), 4 tests, **no count anywhere**: the tripwire set
+is re-derived from `git ls-files` every run, so a ninth is covered the day it
+lands. It asserts every tripwire the corpus *reads* is *armed* (workflow env
+key or a runnable `NAME=1` in the document); that the document arms no tripwire
+nothing reads; and that any source *citing* the document has its tripwires
+armed there — the broken citation, generalised. Workflow comment lines are
+stripped first, because `ci.yml` describes `XPILE_REQUIRE_WASM_RUNTIME=1` in a
+comment several jobs from where it sets it.
+
+**Red half run**, each firing on exactly the right tests: deleting the document
+reds all four; removing the `XPILE_REQUIRE_RULESET_CHECK=1` command (the
+original defect, reproduced) reds tests 1 and 3 only; a phantom
+`XPILE_REQUIRE_NOSUCHTHING=1` reds test 2 only; deleting abort rule A5 and the
+overlay-purge fragments reds test 4 only.
+
+The gate **caught two defects in itself** before it caught anything else. The
+anti-vacuity anchor earned its keep immediately: the first draft's name
+extractor compared the *suffix* length against the length of the
+`XPILE_REQUIRE_` prefix it had already consumed, so only `CHANGELOG_HISTORY`
+survived and seven tripwires were silently dropped — without the anchor the
+universal would have ranged over one element and passed. Then, because the
+corpus is `git ls-files` and a witness is invisible until it is *committed*,
+the gate went red on its own first tracked run: a doc comment illustrated the
+read spelling with a literal `env::var_os` call on a placeholder name, which is
+by construction indistinguishable from a real read site. Both are worth
+keeping: a new witness's tripwire is checked from the commit that adds it and
+not before, and **a gate that scans source for call sites must not print call
+sites.**
+
+Honest limit, stated in the module header too: the gate does **not** run the
+pre-flight. Arming `RULESET_CHECK` needs a credential CI lacks and `RUCHY` a
+toolchain `workspace-test` deliberately does not install, so a gate that
+executed it would itself skip in CI — the same defect one level up. Test 4 is a
+structural presence check over the document; the executable claim is tests 1–3.
+No emitter behaviour changed, no test was weakened, and no gate file was edited
+(`ruleset_drift.rs`'s comment is now true as written).
+
 ### The README's Quickstart credited CI with a check of a different program (PMAT-1415)
 
 `README.md`'s Quickstart shows the two-line `factorial.py`, prints the `i64`
