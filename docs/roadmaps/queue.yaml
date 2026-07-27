@@ -2126,48 +2126,38 @@ queue:
     now unblocked, since its own independent reference is a REAL yaml parse of
     docs/roadmaps/roadmap.yaml, which could not run until this slice landed.'
 - id: PMAT-1390
-  status: open
+  status: done
   ev_rank: R3
   gate_touch: null
   date: '2026-07-27'
-  title: '`xpile attestations` counts a roadmap-PREAMBLE mention as a WORK ITEM (69 where 68 exist, prints
-    a nameless `- ` bullet, ships `""` in JSON) AND emits INVALID JSON for a quoted id'
-  notes: "TWO defects, ONE function family, ONE file, ONE PR — do not split.\nThe PMAT-1385/1386 shape\
-    \ exactly: a reporter printing a number it did not measure.\nSHARPENED REPRO A — the phantom is the\
-    \ ONLY attester (I re-ran it; 2 files, 5 lines, exit 0):\n  D=$(mktemp -d); mkdir -p $D/contracts\n\
-    \  printf 'metadata:\\n  id: C-FOO\\n' > $D/contracts/foo.yaml\n  printf 'strategic_goals:\\n  note:\
-    \ mentions C-FOO in the preamble\\nroadmap:\\n- id: PMAT-1\\n  title: unrelated\\n' > $D/roadmap.yaml\n\
-    \  X=/mnt/nvme-raid0/targets/xpile/debug/xpile\n  $X attestations --roadmap $D/roadmap.yaml --contracts-dir\
-    \ $D/contracts; echo \"rc=$?\"\n  # OBSERVED rc=0:  \"C-FOO   1 mentions across  1 work item(s)\"\
-    \ + a bare \"      - \" bullet\n  #                 \"totals: 1/1 contracts attested\"\n  # REFERENCE:\
-    \ ZERO work items mention C-FOO.\nLIVE TREE: `$X attestations | sed -n '279p'` -> \"C-PY-INT-ARITH\
-    \  87 mentions across 69 work item(s)\";\nindependent reference via a REAL yaml parser (not grep)\
-    \ ->\n  python3 -c \"import yaml; d=yaml.safe_load(open('docs/roadmaps/roadmap.yaml')); print(len([i\
-    \ for i in d['roadmap'] if 'C-PY-INT-ARITH' in yaml.safe_dump(i)]))\"\n  -> 68.  Same off-by-one:\
-    \ C-PY-FLOAT-ARITH 11 vs 10, C-XLATE-PY-CLASS-TO-STRUCT 5 vs 4.\n  `$X attestations | grep -c '^ \
-    \     - $'` -> 3 bare bullets.\nSHARPENED REPRO B — INVALID JSON with NO exotic filename (content-driven,\
-    \ verified):\n  printf 'roadmap:\\n- id: \"P\"\\n  c: C-FOO\\n' > $D/min.yaml\n  $X attestations --roadmap\
-    \ $D/min.yaml --contracts-dir $D/contracts --json > $D/m.json; echo \"rc=$?\"  # 0\n  grep -o '\"\
-    work_item\":\"[^,]*' $D/m.json      # -> \"work_item\":\"\"P\"\"\n  python3 -c \"import json;json.load(open('$D/m.json'))\"\
-    \   # -> JSONDecodeError\nROOT CAUSES (crates/xpile/src/main.rs):\n  (a) :1826 `scan_roadmap_for_id`\
-    \ starts `current_item` as `String::new()` and only reassigns on a\n      column-0 `- id: ` line,\
-    \ so every mention in the `strategic_goals` preamble (lines 1..189;\n      `roadmap:` is 190, first\
-    \ `- id:` is 191) is attributed to work item `\"\"`, which both printers\n      fold into the unique-work-item\
-    \ BTreeSet (:1861-1869 text, :1919-1924 JSON).\n  (b) :1894-1948 hand-rolls JSON and routes ONLY `snippet`\
-    \ through the `escape_json` that already\n      exists at :1954. Raw: `roadmap_path` (:1908-1912),\
-    \ `work_items` (:1919), `work_item` (:1926),\n      `c.id` (:1934), `unattested` (:1943).\n  (c) :1830\
-    \ takes the id as `line.strip_prefix(\"- id: \")` VERBATIM, unlike the sibling\n      `extract_metadata_id`\
-    \ at :1812 which does `.trim_matches('\"')`.\nFIX (S): skip a mention while `current_item.is_empty()`\
-    \ (or bucket preamble mentions under an\nexplicit \"(preamble — not a work item)\" line that does\
-    \ NOT count); route all five strings through\n`escape_json`; give :1830 the same `.trim_matches('\"\
-    ')`.\nTRAP: the existing unit test at main.rs:2004 uses a fixture that STARTS at `roadmap:` and therefore\n\
-    cannot catch (a) — the new test's fixture MUST have a preamble mentioning the id.\nHONEST SCOPE (skeptic's\
-    \ deflation, keep it in the CHANGELOG): `xpile quorum` derives Extrinsic from\n`scan_roadmap_for_id(...).len()`\
-    \ (mention COUNT, main.rs:2152), which this does NOT perturb, and no\nlive contract is attested ONLY\
-    \ by the phantom — nothing flips attested/unattested today.\nACCEPTANCE:\n  repro A -> \"0 work item(s)\"\
-    \ (or an explicit preamble bucket), no bare `- ` bullet, no `\"\"` in JSON\n  repro B -> `python3\
-    \ -c \"import json;json.load(...)\"` exits 0\n  $X attestations | grep -c '^      - $'   # -> 0\n\
-    \  $X attestations --json | python3 -c \"import json,sys;json.load(sys.stdin);print('VALID')\"\n"
+  title: '`xpile attestations` counted a roadmap-PREAMBLE mention as a WORK ITEM (69 where 68 exist,
+    printed a nameless `- ` bullet, shipped `""` in JSON) AND emitted INVALID JSON for a quoted id'
+  notes: 'DONE 2026-07-27. Both repros confirmed through the shipped binary at 16cce394 BEFORE any edit,
+    exactly as filed: live tally 69 vs a yaml-parser reference of 68, 3 bare bullets, and `- id: "P"`
+    producing `"work_item":""P""` that json.load rejects at rc=0. ** FIX: `AttestationMention.work_item`
+    is now `Option<String>` — "no enclosing work item" is REPRESENTED rather than encoded as an empty
+    string that reads like an id. The preamble mention is RETAINED and DISCLOSED, never dropped: quorum
+    scores the whole Extrinsic stratum from `scan_roadmap_for_id(..).len()`, so dropping it would have
+    traded one wrong number for another — the queue entry''s own honest-scope note is what made that
+    the right call. All five raw strings routed through the `escape_json` that already existed; the id
+    gets the sibling `extract_metadata_id` quote-strip; a valueless `- id:` opens no item (the same
+    phantom by another route). `print_attestations_json` split into a String-returning
+    `render_attestations_json` so a test can assert the payload PARSES — it wrote straight to stdout,
+    which is precisely how a substring-matching test passed over invalid JSON. ** WITNESS:
+    crates/xpile/tests/cli_attestation_tally_witness.rs (XPILE-ATTESTTALLY-001, NEW file, not a gate
+    touch), 5 tests + 5 new unit tests, 2.3 s measured. Load-bearing assertion is a RELATION between two
+    live implementations — the reported tally must equal a reference computed by WALKING the
+    serde_yaml-parsed tree (walking, not re-serialising: a folded long scalar could split an id and make
+    the reference agree for the wrong reason). RED HALF: 5/5 fail reverted, 5/5 pass applied. ** LESSON
+    (worth carrying): the first draft of the escaping test passed on BOTH sides — its `"` and `\` landed
+    only in `snippet`, the ONE field already escaped — so it certified nothing about the five raw fields
+    it was named for. Put the special character in the field the defect is actually in. ** DISCLOSED
+    RESIDUAL, deferred to 0.1.619: `attested` still means "mentioned anywhere", so a preamble-only
+    contract counts as attested with zero work-item votes. 0 of 34 live, so nothing flips; the text
+    report now discloses it when nonzero. Changing the attested/unattested semantics has no measurable
+    live effect and is not release-week work. ** quorum output byte-unchanged by construction.
+    NEXT PICK: PMAT-1391 (dated 2026-07-28, R4 — `--target wgsl` exits 0 emitting WGSL the repo''s OWN
+    naga_validate_wgsl rejects). Nothing else is open with date <= 2026-07-27.'
 - id: PMAT-1391
   status: open
   ev_rank: R4
