@@ -17949,3 +17949,114 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1353
+  github_issue: null
+  item_type: feature
+  title: 'PMAT-1353: [capability/hybrid] wire the RepairLoop into the CLI —
+    `xpile hybrid --verify --repair`. 931 lines, 3 RepairRule impls and 18 passing
+    tests that NO USER COULD INVOKE; and the one boundary class that would have
+    reached them was skipped as "non-ABI-mappable" while its emitted workspace
+    failed to compile.'
+  description: '`grep -rn ''RepairLoop'' crates/ --include=''*.rs'' | grep -v
+    crates/xpile-agent/` returned ZERO at 9aa49d9c. `crates/xpile-agent/src/repair.rs`
+    is 931 lines with three deterministic rule impls, a bounded fail-closed loop and
+    a real cc+rustc probe, all unreachable from the binary. Every other slice this
+    window REMOVED a false claim; this one ADDS a capability — and it found a false
+    claim on the way in.
+
+
+    ** THE SEAM. `--repair` (opt-in, clap `requires = "verify"`) hands the two failure
+    classes `--verify` can produce — a `cargo build` failure and a stdout divergence —
+    to `RepairLoop::run`, driven by a new `HybridWorkspaceProbe` that re-emits the
+    workspace with the candidate as the lowered Rust body, `cargo build`s it, runs it,
+    and compares against the SAME captured CPython reference through the SAME
+    `diff_stdout`. Deliberately NOT `xpile_agent::HybridCcRustcProbe`, whose
+    single-file `rustc` build would verify a repair against a DIFFERENT build than the
+    one that failed. Rules are derived from the reconciled boundary via the
+    now-public `xpile_ffi_manifest::wrapper_native`, so the cast a rule inserts is
+    typed by the same function that emitted the wrapper being called — not by a second
+    copy of that table.
+
+
+    ** THE FALSE GREEN IT FOUND. `ctypes_name` had no `Type::CUInt` arm, so `--verify`
+    on a C `unsigned int` boundary printed "boundary `<sym>` has a non-ABI-mappable
+    type — skipping" and exited 0 — while `--emit-workspace` on the same fixture
+    emitted a workspace that DOES NOT COMPILE: `emit_c_shim`''s PMAT-918 wrapper takes
+    `u32`, the Python frontend lowers the call with its unknown-callee `i64` default,
+    and `cargo build` fails E0308 "expected `u32`, found `i64`". That is the PMAT-931
+    call-site-retype hole in the UNSIGNED direction, and the one check that would have
+    caught it declined to look. `unsigned int` <-> `ctypes.c_uint` is the canonical
+    binding the shim already speaks, so widening the CHECKED set (no semantics decided;
+    `CULong`/`CLong`/`F32`/`Ptr` stay refused pending their own probed decisions) turns
+    that disclosed pass into a true red — and gives the repair loop a REAL,
+    production-emitted symptom to converge on.
+
+
+    ** MEASURED, NOT ASSERTED. `hybrid_unsigned --verify` exits 1 naming the E0308;
+    `--verify --repair` exits 0 printing `applied rule chain: ["ffi-arg-cast"]` after
+    1 iteration, and the repaired artifact prints `4`, byte-identical to CPython
+    through a `c_uint`-bound ctypes call (checked on both sides). `hybrid_divergent
+    --verify --repair` exits NON-ZERO: its `[1, 2.5]` vs `[1.0, 2.5]` divergence is
+    outside every wired rule''s domain, so the loop applies nothing, names the
+    unrepaired symptom and fails closed. Both halves were falsified by breaking the
+    fix: neutering `boundary_repair_rules` reds 3 of the 7 new witnesses, removing the
+    `CUInt` arm reds 2.
+
+
+    ** HONEST SCOPE — one of three rules is reachable through this seam, and
+    `boundary_repair_rules` documents why for each. `FfiReturnCastRepair` targets `__r`
+    in `src/ffi_shims.rs`, which the probe REGENERATES from the manifest every
+    iteration, so its target text cannot occur in the candidate. `FloatReprRepair`
+    targets a plain `println!("{}", <float>)`, which this emitter — measured across 7
+    float shapes, not assumed — no longer produces: every float print already carries
+    the full nan/inf/exponent/`fract()` repr block, because PMAT-931 fixed that class
+    in the production seam. Both domains are provably empty here; wiring them would
+    inflate a capability count with rules that can never fire. The Shell lane is told
+    it has no applicable rule rather than being silently omitted.
+
+
+    ** RELEASE-WINDOW SAFETY, VERIFIED TWO WAYS. (a) Two-binary check, run by hand at
+    the slice: `--verify` on all TEN pre-existing `hybrid_*` fixtures produced
+    byte-identical stdout, byte-identical stderr and identical exit codes between
+    `origin/main` (9aa49d9c) and this branch. (b) In-tree and permanent:
+    `repair_off_is_byte_identical_to_plain_verify` asserts `--verify` == `--verify
+    --repair` on every MATCHING lane, so the new code is pinned inert on the success
+    path. `--repair` writes NOTHING — the repaired source stays in memory, since the
+    hybrid Rust body is DERIVED from the Python module and committing it would fork
+    the artifact from its source; asserted by hashing the fixture before/after and by
+    checking the run leaks no probe workspace.
+
+
+    ** WITNESSES: 7 new in `crates/xpile/tests/hybrid_repair.rs` (convergence,
+    the unsigned build failure replacing the skip, fail-closed exhaustion, inertness
+    on 4 matching lanes, the shell-lane disclosure being exactly one line, `--repair`
+    without `--verify` rejected, no-write + no-leak). New fixture
+    `crates/xpile/tests/fixtures/hybrid_unsigned/`. NO witness floor touched — the two
+    permitted 0.1.618 touches remain PMAT-1372 and PMAT-1373; `hybrid_repair.rs` is a
+    NEW file, so `witness_floor.rs::hybrid_witness_count()`''s three hardcoded
+    filenames and `HYBRID_FLOOR = 3` are unaffected.
+
+
+    ** INVERTED TRIPWIRE, DELIBERATE AND DOCUMENTED IN PLACE: `hybrid_unsigned` is
+    asserted to FAIL TO BUILD. The day the Python frontend retypes unsigned call sites
+    the way `retype_float_ffi_sites` retypes float ones, that fixture compiles and two
+    of the seven witnesses go RED. Both the fixture header and the test module doc name
+    the bug and the exact edit to make then — re-point the repair witness at whatever
+    E0308 the emitter then produces, or record that `FfiArgCastRepair`''s domain has
+    become empty too.
+
+
+    ** REMAINING (not this slice): the actual FIX for the unsigned call-site retype
+    (a `retype_uint_ffi_sites` mirroring PMAT-931) is unsigned-semantics work and is
+    logged to the 0.1.619 lane; `--repair-out <dir>` (the `run_and_commit` write path);
+    and `ctypes_name` arms for `CULong`/`CLong`/`F32`/`Ptr`, each needing its own
+    probed binding decision.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -1733,6 +1733,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "xpile-agent",
  "xpile-backend",
  "xpile-contract-backend",
  "xpile-contract-frontend",

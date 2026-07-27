@@ -7,6 +7,103 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The repair loop is reachable — `xpile hybrid --verify --repair` (PMAT-1353)
+
+`crates/xpile-agent/src/repair.rs` held **931 lines**, three deterministic
+`RepairRule` impls, a bounded fail-closed loop, a real cc+rustc probe and **18
+passing tests**. It also held this property:
+
+```console
+$ grep -rn 'RepairLoop' crates/ --include='*.rs' | grep -v crates/xpile-agent/
+$ echo $?
+0    # zero matches — no user could invoke any of it
+```
+
+`--repair` (opt-in; clap `requires = "verify"`) now hands the two failure classes
+`--verify` can produce — a `cargo build` failure and a stdout divergence — to
+`RepairLoop::run`, driven by a new `HybridWorkspaceProbe` that re-emits the
+workspace with the candidate as the lowered Rust body, `cargo build`s it, runs
+it, and compares against the **same** captured CPython reference through the
+**same** `diff_stdout`. Deliberately *not* `xpile_agent::HybridCcRustcProbe`: its
+single-file `rustc` build would verify a repair against a different build than
+the one that failed.
+
+**And wiring it found a false green.** `ctypes_name` had no `Type::CUInt` arm, so
+`--verify` on a C `unsigned int` boundary said this and exited **0**:
+
+```console
+$ xpile hybrid fixtures/hybrid_unsigned --verify
+    bump : Python → C  [shim_af483b6f097eb1c2]
+  --verify: boundary `bump` has a non-ABI-mappable type — skipping
+$ echo $?
+0
+```
+
+while `--emit-workspace` on that same fixture emitted a workspace that **does not
+compile**. `emit_c_shim`'s PMAT-918 wrapper takes `u32`; the Python frontend
+lowers the boundary call with its unknown-callee `i64` default; `cargo build`
+fails `E0308: expected u32, found i64`. That is PMAT-931's call-site-retype hole
+in the **unsigned** direction, and the one check that would have caught it
+declined to look at it. `unsigned int` ↔ `ctypes.c_uint` is the canonical binding
+the shim already speaks, so widening the *checked* set decides no semantics —
+`CULong`, `CLong`, `F32` and `Ptr` stay refused pending their own probed
+decisions — and it turns a disclosed pass into a true red:
+
+```console
+$ xpile hybrid fixtures/hybrid_unsigned --verify            ; echo "exit=$?"
+Error: hybrid artifact failed to build:
+error[E0308]: mismatched types
+ 8 |     println!("{}", bump(3i64));
+   |                    ---- ^^^^ expected `u32`, found `i64`
+exit=1
+
+$ xpile hybrid fixtures/hybrid_unsigned --verify --repair    ; echo "exit=$?"
+  --repair: bounded repair loop — 1 rule(s) ["ffi-arg-cast"], max 2 iteration(s)
+  ✓ REPAIRED in 1 iteration(s) — applied rule chain: ["ffi-arg-cast"]
+exit=0
+```
+
+The repaired artifact prints `4`, byte-identical to CPython through a
+`c_uint`-bound `ctypes` call — checked on both sides, not assumed.
+
+**Fail-closed, asserted.** `hybrid_divergent --verify --repair` exits **non-zero**:
+its `[1, 2.5]` vs `[1.0, 2.5]` divergence is outside every wired rule's domain,
+so the loop applies nothing, names the unrepaired symptom, and refuses.
+`--repair` can never turn a red `--verify` green. A **vacuous** verdict is not
+handed off at all — an empty reference is a fixture defect, and a loop probing
+against it would "converge" on any candidate that also prints nothing,
+manufacturing exactly the false pass PMAT-1387 closed.
+
+**One of three rules is reachable through this seam, and that is stated rather
+than rounded up.** `FfiReturnCastRepair` targets `__r` in `src/ffi_shims.rs`,
+which the probe regenerates from the manifest every iteration, so its target text
+cannot occur in the candidate. `FloatReprRepair` targets a plain
+`println!("{}", <float>)`, which this emitter — measured across seven float
+shapes, not assumed — no longer produces: every float print already carries the
+full nan/inf/exponent/`fract()` repr block, because PMAT-931 fixed that class in
+the production seam. Both domains are provably empty here, and wiring a rule that
+cannot fire is how a capability count gets inflated. The Shell lane is *told* it
+has no applicable rule rather than being silently omitted.
+
+**Release-window safety, verified two ways.** By hand at the slice: `--verify` on
+all **ten** pre-existing `hybrid_*` fixtures produced byte-identical stdout,
+byte-identical stderr and identical exit codes between `origin/main` (9aa49d9c)
+and this branch. In-tree and permanent:
+`repair_off_is_byte_identical_to_plain_verify` pins `--verify` ≡
+`--verify --repair` on every matching lane. `--repair` writes **nothing** — the
+repaired source stays in memory, since the hybrid Rust body is *derived* from the
+Python module and committing it would fork the artifact from its source.
+
+Seven witnesses in `crates/xpile/tests/hybrid_repair.rs`; new fixture
+`crates/xpile/tests/fixtures/hybrid_unsigned/`. Both halves were falsified by
+breaking the fix — neutering `boundary_repair_rules` reds 3 of the 7, removing the
+`CUInt` arm reds 2. No witness floor touched.
+
+`hybrid_unsigned` is an **inverted tripwire, on purpose**: it is asserted to fail
+to build, so it goes red the day the frontend retypes unsigned call sites. The
+fixture header and the test module doc each name the bug and the exact edit to
+make then.
+
 ### WASM i64 arithmetic silently wrapped where the Rust lane was honest (PMAT-1402)
 
 ```python

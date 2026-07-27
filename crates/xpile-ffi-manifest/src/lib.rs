@@ -1348,7 +1348,14 @@ fn c_abi_type(ty: &Type) -> Option<&'static str> {
 
 /// The native Rust type the safe wrapper speaks for an ABI-mappable `Type`
 /// (callers use i64/f64; the wrapper casts to/from the C ABI type internally).
-fn wrapper_native(ty: &Type) -> &'static str {
+///
+/// PMAT-1353 made this **public**. `xpile hybrid --verify --repair` has to know
+/// the type the emitted wrapper's parameter slot actually has, in order to build
+/// the call-site cast an `FfiArgCastRepair` inserts. Re-deriving that mapping in
+/// the CLI would be a second copy of this table kept in sync by hand — the exact
+/// shape this file's own docs argue against — so the repair rule reads the SAME
+/// function that emitted the wrapper it is repairing the call to.
+pub fn wrapper_native(ty: &Type) -> &'static str {
     match ty {
         Type::F64 => "f64",
         // PMAT-911: a C `float` wrapper speaks `f32` (casts to/from `c_float`).

@@ -21,7 +21,18 @@ updated: |-
   ** ID COLLISION, TWICE RUNNING: this slice was re-filed 1402 -> 1404 before any push because
   PMAT-1403's refill claimed 1402 first. Claiming an id in an UNPUSHED queue.yaml reserves nothing —
   re-read origin/main's max id immediately before the first push. PMAT-1375 is 0.1.619 lane, DO NOT
-  START. NOT new WASM breadth outside PMAT-1402 — that grind is CLOSED for this window.)
+  START. NOT new WASM breadth outside PMAT-1402 — that grind is CLOSED for this window.
+  ** PMAT-1353 DONE 2026-07-27 (pulled forward from 07-28; no item was dated today). THE QUEUE IS NOW
+  DRAINED of every ranked item dated <= 07-28: the only OPEN entries left are PMAT-1373 (release commit,
+  07-30), PMAT-1374 (publish, 07-31) and PMAT-1375 (0.1.619 lane, DO NOT START). Days 2-3 are free for
+  new-scope TRUTH work; the 0.1.619 `next_lane` head is now the unsigned FFI call-site retype that
+  PMAT-1353 exposed. ** ITS LESSON, worth carrying: the slice's own ACCEPTANCE was UNREACHABLE as
+  written — it named a fixture whose divergence class no wired rule matches, and all THREE of the
+  agent's rule domains measured EMPTY against the live emitter, because the production seam had already
+  fixed every class they were written for. Wiring the flag and asserting the prescribed green would have
+  been a fabricated pass. MEASURE a queue item's stated domain against a force-rebuilt binary BEFORE
+  planning against it; when the domain is empty, go find a real symptom rather than reporting the
+  prescribed one.)
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -2699,12 +2710,68 @@ queue:
     \ done. The live half skips in CI (repo-scoped GITHUB_TOKEN cannot read an org ruleset), so no\
     \ required context is red. NEXT PICK: PMAT-1353 (date 2026-07-28, R2 — RepairLoop CLI wiring)."
 - id: PMAT-1353
-  status: open
+  status: done
   date: '2026-07-28'
   ev_rank: R2
   gate_touch: null
   title: 'Wire the RepairLoop into the CLI: `xpile hybrid --verify --repair` — 931 lines and 18 passing
     tests that NO USER CAN INVOKE'
+  done_note: 'DONE 2026-07-27 (pulled forward from 07-28; NO item was dated today and today is day 1
+    of the v0.1.618 slate, well inside the Day-4 pull-forward cutoff). Precondition re-verified before
+    starting: the grep returned ZERO at 9aa49d9c.
+
+    ** THE ACCEPTANCE WAS NOT REACHABLE AS WRITTEN, AND FINDING OUT WHY WAS THE SLICE. The queue said
+    "the same with `--repair` exits 0 printing the applied rule chain", and named `hybrid_divergent` as
+    the driving fixture. It cannot converge on that fixture: its divergence is `[1, 2.5]` vs `[1.0, 2.5]`
+    (the OPEN float-annotated-container policy), and `FloatReprRepair::is_whole_float_repr` requires
+    `expected == "{actual}.0"` with `actual` parsing as an i64. MEASURED all three rule domains against
+    the live emitter before writing any wiring: (a) the two ABI-cast rules fire on E0308, which
+    `emit_c_shim` does not produce; (b) `FloatReprRepair` targets a plain `println!("{}", <float>)`,
+    which 7 probed float shapes showed the emitter NEVER emits any more — PMAT-931''s
+    `retype_float_ffi_sites` + `Expr::ToStr{of_float}` fixed that class in the production seam. All
+    three domains were EMPTY. Wiring the flag and asserting the queue''s green would have been a
+    fabricated pass.
+
+    ** SO THE SLICE WENT LOOKING FOR A REAL SYMPTOM AND FOUND ONE, plus the skip that was hiding it.
+    Probed 6 C signature shapes through `--emit-workspace` + `cargo build`: `unsigned int` emits a
+    workspace that DOES NOT COMPILE (`bump(3i64)` into `bump_shim(x: u32)` -> E0308). `--verify` never
+    saw it because `ctypes_name` had no `Type::CUInt` arm, so it printed "non-ABI-mappable — skipping"
+    and exited 0. A disclosed skip standing in front of an uncompilable emit. Adding the `c_uint` arm
+    (the canonical binding the shim ALREADY speaks — no semantics decided; CULong/CLong/F32/Ptr stay
+    refused) turns that into a true red AND gives the loop a production-emitted symptom it converges
+    on in 1 iteration, verified against a real `c_uint`-bound ctypes reference on both sides.
+
+    ** ONE OF THREE RULES IS REACHABLE and the code says so per rule rather than rounding up:
+    `FfiReturnCastRepair` targets `__r`, which lives only in `src/ffi_shims.rs` — REGENERATED from the
+    manifest every iteration, so its target text cannot occur in the candidate; `FloatReprRepair`''s
+    domain is the measured-empty one above. Wiring either would have inflated the capability count with
+    a rule that can never fire.
+
+    ** RELEASE-WINDOW SAFETY VERIFIED TWO WAYS, not asserted once: (a) two-binary hand check —
+    `--verify` on all TEN pre-existing `hybrid_*` fixtures, stdout + stderr + exit code byte-identical
+    between origin/main 9aa49d9c and the branch; (b) in-tree and permanent,
+    `repair_off_is_byte_identical_to_plain_verify`. BOTH falsification passes run: neutering
+    `boundary_repair_rules` reds 3 of 7 witnesses, removing the CUInt arm reds 2.
+
+    ** 7 witnesses in the NEW file crates/xpile/tests/hybrid_repair.rs + fixture hybrid_unsigned/.
+    witness_floor.rs UNTOUCHED (its `hybrid_witness_count()` hardcodes three filenames and a NEW file
+    contributes zero, so HYBRID_FLOOR = 3 is unaffected) — the two permitted 0.1.618 touches remain
+    PMAT-1372 and PMAT-1373. `wrapper_native` made public in xpile-ffi-manifest so the repair rule''s
+    cast type comes from the SAME function that emitted the wrapper, not a second copy of that table.
+
+    ** INVERTED TRIPWIRE, acknowledged in place: hybrid_unsigned is asserted to FAIL TO BUILD, so it
+    reds the day the frontend retypes unsigned call sites. Fixture header + test module doc each name
+    the bug and the exact edit to make then.
+
+    ** LOGGED TO 0.1.619 (see next_lane): the actual FIX for the unsigned call-site retype (a
+    `retype_uint_ffi_sites` mirroring PMAT-931 — unsigned-semantics work, NOT a release-week change);
+    `--repair-out <dir>` (the `run_and_commit` write path); `ctypes_name` arms for CULong/CLong/F32/Ptr.
+
+    ** NEXT PICK: the queue has NO open item dated <= 2026-07-28 left. PMAT-1373 (release commit) is
+    dated 07-30 and PMAT-1374 (publish) 07-31; PMAT-1375 is the 0.1.619 lane, DO NOT START. Days 2-3
+    are therefore free for pull-forward or new-scope TRUTH work — prefer the 0.1.619 `next_lane` items
+    this slice just logged, or a fresh honesty hunt. The HARD FREEZE is Wed 2026-07-29 18:00 local:
+    after it, no merge may touch crates/*/src, contracts/*.yaml or any gate.'
   notes: 'UN-DEFERRED 2026-07-27. The deferral reason has EXPIRED and that is the whole justification:
     it was held back because its prerequisite was a fixture that actually DIVERGES, and that landed this
     morning as PMAT-1352 (#1954, DIVERGENT-arm falsifier) and has soaked. Re-verify before starting: `grep
@@ -2854,6 +2921,25 @@ queue:
     A7: NO Friday code. A Friday defect means A6, never a same-day hotfix onto the release SHA.'
   date: '2026-07-31'
 next_lane:
+- 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by
+  PMAT-1353 (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)`
+  reconciles cleanly and `emit_c_shim` gets the wrapper right (`f_shim(x: u32) -> u32`, PMAT-918), but
+  the Python frontend lowers the boundary call with its unknown-callee `i64` default, so the emitted
+  workspace fails `cargo build` with E0308 "expected `u32`, found `i64`". As of PMAT-1353 `--verify`
+  REPORTS this (exit 1) instead of skipping it, and `--verify --repair` converges on it — so the defect
+  is now visible and worked around, not fixed. THE FIX is a `retype_uint_ffi_sites` mirroring
+  `retype_float_ffi_sites`: after `FfiManifest::reconcile`, re-type the calling module''s FFI call sites
+  for reconciled CUInt/CULong-returning symbols. UNSIGNED SEMANTICS ARE THE HARD PART, which is why this
+  is not a release-week change: Python ints are signed and arbitrary-precision, so `f(-1)` and
+  `f(2**32)` need a stated policy (refuse? wrap? trap?) rather than a silent `as u32`, and PMAT-1395''s
+  lesson applies directly — coercing to make the output compile can install a silent wrong answer.
+  WHEN IT LANDS, `crates/xpile/tests/fixtures/hybrid_unsigned/` stops failing to build and two of
+  `hybrid_repair.rs`''s seven witnesses go RED by design; re-point the repair witness at whatever E0308
+  the emitter then produces, or record that `FfiArgCastRepair`''s domain has become empty too. RELATED
+  and smaller: `--repair-out <dir>` (the disciplined `RepairLoop::run_and_commit` write path, which
+  `--repair` deliberately does not use), and `ctypes_name` arms for CULong/CLong/F32/Ptr — each needs
+  its own PROBED binding decision, since an unprobed guess there re-creates exactly the false green
+  PMAT-1353 removed.'
 - 'WASM i64 OVERFLOW is a SILENT WRONG ANSWER (measured by the PMAT-1378 differential pass, 2026-07-27;
   deliberately NOT actioned in a release week). Python ints are arbitrary precision; the lane maps them
   to i64 and wraps without a word: `9223372036854775807 + 1` returns -9223372036854775808, `2**62 * 4`

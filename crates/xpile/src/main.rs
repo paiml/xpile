@@ -18,10 +18,17 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use xpile_agent::{
+    Budget, FfiArgCastRepair, Probe, RepairLoop, RepairOutcome, RepairRule, Symptom,
+};
 use xpile_backend::{BackendConfig, HwProfile, Profile, Target};
 use xpile_core::TranspileSession;
 use xpile_ffi_manifest::{
-    defining_function, resolve_boundary_to_langs, retype_float_ffi_sites, FfiEntry, FfiManifest,
+    defining_function, resolve_boundary_to_langs, retype_float_ffi_sites, wrapper_native, FfiEntry,
+    FfiManifest,
 };
 use xpile_frontend::{AliasSemantics, LoweringProfile};
 use xpile_meta_hir::{Module, SourceLang, Type};
@@ -186,6 +193,15 @@ enum Cmd {
         /// (exit 0) when `cc`/`python3`/`cargo` are unavailable.
         #[arg(long)]
         verify: bool,
+        /// PMAT-1353 (Phase 6): when `--verify` finds a BUILD FAILURE or a
+        /// DIVERGENCE, drive the bounded, fail-closed, deterministic
+        /// `xpile-agent` repair loop over the lowered Rust body and re-verify
+        /// through the SAME emit → `cargo build` → run → differential path.
+        /// Prints the converged rule chain and exits 0 on a repair; exits
+        /// NON-ZERO (fail-closed) when no rule applies. Requires `--verify`.
+        /// Opt-in: without it, `--verify`'s output and exit code are unchanged.
+        #[arg(long, requires = "verify")]
+        repair: bool,
     },
 }
 
@@ -232,12 +248,14 @@ fn main() -> Result<()> {
             emit_shims,
             emit_workspace,
             verify,
+            repair,
         } => hybrid(
             &session,
             &path,
             emit_shims.as_deref(),
             emit_workspace.as_deref(),
             verify,
+            repair,
         ),
     }
 }
@@ -255,12 +273,18 @@ fn main() -> Result<()> {
 /// Phase 5 (emit the workspace to a temp dir, `cargo build` + run the linked
 /// C+shim artifact) compared against Phase 3 (the CPython reference, the C
 /// extension bound via ctypes) — and prints a Match/Divergent verdict.
+///
+/// PMAT-1353: with `--verify --repair`, a build failure or a divergence hands
+/// off to [`repair_hybrid`] — the bounded, fail-closed `xpile-agent` repair loop
+/// — instead of bailing immediately. `repair` is inert unless `verify` is set
+/// (clap enforces `requires = "verify"`).
 fn hybrid(
     session: &TranspileSession,
     path: &Path,
     emit_shims: Option<&Path>,
     emit_workspace: Option<&Path>,
     verify: bool,
+    repair: bool,
 ) -> Result<()> {
     let sources = collect_source_files(session, path);
     if sources.is_empty() {
@@ -389,6 +413,7 @@ fn hybrid(
                     &c_sources,
                     &py_sources,
                     &sh_sources,
+                    repair,
                 );
             }
             Ok(())
@@ -442,11 +467,32 @@ fn tool_available(tool: &str) -> bool {
 }
 
 /// Meta-HIR type → `ctypes` type name, matching the FFI shim's C-ABI mapping
-/// (`I64`/`Bool` → `c_int`, `F64` → `c_double`). `None` for non-ABI types.
+/// (`I64`/`Bool` → `c_int`, `F64` → `c_double`, `CUInt` → `c_uint`). `None` for
+/// non-ABI types.
+///
+/// **PMAT-1353 added `CUInt`, and it removed a false green.** `Type::CUInt` (a C
+/// `unsigned` / `uint32_t`) was absent here, so `--verify` printed
+/// `boundary <sym> has a non-ABI-mappable type — skipping` and exited 0 — while
+/// `--emit-workspace` on the SAME fixture emitted a workspace that does not
+/// compile: the Python frontend lowers the boundary call with its unknown-callee
+/// `i64` default (`f(3i64)`) but `emit_c_shim`'s safe wrapper takes the
+/// signedness-preserving `u32` (PMAT-918), so `cargo build` fails E0308. That is
+/// the PMAT-931 call-site-retype hole in the UNSIGNED direction, and the skip was
+/// a disclosed pass standing in front of it: the one check that would have caught
+/// it declined to look. `unsigned int` ↔ `ctypes.c_uint` is the canonical binding
+/// the shim itself already uses (`::std::os::raw::c_uint` / `u32`), so this
+/// widens the CHECKED set without deciding any semantics. The consequence is
+/// intended: such a fixture now exits NON-ZERO naming the build failure, and
+/// `--repair` converges on it (see [`repair_hybrid`]).
+///
+/// `CULong`, `CLong`, `F32` and `Ptr` stay refused — each needs its own probed
+/// binding decision, and an unprobed guess here would re-create exactly the
+/// false green this comment describes.
 fn ctypes_name(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::I64 | Type::Bool => Some("c_int"),
         Type::F64 => Some("c_double"),
+        Type::CUInt => Some("c_uint"),
         _ => None,
     }
 }
@@ -501,6 +547,7 @@ fn verify_hybrid(
     c_sources: &[(String, String)],
     py_sources: &[(String, String)],
     sh_sources: &[(String, String)],
+    repair: bool,
 ) -> Result<()> {
     let c_entries: Vec<&FfiEntry> = manifest
         .entries
@@ -540,6 +587,18 @@ fn verify_hybrid(
         return Ok(());
     }
 
+    // PMAT-1353: `--repair` is a C-lane capability only. Every rule in
+    // `xpile-agent::repair` is a transform over emitted RUST (an ABI cast, a
+    // float-repr block); the shell lane's artifact is a re-emitted `.sh` spawned
+    // by a subprocess shim, so none of them can apply to it. Say so rather than
+    // letting a shell-only fixture look like it was offered a repair.
+    if repair && !sh_entries.is_empty() {
+        println!(
+            "  --repair: {} Shell boundary(ies) are NOT repairable — every repair rule \
+             is a transform over emitted Rust; the shell lane has none",
+            sh_entries.len()
+        );
+    }
     if !sh_entries.is_empty() {
         verify_shell_boundary(
             session,
@@ -552,7 +611,7 @@ fn verify_hybrid(
     }
     if !c_entries.is_empty() {
         verify_c_boundary(
-            session, manifest, modules, &c_entries, c_sources, py_sources,
+            session, manifest, modules, &c_entries, c_sources, py_sources, repair,
         )?;
     }
     Ok(())
@@ -561,6 +620,14 @@ fn verify_hybrid(
 /// The C half of the executing hybrid differential (PMAT-902): CPython (the C
 /// extension bound via `ctypes`, driven by the original `app.py` `main()`) vs
 /// the emitted, `cargo build`-ed, linked Rust+C artifact.
+///
+/// PMAT-1353: `repair` changes NOTHING on the success path and nothing about the
+/// wording or the exit code of either failure verdict. It only adds a hand-off
+/// AFTER the verdict has already been printed — a build failure or a divergence
+/// goes on to [`repair_hybrid`] instead of returning that verdict's error
+/// directly. `--verify` without `--repair` is byte-identical to before, which is
+/// what makes this landable inside a release window (asserted by
+/// `hybrid_repair.rs::verify_without_repair_is_byte_identical_on_every_lane`).
 fn verify_c_boundary(
     session: &TranspileSession,
     manifest: &FfiManifest,
@@ -568,6 +635,7 @@ fn verify_c_boundary(
     c_entries: &[&FfiEntry],
     c_sources: &[(String, String)],
     py_sources: &[(String, String)],
+    repair: bool,
 ) -> Result<()> {
     // Toolchain gate — graceful-skip so a constrained runner stays green.
     if !tool_available("cc") || !tool_available("python3") || !tool_available("cargo") {
@@ -618,10 +686,23 @@ fn verify_c_boundary(
         .context("cargo build of the hybrid workspace")?;
     if !build.status.success() {
         let _ = std::fs::remove_dir_all(&ws);
-        bail!(
-            "hybrid artifact failed to build:\n{}",
-            String::from_utf8_lossy(&build.stderr)
-        );
+        let stderr = String::from_utf8_lossy(&build.stderr).to_string();
+        // PMAT-1353: a BUILD FAILURE is `Symptom::BuildError` — the class the
+        // ABI-cast rules were written for. The bail text below is unchanged, so
+        // the default path is byte-identical.
+        if repair {
+            eprintln!("hybrid artifact failed to build:\n{stderr}");
+            return repair_hybrid(
+                session,
+                manifest,
+                modules,
+                c_entries,
+                c_sources,
+                &reference,
+                "the CPython reference",
+            );
+        }
+        bail!("hybrid artifact failed to build:\n{stderr}");
     }
     let bin = target.join("debug").join("xpile-hybrid-artifact");
     let run = Command::new(&bin)
@@ -641,7 +722,372 @@ fn verify_c_boundary(
 
     // Differential verdict.
     println!("  --verify: CPython reference (from {py_name}) vs executed C+shim artifact:");
-    differential_verdict(&reference, &actual, "CPython:", "the CPython reference")
+    let verdict = differential_verdict(&reference, &actual, "CPython:", "the CPython reference");
+    // PMAT-1353: hand a DIVERGENCE — and ONLY a divergence — to the repair loop,
+    // after the verdict above has already been printed in full. `diff_stdout` is
+    // recomputed rather than threaded out of `differential_verdict`, deliberately:
+    // that function is the single reporter both executing lanes share and its
+    // output is pinned byte-for-byte by `hybrid_golden_lock.rs`, so it is worth
+    // one extra pure string comparison to leave it untouched.
+    //
+    // A VACUOUS verdict is NOT handed off. An empty reference is a FIXTURE defect
+    // — there is no symptom in the artifact to repair, and a loop probing against
+    // an empty reference would "converge" on any candidate that also prints
+    // nothing, manufacturing exactly the false pass PMAT-1387 closed.
+    if repair && verdict.is_err() && !reference.is_empty() {
+        if let ComparisonResult::Divergence { .. } = diff_stdout(&reference, &actual) {
+            return repair_hybrid(
+                session,
+                manifest,
+                modules,
+                c_entries,
+                c_sources,
+                &reference,
+                "the CPython reference",
+            );
+        }
+    }
+    verdict
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PMAT-1353 — the CLI seam for `xpile-agent`'s bounded, fail-closed,
+// deterministic repair loop. Before this the crate held 931 lines, 3 rule impls
+// and 18 passing tests that NO USER COULD INVOKE.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A [`Probe`] over the REAL hybrid build path: re-emit the workspace with
+/// `candidate` as the lowered Rust body, `cargo build` it (C side cc-compiled and
+/// linked by the emitted `build.rs`), run the artifact, and differentially
+/// compare its stdout against the captured CPython reference.
+///
+/// This is deliberately NOT [`xpile_agent::HybridCcRustcProbe`], which drives a
+/// single-file `rustc` over a self-contained program. The candidate here is the
+/// `main.rs` BODY of a multi-file cargo workspace (`mod ffi_shims;` + per-boundary
+/// `use` aliases + the lowered module), so the only build that means anything is
+/// the same `emit_hybrid_workspace` → `cargo build` path `--verify` itself judged.
+/// A repair verified by a *different* build would not be evidence about the
+/// artifact that failed.
+///
+/// **What repair can and cannot reach.** The candidate is the lowered Rust body
+/// ONLY. `src/ffi_shims.rs` is regenerated from the manifest on every iteration,
+/// so a rule cannot edit the shim — see [`boundary_repair_rules`] for which of
+/// `xpile-agent`'s three rules that leaves reachable, and why.
+struct HybridWorkspaceProbe<'a> {
+    manifest: &'a FfiManifest,
+    modules: &'a [Module],
+    c_sources: &'a [(String, String)],
+    reference: &'a str,
+    /// Root under which each evaluation gets its OWN workspace directory. A
+    /// shared dir would let a stale `src/main.rs` or a half-written target dir
+    /// leak from one iteration into the next, and the whole point of the loop is
+    /// that iteration N+1's verdict is about candidate N+1.
+    root: PathBuf,
+    seq: AtomicUsize,
+}
+
+impl Probe for HybridWorkspaceProbe<'_> {
+    fn evaluate(&self, candidate: &str) -> Result<(), Symptom> {
+        let n = self.seq.fetch_add(1, Ordering::Relaxed);
+        let ws = self.root.join(format!("iter_{n}"));
+        let _ = std::fs::remove_dir_all(&ws);
+        let cleanup = || {
+            let _ = std::fs::remove_dir_all(&ws);
+        };
+
+        if let Err(e) =
+            self.manifest
+                .emit_hybrid_workspace(self.modules, self.c_sources, candidate, &ws)
+        {
+            cleanup();
+            return Err(Symptom::BuildError {
+                stderr: format!("workspace emit failed: {e}"),
+            });
+        }
+        let target = ws.join("target");
+        match Command::new("cargo")
+            .current_dir(&ws)
+            .arg("build")
+            .arg("--target-dir")
+            .arg(&target)
+            .output()
+        {
+            Ok(o) if o.status.success() => {}
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+                cleanup();
+                return Err(Symptom::BuildError { stderr });
+            }
+            Err(e) => {
+                cleanup();
+                return Err(Symptom::BuildError {
+                    stderr: format!("spawning cargo build: {e}"),
+                });
+            }
+        }
+        let run = Command::new(target.join("debug").join("xpile-hybrid-artifact")).output();
+        let result = match run {
+            Ok(o) if o.status.success() => {
+                let actual = String::from_utf8_lossy(&o.stdout)
+                    .trim_end_matches('\n')
+                    .to_string();
+                // Reuse the ONE differential the product uses, so a "repaired"
+                // candidate is repaired by the same standard `--verify` applies.
+                match diff_stdout(self.reference, &actual) {
+                    ComparisonResult::Match => Ok(()),
+                    ComparisonResult::Divergence {
+                        index,
+                        expected,
+                        actual,
+                    } => Err(Symptom::Divergence {
+                        index,
+                        expected,
+                        actual,
+                    }),
+                }
+            }
+            // A non-zero artifact exit is not a build error and not a stdout
+            // divergence; report it as a divergence carrying the exit status, so
+            // no rule mistakes it for an `E0308` and the loop fails closed.
+            Ok(o) => Err(Symptom::Divergence {
+                index: 0,
+                expected: self.reference.to_string(),
+                actual: format!(
+                    "<artifact exited {}>: {}",
+                    o.status,
+                    String::from_utf8_lossy(&o.stderr).trim()
+                ),
+            }),
+            Err(e) => Err(Symptom::BuildError {
+                stderr: format!("running the hybrid artifact: {e}"),
+            }),
+        };
+        cleanup();
+        result
+    }
+}
+
+/// Wraps a [`RepairRule`] and records its name when — and only when — it
+/// actually FIRES, so the CLI can print the converged rule chain.
+///
+/// [`RepairOutcome`] carries an iteration COUNT, not the rules that produced it.
+/// Adding a chain field to that enum would touch 20 match sites and the 18 tests
+/// that pin `xpile-agent`'s public surface; recording at the rule boundary gets
+/// the exact same chain with zero change to that surface. `RepairLoop::run`
+/// applies the FIRST rule that returns `Some` per iteration, so the recorded
+/// sequence is precisely the applied chain — not the tried set.
+struct RecordingRule {
+    inner: Box<dyn RepairRule>,
+    applied: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl RepairRule for RecordingRule {
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+
+    fn apply(&self, symptom: &Symptom, candidate: &str) -> Option<String> {
+        let out = self.inner.apply(symptom, candidate);
+        if out.is_some() {
+            if let Ok(mut log) = self.applied.lock() {
+                log.push(self.inner.name());
+            }
+        }
+        out
+    }
+}
+
+/// Derive the repair rules for this manifest's C boundaries.
+///
+/// **Only [`FfiArgCastRepair`] is derivable for this candidate domain, and this
+/// is the honest reason for each of `xpile-agent`'s other two rules:**
+///
+///   * `FfiReturnCastRepair` rewrites a shim's tail `__r` into `__r as <native>`.
+///     `__r` only ever appears in `src/ffi_shims.rs`, which
+///     [`HybridWorkspaceProbe`] REGENERATES from the manifest every iteration —
+///     so the text it targets cannot occur in the candidate and the rule could
+///     never fire. Wiring it would add a rule with a provably empty domain, which
+///     is how a capability count gets inflated.
+///   * `FloatReprRepair` rewrites a plain `println!("{}", <float>)` into the
+///     CPython-faithful `.0`-suffix block. MEASURED against this emitter: it no
+///     longer emits that shape at all — every float print already carries the
+///     full repr block (nan/inf/exponent/`fract()`), because PMAT-931's
+///     `retype_float_ffi_sites` plus `Expr::ToStr { of_float: true }` fixed that
+///     class in the production seam. Its domain is empty here too.
+///
+/// So one of three rules is reachable through this seam. That is a real
+/// capability — it converges on a real, production-emitted `E0308` (see
+/// `fixtures/hybrid_unsigned`) — and it is not three.
+///
+/// The `abi` field carries the WRAPPER's native type ([`wrapper_native`]), not
+/// the C ABI type: the candidate is the `main.rs` body, whose `f(..)` call
+/// resolves through `use ffi_shims::f_shim as f` to the SAFE WRAPPER, so the cast
+/// the call site is missing is a cast to the wrapper's parameter type.
+///
+/// A boundary whose parameters do not all share one `wrapper_native` is SKIPPED
+/// with a printed reason: `FfiArgCastRepair` casts every top-level argument to the
+/// same type, so on a mixed `f(int, double)` it would emit a wrong repair. The
+/// probe would reject it and the loop would fail closed, but declining up front
+/// says so instead of burning an iteration on a guess.
+fn boundary_repair_rules(modules: &[Module], c_entries: &[&FfiEntry]) -> Vec<Box<dyn RepairRule>> {
+    let mut rules: Vec<Box<dyn RepairRule>> = Vec::new();
+    for e in c_entries {
+        let Some(f) = defining_function(modules, e) else {
+            println!(
+                "  --repair: boundary `{}` has no defining C function — no rule derivable",
+                e.symbol
+            );
+            continue;
+        };
+        if f.params.is_empty() {
+            println!(
+                "  --repair: boundary `{}` takes no arguments — no call-site cast to insert",
+                e.symbol
+            );
+            continue;
+        }
+        let natives: Vec<&'static str> = f.params.iter().map(|p| wrapper_native(&p.ty)).collect();
+        let first = natives[0];
+        if natives.iter().any(|n| *n != first) {
+            println!(
+                "  --repair: boundary `{}` mixes wrapper types {natives:?} — `ffi-arg-cast` casts \
+                 every argument to ONE type, so it is declined rather than guessed",
+                e.symbol
+            );
+            continue;
+        }
+        rules.push(Box::new(FfiArgCastRepair {
+            symbol: e.symbol.clone(),
+            abi: first.to_string(),
+        }));
+    }
+    rules
+}
+
+/// PMAT-1353 — drive the bounded, fail-closed, deterministic repair loop over
+/// the lowered Rust body and re-verify through the SAME build path `--verify`
+/// used. Called only from `--verify --repair`, only after the verdict for the
+/// original artifact has already been printed.
+///
+/// **Fail-closed, and it writes nothing.** On [`RepairOutcome::Repaired`] this
+/// prints the converged rule chain and exits 0; the repaired source stays in
+/// memory. `xpile` has no canonical destination for it — the hybrid Rust body is
+/// DERIVED from the Python module, so writing it would fork the artifact from its
+/// source. `RepairLoop::run_and_commit` is the disciplined write path a future
+/// `--repair-out <dir>` would use. On [`RepairOutcome::Exhausted`] the exit is
+/// NON-ZERO and the last symptom is named: a repair that did not converge is
+/// reported as a failure, never as a diagnosis-only success.
+///
+/// **`AlreadyMatching` is treated as a DEFECT, not a pass.** This function is
+/// reached only when `--verify` already observed a failure. If the loop's first
+/// probe then reports a match, the two build paths disagree about the same
+/// candidate — a real inconsistency worth a loud non-zero exit, because silently
+/// printing "already matching" would convert a flaky differential into a green.
+fn repair_hybrid(
+    session: &TranspileSession,
+    manifest: &FfiManifest,
+    modules: &[Module],
+    c_entries: &[&FfiEntry],
+    c_sources: &[(String, String)],
+    reference: &str,
+    subject: &str,
+) -> Result<()> {
+    let rules = boundary_repair_rules(modules, c_entries);
+    if rules.is_empty() {
+        eprintln!(
+            "  ✗ NOT REPAIRED — no repair rule is derivable from this manifest, so the loop \
+             was never started"
+        );
+        bail!("hybrid repair: no applicable repair rule (fail-closed)");
+    }
+    let applied: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
+    let tried: Vec<&'static str> = rules.iter().map(|r| r.name()).collect();
+    let recorded: Vec<Box<dyn RepairRule>> = rules
+        .into_iter()
+        .map(|inner| {
+            Box::new(RecordingRule {
+                inner,
+                applied: Arc::clone(&applied),
+            }) as Box<dyn RepairRule>
+        })
+        .collect();
+    // A tight budget on purpose: every iteration is a full cargo build. The rules
+    // are idempotent, so a converging chain is at most one step per boundary.
+    let budget = Budget {
+        max_iterations: (recorded.len() as u32).saturating_add(1),
+        max_wall_clock: Duration::from_secs(300),
+        ..Budget::default()
+    };
+    println!(
+        "  --repair: bounded repair loop — {} rule(s) {tried:?}, max {} iteration(s)",
+        recorded.len(),
+        budget.max_iterations
+    );
+    let root = std::env::temp_dir().join(format!("xpile_repair_ws_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let probe = HybridWorkspaceProbe {
+        manifest,
+        modules,
+        c_sources,
+        reference,
+        root: root.clone(),
+        seq: AtomicUsize::new(0),
+    };
+    let initial = lower_hybrid_rust(session, modules)?;
+    let outcome = RepairLoop::new(budget, recorded).run(&probe, &initial);
+    let _ = std::fs::remove_dir_all(&root);
+    let chain = applied.lock().map(|l| l.clone()).unwrap_or_default();
+    match outcome {
+        RepairOutcome::AlreadyMatching { .. } => {
+            eprintln!(
+                "  ✗ INCONSISTENT — `--verify` reported a failure but the repair loop's first \
+                 probe of the SAME unmodified candidate matched {subject}"
+            );
+            eprintln!(
+                "      the two build paths disagree; that is a differential defect, not a repair"
+            );
+            bail!("hybrid repair: verify and repair disagree on the unrepaired artifact")
+        }
+        RepairOutcome::Repaired { iterations, .. } => {
+            println!("  ✓ REPAIRED in {iterations} iteration(s) — applied rule chain: {chain:?}");
+            println!(
+                "      the repaired artifact now matches {subject}. xpile wrote NOTHING to your \
+                 tree: `--repair` DIAGNOSES, it does not commit (the hybrid Rust body is derived \
+                 from the Python module, so committing it would fork the artifact from its source)"
+            );
+            Ok(())
+        }
+        RepairOutcome::Exhausted { iterations, last } => {
+            eprintln!(
+                "  ✗ NOT REPAIRED — fail-closed after {iterations} iteration(s); rules applied: \
+                 {chain:?}, rules available: {tried:?}"
+            );
+            eprintln!("      last symptom: {}", describe_symptom(&last));
+            bail!("hybrid repair: exhausted without reaching a match (fail-closed)")
+        }
+    }
+}
+
+/// One-line rendering of the symptom the loop failed closed on, so the operator
+/// learns WHICH class went unrepaired rather than just that repair failed.
+fn describe_symptom(s: &Symptom) -> String {
+    match s {
+        Symptom::BuildError { stderr } => {
+            let first = stderr
+                .lines()
+                .find(|l| l.trim_start().starts_with("error"))
+                .unwrap_or_else(|| stderr.lines().next().unwrap_or("<empty>"));
+            format!("BuildError — {}", first.trim())
+        }
+        Symptom::Divergence {
+            index,
+            expected,
+            actual,
+        } => format!(
+            "Divergence at line {} — reference {expected:?} vs artifact {actual:?}",
+            index + 1
+        ),
+    }
 }
 
 /// PMAT-1387 — the shared Match/Vacuous/Divergent verdict for BOTH executing
