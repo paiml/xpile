@@ -7,6 +7,77 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The default `--target lean` emit now elaborates (PMAT-1405)
+
+`--contracts on` is the CLI **default**. Under it the Lean code lane emitted
+`@[xpile_contract "C-…"]` — and `xpile_contract` is a registered Lean attribute
+**nowhere**, so `lean` rejected the file with a *parse* error while `xpile`
+exited 0:
+
+```console
+$ xpile transpile add.py --target lean --out P.lean   ; echo "xpile exit=$?"
+xpile: wrote P.lean
+xpile exit=0
+
+$ lean P.lean                                          ; echo "lean exit=$?"
+P.lean:3:16: error: unexpected token; expected ']'
+lean exit=1
+```
+
+`--target lean` was the only backend whose default output its own toolchain
+could not read.
+
+**Why it survived three weeks.** The defect was written down in *three* places —
+`xpile-lean-codegen`'s doc comment, `audit-design.md` §7, and a README caveat —
+and gated in **zero**. The lane's semantic oracle, `lean_elaborate_witness.rs`,
+passes `--contracts off` deliberately, so a green 6/6 corpus certified a flag
+combination the default invocation never takes. Disclosure is not a gate.
+
+**The fix is a Lean docstring**, `/-- xpile-contract: <ID>[, <ID>]* -/`. The
+standing prescription (`audit-design.md` §7) weighed only two options — keep the
+broken attribute, or register it in a separately-imported prelude — and rejected
+"switch to a comment" because a comment abandons the structured form. A
+docstring is the third option, and it dominates both:
+
+* it **parses** and elaborates standalone, measured against `lean` itself;
+* it is **structured** — resolvable by declaration name out of the elaborated
+  environment via ``Lean.findDocString? env `add``, which is exactly the
+  Lean-native resolution the attribute was chosen for and, never having been
+  registered, never once delivered. A line comment *fails* that retrieval
+  (measured), so this is not the rejected comment fix;
+* it keeps the emit **self-contained** — the prelude fix would have forced an
+  `import` into every emitted file.
+
+Two things were measured rather than assumed while fixing it: Lean permits at
+most **one** docstring per declaration (two stacked `/-- … -/` blocks are a parse
+error), so multiple applicable contracts emit as one comma-separated docstring;
+and the code lane was never contract-bound to the attribute at all — the
+invariant in `xpile-contract-backend-trait-v1.yaml` is guarded by
+`config.format == LeanTheorem`, and neither that contract nor
+`xlate-rust-fn-to-lean-thm-v1.yaml` mentions `Target::Lean`. Example 02's claim
+that the attribute was "required by C-XPILE-CONTRACT-BACKEND-TRAIT" was itself
+false. The contract-**rendering** lane (contract YAML → Lean theorem text) is
+unchanged and keeps `@[xpile_contract …]`, which its contracts specify and which
+is never elaborated as a live attribute.
+
+**Gate:** `crates/xpile/tests/lean_default_emit_witness.rs` (3 tests) runs the
+**default** emit — no `--contracts` flag at all, so a change to the default
+*value* is caught too — and asserts it elaborates with `by decide` obligations,
+that it actually carries a citation (without which the elaboration would prove
+nothing), and that the citation is retrievable through Lean's own API. A fourth
+assertion needs no Lean toolchain, so the lane keeps a non-skipping gate on the
+hosted runner where `lean` is absent. Restoring the attribute form reds all
+three Lean-dependent tests with the exact historical `unexpected token;
+expected ']'`.
+
+**Release-week blast radius, measured two-binary against `d8c80608`:**
+`--contracts off` output is **byte-identical** (stdout, stderr and exit code)
+across the rust/ruchy/wasm/wgsl/lean lanes, and under `--contracts on` only the
+Lean lane changes. `strip_contract_citations` gained the `/-- xpile-contract`
+marker: without it the earlier `-- xpile-contract` match cuts at index 1 and
+leaves a stray `/` line, which two new unit tests pin.
+
+
 ### The repair loop is reachable — `xpile hybrid --verify --repair` (PMAT-1353)
 
 `crates/xpile-agent/src/repair.rs` held **931 lines**, three deterministic

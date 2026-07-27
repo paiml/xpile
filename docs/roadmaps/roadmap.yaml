@@ -18060,3 +18060,85 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1405
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1405: [lean/honesty] the DEFAULT `--target lean` emit exited 0 writing
+    Lean that does not PARSE — `@[xpile_contract "…"]` is a registered Lean attribute
+    NOWHERE, so `lean` rejected the default output with `unexpected token; expected
+    ]` while xpile exited 0. The only backend whose default output its own toolchain
+    could not read. Written down in THREE places, gated in ZERO, and the lane''s own
+    semantic witness passed `--contracts off` — certifying a flag combination the
+    default invocation never takes.'
+  description: '`--contracts on` is the CLI DEFAULT. Under it the Lean CODE lane
+    emitted `@[xpile_contract "C-…"]`. That attribute is registered nowhere, so
+    `lean` failed to PARSE the file (`unexpected token; expected ]`) while `xpile
+    transpile x.py --target lean` exited 0 and printed nothing. Both the flat and
+    the while-helper emit paths were affected (the latter emits two citations, so
+    it produced two parse errors).
+
+
+    ** WHY IT SURVIVED. Disclosure is not a gate. The defect was documented in
+    `xpile-lean-codegen`''s doc comment, `docs/specifications/audit-design.md` §7,
+    and a README caveat — and enforced by no test. `lean_elaborate_witness.rs`, the
+    Lean lane''s semantic oracle, passes `--contracts off` DELIBERATELY, so a green
+    6/6 corpus measured nothing about the path a user actually takes.
+
+
+    ** FIX: a Lean DOCSTRING, `/-- xpile-contract: <ID>[, <ID>]* -/`. The standing
+    prescription in audit-design §7 weighed only two options (keep the broken
+    attribute; register it in a separately-imported prelude) and rejected "switch to
+    a comment" because a comment abandons the structured form. The docstring is a
+    THIRD option that dominates both: it PARSES standalone, and it is resolvable BY
+    DECLARATION NAME out of the elaborated environment via `Lean.findDocString? env
+    `f` — precisely the Lean-native resolution the attribute was chosen for and,
+    never having been registered, never once delivered. A line comment FAILS that
+    retrieval (measured: "no citation resolvable by name for `add`"), so this is not
+    the rejected comment fix. It also PRESERVES standalone-ness, which the prelude
+    fix would have spent on a mandatory `import` in every emitted file.
+
+
+    ** MEASURED, NOT ASSUMED, DURING THE SLICE: (a) Lean permits at most ONE
+    docstring per declaration — two stacked `/-- … -/` blocks are a parse error — so
+    multiple applicable contracts emit as one comma-separated docstring; (b) the CODE
+    lane was never contract-bound to the attribute at all: the invariant in
+    `contracts/xpile-contract-backend-trait-v1.yaml` is guarded by `config.format ==
+    LeanTheorem`, and neither it nor `contracts/xlate-rust-fn-to-lean-thm-v1.yaml`
+    mentions `Target::Lean`, so example 02''s claim that the attribute was "required
+    by C-XPILE-CONTRACT-BACKEND-TRAIT" was itself FALSE. The contract-RENDERING lane
+    is untouched and keeps `@[xpile_contract …]` (specified by those two contracts,
+    and never elaborated as a live attribute — `contracts/lean/*` mention it in PROSE
+    only).
+
+
+    ** GATE: crates/xpile/tests/lean_default_emit_witness.rs, 3 tests over the
+    DEFAULT emit with NO `--contracts` flag passed, so a change to the default VALUE
+    reds too. (1) elaborates with `by decide` obligations; (2) actually CARRIES a
+    citation — without this, deleting `emit_contract_citations` outright would
+    satisfy (1) vacuously; (3) the citation is retrievable through Lean''s own API,
+    which is the structured claim measured through the elaborator instead of a regex.
+    A fourth assertion needs no Lean toolchain, so the lane keeps a NON-SKIPPING gate
+    on the hosted workspace-test runner where `lean` is absent.
+
+
+    ** FALSIFIED BOTH WAYS: restoring `@[xpile_contract "{id}"]` reds all three
+    Lean-dependent tests with the exact historical `unexpected token; expected ]`;
+    substituting a line comment reds the name-resolution test specifically. Removing
+    the new `/-- xpile-contract` entry from CITATION_MARKERS reds the two new
+    xpile-backend unit tests with the predicted stray `"/\ndef f := 1\n"` — the
+    earlier `-- xpile-contract` marker matches at index 1 and takes the INLINE branch.
+
+
+    ** RELEASE-WEEK BLAST RADIUS, two-binary differential against d8c80608:
+    `--contracts off` stdout + stderr + exit code are BYTE-IDENTICAL across the
+    rust/ruchy/wasm/wgsl/lean lanes; under `--contracts on` only the Lean lane
+    changes.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

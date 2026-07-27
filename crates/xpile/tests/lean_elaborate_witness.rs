@@ -16,23 +16,24 @@
 //! procedure), not merely a type-check, and strictly stronger than a
 //! string-compare against frozen expected text.
 //!
-//! FINDING (recorded in `docs/specifications/audit-design.md`): the emit uses
-//! `--contracts off` deliberately. With citations ON (the CLI default) the Lean
-//! backend emits `@[xpile_contract "C-…"]` as an ATTRIBUTE — but `xpile_contract`
-//! is not a registered Lean attribute, so `lean` rejects it
-//! (*"unexpected token; expected ']'"*) and the emitted Lean does NOT elaborate.
-//! Every other backend cites contracts as COMMENTS (`// xpile-contract:`), which
-//! never affect compilation; only the Lean lane uses an attribute form. The
-//! attribute is DELIBERATE (the citation grid's structured form for Lean-native
-//! name resolution; `main.rs`/`xpile-backend` recognise `@[xpile_contract` as the
-//! Lean citation prefix, and example 02 states it is "a Lean attribute, not a
-//! comment"), so a comment is the WRONG fix. The real gap: the attribute was
-//! never actually REGISTERED, so the intended Lean-native resolution isn't wired.
-//! The design-consistent fix is a separately-imported prelude that registers it
-//! (in-file `registerBuiltinAttribute` fails — verified); that also changes the
-//! emit's standalone-ness + frozen tests, so it is a deliberate design task.
-//! Until then the elaborate-able Lean is the annotation-free (`--contracts off`)
-//! form this witness uses. See `docs/specifications/audit-design.md` §7.
+//! HISTORICAL FINDING, RESOLVED BY PMAT-1405 (2026-07-27). This witness passes
+//! `--contracts off` because, through v0.1.617, the DEFAULT (`--contracts on`)
+//! emit could not elaborate: the Lean code lane cited via `@[xpile_contract
+//! "C-…"]`, `xpile_contract` was a registered Lean attribute nowhere, and `lean`
+//! rejected the file with *"unexpected token; expected ']'"* while `xpile`
+//! exited 0.
+//!
+//! That is fixed — the lane now cites with a Lean DOCSTRING
+//! (`/-- xpile-contract: … -/`), which parses AND is resolvable by declaration
+//! name via `Lean.findDocString?`, so it keeps the structured property the
+//! attribute was chosen for (a plain line comment does NOT — measured).
+//!
+//! This witness deliberately KEEPS `--contracts off`: it is the annotation-free
+//! lane's oracle, and the two lanes are now covered separately.
+//! `crates/xpile/tests/lean_default_emit_witness.rs` owns the DEFAULT path and
+//! is what would catch a regression there — this file would not, which is
+//! exactly why the defect above lived for three weeks with the corpus green.
+//! See `docs/specifications/audit-design.md` §7.
 //!
 //! SCOPE: the Lean lane lowers only VALUE functions (arithmetic / comparison /
 //! bool) — it refuses `None`-returning (void) functions, statement-form
