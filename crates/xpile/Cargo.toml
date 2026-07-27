@@ -31,6 +31,12 @@ xpile-oracle       = { workspace = true }
 # target's AliasSemantics to the frontend (reference-semantics targets skip
 # the value-semantics alias dispositions).
 xpile-frontend     = { workspace = true }
+# PMAT-1353: `xpile hybrid --verify --repair` drives the bounded, fail-closed,
+# deterministic RepairLoop. Before this the crate held 931 lines and 18 passing
+# tests that no user could invoke. OPT-IN ONLY — the default `--verify` output
+# and exit code are byte-identical with and without this dependency, which is
+# what makes the wiring safe inside a release window.
+xpile-agent        = { workspace = true }
 anyhow         = { workspace = true }
 clap           = { version = "4", features = ["derive"] }
 
