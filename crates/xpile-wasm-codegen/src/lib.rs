@@ -12420,6 +12420,10 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         mod_fns: &mod_fns,
         str_rets: &str_rets,
         heap_sigs: &heap_sigs,
+        // PMAT-1365: computed ONCE per module — the order-OBSERVING dict
+        // materialisations (`list(d)` / `list(d.keys())` / `list(d.values())`)
+        // are CPython-exact only while nothing perturbs a dict's insertion order.
+        dict_order_offender: module_dict_order_offender(module),
     };
     // PMAT-1307: an `==`/`!=` over str-VALUED dicts routes to the
     // `$__wasm_dict_eq_sv_<k>` twin, whose value compare calls
@@ -14059,6 +14063,110 @@ fn expr_has_int_to_str(e: &Expr) -> bool {
         Expr::ListQuery { list, arg, .. } => expr_has_int_to_str(list) || expr_has_int_to_str(arg),
         _ => false,
     }
+}
+
+/// PMAT-1365: the constructs that make a dict's bump-heap ENTRY ORDER diverge
+/// from Python's INSERTION order. Each entry is `(needle, why)` — `needle` is a
+/// substring of the module's derived `Debug` rendering (see
+/// [`module_dict_order_offender`] for why the scan is textual), `why` names the
+/// hazard in the refusal.
+///
+/// * A REMOVAL (`del d[k]` / `d.pop(k)` / `s.remove(x)` / `s.discard(x)`) is
+///   swap-last-into-hole + `count--` (see `$__wasm_dict_pop_*`), so the surviving
+///   entries are permuted — CPython's `dict` instead preserves the relative order
+///   of everything that stays.
+/// * A `set` is stored in xpile INSERTION order but CPython iterates a set in
+///   HASH order, so any dict whose keys were inserted while iterating a set
+///   (`for x in s: d[x] = …`, which this backend accepts — PMAT-1314) carries a
+///   non-CPython insertion order into the dict itself.
+///
+/// Every needle over-approximates in the SAFE direction only (`DelItem` also
+/// matches the harmless `del xs[i]` on a list; `Clear` also matches
+/// `xs.clear()`; a user identifier literally spelled `DictPop` would match too).
+/// An extra refusal is a capability gap; a MISS would be a silent wrong answer.
+const DICT_ORDER_HAZARDS: &[(&str, &str)] = &[
+    (
+        "DictPop",
+        "a dict `pop` (`d.pop(k)`) — removal is swap-last-into-hole, so the \
+         surviving keys are no longer in insertion order",
+    ),
+    (
+        "DelItem",
+        "an item `del` (`del d[k]`) — dict removal is swap-last-into-hole, so \
+         the surviving keys are no longer in insertion order",
+    ),
+    (
+        "SetRemove",
+        "a set removal (`s.remove(x)` / `s.discard(x)`) — removal is \
+         swap-last-into-hole, so the surviving entries are permuted",
+    ),
+    (
+        "Clear",
+        "a `.clear()` — the emptied region's later refills need not match the \
+         source order",
+    ),
+    (
+        "Set(",
+        "a `set` local/param — xpile stores a set in INSERTION order while \
+         CPython iterates it in HASH order, so a dict filled while iterating \
+         one (`for x in s: d[x] = …`) inherits a non-CPython insertion order",
+    ),
+    (
+        "SetLit",
+        "a set literal — xpile stores a set in INSERTION order while CPython \
+         iterates it in HASH order",
+    ),
+    (
+        "SetToList",
+        "a set materialisation — xpile stores a set in INSERTION order while \
+         CPython iterates it in HASH order",
+    ),
+];
+
+/// PMAT-1365: does every dict in `module` walk its bump-heap entries in PYTHON
+/// INSERTION order? `None` = yes (so materialising a dict view element-by-element
+/// is CPython-EXACT); `Some(why)` names the first hazard found.
+///
+/// This is the gate on the ORDER-OBSERVING dict materialisations `list(d)` /
+/// `list(d.keys())` / `list(d.values())` (see [`emit_list_expr`]). It is NOT
+/// needed by `sorted(d)` / `sum(d)` / `min(d)` / `max(d)`, which re-sort or fold
+/// commutatively and are therefore order-INDEPENDENT — that is exactly why those
+/// already emit while a bare `list(d)` did not.
+///
+/// **Why a `Debug`-rendering scan and not a hand-written walker.** The hazard is a
+/// removal or a set ANYWHERE in the module, at ANY nesting depth, inside ANY of
+/// the 97 `Expr` / 41 `Stmt` hosts. A hand-written recursive walker over that
+/// surface is precisely the recurring gate-hole class this file already documents
+/// (a missed arm on `expr_has_set_to_list` & friends), and here a miss is not a
+/// loud `wat2wasm` failure but a SILENT WRONG ORDER. The derived `Debug`
+/// rendering is structurally TOTAL by construction — it cannot omit a variant,
+/// and it keeps covering variants added later with no edit here — so the scan
+/// cannot miss. It can only over-refuse (see [`DICT_ORDER_HAZARDS`]), which
+/// degrades to the pre-PMAT-1365 behaviour: an honest refusal.
+fn module_dict_order_offender(module: &Module) -> Option<&'static str> {
+    let rendered = format!("{module:?}");
+    DICT_ORDER_HAZARDS
+        .iter()
+        .find(|(needle, _)| rendered.contains(needle))
+        .map(|(_, why)| *why)
+}
+
+/// PMAT-1365: refuse an ORDER-OBSERVING dict materialisation (`list(d)` /
+/// `list(d.keys())` / `list(d.values())`) when the module carries an
+/// insertion-order hazard. `form` is the Python surface form, quoted back to the
+/// user; `what` is what the view materialises ("keys" / "values").
+fn check_dict_view_order(scope: &Scope, form: &str, what: &str) -> Result<(), BackendError> {
+    let Some(why) = scope.dict_order_offender else {
+        return Ok(());
+    };
+    Err(unsupported(&format!(
+        "`{form}` materialises the dict's {what} in BUMP-HEAP STORAGE order, which \
+         equals CPython's insertion order only while nothing in the module perturbs \
+         it — and this module contains {why}. Observing the order element-by-element \
+         could then diverge from CPython, so it is refused honestly (bind `sorted(d)` \
+         for an order-DEFINED sequence, or reduce with the order-INDEPENDENT \
+         `sum`/`min`/`max`)"
+    )))
 }
 
 /// PMAT-995 (slice 3b): which dict/set KEY kinds the module uses — `(needs_int,
@@ -16026,6 +16134,13 @@ fn expr_has_set_to_list(expr: &Expr) -> bool {
         // defence in depth.
         Expr::Map { list, lambda } | Expr::Filter { list, lambda } => e(list) || e(&lambda.body),
         Expr::BoolReduce { list, .. } => e(list),
+        // PMAT-1365: `list(d.keys())` / `list(d.values())` arrive as
+        // `Clone(DictView{..})` (the frontend's `list(<already-a-list>)` COPY
+        // path). `emit_list_expr` PEELS that wrapper and lowers the view, so the
+        // gate must see through it too — else the materialiser is left undeclared
+        // at its `call` site (the recurring gate-hole class: over-detecting is a
+        // harmless dead helper, a miss is a fatal wat2wasm error).
+        Expr::Clone(inner) => e(inner),
         _ => false,
     }
 }
@@ -16189,6 +16304,13 @@ fn expr_has_dict_values_to_list(expr: &Expr) -> bool {
         // gate-hole class; over-detecting is a harmless dead helper, a miss is a
         // fatal wat2wasm error). The `Map` arm above handles the int/float nesting.
         Expr::BoolReduce { list, .. } => e(list),
+        // PMAT-1365: `list(d.keys())` / `list(d.values())` arrive as
+        // `Clone(DictView{..})` (the frontend's `list(<already-a-list>)` COPY
+        // path). `emit_list_expr` PEELS that wrapper and lowers the view, so the
+        // gate must see through it too — else the materialiser is left undeclared
+        // at its `call` site (the recurring gate-hole class: over-detecting is a
+        // harmless dead helper, a miss is a fatal wat2wasm error).
+        Expr::Clone(inner) => e(inner),
         _ => false,
     }
 }
@@ -17209,6 +17331,12 @@ fn expr_has_heap_op(e: &Expr) -> bool {
             kind: DictViewKind::Keys | DictViewKind::Values,
             ..
         } => true,
+        // PMAT-1365: `list(d.keys())` / `list(d.values())` arrive wrapped in the
+        // frontend's `Clone` (the `list(<already-a-list>)` COPY path), which
+        // `emit_list_expr` peels before lowering the view — so the heap gate must
+        // see through the wrapper too. (A reachable dict already forces the heap,
+        // so this is defense-in-depth like the `DictView` arm above.)
+        Expr::Clone(inner) => expr_has_heap_op(inner),
         // PMAT-1253: `reversed(xs)` / `list(reversed(xs))` / `xs[::-1]` over a
         // list likewise bump-allocates a fresh reversed record (via
         // `$__wasm_list_reversed_i64` → `$__alloc`), the SECOND list-VALUED
@@ -17674,6 +17802,15 @@ struct Scope<'a> {
     /// verified to actually produce a str pointer — its i32 result alone is
     /// ambiguous (bool and struct returns are i32 too).
     str_rets: &'a StrReturners,
+    /// PMAT-1365: `Some(why)` when the MODULE contains a construct that makes a
+    /// dict's bump-heap entry order diverge from Python's INSERTION order — a
+    /// removal (swap-last-into-hole) or a `set` (xpile-insertion vs CPython-hash
+    /// iteration order). Module-wide, not per-function: a dict crosses call
+    /// boundaries by base-pointer, so a removal in ANY function can permute the
+    /// record a `list(d)` here observes. Gates the order-OBSERVING dict
+    /// materialisations in [`emit_list_expr`]; the order-INDEPENDENT reductions
+    /// (`sum`/`min`/`max`) and the order-DEFINING `sorted(d)` ignore it.
+    dict_order_offender: Option<&'static str>,
     /// PMAT-1309: per-callable dict/set param signatures (free fns by name,
     /// PMAT-1311 instance methods by `<Struct>.<method>`) — call sites
     /// kind-check dict/set arguments against the callee's declared kinds.
@@ -17920,6 +18057,12 @@ struct Registries<'a> {
     /// kind-check dict/set arguments (an i32-for-i32 WAT match alone would
     /// silently miscompile a kind mismatch).
     heap_sigs: &'a HeapSigRegistry,
+    /// PMAT-1365: `Some(why)` when the module contains a construct that makes a
+    /// dict's bump-heap entry order diverge from Python's INSERTION order (a
+    /// removal, or a set whose iteration order seeds a dict). Computed ONCE per
+    /// module by [`module_dict_order_offender`]; gates the order-OBSERVING
+    /// materialisations `list(d)` / `list(d.keys())` / `list(d.values())`.
+    dict_order_offender: Option<&'static str>,
 }
 
 fn emit_function(
@@ -17935,6 +18078,7 @@ fn emit_function(
         mod_fns,
         str_rets,
         heap_sigs,
+        dict_order_offender,
     } = *regs;
     // PMAT-993 (slice 2): a `str` RETURN now lowers to an `i32` result — the
     // base-pointer of the newly-materialised length-prefixed string in linear
@@ -18003,6 +18147,7 @@ fn emit_function(
         mod_fns,
         str_rets,
         heap_sigs,
+        dict_order_offender,
         literals,
         ret,
         ret_is_unit,
@@ -25029,6 +25174,28 @@ fn emit_list_expr(
     out: &mut String,
     depth: usize,
 ) -> Result<(), BackendError> {
+    // PMAT-1365: `list(d.keys())` / `list(d.values())` reach the backend as
+    // `Clone(DictView{..})` — `d.keys()`/`d.values()` type as `List(T)`, so the
+    // frontend's `list(<already-a-list>)` COPY path wraps them (the PMAT-737
+    // owned-clone posture the Rust lane needs). In linear memory the
+    // materialiser ALREADY allocates a fresh record, so the clone wrapper is a
+    // no-op here: peel it and lower the view itself, exactly as the unwrapped
+    // `list(d)` (`DictView{Keys}`) shape does. Peeled ONLY over a dict view —
+    // a `Clone` of anything else keeps falling through to the honest refusal.
+    let value = match value {
+        Expr::Clone(inner)
+            if matches!(
+                inner.as_ref(),
+                Expr::DictView {
+                    kind: DictViewKind::Keys | DictViewKind::Values,
+                    ..
+                }
+            ) =>
+        {
+            inner.as_ref()
+        }
+        other => other,
+    };
     match value {
         Expr::ListLit(elems) => emit_list_lit(elems, elem, scope, out, depth),
         Expr::Ident(src) => {
@@ -25113,13 +25280,48 @@ fn emit_list_expr(
              bare `list(s)` inherits the set's arbitrary storage order and is \
              refused (use `sorted(s)`)",
         )),
+        // PMAT-1365: `list(d)` / `list(d.keys())` over a `dict[int, _]` — the
+        // FIFTH allocating list-VALUED op, and the FIRST that is ORDER-OBSERVING.
+        // Python iterates a dict as its KEYS, so the frontend lowers both forms to
+        // `DictView{Keys}` (the second via the peeled `Clone` above); the SAME
+        // `$__wasm_set_to_list_i64` materialiser `sorted(d)` already uses copies
+        // the keys into a fresh `list[int]` record (a dict shares the set's
+        // open-assoc region — see `emit_dict_keys_to_list`) and leaves its base
+        // on the stack. The difference from `sorted(d)` is ORDER: nothing
+        // re-sorts, so the result IS the storage order, and that equals CPython's
+        // insertion order only while the module never perturbs it — hence the
+        // `check_dict_view_order` gate. Contrast the `SetToList` arm above: a
+        // set's order is unfaithful by CONSTRUCTION (xpile-insertion vs
+        // CPython-hash), so `list(s)` can never be admitted this way.
+        Expr::DictView {
+            dict,
+            kind: DictViewKind::Keys,
+        } => {
+            check_dict_view_order(scope, "list(d)", "keys")?;
+            emit_dict_keys_to_list(dict, elem, scope, out, depth)
+        }
+        // PMAT-1365: `list(d.values())` over a `dict[_, int]` — the value twin of
+        // the keys arm above, through the DISTINCT `$__wasm_dict_values_to_list_i64`
+        // materialiser (`entry+8` instead of `entry+0`; duplicates KEPT, as Python
+        // keeps them). Same order gate — `d.values()` is CPython's insertion order
+        // too, so the same hazards apply. A str-/bool-/float-VALUED dict refuses
+        // inside `emit_dict_values_to_list` (the i64 slots are pointers/bits, not
+        // ints).
+        Expr::DictView {
+            dict,
+            kind: DictViewKind::Values,
+        } => {
+            check_dict_view_order(scope, "list(d.values())", "values")?;
+            emit_dict_values_to_list(dict, elem, scope, out, depth)
+        }
         other => Err(unsupported(&format!(
             "binding a list local from {} — the WASM subset materialises a \
              list LITERAL, shares another named list local/param, sorts a \
              named list (`sorted(xs)`) or a set (`sorted(s)`), reverses one \
              (`reversed(xs)` / `xs[::-1]`), concatenates two named lists \
-             (`a + b`), or slices one (`xs[lo:hi]`); other list-returning calls \
-             are refused",
+             (`a + b`), slices one (`xs[lo:hi]`), or materialises a dict view \
+             (`list(d)` / `list(d.keys())` / `list(d.values())`); other \
+             list-returning calls are refused",
             expr_kind(other)
         ))),
     }

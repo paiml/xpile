@@ -298,6 +298,21 @@ emit_surface:
                 t = t + d[k]
             return t
 
+    - id: dict-view-materialisation
+      note: >-
+        PMAT-1365. `list(d)` / `list(d.keys())` / `list(d.values())` bind a
+        `list[int]` from a dict view — the first ORDER-OBSERVING dict
+        materialisation (`sorted(d)` / `sum(d)` re-sort or fold commutatively,
+        so they never observe storage order). Emitted ONLY while the whole
+        module preserves Python insertion order; see the `dict-view-after-removal`
+        refusal for the other half.
+      probe: |
+        def f() -> int:
+            d: dict[int, int] = {3: 30, 1: 10, 2: 20}
+            ks: list[int] = list(d)
+            vs: list[int] = list(d.values())
+            return ks[0] * 100 + ks[1] * 10 + vs[0]
+
     - id: set-int-elements
       note: "set[int] — literal, len, membership."
       probe: |
@@ -442,6 +457,22 @@ emit_surface:
         def f() -> int:
             x: float = 1.5
             return len(str(x))
+
+    - id: dict-view-after-removal
+      note: >-
+        PMAT-1365, the RED half of `dict-view-materialisation`. A dict removal
+        (`del d[k]` / `d.pop(k)`) is swap-last-into-hole, so the surviving keys
+        are no longer in insertion order; a `set` is stored in xpile-INSERTION
+        order while CPython iterates it in HASH order. Either hazard ANYWHERE in
+        the module makes an order-OBSERVING `list(d)` potentially divergent from
+        CPython, so the backend refuses it rather than emitting a plausible wrong
+        order. `sorted(d)` and `sum/min/max(d)` stay available and still emit.
+      probe: |
+        def f() -> int:
+            d: dict[int, int] = {3: 30, 1: 10, 2: 20}
+            del d[3]
+            ks: list[int] = list(d)
+            return ks[0]
 
 equations:
   wasm_emission_structure_extensionality_diamond:

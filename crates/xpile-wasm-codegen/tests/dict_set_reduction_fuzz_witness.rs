@@ -586,6 +586,17 @@ fn reductions_match_cpython_over_random_sequences() {
 /// insertion / hash order. Every such form MUST refuse at compile time. These pin
 /// the refusals so a future slice cannot quietly accept one without an order-safe
 /// model. EMIT path only — no WABT required.
+///
+/// PMAT-1365 supplied exactly that order-safe model for `list(d)` / `list(d.keys())`
+/// / `list(d.values())`, so those three moved OFF this roster — but only under a
+/// module-wide gate, and the gated shapes are re-pinned below. A dict's storage
+/// order IS Python's insertion order (`$__wasm_dict_set_<k>` is
+/// update-in-place-else-append-at-count) UNTIL a removal permutes it
+/// (swap-last-into-hole) or a `set` seeds it (xpile-insertion vs CPython-hash
+/// iteration), which is why the cases here now carry a hazard. A dict view in a
+/// hazard-FREE module is CPython-exact and executed against live python3 by
+/// `dict_view_list_witness.rs`. `list(s)` over a set stays refused unconditionally
+/// — a set has no hazard-free module, its order is unfaithful by construction.
 #[test]
 fn order_dependent_iteration_refuses() {
     let cases: &[(&str, &str)] = &[
@@ -602,12 +613,27 @@ fn order_dependent_iteration_refuses() {
             "def go() -> int:\n    d: dict[int, int] = {50: 1, 3: 1, 27: 1}\n    r: int = 0\n    for k in d.keys():\n        r = r * 10 + k\n    return r\n",
         ),
         (
-            "list-of-dict",
-            "def go() -> int:\n    d: dict[int, int] = {50: 1, 3: 1, 27: 1}\n    xs: list[int] = list(d)\n    return xs[0]\n",
+            // PMAT-1365: the bare form now EMITS; what still refuses is the form
+            // whose module perturbs the insertion order — here a `del`, which
+            // swaps the LAST entry into the hole and would walk [27, 3] where
+            // CPython walks [3, 27].
+            "list-of-dict-after-del",
+            "def go() -> int:\n    d: dict[int, int] = {50: 1, 3: 1, 27: 1}\n    del d[50]\n    xs: list[int] = list(d)\n    return xs[0]\n",
         ),
         (
-            "list-of-values",
-            "def go() -> int:\n    d: dict[int, int] = {50: 1, 3: 1, 27: 1}\n    xs: list[int] = list(d.values())\n    return xs[0]\n",
+            // Same gate through the VALUE materialiser, and via `d.pop(k)` — a
+            // removal that hides in EXPRESSION position rather than statement
+            // position.
+            "list-of-values-after-pop",
+            "def go() -> int:\n    d: dict[int, int] = {50: 1, 3: 1, 27: 1}\n    p: int = d.pop(50)\n    xs: list[int] = list(d.values())\n    return xs[0] + p\n",
+        ),
+        (
+            // A `set` ANYWHERE in the module poisons the dict view too: a dict
+            // filled while iterating a set (`for x in s: d[x] = …`, accepted
+            // since PMAT-1314) inherits xpile's insertion order where CPython
+            // used hash order.
+            "list-of-dict-with-a-set-in-scope",
+            "def go() -> int:\n    s: set[int] = {9, 4}\n    d: dict[int, int] = {50: 1, 3: 1, 27: 1}\n    xs: list[int] = list(d)\n    return xs[0] + len(s)\n",
         ),
         (
             "list-of-set",
