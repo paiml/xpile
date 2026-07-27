@@ -12855,14 +12855,7 @@ fn lean_refuses_division_by_a_divisor_it_cannot_prove_nonzero() {
     for (i, (src, what)) in refused.iter().enumerate() {
         let p = dir.join(format!("refuse_{i}.py"));
         std::fs::write(&p, src).expect("write temp py");
-        let out = run_xpile(&[
-            "transpile",
-            p.to_str().unwrap(),
-            "--target",
-            "lean",
-            "--contracts",
-            "off",
-        ]);
+        let out = run_xpile(&["transpile", p.to_str().unwrap(), "--target", "lean"]);
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
             !out.status.success(),
@@ -12903,14 +12896,7 @@ fn lean_refuses_division_by_a_divisor_it_cannot_prove_nonzero() {
     for (i, (src, needle, what)) in accepted.iter().enumerate() {
         let p = dir.join(format!("accept_{i}.py"));
         std::fs::write(&p, src).expect("write temp py");
-        let out = run_xpile(&[
-            "transpile",
-            p.to_str().unwrap(),
-            "--target",
-            "lean",
-            "--contracts",
-            "off",
-        ]);
+        let out = run_xpile(&["transpile", p.to_str().unwrap(), "--target", "lean"]);
         assert!(
             out.status.success(),
             "{what}: must still lower; stderr:\n{}",

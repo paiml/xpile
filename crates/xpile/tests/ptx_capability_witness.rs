@@ -61,8 +61,6 @@ fn transpile(src: &std::path::Path, cap: &str) -> std::process::Output {
             "ptx",
             "--hardware",
             &format!("ptx:{cap}"),
-            "--contracts",
-            "off",
         ])
         .output()
         .expect("spawn xpile")
@@ -225,8 +223,6 @@ fn empty_capability_still_falls_back_to_the_floor() {
                 "ptx",
                 "--hardware",
                 arg,
-                "--contracts",
-                "off",
             ])
             .output()
             .expect("spawn xpile");

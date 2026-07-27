@@ -3115,7 +3115,7 @@ queue:
     NEXT PICK: PMAT-1411 (R5) — assert every execution witness exercises the DEFAULT CLI flags.'
 
 - id: PMAT-1411
-  status: open
+  status: done
   date: '2026-07-29'
   ev_rank: R5
   title: Assert every execution witness exercises the DEFAULT CLI flags — PMAT-1405 shipped because the
@@ -3131,6 +3131,45 @@ queue:
     WHY IT RANKS: strictly cheaper than mutation testing and it would have caught defect #21 before a
     human did. Nobody proposed this in the gap analysis — it came out of asking why the newest defect
     escaped the newest sweep.'
+  done_note: 'SHIPPED 2026-07-27 (Day 2, PULLED FORWARD — the queue had no open item dated <= today and
+    Day <= 4 permits it). Witness crates/xpile/tests/default_flag_witness.rs (XPILE-DEFAULTFLAGS-001),
+    4 tests.
+
+    MEASURED BEFORE DESIGNING: exactly FOUR files passed a non-default `--contracts`, and THREE were
+    DECORATIVE — the flag was deleted from ptx_capability_witness / posonly_param_witness /
+    transpile_e2e and all their tests still pass. Lean is the one real deviation and it is now DECLARED
+    (`XPILE-DEFAULT-FLAGS: DEVIATES` + `DEFAULT-PATH-COVERED-BY:`). Every lane''s DEFAULT emit was run
+    through its real toolchain: rustc, wat2wasm, lean, ruchy, ptxas, sh -n, forjar validate all ACCEPT.
+    NO SECOND PMAT-1405 WAS LIVE — the queued premise was that the hole was open everywhere; it was, but
+    nothing had fallen through it yet.
+
+    RED HALF RUN PER LANE, and it FOUND TWO THINGS. (1) `sh -n` did NOT red on the injected garbage —
+    the token was a syntactically valid command word — so the shell oracle is a PARSE check only, now
+    said so in the doc; re-run with a real syntax error, it reds. (2) THE ENFORCER''S OWN EXEMPTION
+    GUARD WAS VACUOUS: it searched for the literal `emit(lane, &dir, &[])`, which ALSO occurs in the
+    guard''s own assertion MESSAGE, so deleting the default arm kept it GREEN. Needle now assembled at
+    runtime. Reading the code would not have found it.
+
+    MEASURED ASYMMETRY PINNED, NOT ASSERTED AWAY: PTX inlines NO citation under either setting
+    (`--contracts on|off` are byte-identical) — 8 of 9 lanes inline; PTX is `Citations::StructuralOnly`
+    and a change that starts inlining reds the gate.
+
+    THE INVERSE DEFECT, found by the sweep and fixed in the same PR: docs/status/CURRENT.md still
+    documented the Lean `--contracts on` breakage PMAT-1405 fixed the DAY BEFORE, and
+    claims_drift.rs::current_md_discloses_the_lean_default_contracts_caveat REQUIRED the stale sentence
+    — a GREEN TEST ENFORCING A FALSE CLAIM. Inverted to forbid the retired wording; the positive claim
+    now rests on lean_default_emit_witness.rs, which RUNS `lean`.
+
+    NEXT PICK: the queue has NO open item dated <= today after this. PMAT-1373 is 07-30 (release commit)
+    and PMAT-1374 is 07-31 (publish); PMAT-1375 is the 0.1.619 lane and must NOT start. HARD FREEZE Wed
+    2026-07-29 18:00 — Tue 07-28 and Wed morning are the last src-touching windows, so an honesty HUNT
+    is the right pick. SURFACES STILL UNSWEPT, carried forward from PMAT-1413 and narrowed by this
+    slice: (1) the WGSL contract''s missing machine-readable type surface; (2) `--emit-shims`;
+    (3) the PTX `.f32` path (nothing has reached it); (4) whether `xpile hybrid` and the other
+    non-`transpile` subcommands validate their own inputs at all — note this slice gated `transpile`''s
+    default flags ONLY, and the other subcommands have their own defaults nobody has swept; (5) NEW,
+    surfaced here: `naga` is absent on this box so the wgsl/spirv lanes'' DEFAULT emit has never been
+    checked against a shader validator by ANY witness — the two lanes skip-with-reason.'
 - id: PMAT-1413
   status: done
   ev_rank: R1

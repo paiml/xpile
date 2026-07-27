@@ -617,19 +617,54 @@ fn current_md_does_not_carry_the_2026_05_stale_claims() {
     }
 }
 
-/// The `--contracts on` Lean caveat is a CORRECTNESS caveat, not decoration:
-/// the DEFAULT emit does not elaborate. If it is dropped from CURRENT.md the
-/// file silently resumes implying the default is usable Lean.
+/// PMAT-1411 INVERTED THIS TEST, and the inversion is the point.
+///
+/// It used to REQUIRE CURRENT.md to say the DEFAULT `--target lean` emit does
+/// not elaborate and that `--contracts off` is the elaborating form. PMAT-1405
+/// then changed the lane's citation form from the unparseable
+/// `@[xpile_contract "…"]` attribute to a `/-- xpile-contract: … -/` docstring,
+/// so `lean` accepts the default emit — MEASURED 2026-07-27, `lean` exits 0,
+/// and `lean_default_emit_witness.rs` holds it there. The caveat became false
+/// the moment the defect was fixed, and this gate went on ENFORCING it: a
+/// green test demanding that the docs describe a defect that no longer exists.
+///
+/// Disclosing a caveat that has been retired is the same CLAIMS-001 falsehood
+/// as omitting a live one, just pointing the other way. So the assertion is now
+/// the NEGATIVE: the retired wording must not come back. The positive claim —
+/// that the default emit really does elaborate — is held by an EXECUTION
+/// witness (`lean_default_emit_witness.rs` runs `lean`), which is where a claim
+/// about the toolchain belongs, not by a substring in a Markdown file.
 #[test]
-fn current_md_discloses_the_lean_default_contracts_caveat() {
-    let cur = read("docs/status/CURRENT.md").to_lowercase();
-    assert!(
-        cur.contains("--contracts off"),
-        "docs/status/CURRENT.md must disclose that the DEFAULT `--contracts on` \
-         Lean emit does not elaborate (`@[xpile_contract \"…\"]` is not a \
-         registered Lean attribute; `lean` exits 1) and that `--contracts off` \
-         is the elaborating form."
-    );
+fn current_md_does_not_resurrect_the_retired_lean_contracts_caveat() {
+    let cur = read("docs/status/CURRENT.md");
+    // Wording that was true through v0.1.617 and false after PMAT-1405. Each
+    // needle is scoped tightly enough that the "Superseded:" paragraph
+    // documenting the history does not trip it.
+    let retired: &[(&str, &str)] = &[
+        (
+            "not a registered Lean attribute**",
+            "the Lean CODE lane cites via a docstring; the attribute form \
+             survives only in the never-elaborated contract-rendering lane",
+        ),
+        (
+            "For Lean output you intend to elaborate, use",
+            "the DEFAULT emit elaborates; no flag change is needed",
+        ),
+        (
+            "the default does NOT elaborate",
+            "`lean` exits 0 on the default emit (PMAT-1405)",
+        ),
+    ];
+    for &(needle, truth) in retired {
+        assert!(
+            !cur.contains(needle),
+            "docs/status/CURRENT.md re-introduced the RETIRED Lean caveat \
+             {needle:?}. Truth as of 2026-07-27: {truth}. If the default emit \
+             has genuinely regressed, `lean_default_emit_witness.rs` is where \
+             that gets caught and fixed — do not re-document the old defect to \
+             make the docs match a regression."
+        );
+    }
 }
 
 #[test]

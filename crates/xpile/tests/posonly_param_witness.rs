@@ -99,14 +99,7 @@ fn transpile(src: &str, target: &str, tag: &str) -> Result<String, String> {
     let py = dir.join("p.py");
     std::fs::write(&py, src).expect("write probe");
     let out = Command::new(xpile_bin())
-        .args([
-            "transpile",
-            py.to_str().unwrap(),
-            "--target",
-            target,
-            "--contracts",
-            "off",
-        ])
+        .args(["transpile", py.to_str().unwrap(), "--target", target])
         .output()
         .expect("spawn xpile");
     if out.status.success() {
