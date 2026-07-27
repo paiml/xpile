@@ -2935,7 +2935,7 @@ queue:
     install --path . && xpile quorum` exits 0. Best ROI in the assessment: one line repairs a user-facing
     exit 1.'
 - id: PMAT-1408
-  status: open
+  status: done
   date: '2026-07-28'
   ev_rank: R2
   title: 'Inter-crate version skew: 34x `version = "0.1.12"` at workspace version 0.1.617 — a downstream
@@ -2950,7 +2950,28 @@ queue:
     the workspace version.
 
     ACCEPTANCE: `grep -c ''0\.1\.12'' Cargo.toml` is 0; the extended gate reds on a deliberately skewed
-    dep. Do before Friday''s 31-crate publish — it silently breaks the day anything goes 0.2.0.'
+    dep. Do before Friday''s 31-crate publish — it silently breaks the day anything goes 0.2.0.
+
+    ** DONE 2026-07-27 (Day 2), PR #2001. All 34 path-deps now declare 0.1.617; `grep -c ''0\.1\.12''
+    Cargo.toml` is 0. `version.workspace = true` is NOT available inside `[workspace.dependencies]`
+    (inheritance flows workspace -> member only), so the number is necessarily duplicated and the gate
+    is the only thing holding it honest. publish_manifest_integrity.rs is 4 tests: the new equality
+    assert, a RUN red half over a synthetic manifest carrying exactly this defect (offender count pinned
+    at 2 so a commented-out dep and a version-less dep are NOT double-counted, then the fixture is
+    repaired and the detector must CLEAR), and a `rust-version` key-boundary pin. FALSIFIED ON THE REAL
+    MANIFEST too: re-skewing the single xpile-frontend line reds that test alone (3 passed / 1 failed)
+    while the tree still builds — which is why the dry-run never objected.
+
+    ** RESIDUAL: still a caret, so 0.1.617 admits 0.1.618 — a ONE-release window reachable only via an
+    explicit downstream pin, vs the 605-release window replaced. `=0.1.617` is an owner decision, not
+    taken here.
+
+    ** ⚠️ FEEDS PMAT-1373 (Thu tag cut): the version bump is now 35 LINES, not `Cargo.toml:43`. A bump
+    that touches only `[workspace.package].version` REDS the gate. A global replace of the old version
+    string across Cargo.toml does all 35; a comment at the bump site says so.
+
+    ** NEXT PICK: PMAT-1409 (R3, dated 2026-07-28) — run `cargo deny check licenses`, which has never
+    executed, SCOPED TO VISIBILITY not to a license decision.'
 - id: PMAT-1409
   status: open
   date: '2026-07-28'

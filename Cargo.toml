@@ -40,6 +40,16 @@ members = [
 ]
 
 [workspace.package]
+# RELEASE BUMP TOUCHES 35 LINES, NOT THIS ONE (PMAT-1408). Every
+# intra-workspace path-dep below repeats this number, because a
+# `[workspace.dependencies]` entry cannot inherit `[workspace.package].version`
+# (inheritance flows workspace -> member only). Through v0.1.617 they said
+# "0.1.12" while this said "0.1.617" and nothing noticed: `^0.1.12` is
+# satisfied by 0.1.617, so every dry-run packaged clean while the published
+# manifests let a resolver pair releases 605 apart. Bump the version below AND
+# every path-dep `version =` in [workspace.dependencies] in the same edit; a
+# global replace of the old version string across this file does all 35.
+# `crates/xpile/tests/publish_manifest_integrity.rs` reds if they diverge.
 version = "0.1.617"
 edition = "2021"
 rust-version = "1.93"
@@ -87,42 +97,42 @@ naga = { version = "29", default-features = false, features = ["wgsl-in", "spv-o
 provable-contracts = { version = "0.33", package = "aprender-contracts" }
 
 # Code lane: core
-xpile-agent          = { version = "0.1.12", path = "crates/xpile-agent" }
-xpile-contracts      = { version = "0.1.12", path = "crates/xpile-contracts" }
-xpile-core           = { version = "0.1.12", path = "crates/xpile-core" }
-xpile-ffi-manifest   = { version = "0.1.12", path = "crates/xpile-ffi-manifest" }
-xpile-frontend       = { version = "0.1.12", path = "crates/xpile-frontend" }
-xpile-backend        = { version = "0.1.12", path = "crates/xpile-backend" }
-xpile-llm            = { version = "0.1.12", path = "crates/xpile-llm" }
-xpile-mcp            = { version = "0.1.12", path = "crates/xpile-mcp" }
-xpile-meta-hir       = { version = "0.1.12", path = "crates/xpile-meta-hir" }
-xpile-oracle         = { version = "0.1.12", path = "crates/xpile-oracle" }
-xpile-bigint         = { version = "0.1.12", path = "crates/xpile-bigint" }
+xpile-agent          = { version = "0.1.617", path = "crates/xpile-agent" }
+xpile-contracts      = { version = "0.1.617", path = "crates/xpile-contracts" }
+xpile-core           = { version = "0.1.617", path = "crates/xpile-core" }
+xpile-ffi-manifest   = { version = "0.1.617", path = "crates/xpile-ffi-manifest" }
+xpile-frontend       = { version = "0.1.617", path = "crates/xpile-frontend" }
+xpile-backend        = { version = "0.1.617", path = "crates/xpile-backend" }
+xpile-llm            = { version = "0.1.617", path = "crates/xpile-llm" }
+xpile-mcp            = { version = "0.1.617", path = "crates/xpile-mcp" }
+xpile-meta-hir       = { version = "0.1.617", path = "crates/xpile-meta-hir" }
+xpile-oracle         = { version = "0.1.617", path = "crates/xpile-oracle" }
+xpile-bigint         = { version = "0.1.617", path = "crates/xpile-bigint" }
 
 # Code lane: frontends
-depyler-frontend = { version = "0.1.12", path = "crates/depyler-frontend" }
-decy-frontend    = { version = "0.1.12", path = "crates/decy-frontend" }
-ruchy-frontend   = { version = "0.1.12", path = "crates/ruchy-frontend" }
-bashrs-frontend  = { version = "0.1.12", path = "crates/bashrs-frontend" }
-xpile-wasm-frontend = { version = "0.1.12", path = "crates/xpile-wasm-frontend" }
+depyler-frontend = { version = "0.1.617", path = "crates/depyler-frontend" }
+decy-frontend    = { version = "0.1.617", path = "crates/decy-frontend" }
+ruchy-frontend   = { version = "0.1.617", path = "crates/ruchy-frontend" }
+bashrs-frontend  = { version = "0.1.617", path = "crates/bashrs-frontend" }
+xpile-wasm-frontend = { version = "0.1.617", path = "crates/xpile-wasm-frontend" }
 
 # Code lane: backends
-xpile-rust-codegen  = { version = "0.1.12", path = "crates/xpile-rust-codegen" }
-xpile-ruchy-codegen = { version = "0.1.12", path = "crates/xpile-ruchy-codegen" }
-xpile-ptx-codegen   = { version = "0.1.12", path = "crates/xpile-ptx-codegen" }
-xpile-wgsl-codegen  = { version = "0.1.12", path = "crates/xpile-wgsl-codegen" }
-xpile-spirv-codegen = { version = "0.1.12", path = "crates/xpile-spirv-codegen" }
-xpile-wasm-codegen  = { version = "0.1.12", path = "crates/xpile-wasm-codegen" }
-xpile-forjar-codegen = { version = "0.1.12", path = "crates/xpile-forjar-codegen" }
-xpile-lean-codegen  = { version = "0.1.12", path = "crates/xpile-lean-codegen" }
-bashrs-backend      = { version = "0.1.12", path = "crates/bashrs-backend" }
+xpile-rust-codegen  = { version = "0.1.617", path = "crates/xpile-rust-codegen" }
+xpile-ruchy-codegen = { version = "0.1.617", path = "crates/xpile-ruchy-codegen" }
+xpile-ptx-codegen   = { version = "0.1.617", path = "crates/xpile-ptx-codegen" }
+xpile-wgsl-codegen  = { version = "0.1.617", path = "crates/xpile-wgsl-codegen" }
+xpile-spirv-codegen = { version = "0.1.617", path = "crates/xpile-spirv-codegen" }
+xpile-wasm-codegen  = { version = "0.1.617", path = "crates/xpile-wasm-codegen" }
+xpile-forjar-codegen = { version = "0.1.617", path = "crates/xpile-forjar-codegen" }
+xpile-lean-codegen  = { version = "0.1.617", path = "crates/xpile-lean-codegen" }
+bashrs-backend      = { version = "0.1.617", path = "crates/bashrs-backend" }
 
 # Proof lane
-xpile-contract-frontend     = { version = "0.1.12", path = "crates/xpile-contract-frontend" }
-xpile-contract-backend      = { version = "0.1.12", path = "crates/xpile-contract-backend" }
-latex-contract-frontend     = { version = "0.1.12", path = "crates/latex-contract-frontend" }
-xpile-lean-contract-backend = { version = "0.1.12", path = "crates/xpile-lean-contract-backend" }
-xpile-latex-contract-backend = { version = "0.1.12", path = "crates/xpile-latex-contract-backend" }
+xpile-contract-frontend     = { version = "0.1.617", path = "crates/xpile-contract-frontend" }
+xpile-contract-backend      = { version = "0.1.617", path = "crates/xpile-contract-backend" }
+latex-contract-frontend     = { version = "0.1.617", path = "crates/latex-contract-frontend" }
+xpile-lean-contract-backend = { version = "0.1.617", path = "crates/xpile-lean-contract-backend" }
+xpile-latex-contract-backend = { version = "0.1.617", path = "crates/xpile-latex-contract-backend" }
 
 # ── aprender-pattern aliases ──────────────────────────────────────
 # Preserve the historic crate names from sibling repos so that
@@ -130,10 +140,10 @@ xpile-latex-contract-backend = { version = "0.1.12", path = "crates/xpile-latex-
 # (paiml/depyler etc. as ~50-line shim repos) keep importing under the
 # old names. Decision recorded 2026-05-15; see project-xpile-vision memory
 # and aprender's Cargo.toml lines 254-273 for the originating pattern.
-depyler = { version = "0.1.12", path = "crates/depyler-frontend", package = "depyler-frontend" }
-decy    = { version = "0.1.12", path = "crates/decy-frontend",    package = "decy-frontend" }
-ruchy   = { version = "0.1.12", path = "crates/ruchy-frontend",   package = "ruchy-frontend" }
-bashrs  = { version = "0.1.12", path = "crates/bashrs-frontend",  package = "bashrs-frontend" }
+depyler = { version = "0.1.617", path = "crates/depyler-frontend", package = "depyler-frontend" }
+decy    = { version = "0.1.617", path = "crates/decy-frontend",    package = "decy-frontend" }
+ruchy   = { version = "0.1.617", path = "crates/ruchy-frontend",   package = "ruchy-frontend" }
+bashrs  = { version = "0.1.617", path = "crates/bashrs-frontend",  package = "bashrs-frontend" }
 
 [profile.release]
 lto = "thin"
