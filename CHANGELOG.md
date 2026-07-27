@@ -250,6 +250,60 @@ meta-HIR and the trait surfaces.
 
 ### Added
 
+- **Native-WASM `list(d)` / `list(d.keys())` / `list(d.values())` — the first
+  ORDER-OBSERVING dict materialisation, admitted only where the order is
+  provably CPython's** (PMAT-1365). Every dict→list materialisation shipped
+  before this one was order-*blind*: `sum(d)` / `min(d)` / `max(d)` are
+  commutative folds and `sorted(d)` re-sorts, so the dict's bump-heap storage
+  order could never be observed. That is exactly why they emitted while a bare
+  `list(d)` fell into the catch-all refusal. `list(d)`'s answer **is** the
+  storage order, so it is CPython-exact only while that equals Python's
+  *insertion* order. It does — `$__wasm_dict_set_<k>` is
+  update-in-place-else-**append-at-count**, precisely CPython's dict discipline,
+  so a re-assigned key keeps its original position and a duplicate literal key
+  collapses to one entry (first position, last value); both are pinned
+  differentially. Two things break it, and **both now refuse module-wide**: a
+  *removal* (`del d[k]` / `d.pop(k)` / `s.remove(x)` / `s.discard(x)`) is
+  swap-last-into-hole + `count--`, so survivors are permuted where CPython
+  preserves their relative order; and a `set`, which xpile stores in insertion
+  order but CPython iterates in **hash** order, so a dict filled while iterating
+  one (`for x in s: d[x] = …`, accepted since PMAT-1314) inherits a non-CPython
+  order. The divergence is measured, not argued: with the gate temporarily
+  disabled, `{3: 30, 1: 10, 2: 20}` followed by `del d[3]` makes `list(d)`
+  return keys `[2, 1]` where CPython returns `[1, 2]`. The gate is *module*-wide
+  rather than per-function because a dict crosses call boundaries as a bare
+  base-pointer, so a `del` in **any** function can permute the record observed
+  here — pinned by a witness whose removal lives in a different function. **No
+  new WAT helper is minted:** the keys view reuses `$__wasm_set_to_list_i64` (a
+  dict shares the set's open-assoc region) and the values view reuses
+  `$__wasm_dict_values_to_list_i64` — the same two materialisers `sorted(d)`
+  already calls, minus the sort step. `list(d.keys())` / `list(d.values())`
+  arrive as `Clone(DictView{..})` (the frontend's `list(<already-a-list>)` copy
+  path), so `emit_list_expr` peels that wrapper over a dict view only, and the
+  two view gate-walkers plus `expr_has_heap_op` each gained an `Expr::Clone`
+  arm — without them the peeled view would `call` an undeclared materialiser and
+  fail `wat2wasm`. **The order gate is a `Debug`-rendering scan, deliberately:**
+  the hazard can hide in any of 97 `Expr` / 41 `Stmt` hosts at any depth
+  (`d.pop(k)` is an *expression*), and a missed walker arm here would not be a
+  loud `wat2wasm` failure but a silent wrong *order*; the derived `Debug` text
+  is structurally total by construction, so the scan cannot miss, and every
+  needle over-approximates in the safe direction only (an over-refusal degrades
+  exactly to the pre-slice behaviour). 21 witnesses assemble the emitted WAT
+  under `wat2wasm` and run it under `wasm-interp` against live `python3`; the
+  anti-vacuity one encodes each key **by position** over a non-sorted dict, so a
+  silently-sorted materialiser returns `123` instead of `312` and fails —
+  without it, `list(d)` could be implemented as `sorted(d)` and every other
+  equality would still pass. The red halves execute too (the same program emits
+  without the `del` and refuses with it; a `d.pop` nested in an `if` cond, a
+  `while` cond and a call arg all refuse), and an anti-over-reach pin asserts
+  `sum`/`min`/`max`/`sorted(d)` **still** emit alongside a `del`. The contract
+  gains a `dict-view-materialisation` declared row and a
+  `dict-view-after-removal` refused row, both executed in both directions by
+  PMAT-1350's surface gate. Still refused, unchanged: `list(s)` over a set (a
+  set has no hazard-free module — its order is unfaithful by construction), a
+  str-keyed dict view (`list[str]` has no WASM ABI), and a str-/bool-/float-
+  valued `.values()` view (those i64 slots hold pointers or bit patterns, not
+  ints).
 - **`xpile hybrid --verify` now EXECUTES the Shell boundary** (PMAT-1362). The
   `hybrid_shell` fixture reconciled a real `_tool : Python → Shell` shim —
   `Command::new("_tool")`, citing `C-FFI-SHELL-SUBPROCESS`, live since
