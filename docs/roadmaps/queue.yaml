@@ -2,37 +2,14 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: |-
-  2026-07-27 (toward v0.1.618 Fri 07-31. Queue REFILLED by PMAT-1403 with the two highest-EV items
-  left: R1 PMAT-1402 (WASM i64 arithmetic silently wraps, 2**64 -> 0, where CPython is
-  arbitrary-precision AND the rust lane already emits checked_mul — same source, two backends, one
-  honest and one lying) and R2 PMAT-1353 (RepairLoop CLI wiring, UN-DEFERRED because its stated
-  blocker landed as PMAT-1352/#1954 and has soaked).
-  ** PMAT-1404 DONE (hunt slice, landed alongside that refill): the WGSL/SPIR-V lanes silently HALVED
-  a C `long` to i32 at exit 0, collapsing the one distinction Type::CLong exists to carry, while the
-  SAME lane refused to write down the value it was accepting — the literal was caught incidentally by
-  naga, the parameter was not caught at all, because after map_type ran the type had already got
-  smaller. Gated by XPILE-CLONG64-001, whose 18 CLI probes each carry a FRONTEND-ACCEPTS PRECONDITION
-  so a parse failure cannot be counted as a width refusal (that trap fired during the slice itself).
-  PMAT-1401's unswept-surface item (a) is now CLOSED for wgsl/spirv; PMAT-1404's notes carry the
-  updated hunt list — remaining are --emit-crate/--emit-shims, --contracts off, the C -> PTX
-  direction, the unsigned C widths through the GPU lanes, and the WGSL contract's missing
-  machine-readable type surface.
-  ** ID COLLISION, TWICE RUNNING: this slice was re-filed 1402 -> 1404 before any push because
-  PMAT-1403's refill claimed 1402 first. Claiming an id in an UNPUSHED queue.yaml reserves nothing —
-  re-read origin/main's max id immediately before the first push. PMAT-1375 is 0.1.619 lane, DO NOT
-  START. NOT new WASM breadth outside PMAT-1402 — that grind is CLOSED for this window.
-  ** PMAT-1353 DONE 2026-07-27 (pulled forward from 07-28; no item was dated today). THE QUEUE IS NOW
-  DRAINED of every ranked item dated <= 07-28: the only OPEN entries left are PMAT-1373 (release commit,
-  07-30), PMAT-1374 (publish, 07-31) and PMAT-1375 (0.1.619 lane, DO NOT START). Days 2-3 are free for
-  new-scope TRUTH work; the 0.1.619 `next_lane` head is now the unsigned FFI call-site retype that
-  PMAT-1353 exposed. ** ITS LESSON, worth carrying: the slice's own ACCEPTANCE was UNREACHABLE as
-  written — it named a fixture whose divergence class no wired rule matches, and all THREE of the
-  agent's rule domains measured EMPTY against the live emitter, because the production seam had already
-  fixed every class they were written for. Wiring the flag and asserting the prescribed green would have
-  been a fabricated pass. MEASURE a queue item's stated domain against a force-rebuilt binary BEFORE
-  planning against it; when the domain is empty, go find a real symptom rather than reporting the
-  prescribed one.)
+updated: '2026-07-27 (post-assessment refill. A 13-agent project assessment — 7 survey dimensions, 3 gap
+  lenses, 2 adversarial critics that REFUTED 13 proposed items and ADDED 14 nobody surfaced — produced
+  a release-integrity NOW list. PMAT-1406 (the highest-severity item: a `subprocess.run` inside a class
+  method silently discarded, so an `rm -rf` became a no-op at exit 0) is already SHIPPED as #1996. These
+  five are the rest of the NOW tier, ordered by the standing EV rule. The assessment''s BIGGEST SINGLE
+  THING — that NO proof in the repo can be turned red by a wrong lowering, because contracts/lean/*.lean
+  imports only `Lake` and the Kani harness links nothing from the workspace — is NOT queued here: it is
+  gated on the owner''s narrowing decision and is a NEXT-sprint L, not a pre-release slice.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -2693,22 +2670,21 @@ queue:
     \ trapping on overflow; gated INDIVIDUALLY on call sites read back out of the emitted body. `**` does\
     \ NOT lower (no emit_binop arm) and its refusal is PINNED rather than left to silence. Witnesses:\
     \ crates/xpile-wasm-codegen/tests/i64_overflow_witness.rs, 10 tests (5 construct + 5 runtime-gated),\
-    \ incl. a ONE-MODULE-TWO-BACKENDS confrontation — xpile-rust-codegen is now a dev-dep of\
-    \ xpile-wasm-codegen because an ASYMMETRY is only assertable where both lanes are in scope. wasm 842\
-    \ -> 857 total / 333 -> 340 gated, MEASURED by running the manifest; NO floor touched.\n** FOUND EN\
-    \ ROUTE AND FIXED HERE: PMAT-1379 moved `<<`/`>>` onto helpers and never added the matching lift_call\
-    \ arms, so emit(lift(emit(M))) was BROKEN for every shifting module since it merged — no fixture\
-    \ shifted. roundtrip_shift_and_arith now covers all five helper-routed operators; red-then-green\
-    \ measured.\n** STILL WRAPS, pinned by an EXECUTED disagreement rather than prose: `1 << 63` (shift\
-    \ VALUE; PMAT-1379 fixed the COUNT only) and abs(i64::MIN). shift_count_witness.rs's residual note\
-    \ handed ownership to 'the general i64-overflow work' — i.e. THIS slice — and has been corrected so\
-    \ it stops pointing at a shipped slice. Candidate 0.1.619 lane.\n** OWNER-GATED FINDING, SURFACED NOT\
-    \ ACTED ON: live_ruleset_matches_the_committed_snapshot reds on a CLEAN origin/main checkout — the\
-    \ live org ruleset 13878864 now requires only {gate}; docs/status/ruleset-13878864.json records\
-    \ {gate, workspace-test}. Branch protection was weakened outside this repo. Re-deriving the snapshot\
-    \ would RATIFY the weakening, which is the exact failure PMAT-1347 exists to catch, so it was not\
-    \ done. The live half skips in CI (repo-scoped GITHUB_TOKEN cannot read an org ruleset), so no\
-    \ required context is red. NEXT PICK: PMAT-1353 (date 2026-07-28, R2 — RepairLoop CLI wiring)."
+    \ incl. a ONE-MODULE-TWO-BACKENDS confrontation — xpile-rust-codegen is now a dev-dep of xpile-wasm-codegen\
+    \ because an ASYMMETRY is only assertable where both lanes are in scope. wasm 842 -> 857 total / 333\
+    \ -> 340 gated, MEASURED by running the manifest; NO floor touched.\n** FOUND EN ROUTE AND FIXED HERE:\
+    \ PMAT-1379 moved `<<`/`>>` onto helpers and never added the matching lift_call arms, so emit(lift(emit(M)))\
+    \ was BROKEN for every shifting module since it merged — no fixture shifted. roundtrip_shift_and_arith\
+    \ now covers all five helper-routed operators; red-then-green measured.\n** STILL WRAPS, pinned by\
+    \ an EXECUTED disagreement rather than prose: `1 << 63` (shift VALUE; PMAT-1379 fixed the COUNT only)\
+    \ and abs(i64::MIN). shift_count_witness.rs's residual note handed ownership to 'the general i64-overflow\
+    \ work' — i.e. THIS slice — and has been corrected so it stops pointing at a shipped slice. Candidate\
+    \ 0.1.619 lane.\n** OWNER-GATED FINDING, SURFACED NOT ACTED ON: live_ruleset_matches_the_committed_snapshot\
+    \ reds on a CLEAN origin/main checkout — the live org ruleset 13878864 now requires only {gate}; docs/status/ruleset-13878864.json\
+    \ records {gate, workspace-test}. Branch protection was weakened outside this repo. Re-deriving the\
+    \ snapshot would RATIFY the weakening, which is the exact failure PMAT-1347 exists to catch, so it\
+    \ was not done. The live half skips in CI (repo-scoped GITHUB_TOKEN cannot read an org ruleset), so\
+    \ no required context is red. NEXT PICK: PMAT-1353 (date 2026-07-28, R2 — RepairLoop CLI wiring)."
 - id: PMAT-1353
   status: done
   date: '2026-07-28'
@@ -2716,62 +2692,60 @@ queue:
   gate_touch: null
   title: 'Wire the RepairLoop into the CLI: `xpile hybrid --verify --repair` — 931 lines and 18 passing
     tests that NO USER CAN INVOKE'
-  done_note: 'DONE 2026-07-27 (pulled forward from 07-28; NO item was dated today and today is day 1
-    of the v0.1.618 slate, well inside the Day-4 pull-forward cutoff). Precondition re-verified before
-    starting: the grep returned ZERO at 9aa49d9c.
+  done_note: 'DONE 2026-07-27 (pulled forward from 07-28; NO item was dated today and today is day 1 of
+    the v0.1.618 slate, well inside the Day-4 pull-forward cutoff). Precondition re-verified before starting:
+    the grep returned ZERO at 9aa49d9c.
 
     ** THE ACCEPTANCE WAS NOT REACHABLE AS WRITTEN, AND FINDING OUT WHY WAS THE SLICE. The queue said
     "the same with `--repair` exits 0 printing the applied rule chain", and named `hybrid_divergent` as
     the driving fixture. It cannot converge on that fixture: its divergence is `[1, 2.5]` vs `[1.0, 2.5]`
-    (the OPEN float-annotated-container policy), and `FloatReprRepair::is_whole_float_repr` requires
-    `expected == "{actual}.0"` with `actual` parsing as an i64. MEASURED all three rule domains against
-    the live emitter before writing any wiring: (a) the two ABI-cast rules fire on E0308, which
-    `emit_c_shim` does not produce; (b) `FloatReprRepair` targets a plain `println!("{}", <float>)`,
-    which 7 probed float shapes showed the emitter NEVER emits any more — PMAT-931''s
-    `retype_float_ffi_sites` + `Expr::ToStr{of_float}` fixed that class in the production seam. All
-    three domains were EMPTY. Wiring the flag and asserting the queue''s green would have been a
-    fabricated pass.
+    (the OPEN float-annotated-container policy), and `FloatReprRepair::is_whole_float_repr` requires `expected
+    == "{actual}.0"` with `actual` parsing as an i64. MEASURED all three rule domains against the live
+    emitter before writing any wiring: (a) the two ABI-cast rules fire on E0308, which `emit_c_shim` does
+    not produce; (b) `FloatReprRepair` targets a plain `println!("{}", <float>)`, which 7 probed float
+    shapes showed the emitter NEVER emits any more — PMAT-931''s `retype_float_ffi_sites` + `Expr::ToStr{of_float}`
+    fixed that class in the production seam. All three domains were EMPTY. Wiring the flag and asserting
+    the queue''s green would have been a fabricated pass.
 
-    ** SO THE SLICE WENT LOOKING FOR A REAL SYMPTOM AND FOUND ONE, plus the skip that was hiding it.
-    Probed 6 C signature shapes through `--emit-workspace` + `cargo build`: `unsigned int` emits a
-    workspace that DOES NOT COMPILE (`bump(3i64)` into `bump_shim(x: u32)` -> E0308). `--verify` never
-    saw it because `ctypes_name` had no `Type::CUInt` arm, so it printed "non-ABI-mappable — skipping"
-    and exited 0. A disclosed skip standing in front of an uncompilable emit. Adding the `c_uint` arm
-    (the canonical binding the shim ALREADY speaks — no semantics decided; CULong/CLong/F32/Ptr stay
-    refused) turns that into a true red AND gives the loop a production-emitted symptom it converges
-    on in 1 iteration, verified against a real `c_uint`-bound ctypes reference on both sides.
+    ** SO THE SLICE WENT LOOKING FOR A REAL SYMPTOM AND FOUND ONE, plus the skip that was hiding it. Probed
+    6 C signature shapes through `--emit-workspace` + `cargo build`: `unsigned int` emits a workspace
+    that DOES NOT COMPILE (`bump(3i64)` into `bump_shim(x: u32)` -> E0308). `--verify` never saw it because
+    `ctypes_name` had no `Type::CUInt` arm, so it printed "non-ABI-mappable — skipping" and exited 0.
+    A disclosed skip standing in front of an uncompilable emit. Adding the `c_uint` arm (the canonical
+    binding the shim ALREADY speaks — no semantics decided; CULong/CLong/F32/Ptr stay refused) turns that
+    into a true red AND gives the loop a production-emitted symptom it converges on in 1 iteration, verified
+    against a real `c_uint`-bound ctypes reference on both sides.
 
-    ** ONE OF THREE RULES IS REACHABLE and the code says so per rule rather than rounding up:
-    `FfiReturnCastRepair` targets `__r`, which lives only in `src/ffi_shims.rs` — REGENERATED from the
-    manifest every iteration, so its target text cannot occur in the candidate; `FloatReprRepair`''s
-    domain is the measured-empty one above. Wiring either would have inflated the capability count with
-    a rule that can never fire.
+    ** ONE OF THREE RULES IS REACHABLE and the code says so per rule rather than rounding up: `FfiReturnCastRepair`
+    targets `__r`, which lives only in `src/ffi_shims.rs` — REGENERATED from the manifest every iteration,
+    so its target text cannot occur in the candidate; `FloatReprRepair`''s domain is the measured-empty
+    one above. Wiring either would have inflated the capability count with a rule that can never fire.
 
-    ** RELEASE-WINDOW SAFETY VERIFIED TWO WAYS, not asserted once: (a) two-binary hand check —
-    `--verify` on all TEN pre-existing `hybrid_*` fixtures, stdout + stderr + exit code byte-identical
-    between origin/main 9aa49d9c and the branch; (b) in-tree and permanent,
-    `repair_off_is_byte_identical_to_plain_verify`. BOTH falsification passes run: neutering
-    `boundary_repair_rules` reds 3 of 7 witnesses, removing the CUInt arm reds 2.
+    ** RELEASE-WINDOW SAFETY VERIFIED TWO WAYS, not asserted once: (a) two-binary hand check — `--verify`
+    on all TEN pre-existing `hybrid_*` fixtures, stdout + stderr + exit code byte-identical between origin/main
+    9aa49d9c and the branch; (b) in-tree and permanent, `repair_off_is_byte_identical_to_plain_verify`.
+    BOTH falsification passes run: neutering `boundary_repair_rules` reds 3 of 7 witnesses, removing the
+    CUInt arm reds 2.
 
-    ** 7 witnesses in the NEW file crates/xpile/tests/hybrid_repair.rs + fixture hybrid_unsigned/.
-    witness_floor.rs UNTOUCHED (its `hybrid_witness_count()` hardcodes three filenames and a NEW file
-    contributes zero, so HYBRID_FLOOR = 3 is unaffected) — the two permitted 0.1.618 touches remain
-    PMAT-1372 and PMAT-1373. `wrapper_native` made public in xpile-ffi-manifest so the repair rule''s
-    cast type comes from the SAME function that emitted the wrapper, not a second copy of that table.
+    ** 7 witnesses in the NEW file crates/xpile/tests/hybrid_repair.rs + fixture hybrid_unsigned/. witness_floor.rs
+    UNTOUCHED (its `hybrid_witness_count()` hardcodes three filenames and a NEW file contributes zero,
+    so HYBRID_FLOOR = 3 is unaffected) — the two permitted 0.1.618 touches remain PMAT-1372 and PMAT-1373.
+    `wrapper_native` made public in xpile-ffi-manifest so the repair rule''s cast type comes from the
+    SAME function that emitted the wrapper, not a second copy of that table.
 
-    ** INVERTED TRIPWIRE, acknowledged in place: hybrid_unsigned is asserted to FAIL TO BUILD, so it
-    reds the day the frontend retypes unsigned call sites. Fixture header + test module doc each name
-    the bug and the exact edit to make then.
+    ** INVERTED TRIPWIRE, acknowledged in place: hybrid_unsigned is asserted to FAIL TO BUILD, so it reds
+    the day the frontend retypes unsigned call sites. Fixture header + test module doc each name the bug
+    and the exact edit to make then.
 
-    ** LOGGED TO 0.1.619 (see next_lane): the actual FIX for the unsigned call-site retype (a
-    `retype_uint_ffi_sites` mirroring PMAT-931 — unsigned-semantics work, NOT a release-week change);
-    `--repair-out <dir>` (the `run_and_commit` write path); `ctypes_name` arms for CULong/CLong/F32/Ptr.
+    ** LOGGED TO 0.1.619 (see next_lane): the actual FIX for the unsigned call-site retype (a `retype_uint_ffi_sites`
+    mirroring PMAT-931 — unsigned-semantics work, NOT a release-week change); `--repair-out <dir>` (the
+    `run_and_commit` write path); `ctypes_name` arms for CULong/CLong/F32/Ptr.
 
-    ** NEXT PICK: the queue has NO open item dated <= 2026-07-28 left. PMAT-1373 (release commit) is
-    dated 07-30 and PMAT-1374 (publish) 07-31; PMAT-1375 is the 0.1.619 lane, DO NOT START. Days 2-3
-    are therefore free for pull-forward or new-scope TRUTH work — prefer the 0.1.619 `next_lane` items
-    this slice just logged, or a fresh honesty hunt. The HARD FREEZE is Wed 2026-07-29 18:00 local:
-    after it, no merge may touch crates/*/src, contracts/*.yaml or any gate.'
+    ** NEXT PICK: the queue has NO open item dated <= 2026-07-28 left. PMAT-1373 (release commit) is dated
+    07-30 and PMAT-1374 (publish) 07-31; PMAT-1375 is the 0.1.619 lane, DO NOT START. Days 2-3 are therefore
+    free for pull-forward or new-scope TRUTH work — prefer the 0.1.619 `next_lane` items this slice just
+    logged, or a fresh honesty hunt. The HARD FREEZE is Wed 2026-07-29 18:00 local: after it, no merge
+    may touch crates/*/src, contracts/*.yaml or any gate.'
   notes: 'UN-DEFERRED 2026-07-27. The deferral reason has EXPIRED and that is the whole justification:
     it was held back because its prerequisite was a fixture that actually DIVERGES, and that landed this
     morning as PMAT-1352 (#1954, DIVERGENT-arm falsifier) and has soaked. Re-verify before starting: `grep
@@ -2796,128 +2770,207 @@ queue:
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: 'The WGSL/SPIR-V lanes silently HALVED a C `long` to `i32` at exit 0, collapsing the one
-    distinction `Type::CLong` exists to carry — while the SAME lane refused to write down the value
-    it was accepting'
+  title: The WGSL/SPIR-V lanes silently HALVED a C `long` to `i32` at exit 0, collapsing the one distinction
+    `Type::CLong` exists to carry — while the SAME lane refused to write down the value it was accepting
   notes: 'DONE 2026-07-27 (Day 2). SELF-DIRECTED under the queue''s "Days 2-3 capacity: the honesty hunt"
     clause, taking unswept-surface item (a) that PMAT-1401 named on its way out: the C -> {wgsl, spirv,
-    ptx} direction. THE ID WAS CLAIMED IN THIS FILE BEFORE THE PR WAS OPENED, per PMAT-1401''s own
-    closing lesson about the PMAT-1400 collision. ** THE DEFECT: decy-frontend introduced Type::CLong
-    for exactly one purpose, stated in its own module docs — to keep the 64-bit C widths (long / long
-    long / int64_t) APART from Type::I64, where the 32-bit C `int` and the width-less Python `int` both
-    land. wgsl_emit.rs folded them straight back together (`Type::I64 | Type::CLong => Ok(WgslTy::I32)`)
-    at BOTH type-map sites. `long f(long a) { return a + 1; }` emitted `fn f(a: i32) -> i32` at EXIT 0;
-    half the declared domain of f cannot be passed to that function and nothing said so. SPIR-V
-    inherited it verbatim. ** NOT a documented posture: the lane already refuses the other three 64-bit
-    C types, and the f64 refusal states the doctrine verbatim ("substituting f32 would change numeric
-    results, so the WGSL subset refuses f64 rather than narrow it silently"). Signed `long` was the ONE
-    64-bit type taking the silent narrowing. ** THE SHAPE WORTH REMEMBERING — IT REFUSED TO WRITE DOWN
-    WHAT IT SILENTLY ACCEPTED: `return 3000000000;` inside a `long` function refused ("the concrete type
-    i32 cannot represent the abstract value 3000000000 accurately") while the `long` PARAMETER carrying
-    exactly that value emitted clean. The literal was caught incidentally BY NAGA; the parameter was not
-    caught at all, because after map_type ran there was nothing left to catch — the type had already got
-    smaller. A validator can only police the values you still ask it about, so a downstream validator is
-    NOT a width gate. ** CROSS-BACKEND RECEIPT: same source, five backends, only the two GPU lanes lost
-    the width (rust i64, wasm i64, ptx .s64) — so 64 bits is correct and the WGSL refusal is a real lane
-    limit, not xpile giving up. The refusal names those three alternatives. ** FIX refuses CLong at both
-    sites via one shared CLONG_REFUSAL const; Type::I64 DELIBERATELY still maps to i32 (refusing it would
-    delete the lane — every Python function lowers through it — and an UNDECLARED width contradicts
-    nothing the user wrote; the literal half is already PMAT-1401''s). ** GATE XPILE-CLONG64-001
-    (crates/xpile/tests/c_long_gpu_width_witness.rs, 5 tests, no skip path on any xpile assertion), 18
-    CLI-path probes; the refusal must NAME THE WIDTH, not merely be an Err. Each probe carries a
-    FRONTEND-ACCEPTS PRECONDITION (must emit i64 on the Rust lane first) because a probe that fails to
-    PARSE also "refuses" — THAT TRAP FIRED HERE: the first local_decl probe used a cast the C frontend
-    does not support and the test NAMED it rather than passing. ** HONEST COVERAGE BOUNDARY: the list[…]
-    element site is NOT CLI-reachable (decy cannot parse `xs[0]` at all; Python never makes CLong), so it
-    is covered by a hand-built-meta-HIR unit test that says so in its own doc comment, NOT by a CLI probe
-    that would have "passed" on a parse error. ** RED-THEN-GREEN both sites independently: scalar revert
-    = 18/18 probes narrow, 3 of 5 tests red (the 2 that stay green are exactly the accept-side receipt
-    and the vacuity guard — the evidence this is not a blanket refusal); list revert reds the unit test.
-    ** NOT a gate_touch, NOT a witness_floor.rs touch (no GPU lane has a floor). ** NEXT PICK: the
-    scheduled queue is STILL empty until Thu 2026-07-30 (PMAT-1373, the release commit; gate touch #3 is
-    RESERVED for it). PMAT-1375 is 0.1.619 lane, DO NOT START. Days 2-3 remaining capacity: continue the
-    honesty hunt on the surface PMAT-1401 listed, now with (a) CLOSED for the wgsl/spirv half — REMAINING
+    ptx} direction. THE ID WAS CLAIMED IN THIS FILE BEFORE THE PR WAS OPENED, per PMAT-1401''s own closing
+    lesson about the PMAT-1400 collision. ** THE DEFECT: decy-frontend introduced Type::CLong for exactly
+    one purpose, stated in its own module docs — to keep the 64-bit C widths (long / long long / int64_t)
+    APART from Type::I64, where the 32-bit C `int` and the width-less Python `int` both land. wgsl_emit.rs
+    folded them straight back together (`Type::I64 | Type::CLong => Ok(WgslTy::I32)`) at BOTH type-map
+    sites. `long f(long a) { return a + 1; }` emitted `fn f(a: i32) -> i32` at EXIT 0; half the declared
+    domain of f cannot be passed to that function and nothing said so. SPIR-V inherited it verbatim. **
+    NOT a documented posture: the lane already refuses the other three 64-bit C types, and the f64 refusal
+    states the doctrine verbatim ("substituting f32 would change numeric results, so the WGSL subset refuses
+    f64 rather than narrow it silently"). Signed `long` was the ONE 64-bit type taking the silent narrowing.
+    ** THE SHAPE WORTH REMEMBERING — IT REFUSED TO WRITE DOWN WHAT IT SILENTLY ACCEPTED: `return 3000000000;`
+    inside a `long` function refused ("the concrete type i32 cannot represent the abstract value 3000000000
+    accurately") while the `long` PARAMETER carrying exactly that value emitted clean. The literal was
+    caught incidentally BY NAGA; the parameter was not caught at all, because after map_type ran there
+    was nothing left to catch — the type had already got smaller. A validator can only police the values
+    you still ask it about, so a downstream validator is NOT a width gate. ** CROSS-BACKEND RECEIPT: same
+    source, five backends, only the two GPU lanes lost the width (rust i64, wasm i64, ptx .s64) — so 64
+    bits is correct and the WGSL refusal is a real lane limit, not xpile giving up. The refusal names
+    those three alternatives. ** FIX refuses CLong at both sites via one shared CLONG_REFUSAL const; Type::I64
+    DELIBERATELY still maps to i32 (refusing it would delete the lane — every Python function lowers through
+    it — and an UNDECLARED width contradicts nothing the user wrote; the literal half is already PMAT-1401''s).
+    ** GATE XPILE-CLONG64-001 (crates/xpile/tests/c_long_gpu_width_witness.rs, 5 tests, no skip path on
+    any xpile assertion), 18 CLI-path probes; the refusal must NAME THE WIDTH, not merely be an Err. Each
+    probe carries a FRONTEND-ACCEPTS PRECONDITION (must emit i64 on the Rust lane first) because a probe
+    that fails to PARSE also "refuses" — THAT TRAP FIRED HERE: the first local_decl probe used a cast
+    the C frontend does not support and the test NAMED it rather than passing. ** HONEST COVERAGE BOUNDARY:
+    the list[…] element site is NOT CLI-reachable (decy cannot parse `xs[0]` at all; Python never makes
+    CLong), so it is covered by a hand-built-meta-HIR unit test that says so in its own doc comment, NOT
+    by a CLI probe that would have "passed" on a parse error. ** RED-THEN-GREEN both sites independently:
+    scalar revert = 18/18 probes narrow, 3 of 5 tests red (the 2 that stay green are exactly the accept-side
+    receipt and the vacuity guard — the evidence this is not a blanket refusal); list revert reds the
+    unit test. ** NOT a gate_touch, NOT a witness_floor.rs touch (no GPU lane has a floor). ** NEXT PICK:
+    the scheduled queue is STILL empty until Thu 2026-07-30 (PMAT-1373, the release commit; gate touch
+    #3 is RESERVED for it). PMAT-1375 is 0.1.619 lane, DO NOT START. Days 2-3 remaining capacity: continue
+    the honesty hunt on the surface PMAT-1401 listed, now with (a) CLOSED for the wgsl/spirv half — REMAINING
     are (b) `--emit-crate` and the hybrid `--emit-shims` paths, which no validator-acceptance property
     covers, and (c) `--contracts off` as a distinct emit mode. NEWLY SURFACED HERE, in rough EV order:
     (d) the C -> PTX direction was NOT swept for width defects (ptx maps CLong to .s64, which is right,
-    but nothing pins it and `--hardware` is CLI-required so no existing corpus reaches it); (e) the
-    `unsigned` C widths (CUInt/CULong) through the GPU lanes — CUInt -> u32 accepts, and a mixed
-    `unsigned + int` add already refuses, but no gate pins either; (f) contracts/compile-rust-to-wgsl-v1.yaml
-    has NO machine-readable type surface at all, unlike the WASM contract whose subset is checked both
-    ways (PMAT-1342) — so no contract asserts which types this lane accepts. Do NOT open new WASM breadth;
-    that grind is CLOSED for this window.
+    but nothing pins it and `--hardware` is CLI-required so no existing corpus reaches it); (e) the `unsigned`
+    C widths (CUInt/CULong) through the GPU lanes — CUInt -> u32 accepts, and a mixed `unsigned + int`
+    add already refuses, but no gate pins either; (f) contracts/compile-rust-to-wgsl-v1.yaml has NO machine-readable
+    type surface at all, unlike the WASM contract whose subset is checked both ways (PMAT-1342) — so no
+    contract asserts which types this lane accepts. Do NOT open new WASM breadth; that grind is CLOSED
+    for this window.
 
-    ** ID RE-FILED 1402 -> 1404 BEFORE ANY PUSH. A concurrent fire merged PR #1991 while this
-    slice was in the gate, and its queue refill claimed PMAT-1402 for a DIFFERENT slice (WASM i64
-    wraparound) plus PMAT-1403 for the refill itself. Main won; this slice was re-filed as PMAT-1404
-    in every artefact and the local commit amended, so NOTHING was published under a collided id and
-    no history was rewritten. ** THE LESSON PMAT-1401 DREW IS NOT ENOUGH, and this is the refinement:
-    it said "claim the id in queue.yaml BEFORE opening the PR". This slice DID that — and still
-    collided, because the claim lived in an unpushed worktree. A claim reserves an id only once it is
-    ON MAIN. Two fires both reading `max(id)+1` from origin/main pick the same number no matter how
-    early each writes it locally. The cheap fix that actually works: re-read origin/main''s max id
-    immediately before the first push, and treat a merge conflict in the ledger as an id-collision
-    signal rather than a text conflict.'
+    ** ID RE-FILED 1402 -> 1404 BEFORE ANY PUSH. A concurrent fire merged PR #1991 while this slice was
+    in the gate, and its queue refill claimed PMAT-1402 for a DIFFERENT slice (WASM i64 wraparound) plus
+    PMAT-1403 for the refill itself. Main won; this slice was re-filed as PMAT-1404 in every artefact
+    and the local commit amended, so NOTHING was published under a collided id and no history was rewritten.
+    ** THE LESSON PMAT-1401 DREW IS NOT ENOUGH, and this is the refinement: it said "claim the id in queue.yaml
+    BEFORE opening the PR". This slice DID that — and still collided, because the claim lived in an unpushed
+    worktree. A claim reserves an id only once it is ON MAIN. Two fires both reading `max(id)+1` from
+    origin/main pick the same number no matter how early each writes it locally. The cheap fix that actually
+    works: re-read origin/main''s max id immediately before the first push, and treat a merge conflict
+    in the ledger as an id-collision signal rather than a text conflict.'
 - id: PMAT-1405
   status: done
   ev_rank: R1
   gate_touch: null
   date: '2026-07-27'
-  title: 'The DEFAULT `--target lean` emit exited 0 writing Lean that does not PARSE —
-    `@[xpile_contract "…"]` is a registered Lean attribute NOWHERE. The only backend
-    whose default output its own toolchain could not read; documented in THREE places
-    and gated in ZERO, while the lane''s own semantic witness passed `--contracts off`.'
-  notes: 'DONE 2026-07-27. Found by an honesty HUNT after the queue drained for today
-    (PMAT-1353 merged as #1994; nothing else open with date <= 2026-07-27, and
-    PMAT-1373/1374 are date-gated to 07-30/07-31). Swept the surface PMAT-1404 left
-    open: `--emit-crate` (HONEST — refuses all 8 non-rust targets by name, emits a
-    crate that `cargo build`s and cross-builds to wasm32-wasip1), `--contracts off`
-    (HONEST — 0 citations remaining on all 6 emitting backends), unsigned C widths
-    through the GPU/WASM lanes (HONEST — CULong/CUInt refuse with a named type;
-    `--target rust` correctly emits `wrapping_*`, which IS C''s defined modular
-    semantics for unsigned). The Lean DEFAULT emit was the one that lied.
+  title: The DEFAULT `--target lean` emit exited 0 writing Lean that does not PARSE — `@[xpile_contract
+    "…"]` is a registered Lean attribute NOWHERE. The only backend whose default output its own toolchain
+    could not read; documented in THREE places and gated in ZERO, while the lane's own semantic witness
+    passed `--contracts off`.
+  notes: 'DONE 2026-07-27. Found by an honesty HUNT after the queue drained for today (PMAT-1353 merged
+    as #1994; nothing else open with date <= 2026-07-27, and PMAT-1373/1374 are date-gated to 07-30/07-31).
+    Swept the surface PMAT-1404 left open: `--emit-crate` (HONEST — refuses all 8 non-rust targets by
+    name, emits a crate that `cargo build`s and cross-builds to wasm32-wasip1), `--contracts off` (HONEST
+    — 0 citations remaining on all 6 emitting backends), unsigned C widths through the GPU/WASM lanes
+    (HONEST — CULong/CUInt refuse with a named type; `--target rust` correctly emits `wrapping_*`, which
+    IS C''s defined modular semantics for unsigned). The Lean DEFAULT emit was the one that lied.
 
 
-    ** THE FIX IS A LEAN DOCSTRING and the argument matters, because
-    audit-design.md §7 had explicitly ruled out "switch to a comment" and
-    prescribed a separately-imported prelude instead. §7 weighed only TWO options;
-    the docstring is a third that dominates both — it PARSES standalone AND is
-    resolvable by declaration name via `Lean.findDocString?`, which is the exact
-    structured Lean-native resolution the attribute was chosen for and never
-    delivered (nothing registers it, so no file carrying it ever elaborated, so no
-    environment ever held it). A LINE COMMENT FAILS that retrieval — measured, not
-    argued — so this is not the rejected comment fix; and it keeps the emit
-    self-contained, which the prelude fix would have spent on a mandatory `import`.
+    ** THE FIX IS A LEAN DOCSTRING and the argument matters, because audit-design.md §7 had explicitly
+    ruled out "switch to a comment" and prescribed a separately-imported prelude instead. §7 weighed only
+    TWO options; the docstring is a third that dominates both — it PARSES standalone AND is resolvable
+    by declaration name via `Lean.findDocString?`, which is the exact structured Lean-native resolution
+    the attribute was chosen for and never delivered (nothing registers it, so no file carrying it ever
+    elaborated, so no environment ever held it). A LINE COMMENT FAILS that retrieval — measured, not argued
+    — so this is not the rejected comment fix; and it keeps the emit self-contained, which the prelude
+    fix would have spent on a mandatory `import`.
 
 
-    ** STANDING LESSON (the reason this is a truth-work slice and not a Lean slice):
-    DISCLOSURE IS NOT A GATE. The defect was written down in three places and
-    enforced by none, and the lane''s semantic oracle passed `--contracts off`, so a
-    green 6/6 corpus certified a flag combination the default invocation never
-    takes. When a witness routes AROUND a broken path, it measures nothing about it
-    — the new witness passes NO `--contracts` flag at all, so a change to the
-    default VALUE reds too.
+    ** STANDING LESSON (the reason this is a truth-work slice and not a Lean slice): DISCLOSURE IS NOT
+    A GATE. The defect was written down in three places and enforced by none, and the lane''s semantic
+    oracle passed `--contracts off`, so a green 6/6 corpus certified a flag combination the default invocation
+    never takes. When a witness routes AROUND a broken path, it measures nothing about it — the new witness
+    passes NO `--contracts` flag at all, so a change to the default VALUE reds too.
 
 
-    ** ALSO FOUND, second-order: the CODE lane was never contract-bound to the
-    attribute. The invariant is guarded by `config.format == LeanTheorem` and
-    neither governing contract mentions `Target::Lean`, so example 02''s "required by
-    C-XPILE-CONTRACT-BACKEND-TRAIT" was itself false. The contract-RENDERING lane is
-    untouched and keeps the attribute.
+    ** ALSO FOUND, second-order: the CODE lane was never contract-bound to the attribute. The invariant
+    is guarded by `config.format == LeanTheorem` and neither governing contract mentions `Target::Lean`,
+    so example 02''s "required by C-XPILE-CONTRACT-BACKEND-TRAIT" was itself false. The contract-RENDERING
+    lane is untouched and keeps the attribute.
 
 
-    ** NEXT PICK: the queue again has NO open item dated <= today. PMAT-1373
-    (release commit) is 07-30 and PMAT-1374 (publish) 07-31; PMAT-1375 is the
-    0.1.619 lane, DO NOT START. HARD FREEZE is Wed 2026-07-29 18:00 local — after it
-    no merge may touch crates/*/src, contracts/*.yaml or any gate. Tue 07-28 and Wed
-    (pre-18:00) are free for another honesty hunt. UNSWEPT SURFACE LEFT BY THIS
-    SLICE: the C -> PTX direction (needs `--hardware ptx:sm_89`; every C probe here
-    stopped at "missing hardware profile" so PTX got NO coverage this slice), the
-    WGSL contract''s missing machine-readable type surface, `--emit-shims`, and the C
-    integer-literal SUFFIX forms `1U`/`1L`/`1UL`, which the C frontend REFUSES at
-    parse time ("expected Semi, found Ident(\"UL\")") — an honest refusal, but it
-    means every unsigned/long C probe must use bare literals or it measures the
-    lexer instead of the backend.'
+    ** NEXT PICK: the queue again has NO open item dated <= today. PMAT-1373 (release commit) is 07-30
+    and PMAT-1374 (publish) 07-31; PMAT-1375 is the 0.1.619 lane, DO NOT START. HARD FREEZE is Wed 2026-07-29
+    18:00 local — after it no merge may touch crates/*/src, contracts/*.yaml or any gate. Tue 07-28 and
+    Wed (pre-18:00) are free for another honesty hunt. UNSWEPT SURFACE LEFT BY THIS SLICE: the C -> PTX
+    direction (needs `--hardware ptx:sm_89`; every C probe here stopped at "missing hardware profile"
+    so PTX got NO coverage this slice), the WGSL contract''s missing machine-readable type surface, `--emit-shims`,
+    and the C integer-literal SUFFIX forms `1U`/`1L`/`1UL`, which the C frontend REFUSES at parse time
+    ("expected Semi, found Ident(\"UL\")") — an honest refusal, but it means every unsigned/long C probe
+    must use bare literals or it measures the lexer instead of the backend.'
+- id: PMAT-1407
+  status: open
+  date: '2026-07-27'
+  ev_rank: R1
+  title: Package contracts/**/*.yaml into the published crate — `quorum`/`diamond`/`attestations` exit
+    1 for anyone who ran the README's own `cargo install xpile`
+  notes: 'MEASURED: xpile-0.1.617.crate has 916 entries and ZERO contract YAMLs (899 of the 916 are test
+    fixtures). So the three subcommands the README leads with as its anti-rot device all exit 1 for every
+    installed user, while working perfectly from a git checkout — which is why nobody noticed.
+
+    FIX: one `include = ["contracts/**/*.yaml", ...]` in crates/xpile/Cargo.toml (adding `include` makes
+    it AUTHORITATIVE, so enumerate src/ and anything else needed or the crate loses files — verify with
+    `cargo package --list`).
+
+    ACCEPTANCE: `cargo package --list -p xpile | grep -c contracts/` is non-zero, and a clean-room `cargo
+    install --path . && xpile quorum` exits 0. Best ROI in the assessment: one line repairs a user-facing
+    exit 1.'
+- id: PMAT-1408
+  status: open
+  date: '2026-07-28'
+  ev_rank: R2
+  title: 'Inter-crate version skew: 34x `version = "0.1.12"` at workspace version 0.1.617 — a downstream
+    lockfile can legally pair 0.1.617 with 0.1.12'
+  notes: 'MEASURED: published xpile-core 0.1.617 declares 26 of 27 sibling deps at `^0.1.12`. A resolver
+    may pick a combination that was NEVER built or tested. `cargo publish --dry-run` CANNOT catch it because
+    `^0.1.12` is satisfiable by 0.1.617 — the manifest is valid, just wrong.
+
+    FIX: set the intra-workspace dep versions to the workspace version (or `version.workspace = true`
+    where the dependency table allows). Then GATE it: extend crates/xpile/tests/publish_manifest_integrity.rs
+    — which already asserts every path dep carries a `version =` — to also assert that version EQUALS
+    the workspace version.
+
+    ACCEPTANCE: `grep -c ''0\.1\.12'' Cargo.toml` is 0; the extended gate reds on a deliberately skewed
+    dep. Do before Friday''s 31-crate publish — it silently breaks the day anything goes 0.2.0.'
+- id: PMAT-1409
+  status: open
+  date: '2026-07-28'
+  ev_rank: R3
+  title: Run the dependency checks the repo already configured — `cargo deny check licenses` has NEVER
+    executed and fails with 18 rejections incl. 10x LGPL-3.0-only in the shipped binary
+  notes: 'MEASURED UNPIPED: `cargo deny check licenses` -> EXIT 4, 18 rejections: 10x LGPL-3.0-only (malachite
+    family, reaching the shipped binary as NORMAL deps via rustpython-parser -> depyler-frontend -> xpile-core
+    -> xpile), 4x CC0-1.0, 4x Zlib. The workspace declares `license = "MIT OR Apache-2.0"` and there is
+    NO NOTICE/THIRD-PARTY file. deny.toml configures [licenses] AND [bans]; ci.yml:47-48 runs ONLY `cargo
+    deny check advisories`, so both have never once run. Same declared-but-never-executed shape as the
+    unreachable RepairLoop.
+
+    ⚠️ SCOPE THIS SLICE TO VISIBILITY, NOT TO A LICENSE DECISION. Adding `check licenses` to the REQUIRED
+    `gate` job would wedge every merge on day one. Add it as a SEPARATE ADVISORY job (mirroring kani/lake-build)
+    so the failure is visible and recorded, and add a NOTICE/THIRD-PARTY file enumerating what is actually
+    linked.
+
+    WHAT TO DO ABOUT THE LGPL ITSELF IS AN OWNER DECISION (queue.yaml owner_decisions) — accept+document,
+    replace rustpython-parser (multi-month), or neither. Do NOT decide it in this slice; surface it.
+
+    ACCEPTANCE: the advisory job runs and reports; NOTICE exists; the owner decision is recorded, not
+    silently made.'
+- id: PMAT-1410
+  status: open
+  date: '2026-07-29'
+  ev_rank: R4
+  title: Refuse the two verified exit-0-uncompilable Python shapes (unannotated param in call position;
+    `from pkg.util import X` silently dropped)
+  notes: 'Both reproduce from two lines of Python and both directly refute the README''s central promise.
+
+    (a) An unannotated parameter used in CALL position is typed i64 and emitted as a call -> rustc `error[E0618]`,
+    AND the emit carries a contract citation. depyler-frontend/src/lib.rs:3267 defaults unannotated params
+    to I64; the refusal exists only for RETURNING a callable. The backend already knows `f` is called
+    — it emitted a call expression — so the information needed to refuse is present.
+
+    (b) `from pkg.util import double` is silently DROPPED -> rustc `error[E0425]`. Refusing non-stdlib
+    imports is the defensible interim; the full module system is XL and explicitly NOT in scope.
+
+    ACCEPTANCE: both shapes exit non-zero with a message naming the construct; a witness pins each; no
+    currently-compiling fixture regresses (run the full rust-diff corpus).'
+- id: PMAT-1411
+  status: open
+  date: '2026-07-29'
+  ev_rank: R5
+  title: Assert every execution witness exercises the DEFAULT CLI flags — PMAT-1405 shipped because the
+    Lean lane's own witness passed `--contracts off`
+  notes: 'PMAT-1405 (the default `--target lean` emit writing Lean that does not parse) merged DURING
+    the project assessment, from the lane that had just been swept. It shipped because the lane''s own
+    semantic witness invoked `--contracts off`, leaving the DEFAULT path — the one every user gets — ungated
+    in every lane.
+
+    FIX: a gate asserting each lane''s execution witness exercises the default flag set, or explicitly
+    declares and justifies its deviation. One line per lane.
+
+    WHY IT RANKS: strictly cheaper than mutation testing and it would have caught defect #21 before a
+    human did. Nobody proposed this in the gap analysis — it came out of asking why the newest defect
+    escaped the newest sweep.'
 - id: PMAT-1373
   status: open
   ev_rank: R1
@@ -2981,25 +3034,24 @@ queue:
     A7: NO Friday code. A Friday defect means A6, never a same-day hotfix onto the release SHA.'
   date: '2026-07-31'
 next_lane:
-- 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by
-  PMAT-1353 (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)`
-  reconciles cleanly and `emit_c_shim` gets the wrapper right (`f_shim(x: u32) -> u32`, PMAT-918), but
-  the Python frontend lowers the boundary call with its unknown-callee `i64` default, so the emitted
-  workspace fails `cargo build` with E0308 "expected `u32`, found `i64`". As of PMAT-1353 `--verify`
-  REPORTS this (exit 1) instead of skipping it, and `--verify --repair` converges on it — so the defect
-  is now visible and worked around, not fixed. THE FIX is a `retype_uint_ffi_sites` mirroring
-  `retype_float_ffi_sites`: after `FfiManifest::reconcile`, re-type the calling module''s FFI call sites
-  for reconciled CUInt/CULong-returning symbols. UNSIGNED SEMANTICS ARE THE HARD PART, which is why this
-  is not a release-week change: Python ints are signed and arbitrary-precision, so `f(-1)` and
-  `f(2**32)` need a stated policy (refuse? wrap? trap?) rather than a silent `as u32`, and PMAT-1395''s
-  lesson applies directly — coercing to make the output compile can install a silent wrong answer.
-  WHEN IT LANDS, `crates/xpile/tests/fixtures/hybrid_unsigned/` stops failing to build and two of
-  `hybrid_repair.rs`''s seven witnesses go RED by design; re-point the repair witness at whatever E0308
-  the emitter then produces, or record that `FfiArgCastRepair`''s domain has become empty too. RELATED
-  and smaller: `--repair-out <dir>` (the disciplined `RepairLoop::run_and_commit` write path, which
-  `--repair` deliberately does not use), and `ctypes_name` arms for CULong/CLong/F32/Ptr — each needs
-  its own PROBED binding decision, since an unprobed guess there re-creates exactly the false green
-  PMAT-1353 removed.'
+- 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
+  (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
+  cleanly and `emit_c_shim` gets the wrapper right (`f_shim(x: u32) -> u32`, PMAT-918), but the Python
+  frontend lowers the boundary call with its unknown-callee `i64` default, so the emitted workspace fails
+  `cargo build` with E0308 "expected `u32`, found `i64`". As of PMAT-1353 `--verify` REPORTS this (exit
+  1) instead of skipping it, and `--verify --repair` converges on it — so the defect is now visible and
+  worked around, not fixed. THE FIX is a `retype_uint_ffi_sites` mirroring `retype_float_ffi_sites`: after
+  `FfiManifest::reconcile`, re-type the calling module''s FFI call sites for reconciled CUInt/CULong-returning
+  symbols. UNSIGNED SEMANTICS ARE THE HARD PART, which is why this is not a release-week change: Python
+  ints are signed and arbitrary-precision, so `f(-1)` and `f(2**32)` need a stated policy (refuse? wrap?
+  trap?) rather than a silent `as u32`, and PMAT-1395''s lesson applies directly — coercing to make the
+  output compile can install a silent wrong answer. WHEN IT LANDS, `crates/xpile/tests/fixtures/hybrid_unsigned/`
+  stops failing to build and two of `hybrid_repair.rs`''s seven witnesses go RED by design; re-point the
+  repair witness at whatever E0308 the emitter then produces, or record that `FfiArgCastRepair`''s domain
+  has become empty too. RELATED and smaller: `--repair-out <dir>` (the disciplined `RepairLoop::run_and_commit`
+  write path, which `--repair` deliberately does not use), and `ctypes_name` arms for CULong/CLong/F32/Ptr
+  — each needs its own PROBED binding decision, since an unprobed guess there re-creates exactly the false
+  green PMAT-1353 removed.'
 - 'WASM i64 OVERFLOW is a SILENT WRONG ANSWER (measured by the PMAT-1378 differential pass, 2026-07-27;
   deliberately NOT actioned in a release week). Python ints are arbitrary precision; the lane maps them
   to i64 and wraps without a word: `9223372036854775807 + 1` returns -9223372036854775808, `2**62 * 4`
@@ -3062,3 +3114,32 @@ owner_decisions:
 - id: cpython-set-hash-order
   summary: WONTFIX proposed — run-to-run determinism is already fixed via IndexSet; CPython hash-order
     parity would ship as a permanent documented divergence.
+- id: lgpl-in-shipped-binary
+  summary: '`cargo deny check licenses` exits 4 with 10x LGPL-3.0-only reaching the SHIPPED binary as
+    normal deps via rustpython-parser -> depyler-frontend -> xpile-core -> xpile, while the workspace
+    declares MIT OR Apache-2.0 and no NOTICE file exists. rustpython-parser is ALSO the sole source of
+    all 7 suppressed RUSTSEC advisories (deny.toml''s own comment says ''Revisit when rustpython-parser
+    modernizes its dep graph'', with no ticket). Options: (a) accept + document — add NOTICE, widen the
+    allow-list, state the static-link position; (b) replace the parser — multi-month, and it is the Python
+    half you would be narrowing TO; (c) keep publishing without looking. (c) is the only unacceptable
+    answer. DECIDE BEFORE FRIDAY''S PUBLISH.'
+- id: narrow-to-python-rust-wasm
+  summary: 'Is the product `Python -> {Rust, WASM}`? 59.3% of implementation lines and 100% of the executing
+    witnesses in the required CI job are already on that side. Derived reach over 741 fixtures: rust 710,
+    wasm 218, lean 76, wgsl 31, shell 4, forjar 0; 4 of 9 declared SourceLang variants have no parser.
+    Narrowing costs the nine-backend identity statement but buys an affordable proof-to-code connection
+    and a tractable mutation scope. It is the PRECONDITION for the biggest single thing below.'
+- id: proof-lane-load-bearing-or-decorative
+  summary: '★ BIGGEST SINGLE THING. NO proof in this repo can be turned red by a wrong lowering: `grep
+    -h ''^import'' contracts/lean/*.lean | sort | uniq -c` -> `1 import Lake` across all 36 modules, and
+    the Kani harness builds a temp crate with no workspace dependencies. So 489 Lean theorems and 108
+    Kani proofs verify hand-written RE-IMPLEMENTATIONS of xpile''s behaviour, not xpile. That makes ''every
+    construct is carried by a machine-checked contract'' UNFALSIFIABLE, which is worse than false. Either
+    (a) wire ONE Kani harness to the real emitter and confirm it goes red when the emitter breaks, then
+    make the proof lane merge-blocking; or (b) write down that the lane is advisory-by-decision and stop
+    saying ''machine-checked'' about xpile''s own code (it remains a true claim about the MODELS). Making
+    vacuous proofs blocking buys nothing, so (a) must precede any ruleset re-flip.'
+- id: contracts-stuck-in-draft
+  summary: 'All 35 contracts carry `metadata.status: draft` after 73 days, 616 tags and 26 self-declared
+    QUORUM verdicts. Either define promotion criteria or delete the field — it is the same dead-metadata
+    shape PMAT-1400 just removed from roadmap.yaml, sitting inside the contract corpus itself.'
