@@ -1108,6 +1108,48 @@ queue:
     (the `for..else` / dict-local E0425 pair is the smaller half; the zero-iteration silent default
     needs a maybe-unbound guard and is L, so NOT before the Wed 18:00 freeze). Do NOT start a
     gate_touch. On 2026-07-30 take PMAT-1373.
+- id: PMAT-1382
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'VERIFY-PASS FINDING: the C lane had NO TRUTH-VALUE BRIDGE -- `!a` emitted the BITWISE
+    invert, so `!5` returned -6 where gcc returns 0 (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED by executing PMAT-1381's own next-pick note: the queue is empty before Thursday and that
+    note names the decy/C frontend as "the only lane named by PMAT-1380's note that is still
+    unswept". Swept it with a 129-probe gcc-vs-(xpile -> rustc -> run) differential harness.
+    ** FOUR defects, THREE of them SILENT WRONG ANSWERS that compiled cleanly: C `!x` emitting the
+    bitwise invert (byte-identical to the `~x` arm); a leading-zero literal taking a base-10 parse
+    (`010` -> 10, gcc 8); and "widest wins" retyping a function across the INT/FLOAT boundary,
+    deleting C's truncating conversion (`int f(double a){ return a; }` -> 3.9, gcc 3). Plus a
+    ten-shape accept-then-reject class (int conditions, int `&&`/`||`, truth-as-value, and a
+    reassigned PARAMETER emitting a non-`mut` binding). Root cause is single: C has no boolean type,
+    so ints and truth values mix freely in BOTH directions, and `emit_c_binop`'s own comment
+    asserted the opposite. Comment corrected in place.
+    ** HARNESS TRAP, worth carrying: the first run reported 9 divergences; 5 were the HARNESS. A
+    separate driver translation unit silently defaults every callee to `int f()`, faking divergences
+    on `long`/`unsigned`/`double` returns. Compile the C side as ONE TU. Worse, the harness's own
+    `(long long)` cast MASKED a real defect -- it truncated the f64 3.9 that `int f(double a)`
+    wrongly returned into the 3 that gcc prints, so the int/float bug read as MATCH until probed
+    directly. A differential's normalisation can hide exactly the class it is hunting.
+    ** WITNESS XPILE-CTRUTH-001 (crates/xpile/tests/c_truth_witness.rs, 8 tests) is the PMAT-1381
+    shape: the PROPERTY `Ok(rust) ==> rustc accepts it` over 47 sources, plus an EXECUTING half that
+    byte-compares against `cc`. The executing half is load-bearing, not decorative: `!(x)`
+    type-checked perfectly, so a type-check-only witness stays green through the whole defect.
+    47/47 accepted, compiled and agreeing with gcc. Six mutants, six RED. `XPILE_REQUIRE_CC=1`
+    tripwire so a missing toolchain fails instead of skipping green.
+    ** TWO RESIDUALS PINNED, NOT HIDDEN: `int` param widened to i64 in a `long` function
+    (value-preserving), and `int` param retyped u32 in an `unsigned` function (the call becomes
+    unspellable rather than mis-computed).
+    ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource).
+    NEXT PICK: nothing is OPEN before Thursday. All four lanes named across PMAT-1380/1381 have now
+    been swept (bashrs, WASM, Rust oracle, decy/C). A further fire Tue/Wed should either sweep a
+    lane none of these touched (the ruchy/lean/forjar string-compare backends, or the
+    Python->shell cross-domain path), extend a pinned residual, or do CHANGELOG polish. Do NOT start
+    a gate_touch and do NOT touch witness_floor.rs. On 2026-07-30 take PMAT-1373 (release commit,
+    gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).
+
 - id: PMAT-1373
   status: open
   ev_rank: R1
