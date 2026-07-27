@@ -57,6 +57,13 @@ fn main() -> anyhow::Result<()> {
     println!("    - `// xpile-contract: C-PY-INT-ARITH` citation");
     println!("    - `.checked_mul()` and `.checked_sub()` wrappers");
     println!("    - panic text NAMING the governing contract");
-    println!("• The result is `rustc -O`-clean and `assert_eq!(factorial(10), 3628800)` green.");
+    // PMAT-1415: this example PRINTS a claim it does not check, so it names the
+    // test that does. Through v0.1.617 the sentence read as a bare assertion
+    // and nothing in CI compiled this emit at all.
+    println!(
+        "• `rustc -O`-clean, `factorial(10) == 3628800`, and `factorial(21)` panics \
+         citing the contract — executed by crates/xpile/tests/readme_quickstart_witness.rs, \
+         not by this example."
+    );
     Ok(())
 }

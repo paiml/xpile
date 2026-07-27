@@ -7,6 +7,78 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The README's Quickstart credited CI with a check of a different program (PMAT-1415)
+
+`README.md`'s Quickstart shows the two-line `factorial.py`, prints the `i64`
+emit whose every arithmetic operation is `checked_*`, and offers one sentence
+of evidence:
+
+> CI compiles this output with `rustc -O` and asserts `factorial(10) == 3628800`.
+
+**CI compiled a different program.** The only test asserting that value from an
+emitted `factorial` is `transpile_e2e.rs::factorial_emitted_rust_computes_correct_values`,
+and it reads `crates/xpile/tests/fixtures/factorial.py` — a *different* source,
+annotated `-> BigInt`, whose emit contains **zero** `checked_` calls. Its own
+sibling asserts `!rust.contains("checked_mul")` outright. Measured
+exhaustively: every `fn *factorial*` test in the crate reads either that BigInt
+fixture or the `math.factorial` builtin. Nothing compiled the shape the README
+displays.
+
+**The overflow claim is the expensive half.** That sentence is the evidence for
+the paragraph above it, which says an `i64` overflow *panics* rather than
+wrapping — "CPython's `int` is unbounded, so wrapping would be a wrong answer."
+The BigInt test cannot observe that even in principle: it compiles against an
+inline `mod xpile_bigint` shim whose `Mul` is a plain `*` on an `i64` field,
+which under `rustc -O` **wraps**.
+
+**The claim was true; only the backing was missing** — measured before any code
+was written. The README's emit compiles under `rustc -O`, `factorial(10)` is
+3628800, and `factorial(21)` panics with `xpile: i64 multiplication overflow;
+bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented`. So
+the repair **executes** the claim instead of softening it.
+
+**The gate** — `crates/xpile/tests/readme_quickstart_witness.rs`
+(XPILE-README-001), 5 tests. The Python source and the expected transcript are
+parsed out of `README.md`'s own fenced blocks, never copied into a constant — a
+copy drifts the moment either side moves, which is the failure being repaired.
+
+1. both blocks extract and are non-empty, **and the elision matcher is shown to
+   be able to fail** — one that returned `Ok` unconditionally would make test 2
+   certify nothing;
+2. the published transcript **is** the live emit, modulo reflowing and modulo
+   any `…` the README marks explicitly;
+3. **the sentence, executed**: `rustc -O` on the README's own emit, run,
+   `factorial(10) == 3628800` — plus `0!`/`1!`/`5!`, so an emitter returning a
+   constant could not pass;
+4. **the property the paragraph sells**: `factorial(21)` exits non-zero and the
+   panic names `C-PY-INT-ARITH`. 20! is the largest factorial that fits in
+   `i64`, so this is a total probe, not a probabilistic one;
+5. why this file is *not* redundant with `transpile_e2e.rs` — the two sources
+   differ and the fixture emit has no `checked_`. If a change ever unifies
+   them, this reds and says to merge the witnesses deliberately.
+
+**Red half run, three arms**, each firing on its own assertion. (a) The pre-fix
+README text reds test 2 naming the missing segment — it marked the `xpile: `
+prefix with `…` but *also* shortened `promotion (contract C-PY-INT-ARITH slow
+path)` to `slow path` with no marker at all. (b) `n + factorial(n - 1)` in the
+README reds tests 2-5; test 3 fails at `5! == 120`. (c) Probing `factorial(20)`
+instead of 21 reds test 4 on its "OVERFLOWED i64 SILENTLY" assertion.
+
+**Three sibling sites carried the same falsehood**, corrected here.
+`book/src/quickstart.md` said "CI uses this exact path".
+`book/src/tutorials/python-to-rust.md` printed a "(paraphrased)" CI test body
+that is not a paraphrase of the real test but of one that did not exist — the
+real test needs an inline BigInt shim to compile, which the paraphrase hid.
+And `crates/xpile/examples/01_python_to_rust.rs` **prints to the user** "The
+result is `rustc -O`-clean and `assert_eq!(factorial(10), 3628800)` green" while
+compiling nothing. All three now name the witness that runs it.
+
+**Scope, honestly.** No emitter behaviour changed and no test was weakened. This
+is a documentation-integrity defect in the first example a reader meets, backing
+the project's lead promise. The README transcript is now byte-faithful as well:
+its two `expect` strings previously showed an unmarked elision, which the new
+gate forbids.
+
 ### The build script baked absolute paths, so `cargo build` broke on unmodified `main` (PMAT-1414)
 
 `cargo build -p xpile --bin xpile` exited non-zero from a clean checkout at

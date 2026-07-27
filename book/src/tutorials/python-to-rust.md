@@ -57,19 +57,27 @@ Three things to notice:
 ## 3. Verifying the round-trip in CI
 
 xpile's CI doesn't just check that the emitted Rust compiles — it
-checks that it *computes the right values*. The CI test is:
+checks that it *computes the right values*. Two tests do it, over two
+different programs, and the difference matters:
 
 ```rust
-// crates/xpile/tests/transpile_e2e.rs (paraphrased)
-#[test]
-fn factorial_emitted_rust_computes_correct_values() {
-    let rust = xpile_transpile("factorial.py", Target::Rust);
-    let exe = compile_with_rustc_O(&rust);
-    assert_eq!(exe.call("factorial", 10), 3628800);
-}
+// crates/xpile/tests/readme_quickstart_witness.rs — the i64 program
+// shown above. Source and expected transcript are parsed out of
+// README.md, so the published example cannot rot.
+the_readme_output_compiles_under_rustc_o_and_computes_3628800
+the_readme_overflow_claim_panics_naming_the_contract   // factorial(21)
+
+// crates/xpile/tests/transpile_e2e.rs — a DIFFERENT factorial.py,
+// annotated `-> BigInt`. Emits no `checked_` call at all; compiled
+// against an inline BigInt shim.
+factorial_emitted_rust_computes_correct_values
 ```
 
-Every PR runs this; the v0.1.0 release shipped with it green.
+Every PR runs both. Through v0.1.617 only the second existed, while
+this page and `README.md` both described it as covering the `i64`
+emit — which it never did: a shim whose `Mul` is a plain `*` cannot
+observe an overflow panic. PMAT-1415 added the first test rather than
+softening the claim, because the claim turned out to be true.
 
 ## 4. The proof-lane shadow
 

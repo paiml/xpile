@@ -2,7 +2,7 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-27 (post-assessment refill. A 13-agent project assessment — 7 survey dimensions, 3 gap
+updated: '2026-07-27 (PMAT-1415 landed from an honesty hunt; the ranked queue is exhausted through 07-29. Post-assessment refill. A 13-agent project assessment — 7 survey dimensions, 3 gap
   lenses, 2 adversarial critics that REFUTED 13 proposed items and ADDED 14 nobody surfaced — produced
   a release-integrity NOW list. PMAT-1406 (the highest-severity item: a `subprocess.run` inside a class
   method silently discarded, so an `rm -rf` became a no-op at exit 0) is already SHIPPED as #1996. These
@@ -3314,6 +3314,59 @@ queue:
     has one member and it is fixed. Test 4 of the gate re-derives that enumeration on every run
     so a SECOND build script cannot arrive unexamined; it is an honest text tripwire, not a
     proof, and its doc says so.'
+- id: PMAT-1415
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'README.md''s Quickstart said "CI compiles this output with `rustc -O` and asserts
+    `factorial(10) == 3628800`" — CI compiled a DIFFERENT program. The test that asserted 3628800
+    read the `-> BigInt` `factorial.py`, whose emit contains ZERO `checked_` calls, so the one
+    property the paragraph sells — an i64 overflow PANICS instead of wrapping — was the one
+    property the cited test structurally could not observe.'
+  notes: 'DONE 2026-07-27. Picked by an honesty HUNT: the ranked queue was exhausted through
+    2026-07-29 (PMAT-1373/1374 are date-gated to 07-30/07-31, PMAT-1375 is the 0.1.619 lane), so
+    no item dated <= today was open. Release-mechanics items were NOT pulled forward — they are
+    date-gated by the ratified plan.
+
+
+    ** THE SHAPE: a documentation claim about WHAT CI CHECKS, where CI checks a different
+    artifact. README.md:27-51 displays the two-line `examples/factorial.py` and its i64
+    `checked_*` emit; the only test asserting 3628800 from an emitted `factorial` reads
+    `crates/xpile/tests/fixtures/factorial.py`, annotated `-> BigInt`, whose emit has zero
+    `checked_` calls (measured with the force-rebuilt binary; its own sibling
+    `bigint_implicit_promotion_factorial_emits_bigint_mode` asserts `!rust.contains("checked_mul")`).
+    Verified EXHAUSTIVELY, not spot-checked: every `fn *factorial*` test in crates/xpile/tests
+    reads either that BigInt fixture or the `math.factorial` builtin.
+
+
+    ** THE EXPENSIVE HALF IS THE OVERFLOW CLAIM. The sentence is the evidence for the paragraph
+    above it ("an i64 overflow panics ... rather than wrapping silently"). The BigInt test cannot
+    observe that in principle: its inline `mod xpile_bigint` shim implements Mul as a plain `*` on
+    an i64 field, which under `rustc -O` WRAPS.
+
+
+    ** THE UNDERLYING CLAIM WAS TRUE — measured BEFORE writing anything (rustc -O exit 0,
+    factorial(10)=3628800, factorial(21) panics naming C-PY-INT-ARITH). So the repair EXECUTES the
+    claim rather than deleting it. Gate: crates/xpile/tests/readme_quickstart_witness.rs
+    (XPILE-README-001), 5 tests, source + expected transcript PARSED OUT OF README.md itself so a
+    copy cannot drift. Red half run in three arms (pre-fix README text; `n + factorial(n-1)`;
+    probing factorial(20) instead of 21), each firing on its own assertion, green restored after
+    each.
+
+
+    ** THREE SIBLING SITES carried the same falsehood and are corrected here:
+    book/src/quickstart.md ("CI uses this exact path"), book/src/tutorials/python-to-rust.md (a
+    "(paraphrased)" CI test body that paraphrases a test which did not exist — the real one needs
+    a BigInt shim to compile, which the paraphrase hid), and
+    crates/xpile/examples/01_python_to_rust.rs, which PRINTS the claim to the user while compiling
+    nothing.
+
+
+    ** NOTE FOR THE NEXT FIRE: the ranked queue stays EXHAUSTED until 2026-07-30. Wed 2026-07-29
+    18:00 is the HARD FREEZE — after it, no merge may touch crates/*/src, contracts/*.yaml or any
+    gate. Until then, keep hunting in the docs/claims lane (it is freeze-compatible: this slice
+    touched no `src`). NEXT PICK: another honesty hunt, or PMAT-1373 on 2026-07-30.'
 - id: PMAT-1373
   status: open
   ev_rank: R1
