@@ -2476,7 +2476,7 @@ queue:
     \ is the slice.\nACCEPTANCE: CLAUDE.md:38 no longer contradicts CLAUDE.md:127; `pv lint contracts/`\
     \ still clean.\n"
 - id: PMAT-1399
-  status: open
+  status: done
   ev_rank: R10
   gate_touch: null
   date: '2026-07-27'
@@ -2516,6 +2516,27 @@ queue:
       the repro compiles under rustc AND the built lib answers 705032704, or the emit REFUSES at
       exit 1 with a named message
       command cargo test -p xpile-rust-codegen
+  outcome: 'DONE 2026-07-27 (#TBD). CONFIRMED and BROADER than the report: the sweep (6 C widths x
+    {out-of-range, negated, in-range} x {return, local, call argument, arithmetic operand}, each probe
+    transpiled + rustc-compiled + RUN + value-differentialled against /usr/bin/cc) found the hole in
+    EVERY position at BOTH the i32 and u32 widths, so the fix lands at the single literal emit site
+    (`c_int_lit_render`), not the return site. UNAFFECTED control group held: i64 is the meta-HIR
+    literal''s own width (a wider C constant already refuses at the FRONTEND, "does not fit in i64")
+    and the float widths render `<v>f32`/`<v>f64` — the TRAP the item warned about (`16777217f32`
+    rounding like C) was verified identical to cc and left alone. ** THE PART THE ITEM DID NOT ASK FOR
+    AND THAT MATTERED MOST: converting alone would have swapped one exit-0 lie for a WORSE one. The
+    modular reduction is exact under `+ - * & | ^` and NOT under `/ %`, a comparison, a logical
+    `&& || !` or a controlling expression, where C evaluates the constant at its own wider type first.
+    Those REFUSE. Measured, not reasoned: with the guard removed and the conversion left on, five
+    corpus sources compile cleanly and DISAGREE with live cc (div 352516352 vs 2500000000; mod 5 vs 2;
+    and `>`/`!`/ternary each inverted). ** GATE: EXTENDED crates/xpile/tests/c_truth_witness.rs
+    (XPILE-CTRUTH-001, corpus 47 -> 69) rather than adding a file — it already carries both halves the
+    item asked for. Red-then-green both ways: reverting the fix reds 3 tests, property names 11 of 64
+    accept-then-reject; removing only the guard reds the EXECUTING half on 5. The five refusing shapes
+    are IN the corpus so a future change making them emit is caught by the differential — a refusal is
+    invisible to a compile-only property. ** NOT a witness_floor.rs touch and not a gate_touch.
+    NEXT PICK: no OPEN item is dated <= 2026-07-27; PMAT-1396 (R9, doc-only, freeze-legal) is dated
+    2026-07-29 and may be PULLED FORWARD under the pick_rule (today is Day 2, <= Day 4).'
 - id: PMAT-1373
   status: open
   ev_rank: R1

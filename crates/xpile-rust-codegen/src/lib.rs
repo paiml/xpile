@@ -5474,6 +5474,152 @@ const C_WIDTH_U64: CWidth = CWidth {
     is_float: false,
 };
 
+/// PMAT-1399: is the meta-HIR integer literal `v` representable in `w`?
+///
+/// The literal rides `i64` (the meta-HIR's only integer literal width), so the
+/// `i64` and the float widths can never be out of range; only the narrower
+/// `i32` and the signedness-distinct `u32`/`u64` can.
+fn c_int_lit_fits(v: i64, w: CWidth) -> bool {
+    match w.lit_suffix {
+        "i32" => i32::try_from(v).is_ok(),
+        "u32" => u32::try_from(v).is_ok(),
+        "u64" => u64::try_from(v).is_ok(),
+        _ => true,
+    }
+}
+
+/// PMAT-1399: render a C integer literal at the function's arithmetic width.
+///
+/// C converts an integer constant that does not fit the destination type
+/// MODULO 2^N (C17 6.3.1.3p2), emitting at most a `-Woverflow` diagnostic —
+/// `unsigned int f(void) { return 5000000000; }` answers 705032704 under
+/// `/usr/bin/cc`. Rust instead REJECTS an out-of-range literal outright
+/// (`deny(overflowing_literals)`), so writing `{v}{suffix}` verbatim produced
+/// Rust that `rustc` refuses: `--target rust` exited 0 on a C source it could
+/// not compile, in EVERY literal position (return, local, call argument,
+/// arithmetic operand). Converting here both makes it compile and makes it
+/// answer what C answers.
+///
+/// This is the RUST-lane dual of the WASM lane's PMAT-1395 fix, which converted
+/// at the return site; the two lanes must agree, which is why both convert
+/// rather than refuse. The conversion is exact only where it composes with the
+/// surrounding operator — see [`c_stmt_range_hazard`], which REFUSES the
+/// non-modular contexts rather than trading a `rustc` error for a silent wrong
+/// answer.
+fn c_int_lit_render(v: i64, w: CWidth) -> String {
+    match w.lit_suffix {
+        "i32" => format!("{}i32", v as i32),
+        "u32" => format!("{}u32", v as u32),
+        "u64" => format!("{}u64", v as u64),
+        // `i64` is the literal's own width (identity), and the float widths
+        // render an int literal as `<v>f32`/`<v>f64`, which is always in range.
+        _ => format!("{v}{}", w.lit_suffix),
+    }
+}
+
+/// PMAT-1399: is `op` MODULAR — does computing it on operands already reduced
+/// mod 2^N give the same result mod 2^N?
+///
+/// `+ - *` and the bitwise `& | ^` are (they depend only on the low N bits).
+/// `/ % >>`, every comparison and the logical `&& ||` are NOT: C evaluates the
+/// out-of-range constant at its own wider type first, so reducing the operand
+/// early changes the answer (`5000000000u / 2` is 2500000000 in C, but
+/// 705032704/2 = 352516352 once the literal is reduced). `<<` is excluded
+/// because its right operand is a shift COUNT rather than a value, and `**`
+/// because the emission is `checked_pow`, whose panic behaviour the reduction
+/// would move.
+fn c_binop_is_modular(op: BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor
+    )
+}
+
+/// PMAT-1399: does `e`'s tree carry an integer literal outside `w`'s range?
+fn c_expr_has_out_of_range_lit(e: &Expr, w: CWidth) -> bool {
+    match e {
+        Expr::LitInt(v) => !c_int_lit_fits(*v, w),
+        Expr::BinOp { lhs, rhs, .. } => {
+            c_expr_has_out_of_range_lit(lhs, w) || c_expr_has_out_of_range_lit(rhs, w)
+        }
+        Expr::UnOp { operand, .. } => c_expr_has_out_of_range_lit(operand, w),
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            c_expr_has_out_of_range_lit(cond, w)
+                || c_expr_has_out_of_range_lit(then_expr, w)
+                || c_expr_has_out_of_range_lit(else_expr, w)
+        }
+        Expr::Call { args, .. } => args.iter().any(|a| c_expr_has_out_of_range_lit(a, w)),
+        _ => false,
+    }
+}
+
+/// PMAT-1399: an out-of-range literal reaching a NON-MODULAR position, named.
+///
+/// `ctl` marks a CONTROLLING position (an `if`/`while`/ternary condition),
+/// where the emission is C's `!= 0` truthiness test — not modular either, since
+/// a nonzero multiple of 2^N reduces to 0.
+fn c_expr_range_hazard(e: &Expr, w: CWidth, ctl: bool) -> Option<String> {
+    if ctl && c_expr_has_out_of_range_lit(e, w) {
+        return Some(format!(
+            "a controlling expression (C's `!= 0` truthiness test at width `{}`)",
+            w.rust_ty
+        ));
+    }
+    match e {
+        Expr::BinOp { op, lhs, rhs } => {
+            // `&&`/`||` additionally take their operands' TRUTHINESS rather
+            // than their value, but they are non-modular already, so the
+            // whole-subtree check below covers them without a separate arm.
+            if !c_binop_is_modular(*op)
+                && (c_expr_has_out_of_range_lit(lhs, w) || c_expr_has_out_of_range_lit(rhs, w))
+            {
+                return Some(format!("an operand of the non-modular `{op:?}`"));
+            }
+            c_expr_range_hazard(lhs, w, false).or_else(|| c_expr_range_hazard(rhs, w, false))
+        }
+        Expr::UnOp { op, operand } => {
+            if matches!(op, UnOp::Not) && c_expr_has_out_of_range_lit(operand, w) {
+                return Some("the operand of logical `!` (a truthiness test)".to_string());
+            }
+            c_expr_range_hazard(operand, w, false)
+        }
+        Expr::IfExpr {
+            cond,
+            then_expr,
+            else_expr,
+        } => c_expr_range_hazard(cond, w, true)
+            .or_else(|| c_expr_range_hazard(then_expr, w, false))
+            .or_else(|| c_expr_range_hazard(else_expr, w, false)),
+        Expr::Call { args, .. } => args.iter().find_map(|a| c_expr_range_hazard(a, w, false)),
+        _ => None,
+    }
+}
+
+/// PMAT-1399: the statement-level walk of [`c_expr_range_hazard`].
+fn c_stmt_range_hazard(stmts: &[Stmt], w: CWidth) -> Option<String> {
+    stmts.iter().find_map(|s| match s {
+        Stmt::Let { value, .. } | Stmt::Assign { value, .. } => {
+            c_expr_range_hazard(value, w, false)
+        }
+        Stmt::Return(e) => c_expr_range_hazard(e, w, false),
+        Stmt::While { cond, body } => {
+            c_expr_range_hazard(cond, w, true).or_else(|| c_stmt_range_hazard(body, w))
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => c_expr_range_hazard(cond, w, true)
+            .or_else(|| c_stmt_range_hazard(then_body, w))
+            .or_else(|| c_stmt_range_hazard(else_body, w)),
+        _ => None,
+    })
+}
+
 fn c_function_width(f: &Function) -> CWidth {
     let any_f64 = matches!(f.return_type, Type::F64)
         || f.params.iter().any(|p| matches!(p.ty, Type::F64))
@@ -5642,6 +5788,31 @@ fn emit_c_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     } else {
         // C int/long arithmetic is governed by the on-disk C-C-INT-ARITH.
         writeln!(out, "// xpile-contract: C-C-INT-ARITH")?;
+    }
+    // PMAT-1399: an integer literal outside the function width's range is
+    // CONVERTED at the emit site (`c_int_lit_render`) because C converts it
+    // modulo 2^N and Rust rejects it outright. That conversion is exact under
+    // `+ - * & | ^`, which depend only on the low N bits — but NOT under
+    // `/ % >>`, a comparison, a logical `&& || !` or a controlling expression,
+    // where C evaluates the constant at its own wider type first. Emitting
+    // there would swap one exit-0 lie (uncompilable Rust) for a worse one (a
+    // silent wrong answer that compiles), so refuse instead. Float widths never
+    // convert an int literal — `<v>f64` is always in range — so they are exempt.
+    if !w.is_float {
+        if let Some(site) = c_stmt_range_hazard(&f.body.stmts, w)
+            .or_else(|| c_expr_range_hazard(&f.body.trailing_return, w, false))
+        {
+            return Err(CodegenError::Unsupported(format!(
+                "C function `{}` has an integer literal outside the range of its \
+                 arithmetic width `{}`, reaching {site}. C converts such a constant \
+                 modulo 2^N only at an ASSIGNMENT/return/argument boundary; here it \
+                 is first evaluated at its own wider C type, so reducing it early \
+                 would compute a DIFFERENT value than C. C's usual arithmetic \
+                 conversions are not modelled (the emit path rides ONE scalar width \
+                 per function); keep the literal within `{}`",
+                f.name, w.rust_ty, w.rust_ty
+            )));
+        }
     }
     // PMAT-1382: C parameters are ordinary mutable locals, and decy's
     // `mark_mutable` only reaches `Stmt::Let` — so a REASSIGNED parameter
@@ -5815,7 +5986,12 @@ fn emit_c_expr_inner(out: &mut String, e: &Expr, w: CWidth) -> Result<(), Codege
         // `f32` for `float`) so the body is internally type-consistent. An
         // int literal in a float-width function emits as `<v>f64`/`<v>f32`
         // (valid Rust, e.g. `2f64`, `2f32`).
-        Expr::LitInt(v) => write!(out, "{v}{}", w.lit_suffix)?,
+        // PMAT-1399: a literal outside the width's range is CONVERTED here
+        // (C17 6.3.1.3p2 modular conversion) rather than written verbatim —
+        // `5000000000u32` is Rust `rustc` REJECTS, so the CLI exited 0 on
+        // uncompilable output. The non-modular contexts refuse up-front in
+        // `emit_c_function`, so the conversion is exact wherever it reaches.
+        Expr::LitInt(v) => write!(out, "{}", c_int_lit_render(*v, w))?,
         // PMAT-910/911: a C float literal renders at the function's float
         // width — `f64` in a `double` function, `f32` in a `float` one. `{}`
         // of a whole-valued float (`2.0`) prints `2`, so a suffix is always

@@ -29,6 +29,18 @@
 //! — which emitted a non-`mut` binding (E0384) because decy's `mark_mutable`
 //! reaches only `Stmt::Let` locals.
 //!
+//! PMAT-1399 EXTENDED the accept-then-reject class to INTEGER LITERAL RANGE.
+//! C converts a constant that does not fit its destination MODULO 2^N (C17
+//! 6.3.1.3p2) with only a `-Woverflow`; Rust REJECTS it. The emitter wrote
+//! `<digits><suffix>` verbatim, so `unsigned int f(void) { return 5000000000; }`
+//! emitted `5000000000u32` and exited 0 on Rust rustc refuses — in the return,
+//! local, call-argument and arithmetic-operand positions alike, at both the
+//! `i32` and `u32` widths. The fix CONVERTS (matching the WASM lane's
+//! PMAT-1395), which is exact under `+ - * & | ^` but not under `/ % `, a
+//! comparison, a logical `&&`/`||`/`!` or a controlling expression, where C
+//! evaluates the constant at its own wider type first — those REFUSE, so the
+//! fix cannot swap an uncompilable emission for a silent wrong answer.
+//!
 //! The load-bearing test is [`transpiled_c_either_refuses_or_rustc_accepts_it`]:
 //! it asserts the PROPERTY `Ok(rust) ==> rustc accepts it` over the corpus
 //! rather than pinning one message, because a per-shape assertion cannot catch
@@ -400,6 +412,125 @@ const CORPUS: &[(&str, &str, &[&str])] = &[
         "int f(int x) { if (x > 0) { return 1; } if (x < 0) { return -1; } return 0; }",
         &["3", "-3", "0"],
     ),
+    // --- PMAT-1399: an integer literal OUTSIDE the declared width's range.
+    // C converts it modulo 2^N (C17 6.3.1.3p2) with only a `-Woverflow`; Rust
+    // REJECTS it. Through v0.1.617 the emitter wrote `<digits><suffix>`
+    // verbatim, so every one of these exited 0 emitting Rust rustc refuses —
+    // in the return, local, argument AND arithmetic-operand positions alike.
+    (
+        "lit_u32_over",
+        "unsigned f(void) { return 5000000000; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_local",
+        "unsigned f(void) { unsigned x = 5000000000; return x; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_arg",
+        "unsigned g(unsigned y) { return y; }\nunsigned f(void) { return g(5000000000); }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_add",
+        "unsigned f(void) { return 5000000000 + 1; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_mul",
+        "unsigned f(void) { return 5000000000 * 2; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_bitand",
+        "unsigned f(void) { return 5000000000 & 255; }",
+        &[""],
+    ),
+    ("lit_u32_neg_one", "unsigned f(void) { return -1; }", &[""]),
+    ("lit_i32_over", "int f(void) { return 5000000000; }", &[""]),
+    (
+        "lit_i32_intmax_plus1",
+        "int f(void) { return 2147483648; }",
+        &[""],
+    ),
+    (
+        "lit_i32_intmin_minus1",
+        "int f(void) { return -2147483649; }",
+        &[""],
+    ),
+    (
+        "lit_i32_over_sub",
+        "int f(void) { return 5000000000 - 1; }",
+        &[""],
+    ),
+    (
+        "lit_i32_over_in_param_fn",
+        "int f(int a) { return a + 5000000000; }",
+        &["1", "-1"],
+    ),
+    // The widths that CANNOT be out of range must be untouched: `i64` is the
+    // literal's own width, and a float width renders `<v>f64`/`<v>f32`.
+    (
+        "lit_i64_in_range",
+        "long f(void) { return 9000000000000000000; }",
+        &[""],
+    ),
+    (
+        "lit_u64_neg_one",
+        "unsigned long f(void) { return -1; }",
+        &[""],
+    ),
+    (
+        "lit_f32_rounds",
+        "float f(void) { return 16777217; }",
+        &[""],
+    ),
+    (
+        "lit_f64_exact",
+        "double f(void) { return 16777217; }",
+        &[""],
+    ),
+    (
+        "lit_in_range_unaffected",
+        "unsigned f(void) { return 7; }",
+        &[""],
+    ),
+    // The NON-MODULAR contexts, which REFUSE today (see
+    // `out_of_range_literal_in_a_non_modular_context_refuses`). They are in the
+    // corpus so that if a future change ever makes them EMIT, the executing
+    // half catches the divergence from `cc` — a refusal is invisible to a
+    // compile-only property, and reducing the literal early is exactly the
+    // silent wrong answer the guard exists to prevent (`5000000000u / 2` is
+    // 2500000000 in C, 352516352 once reduced). MEASURED, not asserted: with
+    // the guard removed and the conversion left on, `c_truth_bridge_agrees_with_cc`
+    // reds on all five — div cc=2500000000/xpile=352516352, mod cc=2/xpile=5,
+    // cmp cc=1/xpile=0, truthy cc=0/xpile=1, ternary cc=1/xpile=0.
+    (
+        "lit_u32_over_div",
+        "unsigned f(void) { return 5000000000 / 2; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_mod",
+        "unsigned f(void) { return 5000000000 % 7; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_cmp",
+        "unsigned f(void) { return 5000000000 > 4000000000; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_truthy",
+        "unsigned f(void) { return !4294967296; }",
+        &[""],
+    ),
+    (
+        "lit_u32_over_ternary",
+        "unsigned f(void) { return 4294967296 ? 1 : 0; }",
+        &[""],
+    ),
 ];
 
 fn c_driver(calls: &[&str]) -> String {
@@ -632,6 +763,183 @@ fn reassigned_parameter_is_emitted_mut() {
     assert!(
         rust.contains("pub fn f(a: i32)"),
         "an un-reassigned parameter must NOT be `mut`, emitted: {rust}"
+    );
+}
+
+/// PMAT-1399: C converts an integer constant that does not fit the destination
+/// type MODULO 2^N (C17 6.3.1.3p2), diagnosing at most `-Woverflow`; Rust
+/// REJECTS an out-of-range literal outright (`deny(overflowing_literals)`).
+/// Through v0.1.617 the C→Rust emitter wrote `<digits><suffix>` verbatim, so
+/// `unsigned int f(void) { return 5000000000; }` emitted `5000000000u32` and
+/// `--target rust` exited 0 on Rust `rustc` refuses. This is the RUST-lane dual
+/// of the WASM lane's PMAT-1395 fix; both convert rather than refuse so the two
+/// lanes agree on the value.
+#[test]
+fn integer_literal_outside_the_width_converts_modulo_like_c() {
+    for (tag, src, want) in [
+        (
+            "u32_ret",
+            "unsigned f(void) { return 5000000000; }",
+            "705032704u32",
+        ),
+        (
+            "i32_ret",
+            "int f(void) { return 5000000000; }",
+            "705032704i32",
+        ),
+        (
+            "i32_intmax_plus1",
+            "int f(void) { return 2147483648; }",
+            "-2147483648i32",
+        ),
+        (
+            "u32_local",
+            "unsigned f(void) { unsigned x = 5000000000; return x; }",
+            "705032704u32",
+        ),
+        (
+            "u32_add",
+            "unsigned f(void) { return 5000000000 + 1; }",
+            "705032704u32",
+        ),
+        (
+            "u32_arg",
+            "unsigned g(unsigned y) { return y; }\nunsigned f(void) { return g(5000000000); }",
+            "705032704u32",
+        ),
+        // The NEGATED out-of-range operand: `-2147483649` lifts as
+        // `Neg(LitInt(2147483649))`, so the OPERAND is what is out of range.
+        // Converting it to `-2147483647i32` and then applying the existing
+        // `wrapping_neg` reproduces C's 2147483647 exactly.
+        (
+            "i32_intmin_minus1",
+            "int f(void) { return -2147483649; }",
+            "-2147483647i32",
+        ),
+    ] {
+        let rust = transpile(src, tag).unwrap_or_else(|e| panic!("[{tag}] must transpile: {e}"));
+        assert!(
+            rust.contains(want),
+            "[{tag}] expected the C-converted literal `{want}`, emitted: {rust}"
+        );
+    }
+    // An IN-RANGE literal is emitted verbatim — the conversion is not a
+    // blanket rewrite that happens to make the out-of-range case compile.
+    for (tag, src, want) in [
+        ("inrange_u32", "unsigned f(void) { return 7; }", "7u32"),
+        (
+            "inrange_i32",
+            "int f(void) { return 2147483647; }",
+            "2147483647i32",
+        ),
+        (
+            "inrange_i64",
+            "long f(void) { return 9000000000000000000; }",
+            "9000000000000000000i64",
+        ),
+        (
+            "float_width",
+            "float f(void) { return 16777217; }",
+            "16777217f32",
+        ),
+    ] {
+        let rust = transpile(src, tag).unwrap_or_else(|e| panic!("[{tag}] must transpile: {e}"));
+        assert!(
+            rust.contains(want),
+            "[{tag}] an in-range literal must be emitted verbatim as `{want}`, emitted: {rust}"
+        );
+    }
+}
+
+/// PMAT-1399: the modular conversion is exact ONLY under the operators that
+/// depend on the low N bits (`+ - * & | ^`). Under `/`, `%`, a comparison, a
+/// logical `&&`/`||`/`!` or a controlling expression, C first evaluates the
+/// constant at its own wider type, so reducing it early computes a DIFFERENT
+/// answer — `5000000000u / 2` is 2500000000 in C but 352516352 once the
+/// literal is reduced. Refuse there rather than trade one exit-0 lie
+/// (uncompilable Rust) for the worse one (a wrong answer that compiles).
+#[test]
+fn out_of_range_literal_in_a_non_modular_context_refuses() {
+    for (tag, src) in [
+        ("div", "unsigned f(void) { return 5000000000 / 2; }"),
+        ("mod", "unsigned f(void) { return 5000000000 % 7; }"),
+        (
+            "cmp",
+            "unsigned f(void) { return 5000000000 > 4000000000; }",
+        ),
+        ("andand", "unsigned f(void) { return 4294967296 && 1; }"),
+        ("oror", "unsigned f(void) { return 4294967296 || 0; }"),
+        ("lognot", "unsigned f(void) { return !4294967296; }"),
+        (
+            "if_cond",
+            "unsigned f(void) { if (4294967296) { return 1; } return 0; }",
+        ),
+        ("ternary", "unsigned f(void) { return 4294967296 ? 1 : 0; }"),
+        (
+            "while_cond",
+            "unsigned f(unsigned a) { unsigned s = 0; while (4294967296) { s = a; } return s; }",
+        ),
+        // The hazard is TRANSITIVE — a modular subtree under a non-modular
+        // parent is still reduced before the non-modular step happens.
+        (
+            "nested_under_div",
+            "unsigned f(void) { return (5000000000 + 0) / 2; }",
+        ),
+        (
+            "nested_in_call_arg",
+            "unsigned g(unsigned y) { return y; }\nunsigned f(void) { return g(5000000000 / 2); }",
+        ),
+    ] {
+        let err = transpile(src, tag).expect_err(
+            "an out-of-range literal in a NON-MODULAR context must REFUSE — reducing \
+             it early computes a different value than C",
+        );
+        assert!(
+            err.contains("outside the range of its arithmetic width"),
+            "[{tag}] the refusal must name the range, got: {err}"
+        );
+    }
+    // The refusal must be NARROW: the modular operators, every in-range
+    // program, and the widths that cannot overflow all still transpile.
+    for (tag, src) in [
+        ("add", "unsigned f(void) { return 5000000000 + 1; }"),
+        ("sub", "int f(void) { return 5000000000 - 1; }"),
+        ("mul", "unsigned f(void) { return 5000000000 * 2; }"),
+        ("bitand", "unsigned f(void) { return 5000000000 & 255; }"),
+        ("bitor", "unsigned f(void) { return 5000000000 | 1; }"),
+        ("bitxor", "unsigned f(void) { return 5000000000 ^ 3; }"),
+        ("inrange_div", "unsigned f(void) { return 100 / 2; }"),
+        ("inrange_mod", "int f(int a) { return a % 2; }"),
+        ("inrange_cmp", "unsigned f(void) { return 5 > 4; }"),
+        (
+            "inrange_if",
+            "int f(void) { if (3) { return 1; } return 0; }",
+        ),
+        ("inrange_lognot", "int f(int a) { return !a; }"),
+        (
+            "i64_width_div",
+            "long f(void) { return 9000000000000000000 / 2; }",
+        ),
+        ("float_width_div", "double f(void) { return 16777217 / 2; }"),
+    ] {
+        transpile(src, tag)
+            .unwrap_or_else(|e| panic!("[{tag}] must still transpile — the refusal over-red: {e}"));
+    }
+}
+
+/// PMAT-1399: a C constant too large for the meta-HIR's own `i64` literal never
+/// reaches the emitter — the FRONTEND refuses it. Pinned so the emitter-side
+/// conversion above is not credited with covering a case it never sees.
+#[test]
+fn integer_literal_wider_than_i64_refuses_at_the_frontend() {
+    let err = transpile(
+        "unsigned long f(void) { return 10000000000000000000UL; }",
+        "pin_over_i64",
+    )
+    .expect_err("a constant above i64::MAX must refuse, not wrap silently");
+    assert!(
+        err.contains("does not fit in i64"),
+        "the refusal must name the i64 literal width, got: {err}"
     );
 }
 

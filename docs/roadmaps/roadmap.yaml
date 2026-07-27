@@ -17440,3 +17440,80 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1399
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1399: [honesty/rust] `--target rust` on a C source exited 0 emitting
+    Rust that `rustc` REJECTS — an integer literal outside its declared type''s range
+    was written VERBATIM with its width suffix, in EVERY position (return, local,
+    call argument, arithmetic operand) at BOTH the i32 and u32 widths.'
+  description: 'The `--target rust` dual of PMAT-1395, found by that slice''s sweep and
+    reproduced at 0fa333e6: `printf ''unsigned int f(void) { return 5000000000; }'' >
+    o.c; xpile transpile o.c --target rust > o.rs` exits 0, and `rustc --crate-type
+    lib --edition 2021 o.rs` fails with "literal out of range for `u32`".
+
+
+    ** ROOT CAUSE: the C-emit width table rendered a literal as `<digits><lit_suffix>`
+    (`CWidth.lit_suffix`, crates/xpile-rust-codegen/src/lib.rs) with NO range
+    conversion. C converts a constant that does not fit its destination MODULO 2^N
+    (C17 6.3.1.3p2) with at most a `-Woverflow`, so `/usr/bin/cc` answers 705032704;
+    Rust rejects the literal outright under `deny(overflowing_literals)`. The emitted
+    literal was therefore BOTH uncompilable AND, once made compilable, the wrong value
+    unless wrapped.
+
+
+    ** THE ONE-TOKEN FRAMING UNDERSTATED IT (the PMAT-1395 lesson, applied). A sweep
+    of all six C widths x {out-of-range, negated, in-range} x {return, local, call
+    argument, arithmetic operand} — 20 probes, each transpiled, rustc-compiled, RUN,
+    and value-differentialled against /usr/bin/cc — found the hole in EVERY position
+    at BOTH the i32 and u32 widths, not just the return the work item named. So the
+    fix lands at the single literal emit site, not the return site. UNAFFECTED and
+    kept as the control group: `i64` is the meta-HIR literal''s own width (a wider C
+    constant already refuses at the FRONTEND with "does not fit in i64"), and the
+    float widths render `<v>f32`/`<v>f64`, always in range — `float f(void) { return
+    16777217; }` emitting `16777217f32` is C''s own rounding, verified identical to
+    cc, and NOT a defect.
+
+
+    ** FIXED BY CONVERTING, matching PMAT-1395 on the WASM lane — cross-backend
+    agreement was that slice''s whole argument for converting rather than refusing,
+    and the two lanes must not disagree about a program C defines.
+
+
+    ** BUT CONVERTING ALONE WOULD HAVE TRADED ONE EXIT-0 LIE FOR A WORSE ONE. The
+    modular reduction is exact under `+ - * & | ^` (they depend only on the low N
+    bits) and NOT under `/`, `%`, a comparison, a logical `&&`/`||`/`!` or a
+    controlling expression, where C first evaluates the constant at its own wider
+    type. Those now REFUSE with a named message naming the width and the reaching
+    site. MEASURED, not reasoned: with the guard removed and the conversion left on,
+    five corpus sources compile cleanly and DISAGREE with live cc — `5000000000 / 2`
+    gives 352516352 where C gives 2500000000, `% 7` gives 5 where C gives 2, and the
+    three truthiness shapes (`>`, `!`, ternary) each inverted. The refusal is narrow:
+    the six modular operators, every in-range program, and the i64/float widths all
+    still transpile, each pinned.
+
+
+    ** GATE: crates/xpile/tests/c_truth_witness.rs (XPILE-CTRUTH-001) EXTENDED rather
+    than duplicated — it already carries the two halves this needs, the class property
+    `Ok(rust) ==> rustc accepts it` and a byte-comparison of the emitted Rust against
+    `cc` running the identical source. Corpus 47 -> 69 sources. RED-THEN-GREEN both
+    ways: reverting the fix reds 3 tests and the property names 11 of 64 sources as
+    accept-then-reject; removing only the non-modular guard reds the EXECUTING half on
+    5 sources. The five refusing shapes are IN the corpus so that a future change
+    making them emit is caught by the differential rather than passing invisibly —
+    a refusal is invisible to a compile-only property.
+
+
+    ** RESIDUAL, unchanged and already pinned: the emit path rides ONE scalar width
+    per function, so C''s usual arithmetic conversions are not modelled. This slice
+    narrows the consequence (the divergent contexts refuse) without widening the
+    model.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

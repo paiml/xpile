@@ -9,6 +9,60 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`--target rust` on a C source exited 0 emitting Rust that `rustc`
+  REJECTS — an integer literal outside its declared type's range**
+  (PMAT-1399). The `--target rust` dual of PMAT-1395, found by that slice's
+  sweep:
+
+  ```console
+  $ printf 'unsigned int f(void) { return 5000000000; }\n' > o.c
+  $ xpile transpile o.c --target rust > o.rs ; echo $?
+  0
+  $ rustc --crate-type lib --edition 2021 o.rs
+  error: literal out of range for `u32`
+    5 |     5000000000u32
+    = note: the literal does not fit into `u32` whose range is `0..=4294967295`
+  ```
+
+  C converts a constant that does not fit its destination **modulo 2^N**
+  (C17 6.3.1.3p2), diagnosing at most a `-Woverflow` — `/usr/bin/cc` answers
+  **705032704**. Rust rejects the literal outright under
+  `deny(overflowing_literals)`. The C-emit width table rendered every literal
+  as `<digits><lit_suffix>` with no range conversion, so the emitted literal
+  was both uncompilable *and*, once made compilable, the wrong value unless
+  wrapped.
+
+  **The one-token framing understated it.** Sweeping all six C widths against
+  out-of-range, negated and in-range literals in four positions found the hole
+  in **every** position — return, local, call argument and arithmetic operand
+  — at **both** the `i32` and `u32` widths, not just the return. So the fix
+  lands at the single literal emit site rather than the return site.
+  `i64` is the meta-HIR literal's own width (a wider C constant already
+  refuses at the frontend with `does not fit in i64`), and the float widths
+  render `<v>f32`/`<v>f64`, which is always in range — `float f(void) { return
+  16777217; }` emitting `16777217f32` is C's own rounding, not a defect.
+
+  Fixed by **converting**, matching PMAT-1395 on the WASM lane — cross-backend
+  agreement was the whole argument for converting there rather than refusing.
+
+  **But converting alone would have traded one exit-0 lie for a worse one.**
+  The modular reduction is exact under `+ - * & | ^`, which depend only on the
+  low N bits, and *not* under `/`, `%`, a comparison, a logical `&&`/`||`/`!`
+  or a controlling expression, where C first evaluates the constant at its own
+  wider type. Those now **refuse** with a named message. Measured, not
+  reasoned: with the guard removed and the conversion left on, five corpus
+  sources compile cleanly and disagree with live `cc` — `5000000000 / 2` gives
+  352516352 where C gives 2500000000, `% 7` gives 5 where C gives 2, and the
+  three truthiness shapes inverted.
+
+  Gated by extending `crates/xpile/tests/c_truth_witness.rs`
+  (XPILE-CTRUTH-001), whose two halves are the `Ok(rust) ⟹ rustc accepts it`
+  property and a byte-comparison of the emitted Rust against `cc`. The corpus
+  went 47 → 69 sources; the property test names **11 of 64** as
+  accept-then-reject when the fix is reverted. The five refusing shapes are in
+  the corpus too, so removing the guard reds the executing half rather than
+  passing invisibly.
+
 - **`--target wasm` on a C source exited 0 emitting WAT that `wat2wasm`
   REJECTS** (PMAT-1395). One line of C reproduced it:
 
