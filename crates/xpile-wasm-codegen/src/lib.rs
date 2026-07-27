@@ -12371,6 +12371,12 @@ fn try_fold_strformat_to_concat(fmt: &str, args: &[Expr]) -> Option<Expr> {
 /// any other item kind is refused (no enum/const in the scalar/control
 /// subset).
 pub fn emit_module(module: &Module) -> Result<String, BackendError> {
+    // PMAT-1378: refuse a module whose TOP-LEVEL binding names cannot survive
+    // the trip into a WAT index space — a duplicate `def`/const, or a name
+    // reserved by the emitted runtime. Both shapes used to exit 0 with a WAT
+    // that `wat2wasm` then REJECTED. Runs FIRST, before any desugar/scan, so
+    // the diagnostic names the source-level cause.
+    check_module_binding_names(module)?;
     // PMAT-1030: rewrite `for x in xs` / `for ch in s` into the
     // Let+While+Index/StrCharAt subset FIRST, so every scan pass below and
     // the per-function emission see only statements they already handle.
@@ -13556,7 +13562,157 @@ pub fn emit_module(module: &Module) -> Result<String, BackendError> {
         }
     }
     writeln!(out, ")").expect("write");
+    // PMAT-1378: the BELT. `check_module_binding_names` covers every collision
+    // cause known TODAY; this scan covers the ones a future helper introduces.
+    // It reads the bytes actually about to be handed to `wat2wasm`, so it
+    // cannot drift away from what is emitted.
+    check_emitted_identifiers_unique(&out)?;
     Ok(out)
+}
+
+/// PMAT-1378: reserved WAT identifiers — the names the emitted RUNTIME defines
+/// for itself. A user binding that lands on one produces two definitions of the
+/// same `$id` and `wat2wasm` refuses the module.
+///
+/// `__heap_ptr` (the bump-allocator cursor) and `__alloc` (the allocator) are
+/// spelled out; everything else the codegen synthesises is under the
+/// `__wasm_` prefix (`$__wasm_floordiv_i64`, `$__wasm_list_sort_i64`,
+/// `$__wasm_dict_get_i64`, … — 100+ of them and growing every slice), so the
+/// prefix is reserved WHOLESALE rather than enumerated. Enumerating would
+/// re-open the hole the moment a slice adds a helper.
+const RESERVED_WAT_PREFIX: &str = "__wasm_";
+const RESERVED_WAT_NAMES: &[&str] = &["__heap_ptr", "__alloc"];
+
+/// PMAT-1378: refuse a module whose top-level binding names would collide in a
+/// WAT index space.
+///
+/// ## The defect this closes
+///
+/// Both shapes below EXITED 0 and printed a WAT module that `wat2wasm` then
+/// rejected outright — the emitter reported success and handed the caller an
+/// artifact the next tool in the chain cannot consume. That falsifies the
+/// lane's standing claim (`tests/wasm_contract_surface.rs`) that an emitted
+/// module assembles; a refusal at emit time is the honest answer.
+///
+/// **(a) A duplicate top-level binding.** Python REBINDS — `def g(): return 1`
+/// followed by `def g(): return 2` leaves one `g`, the second. WASM has no
+/// rebinding: both bodies emit, as two `(func $g …)` definitions, and
+/// assembly fails with `redefinition of function "$g"`. The same holds for
+/// `N = 1` / `N = 2` (two `(global $N …)`).
+///
+/// The MIXED spelling is worse than a failed assembly, because it assembles.
+/// `def g(): return 1` then `g: int = 5` puts a `(func $g)` and a
+/// `(global $g)` in two DIFFERENT index spaces, so `wat2wasm` is happy — and
+/// the module exports `g` as a callable returning 1 while Python's `g` is the
+/// integer 5 and is not callable at all. Order-reversed (`g: int = 5` then
+/// `def g()`) Python keeps the FUNCTION, while a body reading `g` resolves the
+/// global and yields 5. Both are silent wrong answers, so the rule is one
+/// rule — a top-level name bound twice, in any combination, refuses.
+///
+/// **(b) A user name inside the runtime's reserved namespace.** A module-level
+/// `__heap_ptr = 5` emits `(global $__heap_ptr i64 …)`; the moment that module
+/// also touches the heap, the allocator's own
+/// `(global $__heap_ptr (mut i32) …)` lands beside it. Likewise a
+/// `def __wasm_floordiv_i64()` next to any `//`. Note what makes this the
+/// nastiest shape in the pair: whether it breaks depends on which HELPERS the
+/// module happens to pull in, so `__heap_ptr = 5` alone is fine and adding an
+/// unrelated list literal three lines later breaks assembly.
+///
+/// ## Scope
+///
+/// Only TOP-LEVEL binders are checked. A parameter or a function-local named
+/// `__heap_ptr` is untouched and keeps working — WAT locals and globals are
+/// separate index spaces, so there is nothing to collide, and refusing them
+/// would be over-refusal. Both are pinned as green witnesses.
+fn check_module_binding_names(module: &Module) -> Result<(), BackendError> {
+    let mut seen: Vec<&str> = Vec::new();
+    for item in &module.items {
+        let name: &str = match item {
+            Item::Function(f) => &f.name,
+            Item::Const { name, .. } | Item::Struct { name, .. } | Item::Enum { name, .. } => name,
+        };
+        if name.starts_with(RESERVED_WAT_PREFIX) || RESERVED_WAT_NAMES.contains(&name) {
+            return Err(unsupported(&format!(
+                "top-level name `{name}` is RESERVED by the WASM runtime this backend \
+                 emits (`$__heap_ptr`, `$__alloc` and the `$__wasm_*` helper family). \
+                 Emitting it would define the same WAT identifier twice and `wat2wasm` \
+                 would reject the module — refusing here rather than exiting 0 with an \
+                 artifact that does not assemble. Rename the binding; a PARAMETER or \
+                 function-LOCAL of the same name is fine (locals are a separate index \
+                 space) and is not refused"
+            )));
+        }
+        if seen.contains(&name) {
+            return Err(unsupported(&format!(
+                "top-level name `{name}` is bound more than once. Python REBINDS — the \
+                 last binding wins and the earlier one is gone — but WASM has no \
+                 rebinding, so both definitions emit. Same-kind duplicates (two `def`s, \
+                 two consts) produce a `wat2wasm` \"redefinition\" error; a def+const \
+                 pair is WORSE, because functions and globals are separate index spaces, \
+                 so it assembles and then disagrees with Python about what `{name}` is. \
+                 Refusing rather than emitting either outcome"
+            )));
+        }
+        seen.push(name);
+    }
+    Ok(())
+}
+
+/// PMAT-1378: post-emit belt — no `$id` may be DEFINED twice within one WAT
+/// index space.
+///
+/// [`check_module_binding_names`] is the specific, well-worded refusal for the
+/// causes that exist today. This is the general one: it reads the emitted text
+/// itself, so a helper added by a future slice that happens to collide with an
+/// existing one (or with a name derived from user input, such as a struct
+/// method's `$<Struct>.<method>` mangling) is caught here instead of surfacing
+/// as a `wat2wasm` error in someone's build.
+///
+/// Matching is on a DEFINITION at the start of a trimmed line — `(global $x`
+/// or `(func $x`, which is exactly how this emitter lays both down. That
+/// deliberately excludes `(export "f" (func $f))`, where `(func $f` is a
+/// REFERENCE mid-line, and `(param $a i64)`, which is neither. Globals and
+/// functions are tracked separately because WAT indexes them separately: a
+/// `(func $g)` beside a `(global $g)` is legal WAT, and is caught upstream by
+/// the binding-name rule for the semantic reason, not here for a structural one.
+fn check_emitted_identifiers_unique(wat: &str) -> Result<(), BackendError> {
+    let mut globals: Vec<&str> = Vec::new();
+    let mut funcs: Vec<&str> = Vec::new();
+    for line in wat.lines() {
+        let t = line.trim_start();
+        let (space, rest) = if let Some(r) = t.strip_prefix("(global $") {
+            ("global", r)
+        } else if let Some(r) = t.strip_prefix("(func $") {
+            ("func", r)
+        } else {
+            continue;
+        };
+        // A WAT identifier runs to the first whitespace or `)`.
+        let id = rest
+            .split(|c: char| c.is_whitespace() || c == ')')
+            .next()
+            .unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        let bucket = if space == "global" {
+            &mut globals
+        } else {
+            &mut funcs
+        };
+        if bucket.contains(&id) {
+            return Err(unsupported(&format!(
+                "emitted WAT defines the {space} `${id}` twice — the module would be \
+                 rejected by `wat2wasm` (\"redefinition of {space}\"). This is the \
+                 PMAT-1378 belt: the emitter refuses its OWN output rather than \
+                 exiting 0 with an artifact that does not assemble. If `${id}` is a \
+                 runtime helper, two emit sites are laying it down; if it derives from \
+                 a source name, the binding-name check above needs widening"
+            )));
+        }
+        bucket.push(id);
+    }
+    Ok(())
 }
 
 /// `true` when any function in `module` takes a `list[...]` OR a `str`

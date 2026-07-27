@@ -16175,3 +16175,68 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1378
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1378: [honesty/correctness] `xpile transpile --target wasm` EXITED 0 emitting a module
+    `wat2wasm` REJECTS - refuse the top-level identifier collisions instead. Found by a DIFFERENTIAL ADVERSARIAL
+    pass over the 0.1.618 WASM lane (91 probes: python3 vs the emitted WAT assembled by wat2wasm and run
+    under wasm-interp), NOT by a failure report, on Day 2 after the D-pool was exhausted and the only
+    remaining OPEN queue items were the date-gated release pair. THE CLAIM FALSIFIED: crates/xpile/tests/wasm_contract_surface.rs
+    states in its own header that an emitted program "assembles under wat2wasm, and executes under wasm-interp".
+    FIVE ordinary source shapes falsified it, each exiting 0: (1) `def g()` declared twice -> `redefinition
+    of function "$g"`; (2) `N: int = 1` / `N: int = 2` -> `redefinition of global "$N"`; (3) the bare
+    `N = 1` / `N = 2` spelling -> same; (4) a module-level `__heap_ptr = 5` beside ANY heap user -> `redefinition
+    of global "$__heap_ptr"` (the emitted runtime''s own bump-allocator cursor); (5) `def __wasm_floordiv_i64()`
+    beside ANY `//`. THE TWO MIXED SPELLINGS ARE WORSE THAN A FAILED ASSEMBLY, BECAUSE THEY ASSEMBLE:
+    `def g(): return 1` then `g: int = 5` puts a `(func $g)` and a `(global $g)` into two DIFFERENT WAT
+    index spaces, so wat2wasm accepts the module - which then exports `g` as a callable returning 1 while
+    Python''s `g` is the integer 5 and is not callable at all; reversed (`g: int = 5` then `def g()`),
+    Python keeps the FUNCTION while a body reading `g` resolves the global and yields 5. Both are SILENT
+    WRONG ANSWERS with clean assembly - the disposition this repo ranks worst. AND THE RESERVED-NAME SHAPE
+    WAS THE MOST TREACHEROUS OF THE SET because whether it broke depended on which HELPERS the module
+    happened to pull in: `__heap_ptr = 5` emits fine alone, and adding an unrelated list literal three
+    lines later breaks assembly. THE FIX, three parts in crates/xpile-wasm-codegen/src/lib.rs: (a) `check_module_binding_names`
+    runs FIRST in `emit_module` (before any desugar, so the diagnostic names the source-level cause) and
+    refuses a TOP-LEVEL name bound more than once in any combination of def/const/class - Python REBINDS
+    (last binding wins) and WASM has no rebinding, so both definitions emit; (b) the same pass refuses
+    a top-level name in the runtime''s reserved namespace - `__heap_ptr`, `__alloc`, and the `__wasm_*`
+    helper family reserved WHOLESALE by prefix rather than enumerated (100+ helpers exist and a new one
+    lands most slices; enumerating would re-open the hole on the next slice) - UNCONDITIONALLY, not only
+    when this module pulls in the colliding helper; (c) `check_emitted_identifiers_unique`, the BELT,
+    runs at the end of `emit_module` on the bytes about to be returned and refuses WAT that DEFINES any
+    `$id` twice within one index space, so a helper added by a future slice cannot silently reintroduce
+    the defect. THE FIX IS PINNED AS NARROW, NOT ASSERTED TO BE: a PARAMETER, a function-LOCAL and a LOOP
+    VARIABLE named `__heap_ptr` are all still accepted and are EXECUTED against live python3 - WAT indexes
+    locals separately from globals, so nothing collides and refusing them would be over-refusal. WITNESSES:
+    a new 10-test crates/xpile-wasm-codegen/tests/module_identifier_collision_witness.rs (6 duplicate-binding
+    shapes + 6 reserved-name shapes refuse AT THE BACKEND - each asserts the FRONTEND still ACCEPTS the
+    source first, so a refusal that migrated upstream cannot make the file green while leaving `emit_module`
+    unguarded for other callers; 3 local-position neighbours execute and value-match python3; the ordinary
+    distinct-name module assembles and runs; one PROPERTY test asserts `emit_module` returning Ok implies
+    wat2wasm accepts the bytes, over every source in the file; and one test assembles the historical `(func
+    $g)`-beside-`(global $g)` WAT by hand to keep "it used to assemble AND lie" a checked fact rather
+    than a recollection), 4 of them runtime-gated, PLUS 5 unit tests in crates/xpile-wasm-codegen/src/tests.rs
+    driving the belt directly - it is unreachable through the public API today by construction, which
+    is exactly the state in which a belt rots untested. FOUR MUTANTS RUN: deleting the duplicate-binding
+    check reds 3; deleting the reserved-name check reds 2; neutering the belt reds 2; merging the belt''s
+    global and func buckets into one reds 1, proving the index-space split is load-bearing and that the
+    belt does not over-fire on the LEGAL `(func $g)` beside `(global $g)`. Mutant 2 is the instructive
+    one: with the reserved-name check gone the `__heap_ptr`-beside-a-list case is STILL refused, by the
+    BELT - the two layers demonstrably catch each other, which is the only reason to carry both. WASM
+    witness count live 827 -> 837 against an unchanged WASM_FLOOR = 770; runtime-gated 326 -> 330 against
+    WASM_EXEC_FLOOR = 300, fraction 39% -> 39% against WASM_EXEC_PCT_FLOOR = 36. (Counts MEASURED by running
+    the manifest, not read off the `// live 795 @ 2026-07-26` snapshot comment in witness_floor.rs --
+    that comment is a TOUCH-point snapshot which the file''s own header says is expected to trail the
+    true count, and a first draft of this entry quoted it as if it were live.) NO witness floor touched
+    - the two permitted 0.1.618 touches remain PMAT-1372 and PMAT-1373. No CI change, no contract change,
+    no gate value changed.'
+  status: done
+  priority: high
+  created: '2026-07-27T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
