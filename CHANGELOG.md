@@ -38,6 +38,87 @@ were. **Parsing is not conforming.**
 
 ### Fixed
 
+- **The WGSL lane accepted `2147483647` and refused `-2147483648` — the two
+  ends of the same `i32` range — blaming a literal the user never wrote**
+  (PMAT-1401):
+
+  ```console
+  $ printf 'def f(a: int, b: int) -> int:\n    return a + 2147483647\n' > ok.py
+  $ xpile transpile ok.py --target wgsl | tail -1
+    return (a + i32(2147483647));
+  $ printf 'def f(a: int, b: int) -> int:\n    return a + -2147483648\n' > min.py
+  $ xpile transpile min.py --target wgsl; echo "exit=$?"
+  Error: backend `wgsl` failed
+  Caused by:
+      lowering error: xpile-wgsl-codegen: emitted WGSL failed naga validation
+      — naga WGSL parse error: the concrete type `i32` cannot represent the
+      abstract value `2147483648` accurately
+  exit=1
+  ```
+
+  `2147483648` appears nowhere in `min.py`. The Python frontend does not fold
+  unary minus, so `-2147483648` reaches the backend as
+  `UnOp{Neg, LitInt(2147483648)}` and `emit_unop` emitted a negated
+  *conversion*, `(-(i32(2147483648)))` — putting an out-of-range magnitude
+  **inside** the conversion even though the value denoted, `i32::MIN`, is
+  perfectly representable. `--target spirv` inherited it verbatim, since that
+  lane emits by compiling this module's own WGSL lowering. The Rust lane
+  survives the same meta-HIR shape only because it renders `checked_neg()` on
+  an `i64`, where the magnitude fits.
+
+  This is the **inverse** of the class PMAT-1395 (WASM) and PMAT-1399 (Rust
+  from C) closed earlier in this cycle: there a literal outside the target
+  width was emitted anyway and the assembler rejected it; here a literal
+  *inside* the target width was refused. Both are one root defect — a literal
+  rendered without regard to the target width's actual bounds.
+
+  Fixed at the single emit site by folding `Neg(LitInt(n))` to `i32(-n)`.
+  The fold is **exact, not a coercion**: for every other magnitude the two
+  forms denote the same value, and a magnitude genuinely outside `i32` fails
+  the same naga range check — now naming the value the user actually wrote
+  (`-2147483649`, not `2147483649`). `checked_neg` guards `i64::MIN`, which
+  falls through to the unchanged path.
+
+  Why the existing sweeps missed it: PMAT-1388 sweeps ~800 fixtures through
+  both GPU lanes but asserts a *relation* between them (SPIR-V accepts a
+  subset of WGSL), which a defect present in **both** lanes satisfies;
+  `xpile-spirv-codegen/tests/offline_validate.rs` and
+  `xpile-ptx-codegen/tests/ptxas_validate.rs` do run the real validators, but
+  over **hand-built meta-HIR**, so no Python source reaches them and no
+  fixture carries an `i32`-boundary literal.
+
+### Added
+
+- **`crates/xpile/tests/wgsl_int_boundary_witness.rs` (XPILE-WGSLI32-001)** —
+  the gate for the above (PMAT-1401). Five tests, no skip path (naga is a
+  library), inside the required `workspace-test` context.
+
+  The accepted set is pinned at both ends of acceptance **and** both ends of
+  refusal: `i32::MIN - 1` and `i32::MAX + 1` must still refuse, so the
+  over-refusal cannot be "repaired" by widening what is accepted — that would
+  trade an exit-1 lie for a silent wrong answer, which is strictly worse and
+  is the standing lesson from PMAT-1395's falsification (B). A separate test
+  pins the emitted **decimal**, the half a compile-only gate cannot provide:
+  a well-typed emit can still denote the wrong value. Probes are generated
+  across five syntactic positions (return, binop operand, local initializer,
+  comparison, loop bound) rather than sampled from one, and the SPIR-V leg is
+  verified end-to-end through naga's spv backend rather than inferred from
+  the WGSL result.
+
+  Anti-vacuity, **measured rather than asserted**: `naga_validate_wgsl("")`
+  returns `Ok` — an empty WGSL module validates clean. A probe harness that
+  redirects stdout to a file and validates the file therefore reports a
+  *refused* program as passing, because the shell creates the file before the
+  emit fails. That fired twice while this defect was being investigated. Every
+  assertion is guarded on substance (the probe's own function must be present),
+  never on `is_ok()` alone, and a dedicated test pins the empty-module premise
+  so those guards do not decay into cargo cult if naga's behaviour changes.
+
+  Red-then-green: reverting the fix reds 4 of the 5 tests; the in-range
+  acceptance count drops 20 → 15 (exactly the `i32::MIN` row in all five
+  positions) while the refusal count is **unchanged at 10** — the receipt that
+  the fix widened nothing.
+
 - **`CLAUDE.md` — the file every agent session in this repo loads first —
   opened its shell-policy section with a claim the same file contradicted
   89 lines later** (PMAT-1396):

@@ -68,3 +68,10 @@ bashrs-frontend         = { workspace = true }
 # real LatexContractFrontend (the test asserts the C-NOTATION three-
 # form equivalence claim against on-disk evidence).
 latex-contract-frontend = { workspace = true }
+# PMAT-1401: wgsl_int_boundary_witness.rs re-validates emitted WGSL through the
+# repo's own exported `naga_validate_wgsl` gate, INDEPENDENTLY of the call
+# `emit_wgsl_module` makes internally — so `Ok ⟹ naga accepts` stays a checked
+# property rather than an unchecked comment if that internal call is ever
+# removed. Already in the graph transitively via xpile-backend; this makes the
+# test's use of it direct.
+xpile-wgsl-codegen      = { workspace = true }
