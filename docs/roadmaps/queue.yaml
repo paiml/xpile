@@ -942,6 +942,47 @@ queue:
     METHOD NOTE for later verify passes: the productive question was not "is the refusal correct?" but
     "what SPELLINGS of the refused construct exist, and does the detector see each one?" A guard keyed
     on a token PREFIX is suspect whenever the tokenizer does not split operators.
+- id: PMAT-1378
+  status: done
+  ev_rank: R1
+  title: 'VERIFY-PASS FINDING: `--target wasm` exited 0 emitting WAT that `wat2wasm` REJECTS — refuse
+    duplicate top-level bindings and reserved runtime names (SHIPPED 2026-07-27)'
+  date: '2026-07-27'
+  notes: |
+    NOT a planned queue item -- the SECOND product of the Day-2 adversarial verify posture, after
+    PMAT-1377. Same provenance rule applies: the queue's ranked slate for 2026-07-27 was empty (the
+    D-pool exhausted at PMAT-1366, the only OPEN items being the date-gated release pair PMAT-1373/1374),
+    and the standing EV rule -- a fix converting a SILENT WRONG ANSWER into an honest refusal outranks new
+    capability -- selects a verify pass over already-shipped 0.1.618 work.
+    METHOD: a DIFFERENTIAL harness, not a re-read. 91 probes across three rounds, each running live
+    python3 against the emitted artifact (WASM: xpile -> wat2wasm -> wasm-interp, values reinterpreted at
+    the declared width because wasm-interp prints integers UNSIGNED). Round 1+2 (49 + 41 shell probes)
+    found NOTHING in the bashrs lane -- worth recording as a negative result, since PMAT-1371/1377 have
+    now been differentially exercised over redirections, logical operators, subshells, function
+    definitions, comments, line continuations, quoting edges, globs, parameter expansion, multi-line
+    quotes and deep control-flow nesting, and every non-OK case was an honest REFUSE. Round 3 turned the
+    same harness on the newest WASM slices and found this.
+    FINDING: five shapes exited 0 with unassemblable WAT (dup `def`, dup const x2 spellings, `__heap_ptr`
+    const beside a heap user, `__wasm_*` fn beside its helper), and two MIXED shapes (def+const of one
+    name) ASSEMBLED CLEANLY and then disagreed with CPython about what the name is. Fixed by a
+    top-level-binding uniqueness check, a wholesale reserved-prefix refusal, and a post-emit
+    duplicate-identifier BELT with its own unit tests. Four mutants run (3 / 2 / 2 / 1 red).
+    PROCESS NOTE, worth one line because it will recur: the first draft of this slice's roadmap entry
+    quoted the WASM witness count as "795 -> 805", read off the `// live 795 @ 2026-07-26 (TOUCH 1)`
+    comment in witness_floor.rs. That comment is a TOUCH-POINT SNAPSHOT and the file's own header says it
+    is EXPECTED to trail the live count between touches. Live was 827 -> 837. MEASURE by running the
+    manifest (`cargo test -p xpile --test witness_floor -- --nocapture`); never quote the snapshot.
+    NEGATIVE RESULTS WORTH NOT RE-DERIVING (same harness, same session): PMAT-1365's `list(d)` family and
+    PMAT-1366's module consts + `round(x)` are CLEAN over 35 probes -- including the aliasing question
+    (`xs = list(d)` then mutating `d`), CPython's round-half-to-EVEN at 0.5/1.5/2.5/-0.5/-1.5, and const
+    reads in range bounds / while conditions / list literals / dict keys / f-strings. Two REAL divergences
+    were found and deliberately NOT actioned: (i) i64 WRAPAROUND -- `2**63-1 + 1`, `2**62 * 4` and
+    `-(-2**63)` all silently wrap where Python has bignums, and `1 << 70` returns 64 because `i64.shl`
+    masks the shift count to 6 bits (wrong even under fixed-width semantics, where 0 is the defensible
+    answer); (ii) `round(1e19)` traps on i64 overflow. (ii) is an honest trap under the lane's
+    `runtime_abort: true` profile. (i) is a genuine silent-wrong-answer class but the fix is
+    overflow-checked arithmetic across every i64 op -- an L/XL change to the emitter's hot path, wrong to
+    land in a release week. SEEDED for 0.1.619; the shift-count half is separable and much smaller.
 - id: PMAT-1373
   status: open
   ev_rank: R1
@@ -1080,6 +1121,17 @@ queue:
 
     someone else''s schedule into this repo''s merge queue.'
 next_lane:
+- 'WASM i64 OVERFLOW is a SILENT WRONG ANSWER (measured by the PMAT-1378 differential pass, 2026-07-27;
+  deliberately NOT actioned in a release week). Python ints are arbitrary precision; the lane maps them
+  to i64 and wraps without a word: `9223372036854775807 + 1` returns -9223372036854775808, `2**62 * 4`
+  returns 0, `-(-2**63)` returns itself. Div-by-zero already TRAPS honestly (i64.div_s), so the lane is
+  internally inconsistent about which arithmetic failures it reports. The full fix is overflow-checked
+  add/sub/mul/neg helpers that `unreachable` on overflow — L/XL, on the emitter''s hot path, and it
+  touches every existing witness. SEPARABLE AND MUCH SMALLER, do this one first: the SHIFT half. `1 << 70`
+  returns 64 because `i64.shl` masks the count to 6 bits — wrong even under fixed-width semantics, where
+  0 is the defensible answer — and a NEGATIVE count (Python raises ValueError) masks to a large positive
+  one. `x >> n` for n >= 64 is fixable EXACTLY by clamping to 63, which reproduces CPython for both
+  signs; `x << n` for n >= 64 always overflows i64 unless x == 0, so it traps. Neither needs the hot path.'
 - list[str] — the biggest compositional hole; blocks s.split(), ','.join(xs) and the repo's own word_count.py.
   Even the read-only subset is M-L.
 - Nested dict values dict[K, dict[...]] and dict-valued struct fields — unblocked by the shipped i32-pointer-in-i64-slot

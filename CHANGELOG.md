@@ -9,6 +9,52 @@ meta-HIR and the trait surfaces.
 
 ### Fixed
 
+- **`xpile transpile --target wasm` no longer exits 0 with a module `wat2wasm`
+  rejects** (PMAT-1378). `crates/xpile/tests/wasm_contract_surface.rs` states
+  the lane's claim in its own header — an emitted program "assembles under
+  `wat2wasm`, and executes under `wasm-interp`". Five ordinary source shapes
+  falsified it, every one of them exiting **0**: two `def g()`s
+  (*redefinition of function `$g`*), `N = 1` / `N = 2` (*redefinition of global
+  `$N`*), the annotated spelling of the same, a module-level `__heap_ptr = 5`
+  next to any heap user (*redefinition of global `$__heap_ptr`* — the emitted
+  runtime's own bump-allocator cursor), and a `def __wasm_floordiv_i64()` next
+  to any `//`. **The two mixed spellings are worse than a failed assembly,
+  because they assemble.** `def g(): return 1` followed by `g: int = 5` puts a
+  `(func $g)` and a `(global $g)` into two *different* WAT index spaces, so
+  `wat2wasm` is happy — and the module then exports `g` as a callable returning
+  `1` while Python's `g` is the integer `5` and is not callable at all.
+  Reversed, Python keeps the function while a body reading `g` resolves the
+  global and yields `5`. Both are silent wrong answers with clean assembly.
+  **And the reserved-name shape was the most treacherous of the set**, because
+  whether it broke depended on which *helpers* the module happened to pull in:
+  `__heap_ptr = 5` emitted fine on its own, and adding an unrelated list
+  literal three lines later broke assembly. Two checks close it. A top-level
+  name bound more than once — in any combination of `def`, const, class —
+  refuses, since Python *rebinds* (last binding wins) and WASM has no
+  rebinding, so both definitions emit. A top-level name inside the runtime's
+  reserved namespace (`__heap_ptr`, `__alloc`, and the `__wasm_*` helper family
+  reserved *wholesale* rather than enumerated — there are 100+ and a new one
+  lands most slices) refuses **unconditionally**, not only when this particular
+  module pulls in the colliding helper. **The fix is pinned as narrow, not
+  asserted to be:** a parameter, a function-local and a loop variable named
+  `__heap_ptr` are all still accepted, and are *executed* against live python3,
+  because WAT indexes locals separately from globals and there is nothing to
+  collide. A third check is the belt — `emit_module` now scans its own output
+  and refuses to return WAT that defines any `$id` twice within one index
+  space, so a helper added by a future slice cannot silently reintroduce the
+  defect. It is unreachable through the public API today by construction, so it
+  carries its own unit tests rather than rotting untested; the index-space
+  split is load-bearing and has its own mutant. **All four mutants were run**:
+  deleting the duplicate-binding check reds 3 tests, deleting the reserved-name
+  check reds 2, neutering the belt reds 2, and merging the belt's two buckets
+  into one reds 1 — the last proving it does not over-fire on the legal
+  `(func $g)`-beside-`(global $g)`. The second mutant is the one worth reading:
+  with the reserved-name check gone, the `__heap_ptr`-beside-a-list case is
+  still refused, *by the belt* — the two layers demonstrably catch each other,
+  which is the only reason to have both. Found by a differential adversarial pass
+  over the 0.1.618 WASM lane (91 probes, python3 vs `wat2wasm` + `wasm-interp`),
+  not by a failure report.
+
 - **The here-document refusal now covers the here-documents people actually
   write** (PMAT-1377). PMAT-1371 shipped a guard that matched a `Bare` token
   *starting with* `<<` — which is only the space-separated spelling

@@ -6475,3 +6475,115 @@ fn list_float_slice_executes_in_wabt() {
          f64 words survive the range-move; negative/omitted bounds CPython-exact; six exports match"
     );
 }
+
+// ---- PMAT-1378: the emitted-identifier BELT ---------------------------------
+//
+// `check_module_binding_names` catches every collision cause that exists in
+// the emitter today, which leaves `check_emitted_identifiers_unique`
+// unreachable through the public API — exactly the state in which a belt
+// silently rots. These unit tests drive it directly on WAT text so it is
+// exercised on its own terms: it must fire on a real duplicate, and it must
+// not fire on the many legal shapes that merely LOOK like one.
+
+#[test]
+fn belt_rejects_a_duplicate_global_definition() {
+    let wat = "(module\n  (global $N i64 (i64.const 1))\n  (global $N i64 (i64.const 2))\n)\n";
+    let err = check_emitted_identifiers_unique(wat)
+        .expect_err("two `(global $N` definitions must be caught")
+        .to_string();
+    assert!(err.contains("global `$N` twice"), "{err}");
+}
+
+#[test]
+fn belt_rejects_a_duplicate_func_definition() {
+    let wat =
+        "(module\n  (func $g (result i64) i64.const 1)\n  (func $g (result i64) i64.const 2)\n)\n";
+    let err = check_emitted_identifiers_unique(wat)
+        .expect_err("two `(func $g` definitions must be caught")
+        .to_string();
+    assert!(err.contains("func `$g` twice"), "{err}");
+}
+
+#[test]
+fn belt_does_not_fire_on_legal_wat() {
+    // Every shape the belt must walk past:
+    //   * a `(func $g)` beside a `(global $g)` — separate index spaces, legal
+    //     WAT (this is the def+const case, refused UPSTREAM on semantic
+    //     grounds; the belt is structural and must not double-report it);
+    //   * `(export "g" (func $g))` — `(func $g` mid-line is a REFERENCE, not a
+    //     definition, and every emitted function has one;
+    //   * repeated `(param $a …)` / `(local $q …)` across functions — locals
+    //     are per-function, so the same name recurs constantly and must not
+    //     be tracked at all;
+    //   * a `call $g` reference.
+    let wat = "\
+(module
+  (global $g i64 (i64.const 5))
+  (func $g (result i64) i64.const 1)
+  (export \"g\" (func $g))
+  (func $a (param $x i64) (result i64) (local $q i64) local.get $x)
+  (export \"a\" (func $a))
+  (func $b (param $x i64) (result i64) (local $q i64) local.get $x)
+  (export \"b\" (func $b))
+  (func $c (result i64) call $g)
+)
+";
+    check_emitted_identifiers_unique(wat).expect("legal WAT must pass the belt");
+}
+
+#[test]
+fn belt_passes_on_every_module_the_emitter_actually_produces() {
+    // The belt runs on the emitter's own output at the end of `emit_module`,
+    // so a false positive would break emission outright. Drive a module that
+    // pulls in the widest helper set this file can build cheaply.
+    let m = module_with(vec![
+        Item::Const {
+            name: "SCALE".into(),
+            ty: Type::I64,
+            value: Expr::LitInt(7),
+        },
+        Item::Function(Function {
+            name: "d".into(),
+            params: vec![param("a", Type::I64), param("b", Type::I64)],
+            return_type: Type::I64,
+            body: Block {
+                stmts: Vec::new(),
+                trailing_return: Expr::BinOp {
+                    op: BinOp::FloorDiv,
+                    lhs: Box::new(Expr::Ident("a".into())),
+                    rhs: Box::new(Expr::Ident("b".into())),
+                },
+            },
+        }),
+        Item::Function(add_fn()),
+    ]);
+    let wat = emit_module(&m).expect("emit");
+    check_emitted_identifiers_unique(&wat).expect("the emitter's own output must pass its belt");
+}
+
+#[test]
+fn binding_name_check_is_order_independent() {
+    // `seen` is a linear scan; make sure it is the SET of prior names that is
+    // consulted, not just the immediately preceding one.
+    let m = module_with(vec![
+        Item::Const {
+            name: "A".into(),
+            ty: Type::I64,
+            value: Expr::LitInt(1),
+        },
+        Item::Const {
+            name: "B".into(),
+            ty: Type::I64,
+            value: Expr::LitInt(2),
+        },
+        Item::Const {
+            name: "A".into(),
+            ty: Type::I64,
+            value: Expr::LitInt(3),
+        },
+    ]);
+    let err = emit_module(&m)
+        .expect_err("`A` bound twice with `B` between them")
+        .to_string();
+    assert!(err.contains("`A` is bound more than once"), "{err}");
+}
