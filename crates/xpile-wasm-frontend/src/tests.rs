@@ -579,3 +579,272 @@ fn frontend_parse_and_lower_recovers_module_name() {
     // (NOT the file stem `whatever`).
     assert_eq!(lifted.name, "named_mod");
 }
+
+// ─── PMAT-1392: the `i32.const` bool-encoding boundary ──────────────
+//
+// Until PMAT-1392 the lift folded EVERY nonzero `i32.const` to `true`
+// (`LitBool(v != 0)`) at three code-identical sites. `i32.const 2` therefore
+// re-emitted as `i32.const 1`: VALID WAT that `wat2wasm` accepts and
+// `wasm-interp` runs to a DIFFERENT value than the source, at exit 0 on
+// every leg — the sharpest exit-0-but-false shape, because nothing
+// downstream can catch it. `.wat` IS an advertised frontend (`xpile
+// transpile foo.wat`), so hand-written / third-party WAT reached this.
+//
+// The section below pins BOTH halves: the refusal at all THREE sites (each
+// mutant derived from LIVE emit, not hand-written, so the surrounding shape
+// is canonical by construction), and — under WABT — a live EXECUTION
+// differential proving the accepted half is value-preserving and every
+// refused literal is one whose runtime value the lift could not have
+// represented.
+
+use std::process::Command;
+
+/// A `Stmt::Let` at an explicit type (the shared `let_mut` helper above is
+/// I64-only; the bool locals here are what lower to `i32`).
+fn let_mut_ty(name: &str, ty: Type, value: Expr) -> Stmt {
+    Stmt::Let {
+        name: name.to_string(),
+        ty,
+        value,
+        mutable: true,
+    }
+}
+
+/// A module whose emitted WAT contains exactly THREE `i32.const`
+/// occurrences, one per lift site, in text order:
+///   0. `i32.const 0` — the `flag` initialiser (straight-line body)
+///   1. `i32.const 1` — the `while true` condition (loop condition)
+///   2. `i32.const 1` — the `flag = true` assignment (loop body)
+///
+/// Mutating occurrence *k* therefore targets site *k* precisely.
+fn three_site_module() -> Module {
+    module(
+        "i32const_mod",
+        vec![func(
+            "f",
+            vec![],
+            Type::Bool,
+            Block {
+                stmts: vec![
+                    let_mut_ty("flag", Type::Bool, Expr::LitBool(false)),
+                    whileloop(
+                        Expr::LitBool(true),
+                        vec![assign("flag", Expr::LitBool(true)), Stmt::Break],
+                    ),
+                ],
+                trailing_return: ident("flag"),
+            },
+        )],
+    )
+}
+
+/// Replace the `n`-th (0-based) occurrence of `needle` in `hay`.
+fn replace_nth(hay: &str, needle: &str, n: usize, with: &str) -> String {
+    let mut start = 0usize;
+    for _ in 0..n {
+        let at = hay[start..]
+            .find(needle)
+            .unwrap_or_else(|| panic!("occurrence {n} of `{needle}` not found"))
+            + start;
+        start = at + needle.len();
+    }
+    let at = hay[start..]
+        .find(needle)
+        .unwrap_or_else(|| panic!("occurrence {n} of `{needle}` not found"))
+        + start;
+    format!("{}{with}{}", &hay[..at], &hay[at + needle.len()..])
+}
+
+#[test]
+fn i32_const_outside_the_bool_encoding_is_refused_at_all_three_sites() {
+    let wat = emit(&three_site_module());
+
+    // Vacuity guard 1: the UNMUTATED module lifts. Without this the three
+    // refusals below would also pass if the fixture were malformed.
+    lift_wat("i32const_mod", &wat).expect("the 0/1 fixture is inside the lift subset");
+
+    // Vacuity guard 2: the site indices mean what the doc comment says.
+    // `assert_eq!` not `>=` — a 4th occurrence would silently re-point the
+    // mutants at the wrong site.
+    assert_eq!(
+        wat.matches("i32.const ").count(),
+        3,
+        "fixture must emit exactly one i32.const per lift site:\n{wat}"
+    );
+
+    // (occurrence, expected site phrase, phrase that must NOT appear)
+    let sites: [(usize, &str, &str); 3] = [
+        (0, "`i32.const 2` is outside", "loop"),
+        (1, "`i32.const 2` in loop condition", "loop body"),
+        (2, "`i32.const 2` in loop body", "loop condition"),
+    ];
+    for (occ, must, must_not) in sites {
+        let mutant = replace_nth(&wat, "i32.const ", occ, "i32.const 2 ;;@ ");
+        // The mutant is still WELL-FORMED WAT — the refusal below is a
+        // SUBSET decision, not a parse failure.
+        let err = lift_wat("i32const_mod", &mutant)
+            .expect_err("i32.const 2 must be refused at site {occ}");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains(must),
+            "site {occ}: refusal must name `{must}`, got: {msg}\n--- mutant ---\n{mutant}"
+        );
+        assert!(
+            !msg.contains(must_not),
+            "site {occ}: refusal mis-attributed (contains `{must_not}`): {msg}"
+        );
+
+        // The CONTROL for this site: the SAME position holding `1` still
+        // lifts. Without it, a guard that killed the whole arm would pass.
+        let control = replace_nth(&wat, "i32.const ", occ, "i32.const 1 ;;@ ");
+        lift_wat("i32const_mod", &control)
+            .unwrap_or_else(|e| panic!("site {occ} control (`i32.const 1`) must still lift: {e}"));
+    }
+}
+
+#[test]
+fn i32_const_bool_encoding_still_round_trips_to_the_fixed_point() {
+    // The accepted half is untouched: `emit(lift(emit(M))) == emit(M)` for a
+    // module carrying BOTH bool literals at all three sites.
+    let lifted = roundtrip(&three_site_module());
+    let Item::Function(f) = &lifted.items[0] else {
+        panic!("function recovered");
+    };
+    assert!(
+        matches!(
+            f.body.stmts.first(),
+            Some(Stmt::Let {
+                value: Expr::LitBool(false),
+                ..
+            })
+        ),
+        "`i32.const 0` still inverts to LitBool(false), got: {:?}",
+        f.body.stmts.first()
+    );
+    let Some(Stmt::While { cond, body }) = f
+        .body
+        .stmts
+        .iter()
+        .find(|s| matches!(s, Stmt::While { .. }))
+    else {
+        panic!("while recovered");
+    };
+    assert!(
+        matches!(cond, Expr::LitBool(true)),
+        "`i32.const 1` still inverts to LitBool(true) in the loop condition, got: {cond:?}"
+    );
+    assert!(
+        matches!(
+            body.first(),
+            Some(Stmt::Assign {
+                value: Expr::LitBool(true),
+                ..
+            })
+        ),
+        "`i32.const 1` still inverts to LitBool(true) in the loop body, got: {:?}",
+        body.first()
+    );
+}
+
+/// Assemble + run `wat_src`, returning the single export's printed value
+/// (e.g. `"i32:2"`). Each call gets its OWN directory — a per-TEST dir races
+/// when one body assembles several modules.
+fn interp_single_export(wat_src: &str, tag: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("xpile-1392-{}-{tag}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create work dir");
+    let wat = dir.join("m.wat");
+    let wasm = dir.join("m.wasm");
+    std::fs::write(&wat, wat_src).expect("write wat");
+
+    let asm = Command::new("wat2wasm")
+        .arg(&wat)
+        .arg("-o")
+        .arg(&wasm)
+        .output()
+        .expect("spawn wat2wasm");
+    assert!(
+        asm.status.success(),
+        "wat2wasm rejected {tag}:\n{}\n--- src ---\n{wat_src}",
+        String::from_utf8_lossy(&asm.stderr)
+    );
+
+    let run = Command::new("wasm-interp")
+        .arg("--run-all-exports")
+        .arg(&wasm)
+        .output()
+        .expect("spawn wasm-interp");
+    assert!(run.status.success(), "wasm-interp failed on {tag}");
+    let out = String::from_utf8_lossy(&run.stdout);
+    out.lines()
+        .find_map(|l| l.split_once("=> "))
+        .map(|(_, v)| v.trim().to_string())
+        .unwrap_or_else(|| panic!("no exported value in wasm-interp output for {tag}:\n{out}"))
+}
+
+#[test]
+fn i32_const_lift_is_value_preserving_or_refuses_execution_differential() {
+    // The load-bearing test: a RELATION over live execution, not a hand-list.
+    // For each literal, the reference value comes from actually RUNNING the
+    // source module. Then:
+    //   * lift accepted  ⟹ the round-tripped module must run to the SAME value
+    //   * lift refused   ⟹ the reference value is outside the bool encoding
+    // Pre-PMAT-1392 the N∈{2,-5,7,255} rows were all ACCEPTED and all ran to
+    // `i32:1`, so the first arm fails on every one of them (red-then-green).
+    if !xpile_wasm_codegen::wasm_runtime_available() {
+        eprintln!("SKIP i32_const execution differential: WABT not invocable");
+        return;
+    }
+
+    let mut accepted = 0usize;
+    let mut refused = 0usize;
+    for (i, n) in [0i64, 1, 2, -5, 7, 255].into_iter().enumerate() {
+        let src = format!(
+            "(module\n  ;; source module: c{i}\n  (func $f (result i32)\n    \
+             i32.const {n}\n  )\n  (export \"f\" (func $f))\n)\n"
+        );
+        // Every source here is well-formed WAT — asserted inside the helper,
+        // so a refusal below is xpile's SUBSET decision, never bad input.
+        let reference = interp_single_export(&src, &format!("ref{i}"));
+
+        match lift_wat(&format!("c{i}"), &src) {
+            Ok(m) => {
+                accepted += 1;
+                let observed = interp_single_export(&emit(&m), &format!("rt{i}"));
+                assert_eq!(
+                    observed, reference,
+                    "i32.const {n}: the lift ACCEPTED the module but the \
+                     round-tripped WAT runs to {observed} where the source \
+                     runs to {reference} — a silent value corruption at exit 0"
+                );
+                assert!(
+                    reference == "i32:0" || reference == "i32:1",
+                    "only the 0/1 bool encoding may be accepted, but \
+                     i32.const {n} runs to {reference}"
+                );
+            }
+            Err(e) => {
+                refused += 1;
+                assert!(
+                    reference != "i32:0" && reference != "i32:1",
+                    "i32.const {n} runs to {reference} — inside the bool \
+                     encoding — yet the lift refused it: {e}"
+                );
+                assert!(
+                    format!("{e}").contains("outside the lift subset"),
+                    "refusal must use the honest-boundary phrasing: {e}"
+                );
+            }
+        }
+    }
+    // Vacuity guards: neither arm may be empty. An "everything refuses" or
+    // "everything accepts" regression passes every assertion above.
+    assert_eq!(
+        accepted, 2,
+        "exactly i32.const 0 and 1 are inside the subset"
+    );
+    assert_eq!(refused, 4, "the other four literals are outside it");
+    eprintln!(
+        "witness[PMAT-1392]: {accepted} accepted (value-preserving, executed) \
+         / {refused} refused, all 6 references executed under wasm-interp"
+    );
+}

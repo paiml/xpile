@@ -17145,3 +17145,77 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1392
+  github_issue: null
+  item_type: task
+  title: 'PMAT-1392: [honesty/wasm-lift] the WAT lift folded EVERY nonzero `i32.const`
+    to `true`, so `xpile transpile m.wat` emitted a VALID module that computes a DIFFERENT
+    VALUE. `(func $f (result i32) i32.const 2)` round-tripped to `i32.const 1` -- reference
+    `i32:2`, xpile `i32:1`, exit 0 on all three legs (emit, wat2wasm, wasm-interp).
+    Guarded at ONE shared `lift_i32_const` helper covering all THREE code-identical
+    sites; anything outside {0,1} now REFUSES.'
+  description: '** THE DEFECT (execution differential, re-run end to end before and after):
+    `printf ''(module (func $f (result i32) i32.const 2) (export "f" (func $f)))''` runs
+    to `f() => i32:2` under wasm-interp. `xpile transpile m.wat --target wasm` exited 0
+    emitting `i32.const 1`, which wat2wasm ACCEPTS and wasm-interp runs to `f() => i32:1`.
+    `i32.const -5` (reference 4294967291) likewise became 1. Nothing downstream could
+    catch it because the output is well-formed WAT -- the sharpest exit-0-but-false shape
+    (the artifact is valid, only the VALUE is wrong). `.wat` IS an advertised frontend
+    (main.rs `"wasm" | "wat"`), so hand-written / third-party WAT reached this. `--target
+    rust` rendered the same module as `pub fn f() -> bool { true }`.
+    ** ROOT CAUSE: a bare `Expr::LitBool(v != 0)` at THREE code-identical sites --
+    straight-line body (lib.rs:557), loop condition (:877), loop body (:977). In the
+    `xpile-wasm-codegen` image an `i32` IS the 0/1 bool encoding and an integer literal
+    is an `i64`, so 0/1 invert to false/true and NOTHING ELSE has a meta-HIR
+    representative. `i32.const` was the ONE unguarded hole in an otherwise strict lift:
+    every neighbouring out-of-image construct (`i32.add`, `i32.div_s`, `i32.popcnt`,
+    `drop`, `(memory 1)`) already refused at exit 1.
+    ** THE FIX: all three sites route through ONE `lift_i32_const(tok, site)` helper --
+    a single decision point, so the guard cannot be added to one arm and forgotten in
+    the other two (the PMAT-1386 class lesson: a guard for one ARGUMENT is not a guard
+    for the FUNCTION). Outside {0,1} returns `FrontendError::Lower` naming the literal,
+    the site, and the `i64.const N` remedy.
+    ** SCOPE MEASURED, NOT ASSERTED: the queue note CLAIMED xpile''s own emit never puts
+    an out-of-range `i32.const` in the lift-reachable subset. Verified by sweeping all
+    847 corpus fixtures through emit-then-lift: 222 emit WASM, 42 are lift-reachable,
+    and ZERO produce an `i32.const` refusal. That count is COMPLETE, not a sample --
+    the only new Err path carries the literal string `i32.const`, so a nonzero count is
+    the exact tell. The self-round-trip fixed point is untouched.
+    ** WITNESS (3 tests, xpile-wasm-frontend/src/tests.rs, MEASURED executing not
+    skipping -- the eprintln reports 6/6 references run under wasm-interp). The
+    load-bearing one is a RELATION OVER LIVE EXECUTION, not a hand-list: for each of
+    {0,1,2,-5,7,255} the reference value comes from RUNNING the source, then accepted =>
+    the round-tripped module must run to the SAME value, refused => the reference must be
+    outside the bool encoding. Both arms vacuity-guarded (exactly 2 accepted / 4 refused),
+    so neither "accept everything" nor "refuse everything" passes. Every source is
+    asserted to ASSEMBLE, so a refusal is xpile''s subset decision and never bad input.
+    ** THREE-SITE COVERAGE derived from LIVE EMIT, not hand-written WAT: a fixture whose
+    emitted WAT contains EXACTLY three `i32.const` occurrences (count asserted, so the
+    indices cannot silently re-point), one per lift site; each mutant replaces exactly
+    one. Each refusal is paired with an `i32.const 1` CONTROL at the SAME position, so a
+    guard that killed a whole arm would fail, and each asserts the OTHER site''s phrase is
+    ABSENT so a refusal cannot be mis-attributed.
+    ** RED HALF EXECUTED, NOT ASSERTED: with product code reverted to origin/main and the
+    tests kept, 2 of 3 FAIL -- naming `Let { flag, value: LitBool(true) }` for `i32.const
+    2` and the `left: "i32:1" right: "i32:2"` divergence. The third is the CONTROL (the
+    0/1 fixed point) and passes both ways, as it must.
+    ** DISCLOSED RESIDUAL, deliberately NOT fixed (the queue''s "optional second half"):
+    the unconditional `"i32" => Type::Bool` at lib.rs:331 still renders a hand-written
+    `(param $a i32)` as `bool` on `--target rust`. Unlike the const fold that is a genuine
+    emit-image AMBIGUITY -- `Bool` and `CUInt` both lower to i32, so no correct inverse
+    exists without an out-of-band signal -- and it does NOT corrupt a value: the WAT round
+    trip stays value-preserving. Recorded in the crate module docs and queued for 0.1.619
+    rather than papered over.
+    ** SCOPE: one product file (crates/xpile-wasm-frontend/src/lib.rs) + its test module.
+    witness_floor.rs UNTOUCHED (two-touch serial resource; TOUCH 2 is reserved for
+    PMAT-1373). No gate file edited. No new *_witness.rs file, so the wasm witness-manifest
+    runtime-guard gate is unaffected.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -2203,7 +2203,7 @@ queue:
     NEXT PICK: PMAT-1392 (R5, dated 2026-07-28 — WAT lift folds EVERY nonzero `i32.const` to `true`;
     `i32.const 2` round-trips to `1`, valid WAT, wrong value, exit 0 on all three legs).'
 - id: PMAT-1392
-  status: open
+  status: done
   ev_rank: R5
   gate_touch: null
   date: '2026-07-28'
@@ -2235,6 +2235,33 @@ queue:
     \ != 0)'` -> 3, all product code),\nso nothing needs unwinding.\nACCEPTANCE:\n  $X transpile $D/m.wat\
     \ --target wasm; echo $?    # -> 1, message names `i32.const 2`\n  a 0/1 module still round-trips\
     \ at rc=0; add a refusal test AND a round-trip test\n  command cargo test -p xpile-wasm-frontend\n"
+  completion: |
+    DONE 2026-07-27 (Mon, day 1 of the 0.1.618 slate; pulled forward from 07-28 because
+    nothing was OPEN dated <= today). Fixed exactly as specified: ONE shared
+    `lift_i32_const(tok, site)` helper behind all THREE code-identical sites (:557 body,
+    :877 loop cond, :977 loop body), refusing outside {0,1} with the "outside the lift
+    subset" phrasing. CLI acceptance MET: `transpile m.wat --target wasm` -> exit 1 naming
+    `i32.const 2`; `--target rust` refuses identically (same frontend); a 0/1 module still
+    round-trips at rc=0 and executes to the reference value. 3 tests added to
+    xpile-wasm-frontend/src/tests.rs, MEASURED executing (6/6 references run under
+    wasm-interp, reported via eprintln -- not trusted green).
+    ** THE SCOPE CLAIM IN THIS ENTRY WAS VERIFIED, NOT INHERITED: "xpile's own emit never
+    puts i32.const N (N not in {0,1}) in the lift-reachable subset" is now MEASURED --
+    all 847 corpus fixtures swept emit-then-lift (222 emit WASM, 42 lift-reachable),
+    ZERO i32.const refusals. Complete rather than sampled, because the only new Err path
+    contains the literal string `i32.const`.
+    ** OPTIONAL SECOND HALF EXPLICITLY SKIPPED (as this entry permits): the unconditional
+    `"i32" => Type::Bool` at lib.rs:331 still renders a hand-written `(param $a i32)` as
+    `bool` on --target rust. It is an emit-image AMBIGUITY (Bool and CUInt both lower to
+    i32; no correct inverse without an out-of-band signal), NOT a value corruption -- the
+    WAT round trip is value-preserving either way. Documented in the crate module docs;
+    belongs to the 0.1.619 lane, not this window.
+    ** NEXT PICK: nothing is OPEN dated <= 2026-07-27. Pull forward from 07-28 ->
+    PMAT-1393 (R6, README publishes a FABRICATED `$ xpile quorum` transcript the shipped
+    binary does not produce). Do NOT start a gate_touch and do NOT touch witness_floor.rs
+    (TOUCH 2 is reserved for PMAT-1373). HARD FREEZE Wed 2026-07-29 18:00: no crates/*/src
+    or contracts/*.yaml merge after it. 2026-07-30 -> PMAT-1373 (release commit, tag);
+    2026-07-31 -> PMAT-1374 (publish).
 - id: PMAT-1393
   status: open
   ev_rank: R6
