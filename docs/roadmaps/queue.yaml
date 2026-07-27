@@ -603,12 +603,21 @@ queue:
     touches #1/#2 are merged; #3 is RESERVED for the Thursday release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1365
-  status: open
+  status: done
   ev_rank: D
-  title: '[D-pool] list(d) / list(d.keys()) / list(d.values())'
-  notes: sorted(d)/sorted(d.keys())/sorted(d.values())/sorted(s) ALL already emit; only the UNSORTED list(d*)
-    form refuses. The gap is S, not HARD. If this does NOT land, it must appear in the CHANGELOG's 'What
-    still REFUSES'.
+  title: '[D-pool] list(d) / list(d.keys()) / list(d.values()) (SHIPPED 2026-07-27)'
+  notes: 'DONE. The premise held — no new WAT helper was minted: the keys view reuses `$__wasm_set_to_list_i64`
+    and the values view `$__wasm_dict_values_to_list_i64`, the same two materialisers `sorted(d)` already
+    calls, minus the sort step. What the note did NOT anticipate is the ONLY interesting part: this is the
+    FIRST ORDER-OBSERVING dict materialisation (sum/min/max are commutative folds, sorted re-sorts — all
+    order-BLIND), so the answer IS the bump-heap storage order and is CPython-exact only while that equals
+    INSERTION order. It does, because `$__wasm_dict_set_<k>` is update-in-place-else-append-at-count; but a
+    REMOVAL (swap-last-into-hole) or a `set` (xpile-insertion vs CPython-hash iteration) breaks it, so both
+    now refuse MODULE-wide via `module_dict_order_offender`. Also threaded `Expr::Clone(inner) => e(inner)`
+    into the two view gate walkers + `expr_has_heap_op` — `list(d.keys())` arrives as `Clone(DictView{..})`
+    and an unthreaded walker would `call` an undeclared materialiser. 21 executed witnesses (WABT vs live
+    python3) incl. the anti-vacuity insertion-vs-sorted probe; contract gains a declared AND a refused row.
+    NEXT PICK: PMAT-1366 (the last D-pool item), then the Thu 07-30 release commit PMAT-1373.'
   date: '2026-07-29'
 - id: PMAT-1366
   status: open
