@@ -84,10 +84,24 @@ The dispatch table the federation-era version established stays intact — what 
 | `.ruchy` | `ruchy-frontend` (lowers to meta-HIR) |
 | `.lean` | `lean-frontend` (lowers to meta-HIR) |
 | `.sh`, `.bash`, `.zsh` | `bashrs-frontend` (lowers to meta-HIR, using shell variants) |
-| `Makefile`, `*.mk` | `bashrs-frontend` (Makefile dialect) |
-| `Dockerfile` | `bashrs-frontend` (Dockerfile dialect) |
+| `Makefile`, `*.mk` | `bashrs-frontend` — **ROUTED, then REFUSED** (PMAT-1420): no Makefile dialect exists; the v0.2.0 job |
+| `Dockerfile` | `bashrs-frontend` — **ROUTED, then REFUSED** (PMAT-1420): no Dockerfile dialect exists; the v0.2.0 job |
 
 All frontends now sit on the same trait; `TranspileSession` has one lane.
+
+> **PMAT-1420 — the last two rows are ROUTING, not HANDLING.** The rows above
+> claimed a "Makefile dialect" and a "Dockerfile dialect". Neither exists:
+> `parse_and_lower` is a POSIX-shell LINE parser, so a routed `Makefile` was
+> lowered as shell at exit 0, discarding tab significance and target scoping.
+> Measured: a `Makefile` with `all:` / `clean:` / `test:` recipes builds
+> `out.txt` under `make` and DELETES it under the emit, which runs every recipe
+> unconditionally in one shell — and `--target forjar` then materialised that
+> script at `/usr/local/bin/<n>.sh` mode 0755 with a task to run it. Both file
+> kinds now REFUSE with a message naming the missing dialect (the here-doc
+> precedent, PMAT-1371/1377). They stay ROUTED so the diagnostic can say what
+> is unimplemented rather than degrading to "no frontend handles `.mk`".
+> Enforced by `crates/xpile/tests/makefile_dialect_refusal_witness.rs`
+> (XPILE-MAKEFILE-DIALECT-001).
 
 ## What gets reused across all four transpilers
 

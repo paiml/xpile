@@ -7,6 +7,74 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `Makefile`, `*.mk` and `Dockerfile` were routed to a frontend that has no dialect for them (PMAT-1420)
+
+`docs/specifications/sub/bashrs-merger.md` advertised a routing-table row
+
+```text
+| `Makefile`, `*.mk` | `bashrs-frontend` (Makefile dialect) |
+```
+
+and a matching `Dockerfile` row. **Neither dialect exists.**
+`BashrsFrontend::parse_and_lower` is a POSIX-shell *line* parser: it trims every
+line, drops the blank ones, and lowers each survivor to a top-level `Stmt::Cmd`.
+`matches_path` (PMAT-038) routed all three file kinds into it, so a Makefile was
+lowered as shell **at exit 0** — tab significance trimmed away, target scoping
+discarded.
+
+Measured and **executed** 2026-07-28 on a `Makefile` with bareword `all:`
+(`echo` + `touch out.txt`), `clean:` (`rm -f out.txt`) and `test:` recipes. Both
+sides exit 0 and the emit is `sh -n`-clean:
+
+| | `make` | the emitted `sh` |
+|---|---|---|
+| exit status | 0 | 0 |
+| `out.txt` afterwards | **exists** | **deleted** |
+| stdout | `building` | `building` + `running-tests` |
+
+The emit runs **every** recipe unconditionally, in one shell, in file order —
+including the `clean` target `make` was never asked for, which deletes the
+artifact `make` had just built. Target-name lines survive as barewords and merely
+print `all:: not found` to stderr while the script still exits 0. Nothing
+downstream caught it: `sh -n` parses the output, the bashrs-backend round-trip is
+a fixed point, and `C-BASHRS-POSIX-IDEMPOTENCE` is cited on it.
+
+`--target forjar` was the sharper end. It wrapped that same script in a
+`type: file` resource at `/usr/local/bin/<name>.sh` mode `0755` plus a
+`type: task` that **runs** it — the deployment lane materialising and executing a
+script whose behaviour differs from the source it was generated from. Expansion
+diverges in the dangerous direction too: `$(RM) x` is variable expansion in make
+and **command substitution** in sh.
+
+**Fixed by refusing**, per the here-doc precedent for this same frontend
+(PMAT-1371/1377) and PMAT-1395's rule that coercing shredded output into
+something that *runs* installs a silent wrong answer. Routing is deliberately
+unchanged, so the diagnostic reads "there is no Makefile dialect" rather than
+degrading to "no frontend handles `.mk`", and every pre-existing `matches_path`
+witness stays green untouched. A real Makefile/Dockerfile dialect is v0.2.0 work.
+
+The over-refusal bound was **measured before cutting** (PMAT-1419's lesson that
+over-refusal is the natural failure mode of a refusal fix): `git ls-files` tracks
+zero `Makefile` / `Dockerfile` / `*.mk`, and invariant 1 of
+`shell_artifact_policy_witness.rs` re-derives that on every run, so this arm
+cannot regress a tracked artifact.
+
+How it was found: PMAT-1419's standing lead (b) — is the ruchy backend's C path
+real? — came back **stale and honest** (`--target ruchy` on C emits
+`(a).wrapping_div(2i32)` at `i32`, genuine C truncating semantics). The finding
+was that the **matrix itself was mis-sized**: PMAT-1419 swept "4×9 frontend ×
+backend", but `xpile transpile x.rs` prints its own extension list and it is *ten*
+extensions across *six* frontend families — `py`/`pyi`, `c`/`h`, `ruchy`,
+`sh`/`bash`/`zsh`, `mk`, `wat`. The `.ruchy`, `.mk` and `.wat` families had never
+been swept, and the defect was in an unswept cell.
+
+`CLAUDE.md` step 2 of the shell-artifact workflow — which *prescribed*
+round-tripping `Makefile` and `Dockerfile` through this path, instructing every
+agent session to run the shredding path — is corrected. Enforced by
+`crates/xpile/tests/makefile_dialect_refusal_witness.rs`
+(XPILE-MAKEFILE-DIALECT-001, 4 tests) plus 3 `bashrs-frontend` unit tests; red
+half run three times.
+
 ### The WASM lane gave C's 32-bit `int` Python's integer semantics, and the emit was byte-identical to the Python one (PMAT-1419)
 
 The same shape [PMAT-1418](#the-lean-backend-gave-cs-32-bit-int-arbitrary-precision-semantics-and-the-audit-scored-it-100-pmat-1418)

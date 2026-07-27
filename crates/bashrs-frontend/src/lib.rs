@@ -1475,6 +1475,32 @@ fn parse_case(lines: &[&str], start: usize) -> Result<(Stmt, usize), FrontendErr
     Ok((Stmt::ShellCase { word, arms }, next))
 }
 
+/// PMAT-1420: name the BUILD-DRIVER dialect a path claims, if any.
+///
+/// `matches_path` routes `*.mk` / `Makefile` / `Dockerfile` to this
+/// frontend, but there is no Makefile dialect and no Dockerfile
+/// dialect — `parse_and_lower` is a POSIX-shell line parser. Routing
+/// them and then LOWERING them applies shell semantics to a file that
+/// does not have them, which is why this returns the dialect NAME for
+/// a refusal rather than a bool: the diagnostic has to say which
+/// dialect is missing, not merely that something failed.
+///
+/// The match set is exactly the set `matches_path` claims — no wider.
+/// `Makefile.in` / `Dockerfile.dev` are deliberately NOT claimed by
+/// `matches_path` (see `matches_path_rejects_unrelated_files`) and so
+/// are deliberately not named here either; widening one without the
+/// other would make the two disagree about what this frontend owns.
+fn build_driver_dialect(path: &Path) -> Option<&'static str> {
+    if path.extension().and_then(|e| e.to_str()) == Some("mk") {
+        return Some("Makefile");
+    }
+    match path.file_name().and_then(|n| n.to_str()) {
+        Some("Makefile") => Some("Makefile"),
+        Some("Dockerfile") => Some("Dockerfile"),
+        _ => None,
+    }
+}
+
 pub struct BashrsFrontend;
 
 impl Frontend for BashrsFrontend {
@@ -1509,9 +1535,13 @@ impl Frontend for BashrsFrontend {
             return true;
         }
         // Then extensionless exact-name match. These are the two
-        // canonical filenames the bashrs domain covers per
-        // `sub/bashrs-merger.md` Layer A; future dialect additions
-        // would extend the match set here.
+        // canonical filenames the bashrs domain ROUTES per
+        // `sub/bashrs-merger.md` Layer A. PMAT-1420: routing them is
+        // not the same as handling them — there is no Makefile or
+        // Dockerfile dialect, so `parse_and_lower` REFUSES both (and
+        // `*.mk`) rather than lowering them as POSIX shell. They stay
+        // routed here so the refusal can name the missing dialect
+        // instead of degrading to "no frontend handles `.mk`".
         matches!(
             path.file_name().and_then(|n| n.to_str()),
             Some("Makefile") | Some("Dockerfile")
@@ -1519,6 +1549,45 @@ impl Frontend for BashrsFrontend {
     }
 
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError> {
+        // PMAT-1420: REFUSE the build-driver dialects this frontend
+        // ROUTES but does not implement. `sub/bashrs-merger.md`
+        // advertised "`Makefile`, `*.mk` → bashrs-frontend (Makefile
+        // dialect)"; no such dialect exists, so every recipe line was
+        // lowered as a top-level POSIX command and the target/recipe
+        // structure — the whole point of a Makefile — was discarded.
+        //
+        // MEASURED, not asserted (`Makefile` with `all:`/`clean:`/
+        // `test:` recipes, exit 0 on BOTH sides, `sh -n` clean):
+        //   make            -> prints "building",  out.txt EXISTS
+        //   emitted `sh`    -> prints "building"
+        //                             + "running-tests", out.txt GONE
+        // because the emit runs EVERY recipe unconditionally, in one
+        // shell, in file order — including the `clean` target `make`
+        // was never asked for. `--target forjar` then wraps that same
+        // script in a `type: file` at /usr/local/bin/<n>.sh mode 0755
+        // plus a `type: task` that RUNS it. A tab-significant,
+        // target-scoped, lazily-expanded language does not become a
+        // shell script by being trimmed line-by-line: `$(RM) x` is
+        // variable expansion in make and COMMAND SUBSTITUTION in sh.
+        //
+        // Refusing (PMAT-1371/1377's here-doc precedent) rather than
+        // coercing, per PMAT-1395: making shredded output *run* is how
+        // a silent wrong answer gets installed. Over-refusal bound is
+        // structural, not a guess — `shell_artifact_policy_witness.rs`
+        // invariant 1 derives from `git ls-files` that ZERO
+        // Makefile/Dockerfile is tracked, so this arm cannot regress a
+        // tracked artifact.
+        if let Some(dialect) = build_driver_dialect(path) {
+            return Err(FrontendError::Parse(format!(
+                "bashrs-frontend: `{}` is a {dialect}, and there is no {dialect} dialect — \
+                 this frontend is a POSIX-shell line parser. Lowering it as shell discards \
+                 the target/recipe structure and runs every recipe unconditionally (a \
+                 `clean:` target executes even when only `all` was requested), so it \
+                 REFUSES rather than silently shredding. The {dialect} dialect is v0.2.0 \
+                 work; see docs/specifications/sub/bashrs-merger.md.",
+                path.display()
+            )));
+        }
         // PMAT-039: minimum-viable Layer B parser. Each non-empty,
         // non-comment line is split by whitespace; the first token
         // becomes `Stmt::Cmd::program`, the rest become
@@ -1820,6 +1889,92 @@ pwd
             assert!(
                 !BashrsFrontend.matches_path(&PathBuf::from(path)),
                 "should NOT match {path}"
+            );
+        }
+    }
+
+    /// PMAT-1420: the routed-but-unimplemented build-driver dialects
+    /// REFUSE instead of lowering as POSIX shell.
+    #[test]
+    fn parse_and_lower_refuses_routed_build_driver_dialects() {
+        // Every one of these is claimed by `matches_path` above, so
+        // without this arm they reach the shell line parser.
+        let cases: &[(&str, &str)] = &[
+            ("Makefile", "Makefile"),
+            ("/home/user/project/Makefile", "Makefile"),
+            ("./build/rules.mk", "Makefile"),
+            ("/tmp/foo.mk", "Makefile"),
+            ("Dockerfile", "Dockerfile"),
+            ("./build/Dockerfile", "Dockerfile"),
+        ];
+        for (path, dialect) in cases {
+            let p = PathBuf::from(path);
+            assert!(
+                BashrsFrontend.matches_path(&p),
+                "precondition: {path} must still ROUTE here (else the refusal is unreachable \
+                 and this test proves nothing)"
+            );
+            let err = BashrsFrontend
+                .parse_and_lower(&p, MAKEFILE_SHAPED_SOURCE)
+                .expect_err("build-driver dialect must be REFUSED, not lowered as shell");
+            let msg = format!("{err:?}");
+            assert!(
+                msg.contains(&format!("no {dialect} dialect")),
+                "refusal must name the missing {dialect} dialect, got: {msg}"
+            );
+        }
+    }
+
+    /// The bytes used above, chosen because they lower CLEANLY as
+    /// shell — no quoting, no `$(...)`, no here-doc. If the corpus
+    /// refused for one of those unrelated reasons the test above
+    /// would pass vacuously.
+    const MAKEFILE_SHAPED_SOURCE: &str = "\
+all:
+\techo building
+\ttouch out.txt
+
+clean:
+\trm -f out.txt
+";
+
+    /// PMAT-1420 ANTI-VACUITY, the load-bearing half: the SAME BYTES
+    /// under a `.sh` path still lower to Ok. That is what makes the
+    /// refusal above attributable to the DIALECT GUARD rather than to
+    /// some unrelated parse failure in the corpus — the discriminator
+    /// is the filename and nothing else.
+    #[test]
+    fn same_bytes_under_a_shell_path_still_lower() {
+        let module = BashrsFrontend
+            .parse_and_lower(&PathBuf::from("/tmp/recipe.sh"), MAKEFILE_SHAPED_SOURCE)
+            .expect(
+                "the refusal must be keyed on the build-driver filename, not on this source \
+                 failing to parse — if this errors, the refusal test above is vacuous",
+            );
+        assert!(
+            !module.items.is_empty(),
+            "the shell path must actually lower these lines, not yield an empty module"
+        );
+    }
+
+    /// The guard must not widen past what `matches_path` claims.
+    /// `Makefile.in` / `Dockerfile.dev` are explicitly NOT routed here
+    /// (`matches_path_rejects_unrelated_files`), so if someone hands
+    /// one straight to `parse_and_lower` it keeps its pre-1420
+    /// behaviour rather than acquiring a refusal the router disagrees
+    /// with.
+    #[test]
+    fn build_driver_guard_does_not_widen_past_matches_path() {
+        for path in &["/tmp/Makefile.in", "/tmp/Dockerfile.dev"] {
+            let p = PathBuf::from(path);
+            assert!(
+                !BashrsFrontend.matches_path(&p),
+                "precondition: {path} is not routed here"
+            );
+            assert!(
+                build_driver_dialect(&p).is_none(),
+                "{path} must not be claimed by the dialect guard either — the router and the \
+                 guard have to agree on what this frontend owns"
             );
         }
     }

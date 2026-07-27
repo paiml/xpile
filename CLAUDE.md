@@ -135,7 +135,16 @@ Concrete workflow when shell artifacts become necessary:
    before commit** — if a `.sh` *must* be authored directly
    (rare), run it through the bashrs-frontend → bashrs-backend
    round-trip (see `parse_and_lower_*` tests for the supported
-   POSIX subset). Same for `Makefile` and `Dockerfile`.
+   POSIX subset). **NOT for `Makefile` / `*.mk` / `Dockerfile`**
+   — PMAT-1420: those are ROUTED to bashrs-frontend but have no
+   dialect, so through v0.1.617 the "round-trip" SHREDDED them,
+   lowering every recipe line to a top-level shell command at
+   exit 0. A `Makefile` whose `all` recipe builds `out.txt` and
+   whose `clean` recipe removes it emitted a script that ran
+   BOTH, `sh -n`-clean, and left no artifact. They now refuse;
+   a build driver stays out of the tree (enforced from
+   `git ls-files` by `shell_artifact_policy_witness.rs`
+   invariant 1) rather than being round-tripped.
 3. **In-tree workflow (v0.1.0+)**: `xpile transpile foo.py
    --target shell` is the cross-domain path (PMAT-040 recognizes
    `subprocess.run([...])` and lowers via bashrs-backend).
