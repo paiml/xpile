@@ -1006,6 +1006,54 @@ queue:
     truth item (the SHIFT half is now done; the remaining i64 overflow half is L/XL and should NOT land
     before the Wed 18:00 freeze) or run an adversarial verify pass over the 0.1.618 lane. On 2026-07-30
     take PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2).'
+- id: PMAT-1380
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-27'
+  title: 'The THREE MANDATORY CHANGELOG sections for v0.1.618, written INCREMENTALLY on Day 2 with
+    every claim re-derived against the live tree (SHIPPED 2026-07-27)'
+  notes: |
+    PICKED because the queue was EMPTY for today -- every dated slice and the whole D-pool are merged
+    and the only OPEN items are the date-gated release pair PMAT-1373 (Thu) / PMAT-1374 (Fri), which
+    must NOT be pulled forward. PMAT-1366's next-pick note names exactly this situation and directs
+    CHANGELOG / docs polish for the 0.1.618 note; the window's standing constraint is "write the
+    CHANGELOG INCREMENTALLY". The three sections are the largest content dependency of PMAT-1373 and
+    Thursday is meant to be a reserved day, so writing them Monday converts release-day drafting into
+    release-day review.
+    ** THE FINDING: the sprint plan's OWN PRESCRIBED TEXT for one of the three sections is STALE.
+    PMAT-1355 / PMAT-1373 both direct Known-divergences to state that "the 14.4 Runtime stratum
+    counts contract-id MENTIONS in fixtures, not executions". PMAT-1367 changed that three slices ago
+    -- the stratum now ALSO counts witness files that name the id AND call a runtime-availability
+    probe. Copying the prescribed sentence would have shipped a CLAIMS-001 falsehood inside the
+    section whose entire purpose is to prevent them. The shipped text states the true and more useful
+    shape, derived from `xpile quorum --json`: the widen is PARTIAL, so of the 18 contracts carrying
+    a Runtime vote exactly TWO are backed by executions (C-COMPILE-RUST-TO-WASM 113, C-WASM-HEAP 93)
+    and the other 16 carry 1-11 MENTIONS. GENERAL RULE for PMAT-1373: the slate's prescribed CHANGELOG
+    text is a CHECKLIST OF TOPICS, not copy -- re-derive each claim, because the slate was written
+    before the slices that changed the facts.
+    ** Every other claim re-derived through the shipped CLI, not quoted: six cross-lane refusals
+    probed live; 13 refused / 31 declared emit_surface rows read from the contract YAML; REQUIRED =
+    [gate, workspace-test] + the 6 advisory contexts from the ci.yml markers and the committed ruleset
+    snapshot; the single `apt-get install -y wabt` line; release.yml's dispatch+tag-only trigger; BOTH
+    PMAT-1352 Rust-lane float divergences re-run end to end (1 vs 1.0, 49 vs 49.0); the Lean
+    @[xpile_contract] non-elaboration re-emitted both ways; all eight witness-lane counts taken by
+    RUNNING the manifest (wasm 842/333, shell 10, rust-diff 47, hybrid 7, wasi 1, ruchy 7, forjar 4,
+    lean 6) rather than read off the touch-point snapshot comments.
+    ** Backed by a 77-probe differential verify pass (python3 vs xpile -> wat2wasm -> wasm-interp) run
+    in the same session. NEGATIVE RESULTS RECORDED IN THE SECTION so they are not re-derived: integer
+    // and % match Python FLOOR semantics over every sign combination; all 16 container error paths
+    TRAP where CPython raises; float + - * / incl. inf/subnormal/div-by-zero agree; and the whole
+    non-ASCII string surface agrees on CODE POINTS, not UTF-8 bytes. The only silent-wrong-answer
+    class found is the already-known, deliberately-deferred i64 overflow family (divergence #1).
+    ** A draft error caught before commit, worth one line: the text asserted `$__wasm_mod_i64`; the
+    emitted WAT says `$__wasm_floormod_i64`. Verify a runtime name before printing it in a release note.
+    ** NO gate file touched -- gate touch #3 is reserved for Thursday's PMAT-1373 and witness_floor.rs
+    is the two-touch serial resource. CHANGELOG.md + roadmap.yaml + queue.yaml only.
+    NEXT PICK: nothing is OPEN before Thursday. A further fire today/Tue/Wed should take another
+    adversarial verify pass over a lane this session did NOT sweep (the Rust oracle lane and the
+    decy/C frontend are the two untouched by PMAT-1377/1378/1379/1380), or further CHANGELOG polish.
+    Do NOT start a gate_touch. On 2026-07-30 take PMAT-1373.
 - id: PMAT-1373
   status: open
   ev_rank: R1

@@ -609,6 +609,221 @@ meta-HIR and the trait surfaces.
   they are refusal witnesses, and `wasm_contract_surface.rs` depends on refusals
   being tested.
 
+### What still REFUSES
+
+An honest release note has to say what the tool *will not do*, in the same
+breath as what it now does. Every row below was re-derived against the tree on
+2026-07-27 by running the refusal through the shipped CLI, not by reading the
+source. A refusal is a **feature** here: the standing rule of this window is
+that converting a silent wrong answer into an honest refusal outranks new
+capability, and four of this cycle's slices (PMAT-1363, PMAT-1371, PMAT-1377,
+PMAT-1378) exist only to move a construct from the first column to the second.
+
+**The WASM lane.** The refused surface is not prose — it is the
+`emit_surface.refused` block of `contracts/compile-rust-to-wasm-v1.yaml`, 13
+rows against 31 `declared` rows, each carrying a real Python probe and the
+**stage** that refuses it, executed in both directions by
+`crates/xpile/tests/wasm_contract_surface.rs` against the live
+`default_session()`. Widening the emitter without moving a row is a red test,
+which is the entire point (PMAT-1350). Derive the current lists with:
+
+```
+python3 -c "import yaml;d=yaml.safe_load(open('contracts/compile-rust-to-wasm-v1.yaml'))['emit_surface'];print(len(d['declared']),'declared,',len(d['refused']),'refused')"
+```
+
+The 13 refusals as of this release: tuples; `print` (no host I/O in the emitted
+module); closures/lambdas; an integer literal outside i64 range; `list[str]`;
+`list[list[...]]`; `dict[K, dict[...]]` and `dict[K, list[...]]`; a struct field
+holding a container; `set[float]`; a tuple-valued dict key; `str(float)`; a dict
+**view** materialised in a module that also removes a key or builds a `set`
+(PMAT-1365 — the order the view observes would stop being CPython's); and
+2-argument `round(x, n)`. Two of those rows carry a caveat that is worth
+repeating because it is the kind of thing a refusal test can green over: the
+`set[float]` row is refused at the **frontend**, for all targets, for a
+Rust-lane reason (`f64` is not `Eq`/`Hash`), *not* by the WASM backend for the
+±0.0/NaN reason the row originally claimed — from the CLI the two are
+indistinguishable, and pinning the stage is what caught it.
+
+**Also refused in the WASM lane, and new this cycle** (PMAT-1378): a top-level
+name bound more than once in any combination of `def` / const / class, because
+Python rebinds and WASM does not; and any top-level name in the emitted
+runtime's reserved namespace — `__heap_ptr`, `__alloc`, and the `__wasm_*`
+helper family, reserved *wholesale*. A parameter, a local or a loop variable
+with those names is still accepted and executed, because WAT indexes locals
+separately. And (PMAT-1379) a shift count that CPython itself rejects — a
+negative count — now traps rather than masking to a large positive one.
+
+**The shell lane.** `crates/bashrs-frontend` handles the flat-command subset
+plus the full v0.1.0 control-flow surface (`for` / `while` / `until` / `if` /
+`elif` / `else`, arbitrarily nested, plus top-level `case`). It **refuses**,
+rather than shredding into barewords: here-documents in every spelling —
+`cat <<EOF`, `cat<<EOF`, `cat 0<<EOF`, `cat<<-EOF` (PMAT-1371 shipped the first
+spelling, PMAT-1377 the other three); `;&` and `;;&` bash fall-through; a bare
+`&` in command position; and a `case` nested inside a loop or `if` body. Loop
+and `if` **conditions** and `case` **patterns** are captured verbatim as opaque
+strings and printed back byte-for-byte — they are not modelled structurally,
+and that is a v0.2.0 item, not a defect. Do not read "shell is supported" as
+"all of POSIX shell round-trips".
+
+**Ruchy is an output language only** (PMAT-1346). `xpile transpile foo.ruchy`
+does not read Ruchy; it refuses with `unimplemented frontend: … the Ruchy
+frontend has no parser`. The routing is retained deliberately so the file gets
+that specific refusal instead of a generic "no frontend handles `.ruchy`". The
+substantive source-language count is **four** — Python, C, shell, WASM — and
+`crates/xpile/tests/claims_drift.rs` now runs every registered frontend against
+a real program in its own language and reds if a README numeral disagrees.
+
+**The Python frontend** refuses an annotated comprehension whose element type
+disagrees with its annotation (PMAT-1363 — six shapes that previously emitted
+Rust that then failed `rustc` with `E0308`), and a `range()` bound of type
+`bool` under bigint mode (PMAT-1364 — the non-bigint path now coerces instead).
+
+### What is NOT merge-blocking
+
+This section exists because a green check mark is the easiest thing in this
+repository to over-read, and because the 0.1.617 release was cut with an
+advisory job **red on the exact tagged SHA** and the release body did not say so
+(PMAT-1370). Nothing below is a complaint about the CI; it is a statement of
+what the badge does and does not prove.
+
+**Only two status checks block a merge: `gate` and `workspace-test`.** That is
+the live org ruleset 13878864, re-queried and confirmed during PMAT-1347; the
+snapshot is committed at `docs/status/ruleset-13878864.json` and
+`crates/xpile/tests/ruleset_drift.rs` reds when it drifts from the CI job list —
+in a **static** half that cannot skip, because reading an org ruleset needs
+org scope and Actions' repo-scoped token does not have it, so a live-only check
+would skip *green* on exactly the runner that matters.
+
+**`docs`, `kani`, `lake-build`, `lean-models`, `shader-validate` and `wasi` are
+ADVISORY.** A red proof job does not block a merge. Derive the current split
+without trusting this paragraph:
+
+```
+grep -n 'XPILE-ENFORCEMENT' .github/workflows/ci.yml
+```
+
+Two consequences worth stating plainly. First, `kani` and `lake-build` — the
+proof lane — are advisory, so the Lean and Kani evidence in this release is
+evidence that *was* green, not evidence that *cannot* go red without someone
+noticing; restoring them as required contexts is an open owner decision
+(org-admin only; the repo endpoint 404s). Second,
+`strict_required_status_checks_policy` is **false**, which means a PR can merge
+on checks that were green against an older base — green checks do not prove the
+merged combination was ever tested together. The Thursday tag cut re-runs the
+suite on the exact SHA being tagged for that reason.
+
+**`cleanroom-publish` does not run on pull requests.** `.github/workflows/release.yml`
+triggers only on `workflow_dispatch` and on `v*` tag pushes, because packaging
+and verify-building 31 crates from a cold registry is minutes-heavy. Its per-PR
+half is the fast static falsifier `crates/xpile/tests/publish_manifest_integrity.rs`.
+
+**The ruchy, lean and forjar execution witnesses EXIST BUT SKIP IN CI.** They
+pass locally at ruchy 4.2.1, forjar 1.10.0 and lean v4.15.0, in about 1.3s
+combined — but `workspace-test` installs **wabt and nothing else**, verifiable
+because it is the file's only `apt-get install` line:
+
+```
+grep -n 'apt-get install' .github/workflows/ci.yml
+```
+
+So the WASM execution witnesses genuinely execute on every required run, and the
+other three lanes' witnesses take their graceful-skip branch. An advisory
+`backend-exec` job that installs pinned toolchains is specified and seeded for
+0.1.619 (PMAT-1375), deliberately not landed in a release week.
+
+### Known divergences
+
+Measured, not assumed. Each item below was reproduced against live `python3`
+through the shipped CLI on 2026-07-27.
+
+**1. i64 arithmetic overflow is still a SILENT WRONG ANSWER in the WASM lane.**
+Python integers are arbitrary precision; the lane maps them to `i64` and wraps
+without a word. `9223372036854775807 + 1` returns `-9223372036854775808`;
+`3037000500 * 3037000500` returns `-9223372036709301616` against CPython's
+`9223372037000250000`; `-(-9223372036854775808)` and
+`abs(-9223372036854775808)` each return `i64::MIN`. The lane is internally
+inconsistent about this: division by zero **traps** honestly, as do all sixteen
+container error paths (below), while arithmetic overflow does not. The shift
+half of this debt was fixed this cycle (PMAT-1379) precisely because it is
+separable and off the hot path; the remaining fix is overflow-checked
+`add`/`sub`/`mul`/`neg` across every i64 operation, which is L/XL, sits on the
+emitter's hot path and touches every existing witness — the wrong change for a
+release week. It is the first entry in the 0.1.619 lane. The narrower residual
+inside the shifts themselves — `1 << 63` wrapping to `i64::MIN` for an in-range
+count — is asserted out loud by
+`shift_count_witness.rs::shl_in_range_overflow_is_a_known_residual`.
+
+**2. Two Rust-lane float-coercion divergences, both reproduced today.**
+`print(1 if x > 0 else 2.5)` prints `1.0` where CPython prints `1`, and
+`xs: list[float] = [1.0, 2.0]` / `xs.append(49)` / `print(xs[2])` prints `49.0`
+where CPython prints `49`. Both were surfaced by PMAT-1352 and both are
+instances of one open owner decision — `int-float-container-literal-policy` —
+where `list[float] = [1, 2.5]` silently coerces while `dict[str, float]` and
+`tuple[float, float]` accept-then-fail `rustc` with `E0308`. Coercing everything
+trades invalid Rust for a silent wrong answer; refusing matches the OOP-`==`
+honesty precedent. The policy is deliberately not pre-empted by a code change,
+which is also why PMAT-1363's new comprehension guard *refuses*
+`list[float]`-over-`int` rather than coercing it. `hybrid_divergent/` pins the
+second shape as an executing witness, with a loud comment naming what to change
+the day the policy lands.
+
+**3. Set iteration order is deterministic but is not CPython's.** Sets lower to
+`indexmap::IndexSet`, so a program's output is stable run to run — the
+flapping-oracle problem is fixed. The order is **insertion** order, which is not
+CPython's hash order. `print(set)` stays refused in the WASM lane for the same
+reason; a dict view materialised in a module that also removes a key or builds a
+set refuses module-wide (PMAT-1365) rather than silently observing an order that
+diverges. WONTFIX is proposed for hash-order parity.
+
+**4. The default `--contracts on` Lean emit does not elaborate.** Every backend
+cites its contracts in comments except Lean, which emits
+`@[xpile_contract "C-PY-INT-ARITH"]` — an attribute no Lean prelude registers,
+so `lean` rejects the file. `--contracts off` emits clean, elaborating Lean.
+Registering the attribute in a prelude changes emit standalone-ness and several
+frozen expected-string tests, so it ships as this caveat again rather than as a
+release-week refactor.
+
+**5. `26 QUORUM / 9 PARTIAL` must not be read as "executed 35 ways".** Derive it
+with `xpile quorum`. PMAT-1367 changed what the §14.4 Runtime stratum counts:
+it *used* to count fixture files that merely **mentioned** a contract id, and it
+now **also** counts top-level witness `*.rs` files that both name the id and
+call a runtime-availability probe. That is a widening, not a replacement — so of
+the 18 contracts carrying a Runtime vote, exactly **two** (`C-COMPILE-RUST-TO-WASM`
+at 113 and `C-WASM-HEAP` at 93) are backed by executing witnesses; the other 16
+carry between 1 and 11 votes that are still **mentions**. `quorum.rs` pins six
+contracts as `MUST_STAY_UNWITNESSED` so the counter cannot inflate itself. The
+honest reading is: two contracts are executed heavily, the rest are cited.
+
+**6. The witness floors are lower bounds, not a coverage claim.** Live counts
+this release, from `cargo test -p xpile --test witness_floor -- --nocapture`:
+wasm 842 (floor 770) of which 333 are runtime-gated (floor 300, 39% vs a 36%
+floor), shell 10 (7), rust-differential 47 (44), hybrid 7 (3), wasi 1 (1),
+ruchy 7 (7), forjar 4 (4), lean 6 (6). The runtime-gated metric is a syntactic
+proxy that deliberately does not follow helper calls, so it under-counts. Never
+quote the `// live NNN @ DATE` comments in `witness_floor.rs` — they are
+touch-point snapshots and are *expected* to trail the live count between the two
+permitted floor touches per release.
+
+**Negative results from this cycle's differential passes, recorded so they are
+not re-derived.** Across roughly 170 CPython-vs-artifact probes run over
+PMAT-1377/1378/1379 and a further pass on 2026-07-27, the following came back
+**clean** and are not divergences: integer `//` and `%` over every sign
+combination (the lane routes both through `$__wasm_floordiv_i64` / `$__wasm_floormod_i64`
+and matches Python's floor semantics, not C truncation); all sixteen container
+error paths — missing dict key, missing set element, list/string index out of
+range in both directions, `pop` from empty, `pop`/`del`/`insert` out of range,
+`remove`/`index` of a missing value, `min`/`max` of an empty sequence — every
+one of which **traps** where CPython raises; out-of-range slice bounds on both
+lists and strings; float `+ - * /` including infinities, subnormals and
+division-by-zero (which traps); and the entire non-ASCII string surface —
+`len`, `ord`, indexing, slicing, `find`, comparison, `zfill`, `center` and
+`chr()` above U+007F all agree with CPython on **code points**, not UTF-8 bytes,
+which is the divergence the length-prefixed UTF-8 ABI could plausibly have had
+and does not. The bashrs lane came back clean over 90 probes covering
+redirections, logical operators, subshells, function definitions, comments, line
+continuations, quoting edges, globs, parameter expansion and deep control-flow
+nesting: every non-OK case was an honest refusal.
+
 
 ## [0.1.617] - 2026-07-26
 
