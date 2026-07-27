@@ -140,15 +140,18 @@ LaTeX, a structured comment in mdBook — never a regex over prose.
 
 Every emittable construct is anchored to a contract in [`contracts/`](contracts/),
 validated on every commit by `pv lint contracts/`. Each contract carries a Lean
-4 refinement theorem and a Kani bounded-model-checking harness, and is scored
-against the N-of-M *oracle quorum* bar — ≥1 vote across ≥3 of the four strata
-(Semantic / Symbolic / Runtime / Extrinsic). The mature core sits at full
-QUORUM while newer contracts are still accreting stratum votes; run
-`xpile quorum` for the live per-contract tally:
+4 refinement theorem; most also carry a Kani bounded-model-checking harness. Each
+is scored against the N-of-M *oracle quorum* bar — ≥1 vote across ≥3 of the four
+strata (Semantic / Symbolic / Runtime / Extrinsic). The mature core sits at full
+QUORUM while newer contracts are still accreting stratum votes.
 
-```text
-$ xpile quorum
-  totals: 15 QUORUM, 20 PARTIAL, 0 UNVERIFIED (35 contracts total)
+This README publishes the **derive command**, not a frozen transcript. A pasted
+tally here rots silently against a binary that keeps moving — this section used
+to quote one the shipped `xpile quorum` contradicted:
+
+```console
+$ xpile quorum          # live per-contract stratum table, then the totals line
+$ ls contracts/*.yaml   # the substrate those totals are computed over
 ```
 
 Full detail — the contract taxonomy, quorum strata, and the "Diamond" theorem
