@@ -18506,3 +18506,96 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1415
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1415: [docs/honesty] README.md''s Quickstart said "CI compiles this
+    output with `rustc -O` and asserts `factorial(10) == 3628800`" — CI compiled a
+    DIFFERENT program. The test that asserted 3628800 read the `-> BigInt`
+    `factorial.py`, whose emit contains ZERO `checked_` calls, so the one property
+    the paragraph sells — an i64 overflow PANICS instead of wrapping — was the one
+    property the cited test structurally could not observe.'
+  description: 'MEASURED, not inferred. README.md:27-51 shows the two-line
+    `examples/factorial.py`, prints the i64 emit whose every arithmetic operation is
+    `checked_*`, and then offers one sentence of evidence: "CI compiles this output
+    with `rustc -O` and asserts `factorial(10) == 3628800`."
+
+    WHAT CI ACTUALLY COMPILED. The only test in the repository asserting that value
+    from an emitted `factorial` is transpile_e2e.rs::factorial_emitted_rust_computes_correct_values,
+    and it transpiles crates/xpile/tests/fixtures/factorial.py — a different source,
+    annotated `-> BigInt`. Running the binary on it emits
+    `pub fn factorial(n: xpile_bigint::BigInt) -> xpile_bigint::BigInt` with plain
+    infix `*` and `-`: grep -c checked_ is 0. Its own sibling
+    bigint_implicit_promotion_factorial_emits_bigint_mode asserts
+    `!rust.contains("checked_mul")` outright. The two artifacts shared a file NAME
+    and nothing else. Confirmed exhaustively: every `fn *factorial*` test in
+    crates/xpile/tests reads either that BigInt fixture or the `math.factorial`
+    builtin; none compiles the i64 shape.
+
+    WHY THE EXPENSIVE HALF IS THE OVERFLOW CLAIM. The sentence is the evidence
+    offered for the paragraph above it, which claims an i64 overflow "panics with a
+    pointer to the unimplemented bigint path rather than wrapping silently — CPython''s
+    int is unbounded, so wrapping would be a wrong answer." The BigInt test cannot
+    check that even in principle: it compiles against a hand-written `mod xpile_bigint`
+    shim whose Mul is a plain `*` on an i64 field, which under `rustc -O` WRAPS.
+
+    THE UNDERLYING CLAIM IS TRUE — MEASURED BEFORE ANY CODE WAS WRITTEN. The README''s
+    emit compiles under `rustc -O` (exit 0), factorial(10) is 3628800, and
+    factorial(21) panics with `xpile: i64 multiplication overflow; bigint promotion
+    (contract C-PY-INT-ARITH slow path) not yet implemented`. Nothing was wrong with
+    the emitter. What was wrong is that a reader had no way to tell, because the
+    sentence asserting it was unbacked. So the repair EXECUTES the claim rather than
+    softening it.
+
+    THE GATE — crates/xpile/tests/readme_quickstart_witness.rs (XPILE-README-001),
+    5 tests, everything DERIVED FROM README.md ITSELF (the Python source and the
+    expected transcript are parsed out of the published fenced blocks, never copied
+    into a constant — a copy drifts the moment either side moves, which is the exact
+    failure being repaired). (1) Both Quickstart blocks are extractable and
+    non-empty, and the elision matcher is shown to be able to FAIL — a matcher
+    returning Ok unconditionally would make test 2 certify nothing. (2) The published
+    transcript IS the live emit, compared modulo reflowing and modulo any `…` the
+    README marks explicitly. (3) THE SENTENCE, EXECUTED: `rustc -O` on the README''s
+    own emit, run, `factorial(10) == 3628800` plus 0!/1!/5! so an emitter returning a
+    constant could not pass. (4) THE PROPERTY THE PARAGRAPH SELLS: factorial(21)
+    must exit non-zero and the panic must NAME C-PY-INT-ARITH and `bigint` — 20! is
+    the largest i64 factorial, so this is a total probe, not a probabilistic one.
+    (5) Pins WHY this file is not redundant with transpile_e2e.rs: the two sources
+    differ, the fixture emit has no `checked_`, the README emit has both
+    `checked_mul` and `checked_sub`. If a later change unifies them, that test reds
+    and says merge them deliberately.
+
+    RED HALF RUN, three arms, each firing on its own assertion. (a) Restoring the
+    pre-fix README text — which elided `xpile: ` with a marked `…` but ALSO silently
+    dropped `promotion (contract C-PY-INT-ARITH slow path)` down to `slow path`
+    with no marker — reds test 2 naming the missing segment. (b) Changing the
+    README''s source to `n + factorial(n - 1)` reds tests 2, 3, 4 and 5; test 3
+    fails at `5! == 120`. (c) Probing factorial(20) instead of 21 reds test 4 on the
+    "OVERFLOWED i64 SILENTLY" assertion. Green restored after each.
+
+    THREE SIBLING SITES CARRIED THE SAME FALSEHOOD and are corrected in the same PR.
+    book/src/quickstart.md said "CI uses this exact path: rustc -O +
+    assert_eq!(factorial(10), 3628800)". book/src/tutorials/python-to-rust.md printed
+    a "(paraphrased)" CI test body — `xpile_transpile("factorial.py", Target::Rust)`
+    then `assert_eq!(exe.call("factorial", 10), 3628800)` — which is not a paraphrase
+    of the real test but of a test that did not exist; the real one needs an inline
+    BigInt shim to compile at all, and the paraphrase hid exactly that. And
+    crates/xpile/examples/01_python_to_rust.rs PRINTS to the user "The result is
+    `rustc -O`-clean and `assert_eq!(factorial(10), 3628800)` green" while compiling
+    nothing. All three now name the witness that runs it.
+
+    SCOPE, honestly. No emitter behaviour changed and no test was weakened. This is a
+    documentation-integrity defect in the FIRST example a reader meets, backing the
+    project''s lead promise ("transpile-success means the output compiles and matches
+    the source''s semantics"). The README transcript is also now byte-faithful: the
+    two `expect` strings previously showed an unmarked elision, which the new gate
+    forbids.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

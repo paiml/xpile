@@ -47,8 +47,16 @@ You can compile and run the output directly:
 ```bash
 $ xpile transpile factorial.py --out factorial.rs
 $ rustc -O factorial.rs --crate-type lib --emit=metadata -o /dev/null
-$ # CI uses this exact path: rustc -O + assert_eq!(factorial(10), 3628800)
 ```
+
+CI runs that path on the code block above — literally on the block,
+which `crates/xpile/tests/readme_quickstart_witness.rs` parses out of
+`README.md`, transpiles, compiles with `rustc -O`, and executes to
+assert `factorial(10) == 3628800` and that `factorial(21)` **panics
+naming `C-PY-INT-ARITH`** rather than wrapping. Before PMAT-1415 this
+line claimed the same thing with nothing behind it: the test that
+asserted `3628800` read the `-> BigInt` fixture, a different program
+whose emit has no `checked_` call to overflow.
 
 ## 3. Same source, different backends
 

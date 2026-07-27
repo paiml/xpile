@@ -38,8 +38,8 @@ $ xpile transpile factorial.py
 pub fn factorial(n: i64) -> i64 {
     if (n <= 1i64) { 1i64 } else {
         (n).checked_mul(factorial(
-            (n).checked_sub(1i64).expect("… i64 subtraction overflow; bigint slow path not yet implemented")
-        )).expect("… i64 multiplication overflow; bigint slow path not yet implemented")
+            (n).checked_sub(1i64).expect("xpile: i64 subtraction overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented")
+        )).expect("xpile: i64 multiplication overflow; bigint promotion (contract C-PY-INT-ARITH slow path) not yet implemented")
     }
 }
 ```
@@ -48,7 +48,17 @@ Every arithmetic operation is `checked_*` and every emitted item cites the
 contract it satisfies (`// xpile-contract: C-PY-INT-ARITH`). An `i64` overflow
 **panics with a pointer to the unimplemented bigint path** rather than wrapping
 silently — CPython's `int` is unbounded, so wrapping would be a wrong answer.
-CI compiles this output with `rustc -O` and asserts `factorial(10) == 3628800`.
+
+That transcript is not pasted, it is gated.
+[`crates/xpile/tests/readme_quickstart_witness.rs`](crates/xpile/tests/readme_quickstart_witness.rs)
+parses the two blocks above out of *this file*, runs the real binary on that
+source, checks the emit matches what is printed here, compiles it with
+`rustc -O`, asserts `factorial(10) == 3628800`, and asserts `factorial(21)`
+**panics naming `C-PY-INT-ARITH`** instead of wrapping. Before PMAT-1415 this
+paragraph claimed the compile-and-assert without it happening anywhere: the
+test that asserted `3628800` read a *different* `factorial.py` — the `-> BigInt`
+fixture, whose emit contains no `checked_` call at all — so the overflow
+property being sold here was the one property that test could not observe.
 
 More runnable programs are in [`examples/`](examples/).
 
