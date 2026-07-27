@@ -1974,6 +1974,7 @@ dependencies = [
  "xpile-contracts",
  "xpile-frontend",
  "xpile-meta-hir",
+ "xpile-rust-codegen",
 ]
 
 [[package]]

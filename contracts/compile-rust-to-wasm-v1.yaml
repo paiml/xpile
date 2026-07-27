@@ -42,6 +42,21 @@ metadata:
     carries the `C-PY-INT-ARITH` overflow posture, and FloorDiv/Mod apply
     the Python floor correction (WASM `i64.div_s` truncates toward zero;
     Python `//` floors toward −∞) via emitted helper functions.
+
+    PMAT-1402 (2026-07-27) made the FIRST of those two clauses true. The
+    "carries the C-PY-INT-ARITH overflow posture" sentence was written
+    against an emitter whose `+`/`-`/`*` were bare `i64.add`/`i64.sub`/
+    `i64.mul`, which WRAP: `x *= 2` sixty-four times returned 0 at exit 0
+    where the Rust lane emitted `checked_mul(…).expect(…)` for the same
+    meta-HIR. Note what PMAT-1350's two-way gate could and could not see —
+    it reconciles the CONSTRUCT surface (`emit_surface.declared` lowers,
+    `emit_surface.refused` refuses) and is blind to SEMANTIC posture, so a
+    lane can satisfy it in full while computing a wrong value. `+`/`-`/`*`
+    and unary `-` now route through `$__wasm_add_i64` / `$__wasm_sub_i64` /
+    `$__wasm_mul_i64`, each trapping on overflow. STILL OUTSTANDING under
+    this same sentence: the shift VALUE (`1 << 63` wraps to `i64::MIN`;
+    PMAT-1379 fixed the shift COUNT only) and `abs(i64::MIN)`. Both are
+    pinned by executed witnesses, not left to prose.
   xpile:
     layer: compile
   references:

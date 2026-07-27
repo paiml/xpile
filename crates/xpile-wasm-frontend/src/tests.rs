@@ -128,6 +128,72 @@ fn roundtrip_add() {
     ));
 }
 
+/// PMAT-1402 — the fixture that would have caught PMAT-1379.
+///
+/// Every operator the emit routes through a `$__wasm_*` helper needs a
+/// matching arm in `lift_call`, or `emit(lift(emit(M)))` is not even
+/// well-formed for a module using that operator: the lift reconstructs an
+/// `Expr::Call` to a helper that is not an item of the lifted module, and the
+/// re-emit refuses it. PMAT-1379 moved `<<`/`>>` onto helpers and did not add
+/// those arms; nothing went red because NO fixture in this file shifted. This
+/// one exercises all five helper-routed i64 operators at once (`+`, `-`, `*`,
+/// `<<`, `>>`), so the next operator that moves onto a helper cannot repeat it
+/// silently.
+#[test]
+fn roundtrip_shift_and_arith() {
+    // fn mix(a: i64, b: i64) -> i64 { ((a + b) - (a * b)) << ((a >> b) & 1) }
+    let m = module(
+        "mix_mod",
+        vec![func(
+            "mix",
+            vec![p("a", Type::I64), p("b", Type::I64)],
+            Type::I64,
+            Block {
+                stmts: vec![],
+                trailing_return: binop(
+                    BinOp::Shl,
+                    binop(
+                        BinOp::Sub,
+                        binop(BinOp::Add, ident("a"), ident("b")),
+                        binop(BinOp::Mul, ident("a"), ident("b")),
+                    ),
+                    binop(
+                        BinOp::BitAnd,
+                        binop(BinOp::Shr, ident("a"), ident("b")),
+                        Expr::LitInt(1),
+                    ),
+                ),
+            },
+        )],
+    );
+    // `roundtrip` itself asserts the fixed point; the emit must additionally
+    // have gone through the helpers, else this fixture proves nothing about
+    // `lift_call`'s helper arms.
+    let wat = emit(&m);
+    for helper in [
+        "call $__wasm_add_i64",
+        "call $__wasm_sub_i64",
+        "call $__wasm_mul_i64",
+        "call $__wasm_shl_i64",
+        "call $__wasm_shr_i64",
+    ] {
+        assert!(
+            wat.contains(helper),
+            "fixture must exercise `{helper}`, else the lift arm it covers is \
+             untested:\n{wat}"
+        );
+    }
+    let lifted = roundtrip(&m);
+    let Item::Function(f) = &lifted.items[0] else {
+        panic!();
+    };
+    // The outermost operator came back as `<<`, not as a call to a helper.
+    assert!(matches!(
+        f.body.trailing_return,
+        Expr::BinOp { op: BinOp::Shl, .. }
+    ));
+}
+
 #[test]
 fn roundtrip_with_let() {
     // fn f(a, b) { let c = a + b; c * c }

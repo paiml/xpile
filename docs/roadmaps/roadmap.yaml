@@ -17827,3 +17827,125 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1402
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-1402: [honesty/wasm] i64 `+`/`-`/`*`/unary-`-` SILENTLY WRAPPED on
+    overflow at exit 0, under a comment that already said "checked overflow trap
+    posture" — while the SAME meta-HIR module through `--target rust` emitted
+    `checked_mul(…).expect(…)`.'
+  description: 'REPRO, measured at 0492fb42 with a provenance-verified binary
+    (`command cargo build -p xpile --target-dir <isolated>`; the shared
+    /mnt/nvme-raid0/targets/xpile has been poisoned by worktree builds before):
+    `def overflow_mul() -> int: x = 1; i = 0; while i < 64: x = x * 2; i = i + 1;
+    return x`. CPython answers 18446744073709551616. `--target rust` emits
+    `checked_mul(…).expect("xpile: i64 multiplication overflow; bigint promotion
+    (contract C-PY-INT-ARITH slow path) not yet implemented")`. `--target wasm`
+    exited 0 and `wasm-interp` printed `i64:0` — 2**64 mod 2**64.
+
+
+    ** WHY THIS IS A DEFECT AND NOT A SCOPE DECISION. The asymmetry is the whole
+    argument: the SAME module through two backends is honest on one and silently
+    wrong on the other. The Rust lane had already settled "Python bigint is out of
+    scope" the honest way, by failing loudly. So this is not "bigint is unsupported",
+    it is one lane not following a decision the project had already made. The witness
+    puts one module through BOTH backends in a single test, because a claim about two
+    lanes cannot be checked one lane at a time — that is what the new
+    `xpile-rust-codegen` dev-dependency on `xpile-wasm-codegen` is for.
+
+
+    ** THE SOURCE ALREADY SAID OTHERWISE, IN TWO PLACES. `emit_binop`''s arithmetic
+    arms were introduced by the comment "arithmetic over i64 — checked overflow trap
+    posture" directly above three bare wrapping instructions, and
+    contracts/compile-rust-to-wasm-v1.yaml said "i64 arithmetic carries the
+    C-PY-INT-ARITH overflow posture". Unary `-x` carried the same shape one level
+    down: "checked-overflow on i64::MIN matches the Rust lane (negation of MIN
+    traps)" above an `i64.const -1` + bare `i64.mul`, so `-i64::MIN` answered
+    `i64::MIN`.
+
+
+    ** WHAT PMAT-1350''S TWO-WAY CONTRACT GATE COULD NOT SEE, worth recording as a
+    class: it reconciles the CONSTRUCT surface (every `emit_surface.declared` probe
+    lowers, every `emit_surface.refused` probe refuses) and is STRUCTURALLY BLIND to
+    semantic posture. A lane can satisfy it in full while computing a wrong value.
+    The contract prose is now true and carries a dated note saying which clause
+    PMAT-1402 made true and which parts of the same sentence remain outstanding.
+
+
+    ** FIX: `+`/`-`/`*` and unary `-` route through `$__wasm_add_i64` /
+    `$__wasm_sub_i64` / `$__wasm_mul_i64`, each trapping with `unreachable` — the WAT
+    analogue of the Rust lane''s panicking `expect`. Add/sub use the sign-bit test;
+    mul uses the divide-back (`x != 0 && (x*y)/x != y`), exact in both directions,
+    whose one un-evaluable input `i64::MIN * -1` traps inside `i64.div_s` — the
+    correct answer for that input. Helpers are gated INDIVIDUALLY on call sites read
+    back out of the emitted body (the PMAT-1379 discipline: the gate observes the
+    exact bytes it guards and cannot drift), so an add-only module carries no
+    multiply trap and an arithmetic-free module stays trap-free.
+
+
+    ** LATENT PMAT-1379 BREAKAGE FOUND AND REPAIRED HERE. That slice moved `<<`/`>>`
+    onto helpers and did NOT add the matching arms to `xpile-wasm-frontend`''s
+    `lift_call`, so `emit(lift(emit(M)))` — the WAT lift''s right-inverse property,
+    the stated correctness witness of the whole bidirectional lane — has been BROKEN
+    for every shifting module since it merged: the lift reconstructs an `Expr::Call`
+    to a helper that is not an item of the lifted module and the re-emit refuses it.
+    Nothing went red because NO round-trip fixture shifted. Both families'' arms are
+    added and `roundtrip_shift_and_arith` exercises all five helper-routed operators
+    at once. RED-THEN-GREEN measured: removing just the two shift arms reds it with
+    `call to `__wasm_shl_i64` — not a function of this WASM module`.
+
+
+    ** WHAT STILL WRAPS, stated rather than implied. `1 << 63` still returns
+    `i64::MIN` (PMAT-1379 fixed the shift COUNT; this slice did not reopen the shift
+    VALUE). `abs(i64::MIN)` remains the documented `$__wasm_abs_i64` wrap. `**` does
+    not lower at all and refuses — pinned by `pow_over_i64_is_refused_not_wrapped`,
+    so "we covered `**`" can never be read off silence. The shift residual is
+    MEASURED, not described: `shl_residual_and_mul_disagree_on_the_same_value` runs
+    `2 * (1 << 62)` against `1 << 63` — the same mathematical value — and records
+    that the multiply now traps and the shift does not. The prose in
+    shift_count_witness.rs that handed its residual to "the general i64-overflow work
+    (checked add/sub/mul/neg)" is CORRECTED, because that work is this slice and it
+    did not close it; leaving it would have left a promise pointing at a shipped
+    slice, which reads as "already handled".
+
+
+    ** A SHARED-PROBE ASSERTION SPLIT RATHER THAN WEAKENED.
+    `shift_helpers_are_absent_from_a_shiftless_module` asserted both "no shift
+    helpers" and "no trap at all" over a `2 + 3` probe; once `+` routed through a
+    trapping helper the second half went red for a reason unrelated to shifts.
+    Collapsing them would have lost one, so each got the probe it is about — and the
+    shift-absence half is now STRONGER (it proves the shift helpers stay out of a
+    module that does pull in a sibling helper) with an added non-vacuity assertion
+    that the probe really exercises the add helper.
+
+
+    ** WITNESSES: crates/xpile-wasm-codegen/tests/i64_overflow_witness.rs, 10 tests —
+    5 CONSTRUCT (two-backend confrontation, raw-instruction containment counted over
+    INSTRUCTION lines with the unconditional FLOOR_HELPERS occurrences pinned at
+    their live values, per-helper gating incl. the arithmetic-free control, unary
+    routing, the `**` refusal) and 5 RUNTIME-GATED EXECUTION (the repro plus its
+    non-trapping 2**62 control, 26 boundary arms across the three operators, negation
+    incl. `-i64::MIN`, a 30-case differential against LIVE python3, the surviving
+    shift disagreement). WASM witness count 842 -> 857 against an unchanged
+    WASM_FLOOR = 770; runtime-gated 333 -> 340 against WASM_EXEC_FLOOR = 300, MEASURED
+    by running the manifest rather than read off a snapshot comment. NO witness floor
+    touched — the two permitted 0.1.618 touches remain PMAT-1372 and PMAT-1373.
+
+
+    ** SURFACED, NOT ACTED ON (owner-gated): `live_ruleset_matches_the_committed_snapshot`
+    reds on a clean origin/main checkout — the LIVE org ruleset 13878864 now requires
+    only {gate}, while docs/status/ruleset-13878864.json records {gate,
+    workspace-test}. Branch protection was weakened outside this repo. Ruleset edits
+    are owner-gated and re-deriving the snapshot would silently RATIFY the weakening,
+    which is the exact failure the PMAT-1347 gate exists to catch, so neither was
+    done. The live half skips in CI (Actions'' repo-scoped GITHUB_TOKEN cannot read an
+    org ruleset), so this does not red any required context.'
+  status: done
+  priority: high
+  created: 2026-07-27T00:00:00Z
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

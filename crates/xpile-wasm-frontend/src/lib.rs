@@ -28,6 +28,18 @@
 //!     * `call $__wasm_floordiv_i64` / `$__wasm_floormod_i64` → the
 //!       Python floor [`BinOp::FloorDiv`] / [`BinOp::Mod`] (the emit's
 //!       helper calls, lifted back to the high-level op).
+//!     * `call $__wasm_add_i64` / `$__wasm_sub_i64` / `$__wasm_mul_i64`
+//!       (PMAT-1402) and `$__wasm_shl_i64` / `$__wasm_shr_i64` (PMAT-1379,
+//!       whose arms this slice supplies) → [`BinOp::Add`] / [`Sub`] /
+//!       [`Mul`] / [`Shl`] / [`Shr`]. EVERY helper the emit routes an
+//!       operator through needs an arm here or the right-inverse property
+//!       below is false for any module using that operator — which it
+//!       silently was for `<<`/`>>` between PMAT-1379 and PMAT-1402.
+//!
+//!       [`Sub`]: BinOp::Sub
+//!       [`Mul`]: BinOp::Mul
+//!       [`Shl`]: BinOp::Shl
+//!       [`Shr`]: BinOp::Shr
 //!     * `call $f` → an intra-module [`Expr::Call`] (arity from the
 //!       callee's parsed signature).
 //!
@@ -699,6 +711,58 @@ fn lift_call(
             let (lhs, rhs) = pop2(stack, "call")?;
             stack.push(Expr::BinOp {
                 op: BinOp::Mod,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        // PMAT-1402: the CHECKED arithmetic helpers. `+`/`-`/`*` stopped
+        // emitting bare `i64.add`/`i64.sub`/`i64.mul` and started emitting
+        // these calls, so without these arms the lift reconstructs an
+        // `Expr::Call` to a function that is not in the lifted module and the
+        // re-emit refuses — the fixed point breaks.
+        //
+        // ⚠️ `__wasm_shl_i64`/`__wasm_shr_i64` are here for the SAME reason and
+        // are a PMAT-1402 REPAIR OF PMAT-1379, not new work: that slice routed
+        // `<<`/`>>` through helpers and did NOT add these arms, so `lift(emit(M))`
+        // has been broken for every shifting module since it merged. No fixture
+        // caught it because none of them shifted — `roundtrip_shift_and_arith`
+        // is the fixture that now does.
+        "__wasm_add_i64" => {
+            let (lhs, rhs) = pop2(stack, "call")?;
+            stack.push(Expr::BinOp {
+                op: BinOp::Add,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        "__wasm_sub_i64" => {
+            let (lhs, rhs) = pop2(stack, "call")?;
+            stack.push(Expr::BinOp {
+                op: BinOp::Sub,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        "__wasm_mul_i64" => {
+            let (lhs, rhs) = pop2(stack, "call")?;
+            stack.push(Expr::BinOp {
+                op: BinOp::Mul,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        "__wasm_shl_i64" => {
+            let (lhs, rhs) = pop2(stack, "call")?;
+            stack.push(Expr::BinOp {
+                op: BinOp::Shl,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        "__wasm_shr_i64" => {
+            let (lhs, rhs) = pop2(stack, "call")?;
+            stack.push(Expr::BinOp {
+                op: BinOp::Shr,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             });
