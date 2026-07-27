@@ -61,6 +61,18 @@ deleting a disclosed row (reds), inventing one (reds), reclassifying
 to dev-only (reds), and `XPILE_REQUIRE_DENY=1` with cargo-deny off `PATH`
 (reds).
 
+**The gate's own first CI run failed, and the bug was in the gate.** The
+linkage re-derivation shells out to `cargo tree`, and `ci.yml` sets
+`CARGO_TERM_COLOR: always` workflow-wide — so on a runner the tree arrives
+wrapped in ANSI escapes while locally cargo emits none (it auto-disables colour
+when stdout is not a tty). The matcher walked straight past a line that visibly
+read `└── xpile v0.1.617 (…)` and reported the LGPL crate as unlinked. A green
+local run proved nothing about the runner. Fixed twice over: the child's
+`CARGO_TERM_COLOR` is now pinned to `never` so the input is deterministic
+rather than inherited, and the matcher strips escapes anyway. Both spellings —
+plus the negatives that keep it from degrading into "any line mentioning
+xpile" — are pinned by a unit test that reds without the fix.
+
 **Correction to the queue entry that scheduled this slice:** it recorded "18
 rejections incl. 10x LGPL-3.0-only". The real figure is nine diagnostics over
 nine crates, five of them LGPL. The doubling came from counting

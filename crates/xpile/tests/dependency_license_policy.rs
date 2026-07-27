@@ -465,6 +465,7 @@ fn live_rejections() -> BTreeSet<(String, String, String)> {
     let out = Command::new("cargo")
         .args(["deny", "--format", "json", "check", "licenses"])
         .current_dir(workspace_root())
+        .env("CARGO_TERM_COLOR", "never")
         .output()
         .expect("run cargo deny");
     let text = String::from_utf8_lossy(&out.stderr);
@@ -596,6 +597,15 @@ fn cargo_tree(spec: &str, edges: &str) -> String {
             spec,
         ])
         .current_dir(workspace_root())
+        // Pin the CHILD's environment rather than inheriting it. `ci.yml` sets
+        // `CARGO_TERM_COLOR: always` workflow-wide, so on a runner `cargo tree`
+        // wraps every glyph in ANSI escapes while locally it emits none (cargo
+        // auto-disables colour when stdout is not a tty). The first CI run of
+        // this job failed exactly there, on output that visibly DID reach
+        // `xpile v0.1.617` — a green local run proved nothing about the runner.
+        // The parser below strips escapes anyway; this makes its input
+        // deterministic instead of environment-dependent.
+        .env("CARGO_TERM_COLOR", "never")
         .output()
         .unwrap_or_else(|e| panic!("cargo tree -i {spec}: {e}"));
     format!(
@@ -605,12 +615,73 @@ fn cargo_tree(spec: &str, edges: &str) -> String {
     )
 }
 
+/// Strip ANSI CSI escape sequences (`ESC [ … m`). `cargo tree` colours its
+/// glyphs when `CARGO_TERM_COLOR=always`, which `ci.yml` sets workflow-wide, so
+/// a runner sees `\x1b[2m└──\x1b[0m xpile v0.1.617` where a local pipe sees
+/// `└── xpile v0.1.617`.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // Consume the CSI sequence up to and including its final byte.
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Does an inverted `cargo tree` reach the root `xpile` package? The trailing
 /// space in `"xpile v"` is load-bearing — without it every row would "reach"
 /// via `xpile-core`, and `xpile-core` is a library, not the thing users run.
 fn reaches_the_xpile_binary(tree: &str) -> bool {
     tree.lines().any(|line| {
-        line.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '└' | '├' | '─' | '│'))
+        strip_ansi(line)
+            .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '└' | '├' | '─' | '│'))
             .starts_with("xpile v")
     })
+}
+
+/// The regression this file paid for in CI. `every_linkage_claim_…` shells out
+/// to cargo, and a test that parses a subprocess's output is only as good as
+/// its assumptions about that subprocess's environment: the first CI run of
+/// `license-scan` failed on a tree that visibly DID contain
+/// `└── xpile v0.1.617 (…)`, because the runner's `CARGO_TERM_COLOR: always`
+/// wrapped every glyph in escapes the parser walked straight past. Locally,
+/// cargo emitted no colour and the same test passed. Both spellings are pinned
+/// here so the fix cannot regress silently, together with the negatives that
+/// keep the matcher from becoming "any line mentioning xpile".
+#[test]
+fn the_tree_matcher_reads_coloured_and_plain_output_alike() {
+    let plain = "malachite v0.4.22\n└── malachite-bigint v0.2.3\n    └── xpile v0.1.617 (/w/crates/xpile)\n";
+    let coloured = "malachite v0.4.22\n\u{1b}[2m└──\u{1b}[0m malachite-bigint v0.2.3\n\u{1b}[2m \u{1b}[0m   \u{1b}[2m└──\u{1b}[0m xpile v0.1.617 (/w/crates/xpile)\n";
+    assert!(reaches_the_xpile_binary(plain), "plain tree must match");
+    assert!(
+        reaches_the_xpile_binary(coloured),
+        "ANSI-coloured tree must match — this is the exact form the runner emits"
+    );
+
+    // Negatives: reaching a LIBRARY is not reaching the shipped binary, and an
+    // empty inverted tree (cargo tree's answer for an unreachable crate) is not
+    // a match. Without these the matcher could pass by being permissive.
+    assert!(
+        !reaches_the_xpile_binary(
+            "hexf-parse v0.2.1\n└── xpile-core v0.1.617 (/w/crates/xpile-core)\n"
+        ),
+        "`xpile-core` is a library — the trailing space in \"xpile v\" is what keeps them apart"
+    );
+    assert!(
+        !reaches_the_xpile_binary("warning: nothing to print.\n"),
+        "an empty inverted tree must not read as reachable"
+    );
+    assert!(
+        !reaches_the_xpile_binary("\u{1b}[2m└──\u{1b}[0m xpile-wgsl-codegen v0.1.617\n"),
+        "a coloured LIBRARY line must not match either"
+    );
 }

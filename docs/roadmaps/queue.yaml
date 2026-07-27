@@ -3030,6 +3030,19 @@ queue:
     XPILE_REQUIRE_DENY=1 with cargo-deny off PATH (reds, while the unflagged run SKIPs with a printed
     reason).
 
+    ** ⚠️ THE GATE''S OWN FIRST CI RUN FAILED AND THE BUG WAS IN THE GATE — the most transferable lesson
+    here. `every_linkage_claim_is_re_derived_from_cargo_tree` shells out to `cargo tree`, and ci.yml sets
+    `CARGO_TERM_COLOR: always` WORKFLOW-WIDE, so on a runner the tree arrives wrapped in ANSI escapes
+    while locally cargo auto-disables colour (stdout is not a tty). The matcher walked past a line that
+    visibly read `└── xpile v0.1.617 (…)` and reported the LGPL crate as UNLINKED — a FALSE ALARM in the
+    safe direction this time, but the same blindness could as easily have gone the other way on the
+    build-only row. 8/8 green locally proved NOTHING about the runner. Fixed twice over: `.env("CARGO_TERM_COLOR",
+    "never")` on the child so the input is DETERMINISTIC rather than inherited, plus escape-stripping
+    in the matcher. Measured which fix does what: with the env pin alone the live test passes even under
+    `CARGO_TERM_COLOR=always`; the strip is defence-in-depth and is pinned by a unit test that reds without
+    it. STANDING RULE: a test that parses a SUBPROCESS''s output must PIN that subprocess''s environment
+    — inheriting CI''s env means the local run and the CI run are different experiments.
+
     ** PRE-EXISTING RED, NOT SLICE FALLOUT: `ruleset_drift::live_ruleset_matches_the_committed_snapshot`
     still reds locally on the `ruleset-workspace-test-dropped` owner decision. Unchanged by this slice
     and skips-with-reason in CI.
