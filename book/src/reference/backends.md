@@ -12,7 +12,7 @@
 > pins neither, and five of the nine backends do neither. See the
 > measured table below and PMAT-1437.
 
-A backend reads a `MetaHirModule` and emits an artifact in some target
+A backend reads a `xpile_meta_hir::Module` and emits an artifact in some target
 language. Backends never see other backends; they all read from
 meta-HIR.
 
@@ -149,13 +149,19 @@ real output.
 ## Calling a backend as a library
 
 ```rust
+use xpile_backend::{Backend, BackendConfig, Profile, Target};
 use xpile_rust_codegen::RustBackend;
-use xpile_backend::Backend;
-use xpile_meta_hir::MetaHirModule;
 
-let backend = RustBackend::default();
-let emitted = backend.emit_module(&module)?;
-// `emitted` is a `xpile_backend::EmittedArtifact`
+let config = BackendConfig {
+    target: Target::Rust,
+    profile: Profile::RustOut,
+    hardware: None,
+    emit_contracts: true,
+};
+let backend = RustBackend;
+let artifact = backend.lower(&module, &config)?;
+// `artifact` is a `xpile_backend::Artifact`; `artifact.primary` is the
+// emitted Rust source.
 ```
 
 The `Backend` trait surface is intentionally minimal — see

@@ -20478,3 +20478,88 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1439
+  title: 'PMAT-1439: [docs+gate+honesty] every RUST EXAMPLE the book publishes was uncompilable, and THREE of the seven names it invented DO exist -- which is why nothing caught it.
+    ** THE DEFECT. book/src carried FOUR ```rust fences describing xpile''s library API -- the two
+    "Calling a ... as a library" sections and the two "Implement the trait" sections of the
+    contributing guides. NONE OF THEM COMPILED. `MetaHirModule`, `EmittedArtifact`,
+    `target_label` and `DepylerFrontend` are absent from crates/*/src ENTIRELY (real:
+    `xpile_meta_hir::Module`, `xpile_backend::Artifact`, `Backend::targets`,
+    `depyler_frontend::PythonFrontend`); `backend.emit_module(&m)` is a FREE FUNCTION in four
+    codegen crates returning `Result<String, _>`, not a `Backend` method returning an
+    `Artifact`; `frontend.parse_str` / `parse_file` are not `Frontend` methods at all (the
+    in-tree spellings are naga''s WGSL parser and `syn::parse_file`). Plus
+    `RustBackend::default()` on a unit struct with NO Default impl, and two trait signatures
+    (`-> &str`, `-> &[&str]`) that do not match the traits.
+    ** THREE OF THE SEVEN NAMES EXIST, and that is the load-bearing half. `emit_module` is a
+    real, public, sensibly-named function -- just the wrong KIND of thing. AN
+    IDENTIFIER-PRESENCE CHECK WOULD HAVE FOUND ALL THREE AND PASSED. A name-presence check is
+    not an API check, and neither is a reader''s eye: the fences looked right because they very
+    nearly were. This is why the gate had to be COMPILATION, not grep.
+    ** THE WORST SITE IS NOT THE FLASHIEST. adding-a-frontend.md §3 -- the page whose whole job
+    is to say how to implement `Frontend` -- OMITTED `refused_claims()`, which is REQUIRED with
+    no default and whose doc comment says a default of `&[]` "would let the next frontend with
+    a partial refusal inherit the exact silence this method exists to break" (PMAT-1433). The
+    guide handed contributors an impl that does not compile and which, had the names been
+    right, would have reproduced exactly the silence 1433 removed.
+    ** WHY IT WAS GREEN for 74 days: CI''s `book` job runs `mdbook build` (renders Markdown),
+    never `mdbook test` (compiles fences). And the book is NOT unwatched -- TEN tests read the
+    whole book/src corpus (backend_docs_drift, cli_docs_drift, claims_drift, and the
+    PMAT-1430/1433/1435/1437/1438 witnesses). ZERO of them parse a rust fence. Every gate the
+    book has reads its PROSE. The one thing a reader would paste into their own crate was the
+    one thing nothing read.
+    ** FIX, two files. crates/xpile/tests/book_api_examples.rs holds each published example
+    between markers inside a file CARGO COMPILES, so the real traits type-check it;
+    crates/xpile/tests/book_rust_example_witness.rs (XPILE-BOOKAPI-001) asserts every rust
+    fence in book/src is BYTE-IDENTICAL to its marked region, BOTH DIRECTIONS -- a fence with
+    no region is an unchecked example, a region with no fence is a check over something nobody
+    publishes. An API rename therefore breaks the BUILD, not a string comparison. PMAT-1415''s
+    derive-from-the-artifact idiom, applied to the book''s Rust where it never had been.
+    ** A RETAG MUST NOT BE A WAY TO LEAVE THE CLASS. python-to-rust.md carried a fence TAGGED
+    `rust` that is a list of test names, not Rust; it is retagged `text`, and the test-name
+    claims it makes are now checked instead (each named test must exist in the file the block
+    names -- all three did).
+    ** RED HALF RUN, SIX perturbations, green control: the original frontends.md fence
+    restored; a fence added with no region; a region dropped with the fence left published; ONE
+    BYTE changed in a fence; a fence retagged away; and -- the BEHAVIOUR half -- RENAMING
+    `Frontend::parse_and_lower` in crates/xpile-frontend/src, which stops the published example
+    COMPILING.
+    ** CORRECTED MID-SLICE, recorded because the shape recurs: the first draft of the witness
+    asserted all seven names appear in ZERO source files. That came from a
+    `git grep -- ''crates/*/src''` pathspec THAT DOES NOT RECURSE, and it was false for three of
+    them. The witness reddened on its own author''s table before it ever landed. The precise
+    claim (not a method of the trait it is called on) is now pinned SEPARATELY from the
+    absolute one, so the two red as different events. SAME PATHSPEC BUG bit the audit twice in
+    one session -- `crates/*/tests` also silently matched nothing. Use `grep -r --include`
+    or a filesystem walk; a zero from a bad pathspec looks exactly like a zero from the truth.
+    ONE Cargo.toml dev-dependency (xpile-rust-codegen, already transitive via xpile-core);
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    NEXT PICK: STANDING LEADS, EV order. (a) book/src/concepts/two-lanes.md, the book''s
+    self-declared "single most important mental model", still publishes the pre-PMAT-1417
+    roster -- 3 PHANTOM frontends (C++, Rust, Lean 4), the wasm frontend missing, 2 of 9
+    backends missing, PTX/WGSL/SPIR-V/Lean labelled scaffold while all four emit; PMAT-1417
+    EDITED the file and left the diagram. (b) the proof lane is sold as a LaTeX <-> Lean <->
+    mdBook ROUND-TRIP on README:121-123, the hero alt-text and introduction.md, while
+    README:179-180 says outright there is no mdBook contract frontend or backend -- one file
+    contradicting itself. (c) `xpile audit`''s "xpile recognises ..." bail is the PRE-PMAT-1434
+    flat extensions() union, the FOURTH surface of the frontend-claim class (source fix).
+    (d) `.pyi` and `.h` are published as spellings that LOWER on all three surfaces, but a
+    canonical stub / header refuses, and frontend_claim_disposition_witness.rs certifies them
+    by driving `.py` / `.c` BYTES at those paths -- PMAT-1433 lesson 3 recurring.
+    (e) frontends.md claims the Python frontend supports "all binary operators" and "all unary
+    operators"; `@` refuses and the refusal PUBLISHES the real list, and unary `+` refuses.
+    (f) backends.md''s ruchy Status parenthetical "compiles to Rust" -- `ruchy check` accepts 18
+    of 39 emitted artifacts. PROBED AND CLEAN, so it is not re-derived: the Status column''s
+    "Real emission" is HONEST as a category verdict (input-dependence holds for all nine
+    backends; no backend emits a fixture), and the proof-lane scaffolds are gated both ways.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
