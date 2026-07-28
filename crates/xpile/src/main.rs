@@ -799,6 +799,31 @@ fn verify_c_boundary(
 /// ONLY. `src/ffi_shims.rs` is regenerated from the manifest on every iteration,
 /// so a rule cannot edit the shim — see [`boundary_repair_rules`] for which of
 /// `xpile-agent`'s three rules that leaves reachable, and why.
+/// The ONE place the repair loop's probe-workspace root is spelled.
+///
+/// PMAT-1436. This used to be an inline `format!` in `verify_c_boundary`, with
+/// the prefix literal `"xpile_repair_ws_"` duplicated into
+/// `tests/hybrid_repair.rs`, which globbed [`std::env::temp_dir`] for it. Two
+/// measured consequences of identifying the subject by a glob over a
+/// process-global namespace instead of by name:
+///
+/// * FALSE RED — a CONCURRENT `xpile … --repair` (any sibling test in the same
+///   `cargo test` binary; each spawned child gets its own pid, hence its own
+///   root) lands in the witness's after-set and is reported as "every probe
+///   workspace THIS RUN created", naming a directory this run never touched.
+/// * FALSE GREEN — change this prefix and the witness stops seeing the root at
+///   all, so a run that leaks every workspace it built still passes the test
+///   called `repair_writes_nothing_and_leaves_no_workspace_behind`.
+///
+/// The fix is not a better glob. The run now PRINTS this path and the number of
+/// workspaces it built under it, so the witness reads the identity of the
+/// process it actually spawned. Keyed by pid so two concurrent `--repair`
+/// invocations cannot share a root; rooted at `temp_dir()` so a caller that sets
+/// `TMPDIR` gets a private namespace it can assert is empty afterwards.
+fn repair_probe_root() -> PathBuf {
+    std::env::temp_dir().join(format!("xpile_repair_ws_{}", std::process::id()))
+}
+
 struct HybridWorkspaceProbe<'a> {
     manifest: &'a FfiManifest,
     modules: &'a [Module],
@@ -1049,7 +1074,7 @@ fn repair_hybrid(
         recorded.len(),
         budget.max_iterations
     );
-    let root = std::env::temp_dir().join(format!("xpile_repair_ws_{}", std::process::id()));
+    let root = repair_probe_root();
     let _ = std::fs::remove_dir_all(&root);
     let probe = HybridWorkspaceProbe {
         manifest,
@@ -1061,7 +1086,24 @@ fn repair_hybrid(
     };
     let initial = lower_hybrid_rust(session, modules)?;
     let outcome = RepairLoop::new(budget, recorded).run(&probe, &initial);
+    // PMAT-1436: the run ANNOUNCES its own probe root and how many candidate
+    // workspaces it built there. Before this, the only statement about the loop's
+    // disk use was a test that globbed the shared temp dir for a hard-coded
+    // prefix — which identifies the neighbourhood, not the run. The count comes
+    // from the probe's OWN allocation counter, so "N built, all removed" cannot
+    // be satisfied by never building anything: N is the number of directories
+    // `HybridWorkspaceProbe::evaluate` actually made.
+    let built = probe.seq.load(Ordering::Relaxed);
     let _ = std::fs::remove_dir_all(&root);
+    println!(
+        "      probe workspaces: {built} built under {} — {}",
+        root.display(),
+        if root.exists() {
+            "NOT REMOVED (leaked)"
+        } else {
+            "all removed"
+        }
+    );
     let chain = applied.lock().map(|l| l.clone()).unwrap_or_default();
     match outcome {
         RepairOutcome::AlreadyMatching { .. } => {

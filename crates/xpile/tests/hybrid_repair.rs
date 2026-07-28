@@ -86,12 +86,51 @@ fn toolchain() -> bool {
 
 /// Run `xpile hybrid <fixture> --verify [--repair]`.
 fn run(name: &str, repair: bool) -> Output {
+    run_in(name, repair, None)
+}
+
+/// Same, with an optional PRIVATE `TMPDIR` (PMAT-1436).
+///
+/// `std::env::temp_dir()` reads `TMPDIR` on Unix, and every scratch directory
+/// the hybrid lane makes — the `--verify` workspace and the `--repair` probe
+/// root alike — hangs off it. Handing a run its own `TMPDIR` is what lets a
+/// witness assert about THAT RUN's disk footprint instead of globbing a
+/// namespace it shares with every sibling test and every stale aborted run.
+fn run_in(name: &str, repair: bool, tmpdir: Option<&std::path::Path>) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_xpile"));
     cmd.arg("hybrid").arg(fixture(name)).arg("--verify");
     if repair {
         cmd.arg("--repair");
     }
+    if let Some(t) = tmpdir {
+        cmd.env("TMPDIR", t);
+    }
     cmd.output().expect("run xpile hybrid --verify")
+}
+
+/// The `probe workspaces: N built under <root> — <disposition>` disclosure,
+/// parsed out of a run's OWN stdout. Returns `(built, root, disposition)`.
+///
+/// PMAT-1436: this is the identity the old witness lacked. It never asked the
+/// binary what it did; it listed a shared directory and subtracted.
+fn probe_disclosure(stdout: &str) -> (usize, PathBuf, String) {
+    let line = stdout
+        .lines()
+        .find(|l| l.trim_start().starts_with("probe workspaces:"))
+        .unwrap_or_else(|| {
+            panic!("the repair loop must disclose its probe-workspace root and count:\n{stdout}")
+        })
+        .trim();
+    let rest = line
+        .strip_prefix("probe workspaces: ")
+        .expect("disclosure prefix");
+    let (built, rest) = rest.split_once(" built under ").expect("`N built under`");
+    let (root, disposition) = rest.rsplit_once(" — ").expect("` — <disposition>`");
+    (
+        built.parse().expect("the built count must be a number"),
+        PathBuf::from(root),
+        disposition.to_string(),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,6 +283,24 @@ fn repair_fails_closed_when_no_rule_applies() {
         stderr.contains("hybrid repair: exhausted without reaching a match (fail-closed)"),
         "expected the fail-closed bail reason:\n{stderr}"
     );
+    // PMAT-1436: the EXHAUSTED path discloses and cleans up too. A loop that
+    // bails is the one most likely to leave debris, and it is the path the
+    // no-write witness — which only ever exercises a CONVERGING run — cannot see.
+    let (built, root, disposition) = probe_disclosure(&stdout);
+    assert_eq!(
+        built, 1,
+        "a fail-closed run still probes the initial candidate once:\n{stdout}"
+    );
+    assert_eq!(
+        disposition, "all removed",
+        "the fail-closed path must clean up its probe root, not only the converging \
+         one:\n{stdout}"
+    );
+    assert!(
+        !root.exists(),
+        "the fail-closed run's probe root must not survive it: {}",
+        root.display()
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,8 +418,49 @@ fn repair_requires_verify() {
 /// `source` field), which says nothing about what the CLI does with a SUCCESSFUL
 /// repair. This asserts the CLI's half: the repaired Rust never reaches disk, so
 /// a `--repair` run cannot leave a derived artifact behind to drift from the
-/// Python module it came from. The temp-dir half also pins that a run which
-/// builds N candidate workspaces cleans up all N.
+/// Python module it came from.
+///
+/// ## PMAT-1436 — how the temp-dir half used to be written, and why it was wrong
+///
+/// It globbed `std::env::temp_dir()` for names starting with
+/// `"xpile_repair_ws_"`, snapshotted that list before and after, and asserted the
+/// difference was empty. That identifies a NEIGHBOURHOOD, not a run, and it fails
+/// in BOTH directions — both reproduced on this branch before the fix:
+///
+/// * **FALSE RED.** With one sibling `xpile … --repair` running concurrently,
+///   this test failed with `leaked: ["/tmp/xpile_repair_ws_968061"]` — a root
+///   created by another process, reported as "every probe workspace THIS RUN
+///   created". Every test in this file that spawns `--repair` is a candidate
+///   sibling, since `cargo test` runs them on concurrent threads and each child
+///   gets its own pid, hence its own root. That is the flake observed once under
+///   load at PMAT-1435 and left as its top lead.
+/// * **FALSE GREEN.** Renaming the CLI's root prefix to `xpile_probe_ws_` and
+///   deleting the final `remove_dir_all` made the run leak its root outright —
+///   and this test, named `…_leaves_no_workspace_behind`, PASSED. The prefix was
+///   a string literal duplicated here from `main.rs` with nothing tying the two
+///   together, so relocating the subject made the witness blind to it.
+///
+/// Its doc comment also claimed it "pins that a run which builds N candidate
+/// workspaces cleans up all N". It could not: it observed only an after-state,
+/// so it could not distinguish cleaning up N from never building any.
+///
+/// ## What it does now
+///
+/// The run gets a PRIVATE `TMPDIR` and is asked what it did. Four assertions,
+/// each closing one of the holes above:
+///
+/// 1. `N built` comes from the probe's own allocation counter and must be ≥ 1 —
+///    the cleanup claim is now about something. Cross-checked against the
+///    INDEPENDENTLY reported iteration count, so `N` cannot be a constant.
+/// 2. The announced root must lie INSIDE the private `TMPDIR` — it moved when we
+///    moved `TMPDIR`, so it is the path the binary really used and not a
+///    fabricated string.
+/// 3. That exact path must not exist. No set difference, so a pid reused from an
+///    earlier aborted run cannot filter a real leak out of the answer.
+/// 4. The private `TMPDIR` must be EMPTY. This is the assertion that survives a
+///    rename: it catches a leak under ANY name, including the `--verify` lane's
+///    own `xpile_verify_ws_*` workspace, which the old prefix glob never covered
+///    at all.
 #[test]
 fn repair_writes_nothing_and_leaves_no_workspace_behind() {
     if !toolchain() {
@@ -370,33 +468,32 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
         return;
     }
     let dir = fixture("hybrid_unsigned");
-    let before: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(&dir)
-        .expect("read fixture dir")
-        .map(|e| {
-            let p = e.expect("dir entry").path();
-            let bytes = std::fs::read(&p).expect("read fixture file");
-            (p, bytes)
-        })
-        .collect();
-
-    // Snapshot the probe-workspace debris that already exists, so a leaked dir
-    // from some earlier aborted run cannot red this test and, more importantly,
-    // cannot MASK a leak by this run (a bare "is_empty" would report the same
-    // failure either way and prove nothing about the run under test).
-    let ws_roots = || -> Vec<PathBuf> {
-        std::fs::read_dir(std::env::temp_dir())
-            .expect("read temp dir")
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with("xpile_repair_ws_"))
+    let snapshot = || -> Vec<(PathBuf, Vec<u8>)> {
+        let mut v: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(&dir)
+            .expect("read fixture dir")
+            .map(|e| {
+                let p = e.expect("dir entry").path();
+                let bytes = std::fs::read(&p).expect("read fixture file");
+                (p, bytes)
             })
-            .collect()
+            .collect();
+        v.sort();
+        v
     };
-    let ws_before = ws_roots();
+    let before = snapshot();
 
-    let out = run("hybrid_unsigned", true);
+    // A namespace nobody else writes to. Everything the run scratches lands here,
+    // so "did THIS run clean up" becomes a question about a directory we own
+    // rather than a subtraction over shared state.
+    let tmp = std::env::temp_dir().join(format!(
+        "xpile_repair_witness_{}_{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("create the private TMPDIR");
+
+    let out = run_in("hybrid_unsigned", true, Some(&tmp));
     let stdout = String::from_utf8_lossy(&out.stdout);
     // The precondition is that a repair actually RAN and converged — not merely
     // that the exit was 0. A green exit reached by skipping the boundary entirely
@@ -406,32 +503,67 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
         "precondition: the repair loop must have run and converged;\nstdout:\n{stdout}"
     );
 
-    let after: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(&dir)
-        .expect("read fixture dir")
-        .map(|e| {
-            let p = e.expect("dir entry").path();
-            let bytes = std::fs::read(&p).expect("read fixture file");
-            (p, bytes)
-        })
-        .collect();
-    let mut before_sorted = before;
-    let mut after_sorted = after;
-    before_sorted.sort();
-    after_sorted.sort();
     assert_eq!(
-        before_sorted, after_sorted,
+        before,
+        snapshot(),
         "`--repair` must not write into the source tree — it DIAGNOSES, it does not commit"
     );
 
-    // No probe workspace survives THIS run. Each candidate gets its own `iter_N`
-    // dir under one pid-keyed root; both levels must be gone.
-    let leaked: Vec<PathBuf> = ws_roots()
-        .into_iter()
-        .filter(|p| !ws_before.contains(p))
+    let (built, root, disposition) = probe_disclosure(&stdout);
+
+    // (1) NON-VACUITY: the cleanup claim is about workspaces that were really
+    // built, and the count tracks the independently reported iteration count
+    // (one probe of the initial candidate, then one per repair iteration).
+    let iterations: usize = stdout
+        .split("✓ REPAIRED in ")
+        .nth(1)
+        .and_then(|s| s.split_whitespace().next())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| panic!("expected the iteration count in the verdict:\n{stdout}"));
+    assert!(
+        built >= 1,
+        "a run that built NO probe workspace proves nothing about cleaning them up:\n{stdout}"
+    );
+    assert_eq!(
+        built,
+        iterations + 1,
+        "the disclosed workspace count must track the reported iteration count — one \
+         probe of the initial candidate plus one per iteration — or it is a constant \
+         wearing a measurement's clothes:\n{stdout}"
+    );
+
+    // (2) The announced root MOVED with our TMPDIR, so it is the path the binary
+    // allocated and not a string it prints regardless.
+    assert!(
+        root.starts_with(&tmp),
+        "the disclosed probe root must be the one the run really allocated — it must \
+         follow TMPDIR ({}), got {}",
+        tmp.display(),
+        root.display()
+    );
+    assert_eq!(
+        disposition, "all removed",
+        "the run must report its own probe root as removed:\n{stdout}"
+    );
+
+    // (3) That exact path is gone — asked directly, not inferred from a diff.
+    assert!(
+        !root.exists(),
+        "the probe root this run announced must not survive it: {}",
+        root.display()
+    );
+
+    // (4) …and NOTHING else survives in the namespace either. This is the half
+    // that a rename cannot evade, and it covers the `--verify` lane's workspace
+    // as well as the `--repair` probe root.
+    let leaked: Vec<PathBuf> = std::fs::read_dir(&tmp)
+        .expect("read the private TMPDIR")
+        .filter_map(|e| e.ok().map(|e| e.path()))
         .collect();
     assert!(
         leaked.is_empty(),
-        "every probe workspace this run created must be removed after the loop; \
-         leaked: {leaked:?}"
+        "the run's private TMPDIR must be empty afterwards — every scratch directory \
+         the hybrid lane makes hangs off it; leaked: {leaked:?}"
     );
+    let _ = std::fs::remove_dir_all(&tmp);
 }
