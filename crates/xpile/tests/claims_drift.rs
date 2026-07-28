@@ -4768,3 +4768,536 @@ fn the_finality_router_sends_each_live_claim_to_its_own_series() {
         assert_eq!(series_of(clause), want, "{why} — on {clause:?}");
     }
 }
+
+// ── PMAT-1458: the SUBSTRATE SIZE named inside a totality claim ───────
+//
+// PMAT-1457 closed the ordinal class and named the next one in its own
+// notes: *"the per-contract COVERAGE FRACTION — 'every equation at tier T',
+// 'N/N' — is derivable exactly the way the ordinal now is, and three live
+// sites were repaired BY HAND here."* This is that class, taken at the level
+// where it is decidable without arguing about tier semantics.
+//
+// ⭐ THE NUMBER THAT FROZE IS THE DENOMINATOR, AND IT IS THE POPULATION.
+// PMAT-1457's finding was that an ordinal froze the NUMERATOR while the
+// substrate grew the DENOMINATOR. One level up, the substrate writes the
+// denominator down: `12 contracts`. It has thirty-five. Measured at
+// b4b9fc6e, with `cargo test -p xpile --test claims_drift` GREEN on all 35
+// tests, this needle finds 64 census claims under `contracts/`: **62 of them
+// name a 12-contract substrate**, and 2 name 35. Three of the 62 sit in
+// NORMATIVE `invariants:`/`postconditions:` slots, where PMAT-1454
+// established there is no record exemption at all. The other 59 are cited
+// provenance and are honest records of a smaller substrate — they stay.
+//
+// ⚠️ AND EVERY ONE OF THE THREE IS TRUE IN ITS TOTALITY HALF. That is what
+// made them survive sixty-odd sentences' worth of re-reading:
+//
+//   "every one of the 12 contracts in the substrate now has at least one
+//    Diamond theorem"        → live: `xpile diamond --json` min = 1 over 35
+//   "ALL 12 contracts … have at least one Gold-tier refinement theorem"
+//                            → live: 35 of 35 bind a Gold-or-better theorem
+//   "Gold-tier coverage is now universal across the substrate (12/12)"
+//
+// A reader checks the CLAIM — *is it universal?* — gets `yes`, and never
+// checks the CENSUS riding along inside it. The true half laundered the
+// stale half, exactly as a correct ordinal laundered a false coverage clause
+// in PMAT-1457. The repairs below keep all three claims: two drop the census
+// (an `invariants:` entry is about its equation, not about how big the
+// substrate is), and one states the LIVE fraction so this gate maintains it.
+//
+// THE RULE. **A number that names |substrate| must equal the live
+// |substrate|.** Three spellings, because the corpus writes three:
+//   * `all N contracts` / `every one of the N contracts` — the totality;
+//   * `N/M contracts` — the fraction, M is the census;
+//   * `N of M contracts` — the same fraction, spelled out.
+// A BARE `N contracts` is deliberately NOT in the class: `2 contracts at
+// depth-5+` is a subset count, not a census, and reading it as one would
+// report true sentences as drift.
+//
+// EXEMPTION — the same one PMAT-1454 established for this corpus, not a new
+// one: a NORMATIVE field must be live-true with no way out, and a PROVENANCE
+// block is exempt iff it cites the slice it narrates. `PMAT-336 … ACROSS ALL
+// 12 CONTRACTS` is an honest record of a 12-contract substrate. This gate
+// does NOT rewrite history, and it must not: 59 cited records name 12 and
+// stay exactly as they are.
+//
+// ⚠️ THE UNCITED BRANCH BITES NOTHING TODAY — measured, not assumed: every
+// provenance block under `contracts/` that names a census also carries a
+// `PMAT-NNN`, so it reports 0. It is a lower bound kept for the next
+// uncited record, and `an_uncited_census_record_is_reported_and_a_cited_one_
+// is_not` pins that it CAN fire in BOTH directions rather than leaving an
+// untested branch to rot (PMAT-1451's rule: a carve-out that is not checked
+// is a hole).
+//
+// TWO LIVE CLAIMS AGREE and they are the proof this measures rather than
+// bans, one per spelling — both in `contracts/README.md`, neither planted:
+//   `covering 24 of 35 contracts`   (fraction)
+//   `All 35 contracts sit at Bronze` (totality)
+//
+// ⚠️ SCOPE, MEASURED RATHER THAN ASSUMED. The corpus also writes `ALL 5
+// LAYERS` 71 times and it is TRUE — but `layer` is not a field of a
+// contract. It is a sentence inside `metadata.description`, and only 6 of
+// the 35 descriptions spell it, so the population is not derivable and a
+// gate that guessed at it would be worse than none. Taxonomy-layer census
+// claims are therefore OUT of this gate's subject, said here rather than
+// left for a reader to infer from a needle that happens not to match.
+
+/// The live number of contracts in the substrate: `contracts/*.yaml`
+/// carrying a `metadata.id`.
+///
+/// Re-derived on every run — never a literal — so the thirty-sixth contract
+/// reds every sentence that still says thirty-five.
+fn live_contract_count() -> usize {
+    let dir = workspace_root().join("contracts");
+    let mut n = 0usize;
+    let mut entries: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+        .collect();
+    entries.sort();
+    for p in &entries {
+        let body = fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+        let doc: serde_yaml::Value = serde_yaml::from_str(&body)
+            .unwrap_or_else(|e| panic!("{} is not valid YAML: {e}", p.display()));
+        if doc
+            .get("metadata")
+            .and_then(|m| m.get("id"))
+            .and_then(|v| v.as_str())
+            .is_some()
+        {
+            n += 1;
+        }
+    }
+    n
+}
+
+/// True iff the population noun ending at `at + len` is not glued to a word
+/// character or a hyphen on its RIGHT — so `contracts` matches `contracts.`
+/// and `CONTRACTS**` but `contract-lane` is a different population.
+///
+/// ⚠️ TRAILING ONLY, AND THAT IS A MEASUREMENT. This was written with a
+/// symmetric leading check too, on the obvious reasoning that `subcontracts`
+/// and `then-12-contract` must not match. Its red half came back GREEN: the
+/// backward walk in [`substrate_size_claims`] requires a space or emphasis
+/// and THEN digits, so a noun glued to a word character can never reach a
+/// number anyway and the leading branch was unreachable code dressed as a
+/// guard. Deleted rather than downgraded. The trailing half IS load-bearing
+/// and is pinned by the `contract-lane` case in
+/// `the_census_needle_reads_the_spellings_the_corpus_writes`, which reds when
+/// it goes — the third guard this slice measured and the second whose obvious
+/// justification was the wrong one.
+fn noun_ends_cleanly(bytes: &[u8], at: usize, len: usize) -> bool {
+    let end = at + len;
+    end >= bytes.len() || !(bytes[end].is_ascii_alphanumeric() || bytes[end] == b'-')
+}
+
+/// True iff `head` ends in a decimal number that is not glued to a word
+/// character or a hyphen on ITS left.
+///
+/// ⚠️ THIS IS THE GUARD THAT MADE THE FRACTION SPELLING SHIPPABLE, and it was
+/// a live false positive rather than a hypothetical: `xpile-backend-trait-v1
+/// .yaml:241` says *"language's Layer-1/2 contracts via meta-HIR"*, and
+/// without this the `1/2` reads as a fraction and the gate reports a
+/// two-contract substrate in a normative field. Same shape kills `depth-3/4
+/// contracts` and `PMAT-194/195 contracts`. Pinned by the `Layer-1/2` case in
+/// `the_census_needle_reads_the_spellings_the_corpus_writes`, which reds when
+/// this returns a bare `true`.
+fn trailing_number_is_free(head: &str) -> bool {
+    let digits = head.len() - head.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    if digits == 0 {
+        return false;
+    }
+    let before = &head[..head.len() - digits];
+    !before.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// True iff `head` ends with `word` as a whole word — so `install` does not
+/// end with the quantifier `all`.
+fn ends_with_word(head: &str, word: &str) -> bool {
+    head.strip_suffix(word)
+        .is_some_and(|before| !before.ends_with(|c: char| c.is_ascii_alphanumeric()))
+}
+
+/// Every `(named census, byte offset)` in `clause` that states HOW MANY
+/// contracts the substrate holds.
+///
+/// The offset returned is the number's, so a failure message points at the
+/// digits a repair has to change.
+///
+/// [`EMPHASIS`] is skipped where it can separate the words of a phrase, so
+/// offsets stay TRUE offsets into `clause` — the caller needs them to name a
+/// line, and PMAT-1457's habit of stripping the marks first would shift every
+/// one of them.
+fn substrate_size_claims(clause: &str) -> Vec<(usize, usize)> {
+    let lower = clause.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut out = Vec::new();
+    // Every occurrence of the population noun, scanned BACKWARDS for one of
+    // the three census shapes. Anchoring on the NOUN rather than on `all` is
+    // what keeps `all 5 layers` and `all four strata` out with no stop-list:
+    // a shape that does not end in `contract(s)` is not a claim about this
+    // population, by construction.
+    let mut from = 0usize;
+    while let Some(rel) = lower[from..].find("contract") {
+        let noun = from + rel;
+        from = noun + "contract".len();
+        let len = if lower[noun..].starts_with("contracts") {
+            "contracts".len()
+        } else {
+            "contract".len()
+        };
+        if !noun_ends_cleanly(bytes, noun, len) {
+            continue;
+        }
+        // Walk left over spaces and emphasis to the number qualifying it.
+        let mut i = noun;
+        while i > 0 && (bytes[i - 1] == b' ' || EMPHASIS.contains(&(bytes[i - 1] as char))) {
+            i -= 1;
+        }
+        let mut j = i;
+        while j > 0 && bytes[j - 1].is_ascii_digit() {
+            j -= 1;
+        }
+        if j == i {
+            continue; // no number in front of the noun at all
+        }
+        let Ok(census) = lower[j..i].parse::<usize>() else {
+            continue;
+        };
+        // Suffix tests only — offsets do not matter past this point, so the
+        // marks can simply go.
+        let cleaned: String = lower[..j]
+            .chars()
+            .filter(|c| !EMPHASIS.contains(c))
+            .collect();
+        let head = cleaned.trim_end();
+        // `N/M contracts` and `N of M contracts` — M is the census. The
+        // NUMERATOR is deliberately NOT scored: "Silver coverage" has two
+        // defensible readings (an exactly-`_silver` theorem, or any tier that
+        // subsumes it — see `is_silver_or_better`), and a numerator scored
+        // under the wrong one would fabricate a finding. A denominator that
+        // names a population has exactly one reading, and it is the half that
+        // actually froze.
+        let fraction = head
+            .strip_suffix('/')
+            .is_some_and(|n| trailing_number_is_free(n.trim_end()));
+        let spelled = head
+            .strip_suffix("the")
+            .map_or(head, str::trim_end)
+            .strip_suffix(" of")
+            .is_some_and(|n| trailing_number_is_free(n.trim_end()));
+        // The totality, where N IS the census.
+        let totality = ends_with_word(head, "all")
+            || head.ends_with("all of the")
+            || head.ends_with("every one of the")
+            || head.ends_with("each of the");
+        if fraction || spelled || totality {
+            out.push((census, j));
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// What the census scan found, split so each half can be asserted on
+/// separately — the live falsehood before any hygiene rule (PMAT-1451).
+#[derive(Default)]
+struct SizeReport {
+    /// A NORMATIVE field naming a census that is not the live one.
+    offences: Vec<String>,
+    /// A PROVENANCE block naming a stale census without citing its slice.
+    uncited: Vec<String>,
+    /// A census that matches live — the claims that PASS.
+    agreements: Vec<String>,
+}
+
+/// Scan `pages` for substrate-census claims and score each against `live`.
+///
+/// Pure in `live` so the behaviour half can hand it a perturbed population
+/// and prove this tracks the SUBSTRATE rather than agreeing with the text.
+fn size_report(pages: &[(String, String)], live: usize) -> SizeReport {
+    let mut report = SizeReport::default();
+    for (rel, body) in pages {
+        for block in substrate_blocks(rel, body) {
+            for (census, at) in substrate_size_claims(&block.flat) {
+                let n = block.line_at(at);
+                if census == live {
+                    report.agreements.push(format!("{rel}:{n}"));
+                    continue;
+                }
+                let what = format!(
+                    "{rel}:{n}: names a {census}-contract substrate; live is \
+                     {live} — {}",
+                    excerpt(&block.flat, at)
+                );
+                if block.record {
+                    if pmat_ids(&block.flat).is_empty() {
+                        report.uncited.push(what);
+                    }
+                } else {
+                    report.offences.push(what);
+                }
+            }
+        }
+    }
+    report
+}
+
+#[test]
+fn substrate_census_claims_name_the_live_contract_count() {
+    let live = live_contract_count();
+    // Anti-vacuity BEFORE the derivation judges anything: a walk that broke
+    // would silently agree with every sentence in the corpus.
+    assert!(
+        live >= 12,
+        "live_contract_count() derived {live} contract(s) from contracts/*.yaml \
+         — the walk is broken and this gate would be scoring against nothing"
+    );
+    let pages = provable_artifact_pages();
+    let report = size_report(&pages, live);
+
+    assert!(
+        report.offences.is_empty(),
+        "{} normative field(s) under `contracts/` state the substrate's SIZE \
+         as a number it no longer holds — {}. A normative \
+         `invariants:`/`postconditions:` entry has no record exemption \
+         (PMAT-1454): drop the census and assert what the equation \
+         establishes, or write the LIVE fraction and let this gate maintain \
+         it. A universal claim stays true while the census inside it goes \
+         stale, which is exactly why nobody re-reads it.",
+        report.offences.len(),
+        report.offences.join("; ")
+    );
+    assert!(
+        report.uncited.is_empty(),
+        "provenance under `contracts/` records a {live}-contract substrate as \
+         some other number without citing the slice it records — {}. A record \
+         of a smaller substrate is honest and stays; it just has to say WHEN.",
+        report.uncited.join("; ")
+    );
+    // The claims that PASS, one per spelling — proof this is a measurement of
+    // the substrate and not a ban on writing numbers next to `contracts`. If
+    // a repair ever deletes both, the gate keeps passing while scoring
+    // nothing, and that is the failure mode this asserts against.
+    assert!(
+        report.agreements.len() >= 2,
+        "fewer than two live census claims agree with the substrate's actual \
+         size of {live}; without an agreeing claim this gate cannot \
+         distinguish `measures the corpus` from `matches nothing`. \
+         Agreements: {:?}",
+        report.agreements
+    );
+}
+
+#[test]
+fn the_census_gate_tracks_the_substrate_not_the_text() {
+    // THE BEHAVIOUR HALF. Perturb the DERIVED population, not the prose. The
+    // two live agreements say `35`; at a 36-contract substrate BOTH must
+    // become findings, and the cited records that say `12` must STAY exempt
+    // — a gate that flipped those too would be rewriting history rather than
+    // catching drift.
+    let pages = provable_artifact_pages();
+    let live = live_contract_count();
+    let clean = size_report(&pages, live);
+    assert!(
+        clean.offences.is_empty() && clean.uncited.is_empty(),
+        "control: the corpus must be clean at the LIVE census before a \
+         perturbation means anything. offences: {:?} uncited: {:?}",
+        clean.offences,
+        clean.uncited
+    );
+
+    let grown = size_report(&pages, live + 1);
+    assert!(
+        grown.agreements.is_empty(),
+        "a thirty-sixth contract left {} census claim(s) reading as agreed — \
+         the gate is comparing the text against itself: {:?}",
+        grown.agreements.len(),
+        grown.agreements
+    );
+    assert!(
+        grown
+            .uncited
+            .iter()
+            .chain(grown.offences.iter())
+            .any(|o| o.contains("README.md")),
+        "growing the substrate by one left `contracts/README.md`'s `All 35 \
+         contracts` and `24 of 35 contracts` unreported, so the needle is not \
+         reading the live count at all. offences: {:?} uncited: {:?}",
+        grown.offences,
+        grown.uncited
+    );
+}
+
+#[test]
+fn the_census_needle_reads_the_spellings_the_corpus_writes() {
+    for (text, want, why) in [
+        (
+            "with PMAT-197 landed, ALL 12 contracts in the substrate have at least one \
+             Gold-tier refinement theorem",
+            vec![12usize],
+            "the totality spelling, verbatim from a normative `invariants:` entry",
+        ),
+        (
+            "Gold-tier coverage is now universal across the substrate (12/12 contracts)",
+            vec![12],
+            "the FRACTION spelling — the denominator is the census; the equal \
+             numerator is not double-counted",
+        ),
+        (
+            "every one of the 12 contracts in the substrate now has at least one Diamond theorem",
+            vec![12],
+            "`every one of the N` is the same totality",
+        ),
+        (
+            "Platinum coverage now spans 9 of 12 contracts across all 5 layers",
+            vec![12],
+            "the SPELLED-OUT fraction: `9 of 12` names the same census as `9/12`, \
+             and this is live in XpileFrontendTrait.lean",
+        ),
+        (
+            "runs cargo kani over all 101 harnesses (24 files, covering 24 of 35 contracts)",
+            vec![35],
+            "the live agreeing claim; `all 101 harnesses` is a different \
+             population and must not be read as a contract census",
+        ),
+        (
+            "All 35 contracts sit at Bronze.",
+            vec![35],
+            "the other live agreeing claim, and the reason a trailing `.` cannot \
+             be part of the noun",
+        ),
+        (
+            "Diamond depth-3 broadened: 11 contracts at depth-3+",
+            vec![],
+            "a BARE `N contracts` is a SUBSET count, not a census. Forty-odd of \
+             these are live and every one is honest; reading them as censuses \
+             would report true sentences as drift",
+        ),
+        (
+            "12 contracts × 2 strata (Sem + Sym) = 24 paired discharges",
+            vec![],
+            "same — an arithmetic operand, live in contracts/kani/ffi_cpython_ext.rs",
+        ),
+        (
+            "With both landed, of the then-12-contract substrate:",
+            vec![],
+            "the PAST-SCOPED spelling PMAT-1456 repaired that same file INTO. A \
+             needle that flagged its own house style would push the next repair \
+             back toward the unscoped form",
+        ),
+        (
+            "5 layers of the contract taxonomy fully covered",
+            vec![],
+            "`layers` is a different population and is out of subject — see the \
+             block comment. `contract` here is an adjective and carries no number",
+        ),
+        (
+            "depth-2 Diamonds on all 5 layers (1, 2, 3, 4, 5)",
+            vec![],
+            "the 71 live `ALL 5 LAYERS` claims are TRUE and must stay unreported",
+        ),
+        (
+            "language's Layer-1/2 contracts via meta-HIR",
+            vec![],
+            "THE LIVE FALSE POSITIVE, verbatim from xpile-backend-trait-v1.yaml:241. \
+             `Layer-1/2` is a layer PAIR; read as a fraction it reports a \
+             two-contract substrate in a normative field. This case reds when \
+             `trailing_number_is_free` is weakened",
+        ),
+        (
+            "extends it across all 12 contract-lane theorems",
+            vec![],
+            "a HYPHENATED compound is a different population: `contract-lane` \
+             theorems are not contracts, and scoring twelve of them as a \
+             substrate census would mis-scope the claim. This is what the \
+             noun's trailing word boundary buys — measured, because the \
+             `--contracts-dir` case that looked like the obvious justification \
+             reds NOTHING (its backward walk finds no number at all)",
+        ),
+        (
+            "the tool will install 12 contracts",
+            vec![],
+            "`install` ends in the letters `all`, and reading it as the \
+             quantifier would turn a bare subset count into a census. This case \
+             reds when `ends_with_word` is relaxed to `ends_with`",
+        ),
+        (
+            "**SUBSTRATE MILESTONE: DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS.**",
+            vec![12],
+            "the corpus's COMMONEST spelling, bolded, with a trailing `.` — the \
+             Lean substrate writes it this way about a hundred times",
+        ),
+        (
+            "completes coverage across all **12** contracts",
+            vec![12],
+            "CONSTRUCTED — emphasis BETWEEN the words of the phrase rather than \
+             around it. ⚠️ Measured, not assumed: removing the emphasis skip \
+             from the backward walk leaves the LIVE verdict completely \
+             unchanged, because the corpus bolds the whole phrase every time. \
+             It is kept as a forward tripwire and pinned HERE rather than \
+             claimed to be load-bearing today",
+        ),
+    ] {
+        let got: Vec<usize> = substrate_size_claims(text)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(got, want, "{why} — on {text:?}");
+    }
+}
+
+#[test]
+fn an_uncited_census_record_is_reported_and_a_cited_one_is_not() {
+    // BOTH DIRECTIONS on the exemption, on synthetic pages so the assertion
+    // does not depend on the corpus staying arranged as it is today. The
+    // `.lean` extension makes `substrate_blocks` treat the body as prose,
+    // which is what every real provenance record here is.
+    let stale = "Coverage now spans all 12 contracts.";
+    let uncited = vec![("contracts/lean/Fake.lean".to_string(), stale.to_string())];
+    let report = size_report(&uncited, 35);
+    assert_eq!(
+        report.uncited.len(),
+        1,
+        "an uncited provenance record naming a stale census must be REPORTED, \
+         or the branch is decoration. Got: {report:?}",
+        report = report.uncited
+    );
+    assert!(
+        report.offences.is_empty(),
+        "prose under contracts/ is provenance, not a normative field — it must \
+         not be reported as an assertion: {:?}",
+        report.offences
+    );
+
+    let cited = vec![(
+        "contracts/lean/Fake.lean".to_string(),
+        format!("## PMAT-336 — {stale}"),
+    )];
+    let report = size_report(&cited, 35);
+    assert!(
+        report.uncited.is_empty(),
+        "a record that says WHEN is honest and must stay exempt — this gate \
+         does not rewrite history: {:?}",
+        report.uncited
+    );
+
+    // …and the same sentence in a NORMATIVE slot has no way out, citation or
+    // not. This is the asymmetry PMAT-1454 established, re-pinned for the
+    // census class: a record does not belong in an assertion slot.
+    let normative = vec![(
+        "contracts/fake-v1.yaml".to_string(),
+        format!("    invariants:\n      - \"PMAT-336: {stale}\""),
+    )];
+    let report = size_report(&normative, 35);
+    assert_eq!(
+        report.offences.len(),
+        1,
+        "a normative field naming a stale census must be reported even though \
+         it cites a slice — otherwise a `PMAT-` prefix laundered every one of \
+         the three live offences this slice repaired. Got: {:?}",
+        report.offences
+    );
+}

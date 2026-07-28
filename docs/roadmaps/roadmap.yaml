@@ -21993,3 +21993,85 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1458
+  title: 'the substrate says "12 contracts" 62 times and holds 35 — three of them in normative slots, and every one is TRUE in the half a reader checks'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1457 standing lead (a) — the per-contract COVERAGE FRACTION class,
+    "three live sites repaired BY HAND, still ungated" — and took it at the level where it is
+    decidable without arguing tier semantics: the DENOMINATOR, which is a POPULATION.
+
+    ** CONTROL THAT PASSES, establishing the blindness by measurement. At b4b9fc6e `cargo test -p
+    xpile --test claims_drift` was GREEN on all 36 tests. The shipped needle finds 64 census
+    claims under contracts/: 62 name a 12-contract substrate, 2 name 35. Live is 35 (contracts/
+    *.yaml carrying a metadata.id; `xpile diamond --json` reports the same 35 rows).
+
+    ** THE THREE LIVE FALSEHOODS, all in contracts/xpile-contract-backend-trait-v1.yaml, all in
+    NORMATIVE slots where PMAT-1454 established there is no record exemption:
+    :127 invariants "ALL 12 contracts in the substrate have at least one Gold-tier refinement
+    theorem"; :132 postconditions "Gold-tier coverage is now universal across the substrate
+    (12/12 contracts)"; :189 invariants "every one of the 12 contracts in the substrate now has
+    at least one Diamond theorem".
+
+    ** ⭐ THE FINDING IS THAT ALL THREE ARE TRUE IN THEIR TOTALITY HALF. Measured: all 35
+    contracts bind a Gold-or-better lean_theorem, and `xpile diamond --json` has minimum
+    diamond_count 1 over 35 rows. So a reader who checks the CLAIM — is it universal? — gets YES
+    and never checks the CENSUS riding inside it. PMAT-1457 found an ordinal freezing the
+    NUMERATOR while the substrate grew the DENOMINATOR; one level up the substrate writes the
+    denominator down and it froze at twelve. THE TRUE HALF LAUNDERS THE STALE HALF, same shape as
+    1457''s MIXED SENTENCE, and it survived sixty-odd sentences'' worth of re-reading.
+
+    ** THE RULE: a number that names |substrate| must equal the live |substrate|. Three spellings
+    because the corpus writes three — `all N contracts`, `N/M contracts`, `N of M contracts`. A
+    BARE `N contracts` is deliberately OUT (a subset count: "11 contracts at depth-3+" is honest
+    and there are forty-odd). EXEMPTION is the one PMAT-1454 already established, not a new one:
+    normative field = live-true with no way out; provenance = exempt iff it cites its slice. The
+    59 cited records naming 12 are honest history and are UNTOUCHED — this gate does not rewrite
+    the past.
+
+    ** REPAIRS: :127 and :189 drop the census (an invariants: entry is about its equation, not
+    about how big the substrate is); :132 states the LIVE fraction "(35/35 contracts)" so the gate
+    MAINTAINS it — the thirty-sixth contract now reds that line instead of silently ageing it.
+    Two live agreements already existed and are the proof this measures rather than bans, one per
+    spelling, both in contracts/README.md and neither planted: "covering 24 of 35 contracts" and
+    "All 35 contracts sit at Bronze".
+
+    ** ⚠️ THREE GUARDS MEASURED, TWO OF THEM WRONG THE OBVIOUS WAY (fourth slice running). (1)
+    `trailing_number_is_free` IS load-bearing on the LIVE corpus — without it xpile-backend-trait
+    -v1.yaml:241 "language''s Layer-1/2 contracts" reads as a fraction and the gate reports a
+    TWO-contract substrate in a normative field. (2) The noun''s LEADING word boundary — written
+    for `subcontracts`/`then-12-contract` — came back GREEN on its red half and was DELETED, not
+    downgraded: the backward walk already requires a space then digits, so it was unreachable code
+    dressed as a guard. (3) The trailing boundary red-halfed GREEN against the case that looked
+    like its justification (`--contracts-dir`, whose walk finds no number at all) and is now
+    pinned by `contract-lane`, which does red. The EMPHASIS skip is a forward tripwire: removing
+    it leaves the live verdict completely unchanged (the corpus bolds the whole phrase every
+    time), pinned by a CONSTRUCTED case and said so rather than claimed load-bearing.
+
+    ** The uncited-provenance branch reports 0 today — every provenance block naming a census
+    cites a PMAT id — and is pinned in BOTH directions by a synthetic-page test so it cannot rot.
+
+    ** SCOPE, said rather than left to infer: the corpus also writes `ALL 5 LAYERS` 71 times and
+    it is TRUE, but a contract''s taxonomy layer is a sentence inside metadata.description and
+    only 6 of the 35 descriptions spell it — the population is not derivable, so layer censuses
+    are OUT of subject.
+
+    ** ZERO crates/*/src. contracts/*.yaml touched in NORMATIVE fields (pre-freeze, allowed);
+    `pv lint contracts/` 0 errors 0 warnings.
+
+    ** STANDING LEADS: (a) the PER-CONTRACT equation denominator — "(9/9)", "8/9 equations",
+    "7/7 equations" on contracts that now hold 33, 42 and 29 equations — is the same class one
+    scope down, and all fourteen sites are cited provenance, so gating it means deciding whether
+    a dated record may freeze a per-contract count the way it may freeze the substrate count.
+    (b) the TIER-LADDER totality: xpile-contract-backend-trait-v1.yaml:190 asserts "tier
+    progression Bronze -> Silver -> Gold -> Platinum -> Diamond is now UNIVERSAL across the
+    substrate" with no census to catch it, and C-XLATE-PY-STR-TO-RUST-STRING binds ZERO `_silver`
+    theorems — a strict reading is doubtful and nothing checks it. (c) the BROADENING counts in
+    normative slots ("Diamond depth-3 broadened: 11 contracts at depth-3+", forty-odd of them) are
+    records living in assertion slots, checkable against `xpile diamond --json`.
+
+    NEXT FREE ID IS PMAT-1459. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD
+    FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
+    STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
+  status: done
+  priority: P1
+  category: honesty
