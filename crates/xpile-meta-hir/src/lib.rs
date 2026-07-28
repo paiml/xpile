@@ -52,9 +52,17 @@ pub enum SourceLang {
     /// round-trip **fixed-point** witness: `emit(lift(emit(M))) ==
     /// emit(M)` — the lift is a right-inverse of emit on the part of its
     /// WAT image the lift accepts. PMAT-1422 measured that qualifier
-    /// rather than assuming it away: `emit → lift` refuses exactly two
-    /// emitted constructs, `not` (lowered to `i32.eqz`) and float `/`
-    /// (whose zero-divisor guard ends in `unreachable`).
+    /// rather than assuming it away, at two emitted constructs;
+    /// PMAT-1423 re-measured over a corpus reaching every scalar
+    /// construct the emit accepts and found **twelve**: `not`
+    /// (`i32.eqz`), float `/` (`unreachable`), unary `-` on a float and
+    /// on an `f32` (`f64.neg`/`f32.neg`), float `abs`/`math.floor`/
+    /// `math.ceil` (`f64.abs`/`f64.floor`/`f64.ceil`), an `f32` literal
+    /// (`f32.const`), and int `abs`/`min`/`max`/`math.sqrt` (routed
+    /// through `$__wasm_*` prelude helpers with no inverse arm). The last
+    /// four did not refuse at all before PMAT-1423 — they lifted to a
+    /// call to a dropped helper, which `--target rust` then emitted as
+    /// uncompilable Rust at exit 0.
     /// See `project-bidirectional-wasm`.
     Wasm,
 }

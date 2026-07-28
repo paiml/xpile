@@ -2,31 +2,34 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1422 landed from an honesty hunt. The ranked queue stays exhausted until
-  Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1421''s standing lead (b) verbatim:
-  that slice swept the WAT lift''s BINARY-OPERATOR table and wrote down that `lift_call`, the
-  unary/`i32.eqz` path and the F64 TABLE had been read but NOT swept against a re-derived emit opcode
-  set the same way. Sweeping the f64 table found the same stale-inverse shape one type over. PMAT-1002
-  had already established that WASM''s `f64.div` is IEEE 754 (`1.0/0.0` -> inf, `0.0/0.0` -> NaN) where
-  Python''s `/` raises ZeroDivisionError, and made the emit guard EVERY float division against a zero
-  divisor and trap - so re-derived from the BINARY (variable, parameter and literal divisor alike) the
-  emit never produces a BARE `f64.div`, and the lift''s arm fired ONLY on hand-written and third-party
-  WAT. EXECUTED, both legs wat2wasm-clean, exit 0 throughout: `1.0 f64.div 0.0` runs to `inf` at the
-  source and TRAPS after the round trip; `0.0 f64.div 0.0` runs to `nan` and traps; `6.0 f64.div 3.0`
-  agrees, which is why no fixture saw it. Refused rather than coerced. SECOND HALF: `emit -> lift` was
-  MEASURED over the emitted-construct corpus rather than assumed, and it refuses two constructs the
-  emit produces - `not` (`i32.eqz`) and float `/` (`unreachable`) - while FOUR live places claimed an
-  unqualified "right-inverse of emit on its WAT image". Both refuse honestly at exit 1, so neither is a
-  wrong answer, but the claim was false and the fixture corpus could not falsify it because no fixture
-  used either construct. Now scoped in all four AND enforced by a witness that reds in both directions.
-  LESSONS WORTH KEEPING: (1) the tell was in the repo TWICE - PMAT-1421''s own commit message quoted
-  the emit''s user-body opcode set as including `f64.{add,sub,mul,div}`, which is true of the TOKEN and
-  false of the BARE opcode, and that distinction was the whole defect; a prior slice''s summary of a
-  set is not a substitute for re-deriving it. (2) A premise test must be keyed on the REAL premise: for
-  the i64 mnemonics the premise was "no bare `i64.add` in a user body", but a user body DOES contain
-  the token `f64.div`, so here it had to be "no UNGUARDED `f64.div`". (3) A refusal message that
-  MISDESCRIBES its input hides a gap - `i32.eqz` was being told it was "an arbitrary stack-machine
-  branch", which made an emit-image hole read as out-of-image input.)'
+updated: '2026-07-28 (PMAT-1423 landed from an honesty hunt. The ranked queue stays exhausted until
+  Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1422''s standing lead (d) verbatim
+  and found the COMPLEMENT of the two shapes before it. PMAT-1421 and PMAT-1422 each found a STALE
+  INVERSE ARM - correct when written, left live after a re-route, firing only on input the emit no
+  longer produces. This one is a MISSING arm whose fallback was not a refusal but a RECONSTRUCTION.
+  `lift_wat` drops every `$__wasm_*` prelude function by name, but the generic `call` arm looked the
+  callee up in the parsed arity table, found the helper''s real signature sitting there, and built a
+  well-formed `Expr::Call` to a function the lifted module no longer contained. Four emitted
+  constructs reach it - `abs(int)`, `min`/`max` over ints, `math.sqrt`. EXECUTED: `xpile transpile
+  sqrt.wat --target rust` exits 0 and writes `pub fn f(a: f64) -> f64 { __wasm_sqrt_f64(a) }` under a
+  `C-PY-FLOAT-ARITH` citation; `rustc` rejects it with `error[E0425] cannot find function`. SECOND
+  HALF: PMAT-1422''s "the hole is exactly `not` and float `/`" was measured over 7 fixtures with no
+  float builtin, no unary float `-` and no `F32` in them - re-measured over a corpus reaching every
+  scalar construct the emit accepts, the hole is TWELVE, and six of them were told they were "an
+  arbitrary stack-machine branch". LESSONS WORTH KEEPING. (1) THE ORACLE WAS THE BUG - PMAT-1422''s
+  witness measured `lift_wat(..).is_ok()`, and all four corrupted constructs PASSED it because the
+  lift really did return `Ok`, on a module it had wrecked. `Ok` is not the invariant; the FIXED POINT
+  is. When a witness''s oracle is "the call succeeded", ask what success is being taken to mean. (2)
+  the failure was TARGET-DEPENDENT - `--target wasm` refused, from the BACKEND rather than the lift,
+  which is exactly why it read as caught and says nothing about the other eight backends; check the
+  lane that does NOT catch it. (3) fixing a misdescribing refusal for the two mnemonics you found does
+  not fix it for the six you did not enumerate - sweep the whole vocabulary and gate it BOTH ways
+  (no stale entry, no unnamed refusal). (4) the tell was in the file that failed - "a fixture corpus
+  cannot establish an unqualified claim about the whole image" was already in tests.rs''s module doc
+  when the "exactly two" claim was written one screen below it; grow the CORPUS, not the prose.
+  (5) the first cut of the both-ways gate was OVER-BROAD, driving every emitted mnemonic through
+  `refuse_control` and manufacturing failures for `local.get`/`i64.and`/`f64.add`, which never reach a
+  refusal at all - key a gate on what ACTUALLY happens, not on what could be called.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31

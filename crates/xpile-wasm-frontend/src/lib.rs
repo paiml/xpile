@@ -141,23 +141,42 @@
 //! *not* claimed — the type collapse above makes the lift lossy; the fixed
 //! point is the honest, checkable invariant.)
 //!
-//! **That qualifier is load-bearing and was missing until PMAT-1422**, which
-//! measured the gap instead of assuming it away. Re-derived from the binary
-//! over the emitted-construct corpus, `emit → lift` succeeds for `+ - *`,
-//! `// %`, `<< >>`, `& | ^`, the int and float comparisons, `bool ==`, float
-//! `+`, `while`, `if/else` and short-circuit `and` — and **refuses two**:
+//! **That qualifier is load-bearing and was missing until PMAT-1422.** It
+//! measured the gap at two constructs; PMAT-1423 re-measured over a corpus
+//! reaching every scalar construct the emit accepts and found **twelve**.
+//! `emit → lift` succeeds for `+ - *`, `// %`, `<< >>`, `& | ^`, `~`, unary
+//! `-` on an int, the int and float comparisons, `bool ==`, float `+`, an
+//! `f64` literal, an `f32` passthrough, `while`, `if/else` and short-circuit
+//! `and`. It **refuses** these, each an emitted construct with no meta-HIR
+//! representative to lift back to:
 //!
-//!   * `not` — the emit lowers it to `i32.eqz`, which the lift handles ONLY
-//!     inside a loop condition (where it is the negation guard) and refuses
-//!     in a straight-line or loop body.
-//!   * float `/` — the emit's zero-divisor guard ends in `unreachable`,
-//!     which the lift refuses.
+//!   * `not` — lowered to `i32.eqz`, which the lift handles ONLY inside a
+//!     loop condition (where it is the negation guard).
+//!   * float `/` — the zero-divisor guard ends in `unreachable`.
+//!   * unary `-` on a float (`f64.neg`) and on an `f32` (`f32.neg`). An
+//!     integer `-x` routes through `call $__wasm_mul_i64` and DOES lift.
+//!   * `abs()` on a float (`f64.abs`), `math.floor` (`f64.floor`),
+//!     `math.ceil` (`f64.ceil`).
+//!   * an `f32` literal (`f32.const`) — the lift inverts
+//!     `i64.const`/`i32.const`/`f64.const` only.
+//!   * `abs()` on an int, `min`/`max` on ints, and `math.sqrt` — the emit
+//!     routes these through `$__wasm_abs_i64` / `$__wasm_min_i64` /
+//!     `$__wasm_max_i64` / `$__wasm_sqrt_f64`, prelude helpers the lift has
+//!     no inverse arm for. See [`refuse_uninvertible_helper`].
 //!
-//! Both refuse honestly (hard [`FrontendError::Lower`], exit 1), so neither
-//! is a wrong answer; but the unqualified "right-inverse on its WAT image"
-//! claim was false, and it is what kept the hole invisible. Closing it needs
-//! meta-HIR representatives for a unary `not` and a trap (0.1.619) — see
-//! [`in_image_uninverted`].
+//! All refuse honestly (hard [`FrontendError::Lower`], exit 1) — but the last
+//! four did **not** until PMAT-1423. The lift reconstructed them as an
+//! `Expr::Call` to a helper it had just dropped, and while `--target wasm`
+//! caught the dangling call, `--target rust` wrote uncompilable Rust at exit
+//! 0 under a contract citation. That asymmetry is why the frontend, not a
+//! backend, has to be the one to refuse.
+//!
+//! Closing the hole needs meta-HIR representatives the language does not
+//! have: a unary `not`, a trap statement, a unary float negation, `f32`
+//! literals, and float builtins carrying the emit's Python semantics
+//! (0.1.619). See [`IN_IMAGE_UNINVERTED`], whose entries are checked both
+//! ways — every one reachable from an emitted construct, and every refusal
+//! the corpus produces named by one.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -250,7 +269,11 @@ pub fn lift_wat(module_name: &str, source: &str) -> Result<Module, FrontendError
     for &(open, close) in &func_spans {
         let slice = &toks[open..=close];
         let raw_name = func_name(slice)?;
-        if raw_name.starts_with("__wasm_") {
+        // PMAT-1423: this skip is the REASON an un-armed `call $__wasm_*`
+        // dangles, so it reads the same constant [`lift_call`]'s guard does
+        // — the two cannot drift apart into a namespace the lift drops but
+        // does not refuse calls into.
+        if raw_name.starts_with(HELPER_PREFIX) {
             continue;
         }
         items.push(Item::Function(lift_function(slice, &arity)?));
@@ -825,6 +848,39 @@ fn lift_call(
                 rhs: Box::new(rhs),
             });
         }
+        // PMAT-1423: every OTHER `$__wasm_*` name. The lift DROPS every
+        // `$__wasm_*` function definition (see the pass-2 `starts_with`
+        // skip in [`lift_wat`]), so a surviving call to one that has no
+        // inverse arm above reconstructs an `Expr::Call` to a callee that
+        // is not in the lifted module — a DANGLING call, not a lift.
+        //
+        // This is not hypothetical and it is not caught downstream on every
+        // target. `--target wasm` happens to refuse it ("not a function of
+        // this WASM module"), but `--target rust` exits **0** and writes
+        // uncompilable Rust carrying a contract citation:
+        //
+        // ```text
+        // $ xpile transpile sqrt.wat --target rust   # exit 0
+        // // xpile-contract: C-PY-FLOAT-ARITH
+        // pub fn f(a: f64) -> f64 { __wasm_sqrt_f64(a) }
+        // $ rustc --crate-type=lib sqrt.rs
+        // error[E0425]: cannot find function `__wasm_sqrt_f64` in this scope
+        // ```
+        //
+        // Measured from the BINARY over the emitted-construct corpus, four
+        // reachable constructs land here: `abs()` over an int
+        // (`$__wasm_abs_i64`), `min`/`max` over ints (`$__wasm_min_i64` /
+        // `$__wasm_max_i64`) and `math.sqrt` (`$__wasm_sqrt_f64`). The
+        // guard is keyed on the reserved-namespace SHAPE rather than on
+        // that list, so a helper the emit grows later refuses instead of
+        // dangling (PMAT-1391: key on shape, wire at the single choke
+        // point). It cannot over-refuse: the seven invertible helpers are
+        // matched by the arms above, and any other `$__wasm_*` definition
+        // — even a hand-written one — is dropped by the same pass-2 skip,
+        // so the call would dangle either way.
+        _ if callee.starts_with(HELPER_PREFIX) => {
+            return Err(refuse_uninvertible_helper(&callee));
+        }
         _ => {
             let n = *ctx.arity.get(&callee).ok_or_else(|| {
                 FrontendError::Lower(format!(
@@ -1221,10 +1277,18 @@ fn refuse_control(instr: &str) -> FrontendError {
         return FrontendError::Lower(format!(
             "WAT instruction `{instr}` IS inside the `xpile-wasm-codegen` emit image \
              ({construct}), but the lift has no meta-HIR representative for it, so \
-             `emit(M)` for that construct does not round-trip (PMAT-1422 measured the \
-             hole at exactly these two instructions over the emitted-construct corpus). \
-             It is refused rather than silently dropped; a correct lift needs a unary \
-             `not` and a trap statement in meta-HIR (0.1.619)"
+             `emit(M)` for that construct does not round-trip. The full measured hole \
+             is {} (PMAT-1423 re-measured PMAT-1422's two over a corpus reaching every \
+             scalar construct the emit accepts), plus the un-armed `$__wasm_*` prelude \
+             helpers. It is refused rather than silently dropped; closing it needs \
+             meta-HIR representatives the language does not have yet — a unary `not`, \
+             a trap statement, a unary float negation, `f32` literals, and float \
+             builtins carrying the emit's semantics (0.1.619)",
+            IN_IMAGE_UNINVERTED
+                .iter()
+                .map(|(k, _)| format!("`{k}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     FrontendError::Lower(format!(
@@ -1236,23 +1300,61 @@ fn refuse_control(instr: &str) -> FrontendError {
     ))
 }
 
-/// The two instructions the emit DOES produce in a user body but the lift
-/// cannot invert (PMAT-1422). Re-derived from the binary, not asserted: over
-/// the emitted-construct corpus, `emit → lift` succeeds for every construct
-/// except `not` and float `/`, which fail on exactly these two mnemonics.
+/// The instructions the emit DOES produce in a user body but the lift cannot
+/// invert. Re-derived from the BINARY over the emitted-construct corpus, not
+/// asserted — and both halves are enforced by
+/// `every_uninverted_in_image_instruction_is_named_and_reachable`: every entry
+/// here must be REACHED by some emitted construct (so an entry cannot go stale
+/// the way PMAT-1421's inverse arms did), and every mnemonic the emit produces
+/// that the lift refuses must BE here (so a new emit opcode cannot quietly
+/// fall back to the "arbitrary stack-machine branch" message).
 ///
-/// Note the inversion this exposes — before PMAT-1422 the lift REJECTED the
+/// ⚠️ PMAT-1422 populated this with two entries and wrote "the hole is exactly
+/// these two" into the refusal text, four doc sites and a witness name. That
+/// was measured over a 7-row fixture corpus with no float builtin, no unary
+/// float `-`, and no `F32` in it — so it could not have found the other six.
+/// PMAT-1423 re-measured over a corpus reaching every scalar construct the
+/// emit accepts. A fixture corpus cannot establish a whole-image claim; that
+/// sentence was already in this crate's test module doc when the claim it
+/// warns about was written one screen below it.
+///
+/// Note the inversion PMAT-1422 exposed — before it, the lift REJECTED the
 /// emit's own guarded division (on the `unreachable`) while ACCEPTING and
 /// corrupting a hand-written bare `f64.div`. See [`refuse_ieee_div`].
+pub(crate) const IN_IMAGE_UNINVERTED: &[(&str, &str)] = &[
+    // PMAT-1422
+    ("i32.eqz", "it is how the emit lowers a boolean `not`"),
+    (
+        "unreachable",
+        "it is how the emit traps — the `//`/`%` and float-`/` zero-divisor \
+         guards and the checked-arithmetic helpers all end in it",
+    ),
+    // PMAT-1423 — all six reached by an emitted construct, none of which the
+    // PMAT-1422 corpus exercised.
+    (
+        "f64.neg",
+        "it is how the emit lowers a unary `-` on a float (an integer `-x` \
+         routes through `call $__wasm_mul_i64`, which the lift DOES invert)",
+    ),
+    (
+        "f32.neg",
+        "it is how the emit lowers a unary `-` on an `f32` value",
+    ),
+    ("f64.abs", "it is how the emit lowers `abs()` on a float"),
+    ("f64.floor", "it is how the emit lowers `math.floor`"),
+    ("f64.ceil", "it is how the emit lowers `math.ceil`"),
+    (
+        "f32.const",
+        "it is how the emit lowers a float literal at type `f32` (a C \
+         `float`); the lift inverts `i64.const`/`i32.const`/`f64.const` only",
+    ),
+];
+
 fn in_image_uninverted(instr: &str) -> Option<&'static str> {
-    match instr {
-        "i32.eqz" => Some("it is how the emit lowers a boolean `not`"),
-        "unreachable" => Some(
-            "it is how the emit traps — the `//`/`%` and float-`/` zero-divisor \
-             guards and the checked-arithmetic helpers all end in it",
-        ),
-        _ => None,
-    }
+    IN_IMAGE_UNINVERTED
+        .iter()
+        .find(|(k, _)| *k == instr)
+        .map(|(_, why)| *why)
 }
 
 /// Lift one `i32.const` operand — the SINGLE decision point for all three
@@ -1416,6 +1518,87 @@ fn int_binop(instr: &str) -> Result<Option<BinOp>, FrontendError> {
 /// by picking one of two incompatible semantics installs a silent wrong
 /// answer. A correct lift needs meta-HIR operators carrying WASM wraparound
 /// semantics, which do not exist (0.1.619 capability work).
+/// The reserved namespace `xpile-wasm-codegen` uses for its synthetic
+/// prelude functions. [`lift_wat`] DROPS every function whose name starts
+/// with this, so it is also exactly the set of callees a lifted module can
+/// never resolve — which is why [`lift_call`] refuses the ones it has no
+/// inverse arm for (PMAT-1423).
+pub(crate) const HELPER_PREFIX: &str = "__wasm_";
+
+/// The `$__wasm_*` prelude helpers [`lift_call`] CAN invert, each back to the
+/// high-level meta-HIR operator the emit routed through it. Every other name
+/// in the [`HELPER_PREFIX`] namespace refuses (PMAT-1423).
+///
+/// Exposed for the witness, which asserts this list and the `lift_call` arms
+/// stay in step — a helper listed here but not armed would refuse while
+/// claiming to be invertible, and an armed helper missing here would be
+/// omitted from the refusal message that tells authors what *is* supported.
+pub(crate) const INVERTIBLE_HELPERS: &[&str] = &[
+    "__wasm_floordiv_i64",
+    "__wasm_floormod_i64",
+    "__wasm_add_i64",
+    "__wasm_sub_i64",
+    "__wasm_mul_i64",
+    "__wasm_shl_i64",
+    "__wasm_shr_i64",
+];
+
+/// The honest boundary for a call to a `$__wasm_*` prelude helper the lift
+/// has no inverse arm for (PMAT-1423) — the third shape in the family
+/// PMAT-1421 and PMAT-1422 opened, and the one their standing lead (d) named.
+///
+/// The first two were STALE INVERSE ARMS: an arm that was a correct inverse
+/// when written, left live after the emit re-routed the operator, firing only
+/// on input the emit no longer produces. This one is the complement — a
+/// MISSING arm whose fallback was not a refusal but a *reconstruction*. The
+/// generic `_` arm looked the callee up in the parsed arity table, found the
+/// prelude helper's real signature there, and built a well-formed
+/// `Expr::Call` to it. Then pass 2 dropped the helper's definition, so the
+/// lifted module referenced a function it did not contain.
+///
+/// Measured from the binary, four emitted constructs reach here, and the
+/// failure is target-dependent — which is what kept it quiet:
+///
+/// | source construct  | emitted call            | `--target wasm` | `--target rust` |
+/// |-------------------|-------------------------|-----------------|-----------------|
+/// | `abs(int)`        | `$__wasm_abs_i64`       | refuses         | **exit 0**, `E0425` |
+/// | `min(int, int)`   | `$__wasm_min_i64`       | refuses         | **exit 0**, `E0425` |
+/// | `max(int, int)`   | `$__wasm_max_i64`       | refuses         | **exit 0**, `E0425` |
+/// | `math.sqrt(f)`    | `$__wasm_sqrt_f64`      | refuses         | **exit 0**, `E0425` |
+///
+/// The `--target wasm` refusal comes from the BACKEND ("not a function of
+/// this WASM module"), not from the lift, so it says nothing about the other
+/// eight backends; `--target rust` wrote `pub fn f(a: f64) -> f64 {
+/// __wasm_sqrt_f64(a) }` at exit 0, under a `C-PY-FLOAT-ARITH` citation,
+/// and `rustc` rejects it with `error[E0425]: cannot find function`.
+///
+/// Refusing rather than inventing a lowering follows PMAT-1395: `abs`,
+/// `min`, `max` and `sqrt` DO have meta-HIR representatives
+/// ([`NumBuiltinOp`]), but the emit's helpers implement *Python* semantics
+/// (`abs(i64::MIN)` traps rather than wrapping) and re-emitting them through
+/// the high-level builtin is only sound if that matches — which is the same
+/// question PMAT-1421 left open for the wraparound operators. Adding these
+/// arms is 0.1.619 capability work; refusing is the honest boundary until
+/// then.
+fn refuse_uninvertible_helper(callee: &str) -> FrontendError {
+    FrontendError::Lower(format!(
+        "`call ${callee}` is outside the lift subset — `${HELPER_PREFIX}*` is the \
+         `xpile-wasm-codegen` prelude namespace, and the lift DROPS every function \
+         in it, so lifting this call would produce a call to a function the lifted \
+         module does not contain. That dangling call is not caught by every \
+         backend: `--target wasm` refuses it, but `--target rust` emitted \
+         `{callee}(…)` at exit 0 and `rustc` rejects it with `E0425` \
+         (PMAT-1423). The helpers the lift CAN invert are: {}. A `${callee}` arm \
+         needs the meta-HIR operator to carry the helper's Python semantics \
+         (0.1.619), so it is refused rather than mis-lifted",
+        INVERTIBLE_HELPERS
+            .iter()
+            .map(|h| format!("`${h}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
 fn refuse_helper_routed(instr: &str) -> FrontendError {
     let helper = match instr {
         "i64.add" => "$__wasm_add_i64",

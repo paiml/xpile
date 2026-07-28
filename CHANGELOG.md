@@ -7,6 +7,101 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The WAT lift reported SUCCESS for four constructs it had silently corrupted — `--target rust` exited 0 with uncompilable output (PMAT-1423)
+
+Found by taking PMAT-1422's standing lead (d) verbatim: `lift_call`'s non-helper
+arm "was read during this sweep but not driven with an executed differential."
+Driving it found the **complement** of the shape the two previous slices fixed.
+PMAT-1421 and PMAT-1422 each found a **stale inverse arm** — an arm that was a
+correct inverse when written, left live after the emit re-routed the operator, so
+it fired only on input the emit no longer produces. This one is a **missing** arm
+whose fallback was not a refusal but a *reconstruction*.
+
+`lift_wat` drops every `$__wasm_*` prelude function (pass 2, by name). The generic
+`call` arm did not know that: it looked the callee up in the parsed arity table,
+found the prelude helper's real signature sitting there, and built a well-formed
+`Expr::Call` to a function the lifted module no longer contained. Measured from
+the binary, four emitted constructs reach it — and the failure is
+**target-dependent**, which is what kept it quiet:
+
+| source construct | emitted call         | `--target wasm` | `--target rust`     |
+|------------------|----------------------|-----------------|---------------------|
+| `abs(int)`       | `$__wasm_abs_i64`    | refuses         | **exit 0**, `E0425` |
+| `min(int, int)`  | `$__wasm_min_i64`    | refuses         | **exit 0**, `E0425` |
+| `max(int, int)`  | `$__wasm_max_i64`    | refuses         | **exit 0**, `E0425` |
+| `math.sqrt(f)`   | `$__wasm_sqrt_f64`   | refuses         | **exit 0**, `E0425` |
+
+The `--target wasm` refusal comes from the **backend** ("not a function of this
+WASM module"), not from the lift, so it says nothing about the other eight
+backends. Executed end to end:
+
+```console
+$ xpile transpile sqrt.wat --target rust   # exit 0
+// xpile-contract: C-PY-FLOAT-ARITH
+pub fn f(a: f64) -> f64 { __wasm_sqrt_f64(a) }
+$ rustc --crate-type=lib sqrt.rs
+error[E0425]: cannot find function `__wasm_sqrt_f64` in this scope
+```
+
+Uncompilable Rust, at exit 0, under a contract citation. The guard is keyed on the
+reserved-namespace **shape** rather than on that list of four, and sits at the
+single choke point, so a helper the emit grows later refuses instead of dangling.
+It cannot over-refuse: the seven invertible helpers are matched by the arms above
+it, and any other `$__wasm_*` definition — even a hand-written one — is dropped by
+the same pass-2 skip, so the call would dangle either way. That skip now reads the
+same constant the guard does.
+
+**The oracle was the bug.** PMAT-1422's witness measured `lift_wat(..).is_ok()`.
+Under that oracle all four of these read as *liftable*, because the lift did
+return `Ok` — on a module it had corrupted. `Ok` is not the invariant; the fixed
+point is. `lift_ok_implies_the_lifted_module_still_emits` now asserts the
+implication directly, and `no_lifted_module_references_a_function_it_does_not_define`
+generalises it to any unresolved callee. A third witness pins the half that did
+*not* catch it: the Rust backend emits a hand-built module with an unresolved
+callee at exit 0, while the WASM backend refuses the same module.
+
+### The emit-image hole is twelve constructs, not two — measured over a corpus that can falsify the claim (PMAT-1423)
+
+PMAT-1422 pinned the set of emitted constructs the lift refuses at "exactly `not`
+and float `/`", and wrote that into the refusal text, four doc sites and a witness
+name. It was measured over **7 fixtures containing no float builtin, no unary
+float `-` and no `F32`** — so it could not have found the others. Re-measured over
+a corpus reaching every scalar construct the emit accepts, the hole is:
+
+| refuses                              | lowered to                          |
+|--------------------------------------|-------------------------------------|
+| `not`                                | `i32.eqz`                           |
+| float `/`                            | guard ending in `unreachable`       |
+| unary `-` on a float / on an `f32`   | `f64.neg` / `f32.neg`               |
+| `abs()` on a float                   | `f64.abs`                           |
+| `math.floor` / `math.ceil`           | `f64.floor` / `f64.ceil`            |
+| an `f32` literal                     | `f32.const`                         |
+| `abs`/`min`/`max`/`sqrt`             | un-armed `$__wasm_*` helper calls   |
+
+Six of these were refused with a message that told the author they had written
+"an arbitrary stack-machine branch / non-canonical `(block …)` / `br_table`" —
+false for every one of them, and precisely the misdescription PMAT-1422 fixed for
+`i32.eqz` and `unreachable` without checking whether anything else was affected.
+An integer `-x` routes through `call $__wasm_mul_i64` and does lift, which is why
+unary `-` did not look suspicious.
+
+The vocabulary is now a table checked in **both** directions: every entry must be
+reachable from an emitted construct (so an entry cannot go stale the way
+PMAT-1421's arms did), and every refusal the corpus produces must be named by an
+entry (so a new emit opcode cannot fall back to the generic message). All three
+red halves were run: removing the helper guard reds 5 witnesses, deleting an entry
+reds 2, and adding an entry the emit never produces reds 1.
+
+**The lesson was already written in the file it failed in.** "A fixture corpus
+cannot establish an unqualified claim about the whole image" was in
+`tests.rs`'s module doc when the "exactly two" claim was written one screen below
+it. Growing the corpus, not the prose, is what makes the claim true.
+
+*Named, not fixed:* an integer `-x` round-trips to a fixed point only **modulo
+layout** — the emit writes a blank line after its `i64.const -1` that the re-emit
+does not. Token streams are identical, so it is cosmetic; it is recorded as its
+own bucket in the witness rather than normalised away.
+
 ### A bare `f64.div` lifted to Python's `/`: `1.0/0.0` is `inf` at the source and a trap after the round trip (PMAT-1422)
 
 Found by taking PMAT-1421's standing lead (b) verbatim — that slice swept the WAT
