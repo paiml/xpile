@@ -67,7 +67,7 @@ selects the backend.
 | Flag | Default | Meaning |
 |---|---|---|
 | `<INPUT>` | required | path to the source file |
-| `--target <T>` | `rust` | one of `rust`, `ruchy`, `ptx`, `wgsl`, `spirv`, `wasm`, `lean`, `shell`, `forjar` |
+| `--target <T>` | `rust` | one of `rust`, `ruchy`, `ptx`, `wgsl`, `spirv`, `wasm`, `lean`, `shell`, `forjar`, or one of the aliases `wat`, `sh`, `bash`, `forjar-yaml` (see [Backends](./backends.md)) |
 | `--out <P>` | stdout | output path |
 | `--emit-crate <D>` | — | write a buildable Cargo crate instead of printing; `--target rust` only |
 | `--contracts <on\|off>` | `on` | emit / suppress the `xpile-contract:` citations |

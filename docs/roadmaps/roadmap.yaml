@@ -20133,3 +20133,100 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1435
+  title: 'PMAT-1435: [cli+docs+gate+honesty] A BOTH-DIRECTIONS GATE IS ONLY AS HONEST AS THE SET
+    IT COMPARES TO — `--target` accepted FOUR spellings no surface the binary prints ever named,
+    and the two gates written to keep the book honest about `--target` FORBADE it from naming
+    them (XPILE-TARGET-SPELL-001). Measured at 8582f9c4 on a force-rebuilt binary:
+    `xpile transpile p.py --target wat` exits 0 with 1727 bytes of WAT, while
+    `xpile transpile p.py --target bashrs` answers "unknown target `bashrs`; choose: rust,
+    ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar". `parse_target` accepted THIRTEEN
+    spellings; `wat` (-> `wasm`), `sh` / `bash` (-> `shell`) and `forjar-yaml` (-> `forjar`)
+    were named by NOTHING the binary prints. `xpile transpile --help` named the same nine, and
+    book/src/reference/cli.md:70 published the CLOSED-WORLD claim "one of `rust` ... `forjar`",
+    which was false, while book/src/reference/backends.md disclosed all four two pages over —
+    the book contradicted itself and the only true statement in the repo was the one no gate
+    read.
+    ** THE PAYLOAD IS ONE LEVEL UP FROM THE LEAD, and it is the third consecutive slice where
+    that has been true (PMAT-1426, PMAT-1431, PMAT-1432). The lead named the message; the
+    defect was in the GATES. Both `--target` gates modelled "what the CLI accepts" as WHAT
+    `--help` SAYS. `cli_docs_drift.rs::the_target_row_names_exactly_the_accepted_target_spellings`
+    is NAMED for this exact property and checks BOTH DIRECTIONS — with its reference set short
+    by four it could never fire in the omit direction, and in the advertise direction it
+    FORBADE cli.md''s row from naming a real spelling. MEASURED, not argued: appending
+    ``--target wat`` to backends.md red-ed
+    `backend_docs_drift.rs::every_inline_target_flag_in_the_book_names_a_live_spelling` with
+    "the book uses `--target <x>` with value(s) the CLI does not accept: [(..., \"wat\")]" —
+    about a value the CLI accepts. That file''s own doc comment claimed its EXECUTED half could
+    catch a `--help` string drifting from `parse_target`; it could not in the direction that was
+    wrong, because the executed set is `documented UNION advertised` and a spelling `--help`
+    OMITS is in neither set and is never run.
+    ** FIX. One derivation point: `TARGET_SPELLINGS`, a roster of (spelling, Target,
+    Option<canonical>) that `parse_target` matches through and that `target_spelling_help()`
+    renders the refusal from, so the message is BEHAVIOUR and cannot enumerate fewer spellings
+    than the binary takes. Both gates now take their live set from that refusal instead of from
+    `--help`; `--help` and cli.md name all thirteen; backends.md''s alias sentence stops
+    asserting that `--help` lists only nine.
+    ** GATE: crates/xpile/tests/target_spelling_disposition_witness.rs (XPILE-TARGET-SPELL-001,
+    6 tests), every set derived from the running binary with NO roster written down:
+    published == accepted with an unpublished control; `--help` == refusal in both halves both
+    ways; canonical count == `xpile info`''s registered-backend count (pinning the vocabulary to
+    the REGISTRY, not to another string — PMAT-1433 lesson 2); the same vocabulary at BOTH
+    `parse_target` call sites, `transpile` and `audit` (PMAT-1387: a guard for one argument is
+    not a guard for the function); and every alias BYTE-IDENTICAL to its canonical spelling on
+    stdout, stderr AND exit status — the substantive claim backends.md makes, and the one whose
+    violation would be a silent wrong answer rather than a doc defect.
+    ** RED HALF RUN, SIX separate executions, each of the six tests red under at least one:
+    (1) reverting the refusal to the nine reds 5 tests across the witness and cli_docs_drift;
+    (2) reverting ONLY `--help` to the nine reds exactly
+    `the_help_vocabulary_equals_the_refusal_vocabulary` — the surface that was wrong and had no
+    gate; (3) pointing the `wat` alias at a different Target reds exactly
+    `every_alias_is_byte_identical_to_its_canonical_spelling`; (4) publishing `phantom=wasm`
+    reds `every_published_spelling_is_accepted_and_the_unpublished_one_is_not`; (5) dropping
+    `lean` from the roster reds `the_canonical_spellings_are_one_per_registered_backend`;
+    (6) giving `audit` its own message reds `the_audit_subcommand_publishes_the_same_vocabulary`.
+    ** LESSONS. (1) SET EQUALITY BOTH WAYS IS NOT ENOUGH WHEN BOTH SIDES ARE CLAIMS — PMAT-1433''s
+    remedy applied to the wrong pair. Ask what the reference set is DERIVED FROM; if it is
+    another string the same program prints, agreement is not truth. (2) A GATE CAN ENFORCE THE
+    SILENCE. Both prior gates were green, correct in shape, and actively rejected the honest
+    documentation — the tell was that the true sentence lived on the ONE page no rule covered.
+    (3) NEGATIVE RESULT, recorded so it is not re-derived: cli.md''s sibling claim that
+    `--hardware` is "required to reach `--target ptx`, refused on every other target" was probed
+    across all eight non-PTX targets and is TRUE in both directions.
+    ** NOT a witness_floor.rs touch (two-touch serial resource, PMAT-1372 / PMAT-1373). Two
+    existing gate files WERE edited (cli_docs_drift.rs, backend_docs_drift.rs) because each
+    forbade the truthful fix — PMAT-1430''s own recorded shape, recursively; neither is in the
+    sprint''s serial gate_touch chain and no other slice was in flight.
+    ** OBSERVED ONCE, NOT FIXED HERE, AND THE TOP LEAD FOR THE NEXT FIRE:
+    `hybrid_repair.rs::repair_writes_nothing_and_leaves_no_workspace_behind` FAILED in ONE
+    high-load `cargo test --workspace` run on this branch and did NOT reproduce in 2 further
+    workspace runs on this branch, 8 standalone runs on the untouched base, or a full workspace
+    run on the untouched base. It is a STRUCTURAL RACE, not a break from this slice: its
+    `ws_roots()` closure globs the SHARED temp dir for ANY `xpile_repair_ws_*`, while
+    `main.rs:1052` keys that directory by the SPAWNED xpile process''s PID -- so any of the
+    SIX sibling tests in the same binary that is mid-`--repair` when the snapshot is taken
+    appears in `after - before` and is reported as a leak by THIS run. `hybrid` does not call
+    `parse_target`, so nothing in PMAT-1435 touches that path; what this slice plausibly did is
+    widen the window, since its witness adds ~25 subprocess spawns to the same run. THAT MATTERS
+    BECAUSE `workspace-test` IS A REQUIRED CONTEXT and a flaky required check is a live risk to
+    the Thursday tag. FIX (small, strictly strengthening, deliberately NOT folded in here --
+    different claim class, and this repo''s own lesson is to scope a fix to ONE): use
+    `Command::spawn()` to obtain the CHILD pid and assert on exactly
+    `xpile_repair_ws_<child_pid>` instead of on a shared-prefix glob. That is precise and
+    race-free rather than heuristic, and it reds for the right reason.
+    STANDING LEADS carried forward: (a) PMAT-1433 lead (c) / PMAT-1434 lead (b), the
+    `claimed_filenames()` peer to `extensions()`; (b) PMAT-1430 lead (c) / PMAT-1433 lead (b),
+    backends.md''s Status column is prose nothing gates and `Backend::targets()` is the
+    `Frontend::extensions()` shape one lane over; (c) NEW — sweep the OTHER CLI flags whose help
+    text enumerates a closed set (`--contracts`, `--hardware`) for the same
+    accepted-but-unnamed gap, and ask of every remaining doc-vs-binary gate what its reference
+    set is derived from.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

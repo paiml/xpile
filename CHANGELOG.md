@@ -7,6 +7,64 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### A both-directions gate is only as honest as the set it compares to — `--target` accepted four spellings no surface named (PMAT-1435)
+
+`parse_target` accepted THIRTEEN `--target` spellings. Four of them were named
+by nothing the binary prints. Measured at `8582f9c4` on a force-rebuilt binary:
+
+```text
+$ xpile transpile p.py --target wat            # exit 0, 1727 bytes of WAT
+$ xpile transpile p.py --target bashrs
+Error: unknown target `bashrs`; choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar
+```
+
+`wat` (→ `wasm`), `sh` / `bash` (→ `shell`) and `forjar-yaml` (→ `forjar`) all
+work; the refusal — the "what can I use instead" surface, PMAT-1434's shape one
+flag over — enumerated nine, and so did `xpile transpile --help`.
+`book/src/reference/cli.md` published the **closed-world** claim *"one of
+`rust`, `ruchy`, `ptx`, `wgsl`, `spirv`, `wasm`, `lean`, `shell`, `forjar`"*,
+which was false, while `book/src/reference/backends.md` disclosed all four two
+pages over. The book contradicted itself and the only true statement in the
+repo was the one no gate read.
+
+**The gates did not merely miss it — they held the false half in place.** Both
+`--target` gates modelled "what the CLI accepts" as *what `--help` says*:
+
+- `cli_docs_drift.rs::the_target_row_names_exactly_the_accepted_target_spellings`
+  is named for this exact property and checks BOTH directions. With its
+  reference set short by four it could never fire in the omit direction, and in
+  the advertise direction it **forbade** the row from naming a real spelling.
+- `backend_docs_drift.rs` likewise. MEASURED: appending ``--target wat`` to
+  `backends.md` red-ed `every_inline_target_flag_in_the_book_names_a_live_spelling`
+  with *"the book uses `--target <x>` with value(s) the CLI does not accept:
+  [(…, \"wat\")]"* — about a value the CLI accepts. That file's own doc comment
+  claimed its executed half could catch `--help` drifting from `parse_target`;
+  it could not in the direction that was wrong, because the executed set is
+  `documented ∪ advertised` and a spelling `--help` OMITS is in neither.
+
+Fixed by giving the vocabulary one derivation point: `TARGET_SPELLINGS` — a
+roster carrying each spelling, its `Target`, and the canonical spelling an
+alias resolves to — which `parse_target` matches through and which
+`target_spelling_help()` renders the refusal from. Both `--target` gates now
+take their live set from that refusal, i.e. from behaviour rather than from a
+second prose claim, and `--help` and `cli.md` name all thirteen:
+
+```text
+Error: unknown target `bashrs`; choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar; aliases: wat=wasm, sh=shell, bash=shell, forjar-yaml=forjar
+```
+
+Gated by `crates/xpile/tests/target_spelling_disposition_witness.rs`
+(XPILE-TARGET-SPELL-001, 6 tests), which derives every set from the running
+binary with no roster written down: published-set == accepted-set with an
+unpublished control, `--help` == refusal in both halves both ways, canonical
+count == `xpile info`'s registered-backend count (tying the vocabulary to the
+REGISTRY, not to another string), the same vocabulary at BOTH `parse_target`
+call sites (`transpile` and `audit`), and — the substantive claim
+`backends.md` actually makes — every alias **byte-identical** to its canonical
+spelling on stdout, stderr and exit status, so an alias that parsed but emitted
+something else would be caught as the silent wrong answer it would be. Red half
+run in six separate executions; each of the six tests reds under at least one.
+
 ### The "what can I use instead" message listed two spellings that refuse every input (PMAT-1434)
 
 When no frontend claims a file, `xpile transpile` answers with the one message

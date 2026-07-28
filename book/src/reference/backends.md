@@ -39,8 +39,12 @@ v0.1.617 this column published `bashrs`, which the CLI rejects outright
 | forjar  | `forjar` | `forjar` | ✅ **Real emission** from **shell-origin** modules; refuses Python-origin input with a reason | `xpile-forjar-codegen` |
 
 `--target` also accepts the aliases `wat` (→ `wasm`), `sh` / `bash`
-(→ `shell`) and `forjar-yaml` (→ `forjar`); the nine canonical
-spellings above are the ones `xpile transpile --help` lists.
+(→ `shell`) and `forjar-yaml` (→ `forjar`). All four resolve to the
+canonical target in the table above and are otherwise indistinguishable
+from it. `xpile transpile --help` and the `unknown target` refusal both
+name the nine canonical spellings AND the four aliases; through
+PMAT-1435 they named only the nine, so this sentence was the only place
+in the repo that said so.
 
 The proof lane registers two contract backends, `lean-theorem` and
 `latex`. Both are **scaffolds**: each returns a fixed `_scaffold`
