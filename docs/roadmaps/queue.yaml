@@ -2,22 +2,22 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1443 landed from an honesty hunt: `xpile audit`''s no-source bail
-  published the flat `extensions()` ROUTING union as what xpile "recognises" -- 10 spellings, of
-  which `.mk` and `.ruchy` REFUSE every input -- on the ERROR path, where the reader is asking what
-  to point it at. PMAT-1434 had removed the identical defect from the dispatch-failure message 500
-  lines above it IN THE SAME FILE and wrote the general rule into its own doc comment. Sweeping the
-  CLASS rather than the SITE found a second surface the lead did not name: example
-  06_inspect_session, which book/src/quickstart.md names BY NAME as how to answer "what is
-  registered?". One derivation (`Frontend::spellings_by_disposition`) now backs every rendering.
-  LESSONS: (1) A GATE''S SUBJECT CAN BE NARROWER THAN ITS RULE -- the rule was written down and one
-  site was gated. (2) THE OBVIOUS FIX WAS ALSO AN OVER-REPORT: there are TWO notions of "claimed"
-  here (dispatch `matches_path` vs the extension-only audit walk) and a surface must render ITS OWN;
-  reusing the dispatch split would have advertised Makefile/Dockerfile, which audit cannot collect at
-  any extension. (3) THE GATE''S FIRST RUN CAUGHT A CONFLATION IN ITSELF -- pin the STAGE
-  (`parse_and_lower`), not `Err(_)`: `probe.bash` lowers and still errors because audit''s default
-  --target rust cannot emit Stmt::Cmd. (4) A test green under BOTH red halves can still be
-  load-bearing when it is the JUSTIFICATION for the wording -- say which is which in the file.)'
+updated: '2026-07-29 (PMAT-1457 landed from an honesty hunt: PMAT-1456 wrote down that a
+  superlative needs a live count and that FINALITY was STILL UNGATED, then edited
+  contracts/lean/FfiCpythonExt.lean and walked past the `**TWELFTH and FINAL**` 120 lines into
+  that same file. Ten ordinal-finality claims were live under contracts/ with the whole
+  claims_drift suite GREEN; six were false. "The Nth and FINAL X" is honest exactly when N equals
+  the LIVE |X|, so five populations are now re-derived every run and FOUR live claims PASS -- it
+  is a measurement, not a ban on the word. LESSONS: (1) ⭐ THE MIXED SENTENCE -- a CORRECT ordinal
+  can sit beside a FALSE totality clause and launder it; "SIXTH and FINAL Silver theorem on
+  C-FFI-CPYTHON-EXT" is still true at 6 while "every equation ... has Silver-tier coverage" went
+  false because the contract grew 7 equations -> 22. THE ORDINAL FROZE THE NUMERATOR WHILE THE
+  SUBSTRATE GREW THE DENOMINATOR, and nobody edited either. (2) A REFUTATION CAN ALREADY BE IN
+  THE REPO: "FIFTH and FINAL Path α contract" is contradicted by five sibling files in the same
+  directory recording a seventh, eighth, ninth and TENTH. (3) TWO OF MY OWN GUARDS FAILED THEIR
+  OWN RED HALVES again -- and the OBVIOUS justification was the wrong one both times. (4) ⚠️
+  `git checkout -- <file>` to undo a red-half perturbation reverts to HEAD and deletes
+  uncommitted guard fixes; COMMIT in between.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -73,6 +73,43 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1457
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: 'the slice that wrote "FINAL needs a live count -- still ungated" edited this Lean file and walked past the `**TWELFTH and FINAL**` 120 lines in, and a correct ordinal beside a false coverage clause read as checked'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1456 standing lead (a) and swept the CLASS: every ORDINAL-FINALITY
+    claim under contracts/.
+    ** CONTROL THAT PASSES. At 06d71142 `cargo test -p xpile --test claims_drift` was GREEN on
+    all 32 tests with TEN ordinal-finality claims live under contracts/, SIX of them false.
+    ** MEASURED, five DERIVED populations: Path α = 10 (PMAT-275..279 + 281..285);
+    C-XPILE-*-TRAIT contracts = 4; Silver equations on C-FFI-CPYTHON-EXT = 6; contracts binding
+    a `lean_theorem:` = 35/35; multi-equation contracts at Silver-or-better on EVERY equation =
+    0 of 31.
+    ** THE SIX. FfiCpythonExt.lean:121 "TWELFTH and FINAL contract to receive a refinement
+    theorem"; xlate_py_list_to_vec.rs + xlate-py-list-to-vec-v1.yaml "FIFTH and FINAL Path α
+    contract" (PMAT-281, the VERY NEXT entry, refuted it); PyIntArith.lean x2 +
+    py-int-arith-v1.yaml "SIXTH and FINAL multi-eq contract at full Silver".
+    ** ⭐ THE MIXED SENTENCE IS THE FINDING. FOUR of the ten are TRUE and untouched, and TWO of
+    the true ones share a SENTENCE with a false totality clause: "SIXTH and FINAL Silver theorem
+    on C-FFI-CPYTHON-EXT" (live 6 -- correct) sits beside "every equation ... has Silver-tier
+    coverage", whose OWN evidence list names the Bronze manifest_completeness. The contract went
+    7 equations -> 22 and C-PY-INT-ARITH 9 -> 42: THE ORDINAL FROZE THE NUMERATOR WHILE THE
+    SUBSTRATE GREW THE DENOMINATOR, so the pair read as checked.
+    ** ⚠️ TWO OF MY OWN GUARDS FAILED THEIR RED HALVES (third slice running): the head
+    word-boundary check does NOT reject `seconds` (the TAIL scan does) -- it rejects COMPOUND
+    ordinals, now pinned by a case that reds; and the router rule ORDER bounds nothing live,
+    downgraded to a forward tripwire pinned by a CONSTRUCTED clause. A third guard (the generous
+    tier ladder) came back green and its comment already said so.
+    ** ⚠️ `git checkout -- <file>` to undo a red-half perturbation DELETED four uncommitted guard
+    fixes. COMMIT between a guard fix and its red half.
+    ZERO crates/*/src and ZERO contract NORMATIVE fields -- freeze-compatible.
+    NEXT PICK: another honesty hunt today (standing lead (a): the per-contract COVERAGE FRACTION
+    class -- "every equation at tier T", "N/N" -- is derivable exactly the way the ordinal now
+    is, and three live sites were repaired BY HAND here). NEXT FREE ID IS PMAT-1458. HARD FREEZE
+    Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1456
   status: done
   ev_rank: R1
