@@ -42,6 +42,49 @@ claimed spelling through the frontend and asserts set equality in BOTH
 directions — so implementing the Makefile dialect reds this page until the
 row moves.
 
+### "Lowers" is a claim about the GRAMMAR, not about the file format
+
+A claimed extension means the registry routes that spelling to that frontend
+and the frontend applies **its own grammar** to the bytes. It does **not**
+mean the file format the extension normally denotes is supported — and for
+`.pyi` and `.h` those are different things, because the canonical content of
+each format is precisely what the grammar rejects:
+
+<!-- XPILE-FORMATFORM-001:BEGIN -->
+| spelling | a file in the format's CANONICAL form | why |
+|---|---|---|
+| `*.pyi` | ✅ REFUSES | a stub is bodiless (`def add(...) -> int: ...`); the frontend requires `return expr` |
+| `*.h` | ✅ REFUSES | a header is an include guard plus prototypes; there is no preprocessor, and a prototype has no body |
+<!-- XPILE-FORMATFORM-001:END -->
+
+Both still appear under **Extensions that LOWER** above, and that is correct
+rather than a contradiction: put a `.py`-shaped *definition* in a `.pyi`, or a
+`.c`-shaped definition in a `.h`, and it lowers at exit 0.
+`crates/xpile/tests/format_canonical_form_witness.rs`
+(XPILE-FORMATFORM-001) measures both halves — the canonical form refuses AND
+the definition form lowers at the same path — so the table above cannot drift
+in either direction, and neither claim can be satisfied by a probe that was
+simply malformed.
+
+Through v0.1.617 nothing said this. `.pyi` and `.h` were published as
+extensions that LOWER, with an empty **Routed → REFUSED** cell, on all three
+surfaces — this table, `xpile info`, and the dispatch-failure message — and no
+file in the canonical form of either format lowered at any of them
+(PMAT-1442).
+
+The disposition gate could not have caught it, and says so itself: its subject
+is *"does the answer depend on the path spelling"*, so `PROBES` carries one
+program per FRONTEND and writes those same bytes to every spelling that
+frontend claims. PMAT-1433 generalised the **paths** a probe reaches and left
+the **content** fixed; that is [[PMAT-1433]]'s own "one probe per subject
+samples one of its N claims", one dimension over.
+
+⚠️ `xpile info` still prints `- python (py, pyi)` and `- c (c, h)`
+unannotated. Saying more there needs a per-INPUT granularity the
+`refused_claims()` mechanism does not have — it is per-CLAIM — so this page
+carries the measured table and `xpile info` does not. That is a disclosed gap,
+not a fixed one.
+
 The proof lane registers one contract frontend, LaTeX math
 (`latex-contract-frontend`), which reads contract sources rather than
 programs.
