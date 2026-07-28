@@ -26518,7 +26518,13 @@ fn lower_binop(op: &ast::Operator) -> Result<BinOp, FrontendError> {
         ast::Operator::Pow => BinOp::Pow,
         other => {
             return Err(FrontendError::Lower(format!(
-                "unsupported binary operator: {:?} — supported: + - * // % & | ^ << >> **",
+                // PMAT-1441: `/` belongs in this list. `Operator::Div` is
+                // handled on the float path and never reaches `lower_binop`,
+                // so the enumeration omitted an operator that DOES lower and
+                // told the user, by omission, that `/` is unsupported too.
+                // `frontend_operator_surface_witness.rs` now asserts this list
+                // equals the measured set of `ast.BinOp` operators that lower.
+                "unsupported binary operator: {:?} — supported: + - * / // % & | ^ << >> **",
                 other
             )));
         }

@@ -7,6 +7,63 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The book claimed the WHOLE of Python's binary and unary operator sets while four operators refuse — and the frontend's own refusal message under-reported by one (PMAT-1441)
+
+`book/src/reference/frontends.md`, under "Python frontend — what's supported",
+had carried since 2026-05-15 two bullets that claimed the *entirety* of
+Python's binary operator set (parenthesised with "Python-floor semantics for
+`//` and `%`") and the *entirety* of its unary operator set, listing neither.
+They are quoted verbatim in the witness's module docs; they are deliberately
+not re-spelled here, because `no_universal_operator_claim_anywhere` forbids
+that sentence in any published `.md` and this file is in its sweep.
+
+Neither was true, and the frontend says so itself: `unsupported binary
+operator: MatMult — supported: + - * // % & | ^ << >> **`. Measured by driving
+`PythonFrontend::parse_and_lower` over one probe per Python operator:
+
+| class | in Python | lower | REFUSE |
+|---|---|---|---|
+| `ast.BinOp` | 13 | 12 | `@` (`MatMult`) |
+| `ast.Compare` | 10 | 8 | `is` (`Is`), `is not` (`IsNot`) |
+| `ast.UnaryOp` | 4 | 3 | unary `+` (`UAdd`) |
+
+The page names the CHANGELOG's `Python subset (live, runtime-verified)` section
+as "the canonical list to avoid duplication-and-drift" — and was itself the
+duplicate that had drifted. The canonical list is enumerative and correct
+("Binary arithmetic: `+ - * // %` ... Bitwise: `& | ^ << >>` ... Unary: `-x`
+... `not x`"); the book paraphrased it into a universal the canonical source
+never states. **A paraphrase that WIDENS a claim is the failure mode**, not one
+that drops a detail.
+
+**The error-path twin, fixed in the same slice.** `lower_binop`'s
+`supported: ...` enumeration — the surface a user meets at the wall — omitted
+`/`, which does lower (`Operator::Div` is handled on the float path and never
+reaches `lower_binop`). So the user who hit `@` was told by omission that `/`
+was unsupported too. The list now reads `+ - * / // % & | ^ << >> **` and is
+asserted equal to the measured set of `ast.BinOp` operators that lower.
+
+**Fix:** `crates/xpile/tests/frontend_operator_surface_witness.rs`
+(XPILE-PYOPSURFACE-001, 4 tests). The operator surface is now PUBLISHED as a
+derived block between markers on `frontends.md` and compared to the live
+frontend by equality; a `REFUSES` row is recorded only when the frontend's own
+error names the operator **and** the same program with a reference operator in
+that slot lowers, so a mis-signatured probe reds as a corpus bug instead of
+publishing a false refusal; the corpus must cover 13/10/4 with pairwise
+distinct programs; and `no_universal_operator_claim_anywhere` forbids the
+falsehood *by spelling* across every published `.md` (book, docs, README,
+CHANGELOG) — PMAT-1437's lesson (1), since the original prose carried no
+backticked key, no table row and no marker, and a structural check alone would
+have passed it unchanged.
+
+**Red half run, six perturbations.** Against the real defect: the missing
+marker reds, the missing `/` reds, and the spelling scan reds naming both
+bullets by line. Then (1) flipping one published row reds the equality; (2)
+dropping a probe reds the corpus check naming `ast.BinOp`; (3) mis-signaturing
+the `/` probe (`-> int`, which fails on the *return type*) reds with `CORPUS
+BUG ... the row would publish a FALSE REFUSES` rather than recording it; and
+(4) **actually implementing `MatMult`** moved the block to `13 lower, 0 REFUSE`
+and RED-ed the page — the direction that proves the gate tracks behaviour, not
+text. Control green.
 ### "Lowers" is a claim about the grammar, and the book published it as a claim about the file format (PMAT-1442)
 
 `frontends.md` lists `.pyi` under **Extensions that LOWER** for the Python

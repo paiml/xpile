@@ -2,7 +2,42 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1437 landed from an honesty hunt; the ranked queue stays exhausted
+updated: '2026-07-28 (PMAT-1441 landed from an honesty hunt: book/src/reference/frontends.md
+  published "all binary operators" and "all unary operators" as the Python frontend''s subset
+  while `@`, `is`, `is not` and unary `+` all REFUSE -- and three lines above, the page names the
+  CHANGELOG list it contradicts as "the canonical list to avoid duplication-and-drift". The
+  ERROR-PATH twin was wrong in the OPPOSITE direction: `lower_binop`''s "supported: ..."
+  enumeration omitted `/`, which lowers, so the user who hit `@` was told BY OMISSION that `/`
+  was unsupported too. The operator surface is now a DERIVED marker block compared by EQUALITY,
+  a REFUSES row needs a CONTROL probe to lower before it is published, and the universal is
+  forbidden BY SPELLING across every published .md. LESSONS: (1) A PAGE CAN NAME ITS OWN
+  CANONICAL SOURCE AND STILL CONTRADICT IT -- the pointer had been there the whole time and read
+  as the protection; check the CITING text against the CITED one, not just that the citation
+  exists. (2) A PARAPHRASE THAT WIDENS A CLAIM is the failure mode, not one that drops a detail.
+  (3) AN ERROR MESSAGE IS A CLAIM ABOUT THE SUPPORTED SET, and the under-reporting direction is
+  also a falsehood -- nothing had ever gated one. (4) PMAT-1437 lesson (1) applied FORWARD is
+  what made the gate reach: the defect prose had no backticked key, no row and no marker, so
+  only a check on the SPELLING of the universal touches it. (5) ID COLLISION TWICE, RESOLVED BOTH
+  TIMES IN FAVOUR OF WHAT LANDED: this slice was authored and pushed as PMAT-1438; a CONCURRENT
+  fire took 1438 for the CLAIM-CLASS slice (#2034) and MERGED FIRST, then 1439 (#2036), so this
+  renumbered to 1440; the same fire then took 1440 for the TWO-LANES slice (#2037) and MERGED
+  FIRST AGAIN, so this is PMAT-1441. Renumbering is on EVERY surface, not just the ledger row --
+  book prose, witness module doc, source comment, CHANGELOG heading, and id + title in both
+  ledgers. AND THE OBVIOUS PREVENTION DOES NOT WORK: both renumbers pushed the branch name first
+  AS the claim, and the timestamps say the claim won (`fix/py-operator-surface-1440` on origin
+  13:28:44Z vs #2037 created 13:30:34Z) -- it lost anyway, because the other fire had already
+  written 1440 into 12 places across 8 files before that branch existed. A branch-name claim is
+  only visible to a fire that LOOKS BEFORE IT WRITES, and mid-slice neither fire looks again. The
+  only ordering that decides is WHAT MERGED, so keep the id out of slice CONTENT until merge
+  time, or treat a renumber as routine. NOTE the `updated:` header on main was still describing
+  PMAT-1437 when this landed -- 1438, 1439, 1440 and 1442 ALL shipped without touching it, so the
+  header had been four slices stale, and the chain below therefore skips from this entry to 1437.
+  A rolling `updated:` field that four consecutive slices decline to roll is a claim about
+  currency that nothing enforces. PRIOR ENTRIES, not re-summarised here because each has a full
+  row below: PMAT-1442 (`lowers` is a claim about the GRAMMAR), PMAT-1440 (two-lanes roster),
+  PMAT-1439 (uncompilable book Rust examples), PMAT-1438 (claim-class-is-not-a-paragraph).
+  BEFORE THEM:
+  PMAT-1437 landed from an honesty hunt; the ranked queue stays exhausted
   until Thu 07-30 / PMAT-1373, the release commit. PMAT-1437 took PMAT-1436 standing lead (b) --
   "backends.md''s Status column is prose nothing gates" -- and THE PAYLOAD WAS ONE PARAGRAPH BELOW
   THE TABLE THE LEAD NAMED: the `--target` cells are already gated (backend_docs_drift.rs), but the
@@ -4573,6 +4608,93 @@ queue:
     binary/unary OPERATOR-SET overclaim (PR #2035, needs renumbering off PMAT-1438).
     Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
     18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
+- id: PMAT-1441
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the book claimed the WHOLE of Python''s binary and unary operator sets while four
+    operators refuse -- and the frontend''s own refusal message UNDER-reported by one, so page
+    and binary were wrong in OPPOSITE directions about the same surface'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1437 standing lead (a) -- THE FRONTEND TWIN -- and the lead''s premise
+    was HALF false with the payload one section down, the PMAT-1426 pattern again. The lead asked
+    whether frontend REFUSALS name a contract / suggest an alternative and whether frontends.md
+    claims they do: frontends.md makes NO such claim (PMAT-1437 already converted all nine header
+    blockquotes to `equations:` keys that exist, and the frontend contract''s
+    `ffi_boundaries_are_outgoing_only` / `source_lang_consistency` are honestly named). What WAS
+    false was the page''s "what''s supported" bullet list, two sections lower.
+    ** THE CLAIM, published since 2026-05-15: "- all binary operators (with Python-floor
+    semantics for `//` and `%`)" and "- all unary operators".
+    ** MEASURED, one probe per Python operator through `PythonFrontend::parse_and_lower`:
+    ast.BinOp 13 in Python, 12 lower, `@` REFUSES; ast.Compare 10, 8 lower, `is`/`is not`
+    REFUSE; ast.UnaryOp 4, 3 lower, unary `+` REFUSES. The frontend says so ITSELF --
+    "unsupported binary operator: MatMult -- supported: + - * // % & | ^ << >> **".
+    ** THE PAGE NAMES ITS OWN CANONICAL SOURCE THREE LINES ABOVE and contradicts it: the
+    CHANGELOG `Python subset (live, runtime-verified)` list is ENUMERATIVE and CORRECT; the book
+    paraphrased it into a universal it never states.
+    ** ERROR-PATH TWIN, same claim class, same slice: `lower_binop`''s "supported: ..." list
+    omitted `/`, which lowers (Div is handled on the float path and never reaches `lower_binop`).
+    Now `+ - * / // % & | ^ << >> **`, asserted equal to the measured lowering set.
+    ** FIX: crates/xpile/tests/frontend_operator_surface_witness.rs (XPILE-PYOPSURFACE-001, 4
+    tests) + a DERIVED marker block on frontends.md compared by equality.
+    ** RED HALF RUN, 6 perturbations + 3 against the real defect: missing marker, missing `/`,
+    and the spelling scan naming BOTH bullets by line; then (1) flip a row, (2) drop a probe
+    (reds NAMING ast.BinOp), (3) mis-signature the `/` probe -> "CORPUS BUG ... would publish a
+    FALSE REFUSES", (4) ACTUALLY IMPLEMENT MatMult -> "13 lower, 0 REFUSE" reds the page, the
+    behaviour direction. CONTROL 4/4 green.
+    ** ONE `crates/*/src` line changed (the refusal message) -- landed TUESDAY, before the Wed
+    2026-07-29 18:00 HARD FREEZE. witness_floor.rs untouched.
+    ** BLOCKER RESOLVED, and the note that stood here is now WRONG so it is corrected rather than
+    left: the entry above was written while `gh` was UNAUTHENTICATED (HTTP 401) and said this
+    slice was "COMMITTED AND PUSHED WITH NO PR" on a five-deep stack. Auth returned 2026-07-28
+    14:25 and the whole stack landed as SQUASHES on main that afternoon -- PMAT-1434 (#2026),
+    PMAT-1435 (#2031, from the `-r2` respin), PMAT-1436 (#2032, `-r2`), PMAT-1437 (#2033, `-r2`).
+    Every squash gives its slice a NEW sha, so the original `fix/py-operator-surface-1438` (#2030,
+    head 1e524cf9) went CONFLICTING on the three append-only ledgers and could not be repaired by
+    merging main again. SUPERSEDED, not rewritten: commit 40957be9 -- the only copy of this slice
+    -- was CHERRY-PICKED onto a fresh branch off main (first `fix/py-operator-surface-1438-r2`,
+    then `fix/py-operator-surface-1440` after the id collision below), which applied CLEAN, and
+    #2030 is closed in its favour.
+    ** ID COLLISION TWICE, and this entry is the twice-renumbered one. Authored and pushed as
+    PMAT-1438. A CONCURRENT fire took 1438 for the CLAIM-CLASS slice (#2034) and MERGED FIRST,
+    then took 1439 (#2036); this slice renumbered to 1440. Before its CI finished, the same fire
+    took 1440 too, for the TWO-LANES slice (#2037), and MERGED FIRST AGAIN (39f649b0) -- so this
+    slice is now PMAT-1441. LANDED WINS, applied consistently: the loser renumbers, on every
+    surface rather than just the ledger row (book prose, witness module doc, the `lower_binop`
+    source comment, the CHANGELOG heading, and the id + title in both ledgers).
+    ** WHY THE CLAIM RULE DID NOT SAVE IT, measured rather than assumed. Both renumbers pushed
+    the new branch name FIRST, precisely as an id claim: `fix/py-operator-surface-1440` was on
+    origin at 13:28:44Z and #2037 was not created until 13:30:34Z. The claim was first and STILL
+    LOST, because the other fire had already committed 1440 into its own ledger content before
+    that branch existed -- 12 references across 8 files. A BRANCH-NAME CLAIM IS ONLY VISIBLE TO A
+    FIRE THAT LOOKS BEFORE IT WRITES, and by the time two fires are both mid-slice neither is
+    looking. THE ONLY ORDERING THAT ACTUALLY DECIDES IS WHAT MERGED, so the cheap rule is: keep
+    the id out of the content until the PR is about to merge, or accept a renumber as routine.
+    A renumber is mechanical and safe; racing it is not.
+    NEXT FREE ID IS PMAT-1442 -- derive it from `git branch -r` AND `gh pr list` AND both
+    ledgers, and expect it to be stale anyway.
+    NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) TAKEN, do not
+    re-take -- the "Calling a frontend as a library" Rust block naming
+    `depyler_frontend::DepylerFrontend` / `frontend.parse_file(...)`, neither of which exists,
+    was this slice''s strongest lead and the concurrent fire shipped it as PMAT-1439 (#2036),
+    widened to every published Rust example. (b) the SHELL frontend''s own "what''s
+    supported" bullet list on the same page -- 7 bullets, PROBED green at exit 0 this slice
+    (shebang, assignment, `> file`, `>> file`, `mkdir -p`, pipelines, if/elif, for, subprocess
+    all round-trip), so the list is TRUE but UNGATED; the XPILE-PYOPSURFACE-001 shape applies
+    directly and CLAUDE.md''s own scope paragraph never mentions redirection, so the two
+    descriptions of the same subset have never been compared. (c) backends.md STATUS COLUMN --
+    still prose nothing gates, every row says "Real emission" including the `ruchy` backend the
+    topic file calls HOLLOW (carried from PMAT-1437 lead (b)). (d) PMAT-1433 lead (c) /
+    PMAT-1434 lead (b), the `claimed_filenames()` peer to `extensions()`. (e) PMAT-1436 lead (d),
+    witnesses that identify their subject by a glob over a SHARED namespace.
+    PROBED AND CLEAN, recorded so it is not re-derived: PMAT-1437 lead (a) as literally stated
+    (frontends.md makes no refusal-message claim); and the frontend REFUSAL messages for
+    non-operator inputs were not swept -- that half of lead (a) is still open if someone wants
+    the backend table''s frontend twin.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373
+    (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
 - id: PMAT-1440
   status: done
   ev_rank: R1

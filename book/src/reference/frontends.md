@@ -111,8 +111,6 @@ includes:
 
 - typed `def` functions
 - multi-statement function bodies
-- all binary operators (with Python-floor semantics for `//` and `%`)
-- all unary operators
 - ternary expressions
 - `if`/`elif`/`else` chains
 - function calls including self-recursion
@@ -124,6 +122,66 @@ contract.
 For the full list, see the
 [CHANGELOG `Python subset (live, runtime-verified)`](https://github.com/paiml/xpile/blob/main/CHANGELOG.md)
 section — that's the canonical list to avoid duplication-and-drift.
+
+### Operator surface
+
+Until PMAT-1441 this section claimed the *whole* of Python's binary and
+unary operator sets, without listing either. Both claims were false —
+`@`, `is`, `is not` and unary `+` refuse — and the frontend's own refusal
+message says so in the same breath (`unsupported binary operator:
+MatMult — supported: + - * / // % & | ^ << >> **`). The canonical
+CHANGELOG list linked above is enumerative and was correct; this page had
+paraphrased it into a universal it never states.
+
+The block below is DERIVED: one probe per Python operator, driven through
+the live `PythonFrontend`, compared to this page by equality in
+`crates/xpile/tests/frontend_operator_surface_witness.rs`
+(XPILE-PYOPSURFACE-001). A `REFUSES` row is recorded only when the
+frontend's own error names the operator *and* the same program with a
+reference operator in that slot lowers — so a mis-typed probe reds as a
+corpus bug instead of publishing a false refusal. Implementing one of
+these reds this page until the row moves.
+
+<!-- XPILE-PYOPSURFACE-001:BEGIN -->
+```text
+class     variant   probe       disposition
+BinOp     Add       a + b       lowers
+BinOp     Sub       a - b       lowers
+BinOp     Mult      a * b       lowers
+BinOp     MatMult   a @ b       REFUSES
+BinOp     Div       a / b       lowers
+BinOp     Mod       a % b       lowers
+BinOp     Pow       a ** b      lowers
+BinOp     LShift    a << b      lowers
+BinOp     RShift    a >> b      lowers
+BinOp     BitOr     a | b       lowers
+BinOp     BitXor    a ^ b       lowers
+BinOp     BitAnd    a & b       lowers
+BinOp     FloorDiv  a // b      lowers
+Compare   Eq        a == b      lowers
+Compare   NotEq     a != b      lowers
+Compare   Lt        a < b       lowers
+Compare   LtE       a <= b      lowers
+Compare   Gt        a > b       lowers
+Compare   GtE       a >= b      lowers
+Compare   Is        a is b      REFUSES
+Compare   IsNot     a is not b  REFUSES
+Compare   In        a in b      lowers
+Compare   NotIn     a not in b  lowers
+UnaryOp   USub      -a          lowers
+UnaryOp   UAdd      +a          REFUSES
+UnaryOp   Invert    ~a          lowers
+UnaryOp   Not       not a       lowers
+
+ast.BinOp: 13 in Python, 12 lower, 1 REFUSE
+ast.Compare: 10 in Python, 8 lower, 2 REFUSE
+ast.UnaryOp: 4 in Python, 3 lower, 1 REFUSE
+```
+<!-- XPILE-PYOPSURFACE-001:END -->
+
+`in` / `not in` lower against a `list[...]` right operand (`.contains`),
+not against a scalar. Chained comparisons (`0 < a < b`) desugar to the
+`and` of adjacent pairs.
 
 ## Shell frontend — what's supported
 
