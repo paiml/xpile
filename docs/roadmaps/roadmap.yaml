@@ -19543,3 +19543,105 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1427
+  title: 'PMAT-1427: [src] `xs[i].append(e)` AND `d[k].append(e)` WERE THE LAST SUBSCRIPT-FAMILY
+    MEMBERS EMITTING A RAW NARROWING COERCION: `base[(i) as usize].push(e)` made `a[-1].append(99)`
+    panic with index `18446744073709551615` where CPython appends to the LAST sub-list, and an
+    out-of-range index panicked UNTAGGED so `except IndexError` could not catch it; the dict arm''s
+    `get_mut(&k).unwrap()` was the same shape one container over, an untagged `Option::unwrap()`
+    panic where CPython raises a catchable `KeyError`. All four shapes at exit 0, on BOTH the rust
+    and the ruchy lane, with the meta-HIR variant''s own doc comment CLAIMING "KeyError-on-absent
+    parity with Python".'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30, PMAT-1373; fourth
+    fire of the day). Took PMAT-1426''s recorded standing lead (c) VERBATIM — "the productive
+    question is not which vocabulary is ungated but WHERE ELSE DOES THE EMITTER COERCE ACROSS A
+    SEMANTIC BOUNDARY … the emitter''s other narrowing casts have not been swept". The sweep was
+    run as the lead specifies, on the COERCION rather than the operator: every `as usize` / `as
+    u32` / `toNat` / `try_into` site reachable from an emitted string across all nine backends.
+    ★ THE LEAD''S OWN LANE CAME BACK CLEAN. The Lean `toNat` sites are now all guarded, and the
+    shift-count `as u32` casts are `u32::try_from(..).expect(..)` (honest panic) on the Python
+    lane and deliberate x86-matching `wrapping_shl` on the C lane. ★ THE DEFECT WAS AN ASYMMETRY
+    INSIDE ONE FAMILY. The subscript family has eight members and SEVEN had been corrected across
+    PMAT-590/639/712/744/863/1351 — read, store, nested store, `del`, `insert`, `pop`, string
+    index — each with the wrap-plus-tagged-bounds block. `Stmt::IndexAppend` was never touched and
+    still carried the v0.1 bare cast. Reading the sibling arms in the same `match` is what
+    surfaced it; a search keyed on the operator (`append`) would not have. ★ EXECUTED
+    DIFFERENTIAL against live `python3` through a provenance-verified `ba31f119` binary,
+    `--contracts off`, emit exit 0 and rustc-clean on every row: `a[-1].append(99)` → CPython 99 /
+    emit panics `index out of bounds: the len is 3 but the index is 18446744073709551615`;
+    `i = -1; a[i].append(99)` → identical; `try: a[5].append(9) / except IndexError` → CPython
+    prints `caught IndexError` / emit dies with an UNTAGGED native panic the PMAT-731 typed-except
+    filter cannot route; `try: d["zz"].append(9) / except KeyError` → CPython prints `caught
+    KeyError` / emit dies with `called `Option::unwrap()` on a `None` value`. Byte-identical
+    dispositions on `--target ruchy`. The other seven backends REFUSE the construct upstream
+    (in-place mutation), so the blast radius is exactly the two Rust-shaped lanes. ★ CROSS-LANE
+    ASYMMETRY WAS NOT THE TELL THIS TIME — both live lanes were wrong the same way, because they
+    are twins. The tell was INTRA-FAMILY asymmetry: one arm of a `match` whose siblings all carry
+    a PMAT id in their comment and which carried none.'
+  fix: 'FIX FORWARD, do not refuse (PMAT-1426 lesson 5). The semantics are exactly spellable with
+    the idioms the sibling paths already use, so there is nothing unspellable to refuse. The list
+    arm now emits `{ let __ia: i64 = (IDX) as i64; let __iax = if __ia < 0 { BASE.len() as i64 +
+    __ia } else { __ia }; if __iax < 0 || __iax as usize >= BASE.len() { panic!("xpile: IndexError:
+    list index out of range"); } BASE[__iax as usize].push(ELEM); }` — the PMAT-639/863 block,
+    verbatim in structure. The dict arm binds the key by REFERENCE first and routes the miss
+    through the existing PMAT-1089 `key_error_panic()` helper, so the payload is CPython-shaped
+    (`xpile: KeyError: ''zz''`, `repr(k)` not Debug) and the tag makes `except KeyError` catch it:
+    `{ let __k = &(KEY); BASE.get_mut(__k).unwrap_or_else(|| panic!("xpile: KeyError: {}", ..))
+    .push(ELEM); }`. ★ EVALUATION ORDER PRESERVED DELIBERATELY: the elem stays INSIDE the success
+    path rather than being bound first, because CPython raises the KeyError before evaluating the
+    argument — binding it first would have traded one divergence for a subtler one. ★ Both lanes
+    changed identically (ruchy compiles to Rust), and a cross-lane equality assertion now holds
+    them together so a future one-lane fix reds. ★ NO CONTRACT YAML TOUCHED, so no Diamond
+    resync. ★ REGRESSION BOUND MEASURED, NOT ASSUMED, and re-derived for THIS slice rather than
+    inherited from the previous one (PMAT-1422''s lesson): `xpile audit` run from the same working
+    tree with a provenance-verified pre-fix binary and with the post-fix binary gave the identical
+    six numbers — files scanned 878, functions emitted 2422, require citation 2234, with citation
+    2234, F1 100.0% [OK], over-citations 4, errors 99. A delta of exactly zero: nothing started or
+    stopped lowering.'
+  witness: '`crates/xpile/tests/index_append_index_witness.rs` (XPILE-IDXAPPEND-001), 5 tests, plus
+    the VALUE half in `crates/xpile/tests/oracle_fixtures/index_append_index.py`, which the
+    differential oracle compiles with rustc and diffs byte-for-byte against live CPython over ten
+    rows — the wrap (literal and runtime), both tagged exceptions, the unchanged non-negative fast
+    path, and the BOUNDARY rows where a wrap and a clamp-to-zero COINCIDE (`a[-3]` on a 3-list,
+    `a[-1]` on a 1-list), which a corpus of only-diverging rows could not tell apart. The witness
+    file pins what the fixture cannot: (1) a PREMISE test that both probes really lower to
+    `Stmt::IndexAppend`, so the emit assertions are about this construct and not another; (2) the
+    list emit''s wrap and `xpile: IndexError:` tag on BOTH lanes, keyed on the RAW pre-fix
+    spelling `) as usize].push(` being gone — the post-fix form is `[__iax as usize].push(`, so
+    the two are distinguishable and the gate needs no toolchain; (3) the dict emit''s CPython-shaped
+    `xpile: KeyError:` tag with the pre-fix `.unwrap().push(` absent; (4) CROSS-LANE EQUALITY of
+    the emitted statement; (5) one EXECUTED row through rustc so the file does not rest entirely
+    on text. ★ RED HALF RUN BOTH WAYS. Both codegens reverted to origin/main: 4 of 5 FAIL and the
+    premise test correctly stays green (it is true of both revisions — the shape to expect and to
+    state). ONLY the ruchy codegen reverted: 3 of 5 FAIL, including the cross-lane equality test
+    and excluding the executed rust row — which is what proves the cross-lane assertion is not
+    vacuous. The oracle fixture itself diverges on the pre-fix binary at row 1 and matches on
+    stdout after.'
+  docs: 'Rustdoc at both `Stmt::IndexAppend` arms carrying the executed CPython-vs-emit divergence
+    and naming the sibling PMAT ids whose treatment this now mirrors. The meta-HIR variant doc is
+    CORRECTED: it said "the index `usize`-coerces (matching `IndexAssign`)" — stale, because
+    `IndexAssign` stopped bare-coercing at PMAT-640 — and "KeyError-on-absent parity with Python",
+    which was the false claim the `.unwrap()` did not deliver. CHANGELOG carries the executed
+    transcript for all four shapes.'
+  still_open: 'Named, not fixed: (a) THE RUCHY LANE EMITS `fun add(&self, …)` WHERE THE RUST LANE
+    EMITS `fn add(&mut self, …)` for a method whose body is `self.rows[i].append(v)` (PMAT-1052''s
+    struct-field base), so that one shape does not compile on the ruchy lane (rustc E0596). This
+    is PRE-EXISTING and IDENTICAL on both binaries — verified, not assumed — and lives in the
+    mutable pre-walk''s field-receiver recognition, a different construct; it was deliberately not
+    folded in. (b) The coercion sweep that found this covered the emitted-string sites; the C
+    frontend''s `wrapping_shl`/`wrapping_shr` masks the shift distance to the OPERAND width, which
+    matches x86 for a C `long` but the emitter COLLAPSES C `int` and C `long` to i64, so a C
+    `int` shifted by 33 masks to 6 bits where a real C compiler masks to 5 — measured as a lead,
+    not yet as a divergence, and it cannot be a text scan for the reason PMAT-1419 recorded.
+    (c) `Stmt::IndexAppend` is the append family; `xs[i].extend(..)`, `xs[i].insert(..)` and the
+    other in-place list methods on a SUBSCRIPT receiver have no HIR variant at all and refuse
+    upstream — that refusal was not re-derived from the binary in this slice.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

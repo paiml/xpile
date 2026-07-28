@@ -1168,6 +1168,10 @@ fn emit_stmt_indented(
             Ok(())
         }
         // PMAT-533: append on a subscript receiver (mirrors the Rust twin).
+        // PMAT-1427 (HONESTY): the raw `base[(i) as usize]` narrowing coercion
+        // and the untagged dict `.unwrap()` diverged from CPython on BOTH lanes
+        // identically — see the Rust twin for the measured shapes. Same fix,
+        // same idioms (ruchy compiles to Rust).
         Stmt::IndexAppend {
             base,
             index,
@@ -1175,16 +1179,25 @@ fn emit_stmt_indented(
             base_is_dict,
         } => {
             if *base_is_dict {
-                write!(out, "{indent}{base}.get_mut(&(")?;
+                write!(out, "{indent}{{ let __k = &(")?;
                 emit_expr(out, index, mode)?;
-                out.push_str(")).unwrap().push(");
+                write!(out, "); {base}.get_mut(__k).unwrap_or_else(|| ")?;
+                out.push_str(&key_error_panic());
+                out.push_str(").push(");
+                emit_expr(out, elem, mode)?;
+                writeln!(out, "); }}")?;
             } else {
-                write!(out, "{indent}{base}[(")?;
+                write!(out, "{indent}{{ let __ia: i64 = (")?;
                 emit_expr(out, index, mode)?;
-                out.push_str(") as usize].push(");
+                write!(
+                    out,
+                    ") as i64; let __iax = if __ia < 0 {{ {base}.len() as i64 + __ia }} else {{ __ia }}; \
+if __iax < 0 || __iax as usize >= {base}.len() {{ panic!(\"xpile: IndexError: list index out of range\"); }} \
+{base}[__iax as usize].push("
+                )?;
+                emit_expr(out, elem, mode)?;
+                writeln!(out, "); }}")?;
             }
-            emit_expr(out, elem, mode)?;
-            writeln!(out, ");")?;
             Ok(())
         }
         // PMAT-727 (HUNT-V10 V10-8): `d.setdefault(k, default).append(elem)` →

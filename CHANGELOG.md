@@ -7,6 +7,74 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `xs[i].append(e)` and `d[k].append(e)` were the last raw narrowing coercions in the subscript family (PMAT-1427)
+
+The subscript family has eight members. Seven had already been corrected —
+read, store, nested store, `del`, `insert`, `pop`, string index — each wrapping
+a negative index the way Python does and panicking with an `xpile:`-tagged
+message so a typed `except` can catch it. `Stmt::IndexAppend` was never
+touched. It still emitted the v0.1 bare cast `base[(i) as usize].push(e)`, and
+`(-1i64) as usize` is `18446744073709551615`.
+
+Measured against live CPython through the shipped CLI. Every row transpiles at
+exit 0 and compiles cleanly; the divergence is at run time, on **both** the
+`rust` and the `ruchy` lane, which are byte-identical here:
+
+```text
+  a[-1].append(99)              CPython: appends to a[2]
+                                emit   : panic, index 18446744073709551615
+
+  i = -1; a[i].append(99)       CPython: appends to a[2]
+                                emit   : panic, index 18446744073709551615
+
+  try: a[5].append(9)           CPython: prints "caught IndexError"
+  except IndexError: ...        emit   : UNTAGGED native panic, NOT caught
+
+  try: d["zz"].append(9)        CPython: prints "caught KeyError"
+  except KeyError: ...          emit   : Option::unwrap() on a None value
+```
+
+The last two are the PMAT-731 shape: typed-`except` discrimination only
+re-raises panics tagged `xpile: <KnownExc>:`, so a native Rust panic escapes
+the `except` that Python would have caught. The dict one is worth naming
+separately, because the meta-HIR variant's own doc comment claimed
+"KeyError-on-absent parity with Python" — the claim was written, the tag was
+not.
+
+**Fixed forward rather than refused.** There is nothing unspellable here: the
+list arm now uses the same wrap-plus-tagged-bounds block the read and store
+paths have used since PMAT-639/863, and the dict arm routes its miss through
+the existing `key_error_panic()` helper, so the payload is CPython-shaped
+(`xpile: KeyError: 'zz'` — `repr(k)`, not Rust `Debug`). The element stays
+inside the success path rather than being bound first, because CPython raises
+the `KeyError` before evaluating the argument; binding it first would have
+traded one divergence for a subtler one.
+
+The other seven backends refuse the construct upstream (in-place mutation), so
+the blast radius is exactly the two Rust-shaped lanes. `xpile audit` reports
+the same six numbers before and after — 878 files scanned, 2422 functions
+emitted, 2234 requiring citation, 2234 with citation, F1 100.0%, 99 errors — so
+nothing started or stopped lowering.
+
+**Cross-lane asymmetry was not the tell this time**, because both live lanes
+were wrong in the same way. The tell was asymmetry *inside one family*: one arm
+of a `match` whose every sibling carries a PMAT id in its comment, and which
+carried none.
+
+Witnesses: `crates/xpile/tests/index_append_index_witness.rs` (5 tests — the
+emit shape on both lanes keyed on the raw pre-fix spelling being gone, a
+cross-lane equality assertion, a lowering premise, and one executed row), plus
+`crates/xpile/tests/oracle_fixtures/index_append_index.py`, ten rows the
+differential oracle diffs byte-for-byte against live CPython — including the
+boundary rows where a wrap and a clamp-to-zero coincide, which a corpus of
+only-diverging rows could not tell apart.
+
+Known and NOT fixed here, verified pre-existing and identical on both binaries:
+the ruchy lane emits `fun add(&self, …)` where the rust lane emits
+`fn add(&mut self, …)` for a method whose body is `self.rows[i].append(v)`, so
+that one shape does not compile on the ruchy lane (rustc E0596). That lives in
+the mutable pre-walk's field-receiver recognition — a different construct.
+
 ### The `--target lean` list subscript returned the wrong element for a negative index (PMAT-1426)
 
 `a[-1]` lowered to `a[(-1: Int).toNat]!`. `Int.toNat` **clamps** a negative to

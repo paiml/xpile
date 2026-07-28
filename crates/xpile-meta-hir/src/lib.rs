@@ -1363,13 +1363,23 @@ pub enum Stmt {
     ///     false`) or `dict[K, list[T]]` (`base_is_dict = true`).
     ///   - The base is marked mutable (the pre-walk recognises a subscript
     ///     receiver too).
-    ///   - For a list base the index `usize`-coerces (matching `IndexAssign`);
-    ///     for a dict base the value is reached via `get_mut(&k).unwrap()`
-    ///     (KeyError-on-absent parity with Python).
+    ///   - PMAT-1427: a list index WRAPS a negative like Python (`i < 0 →
+    ///     len + i`) and is bounds-checked with the `xpile: IndexError:` tag,
+    ///     matching the read (`Expr::Index`), store (`Stmt::IndexAssign`) and
+    ///     `del` paths. It previously `usize`-coerced raw, which made
+    ///     `xs[-1].append(e)` panic with `usize::MAX` where Python appends to
+    ///     the last sub-list.
+    ///   - PMAT-1427: a dict base reaches the value via `get_mut(&k)` and
+    ///     panics with the CPython-shaped `xpile: KeyError: <repr(k)>` tag on an
+    ///     absent key, so a typed `except KeyError` catches it (PMAT-731 only
+    ///     re-raises TAGGED panics). The previous `.unwrap()` claimed this
+    ///     parity but delivered an untagged native panic.
     ///
     /// Backends:
-    ///   * Rust / Ruchy: `base[(index) as usize].push(elem);` (list) or
-    ///     `base.get_mut(&(index)).unwrap().push(elem);` (dict).
+    ///   * Rust / Ruchy: the wrapped + bounds-checked
+    ///     `base[__iax as usize].push(elem);` (list) or the tagged
+    ///     `base.get_mut(__k).unwrap_or_else(|| panic!("xpile: KeyError: …"))
+    ///     .push(elem);` (dict).
     ///   * Lean / Shell: refuse (in-place mutation, same gap as `ListAppend`).
     IndexAppend {
         base: String,
