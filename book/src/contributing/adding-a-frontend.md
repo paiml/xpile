@@ -56,19 +56,31 @@ thiserror      = "1"
 ## 3. Implement the trait
 
 ```rust
+use std::path::Path;
+
 use xpile_frontend::{Frontend, FrontendError};
-use xpile_meta_hir::MetaHirModule;
+use xpile_meta_hir::Module;
 
 pub struct MyFrontend;
 
 impl Frontend for MyFrontend {
-    fn name(&self) -> &str { "mylang" }
+    fn name(&self) -> &'static str {
+        "mylang"
+    }
 
-    fn extensions(&self) -> &[&str] { &["myl"] }
+    fn extensions(&self) -> &[&'static str] {
+        &["myl"]
+    }
 
-    fn parse_str(&self, source: &str, module_name: &str)
-        -> Result<MetaHirModule, FrontendError>
-    {
+    /// Path spellings this frontend CLAIMS but refuses for every input.
+    /// Required, with no default: a frontend that lowers only some of what
+    /// it claims must be able to say so (PMAT-1433).
+    fn refused_claims(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError> {
+        let _ = (path, source);
         // parse source → lower to meta-HIR
         todo!()
     }
@@ -76,7 +88,7 @@ impl Frontend for MyFrontend {
 ```
 
 Determinism is **non-negotiable** — the trait contract requires
-identical inputs to produce identical `MetaHirModule` outputs. Test
+identical inputs to produce identical `xpile_meta_hir::Module` outputs. Test
 this directly: parse the same input twice, assert equality.
 
 ## 4. Register in `xpile-core::default_session`

@@ -89,6 +89,13 @@ latex-contract-frontend = { workspace = true }
 # removed. Already in the graph transitively via xpile-backend; this makes the
 # test's use of it direct.
 xpile-wgsl-codegen      = { workspace = true }
+# PMAT-1439: book_api_examples.rs COMPILES the `RustBackend` snippet that
+# `book/src/reference/backends.md` publishes, so the book's only backend
+# library example is type-checked against the real trait instead of being
+# prose. Already in the graph transitively via xpile-core (which registers
+# `xpile_rust_codegen::RustBackend` in `default_session`); this makes the
+# test's use of it direct and adds no node to the publish DAG.
+xpile-rust-codegen      = { workspace = true }
 # PMAT-1428: spirv_binary_recoverable_witness.rs recovers the emitted SPIR-V
 # module back out of the CLI's text artifact and re-checks it through the
 # crate's own `validate_spirv` / `wgsl_to_spirv_words`, so "the artifact

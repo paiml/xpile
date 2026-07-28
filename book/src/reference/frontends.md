@@ -161,12 +161,12 @@ for an end-to-end example.
 ## Calling a frontend as a library
 
 ```rust
-use depyler_frontend::DepylerFrontend;
+use depyler_frontend::PythonFrontend;
 use xpile_frontend::Frontend;
 
-let frontend = DepylerFrontend::default();
-let module = frontend.parse_file("factorial.py")?;
-// `module` is a `xpile_meta_hir::MetaHirModule`
+let frontend = PythonFrontend;
+let module = frontend.parse_and_lower(path, source)?;
+// `module` is a `xpile_meta_hir::Module`
 ```
 
 The `Frontend` trait surface is intentionally minimal — see

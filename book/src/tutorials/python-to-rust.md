@@ -64,7 +64,7 @@ xpile's CI doesn't just check that the emitted Rust compiles — it
 checks that it *computes the right values*. Two tests do it, over two
 different programs, and the difference matters:
 
-```rust
+```text
 // crates/xpile/tests/readme_quickstart_witness.rs — the i64 program
 // shown above. Source and expected transcript are parsed out of
 // README.md, so the published example cannot rot.
