@@ -12,8 +12,12 @@ Rust, Ruchy, PTX, WGSL, SPIR-V, WebAssembly, Lean 4, Shell, forjar YAML.
 A fifth frontend, Ruchy, is registered for routing but **refuses every
 `.ruchy` input** — there is no Ruchy parser, so reading Ruchy is a
 non-zero exit with a reason, not a silent empty transpile. A **proof
-lane** parallel to the code lane round-trips between LaTeX, Lean 4
-theorems, and mdBook through the same YAML contract substrate.
+lane** parallel to the code lane relates LaTeX and Lean 4
+theorems through the same YAML contract substrate — one contract
+frontend (LaTeX) and two contract backends (LaTeX, Lean 4 theorems),
+both of which are **scaffolds** today. There is no mdBook contract
+frontend or backend; through v0.1.617 this sentence named one
+(PMAT-1440).
 
 Run `xpile info` for the live registry and `xpile quorum` for the live
 per-contract stratum table and its QUORUM / PARTIAL / UNVERIFIED

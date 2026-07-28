@@ -3,30 +3,68 @@
 xpile has two parallel pipelines that share the YAML contract substrate.
 This is the single most important mental model in the system.
 
+<!-- XPILE-LANEROSTER-001:CODE:BEGIN -->
 ```text
 Frontends                      Backends
 ─────────                      ─────────
-Python   ─┐               ┌─→ Rust        ✅ real emission
-C        ─┤               ├─→ Ruchy       ✅ real emission
-Shell    ─┤               ├─→ Shell       ✅ real emission (POSIX)
-C++      ─┼→ meta-HIR ─→ ─┼─→ PTX         🚧 scaffold + Layer-5 contract
-Rust     ─┤               ├─→ WGSL        🚧 scaffold
-Ruchy    ─┤               ├─→ SPIR-V      🚧 planned
-Lean 4   ─┘               └─→ Lean 4      🚧 scaffold
+python   ─┐               ┌─→ rust
+c        ─┤               ├─→ ruchy
+bashrs   ─┼→ meta-HIR ─→ ─┼─→ bashrs
+ruchy    ─┤               ├─→ lean
+wasm     ─┘               ├─→ wasm
+                          ├─→ ptx
+                          ├─→ wgsl
+                          ├─→ spirv
+                          └─→ forjar
 ```
+<!-- XPILE-LANEROSTER-001:CODE:END -->
 
-That is the **code lane** — runnable code in, runnable code out.
+That is the **code lane** — runnable code in, runnable code out. The
+names are the registry keys `xpile info` prints, and this roster is
+checked against the live registry in both directions by
+`crates/xpile/tests/lane_roster_witness.rs` — a name here that nothing
+registers, or a registered name missing here, reds.
 
+**What a name in the left column does and does not mean.** It means the
+registry routes that spelling to a frontend, not that the frontend
+parses it: `ruchy` is registered so a `.ruchy` input gets a named
+refusal, and it refuses every input. `xpile info` is the live word on
+which frontends lower — it prints `frontends (5 registered, 4 lowering)`
+and tags the exception. **Per-backend maturity is not shown here on
+purpose**: it lives in one place, the measured
+[Backends → Status](../reference/backends.md#status) table, and it used
+to be duplicated into this diagram — where it went stale, marking PTX,
+WGSL, SPIR-V and Lean as scaffolds or planned long after all four
+emitted (PMAT-1440).
+
+<!-- XPILE-LANEROSTER-001:PROOF:BEGIN -->
 ```text
 ContractFrontends             ContractBackends
 ─────────────────             ─────────────────
-LaTeX       ─┐                  ┌─→ LaTeX (papers)
-Lean 4 thm  ─┼─→ contracts ←──←─┼─→ Lean 4 theorems
-mdBook      ─┘                  └─→ mdBook
+                                ┌─→ latex
+latex       ───→ contracts ←──←─┤
+                                └─→ lean-theorem
 ```
+<!-- XPILE-LANEROSTER-001:PROOF:END -->
 
-That is the **proof lane** — notation and proofs in, notation and proofs
-out, both sides talking to the *same* contract YAML.
+That is the **proof lane** — notation in, notation and proofs out, both
+sides talking to the *same* contract YAML.
+
+**The proof lane is the immature one, and the diagram above is a wiring
+diagram, not a capability claim.** One contract frontend is registered
+and it does parse; both contract backends are **scaffolds** that return
+a fixed `_scaffold` payload no field of the contract can influence, so
+`xpile info` reports them as `contract_backends (2 registered, 0
+rendering)` and tags each. Real rendering is v0.2.0 work — see
+[Backends](../reference/backends.md) and PMAT-1429.
+
+**There is no mdBook contract frontend or backend**, and no Lean 4
+contract *frontend*. `MdBook` is an enum variant in `xpile-contracts`
+with nothing behind it. Through v0.1.617 this page drew both, and drew
+three code-lane frontends (C++, Rust, Lean 4) that likewise do not
+exist — `.cpp`, `.rs` and `.lean` inputs all exit non-zero — while
+omitting the `wasm` frontend and the `wasm` and `forjar` backends that
+do (PMAT-1440).
 
 ## Why two lanes?
 
@@ -67,7 +105,9 @@ structured constructs**, never regex over body text:
 
 - In Lean: `@[xpile_contract "C-PY-INT-ARITH"]` attribute.
 - In LaTeX: `\xpileContract{C-PY-INT-ARITH}{Python int arithmetic}`.
-- In mdBook: a structured HTML comment.
+- In mdBook: a structured HTML comment — **specified, not implemented**;
+  no mdBook `ContractBackend` is registered, so nothing emits this form
+  today (PMAT-1440).
 
 Those are the **`ContractBackend`** forms — contract YAML rendered to
 theorem text or LaTeX, which is read as prose and never elaborated. The

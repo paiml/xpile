@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="xpile architecture: a code lane (Python, C, Ruchy, Shell, WebAssembly → meta-HIR → Rust, Ruchy, WebAssembly, PTX, WGSL, SPIR-V, Lean 4, Shell) and a proof lane (LaTeX, Lean theorems, mdBook ↔ YAML contracts)" width="100%"/>
+  <img src="docs/assets/hero.svg" alt="xpile architecture: a code lane (Python, C, Ruchy, Shell, WebAssembly → meta-HIR → Rust, Ruchy, WebAssembly, PTX, WGSL, SPIR-V, Lean 4, Shell, forjar) and a proof lane (LaTeX ↔ YAML contracts ↔ LaTeX and Lean 4 theorems)" width="100%"/>
 </p>
 
 # xpile
@@ -119,8 +119,11 @@ itself (PMAT-1405).
 - **One meta-HIR, many targets.** Rust, Ruchy, WebAssembly, PTX, WGSL, SPIR-V,
   Lean 4, and POSIX shell all descend from a single intermediate representation.
 - **A proof lane, not just a code lane.** Contracts are shared YAML validated by
-  paired Lean 4 refinement theorems and Kani symbolic harnesses, and round-trip
-  between LaTeX and mdBook.
+  paired Lean 4 refinement theorems and Kani symbolic harnesses. The *rendering*
+  half of that lane is immature — one contract frontend (LaTeX), two contract
+  backends, both scaffolds, and no mdBook lane at all (see below). Through
+  v0.1.617 this bullet advertised a "round-trip between LaTeX and mdBook",
+  which the same file denies 56 lines lower (PMAT-1440).
 - **Hybrid transpilation.** `xpile hybrid <dir> --verify` emits a buildable
   Cargo workspace for cross-language artifacts (Python + C extensions), builds
   it, runs it, and differential-matches the result against the CPython

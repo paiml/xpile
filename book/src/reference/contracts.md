@@ -160,8 +160,11 @@ measured position (PMAT-1437, PMAT-1438).
 
 > Layer 3 (architectural) / proof lane / kind: pattern
 
-Every `ContractFrontend` (LaTeX, mdBook, Lean) must produce a
-deterministic parse of its notation source into contract equations.
+Every `ContractFrontend` must produce a deterministic parse of its
+notation source into contract equations. **One is registered** — LaTeX.
+Through v0.1.617 this entry listed "LaTeX, mdBook, Lean": there is no
+mdBook contract frontend and no Lean contract *frontend*, and naming
+them here read as a roster of what exists (PMAT-1440).
 
 ## C-XPILE-CONTRACT-BACKEND-TRAIT
 
@@ -170,7 +173,11 @@ deterministic parse of its notation source into contract equations.
 Every `ContractBackend` must use **format-native structured
 constructs** for the citation bridge — never regex over body text.
 In Lean: `@[xpile_contract "..."]`. In LaTeX: `\xpileContract{...}{...}`.
-In mdBook: a structured HTML comment.
+In mdBook: a structured HTML comment — **specified, not implemented**;
+no mdBook `ContractBackend` is registered. Both registered contract
+backends are scaffolds today (`xpile info` reports
+`contract_backends (2 registered, 0 rendering)`), so this equation
+constrains a form nothing yet emits (PMAT-1440).
 
 ## C-FFI-CPYTHON-EXT
 
