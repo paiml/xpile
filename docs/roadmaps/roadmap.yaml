@@ -21282,3 +21282,73 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1449
+  title: 'PMAT-1449: [docs+gate+honesty+release] the RELEASE RUNBOOK told Thursday''s operator to publish a FALSE statement about what CI enforces -- it named the committed SNAPSHOT and called it the LIVE ruleset, overstating enforcement inside the section that discloses NON-enforcement.
+    ** THE DEFECT. Two work items mandate the v0.1.618 release body. Both required its
+    "What is NOT merge-blocking" section to state verbatim "the live org ruleset requires only
+    [gate, workspace-test]". IT REQUIRES ONLY [gate]. Measured against the LIVE API, not the
+    snapshot -- `gh api orgs/paiml/rulesets/13878864` gives required=[gate] and
+    strict_required_status_checks_policy=false, while docs/status/ruleset-13878864.json records
+    [gate, workspace-test]. So the mandate reproduced the COMMITTED SNAPSHOT and called it the
+    LIVE ruleset.
+    ** AND IT IS THE WORST AVAILABLE DIRECTION FOR THAT SENTENCE. It OVERSTATES enforcement
+    inside the one section whose entire purpose is to say what is NOT enforced: a reader is told
+    `workspace-test` gates merges when it does not, and `workspace-test` is the ONLY job that
+    runs the full suite. Two days before the tag, that sentence was scheduled for publication.
+    ** THE REPO ALREADY CONTRADICTED ITSELF. docs/RELEASE.md has the live position RIGHT -- "the
+    live ruleset requires only `gate` while the committed snapshot records `gate` +
+    `workspace-test`, an open owner decision" -- so the runbook and the release documentation
+    disagreed, and the runbook is the one that gets copied into the published note.
+    ** WHY NO GATE SAW IT. ruleset_drift.rs covers the three places this list is MACHINE-CHECKABLE
+    (live-vs-snapshot, RED by design; the XPILE-ENFORCEMENT markers vs the snapshot, green; each
+    context vs a real CI job, green). It does not, and should not, read prose in queue.yaml.
+    A LIST THAT IS DERIVED IN THREE PLACES AND TYPED IN A FOURTH WILL GO STALE IN THE FOURTH --
+    and the fourth is the one with a publication date on it.
+    ** FIX = THE POINTER DOCTRINE, APPLIED WHERE IT MATTERS MOST. PMAT-1348 demoted CURRENT.md to
+    a pointer file ("numbers must be stated as the command that derives them, never typed
+    inline") and gated that for THAT ONE FILE. The release runbook is the same shape and had no
+    such rule. Both mandates now say DERIVE it from docs/status/ruleset-13878864.json and name
+    the open drift from docs/RELEASE.md. PMAT-1440''s lesson again: a rule written against a FILE
+    does not protect a CLAIM.
+    ** GATED by crates/xpile/tests/release_mandate_enforcement_witness.rs (XPILE-RELMANDATE-001):
+    (1) no release-body mandate may hard-code the enforcement set, keyed on what the DEFECT
+    spelled ("requires only [") with an exemption for a QUOTED MENTION, since both corrections
+    quote the old wording to explain themselves (PMAT-1430 use-vs-mention); (2) the destination
+    the mandates now point at must EXIST and must disclose the drift as an OPEN OWNER DECISION --
+    a deferral with no destination is just an omission (PMAT-1440); (3) RELEASE.md must name the
+    set the SNAPSHOT actually records, DERIVED from the JSON.
+    ** NOT TOUCHED, DELIBERATELY: the XPILE-ENFORCEMENT REQUIRED-CONTEXTS markers in ci.yml,
+    CURRENT.md and enforcement-handoff.md all read "gate, workspace-test" and all CORRECTLY match
+    the committed snapshot, which ruleset_drift holds green. Changing them would RATIFY the live
+    weakening -- the exact thing RELEASE.md says not to do. The snapshot is the owner''s record;
+    only the prose that mislabelled it as LIVE was wrong.
+    ** RED HALF RUN, FIVE perturbations, green control: the original PMAT-1355 mandate restored;
+    RELEASE.md''s live-ruleset disclosure deleted; RELEASE.md no longer calling it an OPEN OWNER
+    DECISION; the mandate-scan phrasing drifted (non-vacuity); and -- the BEHAVIOUR half --
+    RE-DERIVING THE SNAPSHOT to match live, i.e. exactly how someone would "fix" the red
+    ruleset_drift, which REDS the disclosure and forces the caveat to move with it. A caveat that
+    outlives its defect is the same falsehood pointing the other way (PMAT-1411).
+    ** RELEASE STATE, measured this session and unchanged by this slice: `cargo test --workspace
+    --no-fail-fast` on main is 310 suites OK and ONE failing -- ruleset_drift''s live-vs-snapshot
+    check. PRECONDITION A1 FOR THE 2026-07-30 TAG CUT IS BLOCKED ON THE OWNER DECISION
+    `ruleset-workspace-test-dropped` AND ON NOTHING ELSE.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    NEXT PICK: STANDING LEADS. (a) book/src/reference/contracts.md says C-XLATE-LEAN-TO-RUST
+    "carries 40 equations"; the contract has 33 (the other two numbers in that sentence, 33 Lean
+    theorems and 10 Kani harnesses, are CORRECT -- measured). (b) install `ruchy` in a CI job so
+    PMAT-1446''s COUNTS half stops being developer-only -- OWNER-GATED workflow change.
+    (c) the PER-INPUT disposition granularity PMAT-1442 disclosed rather than fixed.
+    PROBED AND CLEAN, recorded so it is not re-derived: book/src/changelog.md''s "27 workspace
+    crates" and "12 contracts" are HISTORICAL, under a `v0.1.0 - 2026-05-20` heading, and were
+    true at that release -- correcting them would falsify a record.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

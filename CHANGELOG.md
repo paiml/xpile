@@ -7,6 +7,74 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The release runbook told Thursday's operator to publish a false statement about what CI enforces (PMAT-1449)
+
+Two work items mandate the content of the v0.1.618 release body. Both required
+its **"What is NOT merge-blocking"** section to state, verbatim:
+
+> the live org ruleset requires only [gate, workspace-test]
+
+**It requires only `[gate]`.** Measured against the live API, not the snapshot:
+
+```
+$ gh api orgs/paiml/rulesets/13878864 …
+  required: ['gate']          strict_required_status_checks_policy: False
+$ jq … docs/status/ruleset-13878864.json
+  required: ['gate', 'workspace-test']
+```
+
+The mandate reproduced the **committed snapshot** and called it the **live
+ruleset** — and it did so in the one section whose entire purpose is to say what
+is *not* enforced. **It overstated enforcement inside the disclosure of
+non-enforcement**, which is the worst available direction for that sentence: a
+reader is told `workspace-test` gates merges when it does not, and
+`workspace-test` is the only job that runs the full suite. Two days before the
+tag, that sentence was scheduled for publication.
+
+**The repo already contradicted itself.** `docs/RELEASE.md` has the live
+position right — *"the live ruleset requires only `gate` while the committed
+snapshot records `gate` + `workspace-test`, an open owner decision"* — so the
+runbook and the release documentation disagreed, and the runbook is the one that
+gets copied into the published note.
+
+**Why no gate saw it.** `ruleset_drift.rs` covers the three places this list is
+*machine-checkable*. It does not, and should not, read prose in `queue.yaml`.
+**A list that is derived in three places and typed in a fourth will go stale in
+the fourth** — and the fourth is the one with a publication date on it.
+
+**Fixed with the pointer doctrine, applied where it matters most.** PMAT-1348
+demoted `CURRENT.md` to a pointer file (*"numbers must be stated as the command
+that derives them, never typed inline"*) and gated that for **that one file**.
+The release runbook is the same shape and had no such rule. Both mandates now
+say *derive it from `docs/status/ruleset-13878864.json` and name the open drift
+from `docs/RELEASE.md`*. PMAT-1440's lesson again: **a rule written against a
+file does not protect a claim.**
+
+**Gated** by `crates/xpile/tests/release_mandate_enforcement_witness.rs`
+(`XPILE-RELMANDATE-001`): no mandate may hard-code the enforcement set; the
+destination it defers to must exist and must disclose the drift as an **open
+owner decision**; and `RELEASE.md` must name the set the snapshot actually
+records, derived from the JSON.
+
+**Not touched, deliberately:** the `XPILE-ENFORCEMENT REQUIRED-CONTEXTS:`
+markers in `ci.yml`, `CURRENT.md` and `enforcement-handoff.md` all read
+`gate, workspace-test` and all **correctly** match the committed snapshot, which
+`ruleset_drift` holds green. Changing them would ratify the live weakening — the
+exact thing `RELEASE.md` says not to do. The snapshot is the owner's record;
+only the prose that mislabelled it as *live* was wrong.
+
+**Red half run, five perturbations**, green control — including the behaviour
+half: **re-deriving the snapshot to match live**, i.e. exactly how someone would
+"fix" the red `ruleset_drift`, which reds the disclosure and forces the caveat to
+move with it.
+
+**Release state, measured and unchanged by this slice:** `cargo test --workspace
+--no-fail-fast` on `main` is **310 suites ok, 1 failing** — `ruleset_drift`'s
+live-vs-snapshot check. **Precondition A1 for the 2026-07-30 tag cut is blocked
+on the owner decision `ruleset-workspace-test-dropped` and nothing else.**
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### `xpile diamond` published a hand-written enumeration of its own computed classification, and every transcription of it was stale (PMAT-1448)
 
 The reporter printed a legend directly above the column it explains:
