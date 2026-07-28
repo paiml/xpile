@@ -2870,3 +2870,696 @@ fn docs_claim_no_universal_depth_the_substrate_does_not_hold() {
          contracts/, so the record exemption is unreachable and untested"
     );
 }
+
+// ── PMAT-1455: the substrate's PUBLISHED PROOF VOLUME ────────────────
+//
+// Every number below is a claim about a file the repository owns, so every
+// one of them is derivable. Two populations, and conflating them is the
+// first trap: a contract's `kani_harness:` CITATIONS (10 on
+// `C-XLATE-LEAN-TO-RUST`) are not the `#[kani::proof]` FUNCTIONS in its
+// harness file (13 in `contracts/kani/xlate_lean_to_rust.rs`). The book
+// states the first, `sub/kaizen-fleet.md` the second; each arm below is
+// derived from the artifact its prose points at.
+
+/// Everything a contract YAML publishes about its own size.
+#[derive(Clone, Copy)]
+struct ContractParts {
+    /// Entries under `equations:`.
+    equations: usize,
+    /// Equations carrying a `lean_theorem:` citation.
+    lean_citations: usize,
+    /// Equations carrying a `kani_harness:` citation.
+    kani_citations: usize,
+}
+
+/// `metadata.id` → the sizes of that contract, parsed with `serde_yaml` (the
+/// crate's own loader) rather than counted by line-scan — a `kani_harness:`
+/// spelled inside a provenance comment would be counted by a grep and is not
+/// a citation.
+fn contract_parts() -> HashMap<String, ContractParts> {
+    let dir = workspace_root().join("contracts");
+    let mut paths: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+        .collect();
+    paths.sort();
+    let mut out = HashMap::new();
+    for p in paths {
+        let body = fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+        let doc: serde_yaml::Value = serde_yaml::from_str(&body)
+            .unwrap_or_else(|e| panic!("{} is not valid YAML: {e}", p.display()));
+        let Some(id) = doc
+            .get("metadata")
+            .and_then(|m| m.get("id"))
+            .and_then(|v| v.as_str())
+        else {
+            continue;
+        };
+        let mut parts = ContractParts {
+            equations: 0,
+            lean_citations: 0,
+            kani_citations: 0,
+        };
+        if let Some(eqs) = doc.get("equations").and_then(|e| e.as_mapping()) {
+            parts.equations = eqs.len();
+            for (_, eq) in eqs {
+                if eq.get("lean_theorem").is_some() {
+                    parts.lean_citations += 1;
+                }
+                if eq.get("kani_harness").is_some() {
+                    parts.kani_citations += 1;
+                }
+            }
+        }
+        out.insert(id.to_string(), parts);
+    }
+    out
+}
+
+/// Drop `--` line comments and NESTED `/- … -/` blocks from Lean source,
+/// preserving newlines so line attribution survives.
+fn strip_lean_comments(src: &str) -> String {
+    let b = src.as_bytes();
+    let (mut out, mut i, mut depth) = (String::with_capacity(src.len()), 0usize, 0usize);
+    while i < b.len() {
+        if b[i..].starts_with(b"/-") {
+            depth += 1;
+            i += 2;
+            continue;
+        }
+        if depth > 0 && b[i..].starts_with(b"-/") {
+            depth -= 1;
+            i += 2;
+            continue;
+        }
+        if depth == 0 && b[i..].starts_with(b"--") {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if depth == 0 || b[i] == b'\n' {
+            out.push(b[i] as char);
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Drop `//` line comments and NESTED `/* … */` blocks from Rust source.
+fn strip_rust_comments(src: &str) -> String {
+    let b = src.as_bytes();
+    let (mut out, mut i, mut depth) = (String::with_capacity(src.len()), 0usize, 0usize);
+    while i < b.len() {
+        if b[i..].starts_with(b"/*") {
+            depth += 1;
+            i += 2;
+            continue;
+        }
+        if depth > 0 && b[i..].starts_with(b"*/") {
+            depth -= 1;
+            i += 2;
+            continue;
+        }
+        if depth == 0 && b[i..].starts_with(b"//") {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if depth == 0 || b[i] == b'\n' {
+            out.push(b[i] as char);
+        }
+        i += 1;
+    }
+    out
+}
+
+fn files_in(rel: &str, ext: &str) -> Vec<String> {
+    let dir = workspace_root().join(rel);
+    let mut paths: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some(ext))
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .map(|p| fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display())))
+        .collect()
+}
+
+/// Lean `theorem`/`lemma` DECLARATIONS under `contracts/lean/`.
+///
+/// ⚠️ THE COMMENT-STRIP IS THE POINT, not hygiene. `grep -cE '^\s*(theorem|
+/// lemma)'` over this directory answers 512; twenty-three of those lines are
+/// English inside `/-- … -/` docstrings, e.g. `XlateLeanToRust.lean`'s
+/// "Locked-in by the refinement / theorem below — any emitter that …", whose
+/// second line begins with the word `theorem` followed by an identifier-shaped
+/// word. A naive grep COUNTS PROSE ABOUT THEOREMS AS THEOREMS, and it
+/// over-counts in the flattering direction.
+fn lean_theorem_declarations() -> usize {
+    files_in("contracts/lean", "lean")
+        .iter()
+        .map(|body| {
+            strip_lean_comments(body)
+                .lines()
+                .filter(|l| {
+                    let t = l.trim_start();
+                    for kw in ["theorem ", "lemma "] {
+                        if let Some(rest) = t.strip_prefix(kw) {
+                            return rest
+                                .chars()
+                                .next()
+                                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+                        }
+                    }
+                    false
+                })
+                .count()
+        })
+        .sum()
+}
+
+/// `#[kani::proof]` harnesses under `contracts/kani/`.
+///
+/// Same trap, same direction: the raw string occurs 101 times, six of them
+/// inside `//!` module docs explaining what a harness is (`py_int_arith.rs`,
+/// `c_int_arith.rs`, `c_float_arith.rs`, `ols_model_uniqueness.rs`). 95 are
+/// attributes on a function. The published figure was the grep's.
+fn kani_proof_harnesses() -> usize {
+    files_in("contracts/kani", "rs")
+        .iter()
+        .map(|body| strip_rust_comments(body).matches("#[kani::proof]").count())
+        .sum()
+}
+
+/// A population of the substrate a page can put a number in front of.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Part {
+    Equations,
+    LeanTheorems,
+    KaniHarnesses,
+    StratumVotes,
+}
+
+/// Longest spelling first — `lean refinement theorems` must win over
+/// `refinement theorems`, or the walk-back would start inside the phrase.
+const PART_SPELLINGS: [(&str, Part); 7] = [
+    ("lean refinement theorems", Part::LeanTheorems),
+    ("lean theorems", Part::LeanTheorems),
+    ("refinement theorems", Part::LeanTheorems),
+    ("kani bmc harnesses", Part::KaniHarnesses),
+    ("kani harnesses", Part::KaniHarnesses),
+    ("stratum-vote artifacts", Part::StratumVotes),
+    ("equations", Part::Equations),
+];
+
+/// One `<N> <unit>` claim: the number, the population, and where it sits.
+struct PartClaim {
+    claimed: usize,
+    part: Part,
+    /// Byte offset of the NUMERAL in the flattened text.
+    at: usize,
+    /// The word immediately before the numeral, lowercased.
+    preceded_by: String,
+}
+
+/// Scan `flat` for `<N> <unit>` claims about the substrate.
+///
+/// Three shapes are REJECTED at the needle, each because the corpus really
+/// contains it and each would otherwise be a fabricated finding:
+///
+///   * `PMAT-353 equations_block_struct_extensionality` — the numeral is the
+///     tail of an id and the unit is the head of a snake_case identifier.
+///     Rejected by requiring a non-alphanumeric, non-`-` byte before the
+///     numeral and a non-identifier byte after the unit. Four sites in
+///     `contracts/lean/XpileContractFrontendTrait.lean` alone.
+///   * `4/9 equations`, `9/9 equations` — a FRACTION is a coverage record
+///     scoped to a slice, not a total. Rejected when the numeral is preceded
+///     by `/`.
+///   * `3 equations entries` — a compound noun about YAML rows, not a count of
+///     the contract's equations (`notation-latex-math-to-equation-v1.yaml`).
+///     Rejected by the identifier-boundary rule only if followed by an
+///     identifier char, so this one is handled by the caller's routing: it
+///     names no contract and no derivation directory, and is left unjudged.
+fn part_claims(flat: &str) -> Vec<PartClaim> {
+    let lower = flat.to_ascii_lowercase();
+    let b = lower.as_bytes();
+    let mut out: Vec<PartClaim> = Vec::new();
+    for (spelling, part) in PART_SPELLINGS {
+        let mut from = 0usize;
+        while let Some(rel) = lower[from..].find(spelling) {
+            let start = from + rel;
+            let end = start + spelling.len();
+            from = end;
+            // The unit must END at a word boundary: `equations_block` is an
+            // identifier, not a count of equations.
+            if b.get(end)
+                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
+            {
+                continue;
+            }
+            // Walk back over emphasis and space to the numeral.
+            let mut i = start;
+            while i > 0 && matches!(b[i - 1], b' ' | b'*' | b'_' | b'\t' | b'~') {
+                i -= 1;
+            }
+            let num_end = i;
+            while i > 0 && (b[i - 1].is_ascii_digit() || b[i - 1] == b',') {
+                i -= 1;
+            }
+            if i == num_end {
+                continue; // no numeral: `carries equations`, or a longer
+                          // spelling owns the number (`Lean refinement
+                          // theorems` reached via `refinement theorems`).
+            }
+            // `PMAT-353 equations` / `x4 equations` are not counts.
+            if i > 0 && (b[i - 1] == b'-' || b[i - 1].is_ascii_alphanumeric()) {
+                continue;
+            }
+            // `4/9 equations` is a coverage fraction, not a total.
+            if i > 0 && b[i - 1] == b'/' {
+                continue;
+            }
+            let digits: String = lower[i..num_end]
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect();
+            let Ok(claimed) = digits.parse::<usize>() else {
+                continue;
+            };
+            let preceded_by = token_before(&lower, i)
+                .unwrap_or("")
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_string();
+            out.push(PartClaim {
+                claimed,
+                part,
+                at: i,
+                preceded_by,
+            });
+        }
+    }
+    // Two spellings can report the same numeral (`260 Lean refinement
+    // theorems` is also `… refinement theorems`); the walk-back makes the
+    // shorter one find no numeral, but dedupe on the offset anyway so a future
+    // spelling cannot double-report.
+    out.sort_by_key(|c| c.at);
+    out.dedup_by_key(|c| c.at);
+    out
+}
+
+/// Does this clause attribute its number to a directory of the substrate?
+fn names_derivation_dir(clause_lower: &str) -> bool {
+    clause_lower.contains("contracts/lean") || clause_lower.contains("contracts/kani")
+}
+
+/// EVERY published count of a NAMED CONTRACT's own parts equals what that
+/// contract's YAML holds.
+///
+/// PMAT-1455 — `book/src/reference/contracts.md` published
+/// `C-XLATE-LEAN-TO-RUST` as carrying "40 equations, 33 Lean refinement
+/// theorems and 10 Kani harnesses saying so". The contract holds 33 equations.
+/// The other two numbers were right, which is what made the sentence readable:
+/// 33 lean_theorem citations and 10 kani_harness citations are exactly what it
+/// carries — so the page said there are SEVEN MORE EQUATIONS THAN THEOREMS
+/// where in fact every equation has one.
+///
+/// The direction is the finding. That paragraph exists to disclose that
+/// nothing implements this contract — "the proofs range over abstract models …
+/// so they hold, and they hold of nothing shipped" — and the one number it got
+/// wrong INFLATED the proof volume it was disclosing.
+///
+/// SUBJECT is `claim_pages()`, deliberately not widened to `contracts/**`, and
+/// this is a measurement rather than an assumption: every `<N> equations`
+/// occurrence under `contracts/` is a slice-scoped provenance record
+/// (`remaining 8 equations` / `1/9 to 4/9 equations`, each citing its PMAT id),
+/// an identifier (`PMAT-353 equations_block_…`), or a compound noun
+/// (`3 equations entries`). No live falsehood of this class is there, and a
+/// needle loose enough to reach those shapes reports them as findings.
+#[test]
+fn published_contract_part_counts_match_the_contract_yaml() {
+    let parts = contract_parts();
+    assert!(
+        parts.len() >= 30,
+        "contract_parts() loaded {} contract(s) — the substrate walk broke, \
+         and every comparison below would be vacuous",
+        parts.len()
+    );
+
+    let mut offences = Vec::new();
+    let mut agreements: HashMap<Part, usize> = HashMap::new();
+    let mut version_numerals = 0usize;
+
+    for (rel, body) in claim_pages() {
+        for para in paragraphs_under_headings(&body) {
+            if para.heading.contains(HISTORICAL_MARKER) {
+                continue;
+            }
+            let quoted = quoted_spans(&para.flat);
+            for claim in part_claims(&para.flat) {
+                // Reporting a claim is not making one (PMAT-1450).
+                if quoted.iter().any(|&(a, b)| a <= claim.at && claim.at < b) {
+                    continue;
+                }
+                // ⚠️ `Lean 4 refinement theorems` is a VERSION, not a count.
+                // Both `README.md` and `book/src/concepts/contracts.md` write
+                // it, and without this the gate reports the language version
+                // as a drifted theorem tally.
+                if claim.preceded_by == "lean" {
+                    version_numerals += 1;
+                    continue;
+                }
+                let (clo, chi) = clause_bounds(&para.flat, claim.at);
+                let clause = &para.flat[clo..chi];
+                let clause_lower = clause.to_ascii_lowercase();
+                // A directory-attributed count is about the whole substrate,
+                // not about one contract — the other test owns it.
+                if names_derivation_dir(&clause_lower) {
+                    continue;
+                }
+                // Subject: the nearest contract id, clause before paragraph
+                // before heading. A clause naming two contracts is ambiguous
+                // and is left to the reader, not guessed at.
+                let subject = [clause, &para.flat, &para.heading]
+                    .iter()
+                    .map(|scope| contract_ids(scope))
+                    .find_map(|ids| {
+                        let known: Vec<String> =
+                            ids.into_iter().filter(|i| parts.contains_key(i)).collect();
+                        (known.len() == 1).then(|| known[0].clone())
+                    });
+                let Some(id) = subject else {
+                    continue;
+                };
+                let p = parts[&id];
+                let (live, what) = match claim.part {
+                    Part::Equations => (p.equations, "equations"),
+                    Part::LeanTheorems => (p.lean_citations, "`lean_theorem:` citations"),
+                    Part::KaniHarnesses => (p.kani_citations, "`kani_harness:` citations"),
+                    // An aggregate unit is never a property of one contract.
+                    Part::StratumVotes => continue,
+                };
+                if claim.claimed == live {
+                    *agreements.entry(claim.part).or_default() += 1;
+                    continue;
+                }
+                let (line, _) = para.line_at(claim.at);
+                offences.push(format!(
+                    "{rel}:{line}: says {id} carries {} {what}, and it carries \
+                     {live} — \"{}\"",
+                    claim.claimed,
+                    clause.trim()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        offences.is_empty(),
+        "a published per-contract size does not match the contract YAML. \
+         Update the prose, or the contract, whichever is wrong:\n{}",
+        offences.join("\n")
+    );
+    for part in [Part::Equations, Part::LeanTheorems, Part::KaniHarnesses] {
+        assert!(
+            agreements.contains_key(&part),
+            "no AGREEING {part:?} claim was found, so that arm is unexercised \
+             and this gate cannot tell a working needle from a broken one. \
+             `book/src/reference/contracts.md` states all three for \
+             C-XLATE-LEAN-TO-RUST; if it stopped, say so here rather than \
+             leaving the arm standing."
+        );
+    }
+    assert!(
+        version_numerals >= 1,
+        "the `Lean 4` discriminator never saw the shape it exists for, so the \
+         corpus stopped writing `Lean 4 refinement theorems` and the rule is \
+         ranging over nothing"
+    );
+}
+
+/// A LANGUAGE VERSION IS NOT A COUNT — `Lean 4 refinement theorems` parses as
+/// "4 refinement theorems", and every walk-back over a numeral finds it.
+///
+/// PMAT-1455 — this guard is a HARDENING WITH NO CURRENT VERDICT CHANGE, and
+/// saying so is the point. Deleting it from both gates above leaves the whole
+/// suite GREEN: the two live sites (`README.md`, `book/src/concepts/
+/// contracts.md`) are unrouted for an unrelated reason — neither clause names
+/// a contract or a derivation directory, the second only because
+/// `clause_bounds` splits on the `|` of its table row. So
+/// `version_numerals >= 1` proves the discriminator SEES the shape; it does
+/// NOT prove the guard prevented a report. The red half established that
+/// difference; an argument would have concluded the opposite.
+///
+/// A corpus that does not yet contain the dangerous arrangement cannot
+/// demonstrate the rule (PMAT-1451), so the arrangement is constructed here:
+/// one clause, naming `contracts/lean/`, therefore ROUTED. Without the guard
+/// that text reports "attributes 4 Lean theorem/lemma declarations to the
+/// substrate, which holds 489" — a fabricated finding against a version
+/// number.
+#[test]
+fn a_language_version_is_not_a_count() {
+    let routed = "the Semantic stratum is Lean 4 refinement theorems recorded in contracts/lean/";
+    let claims = part_claims(routed);
+    assert_eq!(
+        claims.len(),
+        1,
+        "expected the version numeral to be SEEN (and then discriminated), \
+         got {} claim(s)",
+        claims.len()
+    );
+    assert_eq!(
+        claims[0].claimed, 4,
+        "the numeral parsed is the Lean version"
+    );
+    assert_eq!(claims[0].part, Part::LeanTheorems);
+    assert_eq!(
+        claims[0].preceded_by, "lean",
+        "the discriminator is the preceding word, and it is what both gates \
+         key on; if this stops being `lean` the guard silently stops firing"
+    );
+    assert!(
+        names_derivation_dir(&routed.to_ascii_lowercase()),
+        "the constructed clause must ROUTE, or it would not demonstrate the \
+         guard is load-bearing for a judged claim"
+    );
+    // And the shape that IS a count still parses as one.
+    let real = part_claims("489 Lean refinement theorems in contracts/lean/");
+    assert_eq!(real.len(), 1);
+    assert_eq!(real[0].claimed, 489);
+    assert_ne!(
+        real[0].preceded_by, "lean",
+        "a real tally must not be swallowed by the version guard"
+    );
+}
+
+/// The needle rejections named in [`part_claims`] are the corpus's own shapes,
+/// so each is pinned against the text that produced it. Both live under
+/// `contracts/`, which this gate's subject deliberately excludes — so unlike
+/// the version guard these are not reachable from the judged corpus at all,
+/// and this test is the ONLY thing that exercises them.
+#[test]
+fn the_part_needle_rejects_identifiers_and_fractions() {
+    for (text, why) in [
+        (
+            "- PMAT-353 equations_block_struct_extensionality: inner equations",
+            "an id followed by a snake_case identifier is not `<N> equations`",
+        ),
+        (
+            "Brings Silver coverage on this contract from 1/9 to 4/9 equations.",
+            "a coverage FRACTION is scoped to a slice, not a total",
+        ),
+    ] {
+        assert!(
+            part_claims(text).is_empty(),
+            "part_claims fabricated a claim from {text:?} — {why}"
+        );
+    }
+    // The bare form the same file uses IS seen. It is exempted downstream, by
+    // routing — not by the needle failing to notice it. A shape the needle
+    // cannot see is a shape nobody can reason about.
+    let seen = part_claims("Bronze-tier refinement theorems for the remaining 8 equations");
+    assert_eq!(seen.len(), 1, "the bare `8 equations` form must be SEEN");
+    assert_eq!(seen[0].claimed, 8);
+}
+
+/// EVERY published count attributed to `contracts/lean/` or `contracts/kani/`
+/// equals what that directory holds.
+///
+/// PMAT-1455 — `docs/specifications/sub/kaizen-fleet.md`, the sub-spec
+/// `xpile-spec.md` §20 points at for fleet membership, published the
+/// 2026-05-18 snapshot in the PRESENT TENSE: "The translation contracts
+/// produce verifiable kernels by construction: 260 Lean refinement theorems …
+/// in `contracts/lean/` + 43 Kani BMC harnesses in `contracts/kani/` = 303
+/// stratum-vote artifacts", and "every contract in the substrate (12 of 12)
+/// has a Kani BMC harness on every PR". Live: 489, 95, 584, and 24 of 35 — so
+/// the tally understated by ~2x while the COVERAGE claim overstated, asserting
+/// a harness for eleven contracts that have none.
+///
+/// ⭐ AND THE REPLACEMENT NUMBER IS ALSO A GREP ARTEFACT IF YOU LET IT BE.
+/// `docs/specifications/sub/sprint-6day-2026-07-26.md` — the ratified plan,
+/// under the heading "What the note may honestly claim", i.e. the text
+/// scheduled to become Friday's release body — said "101 Kani harnesses". That
+/// is `grep -c '#\[kani::proof\]'`, and six of those 101 occurrences are
+/// inside `//!` doc comments explaining what a harness is. 95 are attributes.
+/// The same shape inflates the Lean side by 23. See `lean_theorem_
+/// declarations` and `kani_proof_harnesses`: both strip comments, because the
+/// naive count is the one that gets published.
+#[test]
+fn published_substrate_proof_volume_matches_the_contract_tree() {
+    let lean = lean_theorem_declarations();
+    let kani = kani_proof_harnesses();
+    let votes = lean + kani;
+    let parts = contract_parts();
+    let with_kani = parts.values().filter(|p| p.kani_citations > 0).count();
+    let contracts = parts.len();
+    assert!(
+        lean >= 100 && kani >= 10 && with_kani >= 1 && with_kani < contracts,
+        "derived substrate looks wrong (lean {lean}, kani {kani}, \
+         {with_kani}/{contracts} contracts with a harness) — a directory \
+         moved; fix the derivation, not the prose"
+    );
+
+    let mut offences = Vec::new();
+    let mut agreements: HashMap<Part, usize> = HashMap::new();
+    let mut coverage_agreements = 0usize;
+
+    for (rel, body) in claim_pages() {
+        for para in paragraphs_under_headings(&body) {
+            if para.heading.contains(HISTORICAL_MARKER) {
+                continue;
+            }
+            let quoted = quoted_spans(&para.flat);
+            for claim in part_claims(&para.flat) {
+                if quoted.iter().any(|&(a, b)| a <= claim.at && claim.at < b) {
+                    continue;
+                }
+                if claim.preceded_by == "lean" {
+                    continue; // the version numeral; pinned by the sibling test
+                }
+                let (clo, chi) = clause_bounds(&para.flat, claim.at);
+                let clause = &para.flat[clo..chi];
+                let clause_lower = clause.to_ascii_lowercase();
+                if !names_derivation_dir(&clause_lower) {
+                    continue;
+                }
+                let (live, what) = match claim.part {
+                    Part::LeanTheorems => (lean, "Lean theorem/lemma declarations"),
+                    Part::KaniHarnesses => (kani, "`#[kani::proof]` harnesses"),
+                    Part::StratumVotes => (votes, "stratum-vote artifacts"),
+                    // `N equations` next to a directory pointer is a
+                    // per-contract claim that happens to cite the Lean file;
+                    // the sibling test owns it.
+                    Part::Equations => continue,
+                };
+                if claim.claimed == live {
+                    *agreements.entry(claim.part).or_default() += 1;
+                    continue;
+                }
+                let (line, _) = para.line_at(claim.at);
+                offences.push(format!(
+                    "{rel}:{line}: attributes {} {what} to the substrate, which \
+                     holds {live} — \"{}\"",
+                    claim.claimed,
+                    clause.trim()
+                ));
+            }
+            // The COVERAGE half. `12 of 12` and `24/35 contracts` are the same
+            // claim in two spellings, and the first one was the dangerous
+            // direction: a harness asserted for every contract when eleven
+            // have none.
+            for (num, den, at) in coverage_fractions(&para.flat) {
+                if quoted.iter().any(|&(a, b)| a <= at && at < b) {
+                    continue;
+                }
+                let (clo, chi) = clause_bounds(&para.flat, at);
+                let clause = &para.flat[clo..chi];
+                let lower = clause.to_ascii_lowercase();
+                if !(lower.contains("kani") && lower.contains("contracts/kani")) {
+                    continue;
+                }
+                if num == with_kani && den == contracts {
+                    coverage_agreements += 1;
+                    continue;
+                }
+                let (line, _) = para.line_at(at);
+                offences.push(format!(
+                    "{rel}:{line}: says {num} of {den} contracts carry a Kani \
+                     harness; {with_kani} of {contracts} do — \"{}\"",
+                    clause.trim()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        offences.is_empty(),
+        "a published substrate tally does not match `contracts/` \
+         (contracts/lean: {lean} declarations, contracts/kani: {kani} \
+         harnesses over {with_kani} of {contracts} contracts). Update the \
+         prose — and if the number came from a grep, strip the comments \
+         first:\n{}",
+        offences.join("\n")
+    );
+    for part in [Part::LeanTheorems, Part::KaniHarnesses, Part::StratumVotes] {
+        assert!(
+            agreements.contains_key(&part),
+            "no AGREEING {part:?} tally was found in the corpus, so that arm is \
+             unexercised. The substrate's size is worth stating somewhere; if \
+             the last statement of it was deleted, this gate is ranging over \
+             nothing"
+        );
+    }
+    assert!(
+        coverage_agreements >= 1,
+        "no `N of M contracts` Kani-coverage claim was found, so the coverage \
+         arm — the one that caught `12 of 12` where 24 of 35 hold — is \
+         unreachable and untested"
+    );
+}
+
+/// `24 of 35 contracts` / `24/35 contracts` → `(24, 35, offset of the first
+/// numeral)`. Only the two spellings the corpus uses; a bare `24 contracts` is
+/// deliberately not a coverage claim.
+fn coverage_fractions(flat: &str) -> Vec<(usize, usize, usize)> {
+    /// Trailing decimal run of `s`, as `(value, byte offset it starts at)`.
+    fn trailing_number(s: &str) -> Option<(usize, usize)> {
+        let head = s.trim_end_matches(|c: char| c.is_ascii_digit());
+        if head.len() == s.len() {
+            return None;
+        }
+        s[head.len()..].parse().ok().map(|v| (v, head.len()))
+    }
+    const PAD: [char; 4] = [' ', '*', '_', '`'];
+    let lower = flat.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while let Some(rel) = lower[from..].find("contracts") {
+        let at = from + rel;
+        from = at + "contracts".len();
+        // `24 of the 35` / `24 of 35` / `24/35` / `24 out of 35`, reading
+        // right-to-left from the noun.
+        let head = lower[..at].trim_end_matches(PAD);
+        let Some((den, den_at)) = trailing_number(head) else {
+            continue;
+        };
+        let sep = head[..den_at].trim_end_matches(PAD);
+        let Some(sep) = ["of the", "out of", "of", "/"]
+            .iter()
+            .find_map(|c| sep.strip_suffix(c))
+            .map(|s| s.trim_end_matches(PAD))
+        else {
+            continue;
+        };
+        let Some((num, num_at)) = trailing_number(sep) else {
+            continue;
+        };
+        out.push((num, den, num_at));
+    }
+    out
+}

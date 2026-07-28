@@ -76,13 +76,20 @@ and `b` see the mutation.
 **Modelled only — nothing implements this direction.** The contract
 specifies how all Lean 4 constructs (`def`, `partial`, `inductive`,
 `instance`, `axiom`, …) *would* lower to Rust, the inverse of the
-Python→Lean flow, and carries 40 equations, 33 Lean refinement theorems
-and 10 Kani harnesses saying so. There is no Lean frontend: no
+Python→Lean flow, and carries 33 equations, 33 Lean refinement theorems
+and 10 Kani harnesses saying so — one theorem per equation, and a Kani
+harness on ten of them. There is no Lean frontend: no
 registered frontend claims `.lean` (see [frontends](frontends.md)), so
 `xpile transpile x.lean --target rust` exits non-zero with *"no frontend
 handles `.lean`"* and no `SourceLang::Lean` module can be produced at
 all. The proofs range over abstract models — a `LeanDef` is a byte
 array — so they hold, and they hold of nothing shipped.
+
+Through v0.1.617 the sentence above said `40 equations` — seven more than
+the contract holds, and the one number in it that was wrong INFLATED the
+proof volume of the paragraph whose point is that none of it constrains
+shipped code. `crates/xpile/tests/claims_drift.rs` now derives all three
+from the YAML (PMAT-1455).
 
 This page previously stated the lowering as present-tense fact. What
 kept that readable was the §14.4 quorum reporting `C-XLATE-LEAN-TO-RUST`

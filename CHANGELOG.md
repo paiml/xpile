@@ -7,6 +7,58 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The fleet sub-spec published the substrate's proof volume as a 2026-05-18 snapshot — and the number that replaces it is a grep artefact if you let it be (PMAT-1455)
+
+Every count below is a claim about a file this repository owns, so every one of
+them is derivable. Four were not derived.
+
+**The book, and the direction is the finding.**
+`book/src/reference/contracts.md` said `C-XLATE-LEAN-TO-RUST` *"carries 40
+equations, 33 Lean refinement theorems and 10 Kani harnesses saying so"*. It
+carries **33** equations. The other two numbers were right — 33 `lean_theorem:`
+and 10 `kani_harness:` citations are exactly what it holds — so the page
+asserted **seven more equations than theorems** where in fact every equation has
+one. That paragraph exists to disclose that nothing implements the contract
+(*"they hold, and they hold of nothing shipped"*), and the single number it got
+wrong **inflated the proof volume it was in the middle of disclosing**.
+
+**The sub-spec that grades this repo.** `docs/specifications/sub/kaizen-fleet.md`
+— the sub-spec `xpile-spec.md` §20 points at for kaizen-fleet membership —
+published the 2026-05-18 tally in the **present tense**: *"260 Lean refinement
+theorems … in `contracts/lean/` + 43 Kani BMC harnesses in `contracts/kani/` =
+303 stratum-vote artifacts"*, and *"every contract in the substrate (12 of 12)
+has a Kani BMC harness on every PR"*. Live: **489**, **95**, **584**, and **24 of
+35**. The tally understated the substrate roughly two-fold while the *coverage*
+clause overstated it — a harness asserted for eleven contracts that have none.
+`docs/specifications/audit-design.md` carried the same tally and the same
+directory attribution.
+
+**And the replacement number is a grep artefact if you let it be.** The ratified
+sprint plan, under the heading *"What the note may honestly claim"* — the text
+scheduled to become Friday's release body — said **"101 Kani harnesses"**. 101 is
+`grep -c '#[kani::proof]'`, and six of those occurrences are inside `//!` module
+docs *explaining what a harness is*. 95 are attributes on a function. The same
+shape inflates the Lean side by 23: a naive `grep` over `contracts/lean/` answers
+512, and twenty-three of those lines are English inside `/-- … -/` docstrings —
+`XlateLeanToRust.lean` has *"Locked-in by the refinement / theorem below — any
+emitter that …"*, whose second line begins with the word `theorem` followed by an
+identifier-shaped word. **A naive grep counts prose about theorems as theorems,
+and it over-counts in the flattering direction.** Both derivations strip comments
+before counting; perturbing them back to naive reds the corrected prose.
+
+**Gated** by two tests in `crates/xpile/tests/claims_drift.rs`: a count
+attributed to a named contract must equal that contract's YAML, and a count
+attributed to `contracts/lean/` or `contracts/kani/` must equal what the
+directory holds (plus an `N of M contracts` coverage arm). Conflating the two
+populations is the first trap — a contract's 10 `kani_harness:` *citations* are
+not the 13 `#[kani::proof]` *functions* in its harness file.
+
+One guard did not survive its own red half: deleting the `Lean 4`
+version-numeral discriminator left the whole suite green, because both live
+sites are unrouted for an unrelated reason. The anti-vacuity assertion was
+reworded to claim only what it proves, and the routed arrangement the corpus
+does not contain is constructed in a unit test instead.
+
 ### The release runbook cited a line number, and the text at that line was the warning that the runbook was wrong (PMAT-1453)
 
 PMAT-1373 — the Thursday tag-cut item — opened with:
