@@ -94,18 +94,41 @@ fn lakefile_root_count() -> usize {
 /// Every integer `N` such that `{prefix}{N}{suffix}` occurs in `text`.
 /// Anchored substring parsing (no `regex` dep), the same style as the
 /// lakefile parser.
-/// Every depth a piece of prose claims to be UNIVERSAL, in both spellings the
-/// corpus uses: `depth-N UNIVERSAL` and the RANGE form `depth-A..B UNIVERSAL`.
+/// Every depth a piece of prose claims to be UNIVERSAL, in all THREE spellings
+/// the corpus uses: the plain `depth-N UNIVERSAL`, the RANGE form
+/// `depth-A..B UNIVERSAL`, and the SLASH-LIST form
+/// `depth-A/B/C/… UNIVERSAL`.
 ///
-/// A range claims its UPPER end — "depth-1..13 UNIVERSAL" asserts that every
-/// contract carries at least thirteen Diamond categories, not at least one — so
-/// that is what is returned. A trailing `+` (`depth-13+ UNIVERSAL`) is the same
-/// claim as `depth-13`.
+/// A range and a slash list each claim their LARGEST member —
+/// "depth-1..13 UNIVERSAL" and "depth-1/2/…/13 UNIVERSAL" both assert that
+/// every contract carries at least thirteen Diamond categories, not at least
+/// one — so that is what is returned. A trailing `+` (`depth-13+ UNIVERSAL`)
+/// is the same claim as `depth-13`.
 ///
 /// PMAT-1448: the caller used `counts_between(.., "depth-", " UNIVERSAL")`,
-/// which cannot match a range, and the range is the spelling the falsehood
+/// which cannot match a range, and the range is the spelling that falsehood
 /// actually used.
+///
+/// PMAT-1450: the repair was still one spelling short of the corpus. The
+/// canonical spec's instance — `xpile-spec.md`'s description of what the
+/// Diamond CI gate enforces — is written
+/// `depth-1/2/3/4/5/6/7/8/9/10/11/12/13 UNIVERSAL (all 12 contracts)`, and
+/// `claimed_universal_depths` scored it ZERO: only the final `13` is followed
+/// by ` UNIVERSAL`, and it is not preceded by `depth-`. Measured control, on
+/// the tree that carried it: the PMAT-1448 parser returns `[]` for that line
+/// and this one returns `[13]`. Ask what the DEFECT spells, every time — the
+/// answer has now been a different spelling twice running.
 fn claimed_universal_depths(text: &str) -> Vec<usize> {
+    claimed_universal_depths_at(text)
+        .into_iter()
+        .map(|(d, _)| d)
+        .collect()
+}
+
+/// As [`claimed_universal_depths`], plus the byte offset of each claim's
+/// `depth-` prefix — needed to ask whether the claim sits inside a QUOTED span
+/// (see [`quoted_spans`]).
+fn claimed_universal_depths_at(text: &str) -> Vec<(usize, usize)> {
     const PREFIX: &str = "depth-";
     let bytes = text.as_bytes();
     let digits_at = |i: &mut usize| -> Option<usize> {
@@ -122,7 +145,8 @@ fn claimed_universal_depths(text: &str) -> Vec<usize> {
     let mut out = Vec::new();
     let mut from = 0usize;
     while let Some(rel) = text[from..].find(PREFIX) {
-        let mut i = from + rel + PREFIX.len();
+        let at = from + rel;
+        let mut i = at + PREFIX.len();
         from = i; // prefix is non-empty ⇒ strictly advances
         let Some(low) = digits_at(&mut i) else {
             continue;
@@ -135,38 +159,152 @@ fn claimed_universal_depths(text: &str) -> Vec<usize> {
                 i = j;
             }
         }
+        // Slash list: `depth-1/2/…/13`. Consume every `/<digits>` run and keep
+        // the largest, so the claim is read at its strongest.
+        while text[i..].starts_with('/') {
+            let mut j = i + 1;
+            let Some(next) = digits_at(&mut j) else { break };
+            claimed = claimed.max(next);
+            i = j;
+        }
         if text[i..].starts_with('+') {
             i += 1;
         }
         if text[i..].trim_start().starts_with("UNIVERSAL") {
-            out.push(claimed);
+            out.push((claimed, at));
         }
     }
     out
 }
 
-/// A file split into blank-line-delimited paragraphs, as (starting line number,
-/// flattened text). A claim and its denial are a paragraph apart, not a line
-/// apart — and a claim can WRAP across the line break inside one.
-fn paragraphs(body: &str) -> Vec<(usize, String)> {
-    let mut out = Vec::new();
-    let mut start = 1usize;
-    let mut buf: Vec<&str> = Vec::new();
-    for (i, line) in body.lines().enumerate() {
-        if line.trim().is_empty() {
-            if !buf.is_empty() {
-                out.push((start, buf.join(" ")));
-                buf.clear();
+/// Byte ranges of `"…"` and `` `…` `` spans in `text` — the two ways this
+/// corpus quotes a sentence it is reporting rather than making.
+///
+/// PMAT-1450: PMAT-1448's denial rule is paragraph-scoped, and its comment says
+/// "prose may QUOTE a falsehood … but it may not assert one" — but the code
+/// only checked that a denial phrase appeared SOMEWHERE in the paragraph, so a
+/// paragraph that legitimately quotes a retired claim became permanently exempt
+/// and could assert a live one alongside it. Found by running the red half
+/// against this slice's OWN repair: the corrected `xpile-spec.md` bullet quotes
+/// the retired wording and says "used to", and re-asserting the falsehood in
+/// that same bullet left the gate GREEN. A disclosure in front of a false pass
+/// is still a false pass.
+fn quoted_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    for delim in ['"', '`'] {
+        let mut open: Option<usize> = None;
+        for (i, c) in text.char_indices() {
+            if c != delim {
+                continue;
             }
-        } else {
-            if buf.is_empty() {
-                start = i + 1;
+            match open {
+                None => open = Some(i),
+                Some(start) => {
+                    spans.push((start, i + c.len_utf8()));
+                    open = None;
+                }
             }
-            buf.push(line);
         }
     }
+    spans
+}
+
+/// The marker that declares a documentation SECTION to be a dated record of
+/// what was once true rather than a description of the live system.
+///
+/// PMAT-1450: it is section-scoped, and deliberately not sentence-scoped. The
+/// milestone enumerations in `sub/diamond-taxonomy.md` and `xpile-spec.md` §28
+/// are 40+ consecutive bullets inside ONE blank-line-delimited paragraph, so a
+/// paragraph-scoped denial would have let a single clause whitewash the lot.
+/// A heading is also the unit a READER sees before the list, which is the
+/// point: the framing has to be visible without scrolling into it.
+const HISTORICAL_MARKER: &str = "(historical record)";
+
+/// One blank-line-delimited paragraph of a markdown file.
+struct Para {
+    /// 1-based line number the paragraph starts on.
+    start: usize,
+    /// The paragraph's lines joined with a single space — a claim can WRAP
+    /// across a line break, so the scan runs over this, not over lines.
+    flat: String,
+    /// The nearest preceding ATX heading.
+    heading: String,
+    /// The source lines, so a byte offset into `flat` can be attributed back to
+    /// the line that actually carries it.
+    lines: Vec<(usize, String)>,
+}
+
+impl Para {
+    /// The 1-based line number and text of the line containing byte offset
+    /// `at` in [`Self::flat`]. `flat` is `lines.join(" ")`, so the mapping is
+    /// exact: each line contributes its own length plus one for the join.
+    fn line_at(&self, at: usize) -> (usize, &str) {
+        let mut consumed = 0usize;
+        for (n, l) in &self.lines {
+            let end = consumed + l.len();
+            if at < end {
+                return (*n, l);
+            }
+            consumed = end + 1; // the joining space
+        }
+        self.lines
+            .last()
+            .map(|(n, l)| (*n, l.as_str()))
+            .unwrap_or((self.start, ""))
+    }
+}
+
+/// A file split into paragraphs, each carrying the nearest preceding ATX
+/// heading. A heading is a hard paragraph break, and is itself yielded so a
+/// claim written INTO a heading is still scanned.
+fn paragraphs_under_headings(body: &str) -> Vec<Para> {
+    let mut out = Vec::new();
+    let mut start = 1usize;
+    let mut buf: Vec<(usize, String)> = Vec::new();
+    let mut heading = String::new();
+    for (i, line) in body.lines().enumerate() {
+        let t = line.trim_start();
+        let is_heading = t.starts_with('#') && t.trim_start_matches('#').starts_with(' ');
+        if line.trim().is_empty() || is_heading {
+            if !buf.is_empty() {
+                out.push(Para {
+                    start,
+                    flat: buf
+                        .iter()
+                        .map(|(_, l)| l.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    heading: heading.clone(),
+                    lines: std::mem::take(&mut buf),
+                });
+            }
+            if is_heading {
+                heading = t.to_string();
+                out.push(Para {
+                    start: i + 1,
+                    flat: t.to_string(),
+                    heading: heading.clone(),
+                    lines: vec![(i + 1, t.to_string())],
+                });
+            }
+            continue;
+        }
+        if buf.is_empty() {
+            start = i + 1;
+        }
+        buf.push((i + 1, line.to_string()));
+    }
     if !buf.is_empty() {
-        out.push((start, buf.join(" ")));
+        out.push(Para {
+            start,
+            flat: buf
+                .iter()
+                .map(|(_, l)| l.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+            heading,
+            lines: buf,
+        });
     }
     out
 }
@@ -846,6 +984,57 @@ fn book_pages() -> Vec<(String, String)> {
     out
 }
 
+/// Every prose page whose subject is the system AS IT IS NOW: the book, the
+/// canonical specification set, the status index, and the two root-level files
+/// a reader or an agent session opens first.
+///
+/// PMAT-1450: the universal-depth gate's subject was `book_pages()` alone, and
+/// the falsehood it exists to kill was published in `docs/specifications/` —
+/// which `CLAUDE.md` names as the canonical design. A CLAIM CLASS IS NOT A
+/// DIRECTORY (PMAT-1438), and the book is not the only publisher (PMAT-1447).
+///
+/// What is deliberately OUT, and why each is a record rather than a claim:
+///   * `CHANGELOG.md` and `docs/status/2026-*.md` — dated release/status logs.
+///     "v0.1.0 — 12 contracts at depth-13 UNIVERSAL" was true of v0.1.0 and
+///     stays true of it. Same justification as the `book/src/changelog.md`
+///     exemption below, which is checked structurally there.
+///   * `docs/roadmaps/*.yaml` — work-item ledgers; every entry is scoped to the
+///     slice that wrote it.
+///   * `contracts/**` — per-Diamond provenance comments naming the PMAT id that
+///     added that equation.
+///
+/// Prose that describes the CURRENT substrate belongs in the set above; if a
+/// page moves out of it to dodge this gate, that is the drift, not the fix.
+fn claim_pages() -> Vec<(String, String)> {
+    let root = workspace_root();
+    let mut out = book_pages();
+    for rel in ["README.md", "CLAUDE.md", "docs/status/INDEX.md"] {
+        let body = fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+        out.push((rel.to_string(), body));
+    }
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let entries =
+            fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+        let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        paths.sort(); // deterministic order, so a failure message is stable
+        for p in paths {
+            if p.is_dir() {
+                walk(&p, root, out);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("md") {
+                let rel = p
+                    .strip_prefix(root)
+                    .expect("spec page under workspace root")
+                    .to_string_lossy()
+                    .into_owned();
+                let body = fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+                out.push((rel, body));
+            }
+        }
+    }
+    walk(&root.join("docs/specifications"), &root, &mut out);
+    out
+}
+
 /// REGISTRY KEYS of every registered backend — `Backend::name()`, what
 /// `xpile info` prints under `backends (N)`, read from the same
 /// `default_session()` the CLI dispatches through. PMAT-1430: this was named
@@ -1294,8 +1483,31 @@ fn book_claims_no_total_quorum_while_any_contract_is_partial() {
 ///
 /// Derived from `xpile diamond --json`, so it tracks the substrate instead of
 /// pinning a milestone.
+///
+/// PMAT-1450 — WHAT THIS GATE COULD NOT SEE, on two independent axes:
+///   * SUBJECT. It ranged over `book_pages()`. The canonical specification set
+///     — the documents `CLAUDE.md` names as the design of record — was not in
+///     it, and carried 73 instances: `xpile-spec.md` §23's status list
+///     ("Eleven UNIVERSAL Diamond milestones depth-3..13 … 171 wired Diamond
+///     theorems across 12 contracts", under a ✅), §28's coverage table (12
+///     rows of "12/12 contracts (UNIVERSAL)"), and
+///     `sub/diamond-taxonomy.md`'s "CI enforcement" section, which listed
+///     twelve UNIVERSAL assertions as things the gate enforces.
+///   * SPELLING. `xpile-spec.md`'s description of the CI gate is written
+///     `depth-1/2/3/4/5/6/7/8/9/10/11/12/13 UNIVERSAL (all 12 contracts)`,
+///     which the PMAT-1448 parser scored at ZERO claims — the same failure
+///     PMAT-1448 was itself written to repair, in a third spelling.
+///
+/// The published claims were false three ways at once: the substrate is 35
+/// contracts, not 12; its live universal depth is 1 (21 contracts carry a
+/// single Diamond); and PMAT-475 REPLACED the aggregate depth-2..13 gates with
+/// a floor over a named 13-contract cohort, so no gate has enforced depth-2
+/// universally since. PMAT-1448 corrected `diamond_coverage.rs`'s own module
+/// header to say exactly that — and left both published descriptions of that
+/// same file untouched, 130 and 500 lines away in other trees. A fix scoped to
+/// the site carries the class forward.
 #[test]
-fn book_claims_no_universal_depth_the_substrate_does_not_hold() {
+fn docs_claim_no_universal_depth_the_substrate_does_not_hold() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_xpile"))
         .args(["diamond", "--json", "--contracts-dir"])
         .arg(workspace_root().join("contracts"))
@@ -1342,6 +1554,22 @@ fn book_claims_no_universal_depth_the_substrate_does_not_hold() {
         claimed_universal_depths("depth-13 coverage over the core").is_empty(),
         "`depth-N` without the word UNIVERSAL is not a universality claim"
     );
+    // PMAT-1450 — the SLASH-LIST spelling, verbatim from the line in
+    // `xpile-spec.md` §29 that this repair was written against. The PMAT-1448
+    // parser returned `[]` here: only the trailing `13` precedes ` UNIVERSAL`,
+    // and `depth-` precedes the `1`.
+    assert_eq!(
+        claimed_universal_depths(
+            "depth-1/2/3/4/5/6/7/8/9/10/11/12/13 UNIVERSAL (all 12 contracts)"
+        ),
+        vec![13],
+        "the SLASH-LIST spelling must be matched, and must claim its LARGEST member"
+    );
+    assert_eq!(claimed_universal_depths("depth-3/1/2 UNIVERSAL"), vec![3]);
+    assert!(
+        claimed_universal_depths("depth-1/2/3 categories per contract").is_empty(),
+        "a slash list without the word UNIVERSAL is not a universality claim"
+    );
 
     // A claim of the form "depth-N UNIVERSAL", or the range spelling
     // "depth-A..B UNIVERSAL", for a depth the substrate does not hold.
@@ -1350,42 +1578,80 @@ fn book_claims_no_universal_depth_the_substrate_does_not_hold() {
     // WRAPS between `depth-1..13` and `UNIVERSAL`, so a line-oriented scan
     // cannot see it at all and a reflow would silently change the verdict.
     let mut offences = Vec::new();
-    let mut mentions = 0usize;
-    for (rel, body) in book_pages() {
-        for (line_no, para) in paragraphs(&body) {
-            for claimed in claimed_universal_depths(&para) {
-                mentions += 1;
+    let mut undated_mentions = 0usize;
+    let mut historical = Vec::new();
+    let mut pages_scanned = 0usize;
+    for (rel, body) in claim_pages() {
+        pages_scanned += 1;
+        for para in paragraphs_under_headings(&body) {
+            let in_record = para.heading.contains(HISTORICAL_MARKER);
+            let spans = quoted_spans(&para.flat);
+            for (claimed, at) in claimed_universal_depths_at(&para.flat) {
+                let (line_no, line) = para.line_at(at);
+                if in_record {
+                    // A dated record names the slice it records. Checked on the
+                    // claim's OWN LINE, not its paragraph: these lists are 20+
+                    // consecutive bullets in ONE paragraph, so a paragraph-scoped
+                    // check is satisfied by a neighbour and bites nothing. Its
+                    // red half proved exactly that before it was tightened.
+                    assert!(
+                        !pmat_ids(line).is_empty(),
+                        "{rel}:{line_no}: sits under a `{HISTORICAL_MARKER}` heading \
+                         ({:?}) and claims depth-{claimed} UNIVERSAL without citing a \
+                         PMAT id on its own line. A record of what was once true says \
+                         WHEN; otherwise write it as a live claim and make it true.\n\
+                         line: {line}",
+                        para.heading
+                    );
+                    historical.push(format!("{rel}:{line_no}"));
+                    continue;
+                }
+                undated_mentions += 1;
                 if claimed <= universal {
                     continue;
                 }
                 // A mention is honest iff its own paragraph marks the claim as
-                // superseded. Prose may QUOTE a falsehood — the Diamond page
-                // does, on purpose — but it may not assert one.
-                let lower = para.to_lowercase();
+                // superseded AND the claim itself sits inside a quoted span.
+                // Prose may QUOTE a falsehood — the Diamond page does, on
+                // purpose — but it may not assert one, and PMAT-1450 found that
+                // the denial phrase alone exempted the whole paragraph
+                // including anything newly asserted in it.
+                let lower = para.flat.to_lowercase();
                 let denied = lower.contains("this page said")
                     || lower.contains("used to")
                     || lower.contains("no longer")
                     || lower.contains("stopped describing")
                     || lower.contains("does not hold");
-                if !denied {
+                let quoted = spans.iter().any(|&(s, e)| at >= s && at < e);
+                if !(denied && quoted) {
                     offences.push(format!("{rel}:{line_no}: claims depth-{claimed} UNIVERSAL"));
                 }
             }
         }
     }
     assert!(
-        mentions > 0,
-        "no `depth-N UNIVERSAL` claim occurs anywhere in book/src, so this gate is \
-         ranging over nothing (PMAT-1396: a negative over an empty enumeration passes \
-         for free). The Diamond page's disclosure should supply at least one."
+        pages_scanned > 1,
+        "claim_pages() returned {pages_scanned} page(s) — the corpus walk broke"
+    );
+    assert!(
+        undated_mentions > 0,
+        "every `depth-N UNIVERSAL` mention in the corpus now sits under a \
+         `{HISTORICAL_MARKER}` heading ({} of them), so this gate is ranging over \
+         nothing (PMAT-1396: a negative over an empty enumeration passes for free). \
+         The marker has swallowed the subject — a live statement of the substrate's \
+         actual universal depth belongs somewhere in the docs.",
+        historical.len()
     );
     assert!(
         offences.is_empty(),
-        "the book claims a UNIVERSAL depth the substrate does not hold — {} — \
+        "the docs claim a UNIVERSAL depth the substrate does not hold — {} — \
          but the shallowest contract carries {universal} Diamond \
          categor{}, so depth-{universal} is the live universal depth. Say \
-         which SUBSET is deep, or lift the shallow contracts.",
+         which SUBSET is deep, lift the shallow contracts, or move the sentence \
+         under a `{HISTORICAL_MARKER}` heading if it is a dated record. \
+         ({} mention(s) already are.)",
         offences.join(", "),
-        if universal == 1 { "y" } else { "ies" }
+        if universal == 1 { "y" } else { "ies" },
+        historical.len()
     );
 }

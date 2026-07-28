@@ -21352,3 +21352,75 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1450
+  title: 'PMAT-1450: [docs+gate+honesty] the CANONICAL SPEC published depth-2..13 UNIVERSAL as a
+    present-tense property of "all 12 contracts" and named a CI gate that enforces it -- the
+    substrate is 35 contracts at universal depth 1, PMAT-475 retired those gates 400 slices ago,
+    and the honesty gate written for exactly this claim could see none of it, on TWO axes at once.
+
+    ** THE DEFECT, MEASURED. `xpile diamond` on this tree: 207 Diamond theorems across 35
+    contracts; depth-1+ = 35 (universal), depth-2+ = 14. Published as current, in the documents
+    CLAUDE.md names as the design of record: xpile-spec.md §23 ("Eleven UNIVERSAL Diamond
+    milestones depth-3..13 ... 171 wired Diamond theorems across 12 contracts", under a green
+    tick), §28 ("Eleven UNIVERSAL milestones NOW HOLD ... every contract has >=13 Diamond
+    categories"), its 12-row coverage table ("12/12 contracts (UNIVERSAL)"), §28 Tooling, and
+    sub/diamond-taxonomy.md -- whose "## CI enforcement" section listed TWELVE further UNIVERSAL
+    assertions as things `diamond_coverage.rs` enforces. It enforces exactly ONE universally
+    (depth-1); depths 2..13 are a floor over the 13 contracts NAMED in GRANDFATHERED_DEPTH13,
+    which is the whole point of R6/PMAT-475 (a 14th contract must not cost 13 Diamond theorems).
+    78 claim sites across 8 files.
+
+    ** WHY THE GATE COULD NOT SEE IT -- BOTH HALVES CONFIRMED BY CONTROL.
+    (1) SUBJECT: `book_claims_no_universal_depth_the_substrate_does_not_hold` ranged over
+    `book_pages()`. docs/specifications was not in it. CONTROL: narrow the corpus back to
+    `book_pages()` with the falsehood restored -> the test PASSES.
+    (2) SPELLING: the spec writes it `depth-1/2/3/4/5/6/7/8/9/10/11/12/13 UNIVERSAL (all 12
+    contracts)` -- a SLASH LIST. PMAT-1448 taught the parser the RANGE spelling `depth-1..13`
+    two days earlier for exactly this reason and scored the slash list at ZERO. CONTROL: restore
+    the PMAT-1448 parser verbatim with the falsehood present -> the test PASSES. ★ Ask what the
+    DEFECT spells, not what the fix spells -- the answer has now been a different spelling twice
+    running, in consecutive slices.
+
+    ** ⭐ THE RED HALF REFUTED THIS SLICE''S OWN FIRST FIX. The repaired spec bullet quotes the
+    retired wording and says "used to" -- and PMAT-1448''s denial rule is PARAGRAPH-scoped, so
+    re-asserting the falsehood in that same bullet left the gate GREEN. A disclosure in front of
+    a false pass is still a false pass (playbook 1), and here the disclosure was mine. Fixed by
+    implementing what PMAT-1448''s comment already CLAIMED -- "prose may QUOTE a falsehood but
+    may not assert one" -- as a structural test: a denied claim must sit inside a `"..."` or
+    backtick span. That immediately caught a SEVENTH file, audit-design.md:194, exempt because
+    an unrelated "no longer" sat elsewhere in its paragraph.
+
+    ** ⭐ AND THE RED HALF REFUTED THE ANTI-WHITEWASH GUARD TOO. The `(historical record)` heading
+    marker requires each exempt claim to cite a PMAT id. Paragraph-scoped, that guard did not
+    bite: these milestone lists are 20+ consecutive bullets in ONE paragraph, so a neighbour
+    satisfies it. Its red half PASSED. Re-scoped to the claim''s OWN LINE (exact byte-offset ->
+    line attribution over the flattened paragraph, so wrapped claims still scan) it reds, and
+    finding the one bullet that then had no citation added a real one (PMAT-214..226).
+
+    ** THE FIX. Parser learns the slash list (claims its LARGEST member). Subject widens from
+    `book_pages()` to `claim_pages()` = book/src + docs/specifications + docs/status/INDEX.md +
+    README.md + CLAUDE.md, with each exclusion (CHANGELOG.md, roadmaps/*.yaml, contracts/**)
+    justified IN THE CODE as a dated record rather than by convenience. Denial now requires the
+    claim be quoted. New SECTION-scoped `(historical record)` marker -- section-scoped because a
+    sentence-scoped one cannot frame a 20-bullet list and a reader must see the framing before
+    scrolling into it. Docs repaired: the live statements now derive (`xpile diamond`) and carry
+    no transcribed cardinality; the milestone enumerations stay, correctly framed as the record
+    of the then-12-contract cohort; "## CI enforcement" now describes the grandfathered floor
+    the code actually implements.
+
+    ** RED HALVES, SIX, each ASSERTED to have applied (PMAT-1444''s no-op trap): (A) falsehood
+    re-asserted unquoted -> FAILS; (B) PMAT-1448 parser restored -> PASSES [subject-2 control];
+    (C) corpus narrowed to book_pages -> PASSES [subject-1 control]; (D) `(historical record)`
+    marker removed -> FAILS, 22 claims; (E) marked-historical claim citing no PMAT id on its
+    line -> FAILS; (F) quoted-span rule reverted -> PASSES [the hole it closes]. Control 21/21.
+
+    ** ID COLLISION: filed as PMAT-1449, renumbered to PMAT-1450 after a concurrent fire merged
+    its own PMAT-1449 (#2047) mid-slice. Resolving the ledger conflict by "keep both blocks"
+    silently absorbed this entry into that one as a DUPLICATE `title:` key -- and
+    `yaml.safe_load` accepts that, taking the last value, so a parse check does not catch it.
+    Re-applied by resetting the three ledgers to origin/main and re-appending.
+
+    ZERO contracts/*.yaml change; ZERO crates/*/src change -- docs and one gate file only.'
+  status: done
+  priority: P1
+  category: honesty

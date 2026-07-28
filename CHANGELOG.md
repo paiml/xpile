@@ -7,6 +7,76 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The canonical spec published `depth-2..13 UNIVERSAL` as a property of "all 12 contracts", and named a CI gate that enforces it (PMAT-1450)
+
+`xpile diamond`, on this tree:
+
+```
+totals: 207 Diamond theorems across 35 contracts
+  depth-1+: 35 contracts, depth-2+: 14 contracts, ...
+```
+
+Thirty-five contracts; the live **universal** depth is **1**. What
+`docs/specifications/` said, in the documents `CLAUDE.md` names as the design
+of record:
+
+| Site | Published |
+|---|---|
+| `xpile-spec.md` §23 | "Eleven UNIVERSAL Diamond milestones depth-3..13 … **171 wired Diamond theorems** across 12 contracts", under a ✅ |
+| `xpile-spec.md` §28 | "**Eleven UNIVERSAL milestones now hold** … every contract has ≥13 Diamond categories" |
+| `xpile-spec.md` §28 table | twelve rows of "12/12 contracts (UNIVERSAL)" |
+| `xpile-spec.md` §28 Tooling | "**22 integration tests** enforce depth-1/2/…/13 UNIVERSAL (all 12 contracts)" |
+| `sub/diamond-taxonomy.md` | "## CI enforcement" listing **twelve** UNIVERSAL assertions as things the gate enforces |
+
+`diamond_coverage.rs` enforces exactly **one** thing universally — every
+contract carries ≥1 Diamond. Depths 2..13 are a floor over the thirteen
+contracts *named* in `GRANDFATHERED_DEPTH13`, which is the entire point of
+R6/PMAT-475: before it, adding a fourteenth contract cost thirteen Diamond
+theorems, and that treadmill was blocking contract authoring outright.
+PMAT-1448 corrected that file's own module header two days ago and left both
+published descriptions of it standing. **A fix scoped to the site carries the
+class forward.** 78 claim sites across 8 files.
+
+**Why the honesty gate for this exact claim saw none of it — both halves
+confirmed by control, not argued:**
+
+- **Subject.** `book_claims_no_universal_depth_the_substrate_does_not_hold`
+  ranged over `book_pages()`. Narrow the corpus back to `book_pages()` with the
+  falsehood restored and **the test passes.**
+- **Spelling.** The spec writes it `depth-1/2/3/4/5/6/7/8/9/10/11/12/13
+  UNIVERSAL` — a *slash list*. PMAT-1448 taught the parser the *range* spelling
+  `depth-1..13` for precisely this failure mode, two days earlier. Restore the
+  PMAT-1448 parser verbatim with the falsehood present and **the test passes.**
+  Ask what the *defect* spells, not what the fix spells — the answer has now
+  been a different spelling in two consecutive slices.
+
+**The red half refuted this slice's own first fix, twice.** The repaired spec
+bullet quotes the retired wording and says "used to" — and the denial rule is
+*paragraph*-scoped, so re-asserting the falsehood inside that same bullet left
+the gate green. A disclosure in front of a false pass is still a false pass,
+and this time the disclosure was the fix's. Closed by implementing what
+PMAT-1448's own comment already claimed — "prose may QUOTE a falsehood … but it
+may not assert one" — as structure: a denied claim must sit inside a `"…"` or
+backtick span. That immediately surfaced a seventh file (`audit-design.md:194`,
+exempt because an unrelated "no longer" sat elsewhere in its paragraph).
+Likewise the new `(historical record)` marker requires each exempt claim to
+cite a PMAT id; paragraph-scoped, that guard did not bite (these lists are 20+
+bullets in one paragraph, so a neighbour satisfies it) and **its red half
+passed**. Re-scoped to the claim's own line it reds, and the one bullet that
+then lacked a citation got a real one.
+
+**Fixed.** The parser learns the slash list. The subject widens from
+`book_pages()` to `claim_pages()` — book + `docs/specifications` +
+`docs/status/INDEX.md` + `README.md` + `CLAUDE.md` — with every exclusion
+(`CHANGELOG.md`, the roadmap ledgers, `contracts/**`) justified *in the code* as
+a dated record rather than by convenience. Live statements now derive from
+`xpile diamond` and transcribe no cardinality; the milestone enumerations stay,
+framed as the record of the then-12-contract cohort under `(historical record)`
+headings; "## CI enforcement" now describes the grandfathered floor the code
+actually implements. Six red halves, each asserted to have applied; control
+21/21. No `contracts/*.yaml` change and no `crates/*/src` change — docs and one
+gate file.
+
 ### The release runbook told Thursday's operator to publish a false statement about what CI enforces (PMAT-1449)
 
 Two work items mandate the content of the v0.1.618 release body. Both required

@@ -73,6 +73,53 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1450
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the CANONICAL SPEC published depth-2..13 UNIVERSAL as a present-tense property of "all 12 contracts" and named a CI gate that enforces it; the gate written for exactly that claim could see neither the file nor the spelling'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1448 standing lead (c) -- audit every gate whose needle is a SPELLING
+    rather than a structure; `counts_between` has other callers.
+    ** MEASURED. `xpile diamond`: 207 Diamonds across 35 contracts; depth-1+ = 35 (universal),
+    depth-2+ = 14. docs/specifications published, as current: "Eleven UNIVERSAL milestones NOW
+    HOLD ... every contract has >=13 Diamond categories" (spec §28), a 12-row table of "12/12
+    contracts (UNIVERSAL)", and TWO descriptions of `diamond_coverage.rs` enforcing depth-2..13
+    UNIVERSAL. It enforces ONE thing universally (depth-1); 2..13 are a floor over the 13
+    contracts NAMED in GRANDFATHERED_DEPTH13 -- PMAT-475 retired the aggregate gates 400 slices
+    ago, and PMAT-1448 fixed that file''s OWN header two days ago while leaving both published
+    descriptions of it standing. 78 sites, 8 files.
+    ** ⭐ THE GATE WAS BLIND ON TWO INDEPENDENT AXES, EACH CONFIRMED BY A CONTROL THAT PASSES:
+    (1) its subject was `book_pages()` -- narrow it back with the falsehood restored and the test
+    PASSES; (2) the spec spells it `depth-1/2/.../13 UNIVERSAL`, a SLASH LIST, and the parser
+    PMAT-1448 repaired for the RANGE spelling scores it ZERO -- restore that parser verbatim and
+    the test PASSES. Two consecutive slices, two different unmatched spellings.
+    ** ⭐⭐ THE RED HALF REFUTED THIS SLICE''S OWN FIX, TWICE. (a) The repaired bullet quotes the
+    retired wording and says "used to"; the denial rule is PARAGRAPH-scoped, so re-asserting the
+    falsehood in that same bullet left the gate GREEN -- my own disclosure in front of my own
+    false pass. Closed by implementing what PMAT-1448''s comment already CLAIMED ("prose may
+    QUOTE a falsehood but may not assert one") as structure: a denied claim must sit inside a
+    quoted span. That caught a 7th file immediately (audit-design.md:194, exempt because an
+    unrelated "no longer" sat elsewhere in its paragraph). (b) The `(historical record)` marker''s
+    anti-whitewash guard (each exempt claim cites a PMAT id) was paragraph-scoped and its red
+    half PASSED -- these lists are 20+ bullets in ONE paragraph, so a neighbour satisfies it.
+    Re-scoped to the claim''s OWN LINE via exact byte-offset -> line attribution.
+    ** ⚠️ ID COLLISION + A LEDGER-MERGE TRAP. Filed as PMAT-1449; a concurrent fire merged its own
+    PMAT-1449 (#2047) mid-slice. Resolving the rebase conflict by "keep both blocks" absorbed
+    this entry into that one as a DUPLICATE `title:` key -- and yaml.safe_load ACCEPTS that,
+    taking the last value, so the parse check passed on a corrupted ledger. Reset the three
+    ledgers to origin/main and re-appended. A YAML parse check is not an entry-count check.
+    ** STANDING LEADS. (a) install `ruchy` in a CI job -- OWNER-GATED. (b) the PER-INPUT
+    disposition granularity PMAT-1442 disclosed rather than fixed. (c) ⭐ CARRY THE SUBJECT
+    QUESTION FORWARD: every OTHER gate in claims_drift.rs still reads `book_pages()` --
+    `book_claims_no_total_quorum_while_any_contract_is_partial` among them. Ask of each whether
+    its RULE stops at the book. (d) `counts_between` remains the needle for 4 more claims
+    (PROVABILITY-INVENTORY module counts, the roadmap Lean-module count, the quorum PARTIAL
+    tally); each is anchor-guarded against vacuity but only for ONE spelling apiece.
+    NEXT FREE ID IS PMAT-1451. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
+    HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.
+    A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 - id: PMAT-1449
   status: done
   ev_rank: R1
