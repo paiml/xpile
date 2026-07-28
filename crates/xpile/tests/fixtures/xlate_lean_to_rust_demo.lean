@@ -1,7 +1,15 @@
 /-
-  PMAT-124 — Runtime witness for the Lean → Rust translation.
+  PMAT-124 / PMAT-1432 — shape demo (NOT a witness) for the Lean → Rust translation.
 
-  Provides a Runtime-stratum vote for:
+  xpile-runtime-vote: none.
+
+  NO test loads this file, so it casts NO Runtime-stratum vote
+  (PMAT-1432). Until PMAT-1432 it did, because the fixture pass of
+  `xpile quorum` counted any file that merely CONTAINED a contract
+  ID. Wiring a test that loads this file by name is what turns it
+  into evidence; on its own it documents a shape, nothing more.
+
+  Shape documented, for:
     C-XLATE-LEAN-TO-RUST
 
   Small Lean 4 source designed to be parsed by a future

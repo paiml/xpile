@@ -144,6 +144,22 @@ enum Cmd {
         /// the `RUNTIME_PROBES` — naming the ID alone is not execution.
         #[arg(long, default_value = "crates/xpile-wasm-codegen/tests")]
         witness_dir: Vec<PathBuf>,
+        /// Directory whose `*.rs` sources are searched (recursively) for the
+        /// NAME of a fixture, deciding whether that fixture is loaded by a
+        /// test (repeatable). A fixture under `--fixtures-dir` casts a Runtime
+        /// vote only when some source here or under a `--witness-dir` names
+        /// it — naming the contract ID inside the fixture is not evidence that
+        /// anything runs it (PMAT-1432). The `--fixtures-dir` subtree itself is
+        /// excluded, so a `.rs` fixture cannot vote for itself.
+        ///
+        /// Defaults to `--fixtures-dir`'s PARENT rather than to a literal path.
+        /// A literal `crates/xpile/tests` default is CWD-relative, and every
+        /// in-tree caller runs `quorum` with CWD = the crate dir and an
+        /// ABSOLUTE `--fixtures-dir`; the two would not have pointed at the
+        /// same tree, silently zeroing the whole fixture pass. Deriving it
+        /// keeps the pair consistent however the caller spells the corpus.
+        #[arg(long)]
+        fixture_loader_dir: Vec<PathBuf>,
         #[arg(long, default_value = "docs/roadmaps/roadmap.yaml")]
         roadmap: PathBuf,
         #[arg(long)]
@@ -236,9 +252,17 @@ fn main() -> Result<()> {
             contracts_dir,
             fixtures_dir,
             witness_dir,
+            fixture_loader_dir,
             roadmap,
             json,
-        } => quorum(&contracts_dir, &fixtures_dir, &witness_dir, &roadmap, json),
+        } => quorum(
+            &contracts_dir,
+            &fixtures_dir,
+            &witness_dir,
+            &fixture_loader_dir,
+            &roadmap,
+            json,
+        ),
         Cmd::Diamond {
             contracts_dir,
             json,
@@ -2862,6 +2886,7 @@ fn quorum(
     contracts_dir: &Path,
     fixtures_dir: &Path,
     witness_dirs: &[PathBuf],
+    loader_dirs: &[PathBuf],
     roadmap_path: &Path,
     json: bool,
 ) -> Result<()> {
@@ -2902,6 +2927,37 @@ fn quorum(
             fixtures_dir.display()
         );
     }
+    // PMAT-1432: with no `--fixture-loader-dir`, the roots are `--fixtures-dir`'s
+    // parent. See the flag's doc comment: a literal relative default and an
+    // absolute `--fixtures-dir` would point at different trees and zero the
+    // fixture pass silently — which is how this fell over the first time.
+    let derived_loader_dirs: Vec<PathBuf> = if loader_dirs.is_empty() {
+        fixtures_dir
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| vec![p.to_path_buf()])
+            .unwrap_or_default()
+    } else {
+        loader_dirs.to_vec()
+    };
+    // The THIRD half of the same asymmetry. A `--fixture-loader-dir` that does
+    // not exist makes every fixture look unloaded, dropping the whole Pass A
+    // stratum at exit 0 — the mirror of PMAT-1386's missing-fixtures-dir hole,
+    // and the direction that UNDER-reports. Same posture, same wording.
+    for dir in &derived_loader_dirs {
+        if !dir.is_dir() {
+            eprintln!(
+                "xpile quorum: notice — --fixture-loader-dir {} is not a directory; \
+                 no fixture is counted as loaded from it",
+                dir.display()
+            );
+        }
+    }
+    // PMAT-1432: the fixture half of the Runtime stratum is gated on a test
+    // actually NAMING the fixture. Derived ONCE for the whole corpus — the
+    // scan is over Rust sources, not contracts, so it does not vary by row.
+    let loaded_fixtures =
+        referenced_fixture_names(fixtures_dir, &derived_loader_dirs, witness_dirs);
     let mut rows: Vec<QuorumRow> = Vec::new();
     for (_, contents) in &corpus {
         let Some(id) = extract_metadata_id(contents) else {
@@ -2910,7 +2966,7 @@ fn quorum(
         rows.push(QuorumRow {
             semantic: count_field_occurrences(contents, "lean_theorem:"),
             symbolic: count_field_occurrences(contents, "kani_harness:"),
-            runtime: count_runtime_witnesses(&id, fixtures_dir, witness_dirs),
+            runtime: count_runtime_witnesses(&id, fixtures_dir, &loaded_fixtures, witness_dirs),
             extrinsic: 0, // filled below
             id,
         });
@@ -3002,32 +3058,126 @@ fn is_code_line(line: &str) -> bool {
 /// `BTreeSet` of canonical paths so a file reachable from more than one pass —
 /// or from two overlapping `--witness-dir` arguments — is one vote, not two:
 ///
-/// * **Pass A (unchanged since PMAT-033):** flat files under `fixtures_dir`
-///   whose text mentions `contract_id` anywhere. Kept BYTE-IDENTICAL, including
-///   its non-recursive walk, so the monotonicity of this change is reviewable
-///   at a glance: no existing vote can disappear.
-/// * **Pass B (new):** top-level `*.rs` files under each witness dir that BOTH
-///   mention `contract_id` AND carry a non-comment call to one of
+/// * **Pass A:** flat files under `fixtures_dir` that BOTH mention
+///   `contract_id` AND are NAMED by some Rust source a test could load them
+///   from (`loaded_fixtures`, see [`referenced_fixture_names`]).
+/// * **Pass B (PMAT-1367):** top-level `*.rs` files under each witness dir that
+///   BOTH mention `contract_id` AND carry a non-comment call to one of
 ///   [`RUNTIME_PROBES`].
 ///
-/// Pass B's conjunction is the whole point. Naming a contract ID is not
+/// Each pass's conjunction is the whole point. Naming a contract ID is not
 /// evidence of anything — `crates/xpile/tests/contract_citation_integrity.rs`
 /// hardcodes a roster of IDs and `lean_pilot_roots.rs` names them in comments,
 /// and neither executes an emitted artifact. Nor is spawning a process:
 /// every `Command::new` in those files launches the `xpile` binary itself.
 /// Requiring the probe is what separates "a test that runs an emitted module
 /// under a real runtime" from "a test that mentions a string".
+///
+/// PMAT-1432: that reasoning was written for Pass B and applied ONLY to Pass B.
+/// Pass A stayed pure name-matching, and the one place in the repo where a file
+/// exists for no reason other than to be counted is the fixture corpus:
+/// `docs/roadmaps/roadmap.yaml` records eight fixtures added in a single batch —
+/// "one per remaining 3-stratum contract — each carrying its contract ID in a
+/// header comment ... Lifts each from 3-stratum to full 4-stratum" — with the
+/// tests that would load them left as "XPILE-*-RUNTIME-001 follow-ons". Five of
+/// those files are named by no Rust source anywhere in `crates/`, and for FOUR
+/// contracts such a file was the ENTIRE Runtime stratum. The most extreme is
+/// the Lean-source demo: it completed 4-of-4 strata for `C-XLATE-LEAN-TO-RUST`
+/// while its own header states that the frontend which would parse it "doesn't
+/// exist as a crate at v0.1.0" — still true, since no registered frontend
+/// claims `.lean`, so that contract's 40 equations, 33 Lean theorems and 10
+/// Kani harnesses model a lowering with no Rust behind it. A fixture is
+/// evidence when a test loads it; on its own it is a string in a directory.
+///
+/// This comment names no fixture on purpose: a source under `crates/` that
+/// spells a filename makes that fixture look loaded, which is how a scanner
+/// hands back the votes it exists to remove (PMAT-1416).
 fn count_runtime_witnesses(
     contract_id: &str,
     fixtures_dir: &Path,
+    loaded_fixtures: &std::collections::BTreeSet<String>,
     witness_dirs: &[PathBuf],
 ) -> usize {
     let mut voters: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
-    collect_fixture_voters(contract_id, fixtures_dir, &mut voters);
+    collect_fixture_voters(contract_id, fixtures_dir, loaded_fixtures, &mut voters);
     for dir in witness_dirs {
         collect_witness_voters(contract_id, dir, &mut voters);
     }
     voters.len()
+}
+
+/// The fixture file names that some Rust source OUTSIDE the fixture corpus
+/// actually names — the Pass A analogue of [`RUNTIME_PROBES`] (PMAT-1432).
+///
+/// Scanned roots are every `--fixture-loader-dir` and every `--witness-dir`,
+/// each walked recursively for `*.rs`. Both are EXPLICIT arguments on purpose:
+/// deriving the root as `fixtures_dir.parent()` reads well and is a trap — the
+/// unit tests below hand this function a scratch directory directly under
+/// `std::env::temp_dir()`, so the derived root would have been a recursive
+/// walk of all of `/tmp`, both ruinous and non-deterministic.
+///
+/// Measured on the live tree, widening the scan to all of `crates/**/*.rs`
+/// moves ten reference counts but flips no fixture from zero references to
+/// non-zero, so the bounded scope costs no real vote;
+/// `quorum_fixture_evidence_witness.rs` re-derives the wide set independently
+/// and reds if that ever stops being true.
+///
+/// TRAP, and the reason for the `fixtures_dir` exclusion: the corpus itself
+/// contains `*.rs` fixtures. Walking a root that CONTAINS `tests/fixtures/`
+/// without excluding it lets a `.rs` fixture whose header names its own
+/// filename vote for itself, which is the same vacuity one directory over.
+fn referenced_fixture_names(
+    fixtures_dir: &Path,
+    loader_dirs: &[PathBuf],
+    witness_dirs: &[PathBuf],
+) -> std::collections::BTreeSet<String> {
+    let excluded = vote_key(fixtures_dir);
+    let mut sources = String::new();
+    for root in loader_dirs.iter().chain(witness_dirs.iter()) {
+        collect_rust_sources(root, &excluded, &mut sources);
+    }
+
+    let mut named = std::collections::BTreeSet::new();
+    let Ok(entries) = std::fs::read_dir(fixtures_dir) else {
+        return named;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if sources.contains(name) {
+            named.insert(name.to_string());
+        }
+    }
+    named
+}
+
+/// Append every `*.rs` file's text under `dir`, skipping the `excluded`
+/// subtree. Unreadable entries are skipped: a directory the reporter cannot
+/// walk contributes no reference, which can only ever REMOVE a vote — the
+/// direction this counter must err in.
+fn collect_rust_sources(dir: &Path, excluded: &Path, out: &mut String) {
+    if vote_key(dir) == *excluded {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rust_sources(&path, excluded, out);
+        } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                out.push_str(&text);
+                out.push('\n');
+            }
+        }
+    }
 }
 
 /// Canonicalize for set identity, falling back to the literal path when the
@@ -3037,11 +3187,12 @@ fn vote_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Pass A — fixture files mentioning the contract ID. Behaviourally identical
-/// to the pre-PMAT-1367 counter; only the accumulator changed.
+/// Pass A — fixture files that name the contract ID *and* that a test loads
+/// (PMAT-1432; `loaded_fixtures` comes from [`referenced_fixture_names`]).
 fn collect_fixture_voters(
     contract_id: &str,
     fixtures_dir: &Path,
+    loaded_fixtures: &std::collections::BTreeSet<String>,
     voters: &mut std::collections::BTreeSet<PathBuf>,
 ) {
     if !fixtures_dir.is_dir() {
@@ -3053,6 +3204,12 @@ fn collect_fixture_voters(
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !loaded_fixtures.contains(name) {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -3262,6 +3419,116 @@ bar:
         }
     }
 
+    /// The composition `quorum` itself performs: derive the loaded-fixture set,
+    /// then count. Going through the real `referenced_fixture_names` (rather
+    /// than handing in a hand-built set) is what keeps these tests measuring
+    /// the shipped rule. No loader dir is passed, so Pass A is inert unless a
+    /// witness dir happens to name the fixture — which is exactly the
+    /// PMAT-1432 posture these cases predate and must survive.
+    fn count_runtime(id: &str, fixtures_dir: &Path, witness_dirs: &[PathBuf]) -> usize {
+        let loaded = referenced_fixture_names(fixtures_dir, &[], witness_dirs);
+        count_runtime_witnesses(id, fixtures_dir, &loaded, witness_dirs)
+    }
+
+    /// Same composition, with an explicit loader root — the shape the CLI runs
+    /// with (`--fixture-loader-dir crates/xpile/tests`).
+    fn count_runtime_with_loader(id: &str, fixtures_dir: &Path, loader_dir: &Path) -> usize {
+        let loaders = [loader_dir.to_path_buf()];
+        let loaded = referenced_fixture_names(fixtures_dir, &loaders, &[]);
+        count_runtime_witnesses(id, fixtures_dir, &loaded, &[])
+    }
+
+    /// Build `<scratch>/tests/fixtures/<fixture>` carrying `body`, and return
+    /// `(loader_dir, fixtures_dir)`. The loader root CONTAINS the fixture
+    /// corpus, mirroring the live layout that made the self-reference trap
+    /// reachable.
+    fn fixture_tree(s: &Scratch, fixture: &str, body: &str) -> (PathBuf, PathBuf) {
+        let loader = s.path().join("tests");
+        let fixtures = loader.join("fixtures");
+        std::fs::create_dir_all(&fixtures).expect("fixture tree");
+        std::fs::write(fixtures.join(fixture), body).expect("write fixture");
+        (loader, fixtures)
+    }
+
+    /// PMAT-1432, the defect itself: a fixture whose text names a contract ID
+    /// but which NO test loads casts zero Runtime votes. Five such files sat in
+    /// the live corpus, and for four contracts one of them was the entire
+    /// Runtime stratum.
+    #[test]
+    fn fixture_no_test_loads_casts_no_runtime_vote() {
+        let s = Scratch::new("unloaded-fixture");
+        let (loader, fixtures) = fixture_tree(
+            &s,
+            "orphan_demo.py",
+            "# Provides a Runtime-stratum vote for C-WASM-HEAP\n",
+        );
+        std::fs::write(
+            loader.join("some_gate.rs"),
+            "//! A test that loads a DIFFERENT fixture.\n\
+             fn f() { load(\"other_demo.py\"); }\n",
+        )
+        .expect("write loader source");
+        assert_eq!(
+            count_runtime_with_loader("C-WASM-HEAP", &fixtures, &loader),
+            0,
+            "a fixture no test names is a string in a directory, not evidence"
+        );
+    }
+
+    /// The other direction, so the rule cannot be tightened into uselessness:
+    /// once a test NAMES the fixture, the vote is cast.
+    #[test]
+    fn fixture_a_test_loads_casts_a_runtime_vote() {
+        let s = Scratch::new("loaded-fixture");
+        let (loader, fixtures) = fixture_tree(
+            &s,
+            "loaded_demo.py",
+            "# Provides a Runtime-stratum vote for C-WASM-HEAP\n",
+        );
+        std::fs::write(
+            loader.join("loading_gate.rs"),
+            "//! Runs the emitted module.\n\
+             fn f() { load(\"loaded_demo.py\"); }\n",
+        )
+        .expect("write loader source");
+        assert_eq!(
+            count_runtime_with_loader("C-WASM-HEAP", &fixtures, &loader),
+            1,
+            "a fixture a test loads is exactly the evidence this stratum wants"
+        );
+    }
+
+    /// TRAP: the corpus contains `*.rs` fixtures, and a fixture header that
+    /// names its own filename would satisfy a naive scan of the loader root.
+    /// The `--fixtures-dir` subtree is excluded from the walk, so it cannot.
+    #[test]
+    fn a_rust_fixture_naming_its_own_filename_does_not_vote_for_itself() {
+        let s = Scratch::new("self-reference");
+        let (loader, fixtures) = fixture_tree(
+            &s,
+            "self_demo.rs",
+            "//! self_demo.rs — Runtime-stratum vote for C-WASM-HEAP\n",
+        );
+        assert_eq!(
+            count_runtime_with_loader("C-WASM-HEAP", &fixtures, &loader),
+            0,
+            "a fixture inside the excluded subtree must not vote for itself"
+        );
+    }
+
+    /// A `--fixture-loader-dir` that does not exist under-reports rather than
+    /// over-reports, and does not panic. The stderr notice is emitted by
+    /// `quorum` itself, once, not per contract.
+    #[test]
+    fn missing_loader_dir_is_non_fatal_and_drops_the_fixture_pass() {
+        let s = Scratch::new("missing-loader");
+        let (_loader, fixtures) = fixture_tree(&s, "demo.py", "# C-WASM-HEAP\n");
+        assert_eq!(
+            count_runtime_with_loader("C-WASM-HEAP", &fixtures, Path::new("/nonexistent-loader")),
+            0
+        );
+    }
+
     /// A witness that NAMES the contract but never gates on a runtime probe is
     /// static-text evidence, not execution — zero votes. This is the assertion
     /// that keeps `contract_citation_integrity.rs`-shaped roster files (which
@@ -3280,7 +3547,7 @@ bar:
         );
         let empty = Path::new("/nonexistent-fixtures-dir");
         assert_eq!(
-            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            count_runtime("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
             0,
             "naming a contract ID is not evidence of executing anything"
         );
@@ -3304,7 +3571,7 @@ bar:
         );
         let empty = Path::new("/nonexistent-fixtures-dir");
         assert_eq!(
-            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            count_runtime("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
             0,
             "a probe named in a comment is not a probe call"
         );
@@ -3328,12 +3595,12 @@ bar:
         // Same directory handed in as BOTH the fixtures dir and the witness
         // dir, and then as the witness dir twice over.
         assert_eq!(
-            count_runtime_witnesses("C-WASM-HEAP", s.path(), &[s.path().to_path_buf()]),
+            count_runtime("C-WASM-HEAP", s.path(), &[s.path().to_path_buf()]),
             1,
             "fixtures ∪ witness must dedupe by canonical path"
         );
         assert_eq!(
-            count_runtime_witnesses(
+            count_runtime(
                 "C-WASM-HEAP",
                 Path::new("/nonexistent-fixtures-dir"),
                 &[s.path().to_path_buf(), s.path().to_path_buf()],
@@ -3355,13 +3622,13 @@ bar:
         std::fs::write(s.path().join("nested/deep_witness.rs"), probe).expect("nested witness");
         let empty = Path::new("/nonexistent-fixtures-dir");
         assert_eq!(
-            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            count_runtime("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
             0,
             "only top-level *.rs files under a witness dir may vote"
         );
         s.write("real_witness.rs", probe);
         assert_eq!(
-            count_runtime_witnesses("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
+            count_runtime("C-WASM-HEAP", empty, &[s.path().to_path_buf()]),
             1
         );
     }
@@ -3371,7 +3638,7 @@ bar:
     #[test]
     fn missing_witness_dir_is_non_fatal_and_scores_zero() {
         assert_eq!(
-            count_runtime_witnesses(
+            count_runtime(
                 "C-WASM-HEAP",
                 Path::new("/nonexistent-fixtures-dir"),
                 &[PathBuf::from("/nonexistent-witness-dir")],

@@ -19884,3 +19884,82 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1432
+  title: 'PMAT-1432: [quorum+contract+docs] THE RUNTIME STRATUM — THE ONE STRATUM THAT TIES A
+    CONTRACT TO SHIPPED CODE — VOTED FOR FILES NOTHING RUNS: the §14.4 quorum''s Semantic,
+    Symbolic and Extrinsic strata are all satisfied by writing YAML and prose; Runtime is the
+    only one that can tell a MODELLED claim from a SHIPPED one. PMAT-1367 tightened Pass B and
+    wrote the reason into the collector''s own doc comment ("Naming a contract ID is not
+    evidence of anything"), then left Pass A — the fixture corpus — as pure name matching and
+    recorded the omission as a feature ("Kept BYTE-IDENTICAL ... no existing vote can
+    disappear"), fourteen lines apart in the same function. `docs/roadmaps/roadmap.yaml`
+    records what that left standing: eight fixtures added in one batch, "one per remaining
+    3-stratum contract — each carrying its contract ID in a header comment ... Lifts each from
+    3-stratum to full 4-stratum", with the loading tests deferred as XPILE-*-RUNTIME-001
+    follow-ons that were never written. FIVE of those files are named by no Rust source
+    anywhere under `crates/`, and for FOUR contracts such a file was the ENTIRE Runtime
+    stratum.'
+  description: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu
+    07-30 / PMAT-1373). Took PMAT-1431 standing lead (a) — "which OTHER contract''s equations
+    name a construct no shipped code produces?" — and the answer came with a second defect
+    UNDERNEATH it, one level up from the contract: not just that a contract was hollow, but
+    that the substrate''s own honesty METRIC certified it at maximum. MEASURED on a
+    force-rebuilt binary, `xpile quorum` before -> after: C-XLATE-LEAN-TO-RUST 1 -> 0 (4/4 ->
+    3/4), C-COMPILE-RUST-TO-PTX-MMA 1 -> 0 (4/4 -> 3/4), C-FFI-CPYTHON-EXT 1 -> 0 (4/4 ->
+    3/4), C-XLATE-RUST-FN-TO-LEAN-THM 1 -> 0 (4/4 -> 3/4), C-XLATE-PY-LIST-TO-VEC 5 -> 4 (4/4
+    unchanged); totals 26 QUORUM / 9 PARTIAL / 0 UNVERIFIED UNCHANGED. Five votes removed,
+    every one traceable to a named file, nothing else moved — the counts go DOWN because they
+    were inflated, not because coverage regressed (PMAT-1418''s before/after discipline).
+    ** THE EXTREME CASE. `C-XLATE-LEAN-TO-RUST` carries 40 equations, 33 Lean refinement
+    theorems and 10 Kani harnesses specifying how every Lean 4 construct (`def`, `partial
+    def`, `inductive`, `structure`, `instance`, `axiom`, `noncomputable def`) lowers to Rust.
+    There is NO Lean frontend: no registered frontend claims `.lean`, `xpile transpile x.lean
+    --target rust` exits non-zero with "no frontend handles `.lean`", and no `SourceLang::Lean`
+    module can be produced at all — the variant is matched only by backends that REFUSE it.
+    The proofs range over abstract models (a `LeanDef` is a byte array), so they hold, and they
+    hold of nothing shipped. The file that completed its 4/4 says so in its own header: the
+    frontend that would parse it "doesn''t exist as a crate at v0.1.0". Meanwhile
+    `book/src/reference/contracts.md` published "All Lean 4 constructs ... lower to Rust" as
+    present-tense fact, three sections from `frontends.md` stating "There is no C++, Rust, or
+    Lean 4 frontend" — THE BOOK CONTRADICTED ITSELF, and the 4-of-4 quorum number is what made
+    the wrong half readable.
+    FIX: Pass A now requires a test to LOAD the fixture — a fixture votes only when some `*.rs`
+    source under a `--fixture-loader-dir` (new, repeatable, default `crates/xpile/tests`) or a
+    `--witness-dir` names it, with the `--fixtures-dir` subtree EXCLUDED from that scan so a
+    `.rs` fixture whose header names its own filename cannot vote for itself. A missing
+    `--fixture-loader-dir` announces itself on stderr — the third half of the asymmetry
+    PMAT-1367 and PMAT-1386 each fixed one half of; this one UNDER-reports, the safe direction,
+    and still must not be silent. The five unloaded fixtures now carry an
+    `xpile-runtime-vote: none` disclosure instead of a header claiming a vote they no longer
+    cast. `book/src/reference/contracts.md` states that C-XLATE-LEAN-TO-RUST is modelled only.
+    GATE: `crates/xpile/tests/quorum_fixture_evidence_witness.rs` (XPILE-QUORUM-006, 4 tests)
+    re-derives the loaded set independently from a WIDER scan than the binary performs (all
+    `crates/**/*.rs`) and asserts per-contract EQUALITY — too high means a name-only fixture is
+    voting again, too low means a real vote was dropped OR the binary''s bounded scan no longer
+    reaches a source the wide one does, which says to widen the flag rather than weaken the
+    gate. Both directions on the disclosure marker: an unloaded fixture must carry it, a loaded
+    one must not. The Lean half asserts the refusal, the absence of `lean` from the code-lane
+    FRONTEND block of `xpile info` (located positively first, so the negative cannot pass over
+    nothing), and Runtime 0 — so a Lean frontend landing REDS the gate and forces the book
+    paragraph to move. RED HALF RUN, four separate executions: reverting the Pass A conjunction
+    reds 2 of 4; removing one disclosure marker reds a third; adding a stale marker to a loaded
+    fixture reds the fourth; re-pointing the Lean probe at a `.py` the frontend accepts reds
+    the refusal assertion. Non-empty guard on the unloaded set (PMAT-1396: a negative over an
+    empty enumeration passes for free) and a >=500 floor on the fixture corpus.
+    ** LESSON, and it fired DURING the slice: the gate and the collector''s doc comment must
+    name NO fixture. The first draft of the doc comment spelled the Lean fixture''s filename to
+    explain the defect, which made the scanner see it as loaded and handed the vote straight
+    back (PMAT-1416: a call-site scanner must not print call sites). Every roster in the gate
+    is derived from the tree at run time.
+    ** NOT a witness_floor.rs touch (two-touch serial resource, PMAT-1372 / PMAT-1373) and NOT
+    a gate_touch in the serial chain — `quorum_fixture_evidence_witness.rs` is a NEW file and
+    no existing gate was edited.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

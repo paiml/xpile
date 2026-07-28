@@ -2,8 +2,23 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1431 landed from an honesty hunt; the ranked queue stays exhausted
-  until Thu 07-30 / PMAT-1373, the release commit. Took PMAT-1430 standing lead (a) -- the single
+updated: '2026-07-28 (PMAT-1432 landed from an honesty hunt; the ranked queue stays exhausted
+  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1432 took PMAT-1431 standing lead (a) --
+  "which OTHER contract''s equations name a construct no shipped code produces?" -- and found the
+  answer with a SECOND defect underneath it, one level UP from any single contract: the substrate''s
+  own honesty METRIC was scoring the hollow contract at MAXIMUM. `xpile quorum`''s Runtime stratum
+  is the only one of four that can tell a MODELLED claim from a SHIPPED one, and its fixture pass
+  counted any file that merely CONTAINED the contract ID. Five files added for exactly that purpose,
+  loading tests never written, completed 4-of-4 for FOUR contracts -- including C-XLATE-LEAN-TO-RUST,
+  40 equations and 33 Lean theorems for a direction with no Lean frontend, published in the book as
+  present tense three sections from frontends.md saying no such frontend exists. LESSONS: (1) THE
+  GATE MUST NAME NO FIXTURE -- the first draft of the fix''s own doc comment spelled the filename and
+  handed the vote back (PMAT-1416 one directory over); (2) a NEW FLAG''S DEFAULT MUST BE DERIVED FROM
+  THE ARGUMENT IT IS PAIRED WITH -- a literal CWD-relative default silently zeroed the whole pass
+  against callers passing an absolute `--fixtures-dir`, caught only because PMAT-1386''s missing-dir
+  notice fired; (3) a metric going DOWN after a fix is the receipt, if the before/after table names
+  every moved row. PRIOR ENTRY, still the reference for the misfiling shape: PMAT-1431 took PMAT-1430
+  standing lead (a) -- the single
   contract FRONTEND carries no honesty method -- and THE LEAD''S PREMISE WAS FALSE WITH THE PAYLOAD
   UNDERNEATH IT, the PMAT-1426 pattern for the third time. `latex` is NOT hollow; it genuinely
   parses math spans, citations and references, so the honesty method the lead asked for would have
@@ -4167,6 +4182,76 @@ queue:
     Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
     18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373
     (release commit, gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1432
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the Runtime stratum -- the ONE stratum that ties a contract to shipped code --
+    counted any fixture file that merely CONTAINED the contract ID, so five files added for
+    exactly that purpose completed the 4-of-4 quorum for FOUR contracts, one of them a
+    translation direction with ZERO Rust behind it and published in the book as present tense'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1431 standing lead (a) -- "which OTHER contract''s equations name a
+    construct no shipped code produces?" -- and the answer arrived with a SECOND defect
+    underneath it, one level UP from the contract: not merely that a contract was hollow, but
+    that the substrate''s own honesty METRIC scored it at maximum.
+    ** THE DEFECT. `xpile quorum`''s Runtime stratum is the only one of four that can tell a
+    MODELLED claim from a SHIPPED one -- Semantic counts `lean_theorem:` refs in the contract''s
+    own YAML, Symbolic counts `kani_harness:` refs in the same file, Extrinsic counts roadmap
+    prose. PMAT-1367 tightened Pass B and wrote the reason into the collector''s doc comment
+    ("Naming a contract ID is not evidence of anything"), then left Pass A -- the fixture corpus
+    -- as pure name matching, calling the omission a feature ("Kept BYTE-IDENTICAL ... no
+    existing vote can disappear"). Fourteen lines apart, same function. roadmap.yaml records
+    what that left standing: eight fixtures added in ONE batch "each carrying its contract ID in
+    a header comment ... Lifts each from 3-stratum to full 4-stratum", loading tests deferred as
+    XPILE-*-RUNTIME-001 follow-ons that were never written. FIVE are named by no Rust source
+    under `crates/`; for FOUR contracts one was the ENTIRE Runtime stratum.
+    ** MEASURED (force-rebuilt binary), before -> after: C-XLATE-LEAN-TO-RUST 1->0 (4/4->3/4),
+    C-COMPILE-RUST-TO-PTX-MMA 1->0, C-FFI-CPYTHON-EXT 1->0, C-XLATE-RUST-FN-TO-LEAN-THM 1->0,
+    C-XLATE-PY-LIST-TO-VEC 5->4 (stays 4/4); totals 26 QUORUM / 9 PARTIAL / 0 UNVERIFIED
+    UNCHANGED. Five votes removed, each traceable to a named file, nothing else moved.
+    ** THE EXTREME CASE: C-XLATE-LEAN-TO-RUST -- 40 equations, 33 Lean theorems, 10 Kani
+    harnesses for how every Lean 4 construct lowers to Rust, with NO Lean frontend. `xpile
+    transpile x.lean --target rust` exits 1 ("no frontend handles `.lean`"); `SourceLang::Lean`
+    is matched only by backends that REFUSE it. The proofs range over abstract models (a
+    `LeanDef` is a byte array) so they hold, of nothing shipped. book/src/reference/contracts.md
+    published "All Lean 4 constructs ... lower to Rust" as present tense, three sections from
+    frontends.md''s "There is no C++, Rust, or Lean 4 frontend" -- THE BOOK CONTRADICTED ITSELF
+    and the 4-of-4 number is what made the wrong half readable.
+    ** GATE: crates/xpile/tests/quorum_fixture_evidence_witness.rs (XPILE-QUORUM-006, 4 tests).
+    Re-derives the loaded set from a WIDER scan than the binary performs and asserts per-contract
+    EQUALITY -- too high = a name-only fixture voting again, too low = a real vote dropped or the
+    binary''s bounded scan missing a source (widen the flag, do not weaken the gate). Disclosure
+    marker checked BOTH ways. RED HALF RUN in four separate executions.
+    ** THREE LESSONS WORTH KEEPING. (1) THE GATE MUST NAME NO FIXTURE, and this fired DURING the
+    slice: the first draft of the collector doc comment spelled the Lean fixture''s filename to
+    explain the defect, which made the scanner see it as loaded and handed the vote straight
+    back. PMAT-1416''s "a call-site scanner must not print call sites", one directory over.
+    (2) A CWD-RELATIVE DEFAULT ON A NEW FLAG SILENTLY ZEROED THE PASS IT GATES. The first cut
+    defaulted `--fixture-loader-dir` to a literal `crates/xpile/tests` while every in-tree caller
+    runs with CWD = the crate dir and an ABSOLUTE `--fixtures-dir`; the two pointed at different
+    trees. Caught only because PMAT-1386''s missing-dir NOTICE fired -- the flag now DERIVES from
+    `--fixtures-dir`''s parent, so the pair cannot drift. A new flag''s default must be derived
+    from the argument it is paired with, not restated.
+    (3) A METRIC GOING DOWN AFTER A FIX IS THE RECEIPT, not a regression -- but only if the
+    before/after table names every moved row (PMAT-1418).
+    ** NOT a gate_touch (new file, no existing gate edited); witness_floor.rs UNTOUCHED.
+    NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) the same
+    question one stratum over -- Semantic and Symbolic votes are counted by STRING-MATCHING
+    `lean_theorem:` / `kani_harness:` in a contract''s own YAML, so a contract can vote for
+    itself twice by naming a theorem that does not exist in the .lean file or a harness absent
+    from the .rs; check the named symbols actually RESOLVE (`lean_pilot_roots.rs` and
+    `kani_harnesses.rs` exist -- measure what they really assert before assuming this is open);
+    (b) the OTHER three contracts this slice dropped to 3/4 (PTX-MMA, FFI-CPYTHON-EXT,
+    RUST-FN-TO-LEAN-THM) -- each now has a disclosed empty Runtime stratum, and PTX/FFI at least
+    have real code lanes, so "is the shipped lane the one the contract describes?" is a live
+    question for each; (c) PMAT-1430 lead (b), frontends.md lists `.mk` under status "Real POSIX
+    parser" though PMAT-1420 made it REFUSE; (d) PMAT-1430 lead (c), backends.md Status-column
+    prose nothing gates. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD
+    FREEZE Wed 2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it. On
+    2026-07-30 take PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2); on
+    2026-07-31 PMAT-1374 (publish).'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
