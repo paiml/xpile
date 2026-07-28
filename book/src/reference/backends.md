@@ -110,6 +110,11 @@ The Rust backend produces:
 - `.expect("…contract C-PY-INT-ARITH slow path…")` on every arithmetic
   wrap — the panic text **names the contract**
 - A `// xpile-contract: <ID>` citation above each emitted function
+  **whose body uses a construct a contract governs** — not above every
+  function. `applicable_contracts()` is empty for comparison-only,
+  logical-only, constant-only and call-only bodies, and those emit no
+  citation line at all (see [frontends](frontends.md#python-frontend--whats-supported)).
+  Through v0.1.617 this bullet stated it unconditionally.
 
 The semantics-preserving choice of `checked_div_euclid` over the
 sloppy `/` operator is what discharges Layer-1 of `C-PY-INT-ARITH`:

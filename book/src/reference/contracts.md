@@ -147,10 +147,31 @@ information for diagnostic round-trip.
 
 > Layer 3 (architectural) / code lane / kind: pattern
 
-Every `Backend` emission must carry a structural contract citation
-(`// xpile-contract: <ID>`) — that is `compile_contract_citation`, and
-like all twenty of this contract's equations it quantifies over the
-**emitted** artifact. The contract says nothing about error paths.
+Every **target-specific IR construct** a `Backend` emits must cite a
+Layer-5 compile contract that sanctions it, structurally — on
+`Artifact.citations`, which the equation's own invariant says is "NOT
+regex over `Artifact.primary` text". That is
+`compile_contract_citation`, and like all twenty of this contract's
+equations it quantifies over the **emitted** artifact. The contract says
+nothing about error paths.
+
+Two things it also does not say, corrected at PMAT-1446 — through
+v0.1.617 this entry read "Every `Backend` emission must carry a
+structural contract citation (`// xpile-contract: <ID>`)":
+
+1. It is not about the `// xpile-contract: <ID>` **comment**. That line
+   is the Layer-1/2 citation channel, emitted per ID returned by
+   `Function::applicable_contracts()`; `compile_contract_citation`
+   governs Layer-5 hardware sanctioning (`mma.sync`, `@workgroup_size`,
+   `asm!`). The PTX lane makes the split visible: `--contracts on` and
+   `--contracts off` emit byte-identical PTX, and its citations live
+   only on `Artifact.citations`.
+2. It is not universal over emissions. The equation's `domain` says so
+   outright — "Pure language-level constructs (function definitions,
+   structs, arithmetic) do NOT require a citation". Measured:
+   `xpile transpile ident.py --target rust` on `def ident(a: int) ->
+   int: return a` emits an artifact with no `xpile-contract` line
+   anywhere, at exit 0.
 Through v0.1.617 this entry added "Error paths must name the governing
 contract", which no equation states and most backends do not do; see
 [Backends → Error handling](backends.md#error-handling) for the

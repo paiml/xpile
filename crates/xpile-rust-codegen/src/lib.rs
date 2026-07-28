@@ -622,12 +622,23 @@ fn key_error_panic() -> String {
 }
 
 /// PMAT-011: emit one `// xpile-contract: <ID>` comment line per
-/// contract that governs this function. Matches the mdBook convention
-/// from `sub/contract-frontend-trait.md`'s citation grid — same prefix
-/// across all text-comment hosts, so a single regex finds them all.
-/// Lean uses `@[xpile_contract "<ID>"]` (proper structured attribute);
-/// LaTeX uses `\xpileContract{<ID>}{...}`; mdBook + Rust + Ruchy share
-/// the comment form.
+/// contract that governs this function — **zero lines when
+/// `applicable_contracts()` is empty**, which is the designed answer
+/// for a comparison-only / logical-only / call-only body, not a gap
+/// (XPILE-FALSIFY-002 excludes those functions from F1's denominator
+/// for exactly that reason). Pinned by
+/// `crates/xpile/tests/citation_surface_witness.rs`.
+///
+/// Spellings, corrected at PMAT-1446. The CODE lane: Rust and Ruchy
+/// share this comment form; **Lean uses a `/-- xpile-contract: <ID> -/`
+/// docstring** (PMAT-1405 — the attribute form this comment named
+/// through v0.1.617 does not elaborate, and the correction landed in
+/// three files that did not include this one). The contract-RENDERING
+/// lane is separate and keeps its own forms: `@[xpile_contract "<ID>"]`
+/// in `xpile-lean-contract-backend`, `\xpileContract{<ID>}{...}` in
+/// `xpile-latex-contract-backend`. There is no mdBook host of either
+/// lane — no mdBook backend is registered (PMAT-1440), so this comment
+/// naming one as sharing the form named a lane that does not exist.
 fn emit_contract_citations(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     for id in f.applicable_contracts() {
         writeln!(out, "// xpile-contract: {id}")?;

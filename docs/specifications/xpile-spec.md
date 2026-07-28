@@ -1261,7 +1261,7 @@ int add(int a, int b) { return a + b; }
 int factorial(int n) { return n <= 1 ? 1 : n * factorial(n - 1); }
 ```
 
-Both transpile cleanly via `xpile transpile` → Rust + Ruchy + Lean for the Python case; → Rust for the C case. Each emitted function carries a `// xpile-contract: <ID>` citation referencing the appropriate v0.2.0 contract.
+Both transpile cleanly via `xpile transpile` → Rust + Ruchy + Lean for the Python case; → Rust for the C case. Each function in *these* corpora does arithmetic, so each carries a `// xpile-contract: <ID>` citation referencing the appropriate v0.2.0 contract. That is a property of the corpus, not of emission: a comparison-only or call-only body has no applicable contract and correctly emits no citation line (PMAT-1446; through v0.1.617 this sentence read "Each emitted function carries…").
 
 `xpile quorum` → 16 (or 15) QUORUM, 0 PARTIAL, 0 UNVERIFIED.
 `xpile diamond` → depth-13 UNIVERSAL still holds (CI gate); newer contracts at depth-1+ at minimum, ratcheting up via subsequent broadening waves.
