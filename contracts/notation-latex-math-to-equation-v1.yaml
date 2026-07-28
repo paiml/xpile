@@ -9,12 +9,27 @@ metadata:
     Notation contract: how LaTeX source — math mode AND theorem-class
     environments — lowers to xpile contract YAML.
 
-    Math mode (`$...$`, `\[...\]`, `equation`, `align`, `gather`) lowers
-    to `equations:` entries. Theorem-class environments (`theorem`,
-    `lemma`, `corollary`, `proposition`, `definition`, `remark`) lower
-    to `proof_obligations:` entries. `\begin{proof}...\end{proof}`
-    lowers to a Lean theorem pointer (the proof body itself lives in
-    the Lean lane, not the contract YAML).
+    Math mode (`$...$`, `\(...\)`, `\[...\]`, `equation`, `align`,
+    `gather`) lowers to `equations:` entries. Theorem-class environments
+    lower to `proof_obligations:` entries — the normative roster is the
+    machine-readable `theorem_env_to_obligation.environments` key, NOT
+    this sentence. `\begin{proof}...\end{proof}` is consumed without
+    leaking its body into `equations:`; the Lean theorem pointer half of
+    that lowering is NOT implemented (see `notation_surface.unimplemented`,
+    XPILE-LATEX-PARSE-LEANPTR-001).
+
+    PMAT-1431 (2026-07-28): every clause in the paragraph above was
+    FALSE of the shipped `latex-contract-frontend` when it was written on
+    2026-05-15, and stayed false for 74 days. `\(...\)`, `gather` and the
+    entire theorem/proof half produced NOTHING, at exit 0, while the Lean
+    theorems and Kani harnesses below stayed green over abstract models
+    with no Rust behind them. Worse than the omission: a theorem body's
+    math surfaced as free-standing `eq_inline_*` entries — the exact
+    bucket `inline_math_to_equation`'s domain excludes — and a `proof`
+    body's math did the same, contradicting `lower_proof_env`'s modelled
+    `body_leaked := false`. What makes the paragraph durable now is the
+    `notation_surface` block at the end of this file, which is checked
+    BOTH WAYS against the shipped parser.
 
     Layer 2 of the xpile contract taxonomy (translation), proof-lane
     side. Consumed by `latex-contract-frontend`. Bidirectional partner
@@ -170,14 +185,32 @@ equations:
           formal: extracted_math_or_TBD,
           applies_to: resolve_label_to_equation_name(label),
         }]
+    # PMAT-1431: MACHINE-READABLE environment roster. Checked for SET
+    # EQUALITY against `latex_contract_frontend::THEOREM_CLASS_ENVIRONMENTS`
+    # by `crates/xpile/tests/notation_claim_witness.rs`, in BOTH
+    # directions — an environment named here and not handled reds, and an
+    # environment handled and not named here reds. Before PMAT-1431 this
+    # roster lived only in the prose below, and the prose DISAGREED WITH
+    # ITSELF: `metadata.description` named `definition` and `remark`
+    # while this equation's `domain` named `claim` and neither of those.
+    # Neither list was implemented, so the disagreement had never cost
+    # anything and nothing could have detected it. Resolved as the UNION,
+    # which is the reading that makes both prose statements true.
+    environments:
+      - theorem
+      - lemma
+      - corollary
+      - proposition
+      - claim
+      - definition
+      - remark
     domain: |
-      Any `theorem`, `lemma`, `corollary`, `proposition`, `claim`
-      environment. The optional `[label]` argument (from amsthm) names
-      the obligation; the body is the human-readable statement; embedded
-      math spans become the `formal:` field.
+      Any environment named in the `environments` roster above. The
+      optional `[label]` argument (from amsthm) names the obligation; the
+      body is the human-readable statement; embedded math spans become
+      the `formal:` field.
     invariants:
       - "theorem environment ALWAYS produces obligation type 'postcondition' unless preceded by \\textbf{Precondition:}"
-      - "label argument maps 1:1 to an equation name in the same document"
       - "embedded math is extracted as `formal:`; surrounding prose is `property:`"
     preconditions:
       - "the theorem environment is registered (via \\newtheorem) or matches one of the standard names"
@@ -185,7 +218,19 @@ equations:
     postconditions:
       - "output `EquationsBlock.proof_obligations` gains exactly one entry per theorem-class environment in source order"
       - "each entry's `type` field is `postcondition` (default) unless the body is preceded by `\\textbf{Precondition:}`"
-      - "the `[label]` argument, when present, becomes the obligation's `applies_to` field after `resolve_label_to_equation_name` resolution"
+      # PMAT-1431: `resolve_label_to_equation_name` is IDENTITY at
+      # v0.1.x. The formula above names it as though it resolved an
+      # amsthm `[label]` to an equation key elsewhere in the document;
+      # no such resolution is implemented, and the prior wording of this
+      # postcondition ("after `resolve_label_to_equation_name`
+      # resolution") described a step that has never run. amsthm's
+      # bracket argument is a TITLE, not a `\label`, so real resolution
+      # needs `\label{}`/`\ref{}` handling this scanner does not have.
+      # Stated as identity rather than quietly emitting the raw title
+      # through a field documented as resolved.
+      # XPILE-LATEX-PARSE-LABELRES-001.
+      - "the `[label]` argument, when present, becomes the obligation's `applies_to` field VERBATIM; `resolve_label_to_equation_name` is identity at v0.1.x and cross-reference resolution is unimplemented"
+      - "`applies_to` is the empty string when the environment carries no `[label]` argument"
 
   theorem_env_obligation_kind_silver:
     # PMAT-180: Silver-tier promotion of theorem_env_to_obligation.
@@ -1041,3 +1086,135 @@ qa_gate:
   required_tests:
     - every_referenced_lean_theorem_exists_in_its_file
     - every_referenced_kani_harness_exists_in_its_file
+
+# PMAT-1431: machine-readable NOTATION SURFACE, mirroring the
+# `emit_surface` block of `compile-rust-to-wasm-v1.yaml` (PMAT-1350) and
+# checked BOTH WAYS by `crates/xpile/tests/notation_claim_witness.rs`:
+# every `lowers` probe MUST produce the stated outcome, and every
+# `unimplemented` probe MUST produce nothing at all.
+#
+# WHY THIS BLOCK EXISTS. Until this slice the prose above specified a
+# theorem/proof-environment half that `latex-contract-frontend` had never
+# implemented, at exit 0. `\begin{theorem}[Monotone] For all $x > 0$ ...`
+# returned `Ok` with ZERO proof_obligations and TWO free-standing
+# `eq_inline_*` equations — so the theorem's math was not merely dropped,
+# it was RECLASSIFIED into the one bucket `inline_math_to_equation`'s own
+# domain excludes ("outside a theorem-class environment"), and a `proof`
+# body's math leaked into `equations` in direct contradiction of
+# `lower_proof_env`'s modelled `body_leaked := false`. The Lean theorems
+# and Kani harnesses were green throughout because they range over
+# ABSTRACT models; nothing tied a model to the Rust that ships. This
+# block is that tie.
+notation_surface:
+  lowers:
+    - id: inline-math-dollar
+      note: "`$...$` span → one `equations` entry keyed `eq_inline_N`."
+      expect: equations
+      probe: 'The bound $x \le 3$ holds.'
+
+    - id: inline-math-paren
+      note: >-
+        `\(...\)` span → one `equations` entry keyed `eq_paren_N`. The
+        SOURCE KIND is retained in the key, which is what
+        `inline_math_equiv_under_normaliser_silver` requires alongside
+        `inline_kinds_are_distinct_silver`: equal content, distinct kind.
+      expect: equations
+      probe: 'The bound \( x \le 3 \) holds.'
+
+    - id: display-math-bracket
+      note: "`\\[...\\]` → one `equations` entry keyed `eq_display_N`."
+      expect: equations
+      probe: '\[ a^2 + b^2 = c^2 \]'
+
+    - id: display-math-equation-env
+      note: "`equation` environment → one `equations` entry."
+      expect: equations
+      probe: "\\begin{equation}\n  a^2 + b^2 = c^2\n\\end{equation}"
+
+    - id: display-math-align-env
+      note: "`align` environment (single-equation form) → one `equations` entry."
+      expect: equations
+      probe: "\\begin{align}\n  a^2 + b^2 = c^2\n\\end{align}"
+
+    - id: display-math-gather-env
+      note: >-
+        `gather` environment → one `equations` entry. Named by this
+        contract's own description since 2026-05-15 and unimplemented
+        until PMAT-1431, where it produced ZERO equations at exit 0.
+      expect: equations
+      probe: "\\begin{gather}\n  a = b\n\\end{gather}"
+
+    - id: theorem-env-obligation
+      note: >-
+        Every environment in `theorem_env_to_obligation.environments`
+        produces exactly one `proof_obligations` entry and NO
+        free-standing `equations` entry.
+      expect: proof_obligations
+      probe: "\\begin{theorem}[Monotone]\nFor all $x > 0$, $f(x) \\ge 0$.\n\\end{theorem}"
+
+    - id: theorem-env-precondition-polarity
+      note: >-
+        The `\textbf{Precondition:}` flag selects obligation type
+        `precondition`; its absence selects `postcondition`. This is the
+        polarity the Lean theorem `theorem_env_to_obligation` and the
+        Kani harness of the same name prove — now over shipped code.
+      expect: proof_obligations
+      probe: "\\begin{lemma}\n\\textbf{Precondition:} $n > 0$ must hold.\n\\end{lemma}"
+
+    - id: xpile-contract-citation
+      note: "`\\xpileContract{ID}{...}` → one `citations` entry."
+      expect: citations
+      probe: '\xpileContract{C-PY-INT-ARITH}{int arithmetic}'
+
+    - id: cite-reference
+      note: "`\\cite{key}` → one `references` entry."
+      expect: references
+      probe: '\cite{lamport1994}'
+
+  unimplemented:
+    # Each of these produces NOTHING — no equations, no obligations, no
+    # citations, no references — and is listed here so the emptiness is a
+    # DISCLOSED outcome rather than a silent one. The witness asserts the
+    # emptiness, so implementing any of them reds this block and forces
+    # the row to move up to `lowers`.
+    - id: proof-env-lean-pointer
+      note: >-
+        `\begin{proof}...\end{proof}` is CONSUMED so that its body cannot
+        leak into `equations` — that much is required by `lower_proof_env`'s
+        `body_leaked := false`, and was FALSE before PMAT-1431 (the body's
+        math surfaced as `eq_inline_N`). The other half of the modelled
+        lowering, the `lean_pointer` metadata entry with its `stub` /
+        `claimed` status, has NO FIELD in `EquationsBlock` to land in and
+        is NOT produced. XPILE-LATEX-PARSE-LEANPTR-001.
+      probe: "\\begin{proof}\nBy induction on $n$.\n\\end{proof}"
+
+    - id: align-column-splitting
+      note: >-
+        A multi-row `align`/`gather` body is ONE entry, not one per row.
+        The `\\` row separators are not split. XPILE-LATEX-PARSE-ALIGN-COLUMNS.
+        Listed as unimplemented for the SPLIT only; the single entry that
+        IS produced is covered by `display-math-align-env` above, so this
+        row's probe is the multi-row form and its assertion is that the
+        entry count is 1, not 2 — see the witness.
+      probe: "\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}"
+      expect_single_entry: true
+
+    - id: dollar-dollar-display
+      note: >-
+        `$$...$$` is SKIPPED, deliberately and since v0.1.0 — it is not a
+        form this contract names, and the scanner steps over it cleanly
+        rather than mis-reading it as two inline spans.
+      probe: 'Skipped: $$ a = b $$ entirely.'
+
+    - id: theorem-env-nested
+      note: >-
+        A theorem-class environment nested inside another is outside
+        `theorem_env_to_obligation`'s stated preconditions. The scanner
+        closes on the MATCHING `\end{<env>}`, so a nested environment of
+        a DIFFERENT class is absorbed into the outer body (its math
+        becomes the outer obligation's `formal`) rather than producing
+        its own obligation, and one of the SAME class closes the outer
+        environment early. One obligation either way.
+        Disclosed, not fixed. XPILE-LATEX-PARSE-THMNEST-001.
+      probe: "\\begin{theorem}\n\\begin{lemma}\n$a = b$\n\\end{lemma}\n\\end{theorem}"
+      expect_single_entry: true

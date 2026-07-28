@@ -8,17 +8,45 @@
 //!   pushed to `EquationsBlock.citations` as a `ContractId`.
 //! * **`\cite{key}` references** — pushed to `EquationsBlock.references`.
 //!
+//! * **Theorem-class environments** — every environment on
+//!   [`THEOREM_CLASS_ENVIRONMENTS`] becomes a `ProofObligation`, with its
+//!   amsthm `[label]` as `applies_to` and its math as `formal`
+//!   (PMAT-1431).
+//! * **`\begin{proof}`** — consumed and DISCARDED, so the proof body
+//!   never reaches the `EquationsBlock` (PMAT-1431).
+//!
 //! The parser is a hand-rolled scanner over a small subset of LaTeX —
 //! NOT a general LaTeX parser. Out of scope at v0.1.0:
 //!
-//! * Math environments (`equation`, `align`) are HANDLED as of PMAT-274
-//!   (single-equation form only — no numbered sub-equations, no
-//!   alignment columns). `gather` is still future work.
-//! * Theorem-class environments (`theorem`, `lemma`, `proof`) — no
-//!   `proof_obligations` are produced.
+//! * Math environments (`equation`, `align`, `gather`) are handled in
+//!   SINGLE-EQUATION form only — a multi-row body is one entry, not one
+//!   per row. XPILE-LATEX-PARSE-ALIGN-COLUMNS.
+//! * The `lean_pointer` half of proof-env lowering — `EquationsBlock`
+//!   has no field for it. XPILE-LATEX-PARSE-LEANPTR-001.
+//! * `resolve_label_to_equation_name` is IDENTITY: the amsthm bracket
+//!   argument is passed through verbatim, never resolved to an equation
+//!   key. XPILE-LATEX-PARSE-LABELRES-001.
+//! * Theorem-class environments NESTED inside one another.
+//!   XPILE-LATEX-PARSE-THMNEST-001.
 //! * Macro expansion, comments-with-special-chars, escaped delimiters.
 //!
 //! These are flagged as XPILE-LATEX-PARSE-* future work.
+//!
+//! ⚠️ PMAT-1431 (2026-07-28): the four bullets above are the RESIDUAL of
+//! a much larger gap. Until that slice this list said theorem-class
+//! environments produced no obligations — true, but a severe
+//! understatement of what actually happened. The environments were not
+//! recognised AT ALL, so their bodies were re-scanned as ordinary text
+//! and their math spans surfaced as free-standing `eq_inline_*`
+//! equations: the theorem's content was present, in the bucket
+//! `inline_math_to_equation`'s own domain excludes, indistinguishable
+//! from an equation the author never wrote. A `proof` body did the same,
+//! contradicting `lower_proof_env`'s modelled `body_leaked := false`.
+//! `\(...\)` and `gather` produced nothing while a Lean theorem and the
+//! contract description respectively asserted they lowered. Every one of
+//! these was `Ok`, at exit 0, for 74 days. What holds the list honest now
+//! is `notation_surface` in the contract, checked both ways by
+//! `crates/xpile/tests/notation_claim_witness.rs`.
 //!
 //! Layer 2 contract: `contracts/notation-latex-math-to-equation-v1.yaml`.
 //!
@@ -28,8 +56,39 @@
 //! the source linearly and only matches the literal token sequence
 //! `\xpileContract{` (with proper brace balance), not a regex.
 
-use xpile_contract_frontend::{ContractFrontend, ContractFrontendError, Equation, EquationsBlock};
+use xpile_contract_frontend::{
+    ContractFrontend, ContractFrontendError, Equation, EquationsBlock, ObligationType,
+    ProofObligation,
+};
 use xpile_contracts::{ContractFormat, ContractId};
+
+/// The amsthm flag that flips an obligation's polarity, per
+/// `theorem_env_to_obligation`'s invariant.
+const PRECONDITION_FLAG: &str = "\\textbf{Precondition:}";
+
+/// The theorem-class environments this frontend lowers to
+/// [`xpile_contract_frontend::ProofObligation`] entries.
+///
+/// PMAT-1431: this roster is checked for SET EQUALITY, in both
+/// directions, against `equations.theorem_env_to_obligation.environments`
+/// in `contracts/notation-latex-math-to-equation-v1.yaml` by
+/// `crates/xpile/tests/notation_claim_witness.rs`. Adding an environment
+/// here without adding it to the contract reds that test, and vice
+/// versa.
+pub const THEOREM_CLASS_ENVIRONMENTS: &[&str] = &[
+    "theorem",
+    "lemma",
+    "corollary",
+    "proposition",
+    "claim",
+    "definition",
+    "remark",
+];
+
+/// The environment whose body must never reach the `EquationsBlock`.
+/// `contracts/lean/Notation.lean`'s `lower_proof_env` models this as
+/// `body_leaked := false`.
+pub const PROOF_ENVIRONMENT: &str = "proof";
 
 pub struct LatexContractFrontend;
 
@@ -61,6 +120,35 @@ impl ContractFrontend for LatexContractFrontend {
                 Token::AlignEnv(formula) => {
                     insert_math_equation(&mut block, &mut eq_index, formula, "align");
                 }
+                // PMAT-1431: named by this contract's description since
+                // 2026-05-15; produced nothing until now.
+                Token::GatherEnv(formula) => {
+                    insert_math_equation(&mut block, &mut eq_index, formula, "gather");
+                }
+                // PMAT-1431: the `\(...\)` form. The entry KIND stays in
+                // the key so `inline_kinds_are_distinct_silver` is
+                // falsifiable — an emitter that relabels one form as the
+                // other changes the key.
+                Token::ParenMath(formula) => {
+                    insert_math_equation(&mut block, &mut eq_index, formula, "paren");
+                }
+                // PMAT-1431: theorem-class environments lower to
+                // obligations, and their body math does NOT become a
+                // free-standing equation.
+                Token::TheoremEnv { label, body } => {
+                    block
+                        .proof_obligations
+                        .push(lower_theorem_env(&label, &body));
+                }
+                // PMAT-1431: a `proof` body is CONSUMED, never lowered.
+                // `contracts/lean/Notation.lean`'s `lower_proof_env`
+                // models this as `body_leaked := false`; before this
+                // slice the body's math surfaced as `eq_inline_*`. The
+                // `lean_pointer` half of the modelled lowering has no
+                // field in `EquationsBlock` and is NOT produced —
+                // disclosed as XPILE-LATEX-PARSE-LEANPTR-001 in
+                // `notation_surface.unimplemented`.
+                Token::ProofEnv => {}
                 Token::XpileContract(id) => {
                     block.citations.push(ContractId::new(id));
                 }
@@ -93,13 +181,122 @@ fn insert_math_equation(
     );
 }
 
+/// PMAT-1431: lower one theorem-class environment to a
+/// [`ProofObligation`], per `theorem_env_to_obligation`.
+///
+/// * `ty` — [`ObligationType::Precondition`] iff the body opens with
+///   `\textbf{Precondition:}`, else [`ObligationType::Postcondition`].
+///   This is the polarity the Lean theorem and the Kani harness of the
+///   same name prove; it now has shipped code behind it.
+/// * `formal` — the environment's math spans, joined, or the literal
+///   `TBD` when the body carries none (`extracted_math_or_TBD`).
+/// * `property` — the body with its math spans and the precondition flag
+///   removed, whitespace-collapsed.
+/// * `applies_to` — the amsthm `[label]` VERBATIM, empty when absent.
+///   `resolve_label_to_equation_name` is identity at v0.1.x; amsthm's
+///   bracket argument is a title, not a `\label`, so real cross-reference
+///   resolution needs `\label{}`/`\ref{}` handling this scanner does not
+///   have. XPILE-LATEX-PARSE-LABELRES-001.
+fn lower_theorem_env(label: &str, body: &str) -> ProofObligation {
+    let trimmed = body.trim();
+    let is_precondition = trimmed.starts_with(PRECONDITION_FLAG);
+    let statement = trimmed
+        .strip_prefix(PRECONDITION_FLAG)
+        .unwrap_or(trimmed)
+        .trim();
+
+    let math = collect_math_spans(statement);
+    ProofObligation {
+        ty: if is_precondition {
+            ObligationType::Precondition
+        } else {
+            ObligationType::Postcondition
+        },
+        property: strip_math_and_collapse(statement),
+        formal: if math.is_empty() {
+            "TBD".to_string()
+        } else {
+            math.join(" ; ")
+        },
+        applies_to: label.to_string(),
+    }
+}
+
+/// Every math span in `body`, in source order, using the SAME scanner
+/// that drives top-level parsing — so the two can never disagree about
+/// what counts as math.
+fn collect_math_spans(body: &str) -> Vec<String> {
+    let mut scanner = Scanner::new(body);
+    let mut out = Vec::new();
+    while let Some(token) = scanner.next_token() {
+        match token {
+            Token::InlineMath(f)
+            | Token::ParenMath(f)
+            | Token::DisplayMath(f)
+            | Token::EquationEnv(f)
+            | Token::AlignEnv(f)
+            | Token::GatherEnv(f) => out.push(f.trim().to_string()),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The human-readable half of an obligation: `body` with its math spans
+/// elided and runs of whitespace collapsed to one space.
+fn strip_math_and_collapse(body: &str) -> String {
+    let mut prose = String::with_capacity(body.len());
+    let bytes = body.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let rest = &body[i..];
+        if let Some(end) = math_span_len(rest) {
+            prose.push(' ');
+            i += end;
+            continue;
+        }
+        let ch_len = rest.chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        prose.push_str(&rest[..ch_len]);
+        i += ch_len;
+    }
+    prose.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Byte length of the math span starting at `rest`, if one does.
+/// Unterminated spans return `None` so the caller keeps the text as
+/// prose rather than swallowing the rest of the body.
+fn math_span_len(rest: &str) -> Option<usize> {
+    for (open, close) in [("\\(", "\\)"), ("\\[", "\\]")] {
+        if let Some(inner) = rest.strip_prefix(open) {
+            return inner.find(close).map(|e| open.len() + e + close.len());
+        }
+    }
+    if let Some(inner) = rest.strip_prefix('$') {
+        return inner.find('$').map(|e| 1 + e + 1);
+    }
+    None
+}
+
 enum Token {
     InlineMath(String),
+    /// PMAT-1431: `\( ... \)`, the other inline form the contract names.
+    ParenMath(String),
     DisplayMath(String),
     /// PMAT-274: `\begin{equation} ... \end{equation}`.
     EquationEnv(String),
     /// PMAT-274: `\begin{align} ... \end{align}` (single-equation form).
     AlignEnv(String),
+    /// PMAT-1431: `\begin{gather} ... \end{gather}` (single-equation form).
+    GatherEnv(String),
+    /// PMAT-1431: a theorem-class environment from
+    /// [`THEOREM_CLASS_ENVIRONMENTS`], with its optional amsthm `[label]`.
+    TheoremEnv {
+        label: String,
+        body: String,
+    },
+    /// PMAT-1431: `\begin{proof} ... \end{proof}`. Carries no payload —
+    /// the body must not escape into the `EquationsBlock`.
+    ProofEnv,
     XpileContract(String),
     Cite(String),
 }
@@ -179,6 +376,34 @@ impl<'a> Scanner<'a> {
                 return None;
             }
 
+            // PMAT-1431: gather environment (single-equation form),
+            // named by the contract description since 2026-05-15.
+            if rest.starts_with("\\begin{gather}") {
+                self.advance("\\begin{gather}".len());
+                if let Some(end) = self.rest().find("\\end{gather}") {
+                    let formula = self.rest()[..end].to_string();
+                    self.advance(end + "\\end{gather}".len());
+                    return Some(Token::GatherEnv(formula));
+                }
+                return None;
+            }
+
+            // PMAT-1431: `\begin{proof} ... \end{proof}`. Consumed whole
+            // and DISCARDED — `lower_proof_env` models the proof body as
+            // never reaching the EquationsBlock (`body_leaked := false`).
+            if rest.starts_with("\\begin{proof}") {
+                self.advance("\\begin{proof}".len());
+                match self.rest().find("\\end{proof}") {
+                    Some(end) => {
+                        self.advance(end + "\\end{proof}".len());
+                        return Some(Token::ProofEnv);
+                    }
+                    // Unterminated: stop rather than fall through and
+                    // re-scan the body as free-standing math.
+                    None => return None,
+                }
+            }
+
             // \xpileContract{ID}{...}
             if rest.starts_with("\\xpileContract{") {
                 self.advance("\\xpileContract{".len());
@@ -203,6 +428,20 @@ impl<'a> Scanner<'a> {
                 continue;
             }
 
+            // PMAT-1431: inline math, paren form: \( ... \). Must be
+            // tested AFTER `\[` above, since both open with a backslash.
+            if rest.starts_with("\\(") {
+                self.advance(2);
+                if let Some(end) = self.rest().find("\\)") {
+                    let formula = self.rest()[..end].to_string();
+                    self.advance(end + 2);
+                    return Some(Token::ParenMath(formula));
+                }
+                // Unterminated paren math — stop scanning, matching the
+                // established behaviour of the other unterminated forms.
+                return None;
+            }
+
             // Inline math: $...$ but NOT $$ (display via dollars,
             // which we don't support — the next-best behavior is to
             // skip the doubled dollars cleanly).
@@ -224,9 +463,71 @@ impl<'a> Scanner<'a> {
                 return None;
             }
 
+            // PMAT-1431: theorem-class environments, matched against the
+            // roster the contract declares so the two cannot drift.
+            // Placed last because it needs `&mut self` while the `rest`
+            // borrow above is still live; nothing earlier can match a
+            // `\begin{<theorem-class>}` opener, so position is immaterial
+            // to behaviour.
+            if let Some(token) = self.try_theorem_env() {
+                return Some(token);
+            }
+
             // Default: consume one char and continue scanning.
-            let next_char_len = rest.chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+            let next_char_len = self
+                .rest()
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(1);
             self.advance(next_char_len);
+        }
+    }
+
+    /// PMAT-1431: if the scanner is positioned at `\begin{<env>}` for an
+    /// env on [`THEOREM_CLASS_ENVIRONMENTS`], consume the whole
+    /// environment — optional amsthm `[label]` included — and return it.
+    ///
+    /// The closing delimiter searched for is the MATCHING `\end{<env>}`,
+    /// not the first `\end{...}`. A theorem-class environment nested
+    /// inside another is outside `theorem_env_to_obligation`'s stated
+    /// preconditions: a nested env of a DIFFERENT class is absorbed into
+    /// the outer body (and its math becomes the outer `formal`), and one
+    /// of the SAME class closes the outer environment early. Disclosed
+    /// as XPILE-LATEX-PARSE-THMNEST-001 in `notation_surface`, not fixed.
+    fn try_theorem_env(&mut self) -> Option<Token> {
+        let rest = self.rest();
+        let env = THEOREM_CLASS_ENVIRONMENTS
+            .iter()
+            .find(|e| rest.starts_with(&format!("\\begin{{{e}}}")))?;
+
+        let open = format!("\\begin{{{env}}}");
+        let close = format!("\\end{{{env}}}");
+        let start = self.pos;
+        self.advance(open.len());
+
+        // Optional amsthm title argument: `[...]`, brace-free.
+        let mut label = String::new();
+        if self.rest().starts_with('[') {
+            if let Some(end) = self.rest().find(']') {
+                label = self.rest()[1..end].to_string();
+                self.advance(end + 1);
+            }
+        }
+
+        match self.rest().find(&close) {
+            Some(end) => {
+                let body = self.rest()[..end].to_string();
+                self.advance(end + close.len());
+                Some(Token::TheoremEnv { label, body })
+            }
+            None => {
+                // Unterminated environment. Rewind so the default
+                // char-consuming path handles the text, rather than
+                // silently swallowing the rest of the document.
+                self.pos = start;
+                None
+            }
         }
     }
 

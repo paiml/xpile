@@ -2,27 +2,35 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1430 landed from an honesty hunt; the ranked queue stays exhausted
-  until Thu 07-30 / PMAT-1373, the release commit. Took PMAT-1429 standing lead (d) -- book pages
-  that pin `xpile transpile` OUTPUT -- and re-derived every pinned transcript from a force-rebuilt
-  binary. THE LEAD WAS HONEST AND THE TRANSCRIPTS WERE CLEAN: shell-roundtrip.md''s emit AND its
-  `--target rust` refusal message are byte-equal to the binary, the Lean blocks are byte-equal, all
-  six introduction.md invocations work, "six runnable examples" is six. Only cosmetic reflow drift,
-  recorded and deliberately not gated. THE DEFECT WAS ONE COLUMN OVER: backends.md''s ``--target``
-  column published `bashrs` for the shell backend, which the CLI rejects -- the flag is `shell`.
-  LESSONS WORTH KEEPING. (1) A GATE CAN CERTIFY THE DEFECT IT WAS WRITTEN TO PREVENT. claims_drift
-  required the page to name every `Backend::name()` and called those values "`--target` flag"s in
-  both its doc comment and its message; the two coincide for 8 of 9 backends. So the page passed
-  BECAUSE the cell was wrong, and correcting it alone REDS that gate (executed). When a gate walks a
-  set, ask whether its premise holds for EVERY member, not for the representative one. (2) THE
-  SIBLING-CLAIM SHAPE REPEATED ACROSS ONE DAY: PMAT-1429 fixed "the contract backends render
-  contract YAML" in `xpile info` + cli.md and left the same sentence live in backends.md -- its own
-  recorded lesson (1), one file over. A fix that corrects a CLAIM should grep the claim, not the
-  surface. (3) A DOC GATE MUST DISTINGUISH USE FROM MENTION: the first inline scanner reported the
-  book publishes targets `are`, `is` and `also` -- read out of the fix''s OWN new prose explaining
-  the flag. (4) THE REVERSE DIRECTION OF A DISCLOSURE GATE IS CHEAP TO MEASURE and worth it: both
-  `renders_contract_body()` impls were flipped to true and rebuilt to prove the disclosure cannot
-  outlive the scaffold.)'
+updated: '2026-07-28 (PMAT-1431 landed from an honesty hunt; the ranked queue stays exhausted
+  until Thu 07-30 / PMAT-1373, the release commit. Took PMAT-1430 standing lead (a) -- the single
+  contract FRONTEND carries no honesty method -- and THE LEAD''S PREMISE WAS FALSE WITH THE PAYLOAD
+  UNDERNEATH IT, the PMAT-1426 pattern for the third time. `latex` is NOT hollow; it genuinely
+  parses math spans, citations and references, so the honesty method the lead asked for would have
+  answered `true` and certified nothing. What was hollow was the OTHER HALF OF THE SAME CONTRACT:
+  `C-NOTATION-LATEX-MATH-TO-EQUATION` has specified theorem-class -> proof_obligations lowering
+  since 2026-05-15, with a Lean refinement theorem, a Silver promotion, a Kani harness and a book
+  page, and NONE OF IT EXISTED IN RUST -- seven environments, the paren inline form and `gather`
+  all returned Ok with zero output, for 74 days.
+  LESSONS WORTH KEEPING. (1) A PROOF STRATUM CAN BE GREEN OVER AN UNIMPLEMENTED SUBJECT. The Lean
+  theorem and Kani harness range over abstract models -- `LeanTheoremEnv` is a bool plus a string,
+  the harness quantifies over a single `bool` -- so they proved a polarity mapping for a lowering
+  function that had no Rust behind it. A model with no implementation behind it proves a property
+  of nothing, and NOTHING in the Sem/Sym strata can notice. This is PMAT-1385''s reporter lesson
+  one level up, and it generalises: for every contract, ask what ties its model to shipped code.
+  (2) MISFILING BEATS OMISSION AS A FAILURE MODE. The theorem bodies were not dropped -- they were
+  re-scanned as ordinary text and their math emitted as free-standing `eq_inline_*` entries, the
+  ONE bucket `inline_math_to_equation`''s own domain excludes. A reader counting outputs sees a
+  plausible number of equations and no missing-obligation signal. Prefer probes that check WHICH
+  BUCKET, not HOW MANY.
+  (3) A CONTRACT CAN DISAGREE WITH ITSELF FOR FREE. `metadata.description` named `definition`/`remark`
+  as theorem environments; the equation''s own `domain` named `claim` and neither of those. Because
+  NEITHER list was implemented, the disagreement had never cost anything and no test could have
+  found it. Rosters belong in a machine-readable key checked BOTH WAYS against the code, not in
+  two prose paragraphs.
+  (4) The `notation_surface` block (the PMAT-1350 `emit_surface` idiom) is the reusable shape for
+  (1): every `lowers` row must produce output and every `unimplemented` row must produce NONE, so
+  implementing a disclosed gap REDS the gate and forces the disclosure to move.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -4093,6 +4101,72 @@ queue:
     fire before then should hunt again, and lead (a) is the cheapest next application of this
     same gate shape. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
     Wed 2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it.'
+- id: PMAT-1431
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the proof-lane LaTeX frontend implemented NONE of the theorem/proof half its own
+    contract specifies -- and MISFILED the content instead of dropping it, so a theorem''s
+    math surfaced as a free-standing equation the author never wrote, at exit 0 for 74 days'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1430 standing lead (a) -- "the single contract FRONTEND (`latex`)
+    carries no honesty method at all, an UNMEASURED parity claim". THE LEAD''S PREMISE WAS
+    FALSE AND THE PAYLOAD WAS UNDERNEATH IT, the PMAT-1426 pattern for the third time: `latex`
+    is NOT hollow, it genuinely parses math spans, citations and references, so the
+    `renders_contract_body()`-style honesty method the lead asked for would have reported
+    `true` and certified nothing. What was hollow was the OTHER HALF of the same contract.
+    ** THE DEFECT. `C-NOTATION-LATEX-MATH-TO-EQUATION` has specified since 2026-05-15 that
+    theorem-class environments lower to `proof_obligations` and that a `proof` environment
+    lowers without leaking its body -- with a Lean refinement theorem, a Silver promotion, a
+    Kani harness, and a book page publishing it. Measured on a force-rebuilt binary: all seven
+    theorem-class environments returned `Ok` with ZERO obligations, the paren inline form
+    returned zero equations, `gather` returned zero equations. All exit 0.
+    ** THE SHARP PART IS THE MISCLASSIFICATION, NOT THE OMISSION. The environments were not
+    recognised AT ALL, so their bodies were re-scanned as ordinary text and their math spans
+    surfaced as free-standing `eq_inline_*` entries -- the one bucket `inline_math_to_equation`''s
+    own domain EXCLUDES ("outside a theorem-class environment"). The theorem''s content was
+    PRESENT, in the wrong bucket, indistinguishable from an equation nobody wrote. A proof
+    body did the same, contradicting `lower_proof_env`''s modelled `body_leaked := false`.
+    An omission is visible to a reader counting outputs; a misfiling is not.
+    ** WHY THE PROOFS WERE GREEN: they range over ABSTRACT MODELS (`LeanTheoremEnv` is a bool
+    plus a string; the Kani harness quantifies over a single `bool`), so they proved a polarity
+    mapping for a lowering function with no Rust behind it. A MODEL WITH NO IMPLEMENTATION
+    BEHIND IT PROVES A PROPERTY OF NOTHING -- and the repo''s Lean/Kani strata cannot detect
+    that on their own. This is PMAT-1385''s lesson one level up: a test that asserts on a
+    REPORTER is only as good as the reporter''s willingness to say "I measured nothing"; a
+    PROOF is only as good as something tying its model to shipped code.
+    ** GATE: crates/xpile/tests/notation_claim_witness.rs (XPILE-NOTATION-002, 9 tests), keyed
+    on the CLAIM CLASS via a machine-readable `notation_surface` block in the contract -- the
+    PMAT-1350 `emit_surface` idiom -- checked BOTH WAYS: every `lowers` row must produce output
+    and every `unimplemented` row must produce NONE, so implementing a disclosed gap REDS the
+    gate and forces the row to move up. Roster checked for SET EQUALITY in both directions
+    (EXECUTED: adding `sublemma` to the parser alone fails "DRIFTED APART"). RED HALF RUN: 8 of
+    9 failed pre-fix; the 1 that passed was the roster equality, authored consistently on both
+    sides. Minimum-arity guards on every parse (PMAT-1396: a negative over an EMPTY enumeration
+    passes for free).
+    ** ALSO FOUND: the contract DISAGREED WITH ITSELF about its own roster -- `metadata.description`
+    named `definition`/`remark`, the equation''s `domain` named `claim` and neither of those.
+    Nothing was implemented, so the disagreement had never cost anything and nothing could have
+    detected it. Resolved as the union; roster moved out of prose into a machine-readable key.
+    ** RESIDUALS, now DISCLOSED in `notation_surface.unimplemented` rather than silent: the
+    lean-pointer half of proof-env lowering (no field in `EquationsBlock`, LEANPTR-001);
+    `resolve_label_to_equation_name` is IDENTITY and the contract''s postcondition described a
+    resolution step that had never run (LABELRES-001); multi-row `align`/`gather` is one entry;
+    nested theorem envs give one obligation (THMNEST-001).
+    ** NO gate file touched; witness_floor.rs untouched (two-touch serial resource, PMAT-1372 /
+    PMAT-1373).
+    NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) the OTHER
+    contracts with Lean/Kani strata but no model-to-code tie -- this slice showed a green proof
+    stratum is compatible with an unimplemented subject, so "which OTHER contract''s equations
+    name a construct no shipped code produces?" is now the sharpest hunt in the repo, and
+    `notation_surface` is the reusable shape for answering it; (b) PMAT-1430 lead (b),
+    frontends.md lists `.mk` under status "Real POSIX parser" though PMAT-1420 made it REFUSE;
+    (c) PMAT-1430 lead (c), backends.md Status-column prose that nothing gates; (d) PMAT-1385
+    lead (a), the `quorum`/`attestations`/`diamond` reporters for the vacuity shape `audit` had.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373
+    (release commit, gate_touch 3, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
