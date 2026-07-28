@@ -2,6 +2,16 @@
 **/*.rs.bk
 Cargo.lock.bak
 
+# Local build-output redirect. `.cargo/config.toml` pins `target-dir` to a
+# machine-specific path (this host: /mnt/nvme-raid0/targets/xpile) and is
+# deliberately UNTRACKED — an absolute path baked into a published crate would
+# break every other checkout. It is ignored rather than merely untracked so
+# `git status --porcelain` stays EMPTY, which the release preconditions
+# require. If it goes missing, cargo silently falls back to ./target: on
+# 2026-07-28 that had put 29G on the root filesystem and taken it to 100%,
+# at which point every command fails with ENOSPC.
+/.cargo/
+
 # Stray rustc artifacts from differential-hunt / e2e probes that compile a
 # transpiled lib in-place (a `rustc lib.rs` with no `-o` emits `lib*.rlib` in the
 # CWD). These must never be committed (PMAT-689 leaked one via `git add -A`).

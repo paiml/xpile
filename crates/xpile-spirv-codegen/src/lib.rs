@@ -44,8 +44,8 @@ use xpile_meta_hir::Module;
 
 mod spirv_diffexec;
 pub use spirv_diffexec::{
-    general_metahir_module, general_real_wgsl, is_general_saxpy_module, real_wgsl_for,
-    vulkan_adapter_available, SpirvDiffExecEngine, EXPECTED_OUTPUT, FIXTURE_INPUT,
+    extract_wgsl_from_summary, general_metahir_module, general_real_wgsl, is_general_saxpy_module,
+    real_wgsl_for, vulkan_adapter_available, SpirvDiffExecEngine, EXPECTED_OUTPUT, FIXTURE_INPUT,
 };
 
 /// The Layer-5 compile contract every emitted SPIR-V artifact cites.
@@ -106,11 +106,32 @@ pub fn wgsl_to_spirv_words(wgsl: &str) -> Result<Vec<u32>, SpirvCompileError> {
     Ok(words)
 }
 
+/// The per-line prefix carrying one row of emitted SPIR-V binary words as
+/// hex in [`spirv_text_summary`]. Distinct from the `;   ` WGSL-inlining
+/// prefix so the two blocks are separable by prefix alone, and `;`-leading
+/// so the artifact stays a wholly comment-shaped file.
+pub const SUMMARY_BINARY_LINE_PREFIX: &str = ";b ";
+
+/// Words rendered per `;b ` line.
+const BINARY_WORDS_PER_LINE: usize = 8;
+
 /// Render a human-readable text summary of an emitted SPIR-V module for
 /// [`Artifact::primary`]. SPIR-V is binary; the primary text is a stable,
 /// auditable disassembly-lite header (magic, version, word count, the
 /// source WGSL kept inline as a `; ` comment for round-trip clarity).
-/// The raw binary words go in a sidecar.
+///
+/// PMAT-1428: the header is followed by the module's actual binary words,
+/// hex-encoded one `;b `-prefixed row at a time. Until this slice the words
+/// were computed, [`validate_spirv`]-checked, and then **discarded** — this
+/// function's doc claimed "the raw binary words go in a sidecar" and
+/// `emit_from_wgsl`'s claimed it packaged one, but `EmittedText` has no
+/// sidecar channel to package into and none was ever constructed. The CLI
+/// prints `Artifact::primary` and nothing else, so `--target spirv` was the
+/// only target whose artifact was not the thing the target names: a header
+/// asserting `; Words: 63` for a payload no caller could obtain. The words
+/// are now IN the artifact and recoverable via
+/// [`extract_spirv_words_from_summary`], which is what makes that header
+/// count checkable against the module it describes.
 pub fn spirv_text_summary(words: &[u32], source_wgsl: &str) -> String {
     let version = words.get(1).copied().unwrap_or(0);
     let major = (version >> 16) & 0xff;
@@ -124,6 +145,23 @@ pub fn spirv_text_summary(words: &[u32], source_wgsl: &str) -> String {
     out.push_str(&format!("; Version:   {major}.{minor}\n"));
     out.push_str(&format!("; Words:     {}\n", words.len()));
     out.push_str("; Emitter:   xpile-spirv-codegen (WGSL -> naga -> spv)\n");
+    out.push_str(
+        "; Binary:    the emitted module, one `;b ` row per 8 words, each word\n\
+         ;            an 8-digit hex u32. This is the ONLY channel carrying\n\
+         ;            these bytes: `--target spirv` prints text. Recover with\n\
+         ;            `sed -n 's/^;b //p' <file> | tr -d ' \\n' | xxd -r -p`\n\
+         ;            (word-swapped) or `extract_spirv_words_from_summary`.\n",
+    );
+    for row in words.chunks(BINARY_WORDS_PER_LINE) {
+        out.push_str(SUMMARY_BINARY_LINE_PREFIX);
+        for (i, w) in row.iter().enumerate() {
+            if i > 0 {
+                out.push(' ');
+            }
+            out.push_str(&format!("{w:08x}"));
+        }
+        out.push('\n');
+    }
     out.push_str("; Source WGSL (reused from xpile-wgsl-codegen):\n");
     for line in source_wgsl.lines() {
         out.push_str(";   ");
@@ -131,6 +169,45 @@ pub fn spirv_text_summary(words: &[u32], source_wgsl: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+/// Recover the emitted SPIR-V binary words from a [`spirv_text_summary`]
+/// artifact — the inverse of the `;b ` block that function writes.
+///
+/// This is the property that makes the summary's `; Words: N` header a
+/// CHECKABLE claim rather than a self-report: the recovered stream must
+/// both equal the words that were compiled and satisfy [`validate_spirv`].
+/// Returns `Err` when the artifact carries no `;b ` block (an artifact that
+/// only *describes* a module) or when a row is not 8-hex-digit words.
+pub fn extract_spirv_words_from_summary(summary: &str) -> Result<Vec<u32>, String> {
+    let mut words = Vec::new();
+    let mut saw_row = false;
+    for line in summary.lines() {
+        let Some(row) = line.strip_prefix(SUMMARY_BINARY_LINE_PREFIX) else {
+            continue;
+        };
+        saw_row = true;
+        for tok in row.split_whitespace() {
+            if tok.len() != 8 {
+                return Err(format!(
+                    "SPIR-V summary binary row has a {}-digit word `{tok}`; \
+                     every word is 8 hex digits",
+                    tok.len()
+                ));
+            }
+            let w = u32::from_str_radix(tok, 16)
+                .map_err(|e| format!("SPIR-V summary binary row word `{tok}` is not hex: {e}"))?;
+            words.push(w);
+        }
+    }
+    if !saw_row {
+        return Err(format!(
+            "SPIR-V summary carries no `{SUMMARY_BINARY_LINE_PREFIX}` block — the \
+             artifact describes a module without containing it, so its `; Words:` \
+             header cannot be checked. Got:\n{summary}"
+        ));
+    }
+    Ok(words)
 }
 
 /// `true` when `words` is a real SPIR-V binary (begins with the SPIR-V
@@ -254,7 +331,12 @@ fn check_hardware(config: &BackendConfig) -> Option<Result<(), BackendError>> {
 }
 
 /// Emit a SPIR-V artifact from a WGSL source string by compiling it via
-/// naga and packaging the text summary + binary-word sidecar.
+/// naga and packaging the validated words into the text summary.
+///
+/// PMAT-1428: this said "packaging the text summary + binary-word sidecar".
+/// [`EmittedText`] has no sidecar field — a `TargetEmitter` structurally
+/// cannot return one — so no sidecar was ever built and the words died
+/// here. They now travel in the summary's `;b ` block.
 fn emit_from_wgsl(wgsl: &str) -> Result<EmittedText, BackendError> {
     let words = wgsl_to_spirv_words(wgsl)
         .map_err(|e| BackendError::Lower(format!("WGSL->SPIR-V compile: {e}")))?;

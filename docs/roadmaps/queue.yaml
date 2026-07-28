@@ -3925,6 +3925,51 @@ queue:
     witness-floor TOUCH 2) on Thu 07-30; a fire before then should hunt again. Do NOT start a
     gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 — no
     crates/*/src or contracts/*.yaml merge after it.'
+- id: PMAT-1428
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  title: '`--target spirv` emitted a DESCRIPTION of a module instead of the module — the only
+    target whose artifact was not the thing the target names. The words were compiled through
+    naga, `validate_spirv`-checked, and DROPPED; the artifact is a 13-line header asserting
+    `; Words: 63` for a payload no caller could obtain, at exit 0. Two doc comments claimed a
+    "binary-word sidecar" that no code constructs and that `EmittedText` cannot carry.'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (fifth fire of the day; ranked queue exhausted
+    until Thu 07-30). ★ FOUR LEADS RE-DERIVED FIRST, ALL FOUR CLEAN OR FALSE — PMAT-1427''s (a)
+    field-subscript receiver (emits `&mut self` correctly), (b) "C int and long collapse to i64"
+    (FALSE: `int`->`i32`, `long`->`i64`, and the whole unsigned family is right), (c) in-place list
+    methods on a subscript receiver (all seven refuse at exit 1), and PMAT-1388''s next-pick (b)
+    wgsl-accepts-recursion (ALREADY FIXED; both lanes refuse naming naga''s reason). The defect was
+    found while CONFIRMING those negatives, by emitting one source to all nine targets and reading
+    what came back. Fifth slice running where the lead named a place, not a payload. STANDING
+    LESSONS. (1) ASK WHETHER THE ARTIFACT *IS* THE THING THE FLAG NAMES. Every honesty shape swept
+    so far asked "is the emitted content right?"; this one is a level up — the content was never
+    emitted. `--target spirv` is not "SPIR-V that is wrong", it is "not SPIR-V". Sweep the OTHER
+    flags for the same question (`--emit-crate`, `--out`, `--hardware`). (2) A DOC CLAIM THAT NAMES
+    A REAL MECHANISM IS THE HARDEST KIND TO FALSIFY. "The raw binary words go in a sidecar" survived
+    because `Artifact.sidecars` genuinely exists — one type away from the `EmittedText` the function
+    returns. Grepping for the mechanism CONFIRMS the claim; only checking the RETURN TYPE refutes it.
+    (3) THE CLI DROPS `Artifact.sidecars` ENTIRELY AND SILENTLY (`main.rs` writes `primary` only), so
+    the whole sidecar channel is dead code across every backend — a standing lead below. (4) A
+    SELF-REPORTED COUNT IS NOT A CHECK: `; Words: 63` was asserted by a pre-existing witness
+    (`wgsl_int_boundary_witness.rs`) as proof "naga actually ran", but the number was written by the
+    same code path it was meant to attest. The new gate ties the two INDEPENDENTLY recorded halves of
+    the artifact to each other instead. (5) APPEND, DO NOT RESHAPE, when a format has existing
+    readers: the payload went in BEFORE the `; Source WGSL` marker so `extract_wgsl_from_summary`
+    (which advances to that marker) is untouched, every prior line stayed byte-identical, and all
+    four pre-existing spirv/wgsl witness files stayed green unmodified. STANDING LEADS: (a) `Artifact.sidecars`
+    is written by NO backend the CLI can reach and read by NO CLI code path — either wire it (`--out`
+    could write siblings) or delete the field; as it stands it is a channel whose existence makes
+    false claims plausible. (b) `xpile-latex-contract-backend` DOES populate a sidecar (lib.rs:49) —
+    so that backend''s output is silently truncated by the CLI in the same way; not re-derived from
+    the binary here. (c) `spirv-val` / `spirv-dis` are NOT installed on this host, so the recovered
+    module is checked by the crate''s own `validate_spirv` plus the WGSL-recompile identity, NOT by an
+    external SPIR-V toolchain — an independent-tool check is still owed. NEXT PICK: PMAT-1373
+    (release commit, gate_touch 3, witness-floor TOUCH 2) on Thu 07-30; a fire before then should hunt
+    again, and lead (a)/(b) above are the strongest starting points. Do NOT start a gate_touch and do
+    NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 — no crates/*/src or contracts/*.yaml
+    merge after it.'
+  date: '2026-07-28'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
