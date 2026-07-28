@@ -94,6 +94,30 @@ arms rather than leave a refusal standing on an expired premise (PMAT-1421) — 
 carries a positive control, without which a broken `run_lean` would make every
 absence assertion pass for free.
 
+**The corpus shrinks, and a pre-existing witness caught it — which is the point.**
+Over-refusal is the natural failure mode of a refusal fix (PMAT-1419), and
+`audit_command_supports_lean_target`'s vacuity floor went red on this change.
+The delta was attributed rather than assumed, by reverting *only* the six
+`emit_binop` arms, rebuilding into the same target dir, and re-running the same
+831-file corpus with each binary probe-verified:
+
+```text
+           functions_emitted  requiring  with_citation    f1     errors  .py lowering
+  before         172             151          127       84.1%     754       77/810
+  after          158             139          117       84.1%     761       70/810
+```
+
+Exactly seven `.py` fixtures stopped lowering, none started, and each of the
+seven fails with a PMAT-1425 refusal message and no other: `bigint_bits.py`,
+`bits.py`, `left_shift_overflow.py` (`<<`), `bit_invert.py` (`&`), and
+`pow.py`, `pow_builtin.py`, `right_shift_large_amount.py` (the variable
+count/exponent shapes). Nothing collateral: `x ** 0.5` and `x ** y` on `Float`
+still emit — floats never reach the `Int` `Pow` arm — and unary `~a` still
+emits, both probe-verified. F1 is unchanged at 84.1%, so this removed uncited
+and cited emissions in proportion. The floor moves 140 → 128, keeping
+PMAT-1418's margin *ratio* (140/151 = 92.7%, 128/139 = 92.1%) rather than its
+absolute slack; a hollow Lean lane still reads 0.
+
 ### The WAT lift skipped every `(export …)` directive unread, silently rewriting the module's public ABI at exit 0 (PMAT-1424)
 
 Found by taking PMAT-1423's standing lead (e) — "the emit's aggregate lane has
