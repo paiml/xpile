@@ -1430,10 +1430,30 @@ fn print_info(session: &TranspileSession) -> Result<()> {
         let fmts: Vec<String> = cf.formats().iter().map(|f| format!("{:?}", f)).collect();
         println!("    - {} ← {}", cf.name(), fmts.join(", "));
     }
-    println!("  contract_backends ({}):", session.contract_backends.len());
+    // PMAT-1429: the proof-lane twin of the PMAT-1346 sweep 14 lines above.
+    // A contract backend that returns a fixed `_scaffold` payload for every
+    // contract must not be counted, silently, among the formats xpile
+    // RENDERS — `book/src/reference/cli.md` reproduces this listing and tells
+    // the reader to "confirm your install can see every lane".
+    let rendering = session
+        .contract_backends
+        .iter()
+        .filter(|b| b.renders_contract_body())
+        .count();
+    let registered_cb = session.contract_backends.len();
+    if rendering == registered_cb {
+        println!("  contract_backends ({registered_cb}):");
+    } else {
+        println!("  contract_backends ({registered_cb} registered, {rendering} rendering):");
+    }
     for cb in &session.contract_backends {
         let fmts: Vec<String> = cb.formats().iter().map(|f| format!("{:?}", f)).collect();
-        println!("    - {} → {}", cb.name(), fmts.join(", "));
+        let suffix = if cb.renders_contract_body() {
+            ""
+        } else {
+            "  [scaffold — fixed `_scaffold` payload, ignores the contract]"
+        };
+        println!("    - {} → {}{suffix}", cb.name(), fmts.join(", "));
     }
     Ok(())
 }

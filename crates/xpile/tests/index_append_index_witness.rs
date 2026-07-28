@@ -87,9 +87,18 @@ const DICT_SRC: &str = r#"def main() -> None:
 
 /// Transpile `src` through the SHIPPED binary for `target`, returning stdout.
 fn emit(label: &str, target: &str, src: &str) -> String {
+    // PMAT-1429: the probe dir must be unique per CALL, not per
+    // (label, target). Several tests in this file emit the same
+    // (label, target) pair, and `cargo test` runs them concurrently — so
+    // one test's `remove_dir_all` raced another's `create_dir_all`, and the
+    // `fs::write` below failed with NotFound. Intermittent RED on
+    // `workspace-test`, a REQUIRED context, from a witness that passes
+    // whenever it is run alone (`--test-threads=1`).
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nonce = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir()
         .join("xpile-index-append-witness")
-        .join(format!("{label}-{target}"));
+        .join(format!("{label}-{target}-{}-{nonce}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("create probe dir");
     let py = dir.join("p.py");

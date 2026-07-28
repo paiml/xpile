@@ -15,28 +15,39 @@ $ xpile info
 xpile — polyglot transpile workbench
 
 Code lane:
-  frontends (4):
+  frontends (5 registered, 4 lowering):
     - python (py, pyi)
     - c (c, h)
-    - ruchy (ruchy)
+    - ruchy (ruchy)  [routing only — INPUT refuses, no parser]
     - bashrs (sh, bash, zsh, mk)
-  backends (6):
+    - wasm (wat)
+  backends (9):
     - rust → Rust
     - ruchy → Ruchy
     - ptx → Ptx
     - wgsl → Wgsl
+    - spirv → Spirv
+    - wasm → Wasm
     - lean → Lean
     - bashrs → Shell
+    - forjar → ForjarYaml
 
 Proof lane:
   contract_frontends (1):
     - latex ← LatexMath
-  contract_backends (2):
-    - lean-theorem → LeanTheorem
-    - latex → LatexMath
+  contract_backends (2 registered, 0 rendering):
+    - lean-theorem → LeanTheorem  [scaffold — fixed `_scaffold` payload, ignores the contract]
+    - latex → LatexMath  [scaffold — fixed `_scaffold` payload, ignores the contract]
 ```
 
-Use this to confirm your install can see every lane.
+Use this to confirm your install can see every lane. The two count forms are
+load-bearing: `frontends (5 registered, 4 lowering)` and `contract_backends
+(2 registered, 0 rendering)` mean the registry holds entries that do **not**
+do the job their name implies. `ruchy` is registered so a `.ruchy` input gets
+a specific refusal rather than a generic one (PMAT-1346), and both proof-lane
+contract backends are scaffolds that return a fixed `_scaffold` payload for
+every contract (PMAT-1429). This transcript is regenerated from the binary and
+pinned by `crates/xpile/tests/cli_docs_drift.rs`.
 
 ## `xpile transpile`
 
@@ -50,8 +61,11 @@ selects the backend.
 | Flag | Default | Meaning |
 |---|---|---|
 | `<INPUT>` | required | path to the source file |
-| `--target <T>` | `rust` | one of `rust`, `ruchy`, `ptx`, `wgsl`, `spirv`, `lean`, `shell` |
+| `--target <T>` | `rust` | one of `rust`, `ruchy`, `ptx`, `wgsl`, `spirv`, `wasm`, `lean`, `shell`, `forjar` |
 | `--out <P>` | stdout | output path |
+| `--emit-crate <D>` | — | write a buildable Cargo crate instead of printing; `--target rust` only |
+| `--contracts <on\|off>` | `on` | emit / suppress the `xpile-contract:` citations |
+| `--hardware <H>` | — | hardware profile (`ptx`, `ptx:sm_89`); **required** to reach `--target ptx`, refused on every other target |
 
 Examples:
 
@@ -67,6 +81,33 @@ If a backend cannot lower a particular construct, the error message
 names the governing contract and suggests the correct target — see the
 [shell-roundtrip tutorial](../tutorials/shell-roundtrip.md) for an
 example.
+
+## `xpile hybrid`
+
+Phases 1–2 of the hybrid flow (§16). Walks a module directory, dispatches
+each source file to its frontend, and reconciles the cross-language FFI
+boundaries (`FfiManifest::reconcile`) into a manifest. Prints one line per
+resolved boundary (symbol, from→to, shim_id); on unresolved boundaries it
+prints them and exits non-zero — the `manifest_completeness` gate of
+`C-FFI-CPYTHON-EXT`.
+
+```bash
+xpile hybrid [OPTIONS] <PATH>
+```
+
+`<PATH>` is a directory holding the mixed-language module (e.g. `app.py`
+alongside `_core.c`); sources are detected by extension.
+
+| Flag | Meaning |
+|---|---|
+| `--emit-shims <P>` | Phase 4 — write the reconciled Rust FFI shims (`extern "C"` + safe wrappers) |
+| `--emit-workspace <D>` | Phase 5a — emit a buildable Cargo workspace (a `build.rs` that cc-compiles the C side and links the shims) |
+| `--verify` | Phases 3+5 — emit to a temp dir, `cargo build`, run the linked artifact, and differential-check its stdout against the CPython reference. Exit 0 on match, non-zero on divergence; graceful-skips at exit 0 when `cc`/`python3`/`cargo` are unavailable |
+| `--repair` | Phase 6 — on a build failure or divergence, drive the bounded, fail-closed `xpile-agent` repair loop and re-verify through the same path. Requires `--verify`; fail-closed (non-zero) when no rule applies |
+
+`--verify` is the north-star executing differential: it is the one command
+that compares xpile's output against CPython by *running* both, rather than
+by comparing text.
 
 ## `xpile diamond`
 
