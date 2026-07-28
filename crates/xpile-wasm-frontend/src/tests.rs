@@ -8,12 +8,25 @@
 //! byte-identical — an executed proof that the lift reconstructs every
 //! instruction the emit produced.
 //!
-//! That qualifier is PMAT-1422's, and it is measured, not hedged:
-//! `the_emit_image_round_trip_hole_is_exactly_not_and_float_div` pins the
-//! set of emitted constructs the lift refuses at exactly `not` and float
-//! `/`. A fixture corpus cannot establish an unqualified claim about the
-//! whole image — none of the fixtures below used either construct, which is
-//! why the unqualified version survived here for so long.
+//! That qualifier is PMAT-1422's, and
+//! `the_emit_image_round_trip_hole_is_measured_not_asserted` pins the set of
+//! emitted constructs the lift refuses.
+//!
+//! ⚠️ **The measurement is only as wide as its corpus, and this file has been
+//! caught by that twice.** The paragraph above used to end "…at exactly
+//! `not` and float `/`" — established over 7 rows containing no float
+//! builtin, no unary float `-` and no `F32`, so it could not have found the
+//! other ten. PMAT-1423 re-measured over
+//! [`emit_image_corpus`], which reaches every scalar construct the emit
+//! accepts, and the hole is twelve. The sentence "a fixture corpus cannot
+//! establish an unqualified claim about the whole image" was already in this
+//! doc comment when the claim it warns about was written one screen below
+//! it — so the corpus, not the prose, is the thing to grow.
+//!
+//! A second lesson from the same slice: the prior witness's oracle was
+//! `lift_wat(..).is_ok()`, and four constructs passed it while the lift was
+//! silently corrupting them. `Ok` is not the invariant — the FIXED POINT is.
+//! See [`lift_ok_implies_the_lifted_module_still_emits`].
 
 use super::*;
 use std::path::Path;
@@ -1417,188 +1430,659 @@ fn the_emit_still_guards_every_float_division_in_a_user_body() {
     );
 }
 
-/// The two instructions the emit produces in a user body that the lift
-/// cannot invert, MEASURED rather than restated (PMAT-1422).
-///
-/// This is the enforcement half of the corrected module-doc claim. Until
-/// PMAT-1422 the docs said the lift is "a right-inverse of emit on its WAT
-/// image" with no qualifier, and the fixed-point fixtures could not falsify
-/// it because none of them used `not` or float `/`. Each row below builds a
-/// meta-HIR module, emits it, and lifts the emit's OWN output back.
-///
-/// It reds in BOTH directions on purpose: if the hole is closed (a meta-HIR
-/// `not` / trap arrives), the `Err` rows fail and the doc must drop them; if
-/// the hole WIDENS, an `Ok` row fails and the doc must grow.
-#[test]
-fn the_emit_image_round_trip_hole_is_exactly_not_and_float_div() {
-    let bool_p = || vec![p("a", Type::Bool)];
-    let f64_pp = || vec![p("x", Type::F64), p("y", Type::F64)];
-    let i64_pp = || vec![p("a", Type::I64), p("b", Type::I64)];
+// ─── PMAT-1423: the emit-image hole, MEASURED over a corpus that can
+//     falsify the claim ────────────────────────────────────────────────
 
-    let cases: Vec<(&str, bool, Module)> = vec![
-        // ── the hole: emitted, but not liftable ──
-        (
-            "not",
-            false,
-            module(
-                "h",
-                vec![func(
-                    "f",
-                    bool_p(),
-                    Type::Bool,
-                    Block {
-                        stmts: vec![],
-                        trailing_return: Expr::UnOp {
-                            op: xpile_meta_hir::UnOp::Not,
-                            operand: Box::new(ident("a")),
-                        },
-                    },
-                )],
-            ),
-        ),
-        (
-            "float /",
-            false,
-            module(
-                "h",
-                vec![func(
-                    "f",
-                    f64_pp(),
-                    Type::F64,
-                    Block {
-                        stmts: vec![],
-                        trailing_return: Expr::FloatBinOp {
-                            op: xpile_meta_hir::FloatOp::Div,
-                            lhs: Box::new(ident("x")),
-                            rhs: Box::new(ident("y")),
-                        },
-                    },
-                )],
-            ),
-        ),
-        // ── the controls: emitted AND liftable ──
+/// Every scalar construct the emit accepts, as a meta-HIR module. This is
+/// the corpus the hole is measured over, and it is deliberately WIDER than
+/// the claim it establishes.
+///
+/// PMAT-1422 measured the same claim over 7 rows — `not`, float `/`, int
+/// `+`, int `//`, int `&`, float `+`, a comparison — and concluded the hole
+/// was exactly the first two. It had no float builtin in it, no unary float
+/// `-`, no `F32` and no `abs`/`min`/`max`/`sqrt`, so it could not have found
+/// the other ten. That is the failure mode this crate's own test-module doc
+/// warns about one screen above where the claim was written.
+fn emit_image_corpus() -> Vec<(&'static str, Module)> {
+    use xpile_meta_hir::{FloatOp, NumBuiltinOp, UnOp};
+
+    fn one(ps: Vec<Param>, rt: Type, e: Expr) -> Module {
+        module(
+            "h",
+            vec![func(
+                "f",
+                ps,
+                rt,
+                Block {
+                    stmts: vec![],
+                    trailing_return: e,
+                },
+            )],
+        )
+    }
+    let i64_pp = || vec![p("a", Type::I64), p("b", Type::I64)];
+    let f64_pp = || vec![p("x", Type::F64), p("y", Type::F64)];
+    let f32_p = || vec![p("s", Type::F32)];
+    let un = |op, e: Expr| Expr::UnOp {
+        op,
+        operand: Box::new(e),
+    };
+    let nb = |op, args: Vec<Expr>, of_float| Expr::NumBuiltin { op, args, of_float };
+    let fb = |op, l: Expr, r: Expr| Expr::FloatBinOp {
+        op,
+        lhs: Box::new(l),
+        rhs: Box::new(r),
+    };
+
+    vec![
+        // ── integer arithmetic / bitwise ──
         (
             "int +",
-            true,
-            module(
-                "h",
-                vec![func(
-                    "f",
-                    i64_pp(),
-                    Type::I64,
-                    Block {
-                        stmts: vec![],
-                        trailing_return: binop(BinOp::Add, ident("a"), ident("b")),
-                    },
-                )],
+            one(
+                i64_pp(),
+                Type::I64,
+                binop(BinOp::Add, ident("a"), ident("b")),
             ),
         ),
         (
             "int //",
-            true,
-            module(
-                "h",
-                vec![func(
-                    "f",
-                    i64_pp(),
-                    Type::I64,
-                    Block {
-                        stmts: vec![],
-                        trailing_return: binop(BinOp::FloorDiv, ident("a"), ident("b")),
-                    },
-                )],
+            one(
+                i64_pp(),
+                Type::I64,
+                binop(BinOp::FloorDiv, ident("a"), ident("b")),
             ),
         ),
         (
             "int &",
-            true,
-            module(
-                "h",
-                vec![func(
-                    "f",
-                    i64_pp(),
-                    Type::I64,
-                    Block {
-                        stmts: vec![],
-                        trailing_return: binop(BinOp::BitAnd, ident("a"), ident("b")),
-                    },
-                )],
+            one(
+                i64_pp(),
+                Type::I64,
+                binop(BinOp::BitAnd, ident("a"), ident("b")),
             ),
         ),
         (
-            "float +",
-            true,
-            module(
-                "h",
-                vec![func(
-                    "f",
-                    f64_pp(),
-                    Type::F64,
-                    Block {
-                        stmts: vec![],
-                        trailing_return: Expr::FloatBinOp {
-                            op: xpile_meta_hir::FloatOp::Add,
-                            lhs: Box::new(ident("x")),
-                            rhs: Box::new(ident("y")),
-                        },
-                    },
-                )],
+            "int <<",
+            one(
+                i64_pp(),
+                Type::I64,
+                binop(BinOp::Shl, ident("a"), ident("b")),
             ),
         ),
         (
             "comparison",
-            true,
-            module(
-                "h",
-                vec![func(
-                    "f",
-                    i64_pp(),
-                    Type::Bool,
-                    Block {
-                        stmts: vec![],
-                        trailing_return: binop(BinOp::Lt, ident("a"), ident("b")),
-                    },
-                )],
+            one(
+                i64_pp(),
+                Type::Bool,
+                binop(BinOp::Lt, ident("a"), ident("b")),
             ),
         ),
-    ];
+        // ── unary ──
+        (
+            "unary - (int)",
+            one(i64_pp(), Type::I64, un(UnOp::Neg, ident("a"))),
+        ),
+        (
+            "unary ~ (int)",
+            one(i64_pp(), Type::I64, un(UnOp::BitNot, ident("a"))),
+        ),
+        (
+            "unary - (float)",
+            one(f64_pp(), Type::F64, un(UnOp::Neg, ident("x"))),
+        ),
+        (
+            "unary - (f32)",
+            one(f32_p(), Type::F32, un(UnOp::Neg, ident("s"))),
+        ),
+        (
+            "not",
+            one(
+                vec![p("a", Type::Bool)],
+                Type::Bool,
+                un(UnOp::Not, ident("a")),
+            ),
+        ),
+        // ── float arithmetic ──
+        (
+            "float +",
+            one(
+                f64_pp(),
+                Type::F64,
+                fb(FloatOp::Add, ident("x"), ident("y")),
+            ),
+        ),
+        (
+            "float /",
+            one(
+                f64_pp(),
+                Type::F64,
+                fb(FloatOp::Div, ident("x"), ident("y")),
+            ),
+        ),
+        // ── numeric builtins (the `$__wasm_*` helper-call family) ──
+        (
+            "abs (int)",
+            one(
+                i64_pp(),
+                Type::I64,
+                nb(NumBuiltinOp::Abs, vec![ident("a")], false),
+            ),
+        ),
+        (
+            "abs (float)",
+            one(
+                f64_pp(),
+                Type::F64,
+                nb(NumBuiltinOp::Abs, vec![ident("x")], true),
+            ),
+        ),
+        (
+            "min (int)",
+            one(
+                i64_pp(),
+                Type::I64,
+                nb(NumBuiltinOp::Min, vec![ident("a"), ident("b")], false),
+            ),
+        ),
+        (
+            "max (int)",
+            one(
+                i64_pp(),
+                Type::I64,
+                nb(NumBuiltinOp::Max, vec![ident("a"), ident("b")], false),
+            ),
+        ),
+        (
+            "math.sqrt",
+            one(
+                f64_pp(),
+                Type::F64,
+                nb(NumBuiltinOp::Sqrt, vec![ident("x")], true),
+            ),
+        ),
+        (
+            "math.floor",
+            one(
+                f64_pp(),
+                Type::I64,
+                nb(NumBuiltinOp::Floor, vec![ident("x")], true),
+            ),
+        ),
+        (
+            "math.ceil",
+            one(
+                f64_pp(),
+                Type::I64,
+                nb(NumBuiltinOp::Ceil, vec![ident("x")], true),
+            ),
+        ),
+        // ── literals / type identity ──
+        ("f64 literal", one(vec![], Type::F64, Expr::LitFloat(2.5))),
+        ("f32 literal", one(vec![], Type::F32, Expr::LitFloat(2.5))),
+        ("f32 passthrough", one(f32_p(), Type::F32, ident("s"))),
+    ]
+}
 
-    let mut holes: Vec<&str> = Vec::new();
-    for (label, liftable, m) in &cases {
-        let wat = emit(m);
-        let got = lift_wat(&m.name, &wat);
-        if got.is_err() {
-            holes.push(label);
+/// The instruction lines of the USER functions of an emitted module — the
+/// `$__wasm_*` prelude is dropped by the lift, so it is dropped here too.
+/// Signature, comment, `(local …)` declaration and closing-paren lines are
+/// filtered out, leaving the mnemonics the lift actually has to invert.
+fn user_body_lines(wat: &str) -> Vec<String> {
+    wat.split("\n  (func ")
+        .skip(1)
+        .filter(|f| !f.starts_with("$__wasm_"))
+        .flat_map(|f| f.lines().skip(1))
+        .map(str::trim)
+        .filter(|l| {
+            !l.is_empty() && !l.starts_with(";;") && !l.starts_with('(') && !l.starts_with(')')
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+/// How one corpus row behaves under `emit → lift → emit`.
+#[derive(Debug, PartialEq, Eq)]
+enum RoundTrip {
+    /// `emit(lift(emit(M))) == emit(M)` byte for byte.
+    FixedPoint,
+    /// Token streams agree; the bytes differ only in layout. Semantically a
+    /// fixed point, and recorded separately rather than normalised away so
+    /// the cosmetic residual stays visible.
+    FixedPointModuloLayout,
+    /// The lift refused — the honest hole.
+    LiftRefused,
+    /// ⚠️ The lift returned `Ok` and the re-emit then refused. This is the
+    /// PMAT-1423 defect: a module the lift silently corrupted while
+    /// reporting success. Must be empty.
+    ReEmitRefused(String),
+    /// ⚠️ Both legs succeeded but the WAT genuinely differs. Must be empty.
+    NotAFixedPoint,
+}
+
+fn classify(m: &Module) -> RoundTrip {
+    let wat1 = emit(m);
+    let lifted = match lift_wat(&m.name, &wat1) {
+        Ok(l) => l,
+        Err(_) => return RoundTrip::LiftRefused,
+    };
+    match xpile_wasm_codegen::emit_module(&lifted) {
+        Err(e) => RoundTrip::ReEmitRefused(format!("{e}")),
+        Ok(wat2) if wat2 == wat1 => RoundTrip::FixedPoint,
+        Ok(wat2)
+            if wat2.split_whitespace().collect::<Vec<_>>()
+                == wat1.split_whitespace().collect::<Vec<_>>() =>
+        {
+            RoundTrip::FixedPointModuloLayout
         }
-        assert_eq!(
-            got.is_ok(),
-            *liftable,
-            "`{label}`: emit → lift is {}, expected {}. The module doc's \
-             right-inverse claim is scoped to exactly the measured hole \
-             (`not` and float `/`); if this changed, the doc changed too.\n\
-             --- emitted ---\n{wat}\n--- lift ---\n{got:?}",
-            if got.is_ok() { "OK" } else { "REFUSED" },
-            if *liftable { "OK" } else { "REFUSED" },
-        );
+        Ok(_) => RoundTrip::NotAFixedPoint,
     }
-    assert_eq!(
-        holes,
-        vec!["not", "float /"],
-        "the measured emit-image hole must stay exactly these two constructs"
+}
+
+/// **The load-bearing invariant.** `lift_wat` returning `Ok` must mean the
+/// lifted module is a module the emit accepts — anything less is a silent
+/// corruption reported as success.
+///
+/// This is the property the PMAT-1423 defect violated, and the reason it
+/// went unseen is that the prior witness's oracle was `lift_wat(..).is_ok()`.
+/// Under that oracle `abs(int)`, `min`, `max` and `math.sqrt` all read as
+/// "liftable" while the lift was reconstructing a call to a function pass 2
+/// had just dropped. Measuring the FIXED POINT instead of the `Ok` is what
+/// makes the four visible.
+#[test]
+fn lift_ok_implies_the_lifted_module_still_emits() {
+    let mut corrupted: Vec<(&str, String)> = Vec::new();
+    for (label, m) in emit_image_corpus() {
+        if let RoundTrip::ReEmitRefused(why) = classify(&m) {
+            corrupted.push((label, why));
+        }
+    }
+    assert!(
+        corrupted.is_empty(),
+        "the lift reported SUCCESS for {} construct(s) whose lifted module the \
+         emit then refused — a silent corruption, not a lift. Before PMAT-1423 \
+         this was `abs(int)`/`min`/`max`/`math.sqrt`, each reconstructed as a \
+         call to a `$__wasm_*` helper the lift had just dropped:\n{corrupted:#?}",
+        corrupted.len()
+    );
+}
+
+/// No lifted module may reference a function it does not define.
+///
+/// The general form of the same defect, keyed on the SHAPE (an unresolved
+/// callee) rather than on the `$__wasm_*` namespace — so a future arm that
+/// invents a callee for any other reason reds here too.
+#[test]
+fn no_lifted_module_references_a_function_it_does_not_define() {
+    fn callees(e: &Expr, out: &mut Vec<String>) {
+        match e {
+            Expr::Call { callee, args } => {
+                out.push(callee.clone());
+                args.iter().for_each(|a| callees(a, out));
+            }
+            Expr::BinOp { lhs, rhs, .. } | Expr::FloatBinOp { lhs, rhs, .. } => {
+                callees(lhs, out);
+                callees(rhs, out);
+            }
+            Expr::UnOp { operand, .. } => callees(operand, out),
+            Expr::NumBuiltin { args, .. } => args.iter().for_each(|a| callees(a, out)),
+            Expr::IfExpr {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                callees(cond, out);
+                callees(then_expr, out);
+                callees(else_expr, out);
+            }
+            _ => {}
+        }
+    }
+
+    let mut checked = 0usize;
+    let mut dangling: Vec<(&str, String)> = Vec::new();
+    for (label, m) in emit_image_corpus() {
+        let Ok(lifted) = lift_wat(&m.name, &emit(&m)) else {
+            continue;
+        };
+        checked += 1;
+        let fns = || {
+            lifted.items.iter().filter_map(|it| match it {
+                Item::Function(f) => Some(f),
+                _ => None,
+            })
+        };
+        let defined: Vec<&str> = fns().map(|f| f.name.as_str()).collect();
+        for f in fns() {
+            let mut found = Vec::new();
+            callees(&f.body.trailing_return, &mut found);
+            for c in found {
+                if !defined.contains(&c.as_str()) {
+                    dangling.push((label, c));
+                }
+            }
+        }
+    }
+    assert!(
+        checked >= 8,
+        "vacuity guard: only {checked} corpus rows lifted at all, so this \
+         property would pass for free — the guard has become over-refusal"
+    );
+    assert!(
+        dangling.is_empty(),
+        "lifted module(s) call a function they do not define: {dangling:#?}"
+    );
+    eprintln!("witness[PMAT-1423]: {checked} lifted modules, 0 dangling callees");
+}
+
+/// The user-visible half, and the reason the frontend has to be the one to
+/// refuse: **a dangling call is not caught by every backend.**
+///
+/// `--target wasm` refused the corrupted module ("not a function of this
+/// WASM module"), which is exactly why the defect read as caught. It was
+/// not: this pins that the Rust backend emits the same module at exit 0,
+/// referencing a callee it never defines. Measured through the CLI on the
+/// real defect, `rustc` rejects that output with `error[E0425]: cannot find
+/// function `__wasm_sqrt_f64` in this scope`.
+///
+/// The module here is hand-built, NOT lifted — it must keep witnessing the
+/// backend's behaviour after the frontend stops producing such modules,
+/// which is the whole point.
+#[test]
+fn a_dangling_call_is_not_caught_by_the_rust_backend() {
+    let m = module(
+        "dangle",
+        vec![func(
+            "f",
+            vec![p("a", Type::F64)],
+            Type::F64,
+            Block {
+                stmts: vec![],
+                trailing_return: Expr::Call {
+                    callee: "__wasm_sqrt_f64".to_string(),
+                    args: vec![ident("a")],
+                },
+            },
+        )],
     );
 
-    // The refusals must name the REAL reason. Before PMAT-1422 both were
-    // reported as "an arbitrary stack-machine branch / non-canonical
-    // `(block …)` / `br_table`", which is false — `i32.eqz` and `unreachable`
-    // are squarely inside the emit image.
-    for (label, _, m) in cases.iter().filter(|(_, ok, _)| !ok) {
-        let err = lift_wat(&m.name, &emit(m)).expect_err("hole row must refuse");
-        let msg = format!("{err}");
+    let rust = xpile_rust_codegen::emit_module(&m)
+        .expect("the Rust backend accepts a module with an unresolved callee — that is the point");
+    assert!(
+        rust.contains("__wasm_sqrt_f64(a)"),
+        "expected the unresolved callee to be emitted verbatim:\n{rust}"
+    );
+    assert!(
+        !rust.contains("fn __wasm_sqrt_f64"),
+        "the callee must be REFERENCED but never DEFINED — that is what makes \
+         the output uncompilable:\n{rust}"
+    );
+
+    // The contrast that makes the frontend guard load-bearing: the WASM
+    // backend DOES refuse, so a wasm-only check would have read as safe.
+    assert!(
+        xpile_wasm_codegen::emit_module(&m).is_err(),
+        "the WASM backend is expected to refuse the same module — if it \
+         stopped, the note above about why this went unseen is stale"
+    );
+    eprintln!(
+        "witness[PMAT-1423]: rust backend emits an unresolved callee at exit 0; \
+         wasm backend refuses the same module"
+    );
+}
+
+/// The emit-image hole, MEASURED. The enforcement half of the module-doc
+/// claim, and it reds in BOTH directions: closing the hole reds a refused
+/// row, widening it reds a round-tripping row.
+#[test]
+fn the_emit_image_round_trip_hole_is_measured_not_asserted() {
+    let mut refused: Vec<&str> = Vec::new();
+    let mut fixed: Vec<&str> = Vec::new();
+    let mut layout: Vec<&str> = Vec::new();
+    let mut broken: Vec<(&str, RoundTrip)> = Vec::new();
+
+    for (label, m) in emit_image_corpus() {
+        match classify(&m) {
+            RoundTrip::LiftRefused => refused.push(label),
+            RoundTrip::FixedPoint => fixed.push(label),
+            RoundTrip::FixedPointModuloLayout => layout.push(label),
+            other => broken.push((label, other)),
+        }
+    }
+
+    assert!(
+        broken.is_empty(),
+        "every corpus row must either round-trip or refuse; these did \
+         neither:\n{broken:#?}"
+    );
+
+    // The hole. PMAT-1422 pinned this at `["not", "float /"]` over a corpus
+    // that contained no other candidate; the real hole is six times that.
+    assert_eq!(
+        refused,
+        vec![
+            "unary - (float)",
+            "unary - (f32)",
+            "not",
+            "float /",
+            "abs (int)",
+            "abs (float)",
+            "min (int)",
+            "max (int)",
+            "math.sqrt",
+            "math.floor",
+            "math.ceil",
+            "f32 literal",
+        ],
+        "the measured emit-image hole changed — update the module doc, the \
+         `IN_IMAGE_UNINVERTED` table and the CHANGELOG to match"
+    );
+    assert_eq!(
+        fixed,
+        vec![
+            "int +",
+            "int //",
+            "int &",
+            "int <<",
+            "comparison",
+            "unary ~ (int)",
+            "float +",
+            "f64 literal",
+            "f32 passthrough",
+        ],
+        "the set of constructs that round-trip byte-for-byte changed"
+    );
+    // Named, not normalised away: the emit writes a blank line after the
+    // `i64.const -1` of an integer `-x` that the re-emit does not. Token
+    // streams are identical, so this is layout only — a 0.1.619 cosmetic
+    // lead, not a semantic divergence.
+    assert_eq!(
+        layout,
+        vec!["unary - (int)"],
+        "the set of rows that are a fixed point only MODULO LAYOUT changed"
+    );
+
+    // Every refusal must name the REAL reason. A refusal that blames "an
+    // arbitrary stack-machine branch" for an in-image construct is what made
+    // this hole read as out-of-image input for three slices running.
+    for (label, m) in emit_image_corpus()
+        .into_iter()
+        .filter(|(l, _)| refused.contains(l))
+    {
+        let msg = format!(
+            "{}",
+            lift_wat(&m.name, &emit(&m)).expect_err("hole row must refuse")
+        );
         assert!(
-            msg.contains("IS inside the `xpile-wasm-codegen` emit image"),
-            "`{label}`: the refusal must say the instruction is IN the image, \
-             not blame an arbitrary stack-machine branch: {msg}"
+            msg.contains("IS inside the `xpile-wasm-codegen` emit image")
+                || msg.contains("is the `xpile-wasm-codegen` prelude namespace"),
+            "`{label}`: the refusal must say the construct is IN the emit \
+             image, not blame an arbitrary stack-machine branch: {msg}"
         );
     }
-    eprintln!("witness[PMAT-1422]: emit-image round-trip hole measured at {holes:?}");
+    eprintln!(
+        "witness[PMAT-1423]: hole = {} constructs, byte-fixed-point = {}, \
+         layout-only = {}",
+        refused.len(),
+        fixed.len(),
+        layout.len()
+    );
+}
+
+/// The `IN_IMAGE_UNINVERTED` vocabulary must stay in step with the emit, in
+/// BOTH directions.
+///
+/// * Every entry must be REACHED by some emitted construct — the guard
+///   against PMAT-1421's shape, where an arm stayed live after the emit
+///   stopped producing what it matched. A stale entry here would hand an
+///   author a confident, wrong explanation.
+/// * Every mnemonic the emit produces in a user body that the lift refuses
+///   must BE an entry — the guard against PMAT-1422's shape, where a new
+///   emitted opcode falls through to the generic "arbitrary stack-machine
+///   branch" message that misdescribes it.
+#[test]
+fn every_uninverted_in_image_instruction_is_named_and_reachable() {
+    // Collect the mnemonics the emit produces in USER bodies (the
+    // `$__wasm_*` prelude is skipped by the lift, so it is skipped here).
+    let mut produced: Vec<String> = Vec::new();
+    for (_, m) in emit_image_corpus() {
+        for line in user_body_lines(&emit(&m)) {
+            let tok = line.split_whitespace().next().unwrap_or("").to_string();
+            if !tok.is_empty() && !produced.contains(&tok) {
+                produced.push(tok);
+            }
+        }
+    }
+    assert!(
+        produced.len() > 15,
+        "vacuity guard: only {} mnemonics collected from the corpus's user \
+         bodies — the extractor is broken: {produced:?}",
+        produced.len()
+    );
+
+    // Direction 1: no stale entry.
+    let stale: Vec<&str> = IN_IMAGE_UNINVERTED
+        .iter()
+        .map(|(k, _)| *k)
+        .filter(|k| !produced.iter().any(|p| p == k))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "`IN_IMAGE_UNINVERTED` names {stale:?} as in-image, but no corpus \
+         construct emits them into a user body. Either the emit stopped \
+         producing them (delete the entry — PMAT-1421's shape) or the corpus \
+         no longer reaches them (add the construct)."
+    );
+
+    // Direction 2: every refusal the corpus ACTUALLY produces must name a
+    // mnemonic that is in the vocabulary. Measured from the real refusal
+    // messages rather than by driving `refuse_control` directly — most
+    // emitted mnemonics (`local.get`, `i64.and`, `f64.add`, …) are handled
+    // by the lift and never reach a refusal at all, so driving them through
+    // it would manufacture a failure that cannot happen.
+    let mut refused_rows = 0usize;
+    for (label, m) in emit_image_corpus() {
+        let Err(e) = lift_wat(&m.name, &emit(&m)) else {
+            continue;
+        };
+        refused_rows += 1;
+        let msg = format!("{e}");
+        // The `$__wasm_*` prelude-namespace refusal names a callee, not a
+        // mnemonic — a separate honest boundary (PMAT-1423).
+        if msg.contains("prelude namespace") {
+            continue;
+        }
+        let mnemonic = msg
+            .split("WAT instruction `")
+            .nth(1)
+            .and_then(|s| s.split('`').next())
+            .unwrap_or_else(|| {
+                panic!("`{label}`: refusal names no WAT instruction: {msg}");
+            });
+        assert!(
+            IN_IMAGE_UNINVERTED.iter().any(|(k, _)| *k == mnemonic),
+            "`{label}`: the emit produces `{mnemonic}` in a user body and the \
+             lift refuses it, but it is not in `IN_IMAGE_UNINVERTED` — so the \
+             author is told they wrote an \"arbitrary stack-machine branch\" \
+             they did not write. Add it with the construct it lowers.\n{msg}"
+        );
+    }
+    assert!(
+        refused_rows >= 10,
+        "vacuity guard: only {refused_rows} corpus rows refused, so direction 2 \
+         is checking almost nothing"
+    );
+    eprintln!(
+        "witness[PMAT-1423]: {} in-image uninverted mnemonics, all reachable; \
+         {} distinct mnemonics emitted across the corpus",
+        IN_IMAGE_UNINVERTED.len(),
+        produced.len()
+    );
+}
+
+/// `INVERTIBLE_HELPERS` must list exactly the `$__wasm_*` names `lift_call`
+/// has an arm for — it is quoted verbatim in the refusal message that tells
+/// an author which helpers ARE supported, so a drifted list is a confidently
+/// wrong answer.
+/// The four `$__wasm_*` helpers the emit reaches from a scalar construct
+/// with no inverse arm, plus one from the string family to show the guard is
+/// keyed on the NAMESPACE rather than on this list.
+const UNARMED_HELPERS: &[&str] = &[
+    "__wasm_abs_i64",
+    "__wasm_min_i64",
+    "__wasm_max_i64",
+    "__wasm_sqrt_f64",
+    "__wasm_str_upper_lower",
+];
+
+#[test]
+fn the_invertible_helper_list_matches_the_lift_call_arms() {
+    // Every candidate's arity is KNOWN here on purpose: the pre-PMAT-1423
+    // path found the helper in this very table and used it to build a
+    // well-formed call, so a witness that left the arity out would prove
+    // nothing about the guard.
+    let mut arity: HashMap<String, usize> = INVERTIBLE_HELPERS
+        .iter()
+        .map(|h| ((*h).to_string(), 2usize))
+        .collect();
+    for h in UNARMED_HELPERS {
+        arity.insert((*h).to_string(), 2);
+    }
+    let local_names = std::collections::HashSet::new();
+    let local_ty = HashMap::new();
+    let set_counts = HashMap::new();
+    let ctx = BodyCtx {
+        arity: &arity,
+        local_names: &local_names,
+        local_ty: &local_ty,
+        set_counts: &set_counts,
+        assigned: std::collections::HashSet::new(),
+    };
+
+    // Each listed helper must be INVERTED (produce a BinOp), not refused.
+    for h in INVERTIBLE_HELPERS {
+        let mut stack = vec![ident("a"), ident("b")];
+        lift_call((*h).to_string(), &mut stack, &ctx)
+            .unwrap_or_else(|e| panic!("`${h}` is listed as invertible but refused: {e}"));
+        assert!(
+            matches!(stack.as_slice(), [Expr::BinOp { .. }]),
+            "`${h}` must invert to a high-level operator, got {stack:?}"
+        );
+    }
+
+    // A helper NOT on the list must refuse even though its arity IS known.
+    for h in UNARMED_HELPERS {
+        let mut stack = vec![ident("a"), ident("b")];
+        let err = lift_call((*h).to_string(), &mut stack, &ctx)
+            .expect_err("an un-armed prelude helper must refuse, not dangle");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("prelude namespace") && msg.contains(h),
+            "the refusal must name the helper and the namespace: {msg}"
+        );
+        for listed in INVERTIBLE_HELPERS {
+            assert!(
+                msg.contains(listed),
+                "the refusal must list `${listed}` as an invertible helper: {msg}"
+            );
+        }
+    }
 }

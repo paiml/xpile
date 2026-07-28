@@ -1986,6 +1986,7 @@ dependencies = [
  "xpile-backend",
  "xpile-frontend",
  "xpile-meta-hir",
+ "xpile-rust-codegen",
  "xpile-wasm-codegen",
 ]
 

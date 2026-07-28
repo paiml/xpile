@@ -19181,3 +19181,82 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1423
+  title: 'PMAT-1423: [src] THE WAT LIFT REPORTED SUCCESS FOR FOUR CONSTRUCTS IT HAD SILENTLY CORRUPTED:
+    `lift_call`''s generic arm reconstructed a `call $__wasm_sqrt_f64` as an `Expr::Call` to a helper
+    pass 2 had just DROPPED, and while `--target wasm` refused the dangling call, `--target rust` exited
+    0 with `pub fn f(a: f64) -> f64 { __wasm_sqrt_f64(a) }` under a `C-PY-FLOAT-ARITH` citation - `rustc`
+    rejects it with `error[E0425]: cannot find function`. Four emitted constructs reach it: `abs(int)`,
+    `min`/`max` over ints, and `math.sqrt`. SECOND HALF, same sweep: PMAT-1422''s "the emit-image hole
+    is exactly `not` and float `/`" was measured over 7 fixtures with NO float builtin, NO unary float
+    `-` and NO `F32` in them; re-measured over a corpus reaching every scalar construct the emit accepts,
+    the hole is TWELVE, and six of them were refused with the message that tells the author they wrote
+    "an arbitrary stack-machine branch" - false for every one, and precisely the misdescription PMAT-1422
+    fixed for two mnemonics without checking whether anything else was affected.'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30, PMAT-1373). Took PMAT-1422''s
+    standing lead (d) VERBATIM. THE COMPLEMENT OF THE PRECEDING TWO SHAPES: PMAT-1421 and PMAT-1422 each
+    found a STALE INVERSE ARM (correct when written, left live after a re-route, firing only on input
+    the emit no longer produces). This is a MISSING arm whose fallback was not a refusal but a RECONSTRUCTION
+    - the generic arm found the prelude helper''s real signature in the parsed arity table and built a
+    well-formed call to a function pass 2 drops by name. ★ THE ORACLE WAS THE BUG: PMAT-1422''s witness
+    measured `lift_wat(..).is_ok()`, and all four constructs PASSED that oracle because the lift really
+    did return `Ok` - on a module it had corrupted. Measuring the FIXED POINT instead is what made them
+    visible; `is_ok()` is not the invariant. ★ The failure was TARGET-DEPENDENT: `--target wasm` refused
+    (from the BACKEND, not the lift), which is exactly why it read as caught, and says nothing about the
+    other eight backends. ★ The "fixture corpus cannot establish a whole-image claim" sentence was ALREADY
+    in tests.rs''s module doc when the "exactly two" claim was written one screen below it.'
+  fix: 'REFUSE any `call $__wasm_*` with no inverse arm, keyed on the reserved-namespace SHAPE rather
+    than on the list of four, at the SINGLE choke point in `lift_call` (PMAT-1391). Cannot over-refuse:
+    the seven invertible helpers match arms above it, and any other `$__wasm_*` definition - even hand-written
+    - is dropped by the same pass-2 skip, so the call would dangle either way; that skip now reads the
+    same `HELPER_PREFIX` constant. SEPARATELY, `in_image_uninverted` became a `IN_IMAGE_UNINVERTED` table
+    grown from 2 to 8 entries (`f64.neg`, `f32.neg`, `f64.abs`, `f64.floor`, `f64.ceil`, `f32.const`
+    added), and the refusal text no longer hard-codes "exactly these two instructions". NO coercion, NO
+    routing change, NO witness floor touched, NO gate file edited.'
+  tests: 'FIVE witnesses in crates/xpile-wasm-frontend/src/tests.rs over a shared `emit_image_corpus()`
+    of 22 rows (every scalar construct the emit accepts). (1) `lift_ok_implies_the_lifted_module_still_emits`
+    - the load-bearing invariant the defect violated, and the one the old `is_ok()` oracle could not
+    express. (2) `no_lifted_module_references_a_function_it_does_not_define` - the general form, keyed
+    on an unresolved callee rather than on the `$__wasm_*` namespace, with a `checked >= 8` vacuity guard
+    so over-refusal cannot make it pass for free. (3) `a_dangling_call_is_not_caught_by_the_rust_backend`
+    - the USER-VISIBLE half, on a HAND-BUILT module (not a lifted one) so it keeps witnessing the backend
+    after the frontend stops producing such modules; asserts the callee is REFERENCED but never DEFINED,
+    and that the WASM backend refuses the same module (the contrast that makes the frontend guard load-bearing).
+    (4) `the_emit_image_round_trip_hole_is_measured_not_asserted` - replaces `..._is_exactly_not_and_float_div`;
+    classifies every row into byte-fixed-point / fixed-point-modulo-layout / refused / (must-be-empty)
+    re-emit-refused / not-a-fixed-point and pins all three partitions. (5) `every_uninverted_in_image_instruction_is_named_and_reachable`
+    - the vocabulary checked BOTH ways: no stale entry (PMAT-1421''s shape) and no unnamed refusal (PMAT-1422''s),
+    with `produced.len() > 15` and `refused_rows >= 10` vacuity guards. RED HALVES ALL RUN: removing the
+    helper guard reds 5 witnesses; deleting the `f64.neg` entry reds 2; adding an entry the emit never
+    produces reds 1. Direction 2 was FIRST WRITTEN OVER-BROAD - it drove every emitted mnemonic through
+    `refuse_control`, manufacturing failures for `local.get`/`i64.and`/`f64.add`, which never reach a
+    refusal at all; re-keyed onto the refusals the corpus ACTUALLY produces.'
+  docs: 'The "right-inverse of emit on its WAT image" scoping PMAT-1422 put in four places is corrected
+    in all four (xpile-wasm-frontend lib.rs module doc + its enumeration of what refuses, tests.rs module
+    doc, Cargo.toml dev-dependency comment, `SourceLang::Wasm` in xpile-meta-hir) - each now carries the
+    measured TWELVE rather than the claimed two, and the `refuse_uninvertible_helper` rustdoc carries
+    the executed per-target table. tests.rs''s module doc records that the corpus, not the prose, is the
+    thing to grow. CHANGELOG carries both halves with the executed console transcript.'
+  still_open: 'Named, not fixed: (a) CLOSING the hole needs meta-HIR representatives the language does
+    not have - a unary `not`, a trap statement, a unary FLOAT negation, `f32` literals, and float builtins
+    carrying the emit''s Python semantics (0.1.619); adding `abs`/`min`/`max`/`sqrt` arms is not just
+    wiring, since `abs(i64::MIN)` traps in the helper and the meta-HIR builtin does not say so - the same
+    ONE-ARITHMETIC-SEMANTICS gap as PMAT-1421 (a) and PMAT-1422 (b). (b) an integer `-x` is a fixed point
+    only MODULO LAYOUT (the emit writes a blank line after its `i64.const -1` that the re-emit does not);
+    token streams identical, so cosmetic - bucketed in witness (4) rather than normalised away. (c) PMAT-1421''s
+    lead (c) is STILL UNTOUCHED - the deliberate `i32` -> Type::Bool residual renders a hand-written `(param
+    $a i32)` as `bool` on --target rust; probed this slice and the WAT round trip IS value-preserving,
+    so it is a type-identity ambiguity, not a corruption. (d) the ~110 `$__wasm_*` list/dict/str helpers
+    now refuse by namespace rather than dangling, but were not individually driven - they are outside
+    the lift''s scalar subset and refuse earlier on memory/aggregate constructs. (e) the `.wat` frontend
+    was swept for SCALAR constructs only; the emit''s aggregate lane (list/dict/str) has never been driven
+    through `emit -> lift` at all.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
