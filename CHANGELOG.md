@@ -7,6 +7,74 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### "Lowers" is a claim about the grammar, and the book published it as a claim about the file format (PMAT-1442)
+
+`frontends.md` lists `.pyi` under **Extensions that LOWER** for the Python
+frontend and `.h` for the C frontend, both with an **empty** *Routed → REFUSED*
+cell. `xpile info` prints `- python (py, pyi)` and `- c (c, h)` unannotated and
+counts both among the "4 lowering"; the dispatch-failure message lists them
+under `spellings that LOWER`. Three surfaces, one reading: *these formats are
+supported.*
+
+**No file in the canonical form of either format lowers.** Measured:
+
+| source | verdict |
+|---|---|
+| `def add(a: int, b: int) -> int: ...` at `probe.pyi` | `function \`add\` does not end with \`return expr\`` |
+| `#ifndef` / `#define` / prototype / `#endif` at `probe.h` | `unexpected character \`#\` in C source` |
+| `int add(int a, int b);` at `probe.h` | `expected LBrace, found Some(Semi)` |
+
+**And that is not an accident of the probe.** A `.pyi` stub is *by definition*
+bodiless — that is what a stub file is — and the frontend requires every
+function to end in `return expr`. A `.h` header is *by definition* an include
+guard plus prototypes, and the C frontend has **no preprocessor at all**. The
+defining content of each format is exactly what each grammar rejects.
+
+**What is true**, and why the LOWER column is not simply wrong: put a
+`.py`-shaped *definition* in a `.pyi`, or a `.c`-shaped definition in a `.h`,
+and it lowers at exit 0. The extension really is routed and the grammar really
+is applied. *"Lowers" was a claim about the grammar that read as a claim about
+the format.*
+
+**Why the disposition gate could not catch it — and it says so itself.**
+`frontend_claim_disposition_witness.rs` (PMAT-1433) drives every claimed
+spelling through its frontend, which is the right shape, and its own doc states
+its subject: *"this one answers 'does the answer depend on the path spelling'"*.
+So `PROBES` carries **one program per frontend** and writes those same bytes to
+every spelling it claims — the Python function-with-a-body goes to `probe.py`
+*and* `probe.pyi`. By construction it can only report `Lowers` for all four.
+**PMAT-1433 generalised the paths a probe reaches and left the content fixed**,
+so its own lesson — *one probe per subject samples one of its N claims* —
+recurred one dimension over, inside the gate written to settle it. The gate is
+not wrong; the surfaces over-read it.
+
+**Gated** by `crates/xpile/tests/format_canonical_form_witness.rs`
+(`XPILE-FORMATFORM-001`). The measured table lives in `frontends.md` between
+markers and is compared by equality, and each row carries **both** halves: the
+canonical form refuses at that spelling, **and** the definition form lowers at
+that same spelling. The second is the anti-vacuity control and is not optional —
+without it a row is equally satisfied by a malformed probe or by the extension
+quietly ceasing to be routed. Implementing a stub parser reds the page.
+
+**Red half run, six perturbations**, green control — including the behaviour
+half: making a bodiless `...` function lower in `crates/depyler-frontend/src`
+reds with *"a file in the CANONICAL form of `*.pyi` now LOWERS — that is a real
+capability gain, move the row out of the table"*.
+
+**A perturbation of a message is not a perturbation of behaviour.** The first
+attempt at that behaviour half only renamed the refusal *string*, and the
+witness stayed green — correctly, since the frontend still refused. Had that
+been accepted as "the behaviour half ran", this slice would have shipped without
+ever proving the gate tracks the frontend.
+
+**Disclosed, not fixed**, and pinned so the disclosure cannot decay: `xpile info`
+still prints both spellings unannotated. Saying more there needs a **per-input**
+granularity that `refused_claims()` does not have — it is per-*claim*, which is
+exactly the granularity PMAT-1433 added and exactly one level too coarse. A test
+asserts the caveat is still on the page.
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### The page that calls itself "the single most important mental model" drew three frontends that do not exist, omitted three lanes that do, and no test had ever read it (PMAT-1440)
 
 `book/src/concepts/two-lanes.md` opens with *"This is the single most important
