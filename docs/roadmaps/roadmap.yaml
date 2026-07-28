@@ -21739,3 +21739,100 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1455
+  title: 'the sub-spec that grades xpile for the fleet published the substrate''s PROOF VOLUME as
+    a 2026-05-18 snapshot in the present tense — and the corrected number was itself a grep
+    artefact: the ratified release note''s "101 Kani harnesses" counts six mentions inside `//!`
+    doc comments'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1453 standing lead (b) — book/src/reference/contracts.md "carries 40
+    equations" — and swept the CLASS: every published count of a substrate artifact.
+
+    ** MEASURED. contracts/: 35 contracts, 375 equations, 322 `lean_theorem:` citations, 69
+    `kani_harness:` citations over 24 contracts; contracts/lean/: 489 theorem/lemma
+    DECLARATIONS; contracts/kani/: 95 `#[kani::proof]` harnesses. Four live falsehoods, three
+    files, plus one in the ratified sprint plan.
+
+    ** (1) THE BOOK, and the direction is the finding. `book/src/reference/contracts.md:79` said
+    C-XLATE-LEAN-TO-RUST "carries 40 equations, 33 Lean refinement theorems and 10 Kani harnesses
+    saying so". The other two numbers were RIGHT — 33 lean_theorem and 10 kani_harness citations
+    are exactly what it carries — so the page asserted SEVEN MORE EQUATIONS THAN THEOREMS where
+    every equation has one. And that paragraph exists to disclose that nothing implements this
+    contract ("they hold, and they hold of nothing shipped"): the single number it got wrong
+    INFLATED the proof volume it was in the middle of disclosing.
+
+    ** (2) THE FLEET SUB-SPEC. `docs/specifications/sub/kaizen-fleet.md:56` — the sub-spec
+    xpile-spec §20 points at for kaizen-fleet membership — published the 2026-05-18 tally in the
+    PRESENT TENSE: "The translation contracts produce verifiable kernels by construction: 260
+    Lean refinement theorems ... in `contracts/lean/` + 43 Kani BMC harnesses in `contracts/kani/`
+    = 303 stratum-vote artifacts", and "every contract in the substrate (12 of 12) has a Kani BMC
+    harness on every PR". Live: 489, 95, 584, and 24 of 35. THE TALLY UNDERSTATED ~2x WHILE THE
+    COVERAGE CLAUSE OVERSTATED — a harness asserted for eleven contracts that have none, in the
+    document that grades this repo as kernel tier. `audit-design.md:46` carried the same tally and
+    the same directory attribution, plus "runs `cargo kani` over all 43 harnesses each CI cycle".
+
+    ** (3) ⭐ AND THE REPLACEMENT NUMBER IS A GREP ARTEFACT IF YOU LET IT BE. The ratified plan,
+    `sub/sprint-6day-2026-07-26.md:171`, under the heading "What the note may honestly claim" —
+    i.e. the text scheduled to become FRIDAY''S RELEASE BODY — said "101 Kani harnesses". 101 is
+    `grep -c "#[kani::proof]"`; six of those occurrences are inside `//!` module docs EXPLAINING
+    WHAT A HARNESS IS. 95 are attributes. The same shape inflates the Lean side by 23: a naive
+    `grep -cE "^\s*(theorem|lemma)"` over contracts/lean/ answers 512, and twenty-three of those
+    lines are English inside `/-- ... -/` docstrings — XlateLeanToRust.lean has "Locked-in by the
+    refinement / theorem below — any emitter that ...", whose second line begins with the word
+    `theorem` followed by an identifier-shaped word. A NAIVE GREP COUNTS PROSE ABOUT THEOREMS AS
+    THEOREMS, AND IT OVER-COUNTS IN THE FLATTERING DIRECTION. Both derivations strip comments;
+    perturbing them back to naive REDS the corrected prose (508 / 101), which is the recorded
+    proof that the strip is load-bearing rather than hygiene.
+
+    ** GATE: two tests in claims_drift.rs. `published_contract_part_counts_match_the_contract_yaml`
+    (a count attributed to a NAMED contract equals its YAML) and
+    `published_substrate_proof_volume_matches_the_contract_tree` (a count attributed to
+    `contracts/lean/` or `contracts/kani/` equals what that directory holds, plus an `N of M
+    contracts` Kani-coverage arm). Two populations, and CONFLATING THEM IS THE FIRST TRAP: a
+    contract''s 10 `kani_harness:` CITATIONS are not the 13 `#[kani::proof]` FUNCTIONS in its
+    harness file. Each arm derives from the artifact its prose points at.
+
+    ** ⚠️ THE GUARD I ADDED WAS NOT LOAD-BEARING AND THE RED HALF IS WHAT SAID SO. `Lean 4
+    refinement theorems` parses as "4 refinement theorems", so both gates discriminate on the
+    preceding word. Deleting that guard left the ENTIRE SUITE GREEN: both live sites are unrouted
+    for an unrelated reason (neither clause names a contract or a directory — the second only
+    because `clause_bounds` splits on its table row''s `|`). So the anti-vacuity counter proves
+    the discriminator SEES the shape, not that it prevented a report. Rather than leave the
+    overclaim standing, the assertion was reworded and `a_language_version_is_not_a_count`
+    CONSTRUCTS the routed arrangement the corpus does not contain (PMAT-1451''s precedent).
+
+    ** SUBJECT IS claim_pages(), NOT WIDENED TO contracts/**, and that is a MEASUREMENT not an
+    assumption: every `<N> equations` under contracts/ is a slice-scoped provenance record
+    (`remaining 8 equations`, `1/9 to 4/9 equations`, each citing its PMAT id), an identifier
+    (`PMAT-353 equations_block_...` — four sites in XpileContractFrontendTrait.lean), or a
+    compound noun (`3 equations entries`). No live falsehood of this class is there, and a needle
+    loose enough to reach those shapes reports them as findings. All three rejections are pinned
+    by `the_part_needle_rejects_identifiers_and_fractions`, which is the ONLY thing that
+    exercises them.
+
+    ** RED HALVES RUN, each asserting the perturbation APPLIED, green control before and after:
+    R1 `40 equations` restored -> reds the per-contract gate; R2 the 260/43/303 tally restored ->
+    reds all three substrate arms; R3 `12 of 12` restored -> reds the coverage arm; R4 `101`
+    restored in the sprint plan -> reds; R5 BEHAVIOUR HALF — appending a REAL theorem to
+    contracts/lean/ reds all three corrected sites (489->490, 584->585), so the gate tracks the
+    SUBSTRATE and not the text; R6 naive derivations -> reds (508 / 101); R7 version guard removed
+    -> GREEN, recorded above; R8 needle rejections removed -> reds the needle test.
+
+    ZERO crates/*/src and ZERO contracts/*.yaml change — freeze-compatible.
+
+    ** STANDING LEADS. (a) PMAT-1451 lead (a) STILL UNTAKEN: `sub/bashrs-merger.md:121` bare "at
+    QUORUM" over a substrate subject. (b) PMAT-1454 lead (b): the TOTAL-QUORUM gate still reads
+    markdown only; its one contracts/** hit is `ffi-cpython-ext-v1.yaml:40`. (c) the four OTHER
+    aggregate spellings this sweep saw and deliberately did not route — `638 stratum-vote
+    artifacts` (book/src/changelog.md:12, xpile-spec.md:444, both under dated v0.1.0 release
+    headings) and `1025 Lean theorems` (xpile-spec.md:370, kaizen-fleet.md:11, a FLEET-wide figure
+    attributed to pv-spec §31, not derivable here). Neither is a live xpile falsehood, but the
+    second is an EXTERNAL number this repo republishes and cannot check. (d) install `ruchy` in a
+    CI job — OWNER-GATED.
+
+    NEXT FREE ID IS PMAT-1456. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD
+    FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
+    STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
+  status: done
+  priority: P1
+  category: honesty

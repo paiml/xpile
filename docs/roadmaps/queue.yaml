@@ -73,6 +73,56 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1455
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the sub-spec that grades xpile for the fleet published the substrate''s PROOF VOLUME as a 2026-05-18 snapshot in the present tense -- and the corrected number was itself a grep artefact'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1453 standing lead (b) and swept the CLASS: every published count of a
+    substrate artifact.
+    ** MEASURED. 35 contracts, 375 equations, 322 `lean_theorem:` / 69 `kani_harness:` citations
+    over 24 contracts; contracts/lean/ = 489 theorem DECLARATIONS; contracts/kani/ = 95
+    `#[kani::proof]` harnesses.
+    ** (1) THE BOOK, and the DIRECTION is the finding. reference/contracts.md:79 said
+    C-XLATE-LEAN-TO-RUST "carries 40 equations, 33 Lean refinement theorems and 10 Kani harnesses".
+    The other two were RIGHT, so the page asserted SEVEN MORE EQUATIONS THAN THEOREMS where every
+    equation has one -- and that paragraph exists to disclose that the proofs "hold of nothing
+    shipped". The one number it got wrong INFLATED the proof volume it was disclosing.
+    ** (2) THE FLEET SUB-SPEC. sub/kaizen-fleet.md:56 published the 2026-05-18 tally in the PRESENT
+    TENSE (260 / 43 / 303, live 489 / 95 / 584) and "every contract in the substrate (12 of 12) has
+    a Kani BMC harness" (live 24 of 35). THE TALLY UNDERSTATED ~2x WHILE THE COVERAGE CLAUSE
+    OVERSTATED -- a harness asserted for eleven contracts that have none. audit-design.md:46
+    carried the same tally plus "runs cargo kani over all 43 harnesses each CI cycle".
+    ** (3) ⭐ AND THE REPLACEMENT NUMBER IS A GREP ARTEFACT IF YOU LET IT BE. The ratified plan,
+    sprint-6day:171, under "What the note may honestly claim" -- the text scheduled to become
+    FRIDAY''S RELEASE BODY -- said "101 Kani harnesses". 101 is `grep -c` and six of those
+    occurrences are inside `//!` docs EXPLAINING WHAT A HARNESS IS. The same shape inflates the
+    Lean side by 23 (512 raw; the extras are English inside `/-- -/` docstrings beginning with the
+    word `theorem`). A NAIVE GREP COUNTS PROSE ABOUT THEOREMS AS THEOREMS, IN THE FLATTERING
+    DIRECTION. Both derivations strip comments; making them naive REDS the corrected prose.
+    ** ⚠️ THE GUARD I ADDED WAS NOT LOAD-BEARING AND THE RED HALF SAID SO. Deleting the `Lean 4`
+    version-numeral guard left the WHOLE SUITE GREEN -- both live sites are unrouted for an
+    unrelated reason. The anti-vacuity counter proves the discriminator SEES the shape, not that it
+    prevented a report; reworded, and the routed arrangement is CONSTRUCTED in a unit test instead
+    of asserted.
+    ** SUBJECT is claim_pages(), NOT widened to contracts/** -- a MEASUREMENT, not an assumption:
+    every `<N> equations` there is a slice-scoped record, an identifier (`PMAT-353
+    equations_block_...`), or a compound noun (`3 equations entries`). A needle loose enough to
+    reach them reports them as findings.
+    ** 8 RED HALVES RUN, each asserting the perturbation APPLIED, incl. the BEHAVIOUR half
+    (appending a real theorem to contracts/lean/ reds all three corrected sites), green control
+    before and after.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    NEXT PICK: STANDING LEADS. (a) PMAT-1451 lead (a) STILL UNTAKEN: sub/bashrs-merger.md:121 bare
+    "at QUORUM" over a substrate subject. (b) PMAT-1454 lead (b): the TOTAL-QUORUM gate still reads
+    markdown only; its one contracts/** hit is ffi-cpython-ext-v1.yaml:40. (c) `1025 Lean theorems`
+    (xpile-spec.md:370, kaizen-fleet.md:11) is an EXTERNAL pv-spec §31 fleet figure this repo
+    republishes and cannot check. (d) install `ruchy` in a CI job -- OWNER-GATED.
+    NEXT FREE ID IS PMAT-1456. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD
+    FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
+    STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 - id: PMAT-1453
   status: done
   ev_rank: R1
