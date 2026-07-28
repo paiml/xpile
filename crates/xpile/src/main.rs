@@ -1495,6 +1495,78 @@ fn print_info(session: &TranspileSession) -> Result<()> {
     Ok(())
 }
 
+/// Every path spelling the frontend registry CLAIMS, split by disposition:
+/// `(spellings that lower, spellings that are routed and then refused)`.
+///
+/// PMAT-1434. The two halves are the registry's own declarations —
+/// [`Frontend::extensions`] plus [`Frontend::refused_claims`] — rendered in the
+/// one vocabulary `refused_claims()` and `book/src/reference/frontends.md` both
+/// use: a `*.<ext>` glob for an extension, an exact filename for the
+/// extensionless spellings `matches_path` claims. Registration order is
+/// preserved so the output is deterministic.
+///
+/// `refused_claims()` is a DECLARATION; it is confronted with behaviour at
+/// every claimed spelling by
+/// `crates/xpile/tests/frontend_claim_disposition_witness.rs`
+/// (XPILE-FRONTEND-CLAIM-001), so a caller reading this split is reading a
+/// behaviour-checked fact and not a self-report.
+fn claimed_spellings_by_disposition(session: &TranspileSession) -> (Vec<String>, Vec<String>) {
+    let mut lowers = Vec::new();
+    let mut refused = Vec::new();
+    for f in &session.frontends {
+        let declared = f.refused_claims();
+        for ext in f.extensions() {
+            let claim = format!("*.{ext}");
+            if declared.contains(&claim.as_str()) {
+                refused.push(claim);
+            } else {
+                lowers.push(claim);
+            }
+        }
+        // The extensionless spellings. A `*.<ext>` entry was already placed by
+        // the loop above (XPILE-FRONTEND-CLAIM-001 asserts every glob entry's
+        // extension is in `extensions()`), so taking it again here would
+        // duplicate it.
+        refused.extend(
+            declared
+                .iter()
+                .filter(|c| !c.starts_with("*."))
+                .map(|c| (*c).to_string()),
+        );
+    }
+    (lowers, refused)
+}
+
+/// The dispatch-failure message: what a user sees when no frontend claims
+/// their file.
+///
+/// PMAT-1434. This used to print `known extensions: {extensions():?}` — the
+/// flat union of the routing table. Routing and capability are deliberately
+/// the SAME list here: `ruchy-frontend` and `bashrs-frontend` both keep a
+/// refusing spelling in `extensions()` on purpose, so that a `.ruchy` / `.mk`
+/// file reaches their specific refusal instead of degrading to THIS message
+/// (see `crates/ruchy-frontend/src/lib.rs` and PMAT-1420). That decision is
+/// right, and it makes `extensions()` a routing set — which this message was
+/// presenting as the set of things xpile can read. Two of the ten spellings it
+/// named, `ruchy` and `mk`, refuse every input; the two extensionless
+/// spellings `matches_path` claims never appeared in it at all. Over-reported
+/// and under-reported in one line, on the error path, where the reader is
+/// looking for what to use instead.
+///
+/// So the disposition is now carried, in the same vocabulary `xpile info` and
+/// the book use. Pinned to the registry by
+/// `crates/xpile/tests/frontend_dispatch_message_witness.rs`
+/// (XPILE-FRONTEND-CLAIM-002).
+fn no_frontend_message(session: &TranspileSession, ext_label: &str) -> String {
+    let (lowers, refused) = claimed_spellings_by_disposition(session);
+    let head = format!("no frontend handles {ext_label}; spellings that LOWER: {lowers:?}");
+    if refused.is_empty() {
+        head
+    } else {
+        format!("{head}; ROUTED but REFUSED (no parser): {refused:?}")
+    }
+}
+
 fn transpile(
     session: &TranspileSession,
     input: &Path,
@@ -1527,12 +1599,7 @@ fn transpile(
                         .map(|n| format!("filename `{n}`"))
                         .unwrap_or_else(|| "(unknown)".to_string())
                 });
-            let known: Vec<&'static str> = session
-                .frontends
-                .iter()
-                .flat_map(|f| f.extensions().iter().copied())
-                .collect();
-            format!("no frontend handles {ext_label}; known extensions: {known:?}")
+            no_frontend_message(session, &ext_label)
         })?;
 
     // PMAT-1024: resolve the target BEFORE lowering — the frontend's alias

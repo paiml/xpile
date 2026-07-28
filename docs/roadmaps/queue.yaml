@@ -2,7 +2,28 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1433 landed from an honesty hunt; the ranked queue stays exhausted
+updated: '2026-07-28 (PMAT-1434 landed from an honesty hunt; the ranked queue stays exhausted
+  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1434 took the neighbourhood PMAT-1433
+  standing lead (c) points at -- the `extensions()`-derived reports -- and found the CLAIM CLASS
+  had a third surface on the ERROR PATH. `xpile transpile notes.txt` answered
+  `no frontend handles `.txt`; known extensions: ["py","pyi","c","h","ruchy","sh","bash","zsh","mk","wat"]`:
+  two of those ten (`ruchy`, `mk`) refuse EVERY input, and the two extensionless spellings
+  `matches_path` claims (`Makefile`, `Dockerfile`) were in no list at all -- over- and
+  under-reported in one line, in the message whose entire job is to say what to use instead.
+  LESSONS: (1) A CLAIM CLASS HAS A SURFACE ON THE ERROR PATH TOO. PMAT-1433 swept the two
+  REPORTERS and its own recorded lesson was "scope the fix to the CLAIM CLASS, not a lane or a
+  file"; it still landed one surface short, because the third consumer is a `format!` inside a
+  `with_context` closure. Grep for the DATA (`extensions()`), not for the reporters. (2) NO TEST
+  HAD EVER READ THE STRING -- `grep -rn "known extensions"` matched exactly one line, the
+  `format!` that produced it; an error message no test asserts on is an unversioned claim
+  surface. (3) THE VOCABULARY WAS ITSELF THE BUG: bare `"py"` denotes a file literally named
+  `py`, which no frontend claims, so the routing check reds pre-fix for a reason independent of
+  the disposition split. (4) DISCLOSE THE HALF YOU DID NOT CLOSE, IN THE GATE -- `published
+  (subset of) routed` is driven; the converse cannot be checked because `matches_path` is a
+  PREDICATE with no enumeration behind it. NEW STANDING LEAD, concrete: `parse_target` accepts
+  THIRTEEN spellings while its own refusal and `--help` enumerate NINE, and the book contradicts
+  itself about it (backends.md:41 discloses the aliases, cli.md:70 says "one of" the nine).
+  PRIOR ENTRY, still the reference for the partial-claim shape: PMAT-1433 landed from an honesty hunt; the ranked queue stays exhausted
   until Thu 07-30 / PMAT-1373, the release commit. PMAT-1433 took PMAT-1432 standing lead (c)
   verbatim -- frontends.md lists `.mk` under "Real POSIX parser" though PMAT-1420 made it REFUSE --
   and the payload was one level up from the doc row: `Frontend::lowers_input()` is a WHOLE-FRONTEND
@@ -4334,6 +4355,64 @@ queue:
     Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
     18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373
     (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1434
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the dispatch-failure message -- the one whose whole job is to say what the reader
+    could use instead -- listed TWO spellings that refuse every input, and omitted the two
+    extensionless spellings routing claims'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1433 standing lead (c) neighbourhood: the `extensions()`-derived
+    reports. XPILE-FRONTEND-CLAIM-002, 7 tests, new file -- no gate edited, witness_floor.rs
+    untouched.
+    ** MEASURED at da411cef on a force-rebuilt binary: `no frontend handles `.txt`; known
+    extensions: ["py","pyi","c","h","ruchy","sh","bash","zsh","mk","wat"]`. `probe.ruchy` and
+    `probe.mk` both exit 1 for every input; `Makefile` / `Dockerfile`, claimed by `matches_path`
+    alone, were in no list. Over- and under-reported in one line, on the ERROR path.
+    ** ROOT CAUSE IS A CORRECT DECISION SEEN BY THE WRONG CONSUMER. Keeping a refusing spelling
+    in `extensions()` is deliberate and recorded in three places (ruchy-frontend module doc,
+    bashrs-frontend at the `*.mk` guard, and `Frontend::lowers_input`''s own doc comment, which
+    justifies routing-only registration as getting the file "a specific refusal ... instead of
+    the generic `no frontend handles .<ext>` message"). That makes `extensions()` a ROUTING set;
+    this message printed it as a CAPABILITY set.
+    ** LESSONS. (1) A CLAIM CLASS HAS A SURFACE ON THE ERROR PATH TOO. PMAT-1433 enumerated the
+    two REPORTING surfaces (`xpile info`, the book) and its own lesson was "scope the fix to the
+    CLAIM CLASS, not a lane or a file" -- it still landed one surface short, because the third
+    consumer is a `format!` inside a `with_context` closure, not a reporter. When sweeping a
+    class, grep for the DATA (`extensions()`), not for the reporters.
+    (2) NO TEST HAD EVER READ THE STRING: `grep -rn "known extensions"` over the whole tree
+    matched exactly ONE line, the `format!` that produced it. An error message that no test
+    asserts on is an unversioned claim surface.
+    (3) THE VOCABULARY WAS ITSELF THE BUG, and that is what made the red half sharp. The old
+    list printed bare `"py"`; as a path that denotes a file literally named `py`, which no
+    frontend claims -- so `every_published_spelling_is_actually_routed` reds on the pre-fix
+    binary for a reason independent of the disposition split.
+    (4) DISCLOSE THE HALF YOU DID NOT CLOSE, IN THE GATE. `published (subset of) routed` is
+    driven; `routed (subset of) published` cannot be checked from here because `matches_path`
+    is a PREDICATE with no enumeration behind it. Stated in the witness doc comment so it is not
+    mistaken for covered.
+    ** RED HALF RUN, FOUR separate executions, at least one test per execution: reverting the
+    message reds 4 of 7; pointing UNCLAIMED_EXT at a claimed extension reds the anti-vacuity
+    check; breaking the end-to-end probe source reds the end-to-end anchor; giving the
+    extensionless branch its own bare message reds the branch-parity check.
+    ** NOTE FOR THE NEXT FIRE: the ranked queue stays EXHAUSTED until 2026-07-30. Wed 2026-07-29
+    18:00 is the HARD FREEZE -- after it, no merge may touch crates/*/src, contracts/*.yaml or
+    any gate. STANDING LEADS: (a) NEW AND CONCRETE -- `parse_target` accepts THIRTEEN spellings
+    (`wat`, `sh`, `bash`, `forjar-yaml` are aliases) while its own refusal enumerates NINE
+    ("choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar") and
+    `xpile transpile --help` names the same nine; book/src/reference/backends.md:41 DOES
+    disclose the aliases while book/src/reference/cli.md:70 says "one of" the nine, so the BOOK
+    CONTRADICTS ITSELF. `backend_docs_drift.rs` (PMAT-1430) checks documented-subset-of-accepted
+    only -- the one-directional shape PMAT-1433 fixed with set equality one surface over. This
+    is the `--target` twin of THIS slice and is freeze-compatible if scoped to the message +
+    cli.md; (b) PMAT-1433 lead (c), a `claimed_filenames()` peer to `extensions()`, now with a
+    live consumer that would publish it; (c) PMAT-1430 lead (c) / PMAT-1433 lead (b),
+    backends.md''s Status column is prose nothing gates and `Backend::targets()` is the
+    `Frontend::extensions()` shape one lane over. Do NOT start a gate_touch and do NOT touch
+    witness_floor.rs. On 2026-07-30 take PMAT-1373 (release commit, witness-floor TOUCH 2); on
+    2026-07-31 PMAT-1374 (publish).'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

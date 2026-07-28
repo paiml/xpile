@@ -20050,3 +20050,86 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1434
+  title: 'PMAT-1434: [cli+honesty] THE DISPATCH-FAILURE MESSAGE IS THE THIRD SURFACE OF THE
+    FRONTEND CLAIM CLASS AND READ NEITHER DISPOSITION (XPILE-FRONTEND-CLAIM-002). When no
+    frontend claims a file, `xpile transpile` answers with the one message whose entire job is
+    to say what the reader could use instead. Measured at da411cef on a force-rebuilt binary:
+    `no frontend handles `.txt`; known extensions: ["py", "pyi", "c", "h", "ruchy", "sh",
+    "bash", "zsh", "mk", "wat"]`. TWO of those ten refuse EVERY input — `probe.ruchy` exits 1
+    ("the Ruchy frontend has no parser — Ruchy is an OUTPUT language only") and `probe.mk`
+    exits 1 ("there is no Makefile dialect") — and the two extensionless spellings
+    `matches_path` claims, `Makefile` and `Dockerfile`, appeared in it NOT AT ALL. Over-reported
+    and under-reported in one line, on the ERROR path, where the reader is looking for what to
+    use instead: a user who follows it to `.mk` or `.ruchy` walks into a hard refusal.
+    ** ROOT CAUSE, and it is nobody''s mistake. `extensions()` is a ROUTING table, and keeping a
+    refusing spelling in it is a DELIBERATE decision recorded in three places: ruchy-frontend''s
+    module doc ("emptying extensions() would make the refusal dead code"), bashrs-frontend at
+    the `*.mk` guard, and `Frontend::lowers_input`''s own doc comment, which justifies
+    routing-only registration as getting the file "a specific refusal ... instead of the generic
+    `no frontend handles .<ext>` message". That decision is right, and it is exactly what makes
+    `extensions()` a set of spellings xpile ROUTES while this message printed it as the set
+    xpile READS. The registry has carried the per-claim disposition since PMAT-1346
+    (`lowers_input()`) and PMAT-1433 (`refused_claims()`); this consumer read neither.
+    ** WHY THE EXISTING GATES DID NOT CATCH IT. PMAT-1433 fixed the claim class in the two
+    surfaces it enumerated — `xpile info` and book/src/reference/frontends.md. Neither
+    `frontend_claim_disposition_witness.rs` nor `claims_drift.rs` reads a message on the ERROR
+    path, and NO test anywhere asserted on this string: `grep -rn "known extensions"` over the
+    whole tree matched exactly one line, the `format!` that produced it. PMAT-1433''s own
+    recorded lesson — a fix must be scoped to a CLAIM CLASS, not a lane or a file — landed one
+    surface short of its own class.
+    ** FIX. `claimed_spellings_by_disposition()` derives `(lowers, refused)` from the live
+    registry in the one vocabulary `refused_claims()` and frontends.md already use (`*.<ext>`
+    for an extension, an exact filename for the extensionless spellings), and
+    `no_frontend_message()` renders it: `no frontend handles `.txt`; spellings that LOWER:
+    ["*.py", "*.pyi", "*.c", "*.h", "*.sh", "*.bash", "*.zsh", "*.wat"]; ROUTED but REFUSED
+    (no parser): ["*.ruchy", "*.mk", "Makefile", "Dockerfile"]`. The REFUSED clause is omitted
+    when the set is empty. Both branches of the `with_context` closure (extension and
+    extensionless) go through the one renderer — PMAT-1387: a fix applied to one branch of a
+    function is not a fix to the function.
+    ** GATE: crates/xpile/tests/frontend_dispatch_message_witness.rs (XPILE-FRONTEND-CLAIM-002,
+    7 tests). Both published lists are compared to the REGISTRY (not to `xpile info`, not to the
+    book), in BOTH directions; the two lists must PARTITION the claimed spellings (structural,
+    so no roster is written down — PMAT-1396); the extensionless branch must carry the identical
+    lists; and, so the file is not purely transitive through XPILE-FRONTEND-CLAIM-001, every
+    spelling the MESSAGE publishes is DRIVEN through the shipped binary — each must be genuinely
+    routed (it must not come back with this very message), each published refusal must really
+    exit non-zero while THE SAME BYTES lower at `probe.sh` (the path-vs-program control), and one
+    published lowering spelling must transpile end to end at exit 0.
+    ** RED HALF RUN, FOUR separate executions, at least one per test: reverting the message to
+    the pre-fix `known extensions:` form reds 4 of 7 — including `every_published_spelling_is_
+    actually_routed`, because the old list''s bare `"py"` denotes a file literally named `py`
+    that no frontend claims, which makes the message''s VOCABULARY load-bearing; pointing
+    UNCLAIMED_EXT at a claimed extension reds the anti-vacuity check; breaking the end-to-end
+    probe source reds the end-to-end anchor; giving the extensionless branch its own bare
+    message reds the branch-parity check.
+    ** RESIDUAL, DISCLOSED IN THE GATE ITSELF RATHER THAN LEFT TO LOOK COVERED: `published ⊆
+    routed` is checked by driving every published spelling; the converse `routed ⊆ published`
+    is NOT, and cannot be from here — `matches_path` is a PREDICATE and the registry exposes no
+    enumeration of the extensionless names it claims. Today the only override is
+    bashrs-frontend''s and every name it adds is in `refused_claims()`, so the union happens to
+    be complete. A frontend that overrode `matches_path` to claim a spelling it LOWERS would be
+    invisible to both this message and `xpile info`, exactly the way `Makefile` was before
+    PMAT-1433. Closing it needs a `claimed_filenames()` peer to `extensions()`, which is
+    PMAT-1433 standing lead (c) and deliberately NOT folded in here.
+    ** NOT a witness_floor.rs touch (two-touch serial resource, PMAT-1372 / PMAT-1373) and NOT a
+    gate_touch in the serial chain — the witness is a NEW file and no existing gate was edited.
+    STANDING LEADS carried forward: (a) PMAT-1433 lead (c), the `claimed_filenames()` gap named
+    above, now with a live consumer that would publish it; (b) PMAT-1430 lead (c) / PMAT-1433
+    lead (b), backends.md''s Status column is prose nothing gates, and `Backend::targets()` is
+    the `Frontend::extensions()` shape one lane over; (c) NEW — `parse_target` accepts THIRTEEN
+    spellings (`wat`, `sh`, `bash`, `forjar-yaml` are aliases) while its own refusal enumerates
+    NINE ("choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar") and
+    `xpile transpile --help` names the same nine; book/src/reference/backends.md:41 DOES
+    disclose the aliases and book/src/reference/cli.md:70 says "one of" the nine, so the book
+    contradicts itself. `backend_docs_drift.rs` (PMAT-1430) checks documented-subset-of-accepted
+    only — the same one-directional shape PMAT-1433 fixed with set equality one surface over.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
