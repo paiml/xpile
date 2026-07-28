@@ -268,9 +268,14 @@ equations:
     # BigIntResult { value, allocation : Heap | Stack } that
     # captures the load-bearing allocation semantics. Companion
     # theorem bigint_addition_value_eq_math_silver keeps the
-    # Bronze sum-equality claim in the Silver model. COMPLETES
-    # Silver coverage on C-PY-INT-ARITH (9/9) — SIXTH and FINAL
-    # multi-eq contract at full Silver.
+    # Bronze sum-equality claim in the Silver model. PMAT-183
+    # completed Silver coverage on the nine equations
+    # C-PY-INT-ARITH then carried, as the sixth multi-equation
+    # contract to reach that state. PMAT-1457: this comment used
+    # to add "(9/9)" and to claim finality; the contract now
+    # carries 42 equations, nine of them still Bronze, and no
+    # multi-equation contract in the substrate is discharged at
+    # Silver-or-better on every equation.
     lean_theorem: "XpileContracts.CPyIntArith.bigint_addition_is_heap_allocated_silver"
     lean_file: "contracts/lean/PyIntArith.lean"
     formula: |

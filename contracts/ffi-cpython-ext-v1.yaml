@@ -414,10 +414,16 @@ equations:
     # PMAT-174 / XPILE-REFINE-FFI-CPYTHON-007: Silver-tier
     # refinement wires the last previously-unwired equation on
     # this contract — SIXTH and FINAL Silver theorem on
-    # C-FFI-CPYTHON-EXT. With this landed, every equation in
-    # the contract has Silver-tier coverage; C-FFI-CPYTHON-EXT
-    # becomes the first contract in the substrate at FULL
-    # Silver tier. Models typed OracleObservation { output,
+    # C-FFI-CPYTHON-EXT. That ordinal is STILL LIVE (six of this
+    # contract's equations bind a `…_silver` theorem) and
+    # PMAT-1457 re-derives it every run. The two clauses that
+    # used to follow it are RETIRED: they said every equation in
+    # the contract had Silver-tier coverage and that this was the
+    # first contract at FULL Silver tier. The contract has since
+    # grown from seven equations to 22 — `manifest_completeness`
+    # is still Bronze — so both went false with nobody editing
+    # them: the ordinal froze the numerator while the substrate
+    # grew the denominator. Models typed OracleObservation { output,
     # refcount_delta, exception_kind } and proves both sides
     # (Python-baseline + Rust-transpiled) produce structurally-
     # equal observations on the same input — capturing the

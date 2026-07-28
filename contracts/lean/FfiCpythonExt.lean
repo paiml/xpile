@@ -118,11 +118,21 @@ def lower_call_to_manifest (c : FfiCall) : FfiManifestEntry :=
 
   Status: **discharged at v0.1.0 (PMAT-076)**. Tier: Bronze.
 
-  This is the **TWELFTH and FINAL** contract to receive a
-  refinement theorem — completing the xpile substrate.
-  Eleven other contracts (across Layers 1, 2, 3, 5) have
-  already been refined. The Layer-4 hybrid pipeline contract
-  has been the longest-deferred because of its complexity
+  PMAT-076, 2026-05-18: the twelfth contract to receive a
+  refinement theorem, closing the then-12-contract substrate.
+  This line used to assert finality and to count eleven others;
+  it was not the last, and PMAT-1456 — which repaired the same
+  boast in this file's module header and in the Kani twin, and
+  wrote down that a superlative needs a live count — edited
+  this file without reaching this far into it. Every contract
+  in the substrate binds a `lean_theorem:` today and there are
+  far more than twelve of them, so the ordinal is a position in
+  a history, not a boundary. PMAT-1457 re-derives that
+  population on every run (`crates/xpile/tests/claims_drift.rs`,
+  `ordinal_finality_claims_match_the_live_population`).
+
+  The Layer-4 hybrid pipeline contract
+  was the longest-deferred because of its complexity
   (CPython ABI + GIL + refcount + buffer-protocol all in one);
   Bronze tier captures the manifest-completeness invariant
   without committing to the full CPython API modelling.
@@ -811,14 +821,30 @@ theorem length_preserved_in_view_silver (n : NdarrayPassthrough) :
     (XPILE-REFINE-FFI-CPYTHON-007).
 
     SIXTH and FINAL Silver theorem on C-FFI-CPYTHON-EXT — wires
-    the last previously-unwired equation. With this landed,
-    **every equation in C-FFI-CPYTHON-EXT has Silver-tier
-    coverage**: PMAT-076 manifest_completeness (Bronze) +
-    PMAT-160 refcount_balance_on_success_silver + PMAT-168
+    the last previously-unwired equation. That ordinal is STILL
+    LIVE: six of this contract's equations bind a `…_silver`
+    theorem, and PMAT-1457 re-derives that count on every run so
+    a seventh reds this line. What rode alongside it was not.
+
+    This paragraph used to claim that every equation in
+    C-FFI-CPYTHON-EXT had Silver-tier coverage — and its own
+    list named the Bronze `manifest_completeness` among the
+    seven it offered as evidence. The contract has since grown
+    from seven equations to 22, so the coverage sentence went
+    false with nobody editing it: **the ordinal froze the
+    numerator while the substrate grew the denominator**, and a
+    correct ordinal beside it made the pair read as checked.
+
+    The six Silver discharges are PMAT-160
+    refcount_balance_on_success_silver + PMAT-168
     symbol_preserved_silver + PMAT-171 gil_invariant_silver +
     PMAT-172 refcount_balance_on_error_silver + PMAT-173
     pointer_identity_on_zero_copy_silver + PMAT-174
-    oracle_endtoend_equivalence_silver.
+    oracle_endtoend_equivalence_silver, over the Bronze
+    PMAT-076 manifest_completeness. ⚠️ "Every equation at tier
+    T" is NOT gated as a class — PMAT-1457 gated the ORDINAL
+    beside it and left this one repaired-but-unchecked, and
+    says so rather than implying otherwise.
 
     The oracle equivalence claim is the contract's **agent exit
     condition** — the end-to-end correctness witness that ties

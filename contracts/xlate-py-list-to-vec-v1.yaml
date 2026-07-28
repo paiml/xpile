@@ -59,8 +59,11 @@ equations:
     lean_theorem: "XpileContracts.CXlatePyListToVec.homogeneous_element_type_preserved_silver"
     lean_file: "contracts/lean/XlatePyListToVec.lean"
     # PMAT-279: Property-specific Silver-tier Kani harness. Closes
-    # audit-design.md §4 caveat — FIFTH and FINAL Path α contract
-    # closure. Bronze iteration_order_preserved used a fixed 4-byte
+    # audit-design.md §4 caveat — the FIFTH Path α contract
+    # closure. PMAT-1457: this comment used to call it the LAST,
+    # and PMAT-281 refuted that with the next entry; Path α ran on
+    # to a tenth member and the live membership is now re-derived
+    # on every run. Bronze iteration_order_preserved used a fixed 4-byte
     # payload (would silently pass a lowering specialized for
     # byte-elements but broken on other types). Silver adds an
     # element_type_tag field; the homogeneous_element_type_preserved_silver
