@@ -257,14 +257,30 @@ impl Para {
 /// A file split into paragraphs, each carrying the nearest preceding ATX
 /// heading. A heading is a hard paragraph break, and is itself yielded so a
 /// claim written INTO a heading is still scanned.
+///
+/// PMAT-1451 — FENCED CODE IS NOT PROSE. A `#` comment inside a ``` fence has
+/// the shape of an ATX heading, and this walker used to accept it as one. Both
+/// directions are wrong and one of them is unsound: a Python or shell sample
+/// containing `# … (historical record)` would have GRANTED the exemption to
+/// every paragraph after it, and an ordinary `# real_python.py` sample line
+/// silently REVOKES the real heading from everything below the fence. No
+/// fenced block in the corpus spells the marker today, so this is a hardening
+/// with no current verdict change — pinned by
+/// `a_fence_comment_is_not_a_heading`, since a corpus that does not yet
+/// contain the shape cannot demonstrate the rule.
 fn paragraphs_under_headings(body: &str) -> Vec<Para> {
     let mut out = Vec::new();
     let mut start = 1usize;
     let mut buf: Vec<(usize, String)> = Vec::new();
     let mut heading = String::new();
+    let mut fenced = false;
     for (i, line) in body.lines().enumerate() {
         let t = line.trim_start();
-        let is_heading = t.starts_with('#') && t.trim_start_matches('#').starts_with(' ');
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fenced = !fenced;
+        }
+        let is_heading =
+            !fenced && t.starts_with('#') && t.trim_start_matches('#').starts_with(' ');
         if line.trim().is_empty() || is_heading {
             if !buf.is_empty() {
                 out.push(Para {
@@ -703,6 +719,59 @@ fn pmat_ids(clause: &str) -> Vec<String> {
             ids.push(format!("PMAT-{digits}"));
         }
     }
+    ids
+}
+
+/// `text` split into clauses at `". "` and `"; "`, each paired with its byte
+/// offset in `text` so a match can be attributed back to the line that carries
+/// it. The split characters are ASCII, so every boundary is a char boundary.
+fn clauses_with_offsets(text: &str) -> Vec<(&str, usize)> {
+    let mut out = Vec::new();
+    let b = text.as_bytes();
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while i + 1 < b.len() {
+        if (b[i] == b'.' || b[i] == b';') && b[i + 1] == b' ' {
+            out.push((&text[start..i], start));
+            start = i + 2;
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    out.push((&text[start..], start));
+    out
+}
+
+/// Contract ids mentioned in a clause: `C-` followed by upper-case ASCII,
+/// digits and hyphens. Trailing hyphens are trimmed so `C-FOO-` in prose does
+/// not become a distinct id, and a one-character tail (`C-X`) is rejected —
+/// the shortest live id is `C-ENUM-TRANSLATION`.
+fn contract_ids(clause: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let bytes: Vec<char> = clause.chars().collect();
+    let mut i = 0usize;
+    while i + 2 < bytes.len() {
+        let boundary = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+        if boundary && bytes[i] == 'C' && bytes[i + 1] == '-' {
+            let mut j = i + 2;
+            while j < bytes.len()
+                && (bytes[j].is_ascii_uppercase() || bytes[j].is_ascii_digit() || bytes[j] == '-')
+            {
+                j += 1;
+            }
+            let id: String = bytes[i..j].iter().collect();
+            let id = id.trim_end_matches('-').to_string();
+            if id.len() > 3 {
+                ids.push(id);
+            }
+            i = j.max(i + 1);
+            continue;
+        }
+        i += 1;
+    }
+    ids.sort();
+    ids.dedup();
     ids
 }
 
@@ -1392,13 +1461,68 @@ fn book_lean_transcripts_carry_the_live_citation_form() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// A book that says "full quorum" while contracts sit at PARTIAL is making
-/// the one claim this repository exists to be trustworthy about.
-///
-/// Both sides derived: the PARTIAL population from the contract YAMLs' own
-/// stratum references, the claim from the book text.
+/// PMAT-1451 — a `#` comment inside a fenced block is CODE, not a heading.
+/// The corpus does not spell this shape today, so the rule cannot be
+/// demonstrated from the corpus and is pinned here instead. Both directions
+/// matter: the fence must not GRANT a `(historical record)` exemption to the
+/// prose after it, and must not REVOKE the real heading either.
 #[test]
-fn book_claims_no_total_quorum_while_any_contract_is_partial() {
+fn a_fence_comment_is_not_a_heading() {
+    let doc = "## Live section\n\n```python\n# helper (historical record)\nx = 1\n```\n\nall 12 contracts are at 100% QUORUM.\n";
+    let paras = paragraphs_under_headings(doc);
+    let claim = paras
+        .iter()
+        .find(|p| p.flat.contains("100% QUORUM"))
+        .expect("the claim paragraph is in the split");
+    assert_eq!(
+        claim.heading, "## Live section",
+        "a `#` comment inside a ``` fence was taken for an ATX heading, so the \
+         fenced text decided which section the prose below it belongs to"
+    );
+    assert!(
+        !claim.heading.contains(HISTORICAL_MARKER),
+        "a fenced code comment granted the historical-record exemption"
+    );
+    // The control: outside a fence the very same line IS a heading, so the
+    // fence check cannot pass by disabling heading detection altogether.
+    let bare = paragraphs_under_headings("# helper (historical record)\n\nclaim.\n");
+    assert_eq!(
+        bare.last().expect("a paragraph").heading,
+        "# helper (historical record)"
+    );
+}
+
+/// The needle split is the half PMAT-1451 added, so pin both sides of it:
+/// a substrate-totality phrase on a line naming no contract is drift; the
+/// same phrase naming one contract is a per-contract claim.
+#[test]
+fn contract_ids_reads_the_spellings_the_corpus_uses() {
+    assert_eq!(
+        contract_ids("covered by `C-XPILE-FRONTEND-TRAIT` at full §14.4 QUORUM"),
+        vec!["C-XPILE-FRONTEND-TRAIT"]
+    );
+    assert_eq!(
+        contract_ids("asserts C-PY-INT-ARITH has full quorum"),
+        vec!["C-PY-INT-ARITH"]
+    );
+    // Two on one line — `meta-hir.md:111` names both trait contracts.
+    assert_eq!(
+        contract_ids("`C-XPILE-FRONTEND-TRAIT`; same via `C-XPILE-BACKEND-TRAIT`"),
+        vec!["C-XPILE-BACKEND-TRAIT", "C-XPILE-FRONTEND-TRAIT"]
+    );
+    // Prose that merely contains a capital C is not an id.
+    assert!(contract_ids("C code, and a C-like syntax").is_empty());
+    assert!(contract_ids("all 12 contracts reach QUORUM").is_empty());
+}
+
+/// The live §14.4 table, read from the shipped binary: the `totals:` line and
+/// every contract's status keyed by id.
+///
+/// PMAT-1451: the per-contract half exists so a carve-out can be a CHECK. A
+/// line naming `C-FOO` and saying "at full §14.4 QUORUM" is not a claim about
+/// the substrate and must not be scored as one — but it IS a claim, so it is
+/// verified against this map rather than waved past.
+fn live_quorum() -> (String, HashMap<String, String>) {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_xpile"))
         .args(["quorum", "--contracts-dir"])
         .arg(workspace_root().join("contracts"))
@@ -1407,8 +1531,8 @@ fn book_claims_no_total_quorum_while_any_contract_is_partial() {
         .expect("run xpile quorum");
     assert!(
         out.status.success(),
-        "`xpile quorum` failed ({}), so the live PARTIAL count could not be \
-         derived and this gate would be vacuous. stderr: {}",
+        "`xpile quorum` failed ({}), so the live §14.4 table could not be \
+         derived and every gate over it would be vacuous. stderr: {}",
         out.status,
         String::from_utf8_lossy(&out.stderr)
     );
@@ -1416,30 +1540,104 @@ fn book_claims_no_total_quorum_while_any_contract_is_partial() {
     let totals = report
         .lines()
         .find(|l| l.trim_start().starts_with("totals:"))
-        .unwrap_or_else(|| panic!("`xpile quorum` printed no totals line:\n{report}"));
-    let partial = counts_between(totals, ", ", " PARTIAL")
+        .unwrap_or_else(|| panic!("`xpile quorum` printed no totals line:\n{report}"))
+        .trim()
+        .to_string();
+    let mut status = HashMap::new();
+    for line in report.lines() {
+        let toks: Vec<&str> = line.split_whitespace().collect();
+        let (Some(id), Some(last)) = (toks.first(), toks.last()) else {
+            continue;
+        };
+        if id.starts_with("C-") && matches!(*last, "QUORUM" | "PARTIAL" | "UNVERIFIED") {
+            status.insert((*id).to_string(), (*last).to_string());
+        }
+    }
+    // Anti-vacuity, as a RELATION between two things the same report prints:
+    // the row count must equal the `(N contracts total)` the totals line
+    // states. A parser that silently drops rows would otherwise make every
+    // per-contract claim below pass for want of an entry.
+    let declared = counts_between(&totals, "(", " contracts total)")
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("no `(N contracts total)` in totals line {totals:?}"));
+    assert_eq!(
+        status.len(),
+        declared,
+        "parsed {} contract row(s) from `xpile quorum` but its own totals line \
+         declares {declared}. The table shape moved; fix this parser rather \
+         than letting per-contract claims pass on a missing entry.\n{report}",
+        status.len()
+    );
+    (totals, status)
+}
+
+/// Phrases that assert TOTAL §14.4 discharge across the whole substrate. Each
+/// was live in the corpus while PARTIAL was non-zero.
+const TOTAL_QUORUM_CLAIMS: [&str; 5] = [
+    "full quorum",
+    "100% QUORUM",
+    "100% §14.4",
+    "all at QUORUM",
+    "0 PARTIAL",
+];
+
+/// Spellings that assert a NAMED contract has reached quorum.
+const PER_CONTRACT_QUORUM_CLAIMS: [&str; 5] = [
+    "at full §14.4 QUORUM",
+    "at full QUORUM",
+    "has full quorum",
+    "at QUORUM",
+    "reaches QUORUM",
+];
+
+/// Docs that say "full quorum" while contracts sit at PARTIAL make the one
+/// claim this repository exists to be trustworthy about. Both sides derived:
+/// the PARTIAL population from `xpile quorum` over the contract YAMLs, the
+/// claim from the prose.
+///
+/// PMAT-1451 — WHAT THIS GATE COULD NOT SEE, on the same two independent axes
+/// PMAT-1450 found for the universal-depth gate one slice earlier:
+///
+///   * SUBJECT. It ranged over `book_pages()`. Live: 26 QUORUM, **9 PARTIAL**,
+///     0 UNVERIFIED over 35 contracts — and five assertions of TOTAL discharge
+///     sat outside the book, four of them in the canonical specification set.
+///     The worst is `xpile-spec.md`'s "`xpile quorum` → 16 (or 15) QUORUM,
+///     **0 PARTIAL**, 0 UNVERIFIED" under `### Exit criterion` — a pasted
+///     derived transcript, the exact shape
+///     `book_pastes_no_derived_totals_transcript` forbids in the book, sitting
+///     1269 lines BELOW the same file's own `**Status:**` line, which says
+///     coverage is "**partial, not total**". The canonical spec contradicted
+///     itself, and the honest half is the one nothing enforced.
+///
+///   * NEEDLE, in the FALSE-POSITIVE direction — the axis the previous slices
+///     did not hit. `"full quorum"` also matches
+///     `sub/provability-roadmap.md`'s "`tests/quorum.rs` asserts
+///     C-PY-INT-ARITH has full quorum", which is a claim about ONE contract
+///     and is TRUE. Widening the subject without splitting the needle would
+///     have reported a true sentence as drift. A carve-out that is not checked
+///     is a hole, so per-contract claims are verified against the live table
+///     instead of exempted.
+#[test]
+fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
+    let (totals, status) = live_quorum();
+    let partial = counts_between(&totals, ", ", " PARTIAL")
         .into_iter()
         .next()
         .unwrap_or_else(|| panic!("could not parse a PARTIAL count from {totals:?}"));
-    if partial == 0 {
-        return; // the claim would be true; nothing to forbid
-    }
-    // Phrases that assert TOTAL discharge. Each was live in the book while
-    // PARTIAL was non-zero.
-    let banned = [
-        "full quorum",
-        "100% QUORUM",
-        "100% §14.4",
-        "all at QUORUM",
-        "0 PARTIAL",
-    ];
+
     let mut offences = Vec::new();
+    let mut per_contract = Vec::new();
     let mut scanned = 0usize;
-    for (rel, body) in book_pages() {
-        // `book/src/changelog.md` is a DATED release log: "v0.1.0 — 12
-        // contracts at 100% QUORUM" was true of v0.1.0 and stays true of it.
-        // The exemption is one file and is checked to really be that file, so
-        // it cannot quietly widen into "the book is exempt".
+    let mut historical = Vec::new();
+    let mut undated = Vec::new();
+    for (rel, body) in claim_pages() {
+        // `book/src/changelog.md` is a DATED release log — the same role
+        // `CHANGELOG.md` and `docs/status/2026-*.md` play, which is why
+        // `claim_pages()` excludes those outright. "v0.1.0 — 12 contracts at
+        // 100% QUORUM" was true of v0.1.0 and stays true of it. Exempt by
+        // ROLE, and checked to really be that role, so it cannot quietly
+        // widen into "the book is exempt".
         if rel == "book/src/changelog.md" {
             assert!(
                 body.contains("## v0.1.0"),
@@ -1450,10 +1648,115 @@ fn book_claims_no_total_quorum_while_any_contract_is_partial() {
             continue;
         }
         scanned += 1;
-        for (n, line) in body.lines().enumerate() {
-            for b in banned {
-                if line.contains(b) {
-                    offences.push(format!("{rel}:{}: `{b}`", n + 1));
+        for para in paragraphs_under_headings(&body) {
+            let in_record = para.heading.contains(HISTORICAL_MARKER);
+            // Scanned over the FLATTENED paragraph, with byte offsets
+            // attributed back to the line that carries them. A claim — and a
+            // quotation of one — WRAPS across a line break: the repair written
+            // for `xpile-spec.md` opens its backtick on one line and closes it
+            // on the next, so a line-scoped span scan sees one lone backtick,
+            // finds no closed span, and reports the quotation as an assertion.
+            // Same reason `docs_claim_no_universal_depth_the_substrate_does_not_hold`
+            // works over `flat`.
+            let spans = quoted_spans(&para.flat);
+            let lower = para.flat.to_lowercase();
+            // Paragraph-scoped denial, per PMAT-1448. It is NOT sufficient on
+            // its own — see the quoted-span requirement below.
+            let denied = lower.contains("used to")
+                || lower.contains("no longer")
+                || lower.contains("this line said")
+                || lower.contains("does not hold")
+                || lower.contains("was false");
+            // Scanned per CLAUSE. A claim is a clause — not a line, and not a
+            // paragraph. PMAT-1450 moved this family from paragraph to line
+            // because a 20-bullet paragraph let a neighbour whitewash a claim;
+            // the same argument goes one level finer here, and this gate's own
+            // first run proved it: `sub/provability-roadmap.md:103` is a
+            // single run-on line carrying BOTH "`tests/quorum.rs` asserts
+            // C-PY-INT-ARITH has full quorum" (a TRUE per-contract claim) and,
+            // 500 characters earlier, the threshold definition "… = PARTIAL,
+            // 0 = UNVERIFIED". A line-scoped enumeration test saw the word
+            // PARTIAL, declined to treat the line as a per-contract claim, and
+            // reported a true sentence as substrate drift.
+            for (clause, base) in clauses_with_offsets(&para.flat) {
+                // A clause naming contracts is a PER-CONTRACT claim, checked
+                // against the live table rather than against substrate
+                // totality. `PARTIAL`/`UNVERIFIED` in the clause makes it an
+                // enumeration of the possible states ("is at QUORUM, PARTIAL,
+                // or …"), and an arrow makes it a transition ("Bronze→QUORUM")
+                // — neither asserts a current state.
+                let ids = contract_ids(clause);
+                let asserts_per_contract = PER_CONTRACT_QUORUM_CLAIMS
+                    .iter()
+                    .any(|c| clause.contains(c))
+                    && !clause.contains("PARTIAL")
+                    && !clause.contains("UNVERIFIED")
+                    && !clause.contains("→");
+                if !ids.is_empty() && asserts_per_contract {
+                    let (n, _) = para.line_at(base);
+                    for id in &ids {
+                        match status.get(id) {
+                            Some(s) if s == "QUORUM" => per_contract.push(format!("{rel}:{n}")),
+                            Some(s) => offences
+                                .push(format!("{rel}:{n}: says `{id}` is at QUORUM; it is {s}")),
+                            // An id the live table does not carry is a separate
+                            // defect class (PMAT-1435) and is not this gate's
+                            // subject — but it must not read as a satisfied
+                            // claim either.
+                            None => {}
+                        }
+                    }
+                    continue;
+                }
+                for b in TOTAL_QUORUM_CLAIMS {
+                    let mut from = 0usize;
+                    while let Some(hit) = clause[from..].find(b) {
+                        let at = base + from + hit;
+                        from += hit + b.len();
+                        let (n, line) = para.line_at(at);
+                        if in_record {
+                            // A dated record names WHEN. Checked on the
+                            // claim's OWN LINE, not its paragraph: these
+                            // sections are 20+ consecutive bullets in one
+                            // paragraph, so a paragraph-scoped check is
+                            // satisfied by a neighbour and bites nothing
+                            // (PMAT-1450 measured exactly that).
+                            //
+                            // COLLECTED, not asserted in place: an `assert!`
+                            // here aborts the walk at the first undated record
+                            // and hides every substrate-totality offence below
+                            // it — which is exactly what it did on this gate's
+                            // own first run, reporting one site of six.
+                            if pmat_ids(line).is_empty() && !line.contains("v0.1.") {
+                                undated.push(format!("{rel}:{n}: `{b}` under {:?}", para.heading));
+                            } else {
+                                historical.push(format!("{rel}:{n}"));
+                            }
+                            continue;
+                        }
+                        if partial == 0 {
+                            continue; // the claim would be true
+                        }
+                        // Prose may QUOTE a retired falsehood; it may not
+                        // ASSERT one. Same structural rule PMAT-1450 settled
+                        // for the universal-depth gate, and this slice needed
+                        // it for the same reason: the repair written for
+                        // `xpile-spec.md` records what that line USED to pin,
+                        // and the retired numerals include `0 PARTIAL`. The red
+                        // half caught the correction reproducing the defect
+                        // (PMAT-1447's shape) on its first otherwise-green run.
+                        //
+                        // BOTH halves are required. Denial alone is
+                        // paragraph-scoped and would exempt anything newly
+                        // asserted in the same paragraph; the quoted-span
+                        // requirement is what makes it a quotation.
+                        let quoted = spans.iter().any(|&(s, e)| at >= s && at + b.len() <= e);
+                        if denied && quoted {
+                            historical.push(format!("{rel}:{n}"));
+                            continue;
+                        }
+                        offences.push(format!("{rel}:{n}: `{b}`"));
+                    }
                 }
             }
         }
@@ -1462,12 +1765,41 @@ fn book_claims_no_total_quorum_while_any_contract_is_partial() {
         scanned > 1,
         "the exemption swallowed the corpus: only {scanned} page(s) scanned"
     );
+    // Both derived sets must be non-empty, or a later narrowing of either
+    // needle would leave this ranging over nothing and passing for free
+    // (PMAT-1396). `C-PY-INT-ARITH` is the anchor: the substrate's oldest
+    // contract, claimed at quorum by name in `sub/provability-roadmap.md`.
+    assert!(
+        !per_contract.is_empty(),
+        "no per-contract QUORUM claim was found anywhere in the corpus, so \
+         the PER_CONTRACT_QUORUM_CLAIMS needle is matching nothing and every \
+         such claim is now unchecked"
+    );
+    // The live falsehoods first — they are the defect this gate exists for.
+    // The undated-record check below is a hygiene rule on the EXEMPTION, and
+    // reporting it ahead of a false published claim would bury the headline.
     assert!(
         offences.is_empty(),
-        "the book claims TOTAL §14.4 quorum — {} — but `xpile quorum` reports \
-         {partial} contract(s) at PARTIAL. Totals line: {}",
+        "the docs claim TOTAL §14.4 quorum, or claim a named contract is at \
+         QUORUM when it is not — {} — but `xpile quorum` reports {partial} \
+         contract(s) at PARTIAL. Totals line: {totals}. Say which SUBSET is \
+         discharged, or move the sentence under a `{HISTORICAL_MARKER}` \
+         heading if it is a dated record. ({} mention(s) already are.)",
         offences.join(", "),
-        totals.trim()
+        historical.len()
+    );
+    assert!(
+        undated.is_empty(),
+        "totality claim(s) sit under a `{HISTORICAL_MARKER}` heading without \
+         citing a PMAT id or a version on their own line — {}. A record of \
+         what was once true says WHEN; otherwise write it as a live claim and \
+         make it true.",
+        undated.join(", ")
+    );
+    assert!(
+        !historical.is_empty(),
+        "no `{HISTORICAL_MARKER}` totality claim was found, so that branch is \
+         dead and the exemption is untested"
     );
 }
 

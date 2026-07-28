@@ -25,9 +25,11 @@ Live substrate state at v0.1.0:
 
 - **27 workspace crates**, all green on `cargo check` /
   `clippy -D warnings` / `cargo deny advisories`
-- **12 contracts at 100% §14.4 N-of-M QUORUM** — every contract
-  has paired Lean refinement theorem + Kani BMC harness at
-  Bronze tier. Two contracts (C-PY-INT-ARITH,
+- **12 contracts at §14.4 N-of-M QUORUM at v0.1.0** — every
+  contract of that substrate had a paired Lean refinement theorem
+  + Kani BMC harness at Bronze tier. The substrate has grown
+  since; `xpile quorum` reports the live table, and coverage is
+  now partial, not total (PMAT-1451). Two contracts (C-PY-INT-ARITH,
   C-BASHRS-POSIX-IDEMPOTENCE) at full four-stratum coverage;
   the other ten at three-stratum (Sem+Sym+Ext).
 - **Four real backends**: Rust, Ruchy, Lean 4, Shell/bashrs.

@@ -441,7 +441,7 @@ v0.1.0 — **SHIPPED 2026-05-20** — first real release; `cargo install xpile` 
 - ✅ **All 27 workspace crates published to crates.io at v0.1.0** (topological order; published over ~3.5h on the new-crate 5/hour rate-limit budget). xpile is no longer a name reservation — it's a working CLI.
 - ✅ `aprender-contracts` (`pv`) wired via crates.io 0.33
 - ✅ 12 contracts pass `pv lint` (0 errors, 0 warnings)
-- ✅ **100% §14.4 N-of-M QUORUM coverage** — all 12 contracts have paired Lean refinement theorems AND Kani BMC harnesses; **638 stratum-vote artifacts** total (285 Semantic + 53 Symbolic + 15 Runtime + 285 Extrinsic) across all 5 taxonomy layers. See `xpile quorum`.
+- ✅ **100% §14.4 N-of-M QUORUM coverage at v0.1.0** — all 12 contracts of the v0.1.0 substrate have paired Lean refinement theorems AND Kani BMC harnesses; **638 stratum-vote artifacts** total (285 Semantic + 53 Symbolic + 15 Runtime + 285 Extrinsic) across all 5 taxonomy layers. See `xpile quorum`.
 - ✅ **Eleven UNIVERSAL Diamond milestones depth-3..13** (PMAT-336..442); **171 wired Diamond theorems** across 12 contracts; 13 recurring algebraic templates. Deepest contracts: `C-PY-INT-ARITH` at depth-21, `C-COMPILE-RUST-TO-PTX-MMA` at depth-20. Diamond coverage CI-enforced via `crates/xpile/tests/diamond_coverage.rs`.
 - ✅ **Four real backends** (Rust, Ruchy, Lean 4, Shell/bashrs); PTX/WGSL/SPIR-V still scaffolded
 - ✅ Python subset (canonical: [`/CHANGELOG.md`](../../CHANGELOG.md)): typed `def`, multi-statement body, all binary + unary ops including bitwise / power, ternary, if/elif/else with single- *or multi-*assignment branches, function calls including self-recursion, **while loops with mutable rebinding** (PMAT-006), **for-in-range with positive *or negative* literal steps** (PMAT-007, PMAT-008), **`subprocess.run([...])` cross-domain to bashrs** (PMAT-040..058)
@@ -1273,7 +1273,12 @@ int factorial(int n) { return n <= 1 ? 1 : n * factorial(n - 1); }
 
 Both transpile cleanly via `xpile transpile` → Rust + Ruchy + Lean for the Python case; → Rust for the C case. Each function in *these* corpora does arithmetic, so each carries a `// xpile-contract: <ID>` citation referencing the appropriate v0.2.0 contract. That is a property of the corpus, not of emission: a comparison-only or call-only body has no applicable contract and correctly emits no citation line (PMAT-1447; through v0.1.617 this sentence read "Each emitted function carries…").
 
-`xpile quorum` → 16 (or 15) QUORUM, 0 PARTIAL, 0 UNVERIFIED.
+`xpile quorum` → `totals: <N> QUORUM, <N> PARTIAL, <N> UNVERIFIED (<N> contracts
+total)`. The numerals are DERIVED and move every sprint — read them from the
+command, not from here. This line used to pin `16 (or 15) QUORUM, 0 PARTIAL, 0
+UNVERIFIED`, which was false from the first contract that landed ahead of its
+Lean or Kani vote and contradicted this same file's `**Status:**` line 1269
+lines above, which says coverage is partial, not total (PMAT-1451).
 `xpile diamond` → the grandfathered 13-contract cohort still meets its depth-13 floor (CI gate); newer contracts sit at depth-1+ and are not held to it.
 
 ### What this is NOT

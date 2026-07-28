@@ -39,7 +39,9 @@ Move shared concerns into the xpile workspace as crates.io-publishable crates. d
 What end-of-Phase-A originally promised that *did* ship at v0.1.0:
 
 - ✅ depyler, decy, ruchy, bashrs frontends are all in-tree (Phase B-shape, not Phase A-shape — the actual path skipped the "remote dependency" step)
-- ✅ 12 substrate contracts live in `xpile/contracts/` with 100% §14.4 QUORUM
+- ✅ substrate contracts live in `xpile/contracts/`; the 12 that existed at
+  v0.1.0 all reached §14.4 QUORUM. The substrate has grown since and coverage
+  is partial, not total — run `xpile quorum` for the live table (PMAT-1451)
 - ✅ Workspace is on crates.io as `xpile 0.0.1` (name reservation; v0.1.0+ unreleased)
 
 What end-of-Phase-A originally promised that did NOT ship at v0.1.0:

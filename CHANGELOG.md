@@ -7,6 +7,49 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The gate for TOTAL §14.4 QUORUM could only see the book, and the canonical spec contradicted itself 1269 lines apart (PMAT-1451)
+
+`xpile quorum` over `contracts/`, on this tree:
+
+```
+totals: 26 QUORUM, 9 PARTIAL, 0 UNVERIFIED (35 contracts total)
+```
+
+PARTIAL is **9**, and has not been zero for a long time.
+`claims_drift.rs` carries a gate whose own doc comment calls this "the one
+claim this repository exists to be trustworthy about" — and it ranged over
+`book_pages()`. Five live assertions of total discharge sat outside that
+subject, four of them in the canonical specification set:
+
+| site | published |
+|---|---|
+| `xpile-spec.md:1276` | ``xpile quorum` → 16 (or 15) QUORUM, **0 PARTIAL**, 0 UNVERIFIED` |
+| `sub/glossary.md:55` | "the entire 12-contract substrate **is** at 100% QUORUM" |
+| `sub/migration.md:42` | "12 substrate contracts **live in** … with 100% §14.4 QUORUM" |
+| `sub/phased-rollout.md:28` | "12 contracts at 100% §14.4 N-of-M QUORUM" |
+| `audit-design.md:46` | "**all 12 contracts reach** §14.4 QUORUM" |
+
+The specification contradicted **itself**: `xpile-spec.md:7` — the
+`**Status:**` line, the first thing a reader meets — says coverage is
+"**partial, not total**". Line 1276 pinned `0 PARTIAL`. The honest half was
+written down; the false half was the one nothing enforced.
+
+**The needle was blind in the other direction too.** `"full quorum"` also
+matches `sub/provability-roadmap.md:103` — "`tests/quorum.rs` asserts
+C-PY-INT-ARITH has full quorum" — which is a claim about **one** contract and
+is **true**. Widening the subject alone would have reported a true sentence as
+drift. A carve-out that is not checked is a hole, so per-contract claims are
+now verified against the live table rather than exempted.
+
+Fixed: subject widened to `claim_pages()`; the needle split into substrate
+totality and per-contract, the latter checked against `xpile quorum`'s own
+id → status map; the `(historical record)` exemption ported with a per-line
+citation requirement; `paragraphs_under_headings` made fence-aware, because a
+`#` comment inside a ``` fence could grant the historical exemption to the
+prose below it. The five sites now derive their numbers or say *when* they were
+true.
+
+
 ### The canonical spec published `depth-2..13 UNIVERSAL` as a property of "all 12 contracts", and named a CI gate that enforces it (PMAT-1450)
 
 `xpile diamond`, on this tree:

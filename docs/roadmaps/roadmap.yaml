@@ -21424,3 +21424,97 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1451
+  title: 'the gate for TOTAL §14.4 QUORUM -- "the one claim this repository exists to be
+    trustworthy about", in its own words -- ranged over `book_pages()` while five assertions
+    of total discharge sat OUTSIDE the book, four of them in the canonical specification set'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1450 standing lead (c) VERBATIM -- "every OTHER gate in
+    claims_drift.rs still reads `book_pages()`; ask of each whether its RULE stops at the
+    book". It does not. THE SAME TWO INDEPENDENT AXES PMAT-1450 FOUND ONE SLICE EARLIER, on
+    the next gate along.
+
+    ** MEASURED. `xpile quorum` over contracts/: totals 26 QUORUM, 9 PARTIAL, 0 UNVERIFIED
+    (35 contracts). PARTIAL is NOT zero and has not been for a long time. Five live
+    assertions of total discharge, all outside `book_pages()`:
+    xpile-spec.md:1276 "`xpile quorum` -> 16 (or 15) QUORUM, 0 PARTIAL, 0 UNVERIFIED" under
+    `### Exit criterion`; sub/glossary.md:55 "the entire 12-contract substrate is at 100%
+    QUORUM" (a DEFINITION page, present tense); sub/migration.md:42 "12 substrate contracts
+    live in ... with 100% §14.4 QUORUM"; sub/phased-rollout.md:28 "12 contracts at 100%
+    §14.4 N-of-M QUORUM"; audit-design.md:46 "100% §14.4 QUORUM ... all 12 contracts reach
+    §14.4 QUORUM".
+
+    ** ⭐ THE CANONICAL SPEC CONTRADICTED ITSELF, 1269 LINES APART. xpile-spec.md:7 --
+    `**Status:**`, the first thing a reader meets -- says coverage is "**partial, not
+    total**". Line 1276 pinned `0 PARTIAL`. The HONEST half was written down and the FALSE
+    half was the one nothing enforced. Same shape as PMAT-1440 (README contradicting itself
+    56 lines apart), one file larger.
+
+    ** ⭐⭐ THE NEEDLE FAILED IN THE FALSE-POSITIVE DIRECTION -- the axis the previous four
+    slices never hit. `"full quorum"` also matches sub/provability-roadmap.md:103,
+    "`tests/quorum.rs` asserts C-PY-INT-ARITH has full quorum", which is a claim about ONE
+    contract and is TRUE. Widening the subject alone would have reported a true sentence as
+    drift. A CARVE-OUT THAT IS NOT CHECKED IS A HOLE, so per-contract claims are now VERIFIED
+    against the live table (`live_quorum()` parses `xpile quorum` into an id -> status map,
+    anti-vacuity-checked against the `(N contracts total)` the same report prints).
+
+    ** ⭐ A CLAIM IS A CLAUSE -- not a line, and not a paragraph. PMAT-1450 moved this family
+    from paragraph to line. One level finer was required here, and the gate''s OWN FIRST RUN
+    proved it: provability-roadmap.md:103 is a single run-on line carrying BOTH the true
+    per-contract claim AND, 500 chars earlier, the threshold definition "... = PARTIAL, 0 =
+    UNVERIFIED". A line-scoped enumeration test saw the word PARTIAL, declined to treat the
+    line as per-contract, and reported the true sentence as drift.
+
+    ** ⭐ THE RED HALF REFUTED THIS SLICE''S OWN FIX, AGAIN (PMAT-1447''s shape, third
+    consecutive occurrence). The repair for xpile-spec.md records what the line USED to pin
+    -- and the retired numerals CONTAIN `0 PARTIAL`. The correction carried the defect
+    forward inside itself. Closed by porting PMAT-1450''s structural rule: prose may QUOTE a
+    falsehood but may not ASSERT one; a denied claim must sit inside a quoted span. The quote
+    WRAPS a line break, so the scan had to move to byte offsets over the flattened paragraph.
+
+    ** ⭐ A SHADOWED BINDING MADE THE FAILURE MESSAGE LIE, and only the failing path showed
+    it. `while let Some(rel) = clause[from..].find(b)` shadowed the file-path `rel`, so the
+    offence read `1102:103` instead of the path. Invisible on every green run. Found by red
+    half (G). A message only emitted on failure is only tested by a red half.
+
+    ** FIX. Subject `book_pages()` -> `claim_pages()` (PMAT-1450''s corpus). Needle split into
+    TOTAL_QUORUM_CLAIMS (substrate) and PER_CONTRACT_QUORUM_CLAIMS (checked against live
+    status). `(historical record)` exemption ported, per-LINE citation required. Fence-aware
+    `paragraphs_under_headings` -- a `#` comment inside a ``` fence is CODE: it could GRANT
+    the historical exemption to prose below it, and did REVOKE the real heading. No fenced
+    block spells the marker today, so this is a hardening with no verdict change and is pinned
+    by a unit test rather than by the corpus. Undated-record check COLLECTED not asserted
+    in place -- an in-loop assert aborted the walk and reported one site of six on the first run.
+
+    ** RED HALVES, SEVEN, each ASSERTED to have applied (PMAT-1444''s no-op trap):
+    (A) ORIGINAL gate, ORIGINAL prose -> PASSES [subject blindness, the control];
+    (B) new gate narrowed to book_pages() -> FAILS on the anti-vacuity anchor, so it cannot
+    be silently narrowed; (C) new gate, original prose -> FAILS naming all 5 sites and
+    correctly EXCLUDING provability-roadmap.md:103; (D) planted "`C-COMPILE-RUST-TO-WGSL` is
+    at QUORUM" (live PARTIAL) -> FAILS; (E1) fresh ASSERTED falsehood inside the denying
+    paragraph -> FAILS; (E2) same, with denied&&quoted weakened to denied||quoted -> PASSES
+    [the whitewash the quoted half closes]; (F) fence-awareness reverted ->
+    `a_fence_comment_is_not_a_heading` FAILS while the quorum gate stays green, confirming the
+    documented no-verdict-change; (G) clause splitting disabled -> FAILS reporting the TRUE
+    per-contract claim as drift. Control: 23/23 green after repair.
+
+    ** NEGATIVE RESULT, bounding the next hunt: every per-contract QUORUM claim in the corpus
+    is TRUE against the live table (C-XPILE-FRONTEND-TRAIT, C-XPILE-BACKEND-TRAIT,
+    C-XLATE-PY-STR-TO-RUST-STRING, C-PY-INT-ARITH all live QUORUM). The defect was totality,
+    not attribution.
+
+    ** STANDING LEADS. (a) `sub/bashrs-merger.md:121` says "substrate at QUORUM" -- dated
+    (v0.1.0, PMAT-037..058) and cited, so NOT scored, but it is an adjacent spelling the
+    substrate needle does not carry; decide whether bare "at QUORUM" over a substrate subject
+    belongs in TOTAL_QUORUM_CLAIMS. (b) PMAT-1450 lead (d) is UNTAKEN: `counts_between` is
+    still the needle for the PROVABILITY-INVENTORY module counts, the roadmap Lean-module
+    count and the quorum PARTIAL tally, each anchor-guarded for ONE spelling apiece.
+    (c) The remaining `book_pages()` gates are `book_pins_no_version_transcript`,
+    `book_pastes_no_derived_totals_transcript`, `book_lean_transcripts_carry_the_live_citation_form`,
+    and the two reference-page gates -- MEASURED this run over the whole tracked corpus and
+    each is CLEAN outside the book today, so widening them is hardening, not a defect fix.
+
+    ZERO contracts/*.yaml change; ZERO crates/*/src change -- docs and one gate file only.'
+  status: done
+  priority: P1
+  category: honesty
