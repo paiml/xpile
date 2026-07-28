@@ -64,6 +64,50 @@
 //! example; a region with no fence is a check over something nobody publishes.
 //! Either one silently re-opens the hole, so both red.
 //!
+//! THE SCOPE DEFECT (PMAT-1444) — and it was in this file, not in the book.
+//! `the_four_wholly_invented_names_are_absent_from_the_source` sweeps
+//! `crates/*/src` and must NOT read `tests/`, because this file and
+//! `book_api_examples.rs` name all four fabricated identifiers on purpose.
+//! Through v0.1.617 it implemented that as
+//! `p.components().any(|c| c.as_os_str() == "src")` over an **absolute** path.
+//! An absolute path carries the components of every ancestor directory, so the
+//! filter asks a question about the MACHINE, not about the repository. On one
+//! commit (`dd66f76d`, unmodified `main`) the same test returns two verdicts:
+//!
+//! | checkout | ancestor named `src`? | verdict |
+//! |---|---|---|
+//! | `/home/noah/src/xpile` — this project's canonical checkout | yes | **FAILED** |
+//! | `/tmp/claude-1000/xpile-wt/src/wt-1444` | yes | **FAILED** |
+//! | `/tmp/claude-1000/xpile-wt/plain/wt-1444b` | no | ok |
+//! | `/home/runner/work/xpile/xpile` — CI | no | ok |
+//!
+//! So the gate was RED on the machine that wrote it and GREEN in CI, and the
+//! discriminator was whether some parent directory happened to be spelled
+//! `src`. It read 302 files / 10.5 MB instead of 43 / 5.3 MB — every `tests/`,
+//! `benches/` and `examples/` file in the workspace — and then reddened on its
+//! own evidence, naming `MetaHirModule` as having appeared under
+//! `crates/*/src`. It had not.
+//!
+//! **The 1 MB floor below cannot see this, and the reason generalises.** That
+//! floor guards against reading too LITTLE; this bug reads too MUCH (5.3 MB of
+//! genuine `src` either way, so the floor is satisfied on both sides). A
+//! vacuity floor is a one-directional instrument. The repair therefore states
+//! the sweep's subject STRUCTURALLY — every path read must be under a `src/` —
+//! instead of adding a second cardinality that would drift.
+//!
+//! WHY IT IS A RELEASE ITEM. `cargo test --workspace --no-fail-fast` on `main`
+//! at `dd66f76d` exits 101 here: **2 failing test binaries out of 311**. This
+//! was one. (The other is `ruleset_drift`'s
+//! `live_ruleset_matches_the_committed_snapshot`, which reports a REAL live-org
+//! drift and is owner-gated — re-deriving its snapshot would ratify the
+//! weakening — so it is deliberately left alone.) Release precondition A1
+//! requires the suite to exit 0 on the tag SHA, so a gate that is red wherever
+//! it is authored is scheduled ahead of the 2026-07-30 tag cut, not after it.
+//!
+//! Note the ordering that hid it: `cargo test --workspace` WITHOUT
+//! `--no-fail-fast` stops at the first failing binary, and this one sorts
+//! before `ruleset_drift`. Enumerating "what is red" needs the flag.
+//!
 //! SCOPE, stated rather than implied: this pins the ```rust fences. `bash`,
 //! `toml` and `text` fences are not covered — `cli_docs_drift` and
 //! `backend_docs_drift` cover the command transcripts, and the `toml` snippets
@@ -85,6 +129,53 @@ fn workspace_root() -> PathBuf {
         .and_then(Path::parent)
         .expect("crates/xpile has a workspace root two levels up")
         .to_path_buf()
+}
+
+/// Is `path` a Rust file under some crate's `src/`?
+///
+/// **Judged RELATIVE to `root`**, and that is the whole point. Through
+/// v0.1.617 this was spelled `path.components().any(|c| c.as_os_str() ==
+/// "src")` over the ABSOLUTE path, which makes the answer a function of where
+/// the repository happens to be checked out rather than of the repository. See
+/// this file's header, THE SCOPE DEFECT.
+fn is_crate_src(root: &Path, path: &Path) -> bool {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return false;
+    };
+    rel.components().any(|c| c.as_os_str() == "src")
+}
+
+/// Every `.rs` file under `crates/*/src`, as (path RELATIVE to the workspace
+/// root, contents).
+///
+/// Relative on purpose: a caller that gets absolute paths back is one
+/// `components()` away from re-opening the defect this function exists to
+/// close, and the relative path is also what any failure message should print.
+fn crate_src_files(root: &Path) -> Vec<(PathBuf, String)> {
+    fn walk(dir: &Path, root: &Path, out: &mut Vec<(PathBuf, String)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        paths.sort();
+        for p in paths {
+            if p.is_dir() {
+                // `file_name()` — not a component scan. This line was always
+                // location-independent; the one eight lines below it was not.
+                if p.file_name().and_then(|s| s.to_str()) == Some("target") {
+                    continue;
+                }
+                walk(&p, root, out);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("rs") && is_crate_src(root, &p)
+            {
+                let rel = p.strip_prefix(root).unwrap_or(&p).to_path_buf();
+                out.push((rel, std::fs::read_to_string(&p).unwrap_or_default()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&root.join("crates"), root, &mut out);
+    out
 }
 
 fn book_pages(root: &Path) -> Vec<(String, String)> {
@@ -391,36 +482,40 @@ fn the_four_wholly_invented_names_are_absent_from_the_source() {
         ("DepylerFrontend", "depyler_frontend::PythonFrontend"),
     ];
 
-    let mut src = String::new();
-    let crates = root.join("crates");
-    fn walk_rs(dir: &Path, out: &mut String) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for e in entries.filter_map(|e| e.ok()) {
-            let p = e.path();
-            if p.is_dir() {
-                if p.file_name().and_then(|s| s.to_str()) == Some("target") {
-                    continue;
-                }
-                walk_rs(&p, out);
-            } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
-                // `src/` only: this file and its sibling NAME the fabricated
-                // identifiers on purpose, and a scan that swept tests/ would
-                // red on its own evidence.
-                if p.components().any(|c| c.as_os_str() == "src") {
-                    out.push_str(&std::fs::read_to_string(&p).unwrap_or_default());
-                }
-            }
-        }
-    }
-    walk_rs(&crates, &mut src);
+    let scanned = crate_src_files(&root);
+
+    // Non-vacuity, TOO LITTLE: an empty sweep satisfies every negative below.
+    let bytes: usize = scanned.iter().map(|(_, t)| t.len()).sum();
     assert!(
-        src.len() > 1_000_000,
-        "the source sweep read only {} bytes — it is not reaching crates/*/src, so every \
-         assertion below would pass vacuously",
-        src.len()
+        bytes > 1_000_000,
+        "the source sweep read only {bytes} bytes from {} file(s) — it is not reaching \
+         crates/*/src, so every assertion below would pass vacuously",
+        scanned.len()
     );
+
+    // Non-vacuity, TOO MUCH — the direction a floor cannot see (PMAT-1444).
+    // Stated over the VOCABULARY rather than as a count, so it does not drift:
+    // no path this sweep read may sit under a non-`src` crate directory. This
+    // file and its sibling name the fabricated identifiers on purpose, so a
+    // sweep that reached `tests/` would red on its own evidence — which is
+    // exactly what happened, for every checkout whose absolute path contained
+    // a directory called `src`.
+    for (rel, _) in &scanned {
+        let comps: Vec<&str> = rel.iter().filter_map(|c| c.to_str()).collect();
+        assert!(
+            comps.contains(&"src"),
+            "the source sweep read `{}`, which is not under any crate's `src/`. This test's \
+             whole subject is `crates/*/src`; reading past it makes the negatives below fail \
+             on this file's own evidence.",
+            rel.display()
+        );
+    }
+
+    let src: String = scanned
+        .iter()
+        .map(|(_, t)| t.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
 
     for (name, real) in fabricated {
         assert!(
@@ -486,4 +581,312 @@ fn the_retagged_tutorial_block_still_names_tests_that_exist() {
             "python-to-rust.md attributes {test} to {file}, which declares no such test"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// PMAT-1444 — the sweep's subject must be a property of the REPOSITORY.
+// ---------------------------------------------------------------------------
+
+/// The defect, executed: relocate the checkout and the classification must not
+/// move.
+///
+/// This drives `is_crate_src` directly rather than re-running the suite from
+/// several directories, so it is a real differential that costs nothing. The
+/// prefixes differ only in whether an ancestor directory is spelled `src`, and
+/// the first one is this tree's LIVE root — read at run time, never spelled —
+/// so whichever machine reproduced the bug is always among the cases.
+#[test]
+fn the_source_filter_is_the_same_wherever_the_repository_is_checked_out() {
+    // Suffixes of the shape the walk actually produces.
+    let rels = [
+        ("crates/xpile/src/main.rs", true),
+        ("crates/xpile-core/src/lib.rs", true),
+        ("crates/xpile/src/cli/audit.rs", true),
+        ("crates/xpile/tests/book_rust_example_witness.rs", false),
+        ("crates/xpile/benches/emit.rs", false),
+        ("crates/xpile/examples/06_inspect_session.rs", false),
+    ];
+
+    let prefixes: Vec<PathBuf> = vec![
+        workspace_root(),
+        // The two real ones, kept literal because they are the two verdicts
+        // the header's table records.
+        PathBuf::from("/home/noah/src/xpile"),
+        PathBuf::from("/home/runner/work/xpile/xpile"),
+        // Adversarial: `src` as the last component, twice, and not at all.
+        PathBuf::from("/tmp/claude-1000/xpile-wt/src/wt-1444"),
+        PathBuf::from("/var/lib/b/src/src/xpile"),
+        PathBuf::from("/w"),
+    ];
+
+    let mut baseline: Option<Vec<bool>> = None;
+    for prefix in &prefixes {
+        let verdicts: Vec<bool> = rels
+            .iter()
+            .map(|(r, _)| is_crate_src(prefix, &prefix.join(r)))
+            .collect();
+
+        // Non-vacuity: a predicate answering a CONSTANT satisfies the equality
+        // below for free, in either direction.
+        assert!(
+            verdicts.contains(&true) && verdicts.contains(&false),
+            "under `{}` the filter answered a constant {:?} — it is no longer discriminating, \
+             so the agreement asserted below would hold for free",
+            prefix.display(),
+            verdicts
+        );
+
+        match &baseline {
+            None => baseline = Some(verdicts),
+            Some(first) => assert_eq!(
+                first,
+                &verdicts,
+                "the `crates/*/src` filter gives a DIFFERENT answer under `{}` than under \
+                 `{}`. It is reading the absolute path, so its verdict is a property of the \
+                 machine rather than of the repository: at any checkout with an ancestor \
+                 directory named `src` the sweep also reads `tests/`, where this very file \
+                 names the fabricated identifiers on purpose — and the gate then reds on its \
+                 own evidence. Judge the path RELATIVE to the workspace root.",
+                prefix.display(),
+                prefixes[0].display()
+            ),
+        }
+    }
+
+    // Consistency is necessary and not sufficient: a predicate that is
+    // uniformly WRONG is also uniformly consistent.
+    let expected: Vec<bool> = rels.iter().map(|(_, e)| *e).collect();
+    assert_eq!(
+        baseline.expect("at least one prefix"),
+        expected,
+        "the filter agrees with itself across checkouts but classifies the wrong files. \
+         Expected exactly the `src/` entries of {rels:?}"
+    );
+}
+
+/// A tripwire for the NEXT path filter, and it is only a tripwire.
+///
+/// The class is *a predicate over an absolute path's components*, which asks
+/// about the machine rather than the tree. When PMAT-1444 measured it, the
+/// class had exactly one member — the line above — confirmed two ways: a
+/// `components()` sweep of `crates/`, and reading the filter of every
+/// directory walker in `crates/*/tests` (all the others key on `file_name()`,
+/// which is location-independent).
+///
+/// Like `no_build_script_builds_an_include_path_out_of_the_manifest_dir`, this
+/// READS TEXT and therefore certifies nothing about what a filter computes. It
+/// exists to make a new one visible and point its author at
+/// `the_source_filter_is_the_same_wherever_the_repository_is_checked_out`,
+/// which is where the property is actually measured.
+#[test]
+fn no_path_component_filter_runs_on_an_unrelativized_path() {
+    /// The source, line by line, with comments and string literals removed —
+    /// i.e. the part of each line that is CODE. Line numbering is preserved so
+    /// a report points at the real line.
+    ///
+    /// USE vs MENTION, and neither half is hypothetical. The first cut scanned
+    /// raw lines and reported five offenders inside this very function, four of
+    /// them its own failure message (PMAT-1430 — any "no file may say X"
+    /// scanner eventually reads the sentence explaining X; PMAT-1432 — a gate
+    /// whose own text perturbs what it measures). The second cut stripped
+    /// literals ONE LINE AT A TIME and still reported two, because a `\`
+    /// continued literal means a line can BEGIN inside a string: line-local
+    /// state cannot decide a question about a multi-line construct. Hence a
+    /// single pass over the whole file, carrying string state across newlines.
+    fn code_lines(src: &str) -> Vec<String> {
+        let c: Vec<char> = src.chars().collect();
+        let mut lines: Vec<String> = Vec::new();
+        let mut cur = String::new();
+        let mut i = 0;
+        while i < c.len() {
+            // A line comment ends this line's code.
+            if c[i] == '/' && c.get(i + 1) == Some(&'/') {
+                while i < c.len() && c[i] != '\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            // A raw string `r"…"` / `r#"…"#`: no escapes, explicit terminator.
+            if c[i] == 'r' && matches!(c.get(i + 1), Some('"') | Some('#')) {
+                let mut j = i + 1;
+                let mut hashes = 0;
+                while c.get(j) == Some(&'#') {
+                    hashes += 1;
+                    j += 1;
+                }
+                if c.get(j) != Some(&'"') {
+                    cur.push(c[i]); // an identifier starting with `r`
+                    i += 1;
+                    continue;
+                }
+                j += 1;
+                let close: Vec<char> = std::iter::once('"')
+                    .chain(std::iter::repeat_n('#', hashes))
+                    .collect();
+                while j < c.len() {
+                    if c[j..].starts_with(close.as_slice()) {
+                        j += close.len();
+                        break;
+                    }
+                    if c[j] == '\n' {
+                        lines.push(std::mem::take(&mut cur));
+                    }
+                    j += 1;
+                }
+                i = j;
+                continue;
+            }
+            // A char literal — `'"'` would otherwise open a string. Anything
+            // else beginning with `'` is a lifetime.
+            if c[i] == '\'' {
+                if c.get(i + 1) == Some(&'\\') && c.get(i + 3) == Some(&'\'') {
+                    i += 4;
+                } else if c.get(i + 2) == Some(&'\'') {
+                    i += 3;
+                } else {
+                    cur.push(c[i]);
+                    i += 1;
+                }
+                continue;
+            }
+            if c[i] == '"' {
+                i += 1;
+                while i < c.len() {
+                    match c[i] {
+                        // An escape, possibly the `\`-newline continuation
+                        // that made the previous cut wrong.
+                        '\\' => {
+                            if c.get(i + 1) == Some(&'\n') {
+                                lines.push(std::mem::take(&mut cur));
+                            }
+                            i += 2;
+                        }
+                        '"' => {
+                            i += 1;
+                            break;
+                        }
+                        '\n' => {
+                            lines.push(std::mem::take(&mut cur));
+                            i += 1;
+                        }
+                        _ => i += 1,
+                    }
+                }
+                continue;
+            }
+            if c[i] == '\n' {
+                lines.push(std::mem::take(&mut cur));
+                i += 1;
+                continue;
+            }
+            cur.push(c[i]);
+            i += 1;
+        }
+        lines.push(cur);
+        lines
+    }
+
+    /// Flags `.components()` CALLS with no `strip_prefix` in the preceding
+    /// window. Split out so the detector can be driven with the verbatim
+    /// pre-fix text below, and not only with a corpus that is now clean.
+    fn offending_lines(src: &str) -> Vec<(usize, String)> {
+        let code = code_lines(src);
+        let mut out = Vec::new();
+        for (i, line) in code.iter().enumerate() {
+            if !line.contains(".components()") {
+                continue;
+            }
+            let from = i.saturating_sub(6);
+            let relativized = code[from..=i].iter().any(|l| l.contains("strip_prefix"));
+            if !relativized {
+                out.push((i + 1, line.trim().to_string()));
+            }
+        }
+        out
+    }
+
+    // NON-VACUITY BY CONSTRUCTION: the detector is shown to discriminate on
+    // the real before/after text, embedded here, so it keeps its meaning after
+    // the corpus is clean and cannot be softened unnoticed.
+    let before = "            } else if p.extension().and_then(|s| s.to_str()) == Some(\"rs\") {\n\
+                  \x20               if p.components().any(|c| c.as_os_str() == \"src\") {\n";
+    assert_eq!(
+        offending_lines(before).len(),
+        1,
+        "the detector no longer flags PMAT-1444's own pre-fix line; it has been softened past \
+         the defect it exists to catch"
+    );
+    let after = "    let Ok(rel) = path.strip_prefix(root) else {\n\
+                 \x20       return false;\n\
+                 \x20   };\n\
+                 \x20   rel.components().any(|c| c.as_os_str() == \"src\")\n";
+    assert!(
+        offending_lines(after).is_empty(),
+        "the detector flags the RELATIVIZED spelling, so it would red on every correct filter"
+    );
+    // USE vs MENTION. This is the control the first cut failed: prose and
+    // failure messages must be able to QUOTE the shape without being it.
+    let mention = "        assert!(x, \"a filter calling .components() on an absolute path\");\n\
+                   \x20       // p.components().any(|c| c.as_os_str() == \"src\")\n";
+    assert!(
+        offending_lines(mention).is_empty(),
+        "the detector reads string literals and comments, so it flags any file that DESCRIBES \
+         the defect — including this one. It must read code."
+    );
+
+    let root = workspace_root();
+    let out = std::process::Command::new("git")
+        .args(["ls-files", "*.rs"])
+        .current_dir(&root)
+        .output()
+        .expect("git ls-files");
+    assert!(out.status.success(), "git ls-files failed");
+    let files: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+    assert!(
+        files.len() > 100,
+        "git ls-files '*.rs' returned {} path(s); the enumeration is broken and the scan below \
+         would pass over nothing (PMAT-1439: a surprising ZERO is a tooling result until a \
+         second method agrees)",
+        files.len()
+    );
+
+    let mut anchored = false;
+    let mut offenders: Vec<String> = Vec::new();
+    for rel in &files {
+        let Ok(src) = std::fs::read_to_string(root.join(rel)) else {
+            continue;
+        };
+        // Anchored on a CALL, not on the token — otherwise this file's own
+        // explanatory prose would keep the anchor alive after every real
+        // filter had gone.
+        if code_lines(&src).iter().any(|l| l.contains(".components()")) {
+            anchored = true;
+        }
+        for (line, text) in offending_lines(&src) {
+            offenders.push(format!("{rel}:{line}: {text}"));
+        }
+    }
+
+    // A negative over an enumeration passes for free once the enumeration
+    // stops containing the construct at all (PMAT-1396).
+    assert!(
+        anchored,
+        "no tracked Rust file calls `.components()` any more — including this file's own \
+         `is_crate_src`. The scan is passing over a corpus that stopped saying anything; \
+         re-derive whether the class still needs a tripwire."
+    );
+    assert!(
+        offenders.is_empty(),
+        "a path filter tests `.components()` without first making the path relative:\n  {}\n\n\
+         An absolute path carries every ancestor directory's name, so the predicate answers a \
+         question about the machine, not about the repository — see THE SCOPE DEFECT in this \
+         file's header, where exactly this shape made a gate RED at `/home/noah/src/xpile` and \
+         GREEN in CI on one commit. `strip_prefix` the workspace root first.",
+        offenders.join("\n  ")
+    );
 }

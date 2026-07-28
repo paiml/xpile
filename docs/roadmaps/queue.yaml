@@ -5004,6 +5004,52 @@ queue:
     `ruleset-workspace-test-dropped` owner decision. NOT re-derived: doing so ratifies the weakening.
     91 of 93 `cargo test -p xpile` binaries green; these two are the only failures and neither is
     reachable from this slice''s diff.'
+- id: PMAT-1444
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'a gate that was RED where it was AUTHORED and GREEN in CI on the SAME COMMIT --
+    `book_rust_example_witness.rs` filtered `crates/*/src` by a component of an ABSOLUTE path, so
+    `cargo test --workspace` did not exit 0 on the canonical checkout two days before the tag cut'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30). Taken from
+    PMAT-1443''s own addendum, which recorded the defect as FOUND-NOT-FIXED and called it out of scope;
+    it is in scope now because it is a RELEASE precondition. MEASURED, one commit (dd66f76d, unmodified
+    main), four checkouts, two verdicts: /home/noah/src/xpile FAILED, /tmp/claude-1000/xpile-wt/src/wt-1444
+    FAILED, /tmp/claude-1000/xpile-wt/plain/wt-1444b ok, CI (PR #2036 workspace-test SUCCESS) ok. The
+    sweep read 302 files / 10.5 MB instead of 43 / 5.3 MB and reddened on its OWN evidence.
+    RELEASE RELEVANCE: `cargo test --workspace --no-fail-fast` on main exits 101 here, 2 failing binaries
+    of 311; this was one. A1 requires exit 0 on the tag SHA on 07-30. THE OTHER is
+    ruleset_drift::live_ruleset_matches_the_committed_snapshot -- a REAL drift under the OPEN owner
+    decision `ruleset-workspace-test-dropped`, deliberately UNTOUCHED (re-deriving ratifies the
+    weakening). >>> THURSDAY MUST PLAN FOR IT: A1 as written cannot be satisfied on this machine while
+    that decision is open; the release commit has to either get an owner call or state the exception
+    explicitly in the release body rather than quietly passing a piped suite. <<<
+    ALSO: `cargo test --workspace` WITHOUT --no-fail-fast stops at the first failing binary, and this one
+    sorts BEFORE ruleset_drift -- enumerating what is red needs the flag.
+    FIX: the subject is stated STRUCTURALLY (every path read must lie under a `src/`, judged RELATIVE to
+    the workspace root), not as a second cardinality. The 1 MB vacuity floor cannot see this: it guards
+    against reading too LITTLE and crates/*/src is 5.3 MB on both sides -- a floor is one-directional.
+    CLASS SWEPT FIRST, exactly one member, two independent methods agreeing (a components() sweep, and
+    reading every directory-walker filter in crates/*/tests -- all others key on file_name()).
+    GATES: (1) the relocation differential drives `is_crate_src` under six prefixes including this tree''s
+    LIVE root, requiring identical AND correct verdicts plus a non-constant guard; (2) a TEXT TRIPWIRE
+    for the next one that says it certifies nothing about what a filter computes.
+    THREE RED HALVES RUN, DISJOINT: revert the predicate -> 3 tests; keep predicate, drop it from the
+    walker -> the four-names sweep ONLY; add an unrelativized filter elsewhere -> the tripwire ONLY.
+    LESSONS: (1) ASK WHAT A GATE''S VERDICT IS A FUNCTION OF -- if it is a function of the machine, it is
+    red where authored and green where it runs, and both are uninformative. (2) A VACUITY FLOOR IS
+    ONE-DIRECTIONAL; pair it with a structural statement of the subject. (3) THE GATE''S OWN FIRST TWO
+    CUTS WERE WRONG -- raw-line scanning read its own failure message (use vs mention), and line-local
+    literal stripping could not see that a backslash-continued literal makes a line BEGIN inside a
+    string. (4) A PERTURBATION THAT SILENTLY DOES NOT APPLY LOOKS EXACTLY LIKE A PASSING RED HALF: red
+    half 2''s first attempt patched an anchor cargo fmt had reflowed, and the green would have read as
+    evidence. Assert the replacement changed the file.
+    ZERO crates/*/src, ZERO contracts/*.yaml, ZERO witness_floor.rs, ZERO gate_touch. Freeze-compatible.
+    NEXT PICK: nothing OPEN before Thursday. The PMAT-1443 standing leads (a)-(e) carry over UNCHANGED
+    and none was consumed here. On 2026-07-30 take PMAT-1373 (release commit; see the A1 note above);
+    on 2026-07-31 PMAT-1374 (publish). HARD FREEZE Wed 2026-07-29 18:00 -- docs/CHANGELOG/release only
+    after it.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

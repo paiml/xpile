@@ -20904,3 +20904,75 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1444
+  title: 'PMAT-1444: [gate+honesty] a gate that was RED where it was AUTHORED and GREEN in CI on the
+    SAME COMMIT -- `book_rust_example_witness.rs` filtered `crates/*/src` by testing a component of an
+    ABSOLUTE path, so its verdict was a property of the MACHINE, and `cargo test --workspace` did not
+    exit 0 on this repo''s canonical checkout two days before a tag cut.
+
+    ** THE DEFECT. PMAT-1439''s `the_four_wholly_invented_names_are_absent_from_the_source` asserts four
+    fabricated book API names are absent from `crates/*/src`. It MUST NOT read `tests/`, because that
+    witness and `book_api_examples.rs` name all four on purpose -- its own comment says so. It implemented
+    the filter as `p.components().any(|c| c.as_os_str() == "src")` over an ABSOLUTE path. An absolute
+    path carries every ancestor directory''s name, so at any checkout with a parent directory spelled
+    `src` the filter is a NO-OP.
+
+    ** MEASURED, one commit (dd66f76d, unmodified main), four checkouts, two verdicts: /home/noah/src/xpile
+    FAILED; /tmp/claude-1000/xpile-wt/src/wt-1444 FAILED; /tmp/claude-1000/xpile-wt/plain/wt-1444b ok;
+    /home/runner/work/xpile/xpile (CI, PR #2036 workspace-test SUCCESS) ok. The sweep read 302 files /
+    10.5 MB instead of 43 / 5.3 MB -- every tests/, benches/ and examples/ file -- then reddened on its
+    own evidence, reporting `MetaHirModule` had appeared under crates/*/src. It had not.
+
+    ** RELEASE RELEVANCE, not a curiosity. `cargo test --workspace --no-fail-fast` on main at dd66f76d
+    exits 101 here: 2 failing binaries of 311. This was one. A1 requires that suite to exit 0 on the tag
+    SHA on 2026-07-30. The OTHER failure is ruleset_drift::live_ruleset_matches_the_committed_snapshot,
+    a REAL live-org drift under the OPEN owner decision `ruleset-workspace-test-dropped` -- deliberately
+    untouched, because re-deriving its snapshot ratifies the weakening it detects. NOTE the ordering that
+    hid this: `cargo test --workspace` WITHOUT --no-fail-fast stops at the first failing binary and this
+    one sorts before ruleset_drift.
+
+    ** A VACUITY FLOOR IS A ONE-DIRECTIONAL INSTRUMENT. The existing 1 MB floor guards against reading
+    too LITTLE; this bug reads too MUCH, and crates/*/src is 5.3 MB on BOTH sides, so the floor is
+    satisfied either way. The repair states the subject STRUCTURALLY -- every path read must lie under a
+    `src/`, judged RELATIVE to the workspace root -- rather than adding a second cardinality that drifts.
+
+    ** CLASS SWEPT BEFORE THE FIX WAS SCOPED, exactly one member, confirmed two independent ways: a
+    `components()` sweep of crates/, and reading the filter of every directory walker in crates/*/tests
+    (all others key on `file_name()`, which is location-independent). Also checked and clean: no
+    hard-coded absolute path, no HOME/USER/PWD read, and every `canonicalize()` is root derivation.
+
+    ** THE GATES. (1) `the_source_filter_is_the_same_wherever_the_repository_is_checked_out` drives
+    `is_crate_src` under six prefixes differing only in whether an ancestor is named `src` -- including
+    this tree''s LIVE root, read at run time -- and requires identical verdicts AND the correct ones,
+    with a non-vacuity guard against a constant-answering predicate. (2)
+    `no_path_component_filter_runs_on_an_unrelativized_path` is a TEXT TRIPWIRE for the next one, and
+    says in as many words that it certifies nothing about what a filter computes.
+
+    ** THREE RED HALVES RUN, NOT ASSERTED, reding DISJOINT sets: restore the absolute-path predicate ->
+    3 tests (differential, four-names sweep, tripwire); keep the predicate but drop it from the walker ->
+    the four-names sweep ONLY, via the new structural guard; add an unrelativized filter to another
+    tracked file -> the tripwire ONLY, naming file and line.
+
+    ** THE GATE''S OWN FIRST TWO CUTS WERE WRONG, in the two documented ways. Cut 1 scanned raw lines and
+    reported FIVE offenders inside its own failure message (PMAT-1430 use-vs-mention; PMAT-1432 a gate
+    whose own text perturbs what it measures). Cut 2 stripped literals ONE LINE AT A TIME and still
+    reported two, because a backslash-continued literal means a line can BEGIN inside a string --
+    line-local state cannot decide a question about a multi-line construct. Now a single pass carrying
+    string state across newlines, with a use/mention control that reds if it reads prose again.
+
+    ** AND A PERTURBATION SILENTLY DID NOT APPLY. Red half 2''s first attempt patched an anchor that
+    `cargo fmt` had already reflowed; the edit was a no-op, the suite went GREEN, and that green would
+    have read as "the red half ran" (PMAT-1442''s lesson, one costume over). The re-run asserts the
+    replacement actually changed the file before trusting any verdict.
+
+    ZERO crates/*/src change, ZERO contracts/*.yaml change, ZERO witness_floor.rs touch, ZERO gate_touch.
+    Freeze-compatible: touches only crates/xpile/tests, CHANGELOG.md and the two ledgers.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -7,6 +7,70 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### A gate that was RED where it was authored and GREEN in CI, on the same commit (PMAT-1444)
+
+`book_rust_example_witness.rs` (PMAT-1439) asserts that four fabricated book
+API names are absent from `crates/*/src`. It must not read `tests/`, because
+that witness and `book_api_examples.rs` name all four on purpose — its own
+comment says so. It implemented the filter as
+`p.components().any(|c| c.as_os_str() == "src")` over an **absolute** path.
+
+An absolute path carries every ancestor directory's name, so the predicate
+asks a question about the machine rather than about the repository. On one
+commit (`dd66f76d`, unmodified `main`) the same test returns two verdicts:
+
+| checkout | ancestor named `src`? | verdict |
+|---|---|---|
+| `/home/noah/src/xpile` — the canonical checkout | yes | **FAILED** |
+| `/tmp/claude-1000/xpile-wt/src/wt-1444` | yes | **FAILED** |
+| `/tmp/claude-1000/xpile-wt/plain/wt-1444b` | no | ok |
+| `/home/runner/work/xpile/xpile` — CI | no | ok |
+
+The filter was a no-op wherever a parent directory happens to be spelled
+`src`: the sweep read **302 files / 10.5 MB** instead of **43 / 5.3 MB** — every
+`tests/`, `benches/` and `examples/` file in the workspace — and then reddened
+on its own evidence, reporting that `MetaHirModule` had appeared under
+`crates/*/src`. It had not.
+
+**This was a release item, not a curiosity.** `cargo test --workspace
+--no-fail-fast` on `main` at `dd66f76d` exits 101 here with 2 failing binaries
+out of 311, and this was one. Precondition A1 for the 2026-07-30 tag cut
+requires that suite to exit 0 on the tag SHA. The other failure is
+`ruleset_drift`'s `live_ruleset_matches_the_committed_snapshot`, which reports
+a real live-org ruleset drift and is owner-gated; it is deliberately untouched,
+because re-deriving its snapshot would ratify the weakening it detects.
+
+**A vacuity floor is a one-directional instrument.** The existing 1 MB floor
+guards against reading too LITTLE; this bug reads too MUCH, and `crates/*/src`
+is 5.3 MB either way, so the floor is satisfied on both sides of the defect.
+The repair states the sweep's subject STRUCTURALLY — every path read must lie
+under a `src/`, checked relative to the workspace root — rather than adding a
+second cardinality that would drift.
+
+Three red halves were RUN, not asserted, and they red **disjoint** sets:
+
+| perturbation | tests reddened |
+|---|---|
+| restore the absolute-path predicate | the relocation differential, the four-names sweep, and the tripwire (3) |
+| keep the predicate, drop it from the walker | the four-names sweep only (1) |
+| add an unrelativized `.components()` filter elsewhere | the tripwire only (1), naming file and line |
+
+The class was swept before the fix was scoped and has exactly one member: every
+other directory walker in `crates/*/tests` keys on `file_name()`, which is
+location-independent. A text tripwire now makes the next one visible, and says
+in as many words that it reads text and proves nothing about what a filter
+computes.
+
+**The gate's own first two cuts were wrong, in the two documented ways.** Cut
+one scanned raw lines and reported five offenders inside its own failure
+message — a "no file may say X" scanner reading the sentence that explains X.
+Cut two stripped string literals one line at a time and still reported two,
+because a `\`-continued literal means a line can BEGIN inside a string: line-local
+state cannot decide a question about a multi-line construct. The detector now
+makes a single pass carrying string state across newlines, and the use/mention
+distinction is pinned by a control that fails if it ever reads prose again.
+
+
 ### `xpile audit`'s no-source bail published the ROUTING set as what xpile "recognises" (PMAT-1443)
 
 `Frontend::extensions()` is a ROUTING set, not a capability set. `.ruchy`
