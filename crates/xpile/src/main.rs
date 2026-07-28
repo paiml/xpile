@@ -30,7 +30,7 @@ use xpile_ffi_manifest::{
     defining_function, resolve_boundary_to_langs, retype_float_ffi_sites, wrapper_native, FfiEntry,
     FfiManifest,
 };
-use xpile_frontend::{AliasSemantics, LoweringProfile};
+use xpile_frontend::{AliasSemantics, LoweringProfile, SpellingScope};
 use xpile_meta_hir::{Module, SourceLang, Type};
 use xpile_oracle::{capture_cpython_hybrid_ref, diff_stdout, ComparisonResult, CtypesBinding};
 
@@ -1554,31 +1554,84 @@ fn print_info(session: &TranspileSession) -> Result<()> {
 /// `crates/xpile/tests/frontend_claim_disposition_witness.rs`
 /// (XPILE-FRONTEND-CLAIM-001), so a caller reading this split is reading a
 /// behaviour-checked fact and not a self-report.
+///
+/// PMAT-1443: the per-frontend derivation moved to
+/// [`Frontend::spellings_by_disposition`] so that the OTHER surfaces
+/// rendering the registry — `xpile audit`'s no-source bail and
+/// `examples/06_inspect_session.rs`, both of which were still publishing the
+/// flat `extensions()` union — share one implementation instead of each
+/// re-deriving it. This function is now the session-wide `All`-scope fold.
 fn claimed_spellings_by_disposition(session: &TranspileSession) -> (Vec<String>, Vec<String>) {
     let mut lowers = Vec::new();
     let mut refused = Vec::new();
     for f in &session.frontends {
-        let declared = f.refused_claims();
-        for ext in f.extensions() {
-            let claim = format!("*.{ext}");
-            if declared.contains(&claim.as_str()) {
-                refused.push(claim);
-            } else {
-                lowers.push(claim);
-            }
-        }
-        // The extensionless spellings. A `*.<ext>` entry was already placed by
-        // the loop above (XPILE-FRONTEND-CLAIM-001 asserts every glob entry's
-        // extension is in `extensions()`), so taking it again here would
-        // duplicate it.
-        refused.extend(
-            declared
-                .iter()
-                .filter(|c| !c.starts_with("*."))
-                .map(|c| (*c).to_string()),
-        );
+        let (l, r) = f.spellings_by_disposition(SpellingScope::All);
+        lowers.extend(l);
+        refused.extend(r);
     }
     (lowers, refused)
+}
+
+/// The `xpile audit` no-source bail: what a user sees when the corpus they
+/// pointed `audit` at holds nothing it can collect.
+///
+/// PMAT-1443. This used to print `xpile recognises .bash, .c, .h, .mk, .py,
+/// .pyi, .ruchy, .sh, .wat, .zsh` — the flat `extensions()` union, the exact
+/// defect PMAT-1434 removed from the dispatch-failure message, still live in
+/// the same file 500 lines away and still ungated. Measured at 1e251c70: two
+/// of those ten spellings, `.mk` and `.ruchy`, REFUSE every input, so on the
+/// one surface where the reader is asking "what should I point this at?" one
+/// answer in five was wrong.
+///
+/// Two things make this message's set narrower than the dispatch message's,
+/// and getting either wrong swaps one over-report for another:
+///
+/// 1. It is [`SpellingScope::Extensions`], not `All`. [`collect_source_files`]
+///    walks by EXTENSION, so the extensionless spellings `matches_path`
+///    claims (`Makefile`, `Dockerfile`) are never collected no matter how the
+///    corpus is arranged — naming them here would advertise a spelling that
+///    cannot work. The message discloses that exclusion instead, derived from
+///    the difference between the two scopes rather than spelled out, so a new
+///    extensionless claim joins the sentence on landing.
+/// 2. A routed-but-refused extension is NOT "unrecognised". A `.ruchy` file
+///    IS collected, IS counted in `files scanned`, and lands in the error
+///    list — verified, not assumed. Folding it in with `.py` under one verb
+///    ("recognises") is what erased the difference.
+///
+/// Pinned to the registry and to the collector's real behaviour by
+/// `crates/xpile/tests/audit_claim_disposition_witness.rs`
+/// (XPILE-AUDITCLAIM-001).
+fn audit_no_source_message(session: &TranspileSession, path: &Path) -> String {
+    let mut lowers = Vec::new();
+    let mut refused = Vec::new();
+    let mut uncollectable = Vec::new();
+    for f in &session.frontends {
+        let (l, r) = f.spellings_by_disposition(SpellingScope::Extensions);
+        lowers.extend(l);
+        // Everything the DISPATCH claim covers beyond the extension walk.
+        let (_, all_refused) = f.spellings_by_disposition(SpellingScope::All);
+        uncollectable.extend(all_refused.into_iter().filter(|c| !r.contains(c)));
+        refused.extend(r);
+    }
+    let mut msg = format!(
+        "audit found no source file under {} — audit collects BY EXTENSION; \
+         spellings that LOWER: {lowers:?}",
+        path.display()
+    );
+    if !refused.is_empty() {
+        msg.push_str(&format!(
+            "; ROUTED but REFUSED (no parser — a file with one of these IS \
+             collected and reported as an error, never as coverage): {refused:?}"
+        ));
+    }
+    if !uncollectable.is_empty() {
+        msg.push_str(&format!(
+            "; NOT collected at all (claimed by `matches_path` for `xpile \
+             transpile`, but the audit walk is extension-only): {uncollectable:?}"
+        ));
+    }
+    msg.push_str("; nothing was scanned, so there is no F1 to report");
+    msg
 }
 
 /// The dispatch-failure message: what a user sees when no frontend claims
@@ -2054,21 +2107,7 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
     let mut report = AuditReport::default();
     let sources = collect_source_files(session, path);
     if sources.is_empty() {
-        let mut exts: Vec<&str> = session
-            .frontends
-            .iter()
-            .flat_map(|f| f.extensions().iter().copied())
-            .collect();
-        exts.sort_unstable();
-        exts.dedup();
-        bail!(
-            "audit found no source file under {} — xpile recognises {}; nothing was scanned, so there is no F1 to report",
-            path.display(),
-            exts.iter()
-                .map(|e| format!(".{e}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        bail!("{}", audit_no_source_message(session, path));
     }
     for src in sources {
         report.files_scanned += 1;

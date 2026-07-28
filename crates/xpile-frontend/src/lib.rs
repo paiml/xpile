@@ -78,6 +78,23 @@ pub struct LoweringProfile {
     pub runtime_abort: bool,
 }
 
+/// PMAT-1443: which claimed spellings a caller of
+/// [`Frontend::spellings_by_disposition`] is asking about.
+///
+/// The two scopes exist because xpile has TWO different notions of "claimed",
+/// and a surface that renders the wrong one lies in its own direction.
+/// [`Frontend::matches_path`] is the DISPATCH claim (it accepts extensionless
+/// `Makefile` / `Dockerfile`); an extension walk — what `xpile audit`'s
+/// collector does — is strictly narrower.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpellingScope {
+    /// Only the `*.<ext>` globs: what an extension-scoped scanner can reach.
+    Extensions,
+    /// Additionally the extensionless filenames [`Frontend::matches_path`]
+    /// claims: what a dispatch-failure message must report.
+    All,
+}
+
 pub trait Frontend: Send + Sync {
     /// Human-readable language name, e.g. "python", "c", "ruchy".
     fn name(&self) -> &'static str;
@@ -145,6 +162,64 @@ pub trait Frontend: Send + Sync {
     /// break.
     fn refused_claims(&self) -> &[&'static str];
 
+    /// PMAT-1443 (XPILE-AUDITCLAIM-001): this frontend's claimed path
+    /// spellings, split by disposition — `(lowers, refused)`.
+    ///
+    /// [`Frontend::extensions`] is a ROUTING set, not a capability set: a
+    /// spelling is kept in it precisely so a matching file reaches a SPECIFIC
+    /// refusal instead of the generic dispatch failure (see
+    /// [`Frontend::refused_claims`]). So every user-facing rendering of the
+    /// registry has to carry the disposition — and each surface that derived
+    /// it independently got it wrong in its own way. The dispatch-failure
+    /// message published the flat union until PMAT-1434; `xpile audit`'s
+    /// no-source bail and `examples/06_inspect_session.rs` were still
+    /// publishing it at PMAT-1443, the latter under the heading "read source
+    /// → meta-HIR". This is the ONE derivation they all call.
+    ///
+    /// `scope` selects which spellings are in range for the caller.
+    /// [`SpellingScope::Extensions`] yields only the `*.<ext>` globs — the
+    /// set an EXTENSION-SCOPED scanner can reach, which is what `xpile
+    /// audit` must report because its collector walks by extension and never
+    /// sees `Makefile`. [`SpellingScope::All`] additionally yields the
+    /// extensionless filenames [`Frontend::matches_path`] claims, which is
+    /// what a DISPATCH-failure message must report. Rendering the wrong one
+    /// trades an over-report for a different over-report: naming `Makefile`
+    /// in the audit bail would advertise a spelling audit cannot collect at
+    /// any extension.
+    ///
+    /// A pure function of `extensions()` + `refused_claims()`, both of which
+    /// are already confronted with BEHAVIOUR at every claimed spelling by
+    /// `crates/xpile/tests/frontend_claim_disposition_witness.rs`
+    /// (XPILE-FRONTEND-CLAIM-001), so a caller reading this split reads a
+    /// behaviour-checked fact and not a self-report. Registration order is
+    /// preserved so the output is deterministic.
+    fn spellings_by_disposition(&self, scope: SpellingScope) -> (Vec<String>, Vec<String>) {
+        let declared = self.refused_claims();
+        let mut lowers = Vec::new();
+        let mut refused = Vec::new();
+        for ext in self.extensions() {
+            let claim = format!("*.{ext}");
+            if declared.contains(&claim.as_str()) {
+                refused.push(claim);
+            } else {
+                lowers.push(claim);
+            }
+        }
+        if scope == SpellingScope::All {
+            // The extensionless spellings. Every `*.<ext>` entry was already
+            // placed by the loop above (XPILE-FRONTEND-CLAIM-001 asserts every
+            // glob entry's extension is in `extensions()`), so taking it again
+            // here would duplicate it.
+            refused.extend(
+                declared
+                    .iter()
+                    .filter(|c| !c.starts_with("*."))
+                    .map(|c| (*c).to_string()),
+            );
+        }
+        (lowers, refused)
+    }
+
     /// Parse source and lower to meta-HIR.
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError>;
 
@@ -177,4 +252,46 @@ pub trait Frontend: Send + Sync {
     ) -> Result<Module, FrontendError> {
         self.parse_and_lower_for(path, source, profile.alias_semantics)
     }
+}
+
+/// PMAT-1443: the frontend roster, rendered for a human, with every claimed
+/// spelling carrying its disposition.
+///
+/// This exists as a LIBRARY function rather than as a `println!` loop in each
+/// consumer because the loop is exactly what drifted. `xpile info` grew the
+/// disposition at PMAT-1428; `crates/xpile/examples/06_inspect_session.rs`,
+/// which `book/src/quickstart.md` tells the reader to run to answer "what's
+/// registered?", kept printing the raw [`Frontend::extensions`] union under
+/// the heading "Frontends (read source → meta-HIR)" — so it published `ruchy`
+/// and `mk`, which read nothing, as languages xpile reads. A shared renderer
+/// makes that a property of ONE function that
+/// `crates/xpile/tests/audit_claim_disposition_witness.rs` asserts on
+/// directly, instead of a property of each caller's formatting.
+///
+/// Returns a multi-line block WITHOUT a trailing newline; the caller supplies
+/// the surrounding layout.
+pub fn render_frontend_roster(frontends: &[std::sync::Arc<dyn Frontend>]) -> String {
+    let mut out = String::new();
+    for (i, f) in frontends.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        let (lowers, refused) = f.spellings_by_disposition(SpellingScope::All);
+        // "(none)" rather than an empty list: a routing-only frontend
+        // (`ruchy`) has NOTHING in the lowering half, and an empty `[]` there
+        // reads as a rendering slip rather than as the finding.
+        let lowers_txt = if lowers.is_empty() {
+            "(none)".to_string()
+        } else {
+            lowers.join(", ")
+        };
+        out.push_str(&format!("    - {:8}  LOWERS: {lowers_txt}", f.name()));
+        if !refused.is_empty() {
+            out.push_str(&format!(
+                "   ROUTED but REFUSED (no parser): {}",
+                refused.join(", ")
+            ));
+        }
+    }
+    out
 }

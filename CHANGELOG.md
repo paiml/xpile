@@ -7,6 +7,55 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `xpile audit`'s no-source bail published the ROUTING set as what xpile "recognises" (PMAT-1443)
+
+`Frontend::extensions()` is a ROUTING set, not a capability set. `.ruchy`
+(PMAT-1346, emit-only) and `.mk` (PMAT-1420, no Makefile dialect) are in it
+*precisely because* they have no parser — so a matching file reaches a specific
+refusal instead of the generic dispatch failure. That decision is right, and it
+is exactly what makes rendering the flat union to a user a false claim.
+
+Two surfaces were still rendering it. Both measured with a force-rebuilt binary
+before anything was changed:
+
+| surface | published | true of |
+|---|---|---|
+| `xpile audit <dir-with-no-source>` | `xpile recognises .bash, .c, .h, .mk, .py, .pyi, .ruchy, .sh, .wat, .zsh` | 8 of those 10 |
+| `cargo run --example 06_inspect_session` | `ruchy  extensions: ["ruchy"]`, `bashrs  extensions: [… "mk"]`, under the heading `Frontends (read source → meta-HIR)` | neither `ruchy` nor `mk` |
+
+The audit bail is the worse of the two: it fires on the **error path**, where
+the reader is asking "what should I point this at?", so one answer in five was
+wrong. PMAT-1434 had removed the identical defect from the dispatch-failure
+message 500 lines above it in the same file, and wrote the general rule into
+its own doc comment. The example is what `book/src/quickstart.md` names as how
+to answer "what's registered?"; `xpile info` grew the disposition at PMAT-1428
+and this second copy of the same roster did not.
+
+**The fix is one derivation, not three.** `Frontend::spellings_by_disposition`
+— a default method over `extensions()` + `refused_claims()` — is now the single
+source every rendering calls, plus `render_frontend_roster` so the example's
+correctness is a property of a library function rather than of a `println!`
+loop. The loop is what drifted.
+
+**Two scopes, because naming the wrong one is also a false claim.**
+`matches_path` claims extensionless `Makefile` / `Dockerfile`, but
+`collect_source_files` walks by extension and never sees them — verified, not
+assumed: a directory holding only those two still bails. The audit bail
+therefore publishes the narrower `SpellingScope::Extensions` split and
+*discloses* the exclusion, derived from the difference between the scopes.
+Reusing the dispatch message's `All` split — the obvious fix — would have
+advertised two spellings that cannot work at any extension.
+
+A routed-but-refused extension is also not "unrecognised": a `.ruchy` file *is*
+collected, *is* counted in `files scanned`, and lands in the error list. The
+two halves now carry different verbs, and a behaviour test holds the difference.
+
+New gate `crates/xpile/tests/audit_claim_disposition_witness.rs`
+(XPILE-AUDITCLAIM-001, 7 tests, no hard-coded counts). Red half run on both
+surfaces separately: reverting the bail reds 4 tests, reverting the example
+reds exactly 1. The dispatch-failure message is byte-unchanged; `xpile info`
+is deliberately untouched.
+
 ### The book claimed the WHOLE of Python's binary and unary operator sets while four operators refuse — and the frontend's own refusal message under-reported by one (PMAT-1441)
 
 `book/src/reference/frontends.md`, under "Python frontend — what's supported",
