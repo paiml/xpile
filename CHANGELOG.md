@@ -7,7 +7,7 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
-### The book claimed the WHOLE of Python's binary and unary operator sets while four operators refuse — and the frontend's own refusal message under-reported by one (PMAT-1440)
+### The book claimed the WHOLE of Python's binary and unary operator sets while four operators refuse — and the frontend's own refusal message under-reported by one (PMAT-1441)
 
 `book/src/reference/frontends.md`, under "Python frontend — what's supported",
 had carried since 2026-05-15 two bullets that claimed the *entirety* of
@@ -64,6 +64,71 @@ BUG ... the row would publish a FALSE REFUSES` rather than recording it; and
 (4) **actually implementing `MatMult`** moved the block to `13 lower, 0 REFUSE`
 and RED-ed the page — the direction that proves the gate tracks behaviour, not
 text. Control green.
+### The page that calls itself "the single most important mental model" drew three frontends that do not exist, omitted three lanes that do, and no test had ever read it (PMAT-1440)
+
+`book/src/concepts/two-lanes.md` opens with *"This is the single most important
+mental model in the system"* and then drew a roster wrong in **six** independent
+ways. Measured against `xpile_core::default_session()`:
+
+| drawn | truth |
+|---|---|
+| frontends `C++`, `Rust`, `Lean 4` | **do not exist** — `.cpp`, `.rs`, `.lean` all exit non-zero, and `frontends.md` says so in as many words |
+| frontend `wasm` (`.wat`) | registered, **absent from the diagram** |
+| backends `wasm`, `forjar` | registered, **absent** (2 of 9 missing) |
+| `PTX 🚧 scaffold`, `WGSL 🚧 scaffold`, `SPIR-V 🚧 planned`, `Lean 4 🚧 scaffold` | all four **emit**; `backends.md` grades every one `✅ Real emission` |
+| three `ContractFrontends` | **one** is registered (`latex`) |
+| `mdBook` on both sides | **exists nowhere** — `README.md:179` says so outright |
+
+**Why it was green: no test in the repo read the page.** `git grep two-lanes --
+crates` returns nothing. It is not obscure — `SUMMARY.md` lists it as the first
+Concepts chapter and `quickstart.md` links it as the first "Next steps" entry.
+
+**And the wording was already forbidden — somewhere else.**
+`claims_drift.rs::current_md_does_not_carry_the_2026_05_stale_claims` pins the
+needle `"still scaffolded"` against the truth `"PTX, WGSL and SPIR-V all emit"`
+— the exact falsehood this diagram carried — scoped to `docs/status/CURRENT.md`,
+the one file it was found in. **A regression pin written against a file does not
+protect a claim.** That is PMAT-1438's lesson recurring one slice later.
+
+**So the fix was scoped to the class, and the class had eight sites in five
+files.** Beyond the two diagrams: `README.md:123` advertised a *"round-trip
+between LaTeX and mdBook"* while `README.md:179` denies the lane exists — **one
+file contradicting itself 56 lines apart**; the hero image's alt-text drew the
+same phantom; `introduction.md:16` named mdBook a proof lane; `two-lanes.md:108`
+listed an mdBook `ContractBackend` citation form; and `contracts.md` named
+`"LaTeX, mdBook, Lean"` as the `ContractFrontend` roster and repeated the mdBook
+form. **Two of the eight were found by the gate after the other six were already
+fixed.**
+
+**Gated** by `crates/xpile/tests/lane_roster_witness.rs`
+(`XPILE-LANEROSTER-001`). The diagrams sit between markers and their rosters are
+compared to `default_session()` by **set equality, both directions** — a name
+drawn that nothing registers reds, a registered name not drawn reds. Nothing is
+hard-coded, so adding a backend reds the page until the picture moves. A
+corpus rule over `README.md` + `book/src` then bans presenting a phantom lane
+anywhere unless the same paragraph denies it.
+
+**What was deleted rather than gated.** The per-backend maturity glyphs are a
+second copy of `backends.md`'s measured Status column, and the copy is what went
+stale. Gating a duplicate keeps two things in sync forever; deleting it leaves
+one home (PMAT-1396). A test pins that the glyphs have not crept back *and* that
+the page still points at the table it defers to — a deferral with no destination
+is just an omission.
+
+**Red half run, six perturbations**, green control: a phantom frontend restored;
+a registered backend dropped; mdBook redrawn as a lane; a maturity glyph crept
+back; the marker removed; and — the behaviour half — **renaming the forjar
+backend's registry key in `crates/xpile-forjar-codegen/src`**, which reds the
+drawn roster.
+
+Measured and honest, recorded so it is not re-derived: `backends.md`'s Status
+column *"Real emission"* is accurate as a category verdict — an input-dependence
+sweep over a value fn, a loop, a mutating class and a string method gives
+distinct output per input for all nine backends, and every non-emission is a
+hard `BackendError` at exit 1.
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### Every Rust example the book publishes was uncompilable, and three of the seven names it invented DO exist — which is why nothing caught it (PMAT-1439)
 
 `book/src` carried four ```rust fences describing xpile's library API — the two

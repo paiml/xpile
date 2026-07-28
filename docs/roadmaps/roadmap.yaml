@@ -20564,7 +20564,81 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels: []
   notes: null
 - id: PMAT-1440
-  title: 'PMAT-1440: [docs+frontend+gate+honesty] THE BOOK CLAIMED THE WHOLE OF PYTHON''S BINARY
+  title: 'PMAT-1440: [docs+gate+honesty] the book page that calls itself THE SINGLE MOST IMPORTANT MENTAL MODEL drew three frontends that do not exist, omitted three lanes that do, and no test had ever read it.
+    ** THE DEFECT. book/src/concepts/two-lanes.md opens "This is the single most important
+    mental model in the system" and then drew a roster wrong in SIX independent ways, measured
+    against xpile_core::default_session(): frontends C++, Rust and Lean 4 DO NOT EXIST (.cpp,
+    .rs and .lean all exit non-zero, and frontends.md says so in as many words); the wasm (.wat)
+    frontend was ABSENT; the wasm and forjar BACKENDS were absent (2 of 9); PTX/WGSL/SPIR-V/Lean
+    were labelled scaffold-or-planned while all four EMIT and backends.md grades every one "Real
+    emission"; the proof lane drew THREE ContractFrontends where ONE is registered; and it drew
+    mdBook on BOTH sides, which exists nowhere -- README.md:179 says so outright.
+    ** WHY IT WAS GREEN: NO TEST IN THE REPO READ THE PAGE (`git grep two-lanes -- crates` ->
+    nothing). It is not obscure -- SUMMARY.md lists it as the first Concepts chapter and
+    quickstart.md links it as the first "Next steps" entry.
+    ** AND THE WORDING WAS ALREADY FORBIDDEN, SOMEWHERE ELSE. claims_drift.rs::
+    current_md_does_not_carry_the_2026_05_stale_claims pins the needle "still scaffolded"
+    against the truth "PTX, WGSL and SPIR-V all emit" -- the EXACT falsehood this diagram
+    carried -- scoped to docs/status/CURRENT.md, the one file it was found in. A REGRESSION PIN
+    WRITTEN AGAINST A FILE DOES NOT PROTECT A CLAIM. PMAT-1438''s lesson, one slice later.
+    ** SO THE FIX WAS SCOPED TO THE CLASS, AND THE CLASS HAD EIGHT SITES IN FIVE FILES. Beyond
+    the two diagrams: README.md:123 advertised a "round-trip between LaTeX and mdBook" while
+    README.md:179 denies the lane exists -- ONE FILE CONTRADICTING ITSELF 56 LINES APART; the
+    hero image ALT-TEXT drew the same phantom; introduction.md:16 named mdBook a proof lane;
+    two-lanes.md:108 listed an mdBook ContractBackend citation form; and contracts.md named
+    "LaTeX, mdBook, Lean" as the ContractFrontend roster and repeated the mdBook citation form.
+    ** TWO OF THE EIGHT WERE FOUND BY THE GATE AFTER THE OTHER SIX WERE FIXED (the contracts.md
+    pair) -- the same return on class-scoping that PMAT-1438 saw.
+    ** FIX in crates/xpile/tests/lane_roster_witness.rs (XPILE-LANEROSTER-001). The diagrams sit
+    between markers and their rosters are compared to default_session() BY SET EQUALITY, both
+    directions: a name drawn that nothing registers reds, and a registered name not drawn reds.
+    NOTHING IS HARD-CODED -- adding a backend reds the page until the picture moves. A corpus
+    rule over README.md + book/src then bans presenting a phantom lane anywhere unless the same
+    paragraph DENIES it.
+    ** WHAT WAS DELETED RATHER THAN GATED, and why. The per-backend maturity glyphs
+    (real emission / scaffold) are a SECOND COPY of backends.md''s measured Status column, and
+    the copy is what went stale. Gating a duplicate keeps two things in sync forever; deleting
+    it leaves one home (PMAT-1396: state the invariant, do not restate the data). A test pins
+    that the glyphs have not crept back AND that the page still points at the table it defers
+    to -- a deferral with no destination is just an omission.
+    ** RED HALF RUN, SIX perturbations, green control: a phantom frontend restored to the
+    diagram; a registered backend dropped from it; mdBook redrawn as a proof lane; a maturity
+    glyph crept back; the marker removed; and -- the BEHAVIOUR half -- RENAMING the forjar
+    backend''s registry key in crates/xpile-forjar-codegen/src, which reds the drawn roster.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    NEXT PICK: STANDING LEADS, EV order. (a) `xpile audit`''s "xpile recognises ..." bail is the
+    PRE-PMAT-1434 flat extensions() union -- names .mk and .ruchy which refuse EVERY input and
+    omits Makefile/Dockerfile which matches_path claims; the FOURTH surface of the
+    frontend-claim class, and the first one needing a SOURCE fix. (b) `.pyi` and `.h` are
+    published as spellings that LOWER on all three surfaces, but a canonical stub (bodiless
+    `def ... : ...`) and a canonical header (include guard + prototypes) both REFUSE, and
+    frontend_claim_disposition_witness.rs certifies them by driving `.py` / `.c` BYTES at those
+    paths -- PMAT-1433 lesson 3 (one probe per subject samples one of its N claims) recurring.
+    (c) frontends.md claims the Python frontend supports "all binary operators" and "all unary
+    operators"; `@` (MatMult) refuses AND THE REFUSAL PUBLISHES THE REAL LIST, and unary `+`
+    refuses. (d) backends.md''s ruchy Status parenthetical "compiles to Rust" -- `ruchy check`
+    accepts 18 of 39 emitted artifacts, and one emit puts `&self` on a method that assigns to
+    self. (e) frontends.md says every emitted Rust/Ruchy/Lean function carries a
+    `// xpile-contract: C-PY-INT-ARITH` citation; the ID is type-directed (float/str/bool cite
+    three other contracts) and the Lean lane uses `/-- ... -/`, not `//`.
+    PROBED AND CLEAN, so it is not re-derived: backends.md''s Status column "Real emission" is
+    HONEST as a category verdict -- an input-dependence sweep (PMAT-1388''s test) over a value
+    fn / loop / mutating class / string method gives DISTINCT output per input for all nine
+    backends, and every non-emission is a hard BackendError at exit 1.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+
+- id: PMAT-1441
+  title: 'PMAT-1441: [docs+frontend+gate+honesty] THE BOOK CLAIMED THE WHOLE OF PYTHON''S BINARY
     AND UNARY OPERATOR SETS WHILE FOUR OPERATORS REFUSE — and the frontend''s own refusal message
     UNDER-reported by one, so the page and the binary were wrong in OPPOSITE directions about the
     same surface. `book/src/reference/frontends.md` had carried since 2026-05-15, under "Python
@@ -20626,15 +20700,25 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     SUPERSEDED, not rewritten: 40957be9 was CHERRY-PICKED onto a fresh branch off main (clean
     apply) and #2030 closed in its favour; PMAT-1433..1438 verified to appear exactly once each
     in both ledgers after the pick.
-    ** ID COLLISION — THIS SLICE IS THE RENUMBERED ONE. It was authored and pushed as PMAT-1438;
-    a CONCURRENT fire independently took 1438 for the CLAIM-CLASS slice (#2034, the entry above)
-    and MERGED FIRST, then took 1439 (#2036). The landed id wins, so this became PMAT-1440 on
-    every surface: `frontends.md` prose, the witness module doc, the `lower_binop` source
-    comment, the CHANGELOG heading, and the id + title in both ledgers. Re-checked rather than
-    assumed after the renumber: no duplicate id in either ledger, both parse under
-    `yaml.safe_load`, and the roadmap tail reads 1436, 1437, 1438, 1440. The preventive rule is
-    the standing one — A PUSHED BRANCH IS AN ID CLAIM, so `git branch -r` is part of deriving
-    max+1, not just the ledgers; 1439 existed only as a branch at the moment of collision.'
+    ** ID COLLISION TWICE — THIS SLICE IS THE TWICE-RENUMBERED ONE. Authored and pushed as
+    PMAT-1438. A concurrent fire independently took 1438 for the CLAIM-CLASS slice (#2034) and
+    MERGED FIRST, then took 1439 (#2036), so this renumbered to 1440. Before its CI finished the
+    same fire took 1440 as well, for the TWO-LANES slice (#2037), and MERGED FIRST AGAIN
+    (39f649b0) — so this slice is PMAT-1441. LANDED WINS, applied consistently in both
+    directions: the loser renumbers, on every surface rather than just the ledger row
+    (`frontends.md` prose, witness module doc, `lower_binop` source comment, CHANGELOG heading,
+    id + title in both ledgers). Re-checked rather than assumed after each renumber: no duplicate
+    id in either ledger, both parse under `yaml.safe_load`.
+    ** WHY THE PUSHED-BRANCH CLAIM RULE DID NOT PREVENT IT — the interesting half, measured.
+    Both renumbers pushed the new branch name FIRST, exactly as an id claim, and the timestamps
+    say the claim WON the race: `fix/py-operator-surface-1440` was on origin at 13:28:44Z and
+    #2037 was not created until 13:30:34Z. It still lost, because the other fire had already
+    written 1440 into its own content — 12 references across 8 files — before that branch
+    existed. A BRANCH-NAME CLAIM IS ONLY VISIBLE TO A FIRE THAT LOOKS BEFORE IT WRITES; once two
+    fires are both mid-slice, neither is looking again. The only ordering that decides anything
+    is WHAT MERGED. So the useful rule is not a better claim protocol, it is: keep the id out of
+    the content until merge time, or treat a renumber as routine rather than racing it. Under a
+    ~10-minute cron with two live fires this will recur; it is cheap when expected.'
   status: done
   priority: high
   created: '2026-07-28T00:00:00Z'
