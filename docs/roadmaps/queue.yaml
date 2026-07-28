@@ -2,33 +2,27 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1424 landed from an honesty hunt. The ranked queue stays exhausted
-  until Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1423''s standing lead (e)
-  verbatim - the emit''s AGGREGATE lane (list/dict/str) had never been driven through emit->lift -
-  and that lane came back HONEST (it emits a `(memory ...)` and the lift refuses it by name,
-  citing PMAT-952). THE FINDING WAS THE ARM NEXT TO IT, read while confirming the negative
-  result: the top-level `(export ...)` directive was skipped UNREAD on the comment "re-derived
-  from the function on re-emit" - true of the INTERNAL symbol, false of the EXTERNAL name, and
-  the external name is the only way a WASM host can call in. EXECUTED under wasm-interp with both
-  legs wat2wasm-clean and a provenance-verified baseline binary: the source module answers
-  `compute_total() => i64:42`, and after `xpile transpile z2.wat --target wasm` at exit 0 the
-  round-tripped module answers `ct() => i64:42`. Three shapes corrupted silently and a fourth was
-  refused with the wrong description. LESSONS WORTH KEEPING. (1) THE DEFECT WAS IN A DIFFERENT
-  VOCABULARY - every witness in tests.rs, and all three preceding slices, measured INSTRUCTIONS;
-  the module''s export surface had none, so three ABI rewrites sat underneath a round-trip fixed
-  point that was genuinely holding. The oracle was right and the CORPUS could not express the
-  question: single-function modules with self-named exports have no row that distinguishes an
-  external name from an internal one. When a witness set has been wrong twice about its WIDTH,
-  stop widening the corpus along the axis you already know and ask what OTHER vocabulary the emit
-  has. (2) A NEGATIVE RESULT IS A READING OPPORTUNITY - the lead was honest, and the payload was
-  three lines away in the same match block. (3) OVER-REFUSAL FIRED AGAIN, exactly as PMAT-1419
-  recorded, and a PRE-EXISTING witness caught it: the guard placed before the body lift turned
-  five instruction-level refusal witnesses into export diagnostics, because they pin those
-  refusals on hand-written modules that happen to export nothing. It runs LAST. (4) 127 IS NOT A
-  REFUSAL - the first red-half run reported exit=127 for all four shapes and read as a clean
-  pass; it was a missing binary, because the worktree build ignored CARGO_TARGET_DIR and landed
-  in the shared target dir. Every probe binary in this slice was provenance-verified by grepping
-  it for its own new refusal string.)'
+updated: '2026-07-28 (PMAT-1430 landed from an honesty hunt; the ranked queue stays exhausted
+  until Thu 07-30 / PMAT-1373, the release commit. Took PMAT-1429 standing lead (d) -- book pages
+  that pin `xpile transpile` OUTPUT -- and re-derived every pinned transcript from a force-rebuilt
+  binary. THE LEAD WAS HONEST AND THE TRANSCRIPTS WERE CLEAN: shell-roundtrip.md''s emit AND its
+  `--target rust` refusal message are byte-equal to the binary, the Lean blocks are byte-equal, all
+  six introduction.md invocations work, "six runnable examples" is six. Only cosmetic reflow drift,
+  recorded and deliberately not gated. THE DEFECT WAS ONE COLUMN OVER: backends.md''s ``--target``
+  column published `bashrs` for the shell backend, which the CLI rejects -- the flag is `shell`.
+  LESSONS WORTH KEEPING. (1) A GATE CAN CERTIFY THE DEFECT IT WAS WRITTEN TO PREVENT. claims_drift
+  required the page to name every `Backend::name()` and called those values "`--target` flag"s in
+  both its doc comment and its message; the two coincide for 8 of 9 backends. So the page passed
+  BECAUSE the cell was wrong, and correcting it alone REDS that gate (executed). When a gate walks a
+  set, ask whether its premise holds for EVERY member, not for the representative one. (2) THE
+  SIBLING-CLAIM SHAPE REPEATED ACROSS ONE DAY: PMAT-1429 fixed "the contract backends render
+  contract YAML" in `xpile info` + cli.md and left the same sentence live in backends.md -- its own
+  recorded lesson (1), one file over. A fix that corrects a CLAIM should grep the claim, not the
+  surface. (3) A DOC GATE MUST DISTINGUISH USE FROM MENTION: the first inline scanner reported the
+  book publishes targets `are`, `is` and `also` -- read out of the fix''s OWN new prose explaining
+  the flag. (4) THE REVERSE DIRECTION OF A DISCLOSURE GATE IS CHEAP TO MEASURE and worth it: both
+  `renders_contract_body()` impls were flipped to true and rebuilt to prove the disclosure cannot
+  outlive the scaffold.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -4035,6 +4029,70 @@ queue:
     fire before then should hunt again, and lead (d) is the cheapest next application of the same
     gate. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
     18:00 -- no crates/*/src or contracts/*.yaml merge after it.'
+- id: PMAT-1430
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the backend reference published a `--target` value the CLI REJECTS (`bashrs`, where
+    the flag is `shell`), and the claims_drift gate meant to keep that column honest is what put
+    it there and would have RED-ed the correction'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1429 standing lead (d) -- "other book pages pin `xpile transpile`
+    OUTPUT which cli_docs_drift does NOT cover" -- and the lead was HONEST BUT THE PAYLOAD WAS
+    ELSEWHERE, exactly as PMAT-1426 recorded. Every pinned TRANSCRIPT was re-derived from a
+    force-rebuilt binary and they are SUBSTANTIALLY CLEAN: shell-roundtrip.md''s two transcripts
+    (`--target shell` emit AND the `--target rust` refusal message) are BYTE-EQUAL to the binary;
+    python-to-lean.md''s and python-to-rust.md''s Lean blocks are byte-equal; introduction.md''s
+    six "what you can do today" invocations all work INCLUDING `--target wasm` on the recursive
+    factorial; quickstart''s "six runnable examples" is six. The only transcript drift found was
+    COSMETIC (quickstart/python-to-rust hand-reflow the one-line Rust body across four lines, and
+    quickstart''s ruchy/lean blocks elide the two header comment lines) -- recorded, deliberately
+    NOT gated, because a byte-equal rule there would forbid legitimate elision and the tutorials
+    say "notice X", not "your output will be this".
+    THE DEFECT WAS ONE COLUMN OVER, in a TABLE rather than a transcript: backends.md heads its
+    second column ``--target`` and the Shell cell read `bashrs`, which the CLI rejects outright.
+    ** THE SHARP PART: the value was ENFORCED, not mistyped. claims_drift.rs required the page to
+    name every `Backend::name()` and CALLED THOSE VALUES "`--target` flag"s in both its doc
+    comment and its failure message. name() and the flag coincide for 8 of 9 backends and differ
+    for exactly one. So the page passed BECAUSE the cell was wrong, and the naive one-column fix
+    REDS claims_drift -- EXECUTED, not reasoned. Fix = split the conflation (a `Name` column, the
+    idiom frontends.md already used, plus a `--target` column) and stop the gate calling keys
+    flags.
+    SECOND DEFECT SAME PAGE: the proof-lane sentence still said both contract backends "render
+    contract YAML" -- PMAT-1429 fixed that claim in `xpile info` + cli.md ONE DAY EARLIER and
+    left the sibling live in the book. Its own lesson (1), one file over, one day later.
+    GATE: crates/xpile/tests/backend_docs_drift.rs (XPILE-CLIDOCS-002), 5 tests, scoped to the
+    CLAIM CLASS over the WALKED book/src corpus rather than to a file (PMAT-1417): --target
+    column cells + inline `--target <x>` invocations vs `transpile --help`, then EVERY documented
+    spelling EXECUTED through the binary (--help is itself a claim and could drift from
+    parse_target), table arity vs `xpile info` backends (N), and scaffold disclosure IFF the
+    binary tags it. Every parse asserts a minimum arity so a format change reds instead of
+    passing vacuously.
+    RED HALVES ALL RUN: 3 of 5 failed on the unfixed page naming exactly ("backends.md",
+    "bashrs"); the naive fix reds claims_drift with `key(s) ["bashrs"]`; and the disclosure gate
+    was run in the REVERSE direction by flipping BOTH `renders_contract_body()` impls to true and
+    REBUILDING -- it reds with "binary marks a scaffold: false / page discloses a scaffold: true",
+    so the honest disclosure cannot become a permanent understatement (the PMAT-1429 lesson (4)
+    applied to the doc half). Sources restored and `git status` re-checked before commit.
+    ** CAUGHT BY ITS OWN RED HALF: the first inline scanner stripped backticks before reading the
+    token and reported that the book publishes the targets `are`, `is` and `also` -- from MY OWN
+    new prose ("`--target` also accepts the aliases"). It now requires the INVOCATION form (one
+    space then a lowercase token), so a bare `--target` named in prose is not a spelling. A doc
+    gate must distinguish USE from MENTION or the fix''s own explanation reds it.
+    STANDING LEADS. (a) `xpile info` marks hollow CONTRACT BACKENDS but the single contract
+    FRONTEND (`latex`) carries no honesty method at all -- PMAT-1429 added
+    `renders_contract_body()` to ContractBackend only, so `contract_frontends (1)` is an
+    UNMEASURED parity claim of exactly the shape PMAT-1346/1429 twice found false. Cheapest next
+    slice. (b) frontends.md lists `.mk` among the bashrs frontend extensions under status "Real
+    POSIX parser" -- PMAT-1420 made `.mk` ROUTE and then REFUSE, so the extension roster and the
+    status column disagree for one entry; same two-columns-conflated shape as this slice.
+    (c) backends.md''s Status column claims are prose ("Real emission (scalar subset)") that
+    NOTHING gates -- the arity and the roster are now checked, the CLAIMS are not.
+    NEXT PICK: PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2) on Thu 07-30; a
+    fire before then should hunt again, and lead (a) is the cheapest next application of this
+    same gate shape. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
+    Wed 2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

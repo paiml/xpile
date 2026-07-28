@@ -7,6 +7,62 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The backend reference published a `--target` value the CLI rejects — and the gate meant to keep that column honest is what put it there (PMAT-1430)
+
+`book/src/reference/backends.md` heads its second column `` `--target` ``. The
+Shell row read `` `bashrs` ``:
+
+```text
+$ xpile transpile script.sh --target bashrs
+Error: unknown target `bashrs`; choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar
+```
+
+The spelling is `shell`. Eight of the nine rows were right; the ninth sent a
+reader following the reference page's own `--target` column into a hard error,
+on the page whose entire job is to say what to pass.
+
+**The value was not a typo — it was enforced.** `Backend::name()` and the
+`--target` spelling are two different strings. They coincide for eight of the
+nine backends and differ for exactly one: `xpile info` prints
+`- bashrs → Shell`, and `parse_target` accepts `shell`, `sh` and `bash` for
+that variant and `bashrs` for nothing.
+`claims_drift.rs::book_backend_reference_names_every_registered_backend`
+required backends.md to name every `Backend::name()`, and its doc comment and
+failure message both called those values "`--target` flag"s. So the page
+passed *because* it published the registry key in the `--target` column, and
+editing the cell to `shell` on its own turns that gate red — executed, not
+reasoned: the naive one-column fix fails with
+`does not name registered backend key(s) ["bashrs"]`. A gate whose premise is
+false for one member of the set it walks certifies the defect.
+
+The page now carries a `Name` column (registry key) *and* a `--target` column
+(CLI spelling) — the idiom `frontends.md` already used and this page never
+adopted — plus the alias set (`wat`, `sh`/`bash`, `forjar-yaml`).
+`claims_drift` keeps checking the registry keys and stops calling them flags.
+
+**Second defect, same page.** The proof-lane sentence still said the two
+contract backends "render contract YAML rather than programs". PMAT-1429
+corrected exactly that claim in `xpile info` and `cli.md` one day earlier and
+left the sibling live in the book — on the page whose subject *is* what
+backends emit. Its own recorded lesson, one file over.
+
+**Gate.** `crates/xpile/tests/backend_docs_drift.rs` (XPILE-CLIDOCS-002) is
+scoped to the claim CLASS over the walked `book/src` corpus rather than to a
+file: every `--target` table-column cell and every inline `--target <x>`
+invocation anywhere in the book must be a spelling `xpile transpile --help`
+advertises; every documented spelling is then EXECUTED through the binary (a
+`--help` string is itself a claim, and could drift from `parse_target` without
+either half noticing); the status table's arity must equal `xpile info`'s
+`backends (N)`; and the proof-lane paragraph must disclose the scaffolds *iff*
+the binary tags them. That last one was run in **both** directions — the
+reverse by flipping both `renders_contract_body()` impls to `true` and
+rebuilding, which reds with "binary marks a scaffold: false / page discloses a
+scaffold: true" — so an honest disclosure cannot outlive the scaffold it
+describes.
+
+Nothing about what any backend emits changed. This slice makes the published
+claim match the binary.
+
 ### The proof lane was advertised at parity with the code lane, and the published `xpile info` transcript was stale by three backends (PMAT-1429)
 
 Two claim surfaces, one root cause: a listing nobody re-derived.

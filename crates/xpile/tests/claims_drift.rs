@@ -769,10 +769,12 @@ fn book_pages() -> Vec<(String, String)> {
     out
 }
 
-/// `--target` flag names of every registered backend — what `xpile info`
-/// prints under `backends (N)`, read from the same `default_session()` the
-/// CLI dispatches through.
-fn registered_backend_flags() -> Vec<String> {
+/// REGISTRY KEYS of every registered backend — `Backend::name()`, what
+/// `xpile info` prints under `backends (N)`, read from the same
+/// `default_session()` the CLI dispatches through. PMAT-1430: this was named
+/// `registered_backend_flags` and is NOT the `--target` flag set; `bashrs` is
+/// a key with no flag of that spelling.
+fn registered_backend_keys() -> Vec<String> {
     xpile_core::default_session()
         .backends
         .iter()
@@ -841,26 +843,36 @@ fn the_book_corpus_is_not_empty() {
     }
 }
 
-/// The backends reference must name every registered backend's `--target`
-/// flag. It listed 7 of 9 (no `wasm`, no `forjar`) while both emitted.
+/// The backends reference must name every registered backend's REGISTRY KEY
+/// — `Backend::name()`, the string `xpile info` prints. It listed 7 of 9 (no
+/// `wasm`, no `forjar`) while both emitted.
+///
+/// PMAT-1430: this doc comment and the failure message below used to call
+/// those values "`--target` flag"s. They are not. `Backend::name()` and the
+/// `--target` spelling coincide for eight of the nine backends and differ for
+/// the shell backend, whose key is `bashrs` and whose flag is `shell`. That
+/// mislabel is what put `bashrs` in backends.md's `--target` column and kept
+/// it there: correcting the cell alone would have turned THIS test red, so
+/// the gate was enforcing the defect. The page now carries both columns, and
+/// the `--target` half is checked against the running binary by
+/// `backend_docs_drift.rs` (XPILE-CLIDOCS-002).
 #[test]
 fn book_backend_reference_names_every_registered_backend() {
     let page = read("book/src/reference/backends.md");
-    let flags = registered_backend_flags();
+    let keys = registered_backend_keys();
     assert!(
-        !flags.is_empty(),
+        !keys.is_empty(),
         "default_session() registered zero backends — the registry moved"
     );
-    let missing: Vec<&String> = flags
-        .iter()
-        .filter(|f| !table_row_names(&page, f))
-        .collect();
+    let missing: Vec<&String> = keys.iter().filter(|f| !table_row_names(&page, f)).collect();
     assert!(
         missing.is_empty(),
         "book/src/reference/backends.md does not name registered backend \
-         target(s) {missing:?}. The page presents itself as the backend \
-         roster; a backend the CLI dispatches to and the book omits is a \
-         capability the reader cannot discover. Live registry: {flags:?}"
+         key(s) {missing:?} (the `Name` column — `Backend::name()`, what \
+         `xpile info` prints, NOT the `--target` spelling). The page presents \
+         itself as the backend roster; a backend the CLI dispatches to and the \
+         book omits is a capability the reader cannot discover. Live registry: \
+         {keys:?}"
     );
 }
 

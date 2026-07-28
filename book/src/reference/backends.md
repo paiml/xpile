@@ -17,20 +17,39 @@ meta-HIR.
 `xpile info` prints this table live from the `Target` enum the CLI
 actually dispatches through — prefer it to this page.
 
-| Backend | `--target` | Status | Crate |
-|---|---|---|---|
-| Rust    | `rust` | ✅ **Real emission** (Python-floor semantics, `.checked_*()` for `C-PY-INT-ARITH`) | `xpile-rust-codegen` |
-| Ruchy   | `ruchy` | ✅ **Real emission** (same overflow semantics; compiles to Rust) | `xpile-ruchy-codegen` |
-| Lean 4  | `lean` | ✅ **Real emission** (`def`, `Int.fdiv`/`Int.fmod`; `Int` is unbounded) | `xpile-lean-codegen` |
-| Shell   | `bashrs` | ✅ **Real emission** (round-trip with bashrs-frontend) | `bashrs-backend` |
-| WASM    | `wasm` | ✅ **Real emission** (WebAssembly text; assembled and executed in CI) | `xpile-wasm-codegen` |
-| PTX     | `ptx` | ✅ **Real emission** — `--hardware ptx:<sm_XX>` is **required** to reach it | `xpile-ptx-codegen` |
-| WGSL    | `wgsl` | ✅ **Real emission** (scalar subset) | `xpile-wgsl-codegen` |
-| SPIR-V  | `spirv` | ✅ **Real emission** (scalar subset) | `xpile-spirv-codegen` |
-| forjar  | `forjar` | ✅ **Real emission** from **shell-origin** modules; refuses Python-origin input with a reason | `xpile-forjar-codegen` |
+**`Name` and `--target` are two different strings, and for one backend
+they differ.** `Name` is the registry key `xpile info` prints on the
+left of the arrow; `--target` is what you pass on the command line, and
+what `parse_target` accepts. They coincide for eight of the nine
+backends. They do **not** for the shell backend: `xpile info` prints
+`- bashrs → Shell`, and the flag is `--target shell`. Through
+v0.1.617 this column published `bashrs`, which the CLI rejects outright
+(`unknown target`) — see PMAT-1430.
+
+| Backend | Name | `--target` | Status | Crate |
+|---|---|---|---|---|
+| Rust    | `rust` | `rust` | ✅ **Real emission** (Python-floor semantics, `.checked_*()` for `C-PY-INT-ARITH`) | `xpile-rust-codegen` |
+| Ruchy   | `ruchy` | `ruchy` | ✅ **Real emission** (same overflow semantics; compiles to Rust) | `xpile-ruchy-codegen` |
+| Lean 4  | `lean` | `lean` | ✅ **Real emission** (`def`, `Int.fdiv`/`Int.fmod`; `Int` is unbounded) | `xpile-lean-codegen` |
+| Shell   | `bashrs` | `shell` | ✅ **Real emission** (round-trip with bashrs-frontend) | `bashrs-backend` |
+| WASM    | `wasm` | `wasm` | ✅ **Real emission** (WebAssembly text; assembled and executed in CI) | `xpile-wasm-codegen` |
+| PTX     | `ptx` | `ptx` | ✅ **Real emission** — `--hardware ptx:<sm_XX>` is **required** to reach it | `xpile-ptx-codegen` |
+| WGSL    | `wgsl` | `wgsl` | ✅ **Real emission** (scalar subset) | `xpile-wgsl-codegen` |
+| SPIR-V  | `spirv` | `spirv` | ✅ **Real emission** (scalar subset) | `xpile-spirv-codegen` |
+| forjar  | `forjar` | `forjar` | ✅ **Real emission** from **shell-origin** modules; refuses Python-origin input with a reason | `xpile-forjar-codegen` |
+
+`--target` also accepts the aliases `wat` (→ `wasm`), `sh` / `bash`
+(→ `shell`) and `forjar-yaml` (→ `forjar`); the nine canonical
+spellings above are the ones `xpile transpile --help` lists.
 
 The proof lane registers two contract backends, `lean-theorem` and
-`latex`, which render contract YAML rather than programs.
+`latex`. Both are **scaffolds**: each returns a fixed `_scaffold`
+payload that no field of the contract can influence, so neither
+actually renders contract YAML today. `xpile info` reports them as
+`contract_backends (2 registered, 0 rendering)` and tags each one;
+`crates/xpile/tests/proof_lane_scaffold_witness.rs` measures the
+contract-independence rather than asserting it. Real rendering is
+v0.2.0 work — see PMAT-1429.
 
 A ✅ here means "emits for its supported subset", not "emits for every
 program" — each backend refuses constructs outside its subset with a

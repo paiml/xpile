@@ -19778,3 +19778,52 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1430
+  title: 'PMAT-1430: [docs+gate] THE BACKEND REFERENCE PUBLISHED A `--target` VALUE THE CLI REJECTS,
+    AND THE GATE MEANT TO KEEP THAT COLUMN HONEST IS WHAT PUT IT THERE: `book/src/reference/backends.md`
+    heads its second column `` `--target` `` and the Shell row read `` `bashrs` ``. The CLI does not
+    accept it — `xpile transpile script.sh --target bashrs` exits non-zero with "unknown target
+    `bashrs`; choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar". The spelling is
+    `shell`. Eight of nine rows were right; the ninth sent a reader following the reference page''s
+    own `--target` column into a hard error, on the page whose job is to say what to pass. THE VALUE
+    WAS NOT A TYPO — IT WAS ENFORCED. `Backend::name()` and the `--target` spelling are different
+    strings that coincide for eight of the nine backends and differ for exactly one (`xpile info`
+    prints `- bashrs → Shell`; `parse_target` accepts `shell`/`sh`/`bash` and `bashrs` for nothing).
+    `claims_drift.rs::book_backend_reference_names_every_registered_backend` required the page to
+    name every `Backend::name()` and called those values "`--target` flag"s in its doc comment AND
+    its failure message, so the page passed BECAUSE it published the registry key in the `--target`
+    column — and editing the cell to `shell` alone turns that gate RED (EXECUTED, not reasoned:
+    the naive one-column fix fails with `does not name registered backend key(s) ["bashrs"]`).
+    A gate whose premise is false for one member of the set it walks certifies the defect.
+    FIX: backends.md splits the conflation into a `Name` column (registry key) and a `--target`
+    column (CLI spelling) — the idiom `frontends.md` already used and this page never adopted — plus
+    the alias set (`wat`, `sh`/`bash`, `forjar-yaml`); `claims_drift` keeps checking the registry
+    keys and stops calling them flags (`registered_backend_flags` → `registered_backend_keys`).
+    SECOND DEFECT, SAME PAGE: the proof-lane sentence still said the two contract backends "render
+    contract YAML rather than programs" — PMAT-1429 corrected exactly that claim in `xpile info`
+    and `cli.md` one day earlier and left the sibling live in the book, on the page whose subject IS
+    what backends emit. Its own recorded lesson (1), one file over. GATE: new
+    `crates/xpile/tests/backend_docs_drift.rs` (XPILE-CLIDOCS-002), scoped to the CLAIM CLASS over
+    the WALKED `book/src` corpus rather than to a file (PMAT-1417): every `--target` table-column
+    cell and every inline `--target <x>` invocation anywhere in the book must be a spelling
+    `xpile transpile --help` advertises, EVERY documented spelling is then EXECUTED through the
+    binary (a `--help` string is itself a claim and could drift from `parse_target` without either
+    half noticing), the status table''s arity must equal `xpile info`''s `backends (N)`, and the
+    proof-lane paragraph must disclose the scaffolds IFF the binary tags them. RED HALVES ALL RUN:
+    3 of 5 tests failed on the unfixed page naming exactly `("backends.md", "bashrs")`; the naive
+    one-column fix reds `claims_drift`; and the disclosure gate was run in the REVERSE direction by
+    flipping BOTH `renders_contract_body()` impls to `true` and rebuilding — it fails with "binary
+    marks a scaffold: false / page discloses a scaffold: true", so an honest disclosure cannot
+    outlive the scaffold it describes. Also caught by its own red half: the first inline scanner
+    stripped backticks before reading the token and reported that the book publishes the targets
+    `are`, `is` and `also` — it now requires the invocation form (one space, then a lowercase
+    token), so a bare `` `--target` `` named in prose is not read as a spelling.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
