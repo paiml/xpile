@@ -613,7 +613,15 @@ falsification_tests:
       A TranspileSession that registers two ContractBackends with
       overlapping formats() either rejects the second or panics in test.
     test: |
-      cargo test -p xpile-core --test contract_backend_dispatch -- duplicate_format
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-core --test contract_backend_dispatch`.
+      That test target does not exist in xpile-core, and no `#[test] fn
+      contract_backend_dispatch` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `contract_backend_dispatch` in `xpile-core``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Dispatch is ambiguous. The proof lane cannot decide which renderer
       to invoke for ContractFormat::LeanTheorem (or LatexMath).
@@ -628,7 +636,15 @@ falsification_tests:
     prediction: |
       Two consecutive renders of the same (contract, config) hash equal.
     test: |
-      cargo test -p xpile-contract-backend --test idempotency
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-contract-backend --test idempotency`.
+      That test target does not exist in xpile-contract-backend, and no
+      `#[test] fn idempotency` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `idempotency` in `xpile-contract-backend``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Timestamp or random salt leaked into output. Cache hits become
       false negatives; paper diffs noisy across regenerations.
@@ -646,7 +662,16 @@ falsification_tests:
       Render a contract with 2 depends_on and 3 references; resulting
       citations list has at least 5 distinct ContractId entries.
     test: |
-      cargo test -p xpile-contract-backend --test citation_round_trip
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-contract-backend --test
+      citation_round_trip`. That test target does not exist in
+      xpile-contract-backend, and no `#[test] fn citation_round_trip` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `citation_round_trip` in
+      `xpile-contract-backend``) and never ran. The rule above is unchanged
+      and may well be exercised by tests elsewhere in the tree; what was
+      false is this command. Re-pointing this entry at a real falsifier is
+      open work.
     if_fails: |
       Audit chain broken on the rendering side. A contract depends on
       another contract; the rendered paper / Lean file does not show it.
@@ -670,7 +695,16 @@ falsification_tests:
           starting with "xpile:C-X:"
         - mdBook: xpile-mdbook-preprocessor's index contains "C-X"
     test: |
-      cargo test -p xpile-contract-backend --test citation_structurally_parseable
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-contract-backend --test
+      citation_structurally_parseable`. That test target does not exist in
+      xpile-contract-backend, and no `#[test] fn
+      citation_structurally_parseable` exists anywhere in the workspace, so
+      the command hard-errored at target resolution (`error: no test target
+      named `citation_structurally_parseable` in `xpile-contract-backend``)
+      and never ran. The rule above is unchanged and may well be exercised
+      by tests elsewhere in the tree; what was false is this command.
+      Re-pointing this entry at a real falsifier is open work.
     if_fails: |
       A reader CAN find the cite by regex, but the structural parser
       (Lean elaborator, LaTeX label, mdBook preprocessor) cannot.
@@ -695,7 +729,16 @@ falsification_tests:
       emitted theorem with `xpile_contract` attribute, args[0] == the
       string "C-XLATE-PY-LIST-TO-VEC" (verbatim).
     test: |
-      cargo test -p xpile-lean-contract-backend --test theorem_attribute_present
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-contract-backend --test
+      theorem_attribute_present`. That test target does not exist in
+      xpile-lean-contract-backend, and no `#[test] fn
+      theorem_attribute_present` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `theorem_attribute_present` in `xpile-lean-contract-backend``)
+      and never ran. The rule above is unchanged and may well be exercised
+      by tests elsewhere in the tree; what was false is this command.
+      Re-pointing this entry at a real falsifier is open work.
     if_fails: |
       Citation bridge for Lean is broken. Either the attribute is
       missing, or the contract ID was mangled (e.g., dash-to-underscore).
@@ -717,7 +760,16 @@ falsification_tests:
         - render with include_falsification=false → 0 FALSIFY blocks
         - render with include_falsification=true  → N FALSIFY blocks
     test: |
-      cargo test -p xpile-contract-backend --test falsification_flag_honored
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-contract-backend --test
+      falsification_flag_honored`. That test target does not exist in
+      xpile-contract-backend, and no `#[test] fn falsification_flag_honored`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `falsification_flag_honored` in `xpile-contract-backend``) and never
+      ran. The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Flag is ignored or partially honored. Either falsification tests
       bleed into "clean" paper rendering, or they get silently dropped
@@ -734,7 +786,16 @@ falsification_tests:
     prediction: |
       hash(contract, config) before == hash(contract, config) after render().
     test: |
-      cargo test -p xpile-contract-backend --test render_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-contract-backend --test
+      render_no_mutation`. That test target does not exist in
+      xpile-contract-backend, and no `#[test] fn render_no_mutation` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `render_no_mutation` in
+      `xpile-contract-backend``) and never ran. The rule above is unchanged
+      and may well be exercised by tests elsewhere in the tree; what was
+      false is this command. Re-pointing this entry at a real falsifier is
+      open work.
     if_fails: |
       Hidden side effects break render-caching and multi-backend pipelines.
     ship_blocking: true

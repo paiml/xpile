@@ -967,7 +967,16 @@ falsification_tests:
     prediction: |
       `def f : Nat := 42` → `fn f() -> u64 { 42 }` (not Result<_,_>).
     test: |
-      cargo test -p xpile-lean-codegen --test total_def_returns_r
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test
+      total_def_returns_r`. That test target does not exist in
+      xpile-lean-codegen, and no `#[test] fn total_def_returns_r` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `total_def_returns_r` in
+      `xpile-lean-codegen``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Translation conflates totality with partiality; needless wrapper noise.
     ship_blocking: true
@@ -984,7 +993,16 @@ falsification_tests:
       `partial def loop : Unit := loop` → `#[partial_translation] fn loop()
       -> Result<(), NonTermination> { ... }`.
     test: |
-      cargo test -p xpile-lean-codegen --test partial_def_wraps_result
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test
+      partial_def_wraps_result`. That test target does not exist in
+      xpile-lean-codegen, and no `#[test] fn partial_def_wraps_result`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `partial_def_wraps_result` in `xpile-lean-codegen``) and never ran.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Partial Lean def silently lowered as total Rust fn — non-termination
       becomes UB-equivalent (infinite loop, no budget).
@@ -1001,7 +1019,16 @@ falsification_tests:
       A Lean input containing only `theorem foo : 1 + 1 = 2 := rfl`
       produces a Rust file with zero `fn`/`struct`/`impl`/`const` items.
     test: |
-      cargo test -p xpile-lean-codegen --test theorem_emits_no_rust
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test
+      theorem_emits_no_rust`. That test target does not exist in
+      xpile-lean-codegen, and no `#[test] fn theorem_emits_no_rust` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `theorem_emits_no_rust` in
+      `xpile-lean-codegen``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Theorems incorrectly treated as executable; bloat in emitted Rust.
     ship_blocking: true
@@ -1016,7 +1043,16 @@ falsification_tests:
       `inductive T | A (x : Nat) (y : Nat) | B (z : String)` →
       `enum T { A(u64, u64), B(String) }` with arities 2 and 1.
     test: |
-      cargo test -p xpile-lean-codegen --test inductive_arity_preserved
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test
+      inductive_arity_preserved`. That test target does not exist in
+      xpile-lean-codegen, and no `#[test] fn inductive_arity_preserved`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `inductive_arity_preserved` in `xpile-lean-codegen``) and never ran.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Pattern-match exhaustiveness checks misalign; data corruption.
     ship_blocking: true
@@ -1033,7 +1069,15 @@ falsification_tests:
       ≥ 5 lines of `///` or `//` comment containing the substring
       "AXIOM" before the `unsafe extern` block.
     test: |
-      cargo test -p xpile-lean-codegen --test axiom_has_warning
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test axiom_has_warning`.
+      That test target does not exist in xpile-lean-codegen, and no `#[test]
+      fn axiom_has_warning` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `axiom_has_warning` in `xpile-lean-codegen``) and never ran. The rule
+      above is unchanged and may well be exercised by tests elsewhere in the
+      tree; what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Axioms slip into Rust as ordinary externs; reviewers miss them.
     ship_blocking: true
@@ -1049,7 +1093,16 @@ falsification_tests:
       `noncomputable def f := Classical.choice ...` → fn body contains
       `panic!("noncomputable ...")`.
     test: |
-      cargo test -p xpile-lean-codegen --test noncomputable_panics
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test
+      noncomputable_panics`. That test target does not exist in
+      xpile-lean-codegen, and no `#[test] fn noncomputable_panics` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `noncomputable_panics` in
+      `xpile-lean-codegen``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Noncomputable def silently lowered as default value — wrong
       runtime behavior on accidental call.
@@ -1066,7 +1119,16 @@ falsification_tests:
       grep -c '/// Contract: C-' target/rust/lean_out.rs >=
       count of fn/struct/enum/impl items in the file.
     test: |
-      cargo test -p xpile-lean-codegen --test every_item_cites_contract
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test
+      every_item_cites_contract`. That test target does not exist in
+      xpile-lean-codegen, and no `#[test] fn every_item_cites_contract`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `every_item_cites_contract` in `xpile-lean-codegen``) and never ran.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Citation bridge incomplete on code-lane side; reviewer cannot
       trace emitted Rust back to a contract.
@@ -1081,7 +1143,15 @@ falsification_tests:
     prediction: |
       hash(lean_ast) before == hash(lean_ast) after xlate().
     test: |
-      cargo test -p xpile-lean-codegen --test xlate_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test xlate_no_mutation`.
+      That test target does not exist in xpile-lean-codegen, and no `#[test]
+      fn xlate_no_mutation` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `xlate_no_mutation` in `xpile-lean-codegen``) and never ran. The rule
+      above is unchanged and may well be exercised by tests elsewhere in the
+      tree; what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Hidden side effects; cache key invalidates spuriously.
     ship_blocking: true
@@ -1098,7 +1168,16 @@ falsification_tests:
       `impl Ord for u64 { fn compare(...) { ... } }` — exactly one
       `compare` method, no extras, no renames.
     test: |
-      cargo test -p xpile-lean-codegen --test instance_method_1to1
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-codegen --test
+      instance_method_1to1`. That test target does not exist in
+      xpile-lean-codegen, and no `#[test] fn instance_method_1to1` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `instance_method_1to1` in
+      `xpile-lean-codegen``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Methods dropped, renamed, or added — Rust impl doesn't satisfy
       the trait contract that the Lean typeclass promised.

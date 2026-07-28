@@ -936,7 +936,16 @@ falsification_tests:
       parse("Let $x + y = z$.") and parse("Let \(x + y = z\).") yield
       the same `equations:` map.
     test: |
-      cargo test -p latex-contract-frontend --test inline_math_delimiter_equiv
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p latex-contract-frontend --test
+      inline_math_delimiter_equiv`. That test target does not exist in
+      latex-contract-frontend, and no `#[test] fn
+      inline_math_delimiter_equiv` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `inline_math_delimiter_equiv` in `latex-contract-frontend``) and
+      never ran. The rule above is unchanged and may well be exercised by
+      tests elsewhere in the tree; what was false is this command.
+      Re-pointing this entry at a real falsifier is open work.
     if_fails: |
       Parser is delimiter-sensitive — author has to pick one style.
     ship_blocking: true
@@ -951,7 +960,16 @@ falsification_tests:
       A 3-row align env produces 3 equations entries (assuming no
       blank rows).
     test: |
-      cargo test -p latex-contract-frontend --test align_rows_to_equations
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p latex-contract-frontend --test
+      align_rows_to_equations`. That test target does not exist in
+      latex-contract-frontend, and no `#[test] fn align_rows_to_equations`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `align_rows_to_equations` in `latex-contract-frontend``) and never
+      ran. The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Multi-row math collapsed into a single equation — author loses
       per-row granularity (and per-row falsification testing).
@@ -968,7 +986,16 @@ falsification_tests:
       A document with one theorem environment and zero math spans
       yields `len(equations) == 0` and `len(proof_obligations) == 1`.
     test: |
-      cargo test -p latex-contract-frontend --test theorem_env_is_obligation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p latex-contract-frontend --test
+      theorem_env_is_obligation`. That test target does not exist in
+      latex-contract-frontend, and no `#[test] fn theorem_env_is_obligation`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `theorem_env_is_obligation` in `latex-contract-frontend``) and never
+      ran. The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Theorems treated as equations — contract structure broken.
     ship_blocking: true
@@ -983,7 +1010,16 @@ falsification_tests:
       The string content between `\begin{proof}` and `\end{proof}`
       cannot be substring-matched in serialized YAML.
     test: |
-      cargo test -p latex-contract-frontend --test proof_body_not_serialized
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p latex-contract-frontend --test
+      proof_body_not_serialized`. That test target does not exist in
+      latex-contract-frontend, and no `#[test] fn proof_body_not_serialized`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `proof_body_not_serialized` in `latex-contract-frontend``) and never
+      ran. The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Proof prose leaks into contract YAML; cross-format provenance
       breaks; Lean lane and YAML lane diverge.
@@ -999,7 +1035,16 @@ falsification_tests:
       `parse("see \cite{C-XLATE-PY-LIST-TO-VEC}").citations` contains
       `ContractId("C-XLATE-PY-LIST-TO-VEC")`.
     test: |
-      cargo test -p latex-contract-frontend --test cite_preserved
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p latex-contract-frontend --test
+      cite_preserved`. That test target does not exist in
+      latex-contract-frontend, and no `#[test] fn cite_preserved` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `cite_preserved` in
+      `latex-contract-frontend``) and never ran. The rule above is unchanged
+      and may well be exercised by tests elsewhere in the tree; what was
+      false is this command. Re-pointing this entry at a real falsifier is
+      open work.
     if_fails: |
       Citation bridge broken on the LaTeX side — audit chain incomplete.
     ship_blocking: true
@@ -1015,7 +1060,16 @@ falsification_tests:
       `\begin{remark}Output MUST be sorted.\end{remark}` →
       falsification_tests entry with ship_blocking: true.
     test: |
-      cargo test -p latex-contract-frontend --test remark_must_is_blocking
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p latex-contract-frontend --test
+      remark_must_is_blocking`. That test target does not exist in
+      latex-contract-frontend, and no `#[test] fn remark_must_is_blocking`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `remark_must_is_blocking` in `latex-contract-frontend``) and never
+      ran. The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Normative language not recognized — important constraints lost.
     ship_blocking: false
@@ -1029,7 +1083,16 @@ falsification_tests:
     prediction: |
       hash(input_str) before == hash(input_str) after parse().
     test: |
-      cargo test -p latex-contract-frontend --test parse_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p latex-contract-frontend --test
+      parse_no_mutation`. That test target does not exist in
+      latex-contract-frontend, and no `#[test] fn parse_no_mutation` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `parse_no_mutation` in
+      `latex-contract-frontend``) and never ran. The rule above is unchanged
+      and may well be exercised by tests elsewhere in the tree; what was
+      false is this command. Re-pointing this entry at a real falsifier is
+      open work.
     if_fails: |
       Parser holds shared mutable state — multi-doc invocations corrupt.
     ship_blocking: true

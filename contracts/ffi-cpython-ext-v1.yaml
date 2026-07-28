@@ -776,7 +776,15 @@ falsification_tests:
       A C extension whose error path forgets to DECREF an owned reference
       causes the leak tracker to report a non-empty leak set.
     test: |
-      cargo test -p xpile-oracle --test ffi_refcount_leak_detection
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-oracle --test
+      ffi_refcount_leak_detection`. That test target does not exist in
+      xpile-oracle, and no `#[test] fn ffi_refcount_leak_detection` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `ffi_refcount_leak_detection`
+      in `xpile-oracle``) and never ran. The rule above is unchanged and may
+      well be exercised by tests elsewhere in the tree; what was false is
+      this command. Re-pointing this entry at a real falsifier is open work.
     if_fails: |
       Oracle is not instrumenting refcounts — the entire safety story
       for hybrid transpile depends on this catching leaks.
@@ -791,7 +799,15 @@ falsification_tests:
     prediction: |
       copies(transpile(passthrough(ndarray_1GB))) == 0 must hold.
     test: |
-      cargo test -p xpile-oracle --test ffi_ndarray_zero_copy
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-oracle --test ffi_ndarray_zero_copy`.
+      That test target does not exist in xpile-oracle, and no `#[test] fn
+      ffi_ndarray_zero_copy` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `ffi_ndarray_zero_copy` in `xpile-oracle``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       The translation introduced a defensive clone. Performance contract
       broken — this would make NumPy-heavy code unusably slow.
@@ -807,7 +823,15 @@ falsification_tests:
       Running the agent with an incomplete manifest exits with
       AgentError::ManifestIncomplete or budget-exhausted.
     test: |
-      cargo test -p xpile-agent --test ffi_manifest_incomplete
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-agent --test ffi_manifest_incomplete`.
+      That test target does not exist in xpile-agent, and no `#[test] fn
+      ffi_manifest_incomplete` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `ffi_manifest_incomplete` in `xpile-agent``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       The reconciliation step missed a call site — silent miscompile risk.
     ship_blocking: true
@@ -821,7 +845,15 @@ falsification_tests:
       Translation emits a #[pyo3::pyfunction] or equivalent that holds
       the GIL for the duration of the CPython API touch.
     test: |
-      cargo test -p xpile-rust-codegen --test ffi_gil_held
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-rust-codegen --test ffi_gil_held`. That
+      test target does not exist in xpile-rust-codegen, and no `#[test] fn
+      ffi_gil_held` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `ffi_gil_held` in `xpile-rust-codegen``) and never ran. The rule above
+      is unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Some translation path emitted bare extern "C" without a GIL guard.
     ship_blocking: true
@@ -836,7 +868,15 @@ falsification_tests:
       For any input where hybrid(x) != transpiled(x), oracle returns
       ComparisonResult::Divergence.
     test: |
-      cargo test -p xpile-oracle --test ffi_endtoend_divergence
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-oracle --test ffi_endtoend_divergence`.
+      That test target does not exist in xpile-oracle, and no `#[test] fn
+      ffi_endtoend_divergence` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `ffi_endtoend_divergence` in `xpile-oracle``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Oracle equality is too loose (likely using == on float without
       tolerance) — semantic divergence going undetected.
@@ -851,7 +891,15 @@ falsification_tests:
     prediction: |
       stat(orig_python) and stat(orig_c) before == after the session.
     test: |
-      cargo test -p xpile-core --test ffi_frame_invariant
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-core --test ffi_frame_invariant`. That
+      test target does not exist in xpile-core, and no `#[test] fn
+      ffi_frame_invariant` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `ffi_frame_invariant` in `xpile-core``) and never ran. The rule above
+      is unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Transpile is touching the source — destructive, blocks user trust.
     ship_blocking: true
@@ -864,7 +912,15 @@ falsification_tests:
     prediction: |
       leaks_after_run() == ∅ for every passing fixture.
     test: |
-      cargo test -p xpile-oracle --test ffi_leak_tracker_clean
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-oracle --test ffi_leak_tracker_clean`.
+      That test target does not exist in xpile-oracle, and no `#[test] fn
+      ffi_leak_tracker_clean` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `ffi_leak_tracker_clean` in `xpile-oracle``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       A refcount or memory leak survived oracle exit — likely a borrowed-
       vs-new-reference confusion in the translation.

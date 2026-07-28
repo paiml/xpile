@@ -1072,7 +1072,15 @@ falsification_tests:
     prediction: |
       `grep -c 'mma\.sync\.aligned' target/ptx/gemm.ptx` returns ≥ 1.
     test: |
-      cargo test -p xpile-ptx-codegen --test ptx_emits_mma_sync
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-ptx-codegen --test ptx_emits_mma_sync`.
+      That test target does not exist in xpile-ptx-codegen, and no `#[test]
+      fn ptx_emits_mma_sync` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `ptx_emits_mma_sync` in `xpile-ptx-codegen``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Backend silently fell back to scalar mad.lo — defeats the
       tensor-core contract. Likely cause: missing PTX feature gate or
@@ -1090,7 +1098,16 @@ falsification_tests:
       For #[pipeline_depth=2]: PTX contains `cp.async.wait_group 1` and
       contains zero occurrences of `cp.async.wait_group 0`.
     test: |
-      cargo test -p xpile-ptx-codegen --test ptx_pipeline_depth_correct
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-ptx-codegen --test
+      ptx_pipeline_depth_correct`. That test target does not exist in
+      xpile-ptx-codegen, and no `#[test] fn ptx_pipeline_depth_correct`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `ptx_pipeline_depth_correct` in `xpile-ptx-codegen``) and never ran.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Pipeline did not unroll; load and compute are fully serialized.
       Loses the entire point of software pipelining.
@@ -1105,7 +1122,15 @@ falsification_tests:
     prediction: |
       Sum of `.shared .align _ .b8 buf[K]` over the PTX ≤ 49152.
     test: |
-      cargo test -p xpile-ptx-codegen --test ptx_smem_budget
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-ptx-codegen --test ptx_smem_budget`.
+      That test target does not exist in xpile-ptx-codegen, and no `#[test]
+      fn ptx_smem_budget` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `ptx_smem_budget` in `xpile-ptx-codegen``) and never ran. The rule
+      above is unchanged and may well be exercised by tests elsewhere in the
+      tree; what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Kernel launch fails with CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES on
       sm_80 hardware. Likely a tile-size or accumulator-buffer regression.
@@ -1121,8 +1146,15 @@ falsification_tests:
       max_abs_diff(run(emitted_kernel, A, B), cublas_gemm(A, B)) < 0.01
       for the 1024×1024 fp16 fixture.
     test: |
-      cargo test -p xpile-ptx-codegen --test ptx_matches_cublas
-        -- --ignored  # requires GPU runner
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-ptx-codegen --test ptx_matches_cublas`.
+      That test target does not exist in xpile-ptx-codegen, and no `#[test]
+      fn ptx_matches_cublas` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `ptx_matches_cublas` in `xpile-ptx-codegen``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Numerical drift exceeds fp16 epsilon. Likely an fp16 accumulator
       bug (should be fp32) or a row/column-major layout mismatch.
@@ -1138,7 +1170,16 @@ falsification_tests:
     prediction: |
       hash(module) before == hash(module) after PtxBackend::lower().
     test: |
-      cargo test -p xpile-ptx-codegen --test backend_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-ptx-codegen --test
+      backend_no_mutation`. That test target does not exist in
+      xpile-ptx-codegen, and no `#[test] fn backend_no_mutation` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `backend_no_mutation` in
+      `xpile-ptx-codegen``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Backend has hidden side effects. Breaks the compile-cache
       determinism invariant; cache key reuse may emit stale PTX.
@@ -1153,7 +1194,16 @@ falsification_tests:
     prediction: |
       Artifact.citations.contains(ContractId("C-COMPILE-RUST-TO-PTX-MMA")).
     test: |
-      cargo test -p xpile-ptx-codegen --test backend_cites_compile_contract
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-ptx-codegen --test
+      backend_cites_compile_contract`. That test target does not exist in
+      xpile-ptx-codegen, and no `#[test] fn backend_cites_compile_contract`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `backend_cites_compile_contract` in `xpile-ptx-codegen``) and never
+      ran. The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Backend emits MMA / cp.async without contractual sanction. Layer-5
       provenance is broken; audit chain cannot tie hardware instructions
