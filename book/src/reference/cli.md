@@ -172,9 +172,25 @@ contracts land ahead of their Lean or Kani votes.
 ## `xpile audit`
 
 Reports falsifier F1 (Layer-1 contract citation coverage) for a
-corpus. Walks the given path, transpiles every recognised source
-file, and reports the % of emitted functions that carry a
-`// xpile-contract: <ID>` citation.
+corpus. Walks the given path, transpiles every recognised source file,
+and reports the % of **the functions that require a citation** which
+actually carry one. The denominator is *not* every emitted function: it
+is the subset whose `applicable_contracts()` is non-empty
+(XPILE-FALSIFY-002 / PMAT-023 narrowed it there precisely because
+comparison-only and logical-only functions correctly emit none). The
+report prints both numbers on separate lines — `functions emitted` and
+`require citation` — and F1 is the second one's coverage. On a corpus
+of three functions of which one does arithmetic, it reads:
+
+```text
+  functions emitted   : 3
+  require citation    : 1
+  with citation       : 1
+  coverage (F1)       : 100.0%   [OK]
+```
+
+Through v0.1.617 this page described the denominator as "emitted
+functions", which reads that same output as 33.3%.
 
 ```bash
 xpile audit <PATH>

@@ -66,11 +66,13 @@ enum Cmd {
         /// runtime (the "universal binary" path). `--target rust` only.
         #[arg(long)]
         emit_crate: Option<PathBuf>,
-        /// Contract-citation emission. `on` (default) annotates every emitted
-        /// construct with its `// xpile-contract:` citations across the
-        /// applicable L1–L5 taxonomy layers; `off` suppresses them for
-        /// annotation-free output. The library counterpart is
-        /// `xpile_backend::strip_contract_citations`.
+        /// Contract-citation emission. `on` (default) annotates each emitted
+        /// construct that HAS an applicable contract with its
+        /// `// xpile-contract:` citations across the L1–L5 taxonomy layers —
+        /// often none, since a comparison-only or call-only body has no
+        /// governing contract and is emitted with no citation line at all;
+        /// `off` suppresses them for annotation-free output. The library
+        /// counterpart is `xpile_backend::strip_contract_citations`.
         #[arg(long, default_value = "on", value_parser = ["on", "off"])]
         contracts: String,
         /// Hardware profile for hardware-dependent targets. `ptx` selects the
@@ -83,8 +85,12 @@ enum Cmd {
     },
     /// Report falsifier F1 (Layer-1 contract citation coverage) for
     /// a corpus. Walks the given path, transpiles every source file
-    /// xpile recognises, and reports the % of emitted functions that
-    /// carry a `// xpile-contract: <ID>` citation. Drives the
+    /// xpile recognises, and reports the % of the functions that
+    /// REQUIRE a `// xpile-contract: <ID>` citation which carry one.
+    /// The denominator is the functions whose `applicable_contracts()`
+    /// is non-empty, NOT every emitted function — XPILE-FALSIFY-002
+    /// narrowed it there because comparison-only and logical-only
+    /// bodies correctly emit none. Both counts are printed. Drives the
     /// XPILE-FALSIFY-001 metric from `sub/provability-roadmap.md`.
     Audit {
         /// Path to scan (file or directory). Defaults to the current

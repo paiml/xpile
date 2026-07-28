@@ -115,11 +115,22 @@ includes:
 - `if`/`elif`/`else` chains
 - function calls including self-recursion
 
-Each emitted function carries a `xpile-contract:` citation naming the
-contract that governs **its own** types. Two things vary independently,
-and both are measured by
-`crates/xpile/tests/citation_id_matrix_witness.rs` (XPILE-CITEMATRIX-001)
-rather than asserted here:
+An emitted function carries a `xpile-contract:` citation **only when its
+body uses a construct some contract governs** — a minority of the
+functions in a typical corpus, and by design.
+`Function::applicable_contracts()` returns nothing for comparison-only,
+logical-only, constant-only and call-only bodies, and the backends emit
+one line per returned ID, so an empty list emits no line at all.
+Measured: `def ident(a: int) -> int: return a` and a comparison-driven
+`pick` emit **zero** citations from `--target rust`, `--target ruchy`
+and `--target lean`, at exit 0. `xpile audit`'s F1 denominator excludes
+exactly those functions (XPILE-FALSIFY-002), and
+`crates/xpile/tests/citation_surface_witness.rs` (XPILE-CITESURFACE-001)
+pins it.
+
+When a citation *is* emitted, two things vary independently, and both
+are measured by `crates/xpile/tests/citation_id_matrix_witness.rs`
+(XPILE-CITEMATRIX-001) rather than asserted here:
 
 **Which contract, by the function's type** — the same ID on every code
 lane:
@@ -149,12 +160,17 @@ red rather than quietly disagree with the other two.
 
 Through v0.1.617 this section said *"Each emitted Rust/Ruchy/Lean
 function carries a `// xpile-contract: C-PY-INT-ARITH` citation for the
-arithmetic contract"* — one sentence, false twice. The ID is
+arithmetic contract"* — one sentence, false **three** times. The ID is
 **type-directed**, so `C-PY-INT-ARITH` is right only for `int`
-functions; and `//` is not the Lean form. PMAT-1405 changed the Lean
-lane to a `/-- … -/` docstring **deliberately**, because a file `lean`
-must actually parse cannot carry the old attribute — and this page went
-on naming the Rust comment syntax for it (PMAT-1445).
+functions; `//` is not the Lean form, because PMAT-1405 changed that
+lane to a `/-- … -/` docstring **deliberately** (a file `lean` must
+actually parse cannot carry the old attribute) and this page went on
+naming the Rust comment syntax for it; and the citation is not
+universal at all. PMAT-1445 corrected the first two and, in replacing
+the sentence, restated the third as *"Each emitted function carries a
+`xpile-contract:` citation"*. PMAT-1447 removed it and gated the class
+across every surface that states it.
+
 
 For the full list, see the
 [CHANGELOG `Python subset (live, runtime-verified)`](https://github.com/paiml/xpile/blob/main/CHANGELOG.md)
