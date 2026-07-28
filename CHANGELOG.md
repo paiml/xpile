@@ -7,6 +7,63 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The "what can I use instead" message listed two spellings that refuse every input (PMAT-1434)
+
+When no frontend claims a file, `xpile transpile` answers with the one message
+whose entire job is to say what the reader could use instead. Measured at
+`da411cef` on a force-rebuilt binary:
+
+```text
+$ xpile transpile notes.txt --target rust
+Error: no frontend handles `.txt`; known extensions: ["py", "pyi", "c", "h",
+       "ruchy", "sh", "bash", "zsh", "mk", "wat"]
+```
+
+Two of those ten refuse **every** input — `.ruchy` ("the Ruchy frontend has no
+parser — Ruchy is an OUTPUT language only") and `.mk` ("there is no Makefile
+dialect") — and the two extensionless spellings `matches_path` claims,
+`Makefile` and `Dockerfile`, appeared in it not at all. Over-reported and
+under-reported in one line, on the **error path**, where the reader is looking
+for what to use instead.
+
+The cause is nobody's mistake. `extensions()` is a *routing* table, and keeping
+a refusing spelling in it is a deliberate decision recorded in three places —
+including `Frontend::lowers_input`'s own doc comment, which justifies
+routing-only registration as getting the file "a specific refusal … instead of
+the generic `no frontend handles .<ext>` message". That decision is right, and
+it is exactly what makes `extensions()` the set of spellings xpile **routes**
+while this message printed it as the set xpile **reads**. The registry has
+carried the per-claim disposition since PMAT-1346 (`lowers_input()`) and
+PMAT-1433 (`refused_claims()`); this consumer read neither. PMAT-1433 fixed the
+class in the two surfaces it enumerated (`xpile info`, the book) and landed one
+surface short of its own class — no test anywhere asserted on this string.
+
+Fixed: the message is derived from the registry, in the same `*.<ext>`
+vocabulary the book and `refused_claims()` use, through one renderer shared by
+both branches of the dispatch closure (PMAT-1387 — a fix to one branch is not a
+fix to the function):
+
+```text
+Error: no frontend handles `.txt`; spellings that LOWER: ["*.py", "*.pyi",
+       "*.c", "*.h", "*.sh", "*.bash", "*.zsh", "*.wat"]; ROUTED but REFUSED
+       (no parser): ["*.ruchy", "*.mk", "Makefile", "Dockerfile"]
+```
+
+Gated by `crates/xpile/tests/frontend_dispatch_message_witness.rs`
+(XPILE-FRONTEND-CLAIM-002, 7 tests): both lists compared to the **registry** in
+both directions, the two required to partition the claimed spellings
+(structural, so no roster is written down), the extensionless branch required to
+carry identical lists, and — so the file is not purely transitive through
+XPILE-FRONTEND-CLAIM-001 — every spelling the *message* publishes driven through
+the shipped binary, each refusal required to really fail while the same bytes
+lower at `probe.sh`. Red half run in four separate executions, at least one per
+test.
+
+One half is deliberately **not** closed and says so in the gate: `published ⊆
+routed` is checked, `routed ⊆ published` is not, because `matches_path` is a
+predicate with no enumeration behind it. A frontend that overrode it to claim a
+spelling it *lowers* would still be invisible.
+
 ### `.mk` was published as handled by a "Real POSIX parser" that refuses every `.mk` file (PMAT-1433)
 
 `Frontend::lowers_input()` (PMAT-1346) is a **whole-frontend boolean over a
