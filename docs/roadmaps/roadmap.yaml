@@ -19444,3 +19444,102 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1426
+  title: 'PMAT-1426: [src] THE `--target lean` LIST SUBSCRIPT SILENTLY RETURNED THE WRONG ELEMENT
+    FOR A NEGATIVE INDEX: `a[-1]` lowered to `a[(-1: Int).toNat]!`, and `Int.toNat` CLAMPS a
+    negative to `0`, so the emission answered the FIRST element where CPython answers the LAST —
+    `f [10, 20, 30]` was `10` against CPython''s `30`, at exit 0, citing
+    `/-- xpile-contract: C-XLATE-PY-LIST-TO-VEC -/`. The under-range case was wrong in the same
+    direction and worse: CPython raises `IndexError` for `[10,20,30][-5]`, while `(-5).toNat`
+    clamped back into range and returned `10`. Only the OVER-range case was already faithful,
+    because `[...]!` carries its own `outOfBounds` panic. A runtime subscript `a[i]` carried the
+    defect for every negative value of `i`.'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30, PMAT-1373). Took
+    PMAT-1425''s recorded standing lead (c) verbatim — "the sweep that found this covered the
+    integer BINARY operators; the Lean lane''s float, string and list vocabularies … have no
+    corpus-driven ACCEPT-implies-ELABORATES gate of their own". A 55-source sweep of all three
+    vocabularies was run through `xpile transpile --target lean` and every accepted emission
+    through `lean` 4.15.0. ★ THE ELABORATION HALF CAME BACK COMPLETELY CLEAN — before AND after
+    this fix. The lead was honest and its predicted defect class does not exist here. ★ THE
+    DEFECT WAS INVISIBLE TO THE PROPERTY THE LEAD NAMED. `a[-1]` elaborates perfectly; it just
+    computes the wrong number. The hunt only found it because the sweep''s accepted rows were
+    then driven for their VALUE against CPython, which is the assertion PMAT-1425 had bolted on
+    as a secondary check and which turns out to be the load-bearing one for this vocabulary. A
+    gate built to the lead''s literal wording (ACCEPT implies ELABORATES) would have passed on
+    this defect forever. ★ SAME CLAMPING SHAPE, ONE VOCABULARY OVER: `Int.toNat` clamping a
+    negative to `0` is exactly what made `1024 >> -1` answer `1024` in PMAT-1425, one slice
+    earlier, in the same file. Fixing a clamp is not the same as sweeping for clamps: grep the
+    emitter for the COERCION, not for the operator. ★ CROSS-LANE ASYMMETRY IS THE TELL, AGAIN:
+    `--target rust` and `--target ruchy` both emit the Python rule explicitly —
+    `let __lidx = if __li < 0 { __lc.len() as i64 + __li } else { __li }; if __lidx < 0 || __lidx
+    as usize >= __lc.len() { panic!("xpile: IndexError: list index out of range"); }` — while
+    only Lean returned a wrong value at exit 0. Diverging dispositions for one input across lanes
+    IS the defect (PMAT-1425 lesson 2, fired again unchanged).'
+  fix: 'FIX FORWARD, do not refuse. Python''s rule (`xs[i] == xs[len(xs) + i]` for `i < 0`, and
+    IndexError when the resolved index leaves `0 ..< len`) is spellable in CORE Lean with no
+    monad, no Mathlib and no signature change, so PMAT-1425 lesson 4 — scope a refusal to what you
+    CANNOT spell — says to lower it faithfully. `Expr::Index` now emits
+    `(let __xc := COLL; let __xi : Int := IDX; let __xj : Int := (if __xi < 0 then ((__xc).length
+    : Int) + __xi else __xi); if __xj < 0 then panic! "xpile: IndexError: list index out of range"
+    else __xc[__xj.toNat]!)`. Collection and index are each bound ONCE so a compound operand is
+    not emitted twice; `let` is lexically scoped, so a nested `a[b[-1]]` reusing the names is
+    correct (witnessed, not assumed). The upper bound needs no new code — `[...]!`''s own
+    `outOfBounds` panic already reports it; only the STILL-negative case needs the explicit guard,
+    because `.toNat` would clamp it back into range. `panic!` requires `Inhabited` at the element
+    type, which `[...]!` already required, so no type-class surface changed (witnessed at
+    `String`, `List Int` and `String × Int` element types). ★ SCOPE MEASURED, NOT ASSUMED:
+    `Expr::Index` is list-only in this lane — dict reads refuse upstream ("require the Std.HashMap
+    Lean encoding"), tuples refuse ("Python tuples … not yet supported"), and string indexing
+    lowers to `Expr::StrCharAt`, which refuses. All three are pinned as corpus rows. ★ CORPUS
+    DELTA MEASURED BEFORE PUSHING (PMAT-1425b''s lesson) against a provenance-verified pre-fix
+    binary built with `command cargo --target-dir` into the worktree''s own target dir:
+    `xpile audit --target lean` gave emitted 160, requiring 141, with_citation 119, errors 805,
+    F1 84.3% on BOTH binaries — a delta of exactly zero. Nothing started or stopped lowering; this
+    is a pure semantics change. As with PMAT-1394/1425 it changes no `contracts/*.yaml`, so no
+    Diamond resync is required.'
+  witness: '`crates/xpile/tests/lean_list_index_witness.rs`, 4 tests over a 34-source corpus
+    (24 accept / 10 refuse, 39 value obligations). Stated over the FLOAT / STRING / LIST
+    VOCABULARY rather than over the fixed arm, because the gap was a vocabulary with no gate:
+    (1) ACCEPT implies ELABORATES; (2) ACCEPT implies COMPUTES CPYTHON''S VALUE, discharged
+    in-file by `by decide`, or `by native_decide` for `Float`, which has no `DecidableEq` —
+    this is the assertion with teeth, and the file says so, because assertion 1 passed on this
+    defect for the whole 0.1.x line; (3) REFUSE implies FOR THE STATED REASON, keyed per source
+    (PMAT-1410); (4) anti-vacuity floors on BOTH dispositions AND on the obligation count, so a
+    future edit cannot shrink the value half back to nothing. Boundary rows chosen so a clamp
+    cannot pass by accident: `a[-3]` on a 3-list and `a[-1]` on a 1-list are exactly where wrap
+    and clamp COINCIDE, and are pinned alongside the rows where they diverge. ★ RED HALF RUN:
+    with `crates/xpile-lean-codegen/src/lib.rs` reverted to origin/main, 2 of the 4 tests FAIL
+    (`lean_float_str_list_vocabulary_elaborates_and_agrees_with_cpython` on
+    `f [10, 20, 30] = 30`, and `lean_list_index_emission_resolves_negative_subscripts`), while
+    the refusal and premise tests correctly stay green — they are true of both revisions. A
+    second test holds the refusal half and a third the emission SHAPE without a Lean toolchain,
+    so the hosted workspace-test runner (no `lean`) does not skip the whole file. A fourth
+    MEASURES the premise the guard rests on — `(-1 : Int).toNat = 0`, and
+    `[10,20,30][(-1 : Int).toNat]! = 10`, i.e. the defect itself — so if a future toolchain
+    changes `Int.toNat` the gate reds instead of leaving a rationale on an expired premise
+    (PMAT-1421), and it carries a POSITIVE CONTROL so a broken `run_lean` cannot make it pass
+    for free.'
+  docs: 'Rustdoc at the `Expr::Index` arm carrying the executed CPython/lean divergence, the
+    Python rule being implemented, why only the still-negative case needs a guard, and the
+    let-shadowing justification. CHANGELOG carries the executed transcript and states plainly
+    that the elaboration sweep the lead predicted came back clean.'
+  still_open: 'Named, not fixed: (a) an out-of-range subscript reports via Lean `panic!`, which
+    PRINTS and then returns `default` rather than aborting as Rust''s `panic!` does — the
+    disposition is a report either way, but the two lanes differ after the report; a faithful
+    `Except`/`Option` return would change the lane''s signature shape and its `by decide` witness
+    form, the same wall PMAT-1425 hit for a runtime shift count. (b) THE OTHER SEVEN BACKENDS
+    STILL HAVE NO ACCEPT-implies-VALUE GATE AT ALL — only Lean and WASM have a toolchain that can
+    both reject and EXECUTE their output; WGSL/SPIR-V validate through naga (a compile check, not
+    a value check) and ruchy/forjar/shell have no post-emit checker. (c) the productive question
+    this slice answers is not "which vocabulary is ungated" but "where else does the emitter
+    COERCE across a semantic boundary" — `Int.toNat` has now produced two exit-0 wrong answers in
+    two consecutive slices, and the emitter''s other narrowing casts have not been swept.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
