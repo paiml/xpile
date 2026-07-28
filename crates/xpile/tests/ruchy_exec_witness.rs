@@ -20,12 +20,17 @@
 //! gate, which a string-compare against a frozen expectation cannot catch.
 //!
 //! HONEST SCOPE (why curated, not all fixtures): ruchy v4.2.1 executes only a
-//! SUBSET of what xpile emits. Re-measured over all 38 `oracle_fixtures/`
-//! (2026-07-27, `ruchy` v4.2.1, PMAT-1384 — the 2026-07-05 figures below were
-//! stale on the corpus size AND wrong on one count): `xpile --target ruchy`
-//! emits 38/38, `ruchy check` (parse) accepts 18/38, and this
-//! `ruchy transpile`→`rustc`→run chain completes 8/38 — every one matching
-//! CPython. The chain's two ceilings are ruchy-toolchain limitations, NOT
+//! SUBSET of what xpile emits. The corpus-wide counts are NOT written here any
+//! more — they are re-derived from the live fixture directory by
+//! `ruchy_conformance_witness.rs` (XPILE-RUCHYCONF-001) and published in
+//! `book/src/reference/backends.md`. This paragraph twice carried a hard-coded
+//! denominator that went stale the day a fixture landed: it read `38` on
+//! 2026-07-27 and a 39th arrived the next morning (PMAT-1427), so `38/38`,
+//! `18/38` and `8/38` were all wrong in the denominator while two of the three
+//! numerators stayed right — the shape PMAT-1396 rules out. The numerators, for
+//! orientation only: parse accepts about half, and the
+//! `ruchy transpile`→`rustc`→run chain completes about a fifth, every one
+//! matching CPython (PMAT-1446). The chain's two ceilings are ruchy-toolchain limitations, NOT
 //! xpile bugs:
 //!   * the interpreter lacks Rust methods the emitter uses (`checked_add`, …);
 //!   * `ruchy transpile` DROPS the parentheses xpile emits around

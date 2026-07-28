@@ -33,7 +33,7 @@ v0.1.617 this column published `bashrs`, which the CLI rejects outright
 | Backend | Name | `--target` | Status | Crate |
 |---|---|---|---|---|
 | Rust    | `rust` | `rust` | ✅ **Real emission** (Python-floor semantics, `.checked_*()` for `C-PY-INT-ARITH`) | `xpile-rust-codegen` |
-| Ruchy   | `ruchy` | `ruchy` | ✅ **Real emission** (same overflow semantics; compiles to Rust) | `xpile-ruchy-codegen` |
+| Ruchy   | `ruchy` | `ruchy` | ✅ **Real emission** (same overflow semantics; [how far it gets](#how-far-the-ruchy-lane-actually-gets)) | `xpile-ruchy-codegen` |
 | Lean 4  | `lean` | `lean` | ✅ **Real emission** (`def`, `Int.fdiv`/`Int.fmod`; `Int` is unbounded) | `xpile-lean-codegen` |
 | Shell   | `bashrs` | `shell` | ✅ **Real emission** (round-trip with bashrs-frontend) | `bashrs-backend` |
 | WASM    | `wasm` | `wasm` | ✅ **Real emission** (WebAssembly text; assembled and executed in CI) | `xpile-wasm-codegen` |
@@ -167,6 +167,40 @@ let artifact = backend.lower(&module, &config)?;
 The `Backend` trait surface is intentionally minimal — see
 [Adding a backend](../contributing/adding-a-backend.md) for the full
 implementation guide.
+
+### How far the Ruchy lane actually gets
+
+`✅ Real emission` above means xpile emits a `.ruchy` artifact for every input
+in its subset — and it does, for all of them. It does **not** mean the artifact
+survives the Ruchy toolchain. Measured over the repo's own
+`crates/xpile/tests/oracle_fixtures/*.py` with `ruchy` v4.2.1:
+
+<!-- XPILE-RUCHYCONF-001:BEGIN -->
+| stage | fixtures |
+|---|---|
+| `xpile transpile … --target ruchy` emits | 39 of 39 |
+| `ruchy check` (parse) accepts | 18 of 39 |
+| `ruchy transpile` produces Rust | 16 of 39 |
+| `rustc` compiles that Rust | 8 of 39 |
+<!-- XPILE-RUCHYCONF-001:END -->
+
+So **"compiles to Rust" holds for 8 of 39**, and 21 emitted artifacts do not
+parse as Ruchy at all (`Expected RightBrace, found Let`). Through v0.1.617 the
+Status cell said `compiles to Rust` with no qualifier and the README diagram
+said `full emission (compiles to Rust)` — both read as a property of the lane
+rather than of a minority of it (PMAT-1440 established the `✅` itself is
+honest; this is the parenthetical beside it).
+
+The counts are re-derived by
+`crates/xpile/tests/ruchy_conformance_witness.rs` (XPILE-RUCHYCONF-001) from
+the live fixture directory, with no denominator written down anywhere — so a
+39th fixture cannot silently make this table stale, which is how the sibling
+figures in `ruchy_exec_witness.rs` came to read `38`.
+
+⚠️ **CI cannot check the numbers.** `ruchy` is not installed in any workflow,
+so the four counts are verified only where the toolchain is present; the
+*wording* rule below them is checked everywhere. That split is stated here
+rather than left to be discovered.
 
 ## Error handling
 

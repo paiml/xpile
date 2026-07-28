@@ -7,6 +7,69 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### "Compiles to Rust" was published as a property of the Ruchy lane; it is a property of 8 fixtures in 39 (PMAT-1446)
+
+`backends.md`'s Status cell read *"✅ Real emission (same overflow semantics;
+compiles to Rust)"*, and `README.md`'s architecture diagram read *"Ruchy — full
+emission (compiles to Rust)"*. Measured over the repo's own `oracle_fixtures/`
+with `ruchy` v4.2.1:
+
+| stage | fixtures |
+|---|---|
+| `xpile … --target ruchy` emits | 39 of 39 |
+| `ruchy check` (parse) accepts | 18 of 39 |
+| `ruchy transpile` produces Rust | 16 of 39 |
+| `rustc` compiles that Rust | **8 of 39** |
+
+**Twenty-one emitted artifacts do not parse as Ruchy at all** (`Expected
+RightBrace, found Let`), so for most of the corpus the claim fails at the first
+step, before Rust is reached.
+
+**What was already honest**, recorded so it is not re-derived: the `✅` itself
+(PMAT-1440 verified input-dependence for all nine backends), **and** `README`'s
+*specific* example — `xpile transpile factorial.py --target ruchy` really does
+emit, parse, transpile and compile under `rustc`, measured end to end. *The
+falsehood was the universal, not the instance* — the same shape as PMAT-1438's
+shell-roundtrip transcript. Do not "correct" a true example.
+
+**The measurement was wrong the first time**, and it would have been a
+fabricated number inside a fix for fabricated numbers. The first sweep reported
+`rustc compiles: 0 of 39`. Cause: `rustc -o /dev/null` makes rustc create a temp
+dir beside its output, failing with *"couldn't create a temp dir: Permission
+denied … at path /dev/…"* — an **environment** error a naive harness reads as a
+**compile** error. The tell was that a hand-run of the same file looked fine —
+but that hand-run was piped to `head`, so the exit code read was `head`'s.
+Correct invocation is `--out-dir`. **When a sweep returns an absolute result (0
+of N, N of N), suspect the harness before the subject.**
+
+**Gated** by `crates/xpile/tests/ruchy_conformance_witness.rs`
+(`XPILE-RUCHYCONF-001`), and **the split is the point**: `ruchy` is installed in
+**no** CI workflow, so a toolchain gate is a developer-machine check by
+construction.
+
+1. the **wording** rule runs everywhere and is what holds the line in CI;
+2. the **corpus-size** rule also runs everywhere — every denominator must equal
+   the live fixture count, so a new fixture reds the page in CI *even where the
+   counts cannot be checked*;
+3. the **counts** rule re-derives the whole chain by equality, and discloses
+   loudly when the toolchain is absent.
+
+`ruchy_exec_witness.rs`'s header also loses its three hard-coded denominators
+(`38/38`, `18/38`, `8/38` — a 39th fixture landed the morning after they were
+"re-measured", so every denominator was wrong while two numerators stayed
+right). Doc-comment change only; no gate logic touched.
+
+**Red half run, six perturbations**, green control — including the behaviour
+half: **a new fixture landing** with the table not updated, which reds the
+toolchain-free half, the one CI can actually run.
+
+**And the gate flagged its own disclosure on the first run.** The wording scan
+was line-oriented, and the sentence explaining what the *old* text said wraps
+across lines. PMAT-1430's rule — a doc gate must distinguish **use** from
+**mention** — and the unit that carries the distinction is the paragraph.
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### The citation an emitted function carries is type-directed, and the book published it as a constant (PMAT-1445)
 
 One sentence in `book/src/reference/frontends.md`, false twice:

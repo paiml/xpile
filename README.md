@@ -139,7 +139,7 @@ Two pipelines share one YAML contract substrate.
 Frontends                        Backends
 ─────────                        ─────────
 Python  ─┐                  ┌─→  Rust          full emission, runtime-verified
-Shell   ─┤                  ├─→  Ruchy         full emission (compiles to Rust)
+Shell   ─┤                  ├─→  Ruchy         full emission (8 of 39 reach rustc — see the book)
 C       ─┼→  meta-HIR  ─→  ─┼─→  WebAssembly   native emission (linear-memory runtime)
 WASM    ─┘                  ├─→  Shell         POSIX round-trip (flat-command subset)
                             ├─→  PTX / WGSL / SPIR-V   GPU emission, executed on hardware
