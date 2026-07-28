@@ -30,15 +30,18 @@ equations:
   manifest_completeness:
     # PMAT-076: Lean refinement theorem locks in the manifest-
     # completeness modelling commitment. See
-    # contracts/lean/FfiCpythonExt.lean for the proof. TWELFTH
-    # and FINAL contract Lean theorem — completes the
-    # substrate.
+    # contracts/lean/FfiCpythonExt.lean for the proof. Twelfth
+    # contract Lean theorem — completed the then-12-contract
+    # substrate. Written as the FINAL one; it was not
+    # (PMAT-1456).
     lean_theorem: "XpileContracts.CFfiCpythonExt.manifest_completeness"
     lean_file: "contracts/lean/FfiCpythonExt.lean"
-    # PMAT-077: Kani harness completes the §14.4 quorum and
-    # makes the ENTIRE xpile substrate (12 contracts) reach
-    # 100% QUORUM coverage — every contract has paired Lean +
-    # Kani Bronze-tier discharges.
+    # PMAT-077, 2026-05-18: Kani harness completed the §14.4
+    # quorum and made the then-12-contract substrate (12
+    # contracts) reach 100% QUORUM coverage — every contract in
+    # THAT substrate had paired Lean + Kani Bronze-tier
+    # discharges. Not total today (PMAT-1456); `xpile quorum`
+    # reports the live state.
     kani_harness: "manifest_completeness"
     kani_file: "contracts/kani/ffi_cpython_ext.rs"
     formula: |

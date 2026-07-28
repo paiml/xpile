@@ -3,9 +3,12 @@
 //!
 //! This is the **Symbolic stratum** counterpart for the
 //! manifest-completeness invariant of the Python→C FFI
-//! boundary. **With this harness landed, every contract in
-//! xpile's 12-contract substrate reaches §14.4 QUORUM — the
-//! substrate is at 100% paired-discharge coverage.**
+//! boundary. **PMAT-077, 2026-05-18: with this harness landed,
+//! every contract in xpile's then-12-contract substrate reached
+//! §14.4 QUORUM.** The substrate has grown since and paired
+//! coverage is no longer total; `xpile quorum` reports the live
+//! per-contract state and the totals — do not retype them here
+//! (PMAT-1451).
 //!
 //! Strata for this contract:
 //!   * Semantic    (PMAT-076): `contracts/lean/FfiCpythonExt.lean`
@@ -28,22 +31,31 @@
 //! `Vec<T>`. The 4-byte bound captures the payload-preservation
 //! property at byte level; 256^4 ≈ 4.3B configurations.
 //!
-//! ## Substrate milestone
+//! ## Substrate milestone (PMAT-076/077, 2026-05-18)
 //!
-//! This is the **TWELFTH and FINAL** Kani harness, matching the
-//! TWELFTH and FINAL Lean theorem (PMAT-076). With both landed:
+//! This was the twelfth Kani harness, matching the twelfth
+//! contract Lean theorem (PMAT-076). Both were written here as
+//! the **FINAL** one of their kind. That was a claim about the
+//! FUTURE, and a citation cannot date it: the substrate kept
+//! growing, and `contracts/kani/` now holds many times the
+//! twelve harnesses this paragraph called final. With both
+//! landed, of the then-12-contract substrate:
 //!
 //!   - 12 contracts × 2 strata (Sem + Sym) = 24 paired discharges
 //!   - 5 layers of the contract taxonomy fully covered (1, 2, 3, 5)
 //!     plus the Layer-4 hybrid contract that necessitated xpile
-//!   - 100% of the substrate at QUORUM (≥1 vote in ≥3 strata)
-//!   - Zero contracts UNVERIFIED, zero PARTIAL
+//!   - all 12 contracts at QUORUM (≥1 vote in ≥3 strata), none
+//!     UNVERIFIED and none PARTIAL
 //!
-//! The §14.4 N-of-M evidence model from ruchy 5.0 is now
-//! validated across the entire xpile substrate. The remaining
-//! work is to lift individual contracts from Bronze to
-//! Silver/Gold/Platinum tier as concrete impl pressure arrives
-//! (each contract's `XPILE-REFINE-*-001+` tickets).
+//! The §14.4 N-of-M evidence model from ruchy 5.0 was validated
+//! across THAT substrate. It is **not total today** — a contract
+//! lands ahead of its Lean or Kani vote and sits at PARTIAL until
+//! the missing stratum arrives. `xpile quorum` reports the live
+//! per-contract state and the totals; do not retype them here
+//! (PMAT-1451, PMAT-1456). The remaining work is to lift
+//! individual contracts from Bronze to Silver/Gold/Platinum tier
+//! as concrete impl pressure arrives (each contract's
+//! `XPILE-REFINE-*-001+` tickets).
 
 #![cfg(kani)]
 
@@ -90,9 +102,10 @@ fn lower_call_to_manifest(c: &FfiCall) -> FfiManifestEntry {
 /// configurations) and verifies the lowered FfiManifestEntry
 /// carries the same payload bytes as the source FfiCall.
 ///
-/// This is the **TWELFTH and FINAL** Kani harness — every
-/// contract in xpile's substrate is now at QUORUM after this
-/// lands.
+/// PMAT-077, 2026-05-18: the twelfth Kani harness, which brought
+/// every contract in the then-12-contract substrate to QUORUM.
+/// It is not the FINAL one this line used to call it — see the
+/// module doc above.
 #[kani::proof]
 fn manifest_completeness() {
     let input: [u8; 4] = kani::any();

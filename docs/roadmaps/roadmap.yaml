@@ -21739,6 +21739,76 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1456
+  title: 'the Kani harness that IS the Symbolic stratum published "100% of the substrate at QUORUM" — and `.rs` under `contracts/` was in no gate''s subject at all, though the text model 30 lines away already named it'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1455 standing leads (a) + (b) and swept the CLASS: every published
+    claim that the substrate AS A WHOLE has reached §14.4 QUORUM.
+
+    ** MEASURED. `xpile quorum` over contracts/: 26 QUORUM, 9 PARTIAL, 0 UNVERIFIED across 35
+    contracts. 35/35 bind a `lean_theorem:`; 24/35 bind a `kani_harness:` — eleven contracts have
+    NO Symbolic vote. contracts/kani/ holds 95 `#[kani::proof]` harnesses.
+
+    ** THE DEFECT, and WHICH FILE is the finding. contracts/kani/ffi_cpython_ext.rs (the PMAT-077
+    harness) published "100% of the substrate at QUORUM (>=1 vote in >=3 strata)", "Zero contracts
+    UNVERIFIED, zero PARTIAL", and "every contract in xpile''s substrate is now at QUORUM after this
+    lands"; contracts/lean/FfiCpythonExt.lean published "every contract in xpile''s substrate has
+    paired Lean + Kani Bronze-tier discharges". A KANI HARNESS IS THE SYMBOLIC STRATUM''S OWN
+    EVIDENCE, and the absence of one is exactly what puts those eleven contracts at PARTIAL — the
+    artifact class whose scarcity falsifies the claim was the one publishing it.
+
+    ** FINALITY. Both files called themselves the "TWELFTH and FINAL" harness/theorem, 4x across
+    the two. FINAL is a claim about the FUTURE and a citation cannot date it. FfiCpythonExt.lean
+    also called itself the *eleventh* theorem 27 lines below calling itself the TWELFTH.
+
+    ** TWO INDEPENDENT BLIND SPOTS, EACH ESTABLISHED BY A CONTROL THAT PASSES.
+    (a) SUBJECT: with the substrate arm neutered and the retired text restored, the gate is GREEN
+    — all four published. claim_pages() is markdown; provable_artifact_pages() collected
+    .yaml/.lean/.md and NOT .rs (41+35+3 in the subject, 24 outside). ⭐ THE RULE WAS ALREADY
+    WRITTEN DOWN: `Block`''s own doc comment says "`.lean`/`.rs`/`.md` under `contracts/` are prose
+    throughout". The TEXT MODEL named .rs; the WALK never handed it one.
+    (b) NEEDLE: with .rs in the subject but the five PMAT-1451 literals restored, ALSO GREEN. They
+    match none of the four spellings. Fixing either alone leaves all four published.
+
+    ** THE FIX. Needle is a CLASS (totality quantifier x §14.4 token that is its PREDICATE), not
+    more literals. Scoping is a CHECKED carve-out: a denominator differing from the LIVE contract
+    count scopes the claim; "all 35 contracts at QUORUM" stays live. Text model audited for the new
+    artifact kind — `//!`/`///` stripped as `#` is for YAML; measured differential, the wrapped
+    site :93 is reported ONLY with stripping.
+
+    ** THE GATE''S OWN RED HALF FOUND A NEIGHBOUR LAUNDERING 2 OF THE 4: ":39/:40" are BULLETS in a
+    run whose FIRST bullet says "12 contracts x 2 strata", and a clause-scoped denominator let that
+    neighbour excuse them. Scope is now the BULLET. FOURTH slice running needing this same
+    paragraph->clause correction (PMAT-1450/1451/1452).
+
+    ** ⚠️ TWO GUARDS I ADDED WERE REFUTED BY THEIR OWN RED HALVES. (1) A proximity window was
+    DELETED: its justifying site sits 56 bytes away, INSIDE the 60-byte window (scoping spared it,
+    not the window), and usize::MAX/4 left the gate green — it bounded nothing. (2) The
+    !scoped.is_empty() tripwire was DOWNGRADED, not kept as evidence: killing the branch reds the
+    OFFENCES assertion first, so no perturbation in this corpus reaches it.
+
+    ** 8 RED HALVES RUN, each asserting the perturbation APPLIED: behaviour (4 sites), subject
+    (.rs excluded -> 3 of 4 vanish; substrate arm neutered -> all 4 vanish), needle, marker-strip
+    (differential: :93 only with stripping), direction (reds contracts/README.md:29), bullet
+    scoping (reds to 2 of 4), denial (reds 3 honest book denials), scoping-branch (dominated).
+    Green control before and after.
+
+    ** NOT GATED, AND SAID SO. audit-design.md:46''s "operational across the entire substrate" is
+    about the quorum ARCHITECTURE, which does range over every contract; folding that spelling in
+    reported a TRUE sentence as drift. Repaired by wording only. README.md:193, xpile-spec.md:213
+    and contracts/README.md:29 were each reported on the first widened run and are each HONEST.
+
+    ZERO crates/*/src and ZERO contract NORMATIVE fields changed — freeze-compatible.
+
+    NEXT PICK: STANDING LEADS. (a) FINALITY as a claim class is NOT gated — "the FINAL X" is
+    checkable against a live count and this slice only repaired the prose. (b) PMAT-1455 lead (c):
+    `1025 Lean theorems` (xpile-spec.md:370, kaizen-fleet.md:11) is an EXTERNAL pv-spec §31 figure
+    this repo republishes and cannot check. (c) install `ruchy` in a CI job — OWNER-GATED.
+    NEXT FREE ID IS PMAT-1457. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
+    HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
+  status: 'done'
+  priority: 'P1'
+  category: 'honesty'
 - id: PMAT-1455
   title: 'the sub-spec that grades xpile for the fleet published the substrate''s PROOF VOLUME as
     a 2026-05-18 snapshot in the present tense — and the corrected number was itself a grep
