@@ -812,14 +812,26 @@ theorem and_dispatch_total_silver (path : PyIntPath) (a b : Int) :
       load-bearing safety claim that the slow path always
       heap-allocates.
 
-    With this PR landed, **C-PY-INT-ARITH has Silver coverage on
-    all 9 equations (9/9 — full Silver tier)**. This is the
-    **SIXTH and FINAL multi-equation contract in the substrate
-    at full Silver**: all 6 multi-eq contracts (C-FFI-CPYTHON-EXT,
+    PMAT-183, 2026-05-19: with this PR landed, C-PY-INT-ARITH
+    reached Silver coverage on all nine of the equations it then
+    carried, and was the sixth multi-equation contract to get
+    there.
+
+    ⚠️ The two clauses that used to follow that are RETIRED, and
+    NEITHER NEEDED AN EDIT TO GO FALSE. This docstring asserted
+    "9/9 — full Silver tier" and asserted finality over "all 6
+    multi-eq contracts" — naming C-FFI-CPYTHON-EXT,
     C-XLATE-LEAN-TO-RUST, C-XLATE-RUST-FN-TO-LEAN-THM,
-    C-NOTATION-LATEX-MATH-TO-EQUATION, C-XLATE-PY-LIST-TO-VEC,
-    C-PY-INT-ARITH) now at full Silver coverage on every
-    equation. -/
+    C-NOTATION-LATEX-MATH-TO-EQUATION, C-XLATE-PY-LIST-TO-VEC
+    and this contract. The substrate has since grown to 31
+    multi-equation contracts, and NOT ONE of them — the six
+    named above included — is discharged at Silver-or-better on
+    every one of its equations. C-PY-INT-ARITH itself now
+    carries 42 equations, nine of which still bind a Bronze
+    theorem. The ordinal froze the numerator while the substrate
+    grew the denominator. PMAT-1457 re-derives both populations
+    on every run (`crates/xpile/tests/claims_drift.rs`,
+    `ordinal_finality_claims_match_the_live_population`). -/
 
 /-- Caller-observable allocation strategy. Bronze had no
     distinction; Silver introduces this enum to capture
@@ -855,8 +867,11 @@ def bigint_add_with_allocation_silver (a b : Int) : BigIntResult :=
     representations).
 
     Status: discharged at v0.1.0 (PMAT-183). Tier: Silver.
-    COMPLETES Silver coverage on C-PY-INT-ARITH (9/9) — SIXTH
-    and FINAL multi-eq contract at full Silver tier. -/
+    PMAT-183 completed Silver coverage on the nine equations
+    C-PY-INT-ARITH then carried, as the sixth multi-equation
+    contract to reach that state. The finality this line used to
+    claim is retired — see the PMAT-183 block above and
+    PMAT-1457 for the live populations. -/
 theorem bigint_addition_is_heap_allocated_silver (a b : Int) :
     (bigint_add_with_allocation_silver a b).allocation = Allocation.heap := by
   rfl

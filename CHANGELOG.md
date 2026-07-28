@@ -7,6 +7,91 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The slice that wrote "FINAL needs a live count — still ungated" edited this Lean file and walked past the `**TWELFTH and FINAL**` 120 lines in (PMAT-1457)
+
+PMAT-1456 repaired four "TWELFTH and FINAL" sentences and wrote its own lesson
+down: *"FINAL is a claim about the FUTURE and a citation cannot date it.
+Superlatives need a live count, not a date. **Still ungated — standing lead.**"*
+It then edited `contracts/lean/FfiCpythonExt.lean` — 22 lines, in the very same
+commit — and walked past the `**TWELFTH and FINAL**` sitting 120 lines further
+into that file. **The sweep was narrower than the rule it wrote.** Nine more
+ordinal-finality claims stood elsewhere under `contracts/`, and at `06d71142`
+`cargo test -p xpile --test claims_drift` was **green on all 32 tests** with
+every one of them published.
+
+**The class is checkable, and that is the point.** *"The Nth and FINAL X"* is
+honest exactly when **N equals the live |X|**. Nothing about the future is
+required: the claim dates itself the moment an (N+1)th lands. A record
+exemption keyed on citing a PMAT id would launder every one of these, because
+they all do cite one.
+
+**Six of the ten live claims were false.**
+
+| site | claim | live |
+|---|---|---|
+| `contracts/lean/FfiCpythonExt.lean:121` | TWELFTH and FINAL contract to receive a refinement theorem — *"completing the xpile substrate"* | **all 35** contracts bind a `lean_theorem:` |
+| `contracts/kani/xlate_py_list_to_vec.rs`, `contracts/xlate-py-list-to-vec-v1.yaml` | FIFTH and FINAL Path α contract | Path α has **10** members |
+| `contracts/lean/PyIntArith.lean` ×2, `contracts/py-int-arith-v1.yaml` | SIXTH and FINAL multi-eq contract *at full Silver* | **31** multi-eq contracts, **0** at full Silver |
+
+The Path α one is refuted **by this repository**: five sibling files in the
+same directory record the programme running on to a seventh, eighth, ninth and
+tenth member (PMAT-281..285), and the CHANGELOG carries *"Path α extension,
+sixth contract"* sixty-four lines above *"Path α, FIFTH and FINAL contract"*.
+
+**⭐ The mixed sentence is the finding.** Four of the ten claims are **true**
+and are left untouched — and two of the true ones share a *sentence* with a
+false totality clause. `FfiCpythonExt.lean` says *"SIXTH and FINAL Silver
+theorem on C-FFI-CPYTHON-EXT"* (live: 6 — correct) and in the next breath
+*"every equation in C-FFI-CPYTHON-EXT has Silver-tier coverage"*, whose own
+evidence list names the **Bronze** `manifest_completeness` among its seven.
+C-FFI-CPYTHON-EXT went 7 equations → **22** and C-PY-INT-ARITH went 9 → **42**:
+**the ordinal froze the numerator while the substrate grew the denominator**,
+so a coverage claim flipped from true to false with nobody editing it — and a
+correct ordinal beside it made the pair read as checked.
+
+**The gate.** `crates/xpile/tests/claims_drift.rs`,
+`ordinal_finality_claims_match_the_live_population` and three supporting tests.
+Five populations, each **derived** from the artifact the claim's own words
+point at, and each with at least one live claim that **passes** — this is a
+measurement, not a ban on the word *FINAL*:
+
+| series | live | live claims |
+|---|---|---|
+| Path α (`contracts/kani/*.rs` block headers) | 10 | `TENTH and final` **passes**; `FIFTH` reds ×2 |
+| `C-XPILE-*-TRAIT` contracts | 4 | `FOURTH and FINAL` **passes** |
+| Silver equations on C-FFI-CPYTHON-EXT | 6 | `SIXTH and FINAL` **passes** ×2 |
+| contracts binding a `lean_theorem:` | 35 | `TWELFTH` reds |
+| multi-eq contracts at Silver-or-better | 0 | `SIXTH` reds ×3 |
+
+The **behaviour half**, `the_finality_gate_tracks_the_population_not_the_text`,
+perturbs the *derived population* rather than the prose: an eleventh Path α
+harness must red the `TENTH and final` claim, and a seventh Silver equation
+must red the `SIXTH`. There is deliberately **no quotation/denial exemption** —
+the repairs *describe* the retired boast instead of reproducing it, so the
+branch does not exist and cannot rot untested.
+
+**⚠️ Two of the guards added here failed their own red halves** — the third
+slice running to lose one, and both times the *obvious* justification was the
+wrong one. The word-boundary check on the ordinal head does **not** reject
+`seconds` (the tail scan does, because the word after `second` is `s`, not
+`and`); what it buys is refusing to read a **compound** ordinal
+(`twenty-first and final`) as its unit part, and a case pinning *that* now reds
+when it is removed. The `multi-eq`-before-`silver theorem` rule order bounds
+**nothing** in today's corpus — swapping it left the whole suite green — so it
+is downgraded to a forward tripwire, said so, and pinned by a **constructed**
+clause carrying both routes. A third guard (the generous Gold/Platinum/Diamond
+tier ladder) also came back green; its comment already said the population is
+0 under either reading, so it stands as written.
+
+**Not gated, and said so.** *"Every equation of contract X is at tier T"* is
+repaired at all three sites but is **not** gated as a class; this slice gated
+the ordinal beside it, and the Lean docstring says as much rather than implying
+coverage. `CHANGELOG.md`'s own ordinal-finality entries stay as dated records
+and are outside this gate's subject.
+
+Zero `crates/*/src` and zero contract **normative** fields — provenance
+comments and docstrings only. Freeze-compatible.
+
 ### The Kani harness that IS the Symbolic stratum published "100% of the substrate at QUORUM" — and `.rs` under `contracts/` was in no gate's subject, though the text model already named it (PMAT-1456)
 
 Live, from `xpile quorum` over `contracts/`: **26 QUORUM, 9 PARTIAL, 0

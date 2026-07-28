@@ -113,9 +113,18 @@ fn iteration_order_preserved() {
 // The Silver tier introduces an `element_type_tag` to capture
 // polymorphism over element types (List α in Lean's Silver theorem).
 //
-// FIFTH and FINAL Path α contract closure — completing the audit-
-// design.md §4 "byte-identity placeholder" caveat cleanup for the
-// 5 contracts that were on demo-fixture status entering this session.
+// PMAT-279, 2026-05-19: the FIFTH Path α contract closure —
+// completing the audit-design.md §4 "byte-identity placeholder"
+// caveat cleanup for the 5 contracts that were on demo-fixture
+// status entering that session.
+//
+// This line used to call itself the LAST of them, and PMAT-281 —
+// the very next Path α entry — refuted it. Path α ran on to a
+// tenth member (PMAT-281..285), which `xpile_contract_backend_trait
+// .rs` in this same directory has recorded the whole time. PMAT-1457
+// derives the live membership from the block headers under
+// contracts/kani/ on every run, so the surviving finality claim on
+// the tenth is checked rather than asserted.
 
 /// Silver-tier model of a Python list — Rust mirror of Lean's
 /// polymorphic `PyListSilver α`. The Lean side is polymorphic over

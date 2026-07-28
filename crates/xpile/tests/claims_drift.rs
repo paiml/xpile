@@ -4150,3 +4150,621 @@ fn coverage_fractions(flat: &str) -> Vec<(usize, usize, usize)> {
     }
     out
 }
+
+// ── PMAT-1457: ORDINAL-FINALITY claims about substrate populations ───
+//
+// PMAT-1456 repaired four "TWELFTH and FINAL" sentences by hand and wrote
+// its own lesson down: *"FINAL is a claim about the FUTURE and a citation
+// cannot date it. Superlatives need a live count, not a date. Still ungated
+// — standing lead."* It then EDITED `contracts/lean/FfiCpythonExt.lean` (22
+// lines in 06d71142) and walked past the `**TWELFTH and FINAL**` sitting 120
+// lines further into that same file. NINE more ordinal-finality claims stood
+// elsewhere under `contracts/`, and `cargo test -p xpile --test claims_drift`
+// was GREEN on all 32 tests at 06d71142 with every one of them published.
+// Same family as PMAT-1443's "a gate's SUBJECT can be narrower than its
+// RULE", one level up: the SWEEP was narrower than the rule it wrote down.
+//
+// The class is checkable, and that is the point. **"The Nth and FINAL X" is
+// honest exactly when N equals the LIVE size of X.** Nothing about the future
+// is required: the claim dates itself the moment an (N+1)th lands, and a gate
+// that re-derives |X| on every run is what turns an unfalsifiable boast into
+// a checked one. A record exemption keyed on citing a PMAT id would launder
+// every one of these, because they all DO cite one.
+//
+// ⭐ THE FINDING IS THE MIXED SENTENCE. Four of the ten live claims are TRUE
+// and stay untouched — and two of the true ones share a SENTENCE with a false
+// totality clause. `contracts/lean/FfiCpythonExt.lean` says "SIXTH and FINAL
+// Silver theorem on C-FFI-CPYTHON-EXT" (live: 6 — correct) and in the next
+// breath "With this landed, every equation in C-FFI-CPYTHON-EXT has
+// Silver-tier coverage" (live: `manifest_completeness` still binds a Bronze
+// theorem, 1 of 22). **The ordinal froze the NUMERATOR while the substrate
+// grew the DENOMINATOR** — C-FFI-CPYTHON-EXT went 6 equations → 22 and
+// C-PY-INT-ARITH went 9 → 42 — so a coverage claim flipped from true to false
+// with nobody editing it, laundered by a correct ordinal beside it.
+//
+// FOUR POPULATIONS, each DERIVED from the artifact the claim's own words
+// point at (PMAT-1455's routing rule), and each carrying at least one live
+// claim that PASSES — so this is a measurement, not a keyword ban:
+//
+//   Path α                  10  ← `TENTH and final` PASSES, `FIFTH` reds ×2
+//   trait-idempotency stubs  4  ← `FOURTH and FINAL` PASSES
+//   Silver eqs on FFI        6  ← `SIXTH and FINAL` PASSES ×2
+//   contracts Lean-refined  35  ← `TWELFTH and FINAL` reds
+//   multi-eq at full Silver  0  ← `SIXTH and FINAL` reds ×3
+//
+// There is deliberately NO quotation/denial exemption. The repairs this
+// slice writes DESCRIBE the retired boast ("this line used to assert
+// finality") instead of reproducing the phrase, so the branch does not exist
+// and cannot rot untested — PMAT-1456 lost two guards to their own red
+// halves for exactly that reason. A future editor who needs to quote one
+// must add the branch AND its red half.
+
+/// Written-out ordinals; `ORDINALS[i]` names position `i + 1`.
+const ORDINALS: [&str; 13] = [
+    "first",
+    "second",
+    "third",
+    "fourth",
+    "fifth",
+    "sixth",
+    "seventh",
+    "eighth",
+    "ninth",
+    "tenth",
+    "eleventh",
+    "twelfth",
+    "thirteenth",
+];
+
+/// Emphasis and code marks the corpus writes both AROUND the phrase and
+/// BETWEEN its words (`**TWELFTH and FINAL**`), so they are padding here, not
+/// delimiters. Dropping them is what lets the Lean corpus — which bolds every
+/// one of these — be scanned at all.
+const EMPHASIS: [char; 3] = ['*', '_', '`'];
+
+/// The next word of `s`, plus the remainder. A word is a run of alphanumerics
+/// and `-`; leading spaces and [`EMPHASIS`] are skipped, and trailing
+/// punctuation (`final**`, `final,`) is not part of it.
+fn word_after(s: &str) -> Option<(&str, &str)> {
+    let s = s.trim_start_matches(|c: char| c == ' ' || EMPHASIS.contains(&c));
+    let end = s
+        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+        .unwrap_or(s.len());
+    if end == 0 {
+        return None;
+    }
+    Some((&s[..end], &s[end..]))
+}
+
+/// Every `(position, byte offset of the ordinal)` in `clause` written as an
+/// ORDINAL-FINALITY claim: an ordinal followed by `and final` / `and the
+/// final` / `and last`.
+///
+/// ADJACENCY IS THE SHAPE, not a proximity heuristic — the corpus writes the
+/// conjunction literally, and PMAT-1456 deleted a distance-window guard that
+/// turned out to bound nothing. So there is no window parameter to tune: two
+/// words, checked by name.
+///
+/// A bare ordinal is NOT a claim of this class and must not be reported. Both
+/// of these are real text in the corpus and each is honest:
+///   * `becomes the first contract in the substrate at FULL Silver tier` —
+///     an ordinal with no finality conjunction.
+///   * `Path α, fourth contract` — a position with no claim about the last.
+fn ordinal_finality_claims(clause: &str) -> Vec<(usize, usize)> {
+    let lower = clause.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut out = Vec::new();
+    for (i, ord) in ORDINALS.iter().enumerate() {
+        let mut from = 0usize;
+        while let Some(rel) = lower[from..].find(ord) {
+            let at = from + rel;
+            from = at + ord.len();
+            // Word boundary on the head, so `seconds`/`fourthly` cannot pose
+            // as an ordinal.
+            // ⚠️ THE JUSTIFICATION HERE IS NOT THE OBVIOUS ONE, and the red
+            // half is what established that. This does NOT reject `seconds`
+            // — the TAIL scan does, because the word after `second` is `s`,
+            // not `and`. What it rejects is a COMPOUND ordinal:
+            // `twenty-first and final` would otherwise be scored as position
+            // 1 and reported against a series it names no position in.
+            // `ORDINALS` stops at thirteenth precisely because compounds are
+            // not representable, so refusing to read the unit part of one is
+            // correctness, not hygiene. Pinned by the `twenty-first` case in
+            // `the_ordinal_finality_needle_reads_the_spellings_the_corpus_writes`,
+            // which reds when this is removed. Removing it changed NOTHING
+            // in the live corpus.
+            if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'-') {
+                continue;
+            }
+            let Some((conj, rest)) = word_after(&lower[at + ord.len()..]) else {
+                continue;
+            };
+            if conj != "and" {
+                continue;
+            }
+            let Some((mut tail, rest)) = word_after(rest) else {
+                continue;
+            };
+            if tail == "the" {
+                let Some((t, _)) = word_after(rest) else {
+                    continue;
+                };
+                tail = t;
+            }
+            if tail == "final" || tail == "last" {
+                out.push((i + 1, at));
+            }
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
+/// The SERIES an ordinal-finality claim counts itself within.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Series {
+    /// "Path α": the Silver-tier property-specific Kani harness programme
+    /// that closes `audit-design.md` §4's byte-identity-placeholder caveat.
+    PathAlpha,
+    /// Primary idempotency stubs of the 2×2 trait-determinism matrix.
+    TraitIdempotency,
+    /// Multi-equation contracts discharged at Silver tier or better on EVERY
+    /// equation.
+    FullSilverMultiEq,
+    /// Silver-tier equations on the contract the clause names.
+    SilverOn(String),
+    /// Contracts that have received a Lean refinement theorem.
+    LeanRefined,
+}
+
+/// Route a claim to its series by the words the CLAUSE ITSELF uses.
+///
+/// `multi-eq` is tested before `silver theorem` so a claim carrying both is
+/// scored against the substrate-wide population rather than one contract's
+/// own tally. ⚠️ THAT ORDER BOUNDS NOTHING IN TODAY'S CORPUS, and the red
+/// half is what established it: swapping the two rules leaves the whole suite
+/// green, because the live `multi-eq` clause never spells "silver theorem" so
+/// the earlier rule has nothing to steal. It is kept as a forward tripwire
+/// and pinned by a CONSTRUCTED clause in
+/// `the_finality_router_sends_each_live_claim_to_its_own_series` — the
+/// arrangement the corpus lacks — rather than claimed to be load-bearing
+/// today. Second guard in this slice whose obvious justification its own red
+/// half refuted; see the head-boundary check in
+/// [`ordinal_finality_claims`] for the first.
+///
+/// `multi-eq` additionally requires `silver`, or the phrase alone would
+/// capture any future claim about multi-equation contracts.
+fn series_of(clause: &str) -> Option<Series> {
+    let lower = clause.to_ascii_lowercase();
+    if lower.contains("path α") || lower.contains("path alpha") {
+        return Some(Series::PathAlpha);
+    }
+    if lower.contains("trait-idempotency") {
+        return Some(Series::TraitIdempotency);
+    }
+    if lower.contains("multi-eq") && lower.contains("silver") {
+        return Some(Series::FullSilverMultiEq);
+    }
+    if lower.contains("silver theorem") {
+        return contract_ids(clause)
+            .into_iter()
+            .next()
+            .map(Series::SilverOn);
+    }
+    if lower.contains("refinement theorem") {
+        return Some(Series::LeanRefined);
+    }
+    None
+}
+
+/// Live sizes of every series this gate can derive. Re-derived on each run
+/// from the contract tree — never a literal, so an eleventh Path α harness
+/// reds the `TENTH and final` claim the moment it lands.
+struct LiveSeries {
+    path_alpha: usize,
+    trait_stubs: usize,
+    full_silver_multi_eq: usize,
+    silver: HashMap<String, usize>,
+    lean_refined: usize,
+}
+
+/// A `lean_theorem:` naming a discharge at Silver tier or better.
+///
+/// The generous reading, deliberately: a Gold/Platinum/Diamond theorem
+/// SUBSUMES Silver, so scoring "full Silver coverage" against `_silver`
+/// suffixes alone would report a contract as short of Silver because it went
+/// PAST it. Measured both ways while writing this — `full_silver_multi_eq` is
+/// 0 under either — and the generous one is the one that cannot fabricate a
+/// finding.
+fn is_silver_or_better(theorem: &str) -> bool {
+    ["_silver", "_gold", "_platinum", "_diamond"]
+        .iter()
+        .any(|suffix| theorem.ends_with(suffix))
+}
+
+fn live_series() -> LiveSeries {
+    // Path α membership is the BLOCK HEADER each member carries, not the
+    // words "Path α" — five of the ten files never spell the programme's
+    // name. Counted per FILE: a member that grew a second Silver block is
+    // still one contract.
+    let dir = workspace_root().join("contracts/kani");
+    let mut path_alpha = std::collections::HashSet::new();
+    let mut entries: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("rs"))
+        .collect();
+    entries.sort();
+    for p in &entries {
+        let body = fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+        if body.lines().any(|l| {
+            l.contains("PMAT-") && l.contains("Silver-tier property-specific Kani harness")
+        }) {
+            path_alpha.insert(p.file_name().expect("file").to_string_lossy().into_owned());
+        }
+    }
+
+    let dir = workspace_root().join("contracts");
+    let mut yamls: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+        .collect();
+    yamls.sort();
+    let (mut trait_stubs, mut full_silver_multi_eq, mut lean_refined) = (0usize, 0usize, 0usize);
+    let mut silver: HashMap<String, usize> = HashMap::new();
+    for p in &yamls {
+        let body = fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+        let doc: serde_yaml::Value = serde_yaml::from_str(&body)
+            .unwrap_or_else(|e| panic!("{} is not valid YAML: {e}", p.display()));
+        let Some(id) = doc
+            .get("metadata")
+            .and_then(|m| m.get("id"))
+            .and_then(|v| v.as_str())
+        else {
+            continue;
+        };
+        // The 2×2 trait-determinism matrix is {plain, Contract} ×
+        // {Frontend, Backend}, one primary idempotency stub each. Derived
+        // from the contract ids so a fifth trait contract reds the claim.
+        if id.starts_with("C-XPILE-") && id.ends_with("-TRAIT") {
+            trait_stubs += 1;
+        }
+        let Some(eqs) = doc.get("equations").and_then(|e| e.as_mapping()) else {
+            continue;
+        };
+        let theorems: Vec<&str> = eqs
+            .iter()
+            .filter_map(|(_, eq)| eq.get("lean_theorem").and_then(|v| v.as_str()))
+            .collect();
+        if !theorems.is_empty() {
+            lean_refined += 1;
+        }
+        silver.insert(
+            id.to_string(),
+            theorems.iter().filter(|t| t.ends_with("_silver")).count(),
+        );
+        if eqs.len() > 1
+            && theorems.len() == eqs.len()
+            && theorems.iter().all(|t| is_silver_or_better(t))
+        {
+            full_silver_multi_eq += 1;
+        }
+    }
+    LiveSeries {
+        path_alpha: path_alpha.len(),
+        trait_stubs,
+        full_silver_multi_eq,
+        silver,
+        lean_refined,
+    }
+}
+
+impl Series {
+    /// `(live size, how it was derived)` — the second half goes into the
+    /// failure message so a reader can check the arithmetic without reading
+    /// this file.
+    fn live(&self, live: &LiveSeries) -> Option<(usize, String)> {
+        match self {
+            Series::PathAlpha => Some((
+                live.path_alpha,
+                "contracts/kani/*.rs carrying a `PMAT-NNN: Silver-tier \
+                 property-specific Kani harness` block header"
+                    .to_string(),
+            )),
+            Series::TraitIdempotency => Some((
+                live.trait_stubs,
+                "`C-XPILE-*-TRAIT` contracts (the trait-determinism matrix)".to_string(),
+            )),
+            Series::FullSilverMultiEq => Some((
+                live.full_silver_multi_eq,
+                "multi-equation contracts whose EVERY equation binds a \
+                 Silver-or-better `lean_theorem:`"
+                    .to_string(),
+            )),
+            Series::SilverOn(id) => live
+                .silver
+                .get(id)
+                .map(|n| (*n, format!("`{id}` equations binding a `…_silver` theorem"))),
+            Series::LeanRefined => Some((
+                live.lean_refined,
+                "contracts binding at least one `lean_theorem:`".to_string(),
+            )),
+        }
+    }
+}
+
+/// What the scan found, split so each half can be asserted on separately.
+#[derive(Default)]
+struct FinalityReport {
+    /// `Nth and FINAL` where N ≠ the live size.
+    offences: Vec<String>,
+    /// `Nth and FINAL` where N == the live size — the claims that PASS.
+    agreements: Vec<(Series, String)>,
+    /// A finality claim naming a series this gate cannot derive.
+    unrouted: Vec<String>,
+}
+
+/// Scan `pages` for ordinal-finality claims and score each against `live`.
+///
+/// Pure in `live` so the behaviour half can hand it a perturbed population
+/// and prove this gate tracks the SUBSTRATE rather than the text.
+fn finality_report(pages: &[(String, String)], live: &LiveSeries) -> FinalityReport {
+    let mut report = FinalityReport::default();
+    for (rel, body) in pages {
+        for block in substrate_blocks(rel, body) {
+            for (clause, base) in clauses_with_offsets(&block.flat) {
+                for (position, off) in ordinal_finality_claims(clause) {
+                    let n = block.line_at(base + off);
+                    let Some(series) = series_of(clause) else {
+                        report
+                            .unrouted
+                            .push(format!("{rel}:{n}: {}", excerpt(&block.flat, base + off)));
+                        continue;
+                    };
+                    let Some((size, how)) = series.live(live) else {
+                        report
+                            .unrouted
+                            .push(format!("{rel}:{n}: {}", excerpt(&block.flat, base + off)));
+                        continue;
+                    };
+                    if position == size {
+                        report.agreements.push((series, format!("{rel}:{n}")));
+                    } else {
+                        report.offences.push(format!(
+                            "{rel}:{n}: claims position {position} is the LAST of {how}, \
+                             which live holds {size} — {}",
+                            excerpt(&block.flat, base + off)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    report
+}
+
+#[test]
+fn ordinal_finality_claims_match_the_live_population() {
+    let live = live_series();
+    // Anti-vacuity on every derivation BEFORE it is used to judge anything:
+    // a narrowing that takes one of these to 0 would otherwise convert this
+    // gate into a silent pass for the series it can no longer see.
+    assert!(
+        live.path_alpha >= 5 && live.trait_stubs == 4 && live.lean_refined >= 12,
+        "a series derivation collapsed: Path α = {}, trait stubs = {}, \
+         Lean-refined contracts = {} — re-check the derivations before \
+         trusting this gate's verdict",
+        live.path_alpha,
+        live.trait_stubs,
+        live.lean_refined
+    );
+    let pages = provable_artifact_pages();
+    let report = finality_report(&pages, &live);
+
+    assert!(
+        report.offences.is_empty(),
+        "{} ordinal-finality claim(s) under `contracts/` name a position that \
+         is no longer the last of their own series — {}. \"The Nth and FINAL \
+         X\" is honest exactly when N is the live |X|; write the ordinal \
+         without the finality, or say which past substrate it was final in.",
+        report.offences.len(),
+        report.offences.join("; ")
+    );
+    assert!(
+        report.unrouted.is_empty(),
+        "ordinal-finality claim(s) name a series this gate cannot derive — \
+         {}. A finality claim that nothing counts is exactly the shape \
+         PMAT-1457 exists to stop: add a `Series` arm with a derivation, or \
+         do not claim finality.",
+        report.unrouted.join("; ")
+    );
+
+    // The claims that PASS are the proof this is a measurement and not a ban
+    // on the word FINAL. All four derivable series must be exercised by a
+    // LIVE agreeing claim, or a series is being scored against nothing.
+    for want in [
+        Series::PathAlpha,
+        Series::TraitIdempotency,
+        Series::SilverOn("C-FFI-CPYTHON-EXT".to_string()),
+    ] {
+        assert!(
+            report.agreements.iter().any(|(s, _)| *s == want),
+            "no live ordinal-finality claim agrees with the {want:?} series, \
+             so that arm is unreachable and its derivation is untested. \
+             Agreements found: {:?}",
+            report.agreements
+        );
+    }
+}
+
+#[test]
+fn the_finality_gate_tracks_the_population_not_the_text() {
+    // THE BEHAVIOUR HALF. Perturb the DERIVED population, not the prose: an
+    // eleventh Path α harness must red `TENTH and final`, and a seventh
+    // Silver equation on C-FFI-CPYTHON-EXT must red `SIXTH and FINAL`. If
+    // this stayed green, the gate would be reading the text and agreeing
+    // with itself.
+    let pages = provable_artifact_pages();
+    let mut live = live_series();
+    assert!(
+        finality_report(&pages, &live).offences.is_empty(),
+        "control: the corpus must be clean at the LIVE population before a \
+         perturbation means anything"
+    );
+
+    live.path_alpha += 1;
+    let grown = finality_report(&pages, &live);
+    assert!(
+        grown
+            .offences
+            .iter()
+            .any(|o| o.contains("xpile_contract_backend_trait.rs")),
+        "an eleventh Path α harness left the `TENTH and final` claim green — \
+         the gate is not tracking the population. Offences: {:?}",
+        grown.offences
+    );
+    live.path_alpha -= 1;
+
+    *live
+        .silver
+        .get_mut("C-FFI-CPYTHON-EXT")
+        .expect("C-FFI-CPYTHON-EXT is in the live table") += 1;
+    let grown = finality_report(&pages, &live);
+    assert!(
+        grown.offences.iter().any(|o| o.contains("FfiCpythonExt")),
+        "a seventh Silver equation on C-FFI-CPYTHON-EXT left the `SIXTH and \
+         FINAL Silver theorem` claim green. Offences: {:?}",
+        grown.offences
+    );
+}
+
+#[test]
+fn the_ordinal_finality_needle_reads_the_spellings_the_corpus_writes() {
+    for (text, want, why) in [
+        (
+            "This is the **TWELFTH and FINAL** contract to receive a refinement theorem",
+            vec![12usize],
+            "the Lean corpus bolds the whole phrase, so `*` must be padding",
+        ),
+        (
+            "Path α extension to a TENTH and final trait-Kani contract",
+            vec![10],
+            "shouted ordinal, lower-case `final`",
+        ),
+        (
+            "the FOURTH and FINAL primary trait-idempotency stub",
+            vec![4],
+            "the live trait-matrix claim",
+        ),
+        (
+            "the sixth and the last of them",
+            vec![6],
+            "`and the last` is the same claim",
+        ),
+        (
+            "becomes the first contract in the substrate at FULL Silver tier",
+            vec![],
+            "an ordinal with no finality conjunction is a POSITION, not a \
+             claim about the last — and this exact sentence is live in \
+             contracts/ffi-cpython-ext-v1.yaml",
+        ),
+        (
+            "Property-specific Silver-tier Kani harnesses (Path α, fourth contract)",
+            vec![],
+            "a bare position; the corpus writes six of these and none is a \
+             finality claim",
+        ),
+        (
+            "the FINAL FIVE equations on C-XLATE-LEAN-TO-RUST",
+            vec![],
+            "`FINAL` without an ordinal before `and` is a different claim \
+             class and is live in contracts/lean/XlateLeanToRust.lean",
+        ),
+        (
+            "twenty seconds and final cleanup",
+            vec![],
+            "`seconds` is not the ordinal `second`. Rejected by the TAIL scan \
+             (the next word is `s`, not `and`), NOT by the head boundary — \
+             measured, because the obvious reading is the wrong one",
+        ),
+        (
+            "the twenty-first and final entry",
+            vec![],
+            "a COMPOUND ordinal must not be read as its unit part: scoring \
+             this as position 1 would report a wrong position against a \
+             series it names no position in. THIS is what the head boundary \
+             check buys, and this case reds when it is removed",
+        ),
+        (
+            "the catch-all is the final else",
+            vec![],
+            "`final` as an ordinary adjective; live in bashrs-frontend",
+        ),
+    ] {
+        let got: Vec<usize> = ordinal_finality_claims(text)
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(got, want, "{why} — on {text:?}");
+    }
+}
+
+#[test]
+fn the_finality_router_sends_each_live_claim_to_its_own_series() {
+    // Routing is by the CLAUSE's own words, and the order of the rules is
+    // what keeps two Silver-flavoured series apart. Each string below is the
+    // live clause, so a re-ordering that breaks one shows up here rather
+    // than as a silently mis-scored claim.
+    for (clause, want, why) in [
+        (
+            "Path α extension to a TENTH and final trait-Kani contract",
+            Some(Series::PathAlpha),
+            "names the programme",
+        ),
+        (
+            "and the FOURTH and FINAL primary trait-idempotency stub, completing the 2×2 \
+             trait-determinism matrix",
+            Some(Series::TraitIdempotency),
+            "the trait matrix, which also says nothing about Silver",
+        ),
+        (
+            "COMPLETES Silver coverage on C-PY-INT-ARITH (9/9) — SIXTH and FINAL multi-eq \
+             contract at full Silver",
+            Some(Series::FullSilverMultiEq),
+            "carries a contract id AND the word Silver — but NOT the phrase \
+             `silver theorem`, so it does not on its own exercise the rule \
+             order; the constructed clause below does",
+        ),
+        (
+            "the SIXTH and FINAL multi-eq contract at full Silver, matching the Silver \
+             theorem on C-FFI-CPYTHON-EXT",
+            Some(Series::FullSilverMultiEq),
+            "CONSTRUCTED — the corpus writes no clause carrying both routes, \
+             so without this the rule order is untested and swapping it \
+             leaves the suite green (measured). A claim about the \
+             substrate-wide population must not be scored against one \
+             contract's own Silver tally",
+        ),
+        (
+            "SIXTH and FINAL Silver theorem on C-FFI-CPYTHON-EXT — wires the last \
+             previously-unwired equation",
+            Some(Series::SilverOn("C-FFI-CPYTHON-EXT".to_string())),
+            "per-contract Silver tally, read off the id the clause names",
+        ),
+        (
+            "This is the **TWELFTH and FINAL** contract to receive a refinement theorem",
+            Some(Series::LeanRefined),
+            "the substrate-wide Lean population",
+        ),
+        (
+            "the NINTH and FINAL widget in the shed",
+            None,
+            "an underivable series must be REPORTED, never scored",
+        ),
+    ] {
+        assert_eq!(series_of(clause), want, "{why} — on {clause:?}");
+    }
+}

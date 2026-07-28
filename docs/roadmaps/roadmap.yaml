@@ -21906,3 +21906,90 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1457
+  title: 'the slice that wrote "FINAL needs a live count — still ungated" edited this Lean file and walked past the `**TWELFTH and FINAL**` 120 lines in, and a correct ordinal beside a false coverage clause read as checked'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1456 standing lead (a) — "superlatives need a live count, not a date;
+    STILL UNGATED" — and swept the CLASS: every ORDINAL-FINALITY claim under contracts/.
+
+    ** CONTROL THAT PASSES, establishing the blindness by measurement. At 06d71142 `cargo test
+    -p xpile --test claims_drift` was GREEN on all 32 tests with TEN ordinal-finality claims live
+    under contracts/, SIX of them false.
+
+    ** MEASURED, five populations, each DERIVED: Path α = 10 members (contracts/kani/*.rs carrying
+    a `PMAT-NNN: Silver-tier property-specific Kani harness` block header — PMAT-275..279 +
+    281..285); C-XPILE-*-TRAIT contracts = 4; Silver equations on C-FFI-CPYTHON-EXT = 6; contracts
+    binding a `lean_theorem:` = 35 of 35; multi-equation contracts discharged at Silver-or-better
+    on EVERY equation = 0 of 31.
+
+    ** THE SIX FALSEHOODS. contracts/lean/FfiCpythonExt.lean:121 "TWELFTH and FINAL contract to
+    receive a refinement theorem — completing the xpile substrate" (live: all 35 bind one);
+    contracts/kani/xlate_py_list_to_vec.rs + contracts/xlate-py-list-to-vec-v1.yaml "FIFTH and
+    FINAL Path α contract" (live: 10, and PMAT-281 — the VERY NEXT Path α entry — refuted it, with
+    the sequence recorded in this repo''s own CHANGELOG 64 lines apart); contracts/lean/
+    PyIntArith.lean x2 + contracts/py-int-arith-v1.yaml "SIXTH and FINAL multi-eq contract at full
+    Silver" (live: 31 multi-eq contracts, ZERO at full Silver under EITHER reading of the tier).
+
+    ** ⭐ THE FINDING IS THE MIXED SENTENCE. FOUR of the ten claims are TRUE and are left
+    untouched, and TWO of the true ones share a SENTENCE with a false totality clause.
+    FfiCpythonExt.lean says "SIXTH and FINAL Silver theorem on C-FFI-CPYTHON-EXT" (live: 6 —
+    correct) and in the next breath "every equation in C-FFI-CPYTHON-EXT has Silver-tier
+    coverage", whose OWN evidence list names the Bronze `manifest_completeness`. C-FFI-CPYTHON-EXT
+    went 7 equations -> 22 and C-PY-INT-ARITH went 9 -> 42: THE ORDINAL FROZE THE NUMERATOR WHILE
+    THE SUBSTRATE GREW THE DENOMINATOR, so a coverage claim flipped from true to false with nobody
+    editing it, laundered by a correct ordinal beside it.
+
+    ** THE GATE. crates/xpile/tests/claims_drift.rs, `ordinal_finality_claims_match_the_live_
+    population` + `the_finality_gate_tracks_the_population_not_the_text` (behaviour half:
+    perturbs the DERIVED population, not the prose — an 11th Path α harness must red the TENTH
+    claim, a 7th Silver equation must red the SIXTH) + two needle/router unit tests. "The Nth and
+    FINAL X" is honest exactly when N == live |X|, so nothing about the future is needed. Routing
+    is by the words the CLAUSE itself uses (PMAT-1455''s rule). NO quotation/denial exemption
+    branch exists: the repairs DESCRIBE the retired boast instead of reproducing it, so there is
+    no branch to rot untested.
+
+    ** RED HALVES, SEVEN, each asserting the perturbation APPLIED. (fix) pre-repair prose -> reds
+    on exactly the 6 sites, 0 unrouted, 4 agreements. (A) drop the PathAlpha routing rule -> reds
+    the `unrouted` assertion, naming the TENTH claim. (B) break the Path α block-header derivation
+    -> reds the anti-vacuity guard ("Path α = 0"). (C) delete the FOURTH-and-FINAL control
+    sentence -> reds the agreements guard for TraitIdempotency.
+
+    ** ⚠️ TWO OF MY OWN GUARDS FAILED THEIR OWN RED HALVES — third slice running (PMAT-1455 lost
+    one, PMAT-1456 lost two). (E) the head word-boundary check: removing it left the suite GREEN,
+    so its stated justification ("rejects `seconds`") was FALSE — the TAIL scan rejects that,
+    because the word after `second` is `s`, not `and`. What it actually buys is refusing to read a
+    COMPOUND ordinal (`twenty-first and final`) as its unit part; justification corrected and a
+    case added that REDS when it is removed (verified). (F) the `multi-eq` before `silver theorem`
+    rule order: swapping it ALSO left the suite green, because the live `multi-eq` clause never
+    spells "silver theorem"; downgraded from load-bearing to forward tripwire, SAID SO, and pinned
+    by a CONSTRUCTED clause carrying both routes — the arrangement the corpus lacks (PMAT-1455''s
+    remedy) — which now reds. (D) narrowing `is_silver_or_better` to `_silver` alone left the
+    suite GREEN: the generous tier ladder bounds nothing today (0 either way) and the doc comment
+    already said exactly that, so it stands as written.
+
+    ** ⚠️ PROCESS LANDMINE RE-FIRED: `git checkout -- <file>` to undo a red-half perturbation
+    reverted to HEAD and DELETED four uncommitted guard fixes, which is why red half F first came
+    back green a second time. COMMIT between the guard fix and its red half.
+
+    ** NOT GATED, AND SAID SO. "Every equation of contract X is at tier T" is repaired at all
+    three sites but is NOT gated as a class — PMAT-1457 gated the ORDINAL beside it, and both the
+    Lean docstring and this entry say so rather than implying coverage.
+
+    ZERO crates/*/src and ZERO contract NORMATIVE fields (provenance comments and docstrings
+    only) — freeze-compatible.
+
+    ** STANDING LEADS. (a) THE TOTALITY CLAUSE IS THE NEXT CLASS: "every equation ... at Silver
+    tier", "full Silver tier", "N/N" — a per-contract coverage fraction is derivable exactly the
+    way the ordinal now is, and three live sites were repaired by hand here. (b) CHANGELOG.md
+    carries the same ordinal-finality claims under DATED release headings ("TENTH and final",
+    "FIFTH and FINAL", "SIXTH and FINAL", "Twelfth and FINAL"); left alone as a dated record, left
+    OUT of this gate''s subject, and said so — but nothing checks that the exemption stays a
+    record. (c) PMAT-1456 lead (b): `1025 Lean theorems` is an EXTERNAL pv-spec §31 figure this
+    repo republishes and cannot check. (d) install `ruchy` in CI — OWNER-GATED.
+
+    NEXT FREE ID IS PMAT-1458. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD
+    FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
+    STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
+  status: done
+  priority: P1
+  category: honesty
