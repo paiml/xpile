@@ -12957,14 +12957,47 @@ fn audit_command_supports_lean_target() {
     let with = json_usize(&stdout, "functions_with_citation");
     // PMAT-1418: 181 → 151 for the same reason the F1 floor moved (the 18 C-lane
     // functions and their wrong-language citations left the corpus). The floor is
-    // 140, not 150: at 151 measured, a 150 floor leaves ONE function of margin and
+    // not 150: at 151 measured, a 150 floor leaves ONE function of margin and
     // any Python fixture churn reds it, which would make this a tracking equality
     // rather than the vacuity guard it exists to be. It still proves the lane
-    // emits substantially — a hollow Lean lane would read 0, not 140.
+    // emits substantially — a hollow Lean lane would read 0.
+    //
+    // PMAT-1425: 151 → 139, and the floor with it, 140 → 128. This is the SECOND
+    // time this number moved DOWN after a fix, and — as in PMAT-1418 — down is
+    // the removal of something that should never have been emitted, not a
+    // regression. PMAT-1425 refuses six Python operators in the Lean lane:
+    // `& | ^ <<` unconditionally (there is no Lean 4 core spelling — `Int.land`
+    // et al. are not constants), and `>>` / `**` when the count/exponent is not
+    // a provably-non-negative literal (`Int.toNat` CLAMPS a negative to 0, so
+    // `1024 >> -1` answered 1024 where CPython raises).
+    //
+    // ATTRIBUTED, not assumed. Over-refusal is the natural failure mode of a
+    // refusal fix (PMAT-1419), and this floor going red IS the pre-existing
+    // witness that would catch one — so the delta was measured by reverting
+    // ONLY the six `emit_binop` arms, rebuilding into the same target dir, and
+    // re-running the same corpus with each binary verified by probe:
+    //
+    //            functions_emitted  requiring  with_citation    f1     errors  .py lowering
+    //   before          172            151          127       84.1%     754        77/810
+    //   after           158            139          117       84.1%     761        70/810
+    //
+    // Exactly SEVEN `.py` fixtures stopped lowering, none started, and every one
+    // of the seven fails with a PMAT-1425 refusal message and no other:
+    //   bigint_bits.py `<<`   bits.py `<<`   left_shift_overflow.py `<<`
+    //   bit_invert.py  `&`    pow.py `**`    pow_builtin.py `**`
+    //   right_shift_large_amount.py `>>`
+    // (the last three are the variable-count/exponent shapes — the divergent
+    // ones). Nothing collateral went with them: `x ** 0.5` and `x ** y` on
+    // Float still emit (floats never reach the Int `Pow` arm) and unary `~a`
+    // still emits, both probe-verified.
+    //
+    // 128 keeps PMAT-1418's margin ratio rather than its absolute slack:
+    // 140/151 = 92.7%, 128/139 = 92.1%. A hollow Lean lane still reads 0.
     assert!(
-        requiring >= 140,
-        "expected the Lean lane to actually emit (measured 151 requiring, \
-         Python-only, after PMAT-1418), got {requiring}: {stdout}"
+        requiring >= 128,
+        "expected the Lean lane to actually emit (measured 139 requiring, \
+         Python-only, after PMAT-1425's bitwise/shift refusals), got \
+         {requiring}: {stdout}"
     );
     assert!(
         !stdout.contains("\"f1_status\":\"VACUOUS\"") && !stdout.contains("\"f1_pct\":null"),

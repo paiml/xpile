@@ -3743,6 +3743,78 @@ queue:
     not liftable at all, so the `.wat` frontend''s whole non-scalar surface is still unswept for
     anything except that one refusal; (c) PMAT-1421''s lead (c) (the deliberate i32 -> Type::Bool
     residual) and PMAT-1419''s leads remain open, all 0.1.619.'
+- id: PMAT-1425
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: four `--target lean` arms emitted Lean constants that DO NOT EXIST (`Int.land`/`Int.lor`/
+    `Int.xor`/`<<<`) at exit 0, and two more (`>>`, `**`) silently CLAMPED a negative count to 0 -
+    `1024 >> -1` answered 1024 where CPython raises ValueError, all six citing C-PY-INT-ARITH
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (second fire of the day; ranked queue exhausted
+    until Thu 07-30). Took PMAT-1405''s lane one VOCABULARY over - it had just fixed the DEFAULT
+    lean emit exiting 0 on non-parsing Lean, for ONE shape, so the question was whether the WHOLE
+    accepted image elaborates. A 19-construct sweep (arith/cmp/bool/let/call) came back CLEAN and
+    DID NOT CONTAIN the broken vocabulary, because neither Lean oracle contains it either
+    (`lean_default_emit_witness.rs`''s corpus is three sources: `a + b`, `2*x+1`, `a > 1`). Six
+    operators had never been run through `lean` once in 0.1.x. MEASURED at lean 4.15.0: `Int.land`,
+    `Int.lor`, `Int.xor`, `Int.shiftLeft`, `<<<` and `&&&` are ALL absent for Int; only
+    `Int.shiftRight`/`>>>` exists, which is why `>>` survived. STANDING LESSONS. (1) THE REPO
+    ALREADY KNEW, IN THE CONTRACT THE EMIT CITED - `contracts/lean/PyIntArith.lean` lists bitwise
+    under "Not yet covered: core Lean lacks Int.land/lor/xor" and provability-roadmap.md:174 names
+    the missing `HShiftLeft Int Nat` instance, i.e. the `<<` arm exactly. The PROOF lane routed
+    around all four; the CODE lane emitted them. When a proof lane documents an ABSENCE, check
+    whether the emitter honours it. (2) CROSS-LANE ASYMMETRY IS THE TELL - rust/ruchy PANIC and
+    wasm TRAPS on a negative shift count (PMAT-1379), all citing C-PY-INT-ARITH; only Lean returned
+    a wrong value at exit 0 citing the same contract. Diverging dispositions for one input across
+    lanes IS the defect. (3) A SOURCE COMMENT IS NOT A MEASUREMENT - the arms sat under "Lean 4
+    core provides Int.land / Int.lor / Int.xor", never checked against a toolchain. (4) SCOPE THE
+    REFUSAL TO THE OPERAND, NOT THE OPERATOR - `>>`/`**` are exactly faithful for a non-negative
+    count (verified vs CPython on negative base, oversized count, `0**0`, past-i64 result) and
+    still lower; only the clamping operand refuses. The boundary is the EXISTING
+    `reject_zero_divisor` one, and the surviving region is what the contract already proves
+    (`(b : Nat)` in shl_/shr_/pow_fast_path_eq_slow_path). (5) RUN THE RED HALF BOTH WAYS - 2 of 3
+    tests fail on a detached origin/main worktree, and flipping one case to Accept there makes the
+    ELABORATION assertion fire with `unknown constant ''Int.land''`, proving it is not dead code;
+    a positive control (`Int.shiftRight` must elaborate) keeps a broken `run_lean` from passing
+    every absence assertion for free. (6) `CARGO_TARGET_DIR` IS IGNORED HERE, AND THE REASON IS
+    NOT CARGO - `cargo` is a SHELL FUNCTION in the login profile that derives a project name from
+    `git config --get remote.origin.url` and then runs `CARGO_TARGET_DIR="/mnt/nvme-raid0/targets/
+    $project_name" command cargo "$@"`, so an env prefix on the command line is OVERWRITTEN, not
+    honoured. Every worktree of this repo therefore builds into the SAME shared target dir no
+    matter what the caller sets. Use `command cargo` (or `--target-dir`) to bypass it. This is
+    why the first worktree build POISONED the shared target dir, and why every probe binary here
+    was provenance-verified by grepping it for its own new refusal string - and it silently
+    invalidated a first attempt at the PMAT-1425b attribution below, which "measured" a revert
+    against a binary that had never been rebuilt. NEXT PICK: PMAT-1373
+    (release commit, gate_touch 3, witness-floor TOUCH 2) on Thu 07-30; a fire before then should
+    hunt again. HARD FREEZE Wed 18:00 - no crates/*/src or contracts/*.yaml merge after it.
+    ** PMAT-1425b, FIX-FORWARD 2026-07-28 03:40 fire: the first push was RED on `workspace-test`,
+    a REQUIRED context, and the red was CORRECT - `audit_command_supports_lean_target`''s vacuity
+    floor `requiring >= 140` measured 139. This is the PMAT-1419 shape arriving exactly as
+    predicted: OVER-REFUSAL is the natural failure mode of a refusal fix, and the thing that
+    catches it is a PRE-EXISTING witness, not a new one. So the floor was NOT simply lowered -
+    the delta was ATTRIBUTED first, by reverting ONLY the six `emit_binop` arms in place,
+    rebuilding with `command cargo` into the worktree''s own target dir, and re-running the same
+    831-file corpus against both binaries (each probe-verified: legacy EMITs `a & b`, fixed
+    REFUSEs it). Result: emitted 172->158, requiring 151->139, with_citation 127->117, errors
+    754->761, `.py` fixtures lowering 77/810 -> 70/810, F1 UNCHANGED at 84.1%. EXACTLY SEVEN
+    fixtures stopped lowering, NONE started, and all seven carry a PMAT-1425 refusal string and
+    no other: bigint_bits/bits/left_shift_overflow (`<<`), bit_invert (`&`), pow/pow_builtin
+    (`**` with a variable exponent), right_shift_large_amount (`>>` with a variable count).
+    Nothing collateral: `x ** 0.5` and `x ** y` on Float still emit (floats never reach the Int
+    `Pow` arm) and unary `~a` still emits. Floor 140 -> 128, keeping PMAT-1418''s margin RATIO
+    (140/151 = 92.7%, 128/139 = 92.1%) rather than its absolute slack. LESSON: a refusal fix
+    should measure its own corpus delta BEFORE pushing - the audit lane is the cheapest
+    whole-corpus detector of over-refusal in the repo and takes one command.
+    STANDING LEADS: (a) the sweep covered the integer BINARY operators only - the Lean lane''s
+    float, string and list vocabularies were spot-checked as elaborating but have NO corpus-driven
+    ACCEPT-implies-ELABORATES gate of their own (the same width question one type over, and the
+    cheapest next hunt); (b) the OTHER backends have no such gate either - only Lean and WASM have
+    a toolchain that can reject their output, and the WGSL/SPIR-V lanes validate through naga on
+    every emit while ruchy/forjar/shell have no post-emit checker at all; (c) XPILE-REFINE-005
+    (mathlib or a hand-rolled cast-through-Nat encoding for Int bitwise) is now the honest way to
+    RESTORE `&`/`|`/`^`/`<<` to the Lean lane, 0.1.619.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

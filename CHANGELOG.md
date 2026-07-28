@@ -7,6 +7,117 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Four `--target lean` arms emitted Lean constants that do not exist, and two more silently clamped a negative count to zero (PMAT-1425)
+
+PMAT-1405 had just found the DEFAULT `--target lean` emit exiting 0 on Lean that
+does not parse, and fixed one shape. The question here was whether the **whole**
+accepted image elaborates. A 19-construct sweep of arithmetic, comparison, bool,
+let-binding and call came back entirely clean — and did not contain the
+vocabulary that was broken, because neither of the Lean lane's two oracles
+contains it either (`lean_default_emit_witness.rs`'s corpus is three sources:
+`a + b`, `2 * x + 1`, `a > 1`). Six operators had never been driven through
+`lean` once in the 0.1.x line.
+
+Four of them emitted constants and instances that are simply absent from Lean 4
+core. Measured against lean 4.15.0, `xpile` exit 0 on every row:
+
+```text
+  a & b   ->  (Int.land a b)     lean: unknown constant 'Int.land'
+  a | b   ->  (Int.lor a b)      lean: unknown constant 'Int.lor'
+  a ^ b   ->  (Int.xor a b)      lean: unknown constant 'Int.xor'
+  a << b  ->  (a <<< b.toNat)    lean: failed to synthesize HShiftLeft Int Nat
+```
+
+The other two **did** elaborate, and were silently wrong at the edge. Both lower
+through `Int.toNat`, which *clamps* a negative to `0` rather than failing:
+
+```text
+  1024 >> -1     lean: 1024   CPython: ValueError: negative shift count
+     2 ** -1     lean:    1   CPython: 0.5
+     5 ** -2     lean:    1   CPython: 0.04
+```
+
+Every one of the six emissions carried a `/-- xpile-contract: C-PY-INT-ARITH -/`
+docstring claiming the construct was covered by a machine-checked contract.
+
+**The repo already knew — in the contract the emit cited.**
+`contracts/lean/PyIntArith.lean` lists under "Not yet covered": *"Bitwise
+(`&` / `|` / `^`) — core Lean lacks `Int.land/lor/xor` … Tracked as
+XPILE-REFINE-005"*, and `sub/provability-roadmap.md:174` adds *"core Lean 4.15
+doesn't auto-synthesise the `HShiftLeft Int Nat` instance"* — the `<<` arm
+exactly. The proof lane knew all four spellings were absent and modelled shifts
+as `a * 2^b` to avoid them; the code lane emitted them anyway, under a comment
+asserting the opposite that had never been checked against a toolchain.
+
+**The cross-lane asymmetry is the tell.** The three other integer backends all
+report this input: rust and ruchy emit
+`panic!("xpile: negative shift amount (Python ValueError: negative shift count;
+contract C-PY-INT-ARITH)")` and a `u32::try_from(exp).expect("… Python returns
+Float for negative exponents …")`, and the WASM lane traps in
+`$__wasm_shr_i64` (PMAT-1379, "shift-COUNT honest"). Only Lean — the lane whose
+entire purpose is machine-checked semantics — answered the wrong value at exit 0,
+citing the contract the other three cite in their panic text.
+
+**Fixed by kind, because the six fail for two different reasons.** `&`, `|`, `^`
+and `<<` now refuse: there is no core spelling to emit, so there is nothing to
+fix and no coercion that would not be an invention (PMAT-1395). `>>` and `**`
+keep lowering, but only for a provably non-negative count — the exact sibling of
+the existing `reject_zero_divisor`, drawing the same boundary for the same stated
+reason ("Lean is total and has no exception to raise … the emission would
+DISAGREE with Python silently"). The refusal is scoped to the **operand**, not
+the operator: `a >> 3`, `a >> 0`, `a >> 70`, `a ** 2`, `a ** 0` and `a ** 70` all
+still lower, and were measured identical to CPython across the operands most
+likely to diverge before the boundary was drawn:
+
+```text
+  -5 >> 1  => -3     -1 >> 3  => -1     1024 >> 70 => 0
+  (-2) ** 3 => -8     0 ** 0  =>  1     2 ** 70    => 1180591620717411303424
+```
+
+The surviving region is the one the contract already proves:
+`shl_/shr_/pow_fast_path_eq_slow_path` all take the count as `(b : Nat)`, so
+emission for an arbitrary `Int` count was emission outside what C-PY-INT-ARITH
+proves. As with PMAT-1394 this only removes emissions, so no `contracts/*.yaml`
+or Diamond resync is required.
+
+`crates/xpile/tests/lean_bitwise_shift_witness.rs` states the invariant over the
+operator **vocabulary** rather than over the six known-bad arms — a gate listing
+exactly the arms already fixed would not have caught this one. Accept implies
+elaborates (with `by decide` obligations pinning the value against CPython);
+refuse implies for the *stated* reason, keyed per source, because `a ** -2`
+already refused upstream and would satisfy a bare `is_err()` vacuously
+(PMAT-1410); anti-vacuity floors on both dispositions. A second test holds the
+refusal half without a Lean toolchain, so the hosted runner still keeps the four
+uncompilable arms shut instead of skipping the file. A third measures the premise
+itself — if a future toolchain adds `Int.land`, it reds and says to re-enable the
+arms rather than leave a refusal standing on an expired premise (PMAT-1421) — and
+carries a positive control, without which a broken `run_lean` would make every
+absence assertion pass for free.
+
+**The corpus shrinks, and a pre-existing witness caught it — which is the point.**
+Over-refusal is the natural failure mode of a refusal fix (PMAT-1419), and
+`audit_command_supports_lean_target`'s vacuity floor went red on this change.
+The delta was attributed rather than assumed, by reverting *only* the six
+`emit_binop` arms, rebuilding into the same target dir, and re-running the same
+831-file corpus with each binary probe-verified:
+
+```text
+           functions_emitted  requiring  with_citation    f1     errors  .py lowering
+  before         172             151          127       84.1%     754       77/810
+  after          158             139          117       84.1%     761       70/810
+```
+
+Exactly seven `.py` fixtures stopped lowering, none started, and each of the
+seven fails with a PMAT-1425 refusal message and no other: `bigint_bits.py`,
+`bits.py`, `left_shift_overflow.py` (`<<`), `bit_invert.py` (`&`), and
+`pow.py`, `pow_builtin.py`, `right_shift_large_amount.py` (the variable
+count/exponent shapes). Nothing collateral: `x ** 0.5` and `x ** y` on `Float`
+still emit — floats never reach the `Int` `Pow` arm — and unary `~a` still
+emits, both probe-verified. F1 is unchanged at 84.1%, so this removed uncited
+and cited emissions in proportion. The floor moves 140 → 128, keeping
+PMAT-1418's margin *ratio* (140/151 = 92.7%, 128/139 = 92.1%) rather than its
+absolute slack; a hollow Lean lane still reads 0.
+
 ### The WAT lift skipped every `(export …)` directive unread, silently rewriting the module's public ABI at exit 0 (PMAT-1424)
 
 Found by taking PMAT-1423's standing lead (e) — "the emit's aggregate lane has

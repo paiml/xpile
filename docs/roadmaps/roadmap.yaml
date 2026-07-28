@@ -19347,3 +19347,100 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1425
+  title: 'PMAT-1425: [src] FOUR `--target lean` ARMS EMITTED LEAN CONSTANTS THAT DO NOT EXIST,
+    AND TWO MORE SILENTLY CLAMPED A NEGATIVE COUNT TO ZERO: `a & b` lowered to `(Int.land a b)`,
+    `a | b` to `(Int.lor a b)`, `a ^ b` to `(Int.xor a b)` and `a << b` to `(a <<< b.toNat)` —
+    `xpile` exited 0 on all four and `lean` 4.15.0 then rejected the file (`unknown constant
+    ''Int.land''`; `failed to synthesize HShiftLeft Int Nat`). `a >> b` and `a ** b` DID
+    elaborate and were silently wrong at the edge: the lowering goes through `Int.toNat`, which
+    CLAMPS a negative to `0`, so `1024 >> -1` answered `1024` where CPython raises
+    `ValueError: negative shift count`, and `2 ** -1` answered `1` where CPython returns `0.5`.
+    Every one of the six emissions carried a `/-- xpile-contract: C-PY-INT-ARITH -/` docstring
+    claiming the construct was covered by a machine-checked contract.'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30, PMAT-1373; second
+    fire of the day). PMAT-1405 had just found the DEFAULT `--target lean` emit exiting 0 on Lean
+    that does not parse, and fixed ONE shape (the unregistered `@[xpile_contract]` attribute), so
+    the question asked here was whether the WHOLE accepted image elaborates — the PMAT-1422
+    "same table one type over" move. A 19-construct sweep of arithmetic/comparison/bool/let/call
+    came back entirely clean. ★ THE DEFECT WAS IN A VOCABULARY THE SWEEP DID NOT CONTAIN: bitwise
+    and shift were not in it, because they are not in `lean_elaborate_witness.rs` or
+    `lean_default_emit_witness.rs` either (whose DEFAULT_EMIT_CORPUS is three sources: `a + b`,
+    `2 * x + 1`, `a > 1`). Six operators had never been driven through `lean` once in the 0.1.x
+    line. ★ THE REPO ALREADY KNEW, IN THE CONTRACT THE EMIT CITED: `contracts/lean/PyIntArith.lean`
+    lists under "Not yet covered" — "Bitwise (`&` / `|` / `^`) — core Lean lacks
+    `Int.land/lor/xor` … Tracked as XPILE-REFINE-005", and `sub/provability-roadmap.md:174` adds
+    "core Lean 4.15 doesn''t auto-synthesise the `HShiftLeft Int Nat` instance", which is the `<<`
+    arm exactly. The PROOF lane knew all four spellings were absent and modelled shifts as
+    `a * 2^b` to avoid them; the CODE lane emitted them anyway. A source comment three lines above
+    the arms asserted the opposite ("Lean 4 core provides Int.land / Int.lor / Int.xor …") and had
+    never been checked against a toolchain. ★ CROSS-LANE ASYMMETRY IS THE TELL: the three other
+    integer backends all REPORT a negative count — rust/ruchy emit
+    `panic!("xpile: negative shift amount (Python ValueError: negative shift count; contract
+    C-PY-INT-ARITH)")` and a `u32::try_from(exp).expect("… Python returns Float for negative
+    exponents …")`, and WASM traps in `$__wasm_shr_i64` (PMAT-1379, "shift-COUNT honest"). Only
+    Lean — the lane whose entire purpose is machine-checked semantics — answered the wrong value
+    at exit 0, citing the same contract the other three cite in their panic text.'
+  fix: 'Split by KIND, because the six arms fail for two different reasons. (1) `&`, `|`, `^`, `<<`
+    now refuse via `no_lean_spelling`: there is no Lean 4 core spelling to emit, so there is
+    nothing to fix and no coercion that would not be an invention (PMAT-1395). (2) `>>` and `**`
+    keep lowering but only for a provably non-negative count, via
+    `reject_possibly_negative_count` — the exact sibling of the existing
+    `reject_zero_divisor`/`provably_nonzero_divisor` pair, drawing the same boundary for the same
+    reason ("Lean is total and has no exception to raise … the emission would DISAGREE with Python
+    silently"). `provably_nonnegative_count` deliberately does NOT recurse through `UnOp::Neg` —
+    negating is what makes a count unusable — so only `-0` survives it. Diagnostics are split
+    negative-literal vs not-provably-non-negative, and the Python consequence is passed in PER
+    OPERATOR rather than listing both, so a `>>` refusal does not describe `**`''s behaviour
+    (PMAT-1422: a refusal message that misdescribes its input hides a gap). ★ SCOPED TO THE
+    OPERAND, NOT THE OPERATOR: `a >> 3`, `a >> 0`, `a >> 70`, `a ** 2`, `a ** 0` and `a ** 70`
+    all still lower, and were measured identical to CPython across the operands most likely to
+    diverge (negative base, oversized count, `0 ** 0`, a result past i64) before the boundary was
+    drawn — over-refusal is the natural failure mode of a refusal fix (PMAT-1419). ★ The surviving
+    region is the one the contract already proves: `shl_/shr_/pow_fast_path_eq_slow_path` in
+    `contracts/lean/PyIntArith.lean` all take the count as `(b : Nat)`, so emission for an
+    arbitrary `Int` count was emission OUTSIDE what C-PY-INT-ARITH proves. As with PMAT-1394 this
+    only REMOVES emissions, so no `contracts/*.yaml` / Diamond resync is required.'
+  witness: '`crates/xpile/tests/lean_bitwise_shift_witness.rs`, 3 tests over a 16-source corpus.
+    The invariant is stated over the OPERATOR VOCABULARY, not over the six known-bad arms — a gate
+    listing exactly the arms already fixed would not have caught this one: (1) ACCEPT implies
+    ELABORATES, every accepted source''s emission run through `lean`, with `by decide` obligations
+    pinning the VALUE against CPython; (2) REFUSE implies FOR THE STATED REASON, keyed per source —
+    `a ** -2` already refused UPSTREAM (the frontend types it Float), so an unkeyed `is_err()`
+    would pass vacuously on it (PMAT-1410); (3) the six preserved shapes must still lower AND
+    elaborate AND compute CPython''s value; (4) anti-vacuity floors on BOTH dispositions, so
+    neither a blanket refusal nor a blanket acceptance satisfies the file. A second test holds the
+    refusal half WITHOUT a Lean toolchain, so the hosted workspace-test runner (no `lean`) still
+    keeps the four uncompilable arms shut instead of skipping the whole file. A third test MEASURES
+    the premise the fix rests on — `Int.land`/`Int.lor`/`Int.xor`/`Int.shiftLeft`/`<<<`/`&&&` are
+    still absent, `Int.shiftRight`/`>>>` still present — so if a future toolchain adds them the
+    gate reds and says to RE-ENABLE the arms rather than leave a refusal on an expired premise
+    (PMAT-1421). That test carries a POSITIVE CONTROL: without it a broken `run_lean` would make
+    every absence assertion pass for free. ★ RED HALF RUN IN BOTH DIRECTIONS on a detached
+    origin/main worktree: 2 of 3 fail there, and flipping `bitand` to Accept on main makes
+    assertion 1 fire with `unknown constant ''Int.land''`, proving the elaboration check is live
+    and not dead code. ★ Witness RUNTIME measured (1.08s serial vs 0.073s per `lean` invocation
+    x13) to confirm it is not silently skipping.'
+  docs: 'Module-level rustdoc on `no_lean_spelling` and `reject_possibly_negative_count` carrying
+    the measured `#check` transcript, the CPython/lean divergence table, the other three lanes''
+    dispositions, and the citations to PyIntArith.lean and provability-roadmap.md. The false
+    comment ("Lean 4 core provides Int.land / Int.lor / Int.xor …") is replaced by the measurement
+    that falsifies it. CHANGELOG carries the executed transcript.'
+  still_open: 'Named, not fixed: (a) bitwise `&`/`|`/`^` for the Lean lane needs either a mathlib
+    dependency or a hand-rolled cast-through-Nat encoding — this is XPILE-REFINE-005, already
+    tracked on the contract side, and is now consistently REFUSED on the code side rather than
+    emitted-and-broken; `<<` needs the same. (b) `>>`/`**` with a RUNTIME count stay refused: Lean
+    is total, so there is no faithful lowering short of returning an `Option`/`Except`, which
+    would change the lane''s signature shape and its `by decide` witness form. (c) the sweep that
+    found this covered the integer BINARY operators; the Lean lane''s float, string and list
+    vocabularies were spot-checked as elaborating but have no corpus-driven ACCEPT-implies-
+    ELABORATES gate of their own — the same width question one type over.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

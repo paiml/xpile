@@ -2224,6 +2224,168 @@ fn reject_zero_divisor(rhs: &Expr, py_op: &str, lean_result: &str) -> Result<(),
     )))
 }
 
+/// PMAT-1425: refuse a bitwise/shift operator that has no Lean 4 core
+/// spelling, rather than emit a constant that does not exist.
+///
+/// Through v0.1.617 four `emit_binop` arms named constants and instances
+/// that are simply absent from Lean 4 core. MEASURED against lean 4.15.0 —
+/// each of these is the toolchain's own answer, not a reading of the docs:
+///
+/// ```text
+///   #check @Int.land            =>  unknown constant 'Int.land'
+///   #check @Int.lor             =>  unknown constant 'Int.lor'
+///   #check @Int.xor             =>  unknown constant 'Int.xor'
+///   #check @Int.shiftLeft       =>  unknown constant 'Int.shiftLeft'
+///   #check (1:Int) <<< (2:Nat)  =>  failed to synthesize HShiftLeft Int Nat
+///   #check (1:Int) &&& (2:Int)  =>  failed to synthesize
+///   -- the one that DOES exist, and is why `>>` survives:
+///   #check @Int.shiftRight      =>  Int.shiftRight : Int → Nat → Int
+/// ```
+///
+/// So `xpile transpile x.py --target lean` exited **0** for `a & b`,
+/// `a | b`, `a ^ b` and `a << b`, writing a file that `lean` then rejects
+/// with `unknown constant` — under a `/-- xpile-contract: C-PY-INT-ARITH -/`
+/// docstring claiming the construct is carried by a machine-checked
+/// contract. No witness ever covered these four arms, which is how a
+/// vocabulary the emitter cannot spell shipped for the whole 0.1.x line.
+///
+/// This is a REFUSAL and not a fix because there is nothing to emit: the
+/// operation is absent from the target language's core, so there is no
+/// coercion available that would not be an invention (PMAT-1395 — making
+/// uncompilable output compile by guessing installs a silent wrong answer).
+/// A Mathlib-gated path is a future increment; the Lean lane deliberately
+/// imports nothing (all 36 `contracts/lean/*.lean` modules are core-only).
+///
+/// The boundary is not invented here either — the repo had ALREADY WRITTEN IT
+/// DOWN, in the contract these emissions cited. `contracts/lean/PyIntArith.lean`
+/// lists under "Not yet covered": *"Bitwise (`&` / `|` / `^`) — core Lean lacks
+/// `Int.land/lor/xor`, so this needs either a mathlib dep or a hand-rolled
+/// cast-through-Nat encoding. Tracked as XPILE-REFINE-005."* and
+/// `sub/provability-roadmap.md` adds *"core Lean 4.15 doesn't auto-synthesise
+/// the `HShiftLeft Int Nat` instance"* — which is the `<<` arm exactly. The
+/// PROOF lane knew all four were absent and modelled shifts as `a * 2^b` to
+/// avoid them; the CODE lane emitted them anyway, under a docstring citing
+/// C-PY-INT-ARITH. Refusing here makes the two agree.
+fn no_lean_spelling(py_op: &str, what: &str, attempted: &str) -> LeanCodegenError {
+    LeanCodegenError::Unsupported(format!(
+        "Python `{py_op}` ({what}) has no Lean 4 core spelling — the emission attempted \
+         `{attempted}`, which lean 4.15.0 rejects (`Int.land`/`Int.lor`/`Int.xor`/\
+         `Int.shiftLeft` are not constants and there is no `HShiftLeft Int Nat` \
+         instance; only `Int.shiftRight` exists, which is why `>>` still lowers). \
+         The Lean lane is core-only by design, so there is nothing faithful to emit \
+         and it refuses rather than write a file that `lean` cannot elaborate. \
+         Every other integer backend HAS this operator — use `--target rust` or \
+         `--target ruchy` (both emit `a {py_op} b` directly)."
+    ))
+}
+
+/// PMAT-1425: refuse `>>` / `**` whose right operand is not a provably
+/// non-negative literal.
+///
+/// The sibling of [`reject_zero_divisor`], for the same reason and with the
+/// same boundary. Both operators lower through `.toNat`, and `Int.toNat`
+/// CLAMPS a negative to `0` rather than failing — so the count silently
+/// becomes `0`. MEASURED against lean 4.15.0 and CPython 3:
+///
+/// ```text
+///   1024 >> -1   lean: 1024   CPython: ValueError: negative shift count
+///      2 ** -1   lean:    1   CPython: 0.5   (a Float — not even this type)
+///      5 ** -2   lean:    1   CPython: 0.04
+/// ```
+///
+/// `lean` exits 0 on all three, so — exactly as for a zero divisor — the
+/// divergence is SILENT, and it is silent in the one lane whose purpose is
+/// machine-checked semantics. The other lanes all report it: the Rust and
+/// Ruchy emissions carry an explicit
+/// `panic!("xpile: negative shift amount (Python ValueError: negative shift
+/// count; contract C-PY-INT-ARITH)")` and a `u32::try_from(exp).expect("…
+/// Python returns Float for negative exponents …")`, and the WASM lane traps
+/// in `$__wasm_shr_i64` (PMAT-1379, "shift-COUNT honest"). All three cite
+/// C-PY-INT-ARITH while doing it — the same contract this lane cited while
+/// answering `1024`.
+///
+/// A NON-NEGATIVE count is faithful and keeps lowering; this was measured
+/// across the edges rather than assumed, including the cases most likely to
+/// diverge (negative base, oversized count, `0 ** 0`):
+///
+/// ```text
+///   -5 >> 1  =>  -3      -1 >> 3  =>  -1      1024 >> 70  =>  0
+///   (-2) ** 3  =>  -8     0 ** 0  =>  1       2 ** 70  =>  1180591620717411303424
+/// ```
+///
+/// all identical in lean and CPython — so this refusal is scoped to the
+/// operand that can diverge, not to the operator (PMAT-1419: over-refusal is
+/// the natural failure mode of a refusal fix).
+///
+/// And, as for the divisor, the surviving region is the one the contract
+/// already proves: `shl_fast_path_eq_slow_path` / `shr_fast_path_eq_slow_path`
+/// / `pow_fast_path_eq_slow_path` in `contracts/lean/PyIntArith.lean` all take
+/// the count as `(b : Nat)`, so emission for an arbitrary `Int` count was
+/// emission OUTSIDE the region C-PY-INT-ARITH proves. Refusing exactly
+/// `¬ provably-non-negative` realigns the codegen with the contract and changes
+/// nothing about the code that still lowers — so, as with PMAT-1394, no
+/// `contracts/*.yaml` / Diamond-theorem resync is required.
+fn reject_possibly_negative_count(
+    rhs: &Expr,
+    py_op: &str,
+    what: &str,
+    lean_result: &str,
+    py_consequence: &str,
+) -> Result<(), LeanCodegenError> {
+    if provably_nonnegative_count(rhs) {
+        return Ok(());
+    }
+    // Split the diagnostic by KIND, as `reject_zero_divisor` does: a negative
+    // literal is a definite miscompile, an unknown operand is an unprovable
+    // one. Same refusal, different truth. `py_consequence` is passed in per
+    // operator rather than listing both: a message that describes `**`'s
+    // behaviour while refusing a `>>` misdescribes its own input.
+    let why = if provably_negative_count(rhs) {
+        format!("the {what} is a negative literal, so this is a definite miscompile")
+    } else {
+        format!(
+            "the {what} is not a provably-non-negative literal, so it may be negative at runtime"
+        )
+    };
+    Err(LeanCodegenError::Unsupported(format!(
+        "Python `{py_op}` requires a non-negative {what} — with a negative one it \
+         {py_consequence} — and {why}. Lean is total and has no exception to raise: \
+         the lowering goes through `Int.toNat`, which CLAMPS a negative to `0`, so \
+         {lean_result} and `lean` exits 0 — the emission would DISAGREE with Python \
+         silently. This is the same boundary `reject_zero_divisor` draws for `//` and \
+         `%`. Use `--target rust` or `--target ruchy` (both emit an explicit panic \
+         guard naming the Python error), or make the {what} a non-negative literal."
+    )))
+}
+
+/// The `>>` / `**` analogue of [`provably_nonzero_divisor`]. Deliberately
+/// NOT a recursion through `UnOp::Neg`: negating is what makes a count
+/// unusable here, so only `-0` survives it.
+fn provably_nonnegative_count(e: &Expr) -> bool {
+    match e {
+        Expr::LitInt(v) => *v >= 0,
+        Expr::UnOp {
+            op: UnOp::Neg,
+            operand,
+        } => matches!(operand.as_ref(), Expr::LitInt(0)),
+        _ => false,
+    }
+}
+
+/// True when the operand is a literal the lane can see is NEGATIVE. Used only
+/// to pick the diagnostic wording — an operand that is neither provably
+/// non-negative nor provably negative is the "unknown at runtime" case.
+fn provably_negative_count(e: &Expr) -> bool {
+    match e {
+        Expr::LitInt(v) => *v < 0,
+        Expr::UnOp {
+            op: UnOp::Neg,
+            operand,
+        } => matches!(operand.as_ref(), Expr::LitInt(v) if *v > 0),
+        _ => false,
+    }
+}
+
 /// Binary ops:
 ///   - Arithmetic add/sub/mul: `+ - *`
 ///   - Comparisons: `== != < <= > >=`
@@ -2257,23 +2419,43 @@ fn emit_binop(out: &mut String, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<(),
             reject_zero_divisor(rhs, "%", "Int.fmod a 0` is `a")?;
             emit_prefix2(out, "Int.fmod", lhs, rhs)
         }
-        // Bitwise: Lean 4 core provides Int.land / Int.lor / Int.xor for
-        // the bool-ops and Int has HShiftLeft / HShiftRight instances
-        // taking Nat. We coerce rhs via `.toNat` for shifts (matches
-        // Python's "shift amount must be non-negative" check; if rhs is
-        // negative the resulting toNat is 0, which differs from Python's
-        // ValueError — leaving as a known Lean fidelity gap, callable
-        // from any equivalence theorem against the Rust emission via the
-        // `C-PY-INT-ARITH` contract).
-        BinOp::BitAnd => emit_prefix2(out, "Int.land", lhs, rhs),
-        BinOp::BitOr => emit_prefix2(out, "Int.lor", lhs, rhs),
-        BinOp::BitXor => emit_prefix2(out, "Int.xor", lhs, rhs),
-        BinOp::Shl => emit_shift(out, lhs, "<<<", rhs),
-        BinOp::Shr => emit_shift(out, lhs, ">>>", rhs),
-        // Lean's `^` is `HPow.hPow`. For `Int`, the standard library
-        // resolves `(a : Int) ^ (n : Nat) : Int` — coerce rhs via .toNat,
-        // same trade-off as shifts (negative exponent silently → 0).
-        BinOp::Pow => emit_shift(out, lhs, "^", rhs),
+        // PMAT-1425: bitwise AND/OR/XOR and `<<` have NO Lean 4 core
+        // spelling at all. The comment this replaces asserted they did
+        // ("Lean 4 core provides Int.land / Int.lor / Int.xor … and Int
+        // has HShiftLeft / HShiftRight instances taking Nat") and was
+        // never checked against a toolchain; see `NO_LEAN_SPELLING`.
+        BinOp::BitAnd => Err(no_lean_spelling("&", "bitwise AND", "Int.land")),
+        BinOp::BitOr => Err(no_lean_spelling("|", "bitwise OR", "Int.lor")),
+        BinOp::BitXor => Err(no_lean_spelling("^", "bitwise XOR", "Int.xor")),
+        BinOp::Shl => Err(no_lean_spelling("<<", "left shift", "a <<< b.toNat")),
+        // `>>` and `**` DO have faithful Lean spellings — but only for a
+        // NON-NEGATIVE count. `Int.toNat` clamps a negative to `0`, so a
+        // negative count silently answers `a` / `1` where Python RAISES
+        // (`>>`) or returns a Float (`**`). Same rule as the divisor:
+        // emit only where the lane can prove the count is in range.
+        BinOp::Shr => {
+            reject_possibly_negative_count(
+                rhs,
+                ">>",
+                "shift count",
+                "`a >>> 0` is `a`",
+                "raises `ValueError: negative shift count`",
+            )?;
+            emit_shift(out, lhs, ">>>", rhs)
+        }
+        // Lean's `^` is `HPow.hPow`; for `Int` the standard library
+        // resolves `(a : Int) ^ (n : Nat) : Int`.
+        BinOp::Pow => {
+            reject_possibly_negative_count(
+                rhs,
+                "**",
+                "exponent",
+                "`a ^ 0` is `1`",
+                "returns a Float (`2 ** -1` is `0.5`), which the emitted `Int` \
+                 signature cannot represent",
+            )?;
+            emit_shift(out, lhs, "^", rhs)
+        }
     }
 }
 
