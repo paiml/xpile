@@ -2,22 +2,23 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-29 (PMAT-1457 landed from an honesty hunt: PMAT-1456 wrote down that a
-  superlative needs a live count and that FINALITY was STILL UNGATED, then edited
-  contracts/lean/FfiCpythonExt.lean and walked past the `**TWELFTH and FINAL**` 120 lines into
-  that same file. Ten ordinal-finality claims were live under contracts/ with the whole
-  claims_drift suite GREEN; six were false. "The Nth and FINAL X" is honest exactly when N equals
-  the LIVE |X|, so five populations are now re-derived every run and FOUR live claims PASS -- it
-  is a measurement, not a ban on the word. LESSONS: (1) ⭐ THE MIXED SENTENCE -- a CORRECT ordinal
-  can sit beside a FALSE totality clause and launder it; "SIXTH and FINAL Silver theorem on
-  C-FFI-CPYTHON-EXT" is still true at 6 while "every equation ... has Silver-tier coverage" went
-  false because the contract grew 7 equations -> 22. THE ORDINAL FROZE THE NUMERATOR WHILE THE
-  SUBSTRATE GREW THE DENOMINATOR, and nobody edited either. (2) A REFUTATION CAN ALREADY BE IN
-  THE REPO: "FIFTH and FINAL Path α contract" is contradicted by five sibling files in the same
-  directory recording a seventh, eighth, ninth and TENTH. (3) TWO OF MY OWN GUARDS FAILED THEIR
-  OWN RED HALVES again -- and the OBVIOUS justification was the wrong one both times. (4) ⚠️
-  `git checkout -- <file>` to undo a red-half perturbation reverts to HEAD and deletes
-  uncommitted guard fixes; COMMIT in between.)'
+updated: "2026-07-29 (PMAT-1459 landed from an honesty hunt after two of PMAT-1458's three standing\
+  \ leads measured out as NON-defects. The substrate publishes 138 falsification commands as its\
+  \ enforcement story -- one `test:` field per rule, rendered into the emitted contract docs --\
+  \ and SEVENTY of them cannot run. 67 name a `cargo test --test <target>` for a target that does\
+  \ not exist, and no `#[test] fn` of that name exists anywhere among the 2924 in the tree, so the\
+  \ names were NEVER REAL rather than stale; 3 resolve to a real target but name a filter matching\
+  \ no test, so they exit 0 with `running 0 tests`. 123 of the 138 declare `ship_blocking: true`.\
+  \ Nothing had ever read the field: `pv lint` runs 8 gates and none looks at it. LESSONS: (1)\
+  \ \u2B50 A CLAIM OF ENFORCEMENT WHOSE SUBJECT DOES NOT EXIST -- every earlier slice in this arc\
+  \ found a number that had AGED; `idempotency` never existed, because the falsifier was authored\
+  \ as prose beside the rule it was meant to check and nothing ever executed it. (2) FIX WHAT WAS\
+  \ MEASURED, NOT WHAT IS PLAUSIBLE: whether some other test covers each rule was NOT measured, so\
+  \ the disclosure says the COMMAND was false and stops -- claiming 'untested' would have been a\
+  \ new false claim in the pessimistic direction. (3) `ship_blocking` was left alone ON PURPOSE:\
+  \ it has two readings and PMAT-1458's own rule is to take a class where it is DECIDABLE. (4) A\
+  \ LEAD CAN BE A NON-DEFECT: the tier-ladder totality is TRUE under the repo's own subsumption\
+  \ semantics, already decided at claims_drift.rs:4379.)"
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -73,6 +74,43 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1459
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: the substrate publishes 138 falsification commands as its enforcement story and 70
+    of them cannot run — 67 name a target that never existed anywhere, 3 exit 0 having
+    compared nothing
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). NOT one of PMAT-1458''s leads — two of those were measured first and closed as
+    NEGATIVE (see the roadmap entry). ** THE SURFACE: every contracts/*.yaml `falsification_tests[]`
+    entry publishes a `test:` field — the command that falsifies the rule, rendered into the
+    emitted contract docs by `include_falsification`. Nothing read it: `pv lint contracts/` runs
+    8 gates and none touches falsification_tests; no crates/*/src consumer of `ship_blocking`
+    exists. ** MEASURED at 5de8c74b: 35 contracts, 138 entries, 123 `ship_blocking: true`, and
+    SEVENTY cannot run — 67 name a `--test <target>` that does not exist AND has no `#[test] fn`
+    of that name among the 2924 in the tree (never real, not stale; `cargo test -p xpile-backend
+    --test idempotency` → `error: no test target named`), 3 resolve but the filter selects
+    nothing (`... str_no_lifetimes` → `running 0 tests ... 828 filtered out`, EXIT 0 — the worse
+    half). 68 run. Four crates named as falsification hosts hold ZERO tests. ** ⭐ SHAPE: a claim
+    of ENFORCEMENT whose SUBJECT DOES NOT EXIST — not a number that aged, a target that was never
+    there. ** REPAIR: the 70 `test:` fields state what the command did and that re-pointing is
+    open work; they do NOT claim the rule is untested (not measured, so asserting either way
+    would be a new false claim). All other keys byte-identical on all 138, verified by
+    before/after re-parse. `ship_blocking` deliberately UNTOUCHED — two readings, hence an OWNER
+    question, filed not decided. ** GATE falsification_command_integrity.rs (4 tests): every
+    command line must resolve to a live package + existing target + a filter selecting >= 1
+    `#[test]`, or be a `NO RUNNABLE FALSIFIER` disclosure citing a PMAT id and carrying no command
+    line. RED HALF RUN: pre-repair contracts → `70 of 138 ... (live: 68 runnable, 0 declared
+    holes)`, itemised. Subject and needle pinned independently; six perturbation arms, each with
+    a control that PASSES. FIRST SLICE IN FOUR to lose no guard to its own red half. ** NEXT
+    PICK: the 429-string BROADENING-count class in normative slots (PMAT-1458 lead (c), the only
+    one of the three still live) — or the work programme this slice exposes: re-point the 70
+    disclosed rules at real falsifiers, one contract at a time, now that each repair is
+    verifiable. NEXT FREE ID IS PMAT-1460. Do NOT start a gate_touch and do NOT touch
+    witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 — after it, CHANGELOG/version/docs/release
+    mechanics ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1458
   status: done
   ev_rank: R1

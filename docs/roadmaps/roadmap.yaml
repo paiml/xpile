@@ -22075,3 +22075,106 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1459
+  title: 'the substrate publishes 138 falsification commands as its enforcement story and 70 of them cannot run — 67 name a target that never existed anywhere in the tree, and 3 exit 0 having compared nothing'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). NOT one of PMAT-1458''s three standing leads — two of them were measured first
+    and are recorded below as NEGATIVE results, which is what sent the hunt one surface over.
+
+    ** THE SURFACE. Every contracts/*.yaml carries a `falsification_tests:` list, and each entry
+    publishes a `test:` field: THE COMMAND THAT FALSIFIES THIS RULE. It is the substrate''s only
+    statement of HOW a rule is checked, and xpile-contract-backend''s `include_falsification`
+    knob renders it into the emitted contract docs for readers. NOTHING read it. `pv lint
+    contracts/` runs 8 gates and none of them looks at falsification_tests; grep for
+    `ship_blocking` across crates/*/src finds no consumer at all.
+
+    ** MEASURED at 5de8c74b over 35 contracts / 138 entries, 123 of which declare
+    `ship_blocking: true`. SEVENTY of the 138 name a command that cannot falsify anything:
+    (a) 67 name `cargo test -p <pkg> --test <target>` for a target that does not exist — and the
+    stronger finding is that no `#[test] fn <target>` exists ANYWHERE among the 2924 in the
+    workspace either, so these names were never real, not merely stale. Verified by running:
+    `cargo test -p xpile-backend --test idempotency` → `error: no test target named
+    `idempotency` in `xpile-backend``.
+    (b) 3 resolve to a REAL target but name a filter matching no test, so they exit 0 —
+    `cargo test -p xpile --test transpile_e2e str_no_lifetimes` → `running 0 tests ... 828
+    filtered out`, EXIT=0. This is the worse half and the familiar shape: a green that compared
+    nothing reads as a pass.
+    (c) 68 run something.
+    Four whole crates named as falsification hosts (xpile-contract-backend,
+    xpile-contract-frontend, xpile-frontend, xpile-lean-contract-backend) contain ZERO tests of
+    any kind.
+
+    ** ⭐ THE SHAPE: A CLAIM OF ENFORCEMENT WHOSE SUBJECT DOES NOT EXIST. Every prior slice in
+    this arc found a claim whose NUMBER had aged. This one is not aged — `idempotency` never
+    existed. The apparatus was authored as prose in the same pass as the rule it was supposed to
+    check, and because nothing ever executed it, the substrate spent fourteen months publishing
+    123 ship-blocking falsifiers of which 53 could actually block anything.
+
+    ** REPAIR, scoped to what was measured. The 70 `test:` fields now state what the command did:
+    which target was named, that it does not exist / that the filter selected nothing, and the
+    exact cargo error. The disclosure does NOT claim the rule is untested — it says the COMMAND
+    was false and that re-pointing the entry at a real falsifier is open work, because whether
+    some other test covers the rule was NOT measured and asserting it either way would be a new
+    false claim in one direction or the other. `rule` / `prediction` / `if_fails` /
+    `ship_blocking` / `counter_example_classes` are BYTE-IDENTICAL on all 138 entries, verified
+    by re-parsing before/after and diffing every other key.
+
+    ** ⚠️ `ship_blocking` DELIBERATELY NOT TOUCHED. "ship_blocking: true on an entry with no
+    runnable test" has two readings — the flag describes the RULE''s severity, or it describes
+    what CI blocks on — and PMAT-1458''s own lesson is to take a class at the level where it is
+    DECIDABLE rather than argue semantics. The `test:` field has only one reading. Nothing
+    consumes ship_blocking today, so no published claim rests on it; whether the 70 should be
+    flipped is an OWNER question, filed here, not decided by a cron fire.
+
+    ** GATE: crates/xpile/tests/falsification_command_integrity.rs (XPILE-FALSIFY-CMD-001), 4
+    tests. It decides RUNNABILITY, not adequacy — whether a test really falsifies its rule is a
+    judgement no gate can make, whether the command selects >= 1 `#[test]` is arithmetic over
+    the live tree, and that is the half that was silently false. An entry passes iff every
+    command line resolves (live workspace package; existing `tests/<t>.rs` or `tests/<t>/main.rs`;
+    a filter matching >= 1 test fn; a `cd <dir> &&` whose dir exists) OR it is an explicit
+    `NO RUNNABLE FALSIFIER` disclosure citing a PMAT id AND carrying no command line — so a
+    disclosure cannot smuggle a fabricated command back in and the gate cannot be satisfied by
+    writing prose.
+
+    ** RED HALF RUN, and the perturbation ASSERTED TO APPLY: restoring the pre-repair contracts
+    makes the gate report `70 of 138 published falsification commands cannot run ... (live: 68
+    runnable, 0 declared holes)`, itemised, with the 3 vacuous ones named as `exits 0 with
+    running 0 tests`. The `828` in the gate''s message is the same 828 the real cargo run
+    printed. SUBJECT and NEEDLE pinned independently per PMAT-1454: every contract publishing
+    `falsification_tests:` must yield an entry (a parse regression cannot shrink the corpus
+    silently); a LIVE entry must classify as Runs; and all four failure arms (dead package, dead
+    target, empty filter, package with no tests at all) plus both disclosure-abuse arms
+    (smuggled command, undated) are established by perturbation, each against a control that
+    PASSES. No guard was lost to its own red half this time — the first slice in four.
+
+    ** ⭐ TWO OF PMAT-1458''S THREE STANDING LEADS, MEASURED AND CLOSED AS NEGATIVE:
+    (b) THE TIER LADDER IS TRUE, NOT FALSE. xpile-contract-backend-trait-v1.yaml:190/:195 assert
+    the Bronze→Silver→Gold→Platinum→Diamond progression is UNIVERSAL. Per-tier by exact suffix,
+    22-26 of the 35 contracts bind ZERO theorems at some tier — but this repo has already
+    DECIDED that a higher tier SUBSUMES a lower one: claims_drift.rs:4379 `is_silver_or_better`
+    scores Silver coverage against `_silver|_gold|_platinum|_diamond`, with the note that it was
+    "measured both ways while writing this". Under the substrate''s own semantics every contract
+    binds a Diamond, so all five tiers are universal and the lead is a NON-DEFECT. Recorded so
+    the next slice does not re-derive it. A LEAD IS A PLACE TO LOOK — and sometimes what is
+    there is nothing.
+    (a) the per-contract equation denominators ("8/9 equations", "9/9", "7/7"): all fourteen
+    sites are CITED provenance in Lean doc comments and yaml comments, i.e. exactly the class
+    PMAT-1458 ruled honest history and left untouched. Consistency says leave them; still open
+    is only the POLICY question of whether a dated record may freeze a per-contract count.
+    (c) the forty-odd BROADENING counts in normative slots is now the ONLY live lead of that
+    arc, and it is 429 normative count-claim strings wide.
+
+    ** ZERO crates/*/src. contracts/*.yaml touched in `falsification_tests[].test` ONLY
+    (pre-freeze, allowed). `pv lint contracts/` 0 errors / 0 warnings, unchanged.
+
+    ** NEXT CLASS, and it is the natural successor: the substrate has 138 `rule:` statements and
+    now discloses that 70 have no named falsifier. Re-pointing them one contract at a time —
+    proving per rule whether a real test discharges it — is a work programme, not a slice, and
+    the gate now makes each repair verifiable and prevents a 71st fabricated command.
+
+    NEXT FREE ID IS PMAT-1460. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD
+    FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
+    STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
+  status: done
+  priority: P1
+  category: honesty

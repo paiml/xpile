@@ -7,6 +7,80 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### 70 of the substrate's 138 falsification commands could not run — 67 named a target that never existed anywhere, and 3 exited 0 having compared nothing (PMAT-1459)
+
+Every `contracts/*.yaml` carries a `falsification_tests:` list, and each entry
+publishes a `test:` field: **the command that falsifies this rule**. It is the
+substrate's only statement of *how* a rule is checked, and
+`xpile-contract-backend`'s `include_falsification` knob renders it into the
+emitted contract docs for readers.
+
+Nothing ever read it. `pv lint contracts/` runs eight gates and none of them
+looks at `falsification_tests`; grepping `crates/*/src` for `ship_blocking`
+finds no consumer at all.
+
+**Measured at `5de8c74b`** — 35 contracts, 138 entries, **123 of them
+`ship_blocking: true`** — and **70 name a command that cannot falsify
+anything**:
+
+| shape | count | what running it does |
+|---|---|---|
+| `--test <target>` for a target that does not exist | **67** | `error: no test target named `idempotency` in `xpile-backend`` |
+| target exists, filter matches no test | **3** | `running 0 tests ... 828 filtered out`, **exit 0** |
+| runs something | 68 | — |
+
+⭐ **The 67 were never real, not merely stale.** No `#[test] fn` of those names
+exists anywhere among the **2 924** in the workspace. Four crates named as
+falsification hosts — `xpile-contract-backend`, `xpile-contract-frontend`,
+`xpile-frontend`, `xpile-lean-contract-backend` — contain **zero tests of any
+kind**. Every previous slice in this arc found a number that had *aged*; this
+is a claim of enforcement whose **subject does not exist**, because the
+falsifier was authored as prose beside the rule it was meant to check and
+nothing ever executed it.
+
+The three that exit 0 are the worse half — a green that compared nothing reads
+as a pass, the same shape as `--verify` printing `✓ MATCH` over two empty
+outputs (PMAT-1386).
+
+**Repair.** The 70 `test:` fields now state what was measured: which target was
+named, that it does not exist (or that the filter selected nothing), and the
+exact cargo error. The disclosure does **not** claim the rule is untested —
+whether some other test covers it was not measured, and asserting it either way
+would be a new false claim. `rule`, `prediction`, `if_fails`, `ship_blocking`
+and `counter_example_classes` are **byte-identical on all 138 entries**,
+verified by re-parsing before and after and diffing every other key.
+`ship_blocking` is deliberately untouched: it has two readings, and this repo's
+own rule is to take a class at the level where it is decidable. Whether the 70
+should be flipped is an owner question, filed rather than decided.
+
+**Gate** — `crates/xpile/tests/falsification_command_integrity.rs`
+(XPILE-FALSIFY-CMD-001, 4 tests). It decides **runnability, not adequacy**:
+whether a test really falsifies its rule is a judgement no gate can make;
+whether the published command selects at least one `#[test]` is arithmetic over
+the live tree, and that is the half that was silently false. An entry passes iff
+every command line resolves — live workspace package, existing test target, a
+filter matching ≥ 1 test, a `cd <dir> &&` whose directory exists — or it is an
+explicit `NO RUNNABLE FALSIFIER` disclosure that cites a PMAT id **and carries
+no command line**, so a disclosure cannot smuggle a fabricated command back in.
+
+**Red half run.** Restoring the pre-repair contracts makes the gate report
+`70 of 138 published falsification commands cannot run ... (live: 68 runnable,
+0 declared holes)`, itemised, with the three vacuous ones named as `exits 0
+with running 0 tests` — and the `828` in that message is the same 828 the real
+`cargo test` run printed. Subject and needle are pinned independently: every
+contract publishing `falsification_tests:` must yield an entry, a live entry
+must classify as runnable, and all six perturbation arms (dead package, dead
+target, empty filter, package with no tests, smuggled command, undated
+disclosure) are established against controls that pass.
+
+Two of PMAT-1458's three standing leads were measured first and **closed as
+non-defects**: the tier-ladder totality is *true* under the substrate's own
+subsumption semantics (`claims_drift.rs:4379` already scores Silver coverage
+against `_silver|_gold|_platinum|_diamond`), and the per-contract equation
+denominators are cited provenance, the class PMAT-1458 ruled honest history. A
+lead is a place to look — sometimes what is there is nothing.
+
+
 ### The substrate says "12 contracts" 62 times and holds 35 — and every one of the three normative sites is TRUE in the half a reader checks (PMAT-1458)
 
 PMAT-1457 closed the ordinal class and named the next one in its own notes: the
