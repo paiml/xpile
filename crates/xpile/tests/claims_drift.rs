@@ -663,6 +663,371 @@ fn provability_inventory_module_counts_match_lakefile() {
     }
 }
 
+// ── (b2) pilot SIZE is a CLAIM CLASS, over the WHOLE tracked corpus ──
+
+/// Modules in `contracts/lean/` that are NOT lakefile roots — the
+/// KNOWN-INCOMPLETE population. Derived, not exempted: PMAT-1451's rule is
+/// that a carve-out which is not checked is a hole, so the "0 modules"
+/// KNOWN-INCOMPLETE claim the anchor gate above deliberately skips is
+/// verified here against its own denominator instead of being waved past.
+fn known_incomplete_module_count() -> usize {
+    let files = lean_module_files("contracts/lean");
+    let roots = lakefile_root_count();
+    assert!(
+        files >= roots,
+        "contracts/lean/ has {files} module file(s) but lakefile.lean lists \
+         {roots} root(s) — a root names a file that does not exist, or the \
+         roots parser is over-counting"
+    );
+    files - roots
+}
+
+/// Modules in the SEPARATE Mathlib lane. Also derived rather than exempted:
+/// `contracts/lean-models/` is a different population with a different size,
+/// and prose that names it is making a true claim about that lane, not a
+/// false one about the pilot.
+fn mathlib_lane_module_count() -> usize {
+    lean_module_files("contracts/lean-models")
+}
+
+/// `*.lean` files under `dir` (recursively) that are not the build script.
+fn lean_module_files(dir: &str) -> usize {
+    fn walk(d: &std::path::Path, n: &mut usize) {
+        let entries = fs::read_dir(d).unwrap_or_else(|e| panic!("read_dir {}: {e}", d.display()));
+        for p in entries.filter_map(|e| e.ok()).map(|e| e.path()) {
+            if p.is_dir() {
+                walk(&p, n);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("lean")
+                && p.file_name().and_then(|s| s.to_str()) != Some("lakefile.lean")
+            {
+                *n += 1;
+            }
+        }
+    }
+    let mut n = 0;
+    walk(&workspace_root().join(dir), &mut n);
+    n
+}
+
+/// The `contracts/` tree — every contract YAML, every Lean source, every
+/// inventory page.
+///
+/// PMAT-1452: `claim_pages()` is a MARKDOWN corpus (the book, `README.md`,
+/// `CLAUDE.md`, `docs/status/INDEX.md`, `docs/specifications/**`). The
+/// NORMATIVE artifacts — the contract YAMLs the entire provability claim
+/// rests on, and the Lean sources that discharge them — had never been in ANY
+/// claims-drift gate's subject, and all three live falsehoods this slice found
+/// were sitting in them.
+fn provable_artifact_pages() -> Vec<(String, String)> {
+    let root = workspace_root();
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let entries =
+            fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+        let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        paths.sort(); // deterministic order ⇒ stable failure message
+        for p in paths {
+            if p.is_dir() {
+                walk(&p, root, out);
+            } else if matches!(
+                p.extension().and_then(|s| s.to_str()),
+                Some("yaml") | Some("lean") | Some("md")
+            ) {
+                let rel = p
+                    .strip_prefix(root)
+                    .expect("contract artifact under workspace root")
+                    .to_string_lossy()
+                    .into_owned();
+                let body = fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+                out.push((rel, body));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&root.join("contracts"), &root, &mut out);
+    out
+}
+
+/// Every `(claimed_count, byte_offset)` in `text` whose HEAD NOUN is
+/// `module`/`modules`.
+///
+/// This is the CLASS, not an enumeration of spellings — which is the whole
+/// point. The gate this supplements pinned five hand-written
+/// `counts_between(.., prefix, suffix)` anchors, and PMAT-1450 established
+/// that a needle spelled one way is blind to the same claim spelled another.
+/// So the scan runs the other direction: find the noun, then read the number
+/// off it.
+///
+/// Two forms, because the corpus writes both:
+///   * ATTRIBUTIVE — `35-module substrate`, `a (now 35-module) pilot`.
+///   * HEAD NOUN — `35 modules`, `35 machine-checked modules`,
+///     `35 lakefile-rooted modules` (up to three tokens of qualifier).
+///
+/// Two shapes are deliberately NOT counts, and each was a false positive
+/// during measurement:
+///   * `module` as a hyphenated MODIFIER (`all 3 CLI module-construction
+///     sites`) — `module` is not the thing being counted.
+///   * a digit run that is part of a larger token (`PMAT-361 (MetaHirModule
+///     modules side)`, `size-0 modules`, `all 4-byte (module, config) pairs`)
+///     — a bare-integer token is required, so an id or a unit cannot pose as
+///     a count.
+fn module_counts(text: &str) -> Vec<(usize, usize)> {
+    let b = text.as_bytes();
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while let Some(rel) = text[from..].find("module") {
+        let at = from + rel;
+        from = at + "module".len(); // non-empty needle ⇒ strictly advances
+        if at > 0 && (b[at - 1] as char).is_ascii_alphanumeric() {
+            continue; // `MetaHirModule` — not the word
+        }
+        let mut end = at + "module".len();
+        if text[end..].starts_with('s') {
+            end += 1;
+        }
+        match text[end..].chars().next() {
+            // `module-construction`, `module-level` — modifier, not head noun.
+            Some(c) if c == '-' || c.is_ascii_alphanumeric() => continue,
+            _ => {}
+        }
+        let mut claimed: Option<usize> = None;
+        // ATTRIBUTIVE: digits hyphen-attached to the noun.
+        if at > 0 && b[at - 1] == b'-' {
+            let j = at - 1;
+            let mut k = j;
+            while k > 0 && b[k - 1].is_ascii_digit() {
+                k -= 1;
+            }
+            if k < j && (k == 0 || !(b[k - 1] as char).is_ascii_alphanumeric()) {
+                claimed = text[k..j].parse::<usize>().ok();
+            }
+        }
+        // HEAD NOUN: the nearest bare-integer token within three.
+        if claimed.is_none() {
+            for tok in text[..at].split_whitespace().rev().take(3) {
+                let t = tok.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+                if !t.is_empty() && t.bytes().all(|c| c.is_ascii_digit()) {
+                    claimed = t.parse().ok();
+                    break;
+                }
+            }
+        }
+        if let Some(n) = claimed {
+            out.push((n, at));
+        }
+    }
+    out
+}
+
+/// The clause of `flat` containing byte offset `at`.
+///
+/// PMAT-1451: a claim is a CLAUSE, not a line and not a paragraph. It matters
+/// here for the same reason it mattered there — `paragraphs_under_headings`
+/// flattens a whole markdown TABLE into one paragraph, so scoping the
+/// population lookup to the paragraph made `fable-architectural-review.md`'s
+/// "Proofs are REAL: 35 modules" row inherit the `contracts/lean-models/` row
+/// four lines below it and get judged against the Mathlib lane's size.
+fn clause_bounds(flat: &str, at: usize) -> (usize, usize) {
+    let (mut lo, mut hi) = (0usize, flat.len());
+    for d in ["|", ". ", "; ", "? ", "! "] {
+        if let Some(j) = flat[..at].rfind(d) {
+            lo = lo.max(j + d.len());
+        }
+        if let Some(j) = flat[at..].find(d) {
+            hi = hi.min(at + j);
+        }
+    }
+    (lo, hi)
+}
+
+/// EVERY published present-tense size of the Lean proof pilot equals the live
+/// `lakefile.lean` root count — anywhere in the corpus, in any spelling.
+///
+/// PMAT-1452 — the rule was already written down and enforced on TWO files in
+/// SIX spellings. Both bounds were wrong, on the two independent axes PMAT-1450
+/// named, and each blindness is established below by a control that PASSES:
+///
+///   * SUBJECT. `provability_inventory_module_counts_match_lakefile` reads
+///     `contracts/lean/PROVABILITY-INVENTORY.md`; `roadmap_lean_module_count_
+///     matches_lakefile` reads one `strategic_goals` clause. Nothing else in
+///     the repository was checked, and `claim_pages()` — the corpus every
+///     other claims-drift gate ranges over — is MARKDOWN ONLY, so
+///     `contracts/**` has never been in any gate's subject at all. All three
+///     live falsehoods were there.
+///
+///   * NEEDLE. The anchors are six literal `prefix<n>suffix` spellings. The
+///     corpus writes the same claim as `the 23 modules that elaborate` and
+///     `the whole 28-module pilot`, neither of which any anchor matches.
+///
+/// ⭐ THE SHARPEST SITE IS THE DERIVATION ITSELF. `contracts/lean/lakefile.lean`
+/// opened with "PILOT = the 23 modules that elaborate clean under bare core"
+/// twenty-six lines above a `roots := #[…]` array holding 35 — and
+/// `lakefile_root_count()`, the ground truth BOTH older gates measure against,
+/// parses that array out of that file and never reads the prose above it. The
+/// authoritative file contradicted itself, and the half nothing enforced is
+/// the half that was false. The other two sites, `PyExceptAllowlist.lean` and
+/// its contract `py-except-allowlist-v1.yaml`, both said 28.
+///
+/// The three OTHER populations prose legitimately counts are DERIVED, not
+/// exempted, because a carve-out that is not checked is a hole (PMAT-1451):
+/// the KNOWN-INCOMPLETE remainder and the separate `contracts/lean-models/`
+/// Mathlib lane each get their own denominator, and the test asserts every
+/// population actually got dispatched — an unreachable arm is an unchecked
+/// arm.
+#[test]
+fn lean_pilot_size_claims_match_the_lakefile() {
+    let pilot = lakefile_root_count();
+    let incomplete = known_incomplete_module_count();
+    let mathlib = mathlib_lane_module_count();
+    assert!(
+        pilot >= 1 && mathlib >= 1,
+        "derived populations look empty (pilot {pilot}, mathlib lane \
+         {mathlib}) — a directory moved; fix the derivation, not the prose"
+    );
+
+    // Words that make a paragraph be ABOUT the Lean proof lane. Without this
+    // the scan would range over every `module` in the repository (WASM
+    // modules, Python modules, CPython extension modules).
+    const LANE: [&str; 8] = [
+        "pilot",
+        "lakefile",
+        "lake build",
+        "machine-checked",
+        "contracts/lean",
+        "lean_proof",
+        "elaborat",
+        "substrate",
+    ];
+
+    let mut pages = claim_pages();
+    let contract_pages = provable_artifact_pages();
+    let contract_page_count = contract_pages.len();
+    pages.extend(contract_pages);
+    assert!(
+        contract_page_count >= 30,
+        "provable_artifact_pages() collected only {contract_page_count} file(s) \
+         from contracts/ — the walk is not reaching the contract corpus, and \
+         this gate's whole subject widening is vacuous"
+    );
+
+    let mut offences = Vec::new();
+    let mut agree_in_contracts = 0usize;
+    let mut agree_elsewhere = 0usize;
+    let mut by_population: HashMap<&str, usize> = HashMap::new();
+    let mut records = 0usize;
+
+    for (rel, body) in &pages {
+        for para in paragraphs_under_headings(body) {
+            let lower = para.flat.to_ascii_lowercase();
+            if !LANE.iter().any(|k| lower.contains(k)) {
+                continue;
+            }
+            if para.heading.contains(HISTORICAL_MARKER) {
+                continue;
+            }
+            let quoted = quoted_spans(&para.flat);
+            for (claimed, at) in module_counts(&para.flat) {
+                // Reporting a claim is not making one (PMAT-1450).
+                if quoted.iter().any(|&(a, b)| a <= at && at < b) {
+                    continue;
+                }
+                let (clo, chi) = clause_bounds(&para.flat, at);
+                let clause_text = &para.flat[clo..chi];
+                let clause = clause_text.to_ascii_lowercase();
+                let (population, live) =
+                    if clause.contains("lean-models") || clause.contains("mathlib lane") {
+                        ("the separate Mathlib lane", mathlib)
+                    } else if clause.contains("known-incomplete") {
+                        ("the KNOWN-INCOMPLETE remainder", incomplete)
+                    } else {
+                        ("the lake pilot", pilot)
+                    };
+                if claimed == live {
+                    *by_population.entry(population).or_default() += 1;
+                    if rel.starts_with("contracts/") {
+                        agree_in_contracts += 1;
+                    } else {
+                        agree_elsewhere += 1;
+                    }
+                    continue;
+                }
+                // A GROWTH RECORD (`22 -> 23 modules`, `→ an 11-module pilot`)
+                // states what a named slice changed, not what is true now. It
+                // must cite the slice, so the shape cannot be used to launder
+                // a bare stale numeral into an exemption.
+                //
+                // BOTH halves are scoped to the CLAUSE, and the second half is
+                // why: written against the PARAGRAPH, this exemption's own red
+                // half came back GREEN. `audit-design.md`'s bullet opens
+                // "(PMAT-903/904, 2026-06-24 sprint)" and carries the growth
+                // record four sentences later, so stripping the citation FROM
+                // THE RECORD still left a `PMAT-` in the paragraph and the
+                // stale numeral stayed exempt. That is the same
+                // paragraph-vs-clause defect PMAT-1450 fixed in the
+                // `(historical record)` guard and PMAT-1451 fixed in the
+                // quorum enumeration — third slice running in which the
+                // correction restated the defect it was correcting.
+                let back = &para.flat[clo..at];
+                if (back.contains('→') || back.contains("->")) && clause_text.contains("PMAT-") {
+                    records += 1;
+                    continue;
+                }
+                let line = para
+                    .lines
+                    .iter()
+                    .find(|(_, l)| l.contains(&format!("{claimed}")))
+                    .map_or(para.start, |(n, _)| *n);
+                offences.push(format!(
+                    "{rel}:{line}: claims {claimed} for {population}, which \
+                     currently has {live} — \"{}\"",
+                    clause_text.trim()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        offences.is_empty(),
+        "published Lean-pilot size(s) do not match the live derivation \
+         (lakefile roots {pilot}, KNOWN-INCOMPLETE {incomplete}, Mathlib lane \
+         {mathlib}). Update the prose, or the lakefile, whichever is wrong:\n{}",
+        offences.join("\n")
+    );
+
+    // ── anti-vacuity: the scan must actually be finding claims, on BOTH
+    // halves of the widened subject and in EVERY population arm ──
+    assert!(
+        agree_in_contracts >= 1,
+        "no matching pilot-size claim was found anywhere under contracts/, so \
+         the half of the subject PMAT-1452 added is not being exercised and \
+         this gate would stay green if the needle stopped working"
+    );
+    assert!(
+        agree_elsewhere >= 1,
+        "no matching pilot-size claim was found outside contracts/, so the \
+         pre-existing markdown half of the subject is not being exercised"
+    );
+    for population in [
+        "the lake pilot",
+        "the KNOWN-INCOMPLETE remainder",
+        "the separate Mathlib lane",
+    ] {
+        assert!(
+            by_population.contains_key(population),
+            "no claim was judged against `{population}`, so that arm is \
+             unreachable — an unchecked arm is exactly the hole this gate \
+             derives populations to avoid. Either the corpus stopped stating \
+             it, or the clause needle no longer routes it."
+        );
+    }
+    assert!(
+        records >= 1,
+        "no growth-record clause (`22 -> 23 modules`, `→ an 11-module pilot`) \
+         was seen, so the one exemption this gate grants is unreachable and \
+         untested. If the corpus really stopped carrying one, delete the \
+         exemption rather than leaving it standing unexercised."
+    );
+}
+
 // ── (c) + (d) roadmap consistency ────────────────────────────────────
 
 /// Fold the `strategic_goals:` block (col-0 key → next col-0 key) into one

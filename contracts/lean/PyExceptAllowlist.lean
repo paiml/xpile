@@ -15,7 +15,7 @@
   Mathlib note (the provability/mathlib decision): every theorem here is
   discharged over CORE Lean 4 primitives (`List.isEmpty`/`List.contains`,
   `Bool.or_false`, structural `cases`) — NO `import Mathlib`, no `sorry`, no
-  `axiom`. This mirrors the whole 28-module pilot: the allowlist semantics is a
+  `axiom`. This mirrors the whole pilot: the allowlist semantics is a
   decidable Boolean property, so Mathlib's real-analysis / linear-algebra buys
   nothing. The purity invariant (hermetic, fast, warningAsError) holds.
 
