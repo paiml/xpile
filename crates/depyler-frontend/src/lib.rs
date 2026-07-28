@@ -3175,6 +3175,12 @@ impl Frontend for PythonFrontend {
         &["py", "pyi"]
     }
 
+    /// PMAT-1433: none. Both `.py` and `.pyi` lower — measured by
+    /// `frontend_claim_disposition_witness.rs`, not asserted here.
+    fn refused_claims(&self) -> &[&'static str] {
+        &[]
+    }
+
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError> {
         self.parse_and_lower_for(path, source, AliasSemantics::Value)
     }

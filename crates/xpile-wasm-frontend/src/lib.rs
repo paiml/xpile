@@ -243,6 +243,12 @@ impl Frontend for WasmFrontend {
         &["wat"]
     }
 
+    /// PMAT-1433: none. `.wat` lifts (lossily, see the module docs) — measured
+    /// by `frontend_claim_disposition_witness.rs`, not asserted here.
+    fn refused_claims(&self) -> &[&'static str] {
+        &[]
+    }
+
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError> {
         let fallback = path
             .file_stem()

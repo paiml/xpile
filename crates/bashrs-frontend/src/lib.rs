@@ -1515,6 +1515,22 @@ impl Frontend for BashrsFrontend {
         &["sh", "bash", "zsh", "mk"]
     }
 
+    /// PMAT-1433: the three BUILD-DRIVER spellings `build_driver_dialect`
+    /// names. They stay CLAIMED (so the refusal can say which dialect is
+    /// missing, per PMAT-1420) but they do not lower, and until this method
+    /// existed nothing said so: `lowers_input()` is `true` because `.sh`
+    /// lowers, so `xpile info` printed `bashrs (sh, bash, zsh, mk)` flush with
+    /// the three that work and `book/src/reference/frontends.md` published
+    /// `.mk` under "Real POSIX parser".
+    ///
+    /// This list must equal `build_driver_dialect`'s match set — the witness
+    /// checks it by BEHAVIOUR (every spelling here refuses, every other
+    /// claimed spelling lowers), so implementing the Makefile dialect reds
+    /// until the entry is removed.
+    fn refused_claims(&self) -> &[&'static str] {
+        &["*.mk", "Makefile", "Dockerfile"]
+    }
+
     /// PMAT-038: extend the default extension-based match with the
     /// extensionless `Makefile` / `Dockerfile` cases. The bashrs
     /// domain is unique in xpile for having canonical filenames

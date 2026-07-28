@@ -19963,3 +19963,90 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1433
+  title: 'PMAT-1433: [frontend+docs+honesty] A FRONTEND MAY LOWER ONLY SOME OF WHAT IT CLAIMS,
+    AND EVERY REPORT SAID IT LOWERED ALL OF IT: `Frontend::lowers_input()` (PMAT-1346) is a
+    WHOLE-FRONTEND boolean over a per-CLAIM property. `bashrs-frontend` earns `true` on `.sh`,
+    and PMAT-1420 then made `*.mk`, `Makefile` and `Dockerfile` — all three ROUTED into it by
+    `matches_path` — refuse unconditionally. Nothing had the granularity to say so, so
+    `xpile info` printed `- bashrs (sh, bash, zsh, mk)` unannotated and counted it among the
+    "4 lowering" frontends, and `book/src/reference/frontends.md` published Extensions
+    `.sh, .bash, .zsh, .mk` under Status "Real POSIX parser". `xpile transpile x.mk` has exited
+    NON-ZERO for every input since PMAT-1420 landed the day before.'
+  description: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1432 standing lead (c) verbatim. Lead (a) — "do the `lean_theorem:` /
+    `kani_harness:` symbols the Semantic and Symbolic strata count actually RESOLVE?" — was
+    probed FIRST and came back STALE-AND-HONEST in all three directions, which is worth
+    recording so it is not re-derived: all 332 distinct `lean_theorem:` values resolve to a real
+    declaration (the single apparent miss, `XpileModels.ols_unique`, lives in the SEPARATE
+    Mathlib lane `contracts/lean-models/Models/GeneralLinear.lean`); all 67 distinct
+    `kani_harness:` values resolve to a real `#[kani::proof]` harness among the 89 in
+    `contracts/kani/`; and every one of the 328 lean pairs and 69 kani pairs that also names a
+    `lean_file:` / `kani_file:` has the symbol IN the file it cites — zero misfilings, zero
+    nonexistent cited files.
+    ** THE DEFECT. The vocabulary for this exact disclosure already existed one line above in
+    the same `print_info` loop — `- ruchy (ruchy)  [routing only — INPUT refuses, no parser]` —
+    but it keys off the frontend-level boolean, and `bashrs` is not routing-only. Worse in the
+    other direction: `Makefile` and `Dockerfile` are claimed by `matches_path` alone, are in
+    neither `extensions()` nor any report, and also refuse. The surface was OVER-reported and
+    UNDER-reported at the same time.
+    ** MEASURED against the live registry (one probe per frontend, driven at every spelling that
+    frontend claims): LOWERED = probe.py, probe.pyi, probe.c, probe.h, probe.sh, probe.bash,
+    probe.zsh, probe.wat; REFUSED = probe.mk, Makefile, Dockerfile, probe.ruchy. Exactly one
+    frontend has a MIXED disposition and it is the one PMAT-1420 touched a day earlier.
+    ** WHY THE EXISTING GATES MISSED IT. `claims_drift.rs` DOES confront `lowers_input()` with
+    behaviour — the right shape — but `FRONTEND_PROBES` carries ONE file name per frontend
+    (`probe.sh` for bashrs), so the confrontation samples one of four claimed extensions and can
+    never reach `.mk`. Its book rules assert the frontends.md table NAMES every registered
+    frontend; no rule read the Extensions cell. `makefile_dialect_refusal_witness.rs`
+    (PMAT-1420) proves the three build drivers refuse — it is about the REFUSAL, not about who
+    says otherwise. `cli_docs_drift.rs` pins the `xpile info` transcript to the BINARY, so it
+    faithfully reproduced the binary being wrong.
+    ** FIX. (1) `Frontend::refused_claims()` — REQUIRED trait method, no default, because a
+    default of `&[]` would let the next partial refusal inherit the same silence (PMAT-1429).
+    (2) `xpile info` APPENDS `[claims REFUSED — no parser: …]`; the PMAT-1346 routing-only
+    suffix is untouched, so the format is extended, not reshaped (PMAT-1428). (3) frontends.md
+    splits one path column into TWO — `Extensions that LOWER` and `Routed → REFUSED` — because
+    they are different claims and the table had only ever made one.
+    ** GATE: crates/xpile/tests/frontend_claim_disposition_witness.rs (XPILE-FRONTEND-CLAIM-001,
+    6 tests). Over the CLAIM CLASS, not over `.mk`: every registered frontend, every spelling it
+    claims, set equality in BOTH directions — a spelling that refuses without being declared
+    reds, and a declared-refused spelling that starts lowering reds too, so implementing the
+    Makefile dialect FORCES the disclosure to move (PMAT-1431 `notation_surface` shape). Both
+    published surfaces are compared to the REGISTRY, not to each other. Anti-vacuity: the SAME
+    BYTES that refuse at a refused spelling must LOWER at a lowering spelling, so the refusal is
+    proved to be about the PATH and not the program; plus a non-empty guard on the exercised set
+    and a hard panic when the frontends.md row cannot be found (PMAT-1417: a deleted table must
+    not make the gate pass by leaving nothing to disagree with).
+    ** RED HALF RUN, SEVEN separate executions, at least one per test: dropping `*.mk` from
+    `refused_claims()` (the exact pre-fix state) reds 3; a phantom `*.nope` entry reds 4
+    including the well-formedness check; restoring the stale `.sh, .bash, .zsh, .mk` book row
+    reds the book check alone; zeroing ruchy''s list reds the `lowers_input` agreement check;
+    reverting the `print_info` suffix reds the info check alone; a bashrs probe that refuses at
+    EVERY spelling (a here-doc) reds the anti-vacuity check by name; deleting the bashrs row
+    reds the row-not-found panic.
+    ** NOTE ON SEPARATION OF DUTIES: reverting `refused_claims()` alone does NOT red the
+    `xpile info` check, and that is correct — the reporter and the declaration move together, so
+    the check that catches a WRONG declaration is the behavioural one. A self-report needs a
+    measurement, and the measurement is `every_claimed_path_spelling_has_the_declared_disposition`.
+    ** NOT a witness_floor.rs touch (two-touch serial resource, PMAT-1372 / PMAT-1373) and NOT a
+    gate_touch in the serial chain — the witness is a NEW file and no existing gate was edited.
+    STANDING LEADS: (a) PMAT-1432 lead (b) is untouched — the three contracts now at 3/4
+    (PTX-MMA, FFI-CPYTHON-EXT, RUST-FN-TO-LEAN-THM) each have a real code lane worth asking "is
+    the shipped lane the one the contract describes?" about; (b) PMAT-1430 lead (c),
+    backends.md''s Status column is prose nothing gates — the BACKEND twin of exactly this
+    slice, and `Backend::targets()` is the same shape as `Frontend::extensions()`: does every
+    backend lower every meta-HIR shape its Status cell implies, or only some?; (c) the
+    `Frontend::matches_path` OVERRIDE is claimed by one frontend and its claim set is checked
+    only through `refused_claims()` — a frontend that overrode `matches_path` to claim a
+    spelling it LOWERS would be invisible to `extensions()`-derived reports the same way
+    `Makefile` was.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -50,6 +50,16 @@ impl Frontend for RuchyFrontend {
         &["ruchy"]
     }
 
+    /// PMAT-1433: ALL of them. This frontend is routing-only, so its single
+    /// claim is a refused claim. Stated here rather than left to
+    /// `lowers_input() == false` so the two reports cannot disagree: the
+    /// witness asserts `lowers_input() == false` IFF every claimed spelling is
+    /// listed here, which is what makes the frontend-level boolean and the
+    /// per-claim list one fact instead of two.
+    fn refused_claims(&self) -> &[&'static str] {
+        &["*.ruchy"]
+    }
+
     /// PMAT-1346: routing only. Ruchy is emit-only; `.ruchy` input refuses.
     fn lowers_input(&self) -> bool {
         false

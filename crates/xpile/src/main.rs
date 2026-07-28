@@ -1431,10 +1431,23 @@ fn print_info(session: &TranspileSession) -> Result<()> {
         println!("  frontends ({registered} registered, {lowering} lowering):");
     }
     for f in &session.frontends {
+        // PMAT-1433: `lowers_input()` is a WHOLE-FRONTEND boolean, so a
+        // frontend that lowers SOME of what it claims printed flush with one
+        // that lowers all of it. `bashrs` declares `true` (`.sh` lowers) while
+        // `*.mk` / `Makefile` / `Dockerfile` have refused unconditionally since
+        // PMAT-1420 — this line read as "the POSIX parser handles `mk`". The
+        // routing-only suffix is kept verbatim for the whole-frontend case;
+        // the partial case APPENDS a second, distinct suffix rather than
+        // reshaping the line (PMAT-1428).
         let suffix = if f.lowers_input() {
-            ""
+            let refused = f.refused_claims();
+            if refused.is_empty() {
+                String::new()
+            } else {
+                format!("  [claims REFUSED — no parser: {}]", refused.join(", "))
+            }
         } else {
-            "  [routing only — INPUT refuses, no parser]"
+            "  [routing only — INPUT refuses, no parser]".to_string()
         };
         println!("    - {} ({}){suffix}", f.name(), f.extensions().join(", "));
     }
