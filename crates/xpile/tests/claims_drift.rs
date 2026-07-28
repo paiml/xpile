@@ -129,7 +129,34 @@ fn claimed_universal_depths(text: &str) -> Vec<usize> {
 /// `depth-` prefix — needed to ask whether the claim sits inside a QUOTED span
 /// (see [`quoted_spans`]).
 fn claimed_universal_depths_at(text: &str) -> Vec<(usize, usize)> {
+    // ASCII-only lowering, so every byte offset below indexes `text` too:
+    // `str::to_ascii_lowercase` rewrites `A..=Z` and copies every other byte
+    // through, including the multi-byte `≥` and `—` this corpus is full of.
+    // (`str::to_lowercase` is NOT length-preserving — 'İ' becomes two chars —
+    // which would slide every offset and misattribute the reported line.)
+    let lower = text.to_ascii_lowercase();
+    debug_assert_eq!(lower.len(), text.len(), "ASCII lowering must preserve len");
+    let mut out = label_form_depths(&lower);
+    out.extend(definition_form_depths(&lower));
+    out.sort_unstable_by_key(|&(_, at)| at);
+    out
+}
+
+/// The LABEL form: `depth-N UNIVERSAL`, in any of the four spellings the corpus
+/// writes, matched case-insensitively.
+///
+/// PMAT-1454 — the CASE blindness. `contracts/**` shouts its milestones:
+/// `COMPLETES DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS`. The prefix was
+/// matched as the literal lower-case `depth-`, so fifty claims in the
+/// normative substrate were invisible to a parser that had already been
+/// repaired twice for spelling (PMAT-1448 the range, PMAT-1450 the slash
+/// list). Measured control: the pre-PMAT-1454 parser returns `[]` for the
+/// upper-case line and this one returns `[5]`. Third spelling axis, third
+/// slice running — which is why the definition form below is matched too,
+/// rather than waiting for a fourth.
+fn label_form_depths(lower: &str) -> Vec<(usize, usize)> {
     const PREFIX: &str = "depth-";
+    let text = lower;
     let bytes = text.as_bytes();
     let digits_at = |i: &mut usize| -> Option<usize> {
         let start = *i;
@@ -170,8 +197,91 @@ fn claimed_universal_depths_at(text: &str) -> Vec<(usize, usize)> {
         if text[i..].starts_with('+') {
             i += 1;
         }
-        if text[i..].trim_start().starts_with("UNIVERSAL") {
+        // `lower` is already ASCII-lowered by the caller. The qualifier sits
+        // AFTER the depth in every spelling PMAT-1448/1450 repaired…
+        if text[i..].trim_start().starts_with("universal") {
             out.push((claimed, at));
+            continue;
+        }
+        // …and BEFORE it in `UNIVERSAL Diamond depth-3`, which the substrate
+        // writes too — including in one line of `xpile-spec.md` and one of
+        // `audit-design.md`, so this spelling was blind in the MARKDOWN half
+        // as well as the new one.
+        //
+        // The qualifier must be ADJACENT (bar the noun it qualifies), and that
+        // is measured, not stylistic. Allowing any run of lower-case words
+        // between them — the first thing this tried — matched two corpus
+        // sentences that assert nothing about depth: the ratchet POLICY
+        // "Diamond-depth UNIVERSAL ratchet is frozen at depth-13" and
+        // "further UNIVERSAL broadening sweeps beyond depth-13", both of which
+        // say what NOT to do. Reporting a policy as a false claim is how a
+        // gate becomes un-shippable, and every needle fails in both
+        // directions (PMAT-1451). Both shapes are pinned below.
+        let head = &text[..at];
+        if let Some(k) = head.rfind("universal") {
+            let between = &head[k + "universal".len()..];
+            if between.is_empty() || between == " diamond " {
+                out.push((claimed, at));
+            }
+        }
+    }
+    out
+}
+
+/// The DEFINITION form: `every contract has ≥N distinct Diamond categories`.
+///
+/// PMAT-1454 — the blindness that matters most, because it needs no
+/// misspelling at all. `sub/diamond-taxonomy.md` DEFINES depth-N UNIVERSAL as
+/// "*every* contract has at least N distinct Diamond theorem categories", and
+/// the substrate then asserts the claim **in the words of that definition**,
+/// with no `depth-` token anywhere in the sentence:
+///
+/// ```text
+///   invariants:
+///     - "Substrate milestone: every contract has ≥5 distinct Diamond categories"
+/// ```
+///
+/// A needle keyed on the LABEL cannot see the DEFINITION the label expands to.
+/// Twelve such claims were live, up to `≥13`, against a substrate whose live
+/// universal depth is 1 — and unlike the label form they carry no marker a
+/// reader could grep for either.
+///
+/// Two guards, each pinned by a unit test in both directions because a
+/// carve-out that is not checked is a hole (PMAT-1451):
+///   * the clause must be ABOUT Diamond categories, so `every contract has ≥2
+///     references` is not a depth claim;
+///   * the quantifier must sit within the subject's own clause, so a `≥N`
+///     belonging to a later sentence cannot be read onto `every contract`.
+fn definition_form_depths(lower: &str) -> Vec<(usize, usize)> {
+    const SUBJECT: &str = "every contract";
+    const QUANTIFIERS: [&str; 3] = ["≥", ">=", "at least "];
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while let Some(rel) = lower[from..].find(SUBJECT) {
+        let at = from + rel;
+        from = at + SUBJECT.len(); // non-empty needle ⇒ strictly advances
+        let (clo, chi) = clause_bounds(lower, at);
+        let clause = &lower[clo..chi];
+        if !clause.contains("diamond") {
+            continue;
+        }
+        // Nearest quantifier at or after the subject, inside the same clause.
+        let tail = &lower[from..chi.max(from)];
+        let Some((qat, q)) = QUANTIFIERS
+            .iter()
+            .filter_map(|q| tail.find(q).map(|i| (i, *q)))
+            .min_by_key(|&(i, _)| i)
+        else {
+            continue;
+        };
+        let ds = from + qat + q.len();
+        let digits: String = lower[ds..]
+            .trim_start_matches(' ')
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        if let Ok(n) = digits.parse::<usize>() {
+            out.push((n, at));
         }
     }
     out
@@ -744,6 +854,102 @@ fn provable_artifact_pages() -> Vec<(String, String)> {
     }
     let mut out = Vec::new();
     walk(&root.join("contracts"), &root, &mut out);
+    out
+}
+
+/// One block of a `contracts/**` artifact: a maximal run of lines of the same
+/// KIND, flattened, with each line's offset kept so a match can be attributed
+/// back to it.
+///
+/// PMAT-1454 — `paragraphs_under_headings` cannot be used here, and the reason
+/// is worth writing down because it looked like it could. It treats any line
+/// whose first non-space character is `#` as an ATX heading, and in YAML that
+/// is EVERY comment. So a four-line provenance comment became four one-line
+/// "headings", which breaks the record in both directions: a claim that WRAPS
+/// (`… COMPLETES DEPTH-13` / `UNIVERSAL ACROSS ALL 12 CONTRACTS`) is split
+/// across two paragraphs and matches neither, and the `# PMAT-333:` that opens
+/// the block falls outside the scope of the claim it cites, so a correctly
+/// cited record reads as uncited. Measured: 36 sites reported as uncited that
+/// are all, in fact, cited by their own block header.
+///
+/// The block is the record unit for these artifacts, exactly as the
+/// `(historical record)` SECTION is for markdown — and it is a tighter scope
+/// than the file, so a citation cannot be borrowed from an unrelated equation.
+struct Block {
+    /// True if this is provenance (a comment run) rather than a normative
+    /// field run. `.lean`/`.rs`/`.md` under `contracts/` are prose throughout.
+    record: bool,
+    flat: String,
+    /// `(offset in `flat`, 1-based line number)`, ascending.
+    marks: Vec<(usize, usize)>,
+}
+
+impl Block {
+    /// The 1-based line number containing byte offset `at` in [`Self::flat`].
+    fn line_at(&self, at: usize) -> usize {
+        self.marks
+            .iter()
+            .rev()
+            .find(|&&(off, _)| off <= at)
+            .map_or(0, |&(_, n)| n)
+    }
+}
+
+/// Split a `contracts/**` artifact into [`Block`]s.
+///
+/// YAML alternates between provenance (`#` runs) and normative fields; every
+/// other artifact kind under `contracts/` is prose, so its blocks are simply
+/// its non-blank runs. Comment markers are stripped when flattening, or a
+/// claim that wraps mid-phrase would have a `#` spliced into it and stop
+/// matching — which is precisely how the wrapped `DEPTH-13 / UNIVERSAL` sites
+/// hid.
+fn substrate_blocks(rel: &str, body: &str) -> Vec<Block> {
+    let yaml = rel.ends_with(".yaml");
+    let mut out: Vec<Block> = Vec::new();
+    let mut cur: Option<Block> = None;
+    // Lean `/-! … -/` module docs and `/-- … -/` theorem docs are ONE record
+    // that spans blank lines, and the citation sits in the block's `##`
+    // header. Splitting on a blank line separates the milestone sentence from
+    // the `## PMAT-354 —` that dates it, and ten correctly-cited records read
+    // as uncited. Counted rather than boolean because Lean block comments
+    // nest.
+    let mut doc_depth = 0usize;
+    for (i, raw) in body.lines().enumerate() {
+        let t = raw.trim();
+        let opens = t.matches("/-").count();
+        let closes = t.matches("-/").count();
+        if t.is_empty() {
+            if doc_depth == 0 {
+                out.extend(cur.take());
+            }
+            continue;
+        }
+        doc_depth = (doc_depth + opens).saturating_sub(closes);
+        // In YAML a comment is provenance and anything else is an assertion.
+        // Elsewhere under contracts/ there is no assertion syntax at all.
+        let record = !yaml || t.starts_with('#');
+        let text = if yaml && record {
+            t.trim_start_matches('#').trim_start()
+        } else {
+            t
+        };
+        let start_new = cur.as_ref().is_none_or(|b| b.record != record);
+        if start_new {
+            out.extend(cur.take());
+            cur = Some(Block {
+                record,
+                flat: String::new(),
+                marks: Vec::new(),
+            });
+        }
+        let b = cur.as_mut().expect("just set");
+        if !b.flat.is_empty() {
+            b.flat.push(' ');
+        }
+        b.marks.push((b.flat.len(), i + 1));
+        b.flat.push_str(text);
+    }
+    out.extend(cur);
     out
 }
 
@@ -1831,6 +2037,77 @@ fn book_lean_transcripts_carry_the_live_citation_form() {
 /// demonstrated from the corpus and is pinned here instead. Both directions
 /// matter: the fence must not GRANT a `(historical record)` exemption to the
 /// prose after it, and must not REVOKE the real heading either.
+/// The substrate splitter, and the citation branch that today's corpus cannot
+/// demonstrate.
+///
+/// PMAT-1454: the record-citation rule in
+/// `docs_claim_no_universal_depth_the_substrate_does_not_hold` never fires on
+/// the live corpus — every provenance block that carries a milestone also
+/// carries an id. A rule a corpus cannot exercise has to be pinned somewhere
+/// or it decays into a comment (PMAT-1451 shipped its fence-awareness rule the
+/// same way, for the same reason). So the two dispositions are demonstrated
+/// here on synthetic input instead.
+#[test]
+fn an_uncited_provenance_block_is_reported() {
+    // A YAML comment run is ONE record and a field run is ONE assertion, and
+    // the split is on the comment marker, not on the blank line.
+    let yaml = "  # PMAT-354: FIFTH Diamond — COMPLETES DEPTH-5\n  \
+                # UNIVERSAL ACROSS ALL 12 CONTRACTS.\n  \
+                invariants:\n  \
+                - \"Substrate milestone: every contract has ≥5 Diamond categories\"\n";
+    let blocks = substrate_blocks("contracts/x-v1.yaml", yaml);
+    assert_eq!(blocks.len(), 2, "one comment run, one field run");
+    assert!(blocks[0].record && !blocks[1].record);
+
+    // The claim WRAPS across two comment lines. Flattening has to strip the
+    // second `#`, or `DEPTH-5` and `UNIVERSAL` end up with a `#` between them
+    // and the needle sees nothing — which is how these hid.
+    assert_eq!(
+        claimed_universal_depths(&blocks[0].flat),
+        vec![5],
+        "a claim wrapped across two comment lines must still be seen"
+    );
+    assert_eq!(
+        blocks[0].line_at(0),
+        1,
+        "attribution back to the source line"
+    );
+    assert!(
+        !pmat_ids(&blocks[0].flat).is_empty(),
+        "this record is cited"
+    );
+    // …and the assertion half is found in the field run, by its DEFINITION
+    // spelling, with no `depth-` token anywhere in it.
+    assert_eq!(claimed_universal_depths(&blocks[1].flat), vec![5]);
+
+    // THE BRANCH THE CORPUS CANNOT REACH: same record, no id.
+    let uncited = substrate_blocks(
+        "contracts/x-v1.yaml",
+        "  # FIFTH Diamond — COMPLETES DEPTH-5 UNIVERSAL ACROSS ALL 12.\n",
+    );
+    assert_eq!(uncited.len(), 1);
+    assert_eq!(claimed_universal_depths(&uncited[0].flat), vec![5]);
+    assert!(
+        pmat_ids(&uncited[0].flat).is_empty(),
+        "an uncited milestone record must be reported, or the exemption is \
+         unconditional and the gate's record branch is decoration"
+    );
+
+    // A Lean `/-! … -/` docstring spans blank lines: one record, not three.
+    let lean = "/-! ## PMAT-354 — FIFTH Diamond\n\n\
+                **SUBSTRATE MILESTONE: DEPTH-5 UNIVERSAL.**\n\n\
+                Tier: DIAMOND. -/\n";
+    let blocks = substrate_blocks("contracts/lean/X.lean", lean);
+    assert_eq!(
+        blocks.len(),
+        1,
+        "a Lean block comment is ONE record even across blank lines — \
+         splitting it separates the milestone from the `## PMAT-` that dates \
+         it, and ten correctly-cited records read as uncited"
+    );
+    assert!(!pmat_ids(&blocks[0].flat).is_empty());
+}
+
 #[test]
 fn a_fence_comment_is_not_a_heading() {
     let doc = "## Live section\n\n```python\n# helper (historical record)\nx = 1\n```\n\nall 12 contracts are at 100% QUORUM.\n";
@@ -2203,6 +2480,32 @@ fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
 /// header to say exactly that — and left both published descriptions of that
 /// same file untouched, 130 and 500 lines away in other trees. A fix scoped to
 /// the site carries the class forward.
+///
+/// PMAT-1454 — THIRD PASS, and both axes were wrong again. PMAT-1452 left the
+/// standing lead *"ask of EVERY other claims-drift gate whether its RULE stops
+/// at markdown"*; this one did, and the answer was 91 unchecked instances.
+///
+///   * SUBJECT. `claim_pages()` is MARKDOWN. The 35 contract YAMLs and the 35
+///     Lean sources that discharge them — the normative artifacts the whole
+///     provability claim rests on — were in no gate for this class at all.
+///   * SPELLING, twice more. `contracts/**` shouts: `COMPLETES DEPTH-5
+///     UNIVERSAL ACROSS ALL 12 CONTRACTS`, and the prefix was matched as the
+///     literal lower-case `depth-` (50 sites). Worse, twelve sites assert the
+///     claim in the words of its own DEFINITION — `every contract has ≥13
+///     distinct Diamond categories` — with no `depth-` token to match at all.
+///     A needle keyed on the LABEL is blind to the DEFINITION the label
+///     expands to, and that spelling needs no misspelling to hide.
+///
+/// ⭐ THE SHARPEST SITES ARE ASSERTIONS, NOT PROSE. Thirty-six of them sit in
+/// `invariants:` and `postconditions:` — the fields that say what the contract
+/// HOLDS, parsed into `xpile_contract_frontend`'s `invariants: Vec<String>` —
+/// stating `"Substrate milestone: every contract has ≥13 distinct Diamond
+/// categories"` and `"DEPTH-13 UNIVERSAL achieved: 12 contracts at depth-13+"`.
+/// The live substrate is 35 contracts whose shallowest carries ONE Diamond.
+/// Every one of those equations already carries the same milestone in an
+/// adjacent `# PMAT-NNN:` provenance comment, correctly cited — so the
+/// normative copies duplicated a RECORD into an ASSERTION slot, and deleting
+/// the duplicate loses nothing but the falsehood.
 #[test]
 fn docs_claim_no_universal_depth_the_substrate_does_not_hold() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_xpile"))
@@ -2267,6 +2570,80 @@ fn docs_claim_no_universal_depth_the_substrate_does_not_hold() {
         claimed_universal_depths("depth-1/2/3 categories per contract").is_empty(),
         "a slash list without the word UNIVERSAL is not a universality claim"
     );
+    // PMAT-1454 — the CASE spelling, verbatim from `contracts/`. The parser
+    // this slice inherited matched the literal lower-case `depth-`, so every
+    // one of these was invisible while sitting in the normative substrate.
+    assert_eq!(
+        claimed_universal_depths(
+            "FIFTH Diamond category — COMPLETES DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+        ),
+        vec![5],
+        "the UPPER-CASE spelling must be matched"
+    );
+    assert_eq!(
+        claimed_universal_depths("DEPTH-13 UNIVERSAL achieved: 12 contracts at depth-13+"),
+        vec![13],
+        "the upper-case claim counts once; the trailing `depth-13+` is a \
+         population statement, not a universality claim — it is not followed \
+         by UNIVERSAL, and that distinction is the whole point of the suffix \
+         check"
+    );
+    // PMAT-1454 — the DEFINITION spelling, which carries no `depth-` token at
+    // all. This is the form `sub/diamond-taxonomy.md` uses to DEFINE the term,
+    // and the form the contracts use to assert it.
+    assert_eq!(
+        claimed_universal_depths(
+            "Substrate milestone: every contract has ≥5 distinct Diamond categories"
+        ),
+        vec![5],
+        "the DEFINITION spelling must be matched — it is the claim, not a paraphrase"
+    );
+    assert_eq!(
+        claimed_universal_depths("every contract now has at least 9 Diamond categories"),
+        vec![9],
+        "`at least N` is the same quantifier as `≥N`"
+    );
+    assert_eq!(
+        claimed_universal_depths("every contract carries >=1 wired Diamond"),
+        vec![1],
+        "`>=N` is the ASCII spelling of the same quantifier"
+    );
+    // PMAT-1454 — the PREFIX order. `UNIVERSAL` qualifies the depth from the
+    // left here, and the corpus writes it both ways within one file.
+    assert_eq!(
+        claimed_universal_depths("completes UNIVERSAL Diamond depth-3 across all 5 layers"),
+        vec![3],
+        "the qualifier may PRECEDE the depth"
+    );
+    // …and the two shapes that made the loose version of that rule
+    // un-shippable, verbatim from the corpus. Both are POLICY — they say what
+    // not to do — and neither asserts that any depth is universal.
+    assert!(
+        claimed_universal_depths(
+            "**Diamond-depth UNIVERSAL ratchet is frozen at depth-13.** No depth-14+ sweeps"
+        )
+        .is_empty(),
+        "`xpile-spec.md`'s ratchet POLICY asserts no depth; a needle that \
+         reports it would be reporting a true sentence as drift"
+    );
+    assert!(
+        claimed_universal_depths(
+            "Do **not** run further UNIVERSAL broadening sweeps beyond depth-13"
+        )
+        .is_empty(),
+        "`sub/diamond-taxonomy.md`'s freeze notice asserts no depth either"
+    );
+    // …and the two guards on that form, each pinned in the direction that
+    // would make it over-reach. A carve-out that is not checked is a hole.
+    assert!(
+        claimed_universal_depths("every contract has ≥2 references and one author").is_empty(),
+        "a quantified claim about a NON-Diamond property is not a depth claim"
+    );
+    assert!(
+        claimed_universal_depths("every contract has a Diamond. Kani covers ≥24 of them")
+            .is_empty(),
+        "a quantifier in a LATER clause must not be read onto `every contract`"
+    );
 
     // A claim of the form "depth-N UNIVERSAL", or the range spelling
     // "depth-A..B UNIVERSAL", for a depth the substrate does not hold.
@@ -2274,6 +2651,37 @@ fn docs_claim_no_universal_depth_the_substrate_does_not_hold() {
     // denial live a paragraph apart, and the disclosure on the Diamond page
     // WRAPS between `depth-1..13` and `UNIVERSAL`, so a line-oriented scan
     // cannot see it at all and a reflow would silently change the verdict.
+    // PMAT-1454 — the SUBSTRATE half of the subject. `claim_pages()` is
+    // markdown; the 35 contract YAMLs and the 35 Lean sources that discharge
+    // them carried 91 instances of this claim class and were in no gate.
+    let substrate = provable_artifact_pages();
+    let substrate_files = substrate.len();
+    assert!(
+        substrate_files >= 30,
+        "provable_artifact_pages() collected only {substrate_files} file(s) \
+         from contracts/ — the walk is not reaching the substrate, and the \
+         half of the subject PMAT-1454 added would be vacuous"
+    );
+    // The markdown exemption is a HEADING carrying `(historical record)`, and
+    // `paragraphs_under_headings` accepts any line whose first non-space
+    // character is `#` — which every YAML comment is. So the marker would be
+    // grantable from an ordinary contract comment, to every field below it.
+    // The substrate arm below therefore does not consult it at all; this
+    // asserts the corpus cannot be silently relying on that, rather than
+    // leaving the reasoning in a comment (PMAT-1451's fence-comment shape,
+    // one artifact kind over).
+    for (rel, body) in &substrate {
+        assert!(
+            !body.contains(HISTORICAL_MARKER),
+            "{rel} spells `{HISTORICAL_MARKER}`, but the substrate arm of this \
+             gate judges by ARTIFACT STRUCTURE (normative field vs provenance \
+             comment) and never reads the marker. A YAML comment is
+             indistinguishable from an ATX heading here, so honouring it would \
+             let one comment exempt every field beneath it. Decide which rule \
+             governs before introducing the marker under contracts/."
+        );
+    }
+
     let mut offences = Vec::new();
     let mut undated_mentions = 0usize;
     let mut historical = Vec::new();
@@ -2326,9 +2734,111 @@ fn docs_claim_no_universal_depth_the_substrate_does_not_hold() {
             }
         }
     }
+    // ── the substrate arm (PMAT-1454) ────────────────────────────────────
+    //
+    // `contracts/**` has no headings, so the markdown record-marker rule has
+    // nothing to attach to. The artifact's own structure supplies the
+    // distinction instead, and it is a sharper one:
+    //
+    //   * a NORMATIVE FIELD — `invariants:`, `postconditions:`, anything that
+    //     is not a comment — is what the contract ASSERTS. It is parsed into
+    //     `xpile_contract_frontend::…::invariants` and is part of the
+    //     contract's meaning. It must be live-true; there is no record
+    //     exemption, because a record does not belong in an assertion slot.
+    //   * a PROVENANCE COMMENT (`# PMAT-354: …`) or a Lean docstring NARRATES
+    //     a numbered slice. It is exempt iff it says WHEN — the same citation
+    //     rule the markdown arm applies inside a `(historical record)`
+    //     section, scoped to the CLAUSE (PMAT-1450 → 1451 → 1452 each had to
+    //     make exactly this scope fix; a neighbouring id must not launder a
+    //     bare claim).
+    let mut substrate_assertions_ok = 0usize;
+    let mut substrate_records = 0usize;
+    let mut substrate_uncited = Vec::new();
+    for (rel, body) in &substrate {
+        for block in substrate_blocks(rel, body) {
+            for (claimed, at) in claimed_universal_depths_at(&block.flat) {
+                let line_no = block.line_at(at);
+                if !block.record {
+                    if claimed <= universal {
+                        substrate_assertions_ok += 1;
+                        continue;
+                    }
+                    offences.push(format!(
+                        "{rel}:{line_no}: a contract ASSERTS depth-{claimed} \
+                         UNIVERSAL in a normative field"
+                    ));
+                    continue;
+                }
+                if claimed <= universal {
+                    substrate_records += 1;
+                    continue;
+                }
+                // A record says WHEN, scoped to its own provenance BLOCK —
+                // the run of comment lines, or the one `/-! … -/` docstring,
+                // that the claim is written in. A neighbouring equation's
+                // citation cannot reach it.
+                //
+                // ⚠️ THIS IS A LOWER BOUND AND IT CURRENTLY BITES NOTHING.
+                // Measured, not assumed: every provenance block under
+                // `contracts/` that carries a milestone also carries a
+                // citation, so the branch below never fires on today's corpus
+                // — its red half PASSES, twice over (strip one id from a
+                // block, then strip all nine from the visible region: both
+                // stayed green, because a Lean module docstring goes on to
+                // list all five Diamond categories with their ids).
+                //
+                // At CLAUSE scope — the tightening PMAT-1450, 1451 and 1452
+                // each had to make to their own anti-whitewash checks — it
+                // reports 32 sites, all of them Lean docstring sentences that
+                // would each need a `(PMAT-NNN)` appended. That is recorded
+                // as the follow-up rather than done here, because it is 32
+                // cosmetic insertions and none of them is a false claim: the
+                // LIVE falsehoods this slice exists for are the assertions
+                // above, and they are gated. `an_uncited_provenance_block_is_
+                // reported` pins that this branch CAN fire, so it is a
+                // hardening with no current verdict change rather than a
+                // decoration nobody has tested.
+                if !pmat_ids(&block.flat).is_empty() {
+                    substrate_records += 1;
+                    continue;
+                }
+                substrate_uncited.push(format!(
+                    "{rel}:{line_no}: claims depth-{claimed} UNIVERSAL without \
+                     citing the slice it records"
+                ));
+            }
+        }
+    }
+
     assert!(
         pages_scanned > 1,
         "claim_pages() returned {pages_scanned} page(s) — the corpus walk broke"
+    );
+    // The LIVE FALSEHOOD reports before every hygiene rule below it — a gate
+    // that aborts on the tidiness of an exemption and buries a false published
+    // claim has its priorities inverted (PMAT-1451 shipped exactly that bug and
+    // reported one site of six).
+    assert!(
+        offences.is_empty(),
+        "the docs or the contract substrate claim a UNIVERSAL depth the \
+         substrate does not hold — {} — but the shallowest contract carries \
+         {universal} Diamond categor{}, so depth-{universal} is the live \
+         universal depth. Say which SUBSET is deep, lift the shallow \
+         contracts, or — in prose — move the sentence under a \
+         `{HISTORICAL_MARKER}` heading if it is a dated record. ({} mention(s) \
+         already are.) A normative `invariants:`/`postconditions:` entry has \
+         no record exemption: state what the equation establishes about ITS \
+         contract and leave the milestone to the provenance comment.",
+        offences.join(", "),
+        if universal == 1 { "y" } else { "ies" },
+        historical.len()
+    );
+    assert!(
+        substrate_uncited.is_empty(),
+        "provenance under contracts/ records a UNIVERSAL depth the substrate \
+         no longer holds without citing the slice it records — {}. A record of \
+         what was once true says WHEN.",
+        substrate_uncited.join("\n  ")
     );
     assert!(
         undated_mentions > 0,
@@ -2339,16 +2849,24 @@ fn docs_claim_no_universal_depth_the_substrate_does_not_hold() {
          actual universal depth belongs somewhere in the docs.",
         historical.len()
     );
+    // Both arms of the widened subject must be REACHED, and inside the
+    // substrate arm both dispositions must be — an unreachable arm is an
+    // unchecked arm (PMAT-1452). `substrate_assertions_ok` is the strongest of
+    // the three: it is a control that PASSES, driven by
+    // `ffi-shell-subprocess-v1.yaml`'s "every contract carries ≥1 wired
+    // Diamond (depth-1 UNIVERSAL invariant preserved)" — a normative field
+    // asserting the depth the substrate really does hold. If the needle ever
+    // stops matching, that count goes to zero and says so, instead of the
+    // gate going quietly green.
     assert!(
-        offences.is_empty(),
-        "the docs claim a UNIVERSAL depth the substrate does not hold — {} — \
-         but the shallowest contract carries {universal} Diamond \
-         categor{}, so depth-{universal} is the live universal depth. Say \
-         which SUBSET is deep, lift the shallow contracts, or move the sentence \
-         under a `{HISTORICAL_MARKER}` heading if it is a dated record. \
-         ({} mention(s) already are.)",
-        offences.join(", "),
-        if universal == 1 { "y" } else { "ies" },
-        historical.len()
+        substrate_assertions_ok >= 1,
+        "no contract asserts a UNIVERSAL depth the substrate DOES hold, so the \
+         normative-field pass path is unexercised and this gate could not tell \
+         a working needle from a broken one"
+    );
+    assert!(
+        substrate_records >= 1,
+        "no cited provenance record of a UNIVERSAL milestone was found under \
+         contracts/, so the record exemption is unreachable and untested"
     );
 }

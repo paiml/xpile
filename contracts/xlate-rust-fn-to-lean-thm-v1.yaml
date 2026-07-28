@@ -468,13 +468,12 @@ equations:
       Two RustFnSilver records (name, generics, args, return_type,
       body : Array UInt8).
     invariants:
-      - "THIRD Diamond category — COMPLETES DEPTH-3 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "THIRD Diamond category"
       - "NINTH substrate-wide demonstration of structure-extensionality pattern"
-      - "Substrate milestone: every contract has ≥3 distinct Diamond categories"
     preconditions:
       - "two RustFnSilver records"
     postconditions:
-      - "DEPTH-3 UNIVERSAL achieved: 12 contracts at depth-3+"
+      - "C-XLATE-RUST-FN-TO-LEAN-THM reaches depth-3 — 3 distinct Diamond categories on THIS contract"
 
   rust_fn_silver_body_size_diamond:
     # PMAT-344: FOURTH Diamond on this contract — COMPLETES DEPTH-4
@@ -491,12 +490,11 @@ equations:
     domain: |
       Any RustFnSilver record.
     invariants:
-      - "FOURTH Diamond category — COMPLETES DEPTH-4 UNIVERSAL ACROSS ALL 12 CONTRACTS"
-      - "Substrate milestone: every contract has ≥4 distinct Diamond categories"
+      - "FOURTH Diamond category"
     preconditions:
       - "one RustFnSilver record"
     postconditions:
-      - "DEPTH-4 UNIVERSAL achieved: 12 contracts at depth-4+"
+      - "C-XLATE-RUST-FN-TO-LEAN-THM reaches depth-4 — 4 distinct Diamond categories on THIS contract"
 
   lean_def_silver_struct_extensionality_diamond:
     # PMAT-352: FIFTH Diamond on this contract — BROADENS DEPTH-5
@@ -550,13 +548,12 @@ equations:
     domain: |
       Any LeanDefSilver record.
     invariants:
-      - "SIXTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM — COMPLETES DEPTH-6 UNIVERSAL ACROSS ALL 12 CONTRACTS"
-      - "Substrate milestone: every contract has ≥6 distinct Diamond categories"
+      - "SIXTH Diamond category on C-XLATE-RUST-FN-TO-LEAN-THM"
       - "Closes Rust↔Lean Array.size invariant on BOTH sides (PMAT-344 Rust, PMAT-365 Lean)"
     preconditions:
       - "one LeanDefSilver record"
     postconditions:
-      - "DEPTH-6 UNIVERSAL achieved: 12 contracts at depth-6+"
+      - "C-XLATE-RUST-FN-TO-LEAN-THM reaches depth-6 — 6 distinct Diamond categories on THIS contract"
 
   contract_obligation_silver_struct_extensionality_diamond:
     # PMAT-374: SEVENTH Diamond on this contract — BROADENS DEPTH-7

@@ -21654,3 +21654,88 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1454
+  title: 'the contract substrate ASSERTED, in 36 `invariants:`/`postconditions:` entries, that
+    "every contract has ≥13 distinct Diamond categories" — the live universal depth is 1 and 22
+    of 35 contracts carry exactly one Diamond; the gate for that claim class read markdown only,
+    and could not match the two spellings the substrate writes'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1452 standing lead (c) verbatim: "ask of EVERY other claims-drift gate
+    whether its RULE stops at markdown". It did. 91 instances of this claim class lived in
+    `contracts/**` and were in no gate.
+
+    ** MEASURED GROUND TRUTH (`xpile diamond --json`, 35 contracts): universal depth = 1;
+    depth>=2 holds for 14, depth>=3..13 for 13. So every claim of depth-N UNIVERSAL for N>=2 is
+    false, by 21-22 contracts.
+
+    ** ⭐ THE SHARPEST SITES ARE ASSERTIONS, NOT PROSE. 36 of the 91 sit in `invariants:` and
+    `postconditions:` — the fields that say what the contract HOLDS, parsed into
+    `xpile_contract_frontend`''s `invariants: Vec<String>` — as "Substrate milestone: every
+    contract has >=13 distinct Diamond categories" and "DEPTH-13 UNIVERSAL achieved: 12 contracts
+    at depth-13+". Every one of those equations ALREADY carried the same milestone in an adjacent
+    `# PMAT-NNN:` provenance comment, correctly cited: the normative copies duplicated a RECORD
+    into an ASSERTION slot, so deleting the duplicate loses nothing but the falsehood. That is
+    what made the repair honest rather than a 12->35 renumbering (PMAT-1396''s trap).
+
+    ** TWO INDEPENDENT BLIND SPOTS, each established by a CONTROL THAT PASSES (PMAT-1450''s
+    method). SUBJECT: narrow the corpus back to `claim_pages()` with the full needle -> the
+    restored falsehood is invisible, gate GREEN. NEEDLE: restore the pre-1453 parser verbatim
+    with the full widened corpus -> also GREEN. Neither fix alone would have caught it.
+
+    ** THE NEEDLE WAS BLIND THREE WAYS. (1) CASE: `contracts/**` shouts `COMPLETES DEPTH-5
+    UNIVERSAL`, the parser matched the literal lower-case `depth-` (50 sites). (2) ⭐ THE
+    DEFINITION SPELLING, which needs no misspelling at all: `sub/diamond-taxonomy.md` DEFINES
+    depth-N UNIVERSAL as "every contract has at least N distinct Diamond categories", and 12
+    sites assert the claim IN THE WORDS OF THAT DEFINITION, with no `depth-` token to match. A
+    needle keyed on the LABEL is blind to the DEFINITION the label expands to. (3) PREFIX ORDER
+    `UNIVERSAL Diamond depth-2`, which was blind in the MARKDOWN half too.
+
+    ** THE NEEDLE FAILED IN THE FALSE-POSITIVE DIRECTION AGAIN (PMAT-1451''s axis). The first
+    prefix-order rule allowed any lower-case run between the qualifier and the depth, and matched
+    two POLICY sentences that assert nothing — `xpile-spec.md`''s "Diamond-depth UNIVERSAL ratchet
+    is frozen at depth-13" and `diamond-taxonomy.md`''s "no further UNIVERSAL broadening sweeps
+    beyond depth-13". Both are pinned as unit tests.
+
+    ** A CARVE-OUT TURNED INTO A DISTINCTION, not an exemption: 3 sites claimed universality
+    across the 5 taxonomy LAYERS, a materially weaker property wearing the reserved term.
+    `audit-design.md` already had the repo''s correct spelling ("depth-3 across layers"), so the
+    sites were re-spelled to it and the term now means exactly one thing corpus-wide
+    (PMAT-1448''s "when one token means two things, separate the meanings").
+
+    ** ⭐ THE RED HALF REFUTED MY OWN FIX, 5TH SLICE RUNNING (1447/1450/1451/1452/1454): the
+    disclaimer I wrote onto the layer site spelled `depth-2 UNIVERSAL` verbatim and reddened the
+    gate.
+
+    ** THE ARTIFACT NEEDED ITS OWN SPLITTER. `paragraphs_under_headings` treats any line starting
+    `#` as an ATX heading, i.e. EVERY YAML comment — so a 4-line provenance comment became four
+    one-line "paragraphs": a claim wrapping `… COMPLETES DEPTH-13` / `UNIVERSAL ACROSS …` matched
+    neither half, and the `# PMAT-333:` opening the block fell outside the scope of the claim it
+    cites, reporting 36 correctly-cited records as uncited. New `substrate_blocks()` splits on the
+    comment marker and keeps a Lean `/-! … -/` docstring whole across blank lines.
+
+    ** HONEST LIMIT, DISCLOSED RATHER THAN DRESSED UP: the record-CITATION branch is BLOCK-scoped
+    and BITES NOTHING on today''s corpus — its red half PASSES twice (strip one id, then nine:
+    a Lean module docstring goes on to list all five Diamond categories with their ids). At CLAUSE
+    scope it reports 32 sites, all Lean docstring sentences needing a cosmetic `(PMAT-NNN)`; that
+    is the follow-up, not this slice. `an_uncited_provenance_block_is_reported` pins that the
+    branch CAN fire, so it is a hardening with no current verdict change (PMAT-1451''s precedent
+    for its fence rule) rather than an untested decoration.
+
+    ** RED HALVES, each asserting the perturbation APPLIED: 4 fix reds (uppercase label,
+    definition form, prefix order, and the `(historical record)` marker-ambiguity guard); 1
+    anti-vacuity red (deleting the depth-1 TRUE anchor in `ffi-shell-subprocess-v1.yaml` reds
+    `substrate_assertions_ok`); 2 blindness CONTROLS THAT PASS (subject, needle); 1 recorded
+    PASS (the citation branch, above). A third control incidentally proved
+    `substrate_assertions_ok` fires when the subject stops reaching contracts/.
+
+    ** STANDING LEADS. (a) PMAT-1451 lead (a) STILL UNTAKEN: `sub/bashrs-merger.md:121` bare "at
+    QUORUM" over a substrate subject. (b) the TOTAL-QUORUM gate still reads markdown only —
+    measured this session: its only `contracts/**` hit is `ffi-cpython-ext-v1.yaml:40`
+    ("100% QUORUM coverage — every contract has paired Lean + Kani"; live 24/35 have Kani, 9
+    PARTIAL), a comment citing PMAT-077, so widening it is hardening plus one wording fix.
+    (c) tighten the record-citation scope block -> CLAUSE (32 sites, listed above).
+
+    ZERO crates/*/src change. Six contract YAMLs, one spec doc, one gate file.'
+  status: done
+  priority: P1
+  category: honesty

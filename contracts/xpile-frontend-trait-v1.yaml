@@ -213,14 +213,14 @@ equations:
       source_lang projection is fully determined by the frontend
       choice — inputs cannot override it.
     invariants:
-      - "SECOND Diamond category on C-XPILE-FRONTEND-TRAIT — completes Diamond depth-2 UNIVERSAL across all 5 layers"
+      - "SECOND Diamond category on C-XPILE-FRONTEND-TRAIT — completes Diamond depth-2 ACROSS ALL 5 LAYERS (quantifies over the 5 taxonomy layers, not over contracts)"
       - "distinct algebraic category from PMAT-224 equivalence-relation"
       - "captures FUNCTORIAL constant-projection from (Frontend, inputs) onto declared_lang"
     preconditions:
       - "well-formed Frontend f with four arbitrary path/source byte arrays"
     postconditions:
       - "an emitter that introspects source content and re-tags source_lang based on heuristic detection (e.g., shebang lines) would falsify this Diamond"
-      - "Diamond depth-2 UNIVERSAL milestone: substrate now has depth-2 Diamonds across ALL 5 layers (1, 2, 3, 4, 5)"
+      - "Diamond depth-2 ACROSS-LAYERS milestone (PMAT-232): substrate has depth-2 Diamonds on all 5 layers (1, 2, 3, 4, 5)"
 
   parse_and_lower_function_diamond:
     # PMAT-245 / XPILE-REFINE-FRONTEND-TRAIT-006: THIRD Diamond
@@ -245,14 +245,14 @@ equations:
       congruence) for parse_and_lower_silver as a third
       orthogonal algebraic category.
     invariants:
-      - "FIFTH DEPTH-3 Diamond in substrate — completes UNIVERSAL Diamond depth-3 across ALL 5 layers"
+      - "FIFTH depth-3 Diamond in substrate — completes Diamond depth-3 ACROSS ALL 5 LAYERS"
       - "distinct algebraic category from PMAT-224 equiv-rel AND PMAT-232 constant-projection"
       - "captures set-theoretic FUNCTION AXIOMS on full output structure"
     preconditions:
       - "well-formed Frontend f with byte-array inputs"
     postconditions:
       - "an emitter adding non-determinism (random module reordering, time-dependent metadata) would falsify (c) and (d)"
-      - "UNIVERSAL Diamond depth-3 across all 5 layers: substrate now has depth-3 Diamonds on Layer 1, 2, 3, 4, AND 5"
+      - "Diamond depth-3 ACROSS-LAYERS (PMAT-245): substrate has depth-3 Diamonds on Layer 1, 2, 3, 4, AND 5"
 
   metahir_module_struct_extensionality_diamond:
     # PMAT-330: FOURTH Diamond on this contract — COMPLETES DEPTH-4

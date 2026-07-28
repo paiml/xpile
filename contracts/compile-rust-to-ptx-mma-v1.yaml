@@ -434,7 +434,7 @@ equations:
       - "three BoundedSmem values"
     postconditions:
       - "lattice operations enable both worst-case (max via PMAT-231) and safe-floor (min via this PR) reservation analysis"
-      - "Diamond DEPTH-3 universal-across-layers: now opened on Layer 1 (PMAT-241) and Layer 5 (this PR)"
+      - "Diamond depth-3 ACROSS-LAYERS: now opened on Layer 1 (PMAT-241) and Layer 5 (this PR)"
 
   bounded_smem_lattice_absorption_diamond:
     # PMAT-248 / XPILE-REFINE-COMPILE-PTX-008: FOURTH Diamond on
