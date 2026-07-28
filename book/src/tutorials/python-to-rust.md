@@ -49,7 +49,12 @@ Three things to notice:
    function. This is the citation that links the emitted Rust back to
    the contract YAML. The
    [`C-XPILE-BACKEND-TRAIT`](../reference/contracts.md#c-xpile-backend-trait)
-   contract requires every emitted function to carry such a citation.
+   contract's `compile_contract_citation` equation quantifies over the
+   *constructs* of the emitted artifact, so it requires a citation
+   exactly where a construct has a governing contract. `factorial` does
+   arithmetic, so it gets one; a comparison-only function emits none, at
+   exit 0, by design. Through v0.1.617 this step said the contract
+   "requires every emitted function to carry such a citation".
 2. **`checked_sub` / `checked_mul`** wrap every arithmetic op. Python
    ints are unbounded, Rust `i64` isn't. The contract requires that we
    *do not silently wrap*; instead we panic and point the user at the
