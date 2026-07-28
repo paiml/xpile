@@ -515,6 +515,17 @@ fn default_emit_is_accepted_by_each_lane_toolchain() {
 /// The lane table is checked against the LIVE binary's own target list — parsed
 /// out of its rejection message, not copied from a doc comment. A tenth backend
 /// cannot be registered without a lane above.
+///
+/// PMAT-1435: the message now carries a second `; aliases: <s>=<canonical>, …`
+/// section, and this gate reads only the `choose:` half. That is deliberate,
+/// and it is the ONE place in the repo where skipping the aliases is right: an
+/// alias resolves to the same `Target` as its canonical spelling, so it has no
+/// distinct DEFAULT-flag path to gate, and
+/// `target_spelling_disposition_witness.rs::every_alias_is_byte_identical_to_its_canonical_spelling`
+/// proves the two are indistinguishable on stdout, stderr and exit status. A
+/// lane per alias would be duplication that could only ever fail with its
+/// canonical twin. If that byte-identity check is ever removed, this exemption
+/// stops being justified and the aliases must be folded in here.
 #[test]
 fn lane_table_covers_every_target_the_binary_offers() {
     let dir = scratch("targetlist");
@@ -544,6 +555,9 @@ fn lane_table_covers_every_target_the_binary_offers() {
                  than hand-listing). Got:\n{stderr}"
             )
         })
+        .split(';') // drop the `aliases:` section — see the doc comment
+        .next()
+        .unwrap_or("")
         .trim()
         .trim_end_matches('.');
     let mut offered: Vec<&str> = list.split(',').map(str::trim).collect();
