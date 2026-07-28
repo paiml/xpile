@@ -20805,3 +20805,102 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1443
+  title: 'PMAT-1443: [cli+frontend+gate+honesty] `xpile audit`''s no-source bail published the ROUTING
+    set as what xpile "recognises" -- 2 of the 10 spellings it handed a user asking what to point it at
+    REFUSE every input, and PMAT-1434 removed the identical defect 500 lines above it in the SAME FILE.
+
+    ** THE DEFECT. `Frontend::extensions()` is a ROUTING set, not a capability set. `.ruchy` (PMAT-1346,
+    emit-only) and `.mk` (PMAT-1420, no Makefile dialect) are in it PRECISELY BECAUSE they have no parser
+    -- so a matching file reaches a SPECIFIC refusal instead of the generic dispatch failure. That decision
+    is right, and it is exactly what makes rendering the flat union to a user a false claim.
+
+    MEASURED at 1e251c70 with a force-rebuilt binary. `xpile audit <dir-with-no-source>` -> "xpile recognises
+    .bash, .c, .h, .mk, .py, .pyi, .ruchy, .sh, .wat, .zsh" -- true of 8 of those 10. It fires on the
+    ERROR path, where the reader is asking "what should I point this at?", so ONE ANSWER IN FIVE WAS WRONG.
+
+    ** THE SECOND SURFACE, found by sweeping the class rather than the site. `cargo run --example 06_inspect_session`
+    printed `ruchy  extensions: ["ruchy"]` and `bashrs  extensions: [... "mk"]` under the heading "Frontends
+    (read source -> meta-HIR)". `book/src/quickstart.md` names this example BY NAME as how to answer "what
+    is registered?". `xpile info` grew the disposition at PMAT-1428; this second copy of the same roster
+    did not -- the PMAT-1417/1440 shape, a repair aimed at the file the defect was found in.
+
+    ** WHY THE EXISTING GATES DID NOT CATCH IT. frontend_dispatch_message_witness.rs (XPILE-FRONTEND-CLAIM-002)
+    is rigorous about the dispatch message and reads no other surface -- a gate whose SUBJECT is narrower
+    than its RULE, PMAT-1438''s lesson recurring. cli_audit_honesty_witness.rs (XPILE-AUDITHON-001) spawns
+    this exact bail and asserts `stderr.contains("no source file")`: the REASON clause, never the extension
+    list printed right after it.
+
+    ** THE FIX IS ONE DERIVATION, NOT THREE. `Frontend::spellings_by_disposition(scope)` -- a default
+    method over `extensions()` + `refused_claims()` -- is now the single source every rendering calls,
+    plus `render_frontend_roster()` so the EXAMPLE''s correctness is a property of a LIBRARY function
+    a test can assert on directly, rather than of a `println!` loop. The loop is what drifted.
+
+    ** TWO SCOPES, BECAUSE NAMING THE WRONG ONE IS ALSO A FALSE CLAIM. `matches_path` claims extensionless
+    `Makefile`/`Dockerfile`, but `collect_source_files` walks by EXTENSION and never sees them -- VERIFIED,
+    not assumed: a directory holding only those two still bails. So the audit bail publishes the narrower
+    SpellingScope::Extensions split and DISCLOSES the exclusion, derived from the difference between the
+    scopes. Reusing the dispatch message''s `All` split -- the obvious fix, and the one a reader of PMAT-1434
+    would reach for -- would have advertised two spellings that cannot work at ANY extension: a different
+    over-report, not a fix.
+
+    ** AND A ROUTED-BUT-REFUSED EXTENSION IS NOT "UNRECOGNISED". A `.ruchy` file IS collected, IS counted
+    in `files scanned`, and lands in the error list. Folding it in with `.py` under one verb is what erased
+    the difference, so the two halves now carry different verbs and the difference is pinned by a behaviour
+    test.
+
+    ** NEW GATE: crates/xpile/tests/audit_claim_disposition_witness.rs (XPILE-AUDITCLAIM-001, 7 tests,
+    NO hard-coded counts). Set equality BOTH ways against a registry split recomputed in the test from
+    `extensions()` + `refused_claims()` (not via the helper that renders it, so the message is checked
+    against the registry and not against itself); every advertised LOWERS spelling driven through a real
+    `xpile audit` with a real program in its own language; every refused spelling shown to be collected-then-errored;
+    the anti-over-correction pin; and the examples corpus walked with `read_dir` so a NEW example rendering
+    the raw routing set reds ON LANDING.
+
+    ** RED HALF RUN, both surfaces separately, and they red DISJOINT sets. Reverting the audit bail to
+    the flat union reds 4 tests (registry split, disjointness, lowering-spellings-collect, uncollectable-pin).
+    Reverting example 06 to the raw `extensions()` loop reds exactly 1 (`no_example_renders_the_raw_routing_set`).
+    `a_refused_extension_is_collected_and_reported_as_an_error_not_as_absent` is GREEN under both by design
+    -- it measures the COLLECTOR, which is the JUSTIFICATION for the message''s wording, not a test of
+    the fix, and the file says so.
+
+    ** THE GATE''S OWN FIRST RUN CAUGHT A CONFLATION IN IT. `probe.bash` lowers fine and STILL lands in
+    the error list, because audit''s default `--target rust` cannot emit `Stmt::Cmd`. That is an honest
+    downstream refusal about a TARGET, not a false claim about a SPELLING. "Lowers" is a claim about `parse_and_lower`,
+    so the assertion now keys on the STAGE prefix rather than on `errors (...)` -- the same "pin the STAGE,
+    not just Err(_)" rule the WASM refusal gates use.
+
+    ** Dispatch-failure message verified BYTE-UNCHANGED. `xpile info` deliberately untouched: it is honest
+    since PMAT-1428 and separately gated.
+
+    NEXT PICK: nothing OPEN before Thursday. STANDING LEADS, EV order. (a) the PER-INPUT disposition granularity
+    PMAT-1442 DISCLOSED rather than fixed -- `xpile info` still prints `py, pyi` and `c, h` unannotated
+    though a canonical `.pyi` stub and `.h` header both refuse; `refused_claims()` is per-CLAIM and this
+    needs per-INPUT. It is the natural successor to `refused_claims()` and now has a shared derivation
+    to hang off (`spellings_by_disposition`). (b) backends.md''s ruchy Status parenthetical "compiles
+    to Rust" -- `ruchy check` accepts 18 of 39 emitted artifacts, and one emit puts `&self` on a method
+    that assigns to self. (c) frontends.md says every emitted Rust/Ruchy/Lean function carries a `// xpile-contract:
+    C-PY-INT-ARITH` citation; the ID is type-directed (float/str/bool cite three OTHER contracts) and
+    the Lean lane uses `/-- ... -/`, not `//`. (d) the SHELL frontend''s "what''s supported" bullet list
+    on frontends.md -- PROBED GREEN by PMAT-1441, so TRUE but UNGATED, and CLAUDE.md''s own scope paragraph
+    never mentions redirection, so the two descriptions of the same subset have never been compared. (e)
+    PMAT-1436 lead (d), witnesses that identify their subject by a glob over a SHARED namespace.
+
+    PROBED AND CLEAN, recorded so it is not re-derived: `xpile hybrid`''s "no source files xpile recognises
+    under <path>" bail names NO list, so it is terse but not false; `audit --help`''s PATH argument help
+    ("Source files are detected by extension via the registered frontends") is accurate; and the audit
+    REPORT path is honest end to end -- a corpus of only refusing files reports VACUOUS with the refusal
+    in the error list, never a ceiling score (PMAT-1385 holds).
+
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 -- no
+    crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit, witness-floor
+    TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
