@@ -21054,3 +21054,70 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1446
+  title: 'PMAT-1446: [docs+gate+honesty] "compiles to Rust" was published as a property of the RUCHY LANE; it is a property of 8 fixtures in 39, and 21 emitted artifacts do not parse as Ruchy at all.
+    ** THE DEFECT. backends.md''s Status cell read "Real emission (same overflow semantics;
+    compiles to Rust)" and README.md''s architecture diagram read "Ruchy -- full emission
+    (compiles to Rust)". MEASURED over the repo''s own oracle_fixtures/ with ruchy v4.2.1:
+    xpile emits 39 of 39; `ruchy check` (parse) accepts 18 of 39; `ruchy transpile` produces
+    Rust for 16 of 39; `rustc` compiles that Rust for 8 OF 39. TWENTY-ONE emitted artifacts do
+    not parse as Ruchy AT ALL ("Expected RightBrace, found Let" / "found Match"), so for most of
+    the corpus the claim fails at the FIRST step, before Rust is reached.
+    ** WHAT WAS ALREADY HONEST, recorded so it is not re-derived: the checkmark itself
+    (PMAT-1440 verified input-dependence for all nine backends), AND README''s SPECIFIC example
+    -- `xpile transpile factorial.py --target ruchy  # -> Ruchy (compiles to Rust)` is TRUE,
+    measured end to end: emits, parses, transpiles, and rustc compiles it. THE FALSEHOOD WAS THE
+    UNIVERSAL, NOT THE INSTANCE -- the same shape as PMAT-1438''s shell-roundtrip transcript,
+    which was also accurate under a false generalisation. Do not "correct" a true example.
+    ** THE MEASUREMENT WAS WRONG THE FIRST TIME, AND IT WOULD HAVE BEEN A FABRICATED NUMBER
+    INSIDE A FIX FOR FABRICATED NUMBERS. The first sweep reported `rustc compiles: 0 of 39`.
+    Cause: `rustc -o /dev/null` makes rustc create a TEMP DIR beside its output, which fails
+    with "couldn''t create a temp dir: Permission denied ... at path /dev/rmetax9waG4" -- an
+    ENVIRONMENT error a naive harness reads as a COMPILE error. The tell was that a hand-run of
+    the same file had looked fine; that hand-run was PIPED to `head`, so the exit code I read
+    was head''s (the pipe-masks-exit-code trap, in my own notes). Correct invocation is
+    `--out-dir <dir>`. LESSON: when a sweep returns an ABSOLUTE result (0 of N, N of N), suspect
+    the harness before the subject, and re-derive it a second way.
+    ** FIX. The Status cell links a measured table; the README diagram row states the ratio; and
+    `ruchy_exec_witness.rs`''s header loses its three hard-coded denominators (it read 38/38,
+    18/38, 8/38 -- a 39th fixture landed the morning after they were "re-measured", PMAT-1427,
+    so every denominator was wrong while two numerators stayed right). Doc-comment change only,
+    no gate logic touched.
+    ** GATED by crates/xpile/tests/ruchy_conformance_witness.rs (XPILE-RUCHYCONF-001), and the
+    SPLIT IS THE POINT: `ruchy` is installed in NO CI workflow (`grep -rn ruchy
+    .github/workflows` -> nothing), so a toolchain gate is a developer-machine check by
+    construction. (1) The WORDING rule runs EVERYWHERE, needs no toolchain, and is what holds
+    the line in CI: no page may present "compiles to Rust" as an unqualified property of the
+    lane. (2) The CORPUS-SIZE rule also runs everywhere: every denominator in the published
+    table must equal the LIVE fixture count, so a new fixture reds the page in CI even where the
+    counts cannot be checked -- which is exactly how the sibling `38` went stale unnoticed.
+    (3) The COUNTS rule re-derives the whole chain and compares by equality, and discloses
+    loudly when the toolchain is absent. A disclosed skip in front of a false pass is still a
+    false pass, so the skip is confined to the half that genuinely cannot run.
+    ** NO DENOMINATOR IS WRITTEN DOWN ANYWHERE in the witness; the corpus is DISCOVERED from the
+    directory (PMAT-1396).
+    ** RED HALF RUN, SIX perturbations, green control: the original unqualified Status cell
+    restored; the original README diagram row restored; a wrong count in the table; a stale
+    DENOMINATOR; the marker deleted; and -- the BEHAVIOUR half -- A NEW FIXTURE LANDING with the
+    table not updated, which reds the TOOLCHAIN-FREE half, i.e. the half CI can actually run.
+    ** AND THE GATE FLAGGED ITS OWN DISCLOSURE ON THE FIRST RUN. The wording scan was
+    line-oriented, and the sentence explaining what the OLD text said wraps across lines, so the
+    qualifier sat on a different line from the phrase. PMAT-1430''s rule -- A DOC GATE MUST
+    DISTINGUISH USE FROM MENTION -- and the unit that carries the distinction is the PARAGRAPH,
+    not the line. Third time a doc scan in this series needed paragraph granularity.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    NEXT PICK: STANDING LEADS. (a) install `ruchy` in a CI job so the COUNTS half stops being
+    developer-only -- OWNER-GATED, it is a workflow change in a release week. (b) the PER-INPUT
+    disposition granularity PMAT-1442 disclosed rather than fixed. (c) the placeholder-vs-literal
+    sweep from PMAT-1445: any doc that writes a concrete value where the code computes one.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00. A1 IS BLOCKED ON THE OWNER RULESET DECISION ALONE (310 ok / 1 failed, measured).'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
