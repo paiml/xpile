@@ -4496,6 +4496,83 @@ queue:
     look. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed
     2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take
     PMAT-1373 (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1442
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: '"lowers" is a claim about the GRAMMAR and the book published it as a claim about the FILE FORMAT -- no file in the canonical form of `.pyi` or `.h` lowers, on any of the three surfaces that call them extensions that LOWER'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1440 standing lead (b). ID NOTE: 1441 is deliberately SKIPPED and
+    left free for PR #2035, a concurrent cron fire that collided on PMAT-1438 and needs to
+    renumber -- see the comment on that PR.
+    ** THE DEFECT. frontends.md lists `.pyi` under "Extensions that LOWER" for the Python
+    frontend and `.h` for the C frontend, both with an EMPTY "Routed -> REFUSED" cell.
+    `xpile info` prints `- python (py, pyi)` and `- c (c, h)` unannotated and counts both among
+    the "4 lowering"; the dispatch-failure message lists them under `spellings that LOWER`.
+    Three surfaces, one reading: THESE FORMATS ARE SUPPORTED. No file in the canonical form of
+    either format lowers. MEASURED: a `.pyi` stub (`def add(a: int, b: int) -> int: ...`) ->
+    "function `add` does not end with `return expr`"; a `.h` with an include guard ->
+    "unexpected character `#` in C source" (there is NO preprocessor at all); a bare `.h`
+    prototype -> "expected LBrace, found Some(Semi)".
+    ** AND IT IS NOT AN ACCIDENT OF THE PROBE. A `.pyi` stub is BY DEFINITION bodiless -- that is
+    what a stub file IS -- and the frontend requires every function to end in `return expr`. A
+    `.h` header is BY DEFINITION an include guard plus prototypes. The defining content of each
+    format is exactly what each grammar rejects.
+    ** WHAT IS TRUE, and why the LOWER column is not simply wrong: put a `.py`-shaped DEFINITION
+    in a `.pyi`, or a `.c`-shaped definition in a `.h`, and it lowers at exit 0. The extension
+    really is routed and the grammar really is applied. "Lowers" was a claim about the GRAMMAR
+    that read as a claim about the FORMAT.
+    ** WHY THE DISPOSITION GATE COULD NOT CATCH IT -- AND IT SAYS SO ITSELF.
+    frontend_claim_disposition_witness.rs (PMAT-1433) does drive every claimed spelling through
+    its frontend, which is the right shape, and its own doc states its subject: "that one
+    answers *does this frontend read its language at all*, this one answers *does the answer
+    depend on the path spelling*". So `PROBES` carries ONE PROGRAM PER FRONTEND and writes those
+    same bytes to every spelling that frontend claims -- the Python function-with-a-body goes to
+    probe.py AND probe.pyi, the C definition to probe.c AND probe.h. By construction it can only
+    ever report Lowers for all four. PMAT-1433 GENERALISED THE PATHS A PROBE REACHES AND LEFT
+    THE CONTENT FIXED, so its own lesson ("one probe per subject samples one of its N claims")
+    recurred ONE DIMENSION OVER, inside the gate written to settle it. The gate is not wrong;
+    the surfaces over-read it.
+    ** FIX in crates/xpile/tests/format_canonical_form_witness.rs (XPILE-FORMATFORM-001). The
+    measured table lives in frontends.md between markers and is compared by EQUALITY, and each
+    row carries BOTH halves: (1) the format''s canonical form REFUSES at that spelling, and
+    (2) the same frontend''s DEFINITION form LOWERS at that same spelling. Half (2) is the
+    anti-vacuity control and is not optional -- without it a row is equally satisfied by a
+    malformed probe or by the extension quietly ceasing to be routed, and the refusal would look
+    identical. PMAT-1433''s "the SAME BYTES must lower elsewhere", turned to hold the same PATH
+    and vary the CONTENT. Implementing a stub parser REDS the page (PMAT-1431 §4).
+    ** RED HALF RUN, SIX perturbations, green control: the canonical probe replaced by a real
+    definition; the definition probe replaced by a stub (the anti-vacuity control fails); a row
+    dropped from the published table; a spelling published that the registry does not claim; the
+    xpile-info disclosure deleted; and -- the BEHAVIOUR half -- MAKING A BODILESS `...` FUNCTION
+    LOWER in crates/depyler-frontend/src, which reds with "a file in the CANONICAL form of
+    `*.pyi` now LOWERS -- that is a real capability gain, move the row out of the table".
+    ** A PERTURBATION OF A MESSAGE IS NOT A PERTURBATION OF BEHAVIOUR. The FIRST attempt at the
+    behaviour half only renamed the refusal STRING, and the witness stayed GREEN -- correctly,
+    since the frontend still refused. Had that been accepted as "the behaviour half ran", this
+    slice would have shipped without ever proving the gate tracks the frontend. If a behaviour
+    perturbation edits only a literal, it has not been run.
+    ** DISCLOSED, NOT FIXED, and pinned so the disclosure cannot decay: `xpile info` still prints
+    both spellings unannotated. Saying more there needs a per-INPUT granularity that
+    `refused_claims()` does not have -- it is per-CLAIM, which is exactly the granularity
+    PMAT-1433 added and exactly one level too coarse for this. A test asserts the caveat is still
+    on the page, so giving `xpile info` that granularity REDS and forces the disclosure to move.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    NEXT PICK: STANDING LEADS, EV order. (a) `xpile audit`''s "xpile recognises ..." bail is the
+    PRE-PMAT-1434 flat extensions() union -- names .mk and .ruchy which refuse EVERY input and
+    omits Makefile/Dockerfile which matches_path claims; the FOURTH surface of the
+    frontend-claim class and the first needing a SOURCE fix. (b) the PER-INPUT disposition
+    granularity this slice DISCLOSED rather than fixed -- `xpile info` and the dispatch message
+    both need it, and it is the natural successor to `refused_claims()`. (c) backends.md''s ruchy
+    Status parenthetical "compiles to Rust" -- `ruchy check` accepts 18 of 39 emitted artifacts,
+    and one emit puts `&self` on a method that assigns to self. (d) frontends.md says every
+    emitted Rust/Ruchy/Lean function carries a `// xpile-contract: C-PY-INT-ARITH` citation; the
+    ID is type-directed (float/str/bool cite three OTHER contracts) and the Lean lane uses
+    `/-- ... -/`, not `//`. TAKEN BY A CONCURRENT FIRE, do not duplicate: the Python
+    binary/unary OPERATOR-SET overclaim (PR #2035, needs renumbering off PMAT-1438).
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1440
   status: done
   ev_rank: R1
