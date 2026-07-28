@@ -84,13 +84,15 @@ internally coherent.
 
 ## Inspecting the Diamond state
 
+<!-- DIAMOND-TRANSCRIPT:BEGIN -->
 ```bash
 $ xpile diamond
 xpile diamond — Diamond-tier coverage (PMAT-249)
+depth: 0 Diamonds = none, N Diamonds = depth-N (exact — the column is never bucketed; the `depth-N+` figures in the totals block are CUMULATIVE counts, not classifications)
 
   contract                                 diamond  depth
   ------------------------------------------------------------
-  C-PY-INT-ARITH                                21  depth-21+
+  C-PY-INT-ARITH                                21  depth-21
   C-COMPILE-RUST-TO-PTX-MMA                     20  depth-20
   C-BASHRS-POSIX-IDEMPOTENCE                    13  depth-13
   C-FFI-CPYTHON-EXT                             13  depth-13
@@ -100,6 +102,15 @@ xpile diamond — Diamond-tier coverage (PMAT-249)
 totals: <N> Diamond theorems across <N> contracts
   depth-1+: <N> contracts, depth-2+: <N> contracts, ...
 ```
+<!-- DIAMOND-TRANSCRIPT:END -->
+
+The legend line and every contract row above are compared to the live
+binary, by equality, in `crates/xpile/tests/diamond_depth_label_witness.rs`.
+The earlier copy of this transcript **omitted the legend** — an unmarked
+elision, which is why the honest repair of this page never saw that the
+legend was the falsehood: it announced a `depth-3+` bucket the reporter
+could not produce, directly above a column whose first three rows read
+`depth-21+`, `depth-20`, `depth-13` (PMAT-1448).
 
 The totals block is reproduced here as a **shape**, not as numbers. A
 pasted numeral is a claim that nothing re-derives, and the numerals

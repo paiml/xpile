@@ -94,6 +94,83 @@ fn lakefile_root_count() -> usize {
 /// Every integer `N` such that `{prefix}{N}{suffix}` occurs in `text`.
 /// Anchored substring parsing (no `regex` dep), the same style as the
 /// lakefile parser.
+/// Every depth a piece of prose claims to be UNIVERSAL, in both spellings the
+/// corpus uses: `depth-N UNIVERSAL` and the RANGE form `depth-A..B UNIVERSAL`.
+///
+/// A range claims its UPPER end — "depth-1..13 UNIVERSAL" asserts that every
+/// contract carries at least thirteen Diamond categories, not at least one — so
+/// that is what is returned. A trailing `+` (`depth-13+ UNIVERSAL`) is the same
+/// claim as `depth-13`.
+///
+/// PMAT-1448: the caller used `counts_between(.., "depth-", " UNIVERSAL")`,
+/// which cannot match a range, and the range is the spelling the falsehood
+/// actually used.
+fn claimed_universal_depths(text: &str) -> Vec<usize> {
+    const PREFIX: &str = "depth-";
+    let bytes = text.as_bytes();
+    let digits_at = |i: &mut usize| -> Option<usize> {
+        let start = *i;
+        while *i < bytes.len() && bytes[*i].is_ascii_digit() {
+            *i += 1;
+        }
+        if *i == start {
+            None
+        } else {
+            text[start..*i].parse().ok()
+        }
+    };
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while let Some(rel) = text[from..].find(PREFIX) {
+        let mut i = from + rel + PREFIX.len();
+        from = i; // prefix is non-empty ⇒ strictly advances
+        let Some(low) = digits_at(&mut i) else {
+            continue;
+        };
+        let mut claimed = low;
+        if text[i..].starts_with("..") {
+            let mut j = i + 2;
+            if let Some(high) = digits_at(&mut j) {
+                claimed = high;
+                i = j;
+            }
+        }
+        if text[i..].starts_with('+') {
+            i += 1;
+        }
+        if text[i..].trim_start().starts_with("UNIVERSAL") {
+            out.push(claimed);
+        }
+    }
+    out
+}
+
+/// A file split into blank-line-delimited paragraphs, as (starting line number,
+/// flattened text). A claim and its denial are a paragraph apart, not a line
+/// apart — and a claim can WRAP across the line break inside one.
+fn paragraphs(body: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut start = 1usize;
+    let mut buf: Vec<&str> = Vec::new();
+    for (i, line) in body.lines().enumerate() {
+        if line.trim().is_empty() {
+            if !buf.is_empty() {
+                out.push((start, buf.join(" ")));
+                buf.clear();
+            }
+        } else {
+            if buf.is_empty() {
+                start = i + 1;
+            }
+            buf.push(line);
+        }
+    }
+    if !buf.is_empty() {
+        out.push((start, buf.join(" ")));
+    }
+    out
+}
+
 fn counts_between(text: &str, prefix: &str, suffix: &str) -> Vec<usize> {
     let mut out = Vec::new();
     let mut from = 0;
@@ -1245,17 +1322,63 @@ fn book_claims_no_universal_depth_the_substrate_does_not_hold() {
     );
     let universal = *counts.iter().min().expect("non-empty");
 
-    // A claim of the form "depth-N UNIVERSAL" for N > the live universal depth.
+    // PMAT-1448 — NON-VACUITY, and the reason this gate needed repairing at
+    // all: the spelling quoted in the doc comment above as THE defect must be
+    // one the parser can actually match. It was not. The old scan was
+    // `counts_between(line, "depth-", " UNIVERSAL")`, which requires the digits
+    // to be followed immediately by ` UNIVERSAL`; in `depth-1..13 UNIVERSAL`
+    // they are followed by `..13`, so the gate scored ZERO claims on the exact
+    // string it was written to kill, and a live instance sat in
+    // `book/src/reference/cli.md` — four lines above a link to the page this
+    // gate protects. Ask what the DEFECT spelled, not what the fix spells.
+    assert_eq!(
+        claimed_universal_depths("depth-1..13 UNIVERSAL"),
+        vec![13],
+        "the RANGE spelling must be matched, and must claim its UPPER end"
+    );
+    assert_eq!(claimed_universal_depths("depth-7 UNIVERSAL"), vec![7]);
+    assert_eq!(claimed_universal_depths("depth-13+ UNIVERSAL"), vec![13]);
+    assert!(
+        claimed_universal_depths("depth-13 coverage over the core").is_empty(),
+        "`depth-N` without the word UNIVERSAL is not a universality claim"
+    );
+
+    // A claim of the form "depth-N UNIVERSAL", or the range spelling
+    // "depth-A..B UNIVERSAL", for a depth the substrate does not hold.
+    // Scanned per PARAGRAPH, not per line, for two reasons: a claim and its
+    // denial live a paragraph apart, and the disclosure on the Diamond page
+    // WRAPS between `depth-1..13` and `UNIVERSAL`, so a line-oriented scan
+    // cannot see it at all and a reflow would silently change the verdict.
     let mut offences = Vec::new();
+    let mut mentions = 0usize;
     for (rel, body) in book_pages() {
-        for (n, line) in body.lines().enumerate() {
-            for claimed in counts_between(line, "depth-", " UNIVERSAL") {
-                if claimed > universal {
-                    offences.push(format!("{rel}:{}: claims depth-{claimed} UNIVERSAL", n + 1));
+        for (line_no, para) in paragraphs(&body) {
+            for claimed in claimed_universal_depths(&para) {
+                mentions += 1;
+                if claimed <= universal {
+                    continue;
+                }
+                // A mention is honest iff its own paragraph marks the claim as
+                // superseded. Prose may QUOTE a falsehood — the Diamond page
+                // does, on purpose — but it may not assert one.
+                let lower = para.to_lowercase();
+                let denied = lower.contains("this page said")
+                    || lower.contains("used to")
+                    || lower.contains("no longer")
+                    || lower.contains("stopped describing")
+                    || lower.contains("does not hold");
+                if !denied {
+                    offences.push(format!("{rel}:{line_no}: claims depth-{claimed} UNIVERSAL"));
                 }
             }
         }
     }
+    assert!(
+        mentions > 0,
+        "no `depth-N UNIVERSAL` claim occurs anywhere in book/src, so this gate is \
+         ranging over nothing (PMAT-1396: a negative over an empty enumeration passes \
+         for free). The Diamond page's disclosure should supply at least one."
+    );
     assert!(
         offences.is_empty(),
         "the book claims a UNIVERSAL depth the substrate does not hold — {} — \

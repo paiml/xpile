@@ -176,10 +176,15 @@ enum Cmd {
     /// Diamond-tier coverage reporter (PMAT-249). Walks every
     /// contract YAML and tallies the number of `_diamond` lean_theorem
     /// references — the substrate's Diamond-tier coverage per contract.
-    /// Reports raw count + classification:
-    ///   `none` (0 Diamonds), `depth-1` (1 Diamond category),
-    ///   `depth-2` (2 Diamonds), ..., `depth-8` (8 Diamonds),
-    ///   `depth-9+` (9+ Diamonds — opened by PMAT-298).
+    /// Reports the raw count plus a classification computed from it:
+    /// 0 Diamonds classifies as `none`, and N Diamonds as `depth-N`.
+    /// The classification is EXACT and never bucketed, so WHICH labels
+    /// appear is a function of the corpus rather than of a list written
+    /// here.
+    ///
+    /// The `depth-N+` spellings in the totals block mean something
+    /// else: those are CUMULATIVE counts (how many contracts carry at
+    /// least N Diamonds), not a classification any one contract holds.
     ///
     /// Useful for tracking Diamond depth over time and identifying
     /// contracts that could benefit from additional algebraic
@@ -3865,14 +3870,20 @@ bar:
 // YAML and tallies `_diamond` lean_theorem references — each represents
 // one wired Diamond theorem.
 //
-// The substrate's Diamond program at v0.1.0:
-//   - Depth-1 UNIVERSAL: 12/12 contracts (each has at least 1 Diamond)
-//   - Depth-2 UNIVERSAL: 12/12 contracts (each has at least 2 Diamonds)
-//   - Depth-3 UNIVERSAL across layers: 5/5 layers (each has at least
-//     one contract with at least 3 Diamonds)
-//   - Depth-4 opened on 2 contracts (PyIntArith L1, CompileRustToPtxMma L5)
+// PMAT-1448: this header used to restate the substrate's state as four
+// hard-coded cardinalities, the second of which ("Depth-2 UNIVERSAL:
+// 12/12 contracts (each has at least 2 Diamonds)") was measured at 14 of
+// 35 on the tree that still carried it — the substrate grew well past
+// twelve and most newcomers join with a single Diamond. THE STATE IS
+// DELIBERATELY NOT RESTATED HERE. Run the subcommand: the totals block
+// prints how many contracts sit at each `depth-N+`, and by the
+// definition in `book/src/concepts/diamond-substrate.md` the UNIVERSAL
+// depth is the largest N whose count still equals contracts_total.
 //
-// This subcommand is a *reporter*, not a gate.
+// This subcommand is a *reporter*, not a gate. The gate that holds the
+// deep core against regression is `crates/xpile/tests/diamond_coverage.rs`,
+// and it is deliberately grandfathered over a NAMED set (PMAT-475)
+// rather than asserting anything universal above depth-1.
 
 #[derive(Debug, Clone)]
 struct DiamondRow {
@@ -3881,32 +3892,43 @@ struct DiamondRow {
 }
 
 impl DiamondRow {
-    fn depth_label(&self) -> &'static str {
+    /// The classification printed in the `depth` column, COMPUTED from the
+    /// count: `none` at zero, `depth-N` otherwise. Exact for every value.
+    ///
+    /// PMAT-1448: this was a 22-arm hand-written match ending in
+    /// `_ => "depth-21+"`. That bucket's only member was the deepest contract
+    /// in the tree (`C-PY-INT-ARITH`, at exactly 21), so the `+` advertised
+    /// uncertainty about a number the reporter knew exactly and printed in the
+    /// adjacent column. The arms were also what the legend and `--help` had
+    /// been transcribed from, and BOTH transcriptions had gone stale — the
+    /// legend published `depth-3+` and `--help` published `depth-9+`, neither
+    /// of which this function could ever return. An exact label cannot be
+    /// transcribed wrongly, because there is nothing left to enumerate.
+    fn depth_label(&self) -> String {
         match self.diamond_count {
-            0 => "none",
-            1 => "depth-1",
-            2 => "depth-2",
-            3 => "depth-3",
-            4 => "depth-4",
-            5 => "depth-5",
-            6 => "depth-6",
-            7 => "depth-7",
-            8 => "depth-8",
-            9 => "depth-9",
-            10 => "depth-10",
-            11 => "depth-11",
-            12 => "depth-12",
-            13 => "depth-13",
-            14 => "depth-14",
-            15 => "depth-15",
-            16 => "depth-16",
-            17 => "depth-17",
-            18 => "depth-18",
-            19 => "depth-19",
-            20 => "depth-20",
-            _ => "depth-21+",
+            0 => "none".to_string(),
+            n => format!("depth-{n}"),
         }
     }
+}
+
+/// The smallest number of cumulative `depth-N+` buckets the totals block always
+/// emits, so the JSON key set never SHRINKS below what consumers already read.
+const MIN_CUMULATIVE_BUCKETS: usize = 21;
+
+/// `(N, how many contracts carry at least N Diamonds)` — the cumulative buckets
+/// of the totals block, for every N the corpus can say something about.
+///
+/// PMAT-1448: this was 21 hand-written `let depth_N_plus = …` bindings in EACH
+/// of the two printers. Twenty-one is a ceiling, not a range: the deepest
+/// contract in the tree sits at exactly 21, so one more Diamond would have been
+/// reported under `depth-21+` with nothing above it and no indication that the
+/// block had stopped growing.
+fn cumulative_buckets(rows: &[DiamondRow]) -> Vec<(usize, usize)> {
+    let deepest = rows.iter().map(|r| r.diamond_count).max().unwrap_or(0);
+    (1..=deepest.max(MIN_CUMULATIVE_BUCKETS))
+        .map(|n| (n, rows.iter().filter(|r| r.diamond_count >= n).count()))
+        .collect()
 }
 
 fn diamond(contracts_dir: &Path, json: bool) -> Result<()> {
@@ -3965,7 +3987,9 @@ fn count_diamond_theorems(contents: &str) -> usize {
 fn print_diamond_text(rows: &[DiamondRow]) {
     println!("xpile diamond — Diamond-tier coverage (PMAT-249)");
     println!(
-        "depth: 0 = none, 1 = depth-1 (1 Diamond), 2 = depth-2 (2 Diamonds), 3+ = depth-3+ (3+)"
+        "depth: 0 Diamonds = none, N Diamonds = depth-N (exact — the column is never \
+         bucketed; the `depth-N+` figures in the totals block are CUMULATIVE counts, \
+         not classifications)"
     );
     println!();
     println!("  {:<40} {:>7}  {:<10}", "contract", "diamond", "depth");
@@ -3980,44 +4004,15 @@ fn print_diamond_text(rows: &[DiamondRow]) {
     }
     println!();
     let total_diamonds: usize = rows.iter().map(|r| r.diamond_count).sum();
-    let depth_1_plus = rows.iter().filter(|r| r.diamond_count >= 1).count();
-    let depth_2_plus = rows.iter().filter(|r| r.diamond_count >= 2).count();
-    let depth_3_plus = rows.iter().filter(|r| r.diamond_count >= 3).count();
-    let depth_4_plus = rows.iter().filter(|r| r.diamond_count >= 4).count();
-    let depth_5_plus = rows.iter().filter(|r| r.diamond_count >= 5).count();
-    let depth_6_plus = rows.iter().filter(|r| r.diamond_count >= 6).count();
-    let depth_7_plus = rows.iter().filter(|r| r.diamond_count >= 7).count();
-    let depth_8_plus = rows.iter().filter(|r| r.diamond_count >= 8).count();
-    let depth_9_plus = rows.iter().filter(|r| r.diamond_count >= 9).count();
-    let depth_10_plus = rows.iter().filter(|r| r.diamond_count >= 10).count();
-    let depth_11_plus = rows.iter().filter(|r| r.diamond_count >= 11).count();
-    let depth_12_plus = rows.iter().filter(|r| r.diamond_count >= 12).count();
-    let depth_13_plus = rows.iter().filter(|r| r.diamond_count >= 13).count();
-    let depth_14_plus = rows.iter().filter(|r| r.diamond_count >= 14).count();
-    let depth_15_plus = rows.iter().filter(|r| r.diamond_count >= 15).count();
-    let depth_16_plus = rows.iter().filter(|r| r.diamond_count >= 16).count();
-    let depth_17_plus = rows.iter().filter(|r| r.diamond_count >= 17).count();
-    let depth_18_plus = rows.iter().filter(|r| r.diamond_count >= 18).count();
-    let depth_19_plus = rows.iter().filter(|r| r.diamond_count >= 19).count();
-    let depth_20_plus = rows.iter().filter(|r| r.diamond_count >= 20).count();
-    let depth_21_plus = rows.iter().filter(|r| r.diamond_count >= 21).count();
     println!(
         "totals: {total_diamonds} Diamond theorems across {} contracts",
         rows.len()
     );
-    println!(
-        "  depth-1+: {depth_1_plus} contracts, depth-2+: {depth_2_plus} contracts, \
-         depth-3+: {depth_3_plus} contracts, depth-4+: {depth_4_plus} contracts, \
-         depth-5+: {depth_5_plus} contracts, depth-6+: {depth_6_plus} contracts, \
-         depth-7+: {depth_7_plus} contracts, depth-8+: {depth_8_plus} contracts, \
-         depth-9+: {depth_9_plus} contracts, depth-10+: {depth_10_plus} contracts, \
-         depth-11+: {depth_11_plus} contracts, depth-12+: {depth_12_plus} contracts, \
-         depth-13+: {depth_13_plus} contracts, depth-14+: {depth_14_plus} contracts, \
-         depth-15+: {depth_15_plus} contracts, depth-16+: {depth_16_plus} contracts, \
-         depth-17+: {depth_17_plus} contracts, depth-18+: {depth_18_plus} contracts, \
-         depth-19+: {depth_19_plus} contracts, depth-20+: {depth_20_plus} contracts, \
-         depth-21+: {depth_21_plus} contracts"
-    );
+    let buckets: Vec<String> = cumulative_buckets(rows)
+        .into_iter()
+        .map(|(n, c)| format!("depth-{n}+: {c} contracts"))
+        .collect();
+    println!("  {}", buckets.join(", "));
 }
 
 fn print_diamond_json(rows: &[DiamondRow]) {
@@ -4036,41 +4031,14 @@ fn print_diamond_json(rows: &[DiamondRow]) {
         );
     }
     let total_diamonds: usize = rows.iter().map(|r| r.diamond_count).sum();
-    let depth_1_plus = rows.iter().filter(|r| r.diamond_count >= 1).count();
-    let depth_2_plus = rows.iter().filter(|r| r.diamond_count >= 2).count();
-    let depth_3_plus = rows.iter().filter(|r| r.diamond_count >= 3).count();
-    let depth_4_plus = rows.iter().filter(|r| r.diamond_count >= 4).count();
-    let depth_5_plus = rows.iter().filter(|r| r.diamond_count >= 5).count();
-    let depth_6_plus = rows.iter().filter(|r| r.diamond_count >= 6).count();
-    let depth_7_plus = rows.iter().filter(|r| r.diamond_count >= 7).count();
-    let depth_8_plus = rows.iter().filter(|r| r.diamond_count >= 8).count();
-    let depth_9_plus = rows.iter().filter(|r| r.diamond_count >= 9).count();
-    let depth_10_plus = rows.iter().filter(|r| r.diamond_count >= 10).count();
-    let depth_11_plus = rows.iter().filter(|r| r.diamond_count >= 11).count();
-    let depth_12_plus = rows.iter().filter(|r| r.diamond_count >= 12).count();
-    let depth_13_plus = rows.iter().filter(|r| r.diamond_count >= 13).count();
-    let depth_14_plus = rows.iter().filter(|r| r.diamond_count >= 14).count();
-    let depth_15_plus = rows.iter().filter(|r| r.diamond_count >= 15).count();
-    let depth_16_plus = rows.iter().filter(|r| r.diamond_count >= 16).count();
-    let depth_17_plus = rows.iter().filter(|r| r.diamond_count >= 17).count();
-    let depth_18_plus = rows.iter().filter(|r| r.diamond_count >= 18).count();
-    let depth_19_plus = rows.iter().filter(|r| r.diamond_count >= 19).count();
-    let depth_20_plus = rows.iter().filter(|r| r.diamond_count >= 20).count();
-    let depth_21_plus = rows.iter().filter(|r| r.diamond_count >= 21).count();
+    let buckets: Vec<String> = cumulative_buckets(rows)
+        .into_iter()
+        .map(|(n, c)| format!("\"depth_{n}_plus\":{c}"))
+        .collect();
     println!(
-        "],\"total_diamonds\":{total_diamonds},\"contracts_total\":{},\
-         \"depth_1_plus\":{depth_1_plus},\"depth_2_plus\":{depth_2_plus},\
-         \"depth_3_plus\":{depth_3_plus},\"depth_4_plus\":{depth_4_plus},\
-         \"depth_5_plus\":{depth_5_plus},\"depth_6_plus\":{depth_6_plus},\
-         \"depth_7_plus\":{depth_7_plus},\"depth_8_plus\":{depth_8_plus},\
-         \"depth_9_plus\":{depth_9_plus},\"depth_10_plus\":{depth_10_plus},\
-         \"depth_11_plus\":{depth_11_plus},\"depth_12_plus\":{depth_12_plus},\
-         \"depth_13_plus\":{depth_13_plus},\"depth_14_plus\":{depth_14_plus},\
-         \"depth_15_plus\":{depth_15_plus},\"depth_16_plus\":{depth_16_plus},\
-         \"depth_17_plus\":{depth_17_plus},\"depth_18_plus\":{depth_18_plus},\
-         \"depth_19_plus\":{depth_19_plus},\"depth_20_plus\":{depth_20_plus},\
-         \"depth_21_plus\":{depth_21_plus}}}",
-        rows.len()
+        "],\"total_diamonds\":{total_diamonds},\"contracts_total\":{},{}}}",
+        rows.len(),
+        buckets.join(",")
     );
 }
 
@@ -4080,128 +4048,96 @@ mod diamond_tests {
 
     #[test]
     fn diamond_row_depth_label() {
-        let r0 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 0,
+        // PMAT-1448: this test used to enumerate twenty-two hand-written cases,
+        // one per arm, each added by the numbered slice that first reached that
+        // depth (PMAT-286 opened depth-5, …, PMAT-327 opened depth-21+). That
+        // is the same enumeration the legend and `--help` were transcribed
+        // from, so the test grew in lockstep with the defect instead of
+        // catching it: `r22.depth_label()` was asserted to be `"depth-21+"`,
+        // pinning the SATURATION — a contract with 22 Diamonds reported as the
+        // same class as one with 21, while the adjacent count column printed
+        // the true value. The label is now computed, so the property is stated
+        // once and holds at every depth.
+        let label = |n: usize| {
+            DiamondRow {
+                id: "X".into(),
+                diamond_count: n,
+            }
+            .depth_label()
         };
-        assert_eq!(r0.depth_label(), "none");
-        let r1 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 1,
+        assert_eq!(label(0), "none");
+        for n in 1..=40usize {
+            assert_eq!(
+                label(n),
+                format!("depth-{n}"),
+                "the classification must be the count, exactly, at every depth"
+            );
+        }
+        // The specific regression: adjacent depths must stay DISTINGUISHABLE.
+        // The old `_ => "depth-21+"` arm made these two equal.
+        assert_ne!(
+            label(21),
+            label(22),
+            "21 and 22 Diamonds collapsed to one label — the saturating bucket \
+             PMAT-1448 removed is back"
+        );
+        // No classification carries a `+`. That spelling belongs to the totals
+        // block's CUMULATIVE buckets and means something else there; keeping
+        // the two disjoint is what makes the legend's distinction checkable.
+        for n in 0..=40usize {
+            assert!(
+                !label(n).contains('+'),
+                "classification {:?} carries a `+`, which in this reporter marks \
+                 a cumulative bucket, not a class",
+                label(n)
+            );
+        }
+    }
+
+    #[test]
+    fn cumulative_buckets_never_truncate_the_deepest_contract() {
+        // PMAT-1448: the totals block was 21 hand-written bindings, so a
+        // contract deeper than 21 would have been folded into `depth-21+` with
+        // nothing above it — a silent truncation at exactly one more Diamond
+        // than the tree currently carries.
+        let rows = |counts: &[usize]| -> Vec<DiamondRow> {
+            counts
+                .iter()
+                .map(|&c| DiamondRow {
+                    id: "X".into(),
+                    diamond_count: c,
+                })
+                .collect()
         };
-        assert_eq!(r1.depth_label(), "depth-1");
-        let r4 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 4,
-        };
-        assert_eq!(r4.depth_label(), "depth-4");
-        // PMAT-286: depth-5 opened
-        let r5 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 5,
-        };
-        assert_eq!(r5.depth_label(), "depth-5");
-        // PMAT-290: depth-6 opened
-        let r6 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 6,
-        };
-        assert_eq!(r6.depth_label(), "depth-6");
-        // PMAT-292: depth-7 opened
-        let r7 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 7,
-        };
-        assert_eq!(r7.depth_label(), "depth-7");
-        // PMAT-294: depth-8 opened
-        let r8 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 8,
-        };
-        assert_eq!(r8.depth_label(), "depth-8");
-        // PMAT-298: depth-9 opened (later refined to discrete label by PMAT-300)
-        let r9 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 9,
-        };
-        assert_eq!(r9.depth_label(), "depth-9");
-        // PMAT-300: depth-10 opened (later refined to discrete label by PMAT-302)
-        let r10 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 10,
-        };
-        assert_eq!(r10.depth_label(), "depth-10");
-        // PMAT-302: depth-11 opened (later refined to discrete label by PMAT-305)
-        let r11 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 11,
-        };
-        assert_eq!(r11.depth_label(), "depth-11");
-        // PMAT-305: depth-12 opened (later refined to discrete label by PMAT-307)
-        let r12 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 12,
-        };
-        assert_eq!(r12.depth_label(), "depth-12");
-        // PMAT-307: depth-13 opened (later refined to discrete label by PMAT-310)
-        let r13 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 13,
-        };
-        assert_eq!(r13.depth_label(), "depth-13");
-        // PMAT-310: depth-14 opened (later refined to discrete label by PMAT-312)
-        let r14 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 14,
-        };
-        assert_eq!(r14.depth_label(), "depth-14");
-        // PMAT-312: depth-15 opened (later refined to discrete label by PMAT-315)
-        let r15 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 15,
-        };
-        assert_eq!(r15.depth_label(), "depth-15");
-        // PMAT-315: depth-16 opened (later refined to discrete label by PMAT-317)
-        let r16 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 16,
-        };
-        assert_eq!(r16.depth_label(), "depth-16");
-        // PMAT-317: depth-17 opened (later refined to discrete label by PMAT-320)
-        let r17 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 17,
-        };
-        assert_eq!(r17.depth_label(), "depth-17");
-        // PMAT-320: depth-18 opened (later refined to discrete label by PMAT-322)
-        let r18 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 18,
-        };
-        assert_eq!(r18.depth_label(), "depth-18");
-        // PMAT-322: depth-19 opened (later refined to discrete label by PMAT-325)
-        let r19 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 19,
-        };
-        assert_eq!(r19.depth_label(), "depth-19");
-        // PMAT-325: depth-20 opened (later refined to discrete label by PMAT-327)
-        let r20 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 20,
-        };
-        assert_eq!(r20.depth_label(), "depth-20");
-        // PMAT-327: depth-21+ opened (FIRST DEPTH-21 in the substrate)
-        let r21 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 21,
-        };
-        assert_eq!(r21.depth_label(), "depth-21+");
-        let r22 = DiamondRow {
-            id: "X".into(),
-            diamond_count: 22,
-        };
-        assert_eq!(r22.depth_label(), "depth-21+");
+        let deep = rows(&[25, 3]);
+        let b = cumulative_buckets(&deep);
+        assert_eq!(
+            b.last().map(|&(n, _)| n),
+            Some(25),
+            "the buckets must reach the deepest contract, not a written-down ceiling"
+        );
+        assert_eq!(
+            b.iter().find(|&&(n, _)| n == 25).map(|&(_, c)| c),
+            Some(1),
+            "the deepest contract must be counted in its own bucket"
+        );
+        // The floor holds the JSON key set stable for existing consumers even
+        // when the corpus is shallow.
+        let shallow = cumulative_buckets(&rows(&[1]));
+        assert_eq!(
+            shallow.last().map(|&(n, _)| n),
+            Some(MIN_CUMULATIVE_BUCKETS),
+            "the bucket list must not shrink below the published floor"
+        );
+        // Cumulative means monotonically non-increasing in N.
+        let counts: Vec<usize> = cumulative_buckets(&rows(&[5, 3, 1]))
+            .into_iter()
+            .map(|(_, c)| c)
+            .collect();
+        assert!(
+            counts.windows(2).all(|w| w[0] >= w[1]),
+            "cumulative counts must not increase with depth: {counts:?}"
+        );
     }
 
     #[test]
