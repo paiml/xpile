@@ -7,6 +7,73 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The citation an emitted function carries is type-directed, and the book published it as a constant (PMAT-1445)
+
+One sentence in `book/src/reference/frontends.md`, false twice:
+
+> Each emitted Rust/Ruchy/Lean function carries a
+> `// xpile-contract: C-PY-INT-ARITH` citation for the arithmetic contract.
+
+**The ID is not constant.** Measured over the CLI, one minimal function per
+Python type, on every code lane:
+
+| Python type | cited |
+|---|---|
+| `int` | `C-PY-INT-ARITH` |
+| `float` | `C-PY-FLOAT-ARITH` |
+| `str` | `C-XLATE-PY-STR-TO-RUST-STRING` |
+| `bool` | `C-XLATE-PY-BOOL-TO-RUST-BOOL` |
+
+So *"each … function carries `C-PY-INT-ARITH`"* is right for one type of four,
+and a reader with a `float` function was pointed at the wrong contract — on the
+page's only statement about citations.
+
+**And `//` is not the Lean form.** The Lean lane emits
+`/-- xpile-contract: <ID> -/`. That is not an oversight: PMAT-1405 changed it
+**deliberately**, because a file `lean` must actually parse cannot carry the old
+`@[xpile_contract "…"]` attribute that nothing registers. The emitter moved and
+the page did not.
+
+**What is already honest**, recorded so the next hunt does not re-derive it:
+every *other* site in the corpus is correct. `backends.md`, `cli.md`,
+`contracts.md` and `adding-a-backend.md` all use `<ID>` **placeholders**, and
+the concrete `C-PY-INT-ARITH` in `quickstart.md`, the tutorials and `README.md`
+appears in transcripts of `int` functions, where it is the right answer. *One
+site universally quantified over a value that varies; the rest quantified over a
+placeholder.* **A doc that writes `<ID>` cannot go stale this way; one that
+writes a literal can.**
+
+**Gated** by `crates/xpile/tests/citation_id_matrix_witness.rs`
+(`XPILE-CITEMATRIX-001`). The false sentence becomes two measured tables between
+markers, compared to the CLI by equality — which contract by **type**, which
+comment form by **lane** — plus the **factorisation** that makes two small
+tables legitimate instead of one twelve-cell matrix: the ID depends on the type
+and not the lane, the form on the lane and not the type. Without that check,
+`lean` could start citing something the other two do not and each table would
+still be individually satisfiable by picking a lane to believe. *The property
+that makes the documentation shaped the way it is has to be the property under
+test.*
+
+**Red half run, six perturbations**, green control — including **two** behaviour
+halves: making `float` cite `C-PY-INT-ARITH` in `crates/xpile-meta-hir/src`, and
+making the Lean lane emit a `//` citation in `crates/xpile-lean-codegen/src`.
+
+**A skipped behaviour half is not a run one.** The first attempt at the float
+perturbation patched `xpile-rust-codegen`, where the string is not spelled, and
+the driver printed `SKIPPED`. Read as a pass, that would have claimed a
+behaviour half without running it. The ID is chosen in
+`xpile-meta-hir/src/lib.rs:268`, one crate up from where a lane-shaped guess put
+it.
+
+**And the witness caught its own concurrency bug on its first run.** Three tests
+each call `measure()`; cargo runs them on concurrent threads in one process; the
+probe directory was keyed on pid + (type, lane) — shared state between siblings.
+The first to finish deleted the directory the second was still reading. That is
+PMAT-1436's shape inside a brand-new witness. Fixed with a per-call atomic
+counter, verified stable over three consecutive runs.
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### A gate that was RED where it was authored and GREEN in CI, on the same commit (PMAT-1444)
 
 `book_rust_example_witness.rs` (PMAT-1439) asserts that four fabricated book

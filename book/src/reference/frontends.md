@@ -115,9 +115,46 @@ includes:
 - `if`/`elif`/`else` chains
 - function calls including self-recursion
 
-Each emitted Rust/Ruchy/Lean function carries a
-`// xpile-contract: C-PY-INT-ARITH` citation for the arithmetic
-contract.
+Each emitted function carries a `xpile-contract:` citation naming the
+contract that governs **its own** types. Two things vary independently,
+and both are measured by
+`crates/xpile/tests/citation_id_matrix_witness.rs` (XPILE-CITEMATRIX-001)
+rather than asserted here:
+
+**Which contract, by the function's type** — the same ID on every code
+lane:
+
+<!-- XPILE-CITEMATRIX-001:IDS:BEGIN -->
+| Python type | contract cited |
+|---|---|
+| `int` | `C-PY-INT-ARITH` |
+| `float` | `C-PY-FLOAT-ARITH` |
+| `str` | `C-XLATE-PY-STR-TO-RUST-STRING` |
+| `bool` | `C-XLATE-PY-BOOL-TO-RUST-BOOL` |
+<!-- XPILE-CITEMATRIX-001:IDS:END -->
+
+**Which comment form, by lane** — the same form for every type:
+
+<!-- XPILE-CITEMATRIX-001:SYNTAX:BEGIN -->
+| `--target` | citation form |
+|---|---|
+| `rust` | `// xpile-contract: <ID>` |
+| `ruchy` | `// xpile-contract: <ID>` |
+| `lean` | `/-- xpile-contract: <ID> -/` |
+<!-- XPILE-CITEMATRIX-001:SYNTAX:END -->
+
+That the ID is lane-independent and the form is type-independent is
+itself checked, so a lane that started citing something different would
+red rather than quietly disagree with the other two.
+
+Through v0.1.617 this section said *"Each emitted Rust/Ruchy/Lean
+function carries a `// xpile-contract: C-PY-INT-ARITH` citation for the
+arithmetic contract"* — one sentence, false twice. The ID is
+**type-directed**, so `C-PY-INT-ARITH` is right only for `int`
+functions; and `//` is not the Lean form. PMAT-1405 changed the Lean
+lane to a `/-- … -/` docstring **deliberately**, because a file `lean`
+must actually parse cannot carry the old attribute — and this page went
+on naming the Rust comment syntax for it (PMAT-1445).
 
 For the full list, see the
 [CHANGELOG `Python subset (live, runtime-verified)`](https://github.com/paiml/xpile/blob/main/CHANGELOG.md)
