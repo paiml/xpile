@@ -11,10 +11,14 @@
   xpile monorepo (impossible to discharge with depyler or decy
   alone).
 
-  This is the **TWELFTH and FINAL** contract Lean theorem in
+  PMAT-076, 2026-05-18: the twelfth contract Lean theorem in
   the substrate. With this landed and PMAT-077 (companion Kani
-  harness) shipped, every contract in xpile's substrate has
-  paired Lean + Kani Bronze-tier discharges.
+  harness) shipped, every contract in the then-12-contract
+  substrate had paired Lean + Kani Bronze-tier discharges. It
+  was written here as the **FINAL** one; the substrate kept
+  growing and paired coverage is no longer total. `xpile quorum`
+  reports the live per-contract state and the totals — do not
+  retype them here (PMAT-1451, PMAT-1456).
 
   Cross-references:
     * Code lane:   crates/depyler-frontend + crates/decy-frontend
@@ -38,9 +42,15 @@
   work than the other refinements but follows the same
   modelling pattern.
 
-  This is the *eleventh contract Lean theorem* the project has
-  and **completes the substrate**: every contract now has a
-  Bronze-tier Lean modelling commitment.
+  PMAT-076, 2026-05-18: the twelfth contract Lean theorem — this
+  paragraph said *eleventh* while the header twenty-seven lines
+  above said **TWELFTH**, so one of the two was always wrong. It
+  **completed the then-12-contract substrate**. The universal
+  half of that claim has held as the substrate grew: every
+  contract still binds a `lean_theorem:`. The PAIRED half has
+  not — Kani harnesses cover a subset, which is why contracts
+  sit at PARTIAL; `xpile quorum` reports the live state
+  (PMAT-1456).
 -/
 
 namespace XpileContracts.CFfiCpythonExt

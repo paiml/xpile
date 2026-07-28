@@ -819,8 +819,8 @@ fn lean_module_files(dir: &str) -> usize {
     n
 }
 
-/// The `contracts/` tree — every contract YAML, every Lean source, every
-/// inventory page.
+/// The `contracts/` tree — every contract YAML, every Lean source, every Kani
+/// harness, every inventory page.
 ///
 /// PMAT-1452: `claim_pages()` is a MARKDOWN corpus (the book, `README.md`,
 /// `CLAUDE.md`, `docs/status/INDEX.md`, `docs/specifications/**`). The
@@ -828,6 +828,23 @@ fn lean_module_files(dir: &str) -> usize {
 /// rests on, and the Lean sources that discharge them — had never been in ANY
 /// claims-drift gate's subject, and all three live falsehoods this slice found
 /// were sitting in them.
+///
+/// PMAT-1456 — AND `.rs` WAS STILL MISSING, which is a subject blindness the
+/// repository had already written the rule for. [`Block`]'s own doc comment,
+/// 30 lines below, says "`.lean`/`.rs`/`.md` under `contracts/` are prose
+/// throughout": the TEXT MODEL names `.rs`, and this walk never handed it one.
+/// Measured at the time: 41 `.lean`, 35 `.yaml` and 3 `.md` in the subject,
+/// and **24 `.rs` outside it** — the files that carry all 95 `#[kani::proof]`
+/// harnesses, i.e. the SYMBOLIC stratum's own evidence. Four assertions of
+/// TOTAL §14.4 quorum were living there, in the one artifact kind whose
+/// absence from the substrate is what puts contracts at PARTIAL.
+///
+/// Widening an artifact kind means auditing the text model for it too, so
+/// [`substrate_blocks`] learned to strip `//!`/`///` here — without that, a
+/// claim that WRAPS across two doc-comment lines gets the marker spliced into
+/// the middle of it and matches nothing. That was not hypothetical: it is
+/// exactly how `contracts/kani/ffi_cpython_ext.rs`'s "every / contract in
+/// xpile's substrate is now at QUORUM" hid.
 fn provable_artifact_pages() -> Vec<(String, String)> {
     let root = workspace_root();
     fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String)>) {
@@ -840,7 +857,7 @@ fn provable_artifact_pages() -> Vec<(String, String)> {
                 walk(&p, root, out);
             } else if matches!(
                 p.extension().and_then(|s| s.to_str()),
-                Some("yaml") | Some("lean") | Some("md")
+                Some("yaml") | Some("lean") | Some("md") | Some("rs")
             ) {
                 let rel = p
                     .strip_prefix(root)
@@ -903,8 +920,18 @@ impl Block {
 /// claim that wraps mid-phrase would have a `#` spliced into it and stop
 /// matching — which is precisely how the wrapped `DEPTH-13 / UNIVERSAL` sites
 /// hid.
+///
+/// PMAT-1456 — the same rule, one artifact kind over. `.rs` under
+/// `contracts/` is a Kani harness: prose lives in `//!` module docs and `///`
+/// item docs, and the SAME wrap defeats the SAME needle. Measured on
+/// `contracts/kani/ffi_cpython_ext.rs`: stripping the marker takes the blocks
+/// containing `every contract` from 1 to 2, and the one that appears is the
+/// live falsehood ("every / contract in xpile's substrate is now at QUORUM").
+/// `//!` is tried before `///` before `//`, or the two-slash arm would eat the
+/// first two characters and leave a stray `!`/`/` at the head of the phrase.
 fn substrate_blocks(rel: &str, body: &str) -> Vec<Block> {
     let yaml = rel.ends_with(".yaml");
+    let rust = rel.ends_with(".rs");
     let mut out: Vec<Block> = Vec::new();
     let mut cur: Option<Block> = None;
     // Lean `/-! … -/` module docs and `/-- … -/` theorem docs are ONE record
@@ -930,6 +957,12 @@ fn substrate_blocks(rel: &str, body: &str) -> Vec<Block> {
         let record = !yaml || t.starts_with('#');
         let text = if yaml && record {
             t.trim_start_matches('#').trim_start()
+        } else if rust {
+            ["//!", "///", "//"]
+                .iter()
+                .find_map(|m| t.strip_prefix(m))
+                .unwrap_or(t)
+                .trim_start()
         } else {
             t
         };
@@ -2157,6 +2190,210 @@ fn contract_ids_reads_the_spellings_the_corpus_uses() {
     assert!(contract_ids("all 12 contracts reach QUORUM").is_empty());
 }
 
+/// The four sentences that were live in `contracts/kani/ffi_cpython_ext.rs`
+/// and `contracts/lean/FfiCpythonExt.lean` on 2026-07-28, verbatim, with the
+/// `//!` / `///` markers stripped exactly as [`substrate_blocks`] strips them.
+///
+/// Quoted here so the two blindness controls below run against the REAL text
+/// rather than against a paraphrase that might be easier to catch than the
+/// thing that actually shipped.
+const RETIRED_TOTALITY_SITES: [&str; 4] = [
+    "100% of the substrate at QUORUM (≥1 vote in ≥3 strata)",
+    "Zero contracts UNVERIFIED, zero PARTIAL",
+    "This is the **TWELFTH and FINAL** Kani harness — every contract in xpile's \
+     substrate is now at QUORUM after this lands.",
+    "With this landed and PMAT-077 (companion Kani harness) shipped, every \
+     contract in xpile's substrate has paired Lean + Kani Bronze-tier discharges.",
+];
+
+/// PMAT-1456 — a gate's SUBJECT and its NEEDLE are two independent blind spots,
+/// and this establishes BOTH with a control that PASSES rather than by
+/// argument.
+///
+/// PMAT-1451 widened this gate's subject from `book_pages()` to `claim_pages()`
+/// and pinned five spellings. Neither half reached the defect:
+///
+///   * the NEEDLE, run over the text that actually shipped, matches nothing —
+///     so widening the subject alone would have left all four published;
+///   * the SUBJECT excluded `.rs` entirely, so sharpening the needle alone
+///     would have left all four published too.
+///
+/// Fixing one and calling it done is the failure mode; the pair below is what
+/// makes "fixed both" a checked statement.
+#[test]
+fn total_quorum_needle_and_subject_are_independently_blind() {
+    // ── NEEDLE. The five PMAT-1451 spellings, as they were written (a
+    //    case-sensitive `contains`, which is how they were applied).
+    const PMAT_1451_NEEDLES: [&str; 5] = [
+        "full quorum",
+        "100% QUORUM",
+        "100% §14.4",
+        "all at QUORUM",
+        "0 PARTIAL",
+    ];
+    for site in RETIRED_TOTALITY_SITES {
+        assert!(
+            !PMAT_1451_NEEDLES.iter().any(|n| site.contains(n)),
+            "the PMAT-1451 needle set matches {site:?} after all — then this \
+             slice's NEEDLE half is not a blindness and the doc comment \
+             claiming it is must be rewritten"
+        );
+        // …and the replacement DOES see it. Without this the assertion above
+        // is satisfied by a needle that matches nothing at all.
+        assert!(
+            !total_quorum_claims(site, 35).is_empty(),
+            "the widened needle does not match {site:?}, so it would not have \
+             caught the text this slice removed"
+        );
+        // Each site is a LIVE claim, not one the scoping branch waves past —
+        // none of them named the population it was true of.
+        assert!(
+            total_quorum_claims(site, 35).iter().all(|&(_, s)| !s),
+            "{site:?} reads as scoped to a past substrate; it is not, and \
+             treating it as one would re-exempt the defect"
+        );
+    }
+
+    // ── SUBJECT. `.rs` under `contracts/` is now collected; it was not.
+    let pages = provable_artifact_pages();
+    let rs: Vec<&String> = pages
+        .iter()
+        .map(|(rel, _)| rel)
+        .filter(|rel| rel.ends_with(".rs"))
+        .collect();
+    assert!(
+        rs.len() >= 20,
+        "only {} `.rs` file(s) under contracts/ are in the subject",
+        rs.len()
+    );
+    assert!(
+        rs.iter()
+            .any(|rel| rel.ends_with("kani/ffi_cpython_ext.rs")),
+        "the file all four retired sites came from is not in the subject"
+    );
+}
+
+/// PMAT-1456 — the needle reports a quantifier's OWN PREDICATE, not a token
+/// that happens to share its clause.
+///
+/// All three honest sentences below were reported as drift on this gate's
+/// first widened run, and all three are sentences a reader would defend. What
+/// spares each is asserted SEPARATELY, because measurement showed they are
+/// spared by different branches and an undifferentiated "none of these are
+/// reported" would have let the dead proximity guard survive (see
+/// [`quorum_token_follows`]).
+#[test]
+fn total_quorum_needle_reports_a_predicate_not_a_neighbour() {
+    // `xpile-spec.md:213` — the quantifier's predicate is `declares a
+    // qa_gate`; `§14.4` belongs to the following conjunct. Also SCOPED, by
+    // `all 12`, which is the other half of why it is honest.
+    let spec = "every contract declares a `qa_gate`), and all 12 are at §14.4 \
+                N-of-M QUORUM via paired Lean refinement theorems";
+    // `contracts/README.md:29` — true of every contract, and the QUORUM token
+    // is in the PRECEDING sentence, which `.**` did not split off.
+    let readme = "**35 contracts: 26 at §14.4 QUORUM, 9 PARTIAL, 0 \
+                  UNVERIFIED.** Every contract binds a Lean refinement theorem";
+    // `README.md:193` — names the SUBSET, which is the repair the gate asks
+    // for. Caught only once the scan became case-insensitive.
+    let subset = "The mature core sits at full QUORUM while newer contracts \
+                  are still accreting stratum votes.";
+    for honest in [spec, readme, subset] {
+        assert!(
+            total_quorum_claims(honest, 35).iter().all(|&(_, s)| s),
+            "reported a true sentence as live substrate drift: {honest:?}"
+        );
+    }
+    // The hostile variant: same quantifier, quorum token AS its predicate.
+    let hostile = "every contract in the substrate is at QUORUM";
+    let hits = total_quorum_claims(hostile, 35);
+    assert!(
+        !hits.is_empty() && hits.iter().all(|&(_, s)| !s),
+        "the needle no longer catches a bare totality claim: {hostile:?}"
+    );
+
+    // ── WHICH branch spares each one. Asserted separately, because a blanket
+    //    "not reported" is what let a guard that bounded nothing look justified.
+    let quantifier_at = |s: &str| {
+        s.to_ascii_lowercase()
+            .find("every contract")
+            .expect("fixture carries the quantifier")
+    };
+    // `readme` is spared by DIRECTION: no §14.4 token follows the quantifier
+    // at all, so scanning the whole clause — which is what the code did before
+    // — is exactly what reported it.
+    assert!(
+        !quorum_token_follows(&readme.to_ascii_lowercase(), quantifier_at(readme)),
+        "a token now follows the quantifier in the README fixture, so the \
+         direction rule no longer spares it and this control is testing \
+         nothing"
+    );
+    assert!(
+        QUORUM_TOKENS
+            .iter()
+            .any(|t| readme.to_ascii_lowercase().contains(t)),
+        "the README fixture carries no §14.4 token anywhere, so it would be \
+         spared even without the direction rule"
+    );
+    // `spec` is spared by SCOPING (`all 12`), NOT by direction — a token does
+    // follow its quantifier. This is the assertion whose first version claimed
+    // a proximity window did the work; it did not.
+    assert!(
+        quorum_token_follows(&spec.to_ascii_lowercase(), quantifier_at(spec)),
+        "the spec fixture no longer has a token after its quantifier, so it is \
+         spared by direction and the scoping branch is untested here"
+    );
+    assert_eq!(
+        clause_denominators(&spec.to_ascii_lowercase()),
+        vec![12],
+        "the spec fixture must scope itself with `all 12`, or it is spared by \
+         something this test does not name"
+    );
+}
+
+/// PMAT-1456 — widening a gate to a new ARTIFACT KIND means auditing its TEXT
+/// MODEL for that kind. The `.rs` doc-comment marker breaks a wrapped claim
+/// exactly as the YAML `#` did (PMAT-1454), and the site that hid behind it is
+/// the one this slice removed.
+#[test]
+fn substrate_blocks_strip_rust_doc_markers() {
+    let rs = "//! This is the **TWELFTH and FINAL** Kani harness — every\n\
+              //! contract in xpile's substrate is now at QUORUM after this\n\
+              //! lands.\n";
+    // The claim is INVISIBLE in the raw source: it wraps.
+    assert!(
+        !rs.contains("every contract"),
+        "the fixture no longer wraps, so it cannot demonstrate the defect"
+    );
+    let blocks = substrate_blocks("contracts/kani/x.rs", rs);
+    assert_eq!(blocks.len(), 1, "one comment run is one block");
+    assert!(
+        blocks[0]
+            .flat
+            .contains("every contract in xpile's substrate is now at QUORUM"),
+        "the marker was not stripped, so the wrapped claim still reads as \
+         `every //! contract` and matches nothing: {:?}",
+        blocks[0].flat
+    );
+    assert!(
+        !blocks[0].flat.contains("//"),
+        "a comment marker survived into the flattened text: {:?}",
+        blocks[0].flat
+    );
+    // …and the needle finds it there, which is the only reason the stripping
+    // matters.
+    assert!(
+        !total_quorum_claims(&blocks[0].flat, 35).is_empty(),
+        "stripped, but the claim still does not match"
+    );
+    // The offset must still attribute back to the line the phrase STARTS on.
+    let (at, _) = total_quorum_claims(&blocks[0].flat, 35)[0];
+    assert_eq!(
+        blocks[0].line_at(at),
+        1,
+        "`every contract` starts on line 1 and must be reported there"
+    );
+}
+
 /// The live §14.4 table, read from the shipped binary: the `totals:` line and
 /// every contract's status keyed by id.
 ///
@@ -2216,13 +2453,254 @@ fn live_quorum() -> (String, HashMap<String, String>) {
 
 /// Phrases that assert TOTAL §14.4 discharge across the whole substrate. Each
 /// was live in the corpus while PARTIAL was non-zero.
+/// Every one of these is total ON ITS OWN — "100%", "all", "zero remaining"
+/// carry the quantifier inside the phrase.
+///
+/// PMAT-1456 REMOVED `"full quorum"` from this list, which is a NARROWING and
+/// therefore has to be justified. Its subject can be a SUBSET, so on its own it
+/// says nothing about totality: `README.md:193` reads "The mature core sits at
+/// full QUORUM while newer contracts are still accreting stratum votes" — the
+/// honest disclosure, and precisely the "say which SUBSET is discharged" repair
+/// this gate's own failure message asks for. It only matched at all once this
+/// scan became case-insensitive (the corpus writes `full QUORUM`), so nothing
+/// that was previously caught is lost: the phrase is still checked whenever it
+/// sits with a totality quantifier, and `has full quorum` over a NAMED contract
+/// is `PER_CONTRACT_QUORUM_CLAIMS`' job.
 const TOTAL_QUORUM_CLAIMS: [&str; 5] = [
-    "full quorum",
-    "100% QUORUM",
+    "100% quorum",
     "100% §14.4",
-    "all at QUORUM",
-    "0 PARTIAL",
+    "all at quorum",
+    "0 partial",
+    // PMAT-1456 — the same claim, spelled out. `contracts/kani/
+    // ffi_cpython_ext.rs` wrote "Zero contracts UNVERIFIED, zero PARTIAL"
+    // and the numeral needle above could not see it.
+    "zero partial",
 ];
+
+/// A §14.4 token counts as a quantifier's claim only if it FOLLOWS it — the
+/// quantifier's predicate is what comes after it.
+///
+/// `contracts/README.md:29` is why: "…9 PARTIAL, 0 UNVERIFIED.** Every contract
+/// binds a Lean refinement theorem". Every contract does, and the QUORUM token
+/// is in the PRECEDING sentence, which `clauses_with_offsets` never split off
+/// because `.**` is not one of its delimiters. Scanning the whole clause
+/// reports that true sentence as substrate drift.
+///
+/// ⚠️ A PROXIMITY window was written here first, and its own red half refuted
+/// it. The rule was "the token must follow the quantifier AND sit within 60
+/// bytes", justified by a second site — `xpile-spec.md:213`'s "every contract
+/// declares a `qa_gate`), and all 12 are at §14.4 N-of-M QUORUM", where the
+/// token belongs to the following conjunct. It does not hold up: that gap is
+/// **56 bytes**, INSIDE the window, so the window never spared it — the
+/// SCOPING branch did, via `all 12`. Setting the constant to `usize::MAX / 4`
+/// left the whole gate green, so the window bounded nothing anywhere in the
+/// corpus. Keeping it would have meant publishing a guard that does no work
+/// and a justification that measurement contradicts, which is the shape this
+/// slice exists to remove. Direction is kept because it is load-bearing;
+/// proximity is dropped because it is not.
+///
+/// `total_quorum_needle_reports_a_predicate_not_a_neighbour` pins both — the
+/// direction rule by the site that needs it, and the scoping branch by the
+/// site that turned out to need THAT instead.
+fn quorum_token_follows(lower: &str, at: usize) -> bool {
+    QUORUM_TOKENS.iter().any(|t| lower[at..].contains(t))
+}
+
+/// Phrases that quantify over the WHOLE contract population. Each needs a
+/// §14.4 token in the same clause before it becomes a quorum claim — see
+/// [`total_quorum_claims`].
+const TOTALITY_QUANTIFIERS: [&str; 4] = [
+    "every contract",
+    "all contracts",
+    "100% of the substrate",
+    "12 of 12",
+];
+
+/// Tokens that make a quantified clause be about §14.4 DISCHARGE STATE rather
+/// than about some other universal property of contracts.
+///
+/// This is the guard that keeps the needle from over-reaching, and it is
+/// load-bearing in a way measurement showed: `xpile-spec.md` says "every
+/// contract declares a `qa_gate`" and `audit-design.md` says "every equation
+/// has Silver-tier refinement" — both TRUE, both quantified over the whole
+/// substrate, neither a quorum claim. A needle without this token requirement
+/// reports true sentences as drift.
+const QUORUM_TOKENS: [&str; 5] = [
+    "quorum",
+    "§14.4",
+    "paired lean",
+    "paired-discharge",
+    "paired discharge",
+];
+
+/// Every TOTAL §14.4 discharge claim in `clause`, as
+/// `(byte offset, scoped_to_a_smaller_past_substrate)`.
+///
+/// PMAT-1456 — written as a CLASS (quantifier × §14.4 token), not as more
+/// literals, because the literal list is what failed. The five spellings
+/// PMAT-1451 pinned matched NONE of the four live falsehoods this slice found;
+/// measured over the 24 `.rs` files under `contracts/`, they matched nothing
+/// at all, while the class needle matches "100% of the substrate at QUORUM",
+/// "zero PARTIAL", "every contract … is now at QUORUM" and "every contract …
+/// has paired Lean + Kani … discharges".
+///
+/// ## The scoping rule, and why it is a CHECKED carve-out
+///
+/// A claim that names its own denominator — "the then-12-contract substrate",
+/// "all 12 contracts", "12 of 12" — is true of the substrate it names, and
+/// naming a past size IS the date. That is the repair form this repository
+/// already uses (`glossary.md`, `audit-design.md`, `book/src/changelog.md`),
+/// so it must not be reported.
+///
+/// It is not an exemption keyword, though — a carve-out that is not checked is
+/// a hole (PMAT-1451). The denominator is compared against the LIVE contract
+/// count: "all 35 contracts at QUORUM" scopes to the substrate that exists
+/// today and stays a live claim that must be true. Only a denominator that
+/// DIFFERS from the live total buys the scope.
+///
+/// ## What this deliberately does NOT match
+///
+/// "operational across the entire substrate" (`audit-design.md:46`). The
+/// predicate there is that the quorum ARCHITECTURE runs substrate-wide, which
+/// is true — `xpile quorum` does range over every contract. Folding "the
+/// entire substrate" into [`TOTALITY_QUANTIFIERS`] made that line an offence
+/// during measurement. The claim class here is quantification over CONTRACTS
+/// reaching a discharge state, and one prose site whose subject is the
+/// architecture rather than the contracts is repaired by wording, not gated.
+fn total_quorum_claims(clause: &str, live_total: usize) -> Vec<(usize, bool)> {
+    let lower = clause.to_ascii_lowercase();
+    // Scope is decided on the claim's OWN BULLET, not on the whole flattened
+    // clause. Fourth slice running in which this exact correction is needed
+    // (PMAT-1450 paragraph→line, 1451 line→clause, 1452 paragraph→clause), and
+    // this gate's own red half is what surfaced it: restoring the retired
+    // `contracts/kani/ffi_cpython_ext.rs` text reported 2 of its 4 sites,
+    // because "100% of the substrate at QUORUM" and "Zero contracts
+    // UNVERIFIED, zero PARTIAL" are BULLETS in a run whose FIRST bullet reads
+    // "12 contracts × 2 strata". A neighbour must not launder a bare claim.
+    let scoped_at = |at: usize| {
+        let d = clause_denominators(bullet_segment(&lower, at));
+        !d.is_empty() && d.iter().all(|&n| n != live_total)
+    };
+
+    let predicate_token = |at: usize| quorum_token_follows(&lower, at);
+    // A DENIAL is not an assertion. `book/src/concepts/contracts.md` opens a
+    // section with "**Not every contract is at quorum**", which the quantifier
+    // matches and which is the honest sentence.
+    let denied = |at: usize| {
+        let lo = (at.saturating_sub(12)..=at)
+            .find(|&i| lower.is_char_boundary(i))
+            .unwrap_or(at);
+        let back = &lower[lo..at];
+        back.contains("not ") || back.contains("n't ")
+    };
+
+    let mut hits: Vec<(usize, bool)> = Vec::new();
+    for needle in TOTAL_QUORUM_CLAIMS {
+        let mut from = 0usize;
+        while let Some(rel) = lower[from..].find(needle) {
+            let at = from + rel;
+            from = at + needle.len(); // non-empty needle ⇒ strictly advances
+            if !denied(at) {
+                hits.push((at, scoped_at(at)));
+            }
+        }
+    }
+    for needle in TOTALITY_QUANTIFIERS {
+        let mut from = 0usize;
+        while let Some(rel) = lower[from..].find(needle) {
+            let at = from + rel;
+            from = at + needle.len();
+            if !denied(at) && predicate_token(at) {
+                hits.push((at, scoped_at(at)));
+            }
+        }
+    }
+    // `all 12 contracts`, `all 35 contracts` — the quantifier with its
+    // denominator spliced in, which no fixed phrase can carry.
+    let mut from = 0usize;
+    while let Some(rel) = lower[from..].find("all ") {
+        let at = from + rel;
+        from = at + "all ".len();
+        let rest = &lower[at + "all ".len()..];
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !digits.is_empty()
+            && rest[digits.len()..].starts_with(" contract")
+            && !denied(at)
+            && predicate_token(at)
+        {
+            hits.push((at, scoped_at(at)));
+        }
+    }
+    hits.sort_unstable();
+    hits.dedup();
+    hits
+}
+
+/// The list item of `lower` containing byte offset `at`, or the whole slice if
+/// it is not a list.
+///
+/// `substrate_blocks` and `paragraphs_under_headings` both flatten a bullet run
+/// into one string, and `clauses_with_offsets` splits only on `. ` and `; ` —
+/// so a four-bullet milestone list is ONE clause and any denominator in any
+/// bullet scopes all four. Bullet markers are the missing delimiter.
+fn bullet_segment(lower: &str, at: usize) -> &str {
+    const MARKS: [&str; 3] = [" - ", " * ", " • "];
+    let mut lo = 0usize;
+    let mut hi = lower.len();
+    for m in MARKS {
+        if let Some(j) = lower[..at].rfind(m) {
+            lo = lo.max(j + m.len());
+        }
+        if let Some(j) = lower[at..].find(m) {
+            hi = hi.min(at + j);
+        }
+    }
+    &lower[lo..hi]
+}
+
+/// Every explicit contract-population size named in `lower` (already
+/// lowercased). A claim carrying one is ABOUT that population.
+///
+/// Three forms, all live in the corpus: `12 contracts` / `then-12-contract`
+/// (attributive or head noun), `all 12 are …` (the noun elided — this is how
+/// `xpile-spec.md:213` scopes itself, and without it that dated line reads as a
+/// live claim), and `12 of 12` (`audit-design.md`).
+fn clause_denominators(lower: &str) -> Vec<usize> {
+    let b = lower.as_bytes();
+    let mut out = Vec::new();
+    let digits_before = |j: usize| {
+        let mut k = j;
+        while k > 0 && b[k - 1].is_ascii_digit() {
+            k -= 1;
+        }
+        (k < j).then(|| lower[k..j].parse::<usize>().ok()).flatten()
+    };
+    let mut from = 0usize;
+    while let Some(rel) = lower[from..].find("contract") {
+        let at = from + rel;
+        from = at + "contract".len();
+        let mut j = at;
+        while j > 0 && matches!(b[j - 1], b' ' | b'-') {
+            j -= 1;
+        }
+        out.extend(digits_before(j));
+    }
+    for lead in ["all ", "of "] {
+        let mut from = 0usize;
+        while let Some(rel) = lower[from..].find(lead) {
+            let at = from + rel + lead.len();
+            from = at;
+            let digits: String = lower[at..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if !digits.is_empty() {
+                out.extend(digits.parse::<usize>().ok());
+            }
+        }
+    }
+    out
+}
 
 /// Spellings that assert a NAMED contract has reached quorum.
 const PER_CONTRACT_QUORUM_CLAIMS: [&str; 5] = [
@@ -2267,12 +2745,18 @@ fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
         .into_iter()
         .next()
         .unwrap_or_else(|| panic!("could not parse a PARTIAL count from {totals:?}"));
+    // The live denominator, DERIVED from the same `xpile quorum` run that
+    // supplies the PARTIAL population — never a literal. It is what decides
+    // whether a claim naming "N contracts" is scoped to a past substrate or is
+    // a live claim about today's (see `total_quorum_claims`).
+    let live_total = status.len();
 
     let mut offences = Vec::new();
     let mut per_contract = Vec::new();
     let mut scanned = 0usize;
     let mut historical = Vec::new();
     let mut undated = Vec::new();
+    let mut scoped: Vec<String> = Vec::new();
     for (rel, body) in claim_pages() {
         // `book/src/changelog.md` is a DATED release log — the same role
         // `CHANGELOG.md` and `docs/status/2026-*.md` play, which is why
@@ -2350,11 +2834,9 @@ fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
                     }
                     continue;
                 }
-                for b in TOTAL_QUORUM_CLAIMS {
-                    let mut from = 0usize;
-                    while let Some(hit) = clause[from..].find(b) {
-                        let at = base + from + hit;
-                        from += hit + b.len();
+                {
+                    for (off, claim_scoped) in total_quorum_claims(clause, live_total) {
+                        let at = base + off;
                         let (n, line) = para.line_at(at);
                         if in_record {
                             // A dated record names WHEN. Checked on the
@@ -2370,10 +2852,21 @@ fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
                             // it — which is exactly what it did on this gate's
                             // own first run, reporting one site of six.
                             if pmat_ids(line).is_empty() && !line.contains("v0.1.") {
-                                undated.push(format!("{rel}:{n}: `{b}` under {:?}", para.heading));
+                                undated.push(format!(
+                                    "{rel}:{n}: totality claim under {:?}",
+                                    para.heading
+                                ));
                             } else {
                                 historical.push(format!("{rel}:{n}"));
                             }
+                            continue;
+                        }
+                        // A claim that names its own denominator is scoped to
+                        // the substrate it names — see `total_quorum_claims`.
+                        // Counted, so a later narrowing that kills the branch
+                        // cannot go unnoticed.
+                        if claim_scoped {
+                            scoped.push(format!("{rel}:{n}"));
                             continue;
                         }
                         if partial == 0 {
@@ -2392,12 +2885,12 @@ fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
                         // paragraph-scoped and would exempt anything newly
                         // asserted in the same paragraph; the quoted-span
                         // requirement is what makes it a quotation.
-                        let quoted = spans.iter().any(|&(s, e)| at >= s && at + b.len() <= e);
+                        let quoted = spans.iter().any(|&(s, e)| at >= s && at < e);
                         if denied && quoted {
                             historical.push(format!("{rel}:{n}"));
                             continue;
                         }
-                        offences.push(format!("{rel}:{n}: `{b}`"));
+                        offences.push(format!("{rel}:{n}: {}", excerpt(&para.flat, at)));
                     }
                 }
             }
@@ -2407,6 +2900,70 @@ fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
         scanned > 1,
         "the exemption swallowed the corpus: only {scanned} page(s) scanned"
     );
+
+    // ── the substrate arm (PMAT-1456) ────────────────────────────────────
+    //
+    // The SUBJECT half. PMAT-1451 moved this gate from `book_pages()` to
+    // `claim_pages()` and stopped there; `claim_pages()` is MARKDOWN, so the
+    // artifacts the quorum claim is ABOUT — the contract YAMLs, the Lean
+    // sources that discharge them, and the Kani harnesses that are the
+    // Symbolic stratum — were never in its subject at all. All four live
+    // falsehoods were in `contracts/kani/ffi_cpython_ext.rs`.
+    //
+    // Both blindnesses are established by a control that PASSES, not by
+    // argument (see `total_quorum_needle_and_subject_are_independently_blind`):
+    // the OLD needle over the NEW subject finds nothing, and the NEW needle
+    // over the OLD subject finds nothing. Fixing either alone leaves the
+    // defect published.
+    let substrate = provable_artifact_pages();
+    let rs_files = substrate.iter().filter(|(r, _)| r.ends_with(".rs")).count();
+    assert!(
+        rs_files >= 20,
+        "provable_artifact_pages() collected only {rs_files} `.rs` file(s) from \
+         contracts/ — the Kani harnesses are the artifact kind this arm was \
+         added for, and the walk is not reaching them"
+    );
+    let mut substrate_claims = 0usize;
+    for (rel, body) in &substrate {
+        for block in substrate_blocks(rel, body) {
+            for (clause, base) in clauses_with_offsets(&block.flat) {
+                for (off, claim_scoped) in total_quorum_claims(clause, live_total) {
+                    let n = block.line_at(base + off);
+                    substrate_claims += 1;
+                    if claim_scoped {
+                        scoped.push(format!("{rel}:{n}"));
+                        continue;
+                    }
+                    if partial == 0 {
+                        continue; // the claim would be true
+                    }
+                    // A NORMATIVE field is what the contract asserts and is
+                    // parsed into the contract's meaning; a provenance comment
+                    // or docstring narrates. Both are reported — the record
+                    // exemption here is the DENOMINATOR, not the comment
+                    // marker — but naming which one it is tells the reader
+                    // whether they are editing prose or an assertion.
+                    let slot = if block.record {
+                        "a provenance comment/docstring"
+                    } else {
+                        "a NORMATIVE field"
+                    };
+                    offences.push(format!(
+                        "{rel}:{n}: {slot} asserts TOTAL §14.4 quorum — {}",
+                        excerpt(&block.flat, base + off)
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        substrate_claims > 0,
+        "the substrate arm scanned {} contract artifact(s) and found no quorum \
+         claim of any kind, so the needle is matching nothing there and this \
+         whole arm passes for free",
+        substrate.len()
+    );
+
     // Both derived sets must be non-empty, or a later narrowing of either
     // needle would leave this ranging over nothing and passing for free
     // (PMAT-1396). `C-PY-INT-ARITH` is the anchor: the substrate's oldest
@@ -2443,6 +3000,36 @@ fn docs_claim_no_total_quorum_while_any_contract_is_partial() {
         "no `{HISTORICAL_MARKER}` totality claim was found, so that branch is \
          dead and the exemption is untested"
     );
+    // ⚠️ DOMINATED, and said so rather than implied. This was written as the
+    // anti-vacuity tripwire for the scoping branch, and its red half refuted
+    // that: killing the branch (`scoped_at` forced to `false`) reds the
+    // OFFENCES assertion above instead, on `audit-design.md:46` and the other
+    // honestly-scoped sentences, which is the louder and more useful failure.
+    // There is no perturbation in this corpus that reaches this line. It is
+    // kept as a cheap forward tripwire for a future narrowing that leaves the
+    // branch alive but matching nothing — NOT as evidence the branch is
+    // tested, which the red half is. Second guard in this slice whose
+    // justification measurement contradicted; see [`quorum_token_follows`] for
+    // the first, which was deleted rather than downgraded.
+    assert!(
+        !scoped.is_empty(),
+        "no totality claim named a past denominator anywhere in the corpus, so \
+         the scoping branch of `total_quorum_claims` is matching nothing"
+    );
+}
+
+/// A short excerpt of `flat` around byte offset `at`, for a failure message.
+fn excerpt(flat: &str, at: usize) -> String {
+    let lo = flat[..at]
+        .char_indices()
+        .rev()
+        .nth(30)
+        .map_or(0, |(i, _)| i);
+    let hi = flat[at..]
+        .char_indices()
+        .nth(70)
+        .map_or(flat.len(), |(i, _)| at + i);
+    format!("…{}…", flat[lo..hi].trim())
 }
 
 /// The Diamond page defines **depth-N UNIVERSAL** as "*every* contract has at

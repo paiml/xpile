@@ -7,6 +7,78 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The Kani harness that IS the Symbolic stratum published "100% of the substrate at QUORUM" — and `.rs` under `contracts/` was in no gate's subject, though the text model already named it (PMAT-1456)
+
+Live, from `xpile quorum` over `contracts/`: **26 QUORUM, 9 PARTIAL, 0
+UNVERIFIED across 35 contracts**. 35 of 35 bind a `lean_theorem:`; **24 of 35**
+bind a `kani_harness:`, so eleven contracts have no Symbolic vote at all.
+
+**The four claims, and where they lived.** `contracts/kani/ffi_cpython_ext.rs`
+— the PMAT-077 harness — said *"100% of the substrate at QUORUM (≥1 vote in ≥3
+strata)"*, *"Zero contracts UNVERIFIED, zero PARTIAL"*, and *"every contract in
+xpile's substrate is now at QUORUM after this lands"*. Its Lean counterpart
+`contracts/lean/FfiCpythonExt.lean` said *"every contract in xpile's substrate
+has paired Lean + Kani Bronze-tier discharges"*. The sharpest part is **which
+file** they were in: a Kani harness is the Symbolic stratum's own evidence, and
+the absence of one is exactly what puts those eleven contracts at PARTIAL. The
+artifact class whose scarcity falsifies the claim is the one publishing it.
+
+Both files also called themselves the **"TWELFTH and FINAL"** harness and
+theorem — four times across the two. *Final* is a claim about the future, and a
+citation cannot date it; `contracts/kani/` now holds **95** `#[kani::proof]`
+harnesses. `FfiCpythonExt.lean` additionally called itself the *eleventh*
+theorem twenty-seven lines below calling itself the **TWELFTH**, so one of the
+two was always wrong.
+
+**Two independent blind spots, each established by a control that PASSES.**
+PMAT-1451 moved this gate from `book_pages()` to `claim_pages()` and pinned five
+spellings; neither half reached any of the four.
+
+* **SUBJECT.** `claim_pages()` is markdown. With the substrate arm neutered and
+  the retired text restored, the gate is **green** — all four published.
+  `provable_artifact_pages()` collected `.yaml`/`.lean`/`.md` and **not `.rs`**:
+  41 + 35 + 3 files in the subject, **24 outside it**. The rule was already
+  written down — `Block`'s own doc comment says *"`.lean`/`.rs`/`.md` under
+  `contracts/` are prose throughout"*. The text model named `.rs`; the walk
+  never handed it one.
+* **NEEDLE.** With `.rs` in the subject but the five PMAT-1451 literals
+  restored, the gate is **green** too. They match none of the four spellings.
+
+Fixing either alone leaves all four published. The needle is now a **class** —
+a totality quantifier plus a §14.4 token that is its *predicate* — and the
+scoping carve-out is checked, not keyword-based: a claim naming a denominator
+that differs from the live contract count is scoped to the substrate it names.
+
+**Widening to a new artifact kind means auditing its text model.** `//!`/`///`
+are stripped for `.rs` exactly as `#` is for YAML (PMAT-1454). Measured
+differential: the wrapped site `ffi_cpython_ext.rs:93` is reported **only** with
+stripping — unstripped it reads `every //! contract` and matches nothing.
+
+**A neighbouring bullet was laundering two of the four.** This gate's own red
+half caught it: `"100% of the substrate at QUORUM"` and `"Zero contracts
+UNVERIFIED, zero PARTIAL"` are bullets in a run whose *first* bullet reads
+`"12 contracts × 2 strata"`, and a clause-scoped denominator scope let that
+neighbour excuse them. Scope is now the bullet. Fourth slice running in which
+this same paragraph→clause correction was needed (PMAT-1450/1451/1452).
+
+**⚠️ Two guards this slice added were refuted by their own red halves.** A
+proximity window on the quantifier→token distance was **deleted**: the site
+justifying it sits 56 bytes away, *inside* the 60-byte window, and setting the
+constant to `usize::MAX / 4` left the whole gate green — it bounded nothing.
+The `!scoped.is_empty()` tripwire was **downgraded** rather than kept as
+evidence: killing the scoping branch reds the offences assertion first, so no
+perturbation in this corpus reaches it. Direction, bullet scoping, denial and
+marker-stripping each have a red half that names the site it reds.
+
+**Not gated, and said so.** `audit-design.md:46`'s *"operational across the
+entire substrate"* is about the quorum *architecture*, which does range over
+every contract; folding that spelling into the needle reported a true sentence
+as drift. It is repaired by wording only. `README.md:193`, `xpile-spec.md:213`
+and `contracts/README.md:29` were each reported on the first widened run and are
+each honest — they name a subset, a date, or a true non-quorum universal.
+
+Zero `crates/*/src` change; freeze-compatible.
+
 ### The fleet sub-spec published the substrate's proof volume as a 2026-05-18 snapshot — and the number that replaces it is a grep artefact if you let it be (PMAT-1455)
 
 Every count below is a claim about a file this repository owns, so every one of
