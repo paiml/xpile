@@ -20382,3 +20382,70 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1438
+  title: 'PMAT-1438: [docs+frontend+gate+honesty] THE BOOK CLAIMED THE WHOLE OF PYTHON''S BINARY
+    AND UNARY OPERATOR SETS WHILE FOUR OPERATORS REFUSE — and the frontend''s own refusal message
+    UNDER-reported by one, so the page and the binary were wrong in OPPOSITE directions about the
+    same surface. `book/src/reference/frontends.md` had carried since 2026-05-15, under "Python
+    frontend — what''s supported": "- all binary operators (with Python-floor semantics for `//`
+    and `%`)" and "- all unary operators".
+    ** MEASURED by driving `PythonFrontend::parse_and_lower` over one probe per Python operator:
+    ast.BinOp 13 in Python, 12 lower, 1 REFUSES (`@` / MatMult); ast.Compare 10, 8 lower, 2
+    REFUSE (`is` / Is, `is not` / IsNot); ast.UnaryOp 4, 3 lower, 1 REFUSES (unary `+` / UAdd).
+    The frontend SAYS SO ITSELF in the same breath — "unsupported binary operator: MatMult —
+    supported: + - * // % & | ^ << >> **" — so the page contradicted the binary on the page''s
+    own subject.
+    ** AND THE PAGE NAMES THE CANONICAL SOURCE THREE LINES ABOVE. It links the CHANGELOG''s
+    `Python subset (live, runtime-verified)` section as "the canonical list to avoid
+    duplication-and-drift" — and was itself the duplicate that had drifted. The canonical list is
+    ENUMERATIVE and CORRECT ("Binary arithmetic: `+ - * // %` ... Bitwise: `& | ^ << >>` ...
+    Unary: `-x` ... `not x`"); the book paraphrased it into a universal the canonical source never
+    states. A PARAPHRASE THAT WIDENS A CLAIM IS THE FAILURE MODE, not one that drops a detail.
+    ** THE ERROR-PATH TWIN, same claim class, fixed in the same slice: `lower_binop`''s
+    "supported: ..." enumeration — the surface a user meets AT THE WALL — omitted `/`, which DOES
+    lower (`Operator::Div` is handled on the float path and never reaches `lower_binop`), so the
+    user who hit `@` was told BY OMISSION that `/` was unsupported too. Now `+ - * / // % & | ^
+    << >> **`, asserted EQUAL to the measured set of ast.BinOp operators that lower.
+    ** FIX: `crates/xpile/tests/frontend_operator_surface_witness.rs` (XPILE-PYOPSURFACE-001, 4
+    tests). The operator surface is PUBLISHED as a derived block between markers on frontends.md
+    and compared to the live frontend by EQUALITY (the PMAT-1350 `emit_surface` idiom, one lane
+    over); a REFUSES row is recorded only when the frontend''s own error names the operator AND
+    the same program with a REFERENCE operator in that slot lowers — the control, so a
+    mis-signatured probe cannot publish a false refusal; the corpus must cover 13/10/4 with
+    pairwise-distinct programs; and `no_universal_operator_claim_anywhere` forbids the falsehood
+    BY SPELLING across every published .md (book/src, docs, README, CHANGELOG).
+    ** RED HALF RUN, SIX PERTURBATIONS + the three against the REAL defect. Real defect: the
+    missing marker reds, the missing `/` reds, and the spelling scan reds naming BOTH bullets by
+    line. Perturbations: (1) flipping one published row reds the equality; (2) dropping a probe
+    reds the corpus check NAMING ast.BinOp; (3) mis-signaturing the `/` probe (`-> int`, which
+    fails on the RETURN TYPE, not on `/`) reds with "CORPUS BUG ... the row would publish a FALSE
+    REFUSES" instead of recording it; (4) ACTUALLY IMPLEMENTING MatMult moved the block to "13
+    lower, 0 REFUSE" and RED-ed the page — the direction that proves the gate tracks BEHAVIOUR,
+    not text — and separately red-ed the message check with a re-point instruction. CONTROL
+    green, 4/4.
+    ** LESSONS. (1) PMAT-1437 lesson (1) applied FORWARD and it is what made the gate reach: the
+    defect prose carried NO backticked key, NO table row and NO marker, so a structural check
+    alone would have passed it unchanged — only a check on the SPELLING of the universal reaches
+    it, and it is scoped to the CLAIM CLASS (any published page, any of the three operator
+    classes). (2) A PAGE CAN NAME ITS OWN CANONICAL SOURCE AND STILL CONTRADICT IT. The pointer
+    ("to avoid duplication-and-drift") had been there the whole time and read as the protection;
+    nothing compared the two. When a doc cites a canonical list, check the CITING text against
+    the CITED one, not just that the citation exists. (3) THE UNDER-REPORTING DIRECTION IS ALSO A
+    FALSEHOOD — the refusal message''s omission of `/` had no gate because nothing thinks of an
+    error message as a claim about the SUPPORTED set. (4) DISCLOSED LIMIT, not papered over: Rust
+    cannot enumerate `rustpython_parser::ast` variants, so the 13/10/4 universe is hand-authored;
+    what IS enforced is that the corpus has those counts and pairwise-distinct programs, so a
+    spelling typo collapses two rows and reds.
+    ** BLOCKER: `gh` UNAUTHENTICATED (HTTP 401). COMMITTED AND PUSHED WITH NO PR; branch
+    `fix/py-operator-surface-1438` is STACKED on fix/backend-refusal-disclosure-1437 ->
+    fix/repair-ws-witness-1436 -> fix/target-alias-disclosure-1435 ->
+    fix/frontend-dispatch-message-1434 -> main. Merge 1434..1438 IN THAT ORDER when auth returns.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

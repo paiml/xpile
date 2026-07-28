@@ -2,7 +2,23 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1437 landed from an honesty hunt; the ranked queue stays exhausted
+updated: '2026-07-28 (PMAT-1438 landed from an honesty hunt: book/src/reference/frontends.md
+  published "all binary operators" and "all unary operators" as the Python frontend''s subset
+  while `@`, `is`, `is not` and unary `+` all REFUSE -- and three lines above, the page names the
+  CHANGELOG list it contradicts as "the canonical list to avoid duplication-and-drift". The
+  ERROR-PATH twin was wrong in the OPPOSITE direction: `lower_binop`''s "supported: ..."
+  enumeration omitted `/`, which lowers, so the user who hit `@` was told BY OMISSION that `/`
+  was unsupported too. The operator surface is now a DERIVED marker block compared by EQUALITY,
+  a REFUSES row needs a CONTROL probe to lower before it is published, and the universal is
+  forbidden BY SPELLING across every published .md. LESSONS: (1) A PAGE CAN NAME ITS OWN
+  CANONICAL SOURCE AND STILL CONTRADICT IT -- the pointer had been there the whole time and read
+  as the protection; check the CITING text against the CITED one, not just that the citation
+  exists. (2) A PARAPHRASE THAT WIDENS A CLAIM is the failure mode, not one that drops a detail.
+  (3) AN ERROR MESSAGE IS A CLAIM ABOUT THE SUPPORTED SET, and the under-reporting direction is
+  also a falsehood -- nothing had ever gated one. (4) PMAT-1437 lesson (1) applied FORWARD is
+  what made the gate reach: the defect prose had no backticked key, no row and no marker, so
+  only a check on the SPELLING of the universal touches it. PRIOR ENTRY, still the reference for
+  the prose-attributes-an-invariant-to-a-contract shape: PMAT-1437 landed from an honesty hunt; the ranked queue stays exhausted
   until Thu 07-30 / PMAT-1373, the release commit. PMAT-1437 took PMAT-1436 standing lead (b) --
   "backends.md''s Status column is prose nothing gates" -- and THE PAYLOAD WAS ONE PARAGRAPH BELOW
   THE TABLE THE LEAD NAMED: the `--target` cells are already gated (backend_docs_drift.rs), but the
@@ -4565,6 +4581,73 @@ queue:
     start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 --
     no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release
     commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1438
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the book claimed the WHOLE of Python''s binary and unary operator sets while four
+    operators refuse -- and the frontend''s own refusal message UNDER-reported by one, so page
+    and binary were wrong in OPPOSITE directions about the same surface'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1437 standing lead (a) -- THE FRONTEND TWIN -- and the lead''s premise
+    was HALF false with the payload one section down, the PMAT-1426 pattern again. The lead asked
+    whether frontend REFUSALS name a contract / suggest an alternative and whether frontends.md
+    claims they do: frontends.md makes NO such claim (PMAT-1437 already converted all nine header
+    blockquotes to `equations:` keys that exist, and the frontend contract''s
+    `ffi_boundaries_are_outgoing_only` / `source_lang_consistency` are honestly named). What WAS
+    false was the page''s "what''s supported" bullet list, two sections lower.
+    ** THE CLAIM, published since 2026-05-15: "- all binary operators (with Python-floor
+    semantics for `//` and `%`)" and "- all unary operators".
+    ** MEASURED, one probe per Python operator through `PythonFrontend::parse_and_lower`:
+    ast.BinOp 13 in Python, 12 lower, `@` REFUSES; ast.Compare 10, 8 lower, `is`/`is not`
+    REFUSE; ast.UnaryOp 4, 3 lower, unary `+` REFUSES. The frontend says so ITSELF --
+    "unsupported binary operator: MatMult -- supported: + - * // % & | ^ << >> **".
+    ** THE PAGE NAMES ITS OWN CANONICAL SOURCE THREE LINES ABOVE and contradicts it: the
+    CHANGELOG `Python subset (live, runtime-verified)` list is ENUMERATIVE and CORRECT; the book
+    paraphrased it into a universal it never states.
+    ** ERROR-PATH TWIN, same claim class, same slice: `lower_binop`''s "supported: ..." list
+    omitted `/`, which lowers (Div is handled on the float path and never reaches `lower_binop`).
+    Now `+ - * / // % & | ^ << >> **`, asserted equal to the measured lowering set.
+    ** FIX: crates/xpile/tests/frontend_operator_surface_witness.rs (XPILE-PYOPSURFACE-001, 4
+    tests) + a DERIVED marker block on frontends.md compared by equality.
+    ** RED HALF RUN, 6 perturbations + 3 against the real defect: missing marker, missing `/`,
+    and the spelling scan naming BOTH bullets by line; then (1) flip a row, (2) drop a probe
+    (reds NAMING ast.BinOp), (3) mis-signature the `/` probe -> "CORPUS BUG ... would publish a
+    FALSE REFUSES", (4) ACTUALLY IMPLEMENT MatMult -> "13 lower, 0 REFUSE" reds the page, the
+    behaviour direction. CONTROL 4/4 green.
+    ** ONE `crates/*/src` line changed (the refusal message) -- landed TUESDAY, before the Wed
+    2026-07-29 18:00 HARD FREEZE. witness_floor.rs untouched.
+    ** BLOCKER NOTE, unchanged: `gh` is UNAUTHENTICATED (token invalid, HTTP 401). Re-auth is an
+    interactive OAuth flow and is OWNER-GATED. COMMITTED AND PUSHED WITH NO PR. Branch
+    `fix/py-operator-surface-1438` is STACKED on `fix/backend-refusal-disclosure-1437` ->
+    `fix/repair-ws-witness-1436` -> `fix/target-alias-disclosure-1435` ->
+    `fix/frontend-dispatch-message-1434` -> main. Merge 1434, 1435, 1436, 1437, 1438 IN THAT
+    ORDER when auth returns. NEXT FREE ID IS PMAT-1439.
+    NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) ** STRONGEST,
+    FOUND WHILE MEASURING THIS ONE ** -- frontends.md''s "Calling a frontend as a library" Rust
+    block names `depyler_frontend::DepylerFrontend` and `frontend.parse_file("factorial.py")`.
+    NEITHER EXISTS: the type is `PythonFrontend` and the trait method is
+    `parse_and_lower(&Path, &str)`. A copy-pasteable example that cannot compile, on the
+    reference page for the deepest frontend; check every ```rust block in book/src the same way
+    (the same shape almost certainly repeats on backends.md and adding-a-frontend.md), and
+    consider making them doctests rather than prose. (b) the SHELL frontend''s own "what''s
+    supported" bullet list on the same page -- 7 bullets, PROBED green at exit 0 this slice
+    (shebang, assignment, `> file`, `>> file`, `mkdir -p`, pipelines, if/elif, for, subprocess
+    all round-trip), so the list is TRUE but UNGATED; the XPILE-PYOPSURFACE-001 shape applies
+    directly and CLAUDE.md''s own scope paragraph never mentions redirection, so the two
+    descriptions of the same subset have never been compared. (c) backends.md STATUS COLUMN --
+    still prose nothing gates, every row says "Real emission" including the `ruchy` backend the
+    topic file calls HOLLOW (carried from PMAT-1437 lead (b)). (d) PMAT-1433 lead (c) /
+    PMAT-1434 lead (b), the `claimed_filenames()` peer to `extensions()`. (e) PMAT-1436 lead (d),
+    witnesses that identify their subject by a glob over a SHARED namespace.
+    PROBED AND CLEAN, recorded so it is not re-derived: PMAT-1437 lead (a) as literally stated
+    (frontends.md makes no refusal-message claim); and the frontend REFUSAL messages for
+    non-operator inputs were not swept -- that half of lead (a) is still open if someone wants
+    the backend table''s frontend twin.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373
+    (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
