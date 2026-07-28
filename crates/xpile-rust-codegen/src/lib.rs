@@ -1398,10 +1398,27 @@ fn emit_stmt_indented(
             writeln!(out, ").clone(), __xpile_dict_val); }}")?;
             Ok(())
         }
-        // PMAT-533: append on a subscript receiver. List base indexes a
-        // mutable place directly (`base[(i) as usize].push(e)`); dict base
-        // reaches the value via `get_mut(&(k)).unwrap()` (panic on absent
-        // key = Python KeyError).
+        // PMAT-533: append on a subscript receiver — `xs[i].append(e)` /
+        // `d[k].append(e)`.
+        // PMAT-1427 (HONESTY): this was the ONE member of the subscript family
+        // still emitting the raw narrowing coercion `base[(i) as usize]`. Every
+        // sibling had already been given the wrap + tagged-bounds treatment —
+        // the read path (PMAT-639/744), the store path (PMAT-640/641/863),
+        // `del` (PMAT-712/1351), `insert` (PMAT-590), `pop` — and this one was
+        // missed, so `(-1i64) as usize` = `usize::MAX` reached `Vec`'s `Index`
+        // and panicked with the NATIVE message where Python appends to the last
+        // sub-list. Three shapes diverged under execution: `a[-1].append(x)`
+        // (literal — the frontend's negative-literal resolution is on the READ
+        // path only, so it arrives here still negative), `i = -1; a[i].append(x)`
+        // (runtime), and `a[5].append(x)` out of range, whose untagged native
+        // panic the typed-`except` filter (PMAT-731 — it only re-raises panics
+        // tagged `xpile: <KnownExc>:`) could not route to `except IndexError`.
+        // The dict arm's `.unwrap()` was the same shape one container over: the
+        // HIR doc claimed "KeyError-on-absent parity with Python", but
+        // `Option::unwrap`'s native payload carries no tag, so `except KeyError`
+        // never caught it. Fixed forward rather than refused (PMAT-1426 lesson
+        // 5): the semantics are exactly spellable with the idioms the sibling
+        // paths already use — no new runtime, no signature change.
         Stmt::IndexAppend {
             base,
             index,
@@ -1409,16 +1426,36 @@ fn emit_stmt_indented(
             base_is_dict,
         } => {
             if *base_is_dict {
-                write!(out, "{indent}{base}.get_mut(&(")?;
+                // PMAT-1089 idiom, mirroring `Expr::DictGet`: bind the key by
+                // REFERENCE first so the miss panic carries the CPython-shaped
+                // `repr(k)` payload, then `unwrap_or_else` into the tagged
+                // KeyError. `push` stays inside the success path so the elem is
+                // still evaluated AFTER the lookup — CPython raises the KeyError
+                // before evaluating the argument.
+                write!(out, "{indent}{{ let __k = &(")?;
                 emit_expr(out, index, mode)?;
-                out.push_str(")).unwrap().push(");
+                write!(out, "); {base}.get_mut(__k).unwrap_or_else(|| ")?;
+                out.push_str(&key_error_panic());
+                out.push_str(").push(");
+                emit_expr(out, elem, mode)?;
+                writeln!(out, "); }}")?;
             } else {
-                write!(out, "{indent}{base}[(")?;
+                // PMAT-639/863 idiom, mirroring the read and store paths: bind
+                // the index, wrap a negative against the base's own `len`, then
+                // bounds-check with the `xpile: IndexError:` TAG. The `len()`
+                // borrows end before the `index_mut`, so this does not introduce
+                // an E0502 the bare form avoided.
+                write!(out, "{indent}{{ let __ia: i64 = (")?;
                 emit_expr(out, index, mode)?;
-                out.push_str(") as usize].push(");
+                write!(
+                    out,
+                    ") as i64; let __iax = if __ia < 0 {{ {base}.len() as i64 + __ia }} else {{ __ia }}; \
+if __iax < 0 || __iax as usize >= {base}.len() {{ panic!(\"xpile: IndexError: list index out of range\"); }} \
+{base}[__iax as usize].push("
+                )?;
+                emit_expr(out, elem, mode)?;
+                writeln!(out, "); }}")?;
             }
-            emit_expr(out, elem, mode)?;
-            writeln!(out, ");")?;
             Ok(())
         }
         // PMAT-727 (HUNT-V10 V10-8): `d.setdefault(k, default).append(elem)` →

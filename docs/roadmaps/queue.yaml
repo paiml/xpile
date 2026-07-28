@@ -3864,6 +3864,67 @@ queue:
     rather than aborting as Rust''s does - the disposition is a report either way but the lanes
     differ AFTER the report; a faithful `Except`/`Option` return would change the lane''s
     signature shape, the same wall PMAT-1425 hit for a runtime shift count. 0.1.619.'
+- id: PMAT-1427
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  title: '`xs[i].append(e)` / `d[k].append(e)` were the LAST subscript-family members emitting a
+    RAW narrowing coercion — `a[-1].append(99)` panicked with index 18446744073709551615 where
+    CPython appends to the last sub-list, an out-of-range index panicked UNTAGGED so `except
+    IndexError` could not catch it, and the dict arm''s `.unwrap()` was the same shape one
+    container over. Four shapes at exit 0 on BOTH the rust and the ruchy lane.'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (fourth fire of the day; ranked queue exhausted
+    until Thu 07-30). Took PMAT-1426 standing lead (c) VERBATIM — sweep the emitter for the
+    COERCION, not the operator. The lead''s own lane came back CLEAN (every Lean `toNat` site is
+    now guarded; the shift-count `as u32` casts are an honest `u32::try_from(..).expect(..)` on
+    the Python lane and a deliberate x86-matching `wrapping_shl` on the C lane). The defect was an
+    asymmetry INSIDE one family: seven of the eight subscript members had been corrected across
+    PMAT-590/639/712/744/863/1351 and `Stmt::IndexAppend` had never been touched. STANDING
+    LESSONS. (1) A LEAD IS A PLACE TO LOOK, NOT A SPECIFICATION — PMAT-1426 lesson 2 fired again
+    unchanged: the coercion sweep the lead named found nothing, and the payload was three arms
+    down the same `match`, found by reading the siblings while confirming the negative. (2)
+    CROSS-LANE ASYMMETRY WAS *NOT* THE TELL. Rust and ruchy are twins and were wrong identically,
+    so the heuristic that carried PMAT-1425 and PMAT-1426 would have cleared this. The tell was
+    INTRA-FAMILY: one arm of a `match` whose every sibling carries a PMAT id in its comment and
+    which carried none. When a defect class is fixed one construct at a time over many slices, the
+    UNANNOTATED arm is the one that was missed. (3) THE DOC COMMENT ALREADY CLAIMED THE FIX — the
+    meta-HIR variant said "KeyError-on-absent parity with Python" and "the index `usize`-coerces
+    (matching `IndexAssign`)"; the first was never delivered and the second went stale at PMAT-640
+    when `IndexAssign` stopped bare-coercing. A cross-reference to a sibling''s behaviour rots
+    silently when the sibling is fixed. (4) PRESERVE EVALUATION ORDER WHEN FIXING A PANIC —
+    binding the elem before the lookup would have made the KeyError fire AFTER the argument was
+    evaluated, trading one divergence for a subtler one; CPython raises first. (5) RUN THE
+    ONE-LANE RED HALF SEPARATELY: reverting BOTH codegens reds 4 of 5, reverting ONLY ruchy reds
+    3 of 5 — that second run is what proves the cross-lane equality assertion is not vacuous. (6)
+    THE PREMISE TEST CORRECTLY STAYS GREEN in both red halves; it is true of both revisions, which
+    is the shape to expect and to state. STANDING LEADS: (a) the ruchy lane emits `fun add(&self,
+    …)` where rust emits `fn add(&mut self, …)` for a body of `self.rows[i].append(v)` — rustc
+    E0596, PRE-EXISTING and identical on both binaries, in the mutable pre-walk''s field-receiver
+    recognition; (b) the C frontend''s `wrapping_shl`/`wrapping_shr` masks to the OPERAND width,
+    which matches x86 for a C `long`, but the emitter collapses C `int` and C `long` to i64, so a
+    C `int` shifted by 33 masks to 6 bits where a real C compiler masks to 5 — measured as a lead,
+    not yet as a divergence; (c) `xs[i].extend(..)` / `xs[i].insert(..)` and the other in-place
+    list methods on a SUBSCRIPT receiver have no HIR variant and refuse upstream — that refusal
+    was not re-derived from the binary here. (7) ★ ADDED BY THE FIX-FORWARD FIRE (2026-07-28
+    05:10, CI red on the first push): TWO PRE-EXISTING e2e TESTS WERE PINNING THE DEFECT, and the
+    lesson is not "update the assertions" — it is WHERE THEY SAT. `subscript_append` and
+    `field_subscript_append` asserted the raw-`unwrap` spelling, and both of those shape assertions
+    stand IMMEDIATELY IN FRONT OF `assert_rustc_runs`, the executed rustc differential. So for as
+    long as the substring failed to match, THE DIFFERENTIAL NEVER RAN — a failing structural claim
+    silently gating the only executing check in the test. Generalise: in any test shaped
+    `assert!(shape); assert_executes(..)`, the shape assertion is a GATE on the execution, so
+    pinning a shape that is expected to change converts a future correct fix into a suppressed
+    differential. When a fix reds a text assertion, check what that assertion was standing in
+    front of before rewriting it. (8) THE RED HALF OF A RE-PIN MUST BE MEASURED TOO — all seven new
+    pinned substrings were confirmed ABSENT from a provenance-verified pre-fix binary''s emit of
+    both fixtures, and keyed on `__iax`/`__k` so the `__li`/`__lc` read path in the same fixture
+    cannot satisfy them vacuously. (9) A DEFECT''S STALE CLAIMS SPAN DOC KINDS: the same false
+    shape lived in `xpile-spec.md` in the PRESENT TENSE (corrected) and in `roadmap.yaml` /
+    older `CHANGELOG` as DATED RECORDS of v0.1.233 (left alone) — PMAT-1417''s split, applied.
+    NEXT PICK: PMAT-1373 (release commit, gate_touch 3,
+    witness-floor TOUCH 2) on Thu 07-30; a fire before then should hunt again. Do NOT start a
+    gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 — no
+    crates/*/src or contracts/*.yaml merge after it.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
