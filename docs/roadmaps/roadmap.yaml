@@ -20436,10 +20436,15 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     cannot enumerate `rustpython_parser::ast` variants, so the 13/10/4 universe is hand-authored;
     what IS enforced is that the corpus has those counts and pairwise-distinct programs, so a
     spelling typo collapses two rows and reds.
-    ** BLOCKER: `gh` UNAUTHENTICATED (HTTP 401). COMMITTED AND PUSHED WITH NO PR; branch
-    `fix/py-operator-surface-1438` is STACKED on fix/backend-refusal-disclosure-1437 ->
-    fix/repair-ws-witness-1436 -> fix/target-alias-disclosure-1435 ->
-    fix/frontend-dispatch-message-1434 -> main. Merge 1434..1438 IN THAT ORDER when auth returns.'
+    ** BLOCKER RESOLVED. This entry was authored while `gh` was UNAUTHENTICATED (HTTP 401) and
+    said the slice was "COMMITTED AND PUSHED WITH NO PR" on a five-deep stack; that is no longer
+    true, so it is corrected here rather than left standing. Auth returned 2026-07-28 14:25 and
+    the stack landed as SQUASHES the same afternoon: PMAT-1434 (#2026), PMAT-1435 (#2031),
+    PMAT-1436 (#2032), PMAT-1437 (#2033). A squash re-shas its slice, so the original
+    `fix/py-operator-surface-1438` (#2030) went CONFLICTING on the three append-only ledgers.
+    SUPERSEDED, not rewritten: 40957be9 was CHERRY-PICKED onto `fix/py-operator-surface-1438-r2`
+    off main (clean apply) and #2030 closed in its favour; PMAT-1433..1438 verified to appear
+    exactly once each in both ledgers after the pick.'
   status: done
   priority: high
   created: '2026-07-28T00:00:00Z'

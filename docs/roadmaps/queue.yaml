@@ -4618,12 +4618,18 @@ queue:
     behaviour direction. CONTROL 4/4 green.
     ** ONE `crates/*/src` line changed (the refusal message) -- landed TUESDAY, before the Wed
     2026-07-29 18:00 HARD FREEZE. witness_floor.rs untouched.
-    ** BLOCKER NOTE, unchanged: `gh` is UNAUTHENTICATED (token invalid, HTTP 401). Re-auth is an
-    interactive OAuth flow and is OWNER-GATED. COMMITTED AND PUSHED WITH NO PR. Branch
-    `fix/py-operator-surface-1438` is STACKED on `fix/backend-refusal-disclosure-1437` ->
-    `fix/repair-ws-witness-1436` -> `fix/target-alias-disclosure-1435` ->
-    `fix/frontend-dispatch-message-1434` -> main. Merge 1434, 1435, 1436, 1437, 1438 IN THAT
-    ORDER when auth returns. NEXT FREE ID IS PMAT-1439.
+    ** BLOCKER RESOLVED, and the note that stood here is now WRONG so it is corrected rather than
+    left: the entry above was written while `gh` was UNAUTHENTICATED (HTTP 401) and said this
+    slice was "COMMITTED AND PUSHED WITH NO PR" on a five-deep stack. Auth returned 2026-07-28
+    14:25 and the whole stack landed as SQUASHES on main that afternoon -- PMAT-1434 (#2026),
+    PMAT-1435 (#2031, from the `-r2` respin), PMAT-1436 (#2032, `-r2`), PMAT-1437 (#2033, `-r2`).
+    Every squash gives its slice a NEW sha, so the original `fix/py-operator-surface-1438` (#2030,
+    head 1e524cf9) went CONFLICTING on the three append-only ledgers and could not be repaired by
+    merging main again. SUPERSEDED, not rewritten: commit 40957be9 -- the only copy of this slice
+    -- was CHERRY-PICKED onto a fresh branch off main (`fix/py-operator-surface-1438-r2`), which
+    applied CLEAN, and #2030 is closed in its favour. Ledger integrity checked both ways after the
+    pick: PMAT-1433..1438 each appear EXACTLY ONCE in roadmap.yaml and in queue.yaml. NEXT FREE ID
+    IS PMAT-1439.
     NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) ** STRONGEST,
     FOUND WHILE MEASURING THIS ONE ** -- frontends.md''s "Calling a frontend as a library" Rust
     block names `depyler_frontend::DepylerFrontend` and `frontend.parse_file("factorial.py")`.
