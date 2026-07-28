@@ -72,6 +72,63 @@ ones whose falsehoods get **published** under the project's name and **executed*
 by an operator on a deadline.
 
 Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+### The contract substrate asserted "every contract has ≥13 distinct Diamond categories" as an INVARIANT; the live universal depth is 1 (PMAT-1454)
+
+Measured on this tree with `xpile diamond --json` over all 35 contracts:
+
+```
+universal depth (the shallowest contract)      1
+contracts at depth-2+                         14  of 35
+contracts at depth-3+ … depth-13+             13  of 35
+```
+
+`sub/diamond-taxonomy.md` **defines** *depth-N UNIVERSAL* as "every contract
+has at least N distinct Diamond theorem categories". Thirty-six entries in
+`invariants:` and `postconditions:` — the fields that state what a contract
+*holds*, parsed into `xpile_contract_frontend`'s `invariants: Vec<String>` —
+asserted that property for N up to 13:
+
+| site | asserted | live |
+|---|---|---|
+| `notation-latex-math-to-equation-v1.yaml:893` | "Substrate milestone: every contract has ≥13 distinct Diamond categories" | 13 of 35 |
+| `notation-latex-math-to-equation-v1.yaml:897` | "DEPTH-13 UNIVERSAL achieved: 12 contracts at depth-13+" | universal depth 1 |
+| `xpile-contract-backend-trait-v1.yaml:336` | "COMPLETES DEPTH-5 UNIVERSAL ACROSS ALL 12 CONTRACTS" | 13 of 35 |
+
+Each of those equations **already** carried the same milestone in an adjacent
+`# PMAT-NNN:` provenance comment, correctly cited — so the normative copies had
+duplicated a *record* into an *assertion* slot. They are removed rather than
+renumbered from 12 to 35: the substrate grew to 35 and would grow again, and
+restating a cardinality is how this class of defect survives its own repair.
+What each equation establishes about **its own** contract is stated instead.
+
+**The gate for exactly this claim was blind on two independent axes**, each
+established here by a control that *passes*:
+
+* **Subject** — it ranged over markdown (`claim_pages()`). Narrowing it back
+  while leaving the needle widened leaves a restored falsehood invisible.
+* **Needle** — three spellings. `contracts/**` shouts `COMPLETES DEPTH-5
+  UNIVERSAL` and the parser matched a literal lower-case `depth-`; twelve sites
+  state the claim **in the words of the definition** (`every contract has ≥13
+  …`) with no `depth-` token to match at all; and `UNIVERSAL Diamond depth-2`
+  puts the qualifier first, which was blind in the markdown half too. Restoring
+  the previous parser while leaving the subject widened is also green.
+
+Three further sites claimed universality across the five taxonomy **layers** —
+a weaker property wearing the reserved term. `audit-design.md` already used the
+repo's correct spelling (*"depth-3 across layers"*), so they were re-spelled to
+it; `depth-N UNIVERSAL` now means one thing corpus-wide.
+
+**Known limit, stated rather than implied:** the new record-citation rule is
+scoped to a provenance *block* and bites nothing on today's corpus — every
+block carrying a milestone also carries an id, so its red half passes. At
+*clause* scope it reports 32 sites, all Lean docstring sentences needing a
+cosmetic citation; that is queued, not done. `an_uncited_provenance_block_is_
+reported` pins that the branch can fire, so it is a hardening with no current
+verdict change rather than an untested guard.
+
+No `crates/*/src` change. Six contract YAMLs, one specification document, one
+gate file.
+
 
 ### The Lean pilot published its own size as "the 23 modules" in the build file whose `roots` array holds 35 (PMAT-1452)
 

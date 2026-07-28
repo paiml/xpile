@@ -782,13 +782,12 @@ equations:
       Two NonEmptyDefinition values (Gold-tier subtype of
       DefinitionEnvSilver with non-empty all_math_spans witness).
     invariants:
-      - "NINTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-9 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "NINTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION"
       - "SUBTYPE EXTENSIONALITY — tenth substrate-wide demonstration (Template 9 Gold-tier subtype-ext)"
-      - "Substrate milestone: every contract has ≥9 distinct Diamond categories — SEVEN UNIVERSAL milestones"
     preconditions:
       - "two NonEmptyDefinition values"
     postconditions:
-      - "DEPTH-9 UNIVERSAL achieved: 12 contracts at depth-9+"
+      - "C-NOTATION-LATEX-MATH-TO-EQUATION reaches depth-9 — 9 distinct Diamond categories on THIS contract"
 
   definition_env_silver_to_bronze_projection_diamond:
     # PMAT-409: TENTH Diamond on this contract — COMPLETES DEPTH-10
@@ -816,13 +815,12 @@ equations:
       DefinitionEnvSilver → DefinitionEnv that drops all_math_spans
       and label fields while retaining first_math_span.
     invariants:
-      - "TENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-10 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "TENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION"
       - "TIER-PROJECTION HOMOMORPHISM — ninth instance of Template 10"
-      - "Substrate milestone: every contract has ≥10 distinct Diamond categories — EIGHT UNIVERSAL milestones"
     preconditions:
       - "one DefinitionEnvSilver record"
     postconditions:
-      - "DEPTH-10 UNIVERSAL achieved: 12 contracts at depth-10+"
+      - "C-NOTATION-LATEX-MATH-TO-EQUATION reaches depth-10 — 10 distinct Diamond categories on THIS contract"
 
   empty_definition_env_silver_canonical_diamond:
     # PMAT-420: ELEVENTH Diamond on this contract — COMPLETES DEPTH-11
@@ -841,13 +839,12 @@ equations:
     domain: |
       The canonical empty DefinitionEnvSilver.
     invariants:
-      - "ELEVENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-11 UNIVERSAL ACROSS ALL 12 CONTRACTS"
+      - "ELEVENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION"
       - "CANONICAL IDENTITY ELEMENT — tenth instance of Template 11"
-      - "Substrate milestone: every contract has ≥11 distinct Diamond categories — NINE UNIVERSAL milestones"
     preconditions:
       - "no input precondition — `empty_definition_env_silver` is the nullary canonical element (first_math_span = the empty string, all_math_spans = `#[]`, label = `none`), so the theorem holds unconditionally; the only obligation is that `DefinitionEnvSilver` admits the all-empty/none record as a value (it does — `String`'s identity is `\"\"`, `Array`'s is `#[]`, and `Option`'s zero is `none`)"
     postconditions:
-      - "DEPTH-11 UNIVERSAL achieved: 12 contracts at depth-11+"
+      - "C-NOTATION-LATEX-MATH-TO-EQUATION reaches depth-11 — 11 distinct Diamond categories on THIS contract"
 
   definition_env_bronze_to_silver_lift_diamond:
     # PMAT-431: TWELFTH Diamond on this contract — COMPLETES DEPTH-12
@@ -868,13 +865,12 @@ equations:
       The lift definition_env_bronze_to_silver : DefinitionEnv →
       DefinitionEnvSilver.
     invariants:
-      - "TWELFTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-12 UNIVERSAL"
+      - "TWELFTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION"
       - "BRONZE→SILVER LIFT HOMOMORPHISM — tenth instance of Template 12"
-      - "Substrate milestone: every contract has ≥12 distinct Diamond categories — TEN UNIVERSAL milestones"
     preconditions:
       - "one Bronze `DefinitionEnv` record (the lift's input); `definition_env_bronze_to_silver` is total over `DefinitionEnv` — every Bronze record carries the `first_math_span` the lift preserves, so no well-formedness side-condition is needed"
     postconditions:
-      - "DEPTH-12 UNIVERSAL achieved: 12 contracts at depth-12+"
+      - "C-NOTATION-LATEX-MATH-TO-EQUATION reaches depth-12 — 12 distinct Diamond categories on THIS contract"
 
   definition_env_roundtrip_identity_diamond:
     # PMAT-442: THIRTEENTH Diamond — COMPLETES DEPTH-13 UNIVERSAL.
@@ -888,13 +884,12 @@ equations:
       Composition of definition_env_silver_to_bronze with
       definition_env_bronze_to_silver equals identity.
     invariants:
-      - "THIRTEENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — COMPLETES DEPTH-13 UNIVERSAL"
+      - "THIRTEENTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION"
       - "ROUND-TRIP IDENTITY — tenth instance of Template 13"
-      - "Substrate milestone: every contract has ≥13 distinct Diamond categories — ELEVEN UNIVERSAL milestones"
     preconditions:
       - "one Bronze `DefinitionEnv` record (the round-trip's input); the identity `definition_env_silver_to_bronze ∘ definition_env_bronze_to_silver = id` holds for every `DefinitionEnv` because the lift records `first_math_span` and the projection reads it back unchanged — no constraint on the input value is required"
     postconditions:
-      - "DEPTH-13 UNIVERSAL achieved: 12 contracts at depth-13+"
+      - "C-NOTATION-LATEX-MATH-TO-EQUATION reaches depth-13 — 13 distinct Diamond categories on THIS contract"
 
 proof_obligations:
   - type: postcondition

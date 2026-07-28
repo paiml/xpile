@@ -5582,7 +5582,8 @@ queue:
     denominators, and every population arm is asserted to have dispatched.
     ** 16 RED HALVES, each asserting the perturbation APPLIED; 4 are CONTROLS THAT PASS, isolating the
     SUBJECT and NEEDLE axes separately.
-    >>> NEXT PICK: ranked queue EMPTY until Thu 2026-07-30 (PMAT-1373, gate_touch #3). NEXT FREE ID IS
+    >>> SUPERSEDED BY PMAT-1453 (2026-07-28), which took lead (b). Original pointer: ranked queue
+    EMPTY until Thu 2026-07-30 (PMAT-1373, gate_touch #3); next free id was
     PMAT-1453. Standing leads: (a) PMAT-1451 lead (a) still UNTAKEN -- `sub/bashrs-merger.md:121` bare
     "at QUORUM" over a substrate subject. (b) ⭐ CARRY THE CORPUS QUESTION FORWARD, it is bigger than
     this slice: contracts/** is now in ONE gate''s subject. Ask of EVERY other claims-drift gate
@@ -5592,6 +5593,44 @@ queue:
     report prints, structurally safer, but neither has a class needle. <<< Do NOT start a gate_touch and
     do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on
     2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
+
+- id: PMAT-1454
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the contract substrate ASSERTED "every contract has >=13 distinct Diamond categories" in
+    36 normative `invariants:`/`postconditions:` entries while the live universal depth is 1, and
+    the gate for that claim class read markdown only and could not match either spelling the
+    substrate writes'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30).
+    Took PMAT-1452 standing lead (c) verbatim -- "ask of EVERY other claims-drift gate whether its
+    RULE stops at markdown". It did: 91 instances lived in contracts/** and were in no gate.
+    ** MEASURED: 35 contracts, universal depth 1; depth>=2 holds for 14, depth>=3..13 for 13.
+    ** 36 of the 91 are ASSERTIONS in normative fields, not prose -- and each equation ALREADY
+    carried the same milestone in an adjacent cited `# PMAT-NNN:` comment, so the normative copies
+    duplicated a RECORD into an ASSERTION slot and deleting them loses only the falsehood. NOT a
+    12->35 renumbering (PMAT-1396 trap).
+    ** BOTH AXES blind, each established by a CONTROL THAT PASSES: narrow the subject (green),
+    revert the needle (green). Needle blind 3 ways: CASE (`DEPTH-5`), the DEFINITION spelling
+    (`every contract has >=13 ...`, no `depth-` token -- the corpus asserts the claim in the words
+    of its own definition), and PREFIX order (`UNIVERSAL Diamond depth-2`, blind in markdown too).
+    ** FALSE-POSITIVE direction fired again: the first prefix rule matched two POLICY sentences
+    (the depth-13 ratchet FREEZE) that assert nothing. Both pinned as unit tests.
+    ** RED HALF REFUTED MY OWN FIX, 5TH SLICE RUNNING -- my layer-site disclaimer spelled
+    `depth-2 UNIVERSAL` verbatim.
+    ** HONEST LIMIT: the record-citation branch is BLOCK-scoped and bites nothing today (its red
+    half PASSES twice); at CLAUSE scope it reports 32 Lean-docstring sites. Disclosed in the code,
+    pinned by `an_uncited_provenance_block_is_reported`, and carried as lead (c).
+    >>> NEXT PICK: ranked queue EMPTY until Thu 2026-07-30 (PMAT-1373, gate_touch #3). NEXT FREE
+    ID IS PMAT-1455. Standing leads: (a) PMAT-1451 lead (a) STILL UNTAKEN -- `sub/bashrs-merger.md:121`
+    bare "at QUORUM" over a substrate subject. (b) the TOTAL-QUORUM gate STILL reads markdown only;
+    measured this session, its only contracts/** hit is `ffi-cpython-ext-v1.yaml:40` ("100% QUORUM
+    coverage -- every contract has paired Lean + Kani"; live: 24/35 have Kani, 9 PARTIAL) -- a
+    comment citing PMAT-077, so widening is hardening plus one wording fix. (c) tighten the
+    record-citation scope from BLOCK to CLAUSE (32 sites, all Lean docstrings). <<< Do NOT start a
+    gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30
+    take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353

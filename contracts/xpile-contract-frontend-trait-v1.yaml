@@ -217,14 +217,14 @@ equations:
       Diamond captures FUNCTORIAL preservation of the
       equivalence relation through parse_to_equations.
     invariants:
-      - "SECOND wired Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT — closes UNIVERSAL Diamond depth-2 gap"
+      - "SECOND wired Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT"
       - "distinct algebraic category from PMAT-217 equivalence-relation (RELATIONAL vs FUNCTORIAL preservation)"
       - "captures the functor parse_to_equations preserving the modules_equiv equivalence relation"
     preconditions:
       - "two well-formed TranspileSession values related by modules_equiv"
     postconditions:
       - "an emitter that introduces session-instance-specific differences during parse would falsify this Diamond"
-      - "closes UNIVERSAL Diamond depth-2 to TRUE 12/12 contracts at the YAML-equation level"
+      - "C-XPILE-CONTRACT-FRONTEND-TRAIT reaches depth-2 at the YAML-equation level — 2 distinct Diamond categories on THIS contract"
 
   citation_preservation:
     formula: |
