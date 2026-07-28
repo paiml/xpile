@@ -19260,3 +19260,90 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1424
+  title: 'PMAT-1424: [src] THE WAT LIFT SKIPPED EVERY `(export …)` DIRECTIVE UNREAD, SILENTLY
+    REWRITING THE MODULE''S PUBLIC ABI AT EXIT 0: the top-level arm was `"export" => { /* re-derived
+    from the function on re-emit; skip */ }`, which is true of the INTERNAL symbol and false of
+    the EXTERNAL name — and the external name is the only way a WASM host can call in. A module
+    exporting `(export "compute_total" (func $ct))` round-tripped to `(export "ct" …)`,
+    `wat2wasm`-clean on both legs, at exit 0 on `--target rust`, `ruchy`, `wasm` AND `shell`.
+    Two shapes corrupted an existing name silently (a renamed export; a function exported under
+    two names re-emitted under a third) and the folded `(func $g (export "n") …)` spelling
+    refused as a "non-canonical control shape" — the PMAT-1422/1423 misdescription one
+    vocabulary up. A fourth shape, an unexported function PUBLISHED by the re-emit, is a
+    documented WIDENING and is deliberately still accepted.'
+  found_by: 'Honesty hunt, 2026-07-28 (ranked queue exhausted until Thu 07-30, PMAT-1373). Took
+    PMAT-1423''s standing lead (e) — "the emit''s aggregate lane has never been driven through
+    `emit -> lift` at all". THAT LANE CAME BACK HONEST: list/dict/str programs emit a `(memory …)`
+    and the lift refuses it by name citing PMAT-952. The finding was in the arm NEXT TO the one
+    the lead pointed at, read while confirming the negative result. ★ THE DEFECT WAS IN A DIFFERENT
+    VOCABULARY: every witness in tests.rs, and all three preceding slices (PMAT-1421/1422/1423),
+    were about INSTRUCTIONS. The module''s export surface had no witness at all, so three silent
+    ABI rewrites sat underneath a round-trip fixed point that was real — the corpus was
+    single-function with self-named exports, so no row could distinguish an external name from
+    an internal one. The oracle was right and the CORPUS could not express the question.
+    ★ NOT TARGET-DEPENDENT, unlike PMAT-1423: four of six backends exited 0, so no backend was
+    catching it.'
+  fix: 'The top-level `(export …)` arm now PARSES the directive into (external name, target symbol)
+    via `parse_export_form`, and `check_export_image` refuses anything outside the emit''s image
+    (one flat `(export "n" (func $n))` per user function, no `$__wasm_*` helper exported). The
+    folded header spelling gets its own `refuse_inline_export` naming what it is. NO coercion:
+    meta-HIR has no field for an external name distinct from the function''s own, so carrying one
+    would mean inventing it (PMAT-1395) — 0.1.619 capability work. ★ OVER-REFUSAL FIRED TWICE AND
+    A PRE-EXISTING GATE CAUGHT IT BOTH TIMES, exactly as PMAT-1419 recorded. (i) The guard placed
+    BEFORE the body lift turned FIVE instruction-level refusal witnesses into export diagnostics,
+    because they pin those refusals on hand-written modules that happen to export nothing; it now
+    runs LAST. (ii) Refusing an UNEXPORTED function at all broke `claims_drift.rs`, which feeds
+    every frontend "a real program in its own language" and uses a bare `(func $add …)` for
+    `wasm` — refusing it dropped `wasm` out of the substantive-frontend set and falsified the
+    README source-language count. The rule was NARROWED to export directives actually present:
+    an unexported function is a documented WIDENING (every name the source published still points
+    at the same function, so no working host call changes meaning), not a rewrite, and is
+    accepted. No routing change, no witness floor touched, no gate file edited.'
+  tests: 'FIVE witnesses in crates/xpile-wasm-frontend/src/tests.rs. (1)
+    `the_emit_export_image_is_one_flat_self_named_export_per_user_function` — the PREMISE the
+    guard is keyed on, RE-DERIVED from the emitter over `emit_image_corpus()` plus a
+    multi-function row (the corpus is single-function by construction, so the "one export per
+    function" half would be vacuous on it alone), with a `rows > 15` vacuity guard. (2)
+    `every_out_of_image_export_shape_refuses_and_says_what_it_is` — the three refused shapes,
+    each asserting the message names what it actually is and does NOT say "block/loop/branch",
+    plus an IN-IMAGE CONTROL with the same body so the refusals cannot be coming from the body.
+    (2b) `an_unexported_function_lifts_and_the_re_emit_widens_the_abi` — the POSITIVE half,
+    pinning the deliberate line between a lossy widening and a silent rewrite so neither side
+    can drift.
+    (3) `the_re_emit_derives_every_export_name_from_the_function_name_alone` — asserted on the
+    BACKEND, so it keeps witnessing WHY the refusal is load-bearing after the frontend stops
+    producing such modules (PMAT-1423''s witness-3 shape). (4)
+    `the_export_guard_refuses_nothing_in_the_emit_image` — the over-refusal bound, keyed on the
+    guard''s OWN citation so it cannot pass by a row failing for an unrelated reason. RED HALVES
+    ALL RUN: removing `check_export_image` reds (2); removing `refuse_inline_export` reds (2) on
+    the folded shape; making the emit export under a different name reds (1), (3) and (4)
+    together. Executed differential recorded under `wasm-interp` with both legs `wat2wasm`-clean
+    and a provenance-verified baseline binary. ⚠️ The first red-half run reported exit=127 for
+    every shape and READ AS A CLEAN PASS — it was a missing binary, because the worktree build
+    ignored CARGO_TARGET_DIR and landed in the shared target dir, which then served the PATCHED
+    binary back as a baseline. Every probe binary here is provenance-verified by grepping it for
+    its own new refusal string.'
+  docs: 'A new "# The module''s export surface" section in the xpile-wasm-frontend lib.rs module
+    doc, carrying the executed table and the four shapes; the tests.rs module doc records the
+    third width lesson (when a witness set has been wrong twice about its width, ask what OTHER
+    vocabulary the emit has). CHANGELOG carries the executed console transcript.'
+  still_open: 'Named, not fixed: (a) carrying an external name distinct from the function''s own
+    needs a meta-HIR field that does not exist (0.1.619) — until then a renamed export refuses
+    rather than lifting, and an UNEXPORTED function is accepted and PUBLISHED by the re-emit (a
+    documented widening, witnessed positively, not a silent rewrite). (b) PMAT-1423''s lead (e) is RESOLVED-HONEST for the refusal question but
+    the aggregate lane is still not LIFTABLE at all; `(memory …)`/`(global …)`/`(table …)`
+    decompilation remains PMAT-952. (c) PMAT-1421''s lead (c) is still untouched (the deliberate
+    `i32` -> Type::Bool residual). (d) the emit itself writes ONE folded export —
+    `(memory (export "mem") 1)` — which is unreachable for the lift today because the top-level
+    `(memory …)` arm refuses first; if PMAT-952 ever lifts memory, that folded form needs an
+    inverse before `refuse_inline_export`''s func-only scan is extended to it.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

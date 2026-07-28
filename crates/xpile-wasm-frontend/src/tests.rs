@@ -27,6 +27,17 @@
 //! `lift_wat(..).is_ok()`, and four constructs passed it while the lift was
 //! silently corrupting them. `Ok` is not the invariant — the FIXED POINT is.
 //! See [`lift_ok_implies_the_lifted_module_still_emits`].
+//!
+//! A third, from PMAT-1424: every witness in this file up to that point was
+//! about INSTRUCTIONS, and the emit's other vocabulary — the module's export
+//! surface — had none at all, so three silent ABI rewrites sat under a fixed
+//! point that was only ever measured on single-function, self-named-export
+//! modules. The fixed-point oracle was right; the corpus had no row that
+//! could distinguish an external name from an internal one. When a witness
+//! set has been wrong twice about its width, ask what OTHER vocabulary the
+//! emit has. See
+//! [`the_emit_export_image_is_one_flat_self_named_export_per_user_function`],
+//! which re-derives the image from the emitter and reds in both directions.
 
 use super::*;
 use std::path::Path;
@@ -2085,4 +2096,269 @@ fn the_invertible_helper_list_matches_the_lift_call_arms() {
             );
         }
     }
+}
+
+// ─── PMAT-1424: the module's EXPORT surface ─────────────────────────
+//
+// The three witnesses above measure what the lift does to INSTRUCTIONS.
+// These measure what it does to the module's public ABI, which the lift
+// used to skip unread on the comment "re-derived from the function on
+// re-emit" — true of the internal symbol, false of the external name, and
+// the internal symbol is the one thing a WASM host never sees.
+
+/// Every export the emit produces, as `(external name, target symbol)`,
+/// parsed back out of the emitted WAT text.
+fn emitted_exports(wat: &str) -> Vec<(String, String)> {
+    wat.lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let rest = l.strip_prefix("(export ")?;
+            let (name, rest) = rest.strip_prefix('"')?.split_once('"')?;
+            let sym = rest
+                .trim()
+                .strip_prefix("(func $")?
+                .trim_end_matches(')')
+                .trim();
+            Some((name.to_string(), sym.to_string()))
+        })
+        .collect()
+}
+
+/// The emit's export IMAGE, re-derived from the emitter rather than
+/// restated from prose — this is the premise `check_export_image` is keyed
+/// on, and PMAT-1422's lesson is that a premise must be MEASURED (its "no
+/// bare `f64.div`" premise was simply false).
+///
+/// Reds in BOTH directions: if the emit ever stopped exporting a user
+/// function, or started exporting a `$__wasm_*` helper, or emitted an
+/// external name differing from the function's own, the guard would be
+/// refusing the emit's own output and this fails first.
+#[test]
+fn the_emit_export_image_is_one_flat_self_named_export_per_user_function() {
+    let mut rows = 0usize;
+    let mut check = |label: &str, m: &Module| {
+        rows += 1;
+        let wat = emit(m);
+        let exports = emitted_exports(&wat);
+        let user_fns: Vec<String> = m
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Function(f) => Some(f.name.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            exports.len(),
+            user_fns.len(),
+            "[{label}] expected exactly one export per user function, got {exports:?} \
+             for {user_fns:?}\n{wat}"
+        );
+        for (name, sym) in &exports {
+            assert_eq!(
+                name, sym,
+                "[{label}] the emit exported `{sym}` under the DIFFERENT external \
+                 name `{name}`; the lift's export guard assumes they always agree"
+            );
+            assert!(
+                !sym.starts_with(HELPER_PREFIX),
+                "[{label}] the emit exported the prelude helper `${sym}`, which the \
+                 lift DROPS — the re-emitted module would not contain it"
+            );
+            assert!(
+                user_fns.contains(sym),
+                "[{label}] the emit exported `${sym}`, which is not a user function"
+            );
+        }
+    };
+    for (label, m) in emit_image_corpus() {
+        check(label, &m);
+    }
+    // The corpus is single-function by construction, so the "one export per
+    // function" half would be vacuous on it alone. Add a multi-function row.
+    let two = module(
+        "two",
+        vec![
+            func(
+                "helper",
+                vec![p("a", Type::I64)],
+                Type::I64,
+                Block {
+                    stmts: vec![],
+                    trailing_return: Expr::Ident("a".to_string()),
+                },
+            ),
+            func(
+                "entry",
+                vec![p("a", Type::I64)],
+                Type::I64,
+                Block {
+                    stmts: vec![],
+                    trailing_return: Expr::Ident("a".to_string()),
+                },
+            ),
+        ],
+    );
+    check("multi_function", &two);
+    assert!(
+        rows > 15,
+        "vacuity guard: the export image was measured over only {rows} row(s)"
+    );
+}
+
+/// The four out-of-image export shapes, each refused, each NAMING what it
+/// actually is.
+///
+/// Before PMAT-1424 the first three exited 0 and re-emitted a
+/// `wat2wasm`-clean module under a DIFFERENT public ABI, and the fourth was
+/// refused as a "non-canonical control shape `export`" — telling an author
+/// who wrote a folded export that they had written an arbitrary
+/// stack-machine branch (the PMAT-1422/1423 misdescription, one level up).
+#[test]
+fn every_out_of_image_export_shape_refuses_and_says_what_it_is() {
+    // A module whose BODY is inside the lift subset, so the only thing that
+    // can refuse is the export surface itself.
+    let body = "local.get $a";
+    let cases: Vec<(&str, String, &str)> = vec![
+        (
+            "renamed export",
+            format!(
+                "(module\n  (func $ct (param $a i64) (result i64)\n    {body})\n  \
+                 (export \"compute_total\" (func $ct)))"
+            ),
+            "compute_total",
+        ),
+        (
+            "one function, two external names",
+            format!(
+                "(module\n  (func $f (param $a i64) (result i64)\n    {body})\n  \
+                 (export \"alpha\" (func $f))\n  (export \"beta\" (func $f)))"
+            ),
+            "alpha",
+        ),
+        (
+            "folded header export",
+            format!(
+                "(module\n  (func $g (export \"inline_name\") (param $a i64) (result i64)\n    \
+                 {body}))"
+            ),
+            "folded export form",
+        ),
+    ];
+    for (label, wat, must_name) in &cases {
+        let err = lift_wat("m", wat).map(|_| ()).expect_err(&format!(
+            "[{label}] must be refused, not silently rewritten"
+        ));
+        let msg = format!("{err}");
+        assert!(
+            msg.contains(must_name),
+            "[{label}] the refusal must name `{must_name}`, got: {msg}"
+        );
+        assert!(
+            msg.contains("PMAT-1424"),
+            "[{label}] the refusal must cite its boundary: {msg}"
+        );
+        assert!(
+            !msg.contains("block/loop/branch"),
+            "[{label}] the refusal misdescribes an export as a control shape: {msg}"
+        );
+    }
+    // The control group: the SAME body, exported the way the emit exports
+    // it, lifts. Without this the refusals above could all be coming from
+    // the body and the witness would pass for the wrong reason.
+    let in_image = format!(
+        "(module\n  (func $f (param $a i64) (result i64)\n    {body})\n  \
+         (export \"f\" (func $f)))"
+    );
+    lift_wat("m", &in_image).expect("the in-image control must still lift");
+}
+
+/// A function with NO export is ACCEPTED, and the re-emit publishes it.
+///
+/// The deliberate line between a lossy WIDENING and a silent REWRITE, pinned
+/// so neither side can drift. Refusing this was PMAT-1424's first cut and it
+/// deleted a witnessed capability: `claims_drift.rs` feeds the `wasm` frontend
+/// a bare `(func $add …)` with no export section, and refusing it dropped
+/// `wasm` out of the substantive-frontend set and falsified the README's
+/// source-language count (PMAT-1419 — over-refusal is the natural failure mode
+/// of a refusal fix, and a pre-existing gate is what catches it).
+///
+/// No name the source published changes meaning, which is exactly what
+/// separates this from the renamed export next door.
+#[test]
+fn an_unexported_function_lifts_and_the_re_emit_widens_the_abi() {
+    let wat = "\
+(module
+  ;; source module: priv_mod
+  (func $priv (param $a i64) (result i64)
+    local.get $a)
+)";
+    let lifted = lift_wat("priv_mod", wat).expect(
+        "an unexported function must LIFT — refusing it deletes the capability \
+         claims_drift.rs witnesses for the `wasm` frontend",
+    );
+    let exports = emitted_exports(&emit(&lifted));
+    assert_eq!(
+        exports,
+        vec![("priv".to_string(), "priv".to_string())],
+        "the re-emit publishes the previously-unexported function — a documented \
+         widening. It is accepted because no name the SOURCE published changes \
+         meaning; a renamed export is refused because one does"
+    );
+}
+
+/// The guard is load-bearing because the re-emit has no channel for an
+/// external name: it derives every export from the function's own name.
+///
+/// Asserted on the BACKEND directly, so it keeps witnessing the reason even
+/// after the frontend stops producing modules that could expose it — the
+/// shape PMAT-1423's `a_dangling_call_is_not_caught_by_the_rust_backend`
+/// established.
+#[test]
+fn the_re_emit_derives_every_export_name_from_the_function_name_alone() {
+    let m = module(
+        "ct_mod",
+        vec![func(
+            "ct",
+            vec![],
+            Type::I64,
+            Block {
+                stmts: vec![],
+                trailing_return: Expr::LitInt(42),
+            },
+        )],
+    );
+    let exports = emitted_exports(&emit(&m));
+    assert_eq!(
+        exports,
+        vec![("ct".to_string(), "ct".to_string())],
+        "the emit names the export after the function; there is nowhere for a \
+         distinct external name like `compute_total` to survive a round trip, \
+         which is why the lift refuses one instead of dropping it"
+    );
+}
+
+/// The export guard must not refuse anything the emit produces.
+///
+/// PMAT-1419's lesson: over-refusal is the natural failure mode of a
+/// refusal fix. Keyed on the guard's own messages so it cannot pass by the
+/// row failing to lift for some unrelated reason.
+#[test]
+fn the_export_guard_refuses_nothing_in_the_emit_image() {
+    let mut checked = 0usize;
+    for (label, m) in emit_image_corpus() {
+        let wat = emit(&m);
+        if let Err(e) = lift_wat(&m.name, &wat) {
+            let msg = format!("{e}");
+            assert!(
+                !msg.contains("PMAT-1424"),
+                "[{label}] the export guard refused the emit's OWN output: {msg}"
+            );
+        }
+        checked += 1;
+    }
+    assert!(
+        checked > 15,
+        "vacuity guard: over-refusal was checked over only {checked} row(s)"
+    );
 }

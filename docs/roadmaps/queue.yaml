@@ -2,34 +2,33 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1423 landed from an honesty hunt. The ranked queue stays exhausted until
-  Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1422''s standing lead (d) verbatim
-  and found the COMPLEMENT of the two shapes before it. PMAT-1421 and PMAT-1422 each found a STALE
-  INVERSE ARM - correct when written, left live after a re-route, firing only on input the emit no
-  longer produces. This one is a MISSING arm whose fallback was not a refusal but a RECONSTRUCTION.
-  `lift_wat` drops every `$__wasm_*` prelude function by name, but the generic `call` arm looked the
-  callee up in the parsed arity table, found the helper''s real signature sitting there, and built a
-  well-formed `Expr::Call` to a function the lifted module no longer contained. Four emitted
-  constructs reach it - `abs(int)`, `min`/`max` over ints, `math.sqrt`. EXECUTED: `xpile transpile
-  sqrt.wat --target rust` exits 0 and writes `pub fn f(a: f64) -> f64 { __wasm_sqrt_f64(a) }` under a
-  `C-PY-FLOAT-ARITH` citation; `rustc` rejects it with `error[E0425] cannot find function`. SECOND
-  HALF: PMAT-1422''s "the hole is exactly `not` and float `/`" was measured over 7 fixtures with no
-  float builtin, no unary float `-` and no `F32` in them - re-measured over a corpus reaching every
-  scalar construct the emit accepts, the hole is TWELVE, and six of them were told they were "an
-  arbitrary stack-machine branch". LESSONS WORTH KEEPING. (1) THE ORACLE WAS THE BUG - PMAT-1422''s
-  witness measured `lift_wat(..).is_ok()`, and all four corrupted constructs PASSED it because the
-  lift really did return `Ok`, on a module it had wrecked. `Ok` is not the invariant; the FIXED POINT
-  is. When a witness''s oracle is "the call succeeded", ask what success is being taken to mean. (2)
-  the failure was TARGET-DEPENDENT - `--target wasm` refused, from the BACKEND rather than the lift,
-  which is exactly why it read as caught and says nothing about the other eight backends; check the
-  lane that does NOT catch it. (3) fixing a misdescribing refusal for the two mnemonics you found does
-  not fix it for the six you did not enumerate - sweep the whole vocabulary and gate it BOTH ways
-  (no stale entry, no unnamed refusal). (4) the tell was in the file that failed - "a fixture corpus
-  cannot establish an unqualified claim about the whole image" was already in tests.rs''s module doc
-  when the "exactly two" claim was written one screen below it; grow the CORPUS, not the prose.
-  (5) the first cut of the both-ways gate was OVER-BROAD, driving every emitted mnemonic through
-  `refuse_control` and manufacturing failures for `local.get`/`i64.and`/`f64.add`, which never reach a
-  refusal at all - key a gate on what ACTUALLY happens, not on what could be called.)'
+updated: '2026-07-28 (PMAT-1424 landed from an honesty hunt. The ranked queue stays exhausted
+  until Thu 07-30 - PMAT-1373, the release commit. This slice took PMAT-1423''s standing lead (e)
+  verbatim - the emit''s AGGREGATE lane (list/dict/str) had never been driven through emit->lift -
+  and that lane came back HONEST (it emits a `(memory ...)` and the lift refuses it by name,
+  citing PMAT-952). THE FINDING WAS THE ARM NEXT TO IT, read while confirming the negative
+  result: the top-level `(export ...)` directive was skipped UNREAD on the comment "re-derived
+  from the function on re-emit" - true of the INTERNAL symbol, false of the EXTERNAL name, and
+  the external name is the only way a WASM host can call in. EXECUTED under wasm-interp with both
+  legs wat2wasm-clean and a provenance-verified baseline binary: the source module answers
+  `compute_total() => i64:42`, and after `xpile transpile z2.wat --target wasm` at exit 0 the
+  round-tripped module answers `ct() => i64:42`. Three shapes corrupted silently and a fourth was
+  refused with the wrong description. LESSONS WORTH KEEPING. (1) THE DEFECT WAS IN A DIFFERENT
+  VOCABULARY - every witness in tests.rs, and all three preceding slices, measured INSTRUCTIONS;
+  the module''s export surface had none, so three ABI rewrites sat underneath a round-trip fixed
+  point that was genuinely holding. The oracle was right and the CORPUS could not express the
+  question: single-function modules with self-named exports have no row that distinguishes an
+  external name from an internal one. When a witness set has been wrong twice about its WIDTH,
+  stop widening the corpus along the axis you already know and ask what OTHER vocabulary the emit
+  has. (2) A NEGATIVE RESULT IS A READING OPPORTUNITY - the lead was honest, and the payload was
+  three lines away in the same match block. (3) OVER-REFUSAL FIRED AGAIN, exactly as PMAT-1419
+  recorded, and a PRE-EXISTING witness caught it: the guard placed before the body lift turned
+  five instruction-level refusal witnesses into export diagnostics, because they pin those
+  refusals on hand-written modules that happen to export nothing. It runs LAST. (4) 127 IS NOT A
+  REFUSAL - the first red-half run reported exit=127 for all four shapes and read as a clean
+  pass; it was a missing binary, because the worktree build ignored CARGO_TARGET_DIR and landed
+  in the shared target dir. Every probe binary in this slice was provenance-verified by grepping
+  it for its own new refusal string.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -3698,6 +3697,52 @@ queue:
     policy also covers `makefile`, `GNUmakefile`, `Dockerfile*`), safe direction but two sources
     of truth; (c) PMAT-1419''s leads (a) C int->i32 wrapping lowering and (c) the unresolved
     Python-vs-Rust identity of the WASM lane remain open, both 0.1.619.'
+- id: PMAT-1424
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: the WAT lift skipped every `(export ...)` directive UNREAD, silently rewriting the
+    module's public ABI at exit 0 - `(export "compute_total" (func $ct))` round-tripped to
+    `(export "ct" ...)`, wat2wasm-clean on both legs, on four of six backends
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30).
+    PMAT-1423''s standing lead (e) taken verbatim - the emit''s AGGREGATE lane (list/dict/str)
+    had never been driven through emit->lift. THAT LANE IS HONEST: it emits a `(memory ...)`
+    and the lift refuses it by name citing PMAT-952. The finding was the arm NEXT TO it, read
+    while confirming the negative: `"export" => { /* re-derived from the function on re-emit;
+    skip */ }`. True of the INTERNAL symbol, false of the EXTERNAL name, and the external name
+    is the only way a WASM host can call in. EXECUTED under wasm-interp, both legs wat2wasm-clean,
+    transpile exit 0: source answers `compute_total() => i64:42`, round trip answers
+    `ct() => i64:42`. Two shapes corrupted an EXISTING name silently (rename; two external names
+    re-emitted as a third) and the folded `(func $g (export "n") ...)` spelling refused as a
+    "non-canonical control shape" - the PMAT-1422/1423 misdescription one vocabulary up. An
+    UNEXPORTED function, PUBLISHED by the re-emit, is a documented WIDENING and stays ACCEPTED.
+    NOT target-dependent unlike PMAT-1423:
+    rust/ruchy/wasm/shell all exited 0. FIX = parse the directive and refuse outside the image;
+    no coercion (meta-HIR has no external-name field, PMAT-1395). STANDING LESSONS. (1) THE
+    DEFECT WAS IN A DIFFERENT VOCABULARY - all of tests.rs and all three preceding slices were
+    about INSTRUCTIONS; the export surface had no witness, so three ABI rewrites sat under a
+    round-trip fixed point that was genuinely holding. The oracle was right; the CORPUS
+    (single-function, self-named exports) could not express the question. When a witness set has
+    been wrong twice about its WIDTH, ask what OTHER vocabulary the emit has. (2) A NEGATIVE
+    RESULT IS A READING OPPORTUNITY - the lead was honest and the payload was three lines away.
+    (3) OVER-REFUSAL FIRED TWICE and a PRE-EXISTING gate caught it BOTH times: the guard placed
+    BEFORE the body lift turned five instruction-level refusal witnesses into export diagnostics
+    (it now runs LAST), and refusing an UNEXPORTED function broke claims_drift.rs, whose `wasm`
+    probe is a bare `(func $add ...)` - that refusal dropped `wasm` out of the substantive
+    frontend set and falsified the README source-language count. Narrowed to export directives
+    ACTUALLY PRESENT. (3b) 127 IS NOT A REFUSAL - the first red-half run reported exit=127 for
+    every shape and read as a clean pass; it was a missing binary, because the worktree build
+    ignored CARGO_TARGET_DIR and the shared target dir then served the PATCHED binary back as a
+    baseline. Provenance-verify every probe binary by grepping it for its own new string. NEXT PICK: PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2) on
+    Thu 07-30; a fire before then should hunt again. HARD FREEZE Wed 18:00 - no crates/*/src or
+    contracts/*.yaml merge after it. STANDING LEADS: (a) the emit writes exactly one folded
+    export of its own, `(memory (export "mem") 1)`, unreachable today because the top-level
+    `(memory ...)` arm refuses first - if PMAT-952 ever lifts memory it needs an inverse before
+    `refuse_inline_export` is extended past funcs; (b) the aggregate lane refuses HONESTLY but is
+    not liftable at all, so the `.wat` frontend''s whole non-scalar surface is still unswept for
+    anything except that one refusal; (c) PMAT-1421''s lead (c) (the deliberate i32 -> Type::Bool
+    residual) and PMAT-1419''s leads remain open, all 0.1.619.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

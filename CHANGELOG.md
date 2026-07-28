@@ -7,6 +7,88 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The WAT lift skipped every `(export …)` directive unread, silently rewriting the module's public ABI at exit 0 (PMAT-1424)
+
+Found by taking PMAT-1423's standing lead (e) — "the emit's aggregate lane has
+never been driven through `emit → lift` at all". That lane came back **honest**:
+`list`/`dict`/`str` programs emit a `(memory …)` and the lift refuses it by name,
+citing PMAT-952. But reading the top-level dispatch to confirm that turned up the
+arm next to it:
+
+```rust
+"export" => { /* re-derived from the function on re-emit; skip */ }
+```
+
+That comment is true of the **internal symbol** and false of the **external
+name** — and the internal symbol is the one thing a WASM host never sees. The
+directive was never parsed, so nothing checked whether the two agreed.
+
+The emit's export image is exactly one flat `(export "n" (func $n))` per user
+function, with no `$__wasm_*` helper exported (re-derived from the emitter by a
+witness, not restated in prose). Every other shape round-tripped into a
+`wat2wasm`-clean module under a **different ABI**, at exit 0:
+
+| out-of-image shape                            | before PMAT-1424                                       | now |
+|-----------------------------------------------|--------------------------------------------------------|-----|
+| `(export "compute_total" (func $ct))`         | re-emits `(export "ct" …)` — **renamed**                | refused |
+| `$f` exported as both `"alpha"` and `"beta"`  | re-emits `(export "f" …)` — **both lost, a third invented** | refused |
+| `(func $g (export "n") …)` (folded spelling)  | refused — as a *"non-canonical control shape"*          | refused, correctly named |
+| `$priv` defined with no export                | re-emits `(export "priv" …)` — **made public**          | **accepted** (see below) |
+
+Executed, no-argument export, both legs `wat2wasm`-clean:
+
+```console
+$ wasm-interp --run-all-exports z2.wasm        # the source module
+compute_total() => i64:42
+$ xpile transpile z2.wat --target wasm --out z2_re.wat   # exit 0
+$ wasm-interp --run-all-exports z2_re.wasm     # after the round trip
+ct() => i64:42
+```
+
+A host can only call in **by name**, so `compute_total` is gone. Unlike
+PMAT-1423's dangling call, no backend caught this: `--target rust`, `ruchy`,
+`wasm` and `shell` all exited 0 (`lean` and `forjar` refuse the module for
+unrelated reasons).
+
+**Fix.** The top-level arm now parses the directive, and `check_export_image`
+refuses anything outside the emit's image; the folded header spelling gets its
+own named refusal instead of the control-shape one. No coercion — meta-HIR has
+no field for an external name distinct from the function's own, so carrying one
+would mean inventing it (PMAT-1395); that is 0.1.619 capability work.
+
+**An unexported function is deliberately still accepted**, and the re-emit
+publishes it. That is a *widening*, not a rewrite — every name the source
+published keeps pointing at the same function, so no working host call changes
+meaning — and it is the line between the two that the fix is keyed on.
+
+**Over-refusal fired twice here, and a pre-existing gate caught it both times**
+(PMAT-1419, exactly as recorded). First, the guard placed *before* the body lift
+turned five instruction-level refusal witnesses into export diagnostics — they
+pin those refusals on hand-written modules that happen to export nothing; it now
+runs **last**. Second, refusing the unexported function at all broke
+`claims_drift.rs`, which feeds every frontend "a real program in its own
+language" and uses a bare `(func $add …)` for `wasm`: refusing it dropped `wasm`
+out of the substantive-frontend set and falsified the README's source-language
+count. Deleting a witnessed capability to close a lesser hole is the trade
+PMAT-1419 recorded three times; the rule was narrowed to export directives that
+are actually present. Across the 22-row `emit_image_corpus()` plus an 8-program
+CLI corpus the guard now refuses nothing the emit produces, and all 8 stay
+byte-fixed-points.
+
+Five new witnesses, including a positive one pinning the accepted widening. The
+premise (the export image) is **measured from the emitter** and reds in both
+directions — PMAT-1422's lesson that a transplanted premise must be re-keyed.
+Red halves all run: removing the export check reds the shape witness, removing
+the folded-form guard reds it on the folded shape, and making the emit export
+under a different name reds the premise witness, the backend witness and the
+over-refusal witness together.
+
+One process note worth keeping: the first red-half run reported `exit=127` for
+all shapes and read as a clean pass. It was a missing binary — the worktree
+build ignored `CARGO_TARGET_DIR` and landed in the shared target dir, which then
+served the *patched* binary back as a "baseline". Every probe binary in this
+slice is provenance-verified by grepping it for its own new refusal string.
+
 ### The WAT lift reported SUCCESS for four constructs it had silently corrupted — `--target rust` exited 0 with uncompilable output (PMAT-1423)
 
 Found by taking PMAT-1422's standing lead (d) verbatim: `lift_call`'s non-helper

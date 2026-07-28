@@ -177,6 +177,43 @@
 //! (0.1.619). See [`IN_IMAGE_UNINVERTED`], whose entries are checked both
 //! ways — every one reachable from an emitted construct, and every refusal
 //! the corpus produces named by one.
+//!
+//! # The module's export surface (PMAT-1424)
+//!
+//! Everything above is about INSTRUCTIONS. The module's public ABI is a
+//! separate vocabulary, and it was not checked at all: the top-level
+//! `(export …)` arm skipped every directive unread, on the comment "re-derived
+//! from the function on re-emit". That is true of the INTERNAL symbol and
+//! false of the EXTERNAL name — and the internal symbol is the one thing a
+//! WASM host never sees. The emit's export image is exactly one flat
+//! `(export "n" (func $n))` per user function with no `$__wasm_*` helper
+//! exported ([`check_export_image`], measured from the emitter by the
+//! witness, not restated here), so every other shape re-emitted a
+//! `wat2wasm`-clean module under a DIFFERENT ABI at exit 0:
+//!
+//!   * `(export "compute_total" (func $ct))` re-emitted `(export "ct" …)` —
+//!     **renamed**. Executed under `wasm-interp`, both legs `wat2wasm`-clean,
+//!     transpile at exit 0 on `--target rust`, `ruchy`, `wasm` and `shell`:
+//!     the source answers `compute_total() => i64:42` and the round trip
+//!     answers `ct() => i64:42`. A host can only call in BY NAME.
+//!   * a function exported as both `"alpha"` and `"beta"` re-emitted a single
+//!     `(export "f" …)` — **both names lost and a third invented**.
+//!   * the folded header spelling `(func $g (export "n") …)` did refuse, but
+//!     as a "non-canonical control shape `export` … any other block/loop/branch
+//!     nesting is refused" — the PMAT-1422/1423 misdescription one level up.
+//!     See [`refuse_inline_export`].
+//!
+//! Unlike PMAT-1423's dangling call, no backend caught any of this; the
+//! refusal has to be here. Carrying an external name distinct from the
+//! function's own needs a meta-HIR field that does not exist (0.1.619), so
+//! this is refused rather than dropped — PMAT-1395.
+//!
+//! **What is NOT refused, and is the lift's documented lossiness:** a function
+//! defined with no export at all still lifts, and the re-emit **publishes**
+//! it. That is a WIDENING, not a rewrite — every name the source published
+//! keeps pointing at the same function, so no working host call changes
+//! meaning. Refusing it was this fix's first cut and it deleted a capability
+//! `claims_drift.rs` witnesses (see [`check_export_image`]).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -225,9 +262,13 @@ pub fn lift_wat(module_name: &str, source: &str) -> Result<Module, FrontendError
     expect(&toks, &mut i, "(")?;
     expect(&toks, &mut i, "module")?;
 
-    // Split the module body into top-level `(func …)` slices (skipping
-    // `(export …)` directives and refusing anything else).
+    // Split the module body into top-level `(func …)` slices, COLLECTING the
+    // `(export …)` directives (PMAT-1424 — they used to be skipped unread on
+    // the claim that they are "re-derived from the function on re-emit", and
+    // re-derivation from the INTERNAL symbol is not preservation of the
+    // EXTERNAL name) and refusing anything else.
     let mut func_spans: Vec<(usize, usize)> = Vec::new(); // inclusive [open, close]
+    let mut exports: Vec<(String, String)> = Vec::new(); // (external name, target symbol)
     loop {
         let t = peek(&toks, i)?;
         if t == ")" {
@@ -242,7 +283,7 @@ pub fn lift_wat(module_name: &str, source: &str) -> Result<Module, FrontendError
         let kw = peek(&toks, i + 1)?;
         match kw.as_str() {
             "func" => func_spans.push((i, close)),
-            "export" => { /* re-derived from the function on re-emit; skip */ }
+            "export" => exports.push(parse_export_form(&toks, i, close)?),
             other => {
                 return Err(FrontendError::Lower(format!(
                     "WAT top-level `({other} …)` is outside the lift subset \
@@ -252,6 +293,14 @@ pub fn lift_wat(module_name: &str, source: &str) -> Result<Module, FrontendError
             }
         }
         i = close + 1;
+    }
+
+    // PMAT-1424: the FOLDED header spelling `(func $g (export "n") …)` is
+    // checked here, before pass 2, because otherwise it reaches the body
+    // lifter and is refused as a "non-canonical control shape" — the
+    // misdescribing refusal PMAT-1422/1423 worked one level down.
+    for &(open, close) in &func_spans {
+        refuse_inline_export(&toks[open..=close])?;
     }
 
     // Pass 1: arity map (name → param count) over EVERY func, so a
@@ -278,6 +327,23 @@ pub fn lift_wat(module_name: &str, source: &str) -> Result<Module, FrontendError
         }
         items.push(Item::Function(lift_function(slice, &arity)?));
     }
+
+    // PMAT-1424: the lift is a right-inverse of the emit ON ITS IMAGE, and the
+    // emit's export image is exactly "one flat `(export "n" (func $n))` per
+    // user function, no helper exported". Anything else re-emits under a
+    // DIFFERENT public ABI at exit 0, so it refuses rather than being silently
+    // rewritten. Deliberately LAST: an instruction the lift cannot invert at
+    // all is the more specific fact about a module, and several pre-existing
+    // witnesses pin those instruction-level refusals on hand-written modules
+    // that happen to export nothing — checking the surface first turned every
+    // one of them into an export diagnostic (PMAT-1419: over-refusal is the
+    // natural failure mode of a refusal fix, and a pre-existing witness is
+    // what catches it).
+    let func_names: Vec<String> = func_spans
+        .iter()
+        .map(|&(open, close)| func_name(&toks[open..=close]))
+        .collect::<Result<_, _>>()?;
+    check_export_image(&func_names, &exports)?;
 
     Ok(Module {
         name: module_name.to_string(),
@@ -387,6 +453,171 @@ fn matching_paren(toks: &[String], open: usize) -> Result<usize, FrontendError> 
 /// Strip a leading `$` from a WAT identifier (meta-HIR names have none).
 fn ident(tok: &str) -> &str {
     tok.strip_prefix('$').unwrap_or(tok)
+}
+
+// ─── Export-directive parsing and the emit's export image ───────────
+
+/// Parse ONE top-level `(export "name" (func $sym))` form into its external
+/// name and target symbol (PMAT-1424).
+///
+/// The emit writes exactly this flat shape, one per user function. Anything
+/// else — `(export "m" (memory 0))`, a name the flat tokenizer splits because
+/// it contains whitespace, an abbreviated form — refuses here rather than
+/// being dropped: an export the lift does not understand is an export the
+/// re-emit cannot reproduce, and dropping it changes the module's public ABI
+/// at exit 0.
+fn parse_export_form(
+    toks: &[String],
+    open: usize,
+    close: usize,
+) -> Result<(String, String), FrontendError> {
+    // ( export "name" ( func $sym ) )
+    //  0   1      2    3   4    5   6  ← offsets from `open`
+    let shape_ok = close == open + 7
+        && toks.get(open + 3).map(String::as_str) == Some("(")
+        && toks.get(open + 4).map(String::as_str) == Some("func")
+        && toks.get(open + 6).map(String::as_str) == Some(")");
+    let quoted = toks.get(open + 2).cloned().unwrap_or_default();
+    let name = quoted
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .map(str::to_string);
+    match (shape_ok, name) {
+        (true, Some(name)) => {
+            let sym = ident(toks.get(open + 5).map(String::as_str).unwrap_or("")).to_string();
+            Ok((name, sym))
+        }
+        _ => Err(FrontendError::Lower(format!(
+            "WAT export `{}` is outside the lift subset — the lift inverts the \
+             `xpile-wasm-codegen` image, whose every export is the flat form \
+             `(export \"n\" (func $n))`. An export shape the lift cannot read is \
+             one the re-emit cannot reproduce, and dropping it silently changes \
+             the module's public ABI (PMAT-1424); only function exports in that \
+             flat form are lifted, and memory/table/global exports are deferred \
+             to PMAT-952",
+            toks[open..=close.min(toks.len() - 1)].join(" ")
+        ))),
+    }
+}
+
+/// Refuse the FOLDED export form in a function header —
+/// `(func $g (export "n") …)` (PMAT-1424).
+///
+/// This shape is valid WAT that `wat2wasm` accepts, and it is not what the
+/// emit writes. Before this guard it fell through [`lift_function`]'s header
+/// loop into the body lifter, which refused it as a
+/// "non-canonical control shape `export` … any other block/loop/branch nesting
+/// is refused" — telling an author who wrote an inline export that they wrote
+/// an arbitrary stack-machine branch. That is exactly the misdescribing
+/// refusal PMAT-1422 fixed for two mnemonics and PMAT-1423 swept the rest of
+/// the instruction vocabulary for; this is the same shape one level up, in the
+/// MODULE-SURFACE vocabulary rather than the instruction one.
+fn refuse_inline_export(slice: &[String]) -> Result<(), FrontendError> {
+    let end = slice.len().saturating_sub(1);
+    let mut k = 3; // after "(", "func", "$name"
+    while k < end {
+        if slice[k] != "(" {
+            break; // body begins — an `(export` past here is not a header form
+        }
+        if slice.get(k + 1).map(String::as_str) == Some("export") {
+            return Err(FrontendError::Lower(format!(
+                "the folded export form `(func ${} (export …) …)` is outside the \
+                 lift subset — the emit writes every export as a separate \
+                 top-level `(export \"n\" (func $n))`, so the lift has no inverse \
+                 for the inline spelling and would drop it, re-emitting the \
+                 module under a different public ABI at exit 0 (PMAT-1424). \
+                 Hoist it to a top-level export directive",
+                func_name(slice)?
+            )));
+        }
+        k = local_matching(slice, k)? + 1;
+    }
+    Ok(())
+}
+
+/// Check a module's export set against the emit's export IMAGE (PMAT-1424).
+///
+/// Measured from the binary at 222549f2: `xpile transpile <m>.py --target wasm`
+/// emits, for every user function `$n`, exactly one top-level
+/// `(export "n" (func $n))`, and emits NO export for any `$__wasm_*` prelude
+/// helper. That is the whole image, so it is the whole acceptance condition —
+/// and each way of falling outside it was a SILENT ABI REWRITE at exit 0, with
+/// both legs `wat2wasm`-clean:
+///
+/// | out-of-image shape                          | before PMAT-1424 | now |
+/// |---------------------------------------------|------------------|-----|
+/// | `(export "compute_total" (func $ct))`       | re-emits `(export "ct" …)` — **renamed** | refused |
+/// | `$f` exported as both `"alpha"` and `"beta"`| re-emits `(export "f" …)` — **both names lost, a third invented** | refused |
+/// | `(func $g (export "n") …)` folded spelling  | refused, as a "non-canonical control shape" | refused, [`refuse_inline_export`] |
+/// | `$priv` defined with no export              | re-emits `(export "priv" …)` — **made public** | ACCEPTED, see below |
+///
+/// Executed under `wasm-interp`, no-argument export, transpile at exit 0 on
+/// both legs: the source module answers `compute_total() => i64:42` and the
+/// round-tripped module answers `ct() => i64:42`. A host that looks the export
+/// up by name — which is the only way a WASM host can call in — gets an
+/// unknown-export failure against a module xpile reported success for.
+///
+/// This is the module-surface analogue of the instruction-level family
+/// PMAT-1421/1422/1423 worked: the top-level `(export …)` arm was not a stale
+/// inverse but an UNREAD one, skipped on the comment "re-derived from the
+/// function on re-emit". Re-derivation from the internal symbol is not
+/// preservation of the external name, and the internal symbol is the one thing
+/// a WASM host never sees. Refusing rather than teaching the lift to carry
+/// export names follows PMAT-1395: meta-HIR has no place to put an external
+/// name distinct from the function's own, so carrying it would mean inventing
+/// one, and the honest boundary until it exists (0.1.619) is a refusal.
+///
+/// # Why an unexported function is ACCEPTED, not refused
+///
+/// Every rule here is keyed on an export directive that IS present, because
+/// only those can be corrupted. A function with no export is a documented
+/// LOSSY WIDENING, not a rewrite: the re-emit publishes it, but every name the
+/// source published keeps pointing at the same function, so no working host
+/// call changes meaning.
+///
+/// Refusing it was the first cut of this fix and it was WRONG — over-refusal is
+/// the natural failure mode here (PMAT-1419), and two pre-existing gates caught
+/// it. `claims_drift.rs` feeds every frontend "a real program in its own
+/// language", and for `wasm` that is a bare `(func $add …)` with no export
+/// section at all; refusing it dropped `wasm` out of the substantive-frontend
+/// set and falsified the README's source-language count. Deleting a witnessed
+/// capability to close a lesser hole is the trade PMAT-1419 recorded three
+/// times. The widening is instead named in the module doc and in
+/// `still_open`.
+fn check_export_image(
+    func_names: &[String],
+    exports: &[(String, String)],
+) -> Result<(), FrontendError> {
+    for (name, sym) in exports {
+        if sym.starts_with(HELPER_PREFIX) {
+            return Err(FrontendError::Lower(format!(
+                "`(export \"{name}\" (func ${sym}))` is outside the lift subset — \
+                 `${HELPER_PREFIX}*` is the `xpile-wasm-codegen` prelude namespace, \
+                 which the emit never exports and the lift DROPS, so the re-emitted \
+                 module would not contain the exported function at all (PMAT-1424)"
+            )));
+        }
+        if !func_names.iter().any(|f| f == sym) {
+            return Err(FrontendError::Lower(format!(
+                "`(export \"{name}\" (func ${sym}))` names a function this module \
+                 does not define — the lift only inverts exports of functions \
+                 present in the same module (PMAT-1424)"
+            )));
+        }
+        if name != sym {
+            return Err(FrontendError::Lower(format!(
+                "`(export \"{name}\" (func ${sym}))` is outside the lift subset — the \
+                 lift inverts the `xpile-wasm-codegen` image, which exports every \
+                 function under its OWN name, and meta-HIR has no place to carry an \
+                 external name distinct from the function's. Lifting this would \
+                 re-emit `(export \"{sym}\" (func ${sym}))`: `wat2wasm`-clean, exit 0, \
+                 and a DIFFERENT public ABI — a host calling `{name}` gets an \
+                 unknown export (PMAT-1424). It is refused rather than silently \
+                 renamed; rename the function to `${name}` to lift it"
+            )));
+        }
+    }
+    Ok(())
 }
 
 // ─── Function header parsing ────────────────────────────────────────
