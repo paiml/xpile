@@ -91,11 +91,17 @@ pub struct BackendConfig {
     pub profile: Profile,
     pub hardware: Option<HwProfile>,
     /// PMAT-956: whether emitted code is annotated with its `// xpile-contract:`
-    /// citations across the applicable L1–L5 taxonomy layers. `true` by default
-    /// (every emitted construct is cited — the "every construct under a cited
-    /// contract" north-star); set `false` for annotation-free output. Every
-    /// `Backend::lower` honours it, so a library caller controls citation
-    /// emission through the config, exactly as the CLI's `--contracts off` does.
+    /// citations across the applicable L1–L5 taxonomy layers. `true` by
+    /// default, which annotates each construct that HAS an applicable
+    /// contract; "every construct under a cited contract" is the NORTH-STAR,
+    /// not the current state — `applicable_contracts()` is empty for a
+    /// comparison-only or call-only body and those emit no citation line.
+    /// (Through v0.1.617 this read "every emitted construct is cited";
+    /// `audit-design.md`'s capability-vs-contract case study records the same
+    /// slogan as falsified in practice. PMAT-1445.) Set `false` for
+    /// annotation-free output. Every `Backend::lower` honours it, so a library
+    /// caller controls citation emission through the config, exactly as the
+    /// CLI's `--contracts off` does.
     #[serde(default = "default_emit_contracts")]
     pub emit_contracts: bool,
 }
@@ -163,15 +169,21 @@ const CITATION_MARKERS: &[&str] = &[
 
 /// PMAT-956 (provable-model-as-code / optional contract emission): return
 /// `text` with every emitted `xpile-contract` citation removed — for callers
-/// who want annotation-free output. Contract citation is ON by default (every
-/// emitted construct is cited across the applicable L1–L5 taxonomy layers); this
-/// is the library counterpart of the CLI's `--contracts off`, so BOTH the
-/// library and the binary can optionally suppress citations.
+/// who want annotation-free output. Contract citation is ON by default, which
+/// cites each emitted construct that HAS an applicable contract across the
+/// L1–L5 taxonomy layers — frequently none, since `applicable_contracts()` is
+/// empty for a comparison-only or call-only body. (Through v0.1.617 this said
+/// "every emitted construct is cited", the same universal `xpile transpile
+/// --help` carried; PMAT-1445.) This is the library counterpart of the CLI's
+/// `--contracts off`, so BOTH the library and the binary can optionally
+/// suppress citations.
 ///
 /// Handles the two shapes emitted across the nine backends:
-///   * a STANDALONE citation line (Rust/Ruchy/Lean/shell/…, e.g.
-///     `// xpile-contract: C-PY-INT-ARITH` or `@[xpile_contract "…"]`) — the
-///     whole line is dropped;
+///   * a STANDALONE citation line (Rust/Ruchy/shell/…, e.g.
+///     `// xpile-contract: C-PY-INT-ARITH`; the Lean CODE lane's
+///     `/-- xpile-contract: … -/` docstring; and `@[xpile_contract "…"]`,
+///     which since PMAT-1405 only the contract-RENDERING lane produces and
+///     which is handled here defensively) — the whole line is dropped;
 ///   * an INLINE trailing citation (WAT, e.g.
 ///     `(func $f (param …) (result i64) ;; xpile-contract: …`) — only the
 ///     trailing comment is trimmed, keeping the code before it.

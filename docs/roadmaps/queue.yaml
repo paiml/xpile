@@ -5050,6 +5050,65 @@ queue:
     and none was consumed here. On 2026-07-30 take PMAT-1373 (release commit; see the A1 note above);
     on 2026-07-31 PMAT-1374 (publish). HARD FREEZE Wed 2026-07-29 18:00 -- docs/CHANGELOG/release only
     after it.'
+- id: PMAT-1445
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: '"every emitted function carries a `// xpile-contract: <ID>` citation" was published on
+    THIRTEEN surfaces and is false BY DESIGN -- XPILE-FALSIFY-002 narrowed F1''s denominator away
+    from it, and the contract the book attributes it to says the opposite in its `domain:`'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30; taken from
+    PMAT-1443 standing lead (c)). MEASURED at 7c1191f9 with a force-rebuilt binary: `def ident(a: int)
+    -> int: return a` emits ZERO citations from --target rust, ruchy AND lean, at exit 0. A citation is
+    emitted per ID in `applicable_contracts()`, EMPTY for comparison-only / logical-only /
+    constant-only / call-only bodies. `xpile audit` on a 3-function corpus prints `functions emitted:
+    3 / require citation: 1 / F1: 100.0%` -- 33.3% under the denominator cli.md AND `xpile audit
+    --help` published. The design decision was ALREADY WRITTEN DOWN in sub/provability-roadmap.md
+    (XPILE-FALSIFY-002 / PMAT-023, "...that correctly emit *no* citation by design"), and the
+    `compile_contract_citation` equation''s own `domain:` says "Pure language-level constructs ... do
+    NOT require a citation" while its invariant says the chain is `Artifact.citations`, NOT the comment
+    line -- so contracts.md and python-to-rust.md attributed to a contract the opposite of what it
+    states. PMAT-1437/1438 fixed the ERROR-PATH half of that same contracts.md sentence and left the
+    citation half standing. FOUR of the thirteen sites were found BY THE GATE after the audit finished,
+    and they are the USER-FACING ones (`xpile transpile --help`, `xpile audit --help`, two
+    xpile-backend doc comments) because the audit was reading book/src -- fourth consecutive slice
+    where scoping to the CLAIM beat scoping to the SITE. SECOND CLASS same slice: PMAT-1405''s own
+    lesson was "written down in THREE places and gated in ZERO"; it was FIVE -- xpile-meta-hir,
+    xpile-rust-codegen (which also named mdBook, a lane that does not exist) and xpile-backend still
+    described the Lean code lane as citing with `@[xpile_contract]`. THIRD: `adding-a-backend.md` named
+    `qa_gate.rs` as the gate that "fails if a citation is missing"; that file contains `citation` ZERO
+    times (PMAT-1391 shape). GATE: citation_surface_witness.rs (XPILE-CITESURFACE-001, 8 tests, 4
+    behaviour + 4 prose, non-vacuity BY CONSTRUCTION from nine verbatim pre-fix paragraphs). FOUR RED
+    HALVES RUN, DISJOINT: prose restore -> 1 test; widening `applicable_contracts()` (a REAL behaviour
+    change) -> the 3 behaviour tests and NO prose test; stale Lean attribute -> 1; `qa_gate.rs` restored
+    as the named gate -> 1. THE GATE''S OWN FIRST SIX CUTS WERE WRONG and each is recorded inline: a
+    50-file floor over a 43-file corpus (fixed STRUCTURALLY, not with another number); a fixed probe-dir
+    tag that raced; a paragraph splitter that merged bullets and a whole `#[derive(Subcommand)]` body
+    and so reported `audit-design.md`''s case study -- the file that RECORDS the slogan as falsified --
+    as an instance of the defect; an unbounded verb scan doing the same (fixed with a 90-char adjacency
+    window); a `normalise` that stripped `>` globally and thereby ate the `>` of the `<ID>` PLACEHOLDER,
+    going blind to a defect it was written for; and a keyword exemption that reported the proof lane''s
+    own correct format grid. PROBED AND CLEAN, do not re-derive: `bashrs-backend`''s "Every emit
+    carries ... `# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE`" is TRUE on BOTH entry paths (that lane
+    cites unconditionally, as do wasm/wgsl/spirv) -- correcting it would have traded a false universal
+    for a false particular. ZERO contracts/*.yaml, ZERO witness_floor.rs, ZERO gate_touch.
+    NEXT PICK: nothing OPEN before Thursday. STANDING LEADS carried from PMAT-1443, with (c) now
+    CONSUMED by this slice. (a) the PER-INPUT disposition granularity PMAT-1442 DISCLOSED rather than
+    fixed -- `xpile info` still prints `py, pyi` and `c, h` unannotated though a canonical `.pyi` stub
+    and `.h` header both refuse; `refused_claims()` is per-CLAIM and this needs per-INPUT. (b)
+    backends.md''s ruchy Status parenthetical "compiles to Rust" -- `ruchy check` accepts 18 of 39
+    emitted artifacts, and one emit puts `&self` on a method that assigns to self. (d) the SHELL
+    frontend''s "what''s supported" bullet list -- PROBED GREEN by PMAT-1441, so TRUE but UNGATED. (e)
+    PMAT-1436 lead (d), witnesses identifying their subject by a glob over a SHARED namespace.
+    NEW LEAD FROM THIS SLICE: `xpile-contract-backend`/`xpile-contract-frontend` both document
+    `<!-- xpile-contract: ... -->` (mdBook) as a citation host, and PMAT-1440 established there is no
+    mdBook backend or frontend registered. two-lanes.md already carries a "specified, not implemented"
+    disclosure for the rendering side; the two crate docs do not, and the CONTRACT
+    (`contract-frontend-trait.md` line 51) lists it as a format parsers MUST handle. Deliberately left
+    alone here rather than widened into -- it is the PROOF lane, a different subject.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00.
+    On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

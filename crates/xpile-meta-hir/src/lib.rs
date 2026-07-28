@@ -221,7 +221,21 @@ impl Function {
     /// Returns the list of contract IDs that govern this function.
     /// Drives codegen citation emission (PMAT-011): each ID returned
     /// here will appear as `// xpile-contract: <ID>` (Rust/Ruchy) or
-    /// `@[xpile_contract "<ID>"]` (Lean) next to the emitted function.
+    /// `/-- xpile-contract: <ID> -/` (the Lean CODE lane's docstring)
+    /// next to the emitted function.
+    ///
+    /// Through v0.1.617 this said the Lean form was
+    /// `@[xpile_contract "<ID>"]`. PMAT-1405 retired that in the code
+    /// lane a day after it was measured not to elaborate; the
+    /// *contract-rendering* lane (`xpile-lean-contract-backend`) keeps
+    /// the attribute. PMAT-1445 corrected this site and
+    /// `xpile-rust-codegen`'s copy — the two the 1405 sweep missed.
+    ///
+    /// **AN EMPTY RETURN IS THE DESIGNED ANSWER, NOT A GAP.** A
+    /// function that triggers no clause below emits NO citation line at
+    /// all, at exit 0; `xpile audit`'s F1 denominator excludes exactly
+    /// those functions (XPILE-FALSIFY-002). Derived and pinned by
+    /// `crates/xpile/tests/citation_surface_witness.rs`.
     ///
     /// Per v0.1.0's single Layer-1 contract, this returns
     /// `["C-PY-INT-ARITH"]` if and only if the function body uses any

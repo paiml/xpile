@@ -20976,3 +20976,97 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1445
+  title: 'PMAT-1445: [docs+cli+gate+honesty] "every emitted function carries a `// xpile-contract:
+    <ID>` citation" was published on THIRTEEN surfaces and is false BY DESIGN -- the repo''s own
+    XPILE-FALSIFY-002 narrowed F1''s denominator away from it, and the contract the book attributes
+    it to says the opposite in its `domain:`.
+
+    ** MEASURED at 7c1191f9 with a force-rebuilt binary. `def ident(a: int) -> int: return a` emits
+    ZERO citations from `--target rust`, `--target ruchy` AND `--target lean`, at exit 0; so does a
+    comparison-driven `pick` on the two lanes that lower it. A citation line is emitted per ID in
+    `Function::applicable_contracts()`, which is EMPTY for comparison-only, logical-only,
+    constant-only and call-only bodies. `xpile audit` over a 3-function corpus with one arithmetic
+    function prints `functions emitted : 3 / require citation : 1 / coverage (F1) : 100.0% [OK]` --
+    the same run reads 33.3% under the denominator `cli.md` and `xpile audit --help` published.
+
+    ** THE DESIGN DECISION WAS ALREADY WRITTEN DOWN. `sub/provability-roadmap.md` XPILE-FALSIFY-002
+    (PMAT-023): "Pre-002 the denominator was every emitted function, which double-penalised
+    comparison-only and logical-only functions (`cmp.py::le`, `pick.py::pick`) that correctly emit
+    *no* citation by design." The book contradicted a shipped refinement made BECAUSE the universal
+    is false.
+
+    ** AND THE CONTRACT SAYS THE OPPOSITE. `book/src/reference/contracts.md` -- the page every other
+    page links to for what a contract says -- attributed the universal to `C-XPILE-BACKEND-TRAIT`''s
+    `compile_contract_citation`. That equation''s own `domain:` reads "Pure language-level constructs
+    (function definitions, structs, arithmetic) do NOT require a citation", and its invariant says the
+    chain is `Artifact.citations` -- "NOT regex over `Artifact.primary` text", i.e. not the comment
+    line at all; it governs Layer-5 hardware sanctioning (mma.sync, @workgroup_size, asm!). PMAT-1437
+    and PMAT-1438 corrected the ERROR-PATH half of that same sentence and left the citation half
+    standing. `python-to-rust.md` made the same attribution.
+
+    ** FOUR OF THE THIRTEEN SITES WERE FOUND BY THE GATE, AFTER THE AUDIT FINISHED -- and they are the
+    USER-FACING ones, because the audit had been reading book/src: `xpile transpile --help`''s
+    `--contracts` description ("annotates every emitted construct"), `xpile audit --help` (the exact
+    sentence cli.md published), and two `xpile-backend` doc comments including
+    `BackendConfig::contracts`. Fourth consecutive slice where scoping the gate to the CLAIM rather
+    than the SITE turned up members the sweep missed (PMAT-1438, PMAT-1440, PMAT-1443).
+
+    ** SECOND CLASS, SAME SLICE: PMAT-1405 retired the Lean CODE lane''s `@[xpile_contract "<ID>"]`
+    attribute for a `/-- xpile-contract: <ID> -/` docstring and recorded, as its own lesson, that "this
+    defect was written down in THREE places and gated in ZERO". It was written down in FIVE --
+    `xpile-meta-hir`''s `applicable_contracts` doc, `xpile-rust-codegen`''s emitter doc (which also
+    named mdBook as a host sharing the comment form, a lane PMAT-1440 established does not exist), and
+    `xpile-backend`''s stripper doc were all still standing.
+
+    ** THE NAMED GATE WAS NOT A CITATION GATE. `adding-a-backend.md` told contributors "The citation
+    requirement is non-negotiable. The CI gate `crates/xpile/tests/qa_gate.rs` parses every emitted
+    artifact and fails if a citation is missing." `qa_gate.rs` contains the string `citation` ZERO
+    times -- it binds contracts'' `qa_gate: required_tests:` names to real `#[test]` fns. PMAT-1391''s
+    shape. The real gate is `contract_citation_integrity.rs`; the page now names it and the two
+    assertions it actually makes, and a test asserts those fns exist in that file (PMAT-1439: a name
+    check is not an API check).
+
+    ** GATE: crates/xpile/tests/citation_surface_witness.rs (XPILE-CITESURFACE-001, 8 tests). Four
+    BEHAVIOUR tests drive the live registry through the CLI with DEFAULT flags; the prose detector runs
+    over book/src + docs/specifications + README.md + every crates/*/src. Non-vacuity is BY
+    CONSTRUCTION: the nine book/spec paragraphs are embedded VERBATIM and the detector must flag every
+    one, plus a separate assertion that none of them carried the disclosure token, so the exemption is
+    not what the rule turns on.
+
+    ** FOUR RED HALVES RUN, NOT ASSERTED, reding DISJOINT sets: restore the frontends.md paragraph ->
+    the prose test ONLY; widen `applicable_contracts()` to fire on every body (a REAL behaviour change,
+    not a literal) -> the three behaviour tests and NO prose test; restore the retired Lean attribute in
+    a crates/*/src doc -> the spelling test ONLY; restore `qa_gate.rs` as the named gate -> the
+    gate-name test ONLY.
+
+    ** THE GATE''S OWN FIRST SIX CUTS WERE WRONG, and each miss is recorded in the file next to the
+    thing that fixed it. (1) A vacuity floor of 50 over a 43-file corpus -- replaced by a STRUCTURAL
+    statement of the subject (PMAT-1444). (2) A FIXED probe-dir tag raced between concurrent tests
+    (PMAT-1427). (3) "A run of non-blank lines" as a paragraph merged every bullet of a list and a
+    whole `#[derive(Subcommand)]` body, so it reported the NEIGHBOURHOOD -- `audit-design.md`''s
+    capability-vs-contract case study, which quotes the slogan in order to record it as FALSIFIED, was
+    reported as an instance of it (PMAT-1430 use-vs-mention). (4) An unbounded verb scan did the same;
+    fixed with a 90-char adjacency window. (5) `normalise` stripped `>` globally, which also ate the
+    `>` of the `<ID>` PLACEHOLDER -- the exact token distinguishing the generic all-backends claim from
+    `bashrs-backend`''s TRUE lane-specific one -- and the detector went blind to a defect it was written
+    for; only the embedded-verbatim assertion caught it. (6) A keyword exemption for the proof lane
+    reported `xpile-contract-backend`''s own format grid; replaced by a structural one keyed on the
+    crate.
+
+    ** PROBED AND CLEAN, recorded so it is not re-derived: `bashrs-backend`''s "Every emit carries a
+    `#!/bin/sh` shebang and a `# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE` citation line" is TRUE,
+    measured on BOTH entry paths -- that lane cites unconditionally, as do wasm/wgsl/spirv. Correcting
+    it would have traded a false universal for a false particular.
+
+    ZERO contracts/*.yaml change, ZERO witness_floor.rs touch, ZERO gate_touch. Pre-freeze
+    (Wed 18:00), so the four crates/*/src doc-comment and CLI-help corrections are in scope.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

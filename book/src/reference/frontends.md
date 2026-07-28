@@ -115,9 +115,29 @@ includes:
 - `if`/`elif`/`else` chains
 - function calls including self-recursion
 
-Each emitted Rust/Ruchy/Lean function carries a
-`// xpile-contract: C-PY-INT-ARITH` citation for the arithmetic
-contract.
+An emitted function carries a contract citation **only when its body
+uses a construct some contract governs** — which is a minority of the
+functions in a typical corpus, and is by design.
+`Function::applicable_contracts()` returns `["C-PY-INT-ARITH"]` for i64
+arithmetic / bitwise / shift / power / unary-neg, `["C-PY-FLOAT-ARITH"]`
+for the float forms, and **nothing** for comparison-only, logical-only,
+constant-only and call-only bodies; the backends emit one line per
+returned ID, so an empty list emits no line at all. Measured on this
+tree: `def ident(a: int) -> int: return a` and a comparison-driven
+`pick` both emit **zero** citations from `--target rust`, `--target
+ruchy` and `--target lean`, at exit 0.
+
+The spelling is per-lane, not universal: Rust and Ruchy emit
+`// xpile-contract: <ID>`; the Lean code lane emits a
+`/-- xpile-contract: <ID> -/` docstring (PMAT-1405 — see
+[python-to-lean](../tutorials/python-to-lean.md)).
+
+Through v0.1.617 this section said "Each emitted Rust/Ruchy/Lean
+function carries a `// xpile-contract: C-PY-INT-ARITH` citation for the
+arithmetic contract", which was wrong three ways: the citation is not
+universal, the ID is construct-directed rather than always
+`C-PY-INT-ARITH`, and `//` is not the Lean form. Derived and pinned by
+`crates/xpile/tests/citation_surface_witness.rs` (XPILE-CITESURFACE-001).
 
 For the full list, see the
 [CHANGELOG `Python subset (live, runtime-verified)`](https://github.com/paiml/xpile/blob/main/CHANGELOG.md)

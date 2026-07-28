@@ -139,7 +139,10 @@ mod adding_a_backend {
             let _ = (module, config);
             // 1. Begin with a provenance comment naming the backend +
             //    governing contract.
-            // 2. Emit a `// xpile-contract: <ID>` citation per function.
+            // 2. Emit a `// xpile-contract: <ID>` citation per contract in
+            //    `f.applicable_contracts()` — which is often EMPTY (a
+            //    comparison-only body has no governing contract), and then
+            //    you emit no citation line. Do not emit one per function.
             // 3. Lower meta-HIR statements.
             // 4. On unsupported constructs, return `BackendError::Lower`
             //    naming the construct. Naming the governing contract and

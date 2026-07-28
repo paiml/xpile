@@ -84,7 +84,10 @@ impl Backend for MyLangBackend {
         let _ = (module, config);
         // 1. Begin with a provenance comment naming the backend +
         //    governing contract.
-        // 2. Emit a `// xpile-contract: <ID>` citation per function.
+        // 2. Emit a `// xpile-contract: <ID>` citation per contract in
+        //    `f.applicable_contracts()` — which is often EMPTY (a
+        //    comparison-only body has no governing contract), and then
+        //    you emit no citation line. Do not emit one per function.
         // 3. Lower meta-HIR statements.
         // 4. On unsupported constructs, return `BackendError::Lower`
         //    naming the construct. Naming the governing contract and
@@ -95,9 +98,21 @@ impl Backend for MyLangBackend {
 }
 ```
 
-The citation requirement is **non-negotiable**. The CI gate
-`crates/xpile/tests/qa_gate.rs` parses every emitted artifact and
-fails if a citation is missing.
+What is **non-negotiable** is that the citations you emit are
+*derived from `applicable_contracts()`* and resolve to a real
+contract — not that every function has one. The CI gate is
+`crates/xpile/tests/contract_citation_integrity.rs`, which transpiles
+the fixture corpus and fails if an emitted citation names a contract
+absent from `contracts/*.yaml`
+(`every_emitted_citation_resolves_to_an_on_disk_contract`) or if a
+contract that *is* applicable goes uncited
+(`every_applicable_contract_is_actually_cited`).
+
+Through v0.1.617 this paragraph named `crates/xpile/tests/qa_gate.rs`
+as the gate that "parses every emitted artifact and fails if a citation
+is missing". That file contains no citation logic at all — it binds
+contracts' `qa_gate: required_tests:` names to real `#[test]` fns — so
+the requirement stated here was enforced by nothing under that name.
 
 ## 4. Register in `xpile-core::default_session`
 
@@ -127,7 +142,7 @@ Whichever you pick, the panic/error text must name the contract.
 | Unit | Emit fragments, assert text shape | `crates/xpile-mylang-codegen/src/lib.rs` `#[cfg(test)]` |
 | Determinism | Same input twice → same output | a property test in the same file |
 | Integration | Real fixtures emit + (if applicable) compile | `tests/transpile_e2e.rs` |
-| Citation | Every emit carries `// xpile-contract: <ID>` | `tests/qa_gate.rs` (already enforced) |
+| Citation | Every *applicable* contract is cited, and every cited ID exists | `tests/contract_citation_integrity.rs` (already enforced) |
 
 ## 7. Lift the contract
 
