@@ -73,9 +73,27 @@ and `b` see the mutation.
 
 > Layer 2 (translation) / code lane / kind: kernel
 
-All Lean 4 constructs (`def`, `partial`, `inductive`, `instance`,
-`axiom`, …) lower to Rust. The inverse direction of the
-Python→Lean flow.
+**Modelled only — nothing implements this direction.** The contract
+specifies how all Lean 4 constructs (`def`, `partial`, `inductive`,
+`instance`, `axiom`, …) *would* lower to Rust, the inverse of the
+Python→Lean flow, and carries 40 equations, 33 Lean refinement theorems
+and 10 Kani harnesses saying so. There is no Lean frontend: no
+registered frontend claims `.lean` (see [frontends](frontends.md)), so
+`xpile transpile x.lean --target rust` exits non-zero with *"no frontend
+handles `.lean`"* and no `SourceLang::Lean` module can be produced at
+all. The proofs range over abstract models — a `LeanDef` is a byte
+array — so they hold, and they hold of nothing shipped.
+
+This page previously stated the lowering as present-tense fact. What
+kept that readable was the §14.4 quorum reporting `C-XLATE-LEAN-TO-RUST`
+at 4-of-4 strata: three of the four strata are satisfied by writing YAML
+and roadmap prose, and the fourth, Runtime, was completed by a fixture
+file that no test loads. `xpile quorum` now scores it **Runtime 0**
+(still QUORUM, on Semantic + Symbolic + Extrinsic — which is the honest
+reading: a 3-of-4 quorum needs no implementation).
+`crates/xpile/tests/quorum_fixture_evidence_witness.rs` reds the day a
+Lean frontend lands, so this paragraph has to move rather than stay
+wrong.
 
 ## C-XLATE-RUST-FN-TO-LEAN-THM
 

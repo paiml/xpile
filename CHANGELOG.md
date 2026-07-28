@@ -7,6 +7,89 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The Runtime stratum — the one stratum that ties a contract to shipped code — voted for files nothing runs (PMAT-1432)
+
+The §14.4 oracle quorum has four strata. Semantic counts `lean_theorem:` refs
+in a contract's own YAML, Symbolic counts `kani_harness:` refs in the same
+file, and Extrinsic counts roadmap mentions — all three are satisfied by
+writing YAML and prose. **Runtime is the only one that can distinguish a
+modelled claim from a shipped one.**
+
+PMAT-1367 tightened Pass B of that stratum and wrote the reason into the
+collector's own doc comment: *"Naming a contract ID is not evidence of
+anything."* It then left Pass A — the fixture corpus — as pure name matching,
+and recorded the omission as a feature: *"Kept BYTE-IDENTICAL … no existing
+vote can disappear."* Fourteen lines apart, in the same function.
+
+What that left standing is recorded in `docs/roadmaps/roadmap.yaml`: eight
+fixtures added in a single batch, *"one per remaining 3-stratum contract — each
+carrying its contract ID in a header comment … Lifts each from 3-stratum to
+full 4-stratum"*, with the tests that would load them deferred as
+`XPILE-*-RUNTIME-001` follow-ons. The follow-ons were never written. Five of
+those files are named by no Rust source anywhere under `crates/`, and for
+**four** contracts such a file was the *entire* Runtime stratum.
+
+Measured on a force-rebuilt binary, `xpile quorum` before → after:
+
+```text
+  contract                        Run  strata      Run  strata
+  C-XLATE-LEAN-TO-RUST              1     4/4  →     0     3/4
+  C-COMPILE-RUST-TO-PTX-MMA         1     4/4  →     0     3/4
+  C-FFI-CPYTHON-EXT                 1     4/4  →     0     3/4
+  C-XLATE-RUST-FN-TO-LEAN-THM       1     4/4  →     0     3/4
+  C-XLATE-PY-LIST-TO-VEC            5     4/4  →     4     4/4
+  totals                    26 QUORUM, 9 PARTIAL, 0 UNVERIFIED (unchanged)
+```
+
+Five votes removed, every one traceable to a named file, and nothing else
+moved. The counts go **down** because they were inflated, not because coverage
+regressed.
+
+**The extreme case is `C-XLATE-LEAN-TO-RUST`.** It carries 40 equations, 33
+Lean refinement theorems and 10 Kani harnesses specifying how every Lean 4
+construct (`def`, `partial def`, `inductive`, `structure`, `instance`, `axiom`,
+`noncomputable def`) lowers to Rust. There is no Lean frontend. No registered
+frontend claims `.lean`, so `xpile transpile x.lean --target rust` exits
+non-zero with *"no frontend handles `.lean`"* and no `SourceLang::Lean` module
+can be produced at all — the variant is matched only by backends that refuse
+it. The proofs range over abstract models (a `LeanDef` is a byte array), so
+they hold, and they hold of nothing shipped. The file that completed its 4/4
+says so in its own header: the frontend that would parse it *"doesn't exist as
+a crate at v0.1.0"*. Meanwhile `book/src/reference/contracts.md` published
+*"All Lean 4 constructs … lower to Rust"* as present-tense fact, three sections
+away from `frontends.md` stating *"There is no C++, Rust, or Lean 4
+frontend."* The book contradicted itself and the quorum number was what made
+the wrong half readable.
+
+Fixed:
+
+- **Pass A now requires a test to load the fixture.** A fixture casts a Runtime
+  vote only when some `*.rs` source under a `--fixture-loader-dir` (new,
+  repeatable, default `crates/xpile/tests`) or a `--witness-dir` names it. The
+  `--fixtures-dir` subtree is excluded from that scan, so a `.rs` fixture whose
+  header names its own filename cannot vote for itself.
+- **A missing `--fixture-loader-dir` announces itself on stderr** — the third
+  half of the asymmetry PMAT-1367 and PMAT-1386 each fixed one half of. This
+  one under-reports, which is the safe direction, and still must not be silent.
+- **`crates/xpile/tests/quorum_fixture_evidence_witness.rs`** (XPILE-QUORUM-006,
+  4 tests) re-derives the loaded set independently, from a *wider* scan than the
+  binary performs, and asserts per-contract equality — too high means a
+  name-only fixture is voting again, too low means a real vote was dropped or
+  the binary's scan no longer reaches a source the test's does. The five
+  unloaded fixtures must carry an `xpile-runtime-vote: none` disclosure, and a
+  fixture that *is* loaded must not carry a stale one. RED HALF RUN: reverting
+  the Pass A conjunction reds 2 of 4; removing one marker reds a third; adding
+  a stale marker reds the fourth; pointing the Lean probe at a `.py` the
+  frontend accepts reds the last assertion.
+- **`book/src/reference/contracts.md`** now states that `C-XLATE-LEAN-TO-RUST`
+  is modelled only, with the refusal quoted, and the gate reds the day a Lean
+  frontend lands so the paragraph has to move rather than stay wrong.
+
+This gate names no fixture on purpose. A source under `crates/` that spells a
+filename makes that fixture look loaded — which is how a scanner hands back the
+votes it exists to remove. The first draft of the collector's doc comment did
+exactly that and reinstated the Lean fixture's vote.
+
 ### The proof-lane LaTeX frontend implemented none of the theorem/proof half its own contract specifies — and misfiled the content instead of dropping it (PMAT-1431)
 
 `C-NOTATION-LATEX-MATH-TO-EQUATION` has specified since 2026-05-15 that

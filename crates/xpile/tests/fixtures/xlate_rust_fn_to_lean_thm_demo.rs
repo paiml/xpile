@@ -1,6 +1,14 @@
-// PMAT-124 — Runtime witness for Rust fn → Lean theorem lifting.
+// PMAT-124 / PMAT-1432 — shape demo (NOT a witness) for Rust fn → Lean theorem lifting.
 //
-// Provides a Runtime-stratum vote for:
+// xpile-runtime-vote: none.
+//
+// NO test loads this file, so it casts NO Runtime-stratum vote
+// (PMAT-1432). Until PMAT-1432 it did, because the fixture pass of
+// `xpile quorum` counted any file that merely CONTAINED a contract
+// ID. Wiring a test that loads this file by name is what turns it
+// into evidence; on its own it documents a shape, nothing more.
+//
+// Shape documented, for:
 //   C-XLATE-RUST-FN-TO-LEAN-THM
 //
 // Small Rust source designed to be lifted to a Lean theorem by a
