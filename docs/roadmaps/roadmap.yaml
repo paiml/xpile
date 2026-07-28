@@ -21590,3 +21590,67 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1453
+  title: 'PMAT-1453: [release+gate+honesty] the RELEASE RUNBOOK cited a LINE NUMBER and the text AT that line was the warning that the runbook was wrong -- a one-line version bump would have re-created the published-manifest skew PMAT-1408 removed, two days before the tag.
+    ** THE DEFECT, procedural rather than cosmetic. PMAT-1373, the Thursday tag-cut item, opened
+    with "Version is single-sourced at Cargo.toml:43 -- one line + cargo check refreshes all 31
+    Cargo.lock entries." Cargo.toml:43 IS the comment "RELEASE BUMP TOUCHES 35 LINES, NOT THIS ONE
+    (PMAT-1408). Every intra-workspace path-dep below repeats this number, because a
+    [workspace.dependencies] entry cannot inherit [workspace.package].version". THE CITATION
+    POINTED AT ITS OWN REFUTATION. The `version =` key is on line 53; line 43 is the warning.
+    MEASURED: the version literal is assigned on 35 lines.
+    ** WHY IT IS EXPENSIVE, in this repo''s own recorded experience. PMAT-1408 records that through
+    v0.1.617 the path-deps read "0.1.12" while [workspace.package] read "0.1.617" -- "and nothing
+    noticed: ^0.1.12 is satisfied by 0.1.617, so every dry-run packaged clean while the published
+    manifests let a resolver pair releases 605 apart." A one-line bump on Thursday re-creates that
+    skew, IN THE DIRECTION `cargo publish --dry-run` CANNOT SEE.
+    ** SECOND DEFECT, same shape, same item. The mandate enumerated the ADVISORY jobs as "kani,
+    lake-build, docs, wasi, lean-models, shader-validate". Derived from .github/workflows minus the
+    required contexts, the unrequired set ALSO contains license-scan, build and deploy -- so the
+    published list UNDERSTATED what is unenforced, in the section whose job is to disclose exactly
+    that. Note the pattern with PMAT-1449: the XPILE-ADVISORY markers are DERIVED and CORRECT
+    (ruleset_drift holds them equal); it was the TYPED PROSE that was stale. Twice in one runbook.
+    ** FIX. The version instruction now says the bump is NOT one line, names the global-replace
+    procedure, and points at the authoritative comment; the advisory roster defers to the derived
+    markers. GATED by crates/xpile/tests/release_runbook_facts_witness.rs (XPILE-RUNBOOK-001):
+    (1) the runbook may not describe the bump as one line, checked against a COUNT DERIVED from
+    Cargo.toml -- so if the workspace ever genuinely becomes single-sourced this REDS and the
+    runbook text must move (PMAT-1411); (2) a Cargo.toml:<N> citation must point at a line that
+    supports the claim; (3) the runbook may not TYPE an advisory roster.
+    ** THE EXEMPTION TOOK THREE ATTEMPTS, and the red half is what found each failure. A
+    disclosure-aware gate needs a way to tell a QUOTED MENTION from an INSTRUCTION, and:
+    (a) PROXIMITY (within 240 chars of "used to say"/"PMAT-1453") was TOO LOOSE -- the correction
+    and its disclosure are adjacent BY CONSTRUCTION, so a re-typed ADVISORY roster landed inside
+    the window and the perturbation stayed GREEN. AN EXEMPTION KEYED ON NEARNESS EXEMPTS THE
+    NEIGHBOURHOOD. (b) global QUOTE PARITY was TOO FRAGILE -- the note carries many quoted spans,
+    so one unbalanced quote flips the verdict for everything after it and the CONTROL went red.
+    (c) What works is the SHAPE the corrections actually use: a reporting verb ("used to say") plus
+    an opening quote, both immediately before the occurrence. PMAT-1438''s rule -- test the
+    exemption against the defect -- and here it failed twice before passing.
+    ** RED HALF RUN, FOUR perturbations, green control: the original one-line instruction restored
+    (reds the version rule AND the citation rule); the ADVISORY roster typed back inline; the
+    runbook anchor drifted (non-vacuity); and -- the BEHAVIOUR half -- MAKING Cargo.toml GENUINELY
+    SINGLE-SOURCED by dropping the version key from every path-dep, which reds the corrected text
+    as newly stale.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    ** METHOD NOTE worth keeping: this and PMAT-1449 both came from READING THE RUNBOOK rather than
+    sweeping the corpus. Release runbooks are documents too, and they are the ones whose falsehoods
+    get PUBLISHED under the project''s name and EXECUTED by an operator on a deadline.
+    NEXT PICK: STANDING LEADS. (a) the REMAINING PMAT-1373 prescriptions not yet verified -- the
+    witness-floor values it lists (WASM 770 vs live 795, RUST_DIFF 44 vs live 49, HYBRID 3 vs live
+    4) are already annotated as stale IN THE ITEM, but the two Known-divergence findings it
+    mandates have not been re-measured. (b) book/src/reference/contracts.md says
+    C-XLATE-LEAN-TO-RUST "carries 40 equations"; the contract has 33 (the other two numbers in that
+    sentence are CORRECT -- measured). (c) install `ruchy` in a CI job so PMAT-1446''s COUNTS half
+    stops being developer-only -- OWNER-GATED workflow change.
+    A1 REMAINS BLOCKED ON THE OWNER RULESET DECISION ALONE (310 ok / 1 failed, measured 2026-07-28).
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

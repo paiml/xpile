@@ -7,6 +7,72 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The release runbook cited a line number, and the text at that line was the warning that the runbook was wrong (PMAT-1453)
+
+PMAT-1373 — the Thursday tag-cut item — opened with:
+
+> Version is single-sourced at `Cargo.toml:43` — one line + `cargo check`
+> refreshes all 31 Cargo.lock entries.
+
+`Cargo.toml:43` is:
+
+```toml
+# RELEASE BUMP TOUCHES 35 LINES, NOT THIS ONE (PMAT-1408). Every
+# intra-workspace path-dep below repeats this number, because a
+# `[workspace.dependencies]` entry cannot inherit `[workspace.package].version`
+```
+
+**The citation pointed at its own refutation.** The `version =` key is on line
+53; line 43 is the comment saying the instruction above it is wrong. Measured:
+the version literal is assigned on **35 lines**.
+
+**Why that is expensive**, in this repo's own recorded experience. PMAT-1408
+records that through v0.1.617 the path-deps read `"0.1.12"` while
+`[workspace.package]` read `"0.1.617"` — *"and nothing noticed: `^0.1.12` is
+satisfied by 0.1.617, so every dry-run packaged clean while the published
+manifests let a resolver pair releases 605 apart."* A one-line bump on Thursday
+re-creates that skew, **in the direction `cargo publish --dry-run` cannot see**.
+
+**Second defect, same shape, same item.** The mandate enumerated the advisory
+jobs as *"kani, lake-build, docs, wasi, lean-models, shader-validate"*. Derived
+from `.github/workflows` minus the required contexts, the unrequired set also
+contains **`license-scan`**, **`build`** and **`deploy`** — so the published list
+understated what is unenforced, in the section whose job is to disclose exactly
+that. Note the pattern with PMAT-1449: the `XPILE-ADVISORY` markers are derived
+and correct; it was the **typed prose** that was stale. Twice in one runbook.
+
+**Gated** by `crates/xpile/tests/release_runbook_facts_witness.rs`
+(`XPILE-RUNBOOK-001`): the runbook may not describe the bump as one line —
+checked against a count **derived from `Cargo.toml`**, so if the workspace ever
+genuinely becomes single-sourced this reds and the runbook text must move; a
+`Cargo.toml:<N>` citation must point at a line that supports the claim; and the
+runbook may not type an advisory roster.
+
+**The exemption took three attempts, and the red half found each failure.** A
+disclosure-aware gate needs to tell a quoted **mention** from an
+**instruction**:
+
+1. **proximity** (within 240 chars of "used to say") was **too loose** — the
+   correction and its disclosure are adjacent by construction, so a re-typed
+   roster landed inside the window and the perturbation stayed **green**. *An
+   exemption keyed on nearness exempts the neighbourhood.*
+2. global **quote parity** was **too fragile** — the note carries many quoted
+   spans, so one unbalanced quote flips the verdict for everything after it, and
+   the **control** went red.
+3. what works is the shape the corrections actually use: a reporting verb plus
+   an opening quote, both immediately before the occurrence.
+
+**Red half run, four perturbations**, green control — including the behaviour
+half: making `Cargo.toml` genuinely single-sourced, which reds the corrected
+text as newly stale.
+
+**Method note:** this and PMAT-1449 both came from *reading the runbook* rather
+than sweeping the corpus. Release runbooks are documents too, and they are the
+ones whose falsehoods get **published** under the project's name and **executed**
+by an operator on a deadline.
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### The Lean pilot published its own size as "the 23 modules" in the build file whose `roots` array holds 35 (PMAT-1452)
 
 The pilot's size, derived three ways on this tree:
