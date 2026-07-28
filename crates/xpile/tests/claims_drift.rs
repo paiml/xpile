@@ -4261,6 +4261,18 @@ fn ordinal_finality_claims(clause: &str) -> Vec<(usize, usize)> {
             from = at + ord.len();
             // Word boundary on the head, so `seconds`/`fourthly` cannot pose
             // as an ordinal.
+            // ⚠️ THE JUSTIFICATION HERE IS NOT THE OBVIOUS ONE, and the red
+            // half is what established that. This does NOT reject `seconds`
+            // — the TAIL scan does, because the word after `second` is `s`,
+            // not `and`. What it rejects is a COMPOUND ordinal:
+            // `twenty-first and final` would otherwise be scored as position
+            // 1 and reported against a series it names no position in.
+            // `ORDINALS` stops at thirteenth precisely because compounds are
+            // not representable, so refusing to read the unit part of one is
+            // correctness, not hygiene. Pinned by the `twenty-first` case in
+            // `the_ordinal_finality_needle_reads_the_spellings_the_corpus_writes`,
+            // which reds when this is removed. Removing it changed NOTHING
+            // in the live corpus.
             if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'-') {
                 continue;
             }
@@ -4307,13 +4319,21 @@ enum Series {
 
 /// Route a claim to its series by the words the CLAUSE ITSELF uses.
 ///
-/// Order is load-bearing and each rule was measured against the live corpus.
-/// `multi-eq` is tested before `silver theorem` because
-/// `contracts/py-int-arith-v1.yaml`'s clause says "COMPLETES Silver coverage
-/// on C-PY-INT-ARITH (9/9) — SIXTH and FINAL multi-eq contract at full
-/// Silver" and would otherwise be scored against a per-contract Silver tally
-/// it is not about. `multi-eq` additionally requires `silver`, or the phrase
-/// alone would capture any future claim about multi-equation contracts.
+/// `multi-eq` is tested before `silver theorem` so a claim carrying both is
+/// scored against the substrate-wide population rather than one contract's
+/// own tally. ⚠️ THAT ORDER BOUNDS NOTHING IN TODAY'S CORPUS, and the red
+/// half is what established it: swapping the two rules leaves the whole suite
+/// green, because the live `multi-eq` clause never spells "silver theorem" so
+/// the earlier rule has nothing to steal. It is kept as a forward tripwire
+/// and pinned by a CONSTRUCTED clause in
+/// `the_finality_router_sends_each_live_claim_to_its_own_series` — the
+/// arrangement the corpus lacks — rather than claimed to be load-bearing
+/// today. Second guard in this slice whose obvious justification its own red
+/// half refuted; see the head-boundary check in
+/// [`ordinal_finality_claims`] for the first.
+///
+/// `multi-eq` additionally requires `silver`, or the phrase alone would
+/// capture any future claim about multi-equation contracts.
 fn series_of(clause: &str) -> Option<Series> {
     let lower = clause.to_ascii_lowercase();
     if lower.contains("path α") || lower.contains("path alpha") {
@@ -4666,7 +4686,17 @@ fn the_ordinal_finality_needle_reads_the_spellings_the_corpus_writes() {
         (
             "twenty seconds and final cleanup",
             vec![],
-            "`seconds` is not the ordinal `second` — word boundary on the head",
+            "`seconds` is not the ordinal `second`. Rejected by the TAIL scan \
+             (the next word is `s`, not `and`), NOT by the head boundary — \
+             measured, because the obvious reading is the wrong one",
+        ),
+        (
+            "the twenty-first and final entry",
+            vec![],
+            "a COMPOUND ordinal must not be read as its unit part: scoring \
+             this as position 1 would report a wrong position against a \
+             series it names no position in. THIS is what the head boundary \
+             check buys, and this case reds when it is removed",
         ),
         (
             "the catch-all is the final else",
@@ -4704,9 +4734,19 @@ fn the_finality_router_sends_each_live_claim_to_its_own_series() {
             "COMPLETES Silver coverage on C-PY-INT-ARITH (9/9) — SIXTH and FINAL multi-eq \
              contract at full Silver",
             Some(Series::FullSilverMultiEq),
-            "carries a contract id AND the word Silver, so `multi-eq` must be \
-             tested BEFORE the per-contract Silver rule or this is scored \
-             against C-PY-INT-ARITH's own tally",
+            "carries a contract id AND the word Silver — but NOT the phrase \
+             `silver theorem`, so it does not on its own exercise the rule \
+             order; the constructed clause below does",
+        ),
+        (
+            "the SIXTH and FINAL multi-eq contract at full Silver, matching the Silver \
+             theorem on C-FFI-CPYTHON-EXT",
+            Some(Series::FullSilverMultiEq),
+            "CONSTRUCTED — the corpus writes no clause carrying both routes, \
+             so without this the rule order is untested and swapping it \
+             leaves the suite green (measured). A claim about the \
+             substrate-wide population must not be scored against one \
+             contract's own Silver tally",
         ),
         (
             "SIXTH and FINAL Silver theorem on C-FFI-CPYTHON-EXT — wires the last \
