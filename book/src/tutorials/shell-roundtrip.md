@@ -67,10 +67,19 @@ Caused by:
     `--target shell` to emit POSIX sh via bashrs-backend
 ```
 
-The error message **names the governing contract** and **suggests the
-correct target**. This is the
-[`C-XPILE-BACKEND-TRAIT`](../reference/contracts.md#c-xpile-backend-trait)
-contract's "structural compile-contract citation" invariant in action.
+This message **names the governing contract** and **suggests the
+correct target**, and `rust` is one of the backends whose refusals do.
+It is a good message, not an instance of a general rule: most probed
+refusals name neither, and five of the nine backends name neither in
+any of theirs. The measured counts live in exactly one place —
+[Backends → Status](../reference/backends.md#status).
+
+`C-XPILE-BACKEND-TRAIT` does not require either half; every one of its
+equations is a property of the **emitted** artifact. Through v0.1.617
+this paragraph called this message an instance of that contract's
+"structural compile-contract citation" invariant — a name that is not
+an equation key, for an equation whose formula ranges over
+`Artifact.primary` (PMAT-1437, PMAT-1438).
 
 ## 4. The idempotence invariant
 

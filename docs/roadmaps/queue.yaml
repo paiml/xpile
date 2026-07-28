@@ -4496,6 +4496,70 @@ queue:
     look. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed
     2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take
     PMAT-1373 (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1438
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'a CLAIM CLASS is not a PARAGRAPH -- PMAT-1437 corrected TWO sites of the refusal-
+    disclosure falsehood and left SIX, one of them 100 lines below the machine-derived table
+    that refutes it and one on contracts.md, the page every other page cites'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1437 standing lead (b) -- "the backends.md STATUS COLUMN is still
+    prose nothing gates" -- and THE PREMISE WAS LARGELY FALSE while the payload sat one section
+    over, the PMAT-1426 pattern for the fifth time. The Status column is broadly HONEST: an
+    input-dependence sweep (PMAT-1388''s test) over a value fn / loop / mutating class / string
+    method gives distinct output per input for ALL NINE backends, no backend emits a fixture,
+    and every non-emission is a hard BackendError at exit 1. What was false was PMAT-1437''S
+    OWN CLASS, six more times.
+    ** THE SIX SITES, four files, three of them opened by 1437''s own commit:
+    (1) backends.md §Error handling as a numbered normative `must`; (2) the same section
+    attributing it to a "structural compile-contract citation" invariant; (3) cli.md body as a
+    universal indicative; (4) shell-roundtrip.md generalising from one TRUE example plus the
+    same attribution; (5) adding-a-backend.md §3 as a CODE COMMENT -- instructions again, in
+    the file whose §1 1437 fixed FOR THAT REASON; (6) contracts.md §C-XPILE-BACKEND-TRAIT:
+    "Error paths must name the governing contract." So backends.md asserted at line 167 what it
+    refuted at line 78 IN ONE COMMIT.
+    ** WHY NO GATE SAW IT: `every_invariant_the_book_attributes_to_a_contract_is_an_equation_key`
+    computes its subject as "the page''s header blockquote: the first run of `>` lines" -- a
+    HEADER-ONLY check. Two sites are in page BODIES; the other four name NO contract ID, so no
+    attribution gate of any spelling could reach them.
+    ** LESSONS. (1) A CLAIM CLASS IS NOT A PARAGRAPH, AND NOT A FILE. 1437 learned "ask what the
+    defect SPELLED", applied it to the site in front of it, and shipped a gate whose SUBJECT was
+    narrower than the class. Scope the gate to the claim, then ask what the WIDEST thing is that
+    could carry it. (2) A DISCLOSURE-AWARE GATE NEEDS ITS EXEMPTION TESTED AGAINST THE DEFECT:
+    historical notes are exempt on the literal `Through v0.1.`, and a test ASSERTS neither
+    original defect carried it -- otherwise the exemption, not the detector, is what the rule
+    turns on. (3) NON-VACUITY BY CONSTRUCTION BEATS A COUNT: both detectors run over the
+    offending paragraphs'' VERBATIM pre-fix text embedded in the witness, so softening one reds
+    even after the corpus is rewritten clean. (4) THE NEEDLE SET WRITTEN FROM THE FIXED TEXT
+    MISSED THE CODE-COMMENT SPELLING -- §3 wraps as "the governing contract, and the suggested
+    //    target", so a `//`-strip is required and a test pins that the naive needle misses it.
+    (5) TWO OF THE SIX SITES WERE FOUND BY THE GATE, NOT THE AUDIT, after the first four were
+    fixed.
+    ** RED HALF RUN, SEVEN perturbations, green control: each of the five doc sites restored
+    individually; the CONTRACT grown an equation named `structural_compile_contract_citation`
+    (the BEHAVIOUR half); the needle set softened to the obvious two.
+    ** PROBED AND CLEAN, recorded so it is not re-derived: the shell-roundtrip TRANSCRIPT is
+    byte-accurate (rust IS a 1/1/1 backend) -- the falsehood was the sentence generalising from
+    it, not the example; and `qa_gate.rs`, named in adding-a-backend.md, exists.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    NEXT PICK: STANDING LEADS, EV order. (a) THE BOOK''S RUST FENCES ARE 100%% FABRICATED -- all
+    four API fences name ZERO real symbols (`MetaHirModule`, `EmittedArtifact`, `emit_module`,
+    `target_label`, `parse_str`, `parse_file`, `DepylerFrontend` each appear in ZERO files under
+    crates/*/src; `RustBackend::default()` has no Default impl), and adding-a-frontend.md §3
+    OMITS the REQUIRED `refused_claims()`. CI runs `mdbook build`, never `mdbook test`; TEN
+    tests read the whole book/src corpus and ZERO parse a ```rust fence. (b) two-lanes.md, the
+    book''s self-declared "single most important mental model", still shows 3 PHANTOM frontends
+    and omits 2 of 9 backends; PMAT-1417 EDITED the file and left the diagram. (c) the proof
+    lane is sold as a LaTeX <-> Lean <-> mdBook ROUND-TRIP on README:121-123 while README:179
+    says there is no mdBook frontend or backend. (d) `xpile audit`''s bail message is the
+    PRE-1434 flat extensions() union -- the FOURTH surface of the frontend-claim class (source).
+    (e) `.pyi`/`.h` are published as spellings that LOWER but a canonical stub/header refuses,
+    and the witness certifies them by driving `.py`/`.c` BYTES at those paths. (f) the ruchy
+    Status parenthetical "compiles to Rust" -- `ruchy check` accepts 18 of 39 emitted artifacts.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1437
   status: done
   ev_rank: R1

@@ -7,6 +7,90 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### A claim class is not a paragraph — PMAT-1437 corrected two sites and left SIX, one of them 100 lines below the table refuting it and one on the contract reference page every other page cites (PMAT-1438)
+
+PMAT-1437 (the entry below) measured that a backend's refusal message usually
+names neither the governing contract nor a better `--target`, and that
+`C-XPILE-BACKEND-TRAIT` requires neither. It then rewrote `backends.md`'s header
+blockquote and guarantee paragraph, and §1 of `adding-a-backend.md`.
+
+**The identical claim was live in six more places**, across four files —
+including three the same commit had opened:
+
+| site | mood it was written in |
+|---|---|
+| `book/src/reference/backends.md` §Error handling | a numbered normative `must` |
+| `book/src/reference/backends.md` §Error handling | attributed to a `"structural compile-contract citation"` invariant |
+| `book/src/reference/cli.md` body | universal indicative |
+| `book/src/tutorials/shell-roundtrip.md` | generalisation from one true example, plus the same attribution |
+| `book/src/contributing/adding-a-backend.md` §3 | a code comment — instructions again, in the file whose §1 was fixed *for that reason* |
+| `book/src/reference/contracts.md` §C-XPILE-BACKEND-TRAIT | *"Error paths must name the governing contract."* |
+
+So `backends.md` asserted at line 167 what it refuted at line 78 **in one
+commit**; `adding-a-backend.md` corrected the instruction in §1 and reissued it
+in §3; and the contract reference — the page every other page links to for what
+a contract says — stated the requirement outright.
+
+**Why no gate saw it.** PMAT-1437 built
+`every_invariant_the_book_attributes_to_a_contract_is_an_equation_key` for this
+exact class. Its subject is computed as *"the page's header blockquote: the
+first run of `>` lines"* — a **header-only** check. Two sites are in page
+bodies, so it cannot reach them at any strictness; the other four name no
+contract ID at all, so no attribution gate of any spelling could. What they
+spell is the **requirement**, not its attribution.
+
+That is 1437's own lesson turned on its author. It learned *"ask what the defect
+SPELLED, not what the fix spells"* — its first draft checked backticked
+`equations:` keys and the original falsehood contained none — applied it to the
+site in front of it, and shipped a gate whose **subject** was still narrower
+than the class. A claim class is not a paragraph, and it is not a file either.
+
+**Fixed** at all six sites, and gated by
+`crates/xpile/tests/refusal_claim_scope_witness.rs` (XPILE-REFUSECLAIM-001),
+which pins two rules neither reachable by a header-only check:
+
+1. **Attribution, anywhere on the page.** A double-quoted prose phrase used as
+   an invariant's name beside a contract ID must be one of that contract's
+   `equations:` keys. `"structural compile-contract citation"` resembles but is
+   not `compile_contract_citation`; a quoted phrase has no referent that can be
+   checked.
+2. **The requirement itself**, which names no contract. Prose saying a refusal
+   message names the contract or suggests a target must carry a disclaimer or
+   link the measured table.
+
+Historical-note paragraphs are exempt, narrowly (the literal phrase
+`Through v0.1.`) — this repo corrects claims in place, and a gate forbidding the
+restatement would forbid the disclosure. **Neither original defect carried the
+phrase**, which is asserted against their verbatim text rather than assumed.
+
+**Non-vacuity is by construction, not by a count**: both detectors are run over
+the offending paragraphs' verbatim pre-fix text, embedded in the witness, so
+softening either one reds even if the corpus is meanwhile rewritten clean —
+the failure mode a corpus-only negative has (PMAT-1396).
+
+**The `//`-strip is the whole lesson made executable.** The first draft's needle
+set was written from the prose sites and missed §3's code comment, which wraps
+as `… the governing contract, and the suggested //    target.` — the one site
+that is *instructions to contributors*, and the one PMAT-1437's commit message
+singled out as the expensive one. A test pins that the naive needle misses it.
+
+**Two of the six sites were found by the gate, not by the audit** — the
+contract-reference entry and the must-list items — after the first four were
+already fixed.
+
+**Red half run, seven perturbations**, each redding the expected test, with a
+green control: restoring each of the five doc sites individually; growing the
+contract an equation named `structural_compile_contract_citation` (the
+**behaviour** half — the detector tracks the contract, not the text); and
+softening the needle set back to the obvious two.
+
+Measured and honest, so it is not re-derived: the shell-roundtrip **transcript**
+is accurate — `rust` really does name the contract and suggest the target. The
+falsehood was the sentence generalising from it. `qa_gate.rs`, named in
+`adding-a-backend.md`, also exists.
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### The book said the backend contract pins what a REFUSAL message must contain — it pins nothing about error paths, and 5 of 9 backends do neither half (PMAT-1437)
 
 `book/src/reference/backends.md` published this as the page's own statement of

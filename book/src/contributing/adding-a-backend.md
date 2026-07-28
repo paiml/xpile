@@ -83,9 +83,10 @@ impl Backend for MyLangBackend {
         //    governing contract.
         // 2. Emit a `// xpile-contract: <ID>` citation per function.
         // 3. Lower meta-HIR statements.
-        // 4. On unsupported constructs, return an error naming the
-        //    construct, the governing contract, and the suggested
-        //    target.
+        // 4. On unsupported constructs, return `BackendError::Lower`
+        //    naming the construct. Naming the governing contract and
+        //    a better `--target` too is house style (see §1), not a
+        //    requirement — most shipped backends do neither.
         todo!()
     }
 }

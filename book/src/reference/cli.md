@@ -87,10 +87,16 @@ xpile transpile script.sh --target shell         # Shell round-trip
 xpile transpile factorial.py --out factorial.rs  # Write to a file
 ```
 
-If a backend cannot lower a particular construct, the error message
-names the governing contract and suggests the correct target — see the
-[shell-roundtrip tutorial](../tutorials/shell-roundtrip.md) for an
-example.
+If a backend cannot lower a particular construct, `transpile` exits
+non-zero and writes no artifact; the message names the backend that
+refused and the construct it refused. Some messages also name the
+governing contract and a better `--target` — the
+[shell-roundtrip tutorial](../tutorials/shell-roundtrip.md) shows one
+that does — but that is house style, not a guarantee, and most
+backends do neither. The counts are measured, and they live in exactly
+one place: [Backends → Status](backends.md#status). Through v0.1.617
+this paragraph asserted both halves as universal (PMAT-1437,
+PMAT-1438).
 
 ## `xpile hybrid`
 
