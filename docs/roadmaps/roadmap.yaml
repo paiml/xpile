@@ -20305,3 +20305,80 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1437
+  title: 'PMAT-1437: [docs+gate+honesty] THE BOOK SAID THE BACKEND CONTRACT PINS WHAT A REFUSAL
+    MESSAGE MUST CONTAIN — it pins NOTHING about error paths, and 5 of the 9 backends do NEITHER
+    half. `book/src/reference/backends.md` published, as the page''s own statement of the
+    guarantee and since 2026-05-15: "each backend refuses constructs outside its subset with a
+    message naming the governing contract and, where one exists, a better `--target`. That
+    refusal *is* the guarantee" — and in the header blockquote attributed it to the contract:
+    "The contract pins down structural emit invariants: ... error paths must name the governing
+    contract, and unsupported constructs must fail cleanly with a target-suggestion message."
+    BOTH HALVES FALSE.
+    ** THE CONTRACT PINS NEITHER. `contracts/xpile-backend-trait-v1.yaml` is 777 lines and 20
+    equations; the strings `refus`, `suggest` and `error path` appear in it ZERO times. Its
+    equations — `target_ownership`, `lower_idempotency`, `target_consistency`,
+    `compile_contract_citation`, `frame_lower_is_pure` and thirteen Diamond refinements — are
+    every one about the SUCCESS path. No equation, no proof obligation and no falsification test
+    says anything about what a refusal MESSAGE contains.
+    ** THE BACKENDS DO NOT SATISFY IT EITHER, measured by EXECUTING the binary over a fixed
+    seven-program corpus against every registered backend and keeping the 40 failures that
+    reached a backend''s own `lower()`: 4 of 40 named a contract ID, 7 named a better
+    `--target`. Per backend (probed / contract / target): bashrs 6/0/0, forjar 6/0/0, lean
+    4/1/4, ptx 6/0/0, ruchy 1/1/1, rust 1/1/1, spirv 7/0/0, wasm 2/1/1, wgsl 7/0/0. Five of the
+    nine did NEITHER in any probed refusal.
+    ** THE WORDING WAS LOAD-BEARING, not decorative: `book/src/contributing/adding-a-backend.md`
+    repeated the same list as IMPLEMENTATION INSTRUCTIONS ("the trait''s emit invariants
+    (citation requirement, error-path-names-the-contract requirement, target-suggestion on
+    unsupported constructs) are what your implementation must satisfy"), so a contributor was
+    told to satisfy a requirement that neither the contract states nor most shipped backends
+    meet; and `book/src/reference/cli.md` cited the same contract "for emit-side error paths".
+    Three sibling sites, one claim class.
+    FIX: publish what is true, and gate BOTH halves in
+    `crates/xpile/tests/backend_refusal_disclosure_witness.rs` (XPILE-BACKENDREFUSE-001).
+    (1) The measured table now lives in backends.md between machine-readable markers and is
+    compared to the running binary by EQUALITY, not a floor — improving a refusal message REDS
+    the gate and forces the published disclosure to move with it (PMAT-1431 §4 idiom).
+    (2) A refusal counts only if it reached the BACKEND — the message must name the failing
+    backend AND carry `lowering error:` — so a frontend refusal or a `missing hardware profile`
+    cannot stand in for one (PMAT-1432: a check that counts anything merely NEARBY certifies
+    nothing). Non-vacuity is tied to an INDEPENDENTLY derived set: every backend `xpile info`
+    registers must have produced a measured refusal, so a corpus that stops reaching a backend
+    reds instead of silently shrinking the table.
+    (3) NAMING A CONTRACT IN A HEADER BLOCKQUOTE IS NOW AN OBLIGATION TO NAME `equations:` KEYS
+    THAT EXIST. This is the half that reds the DEFECT: all nine such blockquotes described what
+    their contract "pins down" in PROSE, and three described things no equation says, so a gate
+    that only validated backticked keys would have passed the prose form unchanged. The marker
+    is mandatory on any page whose header blockquote names a contract; all nine were converted.
+    RED HALF RUN, SIX perturbations, each recorded with which test it reds: (1) restoring the
+    ORIGINAL backends.md blockquote reds the attribution test on the missing marker — the defect
+    itself; (2) a fabricated key `error_path_names_contract` reds it by name; (3) one published
+    count changed 7 -> 8 reds the table test; (4) a deleted table row reds it; (5) ACTUALLY
+    IMPROVING forjar''s refusal to name `C-COMPILE-SHELL-TO-FORJAR` and `--target rust` moved it
+    from (6,0,0) to (6,6,6) and RED-ed the table — the direction that matters, since it proves
+    the gate tracks behaviour and not the doc; (6) dropping the shell probe from the corpus reds
+    NON-VACUITY naming `["ruchy", "rust"]` rather than silently publishing a smaller table.
+    CONTROL: all restored, both green. The key filter requires an underscore, and that the
+    filter cannot skip a real key is CHECKED (every equation key of every cited contract must
+    contain one) rather than assumed.
+    ZERO `crates/*/src` change: refusal messages, exit statuses and emitted artifacts are
+    byte-identical. What changed is what the repo CLAIMS about them. witness_floor.rs untouched.
+    STANDING LEADS: (a) the frontend twin — `C-XPILE-FRONTEND-TRAIT` has
+    `ffi_boundaries_are_outgoing_only` and `source_lang_consistency`; are the frontend refusals
+    any better than the backend ones, and does frontends.md claim they are? (b) PMAT-1433 lead
+    (c) / PMAT-1434 lead (b), the `claimed_filenames()` peer to `extensions()`; (c) the Status
+    column of backends.md is still PROSE nothing gates — every row says "Real emission", which
+    for `ruchy` is contradicted by the topic file''s own "HOLLOW backend" note, so the ✅ is the
+    next `emit_surface`-idiom candidate; (d) PMAT-1435 lead (c), the OTHER closed-set CLI flags
+    (`--contracts` is clap-enforced and honest; `--hardware` accepts only `ptx`, PROBED and
+    clean — recorded so it is not re-derived); (e) PMAT-1436 lead (d), witnesses that identify
+    their subject by a glob over a SHARED namespace.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

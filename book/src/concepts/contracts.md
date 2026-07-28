@@ -5,7 +5,10 @@
 > [`C-XPILE-CONTRACT-FRONTEND-TRAIT`](../reference/contracts.md#c-xpile-contract-frontend-trait),
 > [`C-XPILE-CONTRACT-BACKEND-TRAIT`](../reference/contracts.md#c-xpile-contract-backend-trait)
 > — these are the "structural" Layer-3 contracts that govern the trait
-> surfaces themselves.
+> surfaces themselves. The invariants it pins: `extension_ownership`,
+> `target_ownership`, `format_ownership`, `parse_idempotency`,
+> `lower_idempotency`, `render_idempotency`, `citation_preservation`,
+> `compile_contract_citation`.
 
 A **contract** in xpile is a YAML file in `contracts/` that pins down one
 fact about the transpile pipeline. Each file declares:

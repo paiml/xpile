@@ -2,9 +2,10 @@
 
 > **Governing contract:** [`C-XPILE-FRONTEND-TRAIT`](contracts.md#c-xpile-frontend-trait)
 > — Layer 3 (architectural), code lane, kind: pattern. Every frontend
-> implements this trait; the contract pins down determinism (same
-> input → same `MetaHirModule`) and the citation invariants the parsed
-> module must carry.
+> implements this trait. The invariants it pins: `extension_ownership`,
+> `parse_idempotency`, `source_lang_consistency`,
+> `ffi_boundaries_are_outgoing_only` (plus Gold/Platinum/Diamond
+> refinements over the same records).
 
 A frontend reads a source file and lowers it to xpile's canonical
 **meta-HIR**. Frontends never see other frontends; they all funnel
