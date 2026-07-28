@@ -148,8 +148,13 @@ information for diagnostic round-trip.
 > Layer 3 (architectural) / code lane / kind: pattern
 
 Every `Backend` emission must carry a structural contract citation
-(`// xpile-contract: <ID>`). Error paths must name the governing
-contract.
+(`// xpile-contract: <ID>`) — that is `compile_contract_citation`, and
+like all twenty of this contract's equations it quantifies over the
+**emitted** artifact. The contract says nothing about error paths.
+Through v0.1.617 this entry added "Error paths must name the governing
+contract", which no equation states and most backends do not do; see
+[Backends → Error handling](backends.md#error-handling) for the
+measured position (PMAT-1437, PMAT-1438).
 
 ## C-XPILE-CONTRACT-FRONTEND-TRAIT
 

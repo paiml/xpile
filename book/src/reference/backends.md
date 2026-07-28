@@ -164,12 +164,27 @@ implementation guide.
 
 ## Error handling
 
-When a backend cannot lower a particular construct it must fail with
-an error message that:
+When a backend cannot lower a particular construct it fails — non-zero,
+with no artifact — and the message names the backend that refused and
+the construct it refused (`Stmt::Cmd`, `Expr::AwaitYield`, etc.).
+**That is the whole of what holds for every backend.**
 
-1. Names the construct (`Stmt::Cmd`, `Expr::AwaitYield`, etc.).
-2. Names the governing contract (e.g. `C-BASHRS-POSIX-IDEMPOTENCE`).
-3. Suggests the correct target if one exists (`use --target shell`).
+Naming the governing contract and suggesting a better `--target` are
+worth doing and are what the best messages do, but they are **house
+style, not an invariant** — see the [measured table](#status) above:
+4 of 40 probed refusals name a contract ID, 7 name a `--target`, and
+`ptx`, `wgsl`, `spirv`, `bashrs` and `forjar` do neither in any of
+theirs.
 
-This is the `C-XPILE-BACKEND-TRAIT` "structural compile-contract
-citation" invariant — see the [contract reference](contracts.md#c-xpile-backend-trait).
+Nor does the contract require them. `C-XPILE-BACKEND-TRAIT`'s
+`compile_contract_citation` equation quantifies over
+`ir_constructs(Artifact.primary)` — the **emitted** artifact — so it
+constrains the success path only; `refus`, `suggest` and `error path`
+occur zero times in its 776 lines.
+
+Through v0.1.617 this section published the contract and target halves
+as a numbered `must` and attributed them to that same equation "in
+action". PMAT-1437 corrected the page header and the guarantee
+paragraph and left this section standing 100 lines below the table that
+refutes it — the same claim, in a different grammatical mood, in the
+same file. PMAT-1438 is the rest of that class.
