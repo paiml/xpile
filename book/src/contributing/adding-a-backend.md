@@ -1,9 +1,15 @@
 # Adding a backend
 
 > **Governing contract:** [`C-XPILE-BACKEND-TRAIT`](../reference/contracts.md#c-xpile-backend-trait)
-> — read this first. The trait's emit invariants (citation requirement,
-> error-path-names-the-contract requirement, target-suggestion on
-> unsupported constructs) are what your implementation must satisfy.
+> — read this first. The invariants it pins: `target_ownership`,
+> `lower_idempotency`, `target_consistency`, `compile_contract_citation`,
+> `frame_lower_is_pure`. Those are what your implementation must
+> satisfy, and all five are about the SUCCESS path. Through v0.1.617
+> this line also listed an "error-path-names-the-contract requirement"
+> and a "target-suggestion on unsupported constructs" — the contract
+> has neither, so contributors were told to satisfy a requirement that
+> does not exist and that most shipped backends do not meet
+> (PMAT-1437).
 
 This walks through what it takes to add a new code-lane backend to
 xpile. See [Adding a frontend](adding-a-frontend.md) for the read-side
@@ -16,13 +22,18 @@ A backend doesn't have to handle every construct in meta-HIR. It does
 have to **fail cleanly** on the ones it can't. So:
 
 1. Pick the meta-HIR subset you'll lower.
-2. For each unhandled construct, plan the error message — name the
-   governing contract, suggest the right target.
+2. For each unhandled construct, return `BackendError::Lower` naming
+   the construct — never emit something approximate.
 
-The `xpile-rust-codegen` crate is the reference implementation; the
-shell rejection error
+Naming the governing contract and suggesting a better `--target` are
+worth doing and are what the best existing messages do, but they are
+**house style, not an invariant**: measured over a fixed corpus,
+4 of 40 refusals name a contract and 7 suggest a target
+(see the [backends reference](../reference/backends.md#status)).
+The `xpile-rust-codegen` crate is the reference implementation; its
+shell rejection
 (see [shell-roundtrip tutorial](../tutorials/shell-roundtrip.md))
-is what your error path should look like.
+is the shape to copy.
 
 ## 2. Scaffold the crate
 

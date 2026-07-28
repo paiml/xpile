@@ -2,11 +2,15 @@
 
 > **Governing contract:** [`C-XPILE-BACKEND-TRAIT`](contracts.md#c-xpile-backend-trait)
 > — Layer 3 (architectural), code lane, kind: pattern. Every backend
-> implements this trait. The contract pins down structural emit
-> invariants: every emitted artifact must carry a
-> `// xpile-contract: <ID>` citation, error paths must name the
-> governing contract, and unsupported constructs must fail cleanly
-> with a target-suggestion message.
+> implements this trait. The invariants it pins: `target_ownership`,
+> `lower_idempotency`, `target_consistency`, `compile_contract_citation`,
+> `frame_lower_is_pure` (plus thirteen Diamond refinements over the same
+> records). Every one of them is a property of the SUCCESS path — the
+> contract says nothing at all about what a REFUSAL message contains.
+> Through v0.1.617 this blockquote claimed it pinned "error paths must
+> name the governing contract" and a "target-suggestion message"; it
+> pins neither, and five of the nine backends do neither. See the
+> measured table below and PMAT-1437.
 
 A backend reads a `MetaHirModule` and emits an artifact in some target
 language. Backends never see other backends; they all read from
@@ -56,11 +60,43 @@ contract-independence rather than asserting it. Real rendering is
 v0.2.0 work — see PMAT-1429.
 
 A ✅ here means "emits for its supported subset", not "emits for every
-program" — each backend refuses constructs outside its subset with a
-message naming the governing contract and, where one exists, a better
-`--target`. That refusal *is* the guarantee; see the
+program" — each backend refuses constructs outside its subset rather
+than emitting something wrong. **That refusal, and its exit status, is
+the guarantee. What the refusal MESSAGE contains is not.**
+
+Through v0.1.617 this paragraph said the message names "the governing
+contract and, where one exists, a better `--target`". It usually names
+neither. The table below is **measured**, not asserted:
+`crates/xpile/tests/backend_refusal_disclosure_witness.rs`
+(XPILE-BACKENDREFUSE-001) runs a fixed seven-program corpus against
+every registered backend, keeps the failures that reached that
+backend's own `lower()`, and re-derives these counts on every run. It
+compares them by **equality** — improving a message reds the gate and
+this table has to move with it.
+
+<!-- XPILE-BACKENDREFUSE-001:BEGIN -->
+| Backend | refusals probed | naming a contract ID | suggesting a `--target` |
+|---|---|---|---|
+| `bashrs` | 6 | 0 | 0 |
+| `forjar` | 6 | 0 | 0 |
+| `lean` | 4 | 1 | 4 |
+| `ptx` | 6 | 0 | 0 |
+| `ruchy` | 1 | 1 | 1 |
+| `rust` | 1 | 1 | 1 |
+| `spirv` | 7 | 0 | 0 |
+| `wasm` | 2 | 1 | 1 |
+| `wgsl` | 7 | 0 | 0 |
+<!-- XPILE-BACKENDREFUSE-001:END -->
+
+Read it as a property of that corpus, not a verdict on each backend: a
+single probe samples one of a backend's many refusal messages. What it
+does establish is that the old universal claim was false — 4 of 40
+probed refusals named a contract ID, 7 named a better `--target`, and
+`ptx`, `wgsl`, `spirv`, `bashrs` and `forjar` did neither in any of
+theirs. Every message *does* name the backend that refused and the
+construct it refused. See the
 [shell round-trip tutorial](../tutorials/shell-roundtrip.md) for a
-worked example of the message.
+worked example.
 
 ## Rust backend — what's emitted
 
