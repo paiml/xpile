@@ -7,6 +7,83 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Every Rust example the book publishes was uncompilable, and three of the seven names it invented DO exist — which is why nothing caught it (PMAT-1439)
+
+`book/src` carried four ```rust fences describing xpile's library API — the two
+"Calling a … as a library" sections and the two "Implement the trait" sections
+of the contributing guides. **None of them compiled.** Measured at 059d4ceb:
+
+| published | what it actually is | the real thing |
+|---|---|---|
+| `MetaHirModule` | absent from `crates/*/src` entirely | `xpile_meta_hir::Module` |
+| `EmittedArtifact` | absent entirely | `xpile_backend::Artifact` |
+| `target_label` | absent entirely | `Backend::targets(&self) -> &[Target]` |
+| `DepylerFrontend` | absent entirely | `depyler_frontend::PythonFrontend` |
+| `backend.emit_module(&m)` | a **free function** in four codegen crates, `-> Result<String, _>` | `Backend::lower(&self, module, config) -> Result<Artifact, _>` |
+| `frontend.parse_str(src, name)` | not a `Frontend` method; the in-tree `parse_str` is naga's WGSL parser | `Frontend::parse_and_lower(&self, path, source)` |
+| `frontend.parse_file(path)` | not a `Frontend` method; the in-tree `parse_file` is `syn::parse_file` | the same |
+
+plus `RustBackend::default()` on a unit struct with no `Default` impl, and two
+trait signatures (`fn name(&self) -> &str`, `fn extensions(&self) -> &[&str]`)
+that do not match the traits they claim to implement.
+
+**Three of the seven names exist**, and that is the load-bearing half.
+`emit_module` is a real, public, sensibly-named function — just a free function
+returning a `String` rather than a trait method returning an `Artifact`. An
+identifier-presence check over the book would have found all three and passed.
+**A name-presence check is not an API check**, and neither is a reader's eye:
+the fences looked right because they very nearly were.
+
+**The worst of the four is not the flashiest.** `adding-a-frontend.md` §3 — the
+page whose entire job is to tell a contributor how to implement `Frontend` —
+omitted `refused_claims()`. That method is required with no default, and the
+trait says why in as many words: a default of `&[]` *"would let the next
+frontend with a partial refusal inherit the exact silence this method exists to
+break"* (PMAT-1433). The guide handed contributors an impl that does not
+compile and which, had the names been right, would have reproduced exactly the
+silence PMAT-1433 was written to remove.
+
+**Why it was green.** CI's `book` job runs `mdbook build`, which renders
+Markdown; it never runs `mdbook test`, which would compile the fences. And the
+book is not unwatched — **ten** tests read the whole `book/src` corpus. **Zero
+of them parse a ```rust fence.** Every gate the book has reads its tables, its
+transcripts, its `--target` spellings and its contract attributions — its
+*prose*. The one thing a reader would paste into their own crate was the one
+thing nothing read.
+
+**Fixed**, and gated by two new files:
+
+- `crates/xpile/tests/book_api_examples.rs` holds each published example between
+  markers, inside a file **cargo compiles**, so the real traits type-check it.
+- `crates/xpile/tests/book_rust_example_witness.rs` (XPILE-BOOKAPI-001) asserts
+  every ```rust fence in `book/src` is byte-identical to its marked region, **in
+  both directions** — a fence with no region is an unchecked example, a region
+  with no fence is a check over something nobody publishes.
+
+An API rename therefore breaks the **build**, not a string comparison. This is
+PMAT-1415's idiom — derive the published example from the artifact rather than
+copying it — applied to the book's Rust, where it had never been applied.
+
+`book/src/tutorials/python-to-rust.md` carried a fence tagged `rust` that is a
+list of test names, not Rust; it is retagged `text`, which is what it is. **A
+retag must not be a way to leave the class**, so the test-name claims it makes
+are now checked instead: each named test must exist in the file the block names.
+(All three did.)
+
+**Red half run, six perturbations**, green control: restoring the original
+`frontends.md` fence; adding a fence with no region; dropping a region while
+leaving the fence; changing one byte in a fence; retagging a fence away; and —
+the behaviour half — **renaming `Frontend::parse_and_lower` in
+`crates/xpile-frontend/src`**, which stops the published example from compiling
+at all.
+
+**Corrected mid-slice, and worth recording:** the first draft of this witness
+asserted all seven names appear in *zero* source files. That came from a
+`git grep -- 'crates/*/src'` pathspec that does not recurse, and it was false
+for three of them. The witness caught it on its first run — the gate reddened on
+its own author's table before it ever landed. It now pins the precise claim (not
+a method of the trait it is called on) separately from the absolute one.
+
 ### A claim class is not a paragraph — PMAT-1437 corrected two sites and left SIX, one of them 100 lines below the table refuting it and one on the contract reference page every other page cites (PMAT-1438)
 
 PMAT-1437 (the entry below) measured that a backend's refusal message usually

@@ -96,7 +96,7 @@ example, `C-PY-INT-ARITH` says exactly: "Python `int` is unbounded; an
 A **pattern** contract pins down a structural invariant that any
 implementation must satisfy. For example, `C-XPILE-FRONTEND-TRAIT` says:
 "Any type implementing the `Frontend` trait must produce a deterministic
-parse — same input, same `MetaHirModule`."
+parse — same input, same `xpile_meta_hir::Module`."
 
 The distinction matters because *kernels* compose by addition (more
 constructs supported), but *patterns* compose by intersection (more

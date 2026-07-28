@@ -66,19 +66,22 @@ thiserror      = "1"
 ## 3. Implement the trait
 
 ```rust
-use xpile_backend::{Backend, BackendError, EmittedArtifact};
-use xpile_meta_hir::MetaHirModule;
+use xpile_backend::{Artifact, Backend, BackendConfig, BackendError, Target};
+use xpile_meta_hir::Module;
 
 pub struct MyLangBackend;
 
 impl Backend for MyLangBackend {
-    fn name(&self) -> &str { "mylang" }
+    fn name(&self) -> &'static str {
+        "mylang"
+    }
 
-    fn target_label(&self) -> &str { "MyLang" }
+    fn targets(&self) -> &[Target] {
+        &[]
+    }
 
-    fn emit_module(&self, module: &MetaHirModule)
-        -> Result<EmittedArtifact, BackendError>
-    {
+    fn lower(&self, module: &Module, config: &BackendConfig) -> Result<Artifact, BackendError> {
+        let _ = (module, config);
         // 1. Begin with a provenance comment naming the backend +
         //    governing contract.
         // 2. Emit a `// xpile-contract: <ID>` citation per function.

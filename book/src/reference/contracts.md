@@ -140,7 +140,7 @@ verbatim), and nested theorem environments.
 > Layer 3 (architectural) / code lane / kind: pattern
 
 Every `Frontend` implementation must produce a deterministic parse
-(same input → same `MetaHirModule`) and preserve source location
+(same input → same `xpile_meta_hir::Module`) and preserve source location
 information for diagnostic round-trip.
 
 ## C-XPILE-BACKEND-TRAIT
