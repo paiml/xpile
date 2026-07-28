@@ -73,6 +73,81 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1445
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the citation an emitted function carries is TYPE-DIRECTED and the book published it as a CONSTANT -- one sentence, false twice, on the page''s only statement about citations'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1442 standing lead (d).
+    ** THE DEFECT, one sentence in book/src/reference/frontends.md: "Each emitted
+    Rust/Ruchy/Lean function carries a `// xpile-contract: C-PY-INT-ARITH` citation for the
+    arithmetic contract." FALSE TWICE.
+    ** (1) THE ID IS NOT CONSTANT. Measured over the CLI, one minimal function per Python type,
+    on every code lane: int -> C-PY-INT-ARITH, float -> C-PY-FLOAT-ARITH, str ->
+    C-XLATE-PY-STR-TO-RUST-STRING, bool -> C-XLATE-PY-BOOL-TO-RUST-BOOL. So "each ... function
+    carries C-PY-INT-ARITH" is right for ONE TYPE OF FOUR, and a reader with a float function
+    was pointed at the wrong contract.
+    ** (2) `//` IS NOT THE LEAN FORM. The Lean lane emits `/-- xpile-contract: <ID> -/`. That is
+    not an oversight: PMAT-1405 changed it DELIBERATELY, because a file `lean` must actually
+    parse cannot carry the old `@[xpile_contract "..."]` attribute that nothing registers. THE
+    EMITTER MOVED AND THE PAGE DID NOT -- it named the Rust comment syntax for a lane that would
+    not compile with it.
+    ** WHAT IS ALREADY HONEST, measured and recorded so it is not re-derived: EVERY OTHER site in
+    the corpus is correct. backends.md gives `// xpile-contract: <ID>` for Rust and
+    `/-- xpile-contract: <ID>[, <ID>]* -/` for Lean, both with PLACEHOLDERS; cli.md, contracts.md
+    and adding-a-backend.md use `<ID>`; and the concrete C-PY-INT-ARITH in quickstart.md,
+    python-to-rust.md, python-to-lean.md and README.md appears in TRANSCRIPTS OF int FUNCTIONS,
+    where it is the right answer. ONE SITE UNIVERSALLY QUANTIFIED OVER A VALUE THAT VARIES; THE
+    REST QUANTIFIED OVER A PLACEHOLDER. That is the tell worth carrying forward -- a doc that
+    writes `<ID>` cannot go stale this way, and one that writes a literal can.
+    ** FIX in crates/xpile/tests/citation_id_matrix_witness.rs (XPILE-CITEMATRIX-001). The false
+    sentence becomes TWO measured tables between markers, compared to the CLI by EQUALITY: which
+    contract by the function''s TYPE, and which comment form by LANE. Plus the FACTORISATION that
+    makes two small tables legitimate instead of one twelve-cell matrix -- the ID depends on the
+    type and NOT the lane, the form depends on the lane and NOT the type. Checking the
+    factorisation is not decoration: without it `lean` could start citing something the other two
+    do not and each table would still be individually satisfiable by picking a lane to believe.
+    THE PROPERTY THAT MAKES THE DOCUMENTATION SHAPED THE WAY IT IS HAS TO BE THE PROPERTY UNDER
+    TEST.
+    ** NON-VACUITY, three ways: every cell must actually produce a citation (an emit with none
+    fails rather than yielding an empty row); the ID set must contain MORE THAN ONE distinct
+    value (otherwise the table has collapsed back into the constant this slice removed and would
+    read as fixed again); and the Lean form must DIFFER from the Rust one, pinned so a regression
+    to `//` reds BY NAME rather than as an opaque table diff.
+    ** RED HALF RUN, SIX perturbations, green control: the original sentence restored; one wrong
+    ID in the table; the Lean form published as `//`; a row dropped; and TWO BEHAVIOUR halves --
+    making float cite C-PY-INT-ARITH in crates/xpile-meta-hir/src (reds the ID table) and making
+    the LEAN lane emit a `//` citation in crates/xpile-lean-codegen/src (reds both the syntax
+    table and the named non-vacuity check).
+    ** A SKIPPED BEHAVIOUR HALF IS NOT A RUN ONE. The first attempt at the float perturbation
+    patched crates/xpile-rust-codegen/src, where the string is not spelled, and the driver
+    printed SKIPPED. Had that been read as a pass, one of the two behaviour halves would have
+    been claimed without running. The ID is chosen in xpile-meta-hir/src/lib.rs:268, one crate
+    up from where a lane-shaped guess put it.
+    ** AND THE WITNESS CAUGHT ITS OWN CONCURRENCY BUG ON ITS FIRST RUN. Three tests each call
+    `measure()`, cargo runs them on concurrent threads in ONE process, and the probe directory
+    was keyed on pid + (type, lane) -- shared state between siblings. The first to finish deleted
+    the directory the second was still reading, surfacing as a spurious "refused a plain
+    function". PMAT-1436''s shape inside a brand-new witness. Fixed with a per-CALL atomic
+    counter; verified stable over three consecutive runs.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    ** RELEASE NOTE, measured this session and worth carrying to Thursday: `cargo test
+    --workspace --no-fail-fast` on main at 7c1191f9 is 310 suites OK and ONE failing --
+    `ruleset_drift::live_ruleset_matches_the_committed_snapshot`, the OPEN owner decision
+    `ruleset-workspace-test-dropped`. Precondition A1 for the 2026-07-30 tag cut is therefore
+    blocked on that decision ALONE. Note PMAT-1444''s ordering trap: without --no-fail-fast the
+    suite stops at the first failing binary, so a second real failure hid behind this one.
+    NEXT PICK: STANDING LEADS, EV order. (a) backends.md''s ruchy Status parenthetical "compiles
+    to Rust" -- `ruchy check` accepts 18 of 39 emitted artifacts, and one emit puts `&self` on a
+    method that assigns to self (E0594). (b) the PER-INPUT disposition granularity PMAT-1442
+    DISCLOSED rather than fixed -- `xpile info` and the dispatch message both need it, and it is
+    the natural successor to `refused_claims()`. (c) sweep the remaining book transcripts for
+    the PLACEHOLDER-vs-LITERAL tell this slice found: any doc that writes a concrete value where
+    the code computes one is the same defect waiting.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1343
   status: done
   ev_rank: R1
