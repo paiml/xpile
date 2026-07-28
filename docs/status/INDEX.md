@@ -11,7 +11,7 @@ This directory tracks where xpile is and what's next. The **single source of tru
 | `YYYY-MM-DD-<topic>.md` | Per-session change log | At session end |
 | `quarterly/YYYY-Q?.md` | Quarterly rollup (from `pv kaizen`) | At quarter close |
 
-## Session log
+## Session log (historical record)
 
 | Date | Session | Topic |
 |---|---|---|

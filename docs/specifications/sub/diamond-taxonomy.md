@@ -2,7 +2,7 @@
 
 **Section 28 of [xpile-spec.md](../xpile-spec.md).** Catalogs every Diamond-tier algebraic category demonstrated across xpile's contract substrate.
 
-> **⛔ DEPTH RATCHET FROZEN AT depth-13 (PMAT-465, 2026-06-11).** Do **not** run further depth-14+ UNIVERSAL broadening sweeps as default or background work. Per [xpile-spec.md §30 "Autonomous execution priority"](../xpile-spec.md#autonomous-execution-priority--ev-ranked-pmat-465-2026-06-11), that capacity is redirected to higher-EV work (dict lane, decy C frontend, and paying down the placeholder Runtime witnesses on the 10 contracts flagged in [`audit-design.md`](../audit-design.md) §4). Depth broadening resumes **only** when a new contract must reach the existing UNIVERSAL floor, or on explicit user request. The taxonomy below remains the authoritative record of what *has* been demonstrated through depth-13.
+> **⛔ DEPTH RATCHET FROZEN AT depth-13 (PMAT-465, 2026-06-11).** Do **not** run further UNIVERSAL broadening sweeps beyond depth-13 as default or background work. Per [xpile-spec.md §30 "Autonomous execution priority"](../xpile-spec.md#autonomous-execution-priority--ev-ranked-pmat-465-2026-06-11), that capacity is redirected to higher-EV work (dict lane, decy C frontend, and paying down the placeholder Runtime witnesses on the 10 contracts flagged in [`audit-design.md`](../audit-design.md) §4). Depth broadening resumes **only** when a new contract must reach the existing UNIVERSAL floor, or on explicit user request. The taxonomy below remains the authoritative record of what *has* been demonstrated through depth-13.
 
 ## What is a Diamond?
 
@@ -18,11 +18,22 @@ Per [ruchy 5.0 §14.10.5](../sub/provability-roadmap.md), the refinement-tier pr
 
 A Diamond theorem combines multiple Platinum properties into a **single algebraic category** that captures a named mathematical structure as a 4-conjunction at the type level.
 
-## Coverage milestones
+## Coverage milestones (historical record)
 
-As of v0.1.0+ (PMAT-214..442), the substrate has:
+**This section is a dated record, not a description of the live substrate.**
+Every milestone below was reached over the **12-contract cohort that existed at
+the time** (PMAT-214..442, through 2026-06-11), and each names the slice that
+reached it. The substrate has grown well past that cohort since: contracts
+authored after R6 (PMAT-475) join at **depth-1+** and are deliberately *not*
+pushed to the old floor — that gate change is the whole point of R6 and the
+reason the depth ratchet could be frozen. **Run `xpile diamond` for what holds
+now**; this page carries no live cardinality on purpose (PMAT-1450 — every
+numeral in this section was between two and three years of slices out of date,
+and the sentence that used to head it read "As of v0.1.0+, the substrate has").
 
-- **Diamond depth-1 UNIVERSAL** (12/12 contracts): every contract has at least one Diamond at one algebraic category.
+Reached, in order:
+
+- **Diamond depth-1 UNIVERSAL** (12/12 contracts, PMAT-214..226): every contract has at least one Diamond at one algebraic category.
 - **Diamond depth-2 UNIVERSAL** (12/12 contracts): every contract has at least two **distinct** Diamond categories. CI-enforced via PMAT-251.
 - **Diamond depth-3 UNIVERSAL** (12/12 contracts, post-PMAT-336): every contract has ≥3 distinct Diamond categories. CI-enforced via tightened gate. Achieved through PMAT-241..245 (Layer coverage) + PMAT-289 + PMAT-331..336 broadening sweep.
 - **Diamond depth-4 UNIVERSAL** (12/12 contracts, post-PMAT-344): every contract has ≥4 distinct Diamond categories. Achieved through PMAT-247/248/288/329/330 (ALL 5 LAYERS milestone at PMAT-330) followed by 7-PR broadening sweep (PMAT-338..344) using five recurring algebraic templates.
@@ -47,11 +58,14 @@ As of v0.1.0+ (PMAT-214..442), the substrate has:
 - **Diamond depth-20 ACROSS LAYERS** (2/12 contracts): PMAT-325 (Int.toNat partial inverse on L1) + PMAT-326 (Nat power monotonicity on L5).
 - **Diamond depth-21** (1/12 contracts, DEEPEST): PMAT-327 (Nat-cast order embedding on PyIntArith L1, captures Mathlib's `OrderRingHom Nat Int` shape together with PMAT-310).
 
-**Substrate total: 171 wired Diamond equations across 12 contracts.**
+**Substrate total at the close of that programme (PMAT-442): 171 wired Diamond
+equations across the 12 contracts of the cohort.** The live totals — how many
+equations, over how many contracts, and at what depth each one sits — are
+printed by `xpile diamond`; they are not transcribed here.
 
 ## Recurring algebraic templates (substrate-wide)
 
-Thirteen recurring algebraic templates emerged during the depth-3..13 broadening sweeps. Each is mechanically applicable to specific record/subtype/enum patterns, enabling the **depth-3..13 UNIVERSAL** milestones (PMAT-336/344/354/365/376/387/398/409/420/431/442):
+Thirteen recurring algebraic templates emerged during the broadening sweeps recorded above. Each is mechanically applicable to specific record/subtype/enum patterns, and together they are what made those sweeps mechanical rather than bespoke (PMAT-336/344/354/365/376/387/398/409/420/431/442):
 
 ### Template 1: Structure-extensionality
 
@@ -232,7 +246,7 @@ Demonstrated on **9 contracts** (PMAT-401/402/403/404/405/406/407/408/409) for *
 | 406 | C-XLATE-PY-LIST-TO-VEC | homogeneous_to_simple_list : HomogeneousListSilver α → PyListSilver α (drops element_type_tag — polymorphic) |
 | 407 | C-XLATE-LEAN-TO-RUST | lean_def_silver_to_bronze : LeanDefSilver → LeanDef (drops name/args/return_type) |
 | 408 | C-XLATE-RUST-FN-TO-LEAN-THM | rust_fn_silver_to_bronze : RustFnSilver → RustFn (drops name/generics/args/return_type — closes Rust↔Lean pair with PMAT-407) |
-| 409 | C-NOTATION-LATEX-MATH-TO-EQUATION | definition_env_silver_to_bronze : DefinitionEnvSilver → DefinitionEnv (drops all_math_spans/label — depth-10 UNIVERSAL finale) |
+| 409 | C-NOTATION-LATEX-MATH-TO-EQUATION | definition_env_silver_to_bronze : DefinitionEnvSilver → DefinitionEnv (drops all_math_spans/label — depth-10 wave finale) |
 
 Each Diamond combines: (a) primary field preserved by projection, (b) projection is independent of dropped fields (forgetful), (c) empty/identity input maps to empty/identity output, (d) reflexivity.
 
@@ -257,7 +271,7 @@ Demonstrated on **10 contracts** (PMAT-411/412/413/414/415/416/417/418/419/420) 
 | 417 | C-XLATE-PY-LIST-TO-VEC | empty_py_list_silver α : PyListSilver α (polymorphic — third polymorphic canonical) |
 | 418 | C-XLATE-LEAN-TO-RUST | empty_lean_def_silver : LeanDefSilver (all 4 fields empty) |
 | 419 | C-XLATE-RUST-FN-TO-LEAN-THM | empty_rust_fn_silver : RustFnSilver (all 5 fields empty — closes Rust↔Lean pair with PMAT-418) |
-| 420 | C-NOTATION-LATEX-MATH-TO-EQUATION | empty_definition_env_silver : DefinitionEnvSilver (first_math_span="", all_math_spans=#[], label=none — depth-11 UNIVERSAL finale) |
+| 420 | C-NOTATION-LATEX-MATH-TO-EQUATION | empty_definition_env_silver : DefinitionEnvSilver (first_math_span="", all_math_spans=#[], label=none — depth-11 wave finale) |
 
 Each Diamond combines: (a) primary field has canonical zero/empty value, (b) auxiliary field has canonical zero/empty value, (c) size/length of canonical field is 0, (d) reflexivity.
 
@@ -307,7 +321,7 @@ Demonstrated on **10 contracts** (PMAT-433..442) for **round-trip composition co
 | 439 | C-XLATE-PY-LIST-TO-VEC | py_list round-trip (UInt8-specialized: toList∘toArray = id) |
 | 440 | C-XLATE-LEAN-TO-RUST | lean_def round-trip |
 | 441 | C-XLATE-RUST-FN-TO-LEAN-THM | rust_fn round-trip (closes Rust↔Lean pair with PMAT-440) |
-| 442 | C-NOTATION-LATEX-MATH-TO-EQUATION | definition_env round-trip (depth-13 UNIVERSAL finale) |
+| 442 | C-NOTATION-LATEX-MATH-TO-EQUATION | definition_env round-trip (depth-13 wave finale) |
 
 Each Diamond combines: (a) round-trip equals identity, (b) primary field preserved through round-trip, (c) empty/identity input round-trips to empty/identity output, (d) reflexivity.
 
@@ -602,50 +616,46 @@ If only 1-2 axioms are available or the structure isn't a named algebraic catego
 
 ## CI enforcement
 
-The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251) enforces:
+The `crates/xpile/tests/diamond_coverage.rs` integration test (PMAT-251,
+grandfathered at PMAT-475) enforces exactly two kinds of thing over the live
+`xpile diamond --json` report. **Only the first is universal**, and this list
+carries no test count and no contract count — read `cargo test -p xpile --test
+diamond_coverage` and `xpile diamond` for those.
 
-- Every contract has ≥1 Diamond (depth-1 UNIVERSAL).
-- Every contract has ≥2 Diamonds (depth-2 UNIVERSAL).
-- ≥6 contracts have ≥3 Diamonds (depth-3 broadened via PMAT-289).
-- ≥3 contracts have ≥4 Diamonds (depth-4 ACROSS LAYERS — L1 + L4 + L5).
-- ≥2 contracts have ≥5 Diamonds (depth-5 ACROSS LAYERS, PMAT-286/287).
-- ≥2 contracts have ≥6 Diamonds (depth-6 ACROSS LAYERS, PMAT-290/291).
-- ≥2 contracts have ≥7 Diamonds (depth-7 ACROSS LAYERS, PMAT-292/293).
-- ≥2 contracts have ≥8 Diamonds (depth-8 ACROSS LAYERS, PMAT-294/295).
-- ≥2 contracts have ≥9 Diamonds (depth-9 ACROSS LAYERS, PMAT-298/299).
-- ≥2 contracts have ≥10 Diamonds (depth-10 ACROSS LAYERS, PMAT-300/301).
-- ≥2 contracts have ≥11 Diamonds (depth-11 ACROSS LAYERS, PMAT-302/303).
-- ≥2 contracts have ≥12 Diamonds (depth-12 ACROSS LAYERS, PMAT-305/306).
-- ≥2 contracts have ≥13 Diamonds (depth-13 ACROSS LAYERS, PMAT-307/308).
-- ≥2 contracts have ≥14 Diamonds (depth-14 ACROSS LAYERS, PMAT-310/311).
-- ≥2 contracts have ≥15 Diamonds (depth-15 ACROSS LAYERS, PMAT-312/313).
-- ≥2 contracts have ≥16 Diamonds (depth-16 ACROSS LAYERS, PMAT-315/316).
-- ≥2 contracts have ≥17 Diamonds (depth-17 ACROSS LAYERS, PMAT-317/318).
-- ≥2 contracts have ≥18 Diamonds (depth-18 ACROSS LAYERS, PMAT-320/321).
-- ≥2 contracts have ≥19 Diamonds (depth-19 ACROSS LAYERS, PMAT-322/323).
-- ≥2 contracts have ≥20 Diamonds (depth-20 ACROSS LAYERS, PMAT-325/326).
-- ≥1 contract has ≥21 Diamonds (depth-21 deepest, PMAT-327 on PyIntArith).
-- 12/12 contracts have ≥3 Diamonds (depth-3 UNIVERSAL, post-PMAT-336).
-- 12/12 contracts have ≥4 Diamonds (depth-4 UNIVERSAL, post-PMAT-344).
-- 12/12 contracts have ≥5 Diamonds (depth-5 UNIVERSAL, post-PMAT-354).
-- 12/12 contracts have ≥6 Diamonds (depth-6 UNIVERSAL, post-PMAT-365).
-- 12/12 contracts have ≥7 Diamonds (depth-7 UNIVERSAL, post-PMAT-376).
-- 12/12 contracts have ≥8 Diamonds (depth-8 UNIVERSAL, post-PMAT-387).
-- 12/12 contracts have ≥9 Diamonds (depth-9 UNIVERSAL, post-PMAT-398).
-- 12/12 contracts have ≥10 Diamonds (depth-10 UNIVERSAL, post-PMAT-409).
-- 12/12 contracts have ≥11 Diamonds (depth-11 UNIVERSAL, post-PMAT-420).
-- 12/12 contracts have ≥12 Diamonds (depth-12 UNIVERSAL, post-PMAT-431).
-- 12/12 contracts have ≥13 Diamonds (depth-13 UNIVERSAL, post-PMAT-442).
-- (Depth-4 ALL 5 LAYERS milestone subsumed by depth-4 UNIVERSAL post-PMAT-344.)
-- (Depth-5 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-347) subsumed by depth-5 UNIVERSAL post-PMAT-354.)
-- (Depth-6 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-358) subsumed by depth-6 UNIVERSAL post-PMAT-365.)
-- (Depth-7 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-369) subsumed by depth-7 UNIVERSAL post-PMAT-376.)
-- (Depth-8 ACROSS ALL 5 LAYERS intermediate milestone (PMAT-380) subsumed by depth-8 UNIVERSAL post-PMAT-387.)
-- (Depth-9 ACROSS LAYERS milestone (PMAT-296/297) subsumed by depth-9 UNIVERSAL post-PMAT-398.)
-- (Depth-10 ACROSS LAYERS milestone (PMAT-300/301) subsumed by depth-10 UNIVERSAL post-PMAT-409.)
-- (Depth-11 ACROSS LAYERS milestone (PMAT-302/303) subsumed by depth-11 UNIVERSAL post-PMAT-420.)
-- (Depth-12 ACROSS LAYERS milestone (PMAT-305/306) subsumed by depth-12 UNIVERSAL post-PMAT-431.)
-- (Depth-13 ACROSS LAYERS milestone (PMAT-307/308) subsumed by depth-13 UNIVERSAL post-PMAT-442.)
+**Universal, over every contract in the substrate:**
+
+- Every contract has ≥1 wired Diamond equation (depth-1 UNIVERSAL). This is the
+  one genuinely universal claim in the file.
+- The aggregate Diamond total does not fall below its post-PMAT-250 baseline.
+
+**A floor over the GRANDFATHERED cohort — the 13 contracts named in
+`GRANDFATHERED_DEPTH13` that had reached depth-13 when R6 landed:**
+
+- Each of those 13 is still at depth-2+, depth-3+, … through depth-13+ (one
+  test per floor).
+- A contract authored after R6 joins at **depth-1+** and is *not* checked
+  against any of those floors. That exemption is the entire purpose of
+  PMAT-475: before it, adding a 14th contract cost 13 Diamond theorems, and
+  that treadmill was blocking contract authoring outright.
+- Removing or renaming a grandfathered contract fails the gate (its id goes
+  missing from the report).
+
+**Frontier depths, counting contracts rather than asserting a floor:** ≥2
+contracts at each of depth-14+ … depth-20+ (ACROSS LAYERS, L1 + L5), and ≥1 at
+depth-21+ (the deepest, PMAT-327 on `C-PY-INT-ARITH`). These count the frontier,
+so new shallow contracts do not affect them.
+
+> ⚠️ **PMAT-1450 — this section no longer describes the gate it used to.** It
+> used to list twelve further UNIVERSAL assertions — "Every contract has ≥2 Diamonds (depth-2 UNIVERSAL)",
+> "12/12 contracts have ≥3 Diamonds", up to depth-13 — as things the gate
+> enforces. PMAT-475 had replaced every one of those aggregate
+> `depth_N_plus == contracts_total` checks with the grandfathered floor above,
+> and the test-function *names* still say `_universal`, which is how the
+> description survived the change. Measured when it was corrected: 14 of 35
+> contracts were at depth-2+, so the second bullet described 40% of the corpus
+> as all of it. `diamond_coverage.rs`'s own module header was corrected at
+> PMAT-1448; this page and [`../xpile-spec.md`](../xpile-spec.md) §29 went on
+> publishing the retired version.
 
 A future regression that removes a `_diamond` from any YAML or fails to keep depth-N invariants will fire the gate.
 - ≥30 total wired Diamond equations.
