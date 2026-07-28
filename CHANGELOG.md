@@ -7,6 +7,66 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### A witness that identifies its subject by a glob over shared state measures the neighbourhood — `…_leaves_no_workspace_behind` red for a sibling's debris and green on its own (PMAT-1436)
+
+`xpile hybrid <dir> --verify --repair` builds each candidate in a throwaway
+workspace under a pid-keyed root in the temp dir, and
+`hybrid_repair.rs::repair_writes_nothing_and_leaves_no_workspace_behind` is the
+test that says none of them survives. It asked the wrong question: it listed
+`std::env::temp_dir()` for names starting with the literal `"xpile_repair_ws_"`,
+before and after, and asserted the difference was empty. That identifies a
+**neighbourhood**, not a run — and it fails in both directions. Both were
+reproduced on this branch, not argued:
+
+- **FALSE RED.** With one concurrent `xpile … --repair` running, the test failed
+  with ``leaked: ["/tmp/xpile_repair_ws_968061"]`` — a root belonging to another
+  process, reported as *"every probe workspace THIS RUN created"*. Every test in
+  the file that spawns `--repair` is a candidate sibling: `cargo test` runs them
+  on concurrent threads and each child gets its own pid, hence its own root.
+  This is the flake observed once under load at PMAT-1435 and left as its lead.
+- **FALSE GREEN.** Renaming the CLI's root prefix to `xpile_probe_ws_` and
+  deleting the final `remove_dir_all` made a run leak its root outright — and
+  the test named `…_leaves_no_workspace_behind` **passed**. The prefix was a
+  string literal duplicated from `main.rs` with nothing tying the two together,
+  so moving the subject made the witness blind to it.
+
+Its doc comment also claimed it *"pins that a run which builds N candidate
+workspaces cleans up all N"*. It could not: it observed only an after-state, so
+it could never distinguish cleaning up N from never building any.
+
+Fixed by giving the run an identity the witness can read instead of a better
+glob. `repair_probe_root()` is now the one place the root is spelled, and every
+`--repair` run — converging **and** fail-closed — announces what it did with it:
+
+```text
+  --repair: bounded repair loop — 1 rule(s) ["ffi-arg-cast"], max 2 iteration(s)
+      probe workspaces: 2 built under /tmp/xpile_repair_ws_972134 — all removed
+  ✓ REPAIRED in 1 iteration(s) — applied rule chain: ["ffi-arg-cast"]
+```
+
+The count comes from `HybridWorkspaceProbe`'s own allocation counter, so it is
+the number of directories that were really made. The witness now runs the
+subject under a **private `TMPDIR`** and asserts four things: `N ≥ 1` and
+`N == iterations + 1` (non-vacuity, cross-checked against an independently
+reported number so the count cannot be a constant); the announced root lies
+inside that `TMPDIR` (it moved when `TMPDIR` moved, so it is the path the binary
+allocated, not a string it prints regardless); that exact path does not exist
+(asked directly — no set difference, so a reused pid cannot filter a real leak
+out of the answer); and the private `TMPDIR` is **empty**, which is the half a
+rename cannot evade and which also covers the `--verify` lane's own
+`xpile_verify_ws_*` workspace — a directory the old prefix glob never looked at
+at all. `repair_fails_closed_when_no_rule_applies` gained the same cleanup
+assertion, because the bailing path is the one most likely to leave debris and
+the no-write witness only ever exercises a converging run.
+
+RED HALF RUN, six perturbations. The relocate-and-leak that the old witness
+passed now reds with the run's own `NOT REMOVED (leaked)` disposition; a
+constant count reds `N == iterations + 1`; a fabricated root reds the
+follow-`TMPDIR` check; deleting the disclosure reds both witnesses; leaking
+**only** on the fail-closed path reds exactly the fail-closed test and leaves
+the converging one green. And the control: the concurrent sibling that red-ed
+the old witness now leaves it green across a 25-run storm.
+
 ### A both-directions gate is only as honest as the set it compares to — `--target` accepted four spellings no surface named (PMAT-1435)
 
 `parse_target` accepted THIRTEEN `--target` spellings. Four of them were named
@@ -2119,6 +2179,7 @@ exit=1
 
 $ xpile hybrid fixtures/hybrid_unsigned --verify --repair    ; echo "exit=$?"
   --repair: bounded repair loop — 1 rule(s) ["ffi-arg-cast"], max 2 iteration(s)
+      probe workspaces: 2 built under /tmp/xpile_repair_ws_972134 — all removed
   ✓ REPAIRED in 1 iteration(s) — applied rule chain: ["ffi-arg-cast"]
 exit=0
 ```
