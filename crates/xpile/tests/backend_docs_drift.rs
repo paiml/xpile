@@ -48,10 +48,33 @@
 //!
 //! ## Both halves are recorded independently
 //!
-//! The live set is taken from `xpile transpile --help`, and then every
-//! documented spelling is ALSO EXECUTED — a `--help` string is itself a claim
-//! and could drift from `parse_target` without either half noticing. Nothing
-//! here is a hard-coded roster (PMAT-1396).
+//! The live set is taken from the binary's own `unknown target` REFUSAL, and
+//! then every documented spelling is ALSO EXECUTED. Nothing here is a
+//! hard-coded roster (PMAT-1396).
+//!
+//! ## PMAT-1435 — HALF ONE used to be a CLAIM, and it was short by four
+//!
+//! Until PMAT-1435 the live set came from `xpile transpile --help`, whose
+//! sentence named the nine canonical spellings — while `parse_target` also
+//! accepted `wat`, `sh`, `bash` and `forjar-yaml`. This file's doc comment
+//! asserted the executed half "could catch a `--help` string that has drifted
+//! from `parse_target`". It could not, in the direction that was actually
+//! wrong: the executed set is `documented ∪ advertised`, both derived from
+//! CLAIMS, so a spelling `--help` OMITS is in neither and is never run.
+//!
+//! The consequence was directional and live. `live` was the nine, so the two
+//! `names_a_live_spelling` checks reported a spelling the CLI **does** accept
+//! as one it does not — a gate written to keep the book honest about
+//! `--target` FORBADE the book from documenting four real spellings, in a
+//! failure message that said "value(s) the CLI does not accept". Same shape as
+//! the defect this file was created to lock out, one level up: a gate whose
+//! premise is false for part of the set it walks certifies the defect.
+//!
+//! `target_spelling_help()` now renders the refusal from the same
+//! `TARGET_SPELLINGS` roster `parse_target` matches through, so this file can
+//! model "what the CLI accepts" from BEHAVIOUR.
+//! `target_spelling_disposition_witness.rs` (XPILE-TARGET-SPELL-001) holds
+//! that message, `--help` and the book to each other in both directions.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -112,27 +135,62 @@ fn book_pages() -> Vec<(String, String)> {
     out
 }
 
-/// The target spellings `xpile transpile --help` advertises. HALF ONE.
-fn advertised_targets() -> BTreeSet<String> {
-    let help = xpile_stdout(&["transpile", "--help"]);
-    let set: BTreeSet<String> = help
-        .lines()
-        .find(|l| l.contains("Target backend:"))
-        .and_then(|l| l.split("Target backend:").nth(1))
-        .map(|s| {
-            s.split("[default")
-                .next()
-                .unwrap_or("")
-                .split('|')
-                .map(|t| t.trim().to_string())
-                .filter(|t| !t.is_empty())
-                .collect()
-        })
-        .expect("`xpile transpile --help` must describe `Target backend:`");
+/// Every `--target` spelling the RUNNING BINARY accepts. HALF ONE.
+///
+/// PMAT-1435: this was derived from `xpile transpile --help` and was SHORT BY
+/// FOUR. `parse_target` accepted `wat`, `sh`, `bash` and `forjar-yaml`; the
+/// help string named only the nine canonical spellings. So the two checks
+/// below — whose whole job is to keep the book honest about `--target` —
+/// reported a spelling the CLI DOES accept as one it does not, and forbade
+/// the book from documenting it truthfully. (Measured: appending
+/// ``--target wat`` to `backends.md` red-ed
+/// `every_inline_target_flag_in_the_book_names_a_live_spelling` with "value(s)
+/// the CLI does not accept: [(…, \"wat\")]".)
+///
+/// The set now comes from the REFUSAL MESSAGE, which `target_spelling_help`
+/// renders from the same `TARGET_SPELLINGS` roster `parse_target` matches
+/// through — behaviour, not a second prose claim.
+/// `target_spelling_disposition_witness.rs` (XPILE-TARGET-SPELL-001) holds
+/// the message to the roster in both directions and against `--help`.
+fn accepted_targets() -> BTreeSet<String> {
+    // `transpile` reads the input BEFORE parsing `--target`, so the vocabulary
+    // is only reachable with a readable file in hand.
+    let dir = std::env::temp_dir().join(format!("xpile-tgtvocab-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create probe dir");
+    let src = dir.join("probe.py");
+    std::fs::write(&src, "def add(a: int, b: int) -> int:\n    return a + b\n").expect("write");
+    let out = xpile(&[
+        "transpile",
+        &src.to_string_lossy(),
+        "--target",
+        "__no_such_target__",
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let vocab = stderr
+        .split("unknown target")
+        .nth(1)
+        .unwrap_or_else(|| panic!("`--target __no_such_target__` must refuse:\n{stderr}"));
+    let after = |k: &str| -> Vec<String> {
+        vocab
+            .split(k)
+            .nth(1)
+            .map(|s| {
+                s.split(';')
+                    .next()
+                    .unwrap_or("")
+                    .split(',')
+                    .map(|t| t.trim().split('=').next().unwrap_or("").trim().to_string())
+                    .filter(|t| !t.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut set: BTreeSet<String> = after("choose:").into_iter().collect();
+    set.extend(after("aliases:"));
     assert!(
         set.len() > 3,
-        "parsed only {set:?} target spellings from `transpile --help` — the \
-         help shape changed and every check below would pass vacuously"
+        "parsed only {set:?} target spellings from the refusal message — the \
+         message shape changed and every check below would pass vacuously:\n{stderr}"
     );
     set
 }
@@ -234,7 +292,7 @@ fn documented_inline_targets() -> Vec<(String, String)> {
 /// `--target` table column is one `xpile transpile --help` advertises.
 #[test]
 fn every_target_column_cell_in_the_book_names_a_live_spelling() {
-    let live = advertised_targets();
+    let live = accepted_targets();
     let cells = documented_target_cells();
     assert!(
         cells.len() > 3,
@@ -256,7 +314,7 @@ fn every_target_column_cell_in_the_book_names_a_live_spelling() {
 /// Same claim class, prose form: `--target wasm` in a code block or sentence.
 #[test]
 fn every_inline_target_flag_in_the_book_names_a_live_spelling() {
-    let live = advertised_targets();
+    let live = accepted_targets();
     let inline = documented_inline_targets();
     assert!(
         inline.len() > 8,
@@ -289,7 +347,7 @@ fn every_documented_target_spelling_is_accepted_by_the_running_binary() {
         .map(|(_, t)| t)
         .collect();
     spellings.extend(documented_inline_targets().into_iter().map(|(_, t)| t));
-    spellings.extend(advertised_targets());
+    spellings.extend(accepted_targets());
     assert!(
         spellings.len() > 5,
         "only {spellings:?} to execute — the corpus scan broke"

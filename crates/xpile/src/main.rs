@@ -50,7 +50,9 @@ enum Cmd {
     Transpile {
         /// Path to the source file (e.g., `add.py`, `kernel.c`).
         input: PathBuf,
-        /// Target backend: rust | ruchy | ptx | wgsl | spirv | wasm | lean | shell | forjar.
+        /// Target backend: rust | ruchy | ptx | wgsl | spirv | wasm | lean |
+        /// shell | forjar; aliases: wat=wasm, sh=shell, bash=shell,
+        /// forjar-yaml=forjar
         #[arg(long, default_value = "rust")]
         target: String,
         /// Output path. Defaults to stdout.
@@ -1794,30 +1796,70 @@ fn lowering_profile_for(target: Target) -> LoweringProfile {
     }
 }
 
+/// XPILE-TARGET-SPELL-001 (PMAT-1435): the SINGLE roster of `--target`
+/// spellings the CLI accepts. `parse_target` matches through it and
+/// [`target_spelling_help`] renders the refusal message from it, so the
+/// "what can I use instead" list cannot enumerate fewer spellings than the
+/// binary takes — the PMAT-1434 defect one flag over.
+///
+/// The third field is the CANONICAL spelling an entry aliases, or `None` for
+/// a canonical entry. Keeping aliases IN the roster rather than as extra
+/// `|` arms is what makes the accepted set derivable from behaviour: before
+/// this, four spellings (`wat`, `sh`, `bash`, `forjar-yaml`) were accepted by
+/// `parse_target` and named by NO surface the binary prints, so every gate
+/// that modelled "what the CLI accepts" modelled it from `--help` prose and
+/// was short by four.
+const TARGET_SPELLINGS: &[(&str, Target, Option<&str>)] = &[
+    ("rust", Target::Rust, None),
+    ("ruchy", Target::Ruchy, None),
+    ("ptx", Target::Ptx, None),
+    ("wgsl", Target::Wgsl, None),
+    ("spirv", Target::Spirv, None),
+    // PMAT-951: native WASM emit — `--target wasm` resolves to the
+    // xpile-wasm-codegen WAT emitter (scalar/control subset).
+    ("wasm", Target::Wasm, None),
+    ("wat", Target::Wasm, Some("wasm")),
+    ("lean", Target::Lean, None),
+    // PMAT-037 / XPILE-BASHRS-MERGER-001: shell target accepted
+    // via the bashrs-backend scaffold.
+    ("shell", Target::Shell, None),
+    ("sh", Target::Shell, Some("shell")),
+    ("bash", Target::Shell, Some("shell")),
+    // PMAT-953: forjar.yaml IaC manifest (BACKEND-ONLY). Lowers a
+    // SHELL-origin command sequence to forjar `type: file`/`type: task`
+    // resources via xpile-forjar-codegen.
+    ("forjar", Target::ForjarYaml, None),
+    ("forjar-yaml", Target::ForjarYaml, Some("forjar")),
+];
+
+/// The `--target` vocabulary, rendered for a human AND parseable by a gate:
+/// `choose: <canonical, …>; aliases: <spelling>=<canonical>, …`. Both halves
+/// come from [`TARGET_SPELLINGS`], so neither can drift from `parse_target`.
+fn target_spelling_help() -> String {
+    let canonical: Vec<&str> = TARGET_SPELLINGS
+        .iter()
+        .filter(|(_, _, alias_of)| alias_of.is_none())
+        .map(|(spelling, _, _)| *spelling)
+        .collect();
+    let aliases: Vec<String> = TARGET_SPELLINGS
+        .iter()
+        .filter_map(|(spelling, _, alias_of)| alias_of.map(|c| format!("{spelling}={c}")))
+        .collect();
+    format!(
+        "choose: {}; aliases: {}",
+        canonical.join(", "),
+        aliases.join(", ")
+    )
+}
+
 fn parse_target(s: &str) -> Result<Target> {
-    Ok(match s {
-        "rust" => Target::Rust,
-        "ruchy" => Target::Ruchy,
-        "ptx" => Target::Ptx,
-        "wgsl" => Target::Wgsl,
-        "spirv" => Target::Spirv,
-        // PMAT-951: native WASM emit — `--target wasm` resolves to the
-        // xpile-wasm-codegen WAT emitter (scalar/control subset).
-        "wasm" | "wat" => Target::Wasm,
-        "lean" => Target::Lean,
-        // PMAT-037 / XPILE-BASHRS-MERGER-001: shell target accepted
-        // via the bashrs-backend scaffold.
-        "shell" | "sh" | "bash" => Target::Shell,
-        // PMAT-953: forjar.yaml IaC manifest (BACKEND-ONLY). Lowers a
-        // SHELL-origin command sequence to forjar `type: file`/`type: task`
-        // resources via xpile-forjar-codegen.
-        "forjar" | "forjar-yaml" => Target::ForjarYaml,
-        other => {
-            bail!(
-                "unknown target `{other}`; choose: rust, ruchy, ptx, wgsl, spirv, wasm, lean, shell, forjar"
-            )
-        }
-    })
+    match TARGET_SPELLINGS
+        .iter()
+        .find(|(spelling, _, _)| *spelling == s)
+    {
+        Some((_, target, _)) => Ok(*target),
+        None => bail!("unknown target `{s}`; {}", target_spelling_help()),
+    }
 }
 
 /// XPILE-PTX-001: parse the optional `--hardware` profile. `None` (flag

@@ -67,6 +67,57 @@ fn xpile(args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).to_string()
 }
 
+/// Every `--target` spelling the RUNNING BINARY accepts, canonical AND alias,
+/// read off its own `unknown target` refusal (PMAT-1435). Deriving this from
+/// `--help` is what let the nine-vs-thirteen gap stand; the refusal is
+/// rendered from `TARGET_SPELLINGS`, the roster `parse_target` matches
+/// through, so it cannot name a spelling the binary rejects or omit one it
+/// takes. Deliberately duplicated in `backend_docs_drift.rs` rather than
+/// shared: `parse_target` lives in a BINARY crate, so the printed message is
+/// the only surface a test can reach, and the two files must agree by
+/// measuring the same thing rather than by importing the same helper.
+fn accepted_target_spellings() -> Vec<String> {
+    // `transpile` reads the input BEFORE parsing `--target`, so the vocabulary
+    // is only reachable with a readable file in hand.
+    let dir = std::env::temp_dir().join(format!("xpile-clitgt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create probe dir");
+    let src = dir.join("probe.py");
+    std::fs::write(&src, "def add(a: int, b: int) -> int:\n    return a + b\n").expect("write");
+    let out = Command::new(env!("CARGO_BIN_EXE_xpile"))
+        .args([
+            "transpile",
+            &src.to_string_lossy(),
+            "--target",
+            "__no_such_target__",
+        ])
+        .output()
+        .expect("running xpile transpile --target __no_such_target__");
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let vocab = stderr
+        .split("unknown target")
+        .nth(1)
+        .unwrap_or_else(|| panic!("`--target __no_such_target__` must refuse:\n{stderr}"))
+        .to_string();
+    let after = |k: &str| -> Vec<String> {
+        vocab
+            .split(k)
+            .nth(1)
+            .map(|s| {
+                s.split(';')
+                    .next()
+                    .unwrap_or("")
+                    .split(',')
+                    .map(|t| t.trim().split('=').next().unwrap_or("").trim().to_string())
+                    .filter(|t| !t.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut all = after("choose:");
+    all.extend(after("aliases:"));
+    all
+}
+
 /// Extract the fenced block that immediately follows a `$ <cmd>` prompt line,
 /// returning the transcript body WITHOUT the prompt line itself.
 fn pinned_transcript(md: &str, prompt: &str) -> String {
@@ -152,27 +203,30 @@ fn every_registered_subcommand_has_a_cli_md_section() {
 /// checked on the LOCATED row (PMAT-1420: a substring sweep of the whole
 /// page would pass on any incidental mention), and in BOTH directions, so
 /// the row can neither omit a live target nor advertise a dead one.
+///
+/// PMAT-1435: BOTH DIRECTIONS IS ONLY AS HONEST AS THE SET IT COMPARES TO.
+/// `live` was parsed from `xpile transpile --help`, which named the nine
+/// canonical spellings while `parse_target` also accepted `wat`, `sh`, `bash`
+/// and `forjar-yaml`. So this test — whose NAME says "exactly the accepted
+/// target spellings" — could never fire in the omit direction for those four,
+/// and in the advertise direction it FORBADE the row from naming them, on the
+/// grounds that `--help` "does not list" them. cli.md duly published the
+/// closed-world claim *one of `rust` … `forjar`*, which was false, while
+/// `backends.md` disclosed all four two pages over: the book contradicted
+/// itself and this gate held the false half in place.
+///
+/// `live` now comes from the `unknown target` REFUSAL, which
+/// `target_spelling_help()` renders from the same `TARGET_SPELLINGS` roster
+/// `parse_target` matches through. See
+/// `target_spelling_disposition_witness.rs` (XPILE-TARGET-SPELL-001), which
+/// holds the refusal, `--help` and this row to each other.
 #[test]
 fn the_target_row_names_exactly_the_accepted_target_spellings() {
-    let help = xpile(&["transpile", "--help"]);
-    let live: Vec<String> = help
-        .lines()
-        .find(|l| l.contains("Target backend:"))
-        .and_then(|l| l.split("Target backend:").nth(1))
-        .map(|s| {
-            s.split("[default")
-                .next()
-                .unwrap_or("")
-                .split('|')
-                .map(|t| t.trim().to_string())
-                .filter(|t| !t.is_empty())
-                .collect()
-        })
-        .expect("`xpile transpile --help` must describe `Target backend:`");
+    let live = accepted_target_spellings();
     assert!(
         live.len() > 3,
-        "parsed only {live:?} target spellings from --help — shape changed, this \
-         gate would pass vacuously"
+        "parsed only {live:?} target spellings from the refusal — shape changed, \
+         this gate would pass vacuously"
     );
 
     let md = cli_md();
