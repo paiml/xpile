@@ -7,6 +7,68 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `--target spirv` handed back a description of a module instead of the module (PMAT-1428)
+
+`--target spirv` was the only target whose artifact was not the thing the
+target names. `rust` gives compilable Rust, `wgsl` naga-valid WGSL, `ptx` real
+PTX assembly, `wasm` WAT, `lean` Lean. SPIR-V gave a header **about** a binary
+that was never included:
+
+```text
+$ xpile transpile add.py --target spirv
+; SPIR-V
+; Magic:     0x07230203
+; Version:   1.3
+; Words:     63              <-- 63 words claimed
+; Emitter:   xpile-spirv-codegen (WGSL -> naga -> spv)
+; Source WGSL (reused from xpile-wgsl-codegen):
+;   fn add(a: i32, b: i32) -> i32 { … }
+                                    <-- 0 words delivered
+```
+
+Exit 0, thirteen lines, every one of them a `;` comment, and no way for the
+caller to obtain the 63 words. `emit_from_wgsl` compiled the module through
+naga, checked it with `validate_spirv`, and then dropped it on the floor.
+
+Two doc comments said otherwise — `spirv_text_summary`'s "The raw binary words
+go in a sidecar" and `emit_from_wgsl`'s "packaging the text summary +
+binary-word sidecar". Neither was true, and neither could be: `EmittedText`
+has no sidecar field, so a `TargetEmitter` structurally cannot return one.
+What made the claim read as satisfied is that `Artifact` *does* carry
+`sidecars: Vec<(String, Vec<u8>)>` — a real channel, one field away, that this
+lane never reached and that the CLI does not write anyway (`main.rs` emits
+`artifact.primary` and nothing else).
+
+The summary now carries the module it describes, as `;b `-prefixed rows of
+8-digit hex words, so the artifact stays wholly comment-shaped and the
+existing `;   ` WGSL block is untouched:
+
+```text
+; Words:     63
+; Binary:    the emitted module, one `;b ` row per 8 words, …
+;b 07230203 00010300 0000001c 0000000b 00000000 00020011 00000001 00020011
+;b …
+```
+
+Recover with `sed -n 's/^;b //p' <file>` or the new
+`xpile_spirv_codegen::extract_spirv_words_from_summary`.
+
+**Witness XPILE-SPIRVBIN-001** (`spirv_binary_recoverable_witness.rs`, 4 tests,
+**0.52 s measured**, no skip path — naga is a library). The load-bearing
+assertion is not "a `;b ` block is present" but a relation between the
+artifact's two independently recorded halves: recompiling the WGSL the
+artifact says it compiled must reproduce, word for word, the binary the
+artifact carries — plus `validate_spirv` on the recovered stream and exact
+agreement with the `; Words:` header. A header an emitter writes about itself
+proves nothing; this cannot drift without one half contradicting the other.
+
+Red half measured, not assumed: with the payload emission removed (the
+pre-fix behaviour, extractor left in place) **4 of 4 tests fail and the corpus
+assertion names 32 of 32 artifacts**. The two extractor-only assertions inside
+`recovery_refuses_an_artifact_that_only_describes_a_module` pass in *both*
+revisions — they are the control, so a green run cannot mean "the extractor
+accepts anything".
+
 ### `xs[i].append(e)` and `d[k].append(e)` were the last raw narrowing coercions in the subscript family (PMAT-1427)
 
 The subscript family has eight members. Seven had already been corrected —

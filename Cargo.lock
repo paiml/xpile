@@ -1744,6 +1744,7 @@ dependencies = [
  "xpile-meta-hir",
  "xpile-oracle",
  "xpile-ptx-codegen",
+ "xpile-spirv-codegen",
  "xpile-wgsl-codegen",
 ]
 

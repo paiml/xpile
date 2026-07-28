@@ -89,3 +89,9 @@ latex-contract-frontend = { workspace = true }
 # removed. Already in the graph transitively via xpile-backend; this makes the
 # test's use of it direct.
 xpile-wgsl-codegen      = { workspace = true }
+# PMAT-1428: spirv_binary_recoverable_witness.rs recovers the emitted SPIR-V
+# module back out of the CLI's text artifact and re-checks it through the
+# crate's own `validate_spirv` / `wgsl_to_spirv_words`, so "the artifact
+# CONTAINS the module it describes" is a checked property of the emitted text
+# rather than a header the emitter writes about itself.
+xpile-spirv-codegen     = { workspace = true }
