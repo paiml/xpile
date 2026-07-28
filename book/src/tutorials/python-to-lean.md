@@ -4,7 +4,9 @@
 > (the Layer-1 semantics of Python int arithmetic) and
 > [`C-XLATE-LEAN-TO-RUST`](../reference/contracts.md#c-xlate-lean-to-rust)
 > (the inverse-direction Layer-2 lowering, used for the proof-lane
-> round-trip check).
+> round-trip check). The invariants it pins: `addition_no_overflow`,
+> `division_floor_semantics`, `modulo_floor_semantics`, `def_to_rust_fn`,
+> `theorem_carried_as_lean_sidecar`.
 
 In the [Python → Rust tutorial](python-to-rust.md) the emitted Rust
 *runs*. In this tutorial the emitted Lean 4 *proves*. The same source

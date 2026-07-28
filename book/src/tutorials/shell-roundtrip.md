@@ -1,9 +1,11 @@
 # Tutorial: POSIX shell round-trip
 
 > **Governing contract:** [`C-BASHRS-POSIX-IDEMPOTENCE`](../reference/contracts.md#c-bashrs-posix-idempotence)
-> — Layer 1 (semantics), code lane, kind: pattern. Pins down the
-> idempotence invariant for the supported POSIX-shell subset and
-> governs the cross-domain Python↔shell flow.
+> — Layer 1 (semantics), code lane, kind: pattern.
+> The invariants it pins: `subprocess_run_equals_shell_run`,
+> `exit_code_consistency` —
+> the supported POSIX-shell subset, and the cross-domain Python↔shell
+> flow.
 
 This tutorial walks through xpile's **same-language round-trip** for
 POSIX shell: parse `.sh`, lower into meta-HIR, emit POSIX shell again.

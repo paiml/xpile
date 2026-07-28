@@ -7,6 +7,87 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The book said the backend contract pins what a REFUSAL message must contain — it pins nothing about error paths, and 5 of 9 backends do neither half (PMAT-1437)
+
+`book/src/reference/backends.md` published this as the page's own statement of
+the guarantee, and had since 2026-05-15:
+
+> each backend refuses constructs outside its subset with a message naming the
+> governing contract and, where one exists, a better `--target`. That refusal
+> *is* the guarantee
+
+and, in the header blockquote, attributed it to the governing contract:
+
+> The contract pins down structural emit invariants: ... error paths must name
+> the governing contract, and unsupported constructs must fail cleanly with a
+> target-suggestion message.
+
+Both halves were false.
+
+**The contract does not pin either invariant.**
+`contracts/xpile-backend-trait-v1.yaml` is 777 lines and 20 equations; the
+strings `refus`, `suggest` and `error path` appear in it **zero** times. Its
+equations - `target_ownership`, `lower_idempotency`, `target_consistency`,
+`compile_contract_citation`, `frame_lower_is_pure`, and thirteen Diamond
+refinements - are every one of them about the **success** path. There is no
+equation, no proof obligation and no falsification test about what a refusal
+says.
+
+**The shipped backends do not satisfy it either.** Measured by executing the
+binary over a fixed seven-program corpus against every registered backend and
+keeping the 40 failures that reached a backend's own `lower()`:
+
+| Backend | refusals probed | naming a contract ID | suggesting a `--target` |
+|---|---|---|---|
+| `bashrs` | 6 | 0 | 0 |
+| `forjar` | 6 | 0 | 0 |
+| `lean` | 4 | 1 | 4 |
+| `ptx` | 6 | 0 | 0 |
+| `ruchy` | 1 | 1 | 1 |
+| `rust` | 1 | 1 | 1 |
+| `spirv` | 7 | 0 | 0 |
+| `wasm` | 2 | 1 | 1 |
+| `wgsl` | 7 | 0 | 0 |
+
+4 of 40 named a contract; 7 named a better `--target`; `ptx`, `wgsl`, `spirv`,
+`bashrs` and `forjar` did **neither**, in any probed refusal.
+
+The wording mattered more than a documentation row usually does, because
+`book/src/contributing/adding-a-backend.md` repeated the same list as
+*implementation instructions* - "the trait's emit invariants (citation
+requirement, error-path-names-the-contract requirement, target-suggestion on
+unsupported constructs) are what your implementation must satisfy". A
+contributor was told to satisfy a requirement that neither the contract states
+nor most shipped backends meet. `book/src/reference/cli.md` cited the same
+contract "for emit-side error paths".
+
+**Fixed** by publishing what is true and gating both halves in
+`crates/xpile/tests/backend_refusal_disclosure_witness.rs`
+(XPILE-BACKENDREFUSE-001):
+
+- The table above now lives in `backends.md` between machine-readable markers
+  and is compared to the running binary by **equality**, not by a floor.
+  Improving a refusal message reds the gate and forces the published
+  disclosure to move with it. (Verified: adding a contract ID and a `--target`
+  to the forjar refusal moved `forjar` from `(6, 0, 0)` to `(6, 6, 6)` and
+  red-ed the gate.)
+- A refusal counts only if it reached the **backend** - the message must name
+  the failing backend *and* carry `lowering error:` - so a frontend refusal or
+  a `missing hardware profile` cannot stand in for one. Non-vacuity is tied to
+  an independently derived set: every backend `xpile info` registers must have
+  produced at least one measured refusal, so a corpus that stopped reaching a
+  backend reds instead of silently shrinking the table.
+- **Naming a contract in a book page's header blockquote is now an obligation
+  to name `equations:` keys that exist.** All nine such blockquotes described
+  what their contract "pins down" in prose; three described things no equation
+  says. A gate that only validated backticked keys would have passed the prose
+  form unchanged, so the marker is mandatory - restoring the original
+  blockquote reds the gate.
+
+Nothing in `crates/*/src` changed: the refusal messages, exit statuses and
+emitted artifacts are byte-identical. What changed is what the repo claims
+about them.
+
 ### A witness that identifies its subject by a glob over shared state measures the neighbourhood — `…_leaves_no_workspace_behind` red for a sibling's debris and green on its own (PMAT-1436)
 
 `xpile hybrid <dir> --verify --repair` builds each candidate in a throwaway

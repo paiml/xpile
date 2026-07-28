@@ -2,107 +2,31 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1436 landed from an honesty hunt; the ranked queue stays exhausted
-  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1436 took PMAT-1435 top lead -- a flake
-  observed ONCE under load -- and found ONE root cause with TWO directions:
-  `hybrid_repair.rs::repair_writes_nothing_and_leaves_no_workspace_behind` identified its subject
-  by GLOBBING the SHARED temp dir for a hard-coded `"xpile_repair_ws_"`, so it red for a
-  CONCURRENT SIBLING PROCESS''s root (reproduced: `leaked: ["/tmp/xpile_repair_ws_968061"]`,
-  a directory this run never touched) AND passed while its own subject leaked every workspace it
-  built (reproduced: rename the prefix + drop the cleanup, test GREEN). LESSONS: (1) ASK WHAT A
-  WITNESS CAN NAME -- if it can only DESCRIBE its subject ("directories matching a prefix, in a
-  place everyone writes"), it will red for a neighbour and go green on itself; those are not two
-  bugs. (2) MAKE THE SUBJECT SPEAK: the fix was not a smarter scan but one line of product
-  DISCLOSURE (`probe workspaces: N built under <root> -- all removed`, N from the probe''s own
-  allocation counter), which is better operator output AND the identity the test needed.
-  (3) A PRIVATE NAMESPACE BEATS A SET DIFFERENCE -- handing the run its own `TMPDIR` cost two
-  lines and killed the flake, the pid-reuse blind spot and the rename blind spot at once, and
-  incidentally covers the `--verify` lane''s `xpile_verify_ws_*` workspace that the prefix glob
-  never looked at. (4) THE LEAD NAMED A NARROWER FIX THAN THE DEFECT NEEDED (spawn-the-child-pid
-  closes only the false RED) -- a lead is a PLACE TO LOOK, not a specification. PRIOR ENTRY:
-  PMAT-1434 took the neighbourhood PMAT-1433
-  standing lead (c) points at -- the `extensions()`-derived reports -- and found the CLAIM CLASS
-  had a third surface on the ERROR PATH. `xpile transpile notes.txt` answered
-  `no frontend handles `.txt`; known extensions: ["py","pyi","c","h","ruchy","sh","bash","zsh","mk","wat"]`:
-  two of those ten (`ruchy`, `mk`) refuse EVERY input, and the two extensionless spellings
-  `matches_path` claims (`Makefile`, `Dockerfile`) were in no list at all -- over- and
-  under-reported in one line, in the message whose entire job is to say what to use instead.
-  LESSONS: (1) A CLAIM CLASS HAS A SURFACE ON THE ERROR PATH TOO. PMAT-1433 swept the two
-  REPORTERS and its own recorded lesson was "scope the fix to the CLAIM CLASS, not a lane or a
-  file"; it still landed one surface short, because the third consumer is a `format!` inside a
-  `with_context` closure. Grep for the DATA (`extensions()`), not for the reporters. (2) NO TEST
-  HAD EVER READ THE STRING -- `grep -rn "known extensions"` matched exactly one line, the
-  `format!` that produced it; an error message no test asserts on is an unversioned claim
-  surface. (3) THE VOCABULARY WAS ITSELF THE BUG: bare `"py"` denotes a file literally named
-  `py`, which no frontend claims, so the routing check reds pre-fix for a reason independent of
-  the disposition split. (4) DISCLOSE THE HALF YOU DID NOT CLOSE, IN THE GATE -- `published
-  (subset of) routed` is driven; the converse cannot be checked because `matches_path` is a
-  PREDICATE with no enumeration behind it. NEW STANDING LEAD, concrete: `parse_target` accepts
-  THIRTEEN spellings while its own refusal and `--help` enumerate NINE, and the book contradicts
-  itself about it (backends.md:41 discloses the aliases, cli.md:70 says "one of" the nine).
-  PRIOR ENTRY, still the reference for the partial-claim shape: PMAT-1433 landed from an honesty hunt; the ranked queue stays exhausted
-  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1433 took PMAT-1432 standing lead (c)
-  verbatim -- frontends.md lists `.mk` under "Real POSIX parser" though PMAT-1420 made it REFUSE --
-  and the payload was one level up from the doc row: `Frontend::lowers_input()` is a WHOLE-FRONTEND
-  boolean over a per-CLAIM property, so there was NO WAY to say a frontend lowers some of what it
-  claims. `xpile info` printed `- bashrs (sh, bash, zsh, mk)` unannotated and counted it among the
-  "4 lowering" frontends while `*.mk`, `Makefile` and `Dockerfile` all exit non-zero; the two
-  extensionless spellings, claimed by `matches_path` alone, were in NO report at all -- the surface
-  was over-reported and under-reported at the same time. LESSONS: (1) A DISCLOSURE VOCABULARY CAN
-  EXIST AND STILL NOT REACH THE CASE. The exact bracket needed was ONE LINE ABOVE in the same loop
-  (`- ruchy (ruchy)  [routing only -- INPUT refuses, no parser]`); it keys off the frontend-level
-  boolean and bashrs is not routing-only. Ask what GRANULARITY the say-it mechanism has, not whether
-  one exists. (2) A GATE THAT PINS A DOC TO THE BINARY REPRODUCES THE BINARY BEING WRONG --
-  `cli_docs_drift` faithfully published the wrong line; pin doc-to-REGISTRY-SEMANTICS somewhere too.
-  (3) ONE PROBE PER SUBJECT SAMPLES ONE OF ITS N CLAIMS -- `claims_drift` DOES confront
-  `lowers_input()` with behaviour, but `FRONTEND_PROBES` carries one file name per frontend
-  (`probe.sh`), so it could never reach `.mk`. (4) PMAT-1432 lead (a) was probed FIRST and came back
-  STALE AND HONEST in all three directions -- all 332 `lean_theorem:` and all 67 `kani_harness:`
-  values resolve, and every pair that also names a file has the symbol IN that file. Recorded so it
-  is not re-derived. PRIOR ENTRY, still the reference for the hollow-metric shape: PMAT-1432 took
-  PMAT-1431 standing lead (a) --
-  "which OTHER contract''s equations name a construct no shipped code produces?" -- and found the
-  answer with a SECOND defect underneath it, one level UP from any single contract: the substrate''s
-  own honesty METRIC was scoring the hollow contract at MAXIMUM. `xpile quorum`''s Runtime stratum
-  is the only one of four that can tell a MODELLED claim from a SHIPPED one, and its fixture pass
-  counted any file that merely CONTAINED the contract ID. Five files added for exactly that purpose,
-  loading tests never written, completed 4-of-4 for FOUR contracts -- including C-XLATE-LEAN-TO-RUST,
-  40 equations and 33 Lean theorems for a direction with no Lean frontend, published in the book as
-  present tense three sections from frontends.md saying no such frontend exists. LESSONS: (1) THE
-  GATE MUST NAME NO FIXTURE -- the first draft of the fix''s own doc comment spelled the filename and
-  handed the vote back (PMAT-1416 one directory over); (2) a NEW FLAG''S DEFAULT MUST BE DERIVED FROM
-  THE ARGUMENT IT IS PAIRED WITH -- a literal CWD-relative default silently zeroed the whole pass
-  against callers passing an absolute `--fixtures-dir`, caught only because PMAT-1386''s missing-dir
-  notice fired; (3) a metric going DOWN after a fix is the receipt, if the before/after table names
-  every moved row. PRIOR ENTRY, still the reference for the misfiling shape: PMAT-1431 took PMAT-1430
-  standing lead (a) -- the single
-  contract FRONTEND carries no honesty method -- and THE LEAD''S PREMISE WAS FALSE WITH THE PAYLOAD
-  UNDERNEATH IT, the PMAT-1426 pattern for the third time. `latex` is NOT hollow; it genuinely
-  parses math spans, citations and references, so the honesty method the lead asked for would have
-  answered `true` and certified nothing. What was hollow was the OTHER HALF OF THE SAME CONTRACT:
-  `C-NOTATION-LATEX-MATH-TO-EQUATION` has specified theorem-class -> proof_obligations lowering
-  since 2026-05-15, with a Lean refinement theorem, a Silver promotion, a Kani harness and a book
-  page, and NONE OF IT EXISTED IN RUST -- seven environments, the paren inline form and `gather`
-  all returned Ok with zero output, for 74 days.
-  LESSONS WORTH KEEPING. (1) A PROOF STRATUM CAN BE GREEN OVER AN UNIMPLEMENTED SUBJECT. The Lean
-  theorem and Kani harness range over abstract models -- `LeanTheoremEnv` is a bool plus a string,
-  the harness quantifies over a single `bool` -- so they proved a polarity mapping for a lowering
-  function that had no Rust behind it. A model with no implementation behind it proves a property
-  of nothing, and NOTHING in the Sem/Sym strata can notice. This is PMAT-1385''s reporter lesson
-  one level up, and it generalises: for every contract, ask what ties its model to shipped code.
-  (2) MISFILING BEATS OMISSION AS A FAILURE MODE. The theorem bodies were not dropped -- they were
-  re-scanned as ordinary text and their math emitted as free-standing `eq_inline_*` entries, the
-  ONE bucket `inline_math_to_equation`''s own domain excludes. A reader counting outputs sees a
-  plausible number of equations and no missing-obligation signal. Prefer probes that check WHICH
-  BUCKET, not HOW MANY.
-  (3) A CONTRACT CAN DISAGREE WITH ITSELF FOR FREE. `metadata.description` named `definition`/`remark`
-  as theorem environments; the equation''s own `domain` named `claim` and neither of those. Because
-  NEITHER list was implemented, the disagreement had never cost anything and no test could have
-  found it. Rosters belong in a machine-readable key checked BOTH WAYS against the code, not in
-  two prose paragraphs.
-  (4) The `notation_surface` block (the PMAT-1350 `emit_surface` idiom) is the reusable shape for
-  (1): every `lowers` row must produce output and every `unimplemented` row must produce NONE, so
-  implementing a disclosed gap REDS the gate and forces the disclosure to move.)'
+updated: '2026-07-28 (PMAT-1437 landed from an honesty hunt; the ranked queue stays exhausted
+  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1437 took PMAT-1436 standing lead (b) --
+  "backends.md''s Status column is prose nothing gates" -- and THE PAYLOAD WAS ONE PARAGRAPH BELOW
+  THE TABLE THE LEAD NAMED: the `--target` cells are already gated (backend_docs_drift.rs), but the
+  sentence saying what a REFUSAL means was not. The book published, since 2026-05-15, "each backend
+  refuses constructs outside its subset with a message naming the governing contract and, where one
+  exists, a better `--target`. That refusal *is* the guarantee" -- and attributed it to
+  C-XPILE-BACKEND-TRAIT, which pins NOTHING about error paths (777 lines, 20 equations, ZERO
+  occurrences of `refus` / `suggest` / `error path`; every equation is a SUCCESS-path property).
+  Measured over 40 executed refusals that reached a backend''s own `lower()`: 4 named a contract ID,
+  7 named a better `--target`, and ptx/wgsl/spirv/bashrs/forjar did NEITHER in any of theirs.
+  adding-a-backend.md repeated the same list as IMPLEMENTATION INSTRUCTIONS, so a contributor was
+  told to satisfy a requirement that does not exist. LESSONS: (1) A GATE THAT VALIDATES A VOCABULARY
+  DOES NOT REACH PROSE THAT USES NONE -- the first draft only checked backticked `equations:` keys,
+  and the original falsehood contained no backticked key at all, so it would have passed unchanged.
+  Making the marker MANDATORY for any page naming a contract is what turned the check into one the
+  DEFECT fails; ask what the defect SPELLED, not what the fixed version spells. (2) A DOC MAY NOT
+  ATTRIBUTE AN INVARIANT TO A CONTRACT IN PROSE -- prose has no referent to check, an `equations:`
+  key does. (3) The published table records COUNTS OVER A NAMED CORPUS, not a per-backend verdict:
+  one probe samples one of a backend''s N messages (PMAT-1433 lesson 3), so sampling can falsify a
+  universal claim but never establish one. (4) The gate compares by EQUALITY -- verified by actually
+  improving forjar''s refusal, which moved it (6,0,0) -> (6,6,6) and RED-ed the gate. PRIOR ENTRY,
+  still the reference for the shared-namespace shape: PMAT-1436 -- a witness that identifies its
+  subject by a GLOB OVER SHARED STATE measures the NEIGHBOURHOOD; make the subject SPEAK and give it
+  a private TMPDIR.)'
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -4572,6 +4496,75 @@ queue:
     look. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed
     2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take
     PMAT-1373 (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1437
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the book said C-XPILE-BACKEND-TRAIT pins what a REFUSAL MESSAGE must contain -- it
+    pins NOTHING about error paths (777 lines, 20 equations, zero occurrences of refus/suggest/
+    error path), and 5 of the 9 backends do NEITHER half'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1436 standing lead (b) -- "backends.md''s Status column is prose
+    nothing gates" -- and THE PAYLOAD WAS ONE PARAGRAPH BELOW THE TABLE THE LEAD NAMED, the
+    PMAT-1426 pattern again: the Status column''s `--target` cells are already gated
+    (backend_docs_drift.rs, PMAT-1430/1435); what was ungated was the sentence that says what a
+    REFUSAL means, and the header blockquote that attributes it to the contract.
+    ** THE CLAIM, published since 2026-05-15 as the page''s own guarantee: "each backend refuses
+    constructs outside its subset with a message naming the governing contract and, where one
+    exists, a better `--target`. That refusal *is* the guarantee".
+    ** MEASURED by executing the binary over a fixed seven-program corpus x every registered
+    backend, keeping the 40 failures that reached a backend''s own `lower()`: 4 of 40 name a
+    contract ID, 7 name a better `--target`. bashrs 6/0/0, forjar 6/0/0, lean 4/1/4, ptx 6/0/0,
+    ruchy 1/1/1, rust 1/1/1, spirv 7/0/0, wasm 2/1/1, wgsl 7/0/0.
+    ** AND THE CONTRACT PINS NEITHER: `refus`, `suggest`, `error path` appear ZERO times in
+    contracts/xpile-backend-trait-v1.yaml. All 20 equations are SUCCESS-path properties.
+    ** THREE SIBLING SITES, one claim class: backends.md (blockquote + guarantee paragraph),
+    cli.md ("for emit-side error paths"), and adding-a-backend.md, which repeated the list as
+    IMPLEMENTATION INSTRUCTIONS -- a contributor was told to satisfy a requirement that does not
+    exist and that most shipped backends do not meet.
+    ** FIX in crates/xpile/tests/backend_refusal_disclosure_witness.rs (XPILE-BACKENDREFUSE-001):
+    the measured table lives in backends.md between markers and is compared to the binary by
+    EQUALITY; a refusal counts only if it reached the BACKEND (names the backend AND carries
+    `lowering error:`); non-vacuity is tied to `xpile info`''s roster so a corpus that stops
+    reaching a backend REDS rather than shrinking the table; and NAMING A CONTRACT IN A HEADER
+    BLOCKQUOTE IS NOW AN OBLIGATION TO NAME `equations:` KEYS THAT EXIST (all nine such
+    blockquotes converted).
+    ** RED HALF RUN, SIX perturbations: (1) restoring the ORIGINAL blockquote reds on the
+    missing marker -- the defect itself; (2) a fabricated key reds by name; (3) 7->8 on one count
+    reds the table; (4) a deleted row reds it; (5) ACTUALLY IMPROVING forjar''s refusal moved it
+    (6,0,0) -> (6,6,6) and RED-ed the table, the direction that proves the gate tracks BEHAVIOUR;
+    (6) dropping the shell probe reds NON-VACUITY naming ["ruchy","rust"]. CONTROL green.
+    ** LESSONS. (1) A GATE THAT VALIDATES A VOCABULARY DOES NOT REACH PROSE THAT USES NONE. The
+    first draft only checked backticked `equations:` keys -- and the original falsehood contained
+    no backticked key at all, so it would have passed unchanged. Making the marker MANDATORY for
+    any page that names a contract is what turned the check into one the defect fails. Ask what
+    the defect SPELLED, not what the fixed version spells. (2) A DOC MAY NOT ATTRIBUTE AN
+    INVARIANT TO A CONTRACT IN PROSE. Prose has no referent to check; an `equations:` key does.
+    (3) ONE PROBE PER SUBJECT SAMPLES ONE OF ITS N MESSAGES (PMAT-1433 lesson 3, respected here):
+    the published table says COUNTS OVER A NAMED CORPUS, not a per-backend verdict, because a
+    universal claim needs only one counterexample to fall but cannot be established by sampling.
+    ZERO crates/*/src change -- freeze-compatible; witness_floor.rs untouched.
+    ** BLOCKER NOTE, unchanged: `gh` is UNAUTHENTICATED (token invalid, HTTP 401). Re-auth is an
+    interactive OAuth flow and is OWNER-GATED. This slice is COMMITTED AND PUSHED WITH NO PR.
+    Branch `fix/backend-refusal-disclosure-1437` is STACKED on `fix/repair-ws-witness-1436` ->
+    `fix/target-alias-disclosure-1435` -> `fix/frontend-dispatch-message-1434` -> main. Merge
+    1434, 1435, 1436, 1437 IN THAT ORDER when auth returns. NEXT FREE ID IS PMAT-1438.
+    NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) THE FRONTEND
+    TWIN -- do the frontend refusals do any better, and does frontends.md claim they do?
+    `C-XPILE-FRONTEND-TRAIT` has `ffi_boundaries_are_outgoing_only` and
+    `source_lang_consistency`; the same measure-and-publish shape applies one lane over and the
+    witness is already written; (b) the backends.md STATUS COLUMN is still prose nothing gates --
+    every row says "Real emission", which for `ruchy` the topic file itself calls a HOLLOW
+    backend, so the checkmark is the next `emit_surface`-idiom candidate; (c) PMAT-1433 lead (c)
+    / PMAT-1434 lead (b), the `claimed_filenames()` peer to `extensions()`; (d) PMAT-1436 lead
+    (d), witnesses that identify their subject by a glob over a SHARED namespace. PROBED AND
+    CLEAN, recorded so it is not re-derived: PMAT-1435 lead (c), the other closed-set CLI flags
+    -- `--contracts` is clap-enforced (possible_values on|off) and `--hardware` accepts only
+    `ptx[:sm_XX]` with the capability validated through the PTX crate''s own grammar. Do NOT
+    start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 --
+    no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release
+    commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

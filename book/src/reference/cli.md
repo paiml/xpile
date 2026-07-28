@@ -1,7 +1,11 @@
 # CLI reference
 
 > **Governing contract:** [`C-XPILE-BACKEND-TRAIT`](contracts.md#c-xpile-backend-trait)
-> for emit-side error paths and citation requirements.
+> for emit-side dispatch and citation. The invariants it pins:
+> `target_ownership` (each `--target` reaches exactly one backend) and
+> `compile_contract_citation` (a target-specific construct may not be
+> emitted without a Layer-5 citation). It pins nothing about ERROR
+> paths — through v0.1.617 this line said it governed them (PMAT-1437).
 
 All commands are subcommands of `xpile`. Run `xpile --help` or
 `xpile <cmd> --help` for inline documentation.

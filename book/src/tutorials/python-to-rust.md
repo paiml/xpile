@@ -1,10 +1,14 @@
 # Tutorial: Python → Rust (with overflow checks)
 
 > **Governing contract:** [`C-PY-INT-ARITH`](../reference/contracts.md#c-py-int-arith)
-> — Layer 1 (semantics), code lane, kind: kernel. Pins down the
-> mismatch between Python's unbounded `int` and Rust's fixed-width
-> `i64`, requiring `.checked_*().expect(...)` wrappers at every
-> arithmetic site until the bigint slow path is implemented.
+> — Layer 1 (semantics), code lane, kind: kernel.
+> The invariants it pins: `addition_no_overflow`,
+> `addition_overflow_promotion`,
+> `multiplication_quadratic_promotion`, `division_floor_semantics`,
+> `modulo_floor_semantics` — the mismatch between Python's unbounded
+> `int` and Rust's fixed-width `i64`, which is why the emit carries
+> `.checked_*().expect(...)` at every arithmetic site until the bigint
+> slow path is implemented.
 
 This tutorial walks through what happens, step by step, when you
 transpile a Python arithmetic function to Rust. By the end you'll know

@@ -1,7 +1,9 @@
 # Adding a frontend
 
 > **Governing contract:** [`C-XPILE-FRONTEND-TRAIT`](../reference/contracts.md#c-xpile-frontend-trait)
-> — read this first. The trait's structural invariants are what your
+> — read this first. The invariants it pins: `extension_ownership`,
+> `parse_idempotency`, `source_lang_consistency`,
+> `ffi_boundaries_are_outgoing_only`. Those are what your
 > implementation must satisfy.
 
 This walks through what it takes to add a new code-lane frontend to
