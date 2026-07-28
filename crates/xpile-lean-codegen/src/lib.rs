@@ -1980,14 +1980,39 @@ fn emit_expr(out: &mut String, e: &Expr) -> Result<(), LeanCodegenError> {
             }
             out.push(']');
         }
-        // PMAT-457 (v0.2.0 Track 1.B): Lean's `xs[i]!` syntax —
-        // panics on out-of-range with a clear error message. We
-        // coerce the i64 index to `Nat` via `.toNat`.
+        // PMAT-457 (v0.2.0 Track 1.B): Lean's `xs[i]!` syntax — panics on
+        // out-of-range with a clear error message.
+        //
+        // PMAT-1426: the index must be RESOLVED Python-style FIRST. The
+        // original emission was a bare `xs[i.toNat]!`, and `Int.toNat`
+        // CLAMPS a negative to `0` — so `a[-1]`, which CPython reads as the
+        // LAST element, silently returned the FIRST one at exit 0. Measured:
+        // `f [10,20,30]` answered 10 where CPython answers 30. This is the
+        // same clamping shape PMAT-1425 removed from `>>` / `**`, one
+        // vocabulary over.
+        //
+        // Python's rule is `xs[i] == xs[len(xs) + i]` for `i < 0`, and
+        // IndexError when the resolved index falls outside `0 ..< len`. Both
+        // halves are spellable in core Lean with no monad and no Mathlib, so
+        // this LOWERS FAITHFULLY rather than refusing (PMAT-1425 lesson 4:
+        // scope a refusal to what you cannot spell). The upper bound is
+        // already reported by `[...]!`'s own `outOfBounds` panic; only the
+        // still-negative case (`[10,20,30][-5]`) needs an explicit guard,
+        // because `.toNat` would clamp it back into range.
+        //
+        // Collection and index are each bound once so a compound operand is
+        // not emitted twice. `let` shadowing is lexically scoped, so a nested
+        // `a[b[i]]` reusing these names is correct (witnessed).
         Expr::Index { collection, index } => {
+            out.push_str("(let __xc := ");
             emit_expr(out, collection)?;
-            out.push('[');
+            out.push_str("; let __xi : Int := ");
             emit_expr(out, index)?;
-            out.push_str(".toNat]!");
+            out.push_str(
+                "; let __xj : Int := (if __xi < 0 then ((__xc).length : Int) + __xi else __xi); \
+                 if __xj < 0 then panic! \"xpile: IndexError: list index out of range\" \
+                 else __xc[__xj.toNat]!)",
+            );
         }
         // PMAT-466 (v0.2.0 Track 1.C): dict read / get-with-default /
         // membership. The `List (K × V)` first-cut model has no

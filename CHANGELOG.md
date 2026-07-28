@@ -7,6 +7,70 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The `--target lean` list subscript returned the wrong element for a negative index (PMAT-1426)
+
+`a[-1]` lowered to `a[(-1: Int).toNat]!`. `Int.toNat` **clamps** a negative to
+`0`, and CPython reads a negative subscript from the **end** of the list — so
+the emission answered the *first* element where Python answers the *last*, at
+exit 0, under a `/-- xpile-contract: C-XLATE-PY-LIST-TO-VEC -/` docstring.
+Executed against lean 4.15.0:
+
+```text
+  def f(a: list[int]) -> int:  return a[-1]
+
+  emitted:  def f (a : List (Int)) : Int := a[(-1: Int).toNat]!
+  lean   :  f [10, 20, 30]  =>  10
+  CPython:    [10, 20, 30][-1]  =>  30
+```
+
+The under-range case was wrong in the same direction and worse: CPython raises
+`IndexError` for `[10,20,30][-5]`, while `(-5).toNat` clamped back into range
+and returned `10`. Only the over-range case was already faithful, because
+`[...]!` carries its own `outOfBounds` panic. A runtime subscript `a[i]` carried
+the defect for every negative value of `i`.
+
+This is the same clamping shape PMAT-1425 removed from `>>` and `**` one slice
+earlier, in the same file, one vocabulary over — and it shows the same
+cross-lane asymmetry that was the tell there. `--target rust` and
+`--target ruchy` both emit the Python rule explicitly, wrap and bounds check
+included; only Lean — the lane whose whole purpose is machine-checked semantics
+— returned a wrong value at exit 0.
+
+**Fixed forward rather than refused.** Python's rule is spellable in core Lean
+with no monad, no Mathlib and no signature change, so the subscript now resolves
+the index before use and guards the still-negative case (the upper bound is
+already reported by `[...]!`). Collection and index are each bound once, so a
+compound operand is not emitted twice and a nested `a[b[-1]]` is correct.
+
+`Expr::Index` is list-only in this lane — dict reads, tuples and string
+indexing all refuse upstream — and all three are now pinned as corpus rows
+rather than assumed.
+
+**Corpus delta: exactly zero.** Measured before pushing against a
+provenance-verified pre-fix binary: `xpile audit --target lean` gives emitted
+160, requiring 141, with_citation 119, errors 805, F1 84.3% on both. Nothing
+started or stopped lowering.
+
+**On how it was found, stated plainly.** PMAT-1425 left a recorded lead: the
+float, string and list vocabularies had no corpus-driven ACCEPT ⟹ ELABORATES
+gate. A 55-source sweep of all three was run, and **the elaboration half came
+back completely clean, before and after this fix** — the lead's predicted defect
+class does not exist here. The defect was invisible to the property the lead
+named: `a[-1]` elaborates perfectly, it just computes the wrong number. It
+surfaced only because the accepted rows were then driven for their *value*
+against CPython. The new gate says so in its own header, because a gate built to
+the lead's literal wording would have passed on this forever.
+
+New witness `crates/xpile/tests/lean_list_index_witness.rs` — 4 tests, 34
+sources (24 accept / 10 refuse), 39 value obligations discharged in-file by
+`by decide`, or `by native_decide` for `Float`, which has no `DecidableEq`.
+Boundary rows are chosen so a clamp cannot pass by accident: `a[-3]` on a
+3-list and `a[-1]` on a 1-list are exactly where wrap and clamp coincide.
+Red half run: with the codegen reverted to `origin/main`, 2 of the 4 tests
+fail; the refusal and premise tests correctly stay green, being true of both
+revisions. The premise test measures `Int.toNat`'s clamping against the
+toolchain rather than restating it, and carries a positive control.
+
 ### Four `--target lean` arms emitted Lean constants that do not exist, and two more silently clamped a negative count to zero (PMAT-1425)
 
 PMAT-1405 had just found the DEFAULT `--target lean` emit exiting 0 on Lean that

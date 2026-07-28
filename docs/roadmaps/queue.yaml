@@ -3815,6 +3815,55 @@ queue:
     every emit while ruchy/forjar/shell have no post-emit checker at all; (c) XPILE-REFINE-005
     (mathlib or a hand-rolled cast-through-Nat encoding for Int bitwise) is now the honest way to
     RESTORE `&`/`|`/`^`/`<<` to the Lean lane, 0.1.619.'
+- id: PMAT-1426
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the `--target lean` LIST SUBSCRIPT silently returned the WRONG ELEMENT for a negative
+    index - `a[-1]` lifted to `a[(-1: Int).toNat]!` and `Int.toNat` CLAMPS a negative to 0, so
+    `f [10,20,30]` answered 10 where CPython answers 30, at exit 0 citing C-XLATE-PY-LIST-TO-VEC'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (third fire of the day; ranked queue exhausted
+    until Thu 07-30). Took PMAT-1425 standing lead (a) VERBATIM - the float/string/list
+    vocabularies had no corpus-driven ACCEPT-implies-ELABORATES gate. A 55-source sweep of all
+    three was run through `lean` 4.15.0. STANDING LESSONS. (1) THE LEAD WAS HONEST AND ITS
+    PREDICTED DEFECT CLASS DOES NOT EXIST - the elaboration half came back COMPLETELY CLEAN,
+    before AND after the fix. Every accepted row in float/str/list elaborates. (2) THE DEFECT WAS
+    INVISIBLE TO THE PROPERTY THE LEAD NAMED. `a[-1]` elaborates perfectly; it computes the wrong
+    number. It surfaced only because the accepted rows were ALSO driven for their VALUE against
+    CPython - the assertion PMAT-1425 had bolted on as a SECONDARY check. A gate built to the
+    lead''s literal wording would have passed on this forever. GENERALISE: when a lead names a
+    property, run the property AND the value; a lead is a place to look, not a specification of
+    what you will find. (3) SAME CLAMP, ONE VOCABULARY OVER, ONE SLICE LATER, SAME FILE.
+    `Int.toNat` clamping a negative to 0 is exactly what made `1024 >> -1` answer 1024 in
+    PMAT-1425. Fixing a clamp is not sweeping for clamps - grep the emitter for the COERCION, not
+    for the operator. (4) CROSS-LANE ASYMMETRY IS THE TELL, AGAIN, UNCHANGED: rust/ruchy both emit
+    the Python wrap plus an explicit IndexError bounds panic; only Lean returned a wrong value at
+    exit 0. (5) FIX FORWARD BEAT REFUSING because the semantics ARE spellable in core Lean (no
+    monad, no Mathlib, no signature change) - PMAT-1425 lesson 4 read in the other direction.
+    (6) CORPUS DELTA MEASURED BEFORE PUSH against a provenance-verified pre-fix binary
+    (`command cargo --target-dir`, then behaviourally diffed on the actual emit): audit gave
+    160/141/119/805/84.3% on BOTH - a delta of exactly ZERO, so no over-refusal and no capability
+    change. (7) BOUNDARY ROWS WHERE WRAP AND CLAMP COINCIDE (`a[-3]` on a 3-list, `a[-1]` on a
+    1-list) are pinned deliberately - a corpus of only-diverging rows would not show that the
+    fix is a WRAP rather than a different clamp. RED HALF RUN: codegen reverted to origin/main
+    reds 2 of 4 tests; the refusal and premise tests correctly stay GREEN (true of both
+    revisions), which is the shape to expect and to state. NEXT PICK: PMAT-1373 (release commit,
+    gate_touch 3, witness-floor TOUCH 2) on Thu 07-30; a fire before then should hunt again.
+    HARD FREEZE Wed 2026-07-29 18:00 - no crates/*/src or contracts/*.yaml merge after it, so
+    Wed is the LAST src-touching day of this window.
+    STANDING LEADS: (a) the productive question is no longer "which vocabulary is ungated" but
+    WHERE ELSE DOES THE EMITTER COERCE ACROSS A SEMANTIC BOUNDARY - `Int.toNat` has now produced
+    two exit-0 wrong answers in two consecutive slices and the emitter''s OTHER narrowing casts
+    (`as usize`, `as u32`, `as i32`, `.toNat` elsewhere, i64 truncation) have never been swept as
+    a class; this is the cheapest next hunt and it is CROSS-LANE, not Lean-specific. (b) the
+    other SEVEN backends have no ACCEPT-implies-VALUE gate at all - only Lean and WASM have a
+    toolchain that can both reject AND EXECUTE their output; WGSL/SPIR-V validate through naga
+    (a compile check, not a value check) and ruchy/forjar/shell have no post-emit checker.
+    (c) a Lean out-of-range subscript reports via `panic!`, which PRINTS then returns `default`
+    rather than aborting as Rust''s does - the disposition is a report either way but the lanes
+    differ AFTER the report; a faithful `Except`/`Option` return would change the lane''s
+    signature shape, the same wall PMAT-1425 hit for a runtime shift count. 0.1.619.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
