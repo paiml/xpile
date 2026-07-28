@@ -24,18 +24,22 @@ open Lake DSL
   — so this job is exactly the check that makes "provable" un-falsifiable by
   `grep sorry`.
 
-  PILOT = the 23 modules that elaborate clean under bare core with
-  warnings-as-errors (9 from PMAT-903 + 2 PMAT-904 + FfiShellSubprocess/907 +
-  CFloatArith/912 + XpileFrontendTrait/913 + XlateRustFnToLeanThm/914 +
-  XlateLeanToRust/915 + Notation/916 + Bashrs/928 + XlatePyBoolToRustBool/935 +
-  XlatePyListToVec/936 + FfiCpythonExt/937 + CompileRustToPtxMma/938 +
-  PyIntArith/948 — the CAPSTONE: the LAST non-elaborating module).
-  The known-incomplete remainder is now ZERO — the ENTIRE
-  `contracts/lean/` substrate is machine-checked by this advisory job.
-  (Historical remainder enumeration retained in PROVABILITY-INVENTORY.md.)
-  honestly in `PROVABILITY-INVENTORY.md` and deliberately EXCLUDED here so this
-  advisory job is GREEN without overstating what is proven. Discharging the
-  remaining errors and re-adding files is ongoing Day 5+ work.
+  PILOT = exactly the `roots := #[…]` list below, which elaborates clean under
+  bare core with warnings-as-errors. That list IS the enumeration, so its SIZE
+  is deliberately NOT restated here in prose — PMAT-1452 found this sentence
+  still reading "the 23 modules" while the array 26 lines down held 35, and the
+  gate that exists for exactly that drift derives its ground truth FROM the
+  array and had never read the prose above it. The live size is published once,
+  in `PROVABILITY-INVENTORY.md`'s PILOT header, which `claims_drift.rs` checks
+  against this array; the per-slice growth record (PMAT-903 → 904 → 907 → … →
+  948 → … ) is kept in that file and in the per-root comments below.
+
+  The known-incomplete remainder is ZERO — the ENTIRE `contracts/lean/`
+  substrate is machine-checked by this advisory job. (PMAT-1452 also removed a
+  superseded fragment that survived here after the remainder reached zero: it
+  said modules were "deliberately EXCLUDED here" and that "discharging the
+  remaining errors and re-adding files is ongoing Day 5+ work", two sentences
+  below the line stating there is no remainder. Nothing is excluded.)
 -/
 
 package «xpileContracts» where

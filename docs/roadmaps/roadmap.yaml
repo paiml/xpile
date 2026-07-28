@@ -21518,3 +21518,75 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1452
+  title: 'the Lean pilot published its own size as "the 23 modules" in the build file whose
+    `roots := #[…]` array — 26 lines below the sentence — holds 35, and the gate that exists
+    for exactly that drift derives its ground truth FROM that array and had never read the
+    prose above it; `contracts/**` was in NO claims-drift gate''s subject at all'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1451 standing lead (b) = PMAT-1450 lead (d), the one marked UNTAKEN:
+    `counts_between` is the needle for the PROVABILITY-INVENTORY module counts and the roadmap
+    Lean-module count, each anchor-guarded for ONE spelling apiece.
+
+    ** MEASURED. Live derivation: lakefile roots 35, KNOWN-INCOMPLETE remainder 0, separate
+    `contracts/lean-models/` Mathlib lane 4. THREE live present-tense falsehoods, all outside
+    both existing gates: contracts/lean/lakefile.lean:27 "PILOT = the 23 modules";
+    contracts/lean/PyExceptAllowlist.lean:18 and its contract contracts/py-except-allowlist-v1.yaml:37,
+    both "the whole 28-module pilot". A fourth defect in the same header: a SUPERSEDED FRAGMENT
+    that outlived the remainder reaching zero, saying modules were "deliberately EXCLUDED here"
+    and that "discharging the remaining errors and re-adding files is ongoing Day 5+ work",
+    two sentences below the line stating there is no remainder.
+
+    ** ⭐ THE SHARPEST SITE IS THE DERIVATION ITSELF. `lakefile_root_count()` -- the ground
+    truth BOTH older gates measure against -- parses the `roots` array out of lakefile.lean and
+    never reads the prose in the same file. The authoritative artifact contradicted itself and
+    the half nothing enforced is the half that was false. Same shape as PMAT-1451''s
+    xpile-spec.md self-contradiction 1269 lines apart, one file smaller.
+
+    ** ⭐⭐ THE SUBJECT BLIND SPOT GENERALISES BEYOND THIS CLAIM: `claim_pages()` -- the corpus
+    EVERY other claims-drift gate ranges over -- is MARKDOWN ONLY (book + README + CLAUDE.md +
+    docs/status/INDEX.md + docs/specifications/**). The NORMATIVE artifacts, the 35 contract
+    YAMLs the whole provability claim rests on and the 35 Lean sources that discharge them, had
+    never been in ANY gate''s subject. New `provable_artifact_pages()` adds contracts/**.
+
+    ** ⭐ THE RED HALF REFUTED THIS SLICE''S OWN FIX -- FOURTH CONSECUTIVE SLICE (1447, 1450,
+    1451, now 1452). The growth-record exemption requires the record to CITE its slice so the
+    shape cannot launder a stale numeral; written against the PARAGRAPH, its red half came back
+    GREEN, because audit-design.md''s bullet opens "(PMAT-903/904, 2026-06-24 sprint)" and
+    carries the record four sentences later, so stripping the citation FROM THE RECORD left a
+    neighbouring `PMAT-` standing. Re-scoped to the CLAUSE -- the identical paragraph-vs-clause
+    defect PMAT-1450 fixed in the `(historical record)` guard and PMAT-1451 fixed in the quorum
+    enumeration.
+
+    ** THE NEEDLE IS NOW THE CLASS, NOT A SPELLING LIST. `module_counts()` runs the scan the
+    other way round: find the head noun, then read the number off it (attributive `35-module`
+    and head-noun `35 machine-checked modules`, up to three qualifier tokens). Two shapes are
+    deliberately not counts and each was a measured false positive: `module` as a hyphenated
+    MODIFIER (`3 CLI module-construction sites`) and a digit run inside a larger token
+    (`PMAT-361 (MetaHirModule modules side)`, `size-0 modules`, `4-byte (module, config)`).
+
+    ** CARVE-OUTS ARE DERIVED, NOT EXEMPTED (PMAT-1451''s rule). The KNOWN-INCOMPLETE remainder
+    and the Mathlib lane get their own denominators rather than a skip, and the test asserts
+    every population arm actually dispatched -- an unreachable arm is an unchecked arm.
+
+    ** 16 RED HALVES, each asserting the perturbation APPLIED. 3 fix reds (one per site);
+    4 blindness CONTROLS THAT PASS establishing both axes separately -- SUBJECT (both older
+    gates stay GREEN on all three falsehoods) and NEEDLE (a false claim planted in the old
+    gate''s OWN file in a spelling no anchor matches leaves it GREEN while the new gate reds);
+    2 carve-out reds (un-quoting a quoted drift report makes it an assertion; a growth record
+    losing its own citation stops being exempt); 7 guard reds (both corpus halves, all three
+    population arms, the growth-record arm, the contracts walk, the denominator relation).
+
+    ** STANDING LEADS. (a) PMAT-1451 lead (a) still UNTAKEN: `sub/bashrs-merger.md:121` bare
+    "at QUORUM" over a substrate subject. (b) `counts_between` now has ONE remaining
+    anchor-guarded caller class -- the quorum PARTIAL tally and the `(N contracts total)`
+    anti-vacuity parse; both are RELATIONS between two things the same report prints, so they
+    are structurally safer than the prose anchors, but neither has a class needle. (c) ⭐ CARRY
+    THE CORPUS QUESTION FORWARD, it is bigger than this slice: contracts/** is now in ONE
+    gate''s subject. Ask of every other claims-drift gate whether its RULE stops at markdown --
+    the contract YAMLs carry prose claims about refusals, depths and strata that nothing reads.
+
+    ZERO crates/*/src change. One contract YAML comment, two Lean comments, one gate file.'
+  status: done
+  priority: P1
+  category: honesty

@@ -7,6 +7,50 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The Lean pilot published its own size as "the 23 modules" in the build file whose `roots` array holds 35 (PMAT-1452)
+
+The pilot's size, derived three ways on this tree:
+
+```
+contracts/lean/lakefile.lean  roots := #[…]   35   (the PILOT)
+contracts/lean/*.lean minus roots              0   (KNOWN-INCOMPLETE remainder)
+contracts/lean-models/**/*.lean                4   (the separate Mathlib lane)
+```
+
+`contracts/lean/lakefile.lean:27` opened with "PILOT = the 23 modules that
+elaborate clean under bare core" — **twenty-six lines above** the `roots`
+array holding 35. The gate that exists for exactly this drift,
+`provability_inventory_module_counts_match_lakefile`, derives its ground truth
+by parsing that array **out of that file**, and had never read the prose above
+it. The authoritative artifact contradicted itself, and the half nothing
+enforced is the half that was false.
+
+| site | published | live |
+|---|---|---|
+| `contracts/lean/lakefile.lean:27` | "PILOT = **the 23 modules** that elaborate clean" | 35 |
+| `contracts/lean/PyExceptAllowlist.lean:18` | "mirrors the whole **28-module** pilot" | 35 |
+| `contracts/py-except-allowlist-v1.yaml:37` | "mirroring the whole **28-module** pilot" | 35 |
+
+A fourth defect in that same header: a **superseded fragment** that outlived
+the remainder reaching zero, saying modules were "deliberately EXCLUDED here"
+and that "discharging the remaining errors and re-adding files is ongoing
+Day 5+ work" — two sentences below the line stating there is no remainder.
+
+**The subject hole generalises past this claim.** `claim_pages()`, the corpus
+every other claims-drift gate ranges over, is **markdown only**. The normative
+artifacts — the 35 contract YAMLs the whole provability claim rests on, and the
+35 Lean sources that discharge them — had never been in **any** gate's subject.
+All three falsehoods were there.
+
+Fixed: `provable_artifact_pages()` puts `contracts/**` under a gate;
+`module_counts()` replaces six literal `prefix<n>suffix` anchors with the
+**class** — find the head noun, read the number off it — while structurally
+excluding two measured false-positive shapes (`module` as a hyphenated
+modifier; a digit run inside a larger token such as `PMAT-361` or `size-0`).
+The other two populations are **derived, not exempted**, and every population
+arm is asserted to have dispatched.
+
+
 ### The gate for TOTAL §14.4 QUORUM could only see the book, and the canonical spec contradicted itself 1269 lines apart (PMAT-1451)
 
 `xpile quorum` over `contracts/`, on this tree:

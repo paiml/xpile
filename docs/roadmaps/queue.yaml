@@ -5489,6 +5489,49 @@ queue:
     re-sweeping this one. <<< Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
     Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON
     THE OWNER RULESET DECISION ALONE.'
+- id: PMAT-1452
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the Lean pilot published its size as "the 23 modules" in the very build file whose `roots`
+    array holds 35, and the gate for that drift derives 35 FROM that array without ever reading the
+    prose above it; `contracts/**` was in NO claims-drift gate''s subject at all'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 / PMAT-1373).
+    Took PMAT-1451 standing lead (b) = PMAT-1450 lead (d), the one marked UNTAKEN.
+    ** MEASURED: lakefile roots 35, KNOWN-INCOMPLETE remainder 0, separate Mathlib lane 4. THREE live
+    present-tense falsehoods, ALL in contracts/: lakefile.lean:27 "PILOT = the 23 modules";
+    PyExceptAllowlist.lean:18 and py-except-allowlist-v1.yaml:37 both "the whole 28-module pilot". Plus
+    a SUPERSEDED FRAGMENT in that same header saying modules are "deliberately EXCLUDED here" and that
+    discharging remaining errors is "ongoing Day 5+ work" -- two sentences below the line stating the
+    remainder is ZERO.
+    ** ⭐ THE SHARPEST SITE IS THE DERIVATION ITSELF: `lakefile_root_count()`, the ground truth BOTH
+    older gates measure against, parses the roots array out of lakefile.lean and never reads that same
+    file''s prose. The authoritative artifact contradicted itself and the unenforced half was false.
+    ** ⭐⭐ THE SUBJECT HOLE GENERALISES: `claim_pages()` -- the corpus EVERY other claims-drift gate
+    ranges over -- is MARKDOWN ONLY. The 35 contract YAMLs the provability claim rests on and the 35
+    Lean sources that discharge them were in NO gate. New `provable_artifact_pages()` adds contracts/**.
+    ** ⭐ THE RED HALF REFUTED MY OWN FIX, 4TH SLICE RUNNING (1447/1450/1451/1452): the growth-record
+    exemption''s citation check was PARAGRAPH-scoped, so a neighbouring PMAT id laundered a stale
+    numeral -- audit-design.md''s bullet opens with a citation and carries the record four sentences
+    later. Re-scoped to the CLAUSE, the same fix PMAT-1450 and PMAT-1451 each had to make.
+    ** THE NEEDLE IS THE CLASS NOW: find the head noun, read the number off it -- not a spelling list.
+    Two measured false-positive shapes are excluded structurally (`module` as a hyphenated MODIFIER;
+    a digit run inside a larger token like `PMAT-361` or `size-0`).
+    ** CARVE-OUTS ARE DERIVED, NOT EXEMPTED: KNOWN-INCOMPLETE and the Mathlib lane get their own
+    denominators, and every population arm is asserted to have dispatched.
+    ** 16 RED HALVES, each asserting the perturbation APPLIED; 4 are CONTROLS THAT PASS, isolating the
+    SUBJECT and NEEDLE axes separately.
+    >>> NEXT PICK: ranked queue EMPTY until Thu 2026-07-30 (PMAT-1373, gate_touch #3). NEXT FREE ID IS
+    PMAT-1453. Standing leads: (a) PMAT-1451 lead (a) still UNTAKEN -- `sub/bashrs-merger.md:121` bare
+    "at QUORUM" over a substrate subject. (b) ⭐ CARRY THE CORPUS QUESTION FORWARD, it is bigger than
+    this slice: contracts/** is now in ONE gate''s subject. Ask of EVERY other claims-drift gate
+    whether its RULE stops at markdown -- the contract YAMLs carry prose claims about refusals, depths
+    and strata that nothing reads. (c) `counts_between`''s last anchor-guarded callers are the quorum
+    PARTIAL tally and the `(N contracts total)` parse; both are RELATIONS between two values the same
+    report prints, structurally safer, but neither has a class needle. <<< Do NOT start a gate_touch and
+    do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on
+    2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353

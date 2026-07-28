@@ -34,7 +34,7 @@ metadata:
     provability/mathlib note: the dispatch predicate is a DECIDABLE Boolean
     property (`allowlist.isEmpty || allowlist.contains type`), so the Lean
     refinement proof is discharged entirely over CORE Lean 4 — NO Mathlib, no
-    `sorry`, no `axiom` (mirroring the whole 28-module pilot; the purity
+    `sorry`, no `axiom` (mirroring the whole pilot; the purity
     invariant holds). Registered at depth-1 under the R6-grandfathered Diamond
     gate (PMAT-475a).
 
