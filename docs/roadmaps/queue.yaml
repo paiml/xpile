@@ -2,8 +2,27 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1432 landed from an honesty hunt; the ranked queue stays exhausted
-  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1432 took PMAT-1431 standing lead (a) --
+updated: '2026-07-28 (PMAT-1433 landed from an honesty hunt; the ranked queue stays exhausted
+  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1433 took PMAT-1432 standing lead (c)
+  verbatim -- frontends.md lists `.mk` under "Real POSIX parser" though PMAT-1420 made it REFUSE --
+  and the payload was one level up from the doc row: `Frontend::lowers_input()` is a WHOLE-FRONTEND
+  boolean over a per-CLAIM property, so there was NO WAY to say a frontend lowers some of what it
+  claims. `xpile info` printed `- bashrs (sh, bash, zsh, mk)` unannotated and counted it among the
+  "4 lowering" frontends while `*.mk`, `Makefile` and `Dockerfile` all exit non-zero; the two
+  extensionless spellings, claimed by `matches_path` alone, were in NO report at all -- the surface
+  was over-reported and under-reported at the same time. LESSONS: (1) A DISCLOSURE VOCABULARY CAN
+  EXIST AND STILL NOT REACH THE CASE. The exact bracket needed was ONE LINE ABOVE in the same loop
+  (`- ruchy (ruchy)  [routing only -- INPUT refuses, no parser]`); it keys off the frontend-level
+  boolean and bashrs is not routing-only. Ask what GRANULARITY the say-it mechanism has, not whether
+  one exists. (2) A GATE THAT PINS A DOC TO THE BINARY REPRODUCES THE BINARY BEING WRONG --
+  `cli_docs_drift` faithfully published the wrong line; pin doc-to-REGISTRY-SEMANTICS somewhere too.
+  (3) ONE PROBE PER SUBJECT SAMPLES ONE OF ITS N CLAIMS -- `claims_drift` DOES confront
+  `lowers_input()` with behaviour, but `FRONTEND_PROBES` carries one file name per frontend
+  (`probe.sh`), so it could never reach `.mk`. (4) PMAT-1432 lead (a) was probed FIRST and came back
+  STALE AND HONEST in all three directions -- all 332 `lean_theorem:` and all 67 `kani_harness:`
+  values resolve, and every pair that also names a file has the symbol IN that file. Recorded so it
+  is not re-derived. PRIOR ENTRY, still the reference for the hollow-metric shape: PMAT-1432 took
+  PMAT-1431 standing lead (a) --
   "which OTHER contract''s equations name a construct no shipped code produces?" -- and found the
   answer with a SECOND defect underneath it, one level UP from any single contract: the substrate''s
   own honesty METRIC was scoring the hollow contract at MAXIMUM. `xpile quorum`''s Runtime stratum
@@ -4252,6 +4271,69 @@ queue:
     FREEZE Wed 2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it. On
     2026-07-30 take PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2); on
     2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1433
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'a frontend may lower only SOME of the path spellings it claims, and every report
+    said it lowered all of them -- `.mk` was published under "Real POSIX parser" on a page
+    and in a live registry table while every `.mk` input exited non-zero'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1432 standing lead (c) verbatim.
+    ** LEAD (a) IS STALE AND HONEST -- recorded so it is not re-derived. All 332 distinct
+    `lean_theorem:` values resolve to a real declaration (the one apparent miss,
+    `XpileModels.ols_unique`, lives in the SEPARATE Mathlib lane `contracts/lean-models/`);
+    all 67 distinct `kani_harness:` values resolve to a real `#[kani::proof]` among the 89 in
+    `contracts/kani/`; and every one of the 328 lean and 69 kani pairs that ALSO names a
+    `lean_file:` / `kani_file:` has the symbol IN the file it cites -- zero misfilings, zero
+    nonexistent cited files. The Semantic and Symbolic strata do not have the PMAT-1432 hole.
+    ** THE DEFECT. `Frontend::lowers_input()` (PMAT-1346) is a WHOLE-FRONTEND boolean over a
+    per-CLAIM property. `bashrs` earns `true` on `.sh`; PMAT-1420 then made `*.mk`, `Makefile`
+    and `Dockerfile` refuse unconditionally. So `xpile info` printed `- bashrs (sh, bash, zsh,
+    mk)` unannotated, counted among "4 lowering", and `book/src/reference/frontends.md`
+    published `.sh, .bash, .zsh, .mk` under "Real POSIX parser". The disclosure vocabulary
+    existed ONE LINE ABOVE in the same loop (`- ruchy (ruchy)  [routing only ...]`) but keys
+    off the frontend-level boolean. Worse the other way: `Makefile` / `Dockerfile` are claimed
+    by `matches_path` alone and appear in NEITHER report -- over-reported and under-reported
+    at once.
+    ** MEASURED: LOWERED = probe.{py,pyi,c,h,sh,bash,zsh,wat}; REFUSED = probe.mk, Makefile,
+    Dockerfile, probe.ruchy. Exactly ONE frontend has a mixed disposition and it is the one
+    PMAT-1420 touched the day before.
+    ** WHY THE GATES MISSED IT: `claims_drift.rs` DOES confront the declaration with behaviour
+    -- but `FRONTEND_PROBES` carries ONE file name per frontend (`probe.sh`), so it samples one
+    of four claimed extensions. `cli_docs_drift.rs` pins the info transcript to the BINARY, so
+    it faithfully reproduced the binary being wrong.
+    ** FIX: required `Frontend::refused_claims()` (NO default -- a default of `&[]` inherits the
+    silence); `xpile info` APPENDS a second bracket form; frontends.md splits one path column
+    into TWO (`Extensions that LOWER` / `Routed -> REFUSED`).
+    ** GATE: crates/xpile/tests/frontend_claim_disposition_witness.rs (XPILE-FRONTEND-CLAIM-001,
+    6 tests) over the CLAIM CLASS -- every frontend, every claimed spelling, set equality BOTH
+    ways, both surfaces compared to the REGISTRY not to each other. RED HALF RUN in SEVEN
+    executions, at least one per test.
+    ** LESSONS. (1) A DISCLOSURE VOCABULARY CAN EXIST AND STILL NOT REACH THE CASE -- ask not
+    "is there a way to say this?" but "what GRANULARITY does the say-it mechanism have?". A
+    per-frontend boolean cannot express a per-extension fact, and PMAT-1420 added the
+    per-extension fact without noticing. (2) A GATE THAT PINS DOC-TO-BINARY REPRODUCES THE
+    BINARY BEING WRONG (`cli_docs_drift`) -- pin doc-to-REGISTRY-SEMANTICS somewhere too.
+    (3) ONE PROBE PER SUBJECT SAMPLES ONE OF ITS N CLAIMS; when a subject makes a SET of claims,
+    the gate must range over the set (PMAT-1417 scope shape, third occurrence).
+    (4) SEPARATION OF DUTIES: reverting `refused_claims()` alone does NOT red the info check,
+    correctly -- reporter and declaration move together, so the check that catches a WRONG
+    declaration must be the BEHAVIOURAL one.
+    NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) PMAT-1432 lead
+    (b), untouched -- the three contracts now at 3/4 (PTX-MMA, FFI-CPYTHON-EXT,
+    RUST-FN-TO-LEAN-THM) each have a real code lane, so "is the shipped lane the one the
+    contract describes?" is live for each; (b) the BACKEND twin of THIS slice --
+    `Backend::targets()` is the same shape as `Frontend::extensions()` and backends.md''s Status
+    column is prose nothing gates (PMAT-1430 lead (c)): does every backend lower every meta-HIR
+    shape its Status cell implies, or only some? `renders_contract_body()` is per-BACKEND too;
+    (c) `matches_path` is an OVERRIDE claimed by one frontend and its claim set is now checked
+    only through `refused_claims()` -- a frontend that overrode it to claim a spelling it
+    LOWERS would be invisible to every `extensions()`-derived report, the way `Makefile` was.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373
+    (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

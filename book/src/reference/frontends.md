@@ -17,13 +17,29 @@ dispatches through — prefer it to this page.
 
 The **Name** column is the key `xpile info` prints, not a display label.
 
-| Frontend | Name | Extensions | Status | Crate |
-|---|---|---|---|---|
-| Python | `python` | `.py`, `.pyi` | ✅ **Real parser** | `depyler-frontend` |
-| C      | `c` | `.c`, `.h` | ✅ **Real parser** | `decy-frontend` |
-| Shell  | `bashrs` | `.sh`, `.bash`, `.zsh`, `.mk` | ✅ **Real POSIX parser** | `bashrs-frontend` |
-| WASM   | `wasm` | `.wat` | ✅ **Real parser** (lossy lift) | `xpile-wasm-frontend` |
-| Ruchy  | `ruchy` | `.ruchy` | ⛔ **Routing only — refuses every input** | `ruchy-frontend` |
+| Frontend | Name | Extensions that LOWER | Routed → REFUSED | Status | Crate |
+|---|---|---|---|---|---|
+| Python | `python` | `.py`, `.pyi` | — | ✅ **Real parser** | `depyler-frontend` |
+| C      | `c` | `.c`, `.h` | — | ✅ **Real parser** | `decy-frontend` |
+| Shell  | `bashrs` | `.sh`, `.bash`, `.zsh` | `*.mk`, `Makefile`, `Dockerfile` | ✅ **Real POSIX parser** | `bashrs-frontend` |
+| WASM   | `wasm` | `.wat` | — | ✅ **Real parser** (lossy lift) | `xpile-wasm-frontend` |
+| Ruchy  | `ruchy` | — | `*.ruchy` | ⛔ **Routing only — refuses every input** | `ruchy-frontend` |
+
+The two path columns are DIFFERENT claims and PMAT-1433 exists because this
+table used to have only one. A frontend can be routed a path spelling and
+still refuse it: `bashrs-frontend` is claimed for `*.mk`, `Makefile` and
+`Dockerfile` so the refusal can name the dialect that is missing (PMAT-1420)
+instead of degrading to a generic "no frontend handles `.mk`" — but it has no
+Makefile dialect and no Dockerfile dialect, and every such input exits
+non-zero. Until PMAT-1433 the Extensions column read `.sh, .bash, .zsh, .mk`
+under status "Real POSIX parser", and `xpile info` printed the same four
+extensions unannotated, because `Frontend::lowers_input()` is one boolean for
+the whole frontend and `bashrs` earns it on `.sh`. Both columns are now
+derived from the registry and checked by
+`crates/xpile/tests/frontend_claim_disposition_witness.rs`, which drives every
+claimed spelling through the frontend and asserts set equality in BOTH
+directions — so implementing the Makefile dialect reds this page until the
+row moves.
 
 The proof lane registers one contract frontend, LaTeX math
 (`latex-contract-frontend`), which reads contract sources rather than

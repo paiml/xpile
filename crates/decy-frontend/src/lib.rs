@@ -59,6 +59,12 @@ impl Frontend for CFrontend {
         &["c", "h"]
     }
 
+    /// PMAT-1433: none. Both `.c` and `.h` lower — measured by
+    /// `frontend_claim_disposition_witness.rs`, not asserted here.
+    fn refused_claims(&self) -> &[&'static str] {
+        &[]
+    }
+
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError> {
         let name = path
             .file_stem()

@@ -7,6 +7,61 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `.mk` was published as handled by a "Real POSIX parser" that refuses every `.mk` file (PMAT-1433)
+
+`Frontend::lowers_input()` (PMAT-1346) is a **whole-frontend boolean over a
+per-claim property**. `bashrs-frontend` earns `true` on `.sh`, and PMAT-1420
+then made `*.mk`, `Makefile` and `Dockerfile` — all three routed into it by
+`matches_path` — refuse unconditionally. Nothing in the reporting had the
+granularity to say a frontend lowers *some* of what it claims, so both
+published surfaces said it lowered all of it:
+
+| surface | said | true of |
+|---|---|---|
+| `xpile info` | `- bashrs (sh, bash, zsh, mk)`, unannotated, counted among the "4 lowering" frontends | `sh`, `bash`, `zsh` |
+| `book/src/reference/frontends.md` | Extensions `` `.sh`, `.bash`, `.zsh`, `.mk` `` under Status "✅ **Real POSIX parser**" | `sh`, `bash`, `zsh` |
+
+The vocabulary for exactly this disclosure already existed one line above in
+the same loop — `- ruchy (ruchy)  [routing only — INPUT refuses, no parser]` —
+but it keys off the frontend-level boolean, and `bashrs` is not routing-only.
+And the two extensionless spellings `matches_path` claims, `Makefile` and
+`Dockerfile`, are in neither `extensions()` nor any report, so the surface was
+**over-reported in one direction and under-reported in the other at once**.
+
+Measured against the live registry, one probe per frontend driven at every
+spelling that frontend claims:
+
+```text
+  probe.py  probe.pyi  probe.c  probe.h  probe.sh  probe.bash  probe.zsh  probe.wat   LOWERED
+  probe.mk  Makefile   Dockerfile  probe.ruchy                                        REFUSED
+```
+
+`claims_drift.rs` already confronts `lowers_input()` with behaviour — the right
+shape — but its `FRONTEND_PROBES` table carries **one** file name per frontend
+(`probe.sh` for bashrs), so the confrontation samples one of four claimed
+extensions and can never reach `.mk`. Its book rules assert the frontends.md
+table *names* every registered frontend; no rule read the Extensions cell.
+
+Fixed:
+
+- **`Frontend::refused_claims()`** — a required trait method (no default: a
+  default of `&[]` would let the next partial refusal inherit the same
+  silence). Returns the path spellings a frontend claims but refuses.
+- **`xpile info`** appends `[claims REFUSED — no parser: *.mk, Makefile,
+  Dockerfile]` to the bashrs line; the PMAT-1346 routing-only suffix is
+  untouched, so the format is extended rather than reshaped.
+- **`book/src/reference/frontends.md`** splits one path column into two —
+  `Extensions that LOWER` and `Routed → REFUSED` — because they are different
+  claims and the table had only ever made one.
+- **`crates/xpile/tests/frontend_claim_disposition_witness.rs`**
+  (XPILE-FRONTEND-CLAIM-001, 6 tests) drives **every** frontend at **every**
+  spelling it claims and asserts set equality in both directions, against the
+  registry rather than against the other document. A spelling that refuses
+  without being declared reds; a declared-refused spelling that starts lowering
+  reds too — so implementing the Makefile dialect forces the disclosure to move
+  instead of going stale. The red half was run in seven separate executions,
+  one per surface.
+
 ### The Runtime stratum — the one stratum that ties a contract to shipped code — voted for files nothing runs (PMAT-1432)
 
 The §14.4 oracle quorum has four strata. Semantic counts `lean_theorem:` refs

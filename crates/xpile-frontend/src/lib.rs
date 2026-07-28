@@ -119,6 +119,32 @@ pub trait Frontend: Send + Sync {
         true
     }
 
+    /// PMAT-1433 (XPILE-FRONTEND-CLAIM-001): the path spellings this frontend
+    /// CLAIMS via [`Frontend::matches_path`] but REFUSES for every input.
+    ///
+    /// [`Frontend::lowers_input`] is a WHOLE-FRONTEND boolean, and that is the
+    /// granularity that let `.mk` be published as handled. `bashrs-frontend`
+    /// lowers `.sh` / `.bash` / `.zsh` and so declares `lowers_input() ==
+    /// true`, which is what `xpile info` and `book/src/reference/frontends.md`
+    /// read — while PMAT-1420 made `*.mk`, `Makefile` and `Dockerfile` refuse
+    /// unconditionally. A frontend can lower SOME of what it claims; there was
+    /// no way to say so, so the reports said it lowered all of it.
+    ///
+    /// Entries are literal path spellings, each either a `*.<ext>` glob whose
+    /// extension appears in [`Frontend::extensions`] or an exact extensionless
+    /// filename that [`Frontend::matches_path`] claims. This is DECLARATION,
+    /// worth nothing on its own; `crates/xpile/tests/frontend_claim_disposition_witness.rs`
+    /// drives EVERY claimed spelling through [`Frontend::parse_and_lower`] and
+    /// asserts set EQUALITY with what is declared here — too many entries (a
+    /// spelling that in fact lowers) and too few (one that in fact refuses)
+    /// both red. Implementing a disclosed gap therefore FORCES the disclosure
+    /// to move rather than letting it go stale.
+    ///
+    /// REQUIRED, deliberately: a default of `&[]` would let the next frontend
+    /// with a partial refusal inherit the exact silence this method exists to
+    /// break.
+    fn refused_claims(&self) -> &[&'static str];
+
     /// Parse source and lower to meta-HIR.
     fn parse_and_lower(&self, path: &Path, source: &str) -> Result<Module, FrontendError>;
 

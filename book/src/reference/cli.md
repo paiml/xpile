@@ -19,7 +19,7 @@ Code lane:
     - python (py, pyi)
     - c (c, h)
     - ruchy (ruchy)  [routing only — INPUT refuses, no parser]
-    - bashrs (sh, bash, zsh, mk)
+    - bashrs (sh, bash, zsh, mk)  [claims REFUSED — no parser: *.mk, Makefile, Dockerfile]
     - wasm (wat)
   backends (9):
     - rust → Rust
@@ -46,8 +46,14 @@ load-bearing: `frontends (5 registered, 4 lowering)` and `contract_backends
 do the job their name implies. `ruchy` is registered so a `.ruchy` input gets
 a specific refusal rather than a generic one (PMAT-1346), and both proof-lane
 contract backends are scaffolds that return a fixed `_scaffold` payload for
-every contract (PMAT-1429). This transcript is regenerated from the binary and
-pinned by `crates/xpile/tests/cli_docs_drift.rs`.
+every contract (PMAT-1429). The third form, `[claims REFUSED — no parser: …]`,
+is the PARTIAL case (PMAT-1433): `bashrs` genuinely lowers `.sh` / `.bash` /
+`.zsh`, so it counts among the 4 lowering frontends, but `*.mk`, `Makefile` and
+`Dockerfile` are routed only so the refusal can name the missing dialect — they
+never lower. Read the extension list as "what reaches this frontend", not "what
+it parses"; the bracket is what separates the two. This transcript is
+regenerated from the binary and pinned by
+`crates/xpile/tests/cli_docs_drift.rs`.
 
 ## `xpile transpile`
 
