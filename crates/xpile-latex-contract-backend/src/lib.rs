@@ -26,6 +26,15 @@ impl ContractBackend for LatexContractBackend {
         &[ContractFormat::LatexMath]
     }
 
+    /// PMAT-1429: SCAFFOLD. `render` interpolates `contract.id` into a fixed
+    /// theorem body labelled `_scaffold` and ignores every other field — and
+    /// the whole of [`ContractRenderConfig`], including the documented
+    /// `embed_citation` / `include_falsification` knobs. Nothing about the
+    /// contract's content reaches the `.tex`.
+    fn renders_contract_body(&self) -> bool {
+        false
+    }
+
     fn render(
         &self,
         contract: &Contract,

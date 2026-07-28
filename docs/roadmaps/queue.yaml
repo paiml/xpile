@@ -3970,6 +3970,71 @@ queue:
     NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 — no crates/*/src or contracts/*.yaml
     merge after it.'
   date: '2026-07-28'
+- id: PMAT-1429
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the PROOF LANE was advertised at parity with the code lane while BOTH its backends
+    are `_scaffold` stubs, and `book/src/reference/cli.md` published an `xpile info` transcript
+    stale by THREE backends and a whole frontend -- on the page that says "use this to confirm
+    your install can see every lane"'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30).
+    PMAT-1428 standing leads (a)/(b) -- the `Artifact.sidecars` channel -- were RE-DERIVED FIRST
+    AND BOTH CAME BACK WEAKER THAN WRITTEN: (a) is FALSE as stated ("written by NO backend the
+    CLI can reach") -- `QuorumBackend` DOES populate `specialist_emission` under Strict/DiffExec
+    at xpile-backend/src/lib.rs:578,631; what is true is that no CLI-REACHABLE session builds
+    those policies, so the channel is unreachable rather than unwritten. (b) is real but inert:
+    the latex CONTRACT backend populates a `RenderedDoc` sidecar, but no CLI subcommand renders
+    contracts at all, so nothing is truncated for any user. Both are dead-channel findings, not
+    exit-0-but-false. THE DEFECT WAS FOUND WHILE CONFIRMING THOSE NEGATIVES, by reading what
+    `xpile info` actually prints. FOUR OTHER LANES SWEPT CLEAN on the way, each worth NOT
+    re-hunting: the 4x9 frontend-target matrix re-derived FROM THE BINARY (every refusal honest);
+    the forjar lane validated with the REAL `forjar 1.11.1` binary -- an independent-tool check of
+    exactly the kind PMAT-1428 lead (c) said was owed -- accepting every emitted manifest, and
+    refusing for/while/if/case honestly; a bashrs-backend-vs-forjar differential of the two
+    INDEPENDENT script reconstructions over the whole tracked shell corpus (no divergence); and an
+    execution differential of quoted-whitespace shapes through the shell lane (all MATCH).
+    ** A VERIFIER CONTRADICTED A GREEN EXIT AND THE VERIFIER WAS WRONG: `forjar validate --strict`
+    reported EVERY xpile manifest invalid ("project has no description field"), which read as a
+    catastrophic finding for ~5 minutes. `--strict` prints "not yet implemented ... Flag ignored"
+    and then reds on an unrelated lint. Without the flag, all pass. This is the crates.io
+    User-Agent lesson in a new costume: uniform failure across N independent items means the
+    HARNESS is broken. Re-ran without the flag before writing anything down.
+    ** ONE MEASURED-BUT-NOT-SHIPPED finding, recorded so it is not re-derived: the forjar manifest
+    emits `name: <stack>` UNQUOTED, so a script named `on.sh`/`no.sh`/`yes.sh`/`true.sh`/`null.sh`
+    /`123.sh` yields a value a YAML *1.1* parser (PyYAML) reads as a bool/null/int. forjar itself
+    is YAML 1.2 (serde_yaml) and reports it back as the string "on", so the LANE IS HONEST and
+    only non-forjar consumers see it -- deliberately NOT fixed in a release week. Related, same
+    site: `sanitize_name` is NON-INJECTIVE (`a b.sh`, `a-b.sh`, `a.b.sh` all -> `a-b`), so two
+    sources converge on one `/usr/local/bin/a-b.sh` install path.
+    STANDING LESSONS. (1) A FIX SCOPED TO A LANE, NOT A CLAIM CLASS, LEAVES ITS SIBLING LIVE --
+    PMAT-1346 fixed the code lane inside `print_info` and the proof lane FOURTEEN LINES BELOW in
+    the SAME FUNCTION kept printing a bare count. When a fix adds a qualifier, grep the function
+    it lives in for the other loops. (2) A GATE THAT WALKS A CORPUS STILL ONLY ENFORCES ITS RULE
+    SHAPE: claims_drift.rs has walked book/src since PMAT-1417, and every derived CARDINALITY it
+    owns is asserted against README.md. Corpus scope and rule scope are different axes; widening
+    one reads like widening both. (3) TIE TWO INDEPENDENTLY RECORDED HALVES rather than pinning a
+    string -- cli_docs_drift.rs compares the published transcript to the binary EXECUTED, so
+    neither half can be edited into agreement alone. (4) A SELF-REPORT NEEDS A MEASUREMENT, AND
+    THE MEASUREMENT MUST RED BOTH WAYS: `renders_contract_body()` would rot exactly like
+    `lowers_input()` could, so the witness renders two maximally-different contracts and also
+    fails when a REAL backend under-claims -- otherwise the honest fix becomes a permanent
+    understatement the day someone implements rendering. (5) NO DEFAULT ON AN HONESTY TRAIT
+    METHOD: a defaulted `-> bool { true }` lets the next scaffold inherit "real" for free.
+    STANDING LEADS: (a) both contract backends drop `Contract.references` from
+    `RenderedDoc.citations`, which the trait doc says MUST be present -- a documented invariant
+    violated by 100% of implementations, currently unreachable from the CLI. (b) BOTH scaffolds
+    ignore `ContractRenderConfig.embed_citation` and `include_falsification`; the latex one takes
+    the whole config as `_config`, the PMAT-1383 `_module` shape exactly. (c) `Contract` itself is
+    a placeholder with NO equations field, so the proof-lane rendering stack cannot be made real
+    without widening that type first -- worth stating before anyone scopes it as a backend task.
+    (d) other book pages pin `xpile transpile` OUTPUT (quickstart.md, tutorials/*) which
+    cli_docs_drift does NOT yet cover -- the transcript-vs-binary rule generalises to them.
+    NEXT PICK: PMAT-1373 (release commit, gate_touch 3, witness-floor TOUCH 2) on Thu 07-30; a
+    fire before then should hunt again, and lead (d) is the cheapest next application of the same
+    gate. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29
+    18:00 -- no crates/*/src or contracts/*.yaml merge after it.'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

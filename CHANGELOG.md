@@ -7,6 +7,83 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The proof lane was advertised at parity with the code lane, and the published `xpile info` transcript was stale by three backends (PMAT-1429)
+
+Two claim surfaces, one root cause: a listing nobody re-derived.
+
+**`xpile info`.** PMAT-1346 established the rule for the code lane — a
+registered-but-hollow entry "must not be silently counted among the languages
+xpile READS" — and taught `print_info` to print both numbers and tag the
+hollow entry. The proof lane, printed by the *same function* fourteen lines
+below, never got that sweep:
+
+```text
+  contract_backends (2):
+    - lean-theorem → LeanTheorem
+    - latex → LatexMath
+```
+
+at full parity with the nine real code-lane backends. Both implementations
+return a fixed payload — `theorem _scaffold : True := True.intro`, and a
+`\xpileContract{<id>}{_scaffold}` wrapper — that no field of the contract can
+influence. Now:
+
+```text
+  contract_backends (2 registered, 0 rendering):
+    - lean-theorem → LeanTheorem  [scaffold — fixed `_scaffold` payload, ignores the contract]
+    - latex → LatexMath  [scaffold — fixed `_scaffold` payload, ignores the contract]
+```
+
+**The published CLI reference.** `book/src/reference/cli.md` pins an
+`xpile info` transcript and tells the reader *"Use this to confirm your
+install can see every lane."* What it published had drifted:
+
+| claim in the book | live registry |
+|---|---|
+| `frontends (4):` | `frontends (5 registered, 4 lowering):` |
+| — absent — | `- wasm (wat)` |
+| `- ruchy (ruchy)` | `- ruchy (ruchy)  [routing only — INPUT refuses, no parser]` |
+| `backends (6):` | `backends (9):` |
+| — absent — | `spirv`, `wasm`, `forjar` |
+
+A reader following the page's own instruction would count nine backends
+against a published six — or, far more likely, never learn that
+`--target wasm`, `--target spirv` and `--target forjar` exist. The same page's
+`--target` row named seven of nine spellings, omitted `--emit-crate` /
+`--contracts` / `--hardware` entirely, and had no section for `xpile hybrid`
+— the PMAT-902 north-star executing differential. README's proof-lane diagram
+drew three contract frontends and three contract backends (LaTeX / Lean 4 /
+mdBook, both directions) where the registry has one and two, and no mdBook
+anything.
+
+`claims_drift.rs` does walk `book/src/` (PMAT-1417), but its book-corpus rules
+are forbidden-/required-*substring* and its derived cardinalities are asserted
+against `README.md` only — so a stale transcript one page over was the same
+claim class on a surface no rule covered.
+
+**Fixed.** `ContractBackend::renders_contract_body()` is the proof-lane twin of
+`Frontend::lowers_input()`, with no default, so a new backend must state which
+it is at the impl site. The transcript is regenerated from the binary, the flag
+table completed, the `xpile hybrid` section written from its live `--help`.
+
+**Gated, in both directions.**
+`crates/xpile/tests/proof_lane_scaffold_witness.rs` does not take the
+self-report's word for it: it renders two contracts differing in *every* field
+`Contract` carries, normalises each output against its own id, and compares —
+then fails both when a contract-independent backend claims to be real and when
+a genuinely contract-dependent one claims to be a scaffold. So when `latex`
+becomes real, the gate *forces* the flag to flip rather than letting
+`xpile info` under-report a shipped feature.
+`crates/xpile/tests/cli_docs_drift.rs` executes the binary and ties two
+independently recorded halves to each other: published transcript vs
+`xpile info` output, clap's `Commands:` block vs the page's sections, and
+`transpile --help`'s target list vs the *located* `--target` row in both
+directions. Every parse asserts a minimum arity, so a help-format change reds
+instead of passing vacuously.
+
+Not changed, deliberately: the scaffolds still emit `_scaffold`. This makes the
+*claim* honest; implementing contract rendering is v0.2.0.
+
 ### `--target spirv` handed back a description of a module instead of the module (PMAT-1428)
 
 `--target spirv` was the only target whose artifact was not the thing the

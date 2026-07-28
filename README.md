@@ -159,15 +159,27 @@ languages above.
 
 ```
 ContractFrontends            ContractBackends
-─────────────────            ─────────────────
-LaTeX  ─┐                       ┌─→  LaTeX (papers)
-Lean 4 ─┼→  contracts  ←──←─    ┼─→  Lean 4 theorems
-mdBook ─┘                       └─→  mdBook
+─────────────────            ─────────────────                    status
+LaTeX  ──→  contracts  ←──←─    ┌─→  LaTeX (papers)      🚧 scaffold
+                                └─→  Lean 4 theorems     🚧 scaffold
 ```
 
 The citation bridge uses **format-native structured constructs** — the
 `@[xpile_contract "…"]` attribute in Lean, a `\xpileContract{…}{…}` macro in
-LaTeX, a structured comment in mdBook — never a regex over prose.
+LaTeX — never a regex over prose.
+
+**Both contract backends are scaffolds (PMAT-1429).** The LaTeX contract
+*frontend* is real — it parses `$…$` / `\[…\]` / `equation` / `align` spans
+and `\xpileContract{}{}` citations with a hand-rolled scanner. The two
+contract *backends* emit the citation construct correctly but wrap a fixed
+`_scaffold` body that no field of the contract can influence, so nothing of a
+contract's content reaches the rendered `.tex` / `.lean`. `xpile info` reports
+this as `contract_backends (2 registered, 0 rendering)`; the count is derived
+from the registry and pinned by
+`crates/xpile/tests/proof_lane_scaffold_witness.rs`. There is no mdBook
+contract frontend or backend. Making these real is v0.2.0 work — the proof
+lane that IS load-bearing today is the Lean *theorem* substrate under
+[`contracts/`](contracts/), not this rendering path.
 
 ## Contracts
 

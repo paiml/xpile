@@ -65,6 +65,27 @@ pub trait ContractBackend: Send + Sync {
     /// is owned by exactly one ContractBackend (`format_ownership`).
     fn formats(&self) -> &[ContractFormat];
 
+    /// PMAT-1429: whether [`render`](Self::render) actually derives its
+    /// `primary` from the contract it is handed, or is a SCAFFOLD that
+    /// returns a fixed payload the contract cannot influence.
+    ///
+    /// This is the proof-lane twin of `Frontend::lowers_input()` (PMAT-1346)
+    /// and exists for the same reason: `xpile info` prints the registry, and
+    /// `README.md` / `book/src/reference/cli.md` point at that listing as the
+    /// live capability surface. A registered backend that returns
+    /// `theorem _scaffold : True := True.intro` for **every** contract must
+    /// not be counted, silently, among the formats xpile RENDERS.
+    ///
+    /// There is deliberately no default: a new ContractBackend has to state
+    /// which it is at the impl site, rather than inheriting "real" for free.
+    ///
+    /// `crates/xpile/tests/proof_lane_scaffold_witness.rs` MEASURES this
+    /// rather than trusting it — it renders two contracts that differ in
+    /// every field [`Contract`] carries and fails in BOTH directions: a
+    /// backend whose output is contract-independent must report `false`, and
+    /// one that reports `false` must actually be contract-independent.
+    fn renders_contract_body(&self) -> bool;
+
     /// Render a contract under the given config.
     ///
     /// Invariants: deterministic per `(contract, config)`; every cited

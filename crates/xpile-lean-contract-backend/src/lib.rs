@@ -25,6 +25,14 @@ impl ContractBackend for LeanContractBackend {
         &[ContractFormat::LeanTheorem]
     }
 
+    /// PMAT-1429: SCAFFOLD. `render` interpolates `contract.id` into a fixed
+    /// `theorem _scaffold : True := True.intro` and ignores every other
+    /// field. The only config knob it reads is `lean_version` (to reject
+    /// Lean 3); `embed_citation` / `include_falsification` are ignored.
+    fn renders_contract_body(&self) -> bool {
+        false
+    }
+
     fn render(
         &self,
         contract: &Contract,

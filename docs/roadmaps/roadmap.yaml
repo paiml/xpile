@@ -19723,3 +19723,58 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1429
+  title: 'PMAT-1429: [src+docs] THE PROOF LANE WAS ADVERTISED AT PARITY WITH THE CODE LANE WHILE
+    BOTH ITS BACKENDS WERE SCAFFOLDS, AND THE PUBLISHED `xpile info` TRANSCRIPT WAS STALE BY THREE
+    BACKENDS: PMAT-1346 established that a registered-but-hollow entry "must not be silently counted
+    among the languages xpile READS" and taught `print_info` to emit `frontends (5 registered, 4
+    lowering)` plus a `[routing only — INPUT refuses, no parser]` tag. The PROOF lane, printed by
+    the SAME function fourteen lines below, never got that sweep: it printed `contract_backends (2)`
+    at full parity with the nine real code-lane backends, while BOTH implementations return a fixed
+    `theorem _scaffold : True := True.intro` / `\xpileContract{id}{_scaffold}` body that no field of
+    the contract can influence. Separately, `book/src/reference/cli.md` — the page that tells the
+    reader "Use this to confirm your install can see every lane" — published an `xpile info`
+    transcript claiming `frontends (4)` and `backends (6)` against a live registry of 5/4 and NINE,
+    omitting the `wasm (wat)` frontend, the `spirv`/`wasm`/`forjar` backends and PMAT-1346''s own
+    routing-only tag; its `--target` row named 7 of 9 spellings; and `xpile hybrid` — the PMAT-902
+    north-star executing differential — had no section at all. claims_drift.rs walks book/src
+    (PMAT-1417) but its book rules are forbidden-/required-SUBSTRING and its derived cardinalities
+    are asserted against README.md only, so a stale transcript one page over was the same claim
+    CLASS on an uncovered surface.'
+  description: 'FIX: (1) `ContractBackend::renders_contract_body()` — the proof-lane twin of
+    `Frontend::lowers_input()`, with NO default so a new backend states which it is at the impl
+    site; both scaffolds report false. (2) `print_info` mirrors the code lane exactly:
+    `contract_backends (2 registered, 0 rendering)` + a `[scaffold — fixed `_scaffold` payload,
+    ignores the contract]` tag per hollow entry. (3) cli.md''s transcript REGENERATED from the
+    binary, `--target` row completed, `--emit-crate`/`--contracts`/`--hardware` rows added, and a
+    full `## `xpile hybrid`` section written from its live --help. (4) README''s proof-lane diagram
+    corrected — it drew 3 contract frontends and 3 contract backends (LaTeX/Lean 4/mdBook both
+    ways) where the registry has 1 and 2 and no mdBook anything. GATES (both new, both run RED
+    first): `crates/xpile/tests/proof_lane_scaffold_witness.rs` MEASURES contract-dependence by
+    rendering two contracts differing in EVERY field `Contract` carries and normalising each output
+    against its own id, then fails in BOTH directions — a contract-independent backend must report
+    false, and one reporting false must actually be contract-independent, so when `latex` becomes
+    real the gate FORCES the flag to flip rather than letting `xpile info` under-report a shipped
+    feature; it also ties the CLI''s printed line and count-header to the measured registry, and
+    pins the tag''s own word `_scaffold` to the emitted payload.
+    `crates/xpile/tests/cli_docs_drift.rs` EXECUTES the binary and compares two independently
+    recorded halves — published transcript vs `xpile info` output (byte-equal), clap''s `Commands:`
+    block vs `## `xpile <cmd>`` sections, and `transpile --help`''s target list vs the LOCATED
+    `--target` row in BOTH directions (PMAT-1420: a page-wide substring sweep would pass on any
+    incidental mention). Every parse asserts a minimum arity so a help-format change reds instead
+    of passing vacuously. RED HALVES RUN, not asserted: scaffold-claims-real fails test 1;
+    CLI-drops-the-tag fails test 3; a genuinely contract-dependent backend still reporting false
+    fails test 1 in the reverse direction; and all three cli_docs_drift tests failed against the
+    unfixed page naming exactly ["wasm","forjar"] and ["hybrid"]. NOT CHANGED, deliberately: the
+    scaffolds still emit `_scaffold` — this slice makes the CLAIM honest, it does not implement
+    contract rendering (v0.2.0). Standing lead recorded: both scaffolds drop `Contract.references`
+    from `RenderedDoc.citations`, which the trait doc says MUST be present.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
