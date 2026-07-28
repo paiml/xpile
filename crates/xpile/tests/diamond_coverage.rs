@@ -1,10 +1,21 @@
-//! UNIVERSAL Diamond depth-2 gate (PMAT-251).
+//! Diamond-tier coverage gate (PMAT-251, grandfathered at PMAT-475).
 //!
-//! Asserts the live substrate state shipped over PMAT-214..250:
-//!   * Every contract has at least 1 wired Diamond equation (depth-1 UNIVERSAL).
-//!   * Every contract has at least 2 wired Diamond equations (depth-2 UNIVERSAL).
-//!   * At least 5 contracts have ≥3 Diamond equations (depth-3 across layers).
-//!   * At least 2 contracts have ≥4 Diamond equations (depth-4 OPENED).
+//! Asserts, over the live `xpile diamond --json` report:
+//!   * Every contract has at least 1 wired Diamond equation. This is the one
+//!     genuinely universal claim in this file.
+//!   * The GRANDFATHERED pre-R6 cohort (`GRANDFATHERED_DEPTH13`) still meets
+//!     each floor from depth-2 up to depth-13. A contract outside that named
+//!     set joins at depth-1+ and is deliberately not checked against them.
+//!
+//! PMAT-1448: this header used to describe the depth-2/3/4 gates as claims
+//! about EVERY contract — "Every contract has at least 2 wired Diamond
+//! equations (depth-2 UNIVERSAL)". PMAT-475 had replaced those aggregate
+//! `depth_N_plus == contracts_total` checks with the grandfathered floor
+//! precisely so a new contract joining at depth-1+ would not trip them, and
+//! `assert_grandfathered_floor` says so 130 lines below — while the header
+//! went on asserting the property that had been deliberately given up.
+//! Measured on the tree that still carried it: 14 of 35 contracts were at
+//! depth-2+, so the second bullet described 40% of the corpus as all of it.
 //!
 //! Integration counterpart to the unit tests in `diamond_tests` inside
 //! the binary crate. The unit tests exercise the depth-label classifier

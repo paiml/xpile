@@ -139,8 +139,13 @@ xpile via `cargo install xpile` and don't have a checkout, point this
 at a clone of the repo.
 
 JSON output is consumed by the CI gate at
-`crates/xpile/tests/diamond_coverage.rs` — 22 integration tests
-ensuring depth-1..13 UNIVERSAL invariants don't regress.
+`crates/xpile/tests/diamond_coverage.rs`. That gate does **not** hold a
+universal depth above 1. It holds a depth-13 floor over a *named,
+grandfathered* set — the contracts that had already reached it when the
+gate was written (PMAT-475) — so a contract joining the substrate today
+is checked against depth-1 and nothing deeper. The universal depth over
+the whole population is whatever `xpile diamond`'s totals block reports,
+and it is set by the shallowest contract, not by the deep core.
 
 See [The Diamond-tier substrate](../concepts/diamond-substrate.md) for
 what the numbers mean.

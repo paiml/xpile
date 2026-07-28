@@ -7,6 +7,64 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `xpile diamond` published a hand-written enumeration of its own computed classification, and every transcription of it was stale (PMAT-1448)
+
+The reporter printed a legend directly above the column it explains:
+
+```
+depth: 0 = none, 1 = depth-1 (1 Diamond), 2 = depth-2 (2 Diamonds), 3+ = depth-3+ (3+)
+```
+
+The three rows immediately beneath it read `depth-21+`, `depth-20`, `depth-13`.
+`depth-3+` is a string the classifier could never return, so **the line was
+refuted by the output it headed, on every single run.** `xpile diamond --help`
+carried a second, differently stale transcription of the same `match`
+(`…, depth-8, depth-9+` as the top bucket), and the module header a third —
+four hard-coded cardinalities, of which *"Depth-2 UNIVERSAL: 12/12 contracts"*
+measured **14 of 35** on the tree that still carried it.
+
+**The mechanism, which the unit test recorded without noticing.** The
+classifier was a 22-arm `match`, one arm appended by each numbered slice that
+first reached that depth (PMAT-286 opened depth-5, …, PMAT-327 opened
+depth-21+), ending in a saturating `_ => "depth-21+"`. The cap was not a
+design — it was however many arms had been typed — and the deepest contract in
+the tree sits at exactly 21, so the `+` advertised uncertainty about a number
+printed exactly in the adjacent column, and the totals block was one Diamond
+away from silently truncating. The old test asserted `label(22) == "depth-21+"`,
+pinning the saturation.
+
+The label is now **computed** (`none` at zero, `depth-N` otherwise) and the
+cumulative buckets reach the deepest contract instead of a written-down
+ceiling. The aggregate JSON key set is unchanged, so existing consumers are
+unaffected; the only output change is `C-PY-INT-ARITH` classifying as
+`depth-21` rather than `depth-21+`.
+
+**A gate could not match the spelling its own doc comment quotes as the
+defect.** `claims_drift.rs`'s `book_claims_no_universal_depth_the_substrate_does_not_hold`
+derives the live universal depth from `xpile diamond --json` — the right
+shape — and scanned for it with `counts_between(line, "depth-", " UNIVERSAL")`,
+which requires the digits to be followed immediately by ` UNIVERSAL`. The
+falsehood it was written for is quoted in its own doc comment as
+`depth-1..13 UNIVERSAL`, a **range**, whose digits are followed by `..13`. So
+the gate scored zero claims on that string, and a live instance sat in
+`book/src/reference/cli.md` — *"22 integration tests ensuring depth-1..13
+UNIVERSAL invariants don't regress"* — four lines above a link to the page the
+gate protects. Both halves were false: the file holds **26** tests, and the
+live universal depth is **1** (21 of 35 contracts carry a single Diamond),
+because PMAT-475 deliberately grandfathered the depth-13 floor to a named set.
+The parser now handles the range spelling, claims the range's upper end, and
+scans per paragraph so a claim that wraps between its depth and the word
+UNIVERSAL is still seen.
+
+Gated by `crates/xpile/tests/diamond_depth_label_witness.rs`
+(XPILE-DIAMONDLABEL-001): the classification must equal its own count, no
+classification may carry the `+` that marks a cumulative bucket, neither the
+legend nor `--help` may name a class the reporter cannot produce, and the book
+transcript's legend line and every contract row are compared to the live binary
+by equality. The transcript previously **omitted** the legend — an unmarked
+elision, and the reason the otherwise careful repair of that page never saw
+that the legend was where the falsehood lived.
+
 ### "Compiles to Rust" was published as a property of the Ruchy lane; it is a property of 8 fixtures in 39 (PMAT-1446)
 
 `backends.md`'s Status cell read *"✅ Real emission (same overflow semantics;

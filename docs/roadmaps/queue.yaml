@@ -73,6 +73,64 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1448
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: '`xpile diamond` published a hand-written enumeration of its own COMPUTED classification on three surfaces; the legend was refuted by the output it headed, on every run'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1446 standing lead (c), the placeholder-vs-literal sweep.
+    ** THE DEFECT. The text reporter printed `depth: 0 = none, 1 = depth-1 (1 Diamond), 2 =
+    depth-2 (2 Diamonds), 3+ = depth-3+ (3+)` immediately above the column it explains, whose
+    first three rows read `depth-21+`, `depth-20`, `depth-13`. `depth-3+` is a string
+    `depth_label()` could never return. `--help` carried a second, differently stale
+    transcription of the same match; the module header a third (four hard-coded cardinalities,
+    of which "Depth-2 UNIVERSAL: 12/12 contracts" measured 14 of 35).
+    ** THE MECHANISM WAS RECORDED IN THE UNIT TEST AND NOT NOTICED: a 22-arm match, one arm
+    appended by each numbered slice that first reached that depth (PMAT-286 depth-5 ... PMAT-327
+    depth-21+), ending in a saturating catchall. The cap was not a design -- it was however many
+    arms had been typed -- and the deepest contract sits at EXACTLY 21, so the totals block was
+    one Diamond from silently truncating and the test asserted `label(22) == "depth-21+"`,
+    pinning the saturation.
+    ** ⭐ THE SHARPEST FINDING: A GATE COULD NOT MATCH THE SPELLING ITS OWN DOC COMMENT QUOTES AS
+    THE DEFECT. `claims_drift.rs`''s `book_claims_no_universal_depth_the_substrate_does_not_hold`
+    derives the live universal depth from `xpile diamond --json` -- the right shape -- and scanned
+    with `counts_between(line, "depth-", " UNIVERSAL")`, which needs the digits followed
+    IMMEDIATELY by ` UNIVERSAL`. Its doc comment quotes the defect as `depth-1..13 UNIVERSAL`, a
+    RANGE. MEASURED CONTROL, and it is the evidence worth carrying: with the falsehood restored,
+    the ORIGINAL parser reports `1 passed`; the repaired one fails naming the line. The live
+    instance was in book/src/reference/cli.md, FOUR LINES above a link to the very page that gate
+    protects, and both halves were false (26 tests not 22; live universal depth is 1, not 1..13,
+    because PMAT-475 grandfathered the depth-13 floor to a NAMED set).
+    ** ALSO SWEPT: `diamond_coverage.rs`''s header asserted the depth-2/3/4 gates as claims about
+    EVERY contract, 130 lines above its own code saying those aggregate checks were REPLACED --
+    playbook rule 3, a claim the code no longer honours.
+    ** FIX. Label COMPUTED; cumulative buckets reach the deepest contract; legend and --help state
+    the RULE with a `depth-N` PLACEHOLDER (PMAT-1445: a doc that writes a placeholder cannot go
+    stale this way). Aggregate JSON key set UNCHANGED -- verified by diffing old vs new binary --
+    so `diamond_coverage.rs` is unaffected; the only output change is C-PY-INT-ARITH classifying
+    `depth-21` instead of `depth-21+`.
+    ** GATED by crates/xpile/tests/diamond_depth_label_witness.rs (XPILE-DIAMONDLABEL-001), fully
+    derived, no label/count/denominator written down: exactness; DISJOINT SPELLINGS (no
+    classification carries the `+` that marks a cumulative bucket -- this is what makes the
+    surface scan decidable at all, since `depth-9+` legitimately occurs in the totals line);
+    no phantom class on legend or --help, each ALSO required to state the rule so an empty
+    surface cannot pass; and the book transcript compared to the binary by EQUALITY.
+    ** THE BOOK TRANSCRIPT HAD OMITTED THE LEGEND -- an unmarked elision, and exactly why the
+    otherwise careful repair of that page never saw that the legend was the falsehood.
+    ** RED HALVES, FIVE, each ASSERTED to have applied (PMAT-1444''s no-op trap), reddened sets
+    DISJOINT: (A) saturating bucket -> 3 tests; (B) original legend -> 2; (C) --help enumeration
+    -> 1; (D) totals truncated at depth-20+ -> 1; (E) stale transcript row -> 1. Control 7/7.
+    ZERO contracts/*.yaml change; crates/*/src change confined to the `diamond` reporter.
+    NEXT PICK: STANDING LEADS. (a) install `ruchy` in a CI job -- OWNER-GATED (workflow change in
+    a release week). (b) the PER-INPUT disposition granularity PMAT-1442 disclosed rather than
+    fixed. (c) CARRY THIS SLICE''S SHAPE FORWARD: audit every OTHER gate whose needle is a
+    SPELLING rather than a structure -- ask whether the defect the gate quotes would match its own
+    parser. `counts_between` has other callers.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00.
+    On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER
+    RULESET DECISION ALONE.'
 - id: PMAT-1446
   status: done
   ev_rank: R1
