@@ -5448,6 +5448,48 @@ queue:
     weakening. PMAT-1444 flagged this for Thursday; this is the MECHANISM and the exact env var. <<<
     Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00.
     On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
+- id: PMAT-1451
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the gate for TOTAL §14.4 QUORUM -- "the one claim this repository exists to be trustworthy
+    about", in its own words -- ranged over `book_pages()` while five assertions of total discharge
+    sat OUTSIDE the book, four of them in the canonical specification set'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 / PMAT-1373).
+    Took PMAT-1450 standing lead (c) VERBATIM: "every OTHER gate in claims_drift.rs still reads
+    `book_pages()`; ask of each whether its RULE stops at the book." It does not. ** MEASURED.
+    `xpile quorum`: 26 QUORUM, 9 PARTIAL, 0 UNVERIFIED (35 contracts). Five live totality assertions
+    outside the book: xpile-spec.md:1276 (`0 PARTIAL` pinned under `### Exit criterion`),
+    sub/glossary.md:55 (a DEFINITION page, present tense), sub/migration.md:42, sub/phased-rollout.md:28,
+    audit-design.md:46. ** ⭐ THE CANONICAL SPEC CONTRADICTED ITSELF 1269 LINES APART -- xpile-spec.md:7
+    `**Status:**` says coverage is "partial, not total"; line 1276 pinned `0 PARTIAL`. The honest half
+    was written down and the FALSE half was the one nothing enforced. ** ⭐⭐ THE NEEDLE FAILED IN THE
+    FALSE-POSITIVE DIRECTION, the axis four previous slices never hit: `"full quorum"` also matches a
+    TRUE per-contract claim (provability-roadmap.md:103, C-PY-INT-ARITH). A CARVE-OUT THAT IS NOT
+    CHECKED IS A HOLE -- per-contract claims are now verified against the live id->status map.
+    ** ⭐ A CLAIM IS A CLAUSE, not a line and not a paragraph: that same line is a run-on carrying the
+    true claim AND the threshold definition "... = PARTIAL, 0 = UNVERIFIED" 500 chars earlier, so a
+    line-scoped enumeration test reported a true sentence as drift. ** ⭐ THE RED HALF REFUTED MY OWN
+    FIX AGAIN (3rd consecutive slice): the repair records what the line USED to pin, and the retired
+    numerals CONTAIN `0 PARTIAL`. Ported PMAT-1450''s quote-vs-assert structure; the quote WRAPS a line
+    break so the scan moved to byte offsets over the flattened paragraph. ** ⭐ A SHADOWED BINDING MADE
+    THE FAILURE MESSAGE LIE (`while let Some(rel) = ...find(b)` shadowed the path `rel`; the offence read
+    `1102:103`) -- invisible on every green run, found only by a red half. A message emitted ONLY on
+    failure is tested ONLY by a red half. ** 7 RED HALVES, each asserted to have applied. ** NEGATIVE
+    RESULT bounding the next hunt: every per-contract QUORUM claim in the corpus is TRUE against the
+    live table; the defect was totality, not attribution. >>> NEXT PICK: the ranked queue is EMPTY until
+    Thu 2026-07-30 (PMAT-1373). NEXT FREE ID IS PMAT-1452. Standing leads: (a) PMAT-1450 lead (d) is
+    UNTAKEN -- `counts_between` is still the needle for the PROVABILITY-INVENTORY module counts, the
+    roadmap Lean-module count and the quorum PARTIAL tally, each anchor-guarded for ONE spelling apiece.
+    (b) `sub/bashrs-merger.md:121` says "substrate at QUORUM" -- dated and cited so NOT scored, but decide
+    whether bare "at QUORUM" over a substrate subject belongs in TOTAL_QUORUM_CLAIMS. (c) the remaining
+    `book_pages()` gates were MEASURED over the whole tracked corpus this run and are CLEAN outside the
+    book today, so widening them is hardening, not a defect fix -- prefer a new claim CLASS over
+    re-sweeping this one. <<< Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
+    Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON
+    THE OWNER RULESET DECISION ALONE.'
+
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

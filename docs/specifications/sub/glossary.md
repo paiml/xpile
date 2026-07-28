@@ -52,7 +52,7 @@
 
 **PVScore** — `pv score`'s output: a numeric quality grade per contract. xpile's mean at v0.1.0 is 0.56 across 12 contracts (canonical value is whatever `pv lint contracts/` reports on the current `main` branch).
 
-**QUORUM** — A contract's §14.4 N-of-M oracle status. The ruchy 5.0 rule: ≥1 vote in ≥3 strata (Semantic / Symbolic / Runtime / Extrinsic) ⇒ QUORUM; 1-2 strata ⇒ PARTIAL; 0 strata ⇒ UNVERIFIED. At v0.1.0 (post PMAT-058..077 substrate completion) the entire 12-contract substrate is at 100% QUORUM. `xpile quorum` reports per-contract state.
+**QUORUM** — A contract's §14.4 N-of-M oracle status. The ruchy 5.0 rule: ≥1 vote in ≥3 strata (Semantic / Symbolic / Runtime / Extrinsic) ⇒ QUORUM; 1-2 strata ⇒ PARTIAL; 0 strata ⇒ UNVERIFIED. At v0.1.0 (post PMAT-058..077 substrate completion) the whole then-12-contract substrate reached QUORUM; the substrate has grown since and coverage is **partial, not total** — new contracts land ahead of their Lean or Kani votes and sit at PARTIAL until the missing stratum arrives. `xpile quorum` reports the live per-contract state and the totals; do not retype them here (PMAT-1451).
 
 **Repair mode** — Opt-in via `--repair`. Invokes the agent loop on static-pass failure.
 
