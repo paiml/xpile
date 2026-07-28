@@ -73,6 +73,66 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1453
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'the RELEASE RUNBOOK cited a LINE NUMBER and the text AT that line was the warning that the runbook was wrong -- a one-line version bump would have re-created the published-manifest skew PMAT-1408 removed, two days before the tag'
+  notes: 'SHIPPED 2026-07-28 from a release-runbook audit, two days before the tag cut.
+    ** THE DEFECT, procedural rather than cosmetic. PMAT-1373, the Thursday tag-cut item, opened
+    with "Version is single-sourced at Cargo.toml:43 -- one line + cargo check refreshes all 31
+    Cargo.lock entries." Cargo.toml:43 IS the comment "RELEASE BUMP TOUCHES 35 LINES, NOT THIS ONE
+    (PMAT-1408). Every intra-workspace path-dep below repeats this number, because a
+    [workspace.dependencies] entry cannot inherit [workspace.package].version". THE CITATION
+    POINTED AT ITS OWN REFUTATION. The `version =` key is on line 53; line 43 is the warning.
+    MEASURED: the version literal is assigned on 35 lines.
+    ** WHY IT IS EXPENSIVE, in this repo''s own recorded experience. PMAT-1408 records that through
+    v0.1.617 the path-deps read "0.1.12" while [workspace.package] read "0.1.617" -- "and nothing
+    noticed: ^0.1.12 is satisfied by 0.1.617, so every dry-run packaged clean while the published
+    manifests let a resolver pair releases 605 apart." A one-line bump on Thursday re-creates that
+    skew, IN THE DIRECTION `cargo publish --dry-run` CANNOT SEE.
+    ** SECOND DEFECT, same shape, same item. The mandate enumerated the ADVISORY jobs as "kani,
+    lake-build, docs, wasi, lean-models, shader-validate". Derived from .github/workflows minus the
+    required contexts, the unrequired set ALSO contains license-scan, build and deploy -- so the
+    published list UNDERSTATED what is unenforced, in the section whose job is to disclose exactly
+    that. Note the pattern with PMAT-1449: the XPILE-ADVISORY markers are DERIVED and CORRECT
+    (ruleset_drift holds them equal); it was the TYPED PROSE that was stale. Twice in one runbook.
+    ** FIX. The version instruction now says the bump is NOT one line, names the global-replace
+    procedure, and points at the authoritative comment; the advisory roster defers to the derived
+    markers. GATED by crates/xpile/tests/release_runbook_facts_witness.rs (XPILE-RUNBOOK-001):
+    (1) the runbook may not describe the bump as one line, checked against a COUNT DERIVED from
+    Cargo.toml -- so if the workspace ever genuinely becomes single-sourced this REDS and the
+    runbook text must move (PMAT-1411); (2) a Cargo.toml:<N> citation must point at a line that
+    supports the claim; (3) the runbook may not TYPE an advisory roster.
+    ** THE EXEMPTION TOOK THREE ATTEMPTS, and the red half is what found each failure. A
+    disclosure-aware gate needs a way to tell a QUOTED MENTION from an INSTRUCTION, and:
+    (a) PROXIMITY (within 240 chars of "used to say"/"PMAT-1453") was TOO LOOSE -- the correction
+    and its disclosure are adjacent BY CONSTRUCTION, so a re-typed ADVISORY roster landed inside
+    the window and the perturbation stayed GREEN. AN EXEMPTION KEYED ON NEARNESS EXEMPTS THE
+    NEIGHBOURHOOD. (b) global QUOTE PARITY was TOO FRAGILE -- the note carries many quoted spans,
+    so one unbalanced quote flips the verdict for everything after it and the CONTROL went red.
+    (c) What works is the SHAPE the corrections actually use: a reporting verb ("used to say") plus
+    an opening quote, both immediately before the occurrence. PMAT-1438''s rule -- test the
+    exemption against the defect -- and here it failed twice before passing.
+    ** RED HALF RUN, FOUR perturbations, green control: the original one-line instruction restored
+    (reds the version rule AND the citation rule); the ADVISORY roster typed back inline; the
+    runbook anchor drifted (non-vacuity); and -- the BEHAVIOUR half -- MAKING Cargo.toml GENUINELY
+    SINGLE-SOURCED by dropping the version key from every path-dep, which reds the corrected text
+    as newly stale.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    ** METHOD NOTE worth keeping: this and PMAT-1449 both came from READING THE RUNBOOK rather than
+    sweeping the corpus. Release runbooks are documents too, and they are the ones whose falsehoods
+    get PUBLISHED under the project''s name and EXECUTED by an operator on a deadline.
+    NEXT PICK: STANDING LEADS. (a) the REMAINING PMAT-1373 prescriptions not yet verified -- the
+    witness-floor values it lists (WASM 770 vs live 795, RUST_DIFF 44 vs live 49, HYBRID 3 vs live
+    4) are already annotated as stale IN THE ITEM, but the two Known-divergence findings it
+    mandates have not been re-measured. (b) book/src/reference/contracts.md says
+    C-XLATE-LEAN-TO-RUST "carries 40 equations"; the contract has 33 (the other two numbers in that
+    sentence are CORRECT -- measured). (c) install `ruchy` in a CI job so PMAT-1446''s COUNTS half
+    stops being developer-only -- OWNER-GATED workflow change.
+    A1 REMAINS BLOCKED ON THE OWNER RULESET DECISION ALONE (310 ok / 1 failed, measured 2026-07-28).
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00.'
 - id: PMAT-1450
   status: done
   ev_rank: R1
@@ -3790,8 +3850,8 @@ queue:
   gate_touch: 3
   title: 'RELEASE COMMIT v0.1.618: version bump + [Unreleased] -> [0.1.618] + witness-floor re-derive
     TOUCH 2 (ALL lanes) + tag on a PINNED SHA'
-  notes: "THURSDAY 2026-07-30. NO src merges. Reserve the day; nothing L/XL lands.\nVersion is single-sourced\
-    \ at Cargo.toml:43 — one line + `cargo check` refreshes all 31\nCargo.lock entries. Promote `## [Unreleased]`\
+  notes: "THURSDAY 2026-07-30. NO src merges. Reserve the day; nothing L/XL lands.\nTHE VERSION BUMP IS NOT ONE LINE\
+    \ — Cargo.toml carries the version literal on 35 sites: [workspace.package].version\nPLUS every intra-workspace path-dep in [workspace.dependencies], which CANNOT inherit it.\nDo a GLOBAL REPLACE of the old version string across the file, then `cargo check` to refresh\nCargo.lock, and let crates/xpile/tests/publish_manifest_integrity.rs confirm they agree.\nPMAT-1453: this line used to say \"Version is single-sourced at Cargo.toml:43 — one line\",\nand Cargo.toml:43 IS the comment reading \"RELEASE BUMP TOUCHES 35 LINES, NOT THIS ONE\"\n(PMAT-1408) — the citation pointed at its own refutation, and following it would have\nre-created the published-manifest skew that let a resolver pair releases 605 apart. Promote `## [Unreleased]`\
     \ to `## [0.1.618] - 2026-07-31` (ship date;\nthe tag OBJECT is created 07-30 — a DELIBERATE one-day\
     \ skew, disclosed in docs/RELEASE.md).\nWitness-floor re-derive TOUCH 2, all lanes. Current values\
     \ at c3e468d4 (re-derive, do not\ncopy): WASM 770 (live 795), SHELL 7 (tight), RUST_DIFF 44 (tight;\
@@ -3802,8 +3862,8 @@ queue:
     \ set AS DERIVED rather than typed --\n    read it from docs/status/ruleset-13878864.json and name the\
     \ OPEN DRIFT recorded in docs/RELEASE.md.\n    PMAT-1449 -- this line used to say \"requires only\
     \ [gate, workspace-test]\" while the LIVE\n    ruleset requires only [gate], so it OVERSTATED\
-    \ enforcement inside the very section whose\n    job is to say what is NOT enforced.\n    Then\
-    \ kani, lake-build, docs, wasi, lean-models, shader-validate are ADVISORY; the\n    ruchy/lean/forjar exec witnesses EXIST BUT SKIP IN CI (workspace-test installs\
+    \ enforcement inside the very section whose\n    job is to say what is NOT enforced.\n    Then state the ADVISORY set AS DERIVED rather than typed\
+    \ — it is every CI job across .github/workflows MINUS the required contexts, and the\nXPILE-ADVISORY markers already carry it (ruleset_drift holds them equal). PMAT-1453: this\nline used to enumerate \"kani, lake-build, docs, wasi, lean-models, shader-validate\" and\nOMITTED license-scan, build and deploy, understating what is unenforced. Also the\n    ruchy/lean/forjar exec witnesses EXIST BUT SKIP IN CI (workspace-test installs\
     \ wabt and\n    nothing else — verified: it is the file's only `apt-get install` line);\n    cleanroom-publish\
     \ does not run on PRs.\n  - Known-divergences MUST add the TWO NEW Rust-lane findings surfaced by\
     \ PMAT-1352:\n    `1 if c else 2.5` prints 1.0 where CPython prints 1, and `list[float].append(int)`\
