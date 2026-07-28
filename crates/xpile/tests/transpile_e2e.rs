@@ -8017,17 +8017,43 @@ fn main() {
 /// PMAT-533 (Tranche 2): in-place `append` on a **subscript receiver** —
 /// `g[i].append(e)` (list-of-list) and `d[k].append(e)` (dict-of-list). The
 /// bare `<name>.append(e)` form already worked; this is the indexed-receiver
-/// companion via the new `Stmt::IndexAppend`. List base indexes a mutable place
-/// directly (`g[(i) as usize].push(e)`); dict base reaches the value via
-/// `get_mut(&(k)).unwrap().push(e)` (KeyError parity). The mutability pre-walk
+/// companion via the new `Stmt::IndexAppend`. The mutability pre-walk
 /// recognises the subscript receiver, so the base is `mut`. Cross-checked vs
 /// python3 (2, 35, 3).
+///
+/// PMAT-1427 re-pinned the emitted shapes. This test previously asserted
+/// `.get_mut(&(` and a bare `as usize].push(`, i.e. it pinned the RAW
+/// narrowing coercion `g[(i) as usize]` and the untagged `Option::unwrap()`
+/// — the exact two defects PMAT-1427 removed. Those substrings were the only
+/// structural claim standing in front of `assert_rustc_runs`, so when they
+/// stopped matching the differential below never ran at all. The assertions
+/// now pin the CORRECTED shapes, keyed on `__iax` / `__k` (the read path uses
+/// `__li` / `__lc`, so none of these can be satisfied vacuously by the
+/// `len(g[i])` and `len(d[k])` reads in the same fixture).
 #[test]
 fn subscript_append() {
     let rust = xpile_transpile_to_rust("subscript_append.py");
+    // The list arm WRAPS a negative index against the base's own `len`
+    // (`g[-1]` is the last row, not `usize::MAX`) …
     assert!(
-        rust.contains("as usize].push(") && rust.contains(".get_mut(&("),
-        "subscript append should index a place / get_mut the value:\n{rust}"
+        rust.contains("let __iax = if __ia < 0 { g.len() as i64 + __ia } else { __ia };")
+            && rust.contains("g[__iax as usize].push("),
+        "the list-base append must wrap a negative index, not `(i) as usize`:\n{rust}"
+    );
+    // … and bounds-checks with the `xpile: IndexError:` TAG, which is what the
+    // typed-`except` filter (PMAT-731) matches on; an untagged native panic is
+    // invisible to it.
+    assert!(
+        rust.contains(
+            "if __iax < 0 || __iax as usize >= g.len() { panic!(\"xpile: IndexError: list index out of range\"); }"
+        ),
+        "the list-base append must bounds-check with the TAGGED IndexError:\n{rust}"
+    );
+    // The dict arm misses into the tagged, `repr(k)`-carrying KeyError rather
+    // than `Option::unwrap`'s untagged native payload.
+    assert!(
+        rust.contains("d.get_mut(__k).unwrap_or_else(|| panic!(\"xpile: KeyError:"),
+        "the dict-base append must miss into the tagged KeyError, not `.unwrap()`:\n{rust}"
     );
     let driver = r#"
 fn main() {
@@ -19977,12 +20003,29 @@ fn main() {
 /// PMAT-1052: `self.<field>[k].append(e)` — the grouping-in-a-class idiom (the
 /// field analogue of `d[k].append(e)`). resolve_subscript_append_base accepts
 /// a struct-field base; IndexAppend emits a dotted codegen base. MATCH 24/13.5.
+///
+/// PMAT-1427: the dotted-base arm shares the `Stmt::IndexAppend` emit with the
+/// plain-base arm, so it inherited the SAME two defects and the same fix. The
+/// old assertion pinned `self.g.get_mut(&`, i.e. the untagged `.unwrap()`
+/// shape, and stood in front of `assert_rustc_runs` — so its failure also
+/// suppressed the differential. Both field arms are pinned now: the dict field
+/// (`self.g` / `self.scores`) and the list field (`self.rows`), the latter
+/// being the only place in this fixture where a dotted base is index-wrapped.
 #[test]
 fn field_subscript_append() {
     let rust = xpile_transpile_to_rust("field_subscript_append.py");
     assert!(
-        rust.contains("self.g.get_mut(&") || rust.contains("self.g . get_mut"),
-        "the dict-field grouping append lowers to get_mut on the field:\n{rust}"
+        rust.contains("self.g.get_mut(__k).unwrap_or_else(|| panic!(\"xpile: KeyError:")
+            && rust
+                .contains("self.scores.get_mut(__k).unwrap_or_else(|| panic!(\"xpile: KeyError:"),
+        "the dict-field grouping append lowers to a TAGGED get_mut on the field:\n{rust}"
+    );
+    assert!(
+        rust.contains("self.rows[__iax as usize].push(")
+            && rust.contains(
+                "if __iax < 0 || __iax as usize >= self.rows.len() { panic!(\"xpile: IndexError: list index out of range\"); }"
+            ),
+        "the list-field append must wrap + tag-bounds-check through `__iax`:\n{rust}"
     );
     let driver = r#"
 fn main() {

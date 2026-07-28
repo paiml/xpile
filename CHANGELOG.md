@@ -69,6 +69,32 @@ differential oracle diffs byte-for-byte against live CPython — including the
 boundary rows where a wrap and a clamp-to-zero coincide, which a corpus of
 only-diverging rows could not tell apart.
 
+**Two pre-existing e2e tests were pinning the defect.** `subscript_append` and
+`field_subscript_append` in `crates/xpile/tests/transpile_e2e.rs` asserted
+`rust.contains(".get_mut(&(")` and `rust.contains("self.g.get_mut(&")` — the
+raw-`unwrap` spelling — so they went red on the *fix*, which is how this was
+caught. The shape worth recording is not that they needed updating, but *where
+they sat*: both shape assertions stand immediately in front of
+`assert_rustc_runs`, the executed rustc differential. While the substring did
+not match, the differential never ran at all — a failing structural claim had
+been silently gating the only executing check in each test. That is the
+"disclosed skip in front of a real check" shape one level down: nothing was
+disclosed, and the skip was the assertion's own failure. Both are re-pinned on
+the corrected spellings, keyed on `__iax` / `__k` (the read path uses
+`__li` / `__lc`, so neither can be satisfied vacuously by the `len(g[i])` and
+`len(d[k])` reads standing in the same fixture), and the red half was measured
+against the pre-fix binary rather than argued: all seven pinned substrings are
+absent from its emit. With the assertions passing, the two rustc differentials
+execute for the first time in this branch and both pass.
+
+`docs/specifications/xpile-spec.md` carried the same stale claim in the
+present tense — the PMAT-533 capability row spelled out
+`base[(index) as usize].push(elem)` / `base.get_mut(&(index)).unwrap().push(elem)`
+and asserted "KeyError parity". Corrected in place, with the old shapes kept
+visible as the record of what was wrong. The `roadmap.yaml` and older
+`CHANGELOG` occurrences are dated records of what shipped at v0.1.233 and are
+left as-is.
+
 Known and NOT fixed here, verified pre-existing and identical on both binaries:
 the ruchy lane emits `fun add(&self, …)` where the rust lane emits
 `fn add(&mut self, …)` for a method whose body is `self.rows[i].append(v)`, so

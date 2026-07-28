@@ -3905,7 +3905,23 @@ queue:
     C `int` shifted by 33 masks to 6 bits where a real C compiler masks to 5 — measured as a lead,
     not yet as a divergence; (c) `xs[i].extend(..)` / `xs[i].insert(..)` and the other in-place
     list methods on a SUBSCRIPT receiver have no HIR variant and refuse upstream — that refusal
-    was not re-derived from the binary here. NEXT PICK: PMAT-1373 (release commit, gate_touch 3,
+    was not re-derived from the binary here. (7) ★ ADDED BY THE FIX-FORWARD FIRE (2026-07-28
+    05:10, CI red on the first push): TWO PRE-EXISTING e2e TESTS WERE PINNING THE DEFECT, and the
+    lesson is not "update the assertions" — it is WHERE THEY SAT. `subscript_append` and
+    `field_subscript_append` asserted the raw-`unwrap` spelling, and both of those shape assertions
+    stand IMMEDIATELY IN FRONT OF `assert_rustc_runs`, the executed rustc differential. So for as
+    long as the substring failed to match, THE DIFFERENTIAL NEVER RAN — a failing structural claim
+    silently gating the only executing check in the test. Generalise: in any test shaped
+    `assert!(shape); assert_executes(..)`, the shape assertion is a GATE on the execution, so
+    pinning a shape that is expected to change converts a future correct fix into a suppressed
+    differential. When a fix reds a text assertion, check what that assertion was standing in
+    front of before rewriting it. (8) THE RED HALF OF A RE-PIN MUST BE MEASURED TOO — all seven new
+    pinned substrings were confirmed ABSENT from a provenance-verified pre-fix binary''s emit of
+    both fixtures, and keyed on `__iax`/`__k` so the `__li`/`__lc` read path in the same fixture
+    cannot satisfy them vacuously. (9) A DEFECT''S STALE CLAIMS SPAN DOC KINDS: the same false
+    shape lived in `xpile-spec.md` in the PRESENT TENSE (corrected) and in `roadmap.yaml` /
+    older `CHANGELOG` as DATED RECORDS of v0.1.233 (left alone) — PMAT-1417''s split, applied.
+    NEXT PICK: PMAT-1373 (release commit, gate_touch 3,
     witness-floor TOUCH 2) on Thu 07-30; a fire before then should hunt again. Do NOT start a
     gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 — no
     crates/*/src or contracts/*.yaml merge after it.'
