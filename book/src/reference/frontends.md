@@ -82,7 +82,7 @@ section — that's the canonical list to avoid duplication-and-drift.
 
 ### Operator surface
 
-Until PMAT-1438 this section claimed the *whole* of Python's binary and
+Until PMAT-1440 this section claimed the *whole* of Python's binary and
 unary operator sets, without listing either. Both claims were false —
 `@`, `is`, `is not` and unary `+` refuse — and the frontend's own refusal
 message says so in the same breath (`unsupported binary operator:

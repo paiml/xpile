@@ -1,4 +1,4 @@
-//! XPILE-PYOPSURFACE-001 (PMAT-1438) — the book published the Python
+//! XPILE-PYOPSURFACE-001 (PMAT-1440) — the book published the Python
 //! frontend's operator surface as a UNIVERSAL ("all binary operators", "all
 //! unary operators") while the frontend itself enumerates a FINITE list and
 //! refuses four operators.
@@ -526,7 +526,7 @@ fn frontend_refusal_message_enumerates_what_actually_lowers() {
         claimed, actual,
         "`lower_binop`'s refusal message enumerates a supported set that is not \
          what the frontend lowers. This is the ERROR-PATH twin of the doc defect \
-         PMAT-1438 fixed: it omitted `/`, which lowers, so the user who hit `@` \
+         PMAT-1440 fixed: it omitted `/`, which lowers, so the user who hit `@` \
          was told by omission that `/` is unsupported too."
     );
 }

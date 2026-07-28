@@ -20383,7 +20383,104 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels: []
   notes: null
 - id: PMAT-1438
-  title: 'PMAT-1438: [docs+frontend+gate+honesty] THE BOOK CLAIMED THE WHOLE OF PYTHON''S BINARY
+  title: 'PMAT-1438: [docs+gate+honesty] A CLAIM CLASS IS NOT A PARAGRAPH — PMAT-1437 corrected
+    TWO sites of the refusal-disclosure falsehood and left SIX, including one 100 lines below
+    the machine-derived table that refutes it, one in the file whose §1 it fixed FOR THAT
+    REASON, and one on `contracts.md`, the page every other page links to for what a contract
+    says. PMAT-1437 measured that a backend refusal usually names neither the governing
+    contract nor a better `--target`, and that `C-XPILE-BACKEND-TRAIT` requires neither; it
+    then rewrote backends.md''s header blockquote + guarantee paragraph and adding-a-backend.md
+    §1. THE SAME CLAIM WAS LIVE IN SIX MORE PLACES across four files:
+    (1) backends.md §Error handling, as a numbered normative `must`; (2) the same section,
+    attributing it to a "structural compile-contract citation" invariant; (3) cli.md body, as
+    a universal indicative; (4) shell-roundtrip.md, generalising from one TRUE example plus the
+    same attribution; (5) adding-a-backend.md §3, as a CODE COMMENT — instructions again;
+    (6) contracts.md §C-XPILE-BACKEND-TRAIT: "Error paths must name the governing contract."
+    ** WHY NO GATE SAW IT. PMAT-1437 built
+    `every_invariant_the_book_attributes_to_a_contract_is_an_equation_key` for this exact
+    class, and computes its subject as "the page''s header blockquote: the first run of `>`
+    lines" — a HEADER-ONLY check. Two sites are in page BODIES, unreachable at any strictness;
+    the other four name NO contract ID, so no attribution gate of any spelling could reach
+    them — what they spell is the REQUIREMENT, not its attribution.
+    ** THE LESSON, which is 1437''s own turned on its author: it learned "ask what the defect
+    SPELLED, not what the fix spells" (its first draft checked backticked `equations:` keys and
+    the original falsehood had none), applied it to the site in front of it, and shipped a gate
+    whose SUBJECT was still narrower than the class. A CLAIM CLASS IS NOT A PARAGRAPH, AND IT
+    IS NOT A FILE EITHER. Scope the gate to the claim; then ask what the widest thing is that
+    could carry that claim.
+    ** FIX in crates/xpile/tests/refusal_claim_scope_witness.rs (XPILE-REFUSECLAIM-001), two
+    rules, neither reachable by a header-only check: (1) a double-quoted prose phrase used as
+    an invariant''s NAME beside a contract ID, ANYWHERE on the page, must be one of that
+    contract''s `equations:` keys — "structural compile-contract citation" resembles but is not
+    `compile_contract_citation`, and a quoted phrase has no referent that can be checked;
+    (2) prose asserting what a refusal MESSAGE contains must carry a disclaimer or link the
+    measured table. Historical notes are exempt NARROWLY (the literal `Through v0.1.`), because
+    this repo corrects claims in place — and NEITHER original defect carried the phrase, which
+    is ASSERTED against their verbatim text rather than assumed.
+    ** NON-VACUITY BY CONSTRUCTION, not by a count: both detectors run over the offending
+    paragraphs'' VERBATIM pre-fix text, embedded in the witness, so softening either reds even
+    if the corpus is meanwhile rewritten clean — the failure mode a corpus-only negative has
+    (PMAT-1396). Anchors, not cardinalities, guard the corpus scan.
+    ** THE `//`-STRIP IS THE LESSON MADE EXECUTABLE. The first needle set was written from the
+    PROSE sites and missed §3''s code comment, which wraps as "… the governing contract, and
+    the suggested //    target." — the one site that is INSTRUCTIONS TO CONTRIBUTORS, and the
+    one 1437''s commit message singled out as the expensive one. A test pins that the naive
+    needle misses it, so the caution cannot decay into a comment.
+    ** TWO OF THE SIX SITES WERE FOUND BY THE GATE, NOT THE AUDIT (contracts.md and the
+    must-list items), after the first four were already fixed — the gate earned its keep before
+    it landed.
+    ** RED HALF RUN, SEVEN perturbations, each redding the expected test, with a green control:
+    restoring each of the five doc sites individually; GROWING THE CONTRACT an equation named
+    `structural_compile_contract_citation` (the BEHAVIOUR half — the detector tracks the
+    contract, not the text); and softening the needle set back to the obvious two.
+    ** MEASURED AND HONEST, recorded so it is not re-derived: the shell-roundtrip TRANSCRIPT is
+    accurate — `rust` really does name the contract and suggest the target; the falsehood was
+    the sentence GENERALISING from it. `qa_gate.rs`, named in adding-a-backend.md as the
+    citation gate, also exists.
+    ZERO crates/*/src and ZERO contracts/*.yaml change — freeze-compatible; witness_floor.rs
+    untouched.
+    NEXT PICK: STANDING LEADS, EV order. (a) THE BOOK''S RUST CODE FENCES ARE 100% FABRICATED —
+    all four API fences name ZERO real symbols. `MetaHirModule` (real: `Module`),
+    `EmittedArtifact` (real: `Artifact`), `emit_module` (real: `lower(&module, &config)`),
+    `target_label` (real: `targets()`), `parse_str` / `parse_file` (real: `parse_and_lower`)
+    and `DepylerFrontend` (real: `PythonFrontend`) each appear in ZERO files under crates/*/src;
+    `RustBackend::default()` has no `Default` impl. `adding-a-frontend.md` §3 additionally
+    OMITS `refused_claims()`, which the trait declares REQUIRED with a doc comment saying the
+    default was withheld so a partial refusal cannot be silent (PMAT-1433) — so the guide
+    instructs precisely the silence 1433 existed to break. CI runs `mdbook build`, never
+    `mdbook test`; TEN tests read the whole book/src corpus and ZERO parse a ```rust fence.
+    The gate: every rust fence must be byte-identical to a marked region of a COMPILED file
+    (the PMAT-1415 derive-from-the-artifact idiom, never applied to the book''s Rust).
+    (b) `book/src/concepts/two-lanes.md` — the book''s self-declared "single most important
+    mental model" — still publishes the pre-PMAT-1417 roster: 3 PHANTOM frontends (C++, Rust,
+    Lean 4), the wasm frontend missing, 2 of 9 backends missing, and PTX/WGSL/SPIR-V/Lean
+    labelled scaffold while all four emit; PMAT-1417 EDITED this file and left the diagram.
+    (c) the proof lane is advertised as a LaTeX ↔ Lean ↔ mdBook ROUND-TRIP on README:121-123,
+    the hero alt-text and introduction.md, while README:179-180 says outright "There is no
+    mdBook contract frontend or backend" — one file contradicting itself.
+    (d) `xpile audit`''s "xpile recognises …" bail is the PRE-PMAT-1434 flat `extensions()`
+    union — the FOURTH surface of the frontend-claim class (source fix).
+    (e) `.pyi` and `.h` are published as spellings that LOWER on all three surfaces, but a
+    canonical stub / header refuses; `frontend_claim_disposition_witness.rs` certifies them by
+    driving `.py`/`.c` BYTES at those paths — PMAT-1433 lesson 3 recurring.
+    (f) backends.md''s Status column is still prose nothing gates; `ruchy`''s "compiles to Rust"
+    parenthetical is refuted by `ruchy check` accepting 18 of 39 emitted artifacts.
+    PROBED AND CLEAN, recorded so it is not re-derived: the shell-roundtrip transcript, and
+    `qa_gate.rs`''s existence. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
+    HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373 (release commit); on
+    2026-07-31 PMAT-1374 (publish).'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+
+- id: PMAT-1440
+  title: 'PMAT-1440: [docs+frontend+gate+honesty] THE BOOK CLAIMED THE WHOLE OF PYTHON''S BINARY
     AND UNARY OPERATOR SETS WHILE FOUR OPERATORS REFUSE — and the frontend''s own refusal message
     UNDER-reported by one, so the page and the binary were wrong in OPPOSITE directions about the
     same surface. `book/src/reference/frontends.md` had carried since 2026-05-15, under "Python
@@ -20442,9 +20539,18 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     the stack landed as SQUASHES the same afternoon: PMAT-1434 (#2026), PMAT-1435 (#2031),
     PMAT-1436 (#2032), PMAT-1437 (#2033). A squash re-shas its slice, so the original
     `fix/py-operator-surface-1438` (#2030) went CONFLICTING on the three append-only ledgers.
-    SUPERSEDED, not rewritten: 40957be9 was CHERRY-PICKED onto `fix/py-operator-surface-1438-r2`
-    off main (clean apply) and #2030 closed in its favour; PMAT-1433..1438 verified to appear
-    exactly once each in both ledgers after the pick.'
+    SUPERSEDED, not rewritten: 40957be9 was CHERRY-PICKED onto a fresh branch off main (clean
+    apply) and #2030 closed in its favour; PMAT-1433..1438 verified to appear exactly once each
+    in both ledgers after the pick.
+    ** ID COLLISION — THIS SLICE IS THE RENUMBERED ONE. It was authored and pushed as PMAT-1438;
+    a CONCURRENT fire independently took 1438 for the CLAIM-CLASS slice (#2034, the entry above)
+    and MERGED FIRST, then took 1439 (#2036). The landed id wins, so this became PMAT-1440 on
+    every surface: `frontends.md` prose, the witness module doc, the `lower_binop` source
+    comment, the CHANGELOG heading, and the id + title in both ledgers. Re-checked rather than
+    assumed after the renumber: no duplicate id in either ledger, both parse under
+    `yaml.safe_load`, and the roadmap tail reads 1436, 1437, 1438, 1440. The preventive rule is
+    the standing one — A PUSHED BRANCH IS AN ID CLAIM, so `git branch -r` is part of deriving
+    max+1, not just the ledgers; 1439 existed only as a branch at the moment of collision.'
   status: done
   priority: high
   created: '2026-07-28T00:00:00Z'
