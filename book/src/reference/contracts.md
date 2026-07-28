@@ -27,7 +27,7 @@ UNVERIFIED totals; PARTIAL is routinely non-zero.
 | [`xlate-py-list-to-vec-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xlate-py-list-to-vec-v1.yaml) | kernel | 2 translation / code | Python list → Rust Vec, alias-preserving |
 | [`xlate-lean-to-rust-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xlate-lean-to-rust-v1.yaml) | kernel | 2 / code | All Lean 4 constructs → Rust |
 | [`xlate-rust-fn-to-lean-thm-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xlate-rust-fn-to-lean-thm-v1.yaml) | kernel | 2 / proof | Rust fn + contract → Lean 4 theorem |
-| [`notation-latex-math-to-equation-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/notation-latex-math-to-equation-v1.yaml) | kernel | 2 / proof | LaTeX math + theorem envs → contract equations |
+| [`notation-latex-math-to-equation-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/notation-latex-math-to-equation-v1.yaml) | kernel | 2 / proof | LaTeX math → equations; theorem envs → proof obligations |
 | [`ffi-cpython-ext-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/ffi-cpython-ext-v1.yaml) | pattern | 4 hybrid / code | CPython C-extension boundary semantics |
 | [`compile-rust-to-ptx-mma-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/compile-rust-to-ptx-mma-v1.yaml) | pattern | **5 compile / code** | PTX emission: `mma.sync`, `cp.async` pipelining, SMEM budget |
 
@@ -89,9 +89,33 @@ proof-lane analogue of `C-XLATE-LEAN-TO-RUST`.
 
 > Layer 2 (translation) / proof lane / kind: kernel
 
-LaTeX math environments and `theorem`/`lemma` blocks lower to
-contract equations. Governs the bidirectional notation bridge between
-human-written math and machine-checked YAML equations.
+LaTeX math — `$...$`, `\(...\)`, `\[...\]`, and the `equation`,
+`align` and `gather` environments — lowers to contract **equations**.
+Theorem-class environments (`theorem`, `lemma`, `corollary`,
+`proposition`, `claim`, `definition`, `remark`) lower to **proof
+obligations**, whose type is `precondition` when the body opens with
+`\textbf{Precondition:}` and `postcondition` otherwise. A
+`\begin{proof}` body is consumed and never reaches the equations
+block. Governs the bidirectional notation bridge between human-written
+math and machine-checked YAML.
+
+The exact surface is machine-readable — the `notation_surface` block
+at the end of the contract — and
+`crates/xpile/tests/notation_claim_witness.rs` checks it **both ways**:
+every construct listed as lowering must produce output, and every
+construct listed as unimplemented must produce none. Four things are
+listed as unimplemented and are not claimed here: the `lean_pointer`
+half of proof-env lowering, multi-row `align`/`gather` splitting,
+`[label]` resolution to an equation key (it is passed through
+verbatim), and nested theorem environments.
+
+> **This paragraph was false until 2026-07-28 (PMAT-1431).** The
+> theorem/proof half had never been implemented, and a theorem body's
+> math surfaced as a free-standing equation rather than as an
+> obligation. The Lean theorems and Kani harnesses that back this
+> contract stayed green throughout, because they range over abstract
+> models rather than over the shipped parser. The two-way
+> `notation_surface` check is what now ties them together.
 
 ## C-XPILE-FRONTEND-TRAIT
 

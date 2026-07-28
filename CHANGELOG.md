@@ -7,6 +7,78 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The proof-lane LaTeX frontend implemented none of the theorem/proof half its own contract specifies — and misfiled the content instead of dropping it (PMAT-1431)
+
+`C-NOTATION-LATEX-MATH-TO-EQUATION` has specified since 2026-05-15 that
+theorem-class environments lower to `proof_obligations` and that a `proof`
+environment lowers without leaking its body. It carries a Lean refinement
+theorem (`theorem_env_to_obligation`), a Silver promotion
+(`theorem_env_obligation_kind_silver`), a Kani harness of the same name, and a
+book page publishing that "`theorem`/`lemma` blocks lower to contract
+equations". None of it existed in Rust.
+
+Measured on a force-rebuilt binary — all seven theorem-class environments, the
+`\(...\)` inline form and `gather` returned `Ok` with nothing in it, at exit 0,
+for 74 days:
+
+```text
+theorem: eqs=2 obligations=0 keys=["eq_inline_0", "eq_inline_1"]
+  lemma: eqs=1 obligations=0 keys=["eq_inline_0"]
+  proof: eqs=1 obligations=0 keys=["eq_inline_0"]
+  paren: eqs=0 obligations=0 keys=[]
+ gather: eqs=0 obligations=0 keys=[]
+```
+
+**The sharp part is the misclassification, not the omission.** The
+environments were not recognised at all, so their bodies were re-scanned as
+ordinary text and their math spans surfaced as free-standing `eq_inline_*`
+entries — the one bucket `inline_math_to_equation`'s own domain excludes
+("outside a theorem-class environment"). `\begin{theorem}[Monotone] For all
+$x > 0$, $f(x) \ge 0$` produced two anonymous equations and no obligation: the
+theorem's content was *present*, in the wrong bucket, indistinguishable from an
+equation the author never wrote. A `proof` body did the same, contradicting
+`lower_proof_env`'s modelled `body_leaked := false`. An omission is visible to
+a reader counting outputs; a misfiling is not.
+
+**Why the proofs did not catch it.** They range over abstract models —
+`LeanTheoremEnv` is a bool plus a string, the Kani harness quantifies over a
+single `bool` — so they proved a polarity mapping for a lowering function that
+had no Rust behind it. A model with no implementation behind it proves a
+property of nothing, and nothing in the semantic or symbolic strata can notice
+on its own.
+
+`latex-contract-frontend` now lowers theorem-class environments (roster
+`THEOREM_CLASS_ENVIRONMENTS`; amsthm `[label]` → `applies_to`, math →
+`formal`, prose → `property`, `\textbf{Precondition:}` → polarity), consumes
+`proof` bodies without leaking them, and handles `\(...\)` (keyed `eq_paren_N`,
+so `inline_kinds_are_distinct_silver` stays falsifiable) and `gather`.
+
+The gate is `crates/xpile/tests/notation_claim_witness.rs`
+(XPILE-NOTATION-002, 9 tests), keyed on the **claim class** via a new
+machine-readable `notation_surface` block in the contract — the PMAT-1350
+`emit_surface` idiom — and checked **both ways**: every `lowers` row must
+produce output and every `unimplemented` row must produce none, so
+implementing a disclosed gap reds the gate and forces the row to move up. The
+environment roster is checked for set equality in both directions (executed:
+adding `sublemma` to the parser alone fails with "DRIFTED APART"). Red half
+run: 8 of 9 tests failed before the fix.
+
+**Also found:** the contract disagreed with itself about its own roster.
+`metadata.description` named `definition` and `remark`; the equation's own
+`domain` named `claim` and neither of those. Because neither list was
+implemented, the disagreement had never cost anything and no test could have
+found it. Resolved as the union, and the roster moved out of prose into a
+machine-readable key.
+
+**Residuals, now disclosed in `notation_surface.unimplemented` rather than
+silent:** the `lean_pointer` half of proof-env lowering has no field in
+`EquationsBlock` (XPILE-LATEX-PARSE-LEANPTR-001);
+`resolve_label_to_equation_name` is identity, and the contract's postcondition
+previously described a resolution step that had never run
+(XPILE-LATEX-PARSE-LABELRES-001); multi-row `align`/`gather` is one entry, not
+one per row; nested theorem environments produce one obligation
+(XPILE-LATEX-PARSE-THMNEST-001).
+
 ### The backend reference published a `--target` value the CLI rejects — and the gate meant to keep that column honest is what put it there (PMAT-1430)
 
 `book/src/reference/backends.md` heads its second column `` `--target` ``. The

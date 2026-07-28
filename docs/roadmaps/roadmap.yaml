@@ -19827,3 +19827,60 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1431
+  title: 'PMAT-1431: [latex+contract+docs] THE PROOF-LANE FRONTEND IMPLEMENTED NONE OF THE
+    THEOREM/PROOF HALF ITS OWN CONTRACT SPECIFIES, AND MISFILED THE CONTENT RATHER THAN
+    DROPPING IT: `C-NOTATION-LATEX-MATH-TO-EQUATION` has specified since 2026-05-15 that
+    theorem-class environments lower to `proof_obligations` and that `\begin{proof}` lowers
+    without leaking its body, with a Lean refinement theorem (`theorem_env_to_obligation`),
+    a Silver promotion (`theorem_env_obligation_kind_silver`), a Kani harness of the same
+    name, and a book page publishing "`theorem`/`lemma` blocks lower to contract equations".
+    NONE OF IT EXISTED IN RUST. Measured on a force-rebuilt binary: all seven theorem-class
+    environments returned `Ok` with ZERO obligations; `\(...\)` returned zero equations;
+    `gather` returned zero equations — every one at exit 0, for 74 days. THE SHARP PART IS
+    NOT THE OMISSION BUT THE MISCLASSIFICATION. The environments were not recognised at all,
+    so their bodies were re-scanned as ordinary text and their math surfaced as free-standing
+    `eq_inline_*` entries — the ONE bucket `inline_math_to_equation`''s own domain excludes
+    ("outside a theorem-class environment"). `\begin{theorem}[Monotone] For all $x > 0$,
+    $f(x) \ge 0$` produced two anonymous equations and no obligation: the theorem''s content
+    was PRESENT, in the wrong bucket, indistinguishable from an equation the author never
+    wrote. A `\begin{proof}` body did the same, directly contradicting `lower_proof_env`''s
+    modelled `body_leaked := false`. WHY THE PROOFS DID NOT CATCH IT: they range over abstract
+    models — `LeanTheoremEnv` is a bool plus a string, the Kani harness quantifies over a
+    single `bool` — so they proved a polarity mapping for a lowering function that had no Rust
+    behind it. A model with no implementation behind it proves a property of nothing.
+    FIX: `latex-contract-frontend` gains theorem-class lowering (roster
+    `THEOREM_CLASS_ENVIRONMENTS`, amsthm `[label]` → `applies_to`, math → `formal`, prose →
+    `property`, `\textbf{Precondition:}` → polarity), proof-env consumption that discards the
+    body, `\(...\)` inline math keyed `eq_paren_N` (kind retained, so
+    `inline_kinds_are_distinct_silver` stays falsifiable), and `gather`. GATE: new
+    `crates/xpile/tests/notation_claim_witness.rs` (XPILE-NOTATION-002, 9 tests) keyed on the
+    CLAIM CLASS via a machine-readable `notation_surface` block in the contract — the PMAT-1350
+    `emit_surface` idiom — checked BOTH WAYS: every `lowers` row must produce output, every
+    `unimplemented` row must produce none, so implementing a disclosed gap reds the gate and
+    forces the row to move. The environment roster is checked for SET EQUALITY in both
+    directions (EXECUTED: adding `sublemma` to the parser alone fails with "DRIFTED APART").
+    RED HALF RUN: 8 of 9 tests failed before the fix; the one that passed was the roster
+    equality, authored consistently on both sides. Every parse asserts a minimum arity so a
+    YAML rename cannot make the file a vacuous pass over an empty list. HONESTY RESIDUALS,
+    all now DISCLOSED in `notation_surface.unimplemented` rather than silent: the `lean_pointer`
+    half of proof-env lowering has no field in `EquationsBlock`
+    (XPILE-LATEX-PARSE-LEANPTR-001); `resolve_label_to_equation_name` is IDENTITY, and the
+    contract''s postcondition previously described a resolution step that had never run
+    (XPILE-LATEX-PARSE-LABELRES-001); multi-row `align`/`gather` is one entry, not one per row;
+    nested theorem environments produce one obligation (XPILE-LATEX-PARSE-THMNEST-001). ALSO
+    FOUND: the contract disagreed WITH ITSELF about its own roster — `metadata.description`
+    named `definition`/`remark`, the equation''s `domain` named `claim` and neither of those.
+    Nothing was implemented, so the disagreement had never cost anything and nothing could have
+    detected it; resolved as the union, and the roster moved out of prose into a machine-readable
+    key. No gate file touched; `witness_floor.rs` untouched (two-touch serial resource,
+    PMAT-1372 / PMAT-1373).'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
