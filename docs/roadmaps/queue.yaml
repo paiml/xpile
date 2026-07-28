@@ -2,8 +2,25 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: '2026-07-28 (PMAT-1434 landed from an honesty hunt; the ranked queue stays exhausted
-  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1434 took the neighbourhood PMAT-1433
+updated: '2026-07-28 (PMAT-1436 landed from an honesty hunt; the ranked queue stays exhausted
+  until Thu 07-30 / PMAT-1373, the release commit. PMAT-1436 took PMAT-1435 top lead -- a flake
+  observed ONCE under load -- and found ONE root cause with TWO directions:
+  `hybrid_repair.rs::repair_writes_nothing_and_leaves_no_workspace_behind` identified its subject
+  by GLOBBING the SHARED temp dir for a hard-coded `"xpile_repair_ws_"`, so it red for a
+  CONCURRENT SIBLING PROCESS''s root (reproduced: `leaked: ["/tmp/xpile_repair_ws_968061"]`,
+  a directory this run never touched) AND passed while its own subject leaked every workspace it
+  built (reproduced: rename the prefix + drop the cleanup, test GREEN). LESSONS: (1) ASK WHAT A
+  WITNESS CAN NAME -- if it can only DESCRIBE its subject ("directories matching a prefix, in a
+  place everyone writes"), it will red for a neighbour and go green on itself; those are not two
+  bugs. (2) MAKE THE SUBJECT SPEAK: the fix was not a smarter scan but one line of product
+  DISCLOSURE (`probe workspaces: N built under <root> -- all removed`, N from the probe''s own
+  allocation counter), which is better operator output AND the identity the test needed.
+  (3) A PRIVATE NAMESPACE BEATS A SET DIFFERENCE -- handing the run its own `TMPDIR` cost two
+  lines and killed the flake, the pid-reuse blind spot and the rename blind spot at once, and
+  incidentally covers the `--verify` lane''s `xpile_verify_ws_*` workspace that the prefix glob
+  never looked at. (4) THE LEAD NAMED A NARROWER FIX THAN THE DEFECT NEEDED (spawn-the-child-pid
+  closes only the false RED) -- a lead is a PLACE TO LOOK, not a specification. PRIOR ENTRY:
+  PMAT-1434 took the neighbourhood PMAT-1433
   standing lead (c) points at -- the `extensions()`-derived reports -- and found the CLAIM CLASS
   had a third surface on the ERROR PATH. `xpile transpile notes.txt` answered
   `no frontend handles `.txt`; known extensions: ["py","pyi","c","h","ruchy","sh","bash","zsh","mk","wat"]`:
@@ -4486,6 +4503,75 @@ queue:
     do NOT touch witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 -- no crates/*/src or
     contracts/*.yaml merge after it. On 2026-07-30 take PMAT-1373 (release commit, witness-floor
     TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1436
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-28'
+  title: 'a witness that identifies its subject by a GLOB OVER SHARED STATE measures the
+    NEIGHBOURHOOD, not the run -- `repair_writes_nothing_and_leaves_no_workspace_behind` red for
+    a SIBLING PROCESS''s debris and green while its own subject leaked every workspace it built'
+  notes: 'SHIPPED 2026-07-28 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1435''s top lead. No new witness FILE: two existing tests in
+    crates/xpile/tests/hybrid_repair.rs strengthened, plus one added disclosure line on the
+    `--repair` path. witness_floor.rs untouched; no contract, gate or emitter semantics changed.
+    ** BOTH FAILURE DIRECTIONS REPRODUCED, not argued. FALSE RED: with one concurrent
+    `xpile ... --repair` running, the test failed with `leaked: ["/tmp/xpile_repair_ws_968061"]`
+    -- a root belonging to ANOTHER PROCESS, reported as "every probe workspace THIS RUN created".
+    FALSE GREEN: renaming the CLI''s root prefix to `xpile_probe_ws_` and deleting the final
+    `remove_dir_all` made the run LEAK its root outright, and the test named
+    `..._leaves_no_workspace_behind` PASSED -- the prefix was a string literal duplicated from
+    main.rs with nothing tying the two together. Its doc comment also claimed it "pins that a
+    run which builds N candidate workspaces cleans up all N"; it observed only an after-state,
+    so it could never tell cleaning up N from never building any.
+    ** FIX: give the run an IDENTITY the witness can read, not a better glob.
+    `repair_probe_root()` is the one place the root is spelled; every `--repair` run --
+    converging AND fail-closed -- prints `probe workspaces: N built under <root> -- all
+    removed`, N from `HybridWorkspaceProbe`''s own allocation counter. The witness runs the
+    subject under a PRIVATE `TMPDIR` and asserts: N >= 1 and N == iterations + 1 (non-vacuity,
+    cross-checked against an INDEPENDENTLY reported number so N cannot be a constant); the
+    announced root lies INSIDE that TMPDIR (it moved when TMPDIR moved, so it is the path the
+    binary allocated); that exact path does not exist (asked directly -- no set difference, so a
+    reused pid cannot filter a real leak out of the answer); and the private TMPDIR is EMPTY --
+    the half a rename cannot evade, which also covers the `--verify` lane''s own
+    `xpile_verify_ws_*` workspace that the old prefix glob never looked at at all.
+    `repair_fails_closed_when_no_rule_applies` gained the same cleanup assertion.
+    ** THE LEAD NAMED A NARROWER FIX THAN THE DEFECT NEEDED. PMAT-1435 prescribed
+    `Command::spawn()` + assert on `xpile_repair_ws_<child_pid>`. That closes the FALSE RED and
+    nothing else: still hard-codes the prefix (blind to relocation), still cannot count N, still
+    never sees the `--verify` workspace. A lead is a PLACE TO LOOK, not a specification.
+    ** RED HALF RUN, SIX perturbations: (1) relocate-and-leak -- the one the OLD witness PASSED
+    -- now reds with the run''s own "NOT REMOVED (leaked)"; (2) a constant count reds
+    N == iterations + 1 (left 1, right 2); (3) a fabricated root reds the follow-TMPDIR check;
+    (4) deleting the disclosure reds BOTH witnesses; (5) leaking ONLY on the fail-closed path
+    reds EXACTLY `repair_fails_closed_when_no_rule_applies` and leaves the converging witness
+    green; CONTROL (6) the concurrent sibling that red-ed the old witness leaves the new one
+    green across a 25-run storm.
+    ** LESSONS. (1) ASK WHAT A WITNESS CAN NAME. If it can only describe its subject
+    ("directories matching a prefix, in a place everyone writes"), it will red for a neighbour
+    and go green on itself -- one root cause, both directions. (2) MAKE THE SUBJECT SPEAK. The
+    cheapest fix was not a smarter scan but one line of product DISCLOSURE; it is better
+    operator output AND it is the identity the test needed. (3) A PRIVATE NAMESPACE BEATS A
+    SET DIFFERENCE. `TMPDIR` cost two lines and killed the flake, the pid-reuse blind spot and
+    the rename blind spot at once.
+    ** BLOCKER NOTE, unchanged: `gh` is UNAUTHENTICATED (token invalid, HTTP 401). Re-auth is an
+    interactive OAuth flow and is OWNER-GATED. This slice is COMMITTED AND PUSHED WITH NO PR.
+    Branch `fix/repair-ws-witness-1436` is STACKED on `fix/target-alias-disclosure-1435`, which
+    is stacked on `fix/frontend-dispatch-message-1434`, which is stacked on main -- merge
+    1434, 1435, 1436 in that order when auth returns. NEXT FREE ID IS PMAT-1437.
+    NEXT PICK: still nothing OPEN before Thursday. STANDING LEADS, EV order: (a) PMAT-1433 lead
+    (c) / PMAT-1434 lead (b), a `claimed_filenames()` peer to `extensions()`; (b) PMAT-1430 lead
+    (c) / PMAT-1433 lead (b), backends.md''s Status column is prose nothing gates and
+    `Backend::targets()` is the `Frontend::extensions()` shape one lane over; (c) PMAT-1435 lead
+    (c), sweep the OTHER CLI flags whose help enumerates a closed set (`--contracts`,
+    `--hardware`); (d) NEW -- this defect''s CLASS is "a witness identifies its subject by a
+    glob/scan over a namespace it SHARES with other runs". Sweep the other tests that read a
+    shared mutable namespace (`std::env::temp_dir()`, `git ls-files`, the workspace target dir)
+    and ask of each whether it can NAME what it measures or only its neighbourhood --
+    `shell_artifact_policy_witness.rs` and every `--emit-workspace` test are the first places to
+    look. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE Wed
+    2026-07-29 18:00 -- no crates/*/src or contracts/*.yaml merge after it. On 2026-07-30 take
+    PMAT-1373 (release commit, witness-floor TOUCH 2); on 2026-07-31 PMAT-1374 (publish).'
 next_lane:
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles

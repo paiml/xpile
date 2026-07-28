@@ -20230,3 +20230,78 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1436
+  title: 'PMAT-1436: [cli+test+honesty] A WITNESS THAT IDENTIFIES ITS SUBJECT BY A GLOB OVER
+    SHARED STATE MEASURES THE NEIGHBOURHOOD, NOT THE RUN — `repair_writes_nothing_and_leaves_no_workspace_behind`
+    red for a SIBLING PROCESS''s debris and green while its own subject leaked every workspace
+    it built. `xpile hybrid --verify --repair` builds each candidate in a throwaway workspace
+    under a pid-keyed root in the temp dir, and this test is the ONE statement in the repo that
+    none of them survives. It asked the wrong question: it listed `std::env::temp_dir()` for
+    names starting with the literal `"xpile_repair_ws_"`, before and after, and asserted the
+    difference was empty. BOTH failure directions were REPRODUCED on the branch, not argued.
+    ** FALSE RED: with one concurrent `xpile ... --repair` running, the test failed with
+    `leaked: ["/tmp/xpile_repair_ws_968061"]` — a root belonging to ANOTHER PROCESS, reported
+    as "every probe workspace THIS RUN created". Every test in the file that spawns `--repair`
+    is a candidate sibling, since `cargo test` runs them on concurrent threads and each child
+    gets its own pid, hence its own root. This is exactly the flake PMAT-1435 observed once
+    under load and left as its top lead, now made deterministic.
+    ** FALSE GREEN: renaming the CLI''s root prefix to `xpile_probe_ws_` and deleting the final
+    `remove_dir_all` made the run LEAK its root outright — and the test named
+    `..._leaves_no_workspace_behind` PASSED. The prefix was a string literal duplicated from
+    main.rs with nothing tying the two together, so relocating the subject made the witness
+    blind to it. Its doc comment ALSO claimed it "pins that a run which builds N candidate
+    workspaces cleans up all N"; it could not, because it observed only an after-state and so
+    could never distinguish cleaning up N from never building any.
+    FIX: give the run an IDENTITY the witness can read, rather than a better glob.
+    `repair_probe_root()` is now the one place the root is spelled, and every `--repair` run —
+    converging AND fail-closed — announces `probe workspaces: N built under <root> —
+    all removed`, with N taken from `HybridWorkspaceProbe`''s own allocation counter. The
+    witness runs the subject under a PRIVATE `TMPDIR` and asserts four things: N >= 1 and
+    N == iterations + 1 (non-vacuity, cross-checked against an INDEPENDENTLY reported number so
+    the count cannot be a constant); the announced root lies INSIDE that `TMPDIR` (it moved when
+    `TMPDIR` moved, so it is the path the binary allocated and not a string it prints
+    regardless); that exact path does not exist (asked directly — no set difference, so a reused
+    pid cannot filter a real leak out of the answer); and the private `TMPDIR` is EMPTY, the
+    half a rename cannot evade, which also covers the `--verify` lane''s own
+    `xpile_verify_ws_*` workspace — a directory the old prefix glob never looked at at all.
+    `repair_fails_closed_when_no_rule_applies` gained the same cleanup assertion, because the
+    bailing path is the one most likely to leave debris and the no-write witness only ever
+    exercises a CONVERGING run.
+    ** THE LEAD NAMED A NARROWER FIX THAN THE DEFECT NEEDED, which is the playbook rule again:
+    PMAT-1435 prescribed `Command::spawn()` to obtain the CHILD pid and assert on exactly
+    `xpile_repair_ws_<child_pid>`. That closes the FALSE RED and nothing else — it still
+    hard-codes the prefix (so it stays blind to relocation), still cannot count N, and still
+    never sees the `--verify` workspace. A lead is a place to look, not a specification.
+    RED HALF RUN, SIX perturbations, each recorded: (1) relocate-and-leak — the perturbation the
+    OLD witness PASSED — now reds with the run''s own "NOT REMOVED (leaked)" disposition;
+    (2) a constant count reds `N == iterations + 1` (left 1, right 2); (3) a fabricated root
+    reds the follow-`TMPDIR` check; (4) deleting the disclosure reds BOTH witnesses; (5) leaking
+    ONLY on the fail-closed path reds EXACTLY `repair_fails_closed_when_no_rule_applies` and
+    leaves the converging witness green, proving the new assertion does independent work; and
+    the CONTROL (6) the concurrent sibling that red-ed the old witness leaves the new one green
+    across a 25-run storm.
+    NOT a witness_floor.rs touch; no contract, gate or emitter semantics changed. The only
+    product change is one added disclosure line on the `--repair` path, which no lane that
+    MATCHES ever reaches (`repair_off_is_byte_identical_to_plain_verify` and
+    `repair_discloses_that_the_shell_lane_has_no_rules`, which counts lines exactly, both stay
+    green).
+    STANDING LEADS carried forward: (a) PMAT-1433 lead (c) / PMAT-1434 lead (b), the
+    `claimed_filenames()` peer to `extensions()`; (b) PMAT-1430 lead (c) / PMAT-1433 lead (b),
+    backends.md''s Status column is prose nothing gates and `Backend::targets()` is the
+    `Frontend::extensions()` shape one lane over; (c) PMAT-1435 lead (c), sweep the OTHER CLI
+    flags whose help text enumerates a closed set (`--contracts`, `--hardware`) for the same
+    accepted-but-unnamed gap; (d) NEW — this defect''s CLASS is "a witness identifies its
+    subject by a glob/scan over a namespace it shares with other runs". Sweep the other tests
+    that read a SHARED mutable namespace (`std::env::temp_dir()`, `git ls-files`, the workspace
+    target dir, `/tmp` fixtures) and ask of each whether it can name the thing it measures or
+    only its neighbourhood — `shell_artifact_policy_witness.rs` and every `--emit-workspace`
+    test are the first places to look.'
+  status: done
+  priority: high
+  created: '2026-07-28T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
