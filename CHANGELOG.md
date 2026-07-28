@@ -7,6 +7,75 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The substrate says "12 contracts" 62 times and holds 35 — and every one of the three normative sites is TRUE in the half a reader checks (PMAT-1458)
+
+PMAT-1457 closed the ordinal class and named the next one in its own notes: the
+per-contract **coverage fraction** — *"three live sites were repaired BY HAND
+here"*, still ungated. This takes that class at the level where it is decidable
+without arguing about tier semantics: **the denominator, which is a
+population**.
+
+⭐ **The number that froze is the census.** PMAT-1457's finding was that an
+ordinal froze the NUMERATOR while the substrate grew the DENOMINATOR. One level
+up, the substrate writes the denominator down — `12 contracts` — and it has
+**thirty-five**. Measured at `b4b9fc6e`, with `cargo test -p xpile --test
+claims_drift` **green on all 36 tests**: the needle finds **64** census claims
+under `contracts/`, **62 of which name a 12-contract substrate**. Three sit in
+normative `invariants:`/`postconditions:` slots, where PMAT-1454 established
+there is no record exemption at all.
+
+⚠️ **All three are TRUE in their totality half — that is why they survived.**
+
+| site | claim | live |
+|---|---|---|
+| `xpile-contract-backend-trait-v1.yaml:127` (`invariants:`) | ALL **12** contracts have ≥1 Gold-tier refinement theorem | **35 of 35** bind a Gold-or-better theorem |
+| `…:132` (`postconditions:`) | Gold-tier coverage universal across the substrate (**12/12** contracts) | 35 contracts |
+| `…:189` (`invariants:`) | every one of the **12** contracts now has ≥1 Diamond theorem | `xpile diamond --json` min `diamond_count` = 1 over **35** rows |
+
+A reader checks the **claim** — *is it universal?* — gets `yes`, and never
+checks the **census** riding along inside it. The true half laundered the stale
+half, the same shape as PMAT-1457's mixed sentence, through sixty-odd
+sentences' worth of re-reading.
+
+**The rule:** a number that names `|substrate|` must equal the live
+`|substrate|`, re-derived from `contracts/*.yaml` on every run. Three spellings,
+because the corpus writes three — `all N contracts`, `N/M contracts`,
+`N of M contracts`. A **bare** `N contracts` is deliberately out of class:
+*"11 contracts at depth-3+"* is a subset count, it is honest, and there are
+forty-odd of them.
+
+**The exemption is the one PMAT-1454 already established, not a new one.** A
+normative field must be live-true with no way out; provenance is exempt iff it
+cites the slice it narrates. **The 59 cited records naming 12 are honest
+history and are untouched** — this gate does not rewrite the past, and a test
+pins that it must not.
+
+**Repairs.** `:127` and `:189` drop the census (an `invariants:` entry is about
+its equation, not about how big the substrate is). `:132` states the **live**
+fraction `(35/35 contracts)` so the gate maintains it — the thirty-sixth
+contract now reds that line instead of silently ageing it. Two live agreements
+already existed, one per spelling, both in `contracts/README.md` and neither
+planted: *"covering 24 of 35 contracts"* and *"All 35 contracts sit at
+Bronze"*. They are the proof this measures the substrate rather than banning a
+word.
+
+⚠️ **Three guards measured; two were wrong the obvious way — fourth slice
+running.** The numerator guard *is* load-bearing on the live corpus: without it
+`xpile-backend-trait-v1.yaml:241`'s *"language's Layer-1/2 contracts"* reads as
+a fraction and the gate reports a **two-contract substrate** in a normative
+field. The noun's **leading** word boundary — written for `subcontracts` and
+`then-12-contract` — came back **green** on its red half and was **deleted, not
+downgraded**: the backward walk already requires a space then digits, so it was
+unreachable code dressed as a guard. The **trailing** boundary red-halfed green
+against the case that looked like its justification (`--contracts-dir`, whose
+walk finds no number at all) and is now pinned by `contract-lane`, which does
+red.
+
+**Scope, said rather than left to infer:** the corpus also writes `ALL 5 LAYERS`
+71 times and it is **true**, but a contract's taxonomy layer is a sentence
+inside `metadata.description` and only 6 of the 35 descriptions spell it — the
+population is not derivable, so layer censuses are out of subject.
+
 ### The slice that wrote "FINAL needs a live count — still ungated" edited this Lean file and walked past the `**TWELFTH and FINAL**` 120 lines in (PMAT-1457)
 
 PMAT-1456 repaired four "TWELFTH and FINAL" sentences and wrote its own lesson

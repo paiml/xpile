@@ -124,12 +124,12 @@ equations:
       - "CitationCompleteContract pairs Contract with RenderedDocSilver under a TYPE-LEVEL proof that citations = depends_on ++ references"
       - "citation-completeness witness travels with the pair — no per-call-site re-proof"
       - "PMAT-197 closes the 2×2 trait matrix at Gold (PMAT-194 frontend, PMAT-195 backend, PMAT-196 contract-frontend, PMAT-197 contract-backend)"
-      - "with PMAT-197 landed, ALL 12 contracts in the substrate have at least one Gold-tier refinement theorem — Gold-tier universally established"
+      - "with PMAT-197 landed, EVERY contract in the substrate binds at least one Gold-or-better refinement theorem — Gold-tier universally established. This entry used to fix the substrate at twelve contracts; the totality never stopped holding while that census went stale, which is exactly why nobody re-read it (PMAT-1458)"
     preconditions:
       - "the ContractBackend impl is well-formed (Silver model preconditions inherited)"
     postconditions:
       - "an emitter returning a (contract, doc) pair where citations ≠ depends_on ++ references would not type-check against render_gold"
-      - "Gold-tier coverage is now universal across the substrate (12/12 contracts)"
+      - "Gold-tier coverage is universal across the substrate (35/35 contracts) — a LIVE fraction, re-derived and enforced by claims_drift::substrate_census_claims_name_the_live_contract_count, so the thirty-sixth contract reds this line instead of silently ageing it (PMAT-1458)"
 
   render_homomorphism_platinum:
     # PMAT-212 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-003:
@@ -186,7 +186,7 @@ equations:
       citation-render-monoid axiomatization.
     invariants:
       - "TWELFTH Diamond-tier theorem — UNIVERSAL Diamond milestone"
-      - "every one of the 12 contracts in the substrate now has at least one Diamond theorem"
+      - "EVERY contract in the substrate has at least one Diamond theorem — live: `xpile diamond --json` reports a minimum diamond_count of 1. This entry used to fix the substrate at twelve contracts; the totality survived the growth and the census did not (PMAT-1458)"
       - "tier progression Bronze → Silver → Gold → Platinum → Diamond is now UNIVERSAL across the substrate"
     preconditions:
       - "three well-formed Contract values"

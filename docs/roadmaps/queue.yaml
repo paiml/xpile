@@ -73,6 +73,37 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1458
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: the substrate says "12 contracts" 62 times and holds 35 — three of them in normative
+    slots, and every one is TRUE in the half a reader checks
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1457 standing lead (a) — the per-contract COVERAGE FRACTION — at the
+    level where it is decidable without arguing tier semantics: the DENOMINATOR, which is a
+    POPULATION. ** CONTROL THAT PASSES: at b4b9fc6e claims_drift was GREEN on all 36 tests; the
+    shipped needle finds 64 census claims under contracts/, 62 naming a 12-contract substrate,
+    live 35. ** THE THREE, all normative (no exemption, PMAT-1454): xpile-contract-backend-trait
+    -v1.yaml:127/:132/:189. ** ⭐ ALL THREE ARE TRUE IN THEIR TOTALITY HALF (35/35 bind a
+    Gold-or-better theorem; min diamond_count is 1 over 35) — a reader checks "is it universal?",
+    gets YES, and never checks the CENSUS inside it. THE TRUE HALF LAUNDERS THE STALE HALF. **
+    :132 was repaired to the LIVE fraction "(35/35 contracts)" so the gate MAINTAINS it; the 59
+    CITED provenance records naming 12 are honest history and are UNTOUCHED. ** ⚠️ FOURTH SLICE
+    RUNNING with a guard whose obvious justification its own red half refuted: the noun''s LEADING
+    word boundary came back GREEN and was DELETED (the backward walk already required a space then
+    digits — unreachable code dressed as a guard); the TRAILING boundary red-halfed green against
+    `--contracts-dir` and is now pinned by `contract-lane`. The numerator guard IS load-bearing:
+    without it "Layer-1/2 contracts" reports a TWO-contract substrate. ** NEXT PICK: the
+    PER-CONTRACT equation denominator ("(9/9)", "8/9 equations" on contracts now holding 33 and
+    42) — same class one scope down, all fourteen sites CITED provenance, so gating it means
+    deciding whether a dated record may freeze a per-contract count the way it may freeze the
+    substrate count. Also open: the TIER-LADDER totality at :190 (no census to catch it;
+    C-XLATE-PY-STR-TO-RUST-STRING binds ZERO _silver theorems) and the forty-odd BROADENING counts
+    in normative slots. NEXT FREE ID IS PMAT-1459. Do NOT start a gate_touch and do NOT touch
+    witness_floor.rs. HARD FREEZE Wed 2026-07-29 18:00 — after it, CHANGELOG/version/docs/release
+    mechanics ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1457
   status: done
   ev_rank: R1
