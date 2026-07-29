@@ -1,21 +1,25 @@
-updated: "2026-07-29 (PMAT-1463 took PMAT-1462's declined CARDINAL half and found the\
-  \ substrate's HEADLINE milestone. A cardinal does not need a SUBJECT, it needs a POPULATION\
-  \ -- the same (depth, as-of) pair the ordinal gate already computes -- so `N contracts on M\
-  \ distinct layers`, `depth-D across ALL M taxonomy layers`, `N contracts at depth-D+` and\
-  \ `N Layer-K contracts at depth-D` are all arithmetic. 52 sites disagreed. FIVE slices\
-  \ published COMPLETES DEPTH-D ACROSS ALL 5 TAXONOMY LAYERS for D=4..8 and every one is FALSE:\
-  \ the population spanned FOUR layers each time, the fifth being Bashrs counted twice.\
-  \ LESSONS: (1) THE LEAD NAMED THE CLAUSE THAT WAS TRUE -- PMAT-1461/1462 filed the\
-  \ substrate-wide depth COUNTS as the open class with a REAL dating question; measured as-of,\
-  \ 44 of 45 are honest history and the class was ~98% a non-defect, while the false claim sat\
-  \ in the neighbouring clause. MEASURE A LEAD BEFORE BUILDING FOR IT. (2) A CORRECTION THAT\
-  \ DOES NOT DELETE THE CLAIM LEAVES THE CLAIM -- PMAT-1461's own annotation sat BETWEEN two\
-  \ live restatements of the sentence it refutes. (3) THE MILESTONE WAS TAKEN FROM THE CONTRACT\
-  \ THAT EARNED IT, and that contract's own file credits the thief. (4) A DISCLOSED BLIND SPOT\
-  \ FOR ONE NEEDLE IS A WRONG ANSWER FOR ANOTHER: layer-before-the-name was silence for the\
-  \ LABEL needle and a false accusation for the CENSUS needle. (5) Sixth slice in nine to lose\
-  \ or downgrade a guard to its own red half -- one branch has no live exerciser left and the\
-  \ gate SAYS SO rather than implying the corpus holds it up.)"
+updated: "2026-07-29 (PMAT-1464 took the repo's FRONT DOOR. docs/assets/hero.svg is the first\
+  \ thing in README.md; it landed 2026-05-15 and was still, 75 days and ONE commit later, drawing SIX\
+  \ source languages of which FOUR had no frontend (C++, Rust, Lean 4 -- none registered, then or now --\
+  \ plus Ruchy, registered for ROUTING ONLY), omitting BOTH frontends that actually lower (Shell,\
+  \ WebAssembly), captioning the hub `6 source langs` against a live 4, drawing 6 of 9 backends, and\
+  \ drawing mdBook on BOTH sides of a proof lane that has never had an mdBook anything. LESSONS:\
+  \ (1) NEVER-TRUE, NOT AGED -- at the SVG's own commit default_session() held 3 frontends and 5 backends,\
+  \ so C++/Rust/Lean 4/SPIR-V were drawn before anything registered them. A roadmap published as an\
+  \ architecture. (2) THE SWEEP WAS NARROWER THAN THE RULE IT WROTE, again: PMAT-1440 found this EXACT\
+  \ roster wrong in two-lanes.md, wrote `a regression pin written against a FILE does not protect a\
+  \ CLAIM`, keyed its comparison to a `const PAGE`, scoped its phantom needle to .md, repaired the hero\
+  \ ALT TEXT and never opened the IMAGE -- so `c++` and `mdBook`, both ON ITS OWN PHANTOM LIST, sat\
+  \ inside an artifact EMBEDDED BY a file it was already reading. A corpus of the FILES that mention a\
+  \ lane is not a corpus of the ARTIFACTS that present one. (3) ONE IMAGE, TWO ARCHITECTURES: the\
+  \ repaired alt text named 5+9 while the picture drew 6+6, so sighted and screen-reader readers got\
+  \ different systems. (4) A LOWERCASED NEEDLE WAS MEASURED AND REJECTED -- it fabricates one finding\
+  \ (`a C++ backend implementer`); the image is gated STRUCTURALLY instead, every lane label declaring a\
+  \ registry id. (5) THE RED HALF THAT MATTERS: narrow the phantom corpus back to .md with the pre-fix\
+  \ image in the tree and the phantom gate passes GREEN over mdBook x4 and C++ x2. (6) MEASURE A LEAD\
+  \ BEFORE BUILDING FOR IT, fifth running: both leads checked first -- `Substrate Diamond total: N` (3\
+  \ sites, all EXACT) and the depth-3/4 UNIVERSAL across-all-5-layers milestones (TRUE) -- measured out\
+  \ as non-defects and are CLOSED.)"
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31

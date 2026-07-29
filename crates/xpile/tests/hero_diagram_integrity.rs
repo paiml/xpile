@@ -84,14 +84,40 @@
 //!     "the asset corpus" coincide; the phantom half in `lane_roster_witness.rs`
 //!     now walks the directory rather than the filename.
 //!
-//! ## RED HALF
+//! ## RED HALVES, all RUN with the perturbation asserted applied
 //!
-//! Run against `647ba346`'s `docs/assets/hero.svg` the shipped gate reports the
-//! frontend roster as `[cpp, rust, lean]` unregistered / `[bashrs, wasm]`
-//! undrawn, the backend roster as `[wasm, bashrs, forjar]` undrawn, the hub
-//! numeral as `6` against a live `4`, and the alt-vs-desc rosters as
-//! disagreeing. Figures in this header are from running this file against the
-//! tree it ships with, not from the notes that preceded it.
+//! Figures below are from running the SHIPPED gate against the SHIPPED tree,
+//! not from the notes that preceded it (PMAT-1461's rule, third instance).
+//!
+//! 1. **Revert `docs/assets/hero.svg` to `647ba346`** — 6 of the 7 tests here
+//!    red. Five of them via the missing `XPILE-HERODIAGRAM-001:*:BEGIN` marker,
+//!    because declaring the ids IS part of the repair; one substantively, `6
+//!    source langs` against a live `4`.
+//! 2. **The pre-fix roster, expressed in the post-fix schema** (this is what
+//!    the gate would have said had the old file declared ids) — six findings,
+//!    exactly the six rows of the table above that are set-shaped:
+//!    `` `cpp` is drawn but nothing registers it ``, `bashrs` and `wasm`
+//!    registered-but-undrawn among frontends, `wasm`, `bashrs` and `forjar`
+//!    registered-but-undrawn among backends.
+//! 3. **Draw `ruchy` as a source lane** — only
+//!    [`a_registered_frontend_that_does_not_lower_is_correctly_absent`] reds.
+//!    That guard has no substitute.
+//! 4. **Add a bare `<text>C++</text>` to the frontends column** — 6 tests pass
+//!    and only [`every_label_drawn_in_a_lane_column_declares_a_registry_id`]
+//!    reds. An undeclared label is invisible to an id-keyed comparison, which
+//!    is why that guard exists and why it is not redundant.
+//! 5. **Put `Ruchy` back into the README alt text** —
+//!    [`the_image_the_desc_and_the_readme_alt_tell_the_same_story`] reds. This
+//!    is the arm that was live: the alt and the image disagreed.
+//! 6. **⭐ Narrow `lane_roster_witness.rs`'s corpus back to `.md` and restore
+//!    the pre-fix image** — `no_book_page_reintroduces_the_phantom_lanes`
+//!    passes **GREEN** over a tree carrying `mdBook` four times and `C++`
+//!    twice. That is the defect, reproduced: a phantom gate green over a live
+//!    phantom because the artifact was not in its corpus. With the corpus
+//!    widened it reports the four `mdBook` sites (`hero.svg:1` twice — both
+//!    spellings sit in the `<desc>` — plus `:97` and `:123`) and **neither**
+//!    `C++` site, which is the case-sensitivity measured in
+//!    [`every_label_drawn_in_a_lane_column_declares_a_registry_id`].
 
 use std::path::{Path, PathBuf};
 
