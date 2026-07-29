@@ -8,7 +8,16 @@ authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/paiml/xpile"
 documentation = "https://docs.rs/xpile"
-readme = "README.md"
+# PMAT-1466: the ROOT README, not a sibling copy. This used to read
+# "README.md", resolving to `crates/xpile/README.md` — a bootstrap stub written
+# 2026-05-15 for the v0.0.1 name reservation, never touched again (one commit,
+# `ac709bf5`), read by no test, and served by crates.io as the flagship's front
+# page for 617 releases while it said "Status: v0.0.1 — crates.io name
+# reservation. The real CLI lands in v0.1.0+". The stub is deleted rather than
+# corrected: two product front pages is what went stale in the first place.
+# `../..` packages correctly — `xpile-bigint` resolved to this exact file from
+# outside its own directory since the workspace was created.
+readme = "../../README.md"
 description = "Polyglot transpile workbench: Python/C/Shell/WASM in, Rust/Ruchy/Lean/WASM/PTX/WGSL/SPIR-V/Shell/forjar out, with provable contracts at every layer."
 keywords = ["transpile", "polyglot", "compiler", "verification", "rust"]
 categories = ["development-tools", "command-line-utilities", "compilers"]

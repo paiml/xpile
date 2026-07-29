@@ -7,7 +7,14 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-readme.workspace = true
+# PMAT-1466: NO `readme.workspace = true` here. Workspace-inherited `readme`
+# resolves against the WORKSPACE root, not the member directory, so that one
+# line published the whole workbench's 20 KB product page — `cargo install
+# xpile`, "lowers four source languages", "emits to nine backends" — as the
+# crates.io front page of a bigint helper crate. This crate now matches the
+# other 29 members and publishes none; `description` below is its registry
+# prose, gated by XPILE-CRATEMETA-001. Enforced by
+# `crates/xpile/tests/published_readme_honesty.rs`.
 description = "Bigint runtime for xpile-generated code — the slow-path side of the `C-PY-INT-ARITH` Layer-1 contract"
 
 [dependencies]
