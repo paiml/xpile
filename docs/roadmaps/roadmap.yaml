@@ -22891,6 +22891,60 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1473
+  status: done
+  priority: P1
+  category: honesty
+  title: The release notes about to ship reported a divergence that had been FIXED -- the
+    Known-divergences entry and the plan's "must NOT claim" list both still enforced the Lean caveat
+    PMAT-1405 retired
+  notes: '`CHANGELOG.md` `[Unreleased]` "Known divergences" item 5 said "The default `--contracts on`
+    Lean emit does not elaborate ... emits `@[xpile_contract ...]`, an attribute no Lean prelude
+    registers, so `lean` rejects the file". PMAT-1405 fixed exactly that and the list was never updated.
+    MEASURED with a FORCED-FRESH build (the shared target dir had handed back a binary from another
+    worktree, so the probe was re-run under a dedicated CARGO_TARGET_DIR): default `xpile transpile
+    add.py --target lean` emits `/-- xpile-contract: C-PY-INT-ARITH -/`, a doc comment like every other
+    backend''s citation, and `lean` exits 0. Explicit `--contracts on` likewise exits 0.
+
+
+    The SAME retired caveat was also still enforced by the active sprint plan''s "What the note must NOT
+    claim" list, which forbade claiming "that the default Lean emit elaborates" -- forbidding Thursday''s
+    operator from stating a TRUE, already-announced capability. A known-divergences section that reports
+    a FIXED defect is the same class of falsehood as one that omits a live one, and it is read by exactly
+    the people deciding what a release may claim.
+
+
+    PMAT-1411 NAMED THIS CLASS IN ITS OWN SUBJECT -- "a GREEN test ENFORCING the retired Lean caveat
+    PMAT-1405 had already fixed" -- and swept the TESTS; PMAT-1468 later swept five more files in
+    passing. Neither reached the [Unreleased] divergence list or the plan. AGED CLAIMS HAVE NO TELL:
+    after any semantics change, ask what ELSE describes the thing you changed.
+
+
+    GATE `crates/xpile/tests/retired_lean_caveat_witness.rs` (XPILE-RETIRED-001, 5 tests). Behaviour is
+    MEASURED not assumed: the test RUNS the emitter under default flags and runs `lean` on the output;
+    the document rules are checked against that measurement and are BIDIRECTIONAL -- regressing the
+    emitter to the attribute form reds BOTH the structural and elaboration halves and would make this
+    slice''s own RETIRED notes false.
+
+
+    SCOPING, found by the red half: whole-document scoping flagged EIGHT narrative arc entries in
+    [Unreleased] that legitimately discuss the attribute as history -- INCLUDING PMAT-1405''s own entry,
+    which exists to record the removal. Subject is therefore the NORMATIVE blocks only (Known divergences
+    / What still REFUSES / What is NOT merge-blocking, plus the plan''s release-note mandate paragraphs).
+    The defect is not a MENTION; it is an ASSERTION in a section read for current truth. `## [0.1.617]`
+    carries the identical caveat and is CORRECT there -- a control test keeps it, so a future broadening
+    cannot demand the project falsify its own history.
+
+
+    ALSO found by the red half: the exemption predicate flagged PMAT-1468''s honest paragraph because it
+    wrote "PMAT-1405 retired that" in lowercase while the check looked for uppercase RETIRED; and the
+    temp dir raced across three parallel tests on one pid-keyed path -- the PMAT-1436 lesson, re-learned.
+
+
+    RECORDED NOT FIXED: `docs/specifications/sub/lean-bidirectional.md` still specifies
+    `@[xpile_contract ...]`, but for the CONTRACT-RENDERING lane (`xpile-lean-contract-backend`), a
+    different backend with its own `XpileContracts.Attr` preamble, and the doc carries "planned" markers.
+    PMAT-1468''s CHANGELOG entry independently reached the same conclusion. Out of scope.'
 - id: PMAT-1472
   status: done
   priority: P1

@@ -77,6 +77,30 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1473
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: Release notes reported a divergence that had been FIXED -- the retired Lean caveat, still
+    enforced by the Known-divergences list and the plan's must-NOT-claim mandate
+  notes: 'PMAT-1405 fixed the default `--target lean` emit (attribute -> `/-- xpile-contract: ... -/`
+    docstring); measured on a forced-fresh build, `lean` exits 0 under default AND explicit
+    `--contracts on`. [Unreleased] divergence 5 and the sprint plan both still asserted the opposite.
+    PMAT-1411 named this exact class in its own subject and swept the TESTS; nobody swept the DOCUMENTS.
+    Gate XPILE-RETIRED-001 RUNS the emitter + `lean` and checks the documents against the measurement,
+    BIDIRECTIONALLY. Subject is the NORMATIVE blocks only -- whole-document scoping flagged 8 honest
+    narrative arcs including PMAT-1405''s own entry.
+
+
+    STANDING LEADS after this slice: (a) THURSDAY 07-30 TAG CUT -- `ruleset_drift` is the ONLY failing
+    suite and is OWNER-GATED (live org ruleset 13878864 requires only [gate]; the committed snapshot
+    records [gate, workspace-test]; re-deriving RATIFIES the weakening). NOTE `workspace-test` still
+    RUNS and is GREEN on main -- what was dropped is the merge-BLOCKING, not the check. (b) the OTHER
+    Kani harnesses (proved-property vs equation mismatch) -- strongest live lead but touches
+    `crates/*/src` + `contracts/`, FROZEN until after the tag; PMAT-1469 is registered + branch-claimed
+    with ZERO commits and a pruned worktree, so that claim is dead. (c) re-point PMAT-1459''s 70
+    disclosed rules at real falsifiers. (d) `docs/specifications/sub/lean-bidirectional.md` proof-lane
+    citation spec -- verify `XpileContracts.Attr` exists and elaborates, or disclose it as planned.'
 - id: PMAT-1472
   status: done
   ev_rank: R1
