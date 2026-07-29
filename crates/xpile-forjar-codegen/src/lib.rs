@@ -38,11 +38,14 @@
 //! - **Non-shell modules** (`SourceLang::Python`/`Rust`/… value-level
 //!   functions that aren't a command sequence) — forjar.yaml is the
 //!   ops/deployment lane only, like the Makefile/Dockerfile bashrs lane.
-//! - **Any shell conditional / idempotence guard** — the meta-HIR shell
-//!   lane has no `Stmt::ShellIf` / `Expr::ShellTest`, so forjar's
-//!   convergence GUARDS can't be expressed. Only *unconditional*
-//!   resources emit; forjar re-adds convergence at apply time.
-//!   `Stmt::ShellLoop` / `Stmt::If` / `Stmt::While` are refused.
+//! - **Any shell conditional / loop / idempotence guard** — forjar.yaml
+//!   has no conditional resource kind, so there is nothing to lower a
+//!   guard INTO. Only *unconditional* resources emit; forjar re-adds
+//!   convergence at apply time. `Stmt::ShellLoop`, `Stmt::ShellIf`,
+//!   `Stmt::ShellCase`, `Stmt::If` and `Stmt::While` are all refused.
+//!   (Through v0.1.617 this bullet blamed meta-HIR for lacking a
+//!   conditional statement. It has had one since PMAT-1283; the limit
+//!   is forjar's resource model, not meta-HIR's. PMAT-1465.)
 //! - **Non-renderable command args** (anything outside the shell `Expr`
 //!   surface).
 //!
@@ -254,11 +257,13 @@ fn render_command_sequence(stmts: &[Stmt]) -> Result<Vec<String>, BackendError> 
             Stmt::ShellAssign { name, value } => {
                 lines.push(format!("{name}={}", render_arg(value)?));
             }
-            // The lossy cases the memory names: the meta-HIR shell lane has
-            // no `Stmt::ShellIf` / `Expr::ShellTest`, so forjar's
-            // idempotence GUARDS cannot be expressed. A loop or conditional
-            // is exactly such a guard — refuse rather than emit YAML that
-            // silently drops the control structure.
+            // The lossy cases the memory names: forjar.yaml has no
+            // conditional resource kind, so an idempotence GUARD has nothing
+            // to lower into. A loop or conditional is exactly such a guard —
+            // refuse rather than emit YAML that silently drops the control
+            // structure. (PMAT-1465: this used to blame meta-HIR for having
+            // no conditional statement. It has had one since PMAT-1283, and
+            // `crate_metadata_honesty.rs` constructs one to prove it.)
             Stmt::ShellLoop { .. } => {
                 return Err(unsupported(
                     "a shell loop (`for`/`while`/`until`) — control flow is an \
@@ -269,9 +274,9 @@ fn render_command_sequence(stmts: &[Stmt]) -> Result<Vec<String>, BackendError> 
             }
             Stmt::If { .. } | Stmt::While { .. } => {
                 return Err(unsupported(
-                    "a shell conditional / loop — the meta-HIR shell lane has no \
-                     `Stmt::ShellIf`/`Expr::ShellTest`, so an idempotence guard \
-                     cannot be lowered to a forjar resource (never emit wrong YAML)",
+                    "a shell conditional / loop — forjar.yaml has no conditional \
+                     resource kind, so an idempotence guard cannot be lowered to a \
+                     forjar resource (never emit wrong YAML)",
                 ));
             }
             other => {

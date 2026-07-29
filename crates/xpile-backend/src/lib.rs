@@ -1,8 +1,12 @@
 //! Backend trait — code-lane emission abstraction.
 //!
-//! Every target language in xpile (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean)
-//! provides one type implementing [`Backend`]. The trait is intentionally
-//! narrow: take meta-HIR and a config, return an [`Artifact`].
+//! Every target language in xpile (Rust, Ruchy, PTX, WGSL, SPIR-V, WASM,
+//! Lean, Shell, forjar.yaml) provides one type implementing [`Backend`].
+//! That enumeration is the whole [`Target`] roster, and
+//! `crate_metadata_honesty.rs` (XPILE-CRATEMETA-001) reds if it drifts from
+//! it — through v0.1.617 this sentence quantified over EVERY target language
+//! and then named six of the nine. The trait is intentionally narrow: take
+//! meta-HIR and a config, return an [`Artifact`].
 //!
 //! Sibling of `xpile-frontend::Frontend`. Architectural invariants
 //! codified in `contracts/xpile-backend-trait-v1.yaml`.
@@ -38,9 +42,14 @@ pub enum Target {
     /// goes through `xpile-lean-contract-backend` instead.
     Lean,
     /// POSIX shell (sh / bash / zsh) — the bashrs merger domain.
-    /// Implemented by `bashrs-backend` (scaffold at v0.1.0; full emit
-    /// at v0.2.0 once the bashrs source folding lands). PMAT-037 /
-    /// XPILE-BASHRS-MERGER-001. See `sub/bashrs-merger.md` Layer A.
+    /// Implemented by `bashrs-backend`, which renders REAL POSIX shell:
+    /// commands, pipelines and assignment with quoting, variables and
+    /// command substitution, plus the shell lane's control-flow
+    /// statements. PMAT-037 / XPILE-BASHRS-MERGER-001; see
+    /// `sub/bashrs-merger.md`. Through v0.1.617 this doc deferred the
+    /// real emit to a later release (PMAT-1465); `crate_metadata_honesty.rs`
+    /// now LOWERS a shell module through the registered backend and reds
+    /// while any such deferral is published here.
     Shell,
     /// forjar.yaml IaC manifest text. Implemented by
     /// `xpile-forjar-codegen` (PMAT-953). The BACKEND-ONLY forjar
@@ -49,9 +58,10 @@ pub enum Target {
     /// SHELL-origin meta-HIR `Module` (the `Stmt::Cmd` / `Stmt::Pipeline`
     /// command sequence) to forjar `type: file` / `type: task` resources.
     /// REFUSES non-shell modules and any shell idempotence guard /
-    /// conditional (the meta-HIR shell lane has no `Stmt::ShellIf`), so
-    /// only unconditional resources emit — forjar re-adds convergence at
-    /// apply time. See `project-forjar-output-backend`.
+    /// conditional — forjar has no conditional resource kind to lower a
+    /// `Stmt::ShellIf` INTO — so only unconditional resources emit, and
+    /// forjar re-adds convergence at apply time. See
+    /// `project-forjar-output-backend`.
     ForjarYaml,
 }
 

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Contract frontend trait — proof-lane sibling of Frontend. Parses LaTeX / Lean theorem text / mdBook into contract equations."
+description = "Contract frontend trait — proof-lane sibling of Frontend. Parses LaTeX into contract equations; `latex` is the one registered ContractFrontend."
 
 [dependencies]
 xpile-contracts = { workspace = true }

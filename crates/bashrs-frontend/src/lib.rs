@@ -1,22 +1,38 @@
-//! POSIX shell frontend for xpile (sh / bash / zsh) — Layer A scaffold.
+//! POSIX shell frontend for xpile (sh / bash / zsh) — the bashrs merger
+//! (see `docs/specifications/sub/bashrs-merger.md`).
 //!
-//! This is the v0.1.0 scaffold for the bashrs merger (see
-//! `docs/specifications/sub/bashrs-merger.md`). It implements the
-//! [`Frontend`] trait so the dispatch table and `xpile info` recognize
-//! the shell domain, but the real parser / lowering pipeline is
-//! deferred to v0.2.0 (the `weeks 1-6 extract` phase of Layer A).
+//! `parse_and_lower` is a real POSIX-shell line parser. `lowers_input()`
+//! is true, and `claims_drift.rs` MEASURES that by running this frontend
+//! against a real `.sh` program. It handles:
 //!
-//! At v0.1.0 `parse_and_lower` returns a structurally empty `Module`
-//! tagged `SourceLang::Shell`. This is enough to:
-//!   * Register the frontend with `xpile-core::default_session`.
-//!   * Route `.sh` / `.bash` / `.zsh` / `.mk` files through the
-//!     standard dispatch surface so a future change can plug in the
-//!     real lowering without touching the bin or the session.
-//!   * Match extensionless `Makefile` and `Dockerfile` files via
-//!     the `Frontend::matches_path` override (PMAT-038).
-//!   * Make `xpile transpile foo.sh --target shell` work end-to-end
-//!     (the bashrs-backend at v0.1.0 emits a placeholder POSIX
-//!     comment carrying the contract citation).
+//!   * The FLAT-command subset — `'…'` / `"…"` quoting, `$VAR`,
+//!     `$(…)` and backtick command substitution, pipelines, and
+//!     single-value assignment (PMAT-085..092, PMAT-119).
+//!   * The full v0.1.0 CONTROL-FLOW surface, single-line and
+//!     multi-line, arbitrarily NESTED: `for … in`, `while` / `until`
+//!     (PMAT-1268 / 1276 / 1281), `if` / `elif` / `else`
+//!     (PMAT-1283 / 1284), and TOP-LEVEL `case` (PMAT-1285). These
+//!     lower to `Stmt::ShellLoop` / `Stmt::ShellIf` / `Stmt::ShellCase`
+//!     and round-trip byte-identically through `bashrs-backend`.
+//!
+//! Everything outside that surface REFUSES with a `FrontendError`
+//! rather than shredding into barewords — `;&` / `;;&` fall-through and
+//! here-documents in every spelling (PMAT-1371 / 1377), and the
+//! build-driver dialects below. Conditions and `case` patterns are
+//! captured VERBATIM as opaque strings and printed back unchanged; they
+//! are not modelled structurally (v0.2.0).
+//!
+//! ## What is ROUTED but not handled
+//!
+//! `Makefile`, `Dockerfile` and `*.mk` are matched by the
+//! `Frontend::matches_path` override (PMAT-038) and then REFUSED by
+//! `parse_and_lower` (PMAT-1420): there is no Makefile dialect and no
+//! Dockerfile dialect, and lowering one as shell discards the
+//! target/recipe structure. They stay routed here so the refusal can
+//! name the missing dialect instead of degrading to "no frontend
+//! handles `.mk`", and they are declared in `refused_claims()` so
+//! `xpile info` and the book do not print them flush with the three
+//! extensions that work.
 
 use std::path::Path;
 use xpile_frontend::{Frontend, FrontendError};

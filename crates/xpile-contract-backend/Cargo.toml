@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Contract backend trait — proof-lane sibling of Backend. Renders contracts as LaTeX / Lean theorems / mdBook."
+description = "Contract backend trait — proof-lane sibling of Backend. Renders contracts as LaTeX or Lean 4 theorem text; those are the two formats a registered ContractBackend claims."
 
 [dependencies]
 xpile-contracts = { workspace = true }

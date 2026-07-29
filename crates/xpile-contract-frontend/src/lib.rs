@@ -1,9 +1,14 @@
 //! ContractFrontend trait — proof-lane parsing abstraction.
 //!
-//! Parses notation (LaTeX math + theorem environments, Lean 4 theorem
-//! text, mdBook with embedded math) into contract equation YAML.
-//! Sibling of [`xpile_frontend::Frontend`]; the proof lane is disjoint
-//! from the code lane and does NOT produce meta-HIR.
+//! Parses notation into contract equation YAML. `latex` (math spans +
+//! theorem-class environments) is the one registered
+//! [`ContractFrontend`]. Sibling of [`xpile_frontend::Frontend`]; the
+//! proof lane is disjoint from the code lane and does NOT produce
+//! meta-HIR.
+//!
+//! Through v0.1.617 this summary advertised two further notations that
+//! no impl parses — see PMAT-1465 and `crate_metadata_honesty.rs`, which
+//! derives the parseable set from the live registry.
 //!
 //! Architectural invariants codified in
 //! `contracts/xpile-contract-frontend-trait-v1.yaml`.

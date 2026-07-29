@@ -1,8 +1,13 @@
 //! ContractBackend trait — proof-lane rendering abstraction.
 //!
 //! Renders parsed [`xpile_contracts::Contract`] into LaTeX (math +
-//! theorem environments), Lean 4 theorem text (with `@[xpile_contract]`
-//! attribute carrying the verbatim contract ID), or mdBook.
+//! theorem environments) or Lean 4 theorem text (with the
+//! `@[xpile_contract]` attribute carrying the verbatim contract ID).
+//! Those are the two [`ContractFormat`](xpile_contracts::ContractFormat)s
+//! a registered [`ContractBackend`] claims. Through v0.1.617 this line
+//! named a third one that no impl has ever rendered — see PMAT-1465 and
+//! `crate_metadata_honesty.rs`, which derives the renderable set from
+//! the live registry and reds if this summary outruns it.
 //!
 //! Architectural invariants codified in
 //! `contracts/xpile-contract-backend-trait-v1.yaml`. The citation bridge

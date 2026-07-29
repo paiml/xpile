@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Backend trait — every target language (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean) implements this."
+description = "Backend trait — every target language (Rust, Ruchy, PTX, WGSL, SPIR-V, WASM, Lean, Shell, forjar.yaml) implements this."
 
 [dependencies]
 xpile-meta-hir = { workspace = true }
