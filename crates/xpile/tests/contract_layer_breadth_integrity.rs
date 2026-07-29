@@ -19,7 +19,7 @@
 //!
 //! ## What was wrong
 //!
-//! At `e17697ae`, **51** sites under `contracts/` disagreed with that
+//! At `e17697ae`, **52** sites under `contracts/` disagreed with that
 //! arithmetic. The root cause is the one PMAT-1460/1461/1462 have been
 //! unwinding for four slices: `C-BASHRS-POSIX-IDEMPOTENCE` declares
 //! `layer: semantics` (Layer 1) and was counted as a Layer **2** contract.
@@ -98,12 +98,15 @@
 //!     naive read takes the LAYER number as the count.
 //!   * VOCABULARY — [`canonical_layer_numbering_is_read_from_the_taxonomy_doc`].
 //!
-//! Run against `e17697ae`'s `contracts/` this gate reports **51** sites: 20 in
-//! `*.yaml` (of 80 claims read) and 31 in `lean/*.lean` (of 46, 0 unanchored).
-//! On the repaired tree it reports 0 over 66 + 23 claims. The claim count DROPS
-//! because a retired totality claim stops being a claim: the milestone prose
-//! restated the same false sentence in a section head, a status line and a
-//! theorem doc, so 51 findings sat on far fewer distinct assertions.
+//! Run against `e17697ae`'s `contracts/` the SHIPPED gate reports **52** sites:
+//! 21 in `*.yaml` (of 80 claims read) and 31 in `lean/*.lean` (of 46, 0
+//! unanchored). On the repaired tree it reports 0 over 66 + 23 claims. The
+//! claim count DROPS because a retired totality claim stops being a claim: the
+//! milestone prose restated the same false sentence in a section head, a status
+//! line and a theorem doc, so 52 findings sat on far fewer distinct assertions.
+//! (An earlier draft of this header said 51, from a measurement taken before
+//! the `post-PMAT-NNN` re-dating landed. Figures here are from running the
+//! shipped gate against the shipped tree, not from the notes that preceded it.)
 //!
 //! Out of subject, stated as a measurement rather than assumed: `contracts/`
 //! holds no `.md` or `kani/*.rs` site matching any of the four needles (0 hits),
@@ -555,6 +558,13 @@ fn claims(hay: &str) -> Vec<Claim> {
                     .collect();
                 // `one contract at depth-5 PER LAYER` distributes the
                 // population over the taxonomy; it is not a census of it.
+                // NO LIVE EXERCISER after this slice's repairs: the one site
+                // that justified this branch (`XpileBackendTrait.lean`, "the
+                // substrate had exactly one contract at depth-5 per layer")
+                // was itself a false claim and was rewritten. Deleting the
+                // branch therefore leaves the corpus scan green — so it is
+                // pinned by a CONSTRUCTED control instead, and this comment
+                // says so rather than implying the corpus holds it up.
                 let tail_after = &after_noun[rel + 9 + digits.len()..];
                 let distributed = tail_after.trim_start().starts_with("per ");
                 if let (Ok(depth), false) = (digits.parse::<u32>(), distributed) {
@@ -1201,6 +1211,42 @@ fn a_layer_number_is_not_a_contract_count() {
         layer_census(&all, 5, 349, 1),
         2,
         "and the two Layer-1 contracts at depth-5 are where the phantom came from"
+    );
+}
+
+/// NEEDLE. `one contract at depth-5 per layer` distributes a population across
+/// the taxonomy; it is not a count of that population. This branch has NO live
+/// exerciser — the site that motivated it was a false claim this slice
+/// rewrote — so the arrangement the corpus no longer supplies is constructed
+/// here. Without the check the sentence reads as "1 contract at depth-5", which
+/// is false at every slice past PMAT-286.
+#[test]
+fn a_per_layer_distribution_is_not_a_census() {
+    let distributed =
+        "After PMAT-347, the substrate had exactly one contract at depth-5 per layer (5 total)";
+    assert!(
+        !claims(distributed)
+            .iter()
+            .any(|c| matches!(c.kind, Kind::Census { .. })),
+        "a per-layer distribution was read as a substrate-wide census: {:?}",
+        claims(distributed)
+    );
+    // The same sentence WITHOUT `per layer` is a census and must be read, or
+    // this control would pass on a needle that reads nothing at all.
+    let plain = "After PMAT-347, the substrate had exactly one contract at depth-5";
+    assert!(
+        claims(plain)
+            .iter()
+            .any(|c| c.kind == Kind::Census { contracts: 1 }),
+        "the control is vacuous — the needle does not read this shape at all: {:?}",
+        claims(plain)
+    );
+    let all = parse_contracts();
+    assert_eq!(
+        census(&all, 5, 347).0,
+        5,
+        "and the census reading really would be false: five contracts had \
+         reached depth-5 by PMAT-347"
     );
 }
 
