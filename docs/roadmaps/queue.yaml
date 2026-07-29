@@ -77,6 +77,68 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1471
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: 'the PACKAGED `contracts/README.md` told crates.io readers that `workspace-test` blocks
+    merges -- it does not, and PMAT-1449''s gate for that exact falsehood missed it on BOTH axes;
+    plus `cargo publish` was uploading 64 gitignored `pv` lint-cache files'
+  notes: 'DONE. Full lessons in docs/roadmaps/roadmap.yaml under `- id: PMAT-1471`.
+    Run AFTER the Wed 18:00 hard freeze, so: docs + packaging manifest only, ZERO `crates/*/src`,
+    ZERO `contracts/*.yaml`, ZERO gate files.
+    ** Two defects in what `cargo package -p xpile` UPLOADS. (1) contracts/README.md asserted the
+    LIVE ruleset requires `gate` and `workspace-test`; live is [gate] alone -- overstating
+    enforcement inside the clause that discloses non-enforcement, the same direction PMAT-1449
+    found. It survived PMAT-1449''s gate on BOTH axes: outside its corpus (queue.yaml +
+    roadmap.yaml) AND outside its needle (`requires only [`, bracket-only; this file spells it with
+    backticks and `and`). Repaired by the POINTER DOCTRINE -- point at the snapshot + RELEASE.md''s
+    open owner decision, never retype the set, never re-derive the snapshot. (2) PMAT-1407''s
+    contracts SYMLINK made `cargo package` walk past `.gitignore`, uploading the untracked
+    `contracts/.pv/` lint cache -- so the published file set depended on the publishing MACHINE
+    (64 files here, 35 after one `pv lint`, 0 clean-room). Fixed with `exclude`, verified as an
+    EXACT subtraction (1143 -> 1108, removed set == the 35 `.pv` entries, nothing added,
+    PMAT-1407''s corpus intact).
+    ** RED HALF: the fresh worktree had NO `.pv/`, so the obvious check would have been VACUOUS --
+    the cache was GENERATED with `pv lint contracts/` before measuring.
+    ** MEASURED, do not re-derive: contracts/README.md''s 101/24/24-of-35 figures all reproduce.
+    contracts/lean-models/README.md (packaged, zero readers) checks out on every EXISTENCE claim --
+    all 12 theorems, warningAsError, the lean-models job -- and "only Mathlib in the repo" is TRUE
+    (the core lakefile''s 30+ `mathlib` grep hits are all COMMENTS saying it does NOT use it, so a
+    naive grep would MANUFACTURE a defect there).
+    ** ⚠️ CORRECTION: this slice called that file CLEAN and it was NOT. PMAT-1472 (#2069) landed
+    mid-review and found the capstone "**Subsumes** … as special cases of one general theorem" --
+    a DERIVATION nothing in the lane carries (Basic/SimpleLinear do not even import GeneralLinear).
+    AN EXISTENCE SWEEP IS STRUCTURALLY BLIND TO A DERIVATION CLAIM: I confirmed every NAME the
+    README cites and reported clean on that basis, but the load-bearing claims are the VERBS, not
+    the nouns. Treat the paragraph above as scoped to the existence half only; XPILE-LEANMODELS-001
+    now owns that file.
+    ** TRAP FOR THURSDAY''S OPERATOR, measured this fire -- a PHANTOM tag-blocker.
+    `cargo test -p xpile` came back with `every_kani_harness_discharges` FAILED on
+    contracts/kani/py_int_arith.rs (the file PMAT-1468 had just rewritten), which reads exactly like
+    a regression the ADVISORY `kani` job would have let through. IT IS NOT ONE. The output carries
+    no `VERIFICATION:- FAILED` and no `Failed Checks` anywhere -- it is a kani-driver INTERNAL panic
+    (`cbmc_output_parser.rs:273`, unwrap on `NotFound`) because `kani_verify.rs:172` builds its
+    scratch dir as a FIXED `std::env::temp_dir().join("xpile-kani-verify")` with no per-run
+    uniqueness, and a CONCURRENT `cargo test -p xpile` from another agent was clobbering it. Re-run
+    alone after that process exited: 3 passed, 0 failed, harnesses discharge. So on 2026-07-30, run
+    the A1 suite with NO other cargo process live, and if this test fails read the output for an
+    actual FAILED check before aborting the day. 0.1.619: give it a per-RUN unique temp dir (the
+    same multi-exec landmine already recorded for the WABT witnesses). GATE FILE -- frozen now.
+    ** DISCLOSED NOT FIXED (freeze): packaged_contracts.rs''s doc comment says the published 0.1.617
+    crate had 954 entries / 837 fixtures; measured from static.crates.io it is 916 / 826 (its
+    load-bearing "ZERO contract YAMLs" IS correct). It is a GATE file -- untouchable until the tag.
+    NEXT PICK: no ranked slice is due until Thu 2026-07-30 (PMAT-1373, tag cut) and Fri (PMAT-1374,
+    publish). A fire before then must hunt, and the freeze confines it to docs/CHANGELOG/release
+    mechanics. STANDING LEADS: (a) book/src/reference/contracts.md says C-XLATE-LEAN-TO-RUST
+    "carries 40 equations"; the contract has 33 (the other two numbers in that sentence are
+    CORRECT -- measured by PMAT-1449, still unfixed, DOCS-ONLY so freeze-compatible). (b) 0.1.619:
+    widen XPILE-RELMANDATE-001 to the PACKAGED file set (derive it from `cargo package --list`,
+    do not type it) and off the bracket-only needle; and assert the packaged listing contains no
+    untracked path. (c) 0.1.619: correct packaged_contracts.rs''s 954/837 to the measured 916/826.
+    NEXT FREE ID IS PMAT-1472 (1469 = abandoned zero-commit branch, 1470 = PUSHED concurrent claim).
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs.'
 - id: PMAT-1472
   status: done
   ev_rank: R1

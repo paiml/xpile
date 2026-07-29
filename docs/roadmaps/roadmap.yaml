@@ -23119,3 +23119,114 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID IS PMAT-1469 (1467 was claimed by a concurrent worktree). HARD FREEZE Wed 2026-07-29
     18:00 -- after it, CHANGELOG/version/docs/release mechanics ONLY. On 2026-07-30 take PMAT-1373; on
     2026-07-31 PMAT-1374.'
+- id: PMAT-1471
+  status: done
+  priority: P1
+  category: honesty
+  title: The PACKAGED `contracts/README.md` told crates.io readers that `workspace-test` blocks merges --
+    it does not, and PMAT-1449's gate for that exact falsehood missed it on BOTH axes; plus `cargo
+    publish` was uploading 64 gitignored `pv` lint-cache files, making the published crate
+    machine-dependent
+  notes: 'SHIPPED 2026-07-29 from a hunt over what `cargo package -p xpile` UPLOADS, run AFTER the
+    Wed 18:00 hard freeze -- so the whole slice is docs + packaging manifest, with ZERO
+    `crates/*/src`, ZERO `contracts/*.yaml` and ZERO gate-file edits.
+
+
+    ** DEFECT 1 -- THE FALSE ENFORCEMENT CLAIM, ON A FILE THAT SHIPS TO THE REGISTRY.
+    `contracts/README.md` line 133 read "the live org ruleset requires only `gate` and
+    `workspace-test`, so a red `kani` job does not stop a merge". Measured against the LIVE API
+    (`gh api orgs/paiml/rulesets/13878864`), required = [gate] ALONE. So it OVERSTATES enforcement,
+    in the same worst-available direction PMAT-1449 recorded: inside the one clause whose purpose is
+    to disclose what is NOT enforced, and `workspace-test` is the ONLY job that runs the full suite.
+
+
+    ** WHY THE GATE WRITTEN TWO DAYS EARLIER FOR THIS EXACT SENTENCE COULD NOT SEE IT. PMAT-1449
+    shipped `release_mandate_enforcement_witness.rs` (XPILE-RELMANDATE-001) against this claim. Its
+    corpus is `docs/roadmaps/queue.yaml` + `docs/roadmaps/roadmap.yaml`; its needle is the literal
+    `requires only [`. `contracts/README.md` is outside the CORPUS, and its backtick-and-`and`
+    spelling carries no bracket, so it is outside the NEEDLE too. A GATE''S SUBJECT AND ITS NEEDLE
+    ARE TWO INDEPENDENT BLIND SPOTS and this file sat in both -- the recurring meta-rule, now with
+    the two-day-old gate as the exhibit. `claims_drift.rs` DOES read the file, but only for
+    contract-count and Bronze-totality claims; it has no notion of CI enforcement. Subject-coverage
+    is not needle-coverage.
+
+
+    ** FIX = PMAT-1449''S POINTER DOCTRINE, NOT A RETYPED SET. The table now claims only what it
+    needs (`kani` is advisory under either set) and points at `docs/status/ruleset-13878864.json`
+    for the recorded set and `docs/RELEASE.md` for the OPEN OWNER DECISION about the live gap. The
+    snapshot is deliberately NOT re-derived -- that ratifies the weakening, which is what
+    docs/RELEASE.md says not to do. The `XPILE-ENFORCEMENT REQUIRED-CONTEXTS` markers in ci.yml,
+    CURRENT.md and enforcement-handoff.md are CORRECT as-is (they match the snapshot, which
+    `ruleset_drift` holds green) and were left alone, per PMAT-1449''s ratified disposition.
+
+
+    ** DEFECT 2 -- THE PUBLISHED CRATE DEPENDED ON THE PUBLISHING MACHINE. PMAT-1407 made
+    `crates/xpile/contracts` a symlink to the workspace root so the contract corpus would ship.
+    `cargo package` WALKS that symlink instead of consulting git, so `.gitignore` does not apply
+    through it -- `git check-ignore` refuses the path outright ("beyond a symbolic link"). The
+    UNTRACKED, gitignored `contracts/.pv/` lint cache was swept in. It exists only because the
+    pre-push checklist runs `pv lint contracts/`, one file per content hash, accumulating and never
+    shrinking: 64 files in the main checkout, 35 after a single `pv lint` in a fresh worktree, 0 in
+    a clean-room checkout. So the clean-room `--dry-run` validated a DIFFERENT ARTIFACT than the one
+    an operator uploads, and nothing compared the two. NOT a secret leak (each file is a 49-byte
+    `{"content_hash":...,"findings":[]}` stub, and 0 of them contain an absolute path) -- the defect
+    is non-reproducibility of a published artifact, one day before a tag cut.
+
+
+    ** RED HALF RUN FOR DEFECT 2, IN A FRESH WORKTREE, AND IT WAS NOT VACUOUS -- which was the trap.
+    A new worktree has NO `.pv/` directory, so simply running `cargo package --list` there would have
+    shown 0 cache files and "confirmed" a fix that does nothing. The cache was therefore GENERATED
+    the way the checklist generates it (`pv lint contracts/` -> 35 files), then: WITHOUT the fix,
+    1143 entries of which 35 are `.pv` (defect reproduces in a clean tree); WITH it, 1108 entries and
+    0 `.pv`. The diff of the two listings removes EXACTLY the 35 `.pv` entries and ADDS NOTHING, and
+    PMAT-1407''s corpus still ships (35 contract YAMLs, 36 Lean modules, 24 Kani harnesses).
+    `exclude` is SUBTRACTIVE and safe; `include` is AUTHORITATIVE and would re-break PMAT-1407 --
+    `packaged_contracts.rs` test 3 bans `include` specifically (`!t.starts_with("include")`), so
+    `exclude` is permitted, verified by reading the assertion rather than by guessing.
+
+
+    ** MEASURED, recorded so it is not re-derived. (a) `contracts/README.md`''s other checkable
+    figures all reproduce: 101 `#[kani::proof]` harnesses, 24 kani files, 24 of 35 contracts binding
+    one, and all five named test files exist.
+    (b) `contracts/lean-models/README.md` -- packaged, ZERO gate readers, named as a standing lead
+    -- was read in full and every EXISTENCE claim in it checks out: all 12 claimed theorems are
+    really declared (`sse_*` in Models/Basic.lean, `slr_*` in SimpleLinear.lean, `ols_*` in
+    GeneralLinear.lean), `warningAsError := true` is really in the lakefile, the `lean-models` CI
+    job really exists (ci.yml:360), and every cited artifact exists. "The ONLY place in the repo
+    that depends on Mathlib" is TRUE, and worth recording because a naive grep says otherwise:
+    `contracts/lean/lakefile.lean` matches a case-insensitive `mathlib` 30+ times and every hit is
+    a COMMENT explaining that the core lane does NOT use it -- the only real `require` is in
+    lean-models. A NAIVE GREP COUNTS PROSE ABOUT X AS X and here it would have MANUFACTURED a
+    defect.
+
+
+    ** ⚠️ CORRECTION -- THIS SLICE CALLED THAT FILE "CLEAN" AND IT WAS NOT. PMAT-1472 (#2069) landed
+    while this PR was in review and found a REAL defect in it: the capstone table closed with
+    "**Subsumes** the constant model (k=1) and simple linear regression (k=2) as special cases of
+    one general theorem", and NOTHING in the lane derives them -- Basic.lean and SimpleLinear.lean
+    do not even import Models.GeneralLinear, so a green `lake build` establishes THREE INDEPENDENT
+    theorems, not one plus two corollaries. THE LESSON IS ABOUT THE SHAPE OF MY CHECK, not about
+    Lean: I verified that every NAME the README cites EXISTS, and the defect was a claim about the
+    RELATIONSHIP BETWEEN those names. An existence sweep is structurally blind to a DERIVATION
+    claim, and I reported "clean" on the strength of one. A corpus is not cleared by confirming its
+    nouns; the load-bearing claims are usually the verbs. Do not read the "(b)" paragraph above as
+    a clearance -- it is now scoped to exactly the existence half, and PMAT-1472''s
+    XPILE-LEANMODELS-001 owns the file.
+
+
+    ** DISCLOSED, NOT FIXED (freeze). (i) `packaged_contracts.rs`''s doc comment says "Measured on
+    the published 0.1.617 crate: 954 packaged entries, 837 of them test fixtures". Downloaded from
+    static.crates.io and counted: 916 entries, 826 fixtures. Its load-bearing claim -- ZERO contract
+    YAMLs -- IS confirmed (0). The two counts look like a working-tree `--list` mislabelled as the
+    published artifact. Left alone because it is a GATE FILE and the freeze forbids touching one;
+    it is a historical record, not a live claim. (ii) NO GATE was added for either defect here, for
+    the same reason. Both are queued for 0.1.619: widen XPILE-RELMANDATE-001''s corpus to the
+    PACKAGED file set (derived from `cargo package --list`, not typed) and off the bracket-only
+    needle, and assert the packaged listing contains no untracked path.
+
+
+    NEXT FREE ID IS PMAT-1472. PMAT-1469 has a zero-commit abandoned local branch and PMAT-1470 is a
+    PUSHED claim by a concurrent fire (release-story derivation); this slice took 1471 to avoid both
+    -- a wasted id is cheaper than a rebase. HARD FREEZE Wed 2026-07-29 18:00 IS IN EFFECT: docs /
+    CHANGELOG / version / release mechanics ONLY. On 2026-07-30 take PMAT-1373 (tag cut); on
+    2026-07-31 PMAT-1374 (publish).'
