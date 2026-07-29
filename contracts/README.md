@@ -130,7 +130,14 @@ The contract substrate is gated by `cargo test --workspace` on every PR. The rel
 | `cargo test -p xpile --test kani_verify` | `cargo kani` actually discharges every harness; asserts exit-0 AND stdout contains `VERIFICATION:- SUCCESSFUL` (skip-gracefully if `cargo-kani` is missing from PATH) |
 | `cargo test -p xpile --test quorum` | `C-PY-INT-ARITH` has all four §14.4 strata represented |
 | `cargo test -p xpile --test attestations` | `xpile attestations` counts Extrinsic stratum votes per contract |
-| dedicated `kani` GitHub-Actions job | runs `cargo kani` over all 101 `#[kani::proof]` harnesses (24 files, covering 24 of 35 contracts) on every PR. **ADVISORY, not merge-blocking** — the live org ruleset requires only `gate` and `workspace-test`, so a red `kani` job does not stop a merge |
+| dedicated `kani` GitHub-Actions job | runs `cargo kani` over all 101 `#[kani::proof]` harnesses (24 files, covering 24 of 35 contracts) on every PR. **ADVISORY, not merge-blocking** — a red `kani` job does not stop a merge |
+
+**Do not read the merge-blocking set here.** It is recorded in
+[`docs/status/ruleset-13878864.json`](../docs/status/ruleset-13878864.json) and
+derived from it by `crates/xpile/tests/ruleset_drift.rs`; the live org ruleset
+is currently **weaker than that record**, and the gap is an open owner decision
+disclosed in [`docs/RELEASE.md`](../docs/RELEASE.md). `kani` is advisory under
+either set, which is the only thing this table needs it for.
 
 `xpile quorum` consolidates all four strata into a single per-contract reporter; `xpile attestations` lists Extrinsic votes; both reflect the live state of the substrate.
 
