@@ -22891,6 +22891,54 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1470
+  status: done
+  priority: P1
+  category: honesty
+  title: The release plan mandated a CHANGELOG story describing the range the PREVIOUS tag had already
+    closed -- 14 of the 15 PMAT ids its eight arcs cited are not in the release range at all
+  notes: 'The v0.1.618 sprint plan section 5 told Thursday''s operator that the release is "101 commits
+    / ~76 unique PMAT ids / 136+ files / +53,940 lines, in 8 arcs" and enumerated those eight arcs by
+    hand. Measured on 2026-07-29 at ac0b28fe, `v0.1.617..HEAD` is 109 commits, 173 unique PMAT ids, 250
+    files and +77,645 insertions, and `[Unreleased]` already carries 76 arc headings. Every one of the
+    four figures is wrong and the arc list is one whole release behind: of the 15 PMAT ids the eight
+    arcs cite (PMAT-1254/1289/1290/1330/1332/1337/1338/1341/1327/1331/1268/1285/1269/1282/482), 14 are
+    NOT in `v0.1.617..HEAD` -- they are v0.1.617 content, already published under `## [0.1.617]`.
+
+
+    THE DOCUMENT STATES THE RULE AND BREAKS IT FIVE LINES LATER. The very next paragraph says of the
+    WASM witness count: "do not type it here (it read 795 on 2026-07-26 and is 857 today; a
+    machine-derived number copied into prose is the PMAT-1445 shape)". The banned shape is committed
+    four times in the paragraph immediately above it. A rule written into prose is not a gate.
+
+
+    THE TRAP THAT KEPT IT ALIVE IS AN ACCIDENTAL CONFIRMATION. The live `[Unreleased]` arc-heading count
+    (`grep -c ''^### ''`) had by 2026-07-29 reached 76 -- numerically equal to the plan''s "~76 unique
+    PMAT ids". A reader spot-checking that figure against the CHANGELOG gets a MATCH and moves on, while
+    the quantity the number actually names stands at 173. TRUE IN THE HALF A READER CHECKS, the
+    PMAT-1458 shape, arrived at here by coincidence rather than by construction -- which is worse,
+    because nobody chose it and so nobody knew to disclose it.
+
+
+    FIX: section 5 no longer states the aggregate shape or enumerates arcs. It carries the four
+    derivation commands (deriving the prior tag itself via `git describe --tags --abbrev=0`, so no
+    version literal is typed) and points at `[Unreleased]`, which is written arc-first as the sprint
+    runs and is therefore the register of what shipped.
+
+
+    GATE: `crates/xpile/tests/release_story_derivation_witness.rs` (XPILE-RELSTORY-001). The corpus is
+    DISCOVERED from `git ls-files` over release-planning documents, per PMAT-1467''s lesson. Rules: (1)
+    a release-story block may not cite a PMAT id absent from `<prior tag>..HEAD` -- fully machine-derived,
+    self-sharpening every release; (2) a release-story block may not type an aggregate count of the
+    release range; (3) the derivation commands it names must actually run and agree with a direct
+    measurement; (4) a HISTORICAL count explicitly attributed to an already-shipped range is NOT an
+    offender -- pinned by a green control over section 2, which legitimately reports "101 commits" for
+    `v0.1.616..origin/main`; (5) the verbatim pre-fix block is embedded and must RED every rule.
+
+
+    Refs PMAT-1467, which corrected the VERSION/TAG/baseline literals in this same section one day
+    earlier and did not reach this paragraph -- the third consecutive slice whose predecessor gate was
+    narrower than its own rule.'
 - id: PMAT-1468
   status: done
   priority: P1
