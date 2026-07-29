@@ -220,7 +220,9 @@ fn workspace_members(root_manifest: &str) -> Vec<String> {
         let line = line.trim();
         let Some(open) = line.find('"') else { continue };
         let after = &line[open + 1..];
-        let Some(close) = after.find('"') else { continue };
+        let Some(close) = after.find('"') else {
+            continue;
+        };
         out.push(after[..close].to_string());
     }
     out
@@ -259,8 +261,9 @@ fn published() -> Vec<(FrontPage, String)> {
         .into_iter()
         .filter_map(|fp| {
             let rel = fp.readme.clone()?;
-            let body = std::fs::read_to_string(root.join(&rel))
-                .unwrap_or_else(|e| panic!("{} publishes `{rel}`, which cannot be read: {e}", fp.krate));
+            let body = std::fs::read_to_string(root.join(&rel)).unwrap_or_else(|e| {
+                panic!("{} publishes `{rel}`, which cannot be read: {e}", fp.krate)
+            });
             Some((fp, body))
         })
         .collect()
@@ -283,7 +286,10 @@ fn the_packaged_front_page_set_is_derived_and_nonempty() {
     for fp in &all {
         if let Some(rel) = &fp.readme {
             if !root.join(rel).is_file() {
-                missing.push(format!("{} publishes `{rel}`, which does not exist", fp.krate));
+                missing.push(format!(
+                    "{} publishes `{rel}`, which does not exist",
+                    fp.krate
+                ));
             }
         }
     }
@@ -309,7 +315,12 @@ fn the_packaged_front_page_set_is_derived_and_nonempty() {
 fn front_page_resolution_handles_every_manifest_shape() {
     // Explicit relative — the flagship's shape after this slice's repair.
     assert_eq!(
-        resolve_front_page("crates/xpile", "readme = \"../../README.md\"\n", None, false),
+        resolve_front_page(
+            "crates/xpile",
+            "readme = \"../../README.md\"\n",
+            None,
+            false
+        ),
         Some("README.md".to_string()),
         "an explicit `readme` resolves against the MEMBER directory"
     );
@@ -387,7 +398,11 @@ fn sibling_test_sources(root: &Path) -> Vec<(String, String)> {
             if p.extension().and_then(|s| s.to_str()) != Some("rs") {
                 continue;
             }
-            let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let name = p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
             if name == me {
                 continue;
             }
@@ -635,8 +650,7 @@ fn status_versions(body: &str) -> Vec<(usize, String)> {
         if !trimmed.to_ascii_lowercase().starts_with("status:") {
             continue;
         }
-        let mut chars = line.char_indices().peekable();
-        while let Some((idx, c)) = chars.next() {
+        for (idx, c) in line.char_indices() {
             if c != 'v' {
                 continue;
             }
@@ -658,8 +672,8 @@ fn no_published_front_page_declares_a_stale_release_status() {
     let root = workspace_root();
     let root_manifest =
         std::fs::read_to_string(root.join("Cargo.toml")).expect("read root Cargo.toml");
-    let live = string_value(&root_manifest, "version")
-        .expect("[workspace.package] declares a version");
+    let live =
+        string_value(&root_manifest, "version").expect("[workspace.package] declares a version");
 
     let mut offenders = Vec::new();
     for (fp, body) in published() {

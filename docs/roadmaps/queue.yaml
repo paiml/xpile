@@ -1,25 +1,27 @@
-updated: "2026-07-29 (PMAT-1464 took the repo's FRONT DOOR. docs/assets/hero.svg is the first\
-  \ thing in README.md; it landed 2026-05-15 and was still, 75 days and ONE commit later, drawing SIX\
-  \ source languages of which FOUR had no frontend (C++, Rust, Lean 4 -- none registered, then or now --\
-  \ plus Ruchy, registered for ROUTING ONLY), omitting BOTH frontends that actually lower (Shell,\
-  \ WebAssembly), captioning the hub `6 source langs` against a live 4, drawing 6 of 9 backends, and\
-  \ drawing mdBook on BOTH sides of a proof lane that has never had an mdBook anything. LESSONS:\
-  \ (1) NEVER-TRUE, NOT AGED -- at the SVG's own commit default_session() held 3 frontends and 5 backends,\
-  \ so C++/Rust/Lean 4/SPIR-V were drawn before anything registered them. A roadmap published as an\
-  \ architecture. (2) THE SWEEP WAS NARROWER THAN THE RULE IT WROTE, again: PMAT-1440 found this EXACT\
-  \ roster wrong in two-lanes.md, wrote `a regression pin written against a FILE does not protect a\
-  \ CLAIM`, keyed its comparison to a `const PAGE`, scoped its phantom needle to .md, repaired the hero\
-  \ ALT TEXT and never opened the IMAGE -- so `c++` and `mdBook`, both ON ITS OWN PHANTOM LIST, sat\
-  \ inside an artifact EMBEDDED BY a file it was already reading. A corpus of the FILES that mention a\
-  \ lane is not a corpus of the ARTIFACTS that present one. (3) ONE IMAGE, TWO ARCHITECTURES: the\
-  \ repaired alt text named 5+9 while the picture drew 6+6, so sighted and screen-reader readers got\
-  \ different systems. (4) A LOWERCASED NEEDLE WAS MEASURED AND REJECTED -- it fabricates one finding\
-  \ (`a C++ backend implementer`); the image is gated STRUCTURALLY instead, every lane label declaring a\
-  \ registry id. (5) THE RED HALF THAT MATTERS: narrow the phantom corpus back to .md with the pre-fix\
-  \ image in the tree and the phantom gate passes GREEN over mdBook x4 and C++ x2. (6) MEASURE A LEAD\
-  \ BEFORE BUILDING FOR IT, fifth running: both leads checked first -- `Substrate Diamond total: N` (3\
-  \ sites, all EXACT) and the depth-3/4 UNIVERSAL across-all-5-layers milestones (TRUE) -- measured out\
-  \ as non-defects and are CLOSED.)"
+updated: "2026-07-29 (PMAT-1466 took the crates.io FRONT PAGE. `cargo publish` renders exactly ONE\
+  \ file per crate as its registry page -- the one named by `[package] readme` -- and across the 31\
+  \ members that resolved to TWO files, neither of which any README gate read. The FLAGSHIP `xpile`\
+  \ published crates/xpile/README.md: ZERO readers, ONE commit ever (ac709bf5, 2026-05-15), still saying\
+  \ `Status: v0.0.1 -- crates.io name reservation. The real CLI lands in v0.1.0+` and `This installs the\
+  \ v0.0.1 placeholder binary` -- CONFIRMED LIVE for 0.1.617 -- while redrawing the exact 6-frontend/mdBook\
+  \ roster PMAT-1464 had just deleted from hero.svg. Meanwhile xpile-bigint, a helper, published the\
+  \ GATED 647-commit root README: 20 KB of the workbench''s product page, `cargo install xpile`, `nine\
+  \ backends`, via `readme.workspace = true` resolving against the WORKSPACE root. LESSONS: (1) FOURTH\
+  \ RECURRENCE, AND THE PRIOR SLICE NAMED THE FILE -- PMAT-1465''s own module doc says `only crates/xpile\
+  \ ships a readme`, citing it to explain why descriptions mattered, and never opened it. A corpus of\
+  \ what the REPO presents is not a corpus of what the REGISTRY presents. (2) THE RED HALF CAUGHT TWO\
+  \ FALSE POSITIVES IN THE GATE ITSELF -- a line-scoped denial check that fabricated an offender whose\
+  \ denial sat one line above, and an install scan that read prose about workspace aliases as an\
+  \ instruction. A red half is the only place a gate''s FALSE POSITIVES surface before they are someone\
+  \ else''s red PR; run it to see what the gate says, not just that it says something. (3) A NAIVE GREP\
+  \ COUNTS PROSE ABOUT X AS X -- six test files discuss README.md in `//!` blocks without opening it,\
+  \ so the reader arm needs the QUOTED path, and the gate excludes ITSELF from its own reader search.\
+  \ (4) THE SUBJECT IS DERIVED BY REDOING CARGO''S RESOLUTION, so dropping a bare README.md into\
+  \ crates/xpile-core/ reds the reader arm through auto-discovery alone, with no manifest edit.\
+  \ (5) REPAIR BY DELETION -- correcting the stub would leave two product front pages to sync forever,\
+  \ which is how it went stale. (6) MEASURE A LEAD BEFORE BUILDING FOR IT, SIXTH RUNNING: the\
+  \ `keywords`/`categories` facets PMAT-1465 named as NEXT PICK measured out as a NON-DEFECT and are\
+  \ CLOSED.)"
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -4181,6 +4183,45 @@ queue:
     18:00 is the HARD FREEZE — after it, no merge may touch crates/*/src, contracts/*.yaml or any
     gate. Until then, keep hunting in the docs/claims lane (it is freeze-compatible: this slice
     touched no `src`). NEXT PICK: another honesty hunt, or PMAT-1373 on 2026-07-30.'
+- id: PMAT-1466
+  status: done
+  date: '2026-07-29'
+  ev_rank: R1
+  gate_touch: null
+  title: the flagship crate's registry front page was a v0.0.1 "name reservation" stub with one commit
+    ever, and the gated 647-commit product page was published on a bigint helper instead
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30; freeze-compatible
+    -- touches no contract YAML, no witness floor, and no `src`). Took PMAT-1465''s METHOD -- ask which
+    published artifact has no reader -- and pointed it at the surface PMAT-1465 had NAMED in its own
+    module doc ("only crates/xpile ships a readme") without opening. `cargo publish` renders exactly ONE
+    file per crate as its crates.io page. Across 31 members that resolved to TWO, and neither was one
+    the README gates read: the FLAGSHIP published crates/xpile/README.md (0 readers, 1 commit ever,
+    2026-05-15) which said "Status: v0.0.1 -- crates.io name reservation. The real CLI lands in v0.1.0+"
+    and "This installs the v0.0.1 placeholder binary" -- CONFIRMED LIVE on the registry for 0.1.617 --
+    while xpile-bigint published the gated 647-commit root README, 20 KB of the WORKBENCH''S product
+    page (`cargo install xpile`, "nine backends") on a bigint helper, via `readme.workspace = true`
+    resolving against the WORKSPACE root. Red half on the SHIPPED gate against the UNMODIFIED corpus:
+    4 of 6 arms red, the 2 passing ones being the controls; all 10 guards red on their own perturbation.
+    The red half also caught TWO FALSE POSITIVES IN THE GATE before they shipped (a line-scoped denial
+    check that fabricated an offender whose denial was one line above; an install scan that counted
+    prose about workspace aliases as an instruction) -- a red half is the only place a gate''s false
+    positives are visible before they are someone else''s red PR. Repair is a DELETION: the stub is
+    removed and crates/xpile points `readme` at ../../README.md, verified with `cargo package --list`
+    at exit 0. Full ledger, controls, out-of-subject measurements and standing leads in
+    docs/roadmaps/roadmap.yaml under PMAT-1466.
+
+
+    ** NOTE FOR THE NEXT FIRE: NEXT FREE ID IS PMAT-1467. The ranked queue stays EXHAUSTED until
+    2026-07-30 (PMAT-1373, the release commit). Wed 2026-07-29 18:00 is the HARD FREEZE -- after it no
+    merge may touch crates/*/src, contracts/*.yaml or any gate; CHANGELOG/version/docs/release mechanics
+    ONLY. MEASURED AND CLOSED this slice: the `keywords`/`categories` facets (PMAT-1465''s named next
+    pick) are a NON-DEFECT -- only crates/xpile declares either and all 8 values are accurate and valid
+    slugs. Do not build for it. NEXT PICK: another honesty hunt before the freeze -- standing leads are
+    (a) the OTHER packaged files (contracts/README.md, contracts/lean-models/README.md,
+    examples/README.md are all uploaded by `cargo package -p xpile` and are in no gate corpus),
+    (b) the `documentation`/`homepage`/`repository` URLs, which no gate resolves, (c) the binary''s clap
+    `--help`/`about` strings -- the first prose a CLI user reads; or PMAT-1373 on 2026-07-30.'
+
 - id: PMAT-1465
   status: done
   date: '2026-07-29'
