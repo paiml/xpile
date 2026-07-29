@@ -7,6 +7,83 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The *most severe* entry in "Known divergences" described a defect this same release fixed — and two of its metric entries had drifted, one of them directly above its own prohibition (PMAT-1474)
+
+PMAT-1473 found the first stale entry in `[Unreleased]`'s "Known divergences"
+list — item 5, retired by PMAT-1405 — and named the class: **a
+known-divergences section that reports a fixed defect is the same kind of
+falsehood as one that omits a live defect.** This slice swept the remaining
+**eight of eight** entries. Three had drifted, including item 1.
+
+**Item 1 was the sharpest, because it was the worst-case claim in the
+document.** It read *"i64 arithmetic overflow is still a SILENT WRONG ANSWER in
+the WASM lane … the lane maps them to `i64` and wraps without a word"*, and
+published three concrete wrapped return values. **PMAT-1402 — an arc 1,900 lines
+above it in this same `[Unreleased]` section — had already made all three
+unreproducible.** Measured under `wasm-interp` rather than read off the source:
+
+| probe | entry said | measured 2026-07-29 |
+|---|---|---|
+| `9223372036854775807 + 1`   | `-9223372036854775808` | **traps** |
+| `-9223372036854775807 - 2`  | (wraps)                | **traps** |
+| `3037000500 * 3037000500`   | `-9223372036709301616` | **traps** |
+| `-(-9223372036854775808)`   | `i64::MIN`             | **traps** |
+| `abs(-9223372036854775808)` | `i64::MIN`             | `i64::MIN` ✓ |
+| `5 + 1` / `1000 * 1000` (controls) | —               | `6` / `1000000` |
+
+The controls matter: without them a uniform trap is indistinguishable from a
+module that no longer runs at all. One row survived, and it is a real silent
+wrong answer — `$__wasm_abs_i64` computes `0 - x` with a **bare `i64.sub`**,
+because `NumBuiltin` never reaches `emit_binop`, which is where PMAT-1402
+landed. Confirmed by a route that does not depend on `wasm-interp` printing
+integer exports **unsigned**: `abs(a) < 0` at `a = i64::MIN` is `true` from the
+module and `False` from CPython, with `abs(-5) < 0` false in both.
+
+**The error was in the direction that costs a reader the most.** An
+over-claimed capability invites misplaced trust; this *under-claimed* the
+lane — it told anyone deciding whether to use native WASM that every i64 add
+silently wraps, when the emitter traps, and it aimed the 0.1.619 lane at
+"overflow-checked add/sub/mul/neg … L/XL, on the emitter's hot path" work that
+was already done. The real residual is S and off the hot path.
+
+**Nothing was hiding this.** `crates/xpile-wasm-codegen/tests/i64_overflow_witness.rs`
+has asserted the trap behaviour, green, since 2026-07-27, and its module doc
+names `abs(i64::MIN)` as the survivor. The executing witness and the release
+note disagreed for two days and only the note was wrong — **a green witness does
+not propagate to the prose that describes it.**
+
+**Items 6 and 7 were metric drift, and item 7 breaks a rule it states in its own
+closing sentence.** Item 6 typed *"of the 18 contracts carrying a Runtime vote …
+the other 16"*; live `xpile quorum` returns **14**, because PMAT-1432 tightened
+what the stratum counts after the sentence was written. Item 7 typed all nine
+witness-floor lane counts, four of which had drifted (wasm 842 → 857,
+runtime-gated 333 → 340, rust-differential 47 → 49, ruchy 7 → 8) — while its
+last sentence forbids quoting `witness_floor.rs`'s `// live NNN @ DATE` comments
+*precisely because they trail the live count*. The prohibition was correct and
+did not apply to itself. Both are repaired by the pointer doctrine
+(PMAT-1449 / PMAT-1470 / PMAT-1471): state the derivation, not the result.
+
+**The section header was also false in a small way that mattered to the sweep.**
+*"Each item below was reproduced against live `python3` through the shipped
+CLI"* cannot be true of items 6 and 7, which are metric claims no `python3`
+differential can check — and that is exactly why they were the two nobody
+re-measured. The header now distinguishes the behavioural entries from the
+metric ones and records what was re-swept when.
+
+Verified honest and left alone: items 2 (never-entered loop), 3 (two Rust
+float coercions), 4 (set iteration order) and 8 (both C-lane width residuals —
+`long f(int)` → `fn f(x: i64) -> i64` and `unsigned g(int)` → `fn g(x: u32) -> u32`,
+both re-derived through the shipped CLI against `gcc`).
+
+**Gate** — `crates/xpile/tests/known_divergences_measured_witness.rs`
+(XPILE-DIVERGENCE-001). Every rule is **executed**, not pattern-matched against
+prose. It emits the overflow probes through the shipped CLI and, when WABT is
+present, runs them; it shells out to `xpile quorum` and parses the `Run` column;
+and it holds the two metric entries to the pointer doctrine by construction.
+The overflow rules are **bidirectional**: if `abs` is ever routed through the
+checked helper, the disclosure this slice wrote becomes the stale claim and the
+gate reds — the same trap PMAT-1473 built, aimed at the opposite direction.
+
 ### The release notes about to ship reported a divergence that had been *fixed* — the retired Lean caveat, still enforced by the Known-divergences list and by the plan's must-NOT-claim mandate (PMAT-1473)
 
 `[Unreleased]`'s "Known divergences" item 5 told readers:
@@ -6834,25 +6911,49 @@ other three lanes' witnesses take their graceful-skip branch. An advisory
 
 ### Known divergences
 
-Measured, not assumed. Each item below was reproduced against live `python3`
-through the shipped CLI on 2026-07-27.
+Measured, not assumed — and *when* a thing was measured matters as much as
+whether. Items 1–5 and 8 are **behavioural** and are reproduced through the
+shipped CLI against live `python3` (or `gcc`, for the C lane); items 6 and 7 are
+**metric** and are derived from the commands they name, which no `python3`
+differential can check. The whole list was re-swept entry by entry on
+2026-07-29 (PMAT-1474): items 1, 6 and 7 had drifted since 2026-07-27 and are
+corrected below; items 2, 3, 4 and 8 were re-measured and are unchanged; item 5
+was retired by PMAT-1473.
 
-**1. i64 arithmetic overflow is still a SILENT WRONG ANSWER in the WASM lane.**
-Python integers are arbitrary precision; the lane maps them to `i64` and wraps
-without a word. `9223372036854775807 + 1` returns `-9223372036854775808`;
-`3037000500 * 3037000500` returns `-9223372036709301616` against CPython's
-`9223372037000250000`; `-(-9223372036854775808)` and
-`abs(-9223372036854775808)` each return `i64::MIN`. The lane is internally
-inconsistent about this: division by zero **traps** honestly, as do all sixteen
-container error paths (below), while arithmetic overflow does not. The shift
-half of this debt was fixed this cycle (PMAT-1379) precisely because it is
-separable and off the hot path; the remaining fix is overflow-checked
-`add`/`sub`/`mul`/`neg` across every i64 operation, which is L/XL, sits on the
-emitter's hot path and touches every existing witness — the wrong change for a
-release week. It is the first entry in the 0.1.619 lane. The narrower residual
-inside the shifts themselves — `1 << 63` wrapping to `i64::MIN` for an in-range
-count — is asserted out loud by
-`shift_count_witness.rs::shl_in_range_overflow_is_a_known_residual`.
+**1. `abs(i64::MIN)` is the last silent i64 overflow in the WASM lane —
+`+`, `-`, `*` and unary `-` now TRAP.** This entry used to describe the whole of
+i64 arithmetic as wrapping "without a word", and published three concrete
+wrapped return values. **PMAT-1402, in this same release, made all three of them
+unreproducible.** Those operators route through `$__wasm_add_i64` /
+`$__wasm_sub_i64` / `$__wasm_mul_i64`, each of which traps with `unreachable`
+exactly when the true result leaves i64. Re-measured under `wasm-interp` on
+2026-07-29: `9223372036854775807 + 1`, `-9223372036854775807 - 2`,
+`3037000500 * 3037000500` and `-(-9223372036854775808)` **every one traps**,
+while the in-range controls `5 + 1` and `1000 * 1000` answer `6` and `1000000`.
+`crates/xpile-wasm-codegen/tests/i64_overflow_witness.rs` had been asserting
+this, green, since 2026-07-27 — the release note was the only artifact still
+saying otherwise.
+
+What survives is exactly one shape, and it is a real silent wrong answer:
+`abs(-9223372036854775808)` returns `i64::MIN`. `$__wasm_abs_i64` computes
+`0 - x` with a **bare `i64.sub`** rather than the checked `$__wasm_sub_i64` its
+siblings now use, because `NumBuiltin` never reaches `emit_binop`, which is
+where PMAT-1402 landed. Reproduced without depending on `wasm-interp`'s
+**unsigned** printing of integer exports: `abs(a) < 0` for `a = i64::MIN`
+returns **true** from the emitted module and `False` from CPython, with
+`abs(-5) < 0` false in both.
+
+So the 0.1.619 lane entry is **not** "overflow-checked `add`/`sub`/`mul`/`neg`
+across every i64 operation, L/XL, on the emitter's hot path" — that shipped.
+It is routing the `NumBuiltin` helpers through the checked forms, which is S and
+off the hot path. Fixing it is out of scope for a release week under a Wednesday
+freeze, which is why this ships as a corrected caveat rather than a code change.
+The other, narrower residual — `1 << 63` wrapping to `i64::MIN` for an in-range
+count — is unchanged and asserted out loud by
+`shift_count_witness.rs::shl_in_range_overflow_is_a_known_residual`. Division by
+zero and all sixteen container error paths (below) trap, as they always did, so
+the lane's internal inconsistency about overflow is now confined to that one
+builtin.
 
 **2. A never-entered loop prints a default in the Rust lane where CPython
 raises `UnboundLocalError`.** Python leaks a loop-body binding to function
@@ -6918,22 +7019,44 @@ is correctly historical.
 with `xpile quorum`. PMAT-1367 changed what the §14.4 Runtime stratum counts:
 it *used* to count fixture files that merely **mentioned** a contract id, and it
 now **also** counts top-level witness `*.rs` files that both name the id and
-call a runtime-availability probe. That is a widening, not a replacement — so of
-the 18 contracts carrying a Runtime vote, exactly **two** (`C-COMPILE-RUST-TO-WASM`
-at 113 and `C-WASM-HEAP` at 93) are backed by executing witnesses; the other 16
-carry between 1 and 11 votes that are still **mentions**. `quorum.rs` pins six
-contracts as `MUST_STAY_UNWITNESSED` so the counter cannot inflate itself. The
-honest reading is: two contracts are executed heavily, the rest are cited.
+call a runtime-availability probe. That is a widening, not a replacement — so
+among the contracts carrying a Runtime vote, exactly **two**
+(`C-COMPILE-RUST-TO-WASM` and `C-WASM-HEAP`) are backed by executing witnesses,
+with vote counts an order of magnitude above every other row; the remainder
+carry a handful of votes that are still **mentions**. Do not quote a roster size
+here — this entry typed "18 … the other 16" on 2026-07-27 and the live figure
+was **14** by 2026-07-29, because PMAT-1432 tightened what the stratum counts
+*after* the sentence was written. Derive it instead, from the `Run` column of:
 
-**7. The witness floors are lower bounds, not a coverage claim.** Live counts
-this release, from `cargo test -p xpile --test witness_floor -- --nocapture`:
-wasm 842 (floor 770) of which 333 are runtime-gated (floor 300, 39% vs a 36%
-floor), shell 10 (7), rust-differential 47 (44), hybrid 7 (3), wasi 1 (1),
-ruchy 7 (7), forjar 4 (4), lean 6 (6). The runtime-gated metric is a syntactic
-proxy that deliberately does not follow helper calls, so it under-counts. Never
-quote the `// live NNN @ DATE` comments in `witness_floor.rs` — they are
-touch-point snapshots and are *expected* to trail the live count between the two
-permitted floor touches per release.
+```
+xpile quorum
+```
+
+`quorum.rs` pins six contracts as `MUST_STAY_UNWITNESSED` so the counter cannot
+inflate itself. The honest reading is: two contracts are executed heavily, the
+rest are cited.
+
+**7. The witness floors are lower bounds, not a coverage claim.** A floor is not
+a witness count, and the live counts are deliberately **not** reproduced here.
+This entry used to carry all nine of them, typed on 2026-07-27 — and by the
+2026-07-29 re-sweep four had drifted (wasm 842 → 857, of which runtime-gated
+333 → 340; rust-differential 47 → 49; ruchy 7 → 8), because every intermediate
+slice adds witnesses and none may touch a floor. That is the PMAT-1445 shape,
+committed **directly above its own prohibition**: the closing sentence of this
+very paragraph forbids quoting the `// live NNN @ DATE` snapshot comments in
+`witness_floor.rs` *on the grounds that they trail the live count*, which is
+exactly what the roster it sat next to was doing. Derive the whole manifest —
+lanes, live counts, floors and the runtime-gated fraction — with:
+
+```
+cargo test -p xpile --test witness_floor -- --nocapture
+```
+
+The runtime-gated metric is a syntactic proxy that deliberately does not follow
+helper calls, so it under-counts. Never quote the `// live NNN @ DATE` comments
+in `witness_floor.rs`, **or this section** — they are touch-point snapshots and
+are *expected* to trail the live count between the two permitted floor touches
+per release.
 
 **8. Two C-lane width residuals, pinned rather than refused** (PMAT-1382).
 The C→Rust path emits one scalar width per function. Across the *signed

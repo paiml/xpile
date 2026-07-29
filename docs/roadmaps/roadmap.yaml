@@ -23284,3 +23284,91 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     -- a wasted id is cheaper than a rebase. HARD FREEZE Wed 2026-07-29 18:00 IS IN EFFECT: docs /
     CHANGELOG / version / release mechanics ONLY. On 2026-07-30 take PMAT-1373 (tag cut); on
     2026-07-31 PMAT-1374 (publish).'
+- id: PMAT-1474
+  status: done
+  priority: P1
+  category: honesty
+  title: The MOST SEVERE entry in "Known divergences" described a defect this same release
+    fixed, and two of its metric entries had drifted -- one of them directly above its own
+    prohibition
+  notes: |
+    PMAT-1473 found the FIRST stale entry in `[Unreleased]`'s "Known divergences" list (item 5,
+    retired by PMAT-1405) and named the class. This slice swept the remaining EIGHT OF EIGHT.
+    Three had drifted.
+
+    ITEM 1 WAS THE SHARPEST, because it was the worst-case claim in the document: "i64
+    arithmetic overflow is still a SILENT WRONG ANSWER in the WASM lane ... the lane maps them
+    to i64 and wraps without a word", plus three concrete wrapped return values. PMAT-1402 --
+    an arc 1,900 lines ABOVE it in the SAME [Unreleased] section -- had already made all three
+    unreproducible. Measured under wasm-interp on 2026-07-29: `9223372036854775807 + 1`,
+    `-9223372036854775807 - 2`, `3037000500 * 3037000500` and `-(-9223372036854775808)` EVERY
+    ONE TRAPS; in-range controls `5 + 1` and `1000 * 1000` answer 6 and 1000000. Exactly one
+    shape survives and the entry named it right: `abs(i64::MIN)` returns `i64::MIN`, because
+    `$__wasm_abs_i64` computes `0 - x` with a BARE `i64.sub` and `NumBuiltin` never reaches
+    `emit_binop`, which is where PMAT-1402 landed.
+
+    THE DIRECTION IS THE LESSON. Every prior slice in this sweep hunted OVER-claiming. This
+    entry UNDER-claimed -- it told anyone evaluating the native-WASM lane that every i64 add
+    silently wraps when the emitter traps, and it aimed the 0.1.619 lane at "overflow-checked
+    add/sub/mul/neg across every i64 operation, L/XL, on the emitter's hot path" work that had
+    SHIPPED. The real residual is S and off the hot path. A stale divergence list does not just
+    misinform; IT MISDIRECTS THE ROADMAP.
+
+    AND NOTHING WAS HIDING IT. `crates/xpile-wasm-codegen/tests/i64_overflow_witness.rs` had
+    asserted the trap behaviour, GREEN, since 2026-07-27, and its module doc names
+    `abs(i64::MIN)` as the survivor; `lib.rs:9010` documents the wrap too. The executing witness
+    and the release note disagreed for two days and only the note was wrong. A GREEN WITNESS
+    DOES NOT PROPAGATE TO THE PROSE THAT DESCRIBES IT.
+
+    ITEMS 6 AND 7 WERE METRIC DRIFT. Item 6 typed "of the 18 contracts carrying a Runtime vote
+    ... the other 16"; live `xpile quorum` returns 14, because PMAT-1432 tightened what the
+    stratum counts AFTER the sentence was written. Item 7 typed all nine witness-floor lane
+    counts and four had drifted in two days (wasm 842->857, runtime-gated 333->340,
+    rust-differential 47->49, ruchy 7->8) -- WHILE ITS OWN CLOSING SENTENCE forbids quoting
+    `witness_floor.rs`'s `// live NNN @ DATE` comments PRECISELY BECAUSE THEY TRAIL THE LIVE
+    COUNT. The prohibition was correct and did not apply to itself. Both repaired by the pointer
+    doctrine (PMAT-1449 / PMAT-1470 / PMAT-1471): state the derivation, not the result.
+
+    THE SECTION HEADER was false in a way that EXPLAINS the drift: "Each item below was
+    reproduced against live `python3` through the shipped CLI" cannot be true of items 6 and 7,
+    which are METRIC claims no python3 differential can check -- and they are exactly the two
+    nobody re-measured. A header that describes only one KIND of entry leaves the other kind
+    unowned.
+
+    VERIFIED HONEST AND LEFT ALONE: items 2 (never-entered loop), 3 (two Rust float coercions),
+    4 (set iteration order) and 8 (both C-lane width residuals -- `long f(int)` -> `fn f(x: i64)
+    -> i64` and `unsigned g(int)` -> `fn g(x: u32) -> u32`, re-derived through the shipped CLI
+    against gcc).
+
+    GATE `crates/xpile/tests/known_divergences_measured_witness.rs` (XPILE-DIVERGENCE-001,
+    8 tests). Every rule is EXECUTED, not pattern-matched: it emits the overflow probes through
+    the shipped CLI and runs them under WABT; it shells out to `xpile quorum` and parses the Run
+    column; it holds the two metric entries to the pointer doctrine. The overflow rules are
+    BIDIRECTIONAL -- routing `abs` through the checked helper reds rules B AND C, so the
+    disclosure cannot outlive the defect it describes.
+
+    RED HALF, ALL FIVE RUN AND EACH NAMED ITS OFFENDER: the pre-fix item 1 headline reds rule D;
+    a restored lane roster reds rule F; a restored "18 contracts / other 16" reds rule E; the
+    pre-fix header reds rule H; and the `abs` perturbation reds B and C. THE PERTURBATION
+    ASSERTION EARNED ITS KEEP -- the first `abs` red half did NOT apply (4-space vs 6-space
+    indent in the WAT string literal) and the suite came back GREEN; without
+    `assert s.count(old)==1` that vacuous green would have been recorded as a passing red half.
+
+    THE GATE CAUGHT A FALSE POSITIVE IN ITSELF on its first run: rule E flagged the CORRECTED
+    item 6, for the `the other 16` it QUOTES from its own pre-fix text. A disclosed quotation is
+    how an entry explains its correction, so the detector now strips `"..."` spans -- a POSITIVE
+    marker, with a two-way control asserting the same sentence FIRES when it asserts the count
+    and is EXEMPT when it quotes it.
+
+    SCOPE HONESTY: the `abs(i64::MIN)` wrap is NOT FIXED here. Fixing it touches
+    `crates/*/src`, which the Wed 2026-07-29 18:00 freeze forbids; it ships as a corrected,
+    gated caveat and is re-aimed as an S-sized 0.1.619 item (route the NumBuiltin helpers
+    through the checked forms), replacing the L/XL item that was already done.
+
+    NEXT FREE ID IS PMAT-1475. HARD FREEZE IS IN EFFECT: docs / CHANGELOG / version / release
+    mechanics ONLY. On 2026-07-30 take PMAT-1373 (tag cut); on 2026-07-31 PMAT-1374 (publish).
+    NEXT PICK for the honesty hunt (0.1.619, all frozen out now): the "What still REFUSES" and
+    "What is NOT merge-blocking" sections are the LAST unswept normative blocks in [Unreleased]
+    -- neither uses numbered items, so a sweep needs a different parse -- plus
+    `docs/status/CURRENT.md`, and the Kani harnesses whose PROVED property may not match the
+    equation they discharge (PMAT-1468's class, never swept).

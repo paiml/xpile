@@ -1,27 +1,25 @@
-updated: "2026-07-29 (PMAT-1466 took the crates.io FRONT PAGE. `cargo publish` renders exactly ONE\
-  \ file per crate as its registry page -- the one named by `[package] readme` -- and across the 31\
-  \ members that resolved to TWO files, neither of which any README gate read. The FLAGSHIP `xpile`\
-  \ published crates/xpile/README.md: ZERO readers, ONE commit ever (ac709bf5, 2026-05-15), still saying\
-  \ `Status: v0.0.1 -- crates.io name reservation. The real CLI lands in v0.1.0+` and `This installs the\
-  \ v0.0.1 placeholder binary` -- CONFIRMED LIVE for 0.1.617 -- while redrawing the exact 6-frontend/mdBook\
-  \ roster PMAT-1464 had just deleted from hero.svg. Meanwhile xpile-bigint, a helper, published the\
-  \ GATED 647-commit root README: 20 KB of the workbench''s product page, `cargo install xpile`, `nine\
-  \ backends`, via `readme.workspace = true` resolving against the WORKSPACE root. LESSONS: (1) FOURTH\
-  \ RECURRENCE, AND THE PRIOR SLICE NAMED THE FILE -- PMAT-1465''s own module doc says `only crates/xpile\
-  \ ships a readme`, citing it to explain why descriptions mattered, and never opened it. A corpus of\
-  \ what the REPO presents is not a corpus of what the REGISTRY presents. (2) THE RED HALF CAUGHT TWO\
-  \ FALSE POSITIVES IN THE GATE ITSELF -- a line-scoped denial check that fabricated an offender whose\
-  \ denial sat one line above, and an install scan that read prose about workspace aliases as an\
-  \ instruction. A red half is the only place a gate''s FALSE POSITIVES surface before they are someone\
-  \ else''s red PR; run it to see what the gate says, not just that it says something. (3) A NAIVE GREP\
-  \ COUNTS PROSE ABOUT X AS X -- six test files discuss README.md in `//!` blocks without opening it,\
-  \ so the reader arm needs the QUOTED path, and the gate excludes ITSELF from its own reader search.\
-  \ (4) THE SUBJECT IS DERIVED BY REDOING CARGO''S RESOLUTION, so dropping a bare README.md into\
-  \ crates/xpile-core/ reds the reader arm through auto-discovery alone, with no manifest edit.\
-  \ (5) REPAIR BY DELETION -- correcting the stub would leave two product front pages to sync forever,\
-  \ which is how it went stale. (6) MEASURE A LEAD BEFORE BUILDING FOR IT, SIXTH RUNNING: the\
-  \ `keywords`/`categories` facets PMAT-1465 named as NEXT PICK measured out as a NON-DEFECT and are\
-  \ CLOSED.)"
+updated: "2026-07-29 (PMAT-1474 swept the REST of the Known-divergences list -- PMAT-1473 did item 5,\
+  \ this did the other EIGHT OF EIGHT -- and three had drifted. ITEM 1 WAS THE WORST-CASE CLAIM IN THE\
+  \ DOCUMENT and it was STALE: `+`/`-`/`*`/neg all TRAP under wasm-interp, fixed by PMAT-1402, an arc\
+  \ 1,900 lines ABOVE it in the SAME [Unreleased] section, while `i64_overflow_witness.rs` asserted the\
+  \ truth GREEN for two days. One shape survives -- `abs(i64::MIN)` -> `i64::MIN`, a bare `i64.sub` in\
+  \ `$__wasm_abs_i64` that `emit_binop` never reaches. LESSONS: (1) THE DIRECTION MATTERS -- every prior\
+  \ slice in this sweep hunted OVER-claiming; this UNDER-claimed, telling readers the WASM lane silently\
+  \ wraps when it traps, and aiming the 0.1.619 lane at L/XL work ALREADY SHIPPED. A stale divergence\
+  \ list MISDIRECTS THE ROADMAP, which is more expensive than misinforming a reader. (2) A GREEN WITNESS\
+  \ DOES NOT PROPAGATE TO THE PROSE THAT DESCRIBES IT -- the executing test and the release note\
+  \ disagreed for two days and only the note was wrong. (3) THE PERTURBATION ASSERTION EARNED ITS KEEP:\
+  \ the first `abs` red half did NOT apply (4-space vs 6-space indent inside a WAT string literal) and\
+  \ the suite came back GREEN -- without `assert count==1` that VACUOUS GREEN would have been recorded\
+  \ as a passing red half. ALWAYS ASSERT THE PERTURBATION APPLIED, never infer it from the diff you\
+  \ intended. (4) THE GATE CAUGHT A FALSE POSITIVE IN ITSELF -- rule E flagged the CORRECTED item 6 for\
+  \ the `the other 16` it QUOTES from its own pre-fix text; a disclosed quotation is how an entry\
+  \ explains its correction, so the detector strips quoted spans, with a two-way control. RUN THE RED\
+  \ HALF TO SEE WHAT THE GATE SAYS, NOT JUST THAT IT SAYS SOMETHING. (5) A HEADER THAT DESCRIBES ONLY\
+  \ ONE KIND OF ENTRY LEAVES THE OTHER KIND UNOWNED -- 'reproduced against live python3' cannot be true\
+  \ of items 6 and 7, and those are exactly the two nobody re-measured. (6) ITEM 7 BROKE A RULE STATED\
+  \ IN ITS OWN CLOSING SENTENCE, which forbids quoting snapshot counts BECAUSE THEY TRAIL THE LIVE\
+  \ COUNT -- the prohibition was right and did not apply to itself.)"
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -77,6 +75,45 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1474
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: The MOST SEVERE "Known divergences" entry described a defect THIS release fixed, and two
+    metric entries had drifted -- one directly above its own prohibition
+  notes: 'PMAT-1473 found the first stale entry and named the class; this slice swept the remaining
+    EIGHT OF EIGHT. Three had drifted. Item 1 said i64 overflow is "still a SILENT WRONG ANSWER ...
+    wraps without a word" with three concrete wrapped values -- PMAT-1402, an arc 1,900 lines ABOVE
+    it in the SAME [Unreleased], had made all three unreproducible: `+`/`-`/`*`/neg all TRAP under
+    wasm-interp (in-range controls answer exactly). ONE shape survives: `abs(i64::MIN)` -> `i64::MIN`,
+    a bare `i64.sub` in `$__wasm_abs_i64`, because `NumBuiltin` never reaches `emit_binop`.
+
+    THE DIRECTION IS THE LESSON -- every prior slice hunted OVER-claiming; this UNDER-claimed, and it
+    aimed the 0.1.619 lane at L/XL work that had already shipped. A stale divergence list MISDIRECTS
+    THE ROADMAP. And `i64_overflow_witness.rs` had asserted the truth, GREEN, for two days: A GREEN
+    WITNESS DOES NOT PROPAGATE TO THE PROSE THAT DESCRIBES IT.
+
+    Items 6 (18 -> 14 contracts, PMAT-1432 tightened the stratum after the sentence was written) and
+    7 (four of nine witness counts drifted) repaired by the POINTER DOCTRINE. Item 7 broke a rule
+    STATED IN ITS OWN CLOSING SENTENCE. Header now separates BEHAVIOURAL from METRIC entries -- the
+    metric two are exactly the ones nobody re-measured, because the header only described the others.
+
+    Gate XPILE-DIVERGENCE-001 (8 tests) EXECUTES every rule; overflow rules are BIDIRECTIONAL. Red
+    half x5, all run. THE PERTURBATION ASSERTION EARNED ITS KEEP: the first `abs` red half did not
+    apply (indent mismatch) and the suite came back GREEN -- a vacuous green that would have been
+    recorded as a passing red half. The gate also caught a FALSE POSITIVE IN ITSELF (it flagged the
+    corrected item 6 for text it QUOTES), fixed with a disclosed-quotation exemption + a two-way
+    control.
+
+    NOT FIXED HERE: the `abs` wrap needs `crates/*/src`, which the freeze forbids. Ships as a gated
+    caveat, re-aimed as an S-sized 0.1.619 item.
+
+
+    NEXT PICK: 2026-07-30 -> PMAT-1373 (tag cut), 2026-07-31 -> PMAT-1374 (publish). NEXT FREE ID
+    PMAT-1475. Remaining honesty leads, ALL frozen out until after the tag: the "What still REFUSES"
+    and "What is NOT merge-blocking" sections (the last unswept normative blocks in [Unreleased];
+    neither uses numbered items so a sweep needs a different parse), `docs/status/CURRENT.md`, and
+    PMAT-1468''s never-swept Kani proved-property class.'
 - id: PMAT-1473
   status: done
   ev_rank: R1
