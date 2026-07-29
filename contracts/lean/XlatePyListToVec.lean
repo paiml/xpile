@@ -998,12 +998,14 @@ theorem length_monoid_homomorphism_diamond {α : Type}
     BROADENING DEPTH-4 from 5 to 6 contracts): LIST REVERSE
     INVOLUTION (XPILE-REFINE-XLATE-PY-LIST-TO-VEC-006).
 
-    **Broadens DEPTH-4 from 5 to 6 contracts.** After PMAT-330
-    completed depth-4 ACROSS ALL 5 LAYERS, this is the first
-    POST-UNIVERSAL broadening: pushes XlatePyList (Layer 2) from
-    depth-3 to depth-4, becoming the FIRST Layer 2 contract at
-    depth-4 (PMAT-1462: this record credited Bashrs, which
-    declares Layer 1).
+    **Broadens DEPTH-4 from 5 to 6 contracts, and COMPLETES depth-4
+    across all five taxonomy layers.** PMAT-330 took depth-4 to a
+    fourth layer (L1+L3+L4+L5); THIS Diamond pushes XlatePyList
+    (Layer 2) from depth-3 to depth-4 and is the arrival that made
+    depth-4 taxonomy-complete. It is also the FIRST Layer 2 contract
+    at depth-4. (PMAT-1462: this record credited Bashrs, which
+    declares Layer 1. PMAT-1463: it also filed itself as the first
+    broadening AFTER a milestone it is in fact the completion of.)
 
     The 4 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
     - PMAT-221 list_free_monoid_diamond: (List, ++, []) monoid

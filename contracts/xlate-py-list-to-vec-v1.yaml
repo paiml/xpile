@@ -450,7 +450,9 @@ equations:
   list_reverse_involution_diamond:
     # PMAT-338: FOURTH Diamond on this contract — BROADENS DEPTH-4
     # from 5 to 6 contracts. First POST-UNIVERSAL broadening
-    # (post-PMAT-330 depth-4 ACROSS ALL 5 LAYERS milestone).
+    # PMAT-1463: this used to be filed as the first broadening AFTER
+    # PMAT-330's taxonomy-complete depth-4. PMAT-330 took depth-4 to a
+    # fourth layer; THIS Diamond is the one that took it to all five.
     # Pushes XlatePyList (Layer 2) from depth-3 to depth-4,
     # becoming the FIRST Layer 2 contract at depth-4 (PMAT-1462:
     # this record credited Bashrs, which declares Layer 1).
@@ -469,7 +471,7 @@ equations:
       subtype (PMAT-229), and the length functor (PMAT-244).
     invariants:
       - "FOURTH Diamond category on C-XLATE-PY-LIST-TO-VEC — BROADENS DEPTH-4 from 5 to 6 contracts"
-      - "first POST-UNIVERSAL broadening (post-PMAT-330 depth-4 ACROSS ALL 5 LAYERS milestone)"
+      - "COMPLETES depth-4 across all 5 taxonomy layers — the Layer-2 arrival PMAT-330 was mis-credited with (PMAT-1463)"
       - "captures (List, reverse) involution algebra — distinct from monoid (PMAT-221), subtype (PMAT-229), functor (PMAT-244)"
     preconditions:
       - "one PyListSilver α value (polymorphic in α)"
@@ -504,7 +506,7 @@ equations:
     preconditions:
       - "two PyListSilver α records (polymorphic in α)"
     postconditions:
-      - "Diamond depth-5 broadened: 7 contracts at depth-5+ (2 Layer 2 contracts at depth-5)"
+      - "Diamond depth-5 broadened: 7 contracts at depth-5+ (1 Layer 2 contract at depth-5 — this one)"
 
   typed_rust_vec_silver_struct_extensionality_diamond:
     # PMAT-360: SIXTH Diamond on this contract — BROADENS DEPTH-6
@@ -536,7 +538,7 @@ equations:
     preconditions:
       - "two TypedRustVecSilver α records (polymorphic in α)"
     postconditions:
-      - "Diamond depth-6 broadened: 7 contracts at depth-6+ (2 L2 contracts at depth-6)"
+      - "Diamond depth-6 broadened: 7 contracts at depth-6+ (1 L2 contract at depth-6 — this one)"
 
   heterogeneous_list_silver_struct_extensionality_diamond:
     # PMAT-371: SEVENTH Diamond on this contract — BROADENS DEPTH-7

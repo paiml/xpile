@@ -257,9 +257,15 @@ equations:
       - "Diamond depth-3 ACROSS-LAYERS (PMAT-245): substrate has depth-3 Diamonds on Layer 1, 2, 3, 4, AND 5"
 
   metahir_module_struct_extensionality_diamond:
-    # PMAT-330: FOURTH Diamond on this contract — COMPLETES DEPTH-4
-    # ACROSS ALL 5 TAXONOMY LAYERS. After PMAT-329 broadened depth-4
-    # to 4 layers (L1+L2+L4+L5), only Layer 3 was missing. PMAT-330
+    # PMAT-330: FOURTH Diamond on this contract — TAKES DEPTH-4 TO A
+    # FOURTH LAYER (L1+L3+L4+L5). PMAT-1463: this record used to award
+    # itself a taxonomy-complete depth-4. It was not one.
+    # C-BASHRS-POSIX-IDEMPOTENCE declares `layer: semantics` — the
+    # same layer as C-PY-INT-ARITH — so PMAT-329 added a CONTRACT and
+    # not a LAYER, and depth-4 stood at L1+L4+L5 before this Diamond.
+    # Layer 2 was still absent afterwards; depth-4 first spanned all
+    # five at PMAT-338, when C-XLATE-PY-LIST-TO-VEC reached it.
+    # PMAT-330
     # pushes XpileFrontendTrait (Layer 3) from depth-3 to depth-4,
     # making depth-4 ACROSS LAYERS reach EVERY xpile taxonomy layer.
     # MetaHirModuleSilver STRUCTURE EXTENSIONALITY: the record type
@@ -281,7 +287,7 @@ equations:
       axiomatize the record-type structure: field equality
       determines record equality, with decidable equality.
     invariants:
-      - "FOURTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-4 ACROSS ALL 5 TAXONOMY LAYERS (L1+L2+L3+L4+L5)"
+      - "FOURTH Diamond category on C-XPILE-FRONTEND-TRAIT — TAKES DEPTH-4 TO A FOURTH LAYER (L1+L3+L4+L5; Layer 2 arrived at PMAT-338)"
       - "RECORD-STRUCTURE / SUBTYPE-LIKE claim, mirror of PMAT-311 (BoundedSmem) and PMAT-329 (OutcomeSilver)"
       - "distinct from the prior 3 Diamonds (equivalence, projection, function axioms) — captures the OUTPUT RECORD TYPE structure"
       - "completes a recurring substrate-wide theme: structure-extensionality demonstrated on 3 distinct record/subtype contracts"
@@ -289,13 +295,15 @@ equations:
       - "two MetaHirModuleSilver records (with derived DecidableEq instance)"
     postconditions:
       - "an emitter introducing a phantom field (e.g., cached_ast_hash) or stripping fields would falsify (a)"
-      - "Diamond depth-4 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+      - "Diamond depth-4 broadened to a FOURTH layer: 5 contracts on 4 distinct layers (L1 + L3 + L4 + L5)"
 
   source_lang_enum_distinctness_diamond:
-    # PMAT-347: FIFTH Diamond on this contract — COMPLETES DEPTH-5
-    # ACROSS ALL 5 TAXONOMY LAYERS. Mirror of PMAT-330 (depth-4 ALL
-    # 5 LAYERS milestone). Pushes XpileFrontendTrait (Layer 3) from
-    # depth-4 to depth-5, adding Layer 3 to depth-5+ coverage.
+    # PMAT-347: FIFTH Diamond on this contract — TAKES DEPTH-5 TO A
+    # FOURTH LAYER (L1+L3+L4+L5). Mirror of PMAT-330 at depth-4.
+    # PMAT-1463: both records used to claim a taxonomy-complete depth;
+    # Layer 2 was absent from depth-5 until PMAT-349
+    # (C-XLATE-PY-LIST-TO-VEC). Pushes XpileFrontendTrait (Layer 3)
+    # from depth-4 to depth-5, adding Layer 3 to depth-5+ coverage.
     # SourceLang enum distinctness (6-variant inductive).
     lean_theorem: "XpileContracts.CXpileFrontendTrait.source_lang_enum_distinctness_diamond"
     lean_file: "contracts/lean/XpileFrontendTrait.lean"
@@ -308,25 +316,24 @@ equations:
     domain: |
       Any SourceLang value (6-variant: python/c/rust/ruchy/shell/lean).
     invariants:
-      - "FIFTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-5 ACROSS ALL 5 TAXONOMY LAYERS"
-      - "Mirror of PMAT-330 depth-4 ALL 5 LAYERS milestone"
+      - "FIFTH Diamond category on C-XPILE-FRONTEND-TRAIT — TAKES DEPTH-5 TO A FOURTH LAYER (L1+L3+L4+L5; Layer 2 arrived at PMAT-349)"
+      - "Mirror of PMAT-330 depth-4 fourth-layer broadening"
     preconditions:
       - "SourceLang inductive type with derived DecidableEq"
     postconditions:
-      - "Diamond depth-5 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+      - "Diamond depth-5 broadened to a FOURTH layer: 5 contracts on 4 distinct layers (L1 + L3 + L4 + L5)"
 
   metahir_module_silver_bytes_array_size_diamond:
     # PMAT-358: SIXTH Diamond on this contract. After PMAT-356
     # opened depth-6 on Layer 4 (FFI-CPYTHON-EXT) and PMAT-357
     # pushed Bashrs (Layer 1) to depth-6, PMAT-358 pushes
     # XpileFrontendTrait (Layer 3) from depth-5 to depth-6.
-    # PMAT-1461: this record claimed PMAT-358 COMPLETED depth-6
-    # ACROSS ALL 5 TAXONOMY LAYERS, but Bashrs declares Layer 1,
-    # not Layer 2 — so the contracts this sentence enumerates cover
-    # L1+L3+L4+L5, four layers, and Layer 2 was absent at depth-6.
-    # Depth-6 DOES span all five layers on the live substrate
-    # (`xpile diamond --json`), reached later by the Layer-2
-    # contracts, not by this Diamond.
+    # PMAT-1461/1463: this record used to award itself a
+    # taxonomy-complete depth-6. Bashrs declares Layer 1, not Layer 2,
+    # so the contracts enumerated here cover L1+L3+L4+L5 — four layers,
+    # with Layer 2 absent. Depth-6 DOES span all five on the live
+    # substrate (`xpile diamond --json`), reached at PMAT-360 by
+    # C-XLATE-PY-LIST-TO-VEC, not by this Diamond.
     # MetaHirModuleSilver bytes Array.size structure — seventh
     # substrate-wide Array.size demonstration.
     lean_theorem: "XpileContracts.CXpileFrontendTrait.metahir_module_silver_bytes_array_size_diamond"
@@ -341,13 +348,13 @@ equations:
       Any MetaHirModuleSilver record with bytes : Array UInt8 and
       source_lang : SourceLang fields.
     invariants:
-      - "SIXTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS"
-      - "Mirror of PMAT-330 (depth-4 ALL 5 LAYERS) and PMAT-347 (depth-5 ALL 5 LAYERS) milestones"
+      - "SIXTH Diamond category on C-XPILE-FRONTEND-TRAIT — TAKES DEPTH-6 TO A FOURTH LAYER (L1+L3+L4+L5; Layer 2 arrived at PMAT-360)"
+      - "Mirror of PMAT-330 (depth-4) and PMAT-347 (depth-5) fourth-layer broadenings"
       - "Seventh substrate-wide demonstration of the Array.size template"
     preconditions:
       - "one MetaHirModuleSilver record"
     postconditions:
-      - "Diamond depth-6 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+      - "Diamond depth-6 broadened to a FOURTH layer: 5 contracts on 4 distinct layers (L1 + L3 + L4 + L5)"
 
   ffi_boundaries_are_outgoing_only:
     formula: |
@@ -360,10 +367,11 @@ equations:
     preconditions: []
 
   frontend_struct_extensionality_diamond:
-    # PMAT-369: SEVENTH Diamond on this contract — COMPLETES DEPTH-7
-    # ACROSS ALL 5 TAXONOMY LAYERS. Mirror of PMAT-330 (depth-4 ALL
-    # 5 LAYERS), PMAT-347 (depth-5), and PMAT-358 (depth-6)
-    # milestones. Pushes XpileFrontendTrait (Layer 3) from depth-6
+    # PMAT-369: SEVENTH Diamond on this contract — TAKES DEPTH-7 TO A
+    # FOURTH LAYER (L1+L3+L4+L5). Mirror of PMAT-330 (depth-4),
+    # PMAT-347 (depth-5) and PMAT-358 (depth-6); PMAT-1463 corrected
+    # all four, which used to award themselves a taxonomy-complete
+    # depth. Layer 2 reached depth-7 at PMAT-371. Pushes XpileFrontendTrait (Layer 3) from depth-6
     # to depth-7. FRONTEND STRUCTURE EXTENSIONALITY: the single-field
     # Frontend record (declared_lang : SourceLang) is field-extensional.
     # Mirror of PMAT-359 on the Backend side (Backend INPUT record).
@@ -380,19 +388,20 @@ equations:
       Two Frontend records (declared_lang : SourceLang) — the INPUT
       record of the parse_and_lower trait method.
     invariants:
-      - "SEVENTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS"
+      - "SEVENTH Diamond category on C-XPILE-FRONTEND-TRAIT — TAKES DEPTH-7 TO A FOURTH LAYER (L1+L3+L4+L5; Layer 2 arrived at PMAT-371)"
       - "STRUCTURE EXTENSIONALITY — twenty-third substrate-wide demonstration"
       - "Mirror of PMAT-359 on Backend side (Backend INPUT record)"
     preconditions:
       - "two Frontend records (DecidableEq derived)"
     postconditions:
-      - "Diamond depth-7 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+      - "Diamond depth-7 broadened to a FOURTH layer: 5 contracts on 4 distinct layers (L1 + L3 + L4 + L5)"
 
   source_lang_enum_completeness_diamond:
-    # PMAT-380: EIGHTH Diamond on this contract — COMPLETES DEPTH-8
-    # ACROSS ALL 5 TAXONOMY LAYERS. Parallel to PMAT-330 (depth-4),
-    # PMAT-347 (depth-5), PMAT-358 (depth-6), and PMAT-369 (depth-7)
-    # ALL 5 LAYERS milestones. SOURCE-LANG ENUM COMPLETENESS: every
+    # PMAT-380: EIGHTH Diamond on this contract — TAKES DEPTH-8 TO A
+    # FOURTH LAYER (L1+L3+L4+L5). Parallel to PMAT-330 (depth-4),
+    # PMAT-347 (depth-5), PMAT-358 (depth-6) and PMAT-369 (depth-7);
+    # PMAT-1463 corrected all five, which used to award themselves a
+    # taxonomy-complete depth. Layer 2 reached depth-8 at PMAT-382. SOURCE-LANG ENUM COMPLETENESS: every
     # SourceLang value matches one of 6 known variants. Mirror of
     # PMAT-370 (Target completeness on Backend trait). Third instance
     # of Template 8 (enum completeness) substrate-wide.
@@ -407,13 +416,13 @@ equations:
     domain: |
       Any SourceLang value (6-variant inductive).
     invariants:
-      - "EIGHTH Diamond category on C-XPILE-FRONTEND-TRAIT — COMPLETES DEPTH-8 ACROSS ALL 5 TAXONOMY LAYERS"
+      - "EIGHTH Diamond category on C-XPILE-FRONTEND-TRAIT — TAKES DEPTH-8 TO A FOURTH LAYER (L1+L3+L4+L5; Layer 2 arrived at PMAT-382)"
       - "FINITE ENUMERATION COMPLETENESS — Template 8; third substrate-wide instance after PMAT-370/372"
       - "Mirror of PMAT-370 (Target completeness on Backend trait)"
     preconditions:
       - "SourceLang inductive type with derived DecidableEq"
     postconditions:
-      - "Diamond depth-8 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
+      - "Diamond depth-8 broadened to a FOURTH layer: 5 contracts on 4 distinct layers (L1 + L3 + L4 + L5)"
 
   consistent_frontend_output_subtype_extensionality_diamond:
     # PMAT-393: NINTH Diamond on this contract — BROADENS DEPTH-9

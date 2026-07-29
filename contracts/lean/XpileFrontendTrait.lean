@@ -710,20 +710,23 @@ theorem parse_and_lower_function_diamond
     rw [hp, hs]
 
 /-! ## PMAT-330 — FOURTH Diamond on C-XPILE-FRONTEND-TRAIT
-    (Layer 3 BROADENING DEPTH-4 ACROSS LAYERS — COMPLETES ALL
-    FIVE LAYERS): MetaHirModuleSilver STRUCTURE EXTENSIONALITY
+    (Layer 3 BROADENING DEPTH-4 ACROSS LAYERS TO A FOURTH
+    LAYER): MetaHirModuleSilver STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XPILE-FRONTEND-TRAIT-007).
 
-    **MILESTONE: COMPLETES DEPTH-4 ACROSS ALL 5 TAXONOMY LAYERS.**
-    After PMAT-329 broadened depth-4 to 4 layers (L1+L2+L4+L5),
-    only Layer 3 was missing. PMAT-330 pushes XpileFrontendTrait
-    (Layer 3) from depth-3 to depth-4, making depth-4 ACROSS
-    LAYERS reach EVERY xpile taxonomy layer — a substrate-wide
-    universality claim.
+    **DEPTH-4 REACHES A FOURTH LAYER.**
+    PMAT-1463: this docstring used to award PMAT-330 a
+    taxonomy-complete depth-4. PMAT-329 had taken depth-4 to
+    L1+L4+L5 — Bashrs declares `metadata.xpile.layer: semantics`,
+    Layer 1, so it added a contract and not a layer — and PMAT-330
+    pushes XpileFrontendTrait (Layer 3) from depth-3 to depth-4,
+    taking depth-4 to L1+L3+L4+L5. Layer 2 was still absent.
+    Depth-4 first spanned every taxonomy layer at PMAT-338, when
+    C-XLATE-PY-LIST-TO-VEC (Layer 2) reached it.
 
-    Coverage milestone:
-      - Depth-4 contracts: 5 (one per layer)
-      - Layers covered: ALL 5 (L1 + L2 + L3 + L4 + L5)
+    Coverage at PMAT-330:
+      - Depth-4 contracts: 5 (two of them on Layer 1)
+      - Layers covered: 4 (L1 + L3 + L4 + L5)
       - Substrate Diamond total: 69 (was 68)
 
     The 4 Diamond categories on C-XPILE-FRONTEND-TRAIT:
@@ -731,7 +734,7 @@ theorem parse_and_lower_function_diamond
     - source_lang_constant_projection_diamond: constant projection
     - parse_and_lower_function_diamond: function axioms
     - **PMAT-330: MetaHirModuleSilver STRUCTURE EXTENSIONALITY**
-      ← completes depth-4 ACROSS ALL 5 LAYERS
+      ← takes depth-4 to a fourth layer
 
     The categorical distinction is sharp:
       - Equivalence-class: about EQUIVALENCE between frontends
@@ -765,7 +768,7 @@ theorem parse_and_lower_function_diamond
     fields must imply equal records.
 
     Status: discharged at v0.1.0 (PMAT-330). Tier: DIAMOND.
-    Completes DEPTH-4 ACROSS ALL 5 TAXONOMY LAYERS. -/
+    Takes DEPTH-4 to a FOURTH layer (L1+L3+L4+L5). -/
 
 /--
   **Diamond-tier refinement theorem** — `MetaHirModuleSilver` admits
@@ -791,7 +794,7 @@ theorem parse_and_lower_function_diamond
   but not record-structure.
 
   Status: **discharged at v0.1.0 (PMAT-330)**. Tier: DIAMOND.
-  Completes DEPTH-4 ACROSS ALL 5 TAXONOMY LAYERS.
+  Takes DEPTH-4 to a FOURTH layer (L1+L3+L4+L5).
 -/
 theorem metahir_module_struct_extensionality_diamond
     (m1 m2 : MetaHirModuleSilver) :
@@ -815,20 +818,22 @@ theorem metahir_module_struct_extensionality_diamond
   · rfl
 
 /-! ## PMAT-347 — FIFTH Diamond on C-XPILE-FRONTEND-TRAIT (Layer 3
-    — **COMPLETES DEPTH-5 ACROSS ALL 5 TAXONOMY LAYERS**):
+    — **TAKES DEPTH-5 TO A FOURTH LAYER**):
     SOURCE-LANG ENUM DISTINCTNESS
     (XPILE-REFINE-XPILE-FRONTEND-TRAIT-008).
 
-    **MILESTONE: depth-5 ACROSS ALL 5 TAXONOMY LAYERS.** After
-    PMAT-346 brought depth-5 to 4 layers (L1+L2+L4+L5), only
-    Layer 3 was missing. PMAT-347 pushes XpileFrontendTrait
-    (Layer 3) from depth-4 to depth-5, COMPLETING depth-5 across
-    every xpile taxonomy layer.
+    **DEPTH-5 REACHES A FOURTH LAYER.** PMAT-1463: this
+    docstring used to award PMAT-347 a taxonomy-complete depth-5.
+    C-BASHRS-POSIX-IDEMPOTENCE declares `layer: semantics`, so
+    PMAT-346 brought depth-5 to no more than L1+L4+L5, and PMAT-347
+    pushes XpileFrontendTrait (Layer 3) from depth-4 to depth-5,
+    taking it to L1+L3+L4+L5. Layer 2 followed at PMAT-349
+    (C-XLATE-PY-LIST-TO-VEC).
 
-    Coverage achievement:
-      - 5 contracts at depth-5+ (one per layer)
-      - depth-5 spans all 5 taxonomy layers
-      - Mirror of PMAT-330 (depth-4 ALL 5 LAYERS milestone)
+    Coverage at PMAT-347:
+      - 5 contracts at depth-5+ (two of them on Layer 1)
+      - depth-5 spans 4 taxonomy layers
+      - Mirror of PMAT-330's depth-4 fourth-layer broadening
 
     The 5 Diamond categories on C-XPILE-FRONTEND-TRAIT:
     - PMAT-224 frontend_equivalence_class
@@ -838,14 +843,14 @@ theorem metahir_module_struct_extensionality_diamond
     - **PMAT-347: SOURCE-LANG ENUM DISTINCTNESS** ← depth-5
 
     Status: discharged at v0.1.0 (PMAT-347). Tier: DIAMOND.
-    Completes DEPTH-5 ACROSS ALL 5 TAXONOMY LAYERS. -/
+    Takes DEPTH-5 to a FOURTH layer (L1+L3+L4+L5). -/
 
 /--
   **Diamond-tier refinement theorem** — `SourceLang` is a 4-variant
   decidable enumeration with distinct constructors.
 
   Status: **discharged at v0.1.0 (PMAT-347)**. Tier: DIAMOND.
-  Completes DEPTH-5 ACROSS ALL 5 TAXONOMY LAYERS.
+  Takes DEPTH-5 to a FOURTH layer (L1+L3+L4+L5).
 -/
 theorem source_lang_enum_distinctness_diamond (l : SourceLang) :
     -- (a) python ≠ rust
@@ -865,7 +870,7 @@ theorem source_lang_enum_distinctness_diamond (l : SourceLang) :
     · exact Or.inr h
 
 /-! ## PMAT-358 — SIXTH Diamond on C-XPILE-FRONTEND-TRAIT
-    (Layer 3 COMPLETES DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS):
+    (Layer 3 TAKES DEPTH-6 TO A FOURTH LAYER):
     METAHIR-MODULE-SILVER BYTES ARRAY.SIZE STRUCTURE
     (XPILE-REFINE-XPILE-FRONTEND-TRAIT-009).
 
@@ -876,12 +881,14 @@ theorem source_lang_enum_distinctness_diamond (l : SourceLang) :
     XpileFrontendTrait (Layer 3) from depth-5 to depth-6, taking
     depth-6 to L1+L3+L4+L5.
 
-    PMAT-1461: this docstring claimed PMAT-358 completed depth-6
-    ACROSS ALL 5 TAXONOMY LAYERS. It did not. Bashrs declares
+    PMAT-1461/1463: this docstring used to award PMAT-358 a
+    taxonomy-complete depth-6, in its section head and its status
+    line as well as here. Bashrs declares
     `metadata.xpile.layer: semantics` (Layer 1), not Layer 2, so
     Layer 2 was absent from depth-6 and the contracts enumerated
-    here cover four layers. Depth-6 DOES span all five on the live
-    substrate — the Layer-2 contracts reached it later, not here.
+    here cover four layers. Depth-6 DOES span every taxonomy layer
+    on the live substrate — C-XLATE-PY-LIST-TO-VEC (Layer 2)
+    reached it at PMAT-360, two slices later, not here.
 
     The 6 Diamond categories on C-XPILE-FRONTEND-TRAIT:
     - PMAT-224 frontend_equivalence_class_diamond: equivalence
@@ -905,7 +912,7 @@ theorem source_lang_enum_distinctness_diamond (l : SourceLang) :
     trait-surface MetaHirModuleSilver record.
 
     Status: discharged at v0.1.0 (PMAT-358). Tier: DIAMOND.
-    **COMPLETES DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS.** -/
+    **TAKES DEPTH-6 TO A FOURTH LAYER (L1+L3+L4+L5).** -/
 
 /--
   **Diamond-tier refinement theorem** — `MetaHirModuleSilver.bytes`
@@ -919,10 +926,10 @@ theorem source_lang_enum_distinctness_diamond (l : SourceLang) :
   (d) source_lang field is independent (size unchanged by lang swap)
 
   Seventh substrate-wide demonstration of the Array.size structural
-  pattern, completing depth-6 ACROSS ALL 5 TAXONOMY LAYERS.
+  pattern, taking depth-6 to a fourth layer (L1+L3+L4+L5).
 
   Status: **discharged at v0.1.0 (PMAT-358)**. Tier: DIAMOND.
-  **COMPLETES DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS.**
+  **TAKES DEPTH-6 TO A FOURTH LAYER; Layer 2 arrived at PMAT-360.**
 -/
 theorem metahir_module_silver_bytes_array_size_diamond
     (m : MetaHirModuleSilver) :
@@ -941,18 +948,20 @@ theorem metahir_module_silver_bytes_array_size_diamond
   · rfl
 
 /-! ## PMAT-369 — SEVENTH Diamond on C-XPILE-FRONTEND-TRAIT
-    (Layer 3 COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS):
+    (Layer 3 TAKES DEPTH-7 TO A FOURTH LAYER):
     FRONTEND STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XPILE-FRONTEND-TRAIT-010).
 
-    **MILESTONE: DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS.**
+    **DEPTH-7 REACHES A FOURTH LAYER.**
 
-    After PMAT-367 opened depth-7 on L4 and PMAT-368 broadened to L2,
-    depth-7 spans 4 of 5 taxonomy layers. PMAT-369 pushes
-    XpileFrontendTrait (Layer 3) from depth-6 to depth-7, completing
-    depth-7 ACROSS ALL 5 TAXONOMY LAYERS. Parallel to PMAT-330
-    (depth-4 ALL 5 LAYERS), PMAT-347 (depth-5 ALL 5 LAYERS), and
-    PMAT-358 (depth-6 ALL 5 LAYERS) milestones.
+    After PMAT-367 opened depth-7 on L4 and PMAT-368 pushed Bashrs
+    (Layer 1 — PMAT-1461; this line used to call it L2) to depth-7,
+    depth-7 spanned L1+L4+L5. PMAT-369 pushes XpileFrontendTrait
+    (Layer 3) from depth-6 to depth-7, taking depth-7 to
+    L1+L3+L4+L5. Layer 2 arrived at PMAT-371. Parallel to PMAT-330
+    (depth-4), PMAT-347 (depth-5) and PMAT-358 (depth-6), all four
+    of which PMAT-1463 corrected from taxonomy-complete to
+    fourth-layer broadenings.
 
     The 7 Diamond categories on C-XPILE-FRONTEND-TRAIT:
     - PMAT-224 frontend_equivalence_class
@@ -966,7 +975,7 @@ theorem metahir_module_silver_bytes_array_size_diamond
     Mirror of PMAT-359 on the Backend side.
 
     Status: discharged at v0.1.0 (PMAT-369). Tier: DIAMOND.
-    **COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS.** -/
+    **TAKES DEPTH-7 TO A FOURTH LAYER (L1+L3+L4+L5).** -/
 
 /--
   **Diamond-tier refinement theorem** — `Frontend` admits
@@ -976,7 +985,7 @@ theorem metahir_module_silver_bytes_array_size_diamond
   derived DecidableEq.
 
   Status: **discharged at v0.1.0 (PMAT-369)**. Tier: DIAMOND.
-  **COMPLETES DEPTH-7 ACROSS ALL 5 TAXONOMY LAYERS.**
+  **TAKES DEPTH-7 TO A FOURTH LAYER; Layer 2 arrived at PMAT-371.**
 -/
 theorem frontend_struct_extensionality_diamond (f1 f2 : Frontend) :
     (f1.declared_lang = f2.declared_lang → f1 = f2)
@@ -995,18 +1004,19 @@ theorem frontend_struct_extensionality_diamond (f1 f2 : Frontend) :
   · rfl
 
 /-! ## PMAT-380 — EIGHTH Diamond on C-XPILE-FRONTEND-TRAIT
-    (Layer 3 COMPLETES DEPTH-8 ACROSS ALL 5 TAXONOMY LAYERS):
+    (Layer 3 TAKES DEPTH-8 TO A FOURTH LAYER):
     SOURCE-LANG ENUM COMPLETENESS
     (XPILE-REFINE-XPILE-FRONTEND-TRAIT-011).
 
-    **MILESTONE: DEPTH-8 ACROSS ALL 5 TAXONOMY LAYERS.**
+    **DEPTH-8 REACHES A FOURTH LAYER.**
 
-    After PMAT-378 opened depth-8 on L4 and PMAT-379 broadened to
-    L2, depth-8 spans 4 of 5 taxonomy layers. PMAT-380 pushes
-    XpileFrontendTrait (Layer 3) from depth-7 to depth-8, completing
-    depth-8 ACROSS ALL 5 TAXONOMY LAYERS. Parallel to PMAT-330
-    (depth-4), PMAT-347 (depth-5), PMAT-358 (depth-6), and PMAT-369
-    (depth-7) ALL 5 LAYERS milestones.
+    After PMAT-378 opened depth-8 on L4 and PMAT-379 pushed Bashrs
+    (Layer 1 — PMAT-1461; this line used to call it L2) to depth-8,
+    depth-8 spanned L1+L4+L5. PMAT-380 pushes XpileFrontendTrait
+    (Layer 3) from depth-7 to depth-8, taking depth-8 to
+    L1+L3+L4+L5. Layer 2 arrived at PMAT-382. Parallel to PMAT-330
+    (depth-4), PMAT-347 (depth-5), PMAT-358 (depth-6) and PMAT-369
+    (depth-7), all five corrected by PMAT-1463.
 
     The 8 Diamond categories on C-XPILE-FRONTEND-TRAIT:
     - PMAT-224 frontend_equivalence_class
@@ -1025,7 +1035,7 @@ theorem frontend_struct_extensionality_diamond (f1 f2 : Frontend) :
     give the full finite-enumeration axiomatization for SourceLang.
 
     Status: discharged at v0.1.0 (PMAT-380). Tier: DIAMOND.
-    **COMPLETES DEPTH-8 ACROSS ALL 5 TAXONOMY LAYERS.** -/
+    **TAKES DEPTH-8 TO A FOURTH LAYER (L1+L3+L4+L5).** -/
 
 /--
   **Diamond-tier refinement theorem** — `SourceLang` admits FINITE
@@ -1038,7 +1048,7 @@ theorem frontend_struct_extensionality_diamond (f1 f2 : Frontend) :
   (d) Constructor distinctness sample
 
   Status: **discharged at v0.1.0 (PMAT-380)**. Tier: DIAMOND.
-  **COMPLETES DEPTH-8 ACROSS ALL 5 TAXONOMY LAYERS.**
+  **TAKES DEPTH-8 TO A FOURTH LAYER; Layer 2 arrived at PMAT-382.**
 -/
 theorem source_lang_enum_completeness_diamond (l : SourceLang) :
     (l = SourceLang.python ∨ l = SourceLang.c ∨ l = SourceLang.rust

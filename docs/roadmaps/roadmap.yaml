@@ -22417,3 +22417,101 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1463
+  title: The five "COMPLETES DEPTH-N ACROSS ALL 5 TAXONOMY LAYERS" milestones never happened — 52 Diamond
+    census claims count a Layer-1 contract as the fifth layer
+  notes: 'PMAT-1462 gated the ORDINAL half of a Diamond broadening record and declined the CARDINAL half,
+    reasoning that "a cardinal names no subject contract, so the rank arithmetic does not apply". True
+    and irrelevant: A CARDINAL DOES NOT NEED A SUBJECT, IT NEEDS A POPULATION -- and the population is
+    the same (depth, as-of) pair the ordinal gate already computes. Four projections of that one population
+    are published under contracts/: `N contracts on M distinct layers`, `depth-D across ALL M taxonomy
+    layers`, `N contracts at depth-D+`, and `N Layer-K contracts at depth-D`. At e17697ae, 52 sites disagreed
+    -- 21 in *.yaml, 31 in lean/*.lean. Root cause identical to PMAT-1460/1461/1462: C-BASHRS-POSIX-IDEMPOTENCE
+    declares `layer: semantics` (Layer 1) and was counted as Layer 2.
+
+    ** THE DAMAGE IS THE SUBSTRATE''S HEADLINE MILESTONE. Five slices published "COMPLETES DEPTH-D ACROSS
+    ALL 5 TAXONOMY LAYERS" for D = 4,5,6,7,8. Every one is FALSE: at each of those moments the population
+    spanned FOUR layers (L1+L3+L4+L5), Layer 2 absent. The fifth layer was Bashrs, counted twice -- once
+    correctly as L1 and once again as the L2 it is not.
+
+    ** THE TRUE HALF LAUNDERS THE FALSE HALF, third run (PMAT-1458 shape). "BROADENS DEPTH-4 ACROSS LAYERS
+    to 4 contracts on 4 distinct layers" is RIGHT about the contracts (Bashrs really was the fourth contract)
+    and wrong about the layers (three). A reader who checks the count gets YES and stops.
+
+    ** THE MILESTONE WAS TAKEN FROM THE CONTRACT THAT EARNED IT. depth-4 reached all five layers at PMAT-338,
+    depth-5 at PMAT-349, depth-6 at PMAT-360, depth-7 at PMAT-371, depth-8 at PMAT-382 -- every one C-XLATE-PY-LIST-TO-VEC
+    (Layer 2), TWO SLICES AFTER the record that claimed it. That contract''s own file filed its arrival
+    as the "first POST-UNIVERSAL broadening (post-PMAT-330 depth-4 ACROSS ALL 5 LAYERS milestone)": IT
+    CREDITS PMAT-330 WITH THE MILESTONE IT COMPLETED ITSELF. Same victim PMAT-1462 found demoted in the
+    ordinal class, in a second class.
+
+    ** A CORRECTION THAT DOES NOT DELETE THE CLAIM LEAVES THE CLAIM. contracts/lean/XpileFrontendTrait.lean
+    carried a PMAT-1461 paragraph saying "this docstring claimed PMAT-358 completed depth-6 ACROSS ALL
+    5 TAXONOMY LAYERS. It did not." -- sitting BETWEEN the section header that made the claim and the
+    status line that repeated it, one docstring above a theorem doc that repeated it twice more unqualified.
+    Prose annotated as false is not prose repaired.
+
+    ** THE DATING QUESTION, MEASURED RATHER THAN DECIDED. PMAT-1461 filed the substrate-wide depth counts
+    as "every site UNDERSTATING" and PMAT-1462 said the dating question there "is REAL and must be decided
+    first". Measuring dissolved it: against the LIVE substrate 55 of 66 census records disagree (that
+    is what "every site understating" saw); against the state at each record''s own `# PMAT-NNN` all but
+    ONE agree -- honest history, ~98% a non-defect. The exception is xlate-lean-to-rust-v1.yaml @PMAT-363
+    (said 8, substrate held 10) plus xpile-contract-frontend-trait-v1.yaml @PMAT-361 whose count was ELIDED
+    to nothing ("Diamond depth-6 broadened: contracts at depth-6+"). THE LEAD NAMED THE CLAUSE THAT WAS
+    TRUE; THE FALSE ONE WAS BESIDE IT.
+
+    ** ENFORCED by crates/xpile/tests/contract_layer_breadth_integrity.rs (XPILE-LAYERBREADTH-001), 11
+    tests. No exemption of any kind; repairs DESCRIBE the retired boast rather than quoting it.
+
+    ** RED HALVES, all RUN with the perturbation asserted applied. Shipped gate on unmodified contracts/:
+    52 sites. (a) ANCHOR -- a first draft took the first owned PMAT- id anywhere in a Lean block and mis-dated
+    FfiCpythonExt.lean''s sign-decomposition docstring to PMAT-216, a cross-reference two paragraphs up,
+    REPORTING A TRUE CLAIM AS FALSE; fixed by preferring the `## PMAT-NNN` head then the `discharged at
+    ... (PMAT-NNN)` status line; red half returns 1 false accusation. (b) RE-DATING -- "After PMAT-349
+    ... (substrate at 7 contracts at depth-5+), PMAT-350 pushes" is a claim about the PREVIOUS slice and
+    correct there; and the ENUMERATION form ("after PMAT-228 L1, PMAT-229 L2, ... PMAT-232 L3 -- that
+    completed UNIVERSAL depth-2") dates itself to the LAST arrival, not the first -- reading the first
+    is exactly PMAT-1461''s one-directional mistake; red half returns 3 false accusations. (c) SUBSET
+    PHRASING -- 46 sites say `ACROSS 3 LAYERS` with no `all`, every one enumerating the three it means;
+    requiring `all` keeps them out, red half returns 6. (d) LAYER-vs-COUNT -- `(3 Layer 3 contracts at
+    depth-5)` puts a LAYER number where a substrate count sits; red half reds the constructed control
+    and returns 10 Lean false positives. (e) LAYER SUBJECT BEFORE THE COUNT -- `Layer 3 now has 4 contracts
+    at depth-4` is a TRUE Layer-3 census that reads as a false substrate-wide one; PMAT-1461 disclosed
+    layer-before-name as a blind spot for a LABEL needle, but for a CENSUS needle it is not silence, it
+    is a WRONG ANSWER; red half returns 1. (f) BEHAVIOUR -- changing one contract''s declared layer reds
+    6 yaml + 1 Lean claims, so the gate tracks the SUBSTRATE and not the text.
+
+    ** ONE GUARD HAS NO LIVE EXERCISER AND THE GATE SAYS SO. `one contract at depth-5 per layer` is a
+    DISTRIBUTION, not a census -- but the only site that ever wrote it was itself a false claim this slice
+    rewrote, so deleting the branch leaves the corpus scan green. KEPT, pinned by a CONSTRUCTED control
+    that reds when the branch is disabled, and the comment states that the corpus is not holding it up.
+    SIXTH SLICE IN NINE to have to touch a guard because of its own red half.
+
+    ** ALSO: writing the repair prose TRIPPED THE SIBLING GATE (XPILE-LAYERLABEL-001) -- "depth-4 to L1+L4+L5
+    (Bashrs declares ...)" puts a layer token immediately before the name and the label needle read Bashrs
+    as Layer 5. Reworded, not exempted. And the FIRST header I wrote said 51 sites, from a measurement
+    taken BEFORE the post-PMAT-NNN re-dating landed; corrected to 52 by re-running the SHIPPED gate against
+    the SHIPPED tree (PMAT-1461''s rule).
+
+    ** PROCESS: `git checkout -- <file>` to undo a red-half perturbation DELETED an uncommitted test again
+    (playbook warning, third recorded instance). Commit between a guard fix and its red half.
+
+    ** SCOPE: contracts/*.yaml and contracts/lean/*.lean prose only -- no `rule:`, `test:`, `lean_theorem:`,
+    `kani_harness:` or equation key changed. ZERO crates/*/src. `lake build` 37/37 green after the docstring
+    edits. CHANGELOG.md and docs/roadmaps/*.yaml carry the same claims in HISTORICAL LEDGER position and
+    are left alone per PMAT-1461/1462 precedent.
+
+    ** NEXT PICK, in order: (a) re-point PMAT-1459''s 70 disclosed falsification commands at real falsifiers,
+    one contract at a time -- the only large lead left with a decidable core. (b) `1025 Lean theorems`
+    (xpile-spec.md:370, kaizen-fleet.md:11), an EXTERNAL pv-spec figure this repo republishes and cannot
+    check -- decide whether to attribute or drop it. (c) the per-contract EQUATION denominator ("8/9 equations"
+    on contracts now holding 33/42/29) -- PMAT-1458 ruled all 14 sites cited provenance, so this needs
+    a policy call, not a gate. (d) the "Substrate Diamond total: N" running counts inside milestone blocks
+    -- same subject and same derivable date as this gate, NOT covered because the total is not depth-scoped.
+
+    NEXT FREE ID IS PMAT-1464. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE
+    Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release mechanics ONLY. On 2026-07-30 take
+    PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
+  status: done
+  priority: P1
+  category: honesty

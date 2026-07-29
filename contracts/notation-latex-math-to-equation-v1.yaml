@@ -680,8 +680,8 @@ equations:
 
   latex_citation_silver_struct_extensionality_diamond:
     # PMAT-362: SIXTH Diamond on this contract — BROADENS DEPTH-6
-    # post-ALL 5 LAYERS milestone. After PMAT-358 completed depth-6
-    # ACROSS ALL 5 TAXONOMY LAYERS, PMAT-362 pushes
+    # after PMAT-358 took depth-6 to a FOURTH layer (L1+L3+L4+L5 —
+    # PMAT-1463; Layer 2 arrived at PMAT-360). PMAT-362 pushes
     # NotationLatexMathToEquation (Layer 2) from depth-5 to depth-6.
     # LATEX-CITATION-SILVER
     # STRUCTURE EXTENSIONALITY: the 2-field LatexCitationSilver
@@ -700,7 +700,7 @@ equations:
       Two LatexCitationSilver records (contract_id : String,
       bib_key : String) with derived DecidableEq.
     invariants:
-      - "SIXTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — BROADENS DEPTH-6 post-ALL 5 LAYERS milestone"
+      - "SIXTH Diamond category on C-NOTATION-LATEX-MATH-TO-EQUATION — BROADENS DEPTH-6 after PMAT-360 took it to all 5 layers"
       - "STRUCTURE EXTENSIONALITY — eighteenth substrate-wide demonstration of this pattern"
       - "distinct from PMAT-334 (struct-ext of EquationFormulaSilver, the FORMULA record) — PMAT-362 captures the CITATION record"
     preconditions:

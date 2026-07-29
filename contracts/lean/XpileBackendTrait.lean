@@ -699,9 +699,11 @@ theorem target_enum_distinctness_diamond (t : Target) :
     BYTES ARRAY SIZE STRUCTURE
     (XPILE-REFINE-XPILE-BACKEND-TRAIT-008).
 
-    **Broadens DEPTH-5 from 5 to 6 contracts.** After PMAT-347
-    achieved depth-5 ACROSS ALL 5 LAYERS, the substrate had exactly
-    one contract at depth-5 per layer (5 total). PMAT-348 pushes
+    **Broadens DEPTH-5 from 5 to 6 contracts.** After PMAT-347 took
+    depth-5 to a fourth layer, the substrate had five contracts at
+    depth-5 spanning L1+L3+L4+L5 — two of them on Layer 1, and none
+    on Layer 2, which arrived at PMAT-349 (PMAT-1463; this used to
+    read "all 5 layers … one contract per layer"). PMAT-348 pushes
     XpileBackendTrait (Layer 3) from depth-4 to depth-5, adding a
     SECOND Layer 3 contract at depth-5 (XpileFrontendTrait was
     first via PMAT-347).
@@ -770,8 +772,9 @@ theorem artifact_bytes_array_size_diamond (a : ArtifactSilver) :
     BACKEND STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XPILE-BACKEND-TRAIT-009).
 
-    **Broadens depth-6 substrate-wide.** After PMAT-358 brought
-    depth-6 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-359 pushes
+    **Broadens depth-6 substrate-wide.** After PMAT-358 took depth-6
+    to a fourth layer (L1+L3+L4+L5; Layer 2 arrived at PMAT-360 —
+    PMAT-1463), PMAT-359 pushes
     XpileBackendTrait (Layer 3) from depth-5 to depth-6 as the
     SECOND L3 contract at depth-6+ (XpileFrontendTrait was first
     via PMAT-358).
@@ -840,8 +843,9 @@ theorem backend_struct_extensionality_diamond (b1 b2 : Backend) :
     TARGET-COMPLETENESS ENUMERATION
     (XPILE-REFINE-XPILE-BACKEND-TRAIT-010).
 
-    **Broadens depth-7 post-ALL 5 LAYERS milestone.** After PMAT-369
-    completed depth-7 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-370 pushes
+    **Broadens depth-7.** After PMAT-369 took depth-7 to a fourth
+    layer (L1+L3+L4+L5; Layer 2 arrived at PMAT-371 — PMAT-1463),
+    PMAT-370 pushes
     XpileBackendTrait (Layer 3) from depth-6 to depth-7 as the
     second L3 contract at depth-7+.
 

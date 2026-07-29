@@ -543,7 +543,12 @@ theorem exit_code_constant_projection_diamond
     must imply equal records.
 
     Status: discharged at v0.1.0 (PMAT-329). Tier: DIAMOND.
-    Broadens DEPTH-4 ACROSS LAYERS to 4 contracts on 4 layers. -/
+    Broadens DEPTH-4 ACROSS LAYERS to 4 contracts on 3 layers
+    (L1+L4+L5). PMAT-1463: this said four layers. Bashrs declares
+    `metadata.xpile.layer: semantics`, Layer 1 — the same layer as
+    C-PY-INT-ARITH — so it is the fourth CONTRACT, not a fourth
+    LAYER. Depth-4 reached a fourth layer at PMAT-330 and all five
+    at PMAT-338. -/
 
 /--
   **Diamond-tier refinement theorem** — `OutcomeSilver` admits
@@ -567,7 +572,9 @@ theorem exit_code_constant_projection_diamond
   dropping exit_code when observable is empty) would falsify (a).
 
   Status: **discharged at v0.1.0 (PMAT-329)**. Tier: DIAMOND.
-  Broadens DEPTH-4 ACROSS LAYERS to 4 contracts on 4 layers.
+  Broadens DEPTH-4 ACROSS LAYERS to 4 contracts on 3 layers
+  (L1+L4+L5) — Bashrs is Layer 1, the fourth contract and not a
+  fourth layer (PMAT-1463).
 -/
 theorem outcome_struct_extensionality_diamond
     (o1 o2 : OutcomeSilver) :

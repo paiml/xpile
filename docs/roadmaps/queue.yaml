@@ -1,27 +1,21 @@
-updated: "2026-07-29 (PMAT-1462 landed from an honesty hunt: PMAT-1461 corrected the LAYER\
-  \ LABEL and left every ORDINAL computed over it. A layer-scoped ordinal -- 'the second L2\
-  \ contract at depth-10' -- is a RANK IN A SET, and both halves of that set are machine-\
-  \ readable: the layer from `metadata.xpile.layer` (universal since PMAT-1461) and the arrival\
-  \ order from the `# PMAT-NNN` header on each `*_diamond:` entry. 29 of the 103 ordinals under\
-  \ contracts/ disagreed with that arithmetic, all one root cause: C-BASHRS-POSIX-IDEMPOTENCE\
-  \ ranked as a LAYER 2 contract when it declares `semantics`, i.e. Layer 1. LESSONS: (1) A\
-  \ TALLY COMPUTED OVER A WRONG LABEL IS NOT A LABEL -- none of the 29 sites spells a layer\
-  \ beside a contract name (the layer rides on the ordinal and the subject is implicit), so the\
-  \ PMAT-1460/1461 label needle could not reach a single one of them at ANY tagging level.\
-  \ (2) THE TRUE HALF LAUNDERS THE FALSE HALF, again: Bashrs really IS second -- for LAYER 1,\
-  \ after PyIntArith, at every depth 4..13 -- so a reader who checks the ordinal gets YES and\
-  \ stops. (3) THE DISCLOSURE ITS OWN DIFF REFUTED: PMAT-1461's header excused these as '127\
-  \ tallies phrased over UNTAGGED contracts, outside reach' in the very commit that took the\
-  \ tagged set from 9/35 to 35/35. (4) THE DATING QUESTION IS ANSWERED BY CONSTRUCTION for an\
-  \ ordinal -- the record's own date is derivable from the block it sits in -- so no policy\
-  \ call was needed and no live count was frozen; the 108-site substrate-wide COUNT class is\
-  \ untouched and that question is still genuinely open. (5) THE OTHER DIRECTION MATTERED:\
-  \ C-XLATE-PY-LIST-TO-VEC was the FIRST Layer-2 contract at depths 4..13 and was written down\
-  \ as second/third -- a real across-layers milestone given away to a contract from another\
-  \ layer. (6) TWO GUARDS FAILED ON THEIR OWN AUTHOR AND WERE FIXED RATHER THAN DOWNGRADED --\
-  \ a ground-truth cross-check that was not independent of what it checked, and a wrapping\
-  \ guard that asserted flattening 'more than doubles' the reach when the corpus said 62->71.\
-  \ Fifth slice in eight.)"
+updated: "2026-07-29 (PMAT-1463 took PMAT-1462's declined CARDINAL half and found the\
+  \ substrate's HEADLINE milestone. A cardinal does not need a SUBJECT, it needs a POPULATION\
+  \ -- the same (depth, as-of) pair the ordinal gate already computes -- so `N contracts on M\
+  \ distinct layers`, `depth-D across ALL M taxonomy layers`, `N contracts at depth-D+` and\
+  \ `N Layer-K contracts at depth-D` are all arithmetic. 52 sites disagreed. FIVE slices\
+  \ published COMPLETES DEPTH-D ACROSS ALL 5 TAXONOMY LAYERS for D=4..8 and every one is FALSE:\
+  \ the population spanned FOUR layers each time, the fifth being Bashrs counted twice.\
+  \ LESSONS: (1) THE LEAD NAMED THE CLAUSE THAT WAS TRUE -- PMAT-1461/1462 filed the\
+  \ substrate-wide depth COUNTS as the open class with a REAL dating question; measured as-of,\
+  \ 44 of 45 are honest history and the class was ~98% a non-defect, while the false claim sat\
+  \ in the neighbouring clause. MEASURE A LEAD BEFORE BUILDING FOR IT. (2) A CORRECTION THAT\
+  \ DOES NOT DELETE THE CLAIM LEAVES THE CLAIM -- PMAT-1461's own annotation sat BETWEEN two\
+  \ live restatements of the sentence it refutes. (3) THE MILESTONE WAS TAKEN FROM THE CONTRACT\
+  \ THAT EARNED IT, and that contract's own file credits the thief. (4) A DISCLOSED BLIND SPOT\
+  \ FOR ONE NEEDLE IS A WRONG ANSWER FOR ANOTHER: layer-before-the-name was silence for the\
+  \ LABEL needle and a false accusation for the CENSUS needle. (5) Sixth slice in nine to lose\
+  \ or downgrade a guard to its own red half -- one branch has no live exerciser left and the\
+  \ gate SAYS SO rather than implying the corpus holds it up.)"
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -77,6 +71,27 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1463
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: 'The five "COMPLETES DEPTH-N ACROSS ALL 5 TAXONOMY LAYERS" milestones never happened
+    — 52 Diamond census claims count a Layer-1 contract as the fifth layer'
+  notes: 'DONE. Full lessons in docs/roadmaps/roadmap.yaml under `- id: PMAT-1463` and in
+    CHANGELOG.md. Gate: crates/xpile/tests/contract_layer_breadth_integrity.rs
+    (XPILE-LAYERBREADTH-001), 11 tests. Shipped gate on unmodified contracts/ reports 52 sites
+    (21 yaml + 31 lean); 0 after repair over 66 + 23 claims.
+    NEXT PICK: (a) re-point PMAT-1459''s 70 disclosed falsification commands at real falsifiers,
+    one contract at a time — the only large lead left with a decidable core. (b) `1025 Lean
+    theorems` (xpile-spec.md:370, kaizen-fleet.md:11), EXTERNAL and uncheckable — decide whether
+    to attribute or drop. (c) the per-contract EQUATION denominator — needs a policy call, not a
+    gate (PMAT-1458 ruled all 14 sites cited provenance). (d) the "Substrate Diamond total: N"
+    running counts inside milestone blocks — same subject, same derivable date, NOT covered here
+    because the total is not depth-scoped.
+    NEXT FREE ID IS PMAT-1464. Queue for today is otherwise EMPTY: PMAT-1373 is dated
+    2026-07-30 and PMAT-1374 2026-07-31; PMAT-1375 is the deferred 0.1.619 lane. HARD FREEZE
+    today 18:00 — after it, CHANGELOG/version/docs/release mechanics ONLY.'
 - id: PMAT-1462
   status: done
   ev_rank: R1

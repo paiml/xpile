@@ -354,8 +354,9 @@ equations:
 
   backend_struct_extensionality_diamond:
     # PMAT-359: SIXTH Diamond on this contract — BROADENS DEPTH-6
-    # substrate-wide. After PMAT-358 brought depth-6 ACROSS ALL 5
-    # TAXONOMY LAYERS, PMAT-359 pushes XpileBackendTrait (Layer 3)
+    # substrate-wide. After PMAT-358 took depth-6 to a FOURTH layer
+    # (L1+L3+L4+L5 — PMAT-1463; Layer 2 followed at PMAT-360), PMAT-359
+    # pushes XpileBackendTrait (Layer 3)
     # from depth-5 to depth-6 as the SECOND L3 contract at depth-6+
     # (XpileFrontendTrait was first via PMAT-358). BACKEND STRUCTURE
     # EXTENSIONALITY: the single-field Backend record
@@ -385,8 +386,8 @@ equations:
 
   target_enum_completeness_diamond:
     # PMAT-370: SEVENTH Diamond on this contract — BROADENS DEPTH-7
-    # post-ALL 5 LAYERS milestone. After PMAT-369 completed depth-7
-    # ACROSS ALL 5 TAXONOMY LAYERS, PMAT-370 pushes XpileBackendTrait
+    # after PMAT-369 took depth-7 to a FOURTH layer (L1+L3+L4+L5 —
+    # PMAT-1463; Layer 2 followed at PMAT-371). PMAT-370 pushes XpileBackendTrait
     # (Layer 3) from depth-6 to depth-7 as the second L3 contract at
     # depth-7+. TARGET-COMPLETENESS ENUMERATION: every Target value
     # matches one of the 7 known variants. Complements PMAT-339

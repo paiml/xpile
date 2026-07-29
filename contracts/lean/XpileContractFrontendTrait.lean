@@ -728,12 +728,15 @@ theorem equations_block_struct_extensionality_diamond
   · rfl
 
 /-! ## PMAT-361 — SIXTH Diamond on C-XPILE-CONTRACT-FRONTEND-TRAIT
-    (Layer 3 BROADENS DEPTH-6 post-ALL 5 LAYERS milestone):
+    (Layer 3 BROADENS DEPTH-6 after PMAT-360 completed it):
     METAHIR-MODULE (BRONZE) STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XPILE-CONTRACT-FRONTEND-TRAIT-009).
 
     **Broadens depth-6 substrate-wide.** After PMAT-358 completed
-    depth-6 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-361 pushes
+    depth-6 to a FOURTH layer (L1+L3+L4+L5), and PMAT-360
+    (C-XLATE-PY-LIST-TO-VEC, Layer 2) completed it across every
+    taxonomy layer — PMAT-1463; this used to credit PMAT-358 with
+    the completion. PMAT-361 pushes
     XpileContractFrontendTrait (Layer 3) from depth-5 to depth-6 as
     the third L3 contract at depth-6+ (XpileFrontendTrait was first
     via PMAT-358, XpileBackendTrait via PMAT-359 pending).
@@ -761,7 +764,8 @@ theorem equations_block_struct_extensionality_diamond
     356/359/360).
 
     Status: discharged at v0.1.0 (PMAT-361). Tier: DIAMOND.
-    Broadens depth-6 post-ALL 5 LAYERS milestone. -/
+    Broadens depth-6 after PMAT-360 completed it across all 5
+    taxonomy layers. -/
 
 /--
   **Diamond-tier refinement theorem** — `MetaHirModule` (Bronze
@@ -778,7 +782,8 @@ theorem equations_block_struct_extensionality_diamond
   extensionality pattern.
 
   Status: **discharged at v0.1.0 (PMAT-361)**. Tier: DIAMOND.
-  Broadens depth-6 post-ALL 5 LAYERS milestone.
+  Broadens depth-6 after PMAT-360 completed it across all 5
+  taxonomy layers.
 -/
 theorem metahir_module_struct_extensionality_diamond
     (m1 m2 : MetaHirModule) :
