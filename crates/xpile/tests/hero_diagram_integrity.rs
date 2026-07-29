@@ -112,6 +112,34 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {rel}: {e}"))
 }
 
+/// The four lane columns, as `(marker, id attribute)`. The SVG delimits each
+/// with an `XPILE-HERODIAGRAM-001:<marker>:BEGIN/END` comment pair — the same
+/// idiom `lane_roster_witness.rs` uses on the book's ASCII roster — so a label
+/// drawn OUTSIDE a lane column (the title, the legend, the footer) is out of
+/// subject and a label drawn INSIDE one cannot be undeclared.
+const BLOCKS: [(&str, &str); 4] = [
+    ("FRONTENDS", "data-frontend"),
+    ("BACKENDS", "data-backend"),
+    ("CONTRACT-FRONTENDS", "data-contract-frontend"),
+    ("CONTRACT-BACKENDS", "data-contract-backend"),
+];
+
+/// The text between a `<!-- XPILE-HERODIAGRAM-001:<marker>:BEGIN -->` / `:END`
+/// pair.
+fn lane_block(svg: &str, marker: &str) -> String {
+    let begin = format!("<!-- XPILE-HERODIAGRAM-001:{marker}:BEGIN -->");
+    let end = format!("<!-- XPILE-HERODIAGRAM-001:{marker}:END -->");
+    let s = svg
+        .find(&begin)
+        .unwrap_or_else(|| panic!("{HERO} must carry `{begin}`"))
+        + begin.len();
+    let e = svg
+        .find(&end)
+        .unwrap_or_else(|| panic!("{HERO} must carry `{end}`"));
+    assert!(e > s, "{HERO}: `{end}` precedes `{begin}`");
+    svg[s..e].to_string()
+}
+
 /// Every `<text … {attr}="<id>">Label</text>` in document order, as
 /// `(registry id, visible label)`.
 ///
@@ -204,26 +232,18 @@ fn every_lane_the_hero_draws_is_registered_and_every_registered_lane_is_drawn() 
         .collect();
 
     let mut findings = Vec::new();
-    findings.extend(roster_findings(
-        "code-lane frontend",
-        &drawn(&svg, "data-frontend"),
-        &frontend_ids_that_lower(&session),
-    ));
-    findings.extend(roster_findings(
-        "code-lane backend",
-        &drawn(&svg, "data-backend"),
-        &backends,
-    ));
-    findings.extend(roster_findings(
-        "proof-lane contract frontend",
-        &drawn(&svg, "data-contract-frontend"),
-        &contract_frontends,
-    ));
-    findings.extend(roster_findings(
-        "proof-lane contract backend",
-        &drawn(&svg, "data-contract-backend"),
-        &contract_backends,
-    ));
+    for ((marker, attr), expected) in BLOCKS.iter().zip([
+        frontend_ids_that_lower(&session),
+        backends,
+        contract_frontends,
+        contract_backends,
+    ]) {
+        findings.extend(roster_findings(
+            marker,
+            &drawn(&lane_block(&svg, marker), attr),
+            &expected,
+        ));
+    }
 
     assert!(
         findings.is_empty(),
@@ -267,17 +287,21 @@ fn the_image_the_desc_and_the_readme_alt_tell_the_same_story() {
     let svg = read(HERO);
     let readme = read(README);
 
-    let labels =
-        |attr: &str| -> Vec<String> { drawn(&svg, attr).into_iter().map(|(_, l)| l).collect() };
+    let labels = |marker: &str, attr: &str| -> Vec<String> {
+        drawn(&lane_block(&svg, marker), attr)
+            .into_iter()
+            .map(|(_, l)| l)
+            .collect()
+    };
     let code = format!(
         "code lane ({} → meta-HIR → {})",
-        labels("data-frontend").join(", "),
-        labels("data-backend").join(", ")
+        labels("FRONTENDS", "data-frontend").join(", "),
+        labels("BACKENDS", "data-backend").join(", ")
     );
     let proof = format!(
         "proof lane ({} → contracts (YAML) → {})",
-        labels("data-contract-frontend").join(", "),
-        labels("data-contract-backend").join(", ")
+        labels("CONTRACT-FRONTENDS", "data-contract-frontend").join(", "),
+        labels("CONTRACT-BACKENDS", "data-contract-backend").join(", ")
     );
 
     // The alt attribute on the hero <img>, which is what a screen reader gets
@@ -342,7 +366,8 @@ fn a_registered_frontend_that_does_not_lower_is_correctly_absent() {
          this gate no longer removes anything, so DELETE it and say so — the diagram must \
          then draw all {all}. (Do not silently keep a filter that bounds nothing; PMAT-1456.)"
     );
-    let svg_ids: Vec<String> = drawn(&read(HERO), "data-frontend")
+    let svg = read(HERO);
+    let svg_ids: Vec<String> = drawn(&lane_block(&svg, "FRONTENDS"), "data-frontend")
         .into_iter()
         .map(|(id, _)| id)
         .collect();
@@ -406,41 +431,77 @@ fn the_roster_comparison_reports_a_fabricated_lane() {
 }
 
 #[test]
+fn every_label_drawn_in_a_lane_column_declares_a_registry_id() {
+    // THE HOLE THE MEASUREMENT FOUND. A comparison keyed on `data-*` ids is
+    // blind to a label that carries none — a bare `<text>C++</text>` added to
+    // the frontends column would be invisible to every assertion above. The
+    // spelling needle in `lane_roster_witness.rs` does not close it either:
+    // its phantom list is matched CASE-SENSITIVELY (`"cpp"`, `"c++"`), so on
+    // the pre-repair image it reported the four `mdBook` sites and NEITHER of
+    // the two `C++` ones. Lowercasing that needle was MEASURED rather than
+    // assumed and REJECTED: over the widened corpus it reports exactly one
+    // site on the repaired tree, `book/src/concepts/contracts.md:76` — "a C++
+    // backend implementer who doesn't know Lean" — an honest sentence about a
+    // hypothetical person, not a lane. A needle loose enough to reach it
+    // fabricates findings (PMAT-1455).
+    //
+    // So the image is covered STRUCTURALLY instead of by spelling: inside a
+    // lane column every label must declare an id, and the id is then checked
+    // against the registry. `C++` would have to name itself `cpp`, and nothing
+    // registers `cpp`.
+    let svg = read(HERO);
+    for (marker, attr) in BLOCKS {
+        let block = lane_block(&svg, marker);
+        let mut rest = block.as_str();
+        let mut labels = 0usize;
+        while let Some(i) = rest.find("<text") {
+            let head = &rest[i..];
+            let end = head
+                .find('>')
+                .unwrap_or_else(|| panic!("{HERO}:{marker}: unterminated <text element"));
+            let head = &head[..end];
+            assert!(
+                head.contains(&format!("{attr}=\"")),
+                "\n{HERO}: the {marker} column draws a label with no `{attr}` id:\n  {head}>\n\n\
+                 Every label in a lane column declares the registry id it stands for, so that \
+                 the roster can be compared to `default_session()` instead of to a list of \
+                 spellings. An undeclared label is exactly how `C++` survived in this file \
+                 for 75 days.\n"
+            );
+            labels += 1;
+            rest = &rest[i + end..];
+        }
+        assert!(
+            labels > 0,
+            "{HERO}: the {marker} column contains no <text> at all — the markers are in the \
+             wrong place and every assertion over this column is vacuous"
+        );
+    }
+}
+
+#[test]
 fn the_gate_reports_what_it_reaches() {
     // ANTI-VACUITY. Every assertion above is over a set this scan produced; a
     // scan that silently produced nothing would make all of them pass.
     let svg = read(HERO);
-    let f = drawn(&svg, "data-frontend");
-    let b = drawn(&svg, "data-backend");
-    let cf = drawn(&svg, "data-contract-frontend");
-    let cb = drawn(&svg, "data-contract-backend");
-    println!(
-        "XPILE-HERODIAGRAM-001 reach: {} code frontends, {} code backends, \
-         {} contract frontends, {} contract backends",
-        f.len(),
-        b.len(),
-        cf.len(),
-        cb.len()
-    );
-    for (kind, set) in [
-        ("data-frontend", &f),
-        ("data-backend", &b),
-        ("data-contract-frontend", &cf),
-        ("data-contract-backend", &cb),
-    ] {
+    let mut reach = Vec::new();
+    for (marker, attr) in BLOCKS {
+        let set = drawn(&lane_block(&svg, marker), attr);
+        reach.push(format!("{marker}={}", set.len()));
         assert!(
             !set.is_empty(),
-            "{HERO} carries no `{kind}` element — the scan reads nothing and every roster \
+            "{HERO} carries no `{attr}` element — the scan reads nothing and every roster \
              assertion in this file is vacuous"
         );
-        for (id, label) in set {
+        for (id, label) in &set {
             assert!(
                 !id.is_empty() && !label.is_empty(),
-                "{HERO}: `{kind}` element has an empty id or an empty label ({id:?}/{label:?}) \
+                "{HERO}: `{attr}` element has an empty id or an empty label ({id:?}/{label:?}) \
                  — a blank label would make the alt-vs-desc comparison agree on nothing"
             );
         }
     }
+    println!("XPILE-HERODIAGRAM-001 reach: {}", reach.join(" "));
 
     // The SUBJECT of `lane_roster_witness.rs`'s phantom half, which PMAT-1464
     // widened from `.md` files to this directory. If the assets move, that walk

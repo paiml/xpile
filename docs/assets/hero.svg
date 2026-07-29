@@ -48,12 +48,14 @@
        registration order. `ruchy` is registered for ROUTING ONLY — its input
        refuses and it has no parser (PMAT-1346) — so it is deliberately NOT
        drawn as a source lane. -->
+  <!-- XPILE-HERODIAGRAM-001:FRONTENDS:BEGIN -->
   <g class="mono lang">
     <text x="100" y="280" data-frontend="python">Python</text>
     <text x="100" y="310" data-frontend="c">C</text>
     <text x="100" y="340" data-frontend="bashrs">Shell</text>
     <text x="100" y="370" data-frontend="wasm">WebAssembly</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:FRONTENDS:END -->
 
   <!-- fan-in arrow lines from frontends -->
   <g stroke="#0891B2" stroke-width="1.2" fill="none" marker-end="url(#arrowCode)">
@@ -82,6 +84,7 @@
   </g>
 
   <!-- backends column: every registered backend, in registration order. -->
+  <!-- XPILE-HERODIAGRAM-001:BACKENDS:BEGIN -->
   <g class="mono lang">
     <text x="850" y="234" data-backend="rust">Rust</text>
     <text x="850" y="257" data-backend="ruchy">Ruchy</text>
@@ -93,6 +96,7 @@
     <text x="850" y="395" data-backend="bashrs">Shell</text>
     <text x="850" y="418" data-backend="forjar">forjar</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:BACKENDS:END -->
 
   <!-- divider between lanes -->
   <line x1="80" y1="440" x2="1120" y2="440" class="divider"/>
@@ -101,9 +105,11 @@
   <text x="100" y="480" class="sans laneLabel" fill="#D97706">PROOF  LANE</text>
 
   <!-- proof-lane sources: the registered contract frontends. -->
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-FRONTENDS:BEGIN -->
   <g class="mono lang">
     <text x="100" y="551" data-contract-frontend="latex">LaTeX</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-FRONTENDS:END -->
 
   <!-- source → contracts -->
   <g stroke="#D97706" stroke-width="1.2" fill="none" marker-end="url(#arrowProof)">
@@ -124,10 +130,12 @@
   </g>
 
   <!-- proof-lane outputs: the registered contract backends. -->
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-BACKENDS:BEGIN -->
   <g class="mono lang">
     <text x="890" y="533" data-contract-backend="lean-theorem">Lean 4 thm</text>
     <text x="890" y="567" data-contract-backend="latex">LaTeX</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-BACKENDS:END -->
 
   <!-- legend -->
   <text x="600" y="600" text-anchor="middle" class="sans legend">dashed = registered contract backend that renders nothing yet (scaffold)</text>
