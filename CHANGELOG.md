@@ -7,6 +7,63 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The sprint plan told Thursday's operator to create and push a tag that already exists (PMAT-1467)
+
+`docs/specifications/sub/sprint-6day-2026-07-26.md` §5 "Release plan" read:
+
+> **TAG: `v0.1.617`, created and pushed THURSDAY 2026-07-30** on a pinned SHA
+
+**`v0.1.617` shipped on 2026-07-26.** It is in `git tag --list` and it is
+`max_version` on crates.io. The queue's sprint block says `version: 0.1.618` and
+PMAT-1373 is titled *"RELEASE COMMIT v0.1.618"*.
+
+So the plan instructed `git tag v0.1.617 <SHA> && git push` — a command that
+**fails outright**, or with `-f` **moves a published tag**. The plan's own A3
+abort clause already named `v0.1.618` as the fallback, so the document
+contradicted itself.
+
+**Five stale literals in one section**, all measured:
+
+| site | said | measured |
+|---|---|---|
+| VERSION | `0.1.617` | queue says `0.1.618` |
+| VERSION | "single-sourced at `Cargo.toml:43` … One line" | 35 assignment sites; line 43 is the comment refuting it |
+| TAG | `v0.1.617` | already shipped |
+| CRATES.IO BATCH | "unyanked at 0.1.616" | `max_version` is 0.1.617 |
+| honest-claim | "**795** WASM witness tests" | the manifest derives **857** |
+
+**This is PMAT-1453 landing one surface short of its own class, and the author
+was me.** PMAT-1453 fixed the one-line-bump falsehood in the runbook and gated it
+— over `queue.yaml` and `roadmap.yaml`. The **sprint plan** is a
+release-planning document too, carries the identical sentence, and was outside
+the corpus. PMAT-1438's lesson applied to a gate written the day before: **scope
+the gate to the claim, then ask what the widest set of documents is that could
+carry it.**
+
+**What is honest and was not "corrected"**, measured: *"all 31 members on
+`version.workspace = true`"* is **true** — 31 of 31. The members really do
+inherit; it is the `[workspace.dependencies]` path-deps that cannot. Flattening
+that sentence would have replaced a true statement with a false one.
+
+**Gated** by `crates/xpile/tests/release_plan_freshness_witness.rs`
+(`XPILE-RELPLAN-001`): a release-planning document may not name, as the version
+**to be created**, a version that is already a shipped git tag — **derived from
+`git tag --list`**, so no version is typed and the rule *sharpens itself* every
+time a release ships; the declared version must agree with `sprint.version`; and
+the one-line-bump falsehood may not reappear in any planning document.
+
+**Red half run, five perturbations**, green control — including the behaviour
+half: **creating the tag `v0.1.618` locally**, which is exactly what Thursday
+does, reds the plan with no document change.
+
+**Also verified this pass, and honest** — recorded so it is not re-derived:
+PMAT-1373's two **mandated** known-divergence findings reproduce exactly as
+stated. `1 if c else 2.5` prints `1.0` where CPython prints `1`;
+`list[float].append(int)` then reading the element prints `49.0` where CPython
+prints `49`. That section of the release body is correct as written.
+
+Zero `crates/*/src` and zero `contracts/*.yaml` change — freeze-compatible.
+
 ### The flagship crate's registry front page was a v0.0.1 "name reservation" stub with one commit ever, and the gated 647-commit product page was published on a bigint helper instead (PMAT-1466)
 
 `cargo publish` renders exactly **one** file per crate as the body of its
