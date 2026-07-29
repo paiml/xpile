@@ -22828,3 +22828,66 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1467
+  title: 'PMAT-1467: [release+gate+honesty] the SPRINT PLAN told Thursday''s operator to create and push a tag that ALREADY EXISTS -- its whole Release-plan section is one release behind, and PMAT-1453''s gate did not reach it.
+    ** THE DEFECT. docs/specifications/sub/sprint-6day-2026-07-26.md §5 read
+    "TAG: `v0.1.617`, created and pushed THURSDAY 2026-07-30". v0.1.617 SHIPPED 2026-07-26 -- it is
+    in `git tag --list` AND it is max_version on crates.io. The queue''s sprint block says
+    version: 0.1.618 and PMAT-1373 is titled "RELEASE COMMIT v0.1.618". So the plan instructed
+    `git tag v0.1.617 <SHA> && git push` -- a command that FAILS OUTRIGHT, or with -f MOVES A
+    PUBLISHED TAG. The plan''s own A3 abort clause already named v0.1.618 as the fallback, so the
+    document contradicted itself.
+    ** FIVE STALE LITERALS IN ONE SECTION, all measured: VERSION said 0.1.617 (queue says 0.1.618);
+    VERSION repeated "single-sourced at Cargo.toml:43 ... One line" (35 assignment sites; line 43 is
+    the comment refuting it); TAG named an already-shipped tag; the CRATES.IO BATCH line said "live
+    and unyanked at 0.1.616" (crates.io max_version is 0.1.617); and the honest-claim line said
+    "795 WASM witness tests (the count witness_floor.rs machine-derives)" while the manifest derives
+    857.
+    ** THIS IS PMAT-1453 LANDING ONE SURFACE SHORT OF ITS OWN CLASS, AND THE AUTHOR WAS ME.
+    PMAT-1453 fixed the one-line-bump falsehood in the runbook and gated it -- over queue.yaml and
+    roadmap.yaml. The SPRINT PLAN is a release-planning document too, carries the identical
+    sentence, and was outside the corpus. PMAT-1438''s lesson applied to a gate written the day
+    before: SCOPE THE GATE TO THE CLAIM, THEN ASK WHAT THE WIDEST SET OF DOCUMENTS IS THAT COULD
+    CARRY IT. The corpus here is every release-planning document, DISCOVERED rather than listed.
+    ** WHAT IS HONEST AND WAS NOT "CORRECTED", measured: "all 31 members on
+    `version.workspace = true`" is TRUE -- 31 of 31 member manifests carry it. The MEMBERS do
+    inherit; it is the [workspace.dependencies] path-deps that cannot. Flattening that sentence
+    would have replaced a true statement with a false one (the PMAT-1446 trap).
+    ** GATED by crates/xpile/tests/release_plan_freshness_witness.rs (XPILE-RELPLAN-001):
+    (1) a release-planning document may not name, as the version TO BE CREATED, a version that is
+    already a shipped git tag -- DERIVED from `git tag --list`, so no version is typed and the rule
+    SHARPENS ITSELF every time a release ships; (2) the declared release version agrees with the
+    queue''s sprint.version; (3) the one-line-bump falsehood may not reappear in ANY planning
+    document -- PMAT-1453''s rule with the corpus widened to the class.
+    ** RED HALF RUN, FIVE perturbations, green control: the already-shipped tag restored; the stale
+    VERSION declaration restored; the one-line-bump falsehood restored; the plan renamed out of the
+    discovery predicate (non-vacuity); and -- the BEHAVIOUR half -- CREATING THE TAG v0.1.618
+    LOCALLY, which is exactly what Thursday does, reds the plan WITH NO DOCUMENT CHANGE. Verified
+    afterwards that no stray tag was left in the shared namespace (a worktree shares tags with the
+    main checkout).
+    ** ALSO VERIFIED THIS FIRE, and HONEST -- recorded so it is not re-derived: PMAT-1373''s two
+    MANDATED known-divergence findings reproduce EXACTLY as stated. `1 if c else 2.5` prints 1.0
+    where CPython prints 1; `list[float].append(int)` then reading the element prints 49.0 where
+    CPython prints 49. That section of the release body is correct and must be published as written.
+    ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
+    ** A1 STATUS, measured 2026-07-28: `cargo test --workspace --no-fail-fast` = 310 suites OK,
+    ONE failing (ruleset_drift live-vs-snapshot). BLOCKED ON THE OWNER DECISION
+    `ruleset-workspace-test-dropped` ALONE.
+    NEXT PICK: STANDING LEADS. (a) the sprint plan''s §5 CHANGELOG-story line still describes the
+    0.1.617 arc ("101 commits / ~76 unique PMAT ids / 136+ files / +53,940 lines, in 8 arcs") -- a
+    0.1.618 story has to be re-derived from `git log v0.1.617..HEAD` on Thursday, and nothing yet
+    gates that the story matches the range. (b) book/src/reference/contracts.md says
+    C-XLATE-LEAN-TO-RUST "carries 40 equations"; the contract has 33 (the other two numbers in that
+    sentence are CORRECT -- measured). (c) install `ruchy` in a CI job so PMAT-1446''s COUNTS half
+    stops being developer-only -- OWNER-GATED workflow change.
+    Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD FREEZE TODAY 2026-07-29
+    18:00.'
+  status: done
+  priority: high
+  created: '2026-07-29T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
