@@ -23764,3 +23764,84 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     accept without modelling. `contracts/compile-rust-to-wasm-v1.yaml`''s `str-of-float` row still
     says "Queued for 0.1.618", a forward-looking claim about the release being cut (frozen out
     this window; contracts/*.yaml).'
+- id: PMAT-1373
+  status: done
+  priority: P1
+  category: release
+  title: 'RELEASE COMMIT v0.1.618: 35 version literals bumped (not one), witness-floor re-derive
+    TOUCH 2 across ALL ten lanes with every COUNT floor set TIGHT, CHANGELOG [Unreleased] promoted
+    to [0.1.618], and the tag cut on a pinned SHA'
+  notes: 'SHIPPED 2026-07-30 (Thursday tag day; post-freeze RELEASE-MECHANICS lane -- ZERO
+    crates/*/src, ZERO contracts/*.yaml; the only non-doc file touched is
+    crates/xpile/tests/witness_floor.rs, which is the sprint-sanctioned TOUCH 2 and is a test, not
+    shipped source).
+
+
+    THE VERSION BUMP IS 35 LINES, MEASURED, NOT ASSUMED. Cargo.toml carried the string `0.1.617` at
+    38 sites: 35 are `version = "0.1.617"` literals (1 x [workspace.package].version + 34
+    intra-workspace path-deps in [workspace.dependencies], which CANNOT inherit it -- inheritance
+    flows workspace -> member only) and 3 are PROSE inside the comment that documents that very
+    skew. The 35 were bumped by a `version = "0.1.617"`-anchored replace; the 3 are history and
+    stay. Verified after the edit: 35 x 0.1.618, 3 x 0.1.617 (all three on lines 46-48, all three
+    prose), file line count unchanged. PMAT-1453''s trap avoided: the queue note that used to say
+    "single-sourced at Cargo.toml:43 -- one line" pointed at the comment reading "RELEASE BUMP
+    TOUCHES 35 LINES, NOT THIS ONE", i.e. at its own refutation.
+
+
+    WITNESS-FLOOR TOUCH 2 -- the second and LAST permitted touch of witness_floor.rs this sprint
+    (the file is a declared SERIAL RESOURCE; TOUCH 1 was PMAT-1344 + PMAT-1372). Every lane
+    re-derived from a live `cargo test -p xpile --test witness_floor -- --nocapture` on the tree
+    being tagged, NOT copied from the queue note (which recorded the c3e468d4 values and had
+    drifted on 4 of 10 lanes):
+
+    wasm total 770 -> 857 (live 857); wasm runtime-gated 300 -> 340 (live 340); wasm gated fraction
+    36% -> 38% (live 39%); shell 7 -> 10; rust-differential 44 -> 49 (39 oracle + 10 diff_exec);
+    hybrid 3 -> 7; wasi 1 -> 1; ruchy 7 -> 8; forjar 4 -> 4; lean 6 -> 6. Also re-derived: the
+    per-file runtime-guard census in the module header, 138/138 -> 145/145.
+
+
+    ★ EVERY *COUNT* FLOOR IS NOW TIGHT (floor == live), WHICH IS A DELIBERATE DEPARTURE FROM TOUCH
+    1. TOUCH 1 bought 25 of WASM headroom for one specific hazard -- an in-flight branch reddening
+    on rebase. That hazard is empirically absent at this touch: `gh pr list --state open` returns
+    `[]`, the Wed 18:00 hard freeze forbids any further crates/*/src merge this window, and Friday
+    is publish-only. Slack that protects nobody only weakens the anti-deletion guarantee the
+    manifest exists to make -- the ORIGINAL PMAT-1344 finding was 395 tests of dead slack, ~50% of
+    the corpus deletable without reddening the REQUIRED context. A 0.1.619 slice that ADDS
+    witnesses raises live and cannot red a tight floor; one that removes or consolidates them reds,
+    which is exactly the event this gate is for, and the answer is a TOUCH, not an opportunistic
+    edit.
+
+
+    ★ ONE DELIBERATE EXCEPTION, AND THE REASON IS A TYPE ERROR IF YOU MISS IT: WASM_EXEC_PCT_FLOOR
+    is a RATIO, not a count, so it keeps ONE point of margin (38 vs live 39). Adding an emit-only
+    refusal witness raises its denominator while the numerator holds -- a tight fraction floor would
+    therefore red on precisely the static/refusal tests the module header explicitly refuses to cap
+    ("NO CEILING IS PLACED ON EMIT-ONLY TESTS, deliberately"). Tightening a ratio and tightening a
+    count are not the same act.
+
+
+    CHANGELOG: `## [Unreleased]` promoted to `## [0.1.618] - 2026-07-31`. The heading date is the
+    SHIP date and the tag OBJECT is created 2026-07-30 -- a ONE-DAY SKEW that is deliberate and
+    disclosed in both the entry and docs/RELEASE.md: release.yml fires cleanroom-publish ON a `v*`
+    tag push, so it structurally CANNOT gate the tag that fires it, and cutting a day early converts
+    a post-hoc check into a real pre-flight with a day of runway. All THREE mandatory sections were
+    re-verified live rather than carried forward: `What still REFUSES` (swept PMAT-1479), `What is
+    NOT merge-blocking` (swept PMAT-1478 -- required set re-read as the UNION over BOTH rulesets via
+    `gh api repos/paiml/xpile/rules/branches/main` = {gate, workspace-test}, 13878864 -> gate,
+    19814559 -> workspace-test; advisory roster = the SEVEN contexts in the XPILE-ENFORCEMENT
+    ADVISORY-CONTEXTS marker at ci.yml:82), and `Known divergences` (swept PMAT-1473/1474; its
+    2026-07-29 re-sweep numbers 857/340/49/8 match tonight''s live measurement exactly).
+
+
+    ★ THE ONE NEW HONESTY EDIT THIS SLICE OWED: Known-divergences item 7 forbids quoting the floors
+    and says they are lower bounds carrying slack. After TOUCH 2 that is no longer the whole truth --
+    tightness changes what a green `workspace-test` proves -- so the item now discloses that every
+    count floor is tight and the fraction is the exception, WITHOUT reproducing the live counts
+    (which the same paragraph prohibits, and which is the PMAT-1445 shape it was itself committed
+    directly above).
+
+
+    NEXT FREE ID PMAT-1480. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618: A1 preconditions,
+    gh release create, `cargo publish --workspace` UNPIPED, sparse-index verification WITH a
+    User-Agent header, ledger close). NO FRIDAY CODE MERGES -- a Friday defect means A6 (ship the
+    tag, roll the batch to 2026-08-07), never a same-day hotfix onto the release SHA.'

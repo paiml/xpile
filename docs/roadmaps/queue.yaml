@@ -4742,7 +4742,7 @@ queue:
     did not match their equation and that class was never swept, and (b) `contracts/lean-models/README.md`,
     the remaining packaged file with zero readers — or PMAT-1373 on 2026-07-30.'
 - id: PMAT-1373
-  status: open
+  status: done
   ev_rank: R1
   gate_touch: 3
   title: 'RELEASE COMMIT v0.1.618: version bump + [Unreleased] -> [0.1.618] + witness-floor re-derive
@@ -4788,6 +4788,28 @@ queue:
     binary owner decision is OPEN. Saying otherwise in a release note would be the exact claim this
     slice exists to prevent.'
   date: '2026-07-30'
+  result: 'SHIPPED 2026-07-30. Version bump MEASURED at 35 `version = "0.1.617"` literals of 38
+    total `0.1.617` occurrences in Cargo.toml -- the other 3 are prose in the comment documenting
+    that very skew and stay. Witness-floor TOUCH 2 re-derived LIVE (the values in the notes above
+    were the c3e468d4 snapshot and had drifted on 4 of 10 lanes): wasm 770->857, wasm-gated
+    300->340, wasm-gated-fraction 36->38%, shell 7->10, rust-differential 44->49, hybrid 3->7,
+    wasi 1, ruchy 7->8, forjar 4, lean 6; module-header guard census 138/138 -> 145/145. EVERY
+    COUNT FLOOR IS NOW TIGHT (floor == live) -- TOUCH 1''s 25 of WASM slack existed only to spare
+    in-flight branches on rebase and there are none (`gh pr list --state open` == `[]`, freeze
+    active, Friday publish-only). SOLE exception WASM_EXEC_PCT_FLOOR, held 1 point under live
+    because it is a RATIO: an emit-only refusal witness raises its denominator, so tightening it
+    would red exactly the static tests the module header refuses to cap. CHANGELOG `[Unreleased]`
+    -> `[0.1.618] - 2026-07-31` (SHIP date; tag OBJECT cut 07-30 -- deliberate one-day skew,
+    disclosed, because release.yml fires cleanroom-publish ON the tag push and cannot gate the tag
+    that fires it). All three mandatory sections re-verified LIVE, not carried forward: required
+    set = UNION over BOTH rulesets via `gh api repos/paiml/xpile/rules/branches/main` = {gate,
+    workspace-test}; advisory = the 7 contexts in the ci.yml:82 marker. Known-divergences item 7
+    updated to disclose the tightness change WITHOUT reproducing the live counts it prohibits.
+
+    NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH). NEXT FREE ID PMAT-1480. NO FRIDAY CODE MERGES --
+    a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07), never a hotfix onto the
+    release SHA. Sparse-index verification MUST send a User-Agent header or it reports every crate
+    MISSING on a successful publish.'
 - id: PMAT-1374
   status: open
   ev_rank: R1
