@@ -23941,3 +23941,127 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID PMAT-1481. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
     MERGES -- a Friday defect means A6, never a same-day hotfix onto the release SHA. Friday''s
     `gh release create` MUST use the extractor above and MUST run the diff.'
+- id: PMAT-1481
+  status: done
+  priority: P1
+  category: honesty
+  title: The fix to the release runbook cannot reach the operator it was written for -- A1 pins
+    them to the TAG and the fix landed FORTY MINUTES after it; and step 3 named a file, not a
+    tree, while the two already differ by 97 lines
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG + release-mechanics lane only
+    -- ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gate files). Tag v0.1.618 is already cut at
+    6b5f6c02 with all 12 check-runs SUCCESS, so this does NOT touch the release SHA.
+
+
+    THE FINDING: WHERE DOES A FIX LAND, AND CAN THE READER IT WAS WRITTEN FOR GET TO IT? PMAT-1480
+    rewrote docs/RELEASE.md step 3 because the sentence "body matching the CHANGELOG section" had
+    never been checked and measured 0-of-613. It merged as 01998032 -- ONE COMMIT AFTER 6b5f6c02,
+    the SHA v0.1.618 points at. Abort rule A1 requires the release worktree be at the TAG, not
+    main; section 2a says the same for the tripwire run; section 5 step 4 says it again for the
+    publish. docs/RELEASE.md is version-controlled INSIDE that tree, so it arrives frozen at
+    whatever it said when the tag was cut.
+
+
+    DERIVED, NOT ASSERTED: `git show v0.1.618:docs/RELEASE.md | sed -n ''229,230p''` returns the
+    superseded two-line step 3 verbatim -- "3. `gh release create ... --notes-file <body>` --
+    non-draft, body matching the CHANGELOG section." That is the exact sentence PMAT-1480 measured
+    0-of-613 against and replaced, sitting in the tree A1 sends the operator to. The worktree was
+    ALREADY THERE (wt-1373-tag, HEAD 6b5f6c02) when this was written, so the failure mode was live
+    rather than hypothetical: an operator doing what A1 says would have re-committed the defect
+    that had been fixed FORTY MINUTES EARLIER.
+
+
+    ** THE INTERVAL IS THE POINT, and the first draft of this entry got it wrong -- it said
+    "yesterday''s fix" and "the previous day", which would have been a stale-date claim inside a
+    slice about stale documents. DERIVED: the v0.1.618 tag object was created at
+    2026-07-30 00:42:18 +0200 (`git for-each-ref --format=%(creatordate:iso) refs/tags/v0.1.618`)
+    and 01998032 landed at 01:22:16 (`git log -1 --format=%ci`) -- FORTY MINUTES, the very next
+    merge, the same night. "Stale documentation" suggests months and invites the reader to discount
+    it; the true figure says ONE MERGE IS ENOUGH, which is a materially different warning. Caught
+    by checking the timestamps rather than reasoning from the calendar.
+
+
+    ** THE SHAPE, and it generalises past this file: A RUNBOOK THAT INSTRUCTS YOU TO WORK FROM A
+    PINNED HISTORICAL TREE CANNOT ASSUME IT WILL BE READ FROM THAT TREE. The freeze table makes
+    this the NORMAL case rather than an accident -- Thu and Fri permit ONLY docs, CHANGELOG and
+    release-mechanics merges, which is precisely the lane docs/RELEASE.md lives in, so the window
+    in which the runbook is most likely to be corrected is the window in which the operator is
+    pinned away from the correction. Every gate in crates/xpile/tests/ reads the WORKING TREE and
+    is therefore blind to this by construction: the stale copy is not a file in the tree, it is a
+    file in a DIFFERENT COMMIT of the tree. FIXED with a top-of-file directive to materialise
+    origin/main:docs/RELEASE.md first, with the one-line `git show` command.
+
+
+    SECOND FINDING -- STEP 3 NAMED A FILE, NOT A TREE, AND THE TWO ALREADY DISAGREE. The extractor
+    read `CHANGELOG.md` as a bare relative path, resolving against whatever checkout the operator
+    happens to be in, while A1 puts them in the tag worktree and the docs lane keeps moving main.
+    MEASURED: the `## [0.1.618]` section is 7,699 lines at the tag and 7,796 on main -- a gap opened
+    one commit after the tag, widened by every further docs slice. Neither choice is neutral.
+    Extract at the TAG and the page omits post-tag entries INCLUDING PMAT-1480''s own, the entry
+    that announces the match rule the extraction implements. Extract on MAIN and the page publishes
+    prose describing commits that are NOT IN THE RELEASED SOURCE, which is the stronger falsehood
+    because the page''s job is to document what shipped. THE TAG WINS, and the omission is repaired
+    by APPENDING the post-tag delta under its own dated heading -- never by folding it into the
+    section, which would reproduce the page-vs-file drift in a third place.
+
+
+    THIRD -- PMAT-1480''S OWN VERIFICATION STEP IS TREE-BLIND AND CANNOT CATCH EITHER PROBLEM. The
+    round-trip `diff /tmp/relbody.md <(gh release view ...)` compares the published body against the
+    SAME FILE the body was extracted from. It proves the upload was faithful and is silent on
+    whether the source tree was right; a wrong-tree extraction passes it clean. This is the same
+    blindness that let its first spelling ship: the zero-byte body was diff-green because empty
+    matched empty. A `test -s` guard now precedes it. ** GENERAL RULE: A ROUND-TRIP CHECK VALIDATES
+    TRANSPORT, NEVER PROVENANCE -- if the source selection can be wrong, something outside the
+    round trip has to check it.
+
+
+    FOURTH -- A SELF-CORRECTION, KEPT IN THE PUBLISHED ENTRY RATHER THAN QUIETLY DROPPED. This
+    slice''s draft asserted that the post-tag CHANGELOG edit could never reach the PACKAGED
+    CHANGELOG.md on crates.io. THERE IS NO PACKAGED CHANGELOG.md. The file sits at the workspace
+    root, outside every package directory, so Cargo ships it in NONE of the 31 crates: measured on
+    the published tarball, xpile-0.1.617.crate holds 916 files and exactly two .md entries,
+    README.md and examples/README.md, neither a CHANGELOG. What IS packaged is the root README.md,
+    pulled in by `readme = "../../README.md"`. The true consequence is TIGHTER than the one being
+    claimed: outside a clone this file reaches a reader through the GitHub release body AND THROUGH
+    NOTHING ELSE -- the 0-of-613 path -- while the rendered crates.io page is frozen at its tag''s
+    README forever, since registry versions are immutable (PMAT-1471''s finding, generalised).
+    Recorded as a correction because "the packaged CHANGELOG is stale" is the more intuitive claim
+    and the next reader will reach for it too. ** METHOD NOTE: the tarball listing took one curl
+    and settled it; the plausible version had survived two paragraphs of drafting.
+
+
+    FIFTH -- THE v0.1.617 PAGE WAS NOT RETRO-EDITED AND NOTHING SAID SO. PMAT-1480 ported a
+    page-only disclosure INTO the CHANGELOG but left the reverse direction unstated, so a reader
+    could infer the page had been brought into line. It has not: the published body still carries
+    the pre-PMAT-1479 `;&` / `;;&` text (15 matches for `REFUSES|;&`) and is untouched since
+    2026-07-26T19:17:19Z. Editing a published, outward-facing, archival body destroys the record of
+    what was published at the time, so it is an owner call -- now filed as owner_decisions
+    `retro-edit-published-release-bodies` with three options and a recommendation (option 2, APPEND
+    a dated correction block, never edit existing text), instead of being left as an inference.
+
+
+    ** THE ONE THAT MATTERS MOST, AND IT IS ABOUT A GATE THAT DOES NOT EXIST YET. next_lane[0]''s
+    spec for XPILE-RELBODY-001 would have BORNE A GATE THAT REDS ON A CORRECT RELEASE. It said the
+    published body must equal the section extracted from `CHANGELOG.md` -- the WORKING TREE copy.
+    Against a tree that keeps growing after the tag, that reds the moment any Thu/Fri docs merge
+    lands, which is ALREADY TRUE at +97 lines. A false red on a release that did everything right is
+    worse than no gate, because it trains the operator to ignore it. New constraint (d) pins the
+    comparison subject to `git show <tag>:CHANGELOG.md` for EVERY tag, notes that the CHANGELOG half
+    then needs no network, and flags that a body legitimately carrying an APPENDED post-tag delta
+    must be compared on its LEADING region rather than for whole-string equality -- decided
+    explicitly rather than discovered as a red. ** CHEAPEST LESSON HERE: a spec for an unwritten
+    gate is worth auditing at the same standard as the gate, because the cost of fixing it is one
+    edit now versus a debugging session and a false-red reputation later.
+
+
+    NO GATE, STATED PLAINLY: everything above is a MEASUREMENT, not an invariant. XPILE-RELBODY-001
+    remains next_lane[0], blocked by the Wed 18:00 freeze because it needs a new crates/xpile/tests/
+    file. The tree-selection defect specifically CANNOT be gated by anything reading the working
+    tree, which is every gate this repo has -- it needs `git show <tag>:` or nothing.
+
+
+    NEXT FREE ID PMAT-1482. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
+    MERGES -- a Friday defect means A6, never a same-day hotfix onto the release SHA. Friday''s
+    `gh release create` MUST use the step-3 extractor, MUST extract from the TAG and not main, MUST
+    `test -s` the body before uploading, and MUST append the post-tag CHANGELOG delta under its own
+    dated heading.'

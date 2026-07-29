@@ -13,6 +13,32 @@ every number below is given as the command that derives it. The crate count,
 the version and the required-context set all move; a number typed here would
 rot exactly like the one that rule exists to prevent.
 
+**⚠️ READ THIS FILE FROM `origin/main`, NOT FROM THE RELEASE WORKTREE.**
+§2a, §5 step 4 and abort rule A1 all put the operator in a worktree pinned to
+the **tag**. This document is version-controlled *inside* that tree, so it
+arrives there frozen at whatever it said when the tag was cut — and §1's freeze
+table permits a docs-lane merge on Thursday and Friday, precisely the window in
+which this file is most likely to be corrected. Every such fix is absent from
+the copy the pinned worktree hands you.
+
+Measured on `v0.1.618`, and the interval is the point — the tag object was
+created at `2026-07-30 00:42:18 +0200` and the commit carrying the extracting
+form of §5 step 3 landed at `01:22:16`, **forty minutes later, the very next
+merge.** So `git show v0.1.618:docs/RELEASE.md` still carries the superseded
+two-line step 3 whose body rule was *"body matching the CHANGELOG section"* — the
+exact sentence that measured 0-of-613 and the reason step 3 was rewritten. An
+operator who did what A1 says and read the runbook out of the release worktree
+would have re-committed the defect that had been fixed forty minutes earlier.
+Staleness here is not measured in days; one merge is enough.
+
+**A runbook that instructs you to work from a pinned historical tree cannot
+assume it will be read from that tree.** Before starting, materialise the
+current one:
+
+```bash
+git -C <repo> show origin/main:docs/RELEASE.md > /tmp/RELEASE.md   # follow THIS copy
+```
+
 ---
 
 ## 0. Why this document exists
@@ -230,11 +256,43 @@ conclusion; a green `gh pr checks` does not include it.**
 
    ```bash
    V=<version>
-   awk -v h="## [$V]" 'index($0,"## [")==1 { f = (index($0,h)==1) } f' \
-     CHANGELOG.md > /tmp/relbody.md
+   # THE TREE IS PART OF THE RULE — extract from the TAG, never from the
+   # working tree. `git show "v$V":CHANGELOG.md` is what shipped.
+   git show "v$V":CHANGELOG.md \
+     | awk -v h="## [$V]" 'index($0,"## [")==1 { f = (index($0,h)==1) } f' > /tmp/relbody.md
+   test -s /tmp/relbody.md || { echo "ABORT: empty body"; exit 1; }
+   # Entries the working tree has added since the tag are NOT in the released
+   # source. Read the delta; if non-empty, append it under its own heading.
+   git diff --stat "v$V"..origin/main -- CHANGELOG.md
    gh release create "v$V" --title "v$V" --notes-file /tmp/relbody.md   # non-draft
-   diff /tmp/relbody.md <(gh release view "v$V" --json body -q .body)
+   gh release view "v$V" --json body -q .body > /tmp/relbody.published.md
+   diff /tmp/relbody.md /tmp/relbody.published.md
    ```
+
+   **Which tree, stated because the two already disagree.** Through PMAT-1480
+   this step read `CHANGELOG.md` as a bare relative path, which resolves against
+   whatever checkout the operator happens to be in — and A1 puts them in the tag
+   worktree while the docs lane keeps moving `main`. On `v0.1.618` the gap opened
+   one commit after the tag was cut: the `## [0.1.618]` section is 7,699 lines at
+   the tag and 7,796 on `main`. Both choices are wrong in a different direction,
+   so the choice has to be made rather than inherited from a `cd`:
+
+   - extract at the **tag** → the page omits post-tag entries, including
+     PMAT-1480's own, which is the entry that announces this very rule;
+   - extract on **`main`** → the page publishes prose describing commits that are
+     **not in the released source**, which is the stronger falsehood, since the
+     page's job is to document what shipped.
+
+   The tag wins, and the omission is repaired by *appending* the post-tag delta
+   under its own dated heading — never by folding it into the section silently,
+   which would reproduce the page-vs-file drift in a third place.
+
+   **The round-trip `diff` is TREE-BLIND — it cannot catch this.** It compares
+   the published body against the same file the body was extracted from, so it
+   proves the upload was faithful and says nothing about whether the source was
+   the right tree. A wrong-tree extraction passes it cleanly. `test -s` is the
+   other half: PMAT-1480's first extractor spelling wrote a **zero-byte body at
+   exit 0**, and the `diff` was green on it, because empty matched empty.
 
    It is `index()` and not a regex on purpose: a *dynamic* awk regex cannot
    carry `\[`, and the escaped form
@@ -255,7 +313,7 @@ conclusion; a green `gh pr checks` does not include it.**
    **The release page is a publisher of this repository's facts that no gate in
    `crates/xpile/tests/` can see.** Every one of them derives its corpus from the
    working tree or from `git ls-files`, and a GitHub release body is in neither.
-   Two consequences, both measured on `v0.1.617`:
+   Three consequences, all measured on `v0.1.617`:
 
    - **A CHANGELOG correction does not reach the page.** PMAT-1479 rewrote the
      `;&` / `;;&` entry because it scoped a false universal to two shapes when
@@ -272,6 +330,21 @@ conclusion; a green `gh pr checks` does not include it.**
      enforcement claim *"Full gate green: fmt, clippy -D warnings, check,
      workspace tests, pv lint (0 errors)"* appears on 25 release pages and in no
      CHANGELOG section.
+   - **And the page is the ONLY non-clone path this file has, which is why the
+     above matters more than it looks.** `CHANGELOG.md` sits at the workspace
+     root, outside every package directory, so Cargo packages it into **none** of
+     the crates: `xpile-0.1.617.crate` holds 916 files and exactly two `.md`
+     (`README.md`, `examples/README.md`), neither a CHANGELOG. Derive it, do not
+     trust this sentence —
+     `curl -sL -H 'User-Agent: xpile-release-verify' https://static.crates.io/crates/xpile/xpile-$V.crate | tar tz | grep -ci changelog || true`
+     (executed 2026-07-30 against `0.1.617`: prints `0`. The `|| true` is load
+     bearing — `grep -c` **exits 1 when the count is 0**, which is the answer
+     being asked for, so under `set -e` the correct result aborts the shell).
+     What *is* packaged is the root `README.md`, via `readme = "../../README.md"`.
+     So a reader who does not clone reaches this file through the release body and
+     through nothing else, and reaches the README frozen per version forever —
+     crates.io versions are immutable, so a post-tag README correction can never
+     reach an already-published page (PMAT-1471's finding, generalised).
 
    **Therefore: a post-release correction is written to `CHANGELOG.md` first and
    mirrored to the page second, never the other way round**, and the mirror is

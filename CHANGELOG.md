@@ -7,6 +7,93 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The fix to the release runbook cannot reach the operator it was written for — A1 pins them to the tag, and the fix landed forty minutes after it (PMAT-1481)
+
+PMAT-1480 rewrote `docs/RELEASE.md` step 3 because the sentence *"body matching
+the CHANGELOG section"* had never been checked and measured 0-of-613. It landed
+on `main` as commit `01998032` — **one commit after `6b5f6c02`, the SHA
+`v0.1.618` points at.** Abort rule A1 requires that the release worktree be at
+the **tag**, not `main`; §2a says the same for the tripwire run; §5 step 4 says
+it again for the publish itself.
+
+The interval is worth stating, because "stale documentation" suggests months.
+The `v0.1.618` tag object was created at `2026-07-30 00:42:18 +0200`; the commit
+carrying the fix landed at `01:22:16` — **forty minutes later, the very next
+merge.** One merge is enough. *(This entry's own draft said "yesterday's fix" and
+"the previous day" — a stale-date claim inside a slice about stale documents,
+caught by reading `git log` instead of the calendar. Disclosed rather than
+quietly corrected, because the true figure carries a different warning: a reader
+told "months" discounts it, a reader told "one merge" cannot.)*
+
+So the operator following the procedure sits in a tree where the procedure is
+the *old* one. Derived, not asserted:
+
+```
+$ git show v0.1.618:docs/RELEASE.md | sed -n '229,230p'
+3. `gh release create "v<version>" --title "v<version>" --notes-file <body>` —
+   non-draft, body matching the CHANGELOG section.
+```
+
+That is the superseded step 3, verbatim, in the tree A1 sends you to — and the
+worktree was already sitting there (`wt-1373-tag`, `HEAD 6b5f6c02`) when this
+was written. **A runbook that instructs you to work from a pinned historical
+tree cannot assume it will be read from that tree**, and §1's freeze table makes
+this the normal case rather than an accident: Thursday and Friday permit *only*
+docs, CHANGELOG and release-mechanics merges, which is exactly the lane
+`docs/RELEASE.md` lives in. Fixed by a top-of-file directive to materialise
+`origin/main:docs/RELEASE.md` first, with the one-line command.
+
+**Second finding: step 3 named a file and not a tree, and the two already
+disagree.** `awk … CHANGELOG.md` is a bare relative path resolving against
+whatever checkout the operator is in. The `## [0.1.618]` section measures
+**7,699 lines at the tag and 7,796 on `main`** — the gap opened one commit after
+the tag, and every remaining docs slice widens it. Neither choice is neutral:
+extracting at the tag omits post-tag entries *including PMAT-1480's own, the
+entry that announces the match rule*; extracting on `main` publishes prose
+describing commits **not in the released source**. The tag wins — a release page
+documents what shipped — and the omission is repaired by appending the delta
+under its own dated heading, per PMAT-1480's CHANGELOG-first mirror rule.
+
+**And the round-trip `diff` PMAT-1480 added cannot catch either problem.** It
+diffs the published body against the same file the body came from, so it
+certifies upload fidelity and is silent on whether the source tree was right; a
+wrong-tree extraction passes it clean. Same blindness that let its first
+spelling ship: the zero-byte body was `diff`-green because empty matched empty.
+A `test -s` guard now precedes it.
+
+**Third finding, and it corrects a claim this slice was about to publish.** The
+draft asserted that the post-tag CHANGELOG edit could never reach the *packaged*
+`CHANGELOG.md` on crates.io. There is no packaged `CHANGELOG.md`. The file sits
+at the workspace root, outside every package directory, so Cargo ships it in
+**none** of the 31 crates — `xpile-0.1.617.crate` holds 916 files and exactly
+two `.md`, `README.md` and `examples/README.md`. What is packaged is the root
+`README.md`, via `readme = "../../README.md"`. The consequence is tighter than
+the one being claimed: outside a clone this file reaches a reader through the
+GitHub release body **and through nothing else** — the 0-of-613 path — while the
+rendered crates.io page is frozen at its tag's README forever, since registry
+versions are immutable (PMAT-1471's finding, generalised). Recorded as a
+correction rather than quietly dropped, because "the packaged CHANGELOG is
+stale" is the more intuitive claim and the next reader will reach for it too.
+
+**Fourth: the `v0.1.617` page was NOT retro-edited, and until now nothing said
+so.** PMAT-1480 ported a page-only disclosure *into* the CHANGELOG but left the
+reverse direction unstated, so a reader could infer the page had been brought
+into line. It has not been: the published body still carries the pre-PMAT-1479
+`;&` / `;;&` text (15 matches for `REFUSES|;&`), and it is untouched since
+`2026-07-26T19:17:19Z`. Editing a published, outward-facing, archival release
+body is an owner call, now filed as `owner_decisions` entry
+`retro-edit-published-release-bodies` rather than left as an inference.
+
+**No gate, and the one specified for tomorrow would have been born wrong.**
+`XPILE-RELBODY-001` is still `next_lane[0]` — it needs a new `crates/xpile/tests/`
+file, which the Wed 18:00 freeze forbids. Its spec in `queue.yaml` said the
+published body must equal the section extracted from `CHANGELOG.md`, meaning the
+**working tree's** copy; against a tree that keeps growing after the tag, that
+gate reds on a *correct* release as soon as the next docs slice lands — already
+true today at +97 lines. Constraint (d) now pins the comparison to
+`git show <tag>:CHANGELOG.md`. Everything in this entry is a **measurement, not
+an invariant**, until that gate exists.
+
 ### The release page publishes this repository's facts and no gate can read it — 0 of 613 published bodies match their CHANGELOG section, and 3,044 lines of release prose exist only on GitHub (PMAT-1480)
 
 Ten honesty slices in a row asked whether a claim in this repository was true.
