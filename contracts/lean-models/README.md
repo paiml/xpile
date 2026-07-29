@@ -64,8 +64,21 @@ stated directly as "the only coefficients mapping to the zero prediction are
 | `ols_unique` | it is the **unique** minimiser (full column rank) |
 | `ols_strict` | **non-vacuity dual**: strictly larger off the optimum |
 
-**Subsumes** the constant model (`k = 1`, `φ₀ ≡ 1`) and simple linear regression
-(`k = 2`, `φ₀ ≡ 1`, `φ₁ = x`) as special cases of one general theorem.
+**Generalises** the constant model (`k = 1`, `φ₀ ≡ 1`) and simple linear
+regression (`k = 2`, `φ₀ ≡ 1`, `φ₁ = x`) — those are instances of this statement
+*mathematically*.
+
+> ⚠️ **The formalisation does not derive them.** `Basic.lean` and
+> `SimpleLinear.lean` do not import `GeneralLinear.lean`; there is no
+> instantiation, corollary or specialisation anywhere in the lane. A green
+> `lake build` establishes **three independent theorems**, not one general
+> theorem plus two derived ones. Through v0.1.617 this line said "**Subsumes**
+> … as special cases of one general theorem", which reads — in a table of what
+> is *proven* — as a claim the proof lane does not carry. Making it true means
+> adding corollaries that instantiate `ols_unique`/`ols_strict` at `k = 1` and
+> `k = 2` and discharge `sse_eq_mean_iff`/`slr_unique` from them; that is
+> tracked for 0.1.619 and gated meanwhile by
+> `crates/xpile/tests/lean_models_lane_witness.rs` (PMAT-1472).
 
 ## Build
 
@@ -79,8 +92,9 @@ lake build           # elaborate the certificate
 
 Done: the isolated Mathlib lane + CI + OLS-uniqueness certificates for the
 **constant** model (`Basic`), **simple linear regression** (`SimpleLinear`), and
-the **general k-parameter** linear model (`GeneralLinear`, which subsumes the
-first two).
+the **general k-parameter** linear model (`GeneralLinear`, which generalises the
+first two mathematically — see the caveat above; the formalisation proves the
+three independently and derives none of them from another).
 
 **The emit path is wired** (this README previously said "not yet wired" — stale):
 - the governing contract `contracts/ols-model-uniqueness-v1.yaml`

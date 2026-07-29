@@ -22891,6 +22891,58 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1472
+  status: done
+  priority: P1
+  category: honesty
+  title: The Mathlib lane published a DERIVATION it does not carry -- "subsumes ... as special cases of
+    one general theorem" -- on a packaged file no test had ever read
+  notes: '`contracts/lean-models/README.md`, under a heading reading "What''s proven", closed its capstone
+    table with "**Subsumes** the constant model (k=1) and simple linear regression (k=2) as special cases
+    of one general theorem", and `Models/GeneralLinear.lean`''s own module doc said the same. MEASURED:
+    `Models/Basic.lean` and `Models/SimpleLinear.lean` do NOT import `Models.GeneralLinear`, and no
+    corollary, `example` or specialisation anywhere in the lane instantiates `ols_unique`/`ols_strict`
+    at k=1 or k=2. A green `lake build` establishes THREE INDEPENDENT THEOREMS, not one general theorem
+    plus two derived ones.
+
+
+    WHY THAT IS THE SHARP KIND OF FALSE: this lane''s whole value proposition is that
+    `warningAsError := true` makes a green build an un-fakeable no-`sorry` claim. A claim about the SHAPE
+    OF THE PROOF is exactly the thing that build does not certify. PMAT-1468''s lesson one lane over --
+    a green build is not a discharged claim; read what it is quantified over. Nothing would notice if
+    `Basic.lean`''s statement drifted out of agreement with the general one, because nothing connects them.
+
+
+    AND IT WAS UNREADABLE BY CONSTRUCTION: the file is uploaded by `cargo package -p xpile` and was read
+    by ZERO tests. MEMORY had recorded it as "read but NOT measured" -- READING A FILE IS NOT MEASURING IT.
+
+
+    THE GATE FOUND A THIRD SITE THE FIX HAD MISSED. I corrected two sentences; the first run of the new
+    rule flagged `README.md:95` in the Status section ("`GeneralLinear`, which subsumes the first two"),
+    which no reading of the two tables would have surfaced. A claim class is not a paragraph, again.
+
+
+    FIX: all three sites now say GENERALISES (mathematically) and disclose that the formalisation derives
+    none of them from another, naming what would make the claim true (corollaries instantiating
+    `ols_unique` at k=1/k=2). Adding those corollaries is DEFERRED to 0.1.619 -- it is real Mathlib work
+    and the night before a tag cut is the wrong time to land unverifiable Lean.
+
+
+    GATE `crates/xpile/tests/lean_models_lane_witness.rs` (XPILE-LEANMODELS-001, 6 tests). Theorem names
+    and file paths are PARSED OUT OF THE README, not typed, so the packaged page checks ITSELF against
+    the Lean sources -- 12 tabulated theorems must exist in the module the README files them under, and
+    every path it cites must resolve. The derivation rule has an ESCAPE HATCH that is the real fix: a
+    subsumption claim passes if the subsumed module IMPORTS the subsuming one. Red half proves both
+    directions -- adding `import Models.GeneralLinear` to Basic.lean makes the rule PASS (the claim became
+    true) and simultaneously REDS the premise assertion, so the disclosure cannot silently outlive the
+    defect it describes.
+
+
+    VERIFIED HONEST and NOT touched: all 12 tabulated theorem names exist as `theorem`s in the named
+    files; all six cited companion artifacts exist; the core lane IS Mathlib-free (every `Mathlib` hit
+    under `contracts/lean/` is prose about NOT importing it -- a naive grep counts prose about X as X);
+    `contracts/kani/ols_model_uniqueness.rs` already says "Do not read this harness as proving
+    `ols_unique`". The page was wrong in one place and right in the rest.'
 - id: PMAT-1470
   status: done
   priority: P1

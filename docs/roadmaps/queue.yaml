@@ -77,6 +77,23 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1472
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: Mathlib lane published a DERIVATION it does not carry, on a packaged file with zero readers
+  notes: '`contracts/lean-models/README.md` and `Models/GeneralLinear.lean` both said the general OLS
+    theorem SUBSUMES the constant and simple-linear models "as special cases of one general theorem".
+    Basic.lean and SimpleLinear.lean do not import GeneralLinear and no corollary instantiates
+    `ols_unique` at k=1/k=2: a green `lake build` proves THREE INDEPENDENT theorems. Packaged by
+    `cargo package -p xpile`, read by ZERO tests. Gate XPILE-LEANMODELS-001 parses theorem names and
+    paths OUT OF the README so the packaged page checks itself; the derivation rule''s escape hatch is
+    the real fix (an import), red-half-proven in BOTH directions.
+
+
+    DEFERRED to 0.1.619: add the corollaries that instantiate `ols_unique`/`ols_strict` at k=1 and k=2
+    and discharge `sse_eq_mean_iff`/`slr_unique` from them, making the subsumption claim TRUE and
+    letting the disclosure be deleted. Real Mathlib work; needs `lake exe cache get`.'
 - id: PMAT-1470
   status: done
   ev_rank: R1
