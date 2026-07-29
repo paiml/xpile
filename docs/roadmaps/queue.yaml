@@ -4181,6 +4181,36 @@ queue:
     18:00 is the HARD FREEZE — after it, no merge may touch crates/*/src, contracts/*.yaml or any
     gate. Until then, keep hunting in the docs/claims lane (it is freeze-compatible: this slice
     touched no `src`). NEXT PICK: another honesty hunt, or PMAT-1373 on 2026-07-30.'
+- id: PMAT-1465
+  status: done
+  date: '2026-07-29'
+  ev_rank: R1
+  gate_touch: null
+  title: the 31 crates.io descriptions and docs.rs summaries had never been read by any gate, and six
+    published a falsehood — one crate's two registry pages disagreed about whether it has a parser
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30; this slice
+    is freeze-compatible in spirit — it touches no contract YAML and no witness floor, and its only
+    behavioural `src` change is the text of a refusal MESSAGE). Took PMAT-1464''s METHOD rather than
+    its lead list: ask WHICH PUBLISHED ARTIFACT HAS NO READER. Answer this time: the `description` in
+    all 31 Cargo.toml files and the crate-root `//!` in all 31 lib.rs files — the crates.io headline and
+    the docs.rs summary, the only prose 30 of the 31 crates show a registry visitor, re-uploaded
+    verbatim every Friday. The sole Cargo.toml gate reads `version =` on path-deps and nothing else.
+    Red half on the SHIPPED gate against the UNMODIFIED corpus: 20 sites, 5 arms. Sharpest finding is
+    one the manual sweep MISSED and the gate caught: ruchy-frontend''s docs.rs page says "routing only;
+    `.ruchy` INPUT refuses" while its crates.io page said "Parses .ruchy and lowers to meta-HIR" — two
+    front pages for one crate, disagreeing about whether it has a parser. Also: a falsehood the BINARY
+    PRINTS (forjar''s refusal blamed meta-HIR for having no `Stmt::ShellIf`, which has existed since
+    PMAT-1283). The gate''s own anti-vacuity guard caught a bug in the gate''s manifest walk that would
+    have shipped it half-blind and green. Three repairs tripped the gate they were written for and were
+    REWORDED, not exempted. Full ledger, controls, out-of-subject measurements and standing leads in
+    docs/roadmaps/roadmap.yaml under PMAT-1465.
+
+
+    ** NOTE FOR THE NEXT FIRE: NEXT FREE ID IS PMAT-1466. The ranked queue stays EXHAUSTED until
+    2026-07-30. Wed 2026-07-29 18:00 is the HARD FREEZE — after it, no merge may touch crates/*/src,
+    contracts/*.yaml or any gate. Before the freeze, keep hunting in the docs/claims lane. NEXT PICK:
+    another honesty hunt (the `keywords`/`categories` crates.io facets are the same unread-surface
+    shape and are still ungated), or PMAT-1373 on 2026-07-30.'
 - id: PMAT-1373
   status: open
   ev_rank: R1

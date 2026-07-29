@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "POSIX shell frontend (sh/bash/zsh + Makefile/Dockerfile) for xpile. Scaffold at v0.1.0 (PMAT-037 / XPILE-BASHRS-MERGER-001); full source fold from `paiml/bashrs` lands at v0.2.0."
+description = "POSIX shell frontend (sh/bash/zsh/mk) for xpile (XPILE-BASHRS-MERGER-001). Parses the flat-command subset plus the full v0.1.0 control-flow surface — nested for/while/until, if/elif/else, top-level case — to meta-HIR. `Makefile`/`Dockerfile`/`*.mk` are ROUTED and then REFUSED: there is no build-driver dialect (PMAT-1420)."
 
 [dependencies]
 xpile-frontend = { workspace = true }

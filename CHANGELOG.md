@@ -7,6 +7,110 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The 31 crates.io descriptions and docs.rs summaries had never been read by any gate, and six of them published a falsehood — one contradicted by the crate's own other page (PMAT-1465)
+
+Every workspace member carries a `description` in its `Cargo.toml` and a
+crate-root `//!` block at the top of its `src/lib.rs`. Those two strings are the
+crates.io headline and the docs.rs summary for that crate, and for **30 of the
+31** they are the only prose a reader arriving from the registry ever sees —
+only `crates/xpile` ships a `readme`. Both are re-uploaded verbatim on every
+Friday publish.
+
+At `18d91af8` **no test in the workspace read either one.** The only gate over
+any `Cargo.toml` is `publish_manifest_integrity.rs`, and it reads `version =` on
+path-deps and nothing else (`grep -c description` over it: **0**).
+
+Running the new gate against the unmodified corpus reported **20 sites across
+five arms**:
+
+| site | published | live |
+|---|---|---|
+| `ruchy-frontend` desc | "**Parses .ruchy** and lowers to meta-HIR" | `lowers_input()` is `false`; `.ruchy` INPUT REFUSES (PMAT-1346) |
+| `bashrs-frontend` desc | "sh/bash/zsh **+ Makefile/Dockerfile**"; "**Scaffold** at v0.1.0" | all three build-driver spellings are in that frontend's own `refused_claims()` (PMAT-1420/1433) |
+| `bashrs-frontend` `//!` | "the real parser / lowering pipeline is **deferred to v0.2.0**"; "`parse_and_lower` returns a **structurally empty `Module`**" | a 1 900-line POSIX parser with nested loops, `if`/`elif`/`else` and `case` (PMAT-085..092, 1268, 1276, 1281, 1283..1285) |
+| `xpile-backend` desc + `//!` | "**every** target language (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean)" | `Target` has **nine** variants — `Wasm`, `Shell` and `ForjarYaml` omitted from a sentence that quantifies universally |
+| `xpile-contract-backend` desc + `//!` | renders "LaTeX / Lean theorems / **mdBook**" | no registered `ContractBackend` claims `ContractFormat::MdBook` |
+| `xpile-contract-frontend` desc + `//!` | parses "LaTeX / Lean theorem text / **mdBook**" | the one registered `ContractFrontend` claims `LatexMath` only |
+| `xpile-backend` `Target::Shell` | shell emit is a "**scaffold at v0.1.0; full emit at v0.2.0**" | lowering a shell `Module` through the registered backend emits the commands — EXECUTED by the gate |
+| `xpile-backend` `Target::ForjarYaml`, `xpile-forjar-codegen` `//!`, **and the refusal message the binary prints** | "the meta-HIR shell lane **has no `Stmt::ShellIf`**" | `Stmt::ShellIf` has existed since PMAT-1283; the gate CONSTRUCTS one |
+
+* **⭐ ONE CRATE, TWO CONTRADICTORY FRONT PAGES.** `ruchy-frontend`'s docs.rs
+  summary opens *"routing only; `.ruchy` INPUT refuses"* — correct, and repaired
+  by PMAT-1346 — while its crates.io headline said *"Parses .ruchy and lowers to
+  meta-HIR"*. The same shape PMAT-1464 found between `hero.svg`'s alt text and
+  the image it describes, one surface further out: **the two registry pages for
+  a single crate disagreed about whether it has a parser.** This one was found by
+  the gate, not by hand.
+* **⭐ THE SWEEP WAS NARROWER THAN THE RULE IT WROTE — third recurrence, two
+  different slices.** PMAT-1433 added `Frontend::refused_claims()` *precisely* so
+  `xpile info` and `book/src/reference/frontends.md` would stop advertising
+  `Makefile` / `Dockerfile` / `*.mk`. It wired the new signal into both readers
+  and left the crate's own crates.io description saying `sh/bash/zsh +
+  Makefile/Dockerfile`. PMAT-1346 did the same thing to `ruchy-frontend`. In both
+  cases the surface the sweep missed was **the published one**.
+* **THE PHANTOM WAS ON AN EXISTING GATE'S OWN BAN LIST.**
+  `lane_roster_witness.rs:16` states in as many words that *"no mdBook contract
+  frontend or backend exists"*, and `mdBook` is one of the four spellings that
+  gate bans across `book/src`, `README.md` and `docs/assets/*.svg`. Two crates
+  were shipping the banned claim to crates.io the whole time, outside its walk.
+* **A FALSEHOOD THE BINARY PRINTS.** `xpile-forjar-codegen`'s refusal message
+  told users *"the meta-HIR shell lane has no `Stmt::ShellIf`/`Expr::ShellTest`"*.
+  The refusal is correct — forjar.yaml has no conditional resource kind — but the
+  reason it gave was a fact about meta-HIR, and that fact stopped being true at
+  PMAT-1283. Reworded at all three sites to say what forjar cannot represent
+  rather than what meta-HIR does not have.
+
+**The gate — `crates/xpile/tests/crate_metadata_honesty.rs`
+(XPILE-CRATEMETA-001), 7 tests.** No arm bans a spelling; each derives its
+population from a live signal:
+
+* Unrenderable contract formats are the **complement** of what registered
+  `ContractBackend`/`ContractFrontend` impls claim via `formats()`. An mdBook
+  backend landing tomorrow lifts the ban by itself, and `Coq`/`Agda`/`Isabelle`
+  are covered for free.
+* A universal over target languages must enumerate all nine `Target` variants —
+  both enum rosters are pinned by wildcard-free matches, so adding a variant
+  fails to COMPILE rather than going stale.
+* An advertised input is scored against that frontend's own `refused_claims()`.
+* A deferral claim is scored only against frontends whose `lowers_input()` is
+  `true` — the signal `claims_drift.rs` measures by RUNNING the frontend.
+* The shell arm LOWERS a probe module through the registered `Target::Shell`
+  backend and requires the probe token in the output (PMAT-1388's
+  input-dependence rule) before scoring the doc.
+* The `Stmt::ShellIf` arm CONSTRUCTS one, so the compiler proves the existence
+  half and there is nothing to keep in sync.
+
+**Three passing controls, supplied by the corpus itself** — which is what makes
+this a measurement rather than an argument: `Coq`/`Agda`/`Isabelle` are
+unrenderable exactly like `MdBook` and no crate page presents them;
+`ruchy-frontend` declares `lowers_input() == false` and its `//!` really does say
+*"routing only"*, so it stays green on the deferral arm; and both contract
+backends open with *"scaffold stub"* while reporting
+`renders_contract_body() == false`, honest and outside that arm's population.
+
+**A guard earned its keep immediately.** The corpus-reach assertion caught a bug
+in this gate's own manifest walk — an early `?` made `manifest_description`
+return on the first non-matching line, so it read **0 of 31** descriptions and
+every arm would have scored the `//!` half only. Without that assertion the gate
+would have shipped half-blind and green.
+
+**Three repairs tripped the gate they were written for**, and each was reworded
+rather than exempted: annotating a retired claim by quoting it re-publishes it.
+The gate has no exemption branch of any kind, so it has no untested branch
+either (PMAT-1457's rule).
+
+**What is OUT of subject, stated with a measurement.** The frontend analogue of
+the target-roster arm is **not** gated: the C frontend's registry name is the
+single character `c`, which cannot be matched in prose without fabricating hits
+in every other word — and `xpile-frontend`'s `//!` names "Python, C, Ruchy, ..."
+with an explicit ellipsis, so it is non-exhaustive by construction rather than
+false. Backend maturity adjectives are also out: `xpile-{ptx,ruchy,lean}-codegen`
+each call themselves a "backend stub", and the proof lane got a machine-readable
+answer for exactly this in PMAT-1429 (`ContractBackend::renders_contract_body()`,
+MEASURED by `proof_lane_scaffold_witness.rs`) while the code-lane `Backend` trait
+never got a twin. That asymmetry is the standing lead this slice files, not a
+finding it makes.
+
 ### The hero image drew six source languages and four of them had no frontend — the front-door diagram was a roadmap published as an architecture (PMAT-1464)
 
 `docs/assets/hero.svg` is the first thing in `README.md` and therefore the first

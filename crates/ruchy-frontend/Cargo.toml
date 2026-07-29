@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Ruchy frontend for xpile. Parses .ruchy and lowers to meta-HIR."
+description = "Ruchy routing entry for xpile (PMAT-1346): registered so `.ruchy` is RECOGNISED, but `.ruchy` INPUT REFUSES — there is no Ruchy parser and `lowers_input()` is false. xpile EMITS Ruchy via `xpile-ruchy-codegen`; it does not read it."
 
 [dependencies]
 xpile-frontend = { workspace = true }
