@@ -498,9 +498,8 @@ equations:
 
   lean_def_silver_struct_extensionality_diamond:
     # PMAT-352: FIFTH Diamond on this contract — BROADENS DEPTH-5
-    # from 9 to 10 contracts. Pushes XlateRustFnToLeanThm (Layer 5)
-    # from depth-4 to depth-5, making it the FOURTH Layer 5
-    # contract at depth-5+. LEAN-DEF-SILVER STRUCTURE
+    # from 9 to 10 contracts. Pushes XlateRustFnToLeanThm (Layer 2)
+    # from depth-4 to depth-5. LEAN-DEF-SILVER STRUCTURE
     # EXTENSIONALITY: the 4-field LeanDefSilver record is
     # field-extensional. Eleventh substrate-wide demonstration of
     # the structure-extensionality pattern. Closes the Rust ↔ Lean
@@ -525,13 +524,13 @@ equations:
       - "two LeanDefSilver records (DecidableEq derived)"
     postconditions:
       - "an emitter that drops or adds fields to LeanDefSilver would falsify the structure"
-      - "Diamond depth-5 broadened: 10 contracts at depth-5+ (4 Layer 5 contracts at depth-5)"
+      - "Diamond depth-5 broadened: XlateRustFnToLeanThm (Layer 2 — translation) reaches depth-5"
 
   lean_def_silver_body_size_diamond:
     # PMAT-365: SIXTH Diamond on this contract — COMPLETES DEPTH-6
     # UNIVERSAL ACROSS ALL 12 CONTRACTS. SUBSTRATE MILESTONE: every
     # contract now has ≥6 distinct Diamond categories. Pushes
-    # XlateRustFnToLeanThm (Layer 5) from depth-5 to depth-6 — last
+    # XlateRustFnToLeanThm (Layer 2) from depth-5 to depth-6 — last
     # contract at depth-5 only. Parallel to PMAT-336 (depth-3
     # UNIVERSAL), PMAT-344 (depth-4 UNIVERSAL), and PMAT-354
     # (depth-5 UNIVERSAL). LEAN-DEF-SILVER BODY ARRAY.SIZE
@@ -557,8 +556,8 @@ equations:
 
   contract_obligation_silver_struct_extensionality_diamond:
     # PMAT-374: SEVENTH Diamond on this contract — BROADENS DEPTH-7
-    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 5) from
-    # depth-6 to depth-7 as the fourth L5 contract at depth-7+.
+    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 2) from
+    # depth-6 to depth-7.
     # CONTRACT-OBLIGATION-SILVER STRUCTURE EXTENSIONALITY: the
     # 3-field ContractObligationSilver input record (applies_to_all,
     # source_index, expansion_count) is field-extensional with
@@ -582,12 +581,12 @@ equations:
     preconditions:
       - "two ContractObligationSilver records (DecidableEq derived)"
     postconditions:
-      - "Diamond depth-7 broadened: 4 L5 contracts at depth-7"
+      - "Diamond depth-7 broadened: XlateRustFnToLeanThm (Layer 2 — translation) reaches depth-7"
 
   emitted_lean_theorem_silver_struct_extensionality_diamond:
     # PMAT-385: EIGHTH Diamond on this contract — BROADENS DEPTH-8
-    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 5) from
-    # depth-7 to depth-8 as the fourth L5 contract at depth-8+.
+    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 2) from
+    # depth-7 to depth-8.
     # EMITTED-LEAN-THEOREM-SILVER STRUCTURE EXTENSIONALITY: OUTPUT
     # record (applies_to_all, source_index, lifted_count). Mirror of
     # PMAT-374 (ContractObligationSilver INPUT). Thirty-second
@@ -614,8 +613,8 @@ equations:
 
   non_empty_precondition_list_subtype_extensionality_diamond:
     # PMAT-397: NINTH Diamond on this contract — BROADENS DEPTH-9
-    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 5) from
-    # depth-8 to depth-9. Second L5 contract at depth-9 in the
+    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 2) from
+    # depth-8 to depth-9 in the
     # broadening wave (after PMAT-396 XlateLeanToRust).
     # NON-EMPTY-PRECONDITION-LIST SUBTYPE EXTENSIONALITY: the
     # Gold-tier subtype `{ pl : PreconditionListSilver //
@@ -640,12 +639,12 @@ equations:
     preconditions:
       - "two NonEmptyPreconditionList values"
     postconditions:
-      - "Diamond depth-9 broadened: second L5 contract at depth-9 in broadening wave"
+      - "Diamond depth-9 broadened: XlateRustFnToLeanThm (Layer 2 — translation) reaches depth-9"
 
   rust_fn_silver_to_bronze_projection_diamond:
     # PMAT-408: TENTH Diamond on this contract — BROADENS DEPTH-10
-    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 5) from
-    # depth-9 to depth-10. Second L5 contract at depth-10 in the
+    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 2) from
+    # depth-9 to depth-10 in the
     # broadening wave.
     # SILVER→BRONZE TIER PROJECTION on RustFnSilver: define the
     # canonical forgetful map rust_fn_silver_to_bronze : RustFnSilver
@@ -672,12 +671,12 @@ equations:
     preconditions:
       - "one RustFnSilver record"
     postconditions:
-      - "Diamond depth-10 broadened: second L5 contract at depth-10 in broadening wave"
+      - "Diamond depth-10 broadened: XlateRustFnToLeanThm (Layer 2 — translation) reaches depth-10"
 
   empty_rust_fn_silver_canonical_diamond:
     # PMAT-419: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
-    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 5) from
-    # depth-10 to depth-11. Second L5 contract at depth-11.
+    # substrate-wide. Pushes XlateRustFnToLeanThm (Layer 2) from
+    # depth-10 to depth-11.
     # **NINTH instance of Template 11 (Canonical identity element)**.
     # Mirror of PMAT-418 — closes Rust↔Lean canonical-element pair.
     lean_theorem: "XpileContracts.CXlateRustFnToLeanThm.empty_rust_fn_silver_canonical_diamond"
@@ -697,7 +696,7 @@ equations:
     preconditions:
       - "no input precondition — `empty_rust_fn_silver` is the nullary canonical element (all 5 Array UInt8 fields are the empty array `#[]`), so the theorem holds unconditionally; the only obligation is that `RustFnSilver` admits the all-empty record as a value (it does — every field is an `Array UInt8`, whose identity is `#[]`)"
     postconditions:
-      - "Diamond depth-11 broadened: second L5 contract at depth-11"
+      - "Diamond depth-11 broadened: XlateRustFnToLeanThm (Layer 2 — translation) reaches depth-11"
 
   rust_fn_bronze_to_silver_lift_diamond:
     # PMAT-430: TWELFTH Diamond on this contract — BROADENS DEPTH-12.
@@ -721,7 +720,7 @@ equations:
     preconditions:
       - "one Bronze `RustFn` record (the lift's input); `rust_fn_bronze_to_silver` is total over `RustFn` — every Bronze record has a `body : Array UInt8`, which is the one field the lift carries forward, so no well-formedness side-condition is needed"
     postconditions:
-      - "Diamond depth-12 broadened: second L5 contract at depth-12"
+      - "Diamond depth-12 broadened: XlateRustFnToLeanThm (Layer 2 — translation) reaches depth-12"
 
   rust_fn_roundtrip_identity_diamond:
     # PMAT-441: THIRTEENTH Diamond. **NINTH instance of Template 13**.
@@ -740,7 +739,7 @@ equations:
     preconditions:
       - "one Bronze `RustFn` record (the round-trip's input); the identity `rust_fn_silver_to_bronze ∘ rust_fn_bronze_to_silver = id` holds for every `RustFn` because the lift records `body` and the projection reads it back unchanged — no constraint on the input value is required"
     postconditions:
-      - "Diamond depth-13 broadened: second L5 contract at depth-13"
+      - "Diamond depth-13 broadened: XlateRustFnToLeanThm (Layer 2 — translation) reaches depth-13"
 
 proof_obligations:
   - type: postcondition

@@ -1322,7 +1322,7 @@ theorem variant_count_cardinality_functor_diamond
   · exact Nat.zero_le i1.variant_count
   · exact hi
 
-/-! ## PMAT-335 — THIRD Diamond on C-XLATE-LEAN-TO-RUST (Layer 5
+/-! ## PMAT-335 — THIRD Diamond on C-XLATE-LEAN-TO-RUST (Layer 2
     BROADENING DEPTH-3 from 10 to 11 contracts):
     RustFn STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XLATE-LEAN-TO-RUST-005).
@@ -1362,14 +1362,13 @@ theorem rust_fn_struct_extensionality_diamond
     · exact Or.inr h
   · rfl
 
-/-! ## PMAT-343 — FOURTH Diamond on C-XLATE-LEAN-TO-RUST (Layer 5
+/-! ## PMAT-343 — FOURTH Diamond on C-XLATE-LEAN-TO-RUST (Layer 2
     BROADENING DEPTH-4 from 10 to 11 contracts):
     LEAN INDUCTIVE / RUST ENUM VARIANT-COUNT NAT STRUCTURE
     (XPILE-REFINE-XLATE-LEAN-TO-RUST-006).
 
     **Broadens DEPTH-4 from 10 to 11 contracts.** Pushes
-    XlateLeanToRust (Layer 5) from depth-3 to depth-4, adding a
-    THIRD Layer 5 contract at depth-4. Only 1 more contract
+    XlateLeanToRust (Layer 2) from depth-3 to depth-4. Only 1 more contract
     needed for depth-4 UNIVERSAL.
 
     The 4 Diamond categories on C-XLATE-LEAN-TO-RUST:
@@ -1408,15 +1407,15 @@ theorem variant_count_nat_structure_diamond
   · exact Nat.zero_le _
   · omega
 
-/-! ## PMAT-351 — FIFTH Diamond on C-XLATE-LEAN-TO-RUST (Layer 5
+/-! ## PMAT-351 — FIFTH Diamond on C-XLATE-LEAN-TO-RUST (Layer 2
     BROADENING DEPTH-5 from 8 to 9 contracts):
     RUST-FN BODY ARRAY.SIZE STRUCTURE
     (XPILE-REFINE-XLATE-LEAN-TO-RUST-007).
 
     **Broadens DEPTH-5 from 8 to 9 contracts.** After PMAT-350
-    brought Notation (Layer 5) to depth-5 (substrate at 8 contracts
-    at depth-5+), PMAT-351 pushes XlateLeanToRust (Layer 5) from
-    depth-4 to depth-5, adding a THIRD Layer 5 contract at depth-5
+    brought Notation (Layer 2) to depth-5 (substrate at 8 contracts
+    at depth-5+), PMAT-351 pushes XlateLeanToRust (Layer 2) from
+    depth-4 to depth-5
     (CompileRustToPtxMma was first via PMAT-287, Notation second
     via PMAT-350).
 
@@ -1454,7 +1453,7 @@ theorem variant_count_nat_structure_diamond
   (d) Self-equal size (reflexivity)
 
   Sixth substrate-wide demonstration of the Array.size structural
-  pattern (after PMAT-340/341/344/348), now on a Layer-5 record
+  pattern (after PMAT-340/341/344/348), now on a Layer-2 record
   with a single body field.
 
   Status: **discharged at v0.1.0 (PMAT-351)**. Tier: DIAMOND.
@@ -1476,12 +1475,12 @@ theorem rust_fn_body_array_size_diamond (f : RustFn) :
   · rfl
 
 /-! ## PMAT-363 — SIXTH Diamond on C-XLATE-LEAN-TO-RUST
-    (Layer 5 BROADENS DEPTH-6):
+    (Layer 2 BROADENS DEPTH-6):
     RUST-ITEM-WITH-CITATION-SILVER STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XLATE-LEAN-TO-RUST-008).
 
     **Broadens depth-6 substrate-wide.** Pushes XlateLeanToRust
-    (Layer 5) from depth-5 to depth-6.
+    (Layer 2) from depth-5 to depth-6.
 
     The 6 Diamond categories on C-XLATE-LEAN-TO-RUST:
     - PMAT-222 inductive_monoid_diamond
@@ -1536,12 +1535,12 @@ theorem rust_item_with_citation_silver_struct_extensionality_diamond
   · rfl
 
 /-! ## PMAT-373 — SEVENTH Diamond on C-XLATE-LEAN-TO-RUST
-    (Layer 5 BROADENS DEPTH-7):
+    (Layer 2 BROADENS DEPTH-7):
     LEAN-INDUCTIVE STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XLATE-LEAN-TO-RUST-009).
 
     **Broadens DEPTH-7 substrate-wide.** Pushes XlateLeanToRust
-    (Layer 5) from depth-6 to depth-7 as the third L5 contract at
+    (Layer 2) from depth-6 to depth-7, at
     depth-7+.
 
     The 7 Diamond categories on C-XLATE-LEAN-TO-RUST:
@@ -1587,12 +1586,12 @@ theorem lean_inductive_struct_extensionality_diamond
   · rfl
 
 /-! ## PMAT-384 — EIGHTH Diamond on C-XLATE-LEAN-TO-RUST
-    (Layer 5 BROADENS DEPTH-8):
+    (Layer 2 BROADENS DEPTH-8):
     RUST-ENUM STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-XLATE-LEAN-TO-RUST-010).
 
     **Broadens DEPTH-8 substrate-wide.** Pushes XlateLeanToRust
-    (Layer 5) from depth-7 to depth-8 as the third L5 contract at
+    (Layer 2) from depth-7 to depth-8, at
     depth-8+.
 
     The 8 Diamond categories on C-XLATE-LEAN-TO-RUST:
@@ -1649,7 +1648,7 @@ theorem rust_enum_struct_extensionality_diamond (e1 e2 : RustEnum) :
 
   Adds a NINTH distinct Diamond category on
   `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-8 to
-  depth-9. First L5 contract at depth-9 in the broadening wave.
+  depth-9, in the broadening wave.
 -/
 theorem warning_line_count_subtype_extensionality_diamond
     (w1 w2 : WarningLineCount) :
@@ -1679,7 +1678,7 @@ theorem warning_line_count_subtype_extensionality_diamond
 
   Adds a TENTH distinct Diamond category on
   `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-9 to
-  depth-10. First L5 contract at depth-10 in the broadening wave.
+  depth-10, in the broadening wave.
 -/
 def lean_def_silver_to_bronze (d : LeanDefSilver) : LeanDef :=
   { body := d.body }
@@ -1709,7 +1708,7 @@ theorem lean_def_silver_to_bronze_projection_diamond (d : LeanDefSilver) :
 
   Adds an ELEVENTH distinct Diamond category on
   `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-10 to
-  depth-11. First L5 contract at depth-11 in the broadening wave.
+  depth-11, in the broadening wave.
 -/
 def empty_lean_def_silver : LeanDefSilver :=
   { name := #[], args := #[], return_type := #[], body := #[] }
@@ -1739,7 +1738,7 @@ theorem empty_lean_def_silver_canonical_diamond :
 
   Adds a TWELFTH distinct Diamond category on
   `C-XLATE-LEAN-TO-RUST`, pushing the contract from depth-11 to
-  depth-12. First L5 contract at depth-12 in the broadening wave.
+  depth-12, in the broadening wave.
 -/
 def lean_def_bronze_to_silver (d : LeanDef) : LeanDefSilver :=
   { name := #[], args := #[], return_type := #[], body := d.body }

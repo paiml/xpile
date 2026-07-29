@@ -22178,3 +22178,89 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1460
+  title: 'three contracts declare `layer: translation` in machine-readable metadata and are
+    filed under Layer 5 at 46 sites -- one of them under three different layers, and the
+    published Layer-5 breadth runs 4x over'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1458 lead (c) -- the BROADENING counts in normative slots -- and,
+    per PMAT-1458''s own rule, took the class at the level where it is DECIDABLE. The counts
+    themselves are not: 26 of 35 contracts carry no layer tag. What IS decidable is the LABEL
+    the counts are computed over.
+    ** THE SURFACE. Every contract may carry `metadata.xpile.layer`;
+    docs/specifications/sub/contract-taxonomy.md numbers the five layers that tag names. NINE
+    of 35 contracts carry it and NOTHING EVER READ IT -- no gate, no `pv lint` check, no
+    consumer in crates/*/src.
+    ** MEASURED at 771f1652. C-NOTATION-LATEX-MATH-TO-EQUATION, C-XLATE-LEAN-TO-RUST and
+    C-XLATE-RUST-FN-TO-LEAN-THM declare `layer: translation` = LAYER 2, and each opens its own
+    `metadata.description` with "Layer 2 of the xpile contract taxonomy (translation)". They
+    are written as LAYER 5 at 46 sites under contracts/ (the number the new gate reports on
+    that tree) and Notation is written LAYER 4 at 3 more. 18 of the repaired lines are
+    `invariants:`/`postconditions:` entries -- the NORMATIVE slots PMAT-1454 established have
+    no citation escape. ONE CONTRACT, THREE LAYERS.
+    ** ⭐ NEVER-TRUE, NOT AGED -- and PMAT-1459 said to prove which. `git log -S"layer:
+    translation"` puts the tag in cdcece9c, THE INITIAL COMMIT; the first `(Layer 5)` landed at
+    PMAT-334/351/352 months later. Every attribution was false the moment it was typed. Every
+    prior slice in this arc found a number that had AGED; the fixes differ.
+    ** ⭐ THE DIRECTION IS FLATTERING. 41 repaired lines carry a Layer-5-scoped tally ("8
+    contracts at depth-5+ (2 Layer 5 contracts at depth-5)", "3 Layer 5 contracts at depth-5",
+    "4 Layer 5 contracts at depth-5", "the fourth L5 contract at depth-7+"). Under the
+    substrate''s own tags exactly ONE Layer-5 contract is past depth-1
+    (C-COMPILE-RUST-TO-PTX-MMA), so published Layer-5 breadth ran 4x OVER -- and Layer-5
+    breadth is the headline of the ACROSS-LAYERS Diamond story.
+    ** ⭐ THE REFUTATION WAS IN THE SAME SENTENCE, NOT JUST THE SAME REPO.
+    contracts/lean/Notation.lean writes "PMAT-395 (PyListToVec L2), PMAT-396 (XlateLeanToRust
+    L5)" -- the UNTAGGED contract labelled correctly and the TAGGED one wrongly, in one list.
+    ** FIX: 94 edits over 3 contract YAMLs + 4 Lean sources. Attributions corrected to the
+    declared layer; the layer-scoped tallies that counted these contracts inside Layer 5 now
+    NAME their members instead of asserting a count the substrate cannot check. All 35 YAMLs
+    re-parse; `pv lint contracts/` unchanged at 0 errors / 0 warnings.
+    ** GATE crates/xpile/tests/contract_layer_label_integrity.rs (XPILE-LAYERLABEL-001, 13
+    tests): if a contract declares a layer, no text under contracts/ may attribute it to
+    another. The name->number map is PARSED from the taxonomy doc, not hard-coded, and fails
+    loudly if a rename makes two layers share a word. The short alias (`Notation`) is DERIVED
+    -- first identifier segment, >=6 chars, not a substring of any other contract''s name --
+    which keeps `Compile` (5 contracts) and `Xlate` (9) out on a rule rather than a list.
+    ** RED HALF RUN, and every guard is load-bearing BY MEASUREMENT: against the pre-repair
+    contracts the gate reports 46 sites; subject narrowed to .yaml -> 23; prose flattening
+    removed -> 37; derived alias suppressed -> 41. The other 12 tests stayed GREEN through the
+    red half, so the failure is the finding and not a broken harness. NO GUARD WAS LOST to its
+    own red half -- second slice in six.
+    ** ⚠️ THE LOOSE NEEDLE COST TWO FALSE POSITIVES ON THE LIVE TREE. A 40-character gap
+    between name and layer token reported "CompileRustToPtxMma), PMAT-346 pushes Bashrs (Layer
+    2)" and "C-XLATE-RUST-FN-TO-LEAN-THM) are Layer-1/Layer-2 contracts" -- both CORRECT
+    sentences whose next clause is about a different contract, and the second a RANGE. The gap
+    is capped at 3 non-alphanumeric chars and both shapes are pinned as constructed cases that
+    must NOT be reported.
+    ** TWO HOLES, BOTH MACHINE-DISCLOSED rather than described.
+    (1) `the_gate_reports_how_much_of_the_substrate_it_can_reach` prints 9 of 35 in the subject
+    and NAMES the 26 that are not, so the 127 layer-scoped tallies phrased over untagged
+    contracts stay out of reach. When the partition completes that test FAILS ON PURPOSE and
+    says to extend the numeric arm.
+    (2) `the_needle_cannot_see_a_layer_written_before_the_name` pins the direction: the needle
+    reads a layer FOLLOWING a name, so the 3 Layer-4 sites (which write the layer first) were
+    repaired BY HAND and are NOT covered. Filed, not implied.
+    ** NOT FIXED, AND SAID SO: the substrate-wide depth counts in the same sentences ("8
+    contracts at depth-5+", live 13) are a SEPARATE measured class -- 112 false sites under
+    contracts/, EVERY ONE UNDERSTATING because the substrate outgrew its own frozen records --
+    with a different ground truth (`xpile diamond --json` depth_N_plus) and a real open policy
+    question about whether a broadening record may freeze a count. Four sentences had to be
+    rewritten anyway; the rewrite DROPS the number rather than restating one this slice did not
+    gate. The other 108 stand.
+    ** ZERO crates/*/src. contracts/*.yaml touched in prose only -- no `rule:`, `test:`,
+    `lean_theorem:`, `kani_harness:` or equation key changed (pre-freeze, allowed).
+    ** NEXT PICK, in order of value: (a) TAG THE 26 UNTAGGED CONTRACTS with
+    `metadata.xpile.layer`. That is a judgement call per contract, but it converts the whole
+    127-site layer-scoped tally class from undecidable to arithmetic and this gate already has
+    the branch waiting for it. (b) The 112-site substrate-wide depth-count class, whose ground
+    truth is `xpile diamond --json` -- decide first whether a dated broadening record may
+    freeze a count, because that answer settles PMAT-1459 lead (a) too. (c) STILL OPEN from
+    PMAT-1456: `1025 Lean theorems` (xpile-spec.md:370, kaizen-fleet.md:11) is an EXTERNAL pv-
+    spec figure this repo republishes and cannot check.
+    NEXT FREE ID IS PMAT-1461. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
+    HARD FREEZE Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release mechanics
+    ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE
+    OWNER RULESET DECISION ALONE.'
+  status: done
+  priority: P1
+  category: honesty

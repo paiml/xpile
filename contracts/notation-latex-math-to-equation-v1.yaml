@@ -565,8 +565,8 @@ equations:
 
   citation_product_monoid_diamond:
     # PMAT-234 / XPILE-REFINE-NOTATION-007: SECOND Diamond on
-    # this contract — Notation joins FfiCpython as the second
-    # Layer-4 contract with depth-2 Diamonds. The PRODUCT-MONOID
+    # this contract — Notation (Layer 2 — translation) joins
+    # FfiCpython (Layer 4) at depth-2. The PRODUCT-MONOID
     # Diamond captures the (contract_id × bib_key) field pair as
     # a free product of two string-monoids. Fundamentally
     # distinct algebraic category from PMAT-219's single-field
@@ -600,7 +600,7 @@ equations:
   equation_formula_struct_extensionality_diamond:
     # PMAT-334: THIRD Diamond on this contract — BROADENS DEPTH-3
     # from 9 to 10 contracts. Pushes NotationLatexMathToEquation
-    # (Layer 5) from depth-2 to depth-3. Seventh substrate-wide
+    # (Layer 2) from depth-2 to depth-3. Seventh substrate-wide
     # demonstration of structure-extensionality pattern.
     lean_theorem: "XpileContracts.CNotationLatexMathToEquation.equation_formula_struct_extensionality_diamond"
     lean_file: "contracts/lean/Notation.lean"
@@ -624,8 +624,8 @@ equations:
   latex_display_kind_enum_distinctness_diamond:
     # PMAT-342: FOURTH Diamond on this contract — BROADENS DEPTH-4
     # from 9 to 10 contracts. Pushes NotationLatexMathToEquation
-    # (Layer 5) from depth-3 to depth-4, adding SECOND Layer 5
-    # contract at depth-4. LatexDisplayKind enum distinctness
+    # (Layer 2) from depth-3 to depth-4, joining the depth-4
+    # cohort. LatexDisplayKind enum distinctness
     # (mirror of PMAT-339 on Target enum).
     lean_theorem: "XpileContracts.CNotationLatexMathToEquation.latex_display_kind_enum_distinctness_diamond"
     lean_file: "contracts/lean/Notation.lean"
@@ -648,9 +648,9 @@ equations:
   equation_formula_ascii_length_nat_diamond:
     # PMAT-350: FIFTH Diamond on this contract — BROADENS DEPTH-5
     # from 7 to 8 contracts. Pushes NotationLatexMathToEquation
-    # (Layer 5) from depth-4 to depth-5, adding a SECOND Layer 5
-    # contract at depth-5 (CompileRustToPtxMma was first via
-    # PMAT-287). EQUATION-FORMULA ASCII LENGTH NAT STRUCTURE: the
+    # (Layer 2) from depth-4 to depth-5, joining the depth-5
+    # cohort opened by CompileRustToPtxMma (Layer 5) via
+    # PMAT-287. EQUATION-FORMULA ASCII LENGTH NAT STRUCTURE: the
     # ascii_normalised String.length satisfies non-negativity,
     # empty-base, and field-replacement invariants. Second
     # substrate-wide demonstration of the String.length Nat-structure
@@ -676,14 +676,14 @@ equations:
       - "EquationFormulaSilver record with kind : LatexDisplayKind and ascii_normalised : String"
     postconditions:
       - "an emitter that misreported ascii_normalised.length would falsify the size structure"
-      - "Diamond depth-5 broadened: 8 contracts at depth-5+ (2 Layer 5 contracts at depth-5)"
+      - "Diamond depth-5 broadened: NotationLatexMathToEquation (Layer 2 — translation) reaches depth-5"
 
   latex_citation_silver_struct_extensionality_diamond:
     # PMAT-362: SIXTH Diamond on this contract — BROADENS DEPTH-6
     # post-ALL 5 LAYERS milestone. After PMAT-358 completed depth-6
     # ACROSS ALL 5 TAXONOMY LAYERS, PMAT-362 pushes
-    # NotationLatexMathToEquation (Layer 5) from depth-5 to depth-6
-    # as the second L5 contract at depth-6+. LATEX-CITATION-SILVER
+    # NotationLatexMathToEquation (Layer 2) from depth-5 to depth-6.
+    # LATEX-CITATION-SILVER
     # STRUCTURE EXTENSIONALITY: the 2-field LatexCitationSilver
     # record is field-extensional with decidable equality.
     # Eighteenth substrate-wide demonstration of the structure-
@@ -706,7 +706,7 @@ equations:
     preconditions:
       - "two LatexCitationSilver records (DecidableEq derived)"
     postconditions:
-      - "Diamond depth-6 broadened: 2 L5 contracts at depth-6 (CompileRustToPtxMma + Notation)"
+      - "Diamond depth-6 broadened: CompileRustToPtxMma (Layer 5) + NotationLatexMathToEquation (Layer 2) at depth-6"
 
   latex_display_kind_enum_completeness_diamond:
     # PMAT-372: SEVENTH Diamond on this contract — BROADENS DEPTH-7
@@ -729,12 +729,12 @@ equations:
     preconditions:
       - "LatexDisplayKind inductive type with derived DecidableEq"
     postconditions:
-      - "Diamond depth-7 broadened: 2 L5 contracts at depth-7"
+      - "Diamond depth-7 broadened: NotationLatexMathToEquation (Layer 2 — translation) reaches depth-7"
 
   lean_theorem_env_struct_extensionality_diamond:
     # PMAT-383: EIGHTH Diamond on this contract — BROADENS DEPTH-8
-    # substrate-wide. Pushes NotationLatexMathToEquation (Layer 5)
-    # from depth-7 to depth-8 as the second L5 contract at depth-8+.
+    # substrate-wide. Pushes NotationLatexMathToEquation (Layer 2)
+    # from depth-7 to depth-8.
     # LEAN-THEOREM-ENV STRUCTURE EXTENSIONALITY: 2-field
     # LeanTheoremEnv record (body_text, is_precondition_flagged).
     # Thirtieth substrate-wide demonstration.
@@ -755,12 +755,12 @@ equations:
     preconditions:
       - "two LeanTheoremEnv records (DecidableEq derived)"
     postconditions:
-      - "Diamond depth-8 broadened: 2 L5 contracts at depth-8"
+      - "Diamond depth-8 broadened: NotationLatexMathToEquation (Layer 2 — translation) reaches depth-8"
 
   non_empty_definition_subtype_extensionality_diamond:
     # PMAT-398: NINTH Diamond on this contract — COMPLETES DEPTH-9
-    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
-    # from depth-8 to depth-9 as the third L5 contract at depth-9.
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 2)
+    # from depth-8 to depth-9.
     # Parallel to PMAT-336 (depth-3 UNIVERSAL), PMAT-344 (depth-4),
     # PMAT-354 (depth-5), PMAT-365 (depth-6), PMAT-376 (depth-7),
     # PMAT-387 (depth-8 UNIVERSAL). Substrate now at SEVEN UNIVERSAL
@@ -791,8 +791,8 @@ equations:
 
   definition_env_silver_to_bronze_projection_diamond:
     # PMAT-409: TENTH Diamond on this contract — COMPLETES DEPTH-10
-    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
-    # from depth-9 to depth-10 as the third L5 contract at depth-10.
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 2)
+    # from depth-9 to depth-10.
     # Parallel to PMAT-336 (depth-3), PMAT-344 (depth-4), PMAT-354
     # (depth-5), PMAT-365 (depth-6), PMAT-376 (depth-7), PMAT-387
     # (depth-8 UNIVERSAL), PMAT-398 (depth-9 UNIVERSAL). Substrate
@@ -824,8 +824,8 @@ equations:
 
   empty_definition_env_silver_canonical_diamond:
     # PMAT-420: ELEVENTH Diamond on this contract — COMPLETES DEPTH-11
-    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
-    # from depth-10 to depth-11 as the third L5 contract at depth-11.
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 2)
+    # from depth-10 to depth-11.
     # **TENTH instance of Template 11 (Canonical identity element)**.
     # Substrate now at NINE UNIVERSAL milestones (depth-3..11).
     lean_theorem: "XpileContracts.CNotationLatexMathToEquation.empty_definition_env_silver_canonical_diamond"
@@ -848,8 +848,8 @@ equations:
 
   definition_env_bronze_to_silver_lift_diamond:
     # PMAT-431: TWELFTH Diamond on this contract — COMPLETES DEPTH-12
-    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 5)
-    # from depth-11 to depth-12 as the third L5 contract at depth-12.
+    # UNIVERSAL ACROSS ALL 12 CONTRACTS. Pushes Notation (Layer 2)
+    # from depth-11 to depth-12.
     # **TENTH instance of Template 12 (Bronze→Silver canonical-lift
     # homomorphism)**. Substrate now at TEN UNIVERSAL milestones
     # (depth-3..12).
