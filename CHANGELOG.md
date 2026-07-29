@@ -7,6 +7,122 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The five "COMPLETES DEPTH-N ACROSS ALL 5 TAXONOMY LAYERS" milestones never happened — 52 census claims count a Layer-1 contract as the fifth layer (PMAT-1463)
+
+PMAT-1462 gated the ORDINAL half of a Diamond broadening record and left the
+CARDINAL half alone, reasoning that "a cardinal names no subject contract, so
+the rank arithmetic does not apply". True, and irrelevant: **a cardinal does
+not need a subject, it needs a POPULATION** — and the population is the same
+`(depth, as-of)` pair the ordinal gate already computes. Four projections of
+that one population are published under `contracts/`:
+
+| claim | derived from |
+|---|---|
+| `N contracts on M distinct layers` | `\|pop\|` and `\|{layers}\|` |
+| `depth-D across ALL M taxonomy layers` | `\|{layers}\|` |
+| `N contracts at depth-D+` | `\|pop\|` |
+| `N Layer-K contracts at depth-D` | `\|pop` restricted to layer K`\|` |
+
+At `e17697ae`, **52 sites disagreed** — 21 in `*.yaml`, 31 in `lean/*.lean`.
+Same root cause the last three slices have been unwinding:
+`C-BASHRS-POSIX-IDEMPOTENCE` declares `layer: semantics`, i.e. Layer 1, and
+was counted as Layer 2.
+
+**The damage here is the substrate's headline milestone.** Five slices
+published `COMPLETES DEPTH-D ACROSS ALL 5 TAXONOMY LAYERS` for D = 4, 5, 6, 7
+and 8. Every one is false. At each of those moments the population spanned
+**four** layers — L1 + L3 + L4 + L5 — with Layer 2 absent. The fifth layer was
+Bashrs, counted twice: once correctly as Layer 1, once again as the Layer 2 it
+is not.
+
+* **THE TRUE HALF LAUNDERS THE FALSE HALF, third run.** `BROADENS DEPTH-4
+  ACROSS LAYERS to 4 contracts on 4 distinct layers` is *right about the
+  contracts* — Bashrs really was the fourth contract at depth-4 — and wrong
+  about the layers, which were three. A reader who checks the count gets YES
+  and stops.
+* **THE MILESTONE WAS TAKEN FROM THE CONTRACT THAT EARNED IT.** Depth-4
+  reached all five layers at PMAT-338, depth-5 at PMAT-349, depth-6 at
+  PMAT-360, depth-7 at PMAT-371, depth-8 at PMAT-382 — every one of them
+  `C-XLATE-PY-LIST-TO-VEC` (Layer 2), two slices *after* the record that
+  claimed it. That contract's own file filed its arrival as the "first
+  POST-UNIVERSAL broadening (post-PMAT-330 depth-4 ACROSS ALL 5 LAYERS
+  milestone)": **it credits PMAT-330 with the milestone it completed itself.**
+  Same victim PMAT-1462 found demoted in the ordinal class, in a second class.
+* **A CORRECTION THAT DOES NOT DELETE THE CLAIM LEAVES THE CLAIM.**
+  `contracts/lean/XpileFrontendTrait.lean` carried a PMAT-1461 paragraph
+  saying, in as many words, *"this docstring claimed PMAT-358 completed depth-6
+  ACROSS ALL 5 TAXONOMY LAYERS. It did not."* — sitting **between** the section
+  header that made the claim and the status line that repeated it, one
+  docstring above a theorem doc that repeated it twice more, unqualified.
+  Prose annotated as false is not prose repaired.
+
+**THE DATING QUESTION, MEASURED RATHER THAN DECIDED.** PMAT-1461 filed the
+substrate-wide depth counts as an open class with "every site UNDERSTATING",
+and PMAT-1462 recorded that the dating question there "is REAL and must be
+decided first". Measuring dissolved it. Against the LIVE substrate **55 of 66**
+census records disagree — that is what "every site understating" saw. Against
+the state at each record's own `# PMAT-NNN`, **all but one agree**: they are
+honest history, and that class was ~98% a non-defect. The exception is
+`xlate-lean-to-rust-v1.yaml` @PMAT-363, which said 8 where the substrate held
+10, plus `xpile-contract-frontend-trait-v1.yaml` @PMAT-361, whose count was
+elided to nothing at all (`"Diamond depth-6 broadened: contracts at
+depth-6+"`). **The lead named the clause that was true; the false one was
+beside it.**
+
+**Now ENFORCED** by `crates/xpile/tests/contract_layer_breadth_integrity.rs`
+(XPILE-LAYERBREADTH-001), which re-derives each census from
+`metadata.xpile.layer` plus the Diamond arrival order and judges every claim
+against the state at its own slice. No exemption of any kind: repairs describe
+the retired boast rather than quoting it.
+
+**Blind spots, each pinned by a control that PASSES, and every guard red-halfed
+with the perturbation asserted applied:**
+
+* ANCHOR — a first draft took the first owned `PMAT-` id anywhere in a Lean
+  block and mis-dated `FfiCpythonExt.lean`'s sign-decomposition docstring to
+  PMAT-216, a cross-reference two paragraphs up, **reporting a TRUE claim as
+  false**. Fixed by preferring the `## PMAT-NNN` head, then the
+  `discharged at … (PMAT-NNN)` status line. Red half: 1 false accusation
+  returns.
+* RE-DATING — `After PMAT-349 … (substrate at 7 contracts at depth-5+),
+  PMAT-350 pushes …` is a claim about the PREVIOUS slice and is correct there.
+  A gate that judged it against the block's own id would have reported three
+  honest records as false. And the enumeration form (`after PMAT-228 L1,
+  PMAT-229 L2, … PMAT-232 L3 — that completed UNIVERSAL depth-2`) dates itself
+  to the LAST arrival, not the first — reading the first is exactly the
+  one-directional mistake PMAT-1461 found in the label needle. Red half: 3
+  false accusations return.
+* SUBSET PHRASING — 46 sites say `ACROSS 3 LAYERS` with no `all`, every one
+  enumerating the three it means. Requiring the word `all` keeps them out; red
+  half: 6 false accusations return.
+* LAYER-vs-COUNT — `(3 Layer 3 contracts at depth-5)` puts a LAYER number
+  exactly where a substrate count sits. Red half: the constructed control reds
+  and 10 Lean false positives return.
+* LAYER SUBJECT BEFORE THE COUNT — `Layer 3 now has 4 contracts at depth-4` is
+  a TRUE Layer-3 census that reads as a false substrate-wide one. PMAT-1461
+  disclosed layer-before-name as a blind spot for a LABEL needle; for a CENSUS
+  needle it is not silence, it is a wrong answer. Red half: 1 false accusation
+  returns.
+* ★ **ONE GUARD HAS NO LIVE EXERCISER AND THE GATE SAYS SO.** `one contract at
+  depth-5 per layer` is a distribution, not a census — but the only site that
+  ever wrote it was itself a false claim this slice rewrote, so deleting the
+  branch leaves the corpus scan green. Kept, pinned by a CONSTRUCTED control
+  (which reds when the branch is disabled), and the comment states that the
+  corpus is not holding it up. Sixth slice in nine to have to touch a guard
+  because of its own red half.
+* BEHAVIOUR — changing one contract's declared layer reds 6 yaml + 1 Lean
+  claims, proving the gate tracks the SUBSTRATE and not the text.
+* ALSO — writing the repair prose tripped the SIBLING gate
+  (XPILE-LAYERLABEL-001): `depth-4 to L1+L4+L5 (Bashrs declares …)` puts a
+  layer token immediately before the name, and the label needle read Bashrs as
+  Layer 5. Reworded, not exempted.
+
+Scope: `contracts/*.yaml` and `contracts/lean/*.lean` prose only — no `rule:`,
+`test:`, `lean_theorem:`, `kani_harness:` or equation key changed, **zero
+`crates/*/src`**. `CHANGELOG.md` and `docs/roadmaps/*.yaml` hold the same
+claims in HISTORICAL LEDGER position and are left alone per PMAT-1461/1462
+precedent — named here rather than silently excluded.
+
 ### PMAT-1461 corrected the layer LABEL and left every ORDINAL computed over it — 29 sites rank a Layer-1 contract inside the Layer-2 set (PMAT-1462)
 
 A layer-scoped ordinal — "the **second L2 contract at depth-10**", "the
