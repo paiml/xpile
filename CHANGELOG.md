@@ -7,6 +7,86 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### Three contracts declare `layer: translation` in machine-readable metadata and were filed under Layer 5 at 46 sites — one of them under three different layers (PMAT-1460)
+
+Every contract may carry a `metadata.xpile.layer` tag, and
+[`sub/contract-taxonomy.md`](docs/specifications/sub/contract-taxonomy.md)
+numbers the five layers that tag names. **Nine of the 35 contracts carry it.
+Nothing ever read it.**
+
+**Measured at `771f1652`.** Three contracts declare `layer: translation` —
+**Layer 2** — and open their own `metadata.description` with the sentence
+"Layer 2 of the xpile contract taxonomy (translation)":
+
+| contract | declares | written as |
+|---|---|---|
+| `C-NOTATION-LATEX-MATH-TO-EQUATION` | Layer 2 | **Layer 5** (and once **Layer 4**) |
+| `C-XLATE-LEAN-TO-RUST` | Layer 2 | **Layer 5** |
+| `C-XLATE-RUST-FN-TO-LEAN-THM` | Layer 2 | **Layer 5** |
+
+**46** sites under `contracts/` file them under Layer 5 — the count the new
+gate reports on that tree — plus **3** more calling `Notation` Layer 4.
+Eighteen of the repaired lines are `invariants:`/`postconditions:` entries, the
+NORMATIVE slots PMAT-1454 established have no citation escape. One contract,
+three layers, and the refutation of the wrong two sat 600 lines up **in the
+same file, in a machine-readable field**.
+
+⭐ **Never-true, not aged — and the two have different fixes.** `git log
+-S"layer: translation"` puts the tag in `cdcece9c`, the *initial commit*. The
+first `(Layer 5)` landed at PMAT-334 / PMAT-351 / PMAT-352, months later. Every
+attribution was false the moment it was typed. Every previous slice in this arc
+found a number that had *aged*; this one was wrong on arrival.
+
+⭐ **The direction is flattering, which is why it mattered.** 41 of the repaired
+lines carry a Layer-5-scoped tally: `8 contracts at depth-5+ (2 Layer 5
+contracts at depth-5)`, `3 Layer 5 contracts at depth-5`, `4 Layer 5 contracts
+at depth-5`, `the fourth L5 contract at depth-7+`. Under the substrate's own
+tags exactly **one** Layer-5 contract is past depth-1
+(`C-COMPILE-RUST-TO-PTX-MMA`), so published Layer-5 breadth ran **4× over** —
+and Layer-5 breadth is the headline of the ACROSS-LAYERS Diamond story.
+
+⭐ **And the sentence next door got it right.** `contracts/lean/Notation.lean`
+writes `PMAT-395 (PyListToVec L2), PMAT-396 (XlateLeanToRust L5)` — the
+**untagged** contract labelled correctly, the **tagged** one wrongly, in one
+list.
+
+**Repair.** 94 edits over 3 contract YAMLs and 4 Lean sources: attributions
+corrected to the declared layer, and the layer-scoped tallies that counted
+these contracts inside Layer 5 now name their members instead of asserting a
+count the substrate cannot check. All 35 YAMLs re-parse; `pv lint contracts/`
+unchanged at 0 errors / 0 warnings.
+
+**Gate** — `crates/xpile/tests/contract_layer_label_integrity.rs`
+(`XPILE-LAYERLABEL-001`, 13 tests). If a contract declares a layer, no text
+under `contracts/` may attribute it to another. The name→number map is
+**parsed** from the taxonomy doc rather than hard-coded, and fails loudly if a
+rename ever makes two layers share a word.
+
+Each guard is load-bearing **by measurement**. Against the pre-repair contracts
+the gate reports 46 sites; with the subject narrowed to `.yaml` it reports
+**23**, with prose flattening removed **37**, and with the derived `Notation`
+alias suppressed **41**.
+
+**What it does not decide, said by measurement rather than in prose.**
+`the_gate_reports_how_much_of_the_substrate_it_can_reach` prints that **9 of
+35** contracts are in the subject and names the 26 that are not, so the 127
+layer-scoped tallies phrased over untagged contracts stay out of reach. When
+the partition completes that test fails on purpose and says to extend the
+numeric arm. A second hole is pinned the same way: the needle reads a layer
+that *follows* a contract name, so the 3 Layer-4 sites — which write the layer
+first — were repaired by hand and
+`the_needle_cannot_see_a_layer_written_before_the_name` records that they are
+not covered.
+
+**Also untouched, deliberately.** The substrate-wide depth counts riding in the
+same sentences (`8 contracts at depth-5+`, live 13) are a *separate* measured
+class — **112 false sites**, every one **understating** because the substrate
+outgrew its own frozen records — with a different ground truth (`xpile diamond
+--json`'s `depth_N_plus`) and a real open question about whether a broadening
+record may freeze a count. Four sentences here had to be rewritten anyway; the
+rewrite drops the number rather than restating one this slice did not gate. The
+other 108 stand.
+
 ### 70 of the substrate's 138 falsification commands could not run — 67 named a target that never existed anywhere, and 3 exited 0 having compared nothing (PMAT-1459)
 
 Every `contracts/*.yaml` carries a `falsification_tests:` list, and each entry

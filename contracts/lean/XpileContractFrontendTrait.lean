@@ -661,7 +661,7 @@ theorem transpile_session_array_size_diamond (s : TranspileSession) :
     (XPILE-REFINE-XPILE-CONTRACT-FRONTEND-TRAIT-008).
 
     **Broadens DEPTH-5 from 10 to 11 contracts.** After PMAT-352
-    brought XlateRustFnToLeanThm (Layer 5) to depth-5 as 4th L5
+    brought XlateRustFnToLeanThm (Layer 2) to depth-5 as 4th
     contract at depth-5, PMAT-353 pushes
     XpileContractFrontendTrait (Layer 3) from depth-4 to depth-5,
     adding a THIRD Layer 3 contract at depth-5+.

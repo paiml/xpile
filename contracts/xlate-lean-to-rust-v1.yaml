@@ -676,10 +676,10 @@ equations:
 
   rust_fn_body_array_size_diamond:
     # PMAT-351: FIFTH Diamond on this contract — BROADENS DEPTH-5
-    # from 8 to 9 contracts. Pushes XlateLeanToRust (Layer 5) from
-    # depth-4 to depth-5, adding a THIRD Layer 5 contract at depth-5
-    # (CompileRustToPtxMma was first via PMAT-287, Notation second
-    # via PMAT-350). RUST-FN BODY ARRAY.SIZE STRUCTURE: the body
+    # from 8 to 9 contracts. Pushes XlateLeanToRust (Layer 2) from
+    # depth-4 to depth-5, joining the depth-5 cohort opened by
+    # CompileRustToPtxMma (Layer 5) via PMAT-287 and joined by
+    # Notation (Layer 2) via PMAT-350. RUST-FN BODY ARRAY.SIZE STRUCTURE: the body
     # Array.size satisfies non-negativity, empty-base, and
     # field-replacement invariants. Sixth substrate-wide
     # demonstration of the Array.size template (after PMAT-340/341/
@@ -703,11 +703,11 @@ equations:
     preconditions:
       - "one RustFn record with body : Array UInt8"
     postconditions:
-      - "Diamond depth-5 broadened: 9 contracts at depth-5+ (3 Layer 5 contracts at depth-5)"
+      - "Diamond depth-5 broadened: XlateLeanToRust (Layer 2 — translation) reaches depth-5"
 
   rust_item_with_citation_silver_struct_extensionality_diamond:
     # PMAT-363: SIXTH Diamond on this contract — BROADENS DEPTH-6
-    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-5
+    # substrate-wide. Pushes XlateLeanToRust (Layer 2) from depth-5
     # to depth-6. RUST-ITEM-WITH-CITATION-SILVER STRUCTURE
     # EXTENSIONALITY: the 3-field record (contract_id,
     # source_location, multi_citation_set) is field-extensional with
@@ -734,8 +734,8 @@ equations:
 
   lean_inductive_struct_extensionality_diamond:
     # PMAT-373: SEVENTH Diamond on this contract — BROADENS DEPTH-7
-    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-6
-    # to depth-7 as the third L5 contract at depth-7+. LEAN-INDUCTIVE
+    # substrate-wide. Pushes XlateLeanToRust (Layer 2) from depth-6
+    # to depth-7. LEAN-INDUCTIVE
     # STRUCTURE EXTENSIONALITY: the single-field LeanInductive record
     # (variant_count : Nat) is field-extensional. Twenty-fifth
     # substrate-wide demonstration. Captures the Lean-side INPUT
@@ -758,12 +758,12 @@ equations:
     preconditions:
       - "two LeanInductive records (DecidableEq derived)"
     postconditions:
-      - "Diamond depth-7 broadened: 3 L5 contracts at depth-7"
+      - "Diamond depth-7 broadened: XlateLeanToRust (Layer 2 — translation) reaches depth-7"
 
   rust_enum_struct_extensionality_diamond:
     # PMAT-384: EIGHTH Diamond on this contract — BROADENS DEPTH-8
-    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-7
-    # to depth-8 as the third L5 contract at depth-8+. RUST-ENUM
+    # substrate-wide. Pushes XlateLeanToRust (Layer 2) from depth-7
+    # to depth-8. RUST-ENUM
     # STRUCTURE EXTENSIONALITY: single-field record (variant_count :
     # Nat). Thirty-first substrate-wide demonstration. Mirror of
     # PMAT-373 (LeanInductive) — closes Lean↔Rust inductive/enum
@@ -790,8 +790,8 @@ equations:
 
   warning_line_count_subtype_extensionality_diamond:
     # PMAT-396: NINTH Diamond on this contract — BROADENS DEPTH-9
-    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-8
-    # to depth-9. First L5 contract at depth-9 in the broadening
+    # substrate-wide. Pushes XlateLeanToRust (Layer 2) from depth-8
+    # to depth-9 in the broadening
     # wave. WARNING-LINE-COUNT SUBTYPE EXTENSIONALITY: the Gold-tier
     # subtype `{ n : Nat // n ≥ warning_lines_floor }` admits
     # subtype extensionality. EIGHTH substrate-wide
@@ -816,12 +816,12 @@ equations:
     preconditions:
       - "two WarningLineCount values"
     postconditions:
-      - "Diamond depth-9 broadened: first L5 contract at depth-9 in broadening wave"
+      - "Diamond depth-9 broadened: XlateLeanToRust (Layer 2 — translation) reaches depth-9"
 
   lean_def_silver_to_bronze_projection_diamond:
     # PMAT-407: TENTH Diamond on this contract — BROADENS DEPTH-10
-    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-9
-    # to depth-10. First L5 contract at depth-10 in the broadening
+    # substrate-wide. Pushes XlateLeanToRust (Layer 2) from depth-9
+    # to depth-10 in the broadening
     # wave.
     # SILVER→BRONZE TIER PROJECTION on LeanDefSilver: define the
     # canonical forgetful map lean_def_silver_to_bronze :
@@ -848,12 +848,12 @@ equations:
     preconditions:
       - "one LeanDefSilver record"
     postconditions:
-      - "Diamond depth-10 broadened: first L5 contract at depth-10 in broadening wave"
+      - "Diamond depth-10 broadened: XlateLeanToRust (Layer 2 — translation) reaches depth-10"
 
   empty_lean_def_silver_canonical_diamond:
     # PMAT-418: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
-    # substrate-wide. Pushes XlateLeanToRust (Layer 5) from depth-10
-    # to depth-11. First L5 contract at depth-11 in the broadening wave.
+    # substrate-wide. Pushes XlateLeanToRust (Layer 2) from depth-10
+    # to depth-11 in the broadening wave.
     # **EIGHTH instance of Template 11 (Canonical identity element)**.
     lean_theorem: "XpileContracts.CXlateLeanToRust.empty_lean_def_silver_canonical_diamond"
     lean_file: "contracts/lean/XlateLeanToRust.lean"
@@ -871,7 +871,7 @@ equations:
     preconditions:
       - "no input precondition — `empty_lean_def_silver` is the nullary canonical element (all `Array UInt8` fields are `#[]`), so the theorem holds unconditionally; the only obligation is that `LeanDefSilver` admits the all-empty record as a value (it does — each field's identity is `#[]`)"
     postconditions:
-      - "Diamond depth-11 broadened: first L5 contract at depth-11 in broadening wave"
+      - "Diamond depth-11 broadened: XlateLeanToRust (Layer 2 — translation) reaches depth-11"
 
   lean_def_bronze_to_silver_lift_diamond:
     # PMAT-429: TWELFTH Diamond on this contract — BROADENS DEPTH-12.
@@ -893,7 +893,7 @@ equations:
     preconditions:
       - "one Bronze `LeanDef` record (the lift's input); `lean_def_bronze_to_silver` is total over `LeanDef` — every Bronze record carries a `body : Array UInt8` (the field the lift preserves), so no well-formedness side-condition is needed"
     postconditions:
-      - "Diamond depth-12 broadened: first L5 contract at depth-12 in broadening wave"
+      - "Diamond depth-12 broadened: XlateLeanToRust (Layer 2 — translation) reaches depth-12"
 
   lean_def_roundtrip_identity_diamond:
     # PMAT-440: THIRTEENTH Diamond. **EIGHTH instance of Template 13**.
@@ -910,7 +910,7 @@ equations:
     preconditions:
       - "one Bronze `LeanDef` record (the round-trip's input); the identity `lean_def_silver_to_bronze ∘ lean_def_bronze_to_silver = id` holds for every `LeanDef` because the lift records `body` and the projection reads it back unchanged — no constraint on the input value is required"
     postconditions:
-      - "Diamond depth-13 broadened: first L5 contract at depth-13"
+      - "Diamond depth-13 broadened: XlateLeanToRust (Layer 2 — translation) reaches depth-13"
 
 proof_obligations:
   - type: postcondition

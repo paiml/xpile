@@ -2,23 +2,27 @@
 # v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
 # Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
 
-updated: "2026-07-29 (PMAT-1459 landed from an honesty hunt after two of PMAT-1458's three standing\
-  \ leads measured out as NON-defects. The substrate publishes 138 falsification commands as its\
-  \ enforcement story -- one `test:` field per rule, rendered into the emitted contract docs --\
-  \ and SEVENTY of them cannot run. 67 name a `cargo test --test <target>` for a target that does\
-  \ not exist, and no `#[test] fn` of that name exists anywhere among the 2924 in the tree, so the\
-  \ names were NEVER REAL rather than stale; 3 resolve to a real target but name a filter matching\
-  \ no test, so they exit 0 with `running 0 tests`. 123 of the 138 declare `ship_blocking: true`.\
-  \ Nothing had ever read the field: `pv lint` runs 8 gates and none looks at it. LESSONS: (1)\
-  \ \u2B50 A CLAIM OF ENFORCEMENT WHOSE SUBJECT DOES NOT EXIST -- every earlier slice in this arc\
-  \ found a number that had AGED; `idempotency` never existed, because the falsifier was authored\
-  \ as prose beside the rule it was meant to check and nothing ever executed it. (2) FIX WHAT WAS\
-  \ MEASURED, NOT WHAT IS PLAUSIBLE: whether some other test covers each rule was NOT measured, so\
-  \ the disclosure says the COMMAND was false and stops -- claiming 'untested' would have been a\
-  \ new false claim in the pessimistic direction. (3) `ship_blocking` was left alone ON PURPOSE:\
-  \ it has two readings and PMAT-1458's own rule is to take a class where it is DECIDABLE. (4) A\
-  \ LEAD CAN BE A NON-DEFECT: the tier-ladder totality is TRUE under the repo's own subsumption\
-  \ semantics, already decided at claims_drift.rs:4379.)"
+updated: "2026-07-29 (PMAT-1460 landed from an honesty hunt: three contracts declare\
+  \ `metadata.xpile.layer: translation` -- LAYER 2 -- in machine-readable metadata AND in the\
+  \ opening sentence of their own description, and are filed under LAYER 5 at 46 sites under\
+  \ contracts/, with Notation filed under LAYER 4 at 3 more. ONE CONTRACT, THREE LAYERS. Nine of\
+  \ 35 contracts carry the tag and nothing had ever read it. LESSONS: (1) NEVER-TRUE, NOT AGED --\
+  \ the tag is in cdcece9c, the INITIAL COMMIT, and the first `(Layer 5)` landed months later at\
+  \ PMAT-334/351/352, so every attribution was false the moment it was typed; every prior slice in\
+  \ this arc found a number that had AGED, and the two defects have different fixes. (2) TAKE THE\
+  \ CLASS ONE LEVEL DOWN, WHERE IT IS DECIDABLE: the BROADENING COUNTS are undecidable here (26\
+  \ contracts carry no layer tag), but the LABEL those counts are computed over is arithmetic --\
+  \ and the label was the thing that was wrong. (3) THE DIRECTION WAS FLATTERING: 41 repaired\
+  \ lines tally Layer-5 breadth ('4 Layer 5 contracts at depth-5') when exactly ONE Layer-5\
+  \ contract is past depth-1, so the headline ACROSS-LAYERS Diamond story ran 4x over. (4) THE\
+  \ REFUTATION WAS IN THE SAME SENTENCE -- Notation.lean writes 'PMAT-395 (PyListToVec L2),\
+  \ PMAT-396 (XlateLeanToRust L5)', the UNTAGGED contract right and the TAGGED one wrong, in one\
+  \ list. (5) THE LOOSE NEEDLE COST TWO FALSE POSITIVES on the live tree (a next-clause subject,\
+  \ and a Layer-1/Layer-2 RANGE), so the name-to-token gap is capped at 3 chars and both shapes\
+  \ are pinned as cases that must NOT be reported. (6) BOTH REMAINING HOLES ARE MACHINE-DISCLOSED\
+  \ rather than described: the gate prints its 9-of-35 reach and NAMES the 26 it cannot decide,\
+  \ and pins that it cannot see a layer written BEFORE a name. No guard was lost to its own red\
+  \ half -- second slice in six.)"
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -74,6 +78,50 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1460
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: 'three contracts declare `layer: translation` in machine-readable metadata and are
+    filed under Layer 5 at 46 sites -- one of them under three different layers'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1458 lead (c) and applied PMAT-1458''s OWN rule to it: the BROADENING
+    COUNTS are undecidable here (26 of 35 contracts carry no layer tag), but the LAYER LABEL those
+    counts are computed over is arithmetic -- and that is what was wrong.
+    ** CONTROL THAT PASSES: at 771f1652 the whole suite was green with 49 live mislabels under
+    contracts/; the new gate reports 46 of them (the other 3 write the layer BEFORE the name and
+    are a DISCLOSED hole, repaired by hand).
+    ** THE THREE: C-NOTATION-LATEX-MATH-TO-EQUATION, C-XLATE-LEAN-TO-RUST,
+    C-XLATE-RUST-FN-TO-LEAN-THM -- `metadata.xpile.layer: translation` = Layer 2, plus "Layer 2 of
+    the xpile contract taxonomy (translation)" as the opening line of their own description. 18 of
+    the repaired lines sit in NORMATIVE `invariants:`/`postconditions:` slots.
+    ** ⭐ NEVER-TRUE, NOT AGED (PMAT-1459 said to prove which): the tag is in cdcece9c, the INITIAL
+    COMMIT; the first `(Layer 5)` landed at PMAT-334/351/352 months later.
+    ** ⭐ FLATTERING DIRECTION: 41 repaired lines tally Layer-5 breadth ("4 Layer 5 contracts at
+    depth-5") when exactly ONE Layer-5 contract is past depth-1. 4x over, on the headline
+    ACROSS-LAYERS claim.
+    ** GATE contract_layer_label_integrity.rs (XPILE-LAYERLABEL-001, 13 tests). Layer numbering
+    PARSED from sub/contract-taxonomy.md; the short alias (`Notation`) DERIVED by rule, not
+    listed, which keeps `Compile` (5 contracts) and `Xlate` (9) out. Red half: 46 sites, other 12
+    tests green throughout; each guard priced by perturbation -- subject .yaml-only 23, no
+    flattening 37, no alias 41.
+    ** NOT FIXED, AND SAID SO: the substrate-wide depth counts in the same sentences ("8 contracts
+    at depth-5+", live 13) are a SEPARATE measured class of 112 false sites, EVERY ONE
+    UNDERSTATING. Four sentences had to be rewritten anyway and the rewrite DROPS the number
+    rather than restating one this slice did not gate; the other 108 stand.
+    ** ZERO crates/*/src; contracts/*.yaml touched in PROSE only -- no rule/test/lean_theorem/
+    kani_harness/equation key changed. Freeze-compatible.
+    ** NEXT PICK, in order: (a) TAG THE 26 UNTAGGED CONTRACTS with `metadata.xpile.layer` -- a
+    judgement call per contract, but it converts the whole 127-site layer-scoped tally class from
+    undecidable to arithmetic, and this gate already holds the branch waiting for it. (b) the
+    112-site substrate-wide depth-count class (ground truth `xpile diamond --json` depth_N_plus)
+    -- decide first whether a dated broadening record may freeze a count, which also settles
+    PMAT-1459 lead (a). (c) `1025 Lean theorems` (xpile-spec.md:370, kaizen-fleet.md:11), an
+    EXTERNAL pv-spec figure this repo republishes and cannot check.
+    NEXT FREE ID IS PMAT-1461. Do NOT start a gate_touch and do NOT touch witness_floor.rs. HARD
+    FREEZE Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release mechanics ONLY. On
+    2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1459
   status: done
   ev_rank: R1

@@ -1085,9 +1085,9 @@ theorem citation_string_monoid_diamond
     **Sixth depth-2 Diamond in the substrate** (after PMAT-228
     L1, PMAT-229 L2, PMAT-230 L4, PMAT-231 L5, PMAT-232 L3 — that
     completed UNIVERSAL depth-2 across all 5 layers). PMAT-234
-    extends depth-2 coverage to a SECOND Layer-4 contract
-    (Notation joins FfiCpython as the second Layer-4 contract
-    with two Diamonds).
+    extends depth-2 coverage to Notation (Layer 2 — translation),
+    which joins FfiCpython (Layer 4) as a contract
+    with two Diamonds.
 
     Notation already has the citation-STRING-MONOID Diamond at
     PMAT-219 covering ONLY the contract_id field. PMAT-234 adds
@@ -1159,14 +1159,14 @@ theorem citation_product_monoid_diamond
     simp
 
 /-! ## PMAT-334 — THIRD Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
-    (Layer 5 BROADENING DEPTH-3 from 9 to 10 contracts):
+    (Layer 2 BROADENING DEPTH-3 from 9 to 10 contracts):
     EquationFormulaSilver STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-NOTATION-007).
 
     **Broadens DEPTH-3 from 9 to 10 contracts.** Pushes
-    NotationLatexMathToEquation (Layer 5) from depth-2 to depth-3,
-    adding a SECOND Layer 5 contract at depth-3
-    (CompileRustToPtxMma was first via PMAT-242).
+    NotationLatexMathToEquation (Layer 2) from depth-2 to depth-3,
+    joining the depth-3 cohort
+    (CompileRustToPtxMma, Layer 5, was first via PMAT-242).
 
     Seventh substrate-wide demonstration of structure-extensionality
     pattern (after PMAT-311/329/330/331/332/333).
@@ -1201,13 +1201,13 @@ theorem equation_formula_struct_extensionality_diamond
   · rfl
 
 /-! ## PMAT-342 — FOURTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
-    (Layer 5 BROADENING DEPTH-4 from 9 to 10 contracts):
+    (Layer 2 BROADENING DEPTH-4 from 9 to 10 contracts):
     LATEX-DISPLAY-KIND ENUM DISTINCTNESS
     (XPILE-REFINE-NOTATION-008).
 
     **Broadens DEPTH-4 from 9 to 10 contracts.** Pushes
-    NotationLatexMathToEquation (Layer 5) from depth-3 to depth-4,
-    adding a SECOND Layer 5 contract at depth-4 (CompileRustToPtxMma
+    NotationLatexMathToEquation (Layer 2) from depth-3 to depth-4,
+    joining the depth-4 cohort (CompileRustToPtxMma, Layer 5,
     was first).
 
     The 4 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
@@ -1247,15 +1247,15 @@ theorem latex_display_kind_enum_distinctness_diamond (k : LatexDisplayKind) :
     · exact Or.inr h
 
 /-! ## PMAT-350 — FIFTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
-    (Layer 5 BROADENING DEPTH-5 from 7 to 8 contracts):
+    (Layer 2 BROADENING DEPTH-5 from 7 to 8 contracts):
     EQUATION-FORMULA ASCII LENGTH NAT STRUCTURE
     (XPILE-REFINE-NOTATION-009).
 
     **Broadens DEPTH-5 from 7 to 8 contracts.** After PMAT-349
     brought XlatePyListToVec (Layer 2) to depth-5 (substrate at 7
     contracts at depth-5+), PMAT-350 pushes
-    NotationLatexMathToEquation (Layer 5) from depth-4 to depth-5,
-    adding a SECOND Layer 5 contract at depth-5 (CompileRustToPtxMma
+    NotationLatexMathToEquation (Layer 2) from depth-4 to depth-5,
+    joining the depth-5 cohort (CompileRustToPtxMma, Layer 5,
     was first via PMAT-287).
 
     The 5 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
@@ -1316,14 +1316,14 @@ theorem equation_formula_ascii_length_nat_diamond (f : EquationFormulaSilver) :
   · rfl
 
 /-! ## PMAT-362 — SIXTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
-    (Layer 5 BROADENS DEPTH-6 post-ALL 5 LAYERS milestone):
+    (Layer 2 BROADENS DEPTH-6 post-ALL 5 LAYERS milestone):
     LATEX-CITATION-SILVER STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-NOTATION-010).
 
     **Broadens depth-6 substrate-wide.** After PMAT-358 completed
     depth-6 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-362 pushes
-    NotationLatexMathToEquation (Layer 5) from depth-5 to depth-6 as
-    the second L5 contract at depth-6+ (CompileRustToPtxMma was
+    NotationLatexMathToEquation (Layer 2) from depth-5 to depth-6
+    (CompileRustToPtxMma, Layer 5, was
     first via PMAT-291).
 
     The 6 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
@@ -1387,13 +1387,13 @@ theorem latex_citation_silver_struct_extensionality_diamond
   · rfl
 
 /-! ## PMAT-372 — SEVENTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
-    (Layer 5 BROADENS DEPTH-7):
+    (Layer 2 BROADENS DEPTH-7):
     LATEX-DISPLAY-KIND ENUM COMPLETENESS
     (XPILE-REFINE-NOTATION-011).
 
     **Broadens DEPTH-7 substrate-wide.** Pushes
-    NotationLatexMathToEquation (Layer 5) from depth-6 to depth-7
-    as the second L5 contract at depth-7+ (CompileRustToPtxMma was
+    NotationLatexMathToEquation (Layer 2) from depth-6 to depth-7
+    (CompileRustToPtxMma, Layer 5, was
     first via PMAT-293).
 
     The 7 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
@@ -1442,13 +1442,12 @@ theorem latex_display_kind_enum_completeness_diamond (k : LatexDisplayKind) :
   · decide
 
 /-! ## PMAT-383 — EIGHTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
-    (Layer 5 BROADENS DEPTH-8):
+    (Layer 2 BROADENS DEPTH-8):
     LEAN-THEOREM-ENV STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-NOTATION-012).
 
     **Broadens DEPTH-8 substrate-wide.** Pushes
-    NotationLatexMathToEquation (Layer 5) from depth-7 to depth-8 as
-    the second L5 contract at depth-8+.
+    NotationLatexMathToEquation (Layer 2) from depth-7 to depth-8.
 
     The 8 Diamond categories on C-NOTATION-LATEX-MATH-TO-EQUATION:
     - PMAT-219 citation_string_monoid
@@ -1507,14 +1506,14 @@ theorem lean_theorem_env_struct_extensionality_diamond
 
   Adds a NINTH distinct Diamond category on
   `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
-  depth-8 to depth-9. Third L5 contract at depth-9. **COMPLETES
+  depth-8 to depth-9. **COMPLETES
   DEPTH-9 UNIVERSAL ACROSS ALL 12 CONTRACTS** alongside PMAT-296
   (PyIntArith L1), PMAT-297 (CompileRustToPtxMma L5), PMAT-389
   (FfiCpythonExt L4), PMAT-390 (Bashrs L2), PMAT-391
   (ContractFrontendTrait L3), PMAT-392 (BackendTrait L3),
   PMAT-393 (FrontendTrait L3), PMAT-394 (ContractBackendTrait L3),
-  PMAT-395 (PyListToVec L2), PMAT-396 (XlateLeanToRust L5), and
-  PMAT-397 (XlateRustFnToLeanThm L5).
+  PMAT-395 (PyListToVec L2), PMAT-396 (XlateLeanToRust L2), and
+  PMAT-397 (XlateRustFnToLeanThm L2).
 -/
 theorem non_empty_definition_subtype_extensionality_diamond
     (n1 n2 : NonEmptyDefinition) :
@@ -1545,12 +1544,12 @@ theorem non_empty_definition_subtype_extensionality_diamond
   (FfiCpythonExt L4), PMAT-401 (Bashrs L2), PMAT-402 (BackendTrait
   L3), PMAT-403 (FrontendTrait L3), PMAT-404 (ContractFrontendTrait
   L3), PMAT-405 (ContractBackendTrait L3), PMAT-406 (PyListToVec
-  L2), PMAT-407 (XlateLeanToRust L5), and PMAT-408
-  (XlateRustFnToLeanThm L5).
+  L2), PMAT-407 (XlateLeanToRust L2), and PMAT-408
+  (XlateRustFnToLeanThm L2).
 
   Adds a TENTH distinct Diamond category on
   `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
-  depth-9 to depth-10. Third L5 contract at depth-10.
+  depth-9 to depth-10.
 -/
 def definition_env_silver_to_bronze (d : DefinitionEnvSilver) : DefinitionEnv :=
   { first_math_span := d.first_math_span }
@@ -1584,7 +1583,7 @@ theorem definition_env_silver_to_bronze_projection_diamond
 
   Adds an ELEVENTH distinct Diamond category on
   `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
-  depth-10 to depth-11. Third L5 contract at depth-11.
+  depth-10 to depth-11.
 -/
 def empty_definition_env_silver : DefinitionEnvSilver :=
   { first_math_span := "", all_math_spans := #[], label := none }
@@ -1617,7 +1616,7 @@ theorem empty_definition_env_silver_canonical_diamond :
 
   Adds a TWELFTH distinct Diamond category on
   `C-NOTATION-LATEX-MATH-TO-EQUATION`, pushing the contract from
-  depth-11 to depth-12. Third L5 contract at depth-12.
+  depth-11 to depth-12.
 -/
 def definition_env_bronze_to_silver (d : DefinitionEnv) : DefinitionEnvSilver :=
   { first_math_span := d.first_math_span, all_math_spans := #[], label := none }
