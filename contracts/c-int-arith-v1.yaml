@@ -18,7 +18,10 @@ metadata:
     *defined two's-complement wraparound*: C `int` `+`/`-`/`*` lower to
     `i32::wrapping_add` / `wrapping_sub` / `wrapping_mul`, and `/`/`%`
     lower to `wrapping_div` / `wrapping_rem` (C truncation), NEVER to
-    Python's `checked_*` / `div_euclid` / `i64` path. This makes the
+    Python's `checked_*` / floor-corrected / `i64` path. (PMAT-538: that
+    Python path is `checked_div` / `checked_rem` plus a floor correction;
+    it has not used `div_euclid` since v0.1.237, because Euclidean
+    division is not floor division for a negative divisor.) This makes the
     emitted Rust total and UB-free while preserving C's observable
     truncating semantics in the defined domain.
 
@@ -102,7 +105,9 @@ falsification_tests:
   - id: FALSIFY-C-INT-ARITH-001
     rule: |
       C `int` arithmetic must lower to `i32::wrapping_*`, never to
-      Python's `checked_*` / `div_euclid` / `i64` path.
+      Python's `checked_*` / floor-corrected / `i64` path (PMAT-538: the
+      Python path is `checked_div` / `checked_rem` + a floor correction,
+      not `div_euclid`).
     prediction: |
       The emitted Rust for a C `int` add/mul contains `wrapping_add` /
       `wrapping_mul` and an `i32` signature, and contains no `checked_` or

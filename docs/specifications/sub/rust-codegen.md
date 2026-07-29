@@ -26,7 +26,7 @@ pub struct RustBackend; // implements xpile-backend::Backend
 - `Block` → `{ stmts; trailing_return }` (no `return` keyword needed)
 - `Stmt::Let` → `let name: T = value;`
 - `Expr::BinOp`:
-  - Arithmetic (`+ - * // %`) → `.checked_*().expect("xpile: ... C-PY-INT-ARITH slow path ...")` so i64 overflow panics with a pointer to the unimplemented bigint promotion path (PR #23, contract `py-int-arith`). Floor-div and mod use the Euclidean variants (`checked_div_euclid` / `checked_rem_euclid`) to preserve Python-floor semantics on negative operands.
+  - Arithmetic (`+ - * // %`) → `.checked_*().expect("xpile: ... C-PY-INT-ARITH slow path ...")` so i64 overflow panics with a pointer to the unimplemented bigint promotion path (PR #23, contract `py-int-arith`). Floor-div and mod emit the TRUNCATING `checked_div` / `checked_rem` plus a floor correction (adjust when the remainder is non-zero and its sign differs from the divisor's), which is what preserves Python-floor semantics on negative operands. PMAT-538 (v0.1.237) removed the Euclidean variants (`checked_div_euclid` / `checked_rem_euclid`) from this path: they only agree with Python for a POSITIVE divisor — `7 % -3` is `-2` in Python but `1` under `rem_euclid`, and `-7 // -2` is `3` but `4` under `div_euclid`.
   - Comparisons (`== != < <= > >=`) and logical (`&& ||`) → infix (no overflow risk).
 - `Expr::UnOp`:
   - `-x` → `.checked_neg().expect(...)` (same contract — `i64::MIN.checked_neg() == None`).

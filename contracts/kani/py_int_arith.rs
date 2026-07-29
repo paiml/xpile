@@ -138,14 +138,27 @@ fn multiplication_quadratic_promotion() {
     assert_eq!(fast, slow);
 }
 
-/// Equation `division_floor_semantics`: Python `//` is FLOOR
-/// division. Rust's `div_euclid` matches by construction (Euclidean
-/// division returns a quotient `q` and a non-negative remainder
-/// `r ∈ [0, |b|)`). Bronze-tier proves the load-bearing property:
-/// the Euclidean remainder is always non-negative. Bounded operands
-/// for BMC tractability — `rem_euclid` over full i64 is much harder
-/// for CBMC than `+`/`*` because division has SAT-unfriendly
-/// structure; bounding to i16-equivalents keeps verification fast.
+/// Equation `division_floor_semantics`: Python `//` is FLOOR division —
+/// the quotient rounds toward −∞, so the remainder takes the DIVISOR's
+/// sign. Verifies the lowering xpile actually emits (`emit_floor_div` in
+/// `crates/xpile-rust-codegen`): the truncating quotient plus a floor
+/// correction. Bounded operands for BMC tractability — division is much
+/// harder for CBMC than `+`/`*` because it has SAT-unfriendly structure;
+/// bounding to i16-equivalents keeps verification fast.
+///
+/// PMAT-1468: this docstring used to say *"Rust's `div_euclid` matches by
+/// construction"* and the body proved `a.rem_euclid(b) >= 0`, calling that
+/// "the load-bearing property". It was the FALSIFIER, not the discharge:
+/// a non-negative remainder is exactly what makes Euclidean division
+/// disagree with Python once the divisor is negative (`-7 // -2` is `3`
+/// in Python and `4` under `div_euclid`). PMAT-538 removed `div_euclid`
+/// from the emit in v0.1.237, so the harness was also proving a property
+/// of a construct this project does not emit.
+///
+/// The property proved is the division-theorem characterisation of floor
+/// division, which does NOT restate the correction formula (so it is not
+/// circular): `a == q*b + r` with `r` zero-or-divisor-signed and
+/// `|r| < |b|`. That pair of conditions determines `q` uniquely.
 #[kani::proof]
 fn division_floor_semantics() {
     let a: i64 = kani::any();
@@ -157,14 +170,36 @@ fn division_floor_semantics() {
     kani::assume(b >= -1000 && b <= 1000);
     kani::assume(b != 0);
 
-    let r: i64 = a.rem_euclid(b);
-    assert!(r >= 0);
+    // The emitted lowering, verbatim from `emit_floor_div`.
+    let q0: i64 = a / b;
+    let r0: i64 = a % b;
+    let q: i64 = if r0 != 0 && (r0 < 0) != (b < 0) { q0 - 1 } else { q0 };
+
+    // Division theorem, in i128 so `q*b` cannot overflow.
+    let r: i128 = a as i128 - (q as i128) * (b as i128);
+    let bb: i128 = b as i128;
+    assert!(r == 0 || (r < 0) == (bb < 0));
+    let abs_r: i128 = if r < 0 { -r } else { r };
+    let abs_b: i128 = if bb < 0 { -bb } else { bb };
+    assert!(abs_r < abs_b);
 }
 
-/// Equation `modulo_floor_semantics`: Python `%` is FLOOR mod
-/// (sign matches divisor). Rust `rem_euclid` matches. Bronze-tier
-/// proves r >= 0 (the load-bearing property that distinguishes
-/// Euclidean from truncating remainder). Bounded for BMC tractability.
+/// Equation `modulo_floor_semantics`: Python `%` is FLOOR mod — the result
+/// takes the sign of the DIVISOR. Verifies the lowering xpile actually
+/// emits (`emit_floor_mod`): the truncating remainder plus a floor
+/// correction. Bounded for BMC tractability.
+///
+/// PMAT-1468: this docstring used to say *"Rust `rem_euclid` matches"* and
+/// prove `r >= 0`. Those two sentences contradict each other — a value
+/// that is always `>= 0` cannot take the sign of a negative divisor — and
+/// the second is what made `rem_euclid` wrong for this lane (`7 % -3` is
+/// `-2` in Python and `1` under `rem_euclid`). See PMAT-538.
+///
+/// The second half is the NON-VACUITY DUAL: for a negative divisor with a
+/// non-zero remainder, `rem_euclid` is proved to DISAGREE with the emitted
+/// result. Without it, an emitter that reverted to `rem_euclid` could
+/// still satisfy the first half by accident on the positive-divisor half
+/// of the domain.
 #[kani::proof]
 fn modulo_floor_semantics() {
     let a: i64 = kani::any();
@@ -173,8 +208,35 @@ fn modulo_floor_semantics() {
     kani::assume(b >= -1000 && b <= 1000);
     kani::assume(b != 0);
 
-    let result: i64 = a.rem_euclid(b);
-    assert!(result >= 0);
+    // The emitted lowering, verbatim from `emit_floor_mod`.
+    let r0: i64 = a % b;
+    let result: i64 = if r0 != 0 && (r0 < 0) != (b < 0) {
+        r0 + b
+    } else {
+        r0
+    };
+
+    // Python's postcondition: zero, or the divisor's sign; and |r| < |b|.
+    assert!(result == 0 || (result < 0) == (b < 0));
+    let abs_r: i128 = if result < 0 {
+        -(result as i128)
+    } else {
+        result as i128
+    };
+    let abs_b: i128 = if b < 0 { -(b as i128) } else { b as i128 };
+    assert!(abs_r < abs_b);
+    // `a - result` is an exact multiple of `b`, so `result` really is a
+    // remainder and not merely a number in the right range.
+    assert!((a as i128 - result as i128) % (b as i128) == 0);
+
+    // NON-VACUITY DUAL (PMAT-538): `rem_euclid` is always non-negative, so on the
+    // negative-divisor / non-zero-remainder sub-domain it CANNOT equal
+    // Python's result, which is strictly negative there.
+    if b < 0 && r0 != 0 {
+        assert!(a.rem_euclid(b) >= 0);
+        assert!(result < 0);
+        assert!(a.rem_euclid(b) != result);
+    }
 }
 
 /// Equation `bitwise_and_signed_semantics`: i64 bit-AND fast path

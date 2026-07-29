@@ -8072,7 +8072,8 @@ fn main() {
 /// a **bounds check**, not a materialized Vec (`x in range(10**9)` must not
 /// allocate). `range(n)` → `0 <= x && x < n`; `range(a, b)` → `a <= x && x < b`;
 /// a 3-arg literal step adds the reachability check `(x - start) % |step| == 0`
-/// (Python floor-mod via `rem_euclid`). Composes inside a genexpr filter.
+/// (Python floor-mod — emitted as `checked_rem` + a floor correction; PMAT-538
+/// removed `rem_euclid` from this path). Composes inside a genexpr filter.
 /// Cross-checked vs python3 (the full boundary sweep matches).
 #[test]
 fn in_range_membership() {
@@ -12340,8 +12341,9 @@ fn main() {
 
 /// Tail-recursive Euclidean GCD. Exercises:
 ///   - Multiple-arg recursion (gcd(b, a % b))
-///   - Python `%` lowering to Rust `rem_euclid` (load-bearing: plain
-///     `%` would diverge from Python on negative operands)
+///   - Python `%` lowering to `checked_rem` + a floor correction (load-bearing:
+///     a plain `%` would diverge from Python on negative operands, and so would
+///     `rem_euclid`, which PMAT-538 removed from this path in v0.1.237)
 #[test]
 fn gcd_emitted_rust_computes_correct_values() {
     let rust = xpile_transpile_to_rust("gcd.py");

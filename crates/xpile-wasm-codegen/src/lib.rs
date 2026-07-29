@@ -163,8 +163,11 @@
 //! - **FloorDiv / Mod:** WASM `i64.div_s` truncates toward zero and traps
 //!   on divide-by-zero; `i64.rem_s` is the truncating remainder. Python's
 //!   `//`/`%` floor toward −∞ and the remainder takes the divisor's sign,
-//!   so the emitter applies the same floor correction the Rust lane uses
-//!   (`div_euclid`/`rem_euclid`-equivalent), implemented inline in WAT.
+//!   so the emitter applies the same floor correction the Rust lane uses,
+//!   implemented inline in WAT. That correction is NOT `div_euclid` /
+//!   `rem_euclid`-equivalent: Euclidean division keeps a non-negative
+//!   remainder, which contradicts "takes the divisor's sign" above the
+//!   moment the divisor is negative (PMAT-538).
 //!
 //! Layer 5 compile contract: `contracts/compile-rust-to-wasm-v1.yaml`
 //! (`C-COMPILE-RUST-TO-WASM`), proof lane `contracts/lean/XlateRustToWasm.lean`.

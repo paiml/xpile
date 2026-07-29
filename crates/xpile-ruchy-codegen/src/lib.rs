@@ -3,8 +3,10 @@
 //! Lowers meta-HIR to Ruchy source. v0.1.0 emits the same arithmetic
 //! subset as `xpile-rust-codegen` — the surface difference is
 //! `fun ... -> T { ... }` instead of Rust's `pub fn ... -> T { ... }`,
-//! and floor-div / modulo still go through Euclidean semantics
-//! (`div_euclid` / `rem_euclid`).
+//! and floor-div / modulo go through the same Python-floor lowering:
+//! truncating `checked_div` / `checked_rem` plus a floor correction.
+//! PMAT-538 (v0.1.237) removed `div_euclid` / `rem_euclid` from this
+//! path — they only agree with Python for a POSITIVE divisor.
 //!
 //! Future scope (tracked by `Profile::RuchyOut`): reconstruct the
 //! pipeline operator `|>` and DataFrame-flavored sugar from meta-HIR
