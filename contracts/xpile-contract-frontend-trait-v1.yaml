@@ -326,8 +326,8 @@ equations:
 
   metahir_module_struct_extensionality_diamond:
     # PMAT-361: SIXTH Diamond on this contract — BROADENS DEPTH-6
-    # post-ALL 5 LAYERS milestone. After PMAT-358 completed depth-6
-    # ACROSS ALL 5 TAXONOMY LAYERS, PMAT-361 pushes
+    # after PMAT-358 took depth-6 to a FOURTH layer (L1+L3+L4+L5 —
+    # PMAT-1463; Layer 2 followed at PMAT-360). PMAT-361 pushes
     # XpileContractFrontendTrait (Layer 3) from depth-5 to depth-6.
     # METAHIR-MODULE (Bronze) STRUCTURE EXTENSIONALITY: the inner
     # MetaHirModule record (bytes : Array UInt8) is field-extensional.
@@ -348,13 +348,13 @@ equations:
       Two MetaHirModule records (bytes : Array UInt8) — the INNER
       modules-side record stored inside TranspileSession.modules.
     invariants:
-      - "SIXTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-6 post-ALL 5 LAYERS milestone"
+      - "SIXTH Diamond category on C-XPILE-CONTRACT-FRONTEND-TRAIT — BROADENS DEPTH-6 after PMAT-360 took it to all 5 layers"
       - "STRUCTURE EXTENSIONALITY — seventeenth substrate-wide demonstration of this pattern"
       - "complementary to PMAT-353 (EquationsBlock equations-side inner record) — together close inner-record extensionality on both sides of TranspileSession"
     preconditions:
       - "two MetaHirModule records (DecidableEq derived)"
     postconditions:
-      - "Diamond depth-6 broadened: contracts at depth-6+ (3 L3 contracts at depth-6)"
+      - "Diamond depth-6 broadened: 8 contracts at depth-6+ (3 L3 contracts at depth-6)"
 
   equations_block_bytes_array_size_diamond:
     # PMAT-375: SEVENTH Diamond on this contract — BROADENS DEPTH-7

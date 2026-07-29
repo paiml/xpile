@@ -326,14 +326,14 @@ equations:
       axiomatize the record-type structure: field equality
       determines record equality, with decidable equality.
     invariants:
-      - "FOURTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-4 ACROSS LAYERS to 4 contracts on 4 distinct layers (L1 + L2 + L4 + L5)"
+      - "FOURTH Diamond category on C-BASHRS-POSIX-IDEMPOTENCE — BROADENS DEPTH-4 ACROSS LAYERS to 4 contracts on 3 distinct layers (L1 + L4 + L5; PMAT-1463: Bashrs declares layer semantics, i.e. L1, so it is the fourth CONTRACT and not a fourth LAYER)"
       - "RECORD-STRUCTURE / SUBTYPE-LIKE claim, mirror of PMAT-311 on BoundedSmem"
       - "distinct from PMAT-215/python pure-function (determinism) and PMAT-238 (specific value claim)"
     preconditions:
       - "two OutcomeSilver records (with DecidableEq instance)"
     postconditions:
       - "an emitter using a JSON serialization that re-orders or drops the exit_code field when observable is empty would falsify (a)"
-      - "Diamond depth-4 ACROSS LAYERS broadened: 4 contracts on 4 distinct layers"
+      - "Diamond depth-4 ACROSS LAYERS broadened: 4 contracts on 3 distinct layers (L1 + L4 + L5)"
 
   outcome_observable_length_nat_diamond:
     # PMAT-346: FIFTH Diamond on this contract. Pushes Bashrs
@@ -358,7 +358,7 @@ equations:
     preconditions:
       - "one OutcomeSilver record"
     postconditions:
-      - "Diamond depth-5 broadened: 4 contracts on 4 distinct layers"
+      - "Diamond depth-5 broadened: 4 contracts on 3 distinct layers (L1 + L4 + L5)"
 
   outcome_exit_code_int_sign_diamond:
     # PMAT-357: SIXTH Diamond on this contract. After PMAT-356
@@ -391,7 +391,7 @@ equations:
       - "one OutcomeSilver record with Int-valued exit_code"
     postconditions:
       - "an emitter that conflated success (0) and failure (non-zero) modes would falsify (a) and (c)"
-      - "Diamond depth-6 broadened: 4 contracts on 4 distinct layers"
+      - "Diamond depth-6 broadened: 4 contracts on 3 distinct layers (L1 + L4 + L5)"
 
   outcome_struct_extensionality_bronze_diamond:
     # PMAT-368: SEVENTH Diamond on this contract — BROADENS DEPTH-7

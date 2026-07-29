@@ -629,7 +629,16 @@ fn redating(lower: &str, at: usize) -> Option<u32> {
         .max(back.rfind(".** ").map(|i| i + 4))
         .unwrap_or(0);
     let clause = &back[start..];
-    let i = clause.rfind("after pmat-")?;
+    // `after PMAT-330 …` and `post-PMAT-330 …` are the same re-dating. The
+    // second spelling is how the contract that ACTUALLY completed each
+    // milestone filed its own arrival — "first POST-UNIVERSAL broadening
+    // (post-PMAT-330 depth-4 ACROSS ALL 5 LAYERS milestone)" — so leaving it
+    // out would have let the clearest evidence of the mis-credit pass.
+    let i = clause
+        .rfind("after pmat-")
+        .into_iter()
+        .chain(clause.rfind("post-pmat-"))
+        .max()?;
     // `after PMAT-228 L1, PMAT-229 L2, PMAT-230 L4, PMAT-231 L5, PMAT-232 L3 —
     // that completed UNIVERSAL depth-2 across all 5 layers` dates itself to the
     // LAST arrival in the enumeration, not the first. Reading the first is the
