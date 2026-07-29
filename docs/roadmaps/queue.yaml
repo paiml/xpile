@@ -4195,7 +4195,9 @@ queue:
     all 31 Cargo.toml files and the crate-root `//!` in all 31 lib.rs files — the crates.io headline and
     the docs.rs summary, the only prose 30 of the 31 crates show a registry visitor, re-uploaded
     verbatim every Friday. The sole Cargo.toml gate reads `version =` on path-deps and nothing else.
-    Red half on the SHIPPED gate against the UNMODIFIED corpus: 20 sites, 5 arms. Sharpest finding is
+    Red half on the SHIPPED gate against the UNMODIFIED corpus: 6 of 7 tests red, 19 enumerated
+    offenders plus the `Target::Shell` doc = 20 published sites. All ten guards red on their own
+    perturbation (none lost). Sharpest finding is
     one the manual sweep MISSED and the gate caught: ruchy-frontend''s docs.rs page says "routing only;
     `.ruchy` INPUT refuses" while its crates.io page said "Parses .ruchy and lowers to meta-HIR" — two
     front pages for one crate, disagreeing about whether it has a parser. Also: a falsehood the BINARY

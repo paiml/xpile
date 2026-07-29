@@ -22598,7 +22598,9 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     that the next candidates are "any file kind absent from every walk_*". Cargo.toml was one.
 
 
-    RED HALF RUN ON THE SHIPPED GATE AGAINST THE UNMODIFIED CORPUS: 20 sites across 5 arms.
+    RED HALF RUN ON THE SHIPPED GATE AGAINST THE UNMODIFIED CORPUS (figures written AFTER the run,
+    per PMAT-1461): SIX of the seven tests red. Five enumerate 19 offenders; the sixth names the
+    `Target::Shell` doc without enumerating -- 20 published sites in all.
     (a) ruchy-frontend desc "Parses .ruchy and lowers to meta-HIR" while `lowers_input()` is FALSE and
     `.ruchy` INPUT refuses (PMAT-1346). (b) bashrs-frontend desc "+ Makefile/Dockerfile" and "Scaffold
     at v0.1.0", and its `//!` "the real parser / lowering pipeline is deferred to v0.2.0" +
@@ -22657,6 +22659,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     like MdBook and no crate page presents them; ruchy-frontend declares `lowers_input() == false` and
     its `//!` really does say "routing only", so it stays green on the deferral arm; both contract
     backends open with "scaffold stub" while reporting `renders_contract_body() == false`.
+
+
+    ** ALL TEN GUARDS RED ON THEIR OWN PERTURBATION -- first slice since PMAT-1464 to lose none.
+    Break the manifest walk -> corpus-reach AND the target arm''s `scored >= 2` both fire; claim every
+    format -> `unrenderable >= 3`; empty the registry walk -> `claimed >= 2`; consume no
+    `refused_claims()` -> `scored >= 3`; make every frontend capable -> the capable/denying split
+    (checked NOT dominated: ruchy-frontend''s metadata carries none of the four deferral spellings, so
+    deleting that guard leaves the perturbation GREEN); drop a `frontend_crate` arm -> the exhaustiveness
+    panic; probe a token the backend never emits -> the input-dependence assertion; scan one file instead
+    of two -> `scanned == 2`; extract a nonexistent variant -> the non-empty `shell_doc` guard.
 
 
     ** A GUARD EARNED ITS KEEP IMMEDIATELY. The corpus-reach assertion caught a bug in this gate''s own

@@ -20,8 +20,9 @@ At `18d91af8` **no test in the workspace read either one.** The only gate over
 any `Cargo.toml` is `publish_manifest_integrity.rs`, and it reads `version =` on
 path-deps and nothing else (`grep -c description` over it: **0**).
 
-Running the new gate against the unmodified corpus reported **20 sites across
-five arms**:
+Running the shipped gate against the unmodified corpus reds **six of its seven
+tests**: five enumerate **19 offenders**, and the sixth names the `Target::Shell`
+doc — **20 published sites in all**.
 
 | site | published | live |
 |---|---|---|
@@ -87,6 +88,18 @@ unrenderable exactly like `MdBook` and no crate page presents them;
 *"routing only"*, so it stays green on the deferral arm; and both contract
 backends open with *"scaffold stub"* while reporting
 `renders_contract_body() == false`, honest and outside that arm's population.
+
+**All ten guards red on their own perturbation** — the first slice since
+PMAT-1464 to lose none. Break the manifest walk → the corpus-reach guard AND the
+target arm's anti-vacuity counter both fire; claim every format → the
+`unrenderable >= 3` guard; empty the registry walk → `claimed >= 2`; consume no
+`refused_claims()` → `scored >= 3`; make every frontend capable → the
+capable/denying split (load-bearing: `ruchy-frontend`'s metadata carries none of
+the four deferral spellings, so removing that guard leaves the perturbation
+green); drop a `frontend_crate` arm → the exhaustiveness panic; probe a token the
+backend never emits → the input-dependence assertion; scan one file instead of
+two → `scanned == 2`; extract a variant that does not exist → the non-empty
+`shell_doc` guard.
 
 **A guard earned its keep immediately.** The corpus-reach assertion caught a bug
 in this gate's own manifest walk — an early `?` made `manifest_description`

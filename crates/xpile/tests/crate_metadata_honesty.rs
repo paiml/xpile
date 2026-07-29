@@ -19,8 +19,10 @@
 //!
 //! ## What was wrong
 //!
-//! Five distinct falsehoods, each contradicted by a signal this repo already
-//! computes:
+//! Against the unmodified corpus this gate reds **six of its seven tests**:
+//! five enumerate **19 offenders**, and the sixth names the `Target::Shell`
+//! doc — **20 published sites**. Each is contradicted by a signal this repo
+//! already computes:
 //!
 //! | site | claim | live |
 //! |------|-------|------|
