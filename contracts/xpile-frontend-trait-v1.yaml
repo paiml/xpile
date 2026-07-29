@@ -260,10 +260,11 @@ equations:
     # PMAT-330: FOURTH Diamond on this contract — TAKES DEPTH-4 TO A
     # FOURTH LAYER (L1+L3+L4+L5). PMAT-1463: this record used to award
     # itself a taxonomy-complete depth-4. It was not one.
-    # PMAT-329 had taken depth-4 to L1+L4+L5 (Bashrs
-    # declares layer semantics, i.e. L1, so it added no new layer),
-    # and Layer 2 was still absent afterwards; depth-4 first spanned
-    # all five at PMAT-338, when C-XLATE-PY-LIST-TO-VEC reached it.
+    # C-BASHRS-POSIX-IDEMPOTENCE declares `layer: semantics` — the
+    # same layer as C-PY-INT-ARITH — so PMAT-329 added a CONTRACT and
+    # not a LAYER, and depth-4 stood at L1+L4+L5 before this Diamond.
+    # Layer 2 was still absent afterwards; depth-4 first spanned all
+    # five at PMAT-338, when C-XLATE-PY-LIST-TO-VEC reached it.
     # PMAT-330
     # pushes XpileFrontendTrait (Layer 3) from depth-3 to depth-4,
     # making depth-4 ACROSS LAYERS reach EVERY xpile taxonomy layer.

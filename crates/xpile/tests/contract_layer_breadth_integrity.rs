@@ -63,7 +63,7 @@
 //! PMAT-1461 filed the substrate-wide depth counts as an open class with "every
 //! site UNDERSTATING", and PMAT-1462 recorded that "the dating question is REAL
 //! there and must be decided first". Measuring it dissolves it. Against the
-//! LIVE substrate 37 of the 45 `N contracts at depth-D+` records disagree —
+//! LIVE substrate 55 of the 66 census records disagree —
 //! which is what "every site understating" saw. Against the state at each
 //! record's own `# PMAT-NNN`, **44 of 45 agree**: they are honest history, and
 //! the class was ~98% a non-defect. The one that is not is
@@ -87,9 +87,9 @@
 //!     The rule now prefers the `## PMAT-NNN` section head, then the
 //!     `discharged at … (PMAT-NNN)` status line, then `**PMAT-NNN`.
 //!   * NEEDLE, false-positive direction —
-//!     [`a_subset_claim_that_names_its_members_is_not_a_totality_claim`]. 45
-//!     sites under `contracts/` say `ACROSS 3 LAYERS` with no `all`, every one
-//!     of them enumerating the three it means (`PyIntArith (L1) +
+//!     [`a_subset_claim_that_names_its_members_is_not_a_totality_claim`]. 46
+//!     sites under `contracts/` (25 of them in `*.yaml`) say `ACROSS 3 LAYERS`
+//!     with no `all`, every one enumerating the three it means (`PyIntArith (L1) +
 //!     FFI-CPYTHON-EXT (L4) + CompileRustToPtxMma (L5)`). Those are honest
 //!     subset claims and the totality needle requires the word `all` so it
 //!     cannot reach them.
@@ -100,7 +100,10 @@
 //!
 //! Run against `e17697ae`'s `contracts/` this gate reports **51** sites: 20 in
 //! `*.yaml` (of 80 claims read) and 31 in `lean/*.lean` (of 46, 0 unanchored).
-//! On the repaired tree it reports 0.
+//! On the repaired tree it reports 0 over 66 + 23 claims. The claim count DROPS
+//! because a retired totality claim stops being a claim: the milestone prose
+//! restated the same false sentence in a section head, a status line and a
+//! theorem doc, so 51 findings sat on far fewer distinct assertions.
 //!
 //! Out of subject, stated as a measurement rather than assumed: `contracts/`
 //! holds no `.md` or `kani/*.rs` site matching any of the four needles (0 hits),
@@ -918,10 +921,11 @@ fn every_diamond_census_claim_in_a_contract_yaml_matches_the_substrate() {
     let all = parse_contracts();
     let (checked, bad) = yaml_findings(&all);
     assert!(
-        checked >= 55,
+        checked >= 60,
         "the needle found only {checked} census claims under contracts/*.yaml; \
-         it read 68 when written, so a drop this large means the needle stopped \
-         matching, not that the substrate stopped claiming"
+         it reads 66 on the repaired corpus (80 before the repairs, which \
+         retired fourteen false totality claims), so a drop this large means \
+         the needle stopped matching, not that the substrate stopped claiming"
     );
     assert!(
         bad.is_empty(),
@@ -938,9 +942,11 @@ fn every_diamond_census_claim_in_a_lean_docstring_matches_the_substrate() {
     let all = parse_contracts();
     let (checked, bad, unanchored) = lean_findings(&all);
     assert!(
-        checked >= 32,
+        checked >= 17,
         "the needle found only {checked} census claims in contract Lean \
-         docstrings; it read 39 when written"
+         docstrings; it reads 23 on the repaired corpus. It read 39 before the \
+         repairs — the milestone prose restated one false totality claim up to \
+         four times per block, and retiring those removed 18 restatements"
     );
     assert!(
         bad.is_empty(),
@@ -1135,9 +1141,9 @@ fn a_subset_claim_that_names_its_members_is_not_a_totality_claim() {
             .count();
     }
     assert!(
-        subset_sites >= 10,
+        subset_sites >= 15,
         "only {subset_sites} subset-phrased sites remain; this carve-out was \
-         measured against 32 in contracts/*.yaml and is no longer load-bearing"
+         measured against 25 in contracts/*.yaml and is no longer load-bearing"
     );
     eprintln!(
         "XPILE-LAYERBREADTH-001 subset carve-out: {subset_sites} `ACROSS N \

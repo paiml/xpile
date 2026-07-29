@@ -1316,12 +1316,15 @@ theorem equation_formula_ascii_length_nat_diamond (f : EquationFormulaSilver) :
   · rfl
 
 /-! ## PMAT-362 — SIXTH Diamond on C-NOTATION-LATEX-MATH-TO-EQUATION
-    (Layer 2 BROADENS DEPTH-6 post-ALL 5 LAYERS milestone):
+    (Layer 2 BROADENS DEPTH-6 after PMAT-360 completed it):
     LATEX-CITATION-SILVER STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-NOTATION-010).
 
     **Broadens depth-6 substrate-wide.** After PMAT-358 completed
-    depth-6 ACROSS ALL 5 TAXONOMY LAYERS, PMAT-362 pushes
+    depth-6 to a FOURTH layer (L1+L3+L4+L5), and PMAT-360
+    (C-XLATE-PY-LIST-TO-VEC, Layer 2) completed it across every
+    taxonomy layer — PMAT-1463; this used to credit PMAT-358 with
+    the completion. PMAT-362 pushes
     NotationLatexMathToEquation (Layer 2) from depth-5 to depth-6
     (CompileRustToPtxMma, Layer 5, was
     first via PMAT-291).
@@ -1346,7 +1349,8 @@ theorem equation_formula_ascii_length_nat_diamond (f : EquationFormulaSilver) :
     356/359/360/361).
 
     Status: discharged at v0.1.0 (PMAT-362). Tier: DIAMOND.
-    Broadens depth-6 post-ALL 5 LAYERS milestone. -/
+    Broadens depth-6 after PMAT-360 completed it across all 5
+    taxonomy layers. -/
 
 /--
   **Diamond-tier refinement theorem** — `LatexCitationSilver` admits
@@ -1363,7 +1367,8 @@ theorem equation_formula_ascii_length_nat_diamond (f : EquationFormulaSilver) :
   extensionality pattern.
 
   Status: **discharged at v0.1.0 (PMAT-362)**. Tier: DIAMOND.
-  Broadens depth-6 post-ALL 5 LAYERS milestone.
+  Broadens depth-6 after PMAT-360 completed it across all 5
+  taxonomy layers.
 -/
 theorem latex_citation_silver_struct_extensionality_diamond
     (c1 c2 : LatexCitationSilver) :
