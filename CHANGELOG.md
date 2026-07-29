@@ -7,6 +7,94 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The shell lane published a refusal guarantee it does not have: twenty out-of-surface constructs were probed and all twenty were ACCEPTED at exit 0 — including the redirection in this repo's own gated example (PMAT-1479)
+
+PMAT-1478 swept `What is NOT merge-blocking`. This is the third mandatory
+section, `What still REFUSES`, and the direction is the same as PMAT-1474's and
+PMAT-1475's: **the prose under-described what the tool does, in the one way that
+gives a reader false assurance.**
+
+Every row in that section measures TRUE — re-derived through the shipped CLI
+tonight, all of it: the thirteen WASM `emit_surface.refused` rows and their two
+stage caveats, the four here-doc spellings, `;&` / `;;&`, `case`-in-loop, the
+Ruchy frontend's exact refusal text, the BigInt-mode `range(bool)` bound
+(PMAT-1364) and its coercing non-BigInt twin, and PMAT-1378's reserved-namespace
+rules — including the subtle half, that a *local* named `__alloc` or
+`__heap_ptr` still executes correctly in a module that also emits `(func
+$__alloc)` and `(global $__heap_ptr)`, because WAT indexes locals separately
+(measured: 14, matching CPython).
+
+**What the section omitted is a whole third category.** It presents the shell
+lane as two columns — modelled, or refused — and discloses exactly one opaque
+case: *"Loop and `if` conditions and `case` patterns are captured verbatim …
+they are not modelled structurally."* `CLAUDE.md` went further and stated the
+two-column model as a universal: anything outside the enumerated surface
+refuses with a hard `FrontendError` rather than shredding into barewords.
+
+That is false, and not marginally. Twenty shapes outside the enumerated surface
+(quoting, `$VAR`, `$(…)`, pipelines, single-value assignment, the loop dialects,
+`if`/`elif`/`else`, top-level `case`) were run through the shipped CLI.
+**Twenty of twenty were accepted at exit 0. None refused.** `&&`, `||`, `;`,
+background `&`, all four redirection forms (`>` `>>` `<` `2>&1`), subshells,
+brace groups, function definitions, `!`, `[ … ]`, `export`, `set -e`, globs,
+`${V:-default}`, line continuations, trailing comments.
+
+**They are not shredded, and that is the trap.** Emit is `sh -n`-clean,
+byte-identical, and executes identically to the source — checked pairwise under
+`sh` for every one. They are not modelled either: each lowers to `Stmt::Cmd`
+with the operator carried along as an opaque `Expr::LitStr` *word*. This is the
+deliberate LitStr-passthrough design that PMAT-085..092 + PMAT-119 locked in by
+name, with `XPILE-BASHRS-SUBSHELL-001` and `XPILE-BASHRS-STMT-SEP-001` filed as
+the structural follow-ups. **The behaviour was never the defect. The two
+documents describing it were.**
+
+**Why an over-claimed refusal is the dangerous direction.** The standing rule of
+this window is that converting a silent wrong answer into an honest refusal
+outranks new capability — four slices exist only to do that. So a reader treats
+the refusal roster as the load-bearing guarantee and draws the inference: *my
+script was accepted at exit 0, therefore it is inside the modelled subset and
+its round-trip is certified.* Twenty counterexamples say otherwise, and one is
+in this repo's own gated corpus: `crates/xpile/examples/inputs/install.sh` ends
+`echo "done" > /tmp/out/install.log`, and that `>` is a `LitStr` word.
+
+**The gate that drew the inference in prose.** `shell_artifact_policy_witness.rs`
+(XPILE-SHELLPOLICY-001) says every tracked artifact "is accepted by
+`bashrs-frontend`, **so** none is an opaque blob sitting outside the
+substrate-quality regime". Its five invariants are true and stay; what does not
+follow is the *so*. Acceptance plus byte-identical re-emission is what
+passthrough gives you **for free** — a verbatim word is a fixed point by
+construction, so invariants 3–5 hold *vacuously* for the whole passthrough
+class. That file's honest claim is structural round-trip, which it does measure.
+"Inside the regime" was a stronger claim no gate checked.
+
+**Now enforced, both halves.**
+`crates/xpile/tests/shell_passthrough_disclosure_witness.rs`
+(XPILE-SHELLPASS-001) lowers each pinned shape through the real
+`BashrsFrontend` and asserts it is accepted **and** lands as `Stmt::Cmd`
+**and** still carries its operator — so a row that starts refusing, starts
+being modelled, or silently drops an operator reds and drags the prose with it.
+A non-vacuity control requires `for` / `if` / `case` to lower to `ShellLoop` /
+`ShellIf` / `ShellCase`, because `Stmt::Cmd` is only evidence if it
+discriminates. The refusal roster is pinned as the other side of the boundary.
+The prose half requires the disclosure paragraph in **both** documents
+(PMAT-1478's lesson) and screens both for a universal refusal claim, with
+haystack and needle normalised identically (PMAT-1476's) and a positive control
+proving the screen can still fire.
+
+★ **Lesson, and it is a new one for this series: a gate can be *fully correct*
+and still launder a false inference through the sentence that explains it.**
+Every prior slice found a prose claim with no gate, or a gate asking the wrong
+question. XPILE-SHELLPOLICY-001 asks the right question and answers it
+correctly — the falsehood is in the *therefore*. When a gate's doc-comment
+translates what it measured into what it means, that translation is prose and
+gets audited as prose.
+
+★ **A second lesson, cheap to reuse: probe the ACCEPT side.** Ten sweeps in a
+row hunted claims that over-state capability, so every probe list was built from
+things that should fail. Twenty minutes spent asking "what does the frontend
+accept that nobody claims it models?" found this. **A refusal roster is a
+closed-world claim, and nothing had ever tested the complement.**
+
 ### The section whose entire job is to disclose what is *not* enforced omitted one of the seven unenforced contexts — the one whose green means least — and the gate written for exactly that defect had the other document as its only subject (PMAT-1478)
 
 `Known divergences` was swept item-by-item (PMAT-1473, PMAT-1474). The other
@@ -7225,6 +7313,28 @@ strings and printed back byte-for-byte — they are not modelled structurally,
 and that is a v0.2.0 item, not a defect. Do not read "shell is supported" as
 "all of POSIX shell round-trips".
 
+⚠️ **There is a THIRD category, and exit 0 does not distinguish it from the
+first (XPILE-SHELLPASS-001, PMAT-1479).** Twenty shapes outside the enumerated
+surface were probed through the shipped CLI on 2026-07-29 and **all twenty were
+accepted**, none refused. They are not shredded — emit is `sh -n`-clean,
+byte-identical, and executes identically under `sh` — and they are not modelled:
+each lowers to `Stmt::Cmd` with the operator carried as an opaque
+`Expr::LitStr` word (the LitStr-passthrough design of PMAT-085..092 + PMAT-119;
+`XPILE-BASHRS-SUBSHELL-001` and `XPILE-BASHRS-STMT-SEP-001` are the structural
+follow-ups). The families: `&&`, `||`, `;`, background `&`, all four
+**redirection** forms (`>` `>>` `<` `2>&1`), **subshell** `( … )`, **brace
+group** `{ …; }`, **function definition** `f() { …; }`, `!` **negation**, and
+the **test bracket** `[ … ]` — plus `export`, `set -e`, globs, `${V:-default}`,
+line continuations (joined) and trailing comments (dropped). **So a script
+accepted at exit 0 is not thereby inside the modelled subset**, and neither
+`C-BASHRS-POSIX-IDEMPOTENCE`'s §14.4 stratum nor XPILE-SHELLPOLICY-001's
+corpus round-trip certifies this class — byte-identical re-emission of a
+verbatim word is a fixed point by construction. One of the eleven tracked
+artifacts relies on it: `crates/xpile/examples/inputs/install.sh` ends
+`echo "done" > /tmp/out/install.log`. Class membership is pinned by
+`crates/xpile/tests/shell_passthrough_disclosure_witness.rs`, which reds if a
+shape starts refusing, starts being modelled, or drops its operator.
+
 **Ruchy is an output language only** (PMAT-1346). `xpile transpile foo.ruchy`
 does not read Ruchy; it refuses with `unimplemented frontend: … the Ruchy
 frontend has no parser`. The routing is retained deliberately so the file gets
@@ -8318,9 +8428,17 @@ fall.out: line 8: syntax error near unexpected token `&'
 ```
 
 The emitted arm body becomes `echo one` followed by a bare `&` on its own line; `bash -n` exits
-2. The `;;&` variant fails the same way. `CLAUDE.md`'s claim that "everything else refuses with a
-hard `FrontendError` rather than shredding into barewords" is **false for `;&` and `;;&`**. Until
-that is fixed, do not run `.sh` files containing fall-through arms through `--target shell`.
+2. The `;;&` variant fails the same way. `CLAUDE.md` then carried a universally quantified promise
+that every construct outside the enumerated surface refuses with a hard `FrontendError` instead of
+shredding, and these two shapes **falsified it**. Until that is fixed, do not run `.sh` files
+containing fall-through arms through `--target shell`.
+
+> **Retro-note (PMAT-1479, 2026-07-29).** That promise was retired from `CLAUDE.md`, so do not go
+> looking for the sentence — and `;&` / `;;&` were never the only counterexamples. Twenty
+> out-of-surface shapes were probed and all twenty were **accepted**, differing from these two only
+> in that their emit is `sh -n`-clean and byte-identical rather than broken. Scoping the falsity to
+> the two shapes that happened to crash was itself an under-statement; see
+> `What still REFUSES` and XPILE-SHELLPASS-001.
 
 Everything else in the shell lane behaves as documented:
 

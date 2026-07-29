@@ -33,7 +33,7 @@
 //!    sentence is still true, and is worth keeping true);
 //! 2. every tracked shell artifact lives under one of the two gated directories;
 //! 3. every one of them is accepted by `bashrs-frontend`, so none is an opaque
-//!    blob sitting outside the substrate-quality regime;
+//!    blob that the frontend cannot even read;
 //! 4. the shell that comes back out `sh -n`-parses; and
 //! 5. re-transpiling that output reproduces it byte-for-byte — the
 //!    `C-BASHRS-POSIX-IDEMPOTENCE` fixed point, checked over the corpus rather
@@ -55,6 +55,23 @@
 //! So this file's honest claim is *structural* round-trip over the whole
 //! corpus, plus *executed* round-trip over the curated subset elsewhere — and
 //! `CLAUDE.md` now says exactly that and no more.
+//!
+//! ## What acceptance does NOT prove (XPILE-SHELLPASS-001, PMAT-1479)
+//!
+//! Invariant 3 used to end "so none is an opaque blob sitting outside the
+//! substrate-quality regime". The five invariants are unchanged and still hold;
+//! that *therefore* was wrong. Twenty shell constructs outside the frontend's
+//! enumerated surface are accepted at exit 0 and lower to `Stmt::Cmd` with the
+//! operator carried as an opaque `Expr::LitStr` word — so acceptance,
+//! `sh -n`-cleanliness and byte-identical re-emission are exactly what a
+//! verbatim word gives you **for free**, and invariants 3–5 hold *vacuously*
+//! over that class. `crates/xpile/examples/inputs/install.sh`, one of the
+//! artifacts this gate certifies, ends `echo "done" > /tmp/out/install.log`.
+//!
+//! The lesson worth keeping: a gate can measure the right property and still
+//! launder a stronger claim through the sentence that explains it. Class
+//! membership is now pinned by
+//! `crates/xpile/tests/shell_passthrough_disclosure_witness.rs`.
 //!
 //! ## Non-vacuity
 //!

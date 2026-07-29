@@ -23674,3 +23674,93 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     today (checked this slice) but the prose rows were not re-run. (b) PMAT-1468's never-swept
     Kani proved-property class (needs crates/*/src + contracts/ -- 0.1.619). (c) re-point
     PMAT-1459's 70 disclosed rules at real falsifiers.
+- id: PMAT-1479
+  status: done
+  priority: P1
+  category: honesty
+  title: The shell lane published a refusal guarantee it does not have -- twenty out-of-surface
+    constructs were probed and ALL TWENTY were accepted at exit 0, including the redirection in
+    this repo's own gated example
+  notes: 'SHIPPED 2026-07-29 (post-freeze, DOCS + TEST lane; ZERO crates/*/src, ZERO
+    contracts/*.yaml). Third and last of the three mandatory `[Unreleased]` sections --
+    PMAT-1473/1474 swept `Known divergences`, PMAT-1478 swept `What is NOT merge-blocking`, this
+    one swept `What still REFUSES`.
+
+
+    EVERY ROW IN THE SECTION MEASURES TRUE, re-derived through the shipped CLI: the 13 WASM
+    `emit_surface.refused` rows and both stage caveats, the four here-doc spellings, `;&`/`;;&`,
+    case-in-loop, the Ruchy refusal text, PMAT-1364''s BigInt-mode `range(bool)` refusal AND its
+    coercing non-BigInt twin, and PMAT-1378''s reserved-namespace rules -- including the subtle
+    half, that a LOCAL named `__alloc`/`__heap_ptr` executes correctly in a module that ALSO emits
+    `(func $__alloc)` + `(global $__heap_ptr)` (measured 14, matching CPython). The defect was not
+    a wrong row. IT WAS A MISSING CATEGORY.
+
+
+    THE FINDING. The section presents the shell lane as two columns -- modelled or refused -- and
+    discloses exactly one opaque case (loop/if conditions, case patterns). CLAUDE.md stated the
+    two-column model as a UNIVERSAL: anything outside the enumerated surface refuses with a hard
+    FrontendError rather than shredding into barewords. FALSE. Twenty shapes outside the surface
+    (quoting/$VAR/$(..)/pipelines/single assignment/loops/if/elif/else/top-level case) were run
+    through the shipped CLI: TWENTY OF TWENTY ACCEPTED at exit 0, none refused -- `&&`, `||`, `;`,
+    background `&`, all four redirection forms, subshells, brace groups, function definitions, `!`,
+    `[ .. ]`, `export`, `set -e`, globs, `${V:-default}`, line continuations, trailing comments.
+    They are NOT shredded (emit is `sh -n`-clean, byte-identical, and pairwise-identical under `sh`)
+    and NOT modelled (each lowers to `Stmt::Cmd` with the operator as an opaque `Expr::LitStr`
+    WORD) -- the deliberate LitStr-passthrough design PMAT-085..092 + PMAT-119 locked in by name.
+    THE BEHAVIOUR WAS NEVER THE DEFECT; THE TWO DOCUMENTS DESCRIBING IT WERE.
+
+
+    WHY THE DIRECTION IS THE DANGEROUS ONE. The window''s standing rule is that an honest refusal
+    outranks new capability, so a reader treats the refusal roster as the guarantee and infers "my
+    script was accepted at exit 0, therefore it is inside the modelled subset and certified".
+    Twenty counterexamples, and one sits in the repo''s own gated corpus:
+    `crates/xpile/examples/inputs/install.sh` ends `echo "done" > /tmp/out/install.log` -- that `>`
+    is a LitStr word.
+
+
+    ★★ THE NEW LESSON, and it is new for this series: A GATE CAN BE FULLY CORRECT AND STILL LAUNDER
+    A FALSE INFERENCE THROUGH THE SENTENCE THAT EXPLAINS IT. `shell_artifact_policy_witness.rs`
+    (XPILE-SHELLPOLICY-001) says each tracked artifact "is accepted by bashrs-frontend, SO none is
+    an opaque blob sitting outside the substrate-quality regime". Its five invariants are true and
+    unchanged; the *therefore* was wrong -- acceptance + byte-identical re-emission is what a
+    verbatim word gives you FOR FREE, so invariants 3-5 hold VACUOUSLY over the whole passthrough
+    class. Every prior slice found prose with no gate, or a gate asking the wrong question. This
+    was a gate asking the right question whose doc-comment translated the answer into something
+    stronger. WHEN A GATE EXPLAINS WHAT IT MEANS, THAT TRANSLATION IS PROSE AND GETS AUDITED AS
+    PROSE.
+
+
+    ★ SECOND LESSON, CHEAP TO REUSE: PROBE THE ACCEPT SIDE. Ten sweeps in a row hunted claims that
+    OVER-state capability, so every probe list was built from things that should FAIL. Asking "what
+    does the frontend accept that nobody claims it models?" found this in twenty minutes. A REFUSAL
+    ROSTER IS A CLOSED-WORLD CLAIM AND NOTHING HAD EVER TESTED THE COMPLEMENT.
+
+
+    ★ THE PLAYBOOK RULE FIRED AGAIN, ON THE FIRST TRY: running the new gate over the files it was
+    written about found a SECOND live instance -- an 8,400-line-deep release entry QUOTING
+    CLAUDE.md''s universal promise and scoping its falsity to `;&`/`;;&` ALONE. Two defects in one
+    sentence: a citation to a sentence PMAT-1479 was deleting (a reader who follows it finds
+    nothing), and an UNDER-statement (twenty shapes falsify it, not two). REWORDED, NOT EXEMPTED,
+    per PMAT-1476 -- with a dated retro-note, since the historical report itself stays.
+
+
+    ENFORCED BY `crates/xpile/tests/shell_passthrough_disclosure_witness.rs`
+    (XPILE-SHELLPASS-001), 5 assertions: (1) each pinned shape lowers through the REAL
+    BashrsFrontend to `Stmt::Cmd` AND still carries its operator word -- reds if a shape starts
+    refusing, starts being modelled, or silently DROPS an operator; (2) non-vacuity control --
+    for/if/case must lower to ShellLoop/ShellIf/ShellCase, else `Stmt::Cmd` discriminates nothing;
+    (3) the published refusal roster still refuses; (4) BOTH documents carry the disclosure
+    paragraph naming every family pinned in the table (PMAT-1478''s lesson -- the table is the
+    source of truth and the prose follows it); (5) neither document makes a universal refusal
+    claim, needle and haystack normalised identically (PMAT-1476''s lesson) with a positive control
+    proving the screen can fire. RED HALF RUN: 4 and 5 both failed before the doc edits, 1-3 passed.
+
+
+    NEXT FREE ID PMAT-1480. NEXT PICK: 2026-07-30 -> PMAT-1373 (tag cut), 2026-07-31 -> PMAT-1374
+    (publish). REMAINING HONESTY LEADS: (a) PMAT-1468''s never-swept Kani proved-property class
+    (needs crates/*/src -- 0.1.619); (b) re-point PMAT-1459''s 70 disclosed rules at real
+    falsifiers; (c) NEW, from this slice: the ACCEPT-side complement is unswept for every OTHER
+    frontend -- the Python/C/WASM lanes all publish refusal rosters and nothing tests what they
+    accept without modelling. `contracts/compile-rust-to-wasm-v1.yaml`''s `str-of-float` row still
+    says "Queued for 0.1.618", a forward-looking claim about the release being cut (frozen out
+    this window; contracts/*.yaml).'
