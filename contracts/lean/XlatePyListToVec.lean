@@ -1001,8 +1001,9 @@ theorem length_monoid_homomorphism_diamond {α : Type}
     **Broadens DEPTH-4 from 5 to 6 contracts.** After PMAT-330
     completed depth-4 ACROSS ALL 5 LAYERS, this is the first
     POST-UNIVERSAL broadening: pushes XlatePyList (Layer 2) from
-    depth-3 to depth-4, adding a SECOND Layer 2 contract at
-    depth-4 (Bashrs was the first via PMAT-329).
+    depth-3 to depth-4, becoming the FIRST Layer 2 contract at
+    depth-4 (PMAT-1462: this record credited Bashrs, which
+    declares Layer 1).
 
     The 4 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
     - PMAT-221 list_free_monoid_diamond: (List, ++, []) monoid
@@ -1067,8 +1068,8 @@ theorem list_reverse_involution_diamond {α : Type} (l : PyListSilver α) :
     **Broadens DEPTH-5 from 6 to 7 contracts.** After PMAT-348
     achieved depth-5 with 2nd Layer 3 contract (XpileBackendTrait),
     PMAT-349 pushes XlatePyListToVec (Layer 2) from depth-4 to
-    depth-5, adding a SECOND Layer 2 contract at depth-5
-    (Bashrs was first via PMAT-346).
+    depth-5, becoming the FIRST Layer 2 contract at depth-5
+    (PMAT-1462: Bashrs declares Layer 1).
 
     The 5 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
     - PMAT-221 list_free_monoid_diamond: (List, ++, []) monoid
@@ -1137,7 +1138,7 @@ theorem py_list_silver_struct_extensionality_diamond {α : Type}
 
     **Broadens depth-6 substrate-wide.** PMAT-360 pushes
     XlatePyListToVec (Layer 2) from depth-5 to depth-6 as the
-    second L2 contract at depth-6+ (Bashrs was first via PMAT-357).
+    first L2 contract at depth-6+ (PMAT-1462: Bashrs declares L1).
 
     The 6 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
     - PMAT-221 list_free_monoid_diamond: free monoid
@@ -1210,8 +1211,8 @@ theorem typed_rust_vec_silver_struct_extensionality_diamond
     (XPILE-REFINE-XLATE-PY-LIST-008).
 
     **Broadens DEPTH-7 substrate-wide.** Pushes XlatePyListToVec
-    (Layer 2) from depth-6 to depth-7 as the second L2 contract at
-    depth-7+ (Bashrs was first via PMAT-368).
+    (Layer 2) from depth-6 to depth-7 as the first L2 contract at
+    depth-7+ (PMAT-1462: Bashrs declares Layer 1).
 
     The 7 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
     - PMAT-221 list_free_monoid_diamond
@@ -1266,7 +1267,7 @@ theorem heterogeneous_list_silver_struct_extensionality_diamond
     (XPILE-REFINE-XLATE-PY-LIST-009).
 
     **Broadens DEPTH-8 substrate-wide.** Pushes XlatePyListToVec
-    (Layer 2) from depth-7 to depth-8 as the second L2 contract at
+    (Layer 2) from depth-7 to depth-8 as the first L2 contract at
     depth-8+.
 
     The 8 Diamond categories on C-XLATE-PY-LIST-TO-VEC:
@@ -1321,7 +1322,8 @@ theorem homogeneous_list_silver_struct_extensionality_diamond
 
   Adds a NINTH distinct Diamond category on
   `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-8 to
-  depth-9. Second L2 contract at depth-9 (after PMAT-390 Bashrs).
+  depth-9. First L2 contract at depth-9 (PMAT-1462: PMAT-390
+  pushed Bashrs, which declares Layer 1).
   Polymorphic in α — first polymorphic subtype-ext on the
   substrate.
 -/
@@ -1350,8 +1352,9 @@ theorem non_empty_homogeneous_list_subtype_extensionality_diamond
 
   Adds a TENTH distinct Diamond category on
   `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-9 to
-  depth-10. Third L2 contract at depth-10 (after PMAT-401 Bashrs
-  and PMAT-400 FfiCpythonExt openers). Polymorphic in α — second
+  depth-10. First L2 contract at depth-10 (PMAT-1462: the "third"
+  counted Bashrs, which declares Layer 1, and FfiCpythonExt,
+  which declares Layer 4). Polymorphic in α — second
   polymorphic Template 10 instance.
 -/
 def homogeneous_to_simple_list {α : Type}
@@ -1387,7 +1390,7 @@ theorem homogeneous_to_simple_list_projection_diamond
 
   Adds an ELEVENTH distinct Diamond category on
   `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-10 to
-  depth-11. Third L2 contract at depth-11.
+  depth-11. First L2 contract at depth-11 (PMAT-1462).
 -/
 def empty_py_list_silver (α : Type) : PyListSilver α :=
   { elems := [] }
@@ -1418,7 +1421,7 @@ theorem empty_py_list_silver_canonical_diamond (α : Type) :
 
   Adds a TWELFTH distinct Diamond category on
   `C-XLATE-PY-LIST-TO-VEC`, pushing the contract from depth-11 to
-  depth-12. Third L2 contract at depth-12.
+  depth-12. First L2 contract at depth-12 (PMAT-1462).
 -/
 def py_list_bronze_to_silver_u8 (l : PyList) : PyListSilver UInt8 :=
   { elems := l.elems.toList }

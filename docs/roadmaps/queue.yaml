@@ -1,28 +1,27 @@
-# xpile autonomous work-queue — the next-pick source of truth.
-# v0.1.617 SHIPPED 2026-07-26. NEXT: v0.1.618, Fri 2026-07-31.
-# Pick the lowest-numbered OPEN item whose `date` <= today (ISO); R1 first.
-
-updated: "2026-07-29 (PMAT-1460 landed from an honesty hunt: three contracts declare\
-  \ `metadata.xpile.layer: translation` -- LAYER 2 -- in machine-readable metadata AND in the\
-  \ opening sentence of their own description, and are filed under LAYER 5 at 46 sites under\
-  \ contracts/, with Notation filed under LAYER 4 at 3 more. ONE CONTRACT, THREE LAYERS. Nine of\
-  \ 35 contracts carry the tag and nothing had ever read it. LESSONS: (1) NEVER-TRUE, NOT AGED --\
-  \ the tag is in cdcece9c, the INITIAL COMMIT, and the first `(Layer 5)` landed months later at\
-  \ PMAT-334/351/352, so every attribution was false the moment it was typed; every prior slice in\
-  \ this arc found a number that had AGED, and the two defects have different fixes. (2) TAKE THE\
-  \ CLASS ONE LEVEL DOWN, WHERE IT IS DECIDABLE: the BROADENING COUNTS are undecidable here (26\
-  \ contracts carry no layer tag), but the LABEL those counts are computed over is arithmetic --\
-  \ and the label was the thing that was wrong. (3) THE DIRECTION WAS FLATTERING: 41 repaired\
-  \ lines tally Layer-5 breadth ('4 Layer 5 contracts at depth-5') when exactly ONE Layer-5\
-  \ contract is past depth-1, so the headline ACROSS-LAYERS Diamond story ran 4x over. (4) THE\
-  \ REFUTATION WAS IN THE SAME SENTENCE -- Notation.lean writes 'PMAT-395 (PyListToVec L2),\
-  \ PMAT-396 (XlateLeanToRust L5)', the UNTAGGED contract right and the TAGGED one wrong, in one\
-  \ list. (5) THE LOOSE NEEDLE COST TWO FALSE POSITIVES on the live tree (a next-clause subject,\
-  \ and a Layer-1/Layer-2 RANGE), so the name-to-token gap is capped at 3 chars and both shapes\
-  \ are pinned as cases that must NOT be reported. (6) BOTH REMAINING HOLES ARE MACHINE-DISCLOSED\
-  \ rather than described: the gate prints its 9-of-35 reach and NAMES the 26 it cannot decide,\
-  \ and pins that it cannot see a layer written BEFORE a name. No guard was lost to its own red\
-  \ half -- second slice in six.)"
+updated: "2026-07-29 (PMAT-1462 landed from an honesty hunt: PMAT-1461 corrected the LAYER\
+  \ LABEL and left every ORDINAL computed over it. A layer-scoped ordinal -- 'the second L2\
+  \ contract at depth-10' -- is a RANK IN A SET, and both halves of that set are machine-\
+  \ readable: the layer from `metadata.xpile.layer` (universal since PMAT-1461) and the arrival\
+  \ order from the `# PMAT-NNN` header on each `*_diamond:` entry. 29 of the 103 ordinals under\
+  \ contracts/ disagreed with that arithmetic, all one root cause: C-BASHRS-POSIX-IDEMPOTENCE\
+  \ ranked as a LAYER 2 contract when it declares `semantics`, i.e. Layer 1. LESSONS: (1) A\
+  \ TALLY COMPUTED OVER A WRONG LABEL IS NOT A LABEL -- none of the 29 sites spells a layer\
+  \ beside a contract name (the layer rides on the ordinal and the subject is implicit), so the\
+  \ PMAT-1460/1461 label needle could not reach a single one of them at ANY tagging level.\
+  \ (2) THE TRUE HALF LAUNDERS THE FALSE HALF, again: Bashrs really IS second -- for LAYER 1,\
+  \ after PyIntArith, at every depth 4..13 -- so a reader who checks the ordinal gets YES and\
+  \ stops. (3) THE DISCLOSURE ITS OWN DIFF REFUTED: PMAT-1461's header excused these as '127\
+  \ tallies phrased over UNTAGGED contracts, outside reach' in the very commit that took the\
+  \ tagged set from 9/35 to 35/35. (4) THE DATING QUESTION IS ANSWERED BY CONSTRUCTION for an\
+  \ ordinal -- the record's own date is derivable from the block it sits in -- so no policy\
+  \ call was needed and no live count was frozen; the 108-site substrate-wide COUNT class is\
+  \ untouched and that question is still genuinely open. (5) THE OTHER DIRECTION MATTERED:\
+  \ C-XLATE-PY-LIST-TO-VEC was the FIRST Layer-2 contract at depths 4..13 and was written down\
+  \ as second/third -- a real across-layers milestone given away to a contract from another\
+  \ layer. (6) TWO GUARDS FAILED ON THEIR OWN AUTHOR AND WERE FIXED RATHER THAN DOWNGRADED --\
+  \ a ground-truth cross-check that was not independent of what it checked, and a wrapping\
+  \ guard that asserted flattening 'more than doubles' the reach when the corpus said 62->71.\
+  \ Fifth slice in eight.)"
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -78,6 +77,50 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1462
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: PMAT-1461 corrected the LABEL and left every ORDINAL computed over it -- 29 sites
+    rank a Layer-1 contract inside the Layer-2 set, and the contract that actually earned
+    "FIRST Layer 2 contract at depth-4..13" was written down as second
+  notes: 'SHIPPED 2026-07-29. Took PMAT-1461 NEXT-PICK (a) and found a sharper defect one
+    level down inside it. ** A layer-scoped ORDINAL is a RANK IN A SET and both halves of
+    that set are machine-readable: the layer from `metadata.xpile.layer` (universal since
+    PMAT-1461) and the arrival order from the `# PMAT-NNN` on each `*_diamond:` entry.
+    29 of 103 ordinals under contracts/ disagreed -- 20 yaml, 9 lean -- ONE root cause:
+    C-BASHRS-POSIX-IDEMPOTENCE ranked as Layer 2 when it declares `semantics` (Layer 1).
+    ** BOTH DIRECTIONS: Bashrs claimed a rank in a set it is not in (the Layer-2 population
+    at depth-10 was EMPTY at PMAT-401), and C-XLATE-PY-LIST-TO-VEC was DEMOTED from FIRST to
+    second/third Layer-2 contract at depths 4..13 by the phantom predecessor.
+    ** ⭐ THE TRUE HALF LAUNDERS THE FALSE HALF: Bashrs IS second -- for LAYER 1, after
+    PyIntArith, at every depth. Right ordinal, wrong layer; a reader who checks the ordinal
+    gets YES and stops.
+    ** ⭐ A TALLY COMPUTED OVER A WRONG LABEL IS NOT A LABEL -- none of the 29 spells a layer
+    beside a contract name, so PMAT-1460/1461s label needle could never reach them.
+    ** ⭐ THE DISCLOSURE ITS OWN DIFF REFUTED: PMAT-1461 excused these as "phrased over
+    UNTAGGED contracts" in the same commit that tagged the last 26. Repaired.
+    ** ⭐ THE DATING QUESTION ANSWERED BY CONSTRUCTION: an ordinals date is derivable from the
+    block it sits in, so no policy call is needed and nothing is frozen. The 108-site
+    substrate-wide COUNT class is untouched and still open -- that question is still real.
+    ** GATE contract_layer_ordinal_integrity.rs (XPILE-LAYERORDINAL-001), 8 tests, 100 ranked
+    claims, NO quotation escape hatch (so PMAT-1461s three annotation comments that restate the
+    false ordinal were REWRITTEN, not exempted). Lean anchored by an OWNED `**PMAT-NNN`; an
+    earlier nearest-id draft produced 21 FALSE ACCUSATIONS and was caught pre-ship.
+    ** RED HALF RUN on the shipped gate: 20+9 reported unmodified, 0 after. Controls: 54/74
+    yaml and 20/29 lean ordinals were ALREADY CORRECT and stay green.
+    ** TWO GUARDS FAILED ON THEIR AUTHOR: the ground-truth cross-check was not independent
+    (replaced with `xpile diamond --json`), and the wrapping guard claimed flattening "more
+    than doubles" the reach when the corpus said 62->71 -- DELETED and replaced with the
+    measured figure (worth 3 of 29 sites). Fifth slice in eight.
+    ** NEXT PICK: (a) the 108-site substrate-wide depth-count class -- decide the dating
+    question FIRST; (b) the CARDINAL layer-scoped tallies ("3 L3 contracts at depth-7"), same
+    subject and same derivable date, deliberately NOT covered because a cardinal names no
+    subject contract; (c) `1025 Lean theorems`, external and uncheckable; (d) re-point
+    PMAT-1459s 70 disclosed falsification commands.
+    NEXT FREE ID IS PMAT-1463. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
+    HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1461
   status: done
   ev_rank: R1

@@ -7,6 +7,106 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### PMAT-1461 corrected the layer LABEL and left every ORDINAL computed over it — 29 sites rank a Layer-1 contract inside the Layer-2 set (PMAT-1462)
+
+A layer-scoped ordinal — "the **second L2 contract at depth-10**", "the
+**third Layer 2 contract at depth-11**" — is a rank inside a set: *contracts
+declaring layer N that had reached depth-D by the slice writing the sentence*.
+Both halves of that set are machine-readable. The layer comes from
+`metadata.xpile.layer`, which PMAT-1461 made universal (9 of 35 → 35 of 35).
+The arrival order comes from the `# PMAT-NNN:` header on each `*_diamond:`
+entry. So the rank is **arithmetic**, and at `b31fe0ac` **29 of the 103
+layer-scoped ordinals under `contracts/` disagreed with it** — 20 in `*.yaml`,
+9 in `lean/*.lean`.
+
+Every one of the 29 had a single root cause: `C-BASHRS-POSIX-IDEMPOTENCE`
+counted as a **Layer 2** contract. It declares `layer: semantics` — Layer 1.
+
+**The damage ran in both directions.**
+
+* **Bashrs claimed a rank in a layer it is not in.** `"Diamond depth-10
+  broadened: second L2 contract at depth-10"` — a normative `postconditions:`
+  entry — has no rank to be second in. Bashrs is not a Layer-2 contract, and
+  at PMAT-401 the Layer-2 population at depth-10 was *empty*.
+* **`C-XLATE-PY-LIST-TO-VEC` was demoted by the phantom.** It was published as
+  the SECOND, then THIRD, Layer-2 contract at depths 4 through 13. It was the
+  **FIRST** at every one of them — a genuine across-layers milestone, credited
+  to a contract from another layer.
+
+⭐ **The true half launders the false half.** Bashrs really *is* second — for
+Layer **1**, after `C-PY-INT-ARITH`, at every depth from 4 to 13. The ordinal
+was correct and the layer was wrong, so a reader who checks "is Bashrs second?"
+gets YES and stops. Same shape as PMAT-1458's universality clause riding beside
+a stale population size.
+
+⭐ **A tally computed over a wrong label is not a label.** PMAT-1460 and
+PMAT-1461 repaired 46 + 18 sites that spell a layer *beside a contract name*.
+None of these 29 does — the layer rides on the ordinal and the subject is
+implicit (`"second L2 contract at depth-13"` names nobody). A label needle
+cannot reach them at any level of tagging, which is why completing the tagging
+exposed the class rather than closing it.
+
+⭐ **The disclosure its own diff refuted.** PMAT-1461's gate header excused
+exactly these as *"the 127 layer-scoped tallies phrased over untagged
+contracts … are outside its reach and were left alone"* — written into the very
+commit that left nothing untagged. The excuse was false before anyone could
+read it. It has been rewritten, and the gate it now points at exists.
+
+⭐ **The refutation was in the sentence.** `"Third L2 contract at depth-10
+(after PMAT-401 Bashrs and PMAT-400 FfiCpythonExt openers)"` ranks a Layer-1 and
+a Layer-4 contract inside the Layer-2 set — and prints its own basis while doing
+it. Third instance of this shape after PMAT-1460 and PMAT-1461.
+
+**The dating question, answered by construction rather than by policy.**
+PMAT-1461 flagged a real open question before handing this class on: may a dated
+broadening record freeze a substrate-wide count (`"8 contracts at depth-5+"`,
+live 13)? For an **ordinal** the question never arises — the record's own date is
+derivable from the `# PMAT-NNN` on the block it sits in, so each rank is checked
+against the state *at that slice*. Nothing is frozen and no live count is
+asserted. **The 108-site substrate-wide count class is untouched and still
+open.**
+
+**Gate.** `crates/xpile/tests/contract_layer_ordinal_integrity.rs`
+(`XPILE-LAYERORDINAL-001`), 8 tests over 100 ranked claims (71 yaml + 29 Lean),
+**unconditional — no quotation escape hatch anywhere**. That is why PMAT-1461's
+three annotation comments, which quote the false ordinal verbatim while
+correcting it, were *rewritten* rather than exempted: an escape hatch keyed on
+"this sentence is a correction" is a laundering route for the next real claim.
+Lean docstrings are anchored by their own `**PMAT-NNN` and only when that id is
+one of the **owning contract's** Diamond ids; a block failing that test is
+reported as UNANCHORED rather than judged (0 today). An earlier draft anchored
+on the nearest PMAT id in a three-line window and produced **21 false
+accusations against correct prose** — precisely PMAT-1461's "reads the next
+item's label" failure — caught by the control before shipping.
+
+**Red half run on the shipped gate**, against unmodified `contracts/`: 20 yaml
++ 9 Lean reported, 0 after repair. **Controls:** 54 of the 74 yaml ordinals and
+20 of the 29 Lean ordinals were *already correct* before the fix and stay green,
+so the rule and the needle are both validated on the substrate's own records —
+not only on constructed strings.
+
+**Two guards failed on their own author and were fixed, not downgraded.** The
+ground-truth cross-check compared parsed Diamond entries against the
+`lean_theorem:` *line count* in the same file — not independent of the entry set
+it was checking, and wrong besides (the tier ladder carries four such lines on
+non-Diamond entries); it now cross-checks `xpile diamond --json`, the shipped
+binary's own parser, 35 of 35 agreeing. The wrapping guard asserted that prose
+flattening "more than doubles" the reach; the live corpus said 62 → 71, so the
+assertion was **deleted** and the measured figure written down instead —
+flattening is worth 3 of the 29 sites. Fifth slice in eight to lose a guard to
+its own red half.
+
+**Also repaired:** five more Bashrs-as-Layer-2 sites in
+`contracts/lean/Bashrs.lean` of the form `(Layer 2 BROADENS DEPTH-7)` — the
+layer-written-*before*-the-name shape PMAT-1461 disclosed as its own blind spot
+and hand-repaired only for `Notation`.
+
+**Scope.** `contracts/*.yaml` and `contracts/lean/*.lean` prose only: no `rule:`,
+`test:`, `lean_theorem:`, `kani_harness:` or equation key changed, and zero
+`crates/*/src`. `CHANGELOG.md` and `docs/roadmaps/*.yaml` carry the same
+sentences in historical-ledger position and are left alone per PMAT-1461
+precedent — named here rather than silently excluded.
+
 ### The gate that decided contract layers could not see 26 of the 35 contracts, and the 18 sites it could not see filed a Layer-1 contract under Layer 2 (PMAT-1461)
 
 PMAT-1460 built `XPILE-LAYERLABEL-001` to decide one thing: no text under

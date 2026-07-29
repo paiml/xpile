@@ -480,8 +480,8 @@ equations:
   silver_to_bronze_projection_diamond:
     # PMAT-401: TENTH Diamond on this contract — BROADENS DEPTH-10
     # substrate-wide. Pushes Bashrs (Layer 1) from depth-9 to depth-10
-    # (PMAT-1461: Layer 1, not the "Second L2 contract at depth-10"
-    # this record claimed) in the broadening wave (after
+    # (PMAT-1461/PMAT-1462: Layer 1, and the second L1 contract at
+    # depth-10 after PyIntArith — this record filed it under L2) in the broadening wave (after
     # PMAT-400 FfiCpythonExt opening L4).
     # SILVER→BRONZE TIER PROJECTION: define the canonical forgetful
     # map silver_to_bronze : OutcomeSilver → Outcome that projects out
@@ -510,13 +510,13 @@ equations:
     preconditions:
       - "one OutcomeSilver record"
     postconditions:
-      - "Diamond depth-10 broadened: second L2 contract at depth-10"
+      - "Diamond depth-10 broadened: second L1 contract at depth-10"
 
   empty_success_outcome_canonical_diamond:
     # PMAT-412: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
     # substrate-wide. Pushes Bashrs (Layer 1) from depth-10 to depth-11.
-    # PMAT-1461: Layer 1, not the "Second L2 contract at depth-11"
-    # this record claimed.
+    # PMAT-1461/PMAT-1462: Layer 1, and the second L1 contract at
+    # depth-11 after PyIntArith — this record filed it under L2.
     # CANONICAL EMPTY-SUCCESS OutcomeSilver: define the canonical
     # OutcomeSilver element with empty observable and zero exit_code
     # — the POSIX-shell empty success trace.
@@ -539,13 +539,13 @@ equations:
       - "Captures the POSIX-shell empty success trace as a typed canonical element"
     preconditions: []
     postconditions:
-      - "Diamond depth-11 broadened: second L2 contract at depth-11"
+      - "Diamond depth-11 broadened: second L1 contract at depth-11"
 
   bronze_to_silver_lift_diamond:
     # PMAT-423: TWELFTH Diamond on this contract — BROADENS DEPTH-12
     # substrate-wide. Pushes Bashrs (Layer 1) from depth-11 to depth-12.
-    # PMAT-1461: Layer 1, not the "Second L2 contract at depth-12"
-    # this record claimed.
+    # PMAT-1461/PMAT-1462: Layer 1, and the second L1 contract at
+    # depth-12 after PyIntArith — this record filed it under L2.
     # BRONZE→SILVER LIFT on Outcome: define the canonical lift
     # bronze_to_silver : Outcome → OutcomeSilver that preserves
     # observable and sets default exit_code to 0 (success path).
@@ -567,7 +567,7 @@ equations:
       - "BRONZE→SILVER LIFT HOMOMORPHISM — second instance of Template 12 (after PMAT-422 FfiCpythonExt)"
     preconditions: []
     postconditions:
-      - "Diamond depth-12 broadened: second L2 contract at depth-12"
+      - "Diamond depth-12 broadened: second L1 contract at depth-12"
 
   outcome_roundtrip_identity_diamond:
     # PMAT-434: THIRTEENTH Diamond on this contract — BROADENS DEPTH-13.
@@ -591,7 +591,7 @@ equations:
       - "BRONZE→SILVER→BRONZE ROUND-TRIP IDENTITY — second instance of Template 13"
     preconditions: []
     postconditions:
-      - "Diamond depth-13 broadened: second L2 contract at depth-13"
+      - "Diamond depth-13 broadened: second L1 contract at depth-13"
 
 falsification_tests:
   - id: FALSIFY-BASHRS-POSIX-IDEMP-001

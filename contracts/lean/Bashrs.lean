@@ -492,7 +492,7 @@ theorem exit_code_constant_projection_diamond
     rfl
 
 /-! ## PMAT-329 — FOURTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
-    (Layer 2 BROADENING DEPTH-4 ACROSS LAYERS): OutcomeSilver
+    (Layer 1 BROADENING DEPTH-4 ACROSS LAYERS): OutcomeSilver
     STRUCTURE EXTENSIONALITY — `OutcomeSilver` is a record type
     with field-extensional equality and decidable equality
     (XPILE-REFINE-BASHRS-007).
@@ -591,7 +591,7 @@ theorem outcome_struct_extensionality_diamond
   · rfl
 
 /-! ## PMAT-346 — FIFTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
-    (Layer 2 BROADENING DEPTH-5 from 3 to 4 layers):
+    (Layer 1 BROADENING DEPTH-5):
     OUTCOME OBSERVABLE STRING LENGTH NAT STRUCTURE
     (XPILE-REFINE-BASHRS-008).
 
@@ -636,7 +636,7 @@ theorem outcome_observable_length_nat_diamond (o : OutcomeSilver) :
   · rfl
 
 /-! ## PMAT-357 — SIXTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
-    (Layer 2 BROADENS DEPTH-6 from 3 to 4 LAYERS):
+    (Layer 1 BROADENS DEPTH-6):
     OUTCOME EXIT-CODE INT SIGN STRUCTURE
     (XPILE-REFINE-BASHRS-009).
 
@@ -725,13 +725,14 @@ theorem outcome_exit_code_int_sign_diamond (o : OutcomeSilver) :
   · rfl
 
 /-! ## PMAT-368 — SEVENTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
-    (Layer 2 BROADENS DEPTH-7):
+    (Layer 1 BROADENS DEPTH-7):
     OUTCOME (BRONZE) STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-BASHRS-010).
 
     **Broadens DEPTH-7 substrate-wide.** Pushes Bashrs (Layer 1)
-    from depth-6 to depth-7. PMAT-1461: Layer 1, not the "second
-    L2/non-L1-L5 contract at depth-7+" this record claimed.
+    from depth-6 to depth-7. PMAT-1461/PMAT-1462: Layer 1, and the second L1
+    contract at depth-7 after PyIntArith — this record filed it
+    under L2.
 
     The 7 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
     - PMAT-215 bashrs_pure_function_diamond
@@ -784,7 +785,7 @@ theorem outcome_struct_extensionality_bronze_diamond
   · rfl
 
 /-! ## PMAT-379 — EIGHTH Diamond on C-BASHRS-POSIX-IDEMPOTENCE
-    (Layer 2 BROADENS DEPTH-8):
+    (Layer 1 BROADENS DEPTH-8):
     OUTCOME (BRONZE) OBSERVABLE STRING.LENGTH NAT STRUCTURE
     (XPILE-REFINE-BASHRS-011).
 
@@ -844,7 +845,7 @@ theorem outcome_observable_length_bronze_nat_diamond (o : Outcome) :
 
   Adds a NINTH distinct Diamond category on
   `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-8
-  to depth-9. Second L2 contract at depth-9.
+  to depth-9. Second L1 contract at depth-9.
 -/
 theorem successful_outcome_subtype_extensionality_diamond
     (s1 s2 : SuccessfulOutcome) :
@@ -880,7 +881,7 @@ theorem successful_outcome_subtype_extensionality_diamond
 
   Adds a TENTH distinct Diamond category on
   `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-9
-  to depth-10. Second L2 contract at depth-10 in the broadening
+  to depth-10. Second L1 contract at depth-10 in the broadening
   wave (after PMAT-400 FfiCpythonExt opening L4).
 -/
 def silver_to_bronze (o : OutcomeSilver) : Outcome :=
@@ -912,7 +913,7 @@ theorem silver_to_bronze_projection_diamond (o : OutcomeSilver) :
 
   Adds an ELEVENTH distinct Diamond category on
   `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-10
-  to depth-11. Second L2 contract at depth-11 in the broadening wave.
+  to depth-11. Second L1 contract at depth-11 in the broadening wave.
 -/
 def empty_success_outcome : OutcomeSilver :=
   { observable := "", exit_code := 0 }
@@ -944,7 +945,7 @@ theorem empty_success_outcome_canonical_diamond :
 
   Adds a TWELFTH distinct Diamond category on
   `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-11
-  to depth-12. Second L2 contract at depth-12 in the broadening
+  to depth-12. Second L1 contract at depth-12 in the broadening
   wave.
 -/
 def bronze_to_silver (o : Outcome) : OutcomeSilver :=
@@ -976,7 +977,7 @@ theorem bronze_to_silver_lift_diamond (o : Outcome) :
 
   Adds a THIRTEENTH distinct Diamond category on
   `C-BASHRS-POSIX-IDEMPOTENCE`, pushing the contract from depth-12
-  to depth-13. Second L2 contract at depth-13.
+  to depth-13. Second L1 contract at depth-13.
 -/
 theorem outcome_roundtrip_identity_diamond (o : Outcome) :
     -- (a) Bronze→Silver→Bronze is identity on Bronze

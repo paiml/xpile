@@ -22337,3 +22337,83 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+
+- id: PMAT-1462
+  title: 'PMAT-1461 corrected the LABEL and left every ORDINAL computed over it -- 29 sites
+    rank a Layer-1 contract inside the Layer-2 set, and the contract that actually earned
+    "FIRST Layer 2 contract at depth-4..13" was written down as second'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1461 NEXT-PICK (a), the 112-site substrate-wide depth-count class,
+    and found a DIFFERENT and SHARPER defect one level down inside it.
+    ** THE DEFECT. A layer-scoped ORDINAL ("the second L2 contract at depth-10") is a rank
+    inside a set: contracts declaring layer N that had reached depth-D by the slice writing
+    the sentence. At b31fe0ac, 29 of the 103 such ordinals under contracts/ disagreed with
+    that arithmetic -- 20 in *.yaml, 9 in lean/*.lean -- ALL ONE ROOT CAUSE:
+    C-BASHRS-POSIX-IDEMPOTENCE ranked as a LAYER 2 contract. It declares `layer: semantics`.
+    ** BOTH DIRECTIONS. (a) Bashrs claimed a rank in a layer it is not in -- as a Layer-2
+    claim "second L2 contract at depth-10" has NO rank, and at PMAT-401 the Layer-2 population
+    at depth-10 was EMPTY. (b) C-XLATE-PY-LIST-TO-VEC was DEMOTED by the phantom: published as
+    the SECOND then THIRD Layer-2 contract at depths 4..13 when it was the FIRST at every one
+    -- a real across-layers milestone given away to a contract from another layer.
+    ** ⭐ THE TRUE HALF LAUNDERS THE FALSE HALF, AGAIN (PMAT-1458 shape). Bashrs IS second --
+    for LAYER 1, after C-PY-INT-ARITH, at every depth 4..13. The ordinal was right and the
+    layer was wrong, so a reader checking "is Bashrs second?" gets YES and stops.
+    ** ⭐ A TALLY COMPUTED OVER A WRONG LABEL IS NOT A LABEL. PMAT-1460/1461 repaired 46+18
+    sites that SPELL a layer beside a contract NAME. None of these 29 does -- the layer rides
+    on the ordinal and the subject is implicit ("second L2 contract at depth-13" names nobody).
+    A label needle cannot reach them at any tagging level.
+    ** ⭐ THE DISCLOSURE THAT ITS OWN DIFF REFUTED. PMAT-1461s header excused these as "127
+    layer-scoped tallies phrased over UNTAGGED contracts ... outside its reach" -- while the
+    same commit took the tagged set from 9/35 to 35/35. The excuse was false before anyone
+    could read it. Repaired here, and the gate it points at now exists.
+    ** ⭐ THE REFUTATION WAS IN THE SENTENCE (PMAT-1460 shape, third time). "Third L2 contract
+    at depth-10 (after PMAT-401 Bashrs and PMAT-400 FfiCpythonExt openers)" ranks a Layer-1 and
+    a Layer-4 contract inside the Layer-2 set, and prints its own basis while doing it.
+    ** ⭐ THE DATING QUESTION, ANSWERED BY CONSTRUCTION -- NOT BY POLICY. PMAT-1461 flagged a
+    real open question: may a dated broadening record freeze a substrate-wide count? For an
+    ORDINAL it never arises: the record`s own date is derivable from the `# PMAT-NNN` on the
+    block it sits in, so each rank is checked against the state AT THAT SLICE. Nothing is
+    frozen and no live count is asserted. The 108-site substrate-wide count class is UNTOUCHED
+    and still open.
+    ** GATE. crates/xpile/tests/contract_layer_ordinal_integrity.rs (XPILE-LAYERORDINAL-001),
+    8 tests, 100 ranked claims (71 yaml + 29 lean), unconditional -- no quotation escape hatch
+    anywhere, which is WHY PMAT-1461s three annotation comments that restate the false ordinal
+    verbatim were REWRITTEN instead of exempted. Lean docstrings are anchored by their own
+    `**PMAT-NNN` and only when that id is one of the OWNING contract`s Diamond ids; blocks that
+    fail that test are reported as UNANCHORED, not judged (0 today). An earlier draft anchored
+    on the nearest PMAT id in a 3-line window and produced 21 FALSE ACCUSATIONS against correct
+    prose -- exactly PMAT-1461s "reads the NEXT item`s label" failure, caught before shipping.
+    ** RED HALF RUN, on the shipped gate against unmodified contracts/: 20 yaml + 9 lean
+    reported, 0 after repair. Controls: 54 of 74 yaml ordinals and 20 of 29 lean ordinals were
+    ALREADY CORRECT pre-fix and stay green -- the rule and the needle are both validated on the
+    substrate`s own records, not just on constructed strings.
+    ** TWO GUARDS FAILED ON THEIR OWN AUTHOR AND WERE FIXED, NOT DOWNGRADED. (1) The ground-
+    truth cross-check compared parsed Diamond entries to the `lean_theorem:` LINE COUNT in the
+    same file -- not independent of the entry set, and wrong (the tier ladder carries 4 such
+    lines on non-Diamond entries); replaced with `xpile diamond --json`, the shipped binary`s
+    own parser, 35/35 agreeing. (2) The wrapping guard asserted flattening "more than doubles"
+    the reach; the live corpus said 62 -> 71, so the assertion was DELETED and the MEASURED
+    figure written down instead: flattening is worth 3 of the 29 sites. Fifth slice in eight to
+    lose a guard to its own red half.
+    ** ALSO REPAIRED: 5 more Bashrs-as-Layer-2 sites in contracts/lean/Bashrs.lean of the form
+    "(Layer 2 BROADENS DEPTH-7)" -- the layer-written-BEFORE-the-name shape PMAT-1461 disclosed
+    as its own blind spot and hand-repaired only in the Notation case.
+    ** SCOPE: contracts/*.yaml and contracts/lean/*.lean prose only -- no `rule:`, `test:`,
+    `lean_theorem:`, `kani_harness:` or equation key changed. ZERO crates/*/src. CHANGELOG.md
+    and docs/roadmaps/*.yaml carry the same claims in HISTORICAL LEDGER position and are left
+    alone per PMAT-1461 precedent; they are named here rather than silently excluded.
+    ** NEXT PICK, in order: (a) the 108-site substrate-wide depth-count class (`xpile diamond
+    --json` depth_N_plus; every site UNDERSTATING) -- the dating question is REAL there and must
+    be decided first, and PMAT-1462 shows a live fraction is not always needed. (b) the CARDINAL
+    layer-scoped tallies ("3 L3 contracts at depth-7") -- same subject as this gate, same
+    derivable date, NOT covered here because a cardinal names no subject contract. (c) `1025
+    Lean theorems` (xpile-spec.md:370, kaizen-fleet.md:11), an EXTERNAL pv-spec figure this repo
+    republishes and cannot check. (d) re-point PMAT-1459`s 70 disclosed falsification commands
+    at real falsifiers.
+    NEXT FREE ID IS PMAT-1463. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
+    HARD FREEZE Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release mechanics
+    ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE
+    OWNER RULESET DECISION ALONE.'
+  status: done
+  priority: P1
+  category: honesty
