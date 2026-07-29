@@ -7,6 +7,78 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The release plan mandated a CHANGELOG story describing the range the *previous* tag had already closed — 14 of the 15 PMAT ids its eight arcs cite are not in the release range (PMAT-1470)
+
+`docs/specifications/sub/sprint-6day-2026-07-26.md` §5 told Thursday's operator
+what this release is:
+
+> **CHANGELOG story — 101 commits / ~76 unique PMAT ids / 136+ files /
+> +53,940 lines, in 8 arcs**
+
+and then enumerated those eight arcs by hand. Measured at `ac0b28fe`, not quoted
+from anywhere:
+
+| quantity | plan said | `v0.1.617..HEAD` |
+|---|---|---|
+| commits          | 101      | **109** |
+| unique PMAT ids  | ~76      | **173** |
+| files            | 136+     | **250** |
+| insertions       | +53,940  | **+77,645** |
+| arcs             | 8        | **76** (`[Unreleased]` headings) |
+
+All four figures are wrong, and the arc list is one whole release behind: of the
+15 PMAT ids the eight arcs cite, **14 are not in `v0.1.617..HEAD` at all**. They
+are v0.1.617 content, already published under `## [0.1.617]`.
+
+**The document states the rule and breaks it five lines later.** The very next
+paragraph says of the WASM witness count: *"do not type it here (it read `795`
+on 2026-07-26 and is 857 today; a machine-derived number copied into prose is the
+PMAT-1445 shape)"*. The banned shape is committed four times in the paragraph
+immediately above that sentence. A rule written into prose is not a gate.
+
+**What kept it alive is an accidental confirmation.** By 2026-07-29 the live
+`[Unreleased]` arc-heading count had reached **76** — numerically equal to the
+plan's *"~76 unique PMAT ids"*. A reader spot-checking that figure against the
+CHANGELOG gets a **match** and stops, while the quantity the number actually
+names stood at **173**. True in the half a reader checks (the PMAT-1458 shape),
+arrived at here by coincidence rather than by construction — which is worse,
+because nobody chose it and so nobody knew to disclose it.
+
+**A claim class is not a section.** The same falsehood sat 75 lines below §5 in
+§"Also sacrificed" — *"This is a release of 101 commits that were already
+written"* — with no range attribution. Both are fixed.
+
+§5 now states the derivation instead of the result: four commands that derive the
+prior tag (`git describe --tags --abbrev=0`, so no version literal is typed), the
+commit count, the id count, the diffstat, and the arc count — and it points at
+`[Unreleased]`, which is written arc-first as the sprint runs and is therefore the
+register of what shipped.
+
+**Gate** — `crates/xpile/tests/release_story_derivation_witness.rs`
+(XPILE-RELSTORY-001), 6 tests. The subject is *derived*: `queue.yaml`'s
+`sprint.plan` names the plan the sprint is executing, so a retarget moves the
+subject and superseded plans — which describe ranges that are legitimately
+closed — stay correctly out of scope. Rules: (1) the active plan may not type an
+aggregate of the release range; (2) it may not hand-enumerate an arc roster
+(≥3 consecutive numbered items citing bare PMAT ids), with the out-of-range ids
+named in the failure; (3) **the derivation commands it publishes are executed by
+the test** and must agree with an independent measurement — a cited command that
+does not support the claim is the PMAT-1453 shape.
+
+The exemption is a **positive marker, not a negation screen**: a count earns
+historical status by citing an explicit closed range (`v0.1.616..origin/main`) on
+the same line, or by being a disclosed quotation. The first cut of the rule
+scoped by paragraph and flagged **nine false positives** — a markdown table is one
+blank-line paragraph, so the whole day-plan was evaluated at once, and "~5 lines"
+and "931 lines" are commit and file sizes, not release aggregates. The
+discriminator is the claim *frame*, not the unit.
+
+Red half: the pre-fix headline, the 8-item roster and the §"Also sacrificed"
+sentence each red their rule; emptying `[Unreleased]` in the real CHANGELOG reds
+the derivation test (76 arcs → 0); dropping `sprint.plan` reds the subject anchor;
+and **broadening the frame predicate to match every line reds the false-positive
+control** — the guard is not decorative.
+
 ### The `//`/`%` lowering this project removed as incorrect in v0.1.237 was still published as the shipped lowering at 20 sites — including both Kani harnesses, which proved the property that *falsifies* the equation they discharge (PMAT-1468)
 
 PMAT-538 (v0.1.237) replaced `checked_div_euclid` / `checked_rem_euclid` in the

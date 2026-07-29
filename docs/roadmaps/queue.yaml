@@ -77,6 +77,37 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1470
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: Release plan mandated a CHANGELOG story for the range the PREVIOUS tag already closed
+  notes: 'Section 5 said the release is "101 commits / ~76 unique PMAT ids / 136+ files / +53,940
+    lines, in 8 arcs" and enumerated the arcs by hand. At ac0b28fe, `v0.1.617..HEAD` was 109 commits /
+    173 ids / 250 files / +77,645 insertions with 76 arc headings already in `[Unreleased]`. 14 of the
+    15 PMAT ids the arcs cite are not in the range -- they are v0.1.617 content. A SECOND site 75 lines
+    below said "This is a release of 101 commits"; both fixed. Section 5 now publishes the DERIVATION
+    (prior tag via `git describe`, so no version literal) and points at `[Unreleased]` as the register.
+
+
+    GATE `crates/xpile/tests/release_story_derivation_witness.rs` (XPILE-RELSTORY-001, 6 tests). Subject
+    DERIVED from `queue.yaml` sprint.plan, so superseded plans stay out of scope. The derivation commands
+    the plan publishes are EXECUTED by the test. Exemption is a POSITIVE marker (explicit closed-range
+    citation on the same line); the first cut scoped by PARAGRAPH and produced NINE false positives,
+    because a markdown table is one paragraph and "~5 lines" is a commit size.
+
+
+    STANDING LEADS after this slice, in EV order: (a) THURSDAY 2026-07-30 IS THE TAG CUT and the
+    `ruleset_drift` failure is still the only thing between `cargo test --workspace` and green -- it is
+    OWNER-GATED (re-deriving the snapshot RATIFIES the org ruleset having dropped `workspace-test`), so
+    the release either accepts a known-red suite or the owner restores the required check. NOTHING ELSE
+    blocks A1. (b) The OTHER Kani harnesses -- PMAT-1468 found two whose PROVED property did not match
+    the equation they discharge, and the class has never been swept; PMAT-1469 is registered and branch-
+    claimed for it but has ZERO commits and its worktree is gone, so the claim is stale and the lead is
+    live. NOTE it touches `crates/*/src` and `contracts/`, so it is FROZEN OUT until after the tag.
+    (c) `contracts/lean-models/README.md` -- packaged by `cargo package`, zero readers, read but never
+    measured. (d) `documentation`/`homepage`/`repository` URLs -- no gate resolves them. (e) the binary''s
+    clap `--help`/`about` strings.'
 - id: PMAT-1467
   status: done
   ev_rank: R1
