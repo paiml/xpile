@@ -11,19 +11,22 @@
 //! signature the architectural review flagged
 //! (`docs/specifications/fable-architectural-review.md`, XPILE-WITNESS-002).
 //!
-//! Lanes as `(source of the count) -> (live @ 2026-07-26, floor)`. Floors are
+//! Lanes as `(source of the count) -> (live @ 2026-07-30, floor)`. Floors are
 //! lower bounds re-derived at a sprint's TOUCH points, never per slice; each
 //! floor is `<=` the live count, so this is green today and only goes RED on a
 //! real regression. The `live` figures are a DATED SNAPSHOT, not an invariant —
 //! adding witnesses raises the live count and can never red a floor:
 //!
-//! - wasm: `#[test]`s in `crates/xpile-wasm-codegen/tests/*_witness.rs` -> (795, 770)
-//!   PLUS an EXECUTING-half floor (XPILE-WITNESS-004, below) -> (315 gated / 39%, 300 / 36%)
-//! - shell: `#[test]`s in `tests/shell_diff_exec.rs` -> (7, 7)
-//! - rust-differential: `tests/oracle_fixtures/*.py` + `FixtureCfg` rows in `tests/diff_exec.rs` -> (34+10=44, 44)
-//! - hybrid: `#[test]`s in `tests/hybrid_verify{,_float,_multiarg}.rs` -> (3, 3)
+//! - wasm: `#[test]`s in `crates/xpile-wasm-codegen/tests/*_witness.rs` -> (857, 857)
+//!   PLUS an EXECUTING-half floor (XPILE-WITNESS-004, below) -> (340 gated / 39%, 340 / 38%)
+//! - shell: `#[test]`s in `tests/shell_diff_exec.rs` -> (10, 10)
+//! - rust-differential: `tests/oracle_fixtures/*.py` + `FixtureCfg` rows in `tests/diff_exec.rs` -> (39+10=49, 49)
+//! - hybrid: `#[test]`s in `tests/hybrid_verify{,_float,_multiarg}.rs` -> (7, 7)
+//!   (`hybrid_verify_vacuity_witness.rs` is deliberately NOT in the sum — it is
+//!   PMAT-1352's DIVERGENT-arm falsifier, which asserts the differential can go
+//!   red, not that a fixture agrees; counting it would inflate the agreement lane)
 //! - wasi: the `examples/proven-model/model.py` input the CI `wasi` job runs -> (1, 1)
-//! - ruchy: `RUCHY_EXECUTABLE_FIXTURES` in `tests/ruchy_exec_witness.rs` -> (7, 7)
+//! - ruchy: `RUCHY_EXECUTABLE_FIXTURES` in `tests/ruchy_exec_witness.rs` -> (8, 8)
 //!   (XPILE-WITNESS-003; the witness skips-with-reason when `ruchy` is absent, so
 //!   this floor protects the curated set's SIZE from silent shrinkage)
 //! - forjar: `FORJAR_SHELL_CORPUS` in `tests/forjar_validate_witness.rs` -> (4, 4)
@@ -55,7 +58,8 @@
 //!      This is the assertion a total-only floor structurally cannot make: it
 //!      reds when the corpus is PADDED with emit-only tests.
 //!   3. `every_wasm_witness_file_gates_on_the_runtime` — every `*_witness.rs`
-//!      carries at least one non-comment probe site (live 138/138). Strongest
+//!      carries at least one non-comment probe site (live 145/145 @ 2026-07-30,
+//!      TOUCH 2; it was 138/138 at TOUCH 1). Strongest
 //!      and cheapest: a brand-new purely-static witness FILE cannot be added
 //!      without a deliberate, visible decision to change this test.
 //!
@@ -105,7 +109,40 @@ use std::path::{Path, PathBuf};
 // the EXECUTING-half floors below were ADDED, so this touch cannot red another
 // in-flight branch on rebase. TOUCH 2 is the Thursday release re-derive
 // (PMAT-1373), which re-derives every lane INCLUDING the two new ones.
-const WASM_FLOOR: usize = 770; // live 795 @ 2026-07-26 (TOUCH 1)
+//
+// 0.1.618 window, TOUCH 2 (PMAT-1373, 2026-07-30) — the release re-derive, and
+// the LAST permitted touch of this file this sprint. Every lane is re-derived
+// from a live `cargo test -p xpile --test witness_floor -- --nocapture` run on
+// the tagged tree, and every COUNT floor is set TIGHT (floor == live).
+//
+// Why tight, when TOUCH 1 deliberately left 25 of WASM headroom "for in-flight
+// churn": there is no in-flight churn left to protect. `gh pr list --state
+// open` returns `[]` at this touch, the Wednesday 18:00 HARD FREEZE forbids any
+// further `crates/*/src` merge this window, and Friday is publish-only. A floor
+// exists to make a batch DELETION red; slack is the cost paid for rebase safety
+// and there is nothing to rebase. A 0.1.619 slice that ADDS witnesses raises
+// live and can never red a tight floor, so the cost of tight is borne only by a
+// slice that removes or consolidates witnesses — which is precisely the event
+// this manifest exists to surface, and the re-derive discipline below says how
+// to answer it (a TOUCH, not an opportunistic edit).
+//
+// The ONE deliberate exception is WASM_EXEC_PCT_FLOOR, because it is a RATIO and
+// not a count: adding an emit-only refusal witness raises the denominator while
+// the numerator holds, so a tight fraction floor would red on exactly the static
+// tests the header above refuses to cap. It keeps one point of margin.
+//
+//   lane               TOUCH 1        TOUCH 2 (live @ 2026-07-30)
+//   wasm (total)       770  (795)     857  (857)   tight
+//   wasm (gated)       300  (315)     340  (340)   tight
+//   wasm (gated %)      36   (39)      38   (39)   1 point of margin — a RATIO
+//   shell                7    (7)      10   (10)   tight
+//   rust-differential   44   (44)      49   (49)   tight (39 oracle + 10 diff_exec)
+//   hybrid               3    (3)       7    (7)   tight
+//   wasi                 1    (1)       1    (1)   tight
+//   ruchy                7    (7)       8    (8)   tight
+//   forjar               4    (4)       4    (4)   tight (unchanged)
+//   lean                 6    (6)       6    (6)   tight (unchanged)
+const WASM_FLOOR: usize = 857; // live 857 @ 2026-07-30 (TOUCH 2, tight)
 
 // The probe a WASM witness calls to decide whether it can execute the emitted
 // module. Kept as one named constant so widening the notion of "executes" later
@@ -114,15 +151,15 @@ const RUNTIME_PROBE: &str = "wasm_runtime_available(";
 // XPILE-WITNESS-004 executing-half floors. `live 315 / 39%` is a DATED SNAPSHOT
 // (2026-07-26, TOUCH 1) of a metric that is a LOWER BOUND on executing tests —
 // see the module header before quoting either figure anywhere.
-const WASM_EXEC_FLOOR: usize = 300; // live 315 @ 2026-07-26 (TOUCH 1)
-const WASM_EXEC_PCT_FLOOR: usize = 36; // live 39% @ 2026-07-26 (TOUCH 1)
-const SHELL_FLOOR: usize = 7; // live 7 @ 2026-07-26 (tight)
-const RUST_DIFF_FLOOR: usize = 44; // live 44 @ 2026-07-26 (34 oracle + 10 diff_exec; tight)
-const HYBRID_FLOOR: usize = 3; // live 3 @ 2026-07-26 (tight)
-const WASI_FLOOR: usize = 1; // live 1 @ 2026-07-26 (tight)
-const RUCHY_FLOOR: usize = 7; // live 7 @ 2026-07-26 (XPILE-WITNESS-003 curated executing set)
-const FORJAR_FLOOR: usize = 4; // live 4 @ 2026-07-26 (XPILE-WITNESS-003 validator-accepted shell corpus)
-const LEAN_FLOOR: usize = 6; // live 6 @ 2026-07-26 (XPILE-WITNESS-003 semantic value-function corpus)
+const WASM_EXEC_FLOOR: usize = 340; // live 340 @ 2026-07-30 (TOUCH 2, tight)
+const WASM_EXEC_PCT_FLOOR: usize = 38; // live 39% @ 2026-07-30 (TOUCH 2; 1 pt of margin — a RATIO)
+const SHELL_FLOOR: usize = 10; // live 10 @ 2026-07-30 (TOUCH 2, tight)
+const RUST_DIFF_FLOOR: usize = 49; // live 49 @ 2026-07-30 (39 oracle + 10 diff_exec; TOUCH 2, tight)
+const HYBRID_FLOOR: usize = 7; // live 7 @ 2026-07-30 (TOUCH 2, tight)
+const WASI_FLOOR: usize = 1; // live 1 @ 2026-07-30 (TOUCH 2, tight)
+const RUCHY_FLOOR: usize = 8; // live 8 @ 2026-07-30 (XPILE-WITNESS-003 curated executing set; TOUCH 2, tight)
+const FORJAR_FLOOR: usize = 4; // live 4 @ 2026-07-30 (XPILE-WITNESS-003 validator-accepted shell corpus; TOUCH 2, tight)
+const LEAN_FLOOR: usize = 6; // live 6 @ 2026-07-30 (XPILE-WITNESS-003 semantic value-function corpus; TOUCH 2, tight)
 
 // ── Path helpers ────────────────────────────────────────────────────────────
 fn crate_dir() -> PathBuf {

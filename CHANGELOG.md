@@ -5,7 +5,77 @@ All notable changes to xpile are recorded here. The project follows
 pre-1.0 development each minor version may include breaking changes to
 meta-HIR and the trait surfaces.
 
-## [Unreleased]
+## [0.1.618] - 2026-07-31
+
+### Release commit: 35 version literals, the witness-floor re-derive, and a deliberate one-day skew between the tag object and this heading (PMAT-1373)
+
+This is the release commit, and three of its mechanics are worth stating because
+each one has a documented way of going wrong in this repository.
+
+**The version bump is 35 lines, not one.** `[workspace.package].version` is one
+of them; the other 34 are the intra-workspace path-deps in
+`[workspace.dependencies]`, which **cannot** inherit it — inheritance flows
+workspace → member only, never workspace → workspace-dependency. Through
+v0.1.617 those 34 said `0.1.12` while the workspace said `0.1.617`, and nothing
+noticed for 605 releases: `^0.1.12` is satisfied by `0.1.617`, so every dry-run
+packaged clean while the *published* manifests let a resolver pair two releases
+605 apart (PMAT-1408). `crates/xpile/tests/publish_manifest_integrity.rs` reds a
+bump that touches only the first one. Measured for this release: `Cargo.toml`
+carried the string `0.1.617` at **38** sites, of which **35** are
+`version = "0.1.617"` literals and **3** are prose in the comment that describes
+the skew above — the 35 are bumped, the 3 are history and stay.
+
+**Witness-floor TOUCH 2 (XPILE-WITNESS-002), the second and last permitted touch
+of `witness_floor.rs` this sprint**, re-derived from a live
+`cargo test -p xpile --test witness_floor -- --nocapture` on the tagged tree:
+
+| lane | TOUCH 1 floor (live) | TOUCH 2 floor (live) |
+|---|---|---|
+| wasm, total | 770 (795) | **857** (857) |
+| wasm, runtime-gated | 300 (315) | **340** (340) |
+| wasm, gated fraction | 36% (39%) | **38%** (39%) |
+| shell | 7 (7) | **10** (10) |
+| rust-differential | 44 (44) | **49** (49) |
+| hybrid | 3 (3) | **7** (7) |
+| wasi | 1 (1) | **1** (1) |
+| ruchy | 7 (7) | **8** (8) |
+| forjar | 4 (4) | **4** (4) |
+| lean | 6 (6) | **6** (6) |
+
+Every **count** floor is now tight — floor equals live. TOUCH 1 deliberately
+left 25 of WASM headroom for in-flight branches that would red on rebase; at
+this touch there are none (`gh pr list --state open` returns `[]`, the Wednesday
+18:00 hard freeze forbids any further `crates/*/src` merge this window, and
+Friday is publish-only), so the slack has no one left to protect and buying it
+would only weaken the anti-deletion guarantee the manifest exists to make. A
+0.1.619 slice that *adds* witnesses raises the live count and cannot red a tight
+floor; a slice that removes or consolidates them reds, which is the event this
+gate is for.
+
+**The single exception is the gated *fraction*, held one point below live**,
+because it is a ratio and not a count: adding an emit-only refusal witness
+raises its denominator while the numerator holds, so a tight fraction floor would
+red on exactly the static tests `witness_floor.rs`'s header refuses to cap. Read
+neither figure as "39% of WASM witnesses execute" — the gated metric is a
+syntactic proxy that does not follow helper calls, so it is a strict lower bound
+on executing tests, which is what a floor needs and all it claims.
+
+**The heading above says `2026-07-31` and the tag object is created
+`2026-07-30`.** That one-day skew is deliberate, not drift. `release.yml` fires
+`cleanroom-publish` on a `v*` tag push, so it structurally cannot gate the tag
+that fires it; cutting the tag a day early converts a post-hoc check into a real
+pre-flight with a day of runway, and Friday's publish then re-verifies against a
+tag whose clean-room run has already completed. The date in this heading is the
+**ship** date. `docs/RELEASE.md` carries the same disclosure.
+
+Also re-derived rather than carried forward for this commit: the required-status
+set is `{gate, workspace-test}` as the **union over both** rulesets that protect
+`main` (`13878864` → `gate`, `19814559` → `workspace-test`), read from
+`gh api repos/paiml/xpile/rules/branches/main`; the advisory roster is the seven
+contexts in the `XPILE-ENFORCEMENT ADVISORY-CONTEXTS` marker at
+`.github/workflows/ci.yml:82`. Both are stated under *What is NOT
+merge-blocking* below, and neither number in this paragraph was typed from the
+previous release's notes — see PMAT-1475/1476/1478 for what that costs.
 
 ### The shell lane published a refusal guarantee it does not have: twenty out-of-surface constructs were probed and all twenty were ACCEPTED at exit 0 — including the redirection in this repo's own gated example (PMAT-1479)
 
@@ -7583,6 +7653,15 @@ helper calls, so it under-counts. Never quote the `// live NNN @ DATE` comments
 in `witness_floor.rs`, **or this section** — they are touch-point snapshots and
 are *expected* to trail the live count between the two permitted floor touches
 per release.
+
+One thing about the floors *did* change at TOUCH 2 and belongs here, because it
+changes what a green `workspace-test` proves: every **count** floor is now tight
+(floor equals live), so from this release the floors are no longer carrying
+slack — see the release-commit entry at the top of this section for the table and
+the reason. The **gated fraction** is the one exception and is held one point
+below live, deliberately, because it is a ratio. Tight floors do not make the
+floors a coverage claim; they make a deletion red sooner. The paragraph above
+still governs: derive, never quote.
 
 **8. Two C-lane width residuals, pinned rather than refused** (PMAT-1382).
 The C→Rust path emits one scalar width per function. Across the *signed
