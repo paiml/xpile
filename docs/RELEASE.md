@@ -111,19 +111,32 @@ gh auth status   # must show org read scope; `gh auth login` if not
 XPILE_REQUIRE_RULESET_CHECK=1 cargo test -p xpile --test ruleset_drift
 ```
 
-This compares `docs/status/ruleset-13878864.json` against the live org
-ruleset. It is **not** a publish blocker, for one reason: the ruleset is
-owner-controlled state outside this repo, so a red here reports someone else's
-change, not a defect in the artifact being shipped.
+This compares the committed `docs/status/ruleset-*.json` receipts against the
+live `gh api repos/paiml/xpile/rules/branches/main` — the union over every
+ruleset that protects the branch. It is **not** a publish blocker, for one
+reason: the rulesets are owner-controlled state outside this repo, so a red here
+reports someone else's change, not a defect in the artifact being shipped.
 
-**It is also not optional.** Its result goes in the release body verbatim. As
-of 2026-07-27 it is **RED** — the live ruleset requires only `gate` while the
-committed snapshot records `gate` + `workspace-test`, an open owner decision
-(`owner_decisions: ruleset-workspace-test-dropped` in
-`docs/roadmaps/queue.yaml`). Do **not** re-derive the snapshot to make it
-green: a receipt rewritten to match a mutation it was supposed to detect is
-worse than a red one, and this repo has already been misled for three weeks by
-exactly that (the 2026-07-05 flip).
+**It is also not optional.** Its result goes in the release body verbatim. As of
+2026-07-29 it is **GREEN**: `main` is blocked by `gate` (ruleset `13878864`) and
+`workspace-test` (ruleset `19814559`).
+
+Two rules when it goes red, and the second one is new because ignoring it cost
+two days (PMAT-1475):
+
+1. Do **not** re-derive a receipt to make it green. A receipt rewritten to match
+   a mutation it was supposed to detect is worse than a red one, and this repo
+   has already been misled for three weeks by exactly that (the 2026-07-05
+   flip).
+2. Do **not** conclude a weakening from a single ruleset. Between 2026-07-27 and
+   2026-07-29 this check was red because `workspace-test` had been **moved** out
+   of ruleset `13878864` into a new dedicated ruleset `19814559`; the effective
+   protection on `main` never changed. It was read as a dropped requirement,
+   escalated as an owner decision, and three documents were edited to claim
+   *less* enforcement than the repo actually has. **Read
+   `gh api repos/paiml/xpile/rules/branches/main` before you believe anything
+   about what blocks a merge** — a per-ruleset read cannot answer that question
+   and never could.
 
 ---
 

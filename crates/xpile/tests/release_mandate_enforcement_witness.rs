@@ -1,7 +1,32 @@
 //! XPILE-RELMANDATE-001 (PMAT-1449) — the release runbook told Thursday's
 //! operator to publish a false statement about what CI enforces.
 //!
-//! THE DEFECT. Two work items mandate the content of the v0.1.618 release body.
+//! # ⚠️ CORRECTION (PMAT-1475): THE PREMISE BELOW IS FALSE
+//!
+//! **The mandated sentence was TRUE.** A merge to `main` is blocked by `gate`
+//! **and** `workspace-test`, and always was. The measurement below read ONE
+//! ruleset by id; on `2026-07-27T13:48:24` the org **moved** `workspace-test`
+//! into a second ruleset, `19814559`. The effective required set —
+//! `gh api repos/paiml/xpile/rules/branches/main`, the union over every ruleset
+//! protecting the branch — never changed.
+//!
+//! So this gate was built to enforce the disclosure of a drift that does not
+//! exist, and two of its four tests **required `docs/RELEASE.md` to keep
+//! asserting the falsehood**. Both have been re-aimed at the invariant that was
+//! actually wanted: the mandates must not hard-code a context list, and the
+//! destination they defer to must name the set the receipts record. The
+//! use-vs-mention discipline and the pointer doctrine below are sound and are
+//! what the correcting slice reused — only the premise was wrong.
+//!
+//! One thing this file got exactly right, and it is worth keeping: *"a list
+//! that is derived in three places and typed in a fourth will go stale in the
+//! fourth."* The list was derived in three places and **all three were reading
+//! the wrong ruleset**, which is the failure mode one rung up — derivation does
+//! not help when every deriver shares a subject that no longer answers the
+//! question.
+//!
+//! THE DEFECT AS ORIGINALLY DIAGNOSED (read with the correction above in mind).
+//! Two work items mandate the content of the v0.1.618 release body.
 //! Both required its "What is NOT merge-blocking" section to state, verbatim:
 //!
 //! > the live org ruleset requires only [gate, workspace-test]
@@ -55,26 +80,33 @@
 //!    an exemption for a *quoted mention* of the old wording, because both
 //!    corrections quote it in order to explain themselves (PMAT-1430: a doc
 //!    gate must distinguish USE from MENTION).
-//! 2. The destination the mandates now point at must EXIST and must disclose
-//!    the drift, naming both sets. **A deferral with no destination is just an
-//!    omission** (PMAT-1440).
-//! 3. `docs/RELEASE.md`'s disclosure must name the set the SNAPSHOT actually
-//!    records, derived from the JSON. That is the behaviour half: if the owner
-//!    resolves the drift by re-deriving the snapshot, this reds and forces the
-//!    disclosure to move with it — a caveat that outlives its defect is the
+//! 2. The destination the mandates point at must EXIST and must name the
+//!    endpoint that answers the question — `repos/paiml/xpile/rules/branches/
+//!    main`. **A deferral with no destination is just an omission**
+//!    (PMAT-1440); *re-aimed by PMAT-1475, which found this rule demanding that
+//!    `RELEASE.md` keep asserting a drift that did not exist.*
+//! 3. `docs/RELEASE.md` must name every context the committed RECEIPTS record,
+//!    derived from the JSON — the union across `docs/status/ruleset-*.json`,
+//!    not one file. That is the behaviour half: re-derive the receipts and this
+//!    reds until the prose follows. A caveat that outlives its defect is the
 //!    same falsehood pointing the other way (PMAT-1411).
 //!
 //! NOT TOUCHED, deliberately: the `XPILE-ENFORCEMENT REQUIRED-CONTEXTS:`
 //! markers in `ci.yml`, `CURRENT.md` and `enforcement-handoff.md` all read
-//! `gate, workspace-test` and all **correctly** match the committed snapshot,
-//! which `ruleset_drift::enforcement_markers_match_the_committed_snapshot`
-//! holds green. Changing them would ratify the live weakening — the exact thing
-//! `RELEASE.md` says not to do. The snapshot is the owner's record; only the
-//! prose that mislabelled it as *live* was wrong.
+//! `gate, workspace-test`. They were **correct throughout** — including for the
+//! two days everything around them said otherwise — and
+//! `ruleset_drift::enforcement_markers_match_the_committed_snapshot` held them
+//! green the whole time. *The original text of this paragraph justified leaving
+//! them alone on the grounds that changing them would ratify a live weakening.
+//! There was no weakening; they were simply right.* That is worth recording:
+//! **the markers, the receipts and this repo's own `workspace-test` job were
+//! all telling the truth, and the only thing that had gone wrong was a gate
+//! reading one ruleset — yet the prose moved toward the gate.**
 
 use std::path::{Path, PathBuf};
 
-const SNAPSHOT: &str = "docs/status/ruleset-13878864.json";
+const SNAPSHOT: &str = "docs/status/ruleset-*.json";
+const SNAPSHOT_DIR: &str = "docs/status";
 const RELEASE_MD: &str = "docs/RELEASE.md";
 
 fn workspace_root() -> PathBuf {
@@ -90,34 +122,57 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {rel}: {e}"))
 }
 
-/// The required contexts the COMMITTED snapshot records, parsed from the JSON.
-/// Derived, never typed — that is the whole point of this file.
+/// The UNION over every committed receipt — what actually blocks a merge.
+/// Derived, never typed; that is the whole point of this file.
+///
+/// Reading a single receipt is the defect PMAT-1475 corrected: enforcement is a
+/// property of the BRANCH, and since 2026-07-27 two rulesets supply it.
 fn snapshot_contexts() -> Vec<String> {
-    let body = read(SNAPSHOT);
-    let v: serde_json::Value =
-        serde_json::from_str(&body).unwrap_or_else(|e| panic!("{SNAPSHOT} is not valid JSON: {e}"));
+    let dir = workspace_root().join(SNAPSHOT_DIR);
     let mut out = Vec::new();
-    for rule in v
-        .get("rules")
-        .and_then(|r| r.as_array())
-        .into_iter()
+    let mut receipts = 0usize;
+    for entry in std::fs::read_dir(&dir)
+        .expect("docs/status/ exists")
         .flatten()
     {
-        if rule.get("type").and_then(|t| t.as_str()) != Some("required_status_checks") {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("ruleset-") || !name.ends_with(".json") {
             continue;
         }
-        for c in rule
-            .pointer("/parameters/required_status_checks")
+        receipts += 1;
+        let body = std::fs::read_to_string(&path).expect("receipt is readable");
+        let v: serde_json::Value =
+            serde_json::from_str(&body).unwrap_or_else(|e| panic!("{name} is not valid JSON: {e}"));
+        for rule in v
+            .get("rules")
             .and_then(|r| r.as_array())
             .into_iter()
             .flatten()
         {
-            if let Some(ctx) = c.get("context").and_then(|c| c.as_str()) {
-                out.push(ctx.to_string());
+            if rule.get("type").and_then(|t| t.as_str()) != Some("required_status_checks") {
+                continue;
+            }
+            for c in rule
+                .pointer("/parameters/required_status_checks")
+                .and_then(|r| r.as_array())
+                .into_iter()
+                .flatten()
+            {
+                if let Some(ctx) = c.get("context").and_then(|c| c.as_str()) {
+                    out.push(ctx.to_string());
+                }
             }
         }
     }
+    assert!(
+        receipts > 0,
+        "no {SNAPSHOT} receipts found — every assertion below would range over nothing"
+    );
     out.sort();
+    out.dedup();
     assert!(
         !out.is_empty(),
         "{SNAPSHOT} records no required status checks — every assertion below would range over \
@@ -190,27 +245,29 @@ fn the_mandates_point_somewhere_and_that_somewhere_discloses_the_drift() {
     // both have to be real.
     let queue = read("docs/roadmaps/queue.yaml");
     assert!(
-        queue.contains("ruleset-13878864.json"),
-        "no release mandate names {SNAPSHOT} as the derivation source, so \"derive it\" has no \
-         destination"
+        queue.contains("ruleset-13878864.json") || queue.contains("ruleset-*.json"),
+        "no release mandate names the {SNAPSHOT} receipts as the derivation source, so \
+         \"derive it\" has no destination"
     );
     assert!(
-        workspace_root().join(SNAPSHOT).exists(),
-        "{SNAPSHOT} does not exist, but the release mandates now send the operator to it"
+        !snapshot_contexts().is_empty(),
+        "no {SNAPSHOT} receipt records a required context, but the release mandates send the \
+         operator to them"
     );
 
+    // PMAT-1475 re-aimed this. It used to require RELEASE.md to keep asserting
+    // "the live ruleset requires only …", which was a disclosure of a drift that
+    // never existed — so the gate ENFORCED the falsehood and would have red-ed
+    // the fix. What the mandates actually need from RELEASE.md is a live,
+    // derivable position: the command that answers the question, not a typed set.
     let rel = read(RELEASE_MD);
     let l = rel.to_ascii_lowercase();
     assert!(
-        l.contains("live ruleset requires only"),
-        "{RELEASE_MD} no longer states what the LIVE ruleset requires. The release mandates defer \
-         to it for exactly that, so this is now the only place the live position is written down."
-    );
-    assert!(
-        l.contains("owner decision") || l.contains("ruleset-workspace-test-dropped"),
-        "{RELEASE_MD} states the live-vs-snapshot difference but no longer names it as an OPEN \
-         OWNER DECISION — without that, a reader cannot tell a detected mutation from an \
-         accepted one"
+        l.contains("rules/branches/main"),
+        "{RELEASE_MD} no longer names `gh api repos/paiml/xpile/rules/branches/main`. The release \
+         mandates defer to it for what blocks a merge, and that endpoint — the union over every \
+         ruleset protecting the branch — is the only thing that answers it. A per-ruleset read \
+         cannot, which is the PMAT-1475 defect."
     );
 }
 
@@ -231,17 +288,24 @@ fn release_md_names_the_set_the_snapshot_actually_records() {
              disclosure has to move with it."
         );
     }
-    // And the disclosure must still be describing a DIFFERENCE. If the snapshot
-    // ever shrinks to the live single context, "requires only `gate` while the
-    // committed snapshot records `gate` + `workspace-test`" becomes false.
-    if contexts.len() == 1 {
-        panic!(
-            "{SNAPSHOT} now records a single required context ({contexts:?}). Either the drift \
-             was resolved by ratifying the weakening — which {RELEASE_MD} explicitly says not to \
-             do — or it was resolved upstream. Either way the disclosure in {RELEASE_MD} and the \
-             mandates in queue.yaml describe a difference that no longer exists."
-        );
-    }
+    // PMAT-1475 replaced the old tripwire here. It fired when the receipts
+    // recorded a SINGLE context, on the theory that the only way to reach that
+    // state was to ratify a weakening. That theory was wrong twice over: the
+    // union across receipts is what matters, and there was no weakening. Worse,
+    // the tripwire read one receipt, so it would have fired on the CORRECT
+    // re-derivation — a gate that reds on the fix is a gate that enforces the
+    // defect.
+    //
+    // What survives is the property that was always wanted: the disclosure is
+    // pinned to the RECEIPTS, so re-deriving them forces the prose to move too.
+    assert!(
+        contexts.len() >= 2,
+        "the {SNAPSHOT} receipts record only {contexts:?} as merge-blocking. Before editing any \
+         prose, run `gh api repos/paiml/xpile/rules/branches/main` — a context vanishing from one \
+         ruleset is not a weakening if it reappears in another, which is exactly what happened on \
+         2026-07-27 and cost two days. If enforcement genuinely was reduced, re-derive every \
+         receipt first and let the prose follow."
+    );
 }
 
 #[test]

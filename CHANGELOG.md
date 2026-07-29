@@ -7,6 +7,109 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### `workspace-test` never stopped blocking merges — it was MOVED to a second ruleset, and for two days the repo believed its own enforcement had been weakened, edited three documents to say so, and escalated an owner decision about it (PMAT-1475)
+
+Every honesty slice in this release hunted **over**-claiming. This one is the
+mirror image, and it is the more expensive direction: the repo spent two days
+telling its readers, its roadmap and its release notes that it enforced **less**
+than it actually does — and then changed correct documents to match.
+
+**What is true.** A merge to `main` is blocked by `gate` **and**
+`workspace-test`. It was blocked by both before 2026-07-27, and it is blocked by
+both today. Nothing about xpile's enforcement was ever weakened.
+
+**What happened.** On `2026-07-27T13:48:24` the org **split** `workspace-test`
+out of ruleset `13878864` into a new dedicated ruleset `19814559`, named
+*"workspace-test — repos that emit it (aprender, rmedia, xpile)"*, `active`,
+scoped to `refs/heads/main` on `aprender`, `rmedia` and `xpile`, with the same
+`bypass_actors` as the ruleset it left.
+
+**And it was a fix, not merely a neutral reorganisation.** Ruleset `13878864`
+is scoped `repository_name: ["~ALL"]` — all **244** repos in the org, measured —
+while only a handful emit a `workspace-test` job. GitHub never reports a status
+for a context no job produces, so an org-wide `workspace-test` requirement
+leaves every PR in the other repos stuck on *"Expected — Waiting for status to
+be reported"*: permanently unmergeable, with nothing red to explain why. That is
+the identical hazard this repo already guards against internally, in
+`ruleset_drift::every_required_context_names_a_real_ci_job`. Narrowing the
+requirement to the three repos that actually emit the job is the correct
+configuration — so the change the repo spent two days describing as a weakening
+of its own enforcement was in fact someone repairing a deadlock in everyone
+else's.
+
+That is worth stating plainly, because it is the cheapest check that was
+skipped: **ask what the change would cost if it were what you think it is.**
+Requiring a job across 244 repos that mostly cannot run it is obviously broken,
+which should have prompted "then that is probably not what happened."
+
+**Why the repo could not see that.** `ruleset_drift.rs` asked *"what blocks a
+merge on `main`?"* and measured *"what does ruleset `13878864` contain?"* Those
+agree only until a second ruleset exists. The endpoint that answers the question
+asked is `repos/paiml/xpile/rules/branches/main`, which returns the rules of
+**every** active ruleset applying to the branch, each tagged with its
+`ruleset_id`. No gate in this repo had ever read it.
+
+The consequences, all downstream of one wrong subject:
+
+| | |
+|---|---|
+| `ruleset_drift::live_ruleset_matches_the_committed_snapshot` | the **only failing test in the workspace**, for two days |
+| the v0.1.618 tag cut | this red was recorded as its **blocker**; A1 requires `cargo test --workspace` to exit 0 |
+| `owner_decisions: ruleset-workspace-test-dropped` | an owner decision escalated about a weakening **that never happened** |
+| `contracts/README.md` | **packaged and published to crates.io** — PMAT-1471 deleted a *true* sentence from it and replaced it with a pointer to the non-existent weakening |
+| `docs/RELEASE.md` §2b | told the release operator the check is RED and to expect it |
+| this CHANGELOG's PMAT-1471 entry | about to ship as release notes; now carries a correction banner |
+
+The gate's remediation text was the sharpest part. It instructed the operator to
+re-derive the snapshot to `[gate]` and *"update every
+`XPILE-ENFORCEMENT REQUIRED-CONTEXTS:` marker to match"* — which would have
+written the falsehood into the repo's own authoritative enforcement marker and
+turned the gate **green and wrong**. The one thing that stopped it was a
+standing instruction not to re-derive a receipt to silence it. That instruction
+was right for the wrong reason: it prevented the bad edit without ever
+prompting anyone to check whether the premise was true.
+
+**The fix — the subject, not the reading.**
+
+* The live half now reads `repos/paiml/xpile/rules/branches/main` and asserts
+  **two** things: the **union** (what blocks a merge — the sentence every
+  document repeats) and the **per-ruleset attribution** (which ruleset supplies
+  each context). A context that *moves* now fails the second while the first
+  still passes, and the failure message says so in as many words: *"This is a
+  SPLIT, not a weakening: do not fix it by editing documents to claim less
+  enforcement."* That endpoint is repo-scoped, so unlike the org read it is
+  answerable by Actions' default `GITHUB_TOKEN`.
+* Receipts are **discovered**, not listed: one `docs/status/ruleset-<id>.json`
+  per ruleset, globbed, with the payload's `id` checked against its filename.
+  Adding `ruleset-19814559.json` is now sufficient to teach every assertion
+  about a new source of enforcement — the hard-coded id is what made the split
+  invisible.
+* `XPILE-ENFORCE-PROSE-001`
+  (`crates/xpile/tests/enforcement_prose_witness.rs`, 3 tests) gates the **prose**
+  over a corpus discovered from `git ls-files '*.md'`, so a new document is
+  covered the day it lands. `contracts/README.md` sat outside PMAT-1449's
+  two-file corpus; that is how a packaged file drifted twice in three days.
+
+**Both red halves were run, and reading the offender list mattered more than
+watching it fire.** The first draft treated inline code as quotation, so
+`docs/RELEASE.md`'s *"the live ruleset requires only `gate`"* went undetected —
+the one word that made it a claim sat inside backticks. Backticks are
+formatting, not quotation; they are now stripped as characters while their
+contents stay in the haystack. That fix widened the net onto two more files —
+including this CHANGELOG — and then produced **two false positives**: the honest
+sentence *"requires only `gate` and `workspace-test`"*, which names both
+required contexts and ships in a released section. Hence the acquittal window:
+a match is an offence only if `workspace-test` does not follow it. Controls
+assert the screen fires on the exact sentence that shipped to crates.io, stays
+silent on honest prose, and stays silent on the true-but-similar one.
+
+**The lesson is not about GitHub.** A gate is only ever as good as the question
+its subject actually answers, and a subject drifts from its question silently —
+no test goes red when the world grows a second ruleset. Three documents were
+edited *toward* the defect by a sweep whose whole purpose was honesty, because
+the sweep trusted a measurement instead of the thing measured. When a gate and a
+document disagree, the gate is a suspect too.
+
 ### The *most severe* entry in "Known divergences" described a defect this same release fixed — and two of its metric entries had drifted, one of them directly above its own prohibition (PMAT-1474)
 
 PMAT-1473 found the first stale entry in `[Unreleased]`'s "Known divergences"
@@ -154,6 +257,19 @@ lesson, re-learned.
 > the live org ruleset requires only `gate` and `workspace-test`, so a red
 > `kani` job does not stop a merge
 
+> ### ⚠️ CORRECTION (PMAT-1475) — the premise below is FALSE and the sentence
+> ### this entry removed was TRUE
+>
+> `workspace-test` **does** block merges, and did so continuously through this
+> entire episode. The measurement below read ONE ruleset by id; on 2026-07-27
+> the org **moved** `workspace-test` into a second ruleset, `19814559`. The
+> effective set for `main` — `gh api repos/paiml/xpile/rules/branches/main`,
+> the union over every ruleset protecting the branch — never changed. So this
+> slice removed an accurate sentence from a packaged file and replaced it with
+> a pointer to a weakening that does not exist. Read the rest of this entry as
+> a record of the misdiagnosis; the blind-spot analysis it makes about corpora
+> and needles is sound and is what the correcting slice reused.
+
 Measured against the **live** API, not the committed snapshot:
 `gh api orgs/paiml/rulesets/13878864` returns required = `[gate]` alone.
 So the sentence **overstates** enforcement, in the same worst direction
@@ -171,9 +287,12 @@ and Bronze-totality claims — it has no notion of CI enforcement.
 
 Repaired by the pointer doctrine PMAT-1449 established rather than by retyping
 a set: the table now states only what it needs (`kani` is advisory), and points
-at `docs/status/ruleset-13878864.json` for the recorded set and `docs/RELEASE.md`
-for the open owner decision about the live gap. The snapshot is deliberately
-**not** re-derived — that would ratify the weakening.
+at the committed receipts for the recorded set.
+
+> The original text of this paragraph also justified not re-deriving the
+> snapshot, on the grounds that doing so would ratify a weakening. PMAT-1475
+> established there was no weakening to ratify; both receipts are now
+> re-derived, and the pointer targets are per-ruleset.
 
 ### `cargo publish` uploaded 64 gitignored `pv` lint-cache files, so the flagship crate's published contents depended on which machine ran the publish (PMAT-1471)
 
