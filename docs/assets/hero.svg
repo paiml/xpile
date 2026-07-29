@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
   <title id="title">xpile — polyglot transpile workbench</title>
-  <desc id="desc">Diagram of the xpile architecture: a code lane (Python, C, C++, Rust, Ruchy, Lean 4 → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, Lean 4) and a proof lane (LaTeX, Lean theorems, mdBook ↔ contracts).</desc>
+  <desc id="desc">Diagram of the xpile architecture: a code lane (Python, C, Shell, WebAssembly → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, WebAssembly, Lean 4, Shell, forjar) and a proof lane (LaTeX → contracts (YAML) → Lean 4 thm, LaTeX), whose two contract backends are registered scaffolds that render nothing yet. Every lane drawn here carries a data-frontend / data-backend id checked against the live registry by crates/xpile/tests/hero_diagram_integrity.rs.</desc>
 
   <defs>
     <linearGradient id="codeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -30,6 +30,7 @@
     .hubSub { font-size: 12px; fill: #FFFFFF; opacity: 0.85; }
     .footer { font-size: 14px; fill: #64748B; }
     .footerKbd { font-size: 14px; fill: #0F172A; font-weight: 600; }
+    .legend { font-size: 12px; fill: #64748B; }
     .divider { stroke: #E2E8F0; stroke-width: 1; }
   </style>
 
@@ -41,94 +42,106 @@
   <text x="600" y="140" text-anchor="middle" class="sans tagline">polyglot transpile workbench · provable contracts at every layer</text>
 
   <!-- ──────────────── CODE LANE ──────────────── -->
-  <text x="100" y="210" class="sans laneLabel" fill="#0891B2">CODE  LANE</text>
+  <text x="100" y="205" class="sans laneLabel" fill="#0891B2">CODE  LANE</text>
 
-  <!-- frontends column -->
+  <!-- frontends column: every frontend whose `lowers_input()` is true, in
+       registration order. `ruchy` is registered for ROUTING ONLY — its input
+       refuses and it has no parser (PMAT-1346) — so it is deliberately NOT
+       drawn as a source lane. -->
+  <!-- XPILE-HERODIAGRAM-001:FRONTENDS:BEGIN -->
   <g class="mono lang">
-    <text x="100" y="250">Python</text>
-    <text x="100" y="278">C</text>
-    <text x="100" y="306">C++</text>
-    <text x="100" y="334">Rust</text>
-    <text x="100" y="362">Ruchy</text>
-    <text x="100" y="390">Lean 4</text>
+    <text x="100" y="280" data-frontend="python">Python</text>
+    <text x="100" y="310" data-frontend="c">C</text>
+    <text x="100" y="340" data-frontend="bashrs">Shell</text>
+    <text x="100" y="370" data-frontend="wasm">WebAssembly</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:FRONTENDS:END -->
 
   <!-- fan-in arrow lines from frontends -->
   <g stroke="#0891B2" stroke-width="1.2" fill="none" marker-end="url(#arrowCode)">
-    <path d="M 200 244 C 280 244, 320 312, 410 320"/>
-    <path d="M 200 272 C 280 272, 320 314, 410 322"/>
-    <path d="M 200 300 C 280 300, 320 318, 410 324"/>
-    <path d="M 200 328 C 280 328, 320 326, 410 326"/>
-    <path d="M 200 356 C 280 356, 320 330, 410 328"/>
-    <path d="M 200 384 C 280 384, 320 334, 410 330"/>
+    <path d="M 250 274 C 330 274, 350 318, 410 322"/>
+    <path d="M 250 304 C 330 304, 350 322, 410 325"/>
+    <path d="M 250 334 C 330 334, 350 328, 410 328"/>
+    <path d="M 250 364 C 330 364, 350 332, 410 331"/>
   </g>
 
   <!-- meta-HIR hub -->
-  <rect x="420" y="290" width="200" height="80" rx="14" fill="url(#codeGrad)"/>
-  <text x="520" y="328" text-anchor="middle" class="sans hub">meta-HIR</text>
-  <text x="520" y="350" text-anchor="middle" class="mono hubSub">canonical IR · 6 source langs</text>
+  <rect x="420" y="286" width="200" height="80" rx="14" fill="url(#codeGrad)"/>
+  <text x="520" y="324" text-anchor="middle" class="sans hub">meta-HIR</text>
+  <text x="520" y="346" text-anchor="middle" class="mono hubSub">canonical IR · 4 source langs</text>
 
   <!-- fan-out arrow lines to backends -->
   <g stroke="#0891B2" stroke-width="1.2" fill="none" marker-end="url(#arrowCode)">
-    <path d="M 630 320 C 720 312, 760 244, 840 244"/>
-    <path d="M 630 322 C 720 314, 760 272, 840 272"/>
-    <path d="M 630 324 C 720 318, 760 300, 840 300"/>
-    <path d="M 630 326 C 720 326, 760 328, 840 328"/>
-    <path d="M 630 328 C 720 330, 760 356, 840 356"/>
-    <path d="M 630 330 C 720 334, 760 384, 840 384"/>
+    <path d="M 630 320 C 710 312, 760 234, 840 229"/>
+    <path d="M 630 321 C 710 314, 760 257, 840 252"/>
+    <path d="M 630 323 C 710 316, 760 280, 840 275"/>
+    <path d="M 630 325 C 710 320, 760 303, 840 298"/>
+    <path d="M 630 326 C 710 326, 760 322, 840 321"/>
+    <path d="M 630 328 C 710 332, 760 344, 840 344"/>
+    <path d="M 630 330 C 710 336, 760 367, 840 367"/>
+    <path d="M 630 332 C 710 340, 760 390, 840 390"/>
+    <path d="M 630 334 C 710 344, 760 413, 840 413"/>
   </g>
 
-  <!-- backends column -->
+  <!-- backends column: every registered backend, in registration order. -->
+  <!-- XPILE-HERODIAGRAM-001:BACKENDS:BEGIN -->
   <g class="mono lang">
-    <text x="850" y="250">Rust</text>
-    <text x="850" y="278">Ruchy</text>
-    <text x="850" y="306">PTX</text>
-    <text x="850" y="334">WGSL</text>
-    <text x="850" y="362">SPIR-V</text>
-    <text x="850" y="390">Lean 4</text>
+    <text x="850" y="234" data-backend="rust">Rust</text>
+    <text x="850" y="257" data-backend="ruchy">Ruchy</text>
+    <text x="850" y="280" data-backend="ptx">PTX</text>
+    <text x="850" y="303" data-backend="wgsl">WGSL</text>
+    <text x="850" y="326" data-backend="spirv">SPIR-V</text>
+    <text x="850" y="349" data-backend="wasm">WebAssembly</text>
+    <text x="850" y="372" data-backend="lean">Lean 4</text>
+    <text x="850" y="395" data-backend="bashrs">Shell</text>
+    <text x="850" y="418" data-backend="forjar">forjar</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:BACKENDS:END -->
 
   <!-- divider between lanes -->
-  <line x1="80" y1="430" x2="1120" y2="430" class="divider"/>
+  <line x1="80" y1="440" x2="1120" y2="440" class="divider"/>
 
   <!-- ──────────────── PROOF LANE ──────────────── -->
-  <text x="100" y="475" class="sans laneLabel" fill="#D97706">PROOF  LANE</text>
+  <text x="100" y="480" class="sans laneLabel" fill="#D97706">PROOF  LANE</text>
 
-  <!-- proof-lane sources -->
+  <!-- proof-lane sources: the registered contract frontends. -->
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-FRONTENDS:BEGIN -->
   <g class="mono lang">
-    <text x="100" y="515">LaTeX (math + thms)</text>
-    <text x="100" y="543">Lean 4 theorems</text>
-    <text x="100" y="571">mdBook</text>
+    <text x="100" y="551" data-contract-frontend="latex">LaTeX</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-FRONTENDS:END -->
 
-  <!-- bidirectional arrows to contracts hub -->
-  <g stroke="#D97706" stroke-width="1.2" fill="none" marker-end="url(#arrowProof)" marker-start="url(#arrowProof)">
-    <path d="M 320 510 L 460 538"/>
-    <path d="M 320 538 L 460 538"/>
-    <path d="M 320 566 L 460 538"/>
+  <!-- source → contracts -->
+  <g stroke="#D97706" stroke-width="1.2" fill="none" marker-end="url(#arrowProof)">
+    <path d="M 250 545 L 460 545"/>
   </g>
 
   <!-- contracts hub -->
-  <rect x="470" y="510" width="260" height="60" rx="12" fill="url(#proofGrad)"/>
-  <text x="600" y="540" text-anchor="middle" class="sans hub">contracts (YAML)</text>
-  <text x="600" y="558" text-anchor="middle" class="mono hubSub">5 layers · pv-validated · structurally cited</text>
+  <rect x="470" y="515" width="260" height="60" rx="12" fill="url(#proofGrad)"/>
+  <text x="600" y="545" text-anchor="middle" class="sans hub">contracts (YAML)</text>
+  <text x="600" y="563" text-anchor="middle" class="mono hubSub">5 layers · pv-validated · structurally cited</text>
 
-  <!-- bidirectional arrows to proof outputs -->
-  <g stroke="#D97706" stroke-width="1.2" fill="none" marker-end="url(#arrowProof)" marker-start="url(#arrowProof)">
-    <path d="M 740 538 L 880 510"/>
-    <path d="M 740 538 L 880 538"/>
-    <path d="M 740 538 L 880 566"/>
+  <!-- contracts ⇢ outputs. DASHED: both registered contract backends return a
+       fixed `_scaffold` payload and ignore the contract — `xpile info` prints
+       "2 registered, 0 rendering". -->
+  <g stroke="#D97706" stroke-width="1.2" fill="none" stroke-dasharray="5 4" marker-end="url(#arrowProof)">
+    <path d="M 740 540 L 880 528"/>
+    <path d="M 740 550 L 880 562"/>
   </g>
 
-  <!-- proof-lane outputs -->
+  <!-- proof-lane outputs: the registered contract backends. -->
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-BACKENDS:BEGIN -->
   <g class="mono lang">
-    <text x="890" y="515">LaTeX (papers)</text>
-    <text x="890" y="543">Lean 4 theorems</text>
-    <text x="890" y="571">mdBook</text>
+    <text x="890" y="533" data-contract-backend="lean-theorem">Lean 4 thm</text>
+    <text x="890" y="567" data-contract-backend="latex">LaTeX</text>
   </g>
+  <!-- XPILE-HERODIAGRAM-001:CONTRACT-BACKENDS:END -->
+
+  <!-- legend -->
+  <text x="600" y="600" text-anchor="middle" class="sans legend">dashed = registered contract backend that renders nothing yet (scaffold)</text>
 
   <!-- footer -->
-  <text x="600" y="615" text-anchor="middle" class="sans footer">
+  <text x="600" y="622" text-anchor="middle" class="sans footer">
     <tspan class="mono footerKbd">cargo install xpile</tspan>
     <tspan>  ·  </tspan>
     <tspan class="mono footerKbd">github.com/paiml/xpile</tspan>

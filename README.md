@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="xpile architecture: a code lane (Python, C, Ruchy, Shell, WebAssembly → meta-HIR → Rust, Ruchy, WebAssembly, PTX, WGSL, SPIR-V, Lean 4, Shell, forjar) and a proof lane (LaTeX ↔ YAML contracts ↔ LaTeX and Lean 4 theorems)" width="100%"/>
+  <img src="docs/assets/hero.svg" alt="xpile architecture: a code lane (Python, C, Shell, WebAssembly → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, WebAssembly, Lean 4, Shell, forjar) and a proof lane (LaTeX → contracts (YAML) → Lean 4 thm, LaTeX), whose two contract backends are registered scaffolds that render nothing yet" width="100%"/>
 </p>
 
 # xpile

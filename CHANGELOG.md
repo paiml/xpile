@@ -7,6 +7,94 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The hero image drew six source languages and four of them had no frontend — the front-door diagram was a roadmap published as an architecture (PMAT-1464)
+
+`docs/assets/hero.svg` is the first thing in `README.md` and therefore the first
+thing on the GitHub landing page. It landed in `1a4c798a` on 2026-05-15 and, at
+`647ba346` — **75 days and one commit later** — still drew this, measured against
+`xpile_core::default_session()`:
+
+| drawn | truth |
+|---|---|
+| frontends `C++`, `Rust`, `Lean 4` | **no frontend exists for any of them**, then or now |
+| frontend `Ruchy` | registered for ROUTING ONLY — `lowers_input()` is `false` and `.ruchy` INPUT refuses (PMAT-1346) |
+| frontends `Shell`, `WebAssembly` | registered and lowering, **absent from the diagram** |
+| hub subtitle `6 source langs` | **4** frontends lower; 5 are registered. Not 6 either way |
+| backends `WebAssembly`, `Shell`, `forjar` | registered, **absent** (3 of 9 missing) |
+| proof lane `mdBook`, drawn as BOTH a source and an output | **no mdBook contract frontend or backend exists** — `README.md` says so outright |
+| proof-lane outputs, solid bidirectional arrows | both contract backends return a fixed `_scaffold` payload; `xpile info` prints `2 registered, 0 rendering` |
+
+Of the six languages drawn flowing **into** meta-HIR, two were real.
+
+* **NEVER-TRUE, NOT AGED — a different defect.** Every prior slice in this arc
+  found a number that had *drifted*. This one was false on the day it was
+  written: at `1a4c798a` itself `default_session()` registered three frontends
+  (`python`, `c`, `ruchy`) and five backends (no `spirv`), so `C++`, `Rust`,
+  `Lean 4` and `SPIR-V` were all drawn before anything registered them, and
+  `mdBook` never has been.
+* **⭐ THE SWEEP WAS NARROWER THAN THE RULE IT WROTE, again.** PMAT-1440 found
+  this *exact* roster wrong in `book/src/concepts/two-lanes.md`, wrote down *"A
+  regression pin written against a FILE does not protect a CLAIM"*, and then
+  keyed its registry comparison to a `const PAGE` and its phantom needle to a
+  corpus of `book/src/**/*.md` plus `README.md`. Its own comment names *"the
+  hero image's alt-text"* as a third site it repaired. It repaired the **alt
+  text** and never opened the **image**: `c++` and `mdBook` are on that gate's
+  phantom list, both were live in the SVG, and the corpus collected `.md` only
+  — so the phantom sat inside an artifact *embedded by* a file the gate was
+  already reading. **A corpus of the FILES that mention a lane is not a corpus
+  of the ARTIFACTS that present one.**
+* **THE NUMERAL HAD A GATED TWIN.** `crates/xpile-core/src/lib.rs` says of the
+  routing-only Ruchy registration: *"It does NOT count toward the README's
+  substantive source-language numeral — `claims_drift.rs` derives that by
+  RUNNING each registered frontend against a real program."* `README.md`'s
+  "four source languages" has been gated and correct for months. The identical
+  numeral in the image the same README embeds said **six**, ungated.
+* **ONE IMAGE, TWO ARCHITECTURES.** PMAT-1440 rewrote the `alt=` to the live 5
+  registered frontends and 9 backends while the picture it describes drew 6 and
+  6 — a screen-reader user and a sighted reader were handed different systems
+  for the same image. The gate now BUILDS the roster string from the labels the
+  image draws and requires it verbatim in both the SVG's `<desc>` and the
+  README's `alt=`.
+* **A LOWERCASED NEEDLE WAS MEASURED AND REJECTED.** Making the phantom match
+  case-insensitive would have caught the SVG's `C++` — and over the widened
+  corpus it reports exactly one site on the repaired tree,
+  `book/src/concepts/contracts.md:76`, *"a C++ backend implementer who doesn't
+  know Lean"*: an honest sentence about a hypothetical person. A needle loose
+  enough to reach it fabricates findings (PMAT-1455). The image is covered
+  **structurally** instead — inside a lane column every label must declare a
+  `data-*` registry id, checked against `default_session()`. `C++` would have
+  to call itself `cpp`, and nothing registers `cpp`.
+
+**THE FIX.** `docs/assets/hero.svg` now draws the 4 lowering frontends, the 9
+backends, the 1 contract frontend and the 2 contract backends, each in
+registration order and each declaring its registry id; the proof-lane output
+arrows are dashed with one legend line stating what dashed means. New gate
+`crates/xpile/tests/hero_diagram_integrity.rs` (XPILE-HERODIAGRAM-001) compares
+all four rosters to `default_session()` **both directions and in order**, checks
+the hub numeral against the live lowering count, and requires the image, its
+`<desc>` and the README `alt=` to carry the same roster.
+`lane_roster_witness.rs`'s phantom corpus was widened from `.md` files to the
+assets directory, with an assertion that reds if it ever collects no `.svg`.
+
+**RED HALVES, all run with the perturbation asserted applied.** Revert the SVG →
+6 of 7 tests red. The pre-fix roster in the post-fix schema → the six set-shaped
+findings (`cpp` drawn/unregistered; `bashrs`, `wasm` frontends and `wasm`,
+`bashrs`, `forjar` backends registered/undrawn). Draw `ruchy` → only the
+routing-only guard reds. A bare `<text>C++</text>` → 6 pass and **only** the
+undeclared-label guard reds, so it has no substitute. Put `Ruchy` back in the alt
+text → the alt/desc test reds. **⭐ Narrow the phantom corpus back to `.md` with
+the pre-fix image in the tree → `no_book_page_reintroduces_the_phantom_lanes`
+passes GREEN over `mdBook` ×4 and `C++` ×2** — the defect, reproduced.
+
+**MEASURED OUT NEGATIVE AND CLOSED.** The two standing leads this slice checked
+first both held: the three `Substrate Diamond total: N` running counts are EXACT
+(69 / 75 / 82, against 69 / 75 / 82 as of PMAT-330 / 336 / 344), and the
+`depth-3`/`depth-4` UNIVERSAL "across all 5 taxonomy layers" milestones are TRUE
+— the 12-contract substrate really did span all five layers. Fifth standing lead
+running to measure out mostly or wholly negative: **measure a lead before
+building for it.**
+
+
 ### The five "COMPLETES DEPTH-N ACROSS ALL 5 TAXONOMY LAYERS" milestones never happened — 52 census claims count a Layer-1 contract as the fifth layer (PMAT-1463)
 
 PMAT-1462 gated the ORDINAL half of a Diamond broadening record and left the

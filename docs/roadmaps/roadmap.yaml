@@ -22515,3 +22515,72 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1464
+  title: The repo's hero diagram drew six source languages and four of them had no frontend — the
+    front-door image was a roadmap published as an architecture, false on the day it landed
+  notes: 'docs/assets/hero.svg is the FIRST thing in README.md and therefore the first thing on the
+    GitHub landing page. It landed in 1a4c798a on 2026-05-15 and at 647ba346 -- 75 days and ONE commit
+    later -- still drew: frontends C++, Rust and Lean 4 (no frontend exists for any of them), Ruchy
+    (registered for ROUTING ONLY, `lowers_input()` false, INPUT refuses -- PMAT-1346), a hub subtitle
+    reading "6 source langs" (live: 4 lower, 5 registered), and NEITHER of the two frontends that
+    actually do lower (Shell, WebAssembly). Of the six languages drawn flowing INTO meta-HIR, TWO were
+    real. Backends: 6 drawn, 9 registered -- wasm, bashrs and forjar absent. Proof lane: mdBook drawn
+    as BOTH a source and an output, and no mdBook contract frontend or backend has ever existed;
+    both contract backends drawn with solid bidirectional arrows while `xpile info` prints "2
+    registered, 0 rendering".
+
+    ** NEVER-TRUE, NOT AGED -- a different defect from every prior slice in this arc, all of which found
+    a number that had DRIFTED. At 1a4c798a itself default_session() registered three frontends (python,
+    c, ruchy) and five backends (no spirv), so C++, Rust, Lean 4 and SPIR-V were all drawn before
+    anything registered them. Prove WHICH you have: aged and never-true have different fixes.
+
+    ** THE SWEEP WAS NARROWER THAN THE RULE IT WROTE, again (PMAT-1457 shape). PMAT-1440 found this
+    EXACT roster wrong in book/src/concepts/two-lanes.md, wrote down "A regression pin written against
+    a FILE does not protect a CLAIM", and then keyed its registry comparison to a `const PAGE` and its
+    phantom needle to a corpus of book/src/**/*.md plus README.md. Its own comment names "the hero
+    image''s alt-text" as a third site it repaired. It repaired the ALT TEXT and never opened the IMAGE:
+    `c++` and `mdBook` are on that gate''s phantom list, both were live in the SVG, and the corpus
+    collected .md only -- so the phantom sat inside an artifact EMBEDDED BY a file the gate was already
+    reading. A corpus of the FILES that mention a lane is not a corpus of the ARTIFACTS that present one.
+
+    ** THE NUMERAL HAD A GATED TWIN. xpile-core/src/lib.rs says of the routing-only Ruchy registration:
+    "It does NOT count toward the README''s substantive source-language numeral -- claims_drift.rs
+    derives that by RUNNING each registered frontend". README.md''s "four source languages" has been
+    gated and correct for months. The identical numeral in the image the same README embeds said SIX,
+    ungated. One claim, two homes, one gate.
+
+    ** ONE IMAGE, TWO ARCHITECTURES. PMAT-1440 rewrote the README `alt=` to the live 5 registered
+    frontends + 9 backends while the picture it describes drew 6 and 6 -- so a screen-reader user and a
+    sighted reader were handed different systems for the same image. The gate now BUILDS the roster
+    string from the labels the image DRAWS and requires it verbatim in both the `<desc>` and the `alt=`.
+
+    ** A LOWERCASED NEEDLE WAS MEASURED AND REJECTED. Widening lane_roster_witness''s phantom match to
+    case-insensitive would have caught the SVG''s `C++`, and over the widened corpus it reports exactly
+    one site on the repaired tree -- book/src/concepts/contracts.md:76, "a C++ backend implementer who
+    doesn''t know Lean" -- an honest sentence about a hypothetical person. A needle loose enough to reach
+    it fabricates findings (PMAT-1455). The image is covered STRUCTURALLY instead: inside a lane column
+    every label must declare a `data-*` registry id, and the id is checked against default_session().
+    `C++` would have to call itself `cpp`, and nothing registers `cpp`.
+
+    ** FIRST SLICE IN THIS ARC TO LOSE NO GUARD TO ITS OWN RED HALF SINCE PMAT-1459, and the red halves
+    were run: (1) revert the SVG -> 6 of 7 red; (2) the pre-fix roster in the post-fix schema -> the six
+    set-shaped findings; (3) draw ruchy -> only the routing-only guard reds; (4) a bare <text>C++</text>
+    -> 6 pass and ONLY the undeclared-label guard reds, so it has no substitute; (5) put Ruchy back in
+    the alt -> the alt/desc test reds; (6) ** narrow the phantom corpus back to .md with the pre-fix
+    image in the tree -> no_book_page_reintroduces_the_phantom_lanes passes GREEN over mdBook x4 and
+    C++ x2. That is the defect reproduced.
+
+    NEXT: (a) re-point PMAT-1459''s 70 disclosed falsification commands at real falsifiers, one contract
+    at a time -- still the only large lead with a decidable core; (b) `1025 Lean theorems`
+    (xpile-spec.md:370, kaizen-fleet.md:11), EXTERNAL and uncheckable -- attribute or drop; (c) the
+    per-contract EQUATION denominator, a policy call rather than a gate; (d) MEASURED OUT NEGATIVE this
+    slice and closed: the `Substrate Diamond total: N` running counts (3 sites, all EXACT -- 69/75/82
+    against 69/75/82 as-of PMAT-330/336/344) and the depth-3/depth-4 UNIVERSAL "across all 5 taxonomy
+    layers" milestones (both TRUE: the 12-contract substrate spanned all five layers). Fifth standing
+    lead running to measure out mostly or wholly negative -- MEASURE A LEAD BEFORE BUILDING FOR IT.
+
+    NEXT FREE ID IS PMAT-1465. HARD FREEZE Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release
+    mechanics ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
+  status: done
+  priority: P1
+  category: honesty
