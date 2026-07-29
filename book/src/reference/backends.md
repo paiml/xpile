@@ -104,8 +104,13 @@ The Rust backend produces:
 
 - `pub fn` declarations with typed parameters and typed returns
 - All binary + unary operators using Python semantics:
-  - `//` → `checked_div_euclid` (Python-floor, not C-truncating)
-  - `%` → `checked_rem_euclid`
+  - `//` → `checked_div` + a floor correction (subtract 1 when the remainder
+    is non-zero and its sign differs from the divisor's)
+  - `%` → `checked_rem` + a floor correction (add the divisor under the same
+    condition), so the result takes the **divisor's** sign as CPython does
+  - neither uses `div_euclid` / `rem_euclid`: PMAT-538 removed those in
+    v0.1.237 because they only match Python for a *positive* divisor
+    (`7 % -3` is `-2` in Python but `1` under `rem_euclid`)
   - `*`, `+`, `-` → `checked_mul`, `checked_add`, `checked_sub`
 - `.expect("…contract C-PY-INT-ARITH slow path…")` on every arithmetic
   wrap — the panic text **names the contract**

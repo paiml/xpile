@@ -46,7 +46,15 @@ fn main() -> anyhow::Result<()> {
 
     println!("─── WHAT THIS DEMONSTRATES ───");
     println!("• Euclidean GCD (a different shape from factorial — mutual recursion via `%`).");
-    println!("• Python `%` lowers to `.checked_rem_euclid()` — Python-floor, NOT C-truncating.");
+    // PMAT-1468: this line claimed `.checked_rem_euclid()`. PMAT-538 REMOVED that
+    // lowering in v0.1.237 precisely because `rem_euclid` is always non-negative
+    // while Python's `%` takes the DIVISOR's sign — they disagree on 2 of the 4
+    // sign combinations (`7 % -3` is -2 in Python, 1 under `rem_euclid`). Read the
+    // emit printed above: it is `checked_rem` plus a floor correction.
+    println!(
+        "• Python `%` lowers to `.checked_rem()` + a floor correction taking the divisor's \
+         sign — NOT `rem_euclid`, which diverges from CPython for a negative divisor (PMAT-538)."
+    );
     println!(
         "• Same C-PY-INT-ARITH discharge as Rust backend; backends compose by sharing meta-HIR."
     );

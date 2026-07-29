@@ -353,7 +353,12 @@ equations:
       Rust `/` is TRUNCATING.
     invariants:
       - "for mixed-sign operands Python and Rust diverge by one — must be corrected in translation"
-      - "div_euclid is closer to floor but still diverges when remainder is zero — handle that case"
+      # PMAT-1468: this line read "div_euclid is closer to floor but still diverges
+      # when remainder is zero". Both halves were wrong, in the flattering direction:
+      # div_euclid AGREES with Python when the remainder is zero, and diverges exactly
+      # when the DIVISOR is negative and the remainder is non-zero (-7 // -2 is 3 in
+      # Python, 4 under div_euclid). PMAT-538 (v0.1.237) removed it from the emit.
+      - "div_euclid is NOT floor division for a negative divisor — it agrees with Python only when the divisor is positive or the remainder is zero, so the emit uses truncating checked_div plus a floor correction (PMAT-538)"
     preconditions:
       - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
     postconditions:
@@ -392,7 +397,10 @@ equations:
       - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
       - "fits_i64(Int.fdiv a b) for the fast-path agreement claim"
     postconditions:
-      - "an emitter that uses Rust's truncating `/` instead of checked_div_euclid would diverge from CPython on mixed-sign operands — caught by the dispatcher's slow-path soundness claim"
+      # PMAT-1468: this postcondition accused the ACTUAL emitter. Since PMAT-538
+      # (v0.1.237) the emit IS Rust's truncating `/` — plus a floor correction —
+      # and it does NOT diverge; `checked_div_euclid` is the form that diverges.
+      - "an emitter that uses Rust's truncating `/` WITHOUT the floor correction would diverge from CPython on mixed-sign operands, and so would `checked_div_euclid` whenever the divisor is negative — caught by the dispatcher's slow-path soundness claim (PMAT-538)"
 
   modulo_floor_semantics:
     formula: |
@@ -402,12 +410,18 @@ equations:
       (sign of result matches sign of divisor); Rust `%` is
       TRUNCATING mod (sign matches sign of dividend).
     invariants:
-      - "for mixed-sign operands Python and Rust diverge — must use rem_euclid or equivalent in translation"
+      # PMAT-1468: this read "must use rem_euclid or equivalent". rem_euclid is
+      # always non-negative, so it contradicts the `domain:` line directly above
+      # ("sign of result matches sign of divisor") for every negative divisor.
+      - "for mixed-sign operands Python and Rust diverge — the translation must apply a floor correction (add the divisor when the truncating remainder is non-zero and its sign differs); rem_euclid does NOT do this, being always non-negative (PMAT-538)"
     preconditions:
       - "b != 0 (else Python raises ZeroDivisionError — separate contract)"
     postconditions:
       - "the result equals `Int.fmod a b` (sign matches divisor) for all (a, b) with b != 0"
-      - "for mixed-sign operands the result diverges from Rust's truncating `%` — the emitted code uses `checked_rem_euclid` or the BigInt equivalent"
+      # PMAT-1468: this said "the emitted code uses `checked_rem_euclid`". It has
+      # not since PMAT-538 (v0.1.237), and `rem_euclid` would falsify the
+      # sign-matches-divisor postcondition on the line above.
+      - "for mixed-sign operands the result diverges from Rust's truncating `%` — the emitted code applies a floor correction to `checked_rem`, or uses the BigInt `mod_floor` equivalent; NOT `checked_rem_euclid` (PMAT-538)"
       - "the result equals CPython `int.__mod__(a, b)` bit-for-bit"
     # XPILE-REFINE-003 / PMAT-029: same `rfl` structure as floor div.
     # Both paths model mod as `Int.fmod`.
@@ -437,7 +451,11 @@ equations:
       - "b != 0 (else Python raises ZeroDivisionError)"
       - "fits_i64(Int.fmod a b) for the fast-path agreement claim"
     postconditions:
-      - "an emitter that uses Rust's truncating `%` instead of checked_rem_euclid would diverge from CPython on mixed-sign operands"
+      # PMAT-1468: as at the floor-div equation above, this accused the emitter
+      # xpile actually ships. Truncating `%` PLUS the floor correction is exactly
+      # what PMAT-538 (v0.1.237) replaced `checked_rem_euclid` WITH, because
+      # rem_euclid is the form that diverges (`7 % -3` is -2 in Python, 1 there).
+      - "an emitter that uses Rust's truncating `%` WITHOUT the floor correction would diverge from CPython on mixed-sign operands, and so would `checked_rem_euclid` whenever the divisor is negative (PMAT-538)"
     kani_file: "contracts/kani/py_int_arith.rs"
 
   division_algorithm_diamond:
