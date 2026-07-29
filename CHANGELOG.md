@@ -7,6 +7,83 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The section whose entire job is to disclose what is *not* enforced omitted one of the seven unenforced contexts — the one whose green means least — and the gate written for exactly that defect had the other document as its only subject (PMAT-1478)
+
+`Known divergences` was swept item-by-item (PMAT-1473, PMAT-1474). The other
+**two** mandatory sections — `What still REFUSES` and `What is NOT
+merge-blocking` — had never been swept, because neither uses numbered items and
+the parse that read the first list does not fit them. They ship on Friday as the
+release notes. Three defects, all measured against the tree tonight.
+
+**1. Six of seven advisory contexts, and the omission was `license-scan`.** The
+paragraph read *"`docs`, `kani`, `lake-build`, `lean-models`, `shader-validate`
+and `wasi` are ADVISORY."* The derived marker it points at,
+`.github/workflows/ci.yml:82`, has named **seven** since PMAT-1409 added the
+`license-scan` job. **The paragraph shipped its own refutation**: the very next
+line tells the reader to run `grep -n 'XPILE-ENFORCEMENT'
+.github/workflows/ci.yml`, which prints the seven.
+
+Of the seven, `license-scan` is the worst one to drop from a *non-enforcement*
+disclosure. Its green does **not** mean "no licence problems" — it means the
+licence surface still equals `NOTICE.md`. Measured tonight: `cargo deny check
+licenses` exits **4**, by design, and the `lgpl-in-shipped-binary` owner decision
+is **OPEN**. So the roster omitted precisely the context a reader most needs to
+know is unenforced, in the section that exists to tell them.
+
+**The root cause is a gate's SUBJECT, not its rule.** PMAT-1453 found this exact
+stale roster in `docs/RELEASE.md` and wrote it up in this same `[Unreleased]`
+section — **5,385 lines above the roster it left stale** (measured on the pre-fix
+file: entry at 1806, stale roster at 7191) — *"the published list understated
+what is unenforced, in the section whose job is to disclose exactly that"* — and shipped
+`release_runbook_facts_witness.rs::the_runbook_does_not_type_an_advisory_roster`
+to stop it recurring. That gate reads **`docs/RELEASE.md` and nothing else**.
+Three documents publish this roster; the runbook is gated, `docs/status/CURRENT.md`
+carries all seven and is ungated-but-correct, and the CHANGELOG — the only copy
+that leaves the repository — was the stale one. **The rule was right, the corpus
+was one file, and the defect walked to the neighbouring document.**
+
+**2. "Each carrying … the stage that refuses it" — two rows of thirteen carry
+one.** `What still REFUSES` described the WASM `emit_surface.refused` block as 13
+rows "each carrying a real Python probe and the **stage** that refuses it".
+Measured: **13 of 13 carry a probe; 2 carry a `stage:`** (`bigint-literal`,
+`set-of-float`). The other eleven ride `expected_stage()`'s
+`stage: Option<String>` → `"backend"` default. The *conclusion* is sound —
+every row's stage is checked, the default is enforced identically — so this is
+the PMAT-1476 shape: **a true answer with a false attribution.** And the section
+refuted itself **twenty-one lines later** (pre-fix 7103 → 7124), where it says of `set[float]` that
+"pinning the stage is what caught it" — true of exactly the two rows that pin
+one, and impossible to reconcile with "each". A reader who believed the first
+sentence would think eleven stages had been independently pinned when they ride a
+default.
+
+**3. `forjar 1.10.0` was refuted by this repo's own ledger before it shipped.**
+The section states the ruchy/lean/forjar witnesses "pass locally at ruchy 4.2.1,
+forjar 1.10.0 and lean v4.15.0, in about 1.3s combined". Re-measured against the
+installed binaries: ruchy **4.2.1** ✓, lean **4.15.0** ✓, forjar **1.12.2** ✗,
+and all four tests pass in **1.25s** ✓. Two of three versions and the timing
+held; the third had drifted two minor versions. `docs/roadmaps/queue.yaml`'s
+PMAT-1429 entry already recorded a **third** value — *"validated with the REAL
+`forjar 1.11.1` binary"* — so the number was inconsistent **inside the tree**
+before it was inconsistent with the machine. **Three mutually incompatible
+versions in tracked files means the figure was never a fact about the lane, only
+about the day someone last looked**, and no witness asserts a forjar version, so
+nothing reds when the toolchain moves.
+
+That number is not inert. PMAT-1375's seeded 0.1.619 `backend-exec` job cites it
+as *"exactly the versions to pin"*, so the stale figure would have been pinned
+into a CI job as the version the witnesses were verified at — PMAT-1474's lesson
+that **a stale metric aims the next release's roadmap, not just the reader**,
+firing a second time. Corrected at both sites.
+
+**What this slice does NOT do, and why.** The three fixes are prose. The
+structural fix — adding `CHANGELOG.md` to the runbook gate's corpus, and
+widening `ruleset_drift.rs::advisory_markers_are_exactly_the_unrequired_ci_jobs`
+past `ci.yml` so `book.yml`'s `build` (which runs on **every PR** and blocks
+nothing) stops sitting outside both sets — **is a gate edit, forbidden by the
+Wed 18:00 release freeze**. Filed for 0.1.619 and disclosed in the section
+itself. **This class is therefore still ungated and will regress**; saying so is
+cheaper than a fourth revision discovering it.
+
 ### A stale forward-looking *directive* told Thursday's operator A1 was owner-blocked, and the ledgers carried a duplicate work-item id that only a human procedure was checking for (PMAT-1477)
 
 Both defects were found **while verifying PMAT-1475**, not by hunting — which is
@@ -7100,9 +7177,13 @@ PMAT-1378) exist only to move a construct from the first column to the second.
 
 **The WASM lane.** The refused surface is not prose — it is the
 `emit_surface.refused` block of `contracts/compile-rust-to-wasm-v1.yaml`, 13
-rows against 31 `declared` rows, each carrying a real Python probe and the
-**stage** that refuses it, executed in both directions by
-`crates/xpile/tests/wasm_contract_surface.rs` against the live
+rows against 31 `declared` rows, each carrying a real Python probe, and each
+checked against the **stage** that refuses it — *declared* on **two** rows
+(`bigint-literal`, `set-of-float`) and *defaulted* to `backend` on the other
+**eleven**, because `expected_stage()` reads `stage: Option<String>` and falls
+back to `"backend"`. The check is identical either way, so every row's stage is
+enforced; what eleven rows do not do is **say so on the row**. Executed in both
+directions by `crates/xpile/tests/wasm_contract_surface.rs` against the live
 `default_session()`. Widening the emitter without moving a row is a red test,
 which is the entire point (PMAT-1350). Derive the current lists with:
 
@@ -7188,13 +7269,31 @@ enforcement than the repo has. **A per-ruleset read cannot answer "what blocks a
 merge" and never could;** one ruleset losing a context is not evidence the
 context stopped being required.
 
-**`docs`, `kani`, `lake-build`, `lean-models`, `shader-validate` and `wasi` are
-ADVISORY.** A red proof job does not block a merge. Derive the current split
-without trusting this paragraph:
+**Seven contexts are ADVISORY: `docs`, `kani`, `lake-build`, `lean-models`,
+`license-scan`, `shader-validate` and `wasi`.** A red proof job does not block a
+merge. That roster is a **snapshot** of the derived marker at
+`.github/workflows/ci.yml:82`, which `ruleset_drift.rs` holds equal to *every
+`ci.yml` job that is not required* — the marker is authoritative and this
+paragraph is not. Derive the current split without trusting it:
 
 ```
 grep -n 'XPILE-ENFORCEMENT' .github/workflows/ci.yml
 ```
+
+**Two disclosures this roster needs, because the count itself was wrong until
+PMAT-1478.** First, the earlier revision of this paragraph named **six** —
+omitting `license-scan` — while the marker it points at has named seven since
+PMAT-1409 added the job. Of the seven that was the worst one to drop:
+`license-scan` green means *the licence surface still equals `NOTICE.md`*, **not
+"no licence problems"** — `cargo deny check licenses` exits **4** by design, and
+the `lgpl-in-shipped-binary` owner decision is **OPEN** (see the PMAT-1409 entry
+and root `NOTICE.md`). Second, the marker's own subject is **`ci.yml` only**, so
+`book.yml`'s `build` — which runs on **every pull request** and blocks nothing —
+and its `deploy` sit outside both the required set and the advisory roster.
+`ruleset_drift.rs::every_required_context_names_a_real_ci_job` already reads all
+three workflow files; `advisory_markers_are_exactly_the_unrequired_ci_jobs`
+reads one. **Widening it is a gate edit, which the release freeze forbids**, so
+it is filed for 0.1.619 and disclosed here rather than fixed.
 
 Two consequences worth stating plainly. First, `kani` and `lake-build` — the
 proof lane — are advisory, so the Lean and Kani evidence in this release is
@@ -7212,8 +7311,9 @@ and verify-building 31 crates from a cold registry is minutes-heavy. Its per-PR
 half is the fast static falsifier `crates/xpile/tests/publish_manifest_integrity.rs`.
 
 **The ruchy, lean and forjar execution witnesses EXIST BUT SKIP IN CI.** They
-pass locally at ruchy 4.2.1, forjar 1.10.0 and lean v4.15.0, in about 1.3s
-combined — but `workspace-test` installs **wabt and nothing else**, verifiable
+pass locally at **ruchy 4.2.1, forjar 1.12.2 and lean v4.15.0** — re-measured
+against the installed binaries on 2026-07-29, 4 tests, 1.25s combined — but
+`workspace-test` installs **wabt and nothing else**, verifiable
 because it is the file's only `apt-get install` line:
 
 ```
