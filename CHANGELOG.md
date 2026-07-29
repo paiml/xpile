@@ -7,6 +7,69 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The release notes about to ship reported a divergence that had been *fixed* — the retired Lean caveat, still enforced by the Known-divergences list and by the plan's must-NOT-claim mandate (PMAT-1473)
+
+`[Unreleased]`'s "Known divergences" item 5 told readers:
+
+> **5. The default `--contracts on` Lean emit does not elaborate.** … which emits
+> `@[xpile_contract "C-PY-INT-ARITH"]` — an attribute no Lean prelude registers,
+> so `lean` rejects the file.
+
+**PMAT-1405 fixed exactly that**, and the list was never updated. Measured on
+this tree with a **forced-fresh** build — the shared target dir had handed back a
+binary from another worktree, so the probe was re-run under a dedicated
+`CARGO_TARGET_DIR`:
+
+```console
+$ xpile transpile add.py --target lean --out P.lean    # DEFAULT flags
+/-- xpile-contract: C-PY-INT-ARITH -/
+def add (a : Int) (b : Int) : Int := (a + b)
+$ lean P.lean ; echo $?
+0
+```
+
+Explicit `--contracts on` likewise exits 0. The attribute form has not been
+emitted since PMAT-1405; it survives only under `## [0.1.617]`, where it is
+correctly historical.
+
+The **same** retired caveat was still enforced by the active sprint plan's *"What
+the note must NOT claim"* list, which forbade claiming *"that the default Lean
+emit elaborates"* — forbidding Thursday's operator from stating a true,
+already-announced capability.
+
+**A known-divergences section that reports a fixed defect is the same class of
+falsehood as one that omits a live defect**, and it is read by exactly the people
+deciding what a release may claim. Aged claims have no tell: nothing about the
+sentence looks wrong, and it was true when written.
+
+**PMAT-1411 named this class in its own subject** — *"the sweep found the INVERSE
+defect, a GREEN test ENFORCING the retired Lean caveat PMAT-1405 had already
+fixed"* — and swept the **tests**. PMAT-1468 later swept five more files in
+passing. Neither reached the divergence list or the plan.
+
+**Gate** — `crates/xpile/tests/retired_lean_caveat_witness.rs`
+(XPILE-RETIRED-001), 5 tests. The behaviour is **measured, not assumed**: the
+test runs the emitter under default flags and runs `lean` on the output, and the
+document rules are checked against that measurement — **bidirectionally**.
+Regressing the emitter back to the attribute form reds *both* the structural and
+the elaboration halves, and would make this slice's own "RETIRED" notes false.
+
+Scoping was found by the red half: whole-document scoping flagged **eight**
+narrative arc entries in `[Unreleased]` that legitimately discuss the attribute
+as history — **including PMAT-1405's own entry, which exists to record the
+removal**. The subject is therefore the *normative* blocks only (Known
+divergences / What still REFUSES / What is NOT merge-blocking, plus the plan's
+release-note mandate). The defect is not a mention; it is an assertion in a
+section a reader consults for current truth. `## [0.1.617]` carries the identical
+caveat and is correct there — a control test keeps it, so a future broadening
+cannot demand the project falsify its own history.
+
+Two more red-half findings, both in the gate itself: the exemption predicate
+flagged PMAT-1468's honest paragraph because it wrote *"PMAT-1405 retired that"*
+in lowercase while the check looked for uppercase `RETIRED`; and the temp dir
+raced across three parallel tests sharing one pid-keyed path — the PMAT-1436
+lesson, re-learned.
+
 ### The packaged `contracts/README.md` told crates.io readers that `workspace-test` blocks merges — it does not, and the gate written for that exact falsehood two days earlier could not see it on either axis (PMAT-1471)
 
 `contracts/README.md` ships inside `cargo package -p xpile`. Its CI table read:
@@ -6830,13 +6893,26 @@ reason; a dict view materialised in a module that also removes a key or builds a
 set refuses module-wide (PMAT-1365) rather than silently observing an order that
 diverges. WONTFIX is proposed for hash-order parity.
 
-**5. The default `--contracts on` Lean emit does not elaborate.** Every backend
-cites its contracts in comments except Lean, which emits
-`@[xpile_contract "C-PY-INT-ARITH"]` — an attribute no Lean prelude registers,
-so `lean` rejects the file. `--contracts off` emits clean, elaborating Lean.
-Registering the attribute in a prelude changes emit standalone-ness and several
-frozen expected-string tests, so it ships as this caveat again rather than as a
-release-week refactor.
+**5. ~~The default `--contracts on` Lean emit does not elaborate.~~ RETIRED —
+this divergence was FIXED by PMAT-1405 and should not have survived into this
+release's list.** Measured on this tree with a forced-fresh build:
+`xpile transpile add.py --target lean` under the **default** flags emits
+`/-- xpile-contract: C-PY-INT-ARITH -/` — a doc comment, exactly like every
+other backend's citation — and `lean` exits **0**. Explicit `--contracts on`
+likewise exits 0. The `@[xpile_contract "…"]` attribute this entry describes has
+not been emitted since PMAT-1405; it survives only under `## [0.1.617]`, where it
+is correctly historical.
+
+> This is the aged-claim shape PMAT-1411 named in its own subject — *"a GREEN
+> test ENFORCING the retired Lean caveat PMAT-1405 had already fixed"*. That
+> sweep corrected the **tests** and never reached the **documents**: this entry
+> and the sprint plan's "what the note must NOT claim" list both still enforced
+> it. A known-divergences section that reports a fixed defect is the same class
+> of falsehood as one that omits a live one, and it is read by exactly the people
+> deciding what the release can claim. Gated by
+> `crates/xpile/tests/retired_lean_caveat_witness.rs` (PMAT-1473), which
+> **executes the emitter and `lean`** rather than pinning a string, so the
+> documents are checked against measured behaviour in both directions.
 
 **6. `26 QUORUM / 9 PARTIAL` must not be read as "executed 35 ways".** Derive it
 with `xpile quorum`. PMAT-1367 changed what the §14.4 Runtime stratum counts:
