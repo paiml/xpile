@@ -70,6 +70,55 @@ in lowercase while the check looked for uppercase `RETIRED`; and the temp dir
 raced across three parallel tests sharing one pid-keyed path — the PMAT-1436
 lesson, re-learned.
 
+### The packaged `contracts/README.md` told crates.io readers that `workspace-test` blocks merges — it does not, and the gate written for that exact falsehood two days earlier could not see it on either axis (PMAT-1471)
+
+`contracts/README.md` ships inside `cargo package -p xpile`. Its CI table read:
+
+> the live org ruleset requires only `gate` and `workspace-test`, so a red
+> `kani` job does not stop a merge
+
+Measured against the **live** API, not the committed snapshot:
+`gh api orgs/paiml/rulesets/13878864` returns required = `[gate]` alone.
+So the sentence **overstates** enforcement, in the same worst direction
+PMAT-1449 found: it is the clause whose job is to disclose what is *not*
+enforced, and `workspace-test` is the only job that runs the full suite.
+
+**PMAT-1449 fixed this claim and gated it — and this file survived both halves
+of that gate.** `release_mandate_enforcement_witness.rs` scans a corpus of
+`docs/roadmaps/queue.yaml` and `docs/roadmaps/roadmap.yaml` for the needle
+`requires only [`. `contracts/README.md` is outside the **corpus**, and its
+backtick-and-`and` spelling carries no bracket, so it is outside the **needle**
+too. A gate's subject and its needle are two independent blind spots; this file
+sat in both. `claims_drift.rs` does read the file, but only for contract-count
+and Bronze-totality claims — it has no notion of CI enforcement.
+
+Repaired by the pointer doctrine PMAT-1449 established rather than by retyping
+a set: the table now states only what it needs (`kani` is advisory), and points
+at `docs/status/ruleset-13878864.json` for the recorded set and `docs/RELEASE.md`
+for the open owner decision about the live gap. The snapshot is deliberately
+**not** re-derived — that would ratify the weakening.
+
+### `cargo publish` uploaded 64 gitignored `pv` lint-cache files, so the flagship crate's published contents depended on which machine ran the publish (PMAT-1471)
+
+PMAT-1407 made `crates/xpile/contracts` a symlink to the workspace root so the
+contract corpus would finally ship. `cargo package` **walks** that symlink
+instead of consulting git, and `.gitignore` does not apply through it — `git
+check-ignore` refuses the path outright with *"beyond a symbolic link"*. The
+untracked `contracts/.pv/` lint cache went along for the ride.
+
+It is machine-dependent by construction: the cache exists only because the
+pre-push checklist runs `pv lint contracts/`, one file per content hash,
+accumulating and never shrinking. Measured — 64 files in the main checkout, 35
+after a single `pv lint` in a fresh worktree, **0** in a clean-room checkout.
+A clean-room `--dry-run` therefore validated a *different* artifact than the one
+an operator would upload, and nothing compared the two.
+
+Fixed with `exclude = ["contracts/.pv/**"]`. Verified as an exact subtraction
+rather than asserted: package listing 1143 → 1108, the removed set is exactly
+the 35 `.pv` entries, nothing is added, and the corpus PMAT-1407 restored still
+ships (35 contract YAMLs, 36 Lean modules, 24 Kani harnesses). `exclude` is
+subtractive; `include` is authoritative and would re-break PMAT-1407, which is
+why `packaged_contracts.rs` test 3 bans it and this change does not touch it.
 ### The Mathlib lane published a *derivation* it does not carry — "subsumes … as special cases of one general theorem" — on a packaged file no test had ever read (PMAT-1472)
 
 `contracts/lean-models/README.md`, under a heading reading **"What's proven"**,

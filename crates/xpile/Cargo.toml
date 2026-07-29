@@ -21,6 +21,17 @@ readme = "../../README.md"
 description = "Polyglot transpile workbench: Python/C/Shell/WASM in, Rust/Ruchy/Lean/WASM/PTX/WGSL/SPIR-V/Shell/forjar out, with provable contracts at every layer."
 keywords = ["transpile", "polyglot", "compiler", "verification", "rust"]
 categories = ["development-tools", "command-line-utilities", "compilers"]
+# PMAT-1471: `contracts` is a SYMLINK to the workspace root (PMAT-1407) and
+# `cargo package` WALKS it instead of consulting git, so `.gitignore` does not
+# apply through it (`git check-ignore` refuses the path outright: "beyond a
+# symbolic link"). That swept the UNTRACKED `pv` lint cache under
+# `contracts/.pv/` into the uploaded `.crate` — 64 files on this tree, present
+# only because the pre-push checklist runs `pv lint contracts/`. The published
+# file set therefore depended on the publishing MACHINE: a clean-room package
+# has none of them, the operator's has all of them, and nothing compared the
+# two. `exclude` is SUBTRACTIVE and safe; `include` is AUTHORITATIVE and would
+# re-break PMAT-1407 — see `tests/packaged_contracts.rs` test 3, which bans it.
+exclude = ["contracts/.pv/**"]
 
 [[bin]]
 name = "xpile"
