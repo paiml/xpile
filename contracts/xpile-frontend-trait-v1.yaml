@@ -589,7 +589,15 @@ falsification_tests:
       A TranspileSession that registers two frontends with overlapping
       extensions() either rejects the second registration or panics in test.
     test: |
-      cargo test -p xpile-core --test frontend_dispatch -- duplicate_extension
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-core --test frontend_dispatch`. That
+      test target does not exist in xpile-core, and no `#[test] fn
+      frontend_dispatch` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `frontend_dispatch` in `xpile-core``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Dispatch is ambiguous. Either reject overlap at register time or
       enforce a single-frontend-per-extension invariant in TranspileSession.
@@ -605,7 +613,15 @@ falsification_tests:
       Hashing two consecutive results of parse_and_lower on the same
       input yields identical hashes.
     test: |
-      cargo test -p xpile-frontend --test idempotency
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-frontend --test idempotency`. That test
+      target does not exist in xpile-frontend, and no `#[test] fn
+      idempotency` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `idempotency` in `xpile-frontend``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Some frontend holds mutable state across calls or uses a
       non-canonical serialization (HashMap iteration order).
@@ -620,7 +636,15 @@ falsification_tests:
     prediction: |
       For all (frontend, path, source): result.source_lang == frontend.declared_lang().
     test: |
-      cargo test -p xpile-frontend --test source_lang_consistency
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-frontend --test
+      source_lang_consistency`. That test target does not exist in
+      xpile-frontend, and no `#[test] fn source_lang_consistency` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `source_lang_consistency` in
+      `xpile-frontend``) and never ran. The rule above is unchanged and may
+      well be exercised by tests elsewhere in the tree; what was false is
+      this command. Re-pointing this entry at a real falsifier is open work.
     if_fails: |
       A frontend was copy-pasted without updating its SourceLang tag.
     ship_blocking: true
@@ -633,7 +657,15 @@ falsification_tests:
     prediction: |
       For all parsed modules m, all b ∈ m.ffi_boundaries: b.from_lang == m.source_lang.
     test: |
-      cargo test -p xpile-frontend --test outgoing_only_ffi
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-frontend --test outgoing_only_ffi`.
+      That test target does not exist in xpile-frontend, and no `#[test] fn
+      outgoing_only_ffi` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `outgoing_only_ffi` in `xpile-frontend``) and never ran. The rule
+      above is unchanged and may well be exercised by tests elsewhere in the
+      tree; what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Frontend is recording an incoming boundary, which should be the
       job of the FFI manifest reconciliation step in xpile-core.

@@ -471,7 +471,14 @@ falsification_tests:
       grep -E "&'[a-z]+ ?str" on emitted Rust returns no matches for
       v0.2.0 Track 1.A fixtures.
     test: |
-      cargo test -p xpile --test transpile_e2e str_no_lifetimes
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile --test transpile_e2e str_no_lifetimes`.
+      The `transpile_e2e` target exists but no test matches the filter
+      `str_no_lifetimes`, so the command exited 0 having run 0 tests
+      ("running 0 tests ... filtered out") — a green that compared nothing.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Frontend started inferring borrows without the 1.D stretch
       sub-track infrastructure (lifetime inference graph).
@@ -485,7 +492,14 @@ falsification_tests:
     prediction: |
       hash(module) before == hash(module) after str-lowering.
     test: |
-      cargo test -p xpile --test transpile_e2e str_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile --test transpile_e2e str_no_mutation`.
+      The `transpile_e2e` target exists but no test matches the filter
+      `str_no_mutation`, so the command exited 0 having run 0 tests
+      ("running 0 tests ... filtered out") — a green that compared nothing.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       str lowering has hidden side effects — breaks composability with
       list-of-str / dict-of-str (1.B / 1.C dependencies).
@@ -503,7 +517,14 @@ falsification_tests:
       For greet_lit.py and echo_name.py, the emitted Rust contains
       the contract citation line above `pub fn`.
     test: |
-      cargo test -p xpile --test qa_gate str_citation_present
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile --test qa_gate str_citation_present`.
+      The `qa_gate` target exists but no test matches the filter
+      `str_citation_present`, so the command exited 0 having run 0 tests
+      ("running 0 tests ... filtered out") — a green that compared nothing.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       The backend dropped the citation when extending to a new
       Type — citation graph drift.

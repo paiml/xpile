@@ -1361,7 +1361,16 @@ falsification_tests:
     prediction: |
       python_int_add(i64::MAX, 1) returns BigInt(i64::MAX + 1), not i64::MIN.
     test: |
-      cargo test -p depyler-frontend --test py_int_overflow_promotion
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test
+      py_int_overflow_promotion`. That test target does not exist in
+      depyler-frontend, and no `#[test] fn py_int_overflow_promotion` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `py_int_overflow_promotion`
+      in `depyler-frontend``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       The translation is doing wrapping_add without the fits_i64 guard.
     ship_blocking: true
@@ -1374,7 +1383,15 @@ falsification_tests:
     prediction: |
       python_int_mul(i64::MIN, -1) returns BigInt(2^63), not i64::MIN.
     test: |
-      cargo test -p depyler-frontend --test py_int_min_neg_one
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test py_int_min_neg_one`.
+      That test target does not exist in depyler-frontend, and no `#[test]
+      fn py_int_min_neg_one` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `py_int_min_neg_one` in `depyler-frontend``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Multiplication translation forgot the i64::MIN * -1 special case.
     ship_blocking: true
@@ -1387,7 +1404,16 @@ falsification_tests:
     prediction: |
       python_int_floordiv(-7, 2) == -4.
     test: |
-      cargo test -p depyler-frontend --test py_int_floordiv_mixed_sign
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test
+      py_int_floordiv_mixed_sign`. That test target does not exist in
+      depyler-frontend, and no `#[test] fn py_int_floordiv_mixed_sign`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `py_int_floordiv_mixed_sign` in `depyler-frontend``) and never ran.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       The translation emitted `a / b` (Rust trunc) instead of correcting to floor.
     ship_blocking: true
@@ -1400,7 +1426,15 @@ falsification_tests:
     prediction: |
       For all (a, b) ∈ i64²: python_int_and(a, b) == a & b (Rust i64).
     test: |
-      cargo test -p depyler-frontend --test py_int_bitand_i64
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test py_int_bitand_i64`.
+      That test target does not exist in depyler-frontend, and no `#[test]
+      fn py_int_bitand_i64` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `py_int_bitand_i64` in `depyler-frontend``) and never ran. The rule
+      above is unchanged and may well be exercised by tests elsewhere in the
+      tree; what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Two's complement representation mismatch — likely sign-extension bug.
     ship_blocking: true
@@ -1414,7 +1448,16 @@ falsification_tests:
       For any single binary arithmetic op, the allocation counter
       increments by at most 1 (the bigint result, if promoted).
     test: |
-      cargo test -p depyler-frontend --test py_int_arith_alloc_budget
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test
+      py_int_arith_alloc_budget`. That test target does not exist in
+      depyler-frontend, and no `#[test] fn py_int_arith_alloc_budget` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `py_int_arith_alloc_budget`
+      in `depyler-frontend``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Intermediate BigInt allocation in the fast path — wasted work.
     ship_blocking: false

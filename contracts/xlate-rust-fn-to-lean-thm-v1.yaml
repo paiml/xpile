@@ -787,7 +787,17 @@ falsification_tests:
       on the line preceding each emitted theorem; `lean --print-attributes
       <file>` lists every theorem with the attribute.
     test: |
-      cargo test -p xpile-lean-contract-backend --test theorem_xpile_contract_attribute
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-contract-backend --test
+      theorem_xpile_contract_attribute`. That test target does not exist in
+      xpile-lean-contract-backend, and no `#[test] fn
+      theorem_xpile_contract_attribute` exists anywhere in the workspace, so
+      the command hard-errored at target resolution (`error: no test target
+      named `theorem_xpile_contract_attribute` in
+      `xpile-lean-contract-backend``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Citation bridge broken at the structural level — auditor cannot
       recover contract from theorem via Lean.Meta API. (Note: bare
@@ -808,7 +818,17 @@ falsification_tests:
       Contract obligation `applies_to: homogeneous_list_to_vec` →
       Lean output contains `theorem homogeneous_list_to_vec`.
     test: |
-      cargo test -p xpile-lean-contract-backend --test theorem_name_matches_applies_to
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-contract-backend --test
+      theorem_name_matches_applies_to`. That test target does not exist in
+      xpile-lean-contract-backend, and no `#[test] fn
+      theorem_name_matches_applies_to` exists anywhere in the workspace, so
+      the command hard-errored at target resolution (`error: no test target
+      named `theorem_name_matches_applies_to` in
+      `xpile-lean-contract-backend``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Theorem names disconnected from contract equations — provenance lost.
     ship_blocking: true
@@ -824,7 +844,16 @@ falsification_tests:
       Contract with precondition P and postcondition Q produces
       `theorem foo : P → Q := by ...`, not `theorem foo : Q := by assume P; ...`.
     test: |
-      cargo test -p xpile-lean-contract-backend --test theorem_pre_before_post
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-contract-backend --test
+      theorem_pre_before_post`. That test target does not exist in
+      xpile-lean-contract-backend, and no `#[test] fn
+      theorem_pre_before_post` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `theorem_pre_before_post` in `xpile-lean-contract-backend``) and
+      never ran. The rule above is unchanged and may well be exercised by
+      tests elsewhere in the tree; what was false is this command.
+      Re-pointing this entry at a real falsifier is open work.
     if_fails: |
       Lean type signature does not surface the precondition; proof
       reviewers can't see what's assumed without reading the body.
@@ -839,7 +868,16 @@ falsification_tests:
     prediction: |
       hash(module, contract) before == hash(module, contract) after lift().
     test: |
-      cargo test -p xpile-lean-contract-backend --test lift_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-contract-backend --test
+      lift_no_mutation`. That test target does not exist in
+      xpile-lean-contract-backend, and no `#[test] fn lift_no_mutation`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named `lift_no_mutation` in
+      `xpile-lean-contract-backend``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Lifting has hidden side effects; cache-determinism breaks.
     ship_blocking: true
@@ -854,7 +892,16 @@ falsification_tests:
       `lean --check target/lean/contracts/C-XLATE-PY-LIST-TO-VEC.lean`
       exits with status 0.
     test: |
-      cargo test -p xpile-lean-contract-backend --test emitted_lean_checks
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-contract-backend --test
+      emitted_lean_checks`. That test target does not exist in
+      xpile-lean-contract-backend, and no `#[test] fn emitted_lean_checks`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named `emitted_lean_checks`
+      in `xpile-lean-contract-backend``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Emitter produces ill-formed Lean — bigger problem than wrong theorem.
     ship_blocking: true
@@ -872,7 +919,17 @@ falsification_tests:
       proof_obligations entries (1:1 for typed obligations, 1:N for
       `applies_to: all`).
     test: |
-      cargo test -p xpile-lean-contract-backend --test obligation_to_theorem_coverage
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-lean-contract-backend --test
+      obligation_to_theorem_coverage`. That test target does not exist in
+      xpile-lean-contract-backend, and no `#[test] fn
+      obligation_to_theorem_coverage` exists anywhere in the workspace, so
+      the command hard-errored at target resolution (`error: no test target
+      named `obligation_to_theorem_coverage` in
+      `xpile-lean-contract-backend``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Obligations silently dropped — false sense of completeness.
     ship_blocking: true

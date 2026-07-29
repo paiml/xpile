@@ -597,7 +597,16 @@ falsification_tests:
     prediction: |
       xlate([1, "a"]) returns Err(Heterogeneous { found_types: {int, str} }).
     test: |
-      cargo test -p depyler-frontend --test xlate_list_hetero_rejected
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test
+      xlate_list_hetero_rejected`. That test target does not exist in
+      depyler-frontend, and no `#[test] fn xlate_list_hetero_rejected`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `xlate_list_hetero_rejected` in `depyler-frontend``) and never ran.
+      The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Translation is silently boxing — defeats the type contract.
     ship_blocking: true
@@ -611,7 +620,16 @@ falsification_tests:
       `b = a; b.append(x); a == b after mutation` translates to Rust where
       the same observation holds (via clone-on-divergence or Rc<RefCell>).
     test: |
-      cargo test -p depyler-frontend --test xlate_list_alias_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test
+      xlate_list_alias_mutation`. That test target does not exist in
+      depyler-frontend, and no `#[test] fn xlate_list_alias_mutation` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `xlate_list_alias_mutation`
+      in `depyler-frontend``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Rust output uses move semantics where Python uses reference semantics.
     ship_blocking: true
@@ -625,7 +643,16 @@ falsification_tests:
       Rust iteration over a translated list yields elements in the same
       order as Python iteration over the original.
     test: |
-      cargo test -p depyler-frontend --test xlate_list_iter_order
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test
+      xlate_list_iter_order`. That test target does not exist in
+      depyler-frontend, and no `#[test] fn xlate_list_iter_order` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `xlate_list_iter_order` in
+      `depyler-frontend``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Translation used a HashSet/HashMap as the intermediate, losing order.
     ship_blocking: true
@@ -639,7 +666,15 @@ falsification_tests:
     prediction: |
       len(py_list) == rust_vec.len() as i64 for all inputs.
     test: |
-      cargo test -p depyler-frontend --test xlate_list_len
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test xlate_list_len`. That
+      test target does not exist in depyler-frontend, and no `#[test] fn
+      xlate_list_len` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `xlate_list_len` in `depyler-frontend``) and never ran. The rule above
+      is unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Likely cast bug: usize → i64 truncation on very long lists.
     ship_blocking: false
@@ -652,7 +687,15 @@ falsification_tests:
     prediction: |
       hash(module) before == hash(module) after xlate.
     test: |
-      cargo test -p depyler-frontend --test xlate_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test xlate_no_mutation`.
+      That test target does not exist in depyler-frontend, and no `#[test]
+      fn xlate_no_mutation` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `xlate_no_mutation` in `depyler-frontend``) and never ran. The rule
+      above is unchanged and may well be exercised by tests elsewhere in the
+      tree; what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Translation has hidden side effects — breaks composability.
     ship_blocking: true
@@ -665,7 +708,16 @@ falsification_tests:
     prediction: |
       lines(emit) ≤ 2 * lines(literal).
     test: |
-      cargo test -p depyler-frontend --test xlate_list_size_budget
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p depyler-frontend --test
+      xlate_list_size_budget`. That test target does not exist in
+      depyler-frontend, and no `#[test] fn xlate_list_size_budget` exists
+      anywhere in the workspace, so the command hard-errored at target
+      resolution (`error: no test target named `xlate_list_size_budget` in
+      `depyler-frontend``) and never ran. The rule above is unchanged and
+      may well be exercised by tests elsewhere in the tree; what was false
+      is this command. Re-pointing this entry at a real falsifier is open
+      work.
     if_fails: |
       Generated code is bloated — likely macro-expansion regression.
     ship_blocking: false

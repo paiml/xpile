@@ -617,7 +617,15 @@ falsification_tests:
       A TranspileSession that registers two backends with overlapping
       targets() either rejects the second or panics in test.
     test: |
-      cargo test -p xpile-core --test backend_dispatch -- duplicate_target
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-core --test backend_dispatch`. That
+      test target does not exist in xpile-core, and no `#[test] fn
+      backend_dispatch` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `backend_dispatch` in `xpile-core``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Dispatch is ambiguous. The session cannot decide which backend
       to invoke for Target::Ptx (or Target::Rust, etc.).
@@ -632,7 +640,15 @@ falsification_tests:
     prediction: |
       Two consecutive lowerings of the same (module, config) hash equal.
     test: |
-      cargo test -p xpile-backend --test idempotency
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-backend --test idempotency`. That test
+      target does not exist in xpile-backend, and no `#[test] fn
+      idempotency` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `idempotency` in `xpile-backend``) and never ran. The rule above is
+      unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       A backend holds mutable state, uses non-canonical serialization
       (HashMap iteration order), or embeds a timestamp. Cache hits
@@ -654,7 +670,15 @@ falsification_tests:
       module produces an Artifact.primary that the reference toolchain
       accepts with exit status 0.
     test: |
-      cargo test -p xpile-backend --test target_consistency_all
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-backend --test target_consistency_all`.
+      That test target does not exist in xpile-backend, and no `#[test] fn
+      target_consistency_all` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `target_consistency_all` in `xpile-backend``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Backend emits a String that LOOKS like Rust (or PTX, or WGSL)
       but isn't parseable by the real tool. Downstream cargo build
@@ -679,7 +703,16 @@ falsification_tests:
       invariants permit `mma.sync.aligned` emission for the declared
       hardware (sm_80 or higher).
     test: |
-      cargo test -p xpile-backend --test every_ir_construct_cites_contract
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-backend --test
+      every_ir_construct_cites_contract`. That test target does not exist in
+      xpile-backend, and no `#[test] fn every_ir_construct_cites_contract`
+      exists anywhere in the workspace, so the command hard-errored at
+      target resolution (`error: no test target named
+      `every_ir_construct_cites_contract` in `xpile-backend``) and never
+      ran. The rule above is unchanged and may well be exercised by tests
+      elsewhere in the tree; what was false is this command. Re-pointing
+      this entry at a real falsifier is open work.
     if_fails: |
       Backend is emitting a hardware instruction without contractual
       sanction. Audit chain broken at the load-bearing point — the
@@ -706,7 +739,15 @@ falsification_tests:
       `parse_citation_attributes_via_target_parser(&artifact.primary)`
       — and neither relies on regex over the primary string.
     test: |
-      cargo test -p xpile-backend --test citation_is_structural
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-backend --test citation_is_structural`.
+      That test target does not exist in xpile-backend, and no `#[test] fn
+      citation_is_structural` exists anywhere in the workspace, so the
+      command hard-errored at target resolution (`error: no test target
+      named `citation_is_structural` in `xpile-backend``) and never ran. The
+      rule above is unchanged and may well be exercised by tests elsewhere
+      in the tree; what was false is this command. Re-pointing this entry at
+      a real falsifier is open work.
     if_fails: |
       Citation recovery is regex-based; manual renames in emission
       silently break the audit chain. This is the same failure mode
@@ -722,7 +763,15 @@ falsification_tests:
     prediction: |
       hash(module, config) before == hash(module, config) after lower().
     test: |
-      cargo test -p xpile-backend --test lower_no_mutation
+      NO RUNNABLE FALSIFIER (PMAT-1459, measured 2026-07-29). This entry
+      published `cargo test -p xpile-backend --test lower_no_mutation`. That
+      test target does not exist in xpile-backend, and no `#[test] fn
+      lower_no_mutation` exists anywhere in the workspace, so the command
+      hard-errored at target resolution (`error: no test target named
+      `lower_no_mutation` in `xpile-backend``) and never ran. The rule above
+      is unchanged and may well be exercised by tests elsewhere in the tree;
+      what was false is this command. Re-pointing this entry at a real
+      falsifier is open work.
     if_fails: |
       Hidden side effects break the cache-determinism invariant; cache
       keys become stale; multi-backend pipelines see inconsistent state.
