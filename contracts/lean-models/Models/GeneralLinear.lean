@@ -13,8 +13,15 @@ UNIQUE minimiser, provided the features are **linearly independent as vectors in
 here stated directly as: the only coefficient vector mapping to the zero
 prediction is `0`).
 
-Subsumes the constant model (`k = 1`, `φ₀ ≡ 1`) and simple linear regression
-(`k = 2`, `φ₀ ≡ 1`, `φ₁ = x`).
+Generalises the constant model (`k = 1`, `φ₀ ≡ 1`) and simple linear regression
+(`k = 2`, `φ₀ ≡ 1`, `φ₁ = x`) — mathematically those are instances of this
+statement.
+
+⚠️ NOT DERIVED HERE. `Models/Basic.lean` and `Models/SimpleLinear.lean` do not
+import this module, and no corollary instantiates `ols_unique` at `k = 1` or
+`k = 2`. This file's `lake build` proves the general statement ONLY; the other
+two are proved independently. Through v0.1.617 this doc-comment said "Subsumes",
+which claims a derivation that does not exist (PMAT-1472).
 -/
 
 namespace XpileModels

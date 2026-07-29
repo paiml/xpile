@@ -7,6 +7,68 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The Mathlib lane published a *derivation* it does not carry — "subsumes … as special cases of one general theorem" — on a packaged file no test had ever read (PMAT-1472)
+
+`contracts/lean-models/README.md`, under a heading reading **"What's proven"**,
+closed its capstone table with:
+
+> **Subsumes** the constant model (`k = 1`, `φ₀ ≡ 1`) and simple linear
+> regression (`k = 2`, `φ₀ ≡ 1`, `φ₁ = x`) as special cases of one general
+> theorem.
+
+and `Models/GeneralLinear.lean`'s own module doc said the same. Measured:
+`Models/Basic.lean` and `Models/SimpleLinear.lean` **do not import**
+`Models.GeneralLinear`, and no corollary, `example` or specialisation anywhere in
+the lane instantiates `ols_unique`/`ols_strict` at `k = 1` or `k = 2`. A green
+`lake build` establishes **three independent theorems**, not one general theorem
+plus two derived ones.
+
+**Why that is the sharp kind of false.** This lane's whole value proposition is
+that `warningAsError := true` makes a green build an un-fakeable "no `sorry`"
+claim. A claim about the *shape of the proof* is exactly what that build does not
+certify — PMAT-1468's lesson one lane over: a green build is not a discharged
+claim; read what it is quantified over. Nothing would notice if `Basic.lean`'s
+statement drifted out of agreement with the general one, because nothing connects
+them.
+
+**And it was unreadable by construction.** The file is uploaded to crates.io by
+`cargo package -p xpile` and was read by **zero** tests — the PMAT-1466 /
+PMAT-1468 packaged-surface class, which the project's own notes had recorded as
+*"read but NOT measured"*. Reading a file is not measuring it.
+
+**The gate found a third site the fix had missed.** Two sentences were corrected
+by hand; the new rule's first run flagged `README.md:95` in the Status section —
+*"`GeneralLinear`, which subsumes the first two"* — which no reading of the two
+tables would have surfaced. A claim class is not a paragraph, again.
+
+All three sites now say **generalises** (mathematically) and disclose that the
+formalisation derives none of them from another, naming what would make the claim
+true: corollaries instantiating `ols_unique` at `k = 1` and `k = 2` and
+discharging `sse_eq_mean_iff`/`slr_unique` from them. Adding those is **deferred
+to 0.1.619** — real Mathlib work, and the night before a tag cut is the wrong
+time to land Lean that cannot be elaborated locally.
+
+**Gate** — `crates/xpile/tests/lean_models_lane_witness.rs`
+(XPILE-LEANMODELS-001), 6 tests. Theorem names and file paths are **parsed out of
+the README**, not typed, so the packaged page checks *itself* against the Lean
+sources: all 12 tabulated theorems must exist in the module the README files them
+under, and every path it cites must resolve. The derivation rule carries an
+**escape hatch that is the real fix** — a subsumption claim passes if the subsumed
+module imports the subsuming one.
+
+Red half: each of the three sites reds the derivation rule undisclosed; renaming
+a tabulated theorem in `Basic.lean` reds the table rule; unsetting
+`warningAsError` reds the un-fakeable-build rule; a fabricated path reds the
+citation rule. And the sharpest — **adding `import Models.GeneralLinear` to
+`Basic.lean` makes the derivation rule PASS** (the claim became true) *and* reds
+the premise assertion, so the disclosure cannot silently outlive the defect it
+describes.
+
+Verified honest and left alone: all 12 tabulated theorem names exist; all six
+cited companion artifacts exist; the core lane really is Mathlib-free (every
+`Mathlib` hit under `contracts/lean/` is prose about *not* importing it — a naive
+grep counts prose about X as X); and `contracts/kani/ols_model_uniqueness.rs`
+already says *"Do not read this harness as proving `ols_unique`"*.
 ### The release plan mandated a CHANGELOG story describing the range the *previous* tag had already closed — 14 of the 15 PMAT ids its eight arcs cite are not in the release range (PMAT-1470)
 
 `docs/specifications/sub/sprint-6day-2026-07-26.md` §5 told Thursday's operator
