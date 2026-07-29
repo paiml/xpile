@@ -7,6 +7,85 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The flagship crate's registry front page was a v0.0.1 "name reservation" stub with one commit ever, and the gated 647-commit product page was published on a bigint helper instead (PMAT-1466)
+
+`cargo publish` renders exactly **one** file per crate as the body of its
+crates.io page: the one named by `[package] readme`. Across the 31 members that
+resolved to **two** files, and neither was one the README gates read.
+
+| crate | front page | readers | commits |
+|---|---|---|---|
+| `xpile` — the flagship, the crate with the binary | `crates/xpile/README.md` | **none** | **1** (`ac709bf5`, 2026-05-15) |
+| `xpile-bigint` — a helper | `README.md` (workspace root) | 5 gates | 647 |
+
+The gated 647-commit product page reached the crate nobody visits. The flagship
+published a bootstrap stub written the day the repo was created and never
+touched again. Fetched from the live registry, not inferred (`GET
+/api/v1/crates/xpile/0.1.617/readme`, 302 → 200):
+
+```text
+Status: v0.0.1 — crates.io name reservation. The real CLI lands in v0.1.0+.
+...
+This installs the v0.0.1 placeholder binary. The real CLI follows.
+```
+
+617 patch releases after that stopped being true. `cargo install xpile`
+installs a working transpiler; the page telling you it installs a placeholder
+was the first thing a visitor read. It also redrew the roster PMAT-1464 had
+just finished deleting from `docs/assets/hero.svg` — six frontends of which
+**three are unregistered** (`C++`, `Rust`, `Lean 4`), **both** real frontends
+missing (`Shell`, `WASM`), six of nine backends, and `mdBook` on **both** sides
+of the proof lane.
+
+And `xpile-bigint`'s page was 20 044 bytes of *the workbench's* product page —
+`cargo install xpile`, "lowers four source languages", "emits to nine backends"
+— printed on a bigint helper. Cause: `readme.workspace = true` resolves against
+the **workspace root**, not the member directory, so one inherited line
+published the wrong document.
+
+* **⭐ FOURTH RECURRENCE OF ONE SHAPE, AND PMAT-1465 NAMED THIS FILE.**
+  PMAT-1440 keyed the roster rule to a FILE and wrote *"a regression pin written
+  against a FILE does not protect a CLAIM."* PMAT-1464 found the corpus
+  collected `.md` only, so the image README embeds was outside it, and wrote
+  *"a corpus of the FILES that mention a lane is not a corpus of the ARTIFACTS
+  that present one."* PMAT-1465 then gated all 31 `description`s and all 31
+  crate-root `//!`s — and its own module doc says, in as many words, *"only
+  `crates/xpile` ships a `readme`."* **It named this file to explain why the
+  other surface mattered, and did not open it.** A corpus of what the REPO
+  presents is not a corpus of what the REGISTRY presents.
+
+* **The gate's own red half caught two bugs in the gate before either shipped.**
+  The denial check was LINE-scoped, so `README.md:125` reported as an offender
+  while its denial sat on `:124` inside the same bullet — now paragraph-scoped,
+  which is exactly why `lane_roster_witness.rs` works that way. And the install
+  scan counted `README.md:242` (*"the original `cargo install depyler` … consumers
+  keep working"*), which is prose **about** the workspace's aliases — now
+  fenced-code only, so it reads instructions rather than commentary. Arm 3
+  additionally requires the path as a **string literal**: six test files discuss
+  `README.md` in their `//!` blocks without opening it, and a bare substring
+  match would have counted that prose as a reader.
+
+* **The repair is a DELETION.** `crates/xpile/README.md` is removed and
+  `crates/xpile` points `readme` at `../../README.md`. Correcting the stub would
+  leave two product front pages to keep in sync forever, which is how this one
+  went stale (PMAT-1396: state the invariant, do not restate the data).
+  `../..` packaging is not a guess — `xpile-bigint` resolved to that exact file
+  from outside its own directory since the workspace was created, and
+  `cargo package -p xpile --list` now shows `README.md` at the package root,
+  exit 0. `xpile-bigint` drops the inherited `readme` and joins the other 29
+  members that publish none, so the product page is printed on the product,
+  once.
+
+**Gate:** `crates/xpile/tests/published_readme_honesty.rs`
+(`XPILE-PUBREADME-001`), 6 tests. The subject is derived by performing cargo's
+own resolution over `[workspace] members` — explicit path, `readme.workspace =
+true` against the workspace root, auto-discovery, `readme = false` — so a crate
+is gated by **acquiring** a front page, not by being remembered. Red half on the
+shipped gate against the unmodified corpus: **4 arms red, 2 controls green**.
+All **10** guards red on their own perturbation, each with the perturbation
+asserted applied; the sharpest is dropping a bare `README.md` into
+`crates/xpile-core/`, which reds the reader arm through auto-discovery alone.
+
 ### The 31 crates.io descriptions and docs.rs summaries had never been read by any gate, and six of them published a falsehood — one contradicted by the crate's own other page (PMAT-1465)
 
 Every workspace member carries a `description` in its `Cargo.toml` and a
