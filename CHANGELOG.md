@@ -7,6 +7,84 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### A stale forward-looking *directive* told Thursday's operator A1 was owner-blocked, and the ledgers carried a duplicate work-item id that only a human procedure was checking for (PMAT-1477)
+
+Both defects were found **while verifying PMAT-1475**, not by hunting — which is
+the point: the verification step is where the residue lives.
+
+**1. A stale directive, addressed to tag day.** `queue.yaml`'s PMAT-1445 entry
+read *"**RELEASE NOTE**, measured this session and worth carrying to Thursday …
+Precondition A1 for the 2026-07-30 tag cut is therefore blocked on that decision
+**ALONE**."* The *measurement* was correct as of `7c1191f9`. The *inference* was
+not — and the inference is the half addressed to tomorrow's operator. PMAT-1475
+established there was no decision to make.
+
+Re-measured on main at `f1e47df4`, unpiped, with the exit code as the authority:
+
+```console
+$ cargo test --workspace --no-fail-fast   # EXIT 0
+331 suites ok · 3066 tests passed · 0 failed
+```
+
+**A1 is green. Nothing is owner-blocked.**
+
+PMAT-1475 and PMAT-1476 both swept for this falsehood and neither reached this
+sentence, for **two independent reasons**: their prose gate's corpus is
+`git ls-files *.md` — Markdown only, so the YAML ledgers are outside it entirely
+— and even within the corpus the sentence matches **none** of the nine
+`UNDER_CLAIMS` needles, because it asserts the falsehood *by reference to a
+decision id* (`ruleset-workspace-test-dropped`) rather than by describing the
+required set.
+
+**The corpus was deliberately not widened.** Running the nine needles over the
+ledgers yields 12 hits, of which **eleven are legitimate historical narration** —
+past slices *quoting* the false sentence to explain what they corrected — and one
+(`roadmap.yaml:17264`, *"requires only gate + workspace-test"*) is simply **true**.
+The ledgers are append-only audit trail; the surfaces a reader consults for
+current truth — CHANGELOG `[Unreleased]`, the docs, the packaged files — are
+already covered. Gating the ledgers would gate the project's own record of its
+mistakes. The minimal effective countermeasure is to correct the one
+forward-looking directive.
+
+**2. A duplicate work-item id, ungated.** `queue.yaml` held **two**
+`- id: PMAT-1351` entries with **divergent titles** — two lanes each appended a
+record for the same slice and a merge kept both. `serde_yaml` accepts duplicate
+ids inside a *sequence*, so the file parsed, the schema held, and
+`roadmap_registration` found the id registered (twice). An id is the join key
+between the commit subject, the CHANGELOG heading and both ledger rows;
+duplicated, `git log --grep=PMAT-1351` no longer resolves to one slice and two
+different titles both claim to describe it. Merged into one entry — the retained
+title is the one matching `roadmap.yaml`, `gate_touch` carried over, and a
+`dedup_note` records why.
+
+**The root cause is that the check was a habit.** This exact failure is written
+down in the project's operating notes — *"a duplicated mapping in a YAML sequence
+is not a parse error … check row count, uniqueness and order every time"* — and
+has been performed **by hand** after every ledger conflict since 2026-07-28:
+correctly on those occasions, and skipped on the one that mattered. **A rule that
+lives in a procedure is enforced exactly as often as someone remembers it.** Same
+lesson as PMAT-1470 (a rule in prose) and PMAT-1475 (a gate measuring the wrong
+subject), in a third form.
+
+**Gate** — `crates/xpile/tests/ledger_integrity_witness.rs` (XPILE-LEDGER-003),
+6 tests: id uniqueness per ledger, asserted on the **parsed sequence** rather than
+the text that fooled every prior check; every entry carries `status` + `title`
+(the "keep both blocks" absorption shape); every `status: done` queue id is
+registered in the roadmap; plus an in-gate red half that constructs a duplicate in
+memory, so the rule cannot be silently satisfied by a shape it cannot see.
+
+**The red half caught two of my own errors.** The registration rule as first
+written demanded *every* queue id be registered and flagged **eleven** — all
+legitimate: six `superseded`, three `open` (including the Thursday and Friday
+release commits) and two `deferred`. Registration happens when a slice *lands*, so
+a forward-looking queue is not an orphan list; the rule is now scoped to
+`status: done` with a green control asserting the unlanded statuses stay exempt.
+And RED 3 first came back **green** — the perturbation was broken
+(`s[:i]+s[j:]` where `PMAT-1474` precedes `PMAT-1475` in the file, so it
+*duplicated* a region instead of deleting one; the "removed bytes" figure was
+negative) while I had printed "applied" without verifying. Redone with
+block-extent removal and a parse-level assertion that the id is absent, after
+which it reds. **Assert the perturbation applied — by parsing, not by printing.**
 ### The gate written yesterday for exactly this falsehood returned NONE over three live instances of it — one of them the sentence that started it, in the section that ships (PMAT-1476)
 
 PMAT-1475 established the truth — a merge to `main` is blocked by `gate` **and**
