@@ -97,6 +97,50 @@ queue:
     FOR THURSDAY: A1 is GREEN on `f1e47df4`. Re-measure after any further merge, unpiped, and read the
     EXIT CODE -- a `| tail -N` pipeline gives a truncated count that looks like a clean result (it
     reported "46 suites / 133 tests / 0 failures" against the true 331/3066).'
+- id: PMAT-1476
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: PMAT-1475's own gate returned NONE over three live instances of the falsehood it was
+    written for -- one of them the sentence that originated it, in the section that ships Friday
+  notes: 'DONE. Full lessons in docs/roadmaps/roadmap.yaml under `- id: PMAT-1476`.
+
+    MEASURED, NOT INFERRED: main''s UNDER_CLAIMS needles, extracted from `git show
+    main:crates/xpile/tests/enforcement_prose_witness.rs` and re-run over `git show
+    main:CHANGELOG.md`, returned the EMPTY SET while `grep -F` confirms all three sentences
+    present. All three were in `[Unreleased]`.
+
+    TWO DIFFERENT REASONS, and the second is not a needle bug. (1) PUNCTUATION, THIRD TIME:
+    PMAT-1449''s needle was bracket-ONLY and missed the backtick spelling; PMAT-1475''s was
+    bracket-LESS and missed `**It requires only `[gate]`.**` -- 4,000 lines above its own entry,
+    and the sentence that ORIGINATED the false model. Choosing a spelling moves the hole; the
+    haystack and needle now normalise identically. A third sentence ("dropped out of the required
+    set, so a PR can merge with it red") matched none of the six needles -- the only one that
+    spelled out the false CONSEQUENCE. (2) THE WRONG SUBJECT: `What is NOT merge-blocking` had
+    the SET right and cited ruleset 13878864 + its receipt as the source. Both hold `gate` alone
+    since 2026-07-27, so FOLLOWING THE CITATION re-derives "workspace-test was dropped". An
+    under-claim screen cannot see this -- the sentence under-claims nothing. ★★ GATE THE
+    ATTRIBUTION, NOT ONLY THE ANSWER.
+
+    ALSO FIXED (the one with teeth): the plan''s release-day EXIT CRITERION 6 "Enforcement is
+    truthful" told Thursday''s operator to diff ONE ruleset against ONE receipt -- the criterion
+    contained the defect it was meant to catch. Now the UNION endpoint.
+
+    ★ A GATE SHIPPED WITH A SLICE IS THE LEAST-AUDITED CODE IN THE REPO: written last, under the
+    confidence of having just understood the bug. RE-RUN A NEW GATE OVER THE FILE IT WAS WRITTEN
+    ABOUT.
+
+    ⚠️ FREEZE EXCEPTION, stated because it is one: run after the Wed 18:00 freeze on the
+    release-mechanics carve-out -- FALSE sentences in the notes that ship Friday and in the
+    operator''s own exit criterion. Docs + one test file. ZERO crates/*/src, ZERO contracts/*.yaml.
+
+    NEXT PICK: 2026-07-30 -> PMAT-1373 (tag cut), 2026-07-31 -> PMAT-1374 (publish). NEXT FREE ID
+    PMAT-1477. REMAINING HONESTY LEADS: (a) the "What still REFUSES" section -- re-derived
+    2026-07-27 and NOT re-swept since, the same window in which PMAT-1474 found 3 of 8
+    Known-divergences entries had drifted; its 13-refused/31-declared numerals MEASURE CORRECT
+    today (checked this slice) but the prose rows were not re-run. (b) PMAT-1468''s Kani
+    proved-property class (needs crates/*/src -- 0.1.619). (c) re-point PMAT-1459''s 70 disclosed
+    rules at real falsifiers.'
 - id: PMAT-1475
   status: done
   ev_rank: R1

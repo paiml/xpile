@@ -85,6 +85,89 @@ And RED 3 first came back **green** — the perturbation was broken
 negative) while I had printed "applied" without verifying. Redone with
 block-extent removal and a parse-level assertion that the id is absent, after
 which it reds. **Assert the perturbation applied — by parsing, not by printing.**
+### The gate written yesterday for exactly this falsehood returned NONE over three live instances of it — one of them the sentence that started it, in the section that ships (PMAT-1476)
+
+PMAT-1475 established the truth — a merge to `main` is blocked by `gate` **and**
+`workspace-test`, throughout — corrected the three documents it found, and
+shipped `XPILE-ENFORCE-PROSE-001` so no document could under-claim enforcement
+again. **Run that gate over `main`'s own `CHANGELOG.md` and it reports no
+offences. Three false sentences were in it, all in `[Unreleased]`, all shipping
+Friday.** Measured, not inferred: main's `UNDER_CLAIMS` needles were re-run
+against `git show main:CHANGELOG.md` and returned the empty set while
+`grep -F` confirms all three sentences present.
+
+They evaded it for **two different reasons**, and the second one is not a bug in
+the needles at all.
+
+**1. Punctuation, for the third time.** `[Unreleased]` contained
+*"**It requires only `[gate]`.**"* — the sentence that **originated** the false
+model, four thousand lines above PMAT-1475's own entry. PMAT-1449's needle was
+`requires only [` (bracket-only) and missed `contracts/README.md`, which spells
+it with backticks and "and". PMAT-1475 therefore wrote the needle *without*
+brackets — and missed this. Stripping backticks as characters was not enough,
+because the brackets survive it: the bracketed spelling does not *contain* the
+bracket-free needle. **Picking one of the two spellings was the mistake.** The
+haystack and the needle now go through the same normalisation, so no separator —
+`[gate]`, `(gate)`, `: gate` — decides the outcome again. A third sentence,
+*"`workspace-test` dropped out of the required set, so a PR can merge with it
+red"* (the PMAT-1416 entry's "not hypothetical" demonstration), matched none of
+the six needles at all: it is the only one that spelled out the false
+**consequence**.
+
+**The broadened needle immediately flagged this paragraph** — the draft above
+wrote both spellings out in inline code to contrast them, and inline code is
+deliberately *not* a quotation in this gate (treating it as one was PMAT-1475's
+hole). So the sentence explaining the needle read as an assertion of it. That is
+the second time a gate in this series has flagged its own correcting prose
+(PMAT-1474 hit it on Known-divergences item 6). **The fix is to reword, never to
+exempt** — an exemption for "the document is only mentioning the string" is
+indistinguishable from the offence it would let through.
+
+**2. The wrong SUBJECT — and this is the one worth reading.** The
+`What is NOT merge-blocking` section said:
+
+> Only two status checks block a merge: `gate` and `workspace-test`. That is
+> the live org ruleset 13878864 […] the snapshot is committed at
+> `docs/status/ruleset-13878864.json`
+
+**The set is right. The citation falsifies it.** Ruleset `13878864` has required
+`gate` alone since 2026-07-27, and so does its committed receipt — so a reader
+who followed the citation would derive *"`workspace-test` was dropped"* and be
+exactly two days behind. An under-claim screen is blind to this **by
+construction**: the sentence under-claims nothing. **A gate that checks the
+answer cannot see a wrong citation, and the citation is what regenerates the
+wrong answer in the next reader's head.** PMAT-1475 diagnosed its predecessor's
+subject as too narrow and then shipped a gate with the same class of gap one
+level up.
+
+**Fixed.** Three sentences corrected in `[Unreleased]`, plus the sprint plan's
+§2 fact bullet and — the one with teeth — release-day exit criterion 6,
+*"Enforcement is truthful"*, which told Thursday's operator to `diff` **one**
+ruleset against **one** receipt. That subject cannot support that conclusion; it
+is the same defect the criterion was supposed to catch, sitting in the check
+itself. All now read
+`gh api repos/paiml/xpile/rules/branches/main` — the union, the only endpoint
+that answers "what blocks a merge".
+
+**Gated, second subject added to `XPILE-ENFORCE-PROSE-001`:** a paragraph naming
+**one** ruleset id while claiming a context that ruleset does not require must
+also name the other ruleset or the union endpoint. Required sets are read from
+the committed `docs/status/ruleset-*.json` receipts by **glob**, so a third
+ruleset is covered the day its receipt lands, with no needle to update, and the
+controls derive their `(ruleset, absent-context)` pair from those receipts rather
+than hard-coding ids — a hard-coded id is the failure mode this gate is *for*.
+
+**Two scope choices, each measured rather than argued.** A ±300-character window
+around a ruleset id flagged **30** sites, nearly all honest — in a document
+*about* enforcement both context names are always nearby, so proximity is not
+evidence. Paragraph scope flagged **four**, all real. And `CHANGELOG.md` is
+narrowed to `[Unreleased]`: `[0.1.617]` correctly records `13878864` requiring
+both contexts, because on 2026-07-26 it did, and a released section is a dated
+record — the doctrine `claim_pages()` already implements. Three red halves, each
+with the perturbation asserted present before the run and the restore verified by
+checksum after it.
+
+Docs and one test file. Zero `crates/*/src`, zero `contracts/*.yaml`.
 
 ### `workspace-test` never stopped blocking merges — it was MOVED to a second ruleset, and for two days the repo believed its own enforcement had been weakened, edited three documents to say so, and escalated an owner decision about it (PMAT-1475)
 
@@ -2000,48 +2083,57 @@ actually implements. Six red halves, each asserted to have applied; control
 21/21. No `contracts/*.yaml` change and no `crates/*/src` change — docs and one
 gate file.
 
-### The release runbook told Thursday's operator to publish a false statement about what CI enforces (PMAT-1449)
+### The release runbook hard-coded what CI enforces in a fourth place, and attributed it to a single ruleset (PMAT-1449, corrected by PMAT-1476)
 
 Two work items mandate the content of the v0.1.618 release body. Both required
 its **"What is NOT merge-blocking"** section to state, verbatim:
 
 > the live org ruleset requires only [gate, workspace-test]
 
-**It requires only `[gate]`.** Measured against the live API, not the snapshot:
+⚠️ **This entry originally reported that sentence as FALSE. It was not, and the
+correction is recorded here rather than deleted because getting it backwards is
+the more instructive half** (PMAT-1476). `[gate, workspace-test]` is exactly
+what blocks a merge on `main`, before 2026-07-27 and today. What the mandate got
+wrong was its **source**, not its set: no single ruleset requires both. Since
+2026-07-27 `13878864` supplies `gate` and `19814559` supplies `workspace-test`,
+and only their union — `gh api repos/paiml/xpile/rules/branches/main` — answers
+the question the sentence was answering.
 
 ```
-$ gh api orgs/paiml/rulesets/13878864 …
+$ gh api repos/paiml/xpile/rules/branches/main …   ← the union: what blocks a merge
+  13878864 → ['gate']        19814559 → ['workspace-test']
+$ gh api orgs/paiml/rulesets/13878864 …            ← one contributor, not the answer
   required: ['gate']          strict_required_status_checks_policy: False
-$ jq … docs/status/ruleset-13878864.json
-  required: ['gate', 'workspace-test']
 ```
 
-The mandate reproduced the **committed snapshot** and called it the **live
-ruleset** — and it did so in the one section whose entire purpose is to say what
-is *not* enforced. **It overstated enforcement inside the disclosure of
-non-enforcement**, which is the worst available direction for that sentence: a
-reader is told `workspace-test` gates merges when it does not, and
-`workspace-test` is the only job that runs the full suite. Two days before the
-tag, that sentence was scheduled for publication.
+Reading the second command as though it were the first is what produced this
+entry's original finding — *"it requires only `[gate]`", "it overstated
+enforcement inside the disclosure of non-enforcement"* — and then, over the next
+two days, three more documents edited to agree with it, one of them packaged to
+crates.io. The full account is under PMAT-1475. **A sweep that only hunts
+over-claiming will rewrite a true sentence into a false one and call it a
+correction**; this entry is the specimen.
 
-**The repo already contradicted itself.** `docs/RELEASE.md` has the live
-position right — *"the live ruleset requires only `gate` while the committed
-snapshot records `gate` + `workspace-test`, an open owner decision"* — so the
-runbook and the release documentation disagreed, and the runbook is the one that
-gets copied into the published note.
+**What survives the correction, and it is the part worth keeping.** The mandate
+typed the enforcement set as prose in a **fourth** place, alongside three where
+it is derived. **A list that is derived in three places and typed in a fourth
+will go stale in the fourth** — and the fourth is the one with a publication
+date on it. That is true independently of which way the fourth copy was wrong,
+and it is why the copy was wrong at all: a typed set cannot track a ruleset
+split.
 
 **Why no gate saw it.** `ruleset_drift.rs` covers the three places this list is
 *machine-checkable*. It does not, and should not, read prose in `queue.yaml`.
-**A list that is derived in three places and typed in a fourth will go stale in
-the fourth** — and the fourth is the one with a publication date on it.
 
 **Fixed with the pointer doctrine, applied where it matters most.** PMAT-1348
 demoted `CURRENT.md` to a pointer file (*"numbers must be stated as the command
 that derives them, never typed inline"*) and gated that for **that one file**.
 The release runbook is the same shape and had no such rule. Both mandates now
-say *derive it from `docs/status/ruleset-13878864.json` and name the open drift
-from `docs/RELEASE.md`*. PMAT-1440's lesson again: **a rule written against a
-file does not protect a claim.**
+defer to the receipts under `docs/status/` **and** to the union endpoint named in
+`docs/RELEASE.md`, rather than naming a set or a single ruleset id — the pointer
+has to survive the union changing shape, which is precisely what it failed to do
+here. PMAT-1440's lesson again: **a rule written against a file does not protect
+a claim.**
 
 **Gated** by `crates/xpile/tests/release_mandate_enforcement_witness.rs`
 (`XPILE-RELMANDATE-001`): no mandate may hard-code the enforcement set; the
@@ -4423,11 +4515,22 @@ had never run.
 still a false pass** — and worse than an undisclosed one, because it reads as
 mitigated.
 
-**Not hypothetical.** Org ruleset 13878864 drifted on 2026-07-27:
-`workspace-test` dropped out of the required set, so a PR can merge with it
-red. What noticed was a cron fire that happened to hold an org-scoped token,
-not the pre-flight the comment credits. Arming the tripwire by hand reproduces
-the red exactly.
+**Not hypothetical.** Org ruleset `13878864` changed on 2026-07-27:
+`workspace-test` moved out of it into a new dedicated ruleset `19814559`. What
+noticed was a cron fire that happened to hold an org-scoped token, not the
+pre-flight the comment credits. Arming the tripwire by hand reproduces the red
+exactly.
+
+**And the red was misread for two days, which sharpens this entry rather than
+softening it** (PMAT-1475, PMAT-1476). This paragraph used to end *"dropped out
+of the required set, so a PR can merge with it red."* It did not, and a PR could
+not: the union over both rulesets is still `[gate, workspace-test]` and
+`workspace-test` never stopped blocking a merge. The tripwire correctly detected
+that *a ruleset changed* and was then read as *enforcement weakened*, because it
+was quantified over one ruleset id. **A live check that fires is only half the
+mechanism; the other half is whether its subject can support the conclusion
+drawn from it.** The gate now asserts the union and the per-ruleset attribution
+separately, so a move reds the attribution while the union stays green.
 
 **Measuring it widened the finding.** The citation names one tripwire; deriving
 the set from read sites across `git ls-files '*.rs'` found **eight**. Only
@@ -7062,13 +7165,28 @@ advisory job **red on the exact tagged SHA** and the release body did not say so
 (PMAT-1370). Nothing below is a complaint about the CI; it is a statement of
 what the badge does and does not prove.
 
-**Only two status checks block a merge: `gate` and `workspace-test`.** That is
-the live org ruleset 13878864, re-queried and confirmed during PMAT-1347; the
-snapshot is committed at `docs/status/ruleset-13878864.json` and
-`crates/xpile/tests/ruleset_drift.rs` reds when it drifts from the CI job list —
-in a **static** half that cannot skip, because reading an org ruleset needs
-org scope and Actions' repo-scoped token does not have it, so a live-only check
-would skip *green* on exactly the runner that matters.
+**Only two status checks block a merge: `gate` and `workspace-test`.** That set
+is the **union over every ruleset that protects `main`**, and the only endpoint
+that reports it is `gh api repos/paiml/xpile/rules/branches/main`. Two rulesets
+supply it: `13878864` contributes `gate`, `19814559` contributes
+`workspace-test`. A receipt for each is committed under `docs/status/`, and
+`crates/xpile/tests/ruleset_drift.rs` asserts the union and the per-ruleset
+attribution *separately* — in a **static** half that cannot skip, because
+reading an org ruleset needs org scope and Actions' repo-scoped token does not
+have it, so a live-only check would skip *green* on exactly the runner that
+matters.
+
+**Read that paragraph as written, because its earlier revision was the most
+expensive sentence in this release** (PMAT-1475, PMAT-1476). It used to say the
+set "is the live org ruleset 13878864" and point at that one receipt.
+Ruleset `13878864` has required `gate` alone since 2026-07-27 — `workspace-test`
+moved to ruleset `19814559` on that date — so a reader who
+followed the citation would have concluded `workspace-test` had stopped blocking
+merges — which is what happened, for two days, at the cost of an escalated owner
+decision that did not exist and three documents edited to claim *less*
+enforcement than the repo has. **A per-ruleset read cannot answer "what blocks a
+merge" and never could;** one ruleset losing a context is not evidence the
+context stopped being required.
 
 **`docs`, `kani`, `lake-build`, `lean-models`, `shader-validate` and `wasi` are
 ADVISORY.** A red proof job does not block a merge. Derive the current split
