@@ -23845,3 +23845,99 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     gh release create, `cargo publish --workspace` UNPIPED, sparse-index verification WITH a
     User-Agent header, ledger close). NO FRIDAY CODE MERGES -- a Friday defect means A6 (ship the
     tag, roll the batch to 2026-08-07), never a same-day hotfix onto the release SHA.'
+- id: PMAT-1480
+  status: done
+  priority: P1
+  category: honesty
+  title: The GitHub release page publishes this repository's facts and no gate can read it --
+    0 of 613 published bodies match their CHANGELOG section, and 3,044 lines of release prose
+    exist only on GitHub
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG + release-mechanics lane only
+    -- ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gate files). Tag v0.1.618 was already cut at
+    6b5f6c02 with all 12 check-runs SUCCESS, so this merges as 0.1.619 content and does NOT touch
+    the release SHA.
+
+
+    THE QUESTION NONE OF THE PREVIOUS TEN SLICES COULD ASK. PMAT-1445..1479 each asked whether a
+    claim IN this repository was true. This one asked: what does this repository say WHERE IT IS
+    NOT THIS REPOSITORY? Every gate in crates/xpile/tests/ derives its corpus from the working tree
+    or from `git ls-files`. A GitHub release body is in NEITHER -- it is structurally invisible to
+    the entire enforcement apparatus, and it is the copy a downstream reader is most likely to read
+    because it arrives without a clone.
+
+
+    MEASURED OVER THE WHOLE CORPUS, not asserted. docs/RELEASE.md step 3 has told every release
+    since the file existed to create the release with a body "matching the CHANGELOG section". That
+    match had never once been checked. All 613 published releases have a `## [x.y.z]` section AND a
+    non-empty body. 0 OF 613 MATCH. Only 1 of 613 bodies even BEGINS with its section heading. ALL
+    613 carry at least one line found nowhere in CHANGELOG.md -- 3,044 such lines, 2,736 distinct,
+    2,698 appearing in exactly ONE release, so the bulk is per-release prose and not boilerplate.
+    212 bodies are LONGER than the section they supposedly match; v0.1.616 went the other way, 1,364
+    body characters against a 24,725 character section (5.5%). The runbook sentence was not
+    describing the procedure; it was describing the check nobody ran.
+
+
+    ⚠ THIS SLICE NEARLY SHIPPED ITS OWN DEFECT. The first draft of the CHANGELOG entry said "0 of 5
+    matched" -- `gh release list` had been called with `--limit 5` (its default is 30), so five
+    releases were silently mistaken for the corpus of 613. The CONCLUSION survived contact with the
+    other 608; the CLAIM would not have. A SAMPLE IS NOT A CORPUS AND A DEFAULT PAGE SIZE IS NOT A
+    MEASUREMENT -- the same shape as PMAT-1479''s gate that was correct over a corpus of one file.
+    Kept in the published entry rather than quietly fixed.
+
+
+    v0.1.617 IS STALE IN BOTH DIRECTIONS, which is the finding, not the count.
+    (1) CHANGELOG -> page: PMAT-1479 rewrote the `;&`/`;;&` entry yesterday because it scoped a
+    false universal to the two shapes that happened to CRASH when twenty out-of-surface shapes were
+    accepted. The published body still carries the pre-correction sentence, so a reader who never
+    opens this repo still re-derives "everything else refuses" -- the exact inference that fix
+    exists to kill. PMAT-1479 shipped the standing lesson ENUMERATE EVERY PUBLISHER IN THE SAME
+    SLICE and missed a publisher.
+    (2) page -> CHANGELOG: the v0.1.617 body carries a 29-line "Post-release correction
+    (PMAT-1370): the `wasi` job was RED on this SHA" section that existed NOWHERE in CHANGELOG.md
+    for four days. A red advisory job on the RELEASED SHA is exactly what `What is NOT
+    merge-blocking` exists to carry, and `git grep` could not find it. Ported in verbatim here,
+    marked with its provenance.
+
+
+    THE FIX (docs-only, which is all the freeze permits). docs/RELEASE.md step 3 no longer ASSERTS
+    the match -- it EXTRACTS the body and then diffs the created release against the file it was
+    created from. The extractor is `awk -v h="## [$V]" ''index($0,"## [")==1 { f = (index($0,h)==1)
+    } f''`, verified byte-identical to an independent Python re.search extraction on 0.1.616/617/618.
+    It uses index() and NOT a regex for a reason worth keeping: a DYNAMIC awk regex cannot carry
+    `\[`, so the escaped form `-v h="^## \[$V\]"` degrades `[0.1.618]` into a CHARACTER CLASS,
+    matches nothing, and writes a ZERO-BYTE body AT EXIT 0 -- a silent empty release note. That was
+    caught by running it, not by reading it (PMAT-1459''s lesson: a published command that has never
+    been executed is decoration). The step also states the rule both directions violate: a
+    post-release correction is written to CHANGELOG.md FIRST and mirrored to the page SECOND, and
+    the mirror is an APPEND with its own date and id so the originally-published text stays legible
+    as what was published at the time.
+
+
+    NOT FIXED, DELIBERATELY, AND SAID SO IN THE ENTRY. There is no gate. The freeze permits docs,
+    CHANGELOG text and release mechanics only, and the gate this finding wants -- diff every
+    published body against its section, SKIP when `gh` is unauthenticated -- needs network and a new
+    crates/xpile/tests/ file. Registered as the lead 0.1.619 item rather than smuggled in. Until it
+    exists 0-of-613 is a MEASUREMENT, NOT AN INVARIANT, and the CHANGELOG entry says that in those
+    words. The 612 historical pages are WHAT SHIPPED, so the gate must assert equality FORWARD from
+    v0.1.618 and must not pretend the archive can be retrofitted.
+
+
+    ALSO CLOSED HERE, because cutting the tag armed it. The sprint plan''s release section still told
+    Thursday''s operator to CREATE AND PUSH v0.1.618, which by then existed.
+    release_plan_freshness_witness.rs (PMAT-1467) derives its offender set from `git tag --list`, so
+    it armed itself the instant the tag was pushed and went RED on the next run -- the SECOND
+    instance of the defect it was written for, caught by the gate and not by a reader. It is a LIVE
+    red, not a local artifact: workspace-test checks out with `fetch-depth: 0` (ci.yml:112-114,
+    commented "load-bearing, not cosmetic"), so CI sees the tags too -- main was red on this the
+    moment the tag landed, and the green check-runs on 6b5f6c02 predate the tag push. Paragraph now
+    states what HAPPENED, and says plainly that FRIDAY''S OPERATOR CREATES NO TAG.
+
+
+    ★ THE SHAPE FOR THE NEXT SWEEP: a corpus derived from `git ls-files` cannot falsify a claim that
+    LEAVES the repository. Package registries (crates.io rendered READMEs), release pages, rendered
+    doc sites and issue templates all republish facts this enforcement regime believes it owns.
+
+
+    NEXT FREE ID PMAT-1481. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
+    MERGES -- a Friday defect means A6, never a same-day hotfix onto the release SHA. Friday''s
+    `gh release create` MUST use the extractor above and MUST run the diff.'

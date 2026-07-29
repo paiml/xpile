@@ -7,6 +7,103 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The release page publishes this repository's facts and no gate can read it — 0 of 613 published bodies match their CHANGELOG section, and 3,044 lines of release prose exist only on GitHub (PMAT-1480)
+
+Ten honesty slices in a row asked whether a claim in this repository was true.
+This one asked a question none of them could: **what does this repository say
+where it is not this repository?**
+
+`docs/RELEASE.md` step 3 has instructed every release since the file existed to
+create the GitHub release with a body *"matching the CHANGELOG section"*. That
+match had never been measured. Measured on 2026-07-30 over the **whole** corpus —
+all **613** published releases, every one of which has a `## [x.y.z]` section and
+a non-empty body:
+
+- **0 of 613 match.** Not a majority-with-exceptions; none.
+- **1 of 613** bodies even *begins* with its section heading.
+- **All 613** carry at least one line that appears nowhere in `CHANGELOG.md` —
+  **3,044** such lines, **2,736** of them distinct and **2,698** appearing in
+  exactly one release, so the bulk is per-release prose rather than boilerplate.
+- **212** bodies are *longer* than the section they supposedly match;
+  `v0.1.616` went the other way, shipping a **1,364**-character body against a
+  **24,725**-character section — 5.5% of the release story reached the page that
+  announces the release.
+
+The sentence in the runbook was not describing the procedure. It was describing
+the check nobody ran.
+
+> **This entry nearly shipped the defect it documents.** Its first draft said
+> *"0 of 5 matched"* — `gh release list` defaults to 30 and had been called with
+> `--limit 5`, so five releases were silently mistaken for the corpus. The
+> conclusion happened to survive contact with the other 608; the *claim* would
+> not have. **A sample is not a corpus, and a default page size is not a
+> measurement** — the same shape as PMAT-1479's gate that was right about a
+> corpus of one file.
+
+**Why no gate caught it.** Every gate in `crates/xpile/tests/` derives its corpus
+from the working tree or from `git ls-files`. A GitHub release body is in
+neither. It is the one publisher of this repository's claims that is
+**structurally invisible** to the whole enforcement apparatus — and it is the
+copy a downstream reader is most likely to actually read, because it arrives
+without a clone.
+
+**The divergence runs in both directions, and `v0.1.617` shows both at once.**
+
+- **CHANGELOG → page.** PMAT-1479 (2026-07-29) rewrote the `;&` / `;;&` entry
+  because it scoped a false universal to the two shapes that happened to crash
+  when twenty out-of-surface shapes were in fact accepted. The published body
+  still carries the pre-correction sentence — `CLAUDE.md`'s claim … *"is false
+  for `;&` and `;;&`"* — so a reader who never opens this repository still
+  re-derives the retired universal: that the enumerated surface is the whole of
+  what the frontend accepts. That is the exact inference the fix exists to kill. **Repairing one publisher of a shared fact does not repair the
+  fact**, and PMAT-1479 shipped the standing lesson *enumerate every publisher in
+  the same slice* while missing a publisher.
+- **Page → CHANGELOG.** The `v0.1.617` body carries a 29-line *Post-release
+  correction (PMAT-1370): the `wasi` job was RED on this SHA* section that
+  existed **nowhere** in `CHANGELOG.md` for four days. A red advisory job on the
+  released SHA is precisely what *What is NOT merge-blocking* exists to carry,
+  and `git grep` could not find it. It is now reproduced verbatim in the
+  `[0.1.617]` section above, marked with its provenance. It is not an isolated
+  case: *"Full gate green: fmt, clippy -D warnings, check, workspace tests, pv
+  lint (0 errors)"* — an enforcement claim — sits on **25** release pages and in
+  no CHANGELOG section, and *"GitHub tag only — crates.io publishes next Friday"*
+  on **29**.
+
+**Fixed here, in the only place a docs-and-release-mechanics freeze permits.**
+`docs/RELEASE.md` step 3 no longer asserts the match — it *extracts* the body
+(`awk … index($0,"## [")` — `index`, not a regex, because a dynamic awk regex
+silently degrades `\[$V\]` into a character class and writes a zero-byte body at
+exit 0) and then `diff`s the created release against the file it was created
+from. It also states the rule the two directions above violate: **a post-release
+correction is written to `CHANGELOG.md` first and mirrored to the page second**,
+never the reverse, and the mirror is an append carrying its own date and id so
+the originally-published text stays legible as what was published at the time.
+
+**Not fixed here, and deliberately.** There is no gate. Under the Wed 2026-07-29
+18:00 freeze this slice may touch documentation, CHANGELOG text and release
+mechanics only, and the gate this finding wants — one that diffs each published
+release body against its section, skipping when `gh` is unauthenticated — needs
+network and a new `crates/xpile/tests/` file. It is registered as the lead
+0.1.619 item rather than smuggled in. **Until it exists, 0-of-613 is a
+measurement, not an invariant** — and the 612 historical pages are *what
+shipped*, so the gate that lands must assert equality forward from `v0.1.618`
+rather than pretending the archive can be retrofitted.
+
+**Also closed here, because the tag being cut armed it.** The sprint plan's
+release section still told Thursday's operator to *create and push* `v0.1.618`,
+which by then existed. `release_plan_freshness_witness.rs` (PMAT-1467) derives
+its offender set from `git tag --list`, so it armed itself the instant the tag
+was pushed and went red on the next run — the second instance of the defect it
+was written for, caught by the gate rather than by a reader. It is a live red,
+not a local artifact: `workspace-test` checks out with `fetch-depth: 0`, so CI
+sees the tag too. The paragraph now states what happened instead of what will,
+and says plainly that **Friday's operator creates no tag.**
+
+★ The shape, for the next sweep: *a corpus derived from `git ls-files` cannot
+falsify a claim that leaves the repository.* Package registries, release pages,
+rendered documentation sites and issue templates all republish facts this
+enforcement regime believes it owns.
+
 ### Release commit: 35 version literals, the witness-floor re-derive, and a deliberate one-day skew between the tag object and this heading (PMAT-1373)
 
 This is the release commit, and three of its mechanics are worth stating because
@@ -8936,6 +9033,35 @@ Result: **76 value matches, 4 traps where CPython raises (`pop()` on empty, `rem
 value, `min` of an empty set, `math.sqrt(-1.0)`), 1 trap where CPython returns a bignum
 (`math.floor(1e300)` — the documented i64 domain limit), and 0 silent wrong answers.** The same
 corpus run against a `v0.1.616` binary built from the tag refuses every capability claimed above.
+
+### Post-release correction (2026-07-26, PMAT-1370): the `wasi` job was RED on this SHA
+
+> **Provenance (PMAT-1480, 2026-07-30).** This section was written on the GitHub release page
+> for `v0.1.617` and existed **nowhere in this repository** for four days. It is reproduced here
+> verbatim because a release page is a publisher no gate can read — see the `v0.1.618` entry.
+
+This note said `wasi` is advisory. It did not say that `wasi` **was failing on `ccb95a04`, the
+SHA this tag points at, at the moment the release was cut.** Listing a job as advisory and
+omitting that it was red is the same class of omission the *What is NOT merge-blocking* section
+exists to prevent, so it is recorded here rather than quietly fixed.
+
+The cause was **not** a defect in the emitted code or in the universal-binary claim. The job
+installed its runtime with `curl -fsSL https://wasmtime.dev/install.sh | bash`; that script
+resolves "latest" by scraping the **unauthenticated** GitHub releases API, and when that call is
+rate-limited on a shared runner IP the response has no `tag_name`, so the installer's `sed`
+pipeline degrades the whole JSON body to the literal `{`. It printed `Could not download Wasmtime
+version '{'` **and exited 0** — a green install step with nothing installed — and the job then
+died on `wasmtime: command not found` (exit 127). The same job was green on `ef53c281` an hour
+earlier with no change to it: flaky, not broken.
+
+The universal-binary claim itself re-verified by hand against this tag with a pinned wasmtime
+47.0.2: `--emit-crate` → `cargo build --target wasm32-wasip1` → `wasmtime run` →
+`207.1 / 367.5 / 127.9`, byte-identical to `python3`. **The claim holds; the job that proves it
+was not running.**
+
+Fixed in `0.1.618` (PMAT-1370): the version is pinned and fetched as a release asset, every
+`$GITHUB_PATH` install verifies its binary in-step, and `crates/xpile/tests/ci_tool_install.rs`
+(`XPILE-CI-INSTALL-001`) reds if either property is dropped.
 
 ## [0.1.616] - 2026-07-04
 

@@ -1,31 +1,32 @@
-updated: "PMAT-1479 closed the last of the three mandatory `[Unreleased]` sections, and found the\
-  \ shape none of the previous ten sweeps could see: a MISSING CATEGORY. `What still REFUSES` measures\
-  \ TRUE row by row -- all 13 WASM refused rows, both stage caveats, the four here-doc spellings,\
-  \ `;&`/`;;&`, case-in-loop, the Ruchy text, PMAT-1364's BigInt `range(bool)`, PMAT-1378's\
-  \ reserved-namespace rules -- and it is still wrong, because it presents the shell lane as two columns\
-  \ (modelled or refused) when there are THREE. Twenty shapes outside the enumerated surface were probed\
-  \ through the shipped CLI and TWENTY OF TWENTY were ACCEPTED at exit 0: `&&`, `||`, `;`, background\
-  \ `&`, all four redirection forms, subshells, brace groups, function definitions, `!`, `[ .. ]`,\
-  \ export, set -e, globs, ${V:-default}, line continuations, trailing comments. Not shredded (sh\
-  \ -n-clean, byte-identical, pairwise-identical under `sh`) and not modelled (`Stmt::Cmd` carrying the\
-  \ operator as an opaque `Expr::LitStr` WORD -- the PMAT-085..092 LitStr-passthrough design). CLAUDE.md\
-  \ stated the two-column model as a UNIVERSAL -- anything outside the surface refuses -- and that was\
-  \ false twenty times over. COST: a reader infers 'accepted at exit 0, therefore inside the modelled\
-  \ subset, therefore certified' and is wrong, INCLUDING about this repo's own gated example\
-  \ (`examples/inputs/install.sh` ends `echo \"done\" > /tmp/out/install.log`; that `>` is a LitStr\
-  \ word). ★★ NEW LESSON: A GATE CAN BE FULLY CORRECT AND STILL LAUNDER A FALSE INFERENCE THROUGH THE\
-  \ SENTENCE THAT EXPLAINS IT. XPILE-SHELLPOLICY-001's five invariants are all true; its 'accepted by\
-  \ bashrs-frontend, SO none is an opaque blob outside the substrate-quality regime' does not follow,\
-  \ because acceptance + byte-identical re-emission is what a verbatim word gives you FOR FREE --\
-  \ invariants 3-5 hold VACUOUSLY over the whole passthrough class. Every prior slice found prose with\
-  \ no gate or a gate asking the wrong question; this was the right question with the answer\
-  \ over-translated in the doc-comment. WHEN A GATE EXPLAINS WHAT IT MEANS, THAT TRANSLATION IS PROSE.\
-  \ ★ SECOND LESSON, CHEAP: PROBE THE ACCEPT SIDE -- ten sweeps in a row hunted over-stated capability,\
-  \ so every probe list was built from things that should FAIL; a refusal roster is a CLOSED-WORLD claim\
-  \ and nothing had ever tested the complement. ★ And the playbook rule fired on the first try: running\
-  \ the new gate over the files it was written about surfaced a SECOND live instance 8,400 lines deep --\
-  \ a release entry quoting the universal promise and scoping its falsity to `;&`/`;;&` alone (stale\
-  \ citation + under-statement). REWORDED, NOT EXEMPTED."
+updated: "PMAT-1480 asked the question the previous ten honesty slices structurally could not:\
+  \ not 'is this claim in the repo true' but 'what does the repo say WHERE IT IS NOT THE REPO'.\
+  \ Every gate in crates/xpile/tests/ derives its corpus from the working tree or from `git\
+  \ ls-files`. A GitHub release body is in NEITHER -- it is the one publisher of this project's\
+  \ claims that is structurally invisible to the whole enforcement apparatus, and it is the copy a\
+  \ downstream reader is most likely to actually read, because it arrives without a clone.\
+  \ MEASURED: docs/RELEASE.md step 3 has told every release since the file existed to create the\
+  \ body 'matching the CHANGELOG section', and that match had never once been checked. Over ALL\
+  \ 613 published releases: 0 MATCH, 1 of 613 even BEGINS with its section heading, and all 613\
+  \ carry >=1 line found nowhere in CHANGELOG.md (3,044 lines, 2,698 unique to one release). 212\
+  \ bodies are LONGER than their section; v0.1.616 went the other way, 1,364 chars vs 24,725.\
+  \ ** The first draft of this said '0 of 5' -- `gh release list --limit 5` mistaken for the\
+  \ corpus. A SAMPLE IS NOT A CORPUS; disclosed in the entry rather than quietly fixed.\
+  \ v0.1.617 is stale in BOTH DIRECTIONS: PMAT-1479's correction to the `;&`/`;;&` entry never\
+  \ reached the page, so a reader who never clones still re-derives the false universal that fix\
+  \ exists to kill -- and a 29-line 'the wasi job was RED on this SHA' disclosure lived ONLY on the\
+  \ page for four days, where `git grep` could not find it (ported into [0.1.617] with provenance).\
+  \ FIXED, docs-only under the freeze: step 3 now EXTRACTS the body and diffs the created release\
+  \ against the file it came from, with the rule that a post-release correction is written to\
+  \ CHANGELOG.md FIRST and mirrored to the page SECOND. NO GATE -- it needs network and a new\
+  \ tests/ file, both frozen; see next_lane[0]. Until then 0-of-613 is a MEASUREMENT, NOT AN\
+  \ INVARIANT, and the CHANGELOG says so in those words. ** NEW SHAPE: a corpus derived from `git\
+  \ ls-files` cannot falsify a claim that LEAVES the repository -- registries, release pages,\
+  \ rendered doc sites, issue templates. ** SECOND LESSON, cheap and repeatable: the extractor's\
+  \ first spelling used an ESCAPED DYNAMIC awk regex and wrote a ZERO-BYTE body AT EXIT 0 (awk\
+  \ degrades `\\[$V\\]` into a character class). Caught by RUNNING it, not reading it. A published\
+  \ command that has never been executed is decoration -- PMAT-1459's lesson, live again.\
+  \ NEXT FREE ID PMAT-1481. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- and its `gh\
+  \ release create` MUST use the step-3 extractor and MUST run the diff."
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -81,6 +82,31 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1480
+  status: done
+  ev_rank: R1
+  date: 2026-07-30
+  title: The GitHub release page publishes this repo's facts and no gate can read it -- 0 of 613
+    published bodies match their CHANGELOG section, and 3,044 lines exist only on GitHub
+  notes: 'DONE 2026-07-30 (Day 5, post-freeze docs/CHANGELOG/release-mechanics lane only). Full
+    lessons in docs/roadmaps/roadmap.yaml under `- id: PMAT-1480`. Ten slices asked whether a claim
+    IN the repo was true; this asked what the repo says WHERE IT IS NOT THE REPO. Every gate derives
+    its corpus from the working tree or `git ls-files`, and a release body is in neither. Measured
+    over ALL 613 published releases: 0 MATCH, only 1 body even begins with its section heading, and
+    all 613 carry >=1 line found nowhere in CHANGELOG.md (3,044 lines; 2,698 unique to one release).
+    212 bodies are LONGER than their section; v0.1.616 went the other way at 1,364 chars vs 24,725.
+    ⚠ the first draft said "0 of 5" -- `gh release list --limit 5` mistaken for the corpus; a SAMPLE
+    IS NOT A CORPUS, kept disclosed in the entry. v0.1.617 is stale BOTH ways -- PMAT-1479''s correction never reached the page, and a 29-line "wasi was RED
+    on this SHA" disclosure lived ONLY on the page for four days (ported in, with provenance).
+    docs/RELEASE.md step 3 now EXTRACTS the body and diffs the created release against it; index()
+    not regex, because the escaped dynamic-regex form writes a ZERO-BYTE body at exit 0. NO GATE --
+    it needs network + a new tests/ file, both frozen; see next_lane[0]. 0-of-613 is a MEASUREMENT,
+    NOT AN INVARIANT, until that gate exists, and the 612 historical pages are WHAT SHIPPED -- the
+    gate asserts equality FORWARD from v0.1.618.
+
+
+    NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). Friday''s `gh release create` MUST use
+    the extractor in docs/RELEASE.md step 3 and MUST run the diff afterwards.'
 - id: PMAT-1479
   status: done
   ev_rank: R1
@@ -6552,6 +6578,29 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1480 GATE — XPILE-RELBODY-001, the FIRST gate whose corpus leaves the repository. Blocked
+  ONLY by the Wed 2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file), S/M-sized, and the
+  defect is already MEASURED: 0 of 613 published release bodies match their CHANGELOG `## [x.y.z]`
+  section, 1 of 613 even begins with its heading, and all 613 carry lines found nowhere in the
+  CHANGELOG (3,044 of them). THE RULE: for every tag with a published
+  release, `gh release view <tag> --json body -q .body` must equal the section extracted by
+  `awk -v h="## [$V]" ''index($0,"## [")==1 { f = (index($0,h)==1) } f'' CHANGELOG.md`. THREE design
+  constraints, each one a way this gate can be born useless. (a) IT MUST SKIP LOUDLY, NOT PASS, when
+  `gh auth status` fails or the network is absent — an offline CI runner silently green is the
+  PMAT-1456 vacuity shape, so gate the skip behind XPILE_REQUIRE_RELEASE_BODIES=1 exactly as
+  changelog_freshness.rs gates its history half, and register the tripwire in docs/RELEASE.md or
+  release_preflight_witness.rs will red for an unarmed tripwire. (b) EXACT EQUALITY IS THE WRONG
+  RULE FOR HISTORY — v0.1.612..v0.1.616 predate the extractor and CANNOT be retrofitted (their pages
+  are what shipped), so the gate is FORWARD-LOOKING: it asserts equality from v0.1.618 on, and for
+  older tags asserts only that a body EXISTS -- note it CANNOT assert the first line is the section
+  heading either, because that holds for exactly 1 of the 613. Say that in
+  the module header, with the 0-of-613 measurement, or a future reader reads a green gate as "all
+  bodies match". (c) THE ACQUITTAL CONTROL: mutate the extracted text by one character and confirm the
+  comparison REDS, so the diff is not silently comparing two empty strings — the zero-byte-at-exit-0
+  failure mode is REAL and was hit while writing the extractor.
+  ★ WHY IT IS WORTH A GATE AT ALL: this is the only publisher of repo facts that is structurally
+  invisible to `git ls-files`, and it is the copy read WITHOUT a clone. The broader sweep the shape
+  opens (crates.io rendered READMEs, doc sites, issue templates) is a SEPARATE, larger lead.'
 - 'PMAT-1479 — TWO GATE-CORPUS WIDENINGS, both blocked ONLY by the Wed 2026-07-29 18:00 release freeze,
   both S-sized, both with the defect already measured by PMAT-1478. (1) `release_runbook_facts_witness.rs::the_runbook_does_not_type_an_advisory_roster`
   encodes the RIGHT rule over a corpus of exactly ONE file, `docs/RELEASE.md` — so when the identical
