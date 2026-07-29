@@ -50,9 +50,14 @@
 //!   * [`the_needle_finds_a_live_runnable_command`] — a real live entry is
 //!     classified [`Verdict::Runs`], so "everything passes" is not "the
 //!     resolver matches nothing".
-//!   * [`the_needle_reports_each_way_a_command_can_fail`] — the four
-//!     perturbations (dead package, dead target, empty filter, empty target)
-//!     are each reported, so no arm of the resolver is unreachable.
+//!   * [`the_needle_reports_each_way_a_command_can_fail`] — six perturbations
+//!     (dead package, dead target, empty filter, package with no tests at all,
+//!     a disclosure smuggling a command, an undated disclosure) are each
+//!     reported, so no arm of the resolver is unreachable — every one against a
+//!     control that PASSES.
+//!   * [`the_needle_counts_only_a_real_test_attribute`] — a constructed pin for
+//!     the one guard here that is a forward tripwire rather than live-load-
+//!     bearing; see [`test_fn_names`], which says so and gives the measurement.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -119,9 +124,16 @@ fn workspace_packages(root: &Path) -> Vec<(String, PathBuf)> {
 /// Names of the `#[test]` functions declared in `src`.
 ///
 /// The `#[test]` line must be exactly that after trimming, and the `fn` must
-/// follow within a few lines — so a `#[test]` written inside a doc comment or
-/// a `#[test_case]`-style attribute is not counted. Without that precision the
-/// needle would accept a filter that matches only prose.
+/// follow within a few lines — so `#[test]` written inside a doc comment, or
+/// inside an emitted-code string literal, is not counted.
+///
+/// MEASURED, not claimed load-bearing: 36 lines in the workspace contain
+/// `#[test]` without being it (3 of them are `"#[test]\n\"` inside
+/// `crates/xpile/src/main.rs`'s emitted Rust), yet relaxing this to a
+/// `contains` test changes the verdict on **0 of the 138** live commands. It is
+/// a FORWARD TRIPWIRE against a filter matching harvested prose, pinned by the
+/// constructed case in [`the_needle_counts_only_a_real_test_attribute`] rather
+/// than by anything live — said outright instead of implied.
 fn test_fn_names(src: &str) -> Vec<String> {
     let lines: Vec<&str> = src.lines().collect();
     let mut out = Vec::new();
@@ -546,4 +558,32 @@ fn the_needle_reports_each_way_a_command_can_fail() {
         ),
     };
     assert_eq!(verdict(&real, &root), Verdict::DeclaredHole);
+}
+
+/// The `#[test]` needle counts a real test attribute and nothing that merely
+/// spells one. Constructed, because relaxing the check changes no live verdict
+/// today — this pins the guard so a future `contains`-style loosening reds
+/// here instead of silently widening what a filter may match.
+#[test]
+fn the_needle_counts_only_a_real_test_attribute() {
+    let src = "\
+#[test]
+fn a_real_one() {}
+
+/// Prose mentioning #[test] fn harvested_from_a_doc_comment
+fn not_a_test() {}
+
+const EMITTED: &str = \"#[test]\\n\\
+fn harvested_from_a_string_literal() {}\";
+
+    #[test]
+    fn an_indented_one() {}
+";
+    let names = test_fn_names(src);
+    assert_eq!(
+        names,
+        vec!["a_real_one".to_string(), "an_indented_one".to_string()],
+        "the needle harvested a name that is not a `#[test]` fn — a filter \
+         could then match prose and read as runnable"
+    );
 }
