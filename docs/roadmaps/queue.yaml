@@ -75,6 +75,28 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1477
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: Stale forward-looking A1 directive for tag day, plus a duplicate ledger id that only a human
+    procedure was checking for
+  notes: 'Found while VERIFYING PMAT-1475, not by hunting. (1) `queue.yaml` PMAT-1445 told Thursday''s
+    operator "Precondition A1 ... is blocked on that decision ALONE" -- correct AS OF `7c1191f9`, false
+    as guidance. RE-MEASURED on main `f1e47df4` unpiped with exit code as the authority: EXIT 0 / 331
+    suites / 3066 tests / 0 failed. **A1 IS GREEN; nothing is owner-blocked.** PMAT-1475/1476 missed it
+    for TWO independent reasons: their prose-gate corpus is `git ls-files *.md` (Markdown only, ledgers
+    excluded) AND the sentence matches none of the nine needles because it asserts via a DECISION ID.
+    Deliberately did NOT widen the corpus to the ledgers -- 11 of the 12 ledger hits are legitimate
+    historical narration and one is simply true; the ledgers are audit trail, not current-truth surface.
+    (2) Merged a DUPLICATE `- id: PMAT-1351` (two divergent titles for one slice). New gate
+    XPILE-LEDGER-003 asserts ledger id uniqueness on the PARSED sequence -- the check had been a
+    hand-performed habit since 2026-07-28 and was skipped on the one merge that mattered.
+
+
+    FOR THURSDAY: A1 is GREEN on `f1e47df4`. Re-measure after any further merge, unpiped, and read the
+    EXIT CODE -- a `| tail -N` pipeline gives a truncated count that looks like a clean result (it
+    reported "46 suites / 133 tests / 0 failures" against the true 331/3066).'
 - id: PMAT-1475
   status: done
   ev_rank: R1
@@ -1037,11 +1059,18 @@ queue:
     function". PMAT-1436''s shape inside a brand-new witness. Fixed with a per-CALL atomic
     counter; verified stable over three consecutive runs.
     ZERO crates/*/src and ZERO contracts/*.yaml change -- freeze-compatible.
-    ** RELEASE NOTE, measured this session and worth carrying to Thursday: `cargo test
-    --workspace --no-fail-fast` on main at 7c1191f9 is 310 suites OK and ONE failing --
-    `ruleset_drift::live_ruleset_matches_the_committed_snapshot`, the OPEN owner decision
-    `ruleset-workspace-test-dropped`. Precondition A1 for the 2026-07-30 tag cut is therefore
-    blocked on that decision ALONE. Note PMAT-1444''s ordering trap: without --no-fail-fast the
+    ** RELEASE NOTE -- ❌ THE FORWARD-LOOKING HALF OF THIS IS VOID, corrected by PMAT-1477.
+    What was measured here is correct AS OF `7c1191f9`: `cargo test --workspace --no-fail-fast`
+    was 310 suites OK and ONE failing, `ruleset_drift::live_ruleset_matches_the_committed_snapshot`.
+    What was WRONG is the inference drawn from it -- that A1 for the 2026-07-30 tag cut is
+    "blocked on that decision ALONE". There was no decision to make: PMAT-1475 established that
+    `workspace-test` never stopped blocking merges (it MOVED to org ruleset 19814559 on
+    2026-07-27T13:48:24, 18 seconds before it was removed from the `~ALL` ruleset), so the red
+    was the GATE reading one hard-coded ruleset id, not a weakening. RE-MEASURED on main at
+    `f1e47df4` after PMAT-1475 landed, unpiped, exit code as the authority: `cargo test
+    --workspace --no-fail-fast` = EXIT 0, 331 suites OK, 3066 tests passed, 0 failed.
+    **A1 IS GREEN. Nothing is owner-blocked.** ⚠️ Do not re-derive an owner decision from this
+    entry. The `ruleset-workspace-test-dropped` item is VOID. Note PMAT-1444''s ordering trap: without --no-fail-fast the
     suite stops at the first failing binary, so a second real failure hid behind this one.
     NEXT PICK: STANDING LEADS, EV order. (a) backends.md''s ruchy Status parenthetical "compiles
     to Rust" -- `ruchy check` accepts 18 of 39 emitted artifacts, and one emit puts `&self` on a
@@ -1280,6 +1309,7 @@ queue:
     not exist unless something reads it. NEXT PICK: PMAT-1351 (Day 3 R2, non-gate — the negative-integer-literal
     list-index double-normalize). PMAT-1352 is also open and disjoint.'
 - id: PMAT-1351
+  gate_touch: null
   status: done
   ev_rank: R2
   abandon: 2026-07-28T23:00
@@ -1301,6 +1331,7 @@ queue:
     then ABORTS (exit 101) vs CPython''s 3,-1,3,-1,-1,2,-1,3,-1,-1: two silent wrong values, then an untagged
     del panic that escapes `except IndexError` and truncates the last four lines. No floor bumped. NEXT
     PICK: PMAT-1352 (DIVERGENT-arm falsifier for `xpile hybrid --verify`, test-only, day 3 R3).'
+  dedup_note: 'PMAT-1477 merged a DUPLICATE `- id: PMAT-1351` entry into this one. Two lanes each appended an entry for the same slice with DIVERGENT titles; `yaml.safe_load` accepts duplicate ids in a sequence, so nothing caught it. `gate_touch` was carried over from the discarded copy; the retained title is the one that matches roadmap.yaml. Now gated by ledger_integrity_witness.rs (XPILE-LEDGER-003).'
 - id: PMAT-1352
   status: done
   ev_rank: R2
@@ -1741,18 +1772,6 @@ queue:
     \ buys zero votes, and\ntests/fixtures/__pycache__ and .pv are in there. Keeping pass A byte-identical\
     \ is what makes\nWIDEN-ONLY monotonicity reviewable at a glance."
   date: '2026-07-29'
-- id: PMAT-1351
-  status: done
-  gate_touch: null
-  title: 'Negative-integer-LITERAL list index: stop the frontend double-normalize; tag del/pop bounds
-    panics (Rust + ruchy + WASM shim delete). RESCUE-FIRST.'
-  notes: 'On xs=[1,2,3]: xs[-4]->3, xs[-5]->2, xs[-6]->1 where CPython raises IndexError each. `del xs[-4]`
-    / `xs.pop(-4)` panic with an UNTAGGED native message (''removal index (is 18446744073709551615)'')
-    that a typed `except IndexError` cannot catch. Literal-only, list-only. Root cause: the frontend folds
-    -4 into len-4 and the runtime normalizes AGAIN. Stop folding the literal; let the single runtime normalization
-    own it. Then AUDIT EVERY neg_literal_int consumer (read, del, pop, store, slice) — PMAT-1289 already
-    shipped two miscompiles from exactly this class. Land all five paths as oracle fixtures. Do NOT bump
-    RUST_DIFF_FLOOR (serial resource — TOUCH 2 captures it).'
 - id: PMAT-1371
   status: done
   ev_rank: R1
