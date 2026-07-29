@@ -29,6 +29,8 @@ metadata:
     contract; the citation now resolves to this YAML. Joins the substrate
     at depth-1 under the R6-grandfathered Diamond gate (PMAT-475a) — it
     is NOT forced to the depth-13 floor; deeper tiers ratchet later.
+  xpile:
+    layer: semantics
   references:
     - "ISO/IEC 9899:2018 (C17) §6.5 (Expressions), §6.2.5 (Types)"
     - "ISO/IEC 9899:2018 (C17) §6.5.5 (Multiplicative — / and % truncate toward zero)"

@@ -30,6 +30,8 @@ metadata:
     delivery vehicle is the `xpile transpile --emit-crate` → `wasm32-wasip1`
     universal-binary path: a proven model ships as one portable `.wasm` that runs
     everywhere and carries this cited contract.
+  xpile:
+    layer: semantics
   references:
     - "Ordinary least squares: the normal equations XᵀXβ = Xᵀy and uniqueness under full column rank"
     - "contracts/lean-models/Models/GeneralLinear.lean (the Mathlib-backed uniqueness certificate: ols_unique / ols_strict)"

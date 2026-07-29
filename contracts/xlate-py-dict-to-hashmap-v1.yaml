@@ -44,6 +44,8 @@ metadata:
     (per-operation lookup/insert/remove laws, the views sub-structure)
     ratchet in later sub-slices. Together with `C-C-INT-ARITH` (v0.1.196)
     this restores the §7.3 "every construct under contract" claim to true.
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference §6.2.7 (Dictionary displays), §3.2 (Mapping types); CPython ≥ 3.7 insertion-order guarantee"
     - "Rust indexmap::IndexMap (insertion-ordered entry API; shift_remove preserves order)"

@@ -869,15 +869,19 @@ theorem source_lang_enum_distinctness_diamond (l : SourceLang) :
     METAHIR-MODULE-SILVER BYTES ARRAY.SIZE STRUCTURE
     (XPILE-REFINE-XPILE-FRONTEND-TRAIT-009).
 
-    **MILESTONE: DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS.**
+    **DEPTH-6 REACHES A FOURTH LAYER.**
 
     After PMAT-356 opened depth-6 on L4 (FFI-CPYTHON-EXT) and
-    PMAT-357 broadened it to L2 (Bashrs) — making depth-6 ACROSS
-    4 LAYERS (L1+L2+L4+L5) — PMAT-358 pushes XpileFrontendTrait
-    (Layer 3) from depth-5 to depth-6, completing depth-6 ACROSS
-    ALL 5 TAXONOMY LAYERS. **Parallel to PMAT-330's depth-4 milestone
-    and PMAT-347's depth-5 milestone** — depth-6 now reaches every
-    xpile taxonomy layer.
+    PMAT-357 pushed Bashrs (L1) to depth-6, PMAT-358 pushes
+    XpileFrontendTrait (Layer 3) from depth-5 to depth-6, taking
+    depth-6 to L1+L3+L4+L5.
+
+    PMAT-1461: this docstring claimed PMAT-358 completed depth-6
+    ACROSS ALL 5 TAXONOMY LAYERS. It did not. Bashrs declares
+    `metadata.xpile.layer: semantics` (Layer 1), not Layer 2, so
+    Layer 2 was absent from depth-6 and the contracts enumerated
+    here cover four layers. Depth-6 DOES span all five on the live
+    substrate — the Layer-2 contracts reached it later, not here.
 
     The 6 Diamond categories on C-XPILE-FRONTEND-TRAIT:
     - PMAT-224 frontend_equivalence_class_diamond: equivalence

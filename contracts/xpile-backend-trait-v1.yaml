@@ -23,6 +23,8 @@ metadata:
     sanctions it. This closes the "Oracle blind spots" gap that
     audit-design.md §4 flags — UB and hardware misuse now have a
     contract chain rather than an Oracle hope.
+  xpile:
+    layer: architectural
   references:
     - docs/specifications/sub/backend-trait.md
     - docs/specifications/sub/contract-taxonomy.md

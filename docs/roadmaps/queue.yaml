@@ -78,6 +78,38 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1461
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: the gate that decided contract layers could not see 26 of the 35 contracts, and
+    the 18 sites it could not see filed a Layer-1 contract under Layer 2
+  notes: 'SHIPPED 2026-07-29. Took PMAT-1460 NEXT-PICK (a). The TAGGING was the enabler, the
+    FINDING was what it exposed. ** PMAT-1460''s gate reached 9 of 35 contracts; an untagged
+    contract is ABSENT FROM THE SUBJECT, not merely undecided. It left a deliberate panic! to
+    fire when the partition completed -- this is that completion. ** NOT 26 judgement calls:
+    all 35 self-declare a layer in metadata.description. CONTROL: 9 of 9 already-tagged agree
+    with the rule, 0 disagreements; 30 of 35 parentheticals independently corroborate.
+    ** 18 SITES, one defect: C-BASHRS-POSIX-IDEMPOTENCE declares Layer 1 and is written Layer 2.
+    ** ⭐ THE DISCLOSED HOLE WAS A MISREAD, NOT A BLIND SPOT: in the enumeration
+    "(L1 PyIntArith + L4 FfiCpythonExt + L5 CompileRustToPtxMma)" every label precedes its
+    name, so a one-directional needle reads THE NEXT ITEM''S label and ACCUSES CORRECT PROSE --
+    9 false reports, invisible only because those three contracts were untagged.
+    ** ⭐ THE MILESTONE THAT NEVER HAPPENED: "COMPLETES DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS"
+    (2 files) rested on "broadened it to Layer 2 (Bashrs)"; Bashrs is Layer 1, so those
+    sentences enumerate FOUR layers and L2 was absent. Depth-6 DOES span all 5 today -- the L2
+    contracts arrived later -- and each record now says exactly that.
+    ** ⭐ NON-DEFECT: the 91 "ALL 5 LAYERS" sentences are TRUE live (depth-1..13 all span 5).
+    Left alone. ** GATE 13 -> 17 tests; reach became an INVARIANT (untagged contract now reds).
+    One stale guard REWRITTEN (it asserted a hole this slice closed).
+    ** NEXT PICK: (a) the 112-site substrate-wide depth-count class (`xpile diamond --json`
+    depth_N_plus; every site UNDERSTATING) -- decide first whether a dated broadening record
+    may freeze a count; (b) `1025 Lean theorems`, an EXTERNAL figure this repo cannot check;
+    (c) re-point PMAT-1459''s 70 disclosed falsification commands at real falsifiers.
+    NEXT FREE ID IS PMAT-1462. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
+    HARD FREEZE Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release mechanics
+    ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
 - id: PMAT-1460
   status: done
   ev_rank: R1

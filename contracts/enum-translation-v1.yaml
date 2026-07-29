@@ -23,6 +23,8 @@ metadata:
     UNCONDITIONALLY true.
 
     Layer 2 of the xpile contract taxonomy (translation).
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference: enum.Enum (members in declaration order; member.value)"
     - "Rust Reference: enumerations (variant order defines discriminant order)"

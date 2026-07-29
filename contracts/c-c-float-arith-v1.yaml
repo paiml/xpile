@@ -36,6 +36,8 @@ metadata:
     theorems are structure-extensionality over the IEEE-754 bit-pattern model —
     genuinely provable, sorry-free — one per width (binary32 + binary64), plus a
     documentary ABI-width-distinctness lemma.
+  xpile:
+    layer: semantics
   references:
     - "ISO/IEC 9899:2018 (C17) §5.2.4.2.2 (floating types), §6.2.5 (Types)"
     - "IEEE 754-2019 (binary32 `c_float` / binary64 `c_double`)"

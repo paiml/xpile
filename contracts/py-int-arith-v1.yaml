@@ -14,6 +14,8 @@ metadata:
     Layer 1 of the xpile contract taxonomy (per-language semantics).
     Paired with `C-XLATE-PY-LIST-TO-VEC-V1` and similar translation
     contracts at Layer 2.
+  xpile:
+    layer: semantics
   references:
     - "Python Language Reference §6.7 (Binary arithmetic operations)"
     - "CPython Objects/longobject.c"

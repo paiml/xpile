@@ -22178,6 +22178,79 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   status: done
   priority: P1
   category: honesty
+- id: PMAT-1461
+  title: 'the gate that decided contract layers could not see 26 of the 35 contracts, and
+    the 18 sites it could not see filed a Layer-1 contract under Layer 2 -- including the
+    substrate headline "COMPLETES DEPTH-6 ACROSS ALL 5 TAXONOMY LAYERS"'
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30 /
+    PMAT-1373). Took PMAT-1460 NEXT-PICK (a) -- tag the 26 untagged contracts -- and the
+    tagging was the ENABLER, not the finding.
+    ** THE SURFACE. PMAT-1460 built XPILE-LAYERLABEL-001 to decide "no text under contracts/
+    files a contract under a layer it does not declare". It reached 9 of 35 contracts. An
+    untagged contract is not UNDECIDED, it is ABSENT FROM THE SUBJECT -- so 26 contracts had
+    every layer attribution naming them unchecked. PMAT-1460 left a deliberate panic! to fire
+    the moment the partition completed; this slice is that completion.
+    ** NOT 26 JUDGEMENT CALLS. All 35 contracts already self-declare a layer in
+    metadata.description ("Layer N of the xpile contract taxonomy"). CONTROL THAT PASSES: the
+    extraction rule was validated on the half where the answer was already machine-readable --
+    9 of 9 tagged contracts agree with their tag, 0 disagreements. Second independent signal:
+    30 of 35 declarations carry a parenthetical naming the layer and every one agrees with its
+    number. The 3 apparently-ambiguous contracts (two "Layer" mentions) were unambiguous --
+    the second mention names a PARTNER layer.
+    ** THE FINDING: 18 sites. C-BASHRS-POSIX-IDEMPOTENCE declares Layer 1 (twice in its own
+    description; its "Layer 2" sentence explicitly describes a FUTURE partner contract) and is
+    written Layer 2 at 18 sites across bashrs-posix-idempotence-v1.yaml,
+    xpile-frontend-trait-v1.yaml, lean/Bashrs.lean, lean/Notation.lean,
+    lean/XpileFrontendTrait.lean.
+    ** ⭐ A DISCLOSED BLIND SPOT THAT WAS ACTUALLY A MISREAD. PMAT-1460 filed the
+    layer-BEFORE-name order as a shape the needle "cannot see". Wrong diagnosis. The
+    substrate''s across-layers headline is carried by an ENUMERATION -- "(L1 PyIntArith + L4
+    FfiCpythonExt + L5 CompileRustToPtxMma)" -- where every label precedes its name. A
+    one-directional needle skips each correct label and reads THE NEXT LIST ITEM''S, so it
+    ACCUSES CORRECT PROSE: 9 false reports on this corpus, invisible only because all three
+    contracts in that enumeration were untagged. A blind spot is SILENT; this one was not.
+    ** ⭐ THE MILESTONE THAT NEVER HAPPENED. Two files record PMAT-358 as "COMPLETES DEPTH-6
+    ACROSS ALL 5 TAXONOMY LAYERS", reached because "PMAT-357 broadened it to Layer 2
+    (Bashrs)". Bashrs is Layer 1, so the contracts those sentences enumerate cover L1+L3+L4+L5
+    -- FOUR layers -- and Layer 2 was absent at depth-6. Nine further records tally breadth off
+    the same wrong label ("4 contracts on 4 distinct layers", "Depth-6 now spans 4 of 5
+    taxonomy layers", "the second L2 contract at depth-10/11/12").
+    ** MEASURED AND REPORTED AS MEASURED: depth-6 DOES span all 5 layers on the live substrate
+    -- the Layer-2 contracts reached it later, not at PMAT-358. Each repaired record states
+    what happened and what did NOT follow from it, rather than deleting history or restating a
+    number this slice did not gate (PMAT-1460 precedent).
+    ** ⭐ A CANDIDATE CLASS THAT MEASURED OUT AS A NON-DEFECT: the substrate''s 91 "ALL 5
+    LAYERS" milestone sentences are TRUE on the live tree (depth-1..depth-13 each span all
+    five layers, computed once the partition was complete). Left alone -- freezing today''s
+    spread into an assertion would re-create the stale-snapshot problem this arc exists to
+    remove. Third slice running in which a lead measured out negative.
+    ** GATE: XPILE-LAYERLABEL-001 extended 13 -> 17 tests. Reach is no longer a DISCLOSURE to
+    print but an INVARIANT to hold -- a contract shipping without a layer tag now reds, because
+    invisibility is exactly what hid these 18 sites. New: the before-name reader
+    (removing it restores 9 false accusations and drops 3 real sites -- MEASURED by running
+    that red half, not estimated), the backward-gap
+    bracket rule (letting it cross ")" restores the stolen-label false positive
+    "PyIntArith (L1), CompileRustToPtxMma"), the list-enumeration control (a CORRECT
+    enumeration must produce ZERO offences), and the layer-spread arm.
+    ** A STALE GUARD REWRITTEN, NOT KEPT: the_needle_cannot_see_a_layer_written_before_the_name
+    asserted a hole this slice CLOSED. Rewritten to the narrower claim that survives
+    re-measurement (a token an ENGLISH WORD away is still unread), with a positive control that
+    the adjacent shape IS read. FIFTH slice in this arc to have to touch a guard because of its
+    own red half.
+    ** ZERO crates/*/src. contracts/*.yaml touched in PROSE plus the added metadata.xpile.layer
+    key; verified by before/after re-parse that NO other key changed on any of the 35.
+    Freeze-compatible.
+    ** NEXT PICK: (a) the 112-site substrate-wide depth-count class (ground truth
+    `xpile diamond --json` depth_N_plus, every site UNDERSTATING) -- now that the partition is
+    complete this is the last big measured class under contracts/, but decide FIRST whether a
+    dated broadening record may freeze a count. (b) `1025 Lean theorems` (xpile-spec.md:370,
+    kaizen-fleet.md:11), an EXTERNAL pv-spec figure this repo republishes and cannot check.
+    (c) re-point the 70 disclosed falsification commands (PMAT-1459) at real falsifiers, one
+    contract at a time.
+    NEXT FREE ID IS PMAT-1462.'
+  status: done
+  priority: P1
+  category: honesty
 - id: PMAT-1460
   title: 'three contracts declare `layer: translation` in machine-readable metadata and are
     filed under Layer 5 at 46 sites -- one of them under three different layers, and the

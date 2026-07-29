@@ -25,6 +25,8 @@ metadata:
     Layer 2 of the xpile contract taxonomy (translation), code lane,
     kind: kernel. v0.2.0 Track 1.A foundation, per
     [`sub/v0.2.0-depyler-merger.md`](../docs/specifications/sub/v0.2.0-depyler-merger.md).
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference §3.3.3 (str)"
     - "Rust Reference §6.5 (str type)"

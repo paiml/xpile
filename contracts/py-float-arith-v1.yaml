@@ -26,6 +26,8 @@ metadata:
     `C-XLATE-PY-STR-TO-RUST-STRING` (whose Diamonds are STRUCTURAL, not
     arithmetic), the tier-defining theorem is structure-extensionality over the
     IEEE-754 bit-pattern model — genuinely provable, sorry-free.
+  xpile:
+    layer: semantics
   references:
     - "IEEE 754-2019 (binary64)"
     - "CPython: float is IEEE-754 double; repr() shortest round-trip"

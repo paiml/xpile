@@ -16,6 +16,8 @@ metadata:
          a typed error) lists that escape the homogeneous fast path.
 
     Layer 2 of the xpile contract taxonomy (translation).
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference §3.3.7.1 (Sequence types)"
     - contracts/py-int-arith-v1.yaml

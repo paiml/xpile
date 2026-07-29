@@ -32,6 +32,8 @@ metadata:
     under the R6-grandfathered Diamond gate (PMAT-475a).
 
     Layer 3 of the xpile contract taxonomy (semantic / lowering).
+  xpile:
+    layer: architectural
   references:
     - "Python Language Reference §6.2.9 (Yield expressions) and §4.3 (generator-iterator methods)"
     - "contracts/xlate-py-list-to-vec-v1.yaml (the list machinery the eager result rides)"

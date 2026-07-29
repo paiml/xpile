@@ -32,6 +32,8 @@ metadata:
     Registered at depth-1 under the R6-grandfathered Diamond gate (PMAT-475a).
 
     Layer 3 of the xpile contract taxonomy (semantic / control-flow).
+  xpile:
+    layer: architectural
   references:
     - "Python Language Reference §8.5 (The with statement — __enter__/__exit__; __exit__ runs on normal and exceptional exit)"
     - "contracts/py-except-allowlist-v1.yaml (sibling control-flow contract — the finally-only try this reuses)"
