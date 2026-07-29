@@ -23448,3 +23448,87 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     (publish). A1 PRECONDITION IS NOW UNBLOCKED: `ruleset_drift` was the workspace's only
     failing suite and it is green -- re-measure `cargo test --workspace --no-fail-fast` with no
     other cargo process live (see PMAT-1471's kani_verify shared-temp-dir trap).
+- id: PMAT-1476
+  status: done
+  priority: P1
+  category: honesty
+  title: PMAT-1475's own gate returned NONE over three live instances of the falsehood it was
+    written for, one of them the sentence that originated it, in the section that ships
+  notes: |
+    MEASURED, NOT INFERRED. Re-ran main's `UNDER_CLAIMS` needles (extracted from
+    `git show main:crates/xpile/tests/enforcement_prose_witness.rs`) over
+    `git show main:CHANGELOG.md`: offences = the EMPTY SET, while `grep -F` confirms all three
+    sentences physically present. All three sat in `[Unreleased]`, i.e. shipping Friday.
+
+    THE THREE, AND WHY EACH EVADED:
+
+    1. `**It requires only `[gate]`.**` (PMAT-1449 entry) -- PUNCTUATION, THIRD OCCURRENCE OF
+       THE SAME CLASS. PMAT-1449's needle was `requires only [` (bracket-only) and missed
+       contracts/README.md, which spells it with backticks + "and". PMAT-1475 therefore wrote
+       the needle WITHOUT brackets and missed this one -- 4,000 lines above its own entry, and
+       the sentence that ORIGINATED the false model. Stripping backticks as CHARACTERS is not
+       enough: `requires only [gate]` does not contain `requires only gate`. ROOT CAUSE = the
+       CHOICE between spellings. Fixed by normalising haystack AND needle identically
+       (non-alphanumeric except `-` and `/` -> single space), so no separator decides it again.
+
+    2. `workspace-test` dropped out of the required set, so a PR can merge with it red"
+       (PMAT-1416 entry's "not hypothetical" paragraph) -- matched NONE of the six needles.
+       The only one of the three that spelled out the false CONSEQUENCE. New needle.
+
+    3. `Only two status checks block a merge: gate and workspace-test.` **That is the live org
+       ruleset 13878864** ... snapshot committed at docs/status/ruleset-13878864.json"
+       (the `What is NOT merge-blocking` section) -- THE WRONG SUBJECT, not a needle miss.
+       ★ THE SET IS RIGHT; THE CITATION FALSIFIES IT. 13878864 has required `gate` alone since
+       2026-07-27 and so does its receipt, so a reader who FOLLOWS THE CITATION derives
+       "workspace-test was dropped" -- the exact two-day defect, regenerated from the fix's own
+       release notes. An under-claim screen is blind to this BY CONSTRUCTION: the sentence
+       under-claims nothing. ★★ A GATE THAT CHECKS THE ANSWER CANNOT SEE A WRONG CITATION, AND
+       THE CITATION IS WHAT REGENERATES THE WRONG ANSWER IN THE NEXT READER'S HEAD. PMAT-1475
+       diagnosed its predecessor's SUBJECT as too narrow and then shipped a gate with the same
+       class of gap one level up.
+
+    ALSO FIXED, and this is the one with teeth: sprint-6day-2026-07-26.md release-day EXIT
+    CRITERION 6, "Enforcement is truthful", told Thursday's operator to
+    `diff <(gh api orgs/paiml/rulesets/13878864) docs/status/ruleset-13878864.json`. ONE ruleset
+    vs ONE receipt cannot support the conclusion "enforcement is truthful" -- the criterion
+    contained the very defect it was supposed to catch. Plus the plan's §2 fact bullet, which
+    attributed `[gate, workspace-test]` to 13878864 alone. All now read
+    `gh api repos/paiml/xpile/rules/branches/main` (the UNION).
+
+    GATE: second SUBJECT added to XPILE-ENFORCE-PROSE-001 (now 5 tests) -- a paragraph naming
+    ONE ruleset id while claiming a context that ruleset does not require must also name the
+    other ruleset or the union endpoint. Required sets read from docs/status/ruleset-*.json by
+    GLOB, so a third ruleset is covered the day its receipt lands with no needle to update; the
+    controls DERIVE their (ruleset, absent-context) pair from the receipts rather than
+    hard-coding ids -- a hard-coded id is the failure mode this gate is FOR.
+
+    TWO SCOPE CHOICES, MEASURED RATHER THAN ARGUED. (a) A +/-300-char window around a ruleset id
+    flagged 30 sites, nearly all HONEST -- in a document ABOUT enforcement both context names
+    are always nearby, so PROXIMITY IS NOT EVIDENCE. Paragraph scope flagged 4, all real.
+    (b) CHANGELOG.md narrowed to `[Unreleased]`: `[0.1.617]` correctly records 13878864
+    requiring both contexts because on 2026-07-26 it did, and a released section is a dated
+    record (the doctrine `claim_pages()` already implements).
+
+    3 red halves, each with the perturbation ASSERTED PRESENT before the run and the restore
+    verified by CHECKSUM after -- the PMAT-1474 trap (a red half that does not apply comes back
+    green and reads as a pass).
+
+    LESSONS: (1) A NEEDLE FIX THAT PICKS A SPELLING JUST MOVES THE HOLE -- three revisions, three
+    misses, each in the spelling the previous revision chose against. Normalise instead of
+    choosing. (2) TRUE CONCLUSION + FALSE CITATION IS NOT A LESSER DEFECT than a false
+    conclusion; it is the same defect with a delay, because the citation is what the next reader
+    re-derives from. GATE THE ATTRIBUTION, NOT ONLY THE ANSWER. (3) A GATE SHIPPED WITH A SLICE
+    IS THE LEAST-AUDITED CODE IN THE REPO -- it is written last, under the confidence of having
+    just understood the bug. Re-run a new gate over the file it was written about.
+
+    FREEZE: run after the Wed 18:00 hard freeze on the release-mechanics carve-out -- these are
+    FALSE sentences in the notes that ship Friday and in the operator's own exit criterion.
+    Docs + one test file. ZERO crates/*/src, ZERO contracts/*.yaml.
+
+    NEXT FREE ID IS PMAT-1477. On 2026-07-30 take PMAT-1373 (tag cut); on 2026-07-31 PMAT-1374
+    (publish). REMAINING HONESTY LEADS: (a) the `What still REFUSES` section -- re-derived
+    2026-07-27, NOT re-swept since, and PMAT-1474 found three of eight Known-divergences entries
+    had drifted in that same window; its `13 refused / 31 declared` numerals MEASURE CORRECT
+    today (checked this slice) but the prose rows were not re-run. (b) PMAT-1468's never-swept
+    Kani proved-property class (needs crates/*/src + contracts/ -- 0.1.619). (c) re-point
+    PMAT-1459's 70 disclosed rules at real falsifiers.
