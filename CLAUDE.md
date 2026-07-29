@@ -102,10 +102,36 @@ terminator got tab-prefixed). The scan is now `contains("<<")` over
 `Bare` tokens, with `$((…))` exempted so the arithmetic LEFT SHIFT
 `$((1<<2))` keeps working (execution-witnessed, not asserted).
 Detection is TOKEN-level, so `echo "a << b"` still works.
-Everything else refuses with a hard `FrontendError` rather than
-shredding into barewords — a claim that only became true at PMAT-1371;
-before it, the four shapes above plus a bare `&` in command position
-all exited 0. The `C-BASHRS-POSIX-IDEMPOTENCE`
+The four shapes above refuse with a hard `FrontendError` rather than
+shredding into barewords — true only since PMAT-1371; before it they
+plus a bare `&` in command position all exited 0.
+
+⚠️ **ACCEPTANCE IS NOT MODELLING, and the boundary is TWO lists, not
+one rule (XPILE-SHELLPASS-001, PMAT-1479).** This paragraph replaces a
+universally quantified promise that stood here until 2026-07-29 —
+that anything outside the enumerated surface refuses. It was FALSE:
+twenty out-of-surface shapes were probed through the shipped CLI and
+ALL TWENTY were accepted at exit 0. They are not shredded (the emit is
+`sh -n`-clean, byte-identical, and executes identically) and they are
+not modelled either: each lowers to `Stmt::Cmd` with the operator
+riding along as an opaque `Expr::LitStr` **word**. That is the
+deliberate LitStr-passthrough design PMAT-085..092 + PMAT-119 locked
+in, with `XPILE-BASHRS-SUBSHELL-001` / `XPILE-BASHRS-STMT-SEP-001`
+filed as the structural follow-ups. The families:
+`&&`, `||`, `;`, background `&`, all four **redirection** forms
+(`>` `>>` `<` `2>&1`), **subshell** `( … )`, **brace group** `{ …; }`,
+**function definition** `f() { …; }`, `!` **negation**, and the
+**test bracket** `[ … ]` — plus `export`, `set -e`, globs,
+`${V:-default}`, line continuations (joined) and trailing comments
+(dropped). **So exit 0 from the shell frontend does NOT mean "inside
+the modelled subset"**, and no gate can infer that it does:
+`crates/xpile/tests/shell_passthrough_disclosure_witness.rs` pins
+class membership by lowering each shape through the real frontend, and
+reds if one starts refusing, starts being modelled, or drops its
+operator. Structured modelling is v0.2.0 work; the honest reading
+today is that these round-trip verbatim, uncertified.
+
+The `C-BASHRS-POSIX-IDEMPOTENCE`
 contract holds for the flat-command subset AND the (nested)
 for/while/until loops, if/then/elif/else conditionals, and top-level
 `case` under its §14.4 stratum coverage — it does NOT certify

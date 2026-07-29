@@ -1,25 +1,31 @@
-updated: "PMAT-1475 found the direction every other slice missed: `workspace-test` NEVER stopped\
-  \ blocking merges. On 2026-07-27T13:48:24 the org SPLIT it out of ruleset 13878864 into a NEW ruleset\
-  \ 19814559; the 13:48:42 `updated_at` the owner decision quoted as proof of a DROP is EIGHTEEN SECONDS\
-  \ LATER -- two halves of one operation, and only one was ever looked at. The effective set for main\
-  \ (`gh api repos/paiml/xpile/rules/branches/main`, the UNION over every ruleset protecting the branch)\
-  \ was {gate, workspace-test} throughout. ROOT CAUSE = THE SUBJECT, NOT THE READING: the gate asked\
-  \ what blocks a merge and measured what ONE ruleset contains; no gate in the repo had ever read the\
-  \ branch-rules endpoint. COST: the only failing test in the workspace for two days, recorded as the\
-  \ v0.1.618 tag-cut blocker, an owner decision escalated about nothing, and THREE documents edited to\
-  \ claim LESS enforcement than the repo has -- one of them contracts/README.md, PACKAGED AND PUBLISHED\
-  \ TO CRATES.IO, from which PMAT-1471 deleted a TRUE sentence. The gates own remediation text told\
-  \ the operator to re-derive the snapshot and update every marker to match, which would have written\
-  \ the falsehood into the authoritative marker and turned the gate GREEN AND WRONG; only the standing\
-  \ do-not-re-derive rule stopped it -- the right answer for the wrong reason, since nothing prompted\
-  \ anyone to test the premise. LESSONS: (1) A SWEEP THAT ONLY KNOWS ONE DIRECTION WILL CORRECT A TRUE\
-  \ SENTENCE INTO A FALSE ONE -- every prior slice hunted over-claiming, so under-claiming read as a fix.\
-  \ (2) A GATE IS ONLY AS GOOD AS THE QUESTION ITS SUBJECT ANSWERS, and a subject drifts from its\
-  \ question SILENTLY: nothing goes red when the world grows a second ruleset. WHEN A GATE AND A DOCUMENT\
-  \ DISAGREE, THE GATE IS A SUSPECT TOO. (3) READING THE OFFENDER LIST BEAT WATCHING THE GATE FIRE --\
-  \ draft 1 treated inline code as quotation and MISSED docs/RELEASE.md because the one word that made\
-  \ it a claim sat in backticks; stripping them widened the net onto two more files and then produced\
-  \ TWO FALSE POSITIVES on honest prose, which is what the acquittal window and its control now cover."
+updated: "PMAT-1479 closed the last of the three mandatory `[Unreleased]` sections, and found the\
+  \ shape none of the previous ten sweeps could see: a MISSING CATEGORY. `What still REFUSES` measures\
+  \ TRUE row by row -- all 13 WASM refused rows, both stage caveats, the four here-doc spellings,\
+  \ `;&`/`;;&`, case-in-loop, the Ruchy text, PMAT-1364's BigInt `range(bool)`, PMAT-1378's\
+  \ reserved-namespace rules -- and it is still wrong, because it presents the shell lane as two columns\
+  \ (modelled or refused) when there are THREE. Twenty shapes outside the enumerated surface were probed\
+  \ through the shipped CLI and TWENTY OF TWENTY were ACCEPTED at exit 0: `&&`, `||`, `;`, background\
+  \ `&`, all four redirection forms, subshells, brace groups, function definitions, `!`, `[ .. ]`,\
+  \ export, set -e, globs, ${V:-default}, line continuations, trailing comments. Not shredded (sh\
+  \ -n-clean, byte-identical, pairwise-identical under `sh`) and not modelled (`Stmt::Cmd` carrying the\
+  \ operator as an opaque `Expr::LitStr` WORD -- the PMAT-085..092 LitStr-passthrough design). CLAUDE.md\
+  \ stated the two-column model as a UNIVERSAL -- anything outside the surface refuses -- and that was\
+  \ false twenty times over. COST: a reader infers 'accepted at exit 0, therefore inside the modelled\
+  \ subset, therefore certified' and is wrong, INCLUDING about this repo's own gated example\
+  \ (`examples/inputs/install.sh` ends `echo \"done\" > /tmp/out/install.log`; that `>` is a LitStr\
+  \ word). ★★ NEW LESSON: A GATE CAN BE FULLY CORRECT AND STILL LAUNDER A FALSE INFERENCE THROUGH THE\
+  \ SENTENCE THAT EXPLAINS IT. XPILE-SHELLPOLICY-001's five invariants are all true; its 'accepted by\
+  \ bashrs-frontend, SO none is an opaque blob outside the substrate-quality regime' does not follow,\
+  \ because acceptance + byte-identical re-emission is what a verbatim word gives you FOR FREE --\
+  \ invariants 3-5 hold VACUOUSLY over the whole passthrough class. Every prior slice found prose with\
+  \ no gate or a gate asking the wrong question; this was the right question with the answer\
+  \ over-translated in the doc-comment. WHEN A GATE EXPLAINS WHAT IT MEANS, THAT TRANSLATION IS PROSE.\
+  \ ★ SECOND LESSON, CHEAP: PROBE THE ACCEPT SIDE -- ten sweeps in a row hunted over-stated capability,\
+  \ so every probe list was built from things that should FAIL; a refusal roster is a CLOSED-WORLD claim\
+  \ and nothing had ever tested the complement. ★ And the playbook rule fired on the first try: running\
+  \ the new gate over the files it was written about surfaced a SECOND live instance 8,400 lines deep --\
+  \ a release entry quoting the universal promise and scoping its falsity to `;&`/`;;&` alone (stale\
+  \ citation + under-statement). REWORDED, NOT EXEMPTED."
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -75,6 +81,47 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1479
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: The shell lane published a refusal guarantee it does not have -- twenty out-of-surface
+    constructs probed, ALL TWENTY accepted at exit 0, one of them in this repo's own gated example
+  notes: 'DONE. Full lessons in docs/roadmaps/roadmap.yaml under `- id: PMAT-1479`.
+
+    LAST of the three mandatory `[Unreleased]` sections (1473/1474 = Known divergences, 1478 = What
+    is NOT merge-blocking, this = What still REFUSES). EVERY ROW MEASURES TRUE -- re-derived
+    through the shipped CLI, including PMAT-1364''s BigInt `range(bool)` refusal + its coercing
+    non-BigInt twin and PMAT-1378''s reserved-name subtlety (a LOCAL `__alloc` executes correctly
+    alongside the emitted `(func $__alloc)`; measured 14 = CPython). The defect was a MISSING
+    CATEGORY, not a wrong row: twenty shapes outside the enumerated surface were probed and TWENTY
+    OF TWENTY were ACCEPTED at exit 0 -- `&&`, `||`, `;`, background `&`, four redirection forms,
+    subshells, brace groups, function definitions, `!`, `[ .. ]`, export, set -e, globs,
+    ${V:-default}, line continuations, trailing comments. Not shredded (sh -n-clean,
+    byte-identical, pairwise-identical under `sh`); not modelled (`Stmt::Cmd` + opaque
+    `Expr::LitStr` operator word = the PMAT-085..092 LitStr-passthrough design). CLAUDE.md''s
+    universal "anything else refuses" promise was FALSE; the CHANGELOG section omitted the class
+    entirely.
+
+    ★★ NEW LESSON: A GATE CAN BE FULLY CORRECT AND STILL LAUNDER A FALSE INFERENCE THROUGH THE
+    SENTENCE THAT EXPLAINS IT -- XPILE-SHELLPOLICY-001''s invariants are true, but "accepted by
+    bashrs-frontend, SO not an opaque blob outside the regime" does not follow: invariants 3-5 hold
+    VACUOUSLY over the passthrough class, and one certified artifact
+    (`examples/inputs/install.sh`) relies on it. ★ PROBE THE ACCEPT SIDE -- a refusal roster is a
+    closed-world claim and nothing had tested the complement.
+
+    ⚠️ FREEZE EXCEPTION, stated because it is one: run after the Wed 18:00 freeze on the
+    release-mechanics carve-out -- the false universal ships Friday in CHANGELOG-adjacent form and
+    CLAUDE.md is what every future operator reads. Docs + two test files. ZERO crates/*/src, ZERO
+    contracts/*.yaml.
+
+    NEXT PICK: 2026-07-30 -> PMAT-1373 (tag cut, witness-floor TOUCH 2), 2026-07-31 -> PMAT-1374
+    (publish). NEXT FREE ID PMAT-1480. REMAINING HONESTY LEADS: (a) the ACCEPT-side complement for
+    the OTHER frontends (Python/C/WASM all publish refusal rosters; none tests what it accepts
+    without modelling) -- NEW and cheap; (b) PMAT-1468''s Kani proved-property class (needs
+    crates/*/src -- 0.1.619); (c) PMAT-1459''s 70 disclosed rules -> real falsifiers; (d) the WASM
+    contract''s `str-of-float` row says "Queued for 0.1.618" -- a forward-looking claim about the
+    release being cut NOW, frozen out this window (contracts/*.yaml).'
 - id: PMAT-1478
   status: done
   ev_rank: R1
