@@ -3,7 +3,11 @@
 //!
 //! Every contract carries an optional `metadata.xpile.layer` tag, and
 //! `docs/specifications/sub/contract-taxonomy.md` numbers the five layers that
-//! tag names. Nine of the 35 contracts carry it. Three of those nine —
+//! tag names. Nine of the 35 contracts carried it when this gate was written;
+//! PMAT-1461 completed the tagging in the same commit and all 35 carry one now
+//! (see [`the_gate_reports_how_much_of_the_substrate_it_can_reach`], which
+//! measures the live figure rather than restating this sentence). Three of the
+//! original nine —
 //! `C-NOTATION-LATEX-MATH-TO-EQUATION`, `C-XLATE-LEAN-TO-RUST` and
 //! `C-XLATE-RUST-FN-TO-LEAN-THM` — declare `layer: translation`, i.e. **Layer
 //! 2**, and open their own `metadata.description` with the sentence "Layer 2
@@ -50,13 +54,20 @@
 //! It decides **self-consistency**, which is arithmetic: if a contract
 //! declares a layer, no text under `contracts/` may attribute it to a
 //! different one. It does NOT decide whether a contract's declared layer is
-//! the *right* layer, and it cannot check the 26 contracts that declare no
-//! layer at all — so the 127 layer-scoped tallies phrased over untagged
-//! contracts ("the second L2 contract at depth-10", "3 L3 contracts at
-//! depth-7") are outside its reach and were left alone. That limitation is not
-//! a comment: [`the_gate_reports_how_much_of_the_substrate_it_can_reach`]
-//! measures it and prints the untagged roster, and the gate's reach grows on
-//! its own as contracts get tagged.
+//! the *right* layer. It also does not read a layer-scoped **tally or
+//! ordinal** ("the second L2 contract at depth-10", "3 L3 contracts at
+//! depth-7") — those spell no layer beside a contract name, so this needle
+//! cannot reach them however well the corpus is tagged.
+//!
+//! ⚠️ **This paragraph used to excuse those 127 tallies as "phrased over
+//! untagged contracts", out of reach until the remaining 26 contracts were
+//! tagged. That excuse was refuted by its own diff** — PMAT-1461 completed the
+//! tagging in this very commit, so nothing was untagged by the time anyone
+//! could read the sentence. PMAT-1462 checked the ordinal half and found **29**
+//! of them false, all one root cause: `C-BASHRS-POSIX-IDEMPOTENCE` ranked as a
+//! Layer-2 contract. `crates/xpile/tests/contract_layer_ordinal_integrity.rs`
+//! now gates them. The reach this gate DOES have is measured, not described, by
+//! [`the_gate_reports_how_much_of_the_substrate_it_can_reach`].
 //!
 //! Also deliberately untouched: the substrate-wide depth counts riding in the
 //! same sentences (`8 contracts at depth-5+`, live 13). That is a separate
@@ -65,7 +76,10 @@
 //! ground truth (`xpile diamond --json`'s `depth_N_plus`) and a genuine open
 //! question about whether a broadening record may freeze a count. Four
 //! sentences here had to be rewritten anyway; rather than restate a number
-//! this slice did not gate, the rewrite drops it. The other 108 stand.
+//! this slice did not gate, the rewrite drops it. The other 108 stand — still
+//! open after PMAT-1462, which answered the dating question only for
+//! *ordinals* (a rank has a derivable date, so no policy call is needed) and
+//! left the substrate-wide counts alone.
 //!
 //! ## Blind spots, each pinned by a control that PASSES
 //!
