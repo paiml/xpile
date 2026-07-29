@@ -1,25 +1,25 @@
-updated: "2026-07-29 (PMAT-1474 swept the REST of the Known-divergences list -- PMAT-1473 did item 5,\
-  \ this did the other EIGHT OF EIGHT -- and three had drifted. ITEM 1 WAS THE WORST-CASE CLAIM IN THE\
-  \ DOCUMENT and it was STALE: `+`/`-`/`*`/neg all TRAP under wasm-interp, fixed by PMAT-1402, an arc\
-  \ 1,900 lines ABOVE it in the SAME [Unreleased] section, while `i64_overflow_witness.rs` asserted the\
-  \ truth GREEN for two days. One shape survives -- `abs(i64::MIN)` -> `i64::MIN`, a bare `i64.sub` in\
-  \ `$__wasm_abs_i64` that `emit_binop` never reaches. LESSONS: (1) THE DIRECTION MATTERS -- every prior\
-  \ slice in this sweep hunted OVER-claiming; this UNDER-claimed, telling readers the WASM lane silently\
-  \ wraps when it traps, and aiming the 0.1.619 lane at L/XL work ALREADY SHIPPED. A stale divergence\
-  \ list MISDIRECTS THE ROADMAP, which is more expensive than misinforming a reader. (2) A GREEN WITNESS\
-  \ DOES NOT PROPAGATE TO THE PROSE THAT DESCRIBES IT -- the executing test and the release note\
-  \ disagreed for two days and only the note was wrong. (3) THE PERTURBATION ASSERTION EARNED ITS KEEP:\
-  \ the first `abs` red half did NOT apply (4-space vs 6-space indent inside a WAT string literal) and\
-  \ the suite came back GREEN -- without `assert count==1` that VACUOUS GREEN would have been recorded\
-  \ as a passing red half. ALWAYS ASSERT THE PERTURBATION APPLIED, never infer it from the diff you\
-  \ intended. (4) THE GATE CAUGHT A FALSE POSITIVE IN ITSELF -- rule E flagged the CORRECTED item 6 for\
-  \ the `the other 16` it QUOTES from its own pre-fix text; a disclosed quotation is how an entry\
-  \ explains its correction, so the detector strips quoted spans, with a two-way control. RUN THE RED\
-  \ HALF TO SEE WHAT THE GATE SAYS, NOT JUST THAT IT SAYS SOMETHING. (5) A HEADER THAT DESCRIBES ONLY\
-  \ ONE KIND OF ENTRY LEAVES THE OTHER KIND UNOWNED -- 'reproduced against live python3' cannot be true\
-  \ of items 6 and 7, and those are exactly the two nobody re-measured. (6) ITEM 7 BROKE A RULE STATED\
-  \ IN ITS OWN CLOSING SENTENCE, which forbids quoting snapshot counts BECAUSE THEY TRAIL THE LIVE\
-  \ COUNT -- the prohibition was right and did not apply to itself.)"
+updated: "PMAT-1475 found the direction every other slice missed: `workspace-test` NEVER stopped\
+  \ blocking merges. On 2026-07-27T13:48:24 the org SPLIT it out of ruleset 13878864 into a NEW ruleset\
+  \ 19814559; the 13:48:42 `updated_at` the owner decision quoted as proof of a DROP is EIGHTEEN SECONDS\
+  \ LATER -- two halves of one operation, and only one was ever looked at. The effective set for main\
+  \ (`gh api repos/paiml/xpile/rules/branches/main`, the UNION over every ruleset protecting the branch)\
+  \ was {gate, workspace-test} throughout. ROOT CAUSE = THE SUBJECT, NOT THE READING: the gate asked\
+  \ what blocks a merge and measured what ONE ruleset contains; no gate in the repo had ever read the\
+  \ branch-rules endpoint. COST: the only failing test in the workspace for two days, recorded as the\
+  \ v0.1.618 tag-cut blocker, an owner decision escalated about nothing, and THREE documents edited to\
+  \ claim LESS enforcement than the repo has -- one of them contracts/README.md, PACKAGED AND PUBLISHED\
+  \ TO CRATES.IO, from which PMAT-1471 deleted a TRUE sentence. The gates own remediation text told\
+  \ the operator to re-derive the snapshot and update every marker to match, which would have written\
+  \ the falsehood into the authoritative marker and turned the gate GREEN AND WRONG; only the standing\
+  \ do-not-re-derive rule stopped it -- the right answer for the wrong reason, since nothing prompted\
+  \ anyone to test the premise. LESSONS: (1) A SWEEP THAT ONLY KNOWS ONE DIRECTION WILL CORRECT A TRUE\
+  \ SENTENCE INTO A FALSE ONE -- every prior slice hunted over-claiming, so under-claiming read as a fix.\
+  \ (2) A GATE IS ONLY AS GOOD AS THE QUESTION ITS SUBJECT ANSWERS, and a subject drifts from its\
+  \ question SILENTLY: nothing goes red when the world grows a second ruleset. WHEN A GATE AND A DOCUMENT\
+  \ DISAGREE, THE GATE IS A SUSPECT TOO. (3) READING THE OFFENDER LIST BEAT WATCHING THE GATE FIRE --\
+  \ draft 1 treated inline code as quotation and MISSED docs/RELEASE.md because the one word that made\
+  \ it a claim sat in backticks; stripping them widened the net onto two more files and then produced\
+  \ TWO FALSE POSITIVES on honest prose, which is what the acquittal window and its control now cover."
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -75,6 +75,43 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1475
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  title: '`workspace-test` never stopped blocking merges -- it was MOVED to a second ruleset, and
+    the enforcement gate reported the move as a weakening for two days'
+  notes: 'DONE. Full lessons in docs/roadmaps/roadmap.yaml under `- id: PMAT-1475`.
+
+    THE MIRROR IMAGE OF EVERY OTHER SLICE IN THIS RELEASE -- all of them hunted OVER-claiming;
+    this UNDER-claimed. A merge to main is blocked by `gate` AND `workspace-test`, before and
+    after 2026-07-27. Enforcement was NEVER weakened. At 2026-07-27T13:48:24 the org SPLIT
+    `workspace-test` into a new ruleset 19814559; the 13:48:42 `updated_at` on 13878864 that the
+    owner decision quoted as proof of a drop is EIGHTEEN SECONDS LATER -- two halves of one
+    operation, one half looked at.
+
+    ROOT CAUSE = THE SUBJECT. The gate asked "what blocks a merge on main?" and measured "what
+    does ruleset 13878864 contain?" `repos/paiml/xpile/rules/branches/main` answers the question
+    asked; no gate had ever read it. BLAST RADIUS: only failing test in the workspace for two
+    days; recorded as the tag-cut blocker; owner decision escalated about nothing; THREE
+    documents edited toward the defect, one of them PACKAGED TO CRATES.IO (PMAT-1471 deleted a
+    TRUE sentence from contracts/README.md). The gate''s own remediation text would have written
+    the falsehood into the authoritative marker and turned it GREEN AND WRONG.
+
+    ⚠️ FREEZE EXCEPTION, stated because it is one: this touches a GATE after the Wed 18:00
+    freeze, on the release-mechanics carve-out -- it IS the recorded A1 blocker, its red is
+    FALSE, and leaving it hands Thursday''s operator instructions that install the falsehood.
+    ZERO crates/*/src, ZERO contracts/*.yaml.
+
+    ★ owner_decisions `ruleset-workspace-test-dropped` is marked RESOLVED/VOID in this file.
+
+    NEXT PICK: 2026-07-30 -> PMAT-1373 (tag cut), 2026-07-31 -> PMAT-1374 (publish). NEXT FREE
+    ID PMAT-1476. A1 IS NOW UNBLOCKED -- `ruleset_drift` was the only failing suite and is green;
+    re-measure `cargo test --workspace --no-fail-fast` with NO other cargo process live
+    (PMAT-1471''s kani_verify shared-temp-dir trap). Remaining honesty leads, still frozen out
+    until after the tag: the "What still REFUSES" and "What is NOT merge-blocking" sections
+    (last unswept normative blocks in [Unreleased]) and PMAT-1468''s never-swept Kani
+    proved-property class.'
 - id: PMAT-1474
   status: done
   ev_rank: R1
@@ -6386,20 +6423,27 @@ next_lane:
   frontiers
 owner_decisions:
 - id: ruleset-workspace-test-dropped
-  summary: '⚠️ SURFACED 2026-07-27 by the PMAT-1401 cron fire, NOT acted on. XPILE-RULESET-DRIFT-001''s
-    LIVE half reds locally: org ruleset 13878864 now requires only {"gate"} while docs/status/ruleset-13878864.json
-    records {"gate", "workspace-test"}. Live `updated_at` is 2026-07-27T13:48:42+02:00 — the change was
-    made DURING that fire, so `workspace-test` is no longer a merge-blocking context and a PR can now
-    merge with it RED. Verified it reproduces on UNMODIFIED main, so it is not slice fallout. CI is unaffected:
-    the live half skips-with-reason under the repo-scoped Actions GITHUB_TOKEN and the 3 STATIC tests
-    pass, so this is visible only where a token carries org scope. ** THE SNAPSHOT WAS DELIBERATELY NOT
-    UPDATED. PMAT-1347''s own recorded lesson is that a receipt committed minutes after an external mutation
-    becomes a stale-but-authoritative-looking record — the 2026-07-05 four-context flip was reverted six
-    hours later and its snapshot misled for three weeks. Re-deriving inside the hour reproduces exactly
-    that. ** DECISION NEEDED: if the drop is intended, re-derive the snapshot AND every `XPILE-ENFORCEMENT
-    REQUIRED-CONTEXTS:` marker, and correct the sprint plan + cron instructions, which both state [gate,
-    workspace-test] as the blocking set. If unintended, restore workspace-test. Until then the sprint
-    continues to require BOTH green before merging — a weakened ruleset is not a licence to merge red.'
+  status: RESOLVED 2026-07-29 by PMAT-1475 — NO DECISION WAS EVER NEEDED. Nothing was dropped.
+  summary: '✅ VOID. `workspace-test` was never dropped as a merge-blocking context — it was MOVED. On
+    2026-07-27T13:48:24 the org created a SECOND ruleset, 19814559 ("workspace-test — repos that emit
+    it (aprender, rmedia, xpile)"), active, scoped to refs/heads/main on aprender/rmedia/xpile, and moved
+    `workspace-test` into it. The creation timestamp is EIGHTEEN SECONDS before the 13:48:42 `updated_at`
+    on 13878864 that this decision quoted as evidence of a drop: the two were halves of one operation,
+    and only one half was ever looked at. The effective required set for main — `gh api repos/paiml/xpile/rules/branches/main`,
+    the UNION over every ruleset protecting the branch — was {gate, workspace-test} before, during and
+    after. A PR could never merge with `workspace-test` red. ** ROOT CAUSE: XPILE-RULESET-DRIFT-001 read
+    ONE ruleset by hard-coded id and reported the difference as a weakening; no gate in the repo had ever
+    read the branch-rules endpoint. The gate now asserts the UNION and the PER-RULESET ATTRIBUTION separately,
+    so a move fails the second while the first stays green and the message says "This is a SPLIT, not
+    a weakening". Receipts are discovered from docs/status/ruleset-*.json, so adding a ruleset is now
+    sufficient to teach every assertion about it. ** COST OF THE MISDIAGNOSIS, recorded because the direction
+    is the lesson: two days as the workspace''s only failing test; recorded as the v0.1.618 tag-cut blocker;
+    and THREE documents edited to claim LESS enforcement than the repo has, one of them (contracts/README.md)
+    packaged and published to crates.io by PMAT-1471, which deleted a TRUE sentence. Every honesty slice
+    before this one hunted OVER-claiming; a sweep that only knows that direction will "correct" a true
+    sentence into a false one. ** The standing "do not re-derive a receipt to silence it" rule prevented
+    the bad edit but never prompted anyone to check the premise — right answer, wrong reason. Both receipts
+    are now re-derived and both are honest.'
 - id: int-float-container-literal-policy
   summary: '`list[float] = [1, 2.5]` silently COERCES (compiles, prints [1.0, 2.5] vs CPython [1, 2.5])
     while `dict[str,float] = {''a'': 1}` and `tuple[float,float] = (1, 2.5)` accept-then-fail rustc with

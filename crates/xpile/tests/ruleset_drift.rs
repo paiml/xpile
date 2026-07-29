@@ -6,7 +6,33 @@
 //! actually blocks a merge** — the claim that gives every other gate its
 //! meaning. A gate nobody is required to pass is a suggestion.
 //!
-//! ## The drift this exists to catch (it already happened, twice, opposite ways)
+//! ## The drift this exists to catch (it has now happened three times)
+//!
+//! **2026-07-27 — the SPLIT, and this gate's own false alarm (PMAT-1475).**
+//! Enforcement stopped being the property of one ruleset. The org moved
+//! `workspace-test` OUT of `13878864` and into a new dedicated ruleset
+//! `19814559` ("workspace-test — repos that emit it (aprender, rmedia,
+//! xpile)"), created `2026-07-27T13:48:24`. The effective required set for
+//! `refs/heads/main` never changed: it was `{gate, workspace-test}` before the
+//! split and it is `{gate, workspace-test}` after it.
+//!
+//! This gate read `orgs/paiml/rulesets/13878864` and reported a WEAKENING. It
+//! was the only failing test in the workspace for two days; it was recorded as
+//! the blocker for the v0.1.618 tag cut; and it was escalated as an OWNER
+//! DECISION ("re-deriving the snapshot ratifies the weakening") about a
+//! weakening that never happened. Downstream, three documents — including the
+//! packaged `contracts/README.md` that ships to crates.io, and a `[Unreleased]`
+//! CHANGELOG entry — were *edited away from the truth* to agree with it.
+//!
+//! The defect was not the reading. It was the SUBJECT. The gate asked "what
+//! blocks a merge on `main`?" and measured "what does ruleset 13878864
+//! contain?" Those are the same number only until someone adds a second
+//! ruleset. **The authoritative endpoint is `repos/paiml/xpile/rules/branches/
+//! main`** — the aggregation of every active ruleset that applies to the
+//! branch — and this gate now reads that, keeping the per-ruleset reads only
+//! for metadata the aggregate does not carry. A required context that MOVES
+//! between rulesets is now visibly a move; a context that DISAPPEARS is still
+//! visibly a weakening; and the two can no longer be confused.
 //!
 //! On 2026-07-05 the org ruleset `13878864` was flipped from `[gate]` to
 //! `[gate, kani, lake-build, workspace-test]`, and `docs/status/
@@ -33,8 +59,15 @@
 //!   and every required context must name a job that actually exists.
 //!   That last one is not theoretical: a required context naming no job leaves
 //!   every PR permanently unmergeable rather than failing loudly.
-//! * **LIVE half** (1 test): `gh api orgs/paiml/rulesets/13878864` vs the
-//!   snapshot. Skips-with-reason when `gh` is absent or unauthorized, with an
+//! * **LIVE half** (2 tests). The first reads the EFFECTIVE branch endpoint
+//!   `gh api repos/paiml/xpile/rules/branches/main` and compares both the
+//!   union (what blocks a merge) and the per-ruleset attribution (which
+//!   ruleset supplies each context) against the committed snapshots. That
+//!   endpoint is REPO-scoped, so unlike the org read it is answerable by
+//!   Actions' default `GITHUB_TOKEN`. The second keeps the per-ruleset ORG
+//!   read for the three properties the aggregate omits — `enforcement`,
+//!   `strict_required_status_checks_policy` and `updated_at`. Both
+//!   skip-with-reason when `gh` is absent or unauthorized, with an
 //!   `XPILE_REQUIRE_RULESET_CHECK=1` tripwire (mirroring
 //!   `XPILE_REQUIRE_WASM_RUNTIME` / `XPILE_REQUIRE_KANI`) so the release
 //!   pre-flight can demand a real answer instead of accepting a skip.
@@ -50,13 +83,16 @@
 //! in `docs/roadmaps/queue.yaml`. This gate reports the truth; it does not
 //! change the policy.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-const RULESET_ID: &str = "13878864";
-const SNAPSHOT: &str = "docs/status/ruleset-13878864.json";
+/// The branch whose *effective* protection is the subject of this gate. Not a
+/// ruleset id — the 2026-07-27 split is exactly what happens when a gate lets a
+/// ruleset id stand in for the branch it protects.
+const BRANCH_RULES_ENDPOINT: &str = "repos/paiml/xpile/rules/branches/main";
+const SNAPSHOT_DIR: &str = "docs/status";
 const REQUIRED_MARKER: &str = "XPILE-ENFORCEMENT REQUIRED-CONTEXTS:";
 const ADVISORY_MARKER: &str = "XPILE-ENFORCEMENT ADVISORY-CONTEXTS:";
 
@@ -108,11 +144,76 @@ fn markers(text: &str, marker: &str) -> Vec<BTreeSet<String>> {
         .collect()
 }
 
-/// The required-status-check contexts recorded in the committed snapshot.
+/// Every committed ruleset receipt, keyed by ruleset id, DISCOVERED from
+/// `docs/status/ruleset-*.json` rather than listed.
+///
+/// Discovery is the point. A hard-coded id is precisely what let the 2026-07-27
+/// split read as a weakening: adding `ruleset-19814559.json` has to be enough to
+/// teach every assertion below about a new source of enforcement, because the
+/// person who adds it is not going to find the other call sites.
+fn snapshot_rulesets() -> BTreeMap<String, serde_json::Value> {
+    let dir = workspace_root().join(SNAPSHOT_DIR);
+    let mut out = BTreeMap::new();
+    for entry in fs::read_dir(&dir).expect("docs/status/ exists").flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some(id) = name
+            .strip_prefix("ruleset-")
+            .and_then(|r| r.strip_suffix(".json"))
+        else {
+            continue;
+        };
+        let rel = format!("{SNAPSHOT_DIR}/{name}");
+        let json: serde_json::Value = serde_json::from_str(&read(&rel))
+            .unwrap_or_else(|e| panic!("{rel}: invalid JSON: {e}"));
+        // The filename is used as the id everywhere below; if the payload
+        // disagrees, every per-ruleset assertion is comparing two different
+        // rulesets while looking correct.
+        assert_eq!(
+            json["id"].as_i64().map(|i| i.to_string()).as_deref(),
+            Some(id),
+            "{rel}: filename says ruleset {id} but the payload's `id` is {:?}",
+            json["id"]
+        );
+        out.insert(id.to_string(), json);
+    }
+    assert!(
+        !out.is_empty(),
+        "no `{SNAPSHOT_DIR}/ruleset-*.json` receipts found — this gate would \
+         assert nothing about enforcement at all"
+    );
+    out
+}
+
+/// A human-readable list of the receipts, for assertion messages.
+fn snapshot_names() -> String {
+    snapshot_rulesets()
+        .keys()
+        .map(|id| format!("{SNAPSHOT_DIR}/ruleset-{id}.json"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// What each committed receipt requires, keyed by ruleset id.
+fn snapshot_required_by_ruleset() -> BTreeMap<String, BTreeSet<String>> {
+    snapshot_rulesets()
+        .into_iter()
+        .map(|(id, json)| {
+            let whence = format!("{SNAPSHOT_DIR}/ruleset-{id}.json");
+            (id, required_from_ruleset(&json, &whence))
+        })
+        .collect()
+}
+
+/// The contexts that block a merge on `main`, per the committed receipts — the
+/// UNION across every ruleset that applies, not the contents of any one of them.
 fn snapshot_required() -> BTreeSet<String> {
-    let json: serde_json::Value =
-        serde_json::from_str(&read(SNAPSHOT)).expect("snapshot is valid JSON");
-    required_from_ruleset(&json, SNAPSHOT)
+    snapshot_required_by_ruleset()
+        .into_values()
+        .flatten()
+        .collect()
 }
 
 /// Pull `rules[].parameters.required_status_checks[].context` out of a ruleset
@@ -171,7 +272,9 @@ fn enforcement_markers_match_the_committed_snapshot() {
     let expected = snapshot_required();
     assert!(
         !expected.is_empty(),
-        "{SNAPSHOT} records ZERO required contexts — nothing would block a merge"
+        "the committed receipts ({}) record ZERO required contexts — nothing \
+         would block a merge",
+        snapshot_names()
     );
 
     let mut seen = 0usize;
@@ -185,12 +288,15 @@ fn enforcement_markers_match_the_committed_snapshot() {
         for found in markers(&text, REQUIRED_MARKER) {
             seen += 1;
             assert_eq!(
-                found, expected,
+                found,
+                expected,
                 "enforcement drift in {rel}: its `{REQUIRED_MARKER}` marker lists \
-                 {found:?} but {SNAPSHOT} records {expected:?}. Exactly one of the \
-                 two is a lie about what blocks a merge. Re-derive the snapshot \
-                 with `gh api orgs/paiml/rulesets/{RULESET_ID} | jq . > {SNAPSHOT}` \
-                 and make every marker match it."
+                 {found:?} but the committed receipts ({}) record {expected:?} in \
+                 total. Exactly one of the two is a lie about what blocks a merge. \
+                 Confirm the truth with `gh api {BRANCH_RULES_ENDPOINT}` FIRST — \
+                 that is the union over every ruleset protecting the branch, and \
+                 the only thing a marker is allowed to describe.",
+                snapshot_names()
             );
         }
     }
@@ -270,14 +376,14 @@ fn every_required_context_names_a_real_ci_job() {
 
 // ── LIVE half — skips-with-reason, tripwire-armed ───────────────────────────
 
-fn gh_ruleset() -> Result<serde_json::Value, String> {
+fn gh_api(path: &str) -> Result<serde_json::Value, String> {
     let out = Command::new("gh")
-        .args(["api", &format!("orgs/paiml/rulesets/{RULESET_ID}")])
+        .args(["api", path])
         .output()
         .map_err(|e| format!("`gh` not invocable: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "`gh api orgs/paiml/rulesets/{RULESET_ID}` failed ({}): {}",
+            "`gh api {path}` failed ({}): {}",
             out.status,
             String::from_utf8_lossy(&out.stderr).trim()
         ));
@@ -285,81 +391,150 @@ fn gh_ruleset() -> Result<serde_json::Value, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| format!("gh returned non-JSON: {e}"))
 }
 
-/// The snapshot is a claim about a live system. Verify it against that system
-/// whenever we are authorized to ask.
+/// Honour the anti-vacuity tripwire, then skip with a reason.
+fn skip_or_fail(why: &str, half: &str) {
+    assert!(
+        std::env::var_os("XPILE_REQUIRE_RULESET_CHECK").is_none(),
+        "XPILE_REQUIRE_RULESET_CHECK is set but the {half} could not be read \
+         ({why}). The enforcement claim must not pass vacuously on a run that \
+         demanded a real answer. Authenticate with `gh auth login` and re-run."
+    );
+    eprintln!(
+        "warning: skipping XPILE-RULESET-DRIFT-001 {half} — {why}.\n\
+         The STATIC half (snapshots ⇔ markers ⇔ job names) still ran.\n\
+         To run this half locally: `gh auth login`, then\n\
+         `XPILE_REQUIRE_RULESET_CHECK=1 cargo test -p xpile --test ruleset_drift`."
+    );
+}
+
+/// The contexts GitHub will actually enforce on `main`, keyed by the ruleset
+/// that supplies each — read from the branch-rules aggregate.
+fn live_required_by_ruleset(rules: &serde_json::Value) -> BTreeMap<String, BTreeSet<String>> {
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for rule in rules
+        .as_array()
+        .expect("branch rules endpoint returns an array")
+        .iter()
+        .filter(|r| r["type"] == "required_status_checks")
+    {
+        let id = rule["ruleset_id"]
+            .as_i64()
+            .expect("every applied rule names its ruleset_id")
+            .to_string();
+        let contexts = rule["parameters"]["required_status_checks"]
+            .as_array()
+            .expect("required_status_checks is an array")
+            .iter()
+            .map(|c| {
+                c["context"]
+                    .as_str()
+                    .expect("context is a string")
+                    .to_string()
+            });
+        out.entry(id).or_default().extend(contexts);
+    }
+    out
+}
+
+/// **The authoritative check.** What blocks a merge on `main` is the union over
+/// every active ruleset that applies to the branch — never the contents of one
+/// ruleset, which is the mistake that made this gate cry wolf for two days
+/// (PMAT-1475).
 #[test]
-fn live_ruleset_matches_the_committed_snapshot() {
-    let live = match gh_ruleset() {
+fn live_effective_enforcement_matches_the_committed_snapshots() {
+    let rules = match gh_api(BRANCH_RULES_ENDPOINT) {
         Ok(v) => v,
-        Err(why) => {
-            // Anti-vacuity tripwire. Reading an ORG ruleset needs a token with
-            // org scope, which Actions' repo-scoped GITHUB_TOKEN does not have —
-            // so this test legitimately skips in CI and the STATIC half above is
-            // what runs there. The release pre-flight (docs/RELEASE.md) sets
-            // XPILE_REQUIRE_RULESET_CHECK=1 to refuse the skip.
-            assert!(
-                std::env::var_os("XPILE_REQUIRE_RULESET_CHECK").is_none(),
-                "XPILE_REQUIRE_RULESET_CHECK is set but the live ruleset could not \
-                 be read ({why}). The enforcement claim must not pass vacuously on \
-                 a run that demanded a real answer. Authenticate with `gh auth login` \
-                 (org read scope) and re-run."
-            );
-            eprintln!(
-                "warning: skipping XPILE-RULESET-DRIFT-001 live check — {why}.\n\
-                 The STATIC half (snapshot ⇔ markers ⇔ job names) still ran.\n\
-                 To run this half locally: `gh auth login` with org read scope, then\n\
-                 `XPILE_REQUIRE_RULESET_CHECK=1 cargo test -p xpile --test ruleset_drift`."
-            );
-            return;
-        }
+        Err(why) => return skip_or_fail(&why, "effective-enforcement half"),
     };
 
-    let live_required = required_from_ruleset(&live, "live ruleset");
-    let snap_required = snapshot_required();
+    let live_by_ruleset = live_required_by_ruleset(&rules);
+    let snap_by_ruleset = snapshot_required_by_ruleset();
+
+    let live_union: BTreeSet<String> = live_by_ruleset.values().flatten().cloned().collect();
+    let snap_union = snapshot_required();
+
+    // Union first: this is the sentence every document in the repo repeats, and
+    // it is the one a reader acts on.
     assert_eq!(
-        live_required, snap_required,
-        "ENFORCEMENT DRIFT: the live org ruleset {RULESET_ID} requires \
-         {live_required:?} but {SNAPSHOT} records {snap_required:?}. This is the \
-         2026-07-05 failure recurring — someone changed branch protection and the \
-         repo's committed receipt did not follow. Re-derive with \
-         `gh api orgs/paiml/rulesets/{RULESET_ID} | jq . > {SNAPSHOT}` and update \
-         every `{REQUIRED_MARKER}` marker to match."
+        live_union,
+        snap_union,
+        "ENFORCEMENT DRIFT: `gh api {BRANCH_RULES_ENDPOINT}` says a merge to main \
+         is blocked by {live_union:?}, but the committed receipts ({}) record \
+         {snap_union:?}. Something genuinely changed about what blocks a merge. \
+         Re-derive EVERY receipt, and update the `{REQUIRED_MARKER}` markers.",
+        snapshot_names()
     );
 
-    let snapshot: serde_json::Value =
-        serde_json::from_str(&read(SNAPSHOT)).expect("snapshot is valid JSON");
-
+    // Attribution second: the union can be right while the receipts describe the
+    // wrong rulesets — which is exactly the 2026-07-27 state, and is how a gate
+    // keyed to one id reports a weakening that did not happen.
     assert_eq!(
-        live["enforcement"], snapshot["enforcement"],
-        "ruleset enforcement mode drifted: live {:?} vs snapshot {:?}. An `active` \
-         ruleset flipped to `evaluate` or `disabled` enforces NOTHING while its \
-         required-context list still reads correctly.",
-        live["enforcement"], snapshot["enforcement"]
+        live_by_ruleset, snap_by_ruleset,
+        "RULESET ATTRIBUTION DRIFT: main is protected by {live_by_ruleset:?} but \
+         the committed receipts record {snap_by_ruleset:?}. NOTE THE UNION ABOVE \
+         AGREED, so the set of merge-blocking contexts did NOT change — a context \
+         MOVED between rulesets (or a ruleset was added/removed). This is a SPLIT, \
+         not a weakening: do not \"fix\" it by editing documents to claim less \
+         enforcement. Add or re-derive the matching \
+         `{SNAPSHOT_DIR}/ruleset-<id>.json` receipt and leave the prose alone."
     );
 
-    // `strict` false means a PR may merge on checks run against a stale base —
-    // load-bearing for release abort rule A1b, so it is pinned rather than
-    // assumed.
-    let live_strict = strict_policy(&live);
-    let snap_strict = strict_policy(&snapshot);
-    assert_eq!(
-        live_strict, snap_strict,
-        "strict_required_status_checks_policy drifted: live {live_strict} vs \
-         snapshot {snap_strict}. With `false`, green checks do not prove the merged \
-         combination was ever tested together (release abort rule A1b)."
+    // Non-vacuity: an endpoint that returned no status-check rules at all would
+    // satisfy neither assertion by agreeing with an empty snapshot only if the
+    // receipts were ALSO empty — which snapshot_rulesets() already refuses.
+    assert!(
+        !live_union.is_empty(),
+        "the live branch-rules endpoint reports NO required status checks for \
+         main — nothing blocks a merge"
     );
+}
 
-    // The snapshot going stale-but-plausible is the specific way this failed
-    // before: it was regenerated BEFORE the revert, so it looked authoritative
-    // and was six hours out of date.
-    assert_eq!(
-        live["updated_at"], snapshot["updated_at"],
-        "the ruleset was edited at {:?} but {SNAPSHOT} was captured at {:?}. The \
-         required set still matches, so nothing is broken YET — but a snapshot \
-         that lags the API is exactly how the 2026-07-05 revert hid for three \
-         weeks. Re-capture it.",
-        live["updated_at"], snapshot["updated_at"]
-    );
+/// Per-ruleset metadata the branch aggregate does not carry: whether the ruleset
+/// is `active` at all, whether `strict` is set, and when it last moved.
+#[test]
+fn live_ruleset_metadata_matches_the_committed_snapshots() {
+    for (id, snapshot) in snapshot_rulesets() {
+        let rel = format!("{SNAPSHOT_DIR}/ruleset-{id}.json");
+        let live = match gh_api(&format!("orgs/paiml/rulesets/{id}")) {
+            Ok(v) => v,
+            // Reading an ORG ruleset needs org scope, which Actions'
+            // repo-scoped GITHUB_TOKEN does not have.
+            Err(why) => return skip_or_fail(&why, "ruleset-metadata half"),
+        };
+
+        assert_eq!(
+            live["enforcement"], snapshot["enforcement"],
+            "ruleset {id} enforcement mode drifted: live {:?} vs {rel} {:?}. An \
+             `active` ruleset flipped to `evaluate` or `disabled` enforces \
+             NOTHING while its required-context list still reads correctly.",
+            live["enforcement"], snapshot["enforcement"]
+        );
+
+        // `strict` false means a PR may merge on checks run against a stale base —
+        // load-bearing for release abort rule A1b, so it is pinned rather than
+        // assumed.
+        let live_strict = strict_policy(&live);
+        let snap_strict = strict_policy(&snapshot);
+        assert_eq!(
+            live_strict, snap_strict,
+            "ruleset {id}: strict_required_status_checks_policy drifted, live \
+             {live_strict} vs {rel} {snap_strict}. With `false`, green checks do \
+             not prove the merged combination was ever tested together (release \
+             abort rule A1b)."
+        );
+
+        // The snapshot going stale-but-plausible is the specific way this failed
+        // before: it was regenerated BEFORE the revert, so it looked authoritative
+        // and was six hours out of date.
+        assert_eq!(
+            live["updated_at"], snapshot["updated_at"],
+            "ruleset {id} was edited at {:?} but {rel} was captured at {:?}. The \
+             required set still matches, so nothing is broken YET — but a snapshot \
+             that lags the API is exactly how the 2026-07-05 revert hid for three \
+             weeks. Re-capture it.",
+            live["updated_at"], snapshot["updated_at"]
+        );
+    }
 }
 
 fn strict_policy(ruleset: &serde_json::Value) -> bool {

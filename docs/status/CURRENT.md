@@ -78,10 +78,22 @@ attribute and is never elaborated.
 
 ## CI enforcement
 
-Eight jobs run on every PR; org ruleset `13878864` requires exactly two of them.
+Every job in `.github/workflows/ci.yml` runs on every PR — derive the list with
+`grep -E '^  [a-z][a-z0-9_-]*:$' .github/workflows/ci.yml`. Which of them block a
+merge is the **union over every ruleset protecting `main`**, not the contents of
+any one ruleset: derive it with `gh api repos/paiml/xpile/rules/branches/main`.
+Two rulesets supply it today (`13878864` → `gate`, `19814559` →
+`workspace-test`); a receipt for each is committed beside this file as
+`ruleset-<id>.json`.
+
+> Reading one ruleset instead of the branch cost this repo two days
+> (**PMAT-1475**): on 2026-07-27 `workspace-test` was **moved** into its own
+> ruleset, a per-id check reported it as dropped, and three documents were
+> edited to claim less enforcement than the repo actually has. The effective set
+> never changed.
 
   <!-- XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test -->
-  **Required (merge-blocking):** `gate`, `workspace-test`. **Advisory (run every PR, red on a real regression, do NOT block a merge):** `kani`, `lake-build`, `docs`, `wasi`, `lean-models`, `shader-validate`. Verify with `gh api repos/paiml/xpile/rules/branches/main`; the claim is pinned by `crates/xpile/tests/ruleset_drift.rs`. Promoting the proof lane to required is an owner-gated org-admin edit — see [`enforcement-handoff.md`](enforcement-handoff.md) §2.
+  **Required (merge-blocking):** `gate`, `workspace-test`. **Advisory (run every PR, red on a real regression, do NOT block a merge):** `docs`, `kani`, `lake-build`, `lean-models`, `license-scan`, `shader-validate`, `wasi`. Verify with `gh api repos/paiml/xpile/rules/branches/main`; both halves are pinned by `crates/xpile/tests/ruleset_drift.rs`, which derives the advisory set as *every CI job that is not required* — so a new job cannot land undisclosed. Promoting the proof lane to required is an owner-gated org-admin edit — see [`enforcement-handoff.md`](enforcement-handoff.md) §2.
 
 Because the proof lane is advisory, **a red `kani` or `lake-build` does not
 block a merge** — read those jobs before trusting a green PR.

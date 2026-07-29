@@ -132,12 +132,12 @@ The contract substrate is gated by `cargo test --workspace` on every PR. The rel
 | `cargo test -p xpile --test attestations` | `xpile attestations` counts Extrinsic stratum votes per contract |
 | dedicated `kani` GitHub-Actions job | runs `cargo kani` over all 101 `#[kani::proof]` harnesses (24 files, covering 24 of 35 contracts) on every PR. **ADVISORY, not merge-blocking** — a red `kani` job does not stop a merge |
 
-**Do not read the merge-blocking set here.** It is recorded in
-[`docs/status/ruleset-13878864.json`](../docs/status/ruleset-13878864.json) and
-derived from it by `crates/xpile/tests/ruleset_drift.rs`; the live org ruleset
-is currently **weaker than that record**, and the gap is an open owner decision
-disclosed in [`docs/RELEASE.md`](../docs/RELEASE.md). `kani` is advisory under
-either set, which is the only thing this table needs it for.
+**Do not read the merge-blocking set here.** It is the union over every ruleset
+protecting `main`, recorded as one receipt per ruleset under
+[`docs/status/ruleset-*.json`](../docs/status/) and derived from them by
+`crates/xpile/tests/ruleset_drift.rs`, which checks that union against the live
+`gh api repos/paiml/xpile/rules/branches/main`. `kani` is advisory, which is the
+only thing this table needs from it.
 
 `xpile quorum` consolidates all four strata into a single per-contract reporter; `xpile attestations` lists Extrinsic votes; both reflect the live state of the substrate.
 

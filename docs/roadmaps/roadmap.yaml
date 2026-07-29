@@ -23372,3 +23372,79 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     -- neither uses numbered items, so a sweep needs a different parse -- plus
     `docs/status/CURRENT.md`, and the Kani harnesses whose PROVED property may not match the
     equation they discharge (PMAT-1468's class, never swept).
+- id: PMAT-1475
+  status: done
+  priority: P1
+  category: honesty
+  title: '`workspace-test` never stopped blocking merges -- it was MOVED to a second ruleset,
+    and the enforcement gate reported the move as a weakening for two days'
+  notes: |
+    THE MIRROR IMAGE OF EVERY OTHER SLICE IN THIS RELEASE. All of them hunted OVER-claiming.
+    This one UNDER-claimed: for two days the repo told its readers, its roadmap and its release
+    notes that it enforced LESS than it does, and then edited correct documents to match.
+
+    TRUTH: a merge to main is blocked by `gate` AND `workspace-test`, before 2026-07-27 and
+    today. Enforcement was never weakened.
+
+    WHAT HAPPENED: at 2026-07-27T13:48:24 the org SPLIT `workspace-test` out of ruleset
+    13878864 into a new ruleset 19814559 ("workspace-test -- repos that emit it (aprender,
+    rmedia, xpile)"), active, scoped to refs/heads/main, same bypass_actors. The
+    `updated_at` on 13878864 that the owner decision quoted as proof of a drop is
+    13:48:42 -- EIGHTEEN SECONDS LATER. Two halves of one operation; only one was looked at.
+
+    ROOT CAUSE -- THE SUBJECT, NOT THE READING. The gate asked "what blocks a merge on main?"
+    and measured "what does ruleset 13878864 contain?" Those agree only until a second ruleset
+    exists. The endpoint that answers the question asked is
+    `repos/paiml/xpile/rules/branches/main` (union over every active ruleset applying to the
+    branch, each tagged with ruleset_id). NO GATE IN THIS REPO HAD EVER READ IT.
+
+    BLAST RADIUS: the only failing test in the workspace for two days; recorded as the
+    v0.1.618 tag-cut blocker (A1 needs `cargo test --workspace` == 0); escalated as owner
+    decision `ruleset-workspace-test-dropped`; and THREE documents edited toward the defect --
+    docs/RELEASE.md §2b, this CHANGELOG's PMAT-1471 entry (about to ship as release notes),
+    and contracts/README.md, which is PACKAGED AND PUBLISHED TO CRATES.IO and from which
+    PMAT-1471 deleted a TRUE sentence.
+
+    THE GATE'S REMEDIATION TEXT WAS A RECIPE FOR MAKING THE REPO LIE: re-derive the snapshot
+    to [gate] and "update every XPILE-ENFORCEMENT REQUIRED-CONTEXTS: marker to match" would
+    have written the falsehood into the authoritative marker and turned the gate GREEN AND
+    WRONG. What stopped it was the standing "never re-derive a receipt to silence it" rule --
+    the right answer for the wrong reason: it blocked the edit without ever prompting anyone
+    to test the premise.
+
+    FIX: (1) live half now reads the branch-rules endpoint and asserts the UNION (what blocks
+    a merge) and the PER-RULESET ATTRIBUTION separately, so a MOVE reds the second while the
+    first stays green, with a message that says "This is a SPLIT, not a weakening: do not fix
+    it by editing documents to claim less enforcement". Repo-scoped, so unlike the org read it
+    is answerable by Actions' GITHUB_TOKEN. (2) receipts DISCOVERED from
+    docs/status/ruleset-*.json with payload `id` checked against filename -- the hard-coded id
+    is what made the split invisible. (3) NEW GATE XPILE-ENFORCE-PROSE-001
+    (crates/xpile/tests/enforcement_prose_witness.rs, 3 tests) over a corpus discovered from
+    `git ls-files '*.md'`.
+
+    RED HALVES ALL RUN, PERTURBATIONS ASSERTED. Swapping contexts between the two receipts
+    (union unchanged, attribution wrong) fires the SPLIT message; deleting the 19814559 receipt
+    reproduces the exact pre-fix state and now blames the receipts rather than the world.
+
+    ★ READING THE OFFENDER LIST BEAT WATCHING THE GATE FIRE. Draft 1 treated inline code as
+    quotation, so docs/RELEASE.md's "requires only `gate`" went UNDETECTED -- the one word that
+    made it a claim sat inside backticks. Backticks are FORMATTING, NOT QUOTATION; stripping
+    them as characters widened the net onto two more files -- and then produced TWO FALSE
+    POSITIVES, incl. the honest "requires only `gate` and `workspace-test`" which names both
+    required contexts and ships in a released section. Hence the acquittal window (a match is
+    an offence only if `workspace-test` does not follow within 48 chars) with a control
+    asserting that true-but-similar sentence stays silent.
+
+    FREEZE NOTE: run after the Wed 18:00 hard freeze. Touches a GATE, which the freeze
+    normally forbids, on the release-mechanics exception -- the gate is the recorded A1 blocker
+    for the 2026-07-30 tag cut, its red is FALSE, and its remediation text would otherwise have
+    the operator install the falsehood into the release. ZERO crates/*/src, ZERO contracts/*.yaml.
+
+    ★ STANDING LESSON: a gate is only as good as the question its SUBJECT answers, and a
+    subject drifts from its question SILENTLY -- nothing goes red when the world grows a
+    second ruleset. When a gate and a document disagree, THE GATE IS A SUSPECT TOO.
+
+    NEXT FREE ID IS PMAT-1476. On 2026-07-30 take PMAT-1373 (tag cut); on 2026-07-31 PMAT-1374
+    (publish). A1 PRECONDITION IS NOW UNBLOCKED: `ruleset_drift` was the workspace's only
+    failing suite and it is green -- re-measure `cargo test --workspace --no-fail-fast` with no
+    other cargo process live (see PMAT-1471's kani_verify shared-temp-dir trap).

@@ -1,13 +1,18 @@
 # Enforcement hand-off — the org-gated tail of the fable architectural review
 
-> **STATUS 2026-07-26 (PMAT-1347) — re-derived against the live API. The
-> previous banner on this line was FALSE.** Org ruleset `13878864` requires
-> exactly two contexts:
+> **STATUS 2026-07-29 (PMAT-1475) — re-derived against the live API.** Two
+> org rulesets protect `main`, and the merge-blocking set is their **union**:
+> `13878864` supplies `gate`, `19814559` ("workspace-test — repos that emit it")
+> supplies `workspace-test`. Derive it with
+> `gh api repos/paiml/xpile/rules/branches/main`, never from one ruleset —
+> `19814559` was split out on 2026-07-27 and a per-id read misreported that as
+> `workspace-test` being dropped.
 >
 > <!-- XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test -->
 > **required (merge-blocking): `gate`, `workspace-test`.**
 > **advisory (run every PR, red on regression, do NOT block a merge):**
-> `kani`, `lake-build`, `docs`, `wasi`, `lean-models`, `shader-validate`.
+> `docs`, `kani`, `lake-build`, `lean-models`, `license-scan`,
+> `shader-validate`, `wasi`.
 >
 > XPILE-RULESET-001 ✅ is DONE and HELD (`workspace-test` is enforced).
 > XPILE-RULESET-002 is **NOT** done: its ruleset half was applied on
@@ -18,7 +23,9 @@
 > `XPILE_REQUIRE_KANI` tripwire (#1885) — but it hardens a lane that is
 > advisory, so a red proof job still does not block a merge.
 >
-> Snapshot: [`ruleset-13878864.json`](ruleset-13878864.json), now pinned by
+> Snapshots: one receipt per ruleset —
+> [`ruleset-13878864.json`](ruleset-13878864.json) and
+> [`ruleset-19814559.json`](ruleset-19814559.json) — pinned by
 > `crates/xpile/tests/ruleset_drift.rs` (XPILE-RULESET-DRIFT-001) against both
 > the marker lines above and — when a token with org scope is present — the
 > live API. **Still open:** the RULESET-002 org-admin RE-FLIP (owner-gated,
