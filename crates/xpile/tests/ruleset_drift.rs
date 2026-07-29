@@ -16,6 +16,17 @@
 //! `refs/heads/main` never changed: it was `{gate, workspace-test}` before the
 //! split and it is `{gate, workspace-test}` after it.
 //!
+//! The split was also *correct*, which is the part that should have prevented
+//! the misreading. `13878864` is scoped `repository_name: ["~ALL"]` — 244 org
+//! repos — and most of them emit no `workspace-test` job. A required context no
+//! job produces hangs every PR on "Expected — Waiting for status to be
+//! reported" forever, which is precisely the hazard
+//! `every_required_context_names_a_real_ci_job` below exists to catch. So the
+//! org was *repairing a deadlock*, and this repo read it as an attack on its
+//! own enforcement. **Ask what the change would cost if it were what you think
+//! it is:** requiring a job across 244 repos that cannot run it is obviously
+//! broken, so that was probably not what happened.
+//!
 //! This gate read `orgs/paiml/rulesets/13878864` and reported a WEAKENING. It
 //! was the only failing test in the workspace for two days; it was recorded as
 //! the blocker for the v0.1.618 tag cut; and it was escalated as an OWNER

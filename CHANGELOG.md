@@ -22,7 +22,25 @@ both today. Nothing about xpile's enforcement was ever weakened.
 out of ruleset `13878864` into a new dedicated ruleset `19814559`, named
 *"workspace-test — repos that emit it (aprender, rmedia, xpile)"*, `active`,
 scoped to `refs/heads/main` on `aprender`, `rmedia` and `xpile`, with the same
-`bypass_actors` as the ruleset it left. A reorganisation, not a policy change.
+`bypass_actors` as the ruleset it left.
+
+**And it was a fix, not merely a neutral reorganisation.** Ruleset `13878864`
+is scoped `repository_name: ["~ALL"]` — all **244** repos in the org, measured —
+while only a handful emit a `workspace-test` job. GitHub never reports a status
+for a context no job produces, so an org-wide `workspace-test` requirement
+leaves every PR in the other repos stuck on *"Expected — Waiting for status to
+be reported"*: permanently unmergeable, with nothing red to explain why. That is
+the identical hazard this repo already guards against internally, in
+`ruleset_drift::every_required_context_names_a_real_ci_job`. Narrowing the
+requirement to the three repos that actually emit the job is the correct
+configuration — so the change the repo spent two days describing as a weakening
+of its own enforcement was in fact someone repairing a deadlock in everyone
+else's.
+
+That is worth stating plainly, because it is the cheapest check that was
+skipped: **ask what the change would cost if it were what you think it is.**
+Requiring a job across 244 repos that mostly cannot run it is obviously broken,
+which should have prompted "then that is probably not what happened."
 
 **Why the repo could not see that.** `ruleset_drift.rs` asked *"what blocks a
 merge on `main`?"* and measured *"what does ruleset `13878864` contain?"* Those
