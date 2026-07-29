@@ -226,8 +226,57 @@ conclusion; a green `gh pr checks` does not include it.**
    licenses` exits 4 by design and the LGPL-in-the-shipped-binary owner
    decision is open. A release note saying otherwise would be the exact class
    of claim this procedure exists to prevent.
-3. `gh release create "v<version>" --title "v<version>" --notes-file <body>` —
-   non-draft, body matching the CHANGELOG section.
+3. **Create the release from an EXTRACTED body, never a hand-assembled one.**
+
+   ```bash
+   V=<version>
+   awk -v h="## [$V]" 'index($0,"## [")==1 { f = (index($0,h)==1) } f' \
+     CHANGELOG.md > /tmp/relbody.md
+   gh release create "v$V" --title "v$V" --notes-file /tmp/relbody.md   # non-draft
+   diff /tmp/relbody.md <(gh release view "v$V" --json body -q .body)
+   ```
+
+   It is `index()` and not a regex on purpose: a *dynamic* awk regex cannot
+   carry `\[`, and the escaped form
+   (`awk -v h="^## \\[$V\\]" '… $0 ~ h …'`) degrades `[0.1.618]` into a
+   **character class**, matches nothing, and writes a **zero-byte body at
+   exit 0** — a silent empty release note. Do not "simplify" it back.
+
+   The `diff` is the point, not decoration. Through `v0.1.617` this step said
+   only *"body matching the CHANGELOG section"*, and **that match was measured
+   for the first time on 2026-07-30 (PMAT-1480), over all 613 published
+   releases: 0 matched.** Only 1 of the 613 bodies even begins with its section
+   heading, all 613 carry at least one line found nowhere in `CHANGELOG.md`
+   (3,044 lines in total), and `v0.1.616` shipped a 1,364-character body against
+   a 24,725-character section — 5.5% of the story. So the sentence was not a
+   description of what the procedure did; it was a description of what nobody
+   had checked.
+
+   **The release page is a publisher of this repository's facts that no gate in
+   `crates/xpile/tests/` can see.** Every one of them derives its corpus from the
+   working tree or from `git ls-files`, and a GitHub release body is in neither.
+   Two consequences, both measured on `v0.1.617`:
+
+   - **A CHANGELOG correction does not reach the page.** PMAT-1479 rewrote the
+     `;&` / `;;&` entry because it scoped a false universal to two shapes when
+     twenty were accepted. The published body still carries the pre-correction
+     sentence, so a reader who never opens this repository still re-derives the
+     claim that fix exists to kill. Repairing one publisher of a shared fact does
+     not repair the fact.
+   - **A page-only disclosure does not reach the repository.** The `v0.1.617`
+     body carries a 29-line *"Post-release correction (2026-07-26, PMAT-1370):
+     the `wasi` job was RED on this SHA"* section that existed **nowhere** in
+     `CHANGELOG.md` until PMAT-1480 ported it in. `git grep` could not find the
+     repo's own most load-bearing release disclosure. Corpus-wide this is the
+     norm, not an outlier: 212 bodies are longer than their section, and the
+     enforcement claim *"Full gate green: fmt, clippy -D warnings, check,
+     workspace tests, pv lint (0 errors)"* appears on 25 release pages and in no
+     CHANGELOG section.
+
+   **Therefore: a post-release correction is written to `CHANGELOG.md` first and
+   mirrored to the page second, never the other way round**, and the mirror is
+   an append with its own date and PMAT id so the original text stays legible as
+   what was published at the time.
 4. **Publish, unpiped, from a worktree checked out AT THE TAG:**
 
    ```bash
