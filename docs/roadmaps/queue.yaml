@@ -75,6 +75,38 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1478
+  status: done
+  ev_rank: R1
+  date: 2026-07-29
+  gate_touch: null
+  title: The two mandatory `[Unreleased]` sections nobody had swept -- `What is NOT merge-blocking`
+    omitted one of the seven unenforced contexts (the one whose green means least), and the gate written
+    for that exact defect had the OTHER document as its only subject
+  notes: 'PROSE-ONLY (post-18:00-freeze lane). `Known divergences` was swept item-by-item by PMAT-1473/1474;
+    the OTHER TWO mandatory sections had never been swept because neither uses numbered items. THREE
+    defects, all measured: (1) the advisory roster named SIX, the derived marker at ci.yml:82 names SEVEN
+    -- `license-scan` missing, and the paragraph''s OWN next line hands the reader the grep that prints
+    seven. `license-scan` is the worst of the seven to drop from a NON-enforcement disclosure: measured,
+    `cargo deny check licenses` EXITS 4 by design and `lgpl-in-shipped-binary` is an OPEN owner decision.
+    ROOT CAUSE IS A GATE''S SUBJECT: PMAT-1453 fixed this same roster in `docs/RELEASE.md` 5,256 lines
+    above in THIS SAME `[Unreleased]` section and gated it with `release_runbook_facts_witness.rs`, whose
+    corpus is `docs/RELEASE.md` ALONE -- so the defect walked to the one copy that leaves the repository.
+    (2) "13 rows each carrying a real Python probe and the STAGE that refuses it" -- 13/13 probes but
+    2/13 stages (the other 11 ride `expected_stage()`''s `backend` default); true conclusion, false
+    attribution, and the section refuted itself 15 lines later. (3) `forjar 1.10.0` -> re-measured
+    **1.12.2** (ruchy 4.2.1 and lean 4.15.0 held; 4 tests, 1.25s, all pass), and `queue.yaml`''s own
+    PMAT-1429 entry already recorded a THIRD value, 1.11.1. Fixed at both sites, including PMAT-1375''s
+    seed which called the stale figure "exactly the versions to pin".
+
+
+    ** NEXT FREE ID IS PMAT-1479. RANKED QUEUE IS EXHAUSTED UNTIL 2026-07-30 (PMAT-1373, the tag cut).
+    POST-FREEZE LANE IS PROSE/DOCS/RELEASE-MECHANICS ONLY -- no `crates/*/src`, no `contracts/*.yaml`,
+    no gate. NEXT PICK: PMAT-1373 on 2026-07-30. If another pre-tag fire lands first, the remaining
+    prose-lane leads are (a) the `What still REFUSES` shell/Ruchy/Python claims, which this slice
+    GATED-BUT-DID-NOT-REMEASURE through the CLI, and (b) `docs/status/CURRENT.md`, still unswept and
+    holding an ungated seven-context roster of its own. The two GATE widenings this slice could not make
+    are filed as PMAT-1479 in `next_lane` below.'
 - id: PMAT-1477
   status: done
   ev_rank: R1
@@ -3087,9 +3119,21 @@ queue:
     so the lean/ruchy/forjar exec witnesses actually execute'
   notes: 'SEEDED, NOT SCHEDULED. Recorded now so the reasoning is not re-derived from scratch.
 
-    All three witnesses PASS locally today at exactly the versions to pin: lean v4.15.0 (== the
+    All three witnesses PASS locally at: lean v4.15.0 (== the
 
-    contracts/lean/lean-toolchain pin), ruchy 4.2.1, forjar 1.10.0; combined wall time ~1.3s.
+    contracts/lean/lean-toolchain pin), ruchy 4.2.1, forjar 1.12.2; 4 tests, 1.25s combined.
+
+    ⚠️ PMAT-1478: this line said `forjar 1.10.0` and called those "exactly the versions to pin".
+
+    RE-MEASURE `forjar --version` BEFORE PINNING — the installed binary was 1.12.2, and this
+
+    file''s own PMAT-1429 entry recorded a THIRD value, `forjar 1.11.1`. Three
+
+    mutually inconsistent versions in tracked files means the number is not a fact about the
+
+    lane, it is a fact about whichever day someone last looked. The witness does not assert a
+
+    forjar version, so nothing reds when the toolchain moves.
 
     Measured install cost from a real runner log: elan installer 0.23s + Lean toolchain 2.2s
 
@@ -6439,6 +6483,28 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1479 — TWO GATE-CORPUS WIDENINGS, both blocked ONLY by the Wed 2026-07-29 18:00 release freeze,
+  both S-sized, both with the defect already measured by PMAT-1478. (1) `release_runbook_facts_witness.rs::the_runbook_does_not_type_an_advisory_roster`
+  encodes the RIGHT rule over a corpus of exactly ONE file, `docs/RELEASE.md` — so when the identical
+  stale roster sat in `CHANGELOG.md` `[Unreleased]`, the only copy that leaves the repository, nothing
+  fired. WIDEN the corpus to every publisher of the roster (`CHANGELOG.md` narrowed to `[Unreleased]`
+  and `docs/status/CURRENT.md`, which today carries a CORRECT but UNGATED seven-context roster and
+  would go stale the same way on the next job added). NOTE THE RULE MUST SOFTEN AS IT WIDENS: the
+  runbook may DEFER to the markers because its reader has the repo in front of them, but a release note
+  is read offline and must NAME the seven, so the widened gate has to check the roster is COMPLETE
+  rather than absent — derive the expected set from the `XPILE-ENFORCEMENT ADVISORY-CONTEXTS:` marker,
+  never retype it, and give it an acquittal control that PASSES on the corrected PMAT-1478 prose.
+  (2) `ruleset_drift.rs::advisory_markers_are_exactly_the_unrequired_ci_jobs` derives the unrequired
+  set from `.github/workflows/ci.yml` ALONE, while its sibling `every_required_context_names_a_real_ci_job`
+  already reads all three workflow files. Consequence, measured: `book.yml`''s `build` job runs on EVERY
+  pull request and blocks nothing, and `deploy` likewise, yet neither is in the required set NOR in the
+  advisory roster — they are exactly the "job whose enforcement status nobody has decided" that this
+  gate''s own failure message names. PMAT-1453 recorded this two-thirds of the way to a fix (it named
+  `license-scan`, `build` and `deploy` as the derived remainder) and the gate was never widened to match
+  the finding. Deciding how to disclose `deploy` (push-to-main only) vs `build` (per-PR) is the only
+  design question. ★ THE STANDING LESSON THIS PAIR EXISTS TO ENCODE: a gate''s RULE and a gate''s CORPUS
+  are two independent defects, and repairing one publisher of a shared fact does not repair the fact —
+  ENUMERATE EVERY PUBLISHER IN THE SAME SLICE.'
 - 'UNSIGNED FFI CALL-SITE RETYPE — the PMAT-931 hole in the unsigned direction, FOUND AND EXPOSED by PMAT-1353
   (2026-07-27) but deliberately NOT fixed in a release week. `unsigned int f(unsigned int)` reconciles
   cleanly and `emit_c_shim` gets the wrapper right (`f_shim(x: u32) -> u32`, PMAT-918), but the Python

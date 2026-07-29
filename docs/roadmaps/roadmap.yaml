@@ -23372,6 +23372,79 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     -- neither uses numbered items, so a sweep needs a different parse -- plus
     `docs/status/CURRENT.md`, and the Kani harnesses whose PROVED property may not match the
     equation they discharge (PMAT-1468's class, never swept).
+- id: PMAT-1478
+  status: done
+  priority: P1
+  category: honesty
+  title: The section whose job is to disclose what is NOT enforced omitted one of the seven unenforced
+    contexts -- the one whose green means least -- and the gate written for exactly that defect had the
+    OTHER document as its only subject
+  notes: 'SHIPPED 2026-07-29 (post-freeze, PROSE-ONLY lane). Subject = the TWO mandatory `[Unreleased]`
+    sections that PMAT-1473/1474 left unswept: `What still REFUSES` and `What is NOT merge-blocking`.
+    Neither uses numbered items, so the parse that swept `Known divergences` does not fit them. They
+    ship Friday as the release notes. THREE defects, all measured.
+
+
+    DEFECT 1 (severe) -- SIX OF SEVEN ADVISORY CONTEXTS. The paragraph named `docs`, `kani`,
+    `lake-build`, `lean-models`, `shader-validate`, `wasi` and OMITTED `license-scan`. The derived
+    marker at `.github/workflows/ci.yml:82` has named seven since PMAT-1409 added the job. The
+    paragraph SHIPPED ITS OWN REFUTATION -- the next line tells the reader to run
+    `grep -n XPILE-ENFORCEMENT .github/workflows/ci.yml`, which prints seven. Of the seven,
+    `license-scan` is the WORST to drop from a NON-enforcement disclosure: its green means "the licence
+    surface still equals NOTICE.md", NOT "no licence problems" -- measured tonight,
+    `cargo deny check licenses` EXITS 4 by design and the `lgpl-in-shipped-binary` owner decision is
+    OPEN. The roster omitted exactly the context a reader most needs to know is unenforced.
+
+    ROOT CAUSE = A GATE''S SUBJECT, NOT ITS RULE. PMAT-1453 found this same stale roster in
+    `docs/RELEASE.md` and wrote it up IN THIS SAME `[Unreleased]` SECTION, 5,385 lines ABOVE the roster
+    it left stale (MEASURED on the pre-fix file: entry at 1806, stale roster at 7191), and
+    shipped `release_runbook_facts_witness.rs::the_runbook_does_not_type_an_advisory_roster` against it.
+    That gate reads `docs/RELEASE.md` AND NOTHING ELSE. Three documents publish the roster: the runbook
+    (gated), `docs/status/CURRENT.md` (all seven, ungated-but-correct), and CHANGELOG.md -- THE ONLY COPY
+    THAT LEAVES THE REPOSITORY -- which was the stale one. The rule was right; the corpus was one file;
+    the defect walked to the neighbouring document.
+
+
+    DEFECT 2 -- "EACH CARRYING ... THE STAGE THAT REFUSES IT": 2 ROWS OF 13 CARRY ONE. Measured over
+    `contracts/compile-rust-to-wasm-v1.yaml`: 13/13 refused rows carry a `probe`; 2 carry a `stage:`
+    (`bigint-literal`, `set-of-float`); the other 11 ride `expected_stage()`''s
+    `stage: Option<String>` -> `"backend"` default. The CONCLUSION is sound -- every row''s stage IS
+    checked and the default is enforced identically -- so this is the PMAT-1476 shape, A TRUE ANSWER
+    WITH A FALSE ATTRIBUTION. The section refuted itself TWENTY-ONE LINES LATER (pre-fix 7103 -> 7124),
+    saying of `set[float]` that "pinning the stage is what caught it": true of exactly the two rows that
+    pin one. ⚠️ BOTH of those distances were WRITTEN BEFORE THEY WERE MEASURED in the first draft of this
+    entry ("5,256 lines", "fifteen lines") and corrected on re-read -- the same defect class, in the
+    entry reporting it. CONFIRM YOU MEASURED THE QUANTITY YOU NAME, including in the write-up.
+
+
+    DEFECT 3 -- `forjar 1.10.0` WAS REFUTED BY THIS REPO''S OWN LEDGER BEFORE IT SHIPPED. Claim: the
+    witnesses "pass locally at ruchy 4.2.1, forjar 1.10.0 and lean v4.15.0, in about 1.3s combined".
+    RE-MEASURED against the installed binaries: ruchy 4.2.1 OK, lean 4.15.0 OK, forjar 1.12.2 WRONG,
+    4 tests / 1.25s / all pass OK. `queue.yaml`''s PMAT-1429 entry already recorded a THIRD value
+    ("validated with the REAL `forjar 1.11.1` binary"), so the figure was inconsistent INSIDE THE TREE
+    before it was inconsistent with the machine. No witness asserts a forjar version, so nothing reds
+    when the toolchain moves. NOT INERT: PMAT-1375''s seeded 0.1.619 `backend-exec` job cites it as
+    "exactly the versions to pin", so the stale figure would have been PINNED INTO A CI JOB --
+    PMAT-1474''s lesson that A STALE METRIC AIMS THE NEXT RELEASE''S ROADMAP, not just the reader,
+    firing a second time. Corrected at BOTH sites (CHANGELOG + the PMAT-1375 seed).
+
+
+    WHAT THIS SLICE DOES NOT DO. All three fixes are PROSE. The structural fix -- add `CHANGELOG.md` to
+    the runbook gate''s corpus, and widen `ruleset_drift.rs::advisory_markers_are_exactly_the_unrequired_ci_jobs`
+    past `ci.yml` so `book.yml`''s `build` (runs on EVERY PR, blocks nothing) stops sitting outside both
+    the required set and the advisory roster -- IS A GATE EDIT, forbidden by the Wed 2026-07-29 18:00
+    release freeze. Filed for 0.1.619 and DISCLOSED in the section itself. THIS CLASS IS STILL UNGATED
+    AND WILL REGRESS; recording that is cheaper than a fourth revision rediscovering it.
+
+
+    LESSONS. (1) A GATE''S RULE AND A GATE''S CORPUS ARE TWO INDEPENDENT DEFECTS, and fixing a document
+    is not fixing a claim -- when a slice repairs one publisher of a shared fact, ENUMERATE THE OTHER
+    PUBLISHERS IN THE SAME SLICE. (2) THE COPY THAT LEAVES THE REPOSITORY IS THE ONE TO CHECK LAST AND
+    TRUST LEAST: readers cannot run the derive command a release note offers them. (3) A PARAGRAPH THAT
+    HANDS THE READER ITS OWN DERIVE COMMAND IS TESTABLE FOR FREE -- run the command and diff it against
+    the prose; two of these three defects fell out of doing exactly that. (4) WHEN THREE TRACKED FILES
+    DISAGREE ABOUT A VERSION, the answer is not "pick the newest" but "nothing asserts it" -- an
+    unasserted number is a date-stamp masquerading as a fact.'
 - id: PMAT-1477
   status: done
   priority: P1
