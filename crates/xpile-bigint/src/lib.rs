@@ -26,9 +26,11 @@
 pub use num_bigint::BigInt;
 
 /// Python-floor division (`a // b`) for `BigInt`. Matches the i64 path's
-/// `checked_div_euclid` semantics — round toward negative infinity, not
-/// toward zero — so generated code can stay on a single floor-div op
-/// across both modes.
+/// semantics — round toward negative infinity, not toward zero — so
+/// generated code can stay on a single floor-div op across both modes.
+/// PMAT-538: that i64 path is `checked_div` + a floor correction, NOT
+/// `checked_div_euclid`; Euclidean division rounds toward negative
+/// infinity only for a positive divisor, so it is not floor division.
 pub fn div_floor(a: &BigInt, b: &BigInt) -> BigInt {
     use num_integer::Integer;
     a.div_floor(b)

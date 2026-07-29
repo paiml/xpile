@@ -896,7 +896,10 @@ impl<'a> Parser<'a> {
             // dividend. We reuse `BinOp::FloorDiv`/`BinOp::Mod` as the IR
             // carriers; the isolated C emit path renders them as Rust
             // `wrapping_div` / `wrapping_rem` (truncating, UB-safe), NOT
-            // the Python floor (`div_euclid`) the shared variants imply.
+            // the Python floor the shared variants imply. (PMAT-538: that
+            // Python floor is `checked_div` + a floor correction, not
+            // `div_euclid` — Euclidean division is not floor division for
+            // a negative divisor.)
             let op = match self.peek() {
                 Some(Tok::Star) => BinOp::Mul,
                 Some(Tok::Slash) => BinOp::FloorDiv,

@@ -4963,10 +4963,13 @@ fn emit_if_expr(
 /// slow path is implemented, overflow panics with a message pointing
 /// at the contract.
 ///
-/// FloorDiv / Mod additionally preserve Python-floor semantics via
-/// `checked_div_euclid` / `checked_rem_euclid` (plain `/` and `%` in
-/// Rust truncate toward zero, which diverges from Python on negative
-/// operands).
+/// FloorDiv / Mod additionally preserve Python-floor semantics via the
+/// truncating `checked_div` / `checked_rem` plus a floor correction (see
+/// `emit_floor_div` / `emit_floor_mod`): plain `/` and `%` in Rust
+/// truncate toward zero, which diverges from Python on negative
+/// operands. PMAT-538 (v0.1.237) removed `checked_div_euclid` /
+/// `checked_rem_euclid` here — Euclidean division keeps a non-negative
+/// remainder, so it diverges too whenever the DIVISOR is negative.
 ///
 /// Comparisons and logical ops never overflow, so they remain infix.
 fn emit_binop(
