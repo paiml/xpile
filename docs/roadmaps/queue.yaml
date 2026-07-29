@@ -166,10 +166,11 @@ queue:
     narrative arcs including PMAT-1405''s own entry.
 
 
-    STANDING LEADS after this slice: (a) THURSDAY 07-30 TAG CUT -- `ruleset_drift` is the ONLY failing
-    suite and is OWNER-GATED (live org ruleset 13878864 requires only [gate]; the committed snapshot
-    records [gate, workspace-test]; re-deriving RATIFIES the weakening). NOTE `workspace-test` still
-    RUNS and is GREEN on main -- what was dropped is the merge-BLOCKING, not the check. (b) the OTHER
+    STANDING LEADS after this slice: (a) ❌ SUPERSEDED BY PMAT-1475 -- this lead said the Thursday tag
+    cut was blocked because `ruleset_drift` was OWNER-GATED on a dropped `workspace-test`. NOTHING WAS
+    DROPPED: it MOVED to ruleset 19814559 on 2026-07-27, both contexts still block, and the closing
+    sentence here ("what was dropped is the merge-BLOCKING, not the check") is exactly the false
+    inference. A1 IS UNBLOCKED; the suite is green at 331/3066/0. (b) the OTHER
     Kani harnesses (proved-property vs equation mismatch) -- strongest live lead but touches
     `crates/*/src` + `contracts/`, FROZEN until after the tag; PMAT-1469 is registered + branch-claimed
     with ZERO commits and a pruned worktree, so that claim is dead. (c) re-point PMAT-1459''s 70
@@ -335,6 +336,9 @@ queue:
     ** A1 STATUS, measured 2026-07-28: `cargo test --workspace --no-fail-fast` = 310 suites OK,
     ONE failing (ruleset_drift live-vs-snapshot). BLOCKED ON THE OWNER DECISION
     `ruleset-workspace-test-dropped` ALONE.
+    ** ❌ CORRECTED 2026-07-29 BY PMAT-1475: that owner decision was VOID -- the measurement was
+    right and the inference was wrong. `workspace-test` MOVED rulesets, it was never dropped, and
+    the failing suite was a FALSE RED in the gate. A1 is UNBLOCKED; workspace is 331/3066/0, exit 0.
     NEXT PICK: STANDING LEADS. (a) the sprint plan''s §5 CHANGELOG-story line still describes the
     0.1.617 arc ("101 commits / ~76 unique PMAT ids / 136+ files / +53,940 lines, in 8 arcs") -- a
     0.1.618 story has to be re-derived from `git log v0.1.617..HEAD` on Thursday, and nothing yet
