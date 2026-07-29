@@ -244,15 +244,31 @@ fn no_book_page_reintroduces_the_phantom_lanes() {
         );
     }
 
-    // The corpus is book/src PLUS README.md, deliberately. `README.md:123`
-    // advertised a "round-trip between LaTeX and mdBook" while `README.md:179`
-    // said "There is no mdBook contract frontend or backend" — one file
-    // contradicting itself, 56 lines apart — and the hero image's alt-text
-    // drew the same phantom. A gate scoped to `book/src` would have left all
-    // three, which is the file-not-class mistake this slice exists to stop
-    // repeating.
+    // The corpus is book/src PLUS README.md PLUS the rendered assets README
+    // embeds, deliberately. `README.md:123` advertised a "round-trip between
+    // LaTeX and mdBook" while `README.md:179` said "There is no mdBook contract
+    // frontend or backend" — one file contradicting itself, 56 lines apart —
+    // and the hero image's alt-text drew the same phantom. A gate scoped to
+    // `book/src` would have left all three, which is the file-not-class mistake
+    // this slice exists to stop repeating.
+    //
+    // PMAT-1464: and it repeated anyway, one level down. This walk collected
+    // `.md` ONLY, so `docs/assets/hero.svg` — the image README.md embeds on its
+    // FIRST line — was outside the corpus while drawing `C++` in its frontend
+    // column and `mdBook` on both sides of its proof lane, two of the four
+    // spellings on the phantom list above. The alt text was repaired here; the
+    // image it describes was not opened. A corpus of the FILES that mention a
+    // lane is not a corpus of the ARTIFACTS that present one.
     let mut corpus: Vec<PathBuf> = walk_md(&root.join("book/src"));
     corpus.push(root.join("README.md"));
+    corpus.extend(walk_ext(&root.join("docs/assets"), "svg"));
+    assert!(
+        corpus
+            .iter()
+            .any(|p| p.extension().is_some_and(|e| e == "svg")),
+        "the phantom corpus collected no .svg — `docs/assets` has moved and this walk is \
+         scanning nothing there (PMAT-1464). Point it at the new home; do not drop the arm."
+    );
 
     let mut offenders = Vec::new();
     let mut mentions = 0usize;
@@ -341,6 +357,13 @@ fn paragraphs(body: &str) -> Vec<(usize, String)> {
 }
 
 fn walk_md(dir: &Path) -> Vec<PathBuf> {
+    walk_ext(dir, "md")
+}
+
+/// PMAT-1464: the same walk over an arbitrary extension, so the phantom corpus
+/// can reach `docs/assets/*.svg` — an artifact that PRESENTS a lane without
+/// being a `.md` file that MENTIONS one.
+fn walk_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
         return out;
@@ -348,8 +371,8 @@ fn walk_md(dir: &Path) -> Vec<PathBuf> {
     for e in entries.filter_map(|e| e.ok()) {
         let p = e.path();
         if p.is_dir() {
-            out.extend(walk_md(&p));
-        } else if p.extension().and_then(|s| s.to_str()) == Some("md") {
+            out.extend(walk_ext(&p, ext));
+        } else if p.extension().and_then(|s| s.to_str()) == Some(ext) {
             out.push(p);
         }
     }
