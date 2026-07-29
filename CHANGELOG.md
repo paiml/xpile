@@ -7,6 +7,134 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The `//`/`%` lowering this project removed as incorrect in v0.1.237 was still published as the shipped lowering at 20 sites — including both Kani harnesses, which proved the property that *falsifies* the equation they discharge (PMAT-1468)
+
+PMAT-538 (v0.1.237) replaced `checked_div_euclid` / `checked_rem_euclid` in the
+Python `//` / `%` lowering with the **truncating** `checked_div` /
+`checked_rem` plus a floor correction. The reason is arithmetic: Euclidean
+division keeps a **non-negative** remainder, while Python's `%` takes the
+**divisor's** sign. Measured on this tree against `python3` and `rustc`, not
+quoted from anywhere:
+
+| expression | CPython | Euclidean | emitted |
+|---|---|---|---|
+| `7 % 3`    | `1`  | `1`  | `1`  |
+| `7 % -3`   | `-2` | `1`  | `-2` |
+| `-7 % 3`   | `2`  | `2`  | `2`  |
+| `-7 % -3`  | `-1` | `2`  | `-1` |
+| `7 // -2`  | `-4` | `-3` | `-4` |
+| `-7 // -2` | `3`  | `4`  | `3`  |
+
+The Euclidean form disagrees with CPython on half the sign combinations. The
+emitted form agrees on all of them.
+
+**Twenty live sites still named the Euclidean form as what xpile emits.**
+Among them:
+
+- `crates/xpile/examples/README.md` — the file `cargo package -p xpile`
+  **uploads to crates.io**, and which no README gate reads because it is not
+  the crate's `readme =` front page. Same unread-packaged-surface shape as
+  PMAT-1466, one file over.
+- `examples/03_python_to_ruchy.rs`, which **prints the claim on stdout**
+  directly above an emit that visibly contradicts it.
+- `book/src/reference/backends.md`'s "Rust backend — what's emitted".
+- `C-PY-INT-ARITH`'s own `invariants:` and `postconditions:` — two of which
+  **accused the emitter xpile actually ships** of diverging from CPython.
+- **Both Kani harnesses** for the two governing equations.
+
+**The harnesses are the sharpest of the twenty.** `modulo_floor_semantics`
+said *"Python `%` is FLOOR mod (sign matches divisor). Rust `rem_euclid`
+matches"* and then proved `a.rem_euclid(b) >= 0`, calling that "the
+load-bearing property". Those two sentences contradict each other — a value
+that is always `>= 0` cannot take the sign of a negative divisor — so the
+Symbolic-stratum evidence for the equation was a proof **of the property that
+falsifies it**, about a construct the emitter does not emit. A green harness is
+not a discharged equation; check what the harness is quantified over.
+
+Both harnesses now verify the lowering that ships, via the division-theorem
+characterisation (`a == q*b + r`, with `r` zero-or-divisor-signed and
+`|r| < |b|`) — which does not restate the correction formula, so it is not
+circular. `modulo_floor_semantics` additionally carries a **non-vacuity dual**
+proving `rem_euclid` *disagrees* on the negative-divisor sub-domain. Folded
+into the existing harness rather than added as a ninth `#[kani::proof]`, so the
+corpus-wide 95-harness count PMAT-1455 gates is untouched. Discharge verified
+by running `cargo kani` (`XPILE_REQUIRE_KANI=1`), not asserted.
+
+**Aged, not never-true — and that is why it survived.** Every one of the 20 was
+true when written. PMAT-538 changed the emitter and swept the three comment
+blocks *nearest the code it edited*; those three are the only sites that cited
+it. Prose at a distance from a fix is not swept by the fix, and an aged claim
+has no tell — nothing about the sentence looks wrong.
+
+**The refutation was already in the repo, running.** `transpile_e2e.rs` has
+asserted `!rust.contains("rem_euclid")` since PMAT-538. A test *proving the
+claim false* ran on every CI cycle beside twenty sites making it — including
+two doc comments in the same file as the assertion.
+
+New gate `XPILE-EUCLIDCLAIM-001`
+(`crates/xpile/tests/euclid_lowering_claim_witness.rs`), eight tests in three
+arms:
+
+1. **Behaviour** — runs the emitter on both the Rust and Ruchy lanes and
+   re-derives that no Euclidean op is emitted, with a *positive* half
+   (`checked_div` / `checked_rem` and the correction shape must be present) so
+   a refusal cannot satisfy it vacuously. The prose ban is therefore a derived
+   fact: a legitimate future restoration reds this arm **first**, and the rule
+   gets re-decided rather than silently enforced against the truth.
+2. **Semantic** — the four sign combinations against pinned CPython values,
+   asserting the Euclidean form disagrees on exactly the two negative-divisor
+   rows. The gate carries the *reason*, not only the rule.
+3. **Prose** — no live site may name the Euclidean form as the `//` / `%`
+   lowering unless its own block cites `PMAT-538`.
+
+**A positive marker, not a negation screen.** The book's published sentence was
+`` `//` → `checked_div_euclid` (Python-floor, **not** C-truncating) `` — an
+offender containing the word "not". Any denial heuristic reads it as honest.
+Requiring a machine-checked citation of the retiring slice inverts the burden
+and cannot be satisfied by accident.
+
+**Scope is the block — both alternatives measured wrong first, and both red
+halves run.** Line scoping fabricates **26 false positives** against correct
+prose, including the book's own counterexample line. Paragraph scoping (a
+contiguous non-blank run) **launders**: Rust has no blank line between a doc
+comment and the body, so `rust-codegen`'s false claim atop `emit_binop` was
+excused by a `// PMAT-538:` comment *forty lines below* inside the function —
+measured at its real size, 2 of the 20, not overstated.
+
+**`#` is a heading in Markdown and a comment in YAML.** Conflating them split
+every YAML comment block into single lines and accused **three of this slice's
+own repairs**. Found by running the scan against the *repaired* tree, not only
+against the broken one.
+
+**The subject anchor is load-bearing, and measured.** Disabling it yields
+**18 false positives**, including `round(x, -n)`'s banker's-rounding helper —
+which genuinely emits `rem_euclid` on a *positive* i128 scale where Euclidean
+and floor coincide, a correct live use — and an assertion message in
+`rust-codegen` that literally reads "must not use div_euclid". This is why the
+gate requires a Python `//` / `%` anchor in the clause and does **not** ban the
+token.
+
+Red halves, all four run with the perturbation asserted applied and the
+offender *list* read rather than only the exit status: revert all 20 repairs →
+exactly 20 reported, correct `file:line`, no false positives and no misses.
+First slice since PMAT-1464 to lose no guard to its own red half; each is
+pinned by a control that passes on the live corpus (41 correctly-cited
+in-subject clauses).
+
+Out of subject, deliberately: `CHANGELOG.md` and `docs/roadmaps/` (the ledger
+must quote the retired claim); `round()`'s correct live use; and whether each
+repaired sentence is now the *best* description of the emit, which is a
+judgement no gate can make. This one checks the decidable half — that no
+sentence names a construct the emitter provably does not emit.
+
+Also fixed in passing, in the same packaged file: `examples/README.md` still
+described the Lean lane's citation as an `@[xpile_contract "..."]` **attribute**.
+PMAT-1405 retired that for a `/-- xpile-contract: ... -/` docstring on
+2026-07-27 and swept five other files; the example's own runtime output already
+says "docstring", so the table contradicted the binary it documents. Repaired,
+not gated — the attribute remains correct for the contract-rendering lane, so a
+ban would need a different needle than the one measured here.
+
 ### The flagship crate's registry front page was a v0.0.1 "name reservation" stub with one commit ever, and the gated 647-commit product page was published on a bigint helper instead (PMAT-1466)
 
 `cargo publish` renders exactly **one** file per crate as the body of its

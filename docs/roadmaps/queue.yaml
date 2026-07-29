@@ -4254,6 +4254,68 @@ queue:
     contracts/*.yaml or any gate. Before the freeze, keep hunting in the docs/claims lane. NEXT PICK:
     another honesty hunt (the `keywords`/`categories` crates.io facets are the same unread-surface
     shape and are still ungated), or PMAT-1373 on 2026-07-30.'
+- id: PMAT-1468
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-29'
+  title: the `//`/`%` lowering this project REMOVED as incorrect in v0.1.237 was still published as the
+    shipped lowering at 20 sites, including BOTH Kani harnesses — which proved the property that
+    FALSIFIES the equation they discharge
+  notes: 'SHIPPED 2026-07-29 from an honesty hunt (ranked queue exhausted until Thu 07-30). PMAT-538
+    (v0.1.237) replaced `checked_div_euclid` / `checked_rem_euclid` in the Python `//`/`%` lowering with
+    truncating `checked_div` / `checked_rem` plus a floor correction, because Euclidean division keeps a
+    NON-NEGATIVE remainder while Python''s `%` takes the DIVISOR''s sign. Measured on this tree against
+    python3 and rustc: they disagree on 2 of the 4 sign combinations (`7 % -3` is -2 in CPython, 1 under
+    `rem_euclid`); the emitted form agrees on 4 of 4. TWENTY live sites still named the retired form as
+    what xpile emits — including the `examples/README.md` that `cargo package -p xpile` UPLOADS TO
+    CRATES.IO (PMAT-1466''s unread-packaged-surface shape, one file over), the example BINARY that prints
+    it on stdout above a contradicting emit, the published book, and C-PY-INT-ARITH''s own `invariants:`
+    and `postconditions:` — two of which ACCUSED the emitter xpile ships of diverging from CPython.
+
+
+    ** THE HARNESSES ARE THE FINDING. `modulo_floor_semantics` said "Python `%` is FLOOR mod (sign matches
+    divisor). Rust `rem_euclid` matches" and proved `a.rem_euclid(b) >= 0`, calling that "the load-bearing
+    property". The two sentences contradict each other, and the proved property is the one that FALSIFIES
+    the equation — Symbolic-stratum evidence about a construct the emitter does not emit. Both harnesses
+    now verify the shipped lowering (division-theorem characterisation, non-circular) plus a NON-VACUITY
+    DUAL proving rem_euclid disagrees on the negative-divisor sub-domain. `cargo kani` VERIFIED. This is
+    a concrete, named instance of the `proof-lane-load-bearing-or-decorative` backlog item below: the
+    harness verified a hand-written re-implementation, and the re-implementation was of the WRONG
+    FUNCTION. That item should cite this slice.
+
+
+    ** AGED, NOT NEVER-TRUE — all 20 were true when written; PMAT-538 swept only the three comment blocks
+    NEAREST the code it edited. An aged claim has no tell. ** THE REFUTATION WAS ALREADY IN THE REPO:
+    transpile_e2e.rs has asserted `!rust.contains("rem_euclid")` since PMAT-538, running on every CI cycle
+    beside two doc comments in the SAME FILE making the claim.
+
+
+    NEW GATE XPILE-EUCLIDCLAIM-001 (8 tests): BEHAVIOUR (run the emitter, both lanes, positive half so a
+    refusal cannot pass vacuously — the ban is a DERIVED fact) + SEMANTIC (four sign combinations vs
+    pinned CPython, so the gate carries the REASON) + PROSE (block-scoped, positive PMAT-538 marker).
+    ** A POSITIVE MARKER, NOT A NEGATION SCREEN: the book''s offender was "`//` -> `checked_div_euclid`
+    (Python-floor, NOT C-truncating)" — it contains "not". ** SCOPE IS THE BLOCK; both alternatives
+    measured wrong first and both red halves run: LINE scoping = 26 false positives, PARAGRAPH scoping
+    LAUNDERS 2 of 20 (Rust has no blank line between a doc comment and the body). ** `#` IS A HEADING IN
+    MARKDOWN AND A COMMENT IN YAML — conflating them accused 3 of this slice''s OWN repairs. ** THE
+    SUBJECT ANCHOR IS LOAD-BEARING: disabling it yields 18 FPs including `round(x,-n)`''s CORRECT live
+    `rem_euclid` and an assertion reading "must not use div_euclid".
+
+
+    Red halves all RUN with the perturbation asserted applied and the offender LIST read: revert 20
+    repairs -> exactly 20, correct file:line, no FPs and no misses. FIRST SLICE SINCE PMAT-1464 TO LOSE
+    NO GUARD. Full ledger in docs/roadmaps/roadmap.yaml under PMAT-1468.
+
+
+    ** NOTE FOR THE NEXT FIRE: NEXT FREE ID IS PMAT-1469 — 1467 was claimed by a concurrent worktree
+    branch (`fix/sprint-plan-release-section-1467`), unpushed but VISIBLE locally; check `git worktree
+    list` as well as remote branches before taking an id. The ranked queue stays EXHAUSTED until
+    2026-07-30. Wed 2026-07-29 18:00 is the HARD FREEZE — after it, no merge may touch crates/*/src,
+    contracts/*.yaml or any gate. NEXT PICK: another honesty hunt before the freeze — the strongest
+    unmeasured leads are (a) THE OTHER KANI HARNESSES, since this slice found two whose proved property
+    did not match their equation and that class was never swept, and (b) `contracts/lean-models/README.md`,
+    the remaining packaged file with zero readers — or PMAT-1373 on 2026-07-30.'
 - id: PMAT-1373
   status: open
   ev_rank: R1

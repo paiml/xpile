@@ -261,7 +261,11 @@ fn line_kind(line: &str, markdown: bool) -> Kind {
     } else if t.starts_with("//") {
         Kind::Comment
     } else if t.starts_with('#') {
-        if markdown { Kind::Item } else { Kind::Comment }
+        if markdown {
+            Kind::Item
+        } else {
+            Kind::Comment
+        }
     } else if t.starts_with("- ") || t.starts_with("* ") || t.starts_with('|') {
         Kind::Item
     } else {
@@ -511,7 +515,10 @@ fn the_needle_ignores_a_euclid_mention_with_no_python_operator_anchor() {
 fn the_marker_is_read_from_the_block_and_not_from_the_file_or_the_paragraph() {
     // (a) LINE scoping would fabricate an offender here: the citation is one
     //     line above, inside the same wrapped doc comment.
-    let wrapped = ["/// PMAT-538: the emitter does not use", "/// `rem_euclid` for `%`."];
+    let wrapped = [
+        "/// PMAT-538: the emitter does not use",
+        "/// `rem_euclid` for `%`.",
+    ];
     assert!(
         block_at(&wrapped, 1, false).contains(MARKER),
         "{ENFORCEMENT}: a wrapped comment block must carry its own citation"
@@ -533,7 +540,11 @@ fn the_marker_is_read_from_the_block_and_not_from_the_file_or_the_paragraph() {
     );
 
     // (c) Same file, different block, is not a citation either.
-    let elsewhere = ["# PMAT-538 is discussed here.", "", "- \"`%` uses rem_euclid\""];
+    let elsewhere = [
+        "# PMAT-538 is discussed here.",
+        "",
+        "- \"`%` uses rem_euclid\"",
+    ];
     assert!(
         !block_at(&elsewhere, 2, false).contains(MARKER),
         "{ENFORCEMENT}: a marker elsewhere in the file must not launder a claim"
