@@ -34,6 +34,8 @@ metadata:
     set.
 
     Layer 2 of the xpile contract taxonomy (translation).
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference §6.11 (Boolean operations — `and`/`or` short-circuit; `not`)"
     - "Rust Reference: lazy boolean operators `&&` / `||` (short-circuiting), unary `!`"

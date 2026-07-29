@@ -29,6 +29,8 @@ metadata:
     already cited str via its inner type, but the Option mapping itself did not).
 
     Layer 2 of the xpile contract taxonomy (translation).
+  xpile:
+    layer: translation
   references:
     - "Python typing: Optional[T] == Union[T, None]; None is a singleton"
     - "Rust std: Option<T> (Some / None)"

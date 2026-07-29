@@ -28,6 +28,8 @@ metadata:
     uncontracted core construct (class translation shipped uncited).
 
     Layer 2 of the xpile contract taxonomy (translation).
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference §3.3 (Special method names) / dataclasses"
     - contracts/xlate-py-list-to-vec-v1.yaml

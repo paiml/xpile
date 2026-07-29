@@ -15,6 +15,8 @@ metadata:
     Layer 4 of the xpile contract taxonomy (hybrid pipeline). This
     contract's existence justifies the entire xpile monorepo — it is
     impossible to discharge with depyler or decy alone.
+  xpile:
+    layer: hybrid
   references:
     - "PEP 7 / PEP 384 (CPython C API stability)"
     - "Python/C API Reference Manual: Reference counting"

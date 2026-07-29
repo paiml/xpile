@@ -28,6 +28,8 @@ metadata:
     depth-1 under the R6-grandfathered Diamond gate (PMAT-475a).
 
     Layer 3 of the xpile contract taxonomy (semantic / effect).
+  xpile:
+    layer: architectural
   references:
     - "Python Language Reference: `open()` built-in (modes 'r'/'w'/'a'); str.read/write"
     - "Rust std::fs::read_to_string / std::fs::write / std::fs::OpenOptions"

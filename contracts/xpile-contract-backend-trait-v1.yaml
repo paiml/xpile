@@ -20,6 +20,8 @@ metadata:
     theorem rendered from a contract must be wrapped in a namespace
     whose path encodes the contract ID, making theorem ↔ contract
     regex-recoverable in either direction.
+  xpile:
+    layer: architectural
   references:
     - docs/specifications/sub/contract-backend-trait.md
     - docs/specifications/sub/contract-taxonomy.md

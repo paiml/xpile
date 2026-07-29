@@ -19,6 +19,8 @@ metadata:
     UNCITED. `Function::applicable_contracts()` now cites
     `C-XLATE-PY-SET-TO-HASHSET` whenever a set is in play. Joins at depth-1 under
     the R6-grandfathered Diamond gate (PMAT-475a); set-algebra tiers ratchet later.
+  xpile:
+    layer: translation
   references:
     - "CPython: set is an unordered hash collection of distinct hashable elements"
     - "Rust std: std::collections::HashSet<T>"

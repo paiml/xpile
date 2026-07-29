@@ -25,6 +25,8 @@ metadata:
     (`(i64, i64)` shipped with no citation).
 
     Layer 2 of the xpile contract taxonomy (translation).
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference §3.3.7 (Sequence types — tuple is an immutable fixed-arity sequence)"
     - "contracts/xlate-py-list-to-vec-v1.yaml (sibling sequence-translation contract)"

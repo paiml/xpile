@@ -53,6 +53,8 @@ metadata:
     differential subprocess oracle (`shell_diff_exec`) reports a
     divergence and the emit is unsound. Tracked under the Shell-frontend
     producer epic.
+  xpile:
+    layer: hybrid
   references:
     - docs/specifications/sub/hybrid-transpile-flow.md
     - docs/specifications/sub/sprint-10day-2026-06-23.md

@@ -49,6 +49,8 @@ metadata:
     an explicit non-idempotent operation marker (e.g., `mkfifo` is
     by spec non-idempotent), the contract is violated and the emit
     is unsound. Tracked as future ticket `XPILE-FALSIFY-BASHRS-IDEMP`.
+  xpile:
+    layer: semantics
   references:
     - docs/specifications/sub/bashrs-merger.md
     - "POSIX 1003.1-2017 Shell & Utilities (§2.7 Redirection, §2.10 Shell Grammar)"
@@ -302,9 +304,12 @@ equations:
 
   outcome_struct_extensionality_diamond:
     # PMAT-329: FOURTH Diamond on this contract — BROADENS DEPTH-4
-    # ACROSS LAYERS from 3 contracts (L1 PyIntArith + L4 FFI +
-    # L5 CompileRustToPtxMma) to 4 contracts on 4 distinct layers
-    # (adding L2 Bashrs). OutcomeSilver STRUCTURE EXTENSIONALITY:
+    # from 3 contracts (L1 PyIntArith + L4 FFI +
+    # L5 CompileRustToPtxMma) to 4 contracts
+    # (adding L1 Bashrs — PMAT-1461: this contract declares Layer 1,
+    # so it added a fourth CONTRACT but no new layer; the "4 distinct
+    # layers" this record claimed never followed from it).
+    # OutcomeSilver STRUCTURE EXTENSIONALITY:
     # the record type is field-extensional with decidable equality.
     # Categorically orthogonal to all 3 prior on this contract.
     # Mirror of PMAT-311 SUBTYPE EXTENSIONALITY on BoundedSmem.
@@ -331,9 +336,11 @@ equations:
       - "Diamond depth-4 ACROSS LAYERS broadened: 4 contracts on 4 distinct layers"
 
   outcome_observable_length_nat_diamond:
-    # PMAT-346: FIFTH Diamond on this contract — BROADENS DEPTH-5
-    # from 3 to 4 layers. Pushes Bashrs (Layer 2) from depth-4 to
-    # depth-5, adding Layer 2 to depth-5+ coverage. OutcomeSilver
+    # PMAT-346: FIFTH Diamond on this contract. Pushes Bashrs
+    # (Layer 1) from depth-4 to depth-5. PMAT-1461: the "3 to 4
+    # layers" and "adding Layer 2 to depth-5+ coverage" clauses this
+    # record carried assumed Bashrs was Layer 2; it declares Layer 1
+    # and PyIntArith already covered L1 at that depth. OutcomeSilver
     # observable String.length Nat structure.
     lean_theorem: "XpileContracts.CBashrsPosixIdempotence.outcome_observable_length_nat_diamond"
     lean_file: "contracts/lean/Bashrs.lean"
@@ -354,12 +361,13 @@ equations:
       - "Diamond depth-5 broadened: 4 contracts on 4 distinct layers"
 
   outcome_exit_code_int_sign_diamond:
-    # PMAT-357: SIXTH Diamond on this contract — BROADENS DEPTH-6
-    # from 3 to 4 LAYERS. After PMAT-356 opened depth-6 on Layer 4
-    # (FFI-CPYTHON-EXT) — making depth-6 ACROSS 3 LAYERS
-    # (L1+L4+L5) — PMAT-357 pushes Bashrs (Layer 2) from depth-5 to
-    # depth-6. Depth-6 now spans 4 of 5 taxonomy layers
-    # (L1+L2+L4+L5; only L3 remains at depth-5). OutcomeSilver
+    # PMAT-357: SIXTH Diamond on this contract. After PMAT-356
+    # opened depth-6 on Layer 4 (FFI-CPYTHON-EXT) — making depth-6
+    # ACROSS 3 LAYERS (L1+L4+L5) — PMAT-357 pushes Bashrs (Layer 1)
+    # from depth-5 to depth-6. PMAT-1461: Bashrs declares Layer 1,
+    # so this did NOT broaden depth-6 to a fourth layer and the
+    # "4 of 5 taxonomy layers" tally this record published did not
+    # follow from it. OutcomeSilver
     # exit_code Int sign structure — cross-substrate parallel with
     # PMAT-328 (refcount_delta sign decomp on FFI-CPYTHON-EXT).
     lean_theorem: "XpileContracts.CBashrsPosixIdempotence.outcome_exit_code_int_sign_diamond"
@@ -387,8 +395,9 @@ equations:
 
   outcome_struct_extensionality_bronze_diamond:
     # PMAT-368: SEVENTH Diamond on this contract — BROADENS DEPTH-7
-    # substrate-wide. Pushes Bashrs (Layer 2) from depth-6 to depth-7
-    # as the second L2/non-L1-L5 contract at depth-7+. OUTCOME
+    # substrate-wide. Pushes Bashrs (Layer 1) from depth-6 to depth-7
+    # (PMAT-1461: Layer 1, not the "second L2" this record claimed).
+    # OUTCOME
     # (Bronze) STRUCTURE EXTENSIONALITY: the single-field Outcome
     # Bronze record (observable : String) is field-extensional with
     # decidable equality. Twenty-second substrate-wide demonstration
@@ -417,7 +426,7 @@ equations:
 
   outcome_observable_length_bronze_nat_diamond:
     # PMAT-379: EIGHTH Diamond on this contract — BROADENS DEPTH-8
-    # substrate-wide. Pushes Bashrs (Layer 2) from depth-7 to depth-8.
+    # substrate-wide. Pushes Bashrs (Layer 1) from depth-7 to depth-8.
     # OUTCOME (Bronze) OBSERVABLE STRING.LENGTH NAT STRUCTURE: Nat
     # measure on the Bronze Outcome.observable field, distinct from
     # PMAT-346 (Silver-tier String.length on OutcomeSilver.observable).
@@ -441,7 +450,7 @@ equations:
 
   successful_outcome_subtype_extensionality_diamond:
     # PMAT-390: NINTH Diamond on this contract — BROADENS DEPTH-9
-    # substrate-wide. Pushes Bashrs (Layer 2) from depth-8 to depth-9.
+    # substrate-wide. Pushes Bashrs (Layer 1) from depth-8 to depth-9.
     # SUCCESSFUL-OUTCOME SUBTYPE EXTENSIONALITY: the Gold-tier
     # SuccessfulOutcome := { o : OutcomeSilver // o.exit_code = 0 }
     # admits subtype extensionality. SECOND substrate-wide
@@ -470,8 +479,9 @@ equations:
 
   silver_to_bronze_projection_diamond:
     # PMAT-401: TENTH Diamond on this contract — BROADENS DEPTH-10
-    # substrate-wide. Pushes Bashrs (Layer 2) from depth-9 to depth-10.
-    # Second L2 contract at depth-10 in the broadening wave (after
+    # substrate-wide. Pushes Bashrs (Layer 1) from depth-9 to depth-10
+    # (PMAT-1461: Layer 1, not the "Second L2 contract at depth-10"
+    # this record claimed) in the broadening wave (after
     # PMAT-400 FfiCpythonExt opening L4).
     # SILVER→BRONZE TIER PROJECTION: define the canonical forgetful
     # map silver_to_bronze : OutcomeSilver → Outcome that projects out
@@ -504,8 +514,9 @@ equations:
 
   empty_success_outcome_canonical_diamond:
     # PMAT-412: ELEVENTH Diamond on this contract — BROADENS DEPTH-11
-    # substrate-wide. Pushes Bashrs (Layer 2) from depth-10 to depth-11.
-    # Second L2 contract at depth-11.
+    # substrate-wide. Pushes Bashrs (Layer 1) from depth-10 to depth-11.
+    # PMAT-1461: Layer 1, not the "Second L2 contract at depth-11"
+    # this record claimed.
     # CANONICAL EMPTY-SUCCESS OutcomeSilver: define the canonical
     # OutcomeSilver element with empty observable and zero exit_code
     # — the POSIX-shell empty success trace.
@@ -532,8 +543,9 @@ equations:
 
   bronze_to_silver_lift_diamond:
     # PMAT-423: TWELFTH Diamond on this contract — BROADENS DEPTH-12
-    # substrate-wide. Pushes Bashrs (Layer 2) from depth-11 to depth-12.
-    # Second L2 contract at depth-12 in the broadening wave.
+    # substrate-wide. Pushes Bashrs (Layer 1) from depth-11 to depth-12.
+    # PMAT-1461: Layer 1, not the "Second L2 contract at depth-12"
+    # this record claimed.
     # BRONZE→SILVER LIFT on Outcome: define the canonical lift
     # bronze_to_silver : Outcome → OutcomeSilver that preserves
     # observable and sets default exit_code to 0 (success path).

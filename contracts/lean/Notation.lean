@@ -1509,7 +1509,7 @@ theorem lean_theorem_env_struct_extensionality_diamond
   depth-8 to depth-9. **COMPLETES
   DEPTH-9 UNIVERSAL ACROSS ALL 12 CONTRACTS** alongside PMAT-296
   (PyIntArith L1), PMAT-297 (CompileRustToPtxMma L5), PMAT-389
-  (FfiCpythonExt L4), PMAT-390 (Bashrs L2), PMAT-391
+  (FfiCpythonExt L4), PMAT-390 (Bashrs L1), PMAT-391
   (ContractFrontendTrait L3), PMAT-392 (BackendTrait L3),
   PMAT-393 (FrontendTrait L3), PMAT-394 (ContractBackendTrait L3),
   PMAT-395 (PyListToVec L2), PMAT-396 (XlateLeanToRust L2), and
@@ -1541,7 +1541,7 @@ theorem non_empty_definition_subtype_extensionality_diamond
   (Tier-projection homomorphism)**. **COMPLETES DEPTH-10
   UNIVERSAL ACROSS ALL 12 CONTRACTS** alongside PMAT-300
   (PyIntArith L1), PMAT-301 (CompileRustToPtxMma L5), PMAT-400
-  (FfiCpythonExt L4), PMAT-401 (Bashrs L2), PMAT-402 (BackendTrait
+  (FfiCpythonExt L4), PMAT-401 (Bashrs L1), PMAT-402 (BackendTrait
   L3), PMAT-403 (FrontendTrait L3), PMAT-404 (ContractFrontendTrait
   L3), PMAT-405 (ContractBackendTrait L3), PMAT-406 (PyListToVec
   L2), PMAT-407 (XlateLeanToRust L2), and PMAT-408

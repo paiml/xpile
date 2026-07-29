@@ -7,6 +7,82 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+### The gate that decided contract layers could not see 26 of the 35 contracts, and the 18 sites it could not see filed a Layer-1 contract under Layer 2 (PMAT-1461)
+
+PMAT-1460 built `XPILE-LAYERLABEL-001` to decide one thing: no text under
+`contracts/` may file a contract under a layer other than the one it declares.
+It reached **9 of 35** contracts, because the other 26 carried no
+`metadata.xpile.layer` tag — and an untagged contract is not merely
+undecided, it is **absent from the subject entirely**. That gate left a
+deliberate `panic!` to fire the moment the partition completed. This is that
+completion.
+
+**The 26 tags were a transcription, not 26 judgement calls.** Every one of the
+35 contracts already states its layer in its own `metadata.description`
+("Layer N of the xpile contract taxonomy"). The extraction rule was validated
+on the half where the answer was already machine-readable: **9 of 9** tagged
+contracts' prose agrees with their tag, zero disagreements. A second,
+independent signal corroborates it — 30 of 35 declarations carry a
+parenthetical naming the layer, and every one agrees with its number.
+
+**Completing the partition exposed 18 sites**, all one defect:
+`C-BASHRS-POSIX-IDEMPOTENCE` declares **Layer 1** — twice in its own
+description, and its "Layer 2" sentence explicitly describes a *future partner*
+contract — and is written **Layer 2** at 18 sites across
+`bashrs-posix-idempotence-v1.yaml`, `xpile-frontend-trait-v1.yaml`,
+`lean/Bashrs.lean`, `lean/Notation.lean` and `lean/XpileFrontendTrait.lean`.
+
+⭐ **A disclosed blind spot that was actually a MISREAD.** PMAT-1460 disclosed
+the layer-*before*-name order as a shape the needle "cannot see", and filed it
+as a hole. Tagging the other 26 contracts proved that diagnosis wrong. The
+substrate's across-layers headline is carried by an *enumeration*, and in an
+enumeration every label precedes its name:
+
+```text
+(L1 PyIntArith + L4 FfiCpythonExt + L5 CompileRustToPtxMma)
+```
+
+A one-directional needle does not merely miss those. It skips each correct
+label and reads **the next list item's**, so it *accuses correct prose* — **9**
+false reports on this corpus, every one against a site that is CORRECT,
+invisible only because all three contracts in that enumeration were untagged. A blind spot is silent; this one was not. The
+needle now reads the before-name position and a label bound to the left wins,
+which is what list syntax means. The backward gap may cross ` `, `-` and `(`
+but **not** `)` or `,` — the first cut of it crossed a closing bracket and
+reported `PyIntArith (L1), CompileRustToPtxMma` as PtxMma-written-Layer-1,
+stealing the previous item's correct label.
+
+⭐ **The milestone that never happened.** The mislabel was load-bearing on the
+substrate's headline claim. `xpile-frontend-trait-v1.yaml` and
+`lean/XpileFrontendTrait.lean` both record PMAT-358 as **"COMPLETES DEPTH-6
+ACROSS ALL 5 TAXONOMY LAYERS"**, reached because "PMAT-357 broadened it to
+Layer 2 (Bashrs)". Bashrs is Layer 1. The contracts those sentences enumerate
+cover L1+L3+L4+L5 — **four** layers — and Layer 2 was absent from depth-6.
+Nine further records tally breadth off the same wrong label: "4 contracts on 4
+distinct layers", "Depth-6 now spans 4 of 5 taxonomy layers", "the second L2
+contract at depth-10/11/12".
+
+**Measured, and reported as measured.** Depth-6 *does* span all five layers on
+the live substrate — the Layer-2 contracts reached it later, not at PMAT-358.
+So each repaired record states what happened and what did not follow from it,
+rather than deleting the history or restating a number this slice did not gate.
+
+**Not a defect class, and said so.** The substrate's **91** `ALL 5 LAYERS`
+milestone sentences were measured against live ground truth: depth-1 through
+depth-13 each span all five layers. They are TRUE, so they were left alone —
+freezing today's spread into an assertion would re-create the stale-snapshot
+problem this arc exists to remove.
+
+**The gate.** Reach is no longer a disclosure to print, it is an invariant to
+hold: a contract shipping without a layer tag now reds, because invisibility is
+precisely what hid these 18 sites. Four new tests, each priced by perturbation
+— removing the before-name reader restores 9 false accusations and drops 3 real
+sites; letting the backward gap cross `)` restores the stolen-label false
+positive; untagging one contract reds the partition. The one guard that went
+stale (`the_needle_cannot_see_a_layer_written_before_the_name`) was rewritten
+to the narrower claim that survives re-measurement, not left asserting a hole
+that had been closed.
+
 ### Three contracts declare `layer: translation` in machine-readable metadata and were filed under Layer 5 at 46 sites — one of them under three different layers (PMAT-1460)
 
 Every contract may carry a `metadata.xpile.layer` tag, and

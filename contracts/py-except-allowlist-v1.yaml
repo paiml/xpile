@@ -39,6 +39,8 @@ metadata:
     gate (PMAT-475a).
 
     Layer 3 of the xpile contract taxonomy (semantic / control-flow).
+  xpile:
+    layer: architectural
   references:
     - "Python Language Reference §8.4 (The try statement — except-clause type matching; the implicit re-raise when no clause matches)"
     - "Rust std::panic::catch_unwind / resume_unwind (the emit-lane panic model)"

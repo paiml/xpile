@@ -417,6 +417,86 @@ fn layer_token_after(cs: &[char], mut i: usize) -> Option<u32> {
     cs[start..j].iter().collect::<String>().parse().ok()
 }
 
+/// Read a layer token written immediately BEFORE the name — `L1 PyIntArith`,
+/// `Layer 4 FfiCpythonExt` — ending at `cs[end]` (exclusive).
+///
+/// PMAT-1460 disclosed the before-the-name spelling as a hole the gate "cannot
+/// see". Once PMAT-1461 tagged the remaining 26 contracts it turned out not to
+/// be blindness but MISREADING, and only in the shape that carries the
+/// substrate's across-layers headline — the enumeration:
+///
+/// ```text
+/// (L1 PyIntArith + L4 FfiCpythonExt + L5 CompileRustToPtxMma)
+/// ```
+///
+/// Every label here is correct and every one is written before its name, so
+/// [`layer_token_after`] skips the right token and reads the NEXT list item's,
+/// reporting `PyIntArith … Layer 4` and `FfiCpythonExt … Layer 5`. That is
+/// worse than a miss: a blind spot stays silent, this one accuses correct
+/// prose. It stayed invisible while the three contracts in the enumeration
+/// were untagged, because an untagged contract is not in the subject at all.
+///
+/// A label bound before the name wins over one bound after it, which is what
+/// list syntax means: in `L1 PyIntArith + L4 Ffi`, `L4` belongs to `Ffi`.
+fn layer_token_before(cs: &[char], end: usize) -> Option<u32> {
+    // Walk back over at most MAX_GAP separators (`L1 `, `Layer 4 `, `L2 (`).
+    //
+    // Only a space, a hyphen or an OPENING paren may be crossed. A closing
+    // paren or a comma means the token was already bound to something else,
+    // and crossing one is how the first cut of this reader reported
+    // `PyIntArith (L1), CompileRustToPtxMma` as PtxMma-written-Layer-1: the
+    // `(L1)` is PyIntArith's, correctly placed after its own name. `(` must
+    // still be crossable, or `broadened it to Layer 2 (Bashrs)` — a REAL
+    // mislabel, live at four sites — reads as nothing.
+    let mut i = end;
+    let mut gap = 0usize;
+    while i > 0 && !cs[i - 1].is_alphanumeric() {
+        if gap == MAX_GAP || !matches!(cs[i - 1], ' ' | '-' | '(') {
+            return None;
+        }
+        gap += 1;
+        i -= 1;
+    }
+    // A separator is REQUIRED: `L1PyIntArith` is not an attribution.
+    if gap == 0 || i == 0 {
+        return None;
+    }
+    // The digit run.
+    let hi = i;
+    while i > 0 && cs[i - 1].is_ascii_digit() {
+        i -= 1;
+    }
+    if i == hi {
+        return None;
+    }
+    let n: u32 = cs[i..hi].iter().collect::<String>().parse().ok()?;
+    // `L` <digits>, or `Layer` [sep] <digits>.
+    if i == 0 {
+        return None;
+    }
+    let mut k = i;
+    if cs[k - 1] == '-' || cs[k - 1] == ' ' {
+        k -= 1;
+    }
+    if k == 0 {
+        return None;
+    }
+    if cs[k - 1] == 'L' {
+        // Word boundary before the `L`, or `XL5` reads as a layer.
+        if k >= 2 && cs[k - 2].is_alphanumeric() {
+            return None;
+        }
+        return Some(n);
+    }
+    if k >= 5 {
+        let w: String = cs[k - 5..k].iter().collect();
+        if w.eq_ignore_ascii_case("layer") && !(k >= 6 && cs[k - 6].is_alphanumeric()) {
+            return Some(n);
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Attribution {
     id: String,
@@ -450,7 +530,11 @@ fn attributions_in(run: &Run, who: &[Declared]) -> Vec<Attribution> {
                 if i > 0 && (cs[i - 1].is_alphanumeric() || cs[i - 1] == '-') {
                     continue;
                 }
-                if let Some(written) = layer_token_after(&cs, i + nlen) {
+                // A label bound BEFORE the name wins: in `L1 PyIntArith + L4
+                // Ffi`, `L4` is Ffi's, not PyIntArith's.
+                let written =
+                    layer_token_before(&cs, i).or_else(|| layer_token_after(&cs, i + nlen));
+                if let Some(written) = written {
                     out.push(Attribution {
                         id: d.id.clone(),
                         declared: d.layer,
@@ -542,24 +626,107 @@ fn the_gate_reports_how_much_of_the_substrate_it_can_reach() {
         total,
         "every contract is either tagged or untagged"
     );
-    // The reach is a measurement, not a target: this prints on failure of the
-    // partition-complete branch below, which is the state we WANT to reach.
-    if untagged.is_empty() {
-        // Partition complete — the 127 layer-scoped tallies PMAT-1460 could not
-        // decide ("the second L2 contract at depth-10") become checkable, and
-        // this gate should grow a numeric arm for them.
-        panic!(
-            "all {total} contracts now declare `metadata.xpile.layer`. The layer \
-             partition is complete, so the layer-scoped depth tallies under \
-             `contracts/` are now decidable — extend this gate rather than \
-             deleting this branch (PMAT-1460 standing lead)."
-        );
-    }
-    eprintln!(
-        "XPILE-LAYERLABEL-001 reach: {tagged} of {total} contracts declare a layer; \
-         {} do not and are outside this gate's subject: {untagged:?}",
+    // PMAT-1460 left a `panic!` here to fire the moment the partition became
+    // complete, so the event could not pass unnoticed. PMAT-1461 completed it
+    // (all 26 remaining contracts tagged) and this is the extension that
+    // branch asked for: reach is no longer a disclosure to print, it is an
+    // INVARIANT to hold. An untagged contract is not merely outside the
+    // subject — it is INVISIBLE to
+    // `no_contract_is_attributed_to_a_layer_other_than_its_declared_one`, and
+    // that invisibility is exactly what hid the 18 sites calling the Layer-1
+    // C-BASHRS-POSIX-IDEMPOTENCE "Layer 2" for months. A new contract that
+    // ships without a layer tag re-opens that hole silently, so it reds here.
+    assert!(
+        untagged.is_empty(),
+        "{} of {total} contract(s) declare no `metadata.xpile.layer`, so this \
+         gate cannot decide how the substrate files them and every layer \
+         attribution naming one is unchecked: {untagged:?}\n\
+         Add `metadata.xpile.{{layer}}` — every contract already states its \
+         layer in its own `metadata.description` (\"Layer N of the xpile \
+         contract taxonomy\"), so this is a transcription, not a judgement \
+         call. The taxonomy's spelling for each layer is read from \
+         {TAXONOMY_DOC}.",
         untagged.len()
     );
+    eprintln!("XPILE-LAYERLABEL-001 reach: all {total} contracts declare a layer");
+}
+
+/// The layer partition being complete makes one thing arithmetic that was not:
+/// which taxonomy layers are represented at each Diamond depth. PMAT-1460
+/// could not compute this at all — 26 of 35 contracts had no layer — and the
+/// substrate published the answer in prose anyway, which is how
+/// `depth-6 ACROSS 4 LAYERS (L1+L2+L4+L5)` survived while the contract
+/// supplying its "L2" was Layer 1.
+///
+/// This does NOT re-check the substrate's 91 `ALL 5 LAYERS` milestone
+/// sentences. Those were measured during PMAT-1461 and are TRUE on the live
+/// tree — depth-1 through depth-13 each span all five layers — so they are not
+/// a defect class, and freezing today's spread into an assertion would just
+/// re-create the stale-snapshot problem this arc exists to remove. What is
+/// asserted is the property that made the 18 sites decidable in the first
+/// place: every contract's layer is known, and the spread is therefore
+/// computable rather than assertable-by-prose.
+#[test]
+fn the_layer_spread_at_each_depth_is_computable() {
+    let words = canonical_layer_words();
+    let root = workspace_root();
+    let mut per_contract: Vec<(String, u32, usize)> = Vec::new();
+    let mut paths: Vec<PathBuf> = fs::read_dir(root.join("contracts"))
+        .expect("read_dir contracts")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+        .collect();
+    paths.sort();
+    for p in &paths {
+        let body = fs::read_to_string(p).expect("read");
+        let doc: serde_yaml::Value = serde_yaml::from_str(&body).expect("parse");
+        let id = doc["metadata"]["id"].as_str().expect("id").to_string();
+        let tag = doc["metadata"]["xpile"]["layer"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{id}: no layer tag"));
+        let layer = *words
+            .get(tag)
+            .unwrap_or_else(|| panic!("{id}: unknown layer `{tag}`"));
+        // Depth == number of `*_diamond` equations, the same count
+        // `xpile diamond` reports.
+        let depth = doc["equations"]
+            .as_mapping()
+            .map(|m| {
+                m.keys()
+                    .filter_map(|k| k.as_str())
+                    .filter(|k| k.ends_with("_diamond"))
+                    .count()
+            })
+            .unwrap_or(0);
+        per_contract.push((id, layer, depth));
+    }
+
+    let deepest = per_contract.iter().map(|(_, _, d)| *d).max().unwrap_or(0);
+    assert!(deepest > 0, "no contract carries a `*_diamond` equation");
+    let mut table = String::new();
+    for n in 1..=deepest {
+        let at: Vec<_> = per_contract.iter().filter(|(_, _, d)| *d >= n).collect();
+        if at.is_empty() {
+            break;
+        }
+        let layers: BTreeSet<u32> = at.iter().map(|(_, l, _)| *l).collect();
+        table.push_str(&format!(
+            "  depth-{n}+: {} contract(s), layers {:?} = {} of 5\n",
+            at.len(),
+            layers.iter().collect::<Vec<_>>(),
+            layers.len()
+        ));
+        // The arithmetic guard: a layer cannot appear at depth N without a
+        // contract that actually declares it and reaches N.
+        for l in &layers {
+            assert!(
+                at.iter().any(|(_, cl, _)| cl == l),
+                "depth-{n}+ credits Layer {l} with no contract declaring it"
+            );
+        }
+    }
+    eprintln!("XPILE-LAYERLABEL-001 live layer spread by depth:\n{table}");
 }
 
 // ---------------------------------------------------------------------------
@@ -823,23 +990,139 @@ fn the_needle_requires_a_word_boundary_on_both_sides() {
 }
 
 #[test]
-fn the_needle_cannot_see_a_layer_written_before_the_name() {
-    // A DISCLOSED HOLE, pinned so nobody reads this gate as total coverage.
+fn the_needle_reads_a_layer_written_immediately_before_the_name() {
+    // PMAT-1461 CLOSED most of the hole PMAT-1460 disclosed here.
     //
-    // The needle is directional: it reads a layer token that FOLLOWS a
-    // contract name. The substrate also writes the other order — "extends
-    // depth-2 coverage to a SECOND Layer-4 contract (Notation joins
-    // FfiCpython …)" — and there the token is eleven characters and a noun
-    // ahead of the name, which is past [`MAX_GAP`] by design (widening the gap
-    // is what produced the false positives in
-    // [`the_needle_does_not_reach_across_a_clause`]).
+    // The needle used to be one-directional — layer token AFTER the name — and
+    // the layer-then-name order was written off as unreachable. Tagging the
+    // remaining 26 contracts showed that was the wrong diagnosis. In the
+    // enumeration the substrate actually uses to carry its across-layers
+    // headline, EVERY label is written before its name:
     //
-    // Measured at 771f1652: 46 sites were in the name-then-layer shape and the
-    // gate reports every one of them; THREE were in this shape
-    // (notation-latex-math-to-equation-v1.yaml:568, Notation.lean:1088 and
-    // :1089, all calling Notation "Layer-4") and PMAT-1460 repaired those by
-    // hand. Deciding this shape needs a sentence-level subject, not a wider
-    // gap — filed, not guessed at.
+    //     (L1 PyIntArith + L4 FfiCpythonExt + L5 CompileRustToPtxMma)
+    //
+    // A one-directional needle does not merely miss those. It skips each
+    // correct label and reads the NEXT list item's, so it ACCUSES correct
+    // prose — 9 such false reports on this very corpus, against sites that
+    // are CORRECT. A blind spot is
+    // silent; this one was not.
+    let who = vec![
+        Declared {
+            id: "C-PY-INT-ARITH".into(),
+            layer: 1,
+            names: vec!["PyIntArith".into()],
+        },
+        Declared {
+            id: "C-BASHRS-POSIX-IDEMPOTENCE".into(),
+            layer: 1,
+            names: vec!["BashrsPosixIdempotence".into(), "Bashrs".into()],
+        },
+    ];
+    for (body, want) in [
+        ("    depth-4 on L1 PyIntArith and more\n", 1u32),
+        ("    depth-4 on Layer 1 PyIntArith and more\n", 1),
+        ("    broadened it to Layer 2 (Bashrs) — making\n", 2),
+        ("    adding L2 Bashrs to the wave\n", 2),
+    ] {
+        let hits: Vec<_> = runs_of(body)
+            .iter()
+            .flat_map(|r| attributions_in(r, &who))
+            .collect();
+        assert_eq!(
+            hits.len(),
+            1,
+            "{body:?} should yield exactly one hit: {hits:?}"
+        );
+        assert_eq!(hits[0].written, want, "{body:?}");
+    }
+}
+
+#[test]
+fn a_label_before_the_name_wins_over_one_after_it() {
+    // The list shape, end to end: each name takes the label bound to its LEFT,
+    // so a correct enumeration produces ZERO offences. Before PMAT-1461 this
+    // exact string produced two — `PyIntArith … Layer 4` and
+    // `FfiCpythonExt … Layer 5`, each stolen from the next item.
+    let who = vec![
+        Declared {
+            id: "C-PY-INT-ARITH".into(),
+            layer: 1,
+            names: vec!["PyIntArith".into()],
+        },
+        Declared {
+            id: "C-FFI-CPYTHON-EXT".into(),
+            layer: 4,
+            names: vec!["FfiCpythonExt".into()],
+        },
+        Declared {
+            id: "C-COMPILE-RUST-TO-PTX-MMA".into(),
+            layer: 5,
+            names: vec!["CompileRustToPtxMma".into()],
+        },
+    ];
+    let body = "    (L1 PyIntArith + L4 FfiCpythonExt + L5 CompileRustToPtxMma)\n";
+    let hits: Vec<_> = runs_of(body)
+        .iter()
+        .flat_map(|r| attributions_in(r, &who))
+        .collect();
+    assert_eq!(
+        hits.len(),
+        3,
+        "every name in the list is attributed: {hits:?}"
+    );
+    let wrong: Vec<_> = hits.iter().filter(|a| a.written != a.declared).collect();
+    assert!(
+        wrong.is_empty(),
+        "a correct enumeration must produce no offences, got {wrong:?}"
+    );
+}
+
+#[test]
+fn the_backward_gap_stops_at_a_closing_bracket() {
+    // The discriminator for the backward reader, and it is load-bearing by
+    // measurement: allowing `)` and `,` to be crossed made the first cut of
+    // PMAT-1461 report `PyIntArith (L1), CompileRustToPtxMma` as PtxMma
+    // written Layer 1. The `(L1)` is PyIntArith's, correctly placed after its
+    // own name; a closing bracket means the token is already spoken for.
+    //
+    // `(` must still be crossable or the three live `… to Layer 2 (Bashrs)`
+    // mislabels read as nothing, so the rule is not "no punctuation".
+    let who = vec![Declared {
+        id: "C-COMPILE-RUST-TO-PTX-MMA".into(),
+        layer: 5,
+        names: vec!["CompileRustToPtxMma".into()],
+    }];
+    let body = "    joins PyIntArith (L1), CompileRustToPtxMma (L5), and more\n";
+    let hits: Vec<_> = runs_of(body)
+        .iter()
+        .flat_map(|r| attributions_in(r, &who))
+        .collect();
+    assert_eq!(hits.len(), 1, "one attribution for PtxMma: {hits:?}");
+    assert_eq!(
+        hits[0].written, 5,
+        "PtxMma takes its OWN trailing (L5), not the preceding item's (L1)"
+    );
+    // Directly on the reader: a comma or bracket in the gap kills it.
+    let cs: Vec<char> = "(L1), X".chars().collect();
+    let x = cs.len() - 1;
+    assert_eq!(
+        layer_token_before(&cs, x),
+        None,
+        "`), ` must not be crossed"
+    );
+    let cs: Vec<char> = "L1 X".chars().collect();
+    assert_eq!(layer_token_before(&cs, 3), Some(1), "a space must be");
+}
+
+#[test]
+fn the_needle_still_cannot_see_a_layer_an_english_word_away() {
+    // The RESIDUAL hole, re-measured rather than inherited. PMAT-1461 closed
+    // the ADJACENT layer-then-name order; a token separated from the name by
+    // an intervening word is still unread, because the backward gap is capped
+    // at MAX_GAP separators and admits only ` `, `-` and `(`. Widening it is
+    // what produced the false positives in
+    // [`the_needle_does_not_reach_across_a_clause`], so this shape needs a
+    // sentence-level subject, not a looser gap — filed, not guessed at.
     let who = vec![Declared {
         id: "C-NOTATION-LATEX-MATH-TO-EQUATION".into(),
         layer: 2,
@@ -853,9 +1136,9 @@ fn the_needle_cannot_see_a_layer_written_before_the_name() {
         .collect();
     assert!(
         hits.is_empty(),
-        "this gate is now seeing the layer-then-name shape ({hits:?}). That is an \
-         improvement, not a failure — delete this test, re-measure the corpus, and \
-         say what the new needle costs in false positives."
+        "this gate now reads a layer an English word ahead of the name ({hits:?}). \
+         That is an improvement, not a failure — rewrite this test, re-measure the \
+         corpus, and say what the wider needle costs in false positives."
     );
 }
 

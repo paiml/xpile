@@ -22,6 +22,8 @@ metadata:
     Pillar A open_gap named exactly const + enum as the remainder).
 
     Layer 2 of the xpile contract taxonomy (translation).
+  xpile:
+    layer: translation
   references:
     - "Python Language Reference: module-level assignment (a name bound to a literal at module scope)"
     - "Rust Reference: constant items (`const NAME: TYPE = VALUE;`)"

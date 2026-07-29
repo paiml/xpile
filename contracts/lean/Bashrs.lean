@@ -497,12 +497,15 @@ theorem exit_code_constant_projection_diamond
     with field-extensional equality and decidable equality
     (XPILE-REFINE-BASHRS-007).
 
-    **Broadens DEPTH-4 ACROSS LAYERS from 3 to 4 contracts.**
+    **Broadens DEPTH-4 from 3 to 4 contracts.**
     Previously depth-4 was on PyIntArith (L1, PMAT-247),
     CompileRustToPtxMma (L5, PMAT-248), and FFI-CPYTHON-EXT (L4,
-    PMAT-288). PMAT-329 pushes Bashrs (Layer 2) from depth-3 to
-    depth-4, making depth-4 ACROSS LAYERS a 4-LAYER claim
-    (Layer 1 + Layer 2 + Layer 4 + Layer 5).
+    PMAT-288). PMAT-329 pushes Bashrs (Layer 1) from depth-3 to
+    depth-4. PMAT-1461: this contract declares Layer 1, so the
+    fourth contract sat on an already-covered layer — the
+    "4-LAYER claim (Layer 1 + Layer 2 + Layer 4 + Layer 5)" this
+    record published did not follow from it, and depth-4 stood at
+    three layers (L1 + L4 + L5) after this Diamond.
 
     The 4 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
     - PMAT-215: bashrs pure function
@@ -592,10 +595,13 @@ theorem outcome_struct_extensionality_diamond
     OUTCOME OBSERVABLE STRING LENGTH NAT STRUCTURE
     (XPILE-REFINE-BASHRS-008).
 
-    **Broadens DEPTH-5 from 3 to 4 layers.** After PMAT-328 brought
-    depth-5 to 3 layers (L1 PyIntArith, L4 FFI-CPYTHON-EXT, L5
-    CompileRustToPtxMma), PMAT-346 pushes Bashrs (Layer 2) from
-    depth-4 to depth-5, adding Layer 2 to depth-5+ coverage.
+    **Broadens DEPTH-5 to a fourth contract.** After PMAT-328
+    brought depth-5 to 3 layers (L1 PyIntArith, L4 FFI-CPYTHON-EXT,
+    L5 CompileRustToPtxMma), PMAT-346 pushes Bashrs (Layer 1) from
+    depth-4 to depth-5. PMAT-1461: Bashrs declares Layer 1, which
+    PyIntArith already covered at this depth, so the "3 to 4 layers"
+    and "adding Layer 2 to depth-5+ coverage" clauses this record
+    published did not follow from it.
 
     The 5 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
     - PMAT-215 bashrs_pure_function (determinism)
@@ -634,12 +640,13 @@ theorem outcome_observable_length_nat_diamond (o : OutcomeSilver) :
     OUTCOME EXIT-CODE INT SIGN STRUCTURE
     (XPILE-REFINE-BASHRS-009).
 
-    **Broadens DEPTH-6 from 3 to 4 LAYERS.** After PMAT-356 opened
-    depth-6 on Layer 4 (FFI-CPYTHON-EXT) — making depth-6 ACROSS
-    3 LAYERS (L1+L4+L5) — PMAT-357 pushes Bashrs (Layer 2) from
-    depth-5 to depth-6, adding Layer 2 to depth-6+ coverage.
-    Depth-6 now spans 4 of 5 taxonomy layers (L1+L2+L4+L5; only
-    L3 remains at depth-5).
+    **Broadens DEPTH-6 to a fourth contract.** After PMAT-356
+    opened depth-6 on Layer 4 (FFI-CPYTHON-EXT) — making depth-6
+    ACROSS 3 LAYERS (L1+L4+L5) — PMAT-357 pushes Bashrs (Layer 1)
+    from depth-5 to depth-6. PMAT-1461: Bashrs declares Layer 1, so
+    depth-6 stayed at three layers (L1+L4+L5) after this Diamond;
+    the "4 of 5 taxonomy layers (L1+L2+L4+L5)" tally this record
+    published did not follow from it.
 
     The 6 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
     - PMAT-215 bashrs_pure_function_diamond
@@ -722,9 +729,9 @@ theorem outcome_exit_code_int_sign_diamond (o : OutcomeSilver) :
     OUTCOME (BRONZE) STRUCTURE EXTENSIONALITY
     (XPILE-REFINE-BASHRS-010).
 
-    **Broadens DEPTH-7 substrate-wide.** Pushes Bashrs (Layer 2)
-    from depth-6 to depth-7 as the second L2/non-L1-L5 contract at
-    depth-7+.
+    **Broadens DEPTH-7 substrate-wide.** Pushes Bashrs (Layer 1)
+    from depth-6 to depth-7. PMAT-1461: Layer 1, not the "second
+    L2/non-L1-L5 contract at depth-7+" this record claimed.
 
     The 7 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:
     - PMAT-215 bashrs_pure_function_diamond
@@ -781,7 +788,7 @@ theorem outcome_struct_extensionality_bronze_diamond
     OUTCOME (BRONZE) OBSERVABLE STRING.LENGTH NAT STRUCTURE
     (XPILE-REFINE-BASHRS-011).
 
-    **Broadens DEPTH-8 substrate-wide.** Pushes Bashrs (Layer 2)
+    **Broadens DEPTH-8 substrate-wide.** Pushes Bashrs (Layer 1)
     from depth-7 to depth-8.
 
     The 8 Diamond categories on C-BASHRS-POSIX-IDEMPOTENCE:

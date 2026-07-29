@@ -12,6 +12,8 @@ metadata:
     in by implementing exactly this trait.
 
     Layer 3 of the contract taxonomy (architectural / xpile-internal).
+  xpile:
+    layer: architectural
   references:
     - docs/specifications/xpile-architecture-v1.md
     - docs/specifications/xpile-contract-driven-design-v1.md
@@ -314,14 +316,17 @@ equations:
       - "Diamond depth-5 ACROSS ALL 5 TAXONOMY LAYERS demonstrated: 5 contracts on 5 distinct layers"
 
   metahir_module_silver_bytes_array_size_diamond:
-    # PMAT-358: SIXTH Diamond on this contract — COMPLETES DEPTH-6
-    # ACROSS ALL 5 TAXONOMY LAYERS. Mirror of PMAT-330 (depth-4 ALL
-    # 5 LAYERS milestone) and PMAT-347 (depth-5 ALL 5 LAYERS
-    # milestone). After PMAT-356 opened depth-6 on Layer 4
-    # (FFI-CPYTHON-EXT) and PMAT-357 broadened it to Layer 2
-    # (Bashrs) — making depth-6 ACROSS 4 LAYERS — PMAT-358 pushes
-    # XpileFrontendTrait (Layer 3) from depth-5 to depth-6,
-    # COMPLETING depth-6 ACROSS ALL 5 TAXONOMY LAYERS.
+    # PMAT-358: SIXTH Diamond on this contract. After PMAT-356
+    # opened depth-6 on Layer 4 (FFI-CPYTHON-EXT) and PMAT-357
+    # pushed Bashrs (Layer 1) to depth-6, PMAT-358 pushes
+    # XpileFrontendTrait (Layer 3) from depth-5 to depth-6.
+    # PMAT-1461: this record claimed PMAT-358 COMPLETED depth-6
+    # ACROSS ALL 5 TAXONOMY LAYERS, but Bashrs declares Layer 1,
+    # not Layer 2 — so the contracts this sentence enumerates cover
+    # L1+L3+L4+L5, four layers, and Layer 2 was absent at depth-6.
+    # Depth-6 DOES span all five layers on the live substrate
+    # (`xpile diamond --json`), reached later by the Layer-2
+    # contracts, not by this Diamond.
     # MetaHirModuleSilver bytes Array.size structure — seventh
     # substrate-wide Array.size demonstration.
     lean_theorem: "XpileContracts.CXpileFrontendTrait.metahir_module_silver_bytes_array_size_diamond"
