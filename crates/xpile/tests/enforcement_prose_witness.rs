@@ -384,14 +384,22 @@ fn present_tense_surface(rel: &str, text: &str) -> String {
     if rel != "CHANGELOG.md" {
         return text.to_string();
     }
+    // ANCHORED at a line start. An unanchored `find("## [Unreleased]")` matched a
+    // PROSE MENTION of the literal, in backticks, 8,700 lines down in a
+    // `[0.1.617]` entry, once the release roll removed the real heading — so this
+    // narrowing silently selected the wrong release's section (PMAT-1496). When
+    // `[Unreleased]` is absent the leading RELEASED section is the active region.
     let start = text
-        .find("## [Unreleased]")
-        .expect("CHANGELOG.md has an [Unreleased] heading");
-    let rest = &text[start + "## [Unreleased]".len()..];
-    let end = rest
+        .find("\n## [Unreleased]")
+        .map(|i| i + 1)
+        .or_else(|| text.find("\n## [").map(|i| i + 1))
+        .expect("CHANGELOG.md has no `## [...]` heading at a line start");
+    let after = &text[start..];
+    let end = after[1..]
         .find("\n## [")
-        .map_or(text.len(), |i| start + "## [Unreleased]".len() + i);
-    text[start..end].to_string()
+        .map(|i| i + 1)
+        .unwrap_or(after.len());
+    after[..end].to_string()
 }
 
 /// Attribution: naming one ruleset as the source of a context it does not
