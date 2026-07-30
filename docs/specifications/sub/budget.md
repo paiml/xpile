@@ -22,7 +22,8 @@ One iteration = one full `(read_diagnostics → write_rust → cargo_build)` cyc
 
 ## Fail-closed on exhaustion
 
-Per `repair-budget-v1.yaml` (depyler) — ported to xpile in Phase 1:
+Per `repair-budget-v1.yaml` in **depyler** — ⚠️ **not** ported to xpile (this line
+claimed Phase 1 had ported it; no repair contract is in `contracts/`, PMAT-1502):
 
 ```
 budget_exhausted => exit_status == ORIGINAL_STATIC_ERROR  AND  no_partial_rust_emitted

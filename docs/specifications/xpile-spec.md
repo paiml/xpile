@@ -170,7 +170,7 @@ The pattern is borrowed from alchemize: extract reference values *before* the ag
 
 `xpile-agent` adapts [alchemize](https://github.com/pymc-labs/alchemize)'s four-tool loop. Tools exposed to the LLM agent: `read_file`, `write_file_in_lang`, `cargo_build`, `cargo_test`, `run_hybrid_oracle`, `apply_skill`. Exit condition: `cargo_build && run_hybrid_oracle` both pass. Failure mode: budget exhaustion, fails closed to the original static error — never partial or speculative Rust.
 
-Default-off: the agent is opt-in via `xpile transpile --repair`. The static path never invokes the LLM. This preserves determinism-by-default per `contracts/repair-determinism-v1.yaml` in depyler (the same contract applies here once ported).
+Default-off: the agent is REQUIRED to be opt-in via a `--repair` flag. ⚠️ **No such flag is registered at 0.1.618** — `xpile transpile --repair` exits 2 (`unexpected argument '--repair' found`), so the opt-in is a requirement rather than a description, and the static path never invokes an LLM because no path does. Determinism-by-default is specified by `repair-determinism-v1.yaml` in depyler; it has **not** been ported to `contracts/` here (35 contracts, none of them a repair contract).
 
 ---
 
@@ -178,9 +178,14 @@ Default-off: the agent is opt-in via `xpile transpile --repair`. The static path
 
 **Sub-spec**: [sub/cache-determinism-provenance.md](sub/cache-determinism-provenance.md)
 
-Content-addressed cache keyed by `sha256(source || xpile_version || model_id || skills_hash)`. On cache hit, returns byte-identical bytes — across runs, machines, and team members. The cache is what converts a stochastic agent into a reproducible artifact pipeline.
+⚠️ **REQUIREMENT, not a description — see the sub-spec's status block (PMAT-1502).**
+The `CacheKey::compute` four-tuple hash is implemented (`crates/xpile-llm/src/lib.rs`,
+42 lines). The **cache is not**: that crate makes no filesystem call, no `cache`
+subcommand is registered, and no code emits a provenance marker.
 
-Every repaired `.rs` carries a provenance marker as the first line: `// xpile-repaired: <hash> via <model_id> at <utc>`. The marker is a *receipt* into the cache. Static-pass files never carry the marker. Confusing the two would let stochastic output masquerade as deterministic.
+Specified: a content-addressed cache keyed by `sha256(source || xpile_version || model_id || skills_hash)` which, on cache hit, returns byte-identical bytes — across runs, machines, and team members. That is what would convert a stochastic agent into a reproducible artifact pipeline.
+
+Specified: every repaired `.rs` starts with a provenance marker — `// xpile-repaired: <hash> via <model_id> at <utc>` — as a *receipt* into the cache, and static-pass files never carry it. Confusing the two would let stochastic output masquerade as deterministic. ⚠️ The marker string occurs in 0 tracked `.rs` files, so this constrains an empty set today.
 
 ---
 
@@ -198,9 +203,13 @@ Per-file budgets prevent denial-of-wallet failure modes and bound CI cost. Aggre
 
 **Sub-spec**: [sub/skills.md](sub/skills.md)
 
-`crates/xpile-agent/skills/` holds markdown skills — short, prescriptive snippets the agent loads when it hits a recurring failure idiom (e.g., `lifetimes.md`, `generators.md`, `cuda_kernel_launch.md`). Skills are tagged by `lang:` and `boundary:` in frontmatter and pulled in via the `apply_skill(name)` tool.
+⚠️ **Specified, not shipped (PMAT-1502).** `crates/xpile-agent/skills/` **does not
+exist**, and none of the three example files named below is tracked. The `apply_skill`
+tool name does appear in the agent crate's source; the corpus it would load does not.
 
-**Skills are a holding pen, not a permanent backstop.** A skill firing ≥50 times across ≥10 files in a quarter is a graduation candidate: the team lifts it into a deterministic rule in `xpile-rust-codegen` and *deletes* the skill markdown in the same PR. The success signal for the agent loop is repair-invocation rate trending *down* per corpus over time. See `contracts/skill-graduation-v1.yaml` (ported from depyler).
+Specified: `crates/xpile-agent/skills/` holds markdown skills — short, prescriptive snippets the agent loads when it hits a recurring failure idiom (e.g., `lifetimes.md`, `generators.md`, `cuda_kernel_launch.md`). Skills are tagged by `lang:` and `boundary:` in frontmatter and pulled in via the `apply_skill(name)` tool.
+
+**Skills are a holding pen, not a permanent backstop.** A skill firing ≥50 times across ≥10 files in a quarter is a graduation candidate: the team lifts it into a deterministic rule in `xpile-rust-codegen` and *deletes* the skill markdown in the same PR. The success signal for the agent loop is repair-invocation rate trending *down* per corpus over time. The graduation rule is specified by `skill-graduation-v1.yaml` in depyler; ⚠️ it was **never ported** to `contracts/` here, so nothing encodes it (PMAT-1502).
 
 ---
 

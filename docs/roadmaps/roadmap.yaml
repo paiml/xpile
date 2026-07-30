@@ -25726,3 +25726,92 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1502
+  status: done
+  priority: P1
+  category: honesty
+  title: an entire subsystem -- spec section 8, its sub-spec, the glossary term and the three
+    contracts said to make it non-negotiable -- is published in the present indicative against
+    42 lines that hash a cache key for a cache that does not exist, and the deferral that hid
+    it is spelled in the PAST tense, which is why a deferral sweep could not see it
+  notes: 'SHIPPED 2026-07-30. Ran the hunt playbook''s next-pick (b): DEFERRALS AS A CLASS.
+    The `in Phase N` corpus is 8 sites outside docs/roadmaps/. One is a future-tense deferral to
+    an EXPIRED target -- sub/cache-determinism-provenance.md''s "These commands are introduced in
+    Phase 2 when the cache lands in production" -- PMAT-1499''s shape exactly, since
+    sub/phased-rollout.md records Phase 2 as "partially shipped (py-int-arith only)" and v0.1.0
+    as released. Pulling that thread showed the page it sits on is 1-OF-6 TRUE.
+
+    MEASURED against the shipped xpile 0.1.618 (force-rebuilt probe binary) and `git ls-files`:
+    (1) CacheKey::compute(source, xpile_version, model_id, skills_hash) with \0-separated sha256
+    -- TRUE, crates/xpile-llm/src/lib.rs, signature and hash order verbatim; (2) the cache
+    itself (store/lookup/eviction) -- ABSENT, that crate is 42 lines with ZERO filesystem calls;
+    (3) `xpile transpile --repair=cached` -- ABSENT, no --repair flag registered, exit 2;
+    (4) `xpile cache prune` / `xpile cache verify` -- ABSENT, "unrecognized subcommand ''cache''",
+    exit 2; (5) the // xpile-repaired: provenance marker -- NO EMITTER, 0 tracked .rs files and 0
+    marker lines in transpiled output; (6) tests/cache_byte_identical.rs, named ON THE PAGE as
+    the CI verification -- NO SUCH FILE under any prefix.
+
+    *** SIXTH AXIS OF *in scope != covered*: TENSE, and it is the DUAL OF PMAT-1499. That slice
+    found a deferral whose target had already passed. The four sharpest sites here assert the
+    deferral WAS ALREADY DISCHARGED: "ported to xpile in Phase 1" (sub/agent-loop.md, calling the
+    rule non-negotiable), "ported to xpile in Phase 1" (sub/budget.md), "ported from depyler to
+    xpile in Phase 1" (sub/skills.md, "this is encoded in"), "(ported from depyler)"
+    (xpile-spec.md section 10). NOT ONE WAS PORTED: contracts/ holds 35 files and none is a
+    repair or skills contract, while sub/phased-rollout.md ENUMERATES Phase 1''s actual output as
+    the four TRAIT contracts -- so the claim is falsified by a page in the same corpus that lists
+    what shipped. A sweep grepping "lands in" / "will be" / "in a future release" structurally
+    cannot see a past-perfect deferral: it does not read as a promise, it reads as history.
+
+    ** THE HEALTHY CONTROL IS IN THE SAME LANE, ONE DOCUMENT OVER, which is what makes this a
+    CLAIM defect and not a rot complaint (PMAT-1487''s rule). sub/ci-gates.md carries a dated
+    "Status (2026-05-18 / PMAT-101 sweep)" block naming scripts/check_provenance.sh as a gate
+    that did NOT ship, with the reason and the tracking id XPILE-CI-PROVENANCE-001;
+    sub/pmat-integration.md does the same. The repo already knows how to disclose THIS EXACT LANE
+    honestly -- it did it for the CI gate and not for the subsystem. check_provenance.sh is
+    therefore a REFUTED hypothesis, recorded so nobody re-hunts it, and the fix reuses that
+    block''s shape verbatim.
+
+    ** ZERO GATES COVER ANY OF IT (PMAT-1500 axis 4, re-confirmed): grep -E
+    ''cache-determinism|cache_byte_identical|xpile-repaired|CacheKey|xpile cache'' over
+    crates/**/*.rs returns exactly ONE hit, the implementation itself. The page sat inside
+    claims_drift.rs''s corpus (all of docs/specifications/) the whole time; that gate hunts
+    derived CARDINALITIES and a phantom subcommand, an unwritten test file and an unemitted
+    comment marker offer none.
+
+    * THE CLASS MEASUREMENT, and it needed a defensible denominator: 410 backticked
+    in-repo-looking paths across 74 tracked markdown files. Naive existence-testing gives 53
+    "missing", which is NOT the finding -- 10 are real files cited by a wrong prefix, 5 are
+    cross-repo, 3 are foo/MyLang placeholders, 3 are /tmp scratch files the release runbook
+    creates itself, and the leading / in /CHANGELOG.md is root-anchored notation. Honest residue:
+    8 in-repo paths published as real and absent under every convention this repo uses, and 6 OF
+    THE 8 ARE IN THIS ONE LANE (3 phantom contracts, the cache test, crates/xpile-agent/skills/,
+    and the marker''s static_files/). WARNING: one raw-bucket entry is
+    crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs in docs/RELEASE.md -- a
+    DELIBERATE QUOTATION of the doubled path abort rule A11 exists to disclose. A path-existence
+    gate would RED on the document correctly reporting a broken path; PMAT-1495''s exemption trap
+    PRE-REGISTERED as a design constraint instead of discovered on the third slice.
+
+    * THE STUB''S DOC COMMENT WAS *LESS* HONEST THAN THE SPEC -- the inverse of PMAT-1499.
+    xpile-llm/src/lib.rs''s module doc calls itself "LLM invocation + content-addressed cache"
+    and "On cache hit, returns the exact bytes stored", implements neither, and cites
+    contracts/xpile-determinism-v1.yaml, marked (TODO) and absent. So "read the component''s doc
+    comment FIRST" is a LEAD, not an oracle -- it can over-claim in the same direction as the
+    spec.
+
+    FIXED, docs-only under the Wed 2026-07-29 18:00 freeze: sub/cache-determinism-provenance.md
+    gains a measured status table and every unimplemented section is re-scoped to REQUIREMENT
+    with both expired Phase-2 deferrals retired; xpile-spec.md sections 7, 8 and 10 corrected in
+    the SAME slice (PMAT-1499''s parent/child rule); sub/agent-loop.md, sub/budget.md,
+    sub/skills.md and sub/glossary.md corrected. Every removed literal was first grepped against
+    crates/**/*.rs (PMAT-1495''s HISTORICAL_MARKER lesson) -- 0 gate needles revoked -- and the
+    new prose was checked against claims_drift''s TOTALITY_QUANTIFIERS, which are scoped to
+    contract-population claims and do not reach "every repaired file". NO GATE -- the freeze bars
+    a new crates/xpile/tests/ file; specified as XPILE-PHANTOMPATH-001 in queue.yaml next_lane
+    with the quotation exemption AND its mandatory positive control.
+
+    NEXT FREE ID PMAT-1503. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. NO FRIDAY CODE.'
+  created: '2026-07-30'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

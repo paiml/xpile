@@ -377,6 +377,48 @@ queue:
     in xpile-spec.md and property 4 covers exactly one of them; (e) still open from 1494,
     owner_decisions and next_lane never drained; (f) still open from 1488, other duplicated
     normative sets.'
+- id: PMAT-1502
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'an entire subsystem -- spec section 8, its sub-spec, the glossary term and the three
+    contracts said to make it non-negotiable -- is published in the present indicative against 42
+    lines that hash a cache key for a cache that does not exist, and the deferral that hid it is
+    spelled in the PAST tense, which is why a deferral sweep could not see it'
+  notes: 'DONE 2026-07-30. The hunt playbook''s next-pick (b): DEFERRALS AS A CLASS. Scope:
+    docs/specifications/ + CHANGELOG + both ledgers. Zero crates/*/src, zero contracts/*.yaml, zero
+    gates, zero Cargo.toml, no floor touched -- freeze-legal.
+    The `in Phase N` corpus is 8 sites outside docs/roadmaps/. One is a future-tense deferral to an
+    EXPIRED target (sub/cache-determinism-provenance.md: "These commands are introduced in Phase 2
+    when the cache lands in production"; sub/phased-rollout.md records Phase 2 as "partially shipped
+    (py-int-arith only)" and v0.1.0 released) -- PMAT-1499''s shape. The page it sits on is
+    1-OF-6 TRUE against the shipped xpile 0.1.618: CacheKey::compute + \0-separated sha256 TRUE;
+    the cache ABSENT (42 lines, ZERO fs calls); `--repair=cached` ABSENT (no flag, exit 2);
+    `xpile cache prune|verify` ABSENT (unrecognized subcommand, exit 2); the // xpile-repaired:
+    marker has NO EMITTER (0 tracked .rs, 0 lines in output); tests/cache_byte_identical.rs, named
+    ON the page as the CI verification, DOES NOT EXIST.
+    *** SIXTH AXIS OF *in scope != covered*: TENSE, the DUAL of PMAT-1499. Four sites assert the
+    deferral was already DISCHARGED -- "ported to xpile in Phase 1" (sub/agent-loop.md, calling the
+    rule non-negotiable), same (sub/budget.md), "ported from depyler to xpile in Phase 1"
+    (sub/skills.md), "(ported from depyler)" (xpile-spec.md s10). NONE was ported: contracts/ holds
+    35 files, none a repair or skills contract, and sub/phased-rollout.md ENUMERATES Phase 1''s
+    actual output as the four TRAIT contracts. A future-tense sweep cannot see a past-perfect
+    deferral -- it reads as history, not as a promise.
+    HEALTHY CONTROL in the same lane one document over: sub/ci-gates.md discloses
+    scripts/check_provenance.sh as NOT shipped, with a reason and the id XPILE-CI-PROVENANCE-001;
+    sub/pmat-integration.md likewise. REFUTED -- do not re-hunt it. The fix reuses that block shape.
+    CLASS MEASUREMENT: 410 backticked in-repo-looking paths / 74 tracked .md; naive testing says 53
+    missing, honest residue 8 (10 wrong-prefix-but-real, 5 cross-repo, 3 placeholders, 3 /tmp
+    runbook scratch, root-anchored / notation), and 6 OF THE 8 ARE IN THIS LANE. WARNING: the raw
+    bucket includes docs/RELEASE.md''s DELIBERATE quotation of the doubled path A11 discloses -- a
+    path-existence gate would RED a document correctly reporting a broken path.
+    NO GATE -- freeze bars a new crates/xpile/tests/ file. Specified as XPILE-PHANTOMPATH-001 in
+    next_lane[0] with the quotation exemption AND its mandatory positive control PRE-registered
+    (that trap has fired on five consecutive slices). Until it lands this is a MEASUREMENT, NOT AN
+    INVARIANT, and the sub-spec status block says so.
+    NEXT FREE ID PMAT-1503. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. NO FRIDAY CODE
+    MERGES -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07).'
 - id: PMAT-1501
   status: done
   ev_rank: R1
@@ -426,8 +468,8 @@ queue:
     NO GATE -- both holes need crates/xpile/tests/ edits, frozen. Specified as
     XPILE-WORKFLOW-PROSE-001 in next_lane[0]. Until it lands this is a MEASUREMENT, NOT AN
     INVARIANT, and ci.yml says so in those words.
-    NEXT FREE ID PMAT-1502. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. NO FRIDAY CODE
-    MERGES -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07).'
+    NEXT FREE ID PMAT-1503 (PMAT-1502 taken same day). NEXT PICK 2026-07-31: PMAT-1374,
+    PUBLISH v0.1.618. NO FRIDAY CODE MERGES -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07).'
 - id: PMAT-1500
   status: done
   ev_rank: R1
@@ -7930,6 +7972,45 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1502 GATE -- XPILE-PHANTOMPATH-001. A backticked in-repo path published in prose is an
+  EXECUTABLE claim and nothing in this repo checks one: `pmat validate-docs` validates markdown
+  LINK integrity, and every path found by PMAT-1502 was inline code, structurally invisible to it.
+  MEASURED 2026-07-30: 410 backticked in-repo-looking paths across 74 tracked .md files, honest
+  residue 8 absent under every convention this repo uses, 6 of the 8 in the repair/cache/skills
+  lane. Blocked only by the Wed 2026-07-29 18:00 freeze (new crates/xpile/tests/ file).
+  Note that next_lane specs here have been caught BORN WRONG three times (PMAT-1481, PMAT-1483,
+  PMAT-1488), so audit this one before writing it.
+  (a) THE CONVENTIONS ARE THE GATE, NOT AN AFTERTHOUGHT. A naive existence test reports 53 and 45
+  of them are fine. Resolve each candidate against the ordered set {as-written, leading-/ stripped
+  (root-anchored notation), relative to the citing file''s dir, crates/xpile/ prefix (crate-relative
+  shorthand -- `tests/quorum.rs`), docs/specifications/ prefix (`sub/foo.md` shorthand)} and only
+  then call it absent. Assert the resolver''s own non-vacuity: a control path known to need EACH
+  convention must resolve, or a broken resolver reports 0 defects and reads green forever.
+  (b) ⛔ THE QUOTATION EXEMPTION, AND IT IS THE ONE THAT WILL RED A CORRECT DOCUMENT.
+  docs/RELEASE.md deliberately quotes `crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs`
+  -- the DOUBLED path abort rule A11 exists to disclose -- and PMAT-1502''s own fixes quote
+  `tests/cache_byte_identical.rs` and `contracts/skill-graduation-v1.yaml` to record what was
+  wrong. A path in a sentence that also carries a negation/disclosure marker (does not exist,
+  absent, no such file, never ported, ⚠️, previously read) is EXEMPT. PMAT-1495''s exemption trap
+  has now fired on FIVE consecutive slices (1495, 1497, 1499, 1500, 1501), so it is PRE-REGISTERED
+  here rather than discovered on the third draft.
+  (c) MANDATORY POSITIVE CONTROL for (b), or the exemption swallows the gate. A #[test] that feeds
+  a NON-exempt phantom path through the checker and asserts it FIRES, plus the two-way control that
+  the same path inside a disclosure sentence does NOT. An exemption nobody has seen fire may match
+  everything.
+  (d) PLACEHOLDERS AND CROSS-REPO PATHS MUST BE CLASSIFIED, NOT GUESSED. `contracts/foo-v1.yaml`,
+  `crates/my-frontend/src/lib.rs`, `contracts/lean/MyLangIdempotence.lean` are teaching templates
+  (book/src/contributing/) and `/home/noah/...`, `depyler/...`, `provable-contracts/...` are other
+  repos. Screen by an explicit allowlist of placeholder tokens plus a leading-segment test for
+  cross-repo, and LOG the screened set -- a silent filter reads as "covered everything".
+  (e) THE /tmp ARM: docs/RELEASE.md names /tmp/relbody.md, /tmp/reldelta.md, /tmp/reldisc.md, which
+  the runbook CREATES. Absolute paths outside the worktree are out of scope; say so in the header
+  rather than letting them fall through the resolver by accident.
+  (f) TENSE IS THE SECOND, INDEPENDENT ARM AND IT IS THE MORE VALUABLE ONE. PMAT-1502''s sixth axis
+  of *in scope != covered* is TENSE: "ported to xpile in Phase 1" asserts a deferral was already
+  DISCHARGED, so a future-tense deferral sweep cannot see it. Screen past-perfect discharge claims
+  (ported, was added, landed in, shipped in, encoded in) that name a phase or version, and check
+  the named artefact EXISTS. Four sites carried this and none was ported.'
 - 'PMAT-1501 GATE -- XPILE-WORKFLOW-PROSE-001, and it closes TWO holes that are independent, so it
   must have two independent red halves. Blocked only by the Wed 2026-07-29 18:00 freeze (both arms
   edit crates/xpile/tests/). Note that next_lane specs in this repo have been caught BORN WRONG
