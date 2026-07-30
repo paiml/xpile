@@ -1045,6 +1045,46 @@ conclusion; a green `gh pr checks` does not include it.**
    the CHANGELOG entry — the addendum is on a page no gate in this repository
    reads (PMAT-1480: every gate's corpus stops at `git ls-files`).
 
+9. **Write the §7 ledger row — the only mandated record whose destination is a
+   file in this repository, and until PMAT-1494 no step wrote it.** Three places
+   send content to §7 (A4's *"record exactly which crates landed in §7"*, A13's
+   *"named in the release body and in §7"*, and §7's own *"every A4 stop and
+   every A6 slip is recorded here"*) and A6 — one of the two rules §7 quantifies
+   over — never names §7 at all. **Run this step whenever this release did not
+   follow §1's cadence**, including a pull-forward; skip it only when the day
+   went exactly as §1 describes.
+
+   Two things make this step non-obvious at the moment it is needed, and both are
+   settled here rather than by an operator improvising after a failed batch:
+
+   - **You are in the wrong tree.** A1 and A8 pin release work to a worktree at
+     the **tag**, and §7 lives on `main`. A row committed in a detached worktree
+     at `v$V` reaches no reader. **Leave it.** Branch off `origin/main`, land the
+     row through a PR like any other change, and let the required contexts run.
+   - **It is not the code this day forbids.** §5 opens *"No code merges. None."*
+     and A7 says *"no Friday code"*; both are about touching the shipped artefact
+     on release day. A ledger row is documentation — the Friday lane in §1's
+     freeze table — and the cost of the ambiguity falls entirely on the one day
+     the row is worth writing. **Writing it is permitted and expected.**
+
+   ```bash
+   # NOT from the release worktree: that one is detached at the tag.
+   cd "$(git -C . rev-parse --show-toplevel)"   # or any checkout tracking main
+   git fetch origin && git checkout -b "chore/slip-ledger-$(date +%Y%m%d)" origin/main
+   # add ONE row per deviation to the table in §7, dated the day it HAPPENED
+   # (never the merge date), then:
+   grep -q "$(date +%F)" docs/RELEASE.md || echo "WARN: no row bears today's date"
+   git commit -am "docs(release): §7 ledger row for $(date +%F) (Refs PMAT-nnnn)"
+   git push -u origin "HEAD:chore/slip-ledger-$(date +%Y%m%d)"
+   ```
+
+   ⚠️ **If it cannot land Friday, it is not dropped — it is the first commit of
+   the next window, dated the day it happened.** A row whose date is the day
+   someone remembered is worse than no row: it moves the event, and §7's whole
+   value is that a reader can place it. And a slip disclosed only in the release
+   body does not reach this file — that is PMAT-1480's page-only disclosure with
+   the direction reversed, and §7 is the copy `git grep` can find.
+
 ---
 
 ## 6. Abort rules
@@ -1119,7 +1159,8 @@ the rule you are about to rely on is still written down.
   crates.io versions are immutable. Do **not** yank the *k−1* already
   published (they are valid). Do **not** retry at the same version (409). Do
   **not** bump a single crate to route around it. Record exactly which crates
-  landed in §7, then fix forward with a **whole-workspace** patch bump the
+  landed in §7 — **via §5 step 9, the only step that writes that table** — then
+  fix forward with a **whole-workspace** patch bump the
   following Friday. The *k−1* being valid is not the same as this being free:
   re-run §4 step 6 arm 3 and record which of the `31 − k` are left serving
   retired prose (A13).
@@ -1135,6 +1176,10 @@ the rule you are about to rely on is still written down.
   "Acceptable" is about *risk*, not about *cost*: a rolled batch keeps every A13
   crate's retired prose published for another week, so name them in the release
   body rather than shipping a tag-only release that reads as a no-op.
+  **Then record the slip in §7 via §5 step 9.** §7 quantifies over *"every A6
+  slip"* and this rule did not name §7 until PMAT-1494 — the one rule whose
+  entire outcome is a deferral was the one carrying no instruction to record
+  that the deferral happened.
 - **A7 — NO FRIDAY CODE.** If a defect surfaces Friday morning the answer is
   A6 (ship the tag, defer the batch), never a same-day hotfix onto the release
   SHA.
@@ -1424,8 +1469,56 @@ the rule you are about to rely on is still written down.
 ## 7. Slip and partial-batch ledger
 
 Every A4 stop and every A6 slip is recorded here, with the reason, on the day
-it happens. An unrecorded slip is indistinguishable from a forgotten release.
+it happens, **by §5 step 9 — the only step that writes this table.** An
+unrecorded slip is indistinguishable from a forgotten release.
+
+⛔ **AN EMPTY ROW COUNT IS A FACT ABOUT THIS TABLE AND NOT A FACT ABOUT THE
+RELEASE HISTORY, AND UNTIL 2026-07-30 THIS SECTION READ AS THOUGH IT WERE BOTH
+(PMAT-1494).** The sentence above quantifies over *every* stop and *every* slip;
+under it sat a single placeholder reading *"no slip or partial batch recorded to
+date"*. That sentence is true as written — nothing had been entered — and the
+preamble licenses a reader to run it backwards into *no slip has occurred*,
+which is a different claim and one nobody had measured. Two facts settle how
+much weight the emptiness can carry:
+
+- **This file was created 2026-07-27 21:53 CEST (`a0959aa9`)** — after every
+  release it ranges over. The ledger was born empty covering a history it had
+  never read, and A4/A6 did not exist before that commit, so nothing below is a
+  rule violation by anyone.
+- **The ledger has governed zero releases.** No version has shipped since it was
+  written; `v0.1.618` is the first. Its emptiness is therefore evidence of its
+  age and of the missing step, and of nothing else.
+
+**Re-derive the cadence rather than trusting this table** — three publishers,
+none of which is this file, and all three agree:
+
+```bash
+TZ=Europe/Berlin git for-each-ref --sort=creatordate \
+  --format='%(refname:short) %(creatordate:format-local:%Y-%m-%d %a %H:%M %Z)' refs/tags
+gh api --paginate 'repos/paiml/xpile/releases?per_page=100' --jq '.[] | "\(.created_at) \(.tag_name)"' | sort
+curl -s -H 'User-Agent: xpile-release-verify' \
+  'https://crates.io/api/v1/crates/xpile/versions?per_page=100' \
+  | python3 -c 'import json,sys;[print(v["num"],v["created_at"]) for v in json.load(sys.stdin)["versions"]]'
+```
+
+A per-tag `gh release view v<x.y.z>` is what proves a release *absent*;
+`gh release list --limit N` is a page, not the corpus (613 releases exist —
+PMAT-1480's sample trap).
+
+**Retrospective reconstruction, measured 2026-07-30 (PMAT-1494), local time.**
+These rows are marked *retro* because they were reconstructed from the three
+publishers above and not entered on the day: nobody classified them at the time,
+which is exactly the state the preamble's second sentence describes.
 
 | Date | Version | What happened | Reason |
 |---|---|---|---|
-| — | — | no slip or partial batch recorded to date | — |
+| 2026-07-03 *(retro)* | `0.1.615` | tag Fri 01:00, crates.io batch Fri 01:05, **no GitHub release, ever** — confirmed by per-tag lookup against all 613 releases | unknown; §5 orders `gh release create` *before* the batch and only the batch ran. §5 step 3's size table already records this as `(no release)` |
+| 2026-07-04 *(retro)* | `0.1.616` | Friday 2026-07-03 passed with no batch; tag, release and batch all ran **Sat 17:50–17:55** | unknown. A6's condition (batch not started by 16:00 local Friday) had obtained; A6's prescription is *roll to the following Friday*, not *run it Saturday* |
+| 2026-07-10, -17, -24 *(retro)* | — | **three consecutive Fridays with no tag, no release and no crates.io version** — zero releases exist in the whole corpus between 2026-07-05 and 2026-07-25 | unknown. §1 states the cadence unconditionally, so nothing distinguishes *deliberately quiet* from *forgotten* — the distinction this ledger exists to preserve |
+| 2026-07-26 *(retro)* | `0.1.617` | shipped **Sun 21:10 / 21:18**, pulled *forward* from the ratified Friday 2026-07-31 | owner-directed retarget, recorded in `docs/roadmaps/queue.yaml` `sprint.concurrency_note` and nowhere in this file |
+| — | — | **no A4 stop or A6 slip has been recorded by §5 step 9**, which is the only writer and has never run | — |
+
+**A pull-forward belongs here too.** The heading says *slip*, and `0.1.617`
+moved the other way — but the ledger's purpose is that a reader can tell a
+deliberate deviation from a forgotten one, and that purpose is direction-blind.
+Record any release that did not follow §1's cadence, whichever way it moved.

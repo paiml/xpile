@@ -175,7 +175,7 @@ updated_prev_1488: >-
   AS IT READS IN THE FILE (extract, never retype), extract from the TAG not main, `test -s` the
   body, expect A9, and after the batch expect A11 and A12 in post-tag form. All predicted, all
   disclosed, NONE a reason to touch the batch. A7: NO FRIDAY CODE.
-updated: >-
+updated_prev_1492: >-
   ⛔ FRIDAY OPERATOR, READ THIS FIRST -- THIS IS THE LAST ENTRY BEFORE THE PUBLISH. PMAT-1492 ran
   PMAT-1479's accept-side recipe on the frontend that slice named as unswept, and found the mirror
   of its own finding. PMAT-1479: the SHELL lane published a refusal guarantee it did NOT have.
@@ -230,6 +230,46 @@ updated: >-
   the plan, never off a remembered range; it returns SIXTEEN markers today, each exactly once.
   RECOUNT the post-tag CHANGELOG delta on the day; it grew again today.
   NEXT FREE ID PMAT-1494. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+updated: >-
+  ⛔⛔ FRIDAY OPERATOR, READ THIS FIRST. TWO THINGS BEFORE ANYTHING ELSE, both from slices that
+  landed after the tag was cut.
+  (1) ⛔ BUILD `/tmp/reldisc.md` BEFORE YOU RUN section 5 step 3 -- IT NOW ABORTS WITHOUT IT
+  (PMAT-1493). Six paragraphs mandate release-body content and step 3 is the only step that builds
+  a body; until 1493 it could carry NONE of them, and appending one still trips PMAT-1484's tail
+  assertion, so that file is the ONLY slot. Put the FIVE pre-publish mandates in it: the section 2b
+  ruleset result verbatim, every advisory job that is not `success` on 6b5f6c02, A12, A13, A15.
+  A11 and A14 measure a RENDERED page and therefore go in the NEW section 5 step 8
+  (`gh release edit`, append-never-rewrite).
+  (2) ⛔ AND IF ANY PART OF TODAY DEVIATES FROM SECTION 1'S CADENCE -- A4 stop, A6 slip, a batch
+  that starts late, a release that ships without its GitHub page -- RUN THE NEW SECTION 5 STEP 9
+  AND WRITE THE SECTION 7 ROW (PMAT-1494). It is the ONLY step that writes that table, and it is
+  new today because there had never been one. Two traps it exists to defuse: you are standing in a
+  worktree pinned to the TAG and section 7 lives on `main` (branch off origin/main instead), and
+  section 5 opens "No code merges. None." -- which is about the shipped artefact, NOT about a
+  documentation row. WRITING THE ROW IS PERMITTED AND EXPECTED. If it cannot land today it is the
+  first commit of the next window, dated the day it HAPPENED and never the merge date.
+  WHY (measured 2026-07-30): section 7 opens "Every A4 stop and every A6 slip is recorded here ...
+  An unrecorded slip is indistinguishable from a forgotten release" over ONE row reading "no slip
+  or partial batch recorded to date" -- true about the TABLE, and the preamble licenses reading it
+  as a fact about the HISTORY. Measured from three publishers (git tags in LOCAL time, the FULL
+  PAGED 613-release corpus, the crates.io API with a User-Agent): 0.1.615 shipped to crates.io with
+  NO GitHub release ever; 0.1.616 ran Saturday after Friday passed; 2026-07-10/-17/-24 were three
+  consecutive Fridays with nothing at all; 0.1.617 was pulled FORWARD to a Sunday. None was a rule
+  violation -- docs/RELEASE.md was created 2026-07-27, after all of them -- and the ledger has
+  GOVERNED ZERO RELEASES. v0.1.618 is the first. Its emptiness was evidence of its age.
+  ⛔ SEVEN ABORT RULES ARE EXPECTED TO FIRE OR BE DISCLOSED TODAY, ALL PREDICTED, NONE A REASON TO
+  TOUCH THE BATCH: A9 (body 469,246 chars vs a MEASURED 125,000 cap -- run the SIZE-CHECKED step 3
+  EXTRACTED from the file, never retyped, and extract from the TAG not main), A10, A11 (12
+  reinterpreted README links), A12 (dead `documentation` URL), A13 (7 stale registry descriptions
+  -- publishing IS the repair, so it argues AGAINST deferring), A14 (58 rustdoc defects on 13 of 30
+  docs.rs pages), A15 (the Python refusal roster is CYCLE-SCOPED, and verify it at the TAG ONLY --
+  0.1.618 carries the DEFECT and 0.1.619 the FIX; a main-side check reports it absent).
+  Read the abort rules ONLY from docs/RELEASE.md section 6 via
+  `grep -nE '^- \*\*A[0-9]+b? —' docs/RELEASE.md` -- never off the plan, never off a remembered
+  range. Rule set is SIXTEEN and unchanged by 1493/1494 (A10 was widened, A6 gained a pointer).
+  RECOUNT the post-tag CHANGELOG delta on the day; step 3 computes it dynamically and it grew again
+  today.
+  NEXT FREE ID PMAT-1495. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -285,6 +325,62 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1494
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the ledger whose stated purpose is telling a deliberate deviation from a forgotten one
+    is empty, has no writer, and was born AFTER every deviation it ranges over'
+  result: 'SHIPPED 2026-07-30. Docs-only under the freeze (docs/RELEASE.md + CHANGELOG.md + both
+    ledgers; zero crates/*/src, zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag
+    v0.1.618 is cut at 6b5f6c02, so nothing here touches the release SHA.
+    PICKED as PMAT-1493''s own next-pick (b), the remaining mandate-vs-mechanism pairs.
+    MEASURED: 7 "Slip and partial-batch ledger" opens "Every A4 stop and every A6 slip is recorded
+    here ... An unrecorded slip is indistinguishable from a forgotten release" over ONE row -- "no
+    slip or partial batch recorded to date". TRUE AS WRITTEN (a fact about the table) and the
+    preamble licenses running it backwards into "no slip has occurred", which nobody had measured.
+    PMAT-1492 at the other end: two rows read as exhaustive there; ZERO rows read the same way and
+    MORE strongly, because there is no row to inspect and doubt.
+    MEASURED from three publishers, none of which is this file -- git tags with local weekdays, the
+    FULL PAGED 613-release GitHub corpus (a `gh release list --limit N` is a page not a corpus,
+    PMAT-1480''s sample trap; v0.1.615 is confirmed absent by a PER-TAG `gh release view`), and the
+    crates.io versions API with a User-Agent. All three agree: 0.1.615 tag Fri 2026-07-03 01:00 +
+    batch Fri 01:05 + NO GITHUB RELEASE EVER (1 orders `gh release create` BEFORE the batch);
+    0.1.616 -- Friday passed with no batch, tag+release+batch all Sat 2026-07-04 17:50-17:55, where
+    A6''s prescription is "roll to the following Friday" and not "run it Saturday"; THREE
+    CONSECUTIVE FRIDAYS 2026-07-10/-17/-24 with no tag, no release, no version (zero releases exist
+    in the whole corpus 2026-07-05..2026-07-25); 0.1.617 shipped Sun 2026-07-26 21:10/21:18, pulled
+    FORWARD from the ratified Friday 2026-07-31, recorded in queue.yaml and nowhere in 7.
+    ** THE SAME FILE CARRIED THE EVIDENCE 640 LINES EARLIER: 5 step 3''s size table has a v0.1.615
+    row reading "(no release)". PMAT-1482''s shape -- two locally consistent sections, one document.
+    ** NOBODY VIOLATED ANYTHING AND THAT IS THE FINDING: docs/RELEASE.md was CREATED 2026-07-27
+    21:53 CEST (a0959aa9), after every release it ranges over, and A4/A6/7 were all born in that
+    commit. THE LEDGER HAS GOVERNED ZERO RELEASES -- v0.1.618 is the first -- so its emptiness is
+    evidence of its AGE and of the missing step, and of nothing else.
+    ** MECHANISM HALF (PMAT-1493 one document along): 7 is the ONLY mandated record whose
+    destination is a file in this repo; THREE places send content to it (A4, A13, 7''s own preamble)
+    and NO step in 4 or 5 wrote it. A6 is the sharpest -- 7 quantifies over "every A6 slip" and A6
+    never named 7, so the one rule whose entire outcome is a deferral had no instruction to record
+    it. AND TWO PROCEDURE-CREATED OBSTACLES: A1+A8 pin the operator to a worktree at the TAG while 7
+    lives on main (PMAT-1481''s pinned tree, WRITE direction), and 5 opens "No code merges. None."
+    with A7 "no Friday code" -- both about the shipped artefact, neither about docs, with the
+    ambiguity landing on the one day the row is worth writing.
+    SHIPPED: NEW 5 step 9 (the single writer -- leave the tag worktree, branch off origin/main, row
+    dated the day it HAPPENED, run it for ANY cadence deviation incl. a pull-forward, and if it
+    cannot land Friday it is the first commit of the next window rather than dropped); A4 + A6 each
+    gain a POINTER to step 9, never a second copy (PMAT-1488); 7 gains the scope statement, the
+    three-publisher re-derivation command, and four *retro*-marked rows. Rule set unchanged at 16.
+    NO GATE (freeze bars a new tests/ file) -> XPILE-SLIPLEDGER-001 filed in next_lane; it must
+    DERIVE the cadence from tags/releases/registry rather than assert the table is non-empty, since
+    an honest quiet week has no row either.
+    ** SHAPE: AN EMPTY RECORD WITH A UNIVERSALLY QUANTIFIED PREAMBLE IS A CLAIM SURFACE, AND IT IS
+    THE ONE THAT GROWS STRONGER THE LONGER NOBODY MAINTAINS IT. A stale roster shows its age; an
+    empty one reads as a clean bill of health, more confidently every release.
+    NEXT PICK (PMAT-1495+): (a) sweep every other "none/zero recorded" surface for this shape --
+    owner_decisions with no decisions, empty divergence tables, next_lane entries never drained;
+    (b) still open from 1493, the OTHER narrowing fixes; (c) still open from 1488, other duplicated
+    normative sets.'
 - id: PMAT-1493
   status: done
   ev_rank: R1
@@ -7424,6 +7520,32 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1494 GATE -- XPILE-SLIPLEDGER-001, the cadence-ledger property. Blocked by the Wed
+  2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file AND the network. The defect is
+  MEASURED: docs/RELEASE.md section 7 quantifies over "every A4 stop and every A6 slip", carried
+  one placeholder row saying none had been recorded, was CREATED 2026-07-27 after every release it
+  ranges over, and had NO step that writes it.
+  FIVE design constraints, each a way this gate can be born useless.
+  (a) ⛔ DERIVE THE CADENCE FROM THE THREE PUBLISHERS, NEVER ASSERT THE TABLE IS NON-EMPTY. An
+  honest quiet week has no row either, so "the table has rows" is not the property. The property
+  is: for every release that DEVIATED from section 1''s cadence -- derived from `git for-each-ref`
+  tag dates in LOCAL time, the FULL PAGED GitHub release corpus, and the crates.io versions API --
+  section 7 carries a row naming it. A gate that only counts rows reds on a correct quiet week and
+  greens on a forgotten release, i.e. exactly backwards.
+  (b) ⛔ PAGE, NOT CORPUS. Use `gh api --paginate .../releases?per_page=100` (613 today) or a
+  per-tag `gh release view`; `gh release list --limit N` silently truncates -- PMAT-1480''s sample
+  trap, and it is what makes the v0.1.615 absence provable rather than inferred.
+  (c) LOCAL TIME, BECAUSE A6 SAYS "16:00 local Friday". v0.1.615 was tagged 2026-07-03 01:00 CEST
+  = 2026-07-02 23:00 UTC: the UTC reading calls it a Thursday release and the local reading calls
+  it a Friday one, and only the second is the rule''s own unit. A gate that mixes them reports the
+  wrong deviation set (PMAT-1483''s wc -c/wc -m defect, one dimension over).
+  (d) THE NETWORK HALF MUST SKIP LOUDLY, ARMED BY AN XPILE_REQUIRE_* TRIPWIRE registered in
+  docs/RELEASE.md section 2''s table -- otherwise it is a skip-green, which is the class section 2
+  exists to prevent, and release_preflight_witness.rs will red on a tripwire nothing arms.
+  (e) MANDATORY ACQUITTAL CONTROL: delete one *retro* row and assert the gate NAMES that release;
+  assert the mutation APPLIED before believing the verdict (PMAT-1484). And a second control the
+  other way: with the table intact, assert the gate does NOT fire on the quiet Fridays it has rows
+  for -- a gate that cannot be satisfied trains the operator to ignore it (PMAT-1481).'
 - 'PMAT-1493 GATE -- XPILE-RELDISC-001, the mandate-REACHABILITY property. Blocked by the Wed
   2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file. The defect is MEASURED: SIX
   paragraphs in docs/RELEASE.md mandate release-body content, section 5 step 3 is the only step

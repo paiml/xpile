@@ -24906,6 +24906,81 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1494
+  status: done
+  priority: P1
+  category: honesty
+  title: The slip ledger whose stated purpose is telling a deliberate deviation from a forgotten
+    one is empty, has no writer, and was born after every deviation it ranges over
+  notes: 'SHIPPED 2026-07-30 (post-freeze; docs/RELEASE.md + CHANGELOG + ledgers ONLY -- zero
+    crates/*/src, zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag v0.1.618 is cut at
+    6b5f6c02, so this does not touch the release SHA.
+    PICKED as PMAT-1493''s own next-pick (b): the remaining mandate-vs-mechanism pairs.
+    MEASURED: docs/RELEASE.md 7 "Slip and partial-batch ledger" opens "Every A4 stop and every A6
+    slip is recorded here ... An unrecorded slip is indistinguishable from a forgotten release" and
+    carried ONE row -- "no slip or partial batch recorded to date". That row is TRUE AS WRITTEN (a
+    statement about the table) and the preamble licenses running it backwards into "no slip has
+    occurred", which is a different claim and one nobody had measured. PMAT-1492 at the other end:
+    that slice found a roster whose TWO rows read as exhaustive; ZERO rows read the same way and
+    more strongly, because there is no row to inspect and doubt.
+    MEASURED 2026-07-30 from three publishers, none of which is this file -- git tags with local
+    weekdays, the FULL PAGED GitHub release corpus (613; `gh release list --limit N` is a page, not
+    a corpus, PMAT-1480''s sample trap, which is why v0.1.615 is confirmed absent by a per-tag
+    `gh release view` and not by scanning a list), and the crates.io versions API with a
+    User-Agent. All three agree: (1) 0.1.615 -- tag Fri 2026-07-03 01:00, batch Fri 01:05, NO GITHUB
+    RELEASE EVER, while 1 orders `gh release create` BEFORE the batch; (2) 0.1.616 -- Friday
+    2026-07-03 passed with no batch, tag+release+batch all ran Sat 2026-07-04 17:50-17:55, and A6''s
+    prescription for that condition is "roll to the following Friday", not "run it Saturday";
+    (3) THREE CONSECUTIVE FRIDAYS 2026-07-10/-17/-24 with no tag, no release and no version -- zero
+    releases exist in the whole 613-corpus between 2026-07-05 and 2026-07-25; (4) 0.1.617 shipped
+    Sun 2026-07-26 21:10/21:18, pulled FORWARD from the ratified Friday 2026-07-31, recorded in
+    queue.yaml sprint.concurrency_note and nowhere in 7.
+    ** THE SAME FILE ALREADY CARRIED THE EVIDENCE, 640 LINES EARLIER: 5 step 3''s body-size table
+    has a v0.1.615 row reading "(no release)". One document, two sections, each locally consistent
+    -- PMAT-1482''s shape, and the only tell is reading them in one pass.
+    ** NOBODY VIOLATED ANYTHING AND THAT IS THE FINDING, NOT A MITIGATION: docs/RELEASE.md was
+    CREATED 2026-07-27 21:53 CEST (a0959aa9), after every release it ranges over; A4, A6 and 7 were
+    all born in that commit. The ledger was born empty covering a history it had never read, and
+    then read as having read it. THE LEDGER HAS GOVERNED ZERO RELEASES -- none has shipped since it
+    was written and v0.1.618 is the first -- so its emptiness is evidence of its AGE, not of a quiet
+    history.
+    ** THE MECHANISM HALF, PMAT-1493 ONE DOCUMENT ALONG: 7 is the ONLY mandated record whose
+    destination is a file in this repository. Three places send content to it (A4''s "record exactly
+    which crates landed in 7", A13''s "named in the release body and in 7", and 7''s own preamble)
+    and NO step in 4 or 5 wrote it. A6 is the sharpest instance: 7 quantifies over "every A6 slip"
+    and A6 never named 7 at all -- the one rule whose entire outcome is a deferral carried no
+    instruction to record that the deferral happened.
+    ** TWO REASONS AN OPERATOR WHO WANTED TO WRITE IT WOULD NOT HAVE, BOTH CREATED BY THIS
+    PROCEDURE: A1+A8 pin release work to a worktree at the TAG while 7 lives on main, so a row
+    committed where the operator is standing reaches no reader (PMAT-1481''s pinned tree, in the
+    WRITE direction); and 5 opens "No code merges. None." with A7 saying "no Friday code" -- both
+    about the shipped artefact, neither about documentation, with the ambiguity landing entirely on
+    the one day the row is worth writing, right after a batch has failed. A mandate discharged only
+    by improvisation, at the worst moment, is not discharged.
+    SHIPPED (all docs/RELEASE.md): NEW 5 step 9, the single writer -- leave the tag worktree, branch
+    off origin/main, row dated the day it HAPPENED and never the merge date, run it for any cadence
+    deviation INCLUDING a pull-forward, and if it cannot land Friday it is the first commit of the
+    next window rather than dropped. A4 and A6 each gain a POINTER to step 9 (never a second copy of
+    the mechanism -- PMAT-1488). 7 gains the scope statement (an empty row count is a fact about the
+    table, not about the history), the three-publisher re-derivation command, and the four rows
+    above marked *retro* because they were reconstructed and not entered on the day. Rule set
+    unchanged at 16 -- no rule minted, A6 amended in place.
+    NO GATE -- the Wednesday 18:00 freeze bars a new tests/ file. Filed XPILE-SLIPLEDGER-001 in
+    next_lane; its first constraint is that it must DERIVE the cadence from tags/releases/registry
+    rather than assert the table is non-empty, since an honest quiet week has no row either.
+    ** THE SHAPE, and it generalises past this table: AN EMPTY RECORD WITH A UNIVERSALLY QUANTIFIED
+    PREAMBLE IS A CLAIM SURFACE, AND IT IS THE ONE THAT GROWS STRONGER THE LONGER NOBODY MAINTAINS
+    IT. A stale roster shows its age; an empty one reads as a clean bill of health, and reads that
+    way more confidently every release. For every "none recorded to date" in this repository, ask
+    which step writes the record and when it last ran.
+    NEXT PICK (PMAT-1495+): (a) sweep every other "none/zero recorded" surface in the repo for the
+    same shape (owner_decisions with no decisions, empty divergence tables, next_lane entries that
+    have never been drained); (b) still open from 1493 -- the OTHER narrowing fixes; (c) still open
+    from 1488 -- other duplicated normative sets.'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
 - id: PMAT-1493
   status: done
   priority: P1
