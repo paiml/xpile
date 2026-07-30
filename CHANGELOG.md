@@ -7,6 +7,126 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The flagship's registry front page publishes 12 links and every one is wrong — packaging a root document into a subdirectory crate silently reinterprets every relative path in it, and 2 of the 11 targets resolve at 200 to the wrong object (PMAT-1486)
+
+**PMAT-1466 fixed *which* document `crates.io/crates/xpile` publishes. Nobody
+measured what the published page does.** It set `readme = "../../README.md"`, so
+the flagship's front page became the gated 647-commit workspace `README.md`
+instead of a v0.0.1 name-reservation stub with one commit ever. That was right.
+It was also the last measurement anyone took.
+
+**The mechanism, probe-verified rather than assumed.** A `readme` outside the
+package root cannot be packaged by reference. Cargo **copies** the file to the
+tarball root and **rewrites the key** to `readme = "README.md"` — confirmed with
+a synthetic two-crate workspace whose member declared `readme =
+"../../README.md"`: the emitted `.crate` carries `README.md` at its root and
+`readme = "README.md"` in its manifest. So the page *does* render; PMAT-1466's
+repair holds. But crates.io then resolves every relative path inside that file
+against the package's **repository subdirectory** — `crates/xpile/` — because
+that is where the manifest lives. **The rewrite that makes the front page
+resolve is the same rewrite that makes every path inside it wrong.** A document
+is not portable just because its bytes are: moving it changes what its relative
+references *mean*.
+
+**Measured at the `v0.1.618` tag — 12 relative refs across 11 targets, 0 correct:**
+
+| result | count | targets |
+|---|---|---|
+| hard `404` | **9** | `LICENSE-MIT`, `LICENSE-APACHE`, both design specs, `docs/status/enforcement-handoff.md`, `.github/workflows/ci.yml`, `crates/xpile-backend/src/lib.rs`, `examples/proven-model/`, and the quickstart witness |
+| `200`, **wrong object** | **2** | `contracts/`, `examples/` |
+
+★ **A 404 is the friendly failure.** `crates/xpile/contracts` is a **symlink**
+(git mode `120000`) to `../../contracts`, so GitHub serves a page whose whole
+content is the string `../../contracts` — under the sentence *"Every emittable
+construct is anchored to a contract in `contracts/`"*, which promises 35 of them.
+And `crates/xpile/examples/` is a real but **different** directory: 7 Rust API
+examples, none of the four Python programs *"more runnable programs are in
+`examples/`"* refers to. Neither shows the reader an error. **Check the prefix,
+not the status code.**
+
+★ The sharpest single casualty: the README cites
+`crates/xpile/tests/readme_quickstart_witness.rs` as the executable evidence for
+its own quickstart. On the front page that becomes the doubled path
+`crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs` — **the evidence
+pointer for the page's central claim, dead, to the one reader who cannot clone
+and check.** Both `LICENSE-*` links dying on a dual-licensed crate is the same
+shape applied to licensing.
+
+**This was already shipping and nothing was watching.** The same file was
+`xpile-bigint`'s front page for `0.1.616` and `0.1.617`, where 11 of 11 refs were
+dead (10 links + a `hero.svg`). `docs/RELEASE.md` §5 step 3 has argued *for four
+days* that this README is the second non-clone path into the repository and that
+crates.io versions are **immutable per version** — and §5's verify step read only
+`version.num`. **Naming a publisher is not measuring it** (PMAT-1480's finding,
+one publisher over).
+
+**FIXED, docs-only under the freeze.** All 12 refs are now absolute —
+`blob/main` for the 8 files, `tree/main` for the 3 directories, **each form HTTP-
+measured, not guessed** (`blob/` on a directory answers `301`, `tree/` on a file
+answers `301`). All 27 URLs in the README now resolve. `docs/RELEASE.md` gains
+**§5 step 6**, which fetches the rendered page and greps for the
+`(blob|tree|raw)/HEAD/crates/<crate>/` prefix — the tell — plus abort rule
+**A11**.
+
+⚠️ **A11 is a DISCLOSURE rule, and this release is its own first casualty.** Step
+6 runs *after* the upload, and a published version is immutable: the fix landed
+post-tag, so **`0.1.618`'s own pages carry all 12 broken links** and `0.1.619`'s
+will not. A11 must never delay, retry or partially revert a batch — an uploaded
+crate is valid regardless of what its front page links to (contrast A4). Like
+A10 it aborts an artefact, not the day.
+
+⚠️⚠️ **My own bug, and the most transferable part: I wrote "check the prefix, not
+the status code" and then wrote a prefix check that could not see images.** Arm
+(a) matched `(blob|tree)`, but crates.io rewrites link hrefs under `blob`/`tree`
+and **image srcs under `raw`**. Against `xpile-bigint@0.1.617` it reported
+**10** rewritten refs where the truth is **11** — the missing one a dead
+`hero.svg`, which surfaced only in arm (b) because it happened to 404. **A
+rewritten image resolving 200 to the wrong picture would have escaped both
+arms.** Found by *executing* the block against a real published artefact, not by
+reading it — PMAT-1485's lesson, next slice. Both halves are now driven: the red
+half aborts `11 relative link(s) reinterpreted` on `xpile-bigint@0.1.617` with
+every one confirmed dead; the green half exits **silent** on the `xpile@0.1.617`
+stub, which has no relative refs at all. Each mutation was `diff`-ed against the
+original before its result was believed (PMAT-1484's rule).
+
+⚠️ A third self-check worth keeping: the first link sweep reported
+`https://crates.io/crates/xpile` **dead at 404** on a crate that is demonstrably
+published. That endpoint returns `404` to every non-browser client — `serde` and
+`tokio` do too. **Before believing a checker that contradicts a known-good
+artefact, run it against a control you know is fine**; step 6 excludes the
+endpoint and says why.
+
+⚠️ **Also fixed, and found the same way — by running the neighbouring block
+rather than reading it.** PMAT-1485's post-tag delta notice lists every commit
+that moved `CHANGELOG.md` since the tag, and elided subjects **at 120 characters
+from the front**. Every subject in this repository ends in `(Refs PMAT-nnnn)` —
+the only handle a reader has for locating the entry the line is pointing them at
+— so the cut removed it from **7 of 7 lines**, including the one announcing the
+notice itself. The notice existed to say *"read the difference"* and named
+nothing readable. It now elides the **middle** and always keeps the trailing id;
+re-measured, **7 of 7** carry it, output still valid UTF-8 (`gawk`'s `length` and
+`substr` are character-aware, which the byte-safety of the cut depends on). Body
+after both changes: **123,275 chars, 1,725 to spare, exit 0.** ★ **A truncation
+rule has to know which END of the string carries the identifier** — the same
+"a limit decides how many, never which" shape as PMAT-1484, one level down, in
+the very block that fixed it.
+
+⚠️ **Secondary finding, from checking that adding A11 did not red an existing
+gate — and the greenness proved nothing.**
+`release_preflight_witness.rs::the_release_doc_documents_the_procedure_and_the_abort_rules`
+asserts the presence of `A1`, `A1b` and `A2`..`A8` and **stops there**. `A9`,
+`A10` and `A11` were added on 2026-07-29/30 and none was ever added to that list,
+so **all three could be deleted from `docs/RELEASE.md` and the gate would stay
+green.** It is a lower bound wearing a checklist's clothes. Extending it is a
+gate edit (frozen); the 0.1.619 fix should *derive* the rule — every `**A<n> —`
+in the file reachable from a named step, and the set contiguous from `A1` — so
+the next rule added is covered without anyone remembering to widen a literal.
+
+**No gate** (freeze: this needs network and a new `tests/` file).
+`XPILE-RELREADME-001` is specified in `queue.yaml` `next_lane` for 0.1.619: pin
+the prefix-free property over **every** packaged front page, both regimes, with
+the `raw` spelling included.
+
 ### The release body points at a file it knows is 526 lines out of date and says nothing — two rules for the tag/`main` gap were written and neither was ever code, and the prefix cut can swallow the disclosures it protects into a code fence (PMAT-1485)
 
 **Three slices have now edited `docs/RELEASE.md` §5 step 3, and this one ran it.**
