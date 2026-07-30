@@ -7,6 +7,110 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The plan's own exit criteria certify the release that already shipped — 6 of 17 pinned to `0.1.617`, and the two that matter most PASS today, thirty hours early (PMAT-1482)
+
+`docs/specifications/sub/sprint-6day-2026-07-26.md` §6 is titled **"Exit
+criteria"** and opens *"Each is a command a hostile reviewer can run."* On the
+morning of the ship day someone ran them, for the first time. Seventeen commands;
+**six carried a literal pinned to `0.1.617`** — the release that shipped on
+2026-07-26, four days into the window this plan governs — and the problem is not
+that they were out of date. They broke three distinct ways.
+
+**They pass.** Criterion 1 is *"Published"*, the plan's top exit criterion. Given
+a `User-Agent` it returns `0.1.617` for **31 of 31** crates, right now, because
+that batch really is live — from last Sunday. Criterion 2 is *"Tagged Thursday,
+released Friday"*: `v0.1.617` resolves (`f764e433`), its SHA shows `gate` and
+`workspace-test` SUCCESS, and `gh release view v0.1.617` has been non-draft since
+`2026-07-26T19:10:35Z`. All three clauses green. **A hostile reviewer running the
+plan's release checklist ~30h before the `0.1.618` batch begins would have found
+the release already certified**, and nothing in the command output would have hinted
+which release it was certifying.
+
+**They measure the wrong span.** Criterion 3 extracted the CHANGELOG section with
+`awk '/## \[0.1.617\]/,/## \[0.1.616\]/'`. **This CHANGELOG quotes its own headings
+in prose**, so the range's end pattern matches a *sentence* long before it reaches
+a heading: the first line containing `## [0.1.617]` is at line **793**, inside
+`[0.1.618]`, while the real heading is at **7,892**. The range therefore returned
+**8,361 lines against a true section of 1,261** — a 6.6× over-count starting
+mid-`[0.1.618]`. Retargeted to the version actually shipping, the same spelling
+yields **786 of 7,884 lines: 90.0% truncated, at exit 0.** That is the release
+body. `docs/RELEASE.md:262` has used the anchored `index()` extractor since
+PMAT-1480; §6 never received it. Same shape as the `sed '/roots/,/\]/'` lakefile
+landmine already in this plan's §8 — **match per line, anchored.**
+
+**They cannot pass at all.** Criterion 4 required
+`grep -nE '453|788' CHANGELOG.md docs/release-notes-0.1.617.draft.md` to return
+nothing: that file **does not exist**, so `grep` exits 2; and unanchored
+`453|788` matches **27** lines of this CHANGELOG, three even word-anchored and all
+legitimate — `PMAT-788`, the `## [0.1.453]` release heading, `PMAT-453/454`. Its
+second clause required `grep -n '795' CHANGELOG.md` **to return a hit** — that is,
+it *mandated the presence of* the figure §5 forbids thirty-four lines earlier, in
+as many words: *"do not type it here (it read `795` on 2026-07-26 and is 857
+today)"*. `witness_floor.rs:145` derives **857**. One document, two sections,
+opposite instructions about the same number.
+
+**And a stale literal can red a correct release.** Criterion 11 counts
+witness-floor touches over `v0.1.616..v0.1.617` and demands **2**. It returns
+**4** — so the criterion *fails*, for a reason having nothing to do with
+`0.1.618`; over the correct `v0.1.617..v0.1.618` range it returns exactly **2**
+and passes. Criterion 12 audits the ledger over that same stale range: **109
+commits that shipped last week**, not the **120** under audit. Both ranges happen
+to return empty, so the verdict was right by luck while the subject was the wrong
+release. A criterion checking the wrong commits is a *different check*, not a
+weaker one.
+
+Independently of any version, criterion **17** probes `head -3 docs/roadmaps/queue.yaml`
+for `updated: 2026-07-31`. Line 1 of that file is `updated_prev_1480:`, an
+eleven-line prose block; the real `updated:` key sits at line 28 and has never
+held a date.
+
+**The healthy controls are what make this a finding rather than a complaint about
+rot.** Criterion 6 carries a dated PMAT-1476 correction, criterion 11's sub-bullet
+a dated PMAT-1344 one; criterion 13 (*freeze held*) returns **empty** and passes,
+confirming the post-freeze docs lane held; criterion 16 passes. The section *was*
+being maintained — one criterion at a time, whichever one a slice happened to
+touch. **Nobody re-read it whole, and not one version literal in it was ever
+derived.**
+
+**THE SHAPE.** `crates/xpile/tests/release_plan_freshness_witness.rs`
+(XPILE-RELPLAN-001, PMAT-1467) gates this exact file. It derives from
+`git tag --list`, discovers its corpus instead of listing it, and is green. It saw
+none of this, because **it pins the section that says what will be DONE — §5's
+`**VERSION:` line and the `` TAG: `v…` `` literal — and not the section that says
+how to CHECK it was done.** A verification harness is a claim surface too, and it
+is the one nobody re-reads: it sits at the bottom, and its job is to be run once.
+*Ask of every gate whether its corpus includes the checks or only the work.*
+
+**FIXED**, docs-only under the freeze. §6 now derives `$V`, `$TAG` and
+`$PREV_TAG` (from `queue.yaml` `sprint.version` and `git tag --sort=-v:refname`)
+and no criterion contains a version literal; criterion 1 gained the mandatory
+`User-Agent` — **measured: without it, 31 of 31 crates report `MISSING` on a fully
+successful publish**, the trap that fired on v0.1.617 night — plus a
+header-free sparse-index cross-check; criterion 3 uses the anchored extractor;
+criterion 4 is rewritten as the positive check a command can actually decide (the
+derived `LIVE` count must appear) with the banned-figure grep demoted to a pinned
+ratchet; 11, 12 and 17 are re-pointed. §1's commitment line said **`v0.1.617`**
+and now says what ships, and §2's banned-figures bullet no longer names the
+replacement figure by value — *a banned-figures list that prints its own
+replacement becomes a source of banned figures.*
+
+⚠️ **Self-correction, kept because it is the most useful line in this entry.** The
+first rewrite of criterion 4 asserted the banned figures appear **nowhere** in the
+section. That fails on the spot — the section quotes all three while documenting
+the ban. **The fix for a can-never-pass criterion was itself a can-never-pass
+criterion, and only executing it caught that.** Every replacement command was then
+run against the live tree before being written down. A grep cannot separate a
+citation from a claim; the shape that can is `is_mention()` in the gate, which is
+why the exact rule is filed for the gate rather than published here.
+
+**NO GATE.** The Wed 2026-07-29 18:00 freeze permits no new
+`crates/xpile/tests/` file and no gate edit, so the above is a **measurement, not
+an invariant**, and it can rot again the moment 0.1.619 opens. The widening is
+filed as its own `queue.yaml` `next_lane` entry — the XPILE-RELPLAN-001 corpus
+widening: **no
+exit criterion may contain a version literal**, which needs no network and reds by
+construction on the next release.
+
 ### The fix to the release runbook cannot reach the operator it was written for — A1 pins them to the tag, and the fix landed forty minutes after it (PMAT-1481)
 
 PMAT-1480 rewrote `docs/RELEASE.md` step 3 because the sentence *"body matching
