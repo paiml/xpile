@@ -7,6 +7,95 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The abort rule whose ONLY action is disclosure told tomorrow's operator the defect was not there — A11 stated the inverse of which release carries the README fix, and it self-cancelled at exit 0 (PMAT-1491)
+
+`docs/RELEASE.md` §6 is the canonical abort-rule set: the sprint plan names this
+file and no other, and PMAT-1488 deleted the plan's second copy precisely so
+that ship-day reads one place. **Its rule A11 ended on a sentence that was false
+in both halves.**
+
+Quoted verbatim, as it stood from 04:57 to 12:0x on 2026-07-30:
+
+```text
+The fix (absolute `blob/main` / `tree/main` URLs, each form HTTP-measured)
+landed *after* the tag, so `0.1.618`'s pages carry it and `0.1.619`'s will not.
+```
+
+Measured against the tree, not read:
+
+```console
+$ git show v0.1.618:README.md | grep -oE '\]\([^)]*\)' | grep -vcE '\]\((https?:|#)'
+12
+$ git show origin/main:README.md | grep -oE '\]\([^)]*\)' | grep -vcE '\]\((https?:|#)'
+0
+```
+
+The tag object was written 2026-07-30 00:32 at `6b5f6c02`; PMAT-1486's fix
+merged at 04:57 as `ff092faf`, **after** it. So `0.1.618` carries all 12 broken
+relative refs and `0.1.619` carries the fix — the exact reverse of both clauses.
+
+**Why one sentence is worth a slice: A11's only action is disclosure, so the
+inverted sentence does not make the rule wrong, it makes the rule VANISH.** A11
+is not a stop rule — it says *"write the finding to `CHANGELOG.md` under the next
+version"* and *"never delay, retry or partially revert a batch."* Every operative
+clause survives an inversion untouched. What does not survive is the reason to
+act: an operator told that `0.1.618`'s pages carry the fix has nothing to
+disclose, closes A11 satisfied, and PMAT-1486's measurement never reaches
+`0.1.619`'s CHANGELOG — the one destination A11 exists to route it to. **The rule
+self-cancels at exit 0, and no lane can see that happen**, because the only
+artefact is a disclosure that was never written.
+
+**Root cause — the disposition was PARAPHRASED from PMAT-1486's own CHANGELOG
+entry rather than derived from the tree, and the paraphrase dropped the noun.**
+That entry is correct: *"the fix landed post-tag, so **`0.1.618`'s own pages
+carry all 12 broken links** and `0.1.619`'s will not."* A11 restated it with
+`the fix` promoted to grammatical subject and `all 12 broken links` replaced by
+`it` — which then bound to `the fix` — while the trailing clause *"and
+`0.1.619`'s will not"*, which only parses against the noun that had been
+removed, was carried over intact. **Two documents, one slice, opposite claims:
+this is PMAT-1488's finding one level down.** PMAT-1488 could fix its copy by
+deleting it. A11 cannot be deleted — §6 must stand alone for the operator — so
+it now carries the falsification command above inline, in the ⛔-block form A12
+and A13 already use, and A11 gains the *"THAT IS THE EXPECTED OUTCOME — DO NOT
+STOP FRIDAY OVER IT"* header those two had and it did not.
+
+**The sweep, because one confirmed instance is not a finding about a class.**
+All six `0.1.618` A-rule records were cross-checked against the CHANGELOG entry
+that created each, and the figures re-derived from the tree and the tag:
+
+| rule | record | re-derived | verdict |
+|---|---|---|---|
+| A9 (PMAT-1483) | `469,246` chars / `7,700` lines | `469,246` / `7,700` | agrees |
+| A10 (PMAT-1484) | tail at `7,319`, `382` lines / `24,324` chars | `7,319` / `382` / `24,324` | agrees |
+| A11 (PMAT-1486) | 12 refs / 11 targets; *`0.1.618` carries the fix* | 12 / 11; **`0.1.618` carries the defect** | **INVERTED** |
+| A12 (PMAT-1487) | tagged tree keeps the dead URL; repair → `0.1.619` | `documentation = "https://docs.rs/xpile"` at the tag | agrees |
+| A13 (PMAT-1489) | 7 of 31 descriptions; the batch is the repair | all 7 manifests `tag == main` | agrees |
+| A14 (PMAT-1490) | 58 = 38 + 18 + 2 on 13 of 30 | `38+18+2 = 58` | agrees |
+
+A11's *count* was never wrong — 12 refs across 11 distinct targets is exact.
+Only its disposition inverted, which is why a figure-checking gate would not
+have caught it and a reader skimming for numbers would not either.
+
+**Also re-measured today, and this is the Thursday pre-flight rather than a
+finding:** §5 step 3 was extracted from this file and run against tag
+`v0.1.618` — exit `0`, body **123,257** characters (1,743 under the 125,000
+cap), three mandatory headings present at body lines 1579/1674/1761, tail
+byte-identical to `/tmp/relmand.md`, fence parity even (16). The post-tag delta
+notice has grown from PMAT-1485's **5 commits / 526 lines** to **11 commits /
+1,998 characters**, absorbed by the prefix exactly as designed — `RESERVE` is
+charged for the cut marker only, and the notice is inside `HDR_C`, which the
+budget subtracts. It names `ff092faf` and `bf7e5d26`, so tomorrow's body
+discloses the two post-tag commits that changed a *published* surface. All 12
+check-runs on `6b5f6c02` are SUCCESS, `cleanroom-publish` included; there is no
+non-success advisory job to name in the release body.
+
+**Not gated, and the freeze is why.** The root-cause gate would derive each
+`First run, <version>` record's disposition instead of trusting prose, and it
+lives in `crates/xpile/tests/`, which the Wed 18:00 freeze closed. It is
+specified in `queue.yaml` `next_lane` as the second arm of
+`XPILE-RELREADME-001`. Until it exists, A11's inline falsification command is
+what a reader has, and it is one line long.
+
 ### The job named `docs` has never built the documentation — 58 defects on 13 of the 30 published `docs.rs` pages, every lane green, and `doc_status: true` for all thirty (PMAT-1490)
 
 **`.github/workflows/` contains zero occurrences of `cargo doc`, `rustdoc` and

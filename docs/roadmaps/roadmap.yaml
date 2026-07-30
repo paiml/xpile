@@ -24906,3 +24906,69 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1491
+  status: done
+  priority: P1
+  category: honesty
+  title: The abort rule whose ONLY action is disclosure told tomorrow's operator the defect was
+    not there -- A11 stated the inverse of which release carries the README fix, and it
+    self-cancelled at exit 0
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG lane ONLY -- zero crates/*/src,
+    zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag v0.1.618 is cut at 6b5f6c02, so
+    this does not touch the release SHA.
+    PICKED on Day 5 with the ranked queue empty (PMAT-1374 dated 07-31, PMAT-1375 the DEFERRED
+    0.1.619 lane) by cross-checking every 0.1.618 abort-rule record in docs/RELEASE.md section 6
+    against the CHANGELOG entry that created it -- PMAT-1488''s "written down twice and nothing
+    compared the two copies" applied one level DOWN, from plan-vs-runbook to runbook-vs-CHANGELOG.
+    MEASURED: A11 ended on "The fix ... landed *after* the tag, so `0.1.618`''s pages carry it and
+    `0.1.619`''s will not" -- FALSE IN BOTH HALVES. The tag object was written 2026-07-30 00:32 at
+    6b5f6c02; PMAT-1486''s fix merged 04:57 as ff092faf, AFTER it. Re-derived from the tree, not
+    read: `git show v0.1.618:README.md | grep -oE ''\]\([^)]*\)'' | grep -vcE ''\]\((https?:|#)''`
+    -> 12 at the tag, 0 on main. So 0.1.618 carries all 12 broken relative refs and 0.1.619 carries
+    the fix, the exact reverse of both clauses.
+    ** WHY ONE SENTENCE IS WORTH A SLICE: A11 is a DISCLOSURE rule, so an inversion does not make it
+    wrong, it makes it VANISH. Every operative clause -- "write the finding to CHANGELOG.md under
+    the next version", "never delay, retry or partially revert a batch" -- survives the inversion
+    untouched. What does not survive is the REASON TO ACT: an operator told that 0.1.618 carries the
+    fix has nothing to disclose, closes A11 satisfied, and PMAT-1486''s measurement never reaches
+    0.1.619''s CHANGELOG, the one destination A11 exists to route it to. The rule self-cancels at
+    exit 0 and NO LANE CAN SEE IT HAPPEN, because the only artefact is a disclosure never written.
+    ** ROOT CAUSE: the disposition was PARAPHRASED from PMAT-1486''s CHANGELOG entry instead of
+    derived from the tree, and the paraphrase dropped the NOUN. The entry is correct ("`0.1.618`''s
+    own pages carry all 12 broken links"); A11 promoted `the fix` to grammatical subject and
+    replaced `all 12 broken links` with `it`, which then bound to `the fix`, while the trailing
+    clause "and `0.1.619`''s will not" -- which only parses against the noun that had been removed
+    -- was carried over intact. PMAT-1488 could fix its second copy by DELETING it; A11 cannot be
+    deleted, because section 6 must stand alone for the operator, so it carries the falsification
+    command INLINE instead and gains the "THAT IS THE EXPECTED OUTCOME -- DO NOT STOP FRIDAY OVER
+    IT" header that A12 and A13 already had and it did not.
+    ** THE SWEEP, because one confirmed instance is not a finding about a class: all SIX 0.1.618
+    A-rule records were cross-checked against their CHANGELOG entries with every figure re-derived.
+    A9 469,246 chars / 7,700 lines -> agrees. A10 tail at 7,319, 382 lines / 24,324 chars -> agrees.
+    A11 12 refs / 11 targets -> count agrees, DISPOSITION INVERTED. A12 tagged tree keeps
+    documentation = "https://docs.rs/xpile" -> agrees. A13 seven descriptions, batch is the repair
+    -> all 7 manifests re-verified tag == main, agrees. A14 58 = 38 + 18 + 2 on 13 of 30 -> agrees.
+    ONE of six. A11''s COUNT was never wrong, which is why a figure-checking gate would not have
+    caught it and a reader skimming for numbers would not either.
+    THURSDAY PRE-FLIGHT (not a finding; the day''s release duty): section 5 step 3 EXTRACTED from
+    RELEASE.md and RUN against tag v0.1.618 -- exit 0, body 123,257 chars (1,743 under the 125,000
+    cap), three mandatory headings at body lines 1579/1674/1761, tail byte-identical to relmand.md,
+    fence parity even (16). The post-tag delta notice grew from PMAT-1485''s 5 commits / 526 lines
+    to 11 commits / 1,998 chars, absorbed by the PREFIX exactly as designed (RESERVE is charged for
+    the cut marker only; the notice is inside HDR_C, which the budget subtracts). It names ff092faf
+    and bf7e5d26, so tomorrow''s body discloses both post-tag commits that changed a PUBLISHED
+    surface. All 12 check-runs on 6b5f6c02 SUCCESS including cleanroom-publish -- no non-success
+    advisory job to name in the release body.
+    NO GATE. The Wed 2026-07-29 18:00 freeze bars a new crates/xpile/tests/ file. The root-cause
+    gate would DERIVE each "First run, <version>" record''s disposition rather than trust prose; it
+    is filed as the SECOND ARM of XPILE-RELREADME-001 in queue.yaml next_lane. Until it exists,
+    A11''s inline falsification command is what a reader has, and it is one line long.
+    NEXT FREE ID PMAT-1492. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- expect A9 (body
+    over cap), A10, A11 (now stated correctly), A12, A13 (7 crates; publishing is the REPAIR) and
+    A14 (58 defects on 13 crates). ALL PREDICTED, NONE a reason to touch the batch. A7: NO FRIDAY
+    CODE.'
+  created: '2026-07-30T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
