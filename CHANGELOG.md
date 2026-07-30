@@ -13,6 +13,103 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The sub-spec that defines this project's fleet membership publishes eight executable claims and six are false against the installed tool — including both commands that constitute the membership procedure — while the one requirement living inside this repository is discharged by a green `cargo test` that runs zero tests (PMAT-1497)
+
+`docs/specifications/sub/kaizen-fleet.md` is the sub-spec that §20 of the
+canonical spec points at. It tells a reader what fleet membership buys, what it
+requires, how to register, and when the quarterly review happens. It was written
+on **2026-05-15** (`cdcece9c`, the initial commit) and its operational half has
+never been executed by anything — CI invokes `pv lint contracts/` and nothing
+else.
+
+**Measured 2026-07-30 against the pinned `pv 0.49.0`, every command run and its
+stderr transcribed into the page.** Six of the eight executable claims are
+false, and two of the six *are* the membership procedure:
+
+| Published claim | Result |
+|---|---|
+| `pv kaizen --register <repo>` (requirement 5, the "Registration" block, and half of §20's *"becomes repo #41 once … is run"*) | `error: unexpected argument '--register' found` |
+| `pv kaizen rollup --quarter <Q>` (the "Quarterly review" cadence) | `error: unexpected argument 'rollup' found` |
+| `pv fleet release --bump minor` | `error: unrecognized subcommand 'fleet'` |
+| *"`pv kaizen` aggregates xpile alongside aprender, depyler, decy, trueno"* | `pv kaizen --dry-run` here → `error: no repos found with binding.yaml and sibling directory` — it does not run in this repo at all |
+| *"`pv audit` resolves cross-repo deps against the fleet manifest … xpile's CI fails before the breakage reaches main"* | `pv audit` takes one `<CONTRACT>` path (`--binding/--coq/--flux`); no fleet manifest, no cross-repo resolution; invoked nowhere in this repo; and the example's subject file `contracts/xlate-py-int-to-i64-v1.yaml` does not exist |
+| *"`pv diff` catches when xpile's API changes break dependents in the fleet"* | `pv diff <OLD> <NEW>` diffs two contract **YAML files** and suggests a semver bump — no repo, dependent, or fleet notion |
+
+Plus two quantitative corrections: *"Pass `pv lint` 8/8 on every PR"* is **7/8**
+— Gate 7 `reverse-coverage` is skipped (`no --binding or --crate-dir provided`)
+because the CI step is exactly `pv lint contracts/` — and `xpile-spec.md` §20's
+*"fleet-level quarterly rollups via `pv score`"* names a **local directory
+scorer** with no fleet or quarter argument. One rollup, two published
+mechanisms, neither of which exists.
+
+**The sharpest item needed no external tool at all.** Membership requirement 2
+asks for `cargo test -p <repo>-contracts --lib` *"exercising the contract
+framework"*. `cargo test -p xpile-contracts --lib` **exits 0 running `0 tests`**;
+`crates/xpile-contracts/src/lib.rs` is 118 lines carrying **zero `#[test]`**. It
+is the only requirement on that list living entirely inside this repository, and
+therefore the only one any gate here could ever have checked — and it has read
+as met for seventy-six days, because the requirement is spelled as **a command
+that passes** rather than **a property that holds**, and an empty crate satisfies
+the first.
+
+**The shape: a claim about a third-party binary's CLI surface has no gate here
+and cannot get one from `git ls-files`.** PMAT-1480 established that a
+tree-derived corpus cannot falsify a claim that *leaves* the repository —
+release pages, registries. This is the inbound mirror: a claim about a tool that
+*arrives* from outside and can move without anyone touching this repo. Every
+honesty gate in `crates/xpile/tests/` **reads files**; none **runs**
+`<tool> --help`. PMAT-1459's rule — *a published command that has never been
+executed is decoration* — at the cross-tool boundary.
+
+**Second: the file is in the strictest corpus, was edited two days ago, and was
+still unaudited.** `claim_pages()` walks all of `docs/specifications/**`, and
+PMAT-1455 edited this very file on 2026-07-28 (`86299aa0`) to correct its
+proof-volume paragraph. That gate hunts **numerals**; the broken lines hold
+**commands**. Being in scope is not being covered, and being edited is not being
+audited.
+
+**Third, and it needs no external probe:** `sub/ci-gates.md` already lists both
+`pv score --no-regression-vs main` (`XPILE-CI-SCORE-001`) and `pv audit`
+(`XPILE-CI-PV-AUDIT-001`) under *"Gates planned but not yet wired"* — so two
+locally-consistent sibling pages of one spec tree disagree about whether a
+membership prerequisite is met. The only tell is reading them in one pass
+(PMAT-1482's shape, third instance).
+
+**Fourth, the process lesson.** PMAT-1495 filed `quarterly-rollup-cadence` as an
+**owner decision** one day earlier, having correctly established that
+`docs/status/quarterly/` has never existed. The mechanism was one `--help` away:
+the writer that register names was never a command. Escalating was right;
+stopping at the escalation was not. `owner_decisions` now carries `update_1497`
+— option (2), *"keep the row and write the rollup at the 2026-09-30 close"*, is
+**not available**, because there is no rollup command to run. An owner-gated
+question is a reason to escalate and never a reason to stop measuring.
+
+**And a healthy control, which is what makes this a finding rather than a
+complaint about rot:** the quarterly SOTA-gap dossier in `audit-design.md` §0
+(`XPILE-SOTA-001`) has a real gate — `sota_dossier_deadline.rs` parses its
+deadline and fails CI when wall-clock reaches it — was published **on time**
+(§7, dated 2026-06-12, commit `6f5c50f0`), and its next deadline 2026-11-15 is
+live and green. Same repository, same quarterly cadence, two registers: **the
+gated one ran; the ungated one was never even runnable.**
+
+**My own bug, kept.** The first draft of the requirement-2 correction asserted
+*"xpile has no `xpile-contracts` crate"* — inferred from the doc's
+`<repo>-contracts` template rather than checked. `ls crates/` has it. Running
+the command instead of reasoning about it turned a wrong correction into the
+strongest finding in the slice. A correction is a claim, and earns the same
+probe as the thing it corrects.
+
+**No gate.** The 2026-07-29 freeze bars a new `crates/xpile/tests/` file, and
+the natural gate must shell out to `pv --help` — a new capability for this
+corpus. Filed as `XPILE-EXTTOOL-001` in `docs/roadmaps/queue.yaml` `next_lane`
+with five design constraints, including *parse-only, never execute* (`pv kaizen
+--fix`, `pv generate`, `gh release create` and `cargo publish` all appear in
+`docs/`), *skip loudly when the binary is absent*, and an in-tree first arm that
+needs no external binary: a published requirement of the form *"`cargo test -p X`
+passes"* must additionally assert the run is **non-vacuous**. Until that gate
+exists, **the probe table is a measurement dated 2026-07-30, not an invariant**,
+and the page says so in those words.
+
 ### The released CHANGELOG section credited v0.1.618 with fifteen slices that are not in the v0.1.618 tag (PMAT-1496)
 
 The release commit rolled `## [Unreleased]` into `## [0.1.618] - 2026-07-31` and

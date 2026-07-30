@@ -367,9 +367,19 @@ The merge is the *implementation* of the monorepo; the extract phase already giv
 
 **Sub-spec**: [sub/kaizen-fleet.md](sub/kaizen-fleet.md)
 
-Per pv-spec §31, the fleet is at Grade A across 40 repos, 294 contracts, 1025 Lean theorems, 20,110 assertions. xpile becomes repo #41 once first contracts pass `pv lint` (✅ done at v0.1.0) and `pv kaizen --register xpile` is run.
+Per pv-spec §31 **as transcribed 2026-05-15 and never re-read** (this tree holds no copy of pv-spec), the fleet is at Grade A across 40 repos, 294 contracts, 1025 Lean theorems, 20,110 assertions. xpile becomes repo #41 once first contracts pass `pv lint` (✅ done at v0.1.0) and `pv kaizen --register xpile` is run.
 
-Fleet-level quarterly rollups via `pv score` aggregate xpile's grade alongside the others. xpile contracts contribute to fleet-level audit-chain integrity.
+> ⛔ **The second half of that condition cannot be satisfied (PMAT-1497).**
+> `pv kaizen --register xpile` → `error: unexpected argument '--register' found`
+> at the pinned `pv 0.49.0`; `pv` has no registration verb. So this section has
+> told readers since 2026-05-15 that membership is one command away, and it is
+> not: the command does not exist. **Whether xpile is repo #41 is not knowable
+> from this tree**, and nothing in this repository — no CI job, no gate, no
+> emitted artefact — depends on the answer. `sub/kaizen-fleet.md` carries the
+> full probe table: six of its eight executable claims were false when measured
+> on 2026-07-30, including the two that constitute the membership procedure.
+
+Fleet-level quarterly rollups **were specified** to aggregate xpile's grade alongside the others, and xpile contracts to contribute to fleet-level audit-chain integrity. ⛔ **Neither has happened.** This sentence named `pv score` as the aggregator; `pv score [PATH]` scores contracts in a **local directory** (default `contracts`) and has no fleet, repo, or quarter argument. `sub/kaizen-fleet.md` names a different command for the same rollup — `pv kaizen rollup --quarter <Q>` — which does not parse either. **One rollup, two published mechanisms, neither of which exists**; no rollup has ever been produced and `docs/status/quarterly/` has never existed (PMAT-1495).
 
 ---
 

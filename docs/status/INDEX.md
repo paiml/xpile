@@ -16,7 +16,7 @@ This directory tracks where xpile is and what's next. The **single source of tru
 | [`CURRENT.md`](CURRENT.md) | Live status: what's done, in-progress, next, blocked | Every session that changes the state | ✅ **LIVE.** Kept honest by `claims_drift.rs` (PMAT-1348 pins it as a POINTER file: no bare derived counts, no retired claims). The gate is why this one did not rot. |
 | [`INDEX.md`](INDEX.md) (this file) | Map of all status documents | When a new session log lands | ⚠️ **NO WRITER.** Its stated trigger is a session log landing, and none has (see below), so the trigger has never fired. Edited only when some *other* slice happened to sweep it. |
 | `YYYY-MM-DD-<topic>.md` | Per-session change log | At session end | ⛔ **ABANDONED 2026-05-18.** Superseded in practice by `CHANGELOG.md` + `docs/roadmaps/{queue,roadmap}.yaml`, which every session does write. Never struck from this table. |
-| `quarterly/YYYY-Q?.md` | Quarterly rollup (from `pv kaizen`) | At quarter close | ⛔ **NEVER WRITTEN.** The directory has never existed in this repository's history. |
+| `quarterly/YYYY-Q?.md` | Quarterly rollup (from `pv kaizen`) | At quarter close | ⛔ **NEVER WRITTEN, AND UNWRITABLE.** The directory has never existed in this repository's history, and the writer this cell names does not exist: `pv kaizen rollup --quarter 2026Q3` → `error: unexpected argument 'rollup' found` at the pinned `pv 0.49.0` (PMAT-1497). |
 
 Re-derive all four, rather than trusting the cells:
 
@@ -95,6 +95,22 @@ commitment or should be struck from the conventions table is an **owner
 decision** — `quarterly-rollup-cadence`, filed under `owner_decisions` in
 `docs/roadmaps/queue.yaml`. Until it is made, do not read this section as a
 statement that no quarter has closed.
+
+⭐ **The missing writer has a name now, and it was one `--help` away (PMAT-1497,
+2026-07-30).** The conventions table above sources this register from
+`pv kaizen`, and [`../specifications/sub/kaizen-fleet.md`](../specifications/sub/kaizen-fleet.md)
+spells the exact invocation: `pv kaizen rollup --quarter 2026Q3 >
+docs/status/quarterly/2026Q3.md`. At the pinned `pv 0.49.0` that is
+`error: unexpected argument 'rollup' found` — **`pv kaizen` has no `rollup`
+subcommand and no `--quarter` flag**, and it does not run in this repo at all
+(`error: no repos found with binding.yaml and sibling directory`). So this
+register was never merely unwritten; **it was never writable**, from the day the
+cadence was published. That does not decide the owner's question — what to
+promise is still a choice — but it strikes one of the three options the decision
+was written against, and it is the difference between a commitment that was
+dropped and one that was never executable. **The escalation was right; stopping
+at it was not** — an owner-gated question is a reason to escalate, never a reason
+to stop measuring.
 
 ## How to pick this up in a future session
 
