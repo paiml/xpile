@@ -243,20 +243,23 @@ Kernel contracts MUST have non-empty `proof_obligations`, `falsification_tests`,
 
 ## 14. CLI Reference (`xpile`)
 
-**Sub-spec**: [sub/cli.md](sub/cli.md)
+**Sub-spec**: [sub/cli.md](sub/cli.md) — that page separates the shipped surface from the planned one and dates its probe. **Read it before this summary.**
+
+⛔ **Measured 2026-07-30 against `xpile 0.1.618`: the block below was **1-of-8** true, and this parent section kept publishing the falsehoods for the six hours after PMAT-1498 corrected the sub-spec (PMAT-1499).** Seven of the eight invocations exited **2** — clap's parse-error code — because `--repair`, `--hybrid`, `lint`, `score` and `mcp` do not exist. Only line 1 runs.
+
+**Shipped, probed exit 0:**
 
 ```bash
-xpile transpile foo.py                        # static path
-xpile transpile foo.py --repair               # static → if fail, agent loop
-xpile transpile foo.py --repair=cached        # cache hit required; never call model
-xpile transpile foo.py --repair=force         # bypass cache; always re-run agent
-xpile transpile --hybrid foo_module/          # multi-language session
-xpile lint                                    # delegates to `pv lint`
-xpile score                                   # delegates to `pv score`
-xpile mcp                                     # launch MCP server (see Section 15)
+xpile transpile foo.py                        # static path, prints Rust to stdout
+xpile hybrid foo_module/                      # multi-language session (§16)
+xpile info                                    # registered frontends + backends
+xpile audit <path>                            # falsifier F1 citation coverage
+xpile attestations                            # Extrinsic-stratum vote tally
+xpile quorum                                  # §14.4 N-of-M quorum report
+xpile diamond                                 # Diamond-tier coverage report
 ```
 
-Budget overrides: `--repair-max-iterations=N`, `--repair-max-tokens=N`, `--repair-max-seconds=N`. Default budgets in [Section 9](#9-budget-discipline).
+**Planned, exits 2 today** — `xpile transpile --repair[=cached|force]`, `xpile transpile --hybrid <dir>` (the shipped spelling is the `xpile hybrid` subcommand above, not a `transpile` flag), `xpile lint`, `xpile score`, `xpile mcp`. The budget overrides `--repair-max-iterations=N`, `--repair-max-tokens=N` and `--repair-max-seconds=N` belong to the same unshipped `--repair` lane and are equally unrecognised; the default budgets in [Section 9](#9-budget-discipline) describe `xpile_agent::Budget`, which no CLI flag reaches. Full per-command probe transcripts in [sub/cli.md](sub/cli.md).
 
 ---
 
@@ -264,7 +267,11 @@ Budget overrides: `--repair-max-iterations=N`, `--repair-max-tokens=N`, `--repai
 
 **Sub-spec**: [sub/mcp.md](sub/mcp.md)
 
-`xpile-mcp` exposes xpile's transpile / repair / inspect tools as MCP (Model Context Protocol) endpoints, callable from Claude Code, Claude Desktop, VS Code, and other IDE assistants. Mirrors the pattern in `depyler-mcp` and `decy-mcp`. Six initial tools: `transpile_file`, `transpile_hybrid`, `inspect_meta_hir`, `inspect_ffi_manifest`, `lint_contracts` (delegates to `pv lint`), `score_contracts` (delegates to `pv score`).
+⛔ **NOT IMPLEMENTED. `xpile mcp` is not a subcommand and exits 2.** `crates/xpile-mcp/src/lib.rs` is 19 lines — one `McpServer` struct, one `bind_addr` field, one constructor, no tools, no transport, no path handling. Nothing depends on the crate.
+
+`xpile-mcp` is **intended** to expose xpile's transpile / repair / inspect tools as MCP (Model Context Protocol) endpoints, callable from Claude Code, Claude Desktop, VS Code, and other IDE assistants. The design mirrors the pattern in `depyler-mcp` and `decy-mcp` — sibling projects not in this workspace, so that comparison is not verifiable here. The planned tool roster and its count live in [sub/mcp.md](sub/mcp.md) and are **deliberately not restated here**: through 2026-07-29 this paragraph published `Six initial tools` against the sub-spec's `seven` rows, and no gate cross-checked a parent section against its own sub-spec (PMAT-1499). `crates/xpile/tests/mcp_surface_disclosure_witness.rs` now reds if this section restates a count the sub-spec contradicts.
+
+The sub-spec also records the two claims that most need reading before anyone wires this crate: the **security posture** it published as fact (path confinement that does not exist, resolved via an `xpile.toml` that has no reader) is a **requirement on the implementation**, not a property; and the **telemetry passthrough** has no mechanism, because no session type in the workspace carries an id.
 
 ---
 

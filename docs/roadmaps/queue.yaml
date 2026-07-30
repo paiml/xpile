@@ -328,6 +328,55 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1499
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'a 19-line stub published seven tools, a transport, a telemetry guarantee and a SECURITY
+    guarantee -- and its one true sentence was the last line of the file'
+  notes: 'DONE 2026-07-30. Scope: docs/specifications/sub/mcp.md + xpile-spec.md sections 14/15 +
+    CHANGELOG + both ledgers + ONE NEW ADDITIVE test file. Zero src, zero contracts, zero existing
+    gates modified, zero Cargo.toml. Tag v0.1.618 is cut at 6b5f6c02, so main is post-tag and this
+    cannot reach the release artifact. PMAT-1498''s next-pick (a).
+    THE PAGE IS 1-of-12 TRUE. Implementation = 19 lines (one struct, one String field, one ctor, one
+    TODO). No tools, no transport, no argument type, no path handling; nothing depends on xpile-mcp.
+    ** SHARPEST ITEM IS A SECURITY CLAIM published as present-tense fact: "only operates on files
+    within the project root", "arbitrary path arguments are rejected". No path handling exists and
+    the stated root-resolution mechanism is xpile.toml, which HAS NO READER (PMAT-1498). Nothing is
+    exposed today so nothing is at risk -- the defect was the GUARANTEE. RANKING RULE: order claims
+    by how hard the READER finds it to falsify them. Command = one keystroke. Config key = SILENT.
+    Sandbox property of a server you cannot start = UNFALSIFIABLE from outside. Security/safety >
+    config > command.
+    ** THE DEFERRAL EXPIRED: "Real MCP wiring lands in Phase 4" -- Phase 4 is the KANI phase and
+    phased-rollout.md records it SHIPPED. A deferral to a NAMED milestone is a claim with an expiry
+    date and no gate here read a deferral''s target.
+    ** THE PARENT WAS WORSE THAN THE CHILD: xpile-spec.md section 14''s CLI block is 1-of-8 true, and
+    PMAT-1498 corrected the SUB-spec six hours earlier without touching it. Section 15 published "Six
+    initial tools" against the sub-spec''s SEVEN rows -- PMAT-1488''s duplicated-normative-set class
+    on a PARENT/CHILD axis.
+    WHY GATES MISSED IT: claims_drift.rs walks all of docs/specifications/ but hunts DERIVED
+    CARDINALITIES; these were present-indicative PROSE with no numeral. Third axis of "in scope !=
+    covered" after completeness and cadence.
+    NEW GATE mcp_surface_disclosure_witness.rs (XPILE-MCPDOC-001), 5 properties, ALL KEYED TO THE
+    CRATE so they FLIP when the implementation lands (mcp registers / a tool name appears / a pmcp
+    dep is declared / path handling appears => gate reds and demands the disclosure be retired). A
+    DISCLOSURE THAT CANNOT EXPIRE BECOMES THE NEXT STALE CLAIM. Both red halves executed; the
+    deferral screen carries a POSITIVE control because its only live mention is inline-code-exempt.
+    The first draft RED ON THE SENTENCE RECORDING THE FIX -- PMAT-1495''s exemption trap, met again.
+    NEXT FREE ID PMAT-1500. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+    ** FRIDAY REMINDER: build /tmp/reldisc.md BEFORE section 5 step 3 (PMAT-1493) -- it aborts
+    without it.
+    NEXT PICKS AFTER THE RELEASE: (a) sweep every filename published as a CONFIG FILE anywhere in
+    docs/ -- xpile.toml is now disclosed on both its pages but the CLASS is unswept, and config
+    claims outrank command claims because they are silent; (b) sweep DEFERRALS as a class -- every
+    "lands in Phase N" / "in a future release" / dated promise in docs/, checked against whether the
+    target has already passed (XPILE-MCPDOC-001 property 5 is the template, and it is currently
+    quantified over ONE page); (c) the rest of the cadence sweep -- book/src/ and contracts inventory
+    headers still unswept; (d) PARENT/CHILD pairs as a class -- every sub-spec has a parent section
+    in xpile-spec.md and property 4 covers exactly one of them; (e) still open from 1494,
+    owner_decisions and next_lane never drained; (f) still open from 1488, other duplicated
+    normative sets.'
 - id: PMAT-1498
   status: done
   ev_rank: R1

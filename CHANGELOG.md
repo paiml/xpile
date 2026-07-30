@@ -13,6 +13,79 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### A 19-line stub published seven tools, a transport, a telemetry guarantee and a **security** guarantee — and its one true sentence was the last line of the file (PMAT-1499)
+
+`docs/specifications/sub/mcp.md` is §15 of the canonical spec. Probed 2026-07-30 against
+the tree at tag `v0.1.618`: **1 of its 12 claims is true.**
+
+The implementation it describes is `crates/xpile-mcp/src/lib.rs` — **19 lines**, one
+`pub struct McpServer` with one `bind_addr: String` field, one constructor, and a `TODO`.
+No tool functions. No transport. No argument type. No path handling. No crate in the
+workspace depends on `xpile-mcp`, and `McpServer` is never constructed outside its own
+definition.
+
+| Published as fact | Measured |
+|---|---|
+| Seven tools "exposed (v1)" | 0 exist as a function, handler, or name in the crate |
+| "uses the PMCP SDK", stdio default, TCP daemon | no `pmcp` dependency; `pmcp` occurs in **1** line of the repo — a `TODO` saying "*likely* PMCP SDK" |
+| `xpile mcp`, `--port 3000`, `--port 3000 --background` | all three exit **2**, `unrecognized subcommand 'mcp'` |
+| 5-step server lifecycle | step 1 fails, so 2–5 are unreachable |
+| "All MCP tool arguments are JSON-Schema-validated" | `schema` occurs in **0** lines of the crate |
+| Telemetry passthrough with an end-to-end session id | `telemetry` occurs in **0** lines under `crates/`; `xpile_agent::Session` has two fields, `model_id` and `budget` — **there is no id to propagate** |
+| Path confinement + "arbitrary path arguments are rejected" | no path handling exists; the stated root-resolution mechanism is `xpile.toml`, which has no reader (PMAT-1498) |
+| "`McpServer::new(bind_addr)` exists as a stub" | **true** — and it was the file's last line |
+
+**The security claim is the one that mattered.** A reader cannot falsify a sandbox
+property of a server they cannot start. An unrecognized subcommand announces itself on
+stderr in one keystroke; a guarantee about path handling in an unreachable component is
+unfalsifiable from the outside. Nothing is exposed today — there is no server to send a
+path to — so the defect was the published *guarantee*, not a live hole. The section now
+states path confinement as a **requirement on the implementation**: the first tool that
+takes a path must resolve and confine it, with its own falsification test, before it is
+reachable over any transport.
+
+**The deferral had expired.** The page ended "Real MCP wiring lands in Phase 4." Phase 4
+of the rollout is the **Kani** phase, and `sub/phased-rollout.md` records it as shipped —
+Kani runs on every PR as a required gate (`XPILE-QUORUM-003` / PMAT-021). Phase 4 came
+and went without MCP wiring, leaving the page deferring to a date in its own past. MCP
+wiring is now recorded as **unscheduled**, because a deferral to a named milestone is a
+claim with an expiry date.
+
+**The parent spec was worse than the sub-spec, and PMAT-1498 had just walked past it.**
+`xpile-spec.md` §14's own CLI block is **1-of-8 true** — `--repair`, `--repair=cached`,
+`--repair=force`, `--hybrid` (the shipped spelling is the `xpile hybrid` subcommand),
+`lint`, `score` and `mcp` all exit 2, as do all three published budget overrides. PMAT-1498
+corrected the *sub-spec* six hours earlier and left the parent restating the same
+falsehoods. §15 also published "Six initial tools" against the sub-spec's **seven** rows:
+a parent section and its own sub-spec disagreeing on a cardinality, in the corpus every
+claim gate walks.
+
+**Why every gate missed it.** `claims_drift.rs` walks all of `docs/specifications/`, so
+this page was in the strictest corpus the whole time — but its assertions hunt derived
+*cardinalities*, and these falsehoods were prose in the present indicative with no
+numeral to check. Third axis of PMAT-1495's *in scope ≠ covered*, after completeness and
+cadence. `cli_docs_drift.rs` executes the binary and could have caught `xpile mcp`, but
+its corpus is a single file.
+
+**New gate — `crates/xpile/tests/mcp_surface_disclosure_witness.rs`
+(`XPILE-MCPDOC-001`), 5 properties.** Every assertion is keyed to the **crate**, not to
+prose, so the gate flips direction when the implementation lands: the day `xpile mcp`
+registers, or a planned tool name appears in `crates/xpile-mcp/`, or a `pmcp` dependency
+is declared, or path handling shows up, it reds and demands the "does not run today"
+framing be retired. A disclosure that cannot expire becomes the next stale claim. It also
+carries the generalizable screen — **no deferral may point at a phase the rollout page
+records as shipped** — with the phase status re-derived from that page rather than trusted
+from either document's prose, plus the parent/child cardinality cross-check, an axis no
+gate in this repo covered.
+
+Both red halves were executed: injecting "Six tools" into §15 reds the cross-check, and a
+dishonest rewrite that drops the planned-surface markers reds the subcommand property.
+Every needle carries a control that must fire, and the deferral screen carries a
+**positive** control — the exact retired sentence — because the live page's only mention
+of it is inline-code-exempt, so without the control the screen could match nothing and
+still report green. That exemption is itself PMAT-1495's trap, met head-on: the first
+draft of this gate red on the sentence recording the fix.
+
 ### The sweep of every external command this repo publishes came back 30-of-31 clean, and the CLI reference for the binary this repo *builds* is 7-of-34 true — a gate written for exactly this defect has been green for 68 days on the other file named `cli.md` (PMAT-1498)
 
 `docs/specifications/sub/cli.md` is §14 of the canonical spec: the reference a reader

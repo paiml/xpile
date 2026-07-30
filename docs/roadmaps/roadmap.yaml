@@ -25494,3 +25494,81 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1499
+  status: done
+  priority: P1
+  category: honesty
+  title: a 19-line stub published seven tools, a transport, a telemetry guarantee and a SECURITY
+    guarantee -- and its one true sentence was the last line of the file
+  notes: 'SHIPPED 2026-07-30. Post-freeze scope: docs/specifications/sub/mcp.md +
+    docs/specifications/xpile-spec.md (sections 14 and 15) + CHANGELOG + both ledgers, plus ONE NEW
+    additive test file (crates/xpile/tests/mcp_surface_disclosure_witness.rs). Zero crates/*/src,
+    zero contracts/*.yaml, zero existing gates modified, zero Cargo.toml. Tag v0.1.618 is cut at
+    6b5f6c02, so main is post-tag and nothing here can reach the release artifact.
+    PICKED as PMAT-1498''s next-pick (a): sub/mcp.md was the SECOND page publishing xpile.toml and
+    the whole `xpile mcp` surface was unprobed.
+    THE PAGE IS 1-of-12 TRUE against the tree at v0.1.618. The implementation is 19 lines: one
+    pub struct McpServer, one bind_addr: String, one constructor, one TODO. No tool functions, no
+    transport, no argument type, no path handling. Nothing in the workspace depends on xpile-mcp and
+    McpServer is never constructed outside its own definition.
+    FALSE: seven tools "exposed (v1)" (0 exist); "uses the PMCP SDK" + stdio/TCP transport (no pmcp
+    dependency; `pmcp` occurs in ONE line of the repo, a TODO that says "LIKELY PMCP SDK" -- the
+    code author hedged and the spec author did not); three `xpile mcp` invocations (all exit 2,
+    unrecognized subcommand); the 5-step lifecycle (step 1 fails so 2-5 are unreachable);
+    "All MCP tool arguments are JSON-Schema-validated" (`schema` = 0 lines in the crate); telemetry
+    passthrough with an end-to-end session id (`telemetry` = 0 lines under crates/;
+    xpile_agent::Session has exactly two fields, model_id and budget -- THERE IS NO ID TO
+    PROPAGATE). TRUE: "McpServer::new(bind_addr) exists as a stub" -- and it was the LAST LINE of
+    the file, 80 lines below the claims it corrects.
+    ** SHARPEST ITEM AND IT IS A SECURITY CLAIM. The page stated as FACT that the server "only
+    operates on files within the project root" and that "arbitrary path arguments are rejected --
+    preventing accidental exfiltration". Every clause false: no path handling, no root resolution,
+    no rejection logic; the stated resolution mechanism is xpile.toml, which HAS NO READER
+    (PMAT-1498). Nothing is exposed today -- there is no server to send a path to -- so the defect
+    was the published GUARANTEE, not a live hole. RANKING RULE: order published claims by how hard
+    the reader finds it to falsify them. A subcommand is falsified in one keystroke; a config key
+    is silent (PMAT-1498); a SANDBOX PROPERTY OF A SERVER YOU CANNOT START is unfalsifiable from
+    the outside. Security/safety properties therefore rank above config claims, which rank above
+    command claims. The section now states confinement as a REQUIREMENT on the implementation --
+    the first tool taking a path must confine it, with its own falsification test, before it is
+    reachable over any transport.
+    ** THE DEFERRAL HAD EXPIRED. The page ended "Real MCP wiring lands in Phase 4." Phase 4 of the
+    rollout is the KANI phase and sub/phased-rollout.md records it SHIPPED (Kani runs on every PR
+    as a required gate, XPILE-QUORUM-003 / PMAT-021). Phase 4 came and went without MCP wiring, so
+    the page deferred to a date in its own past. GENERALIZABLE: a deferral to a NAMED milestone is a
+    claim with an expiry date, and no gate here read a deferral''s target. MCP wiring is now
+    recorded as unscheduled -- no phase or milestone owns it.
+    ** THE PARENT WAS WORSE THAN THE CHILD, AND PMAT-1498 WALKED PAST IT SIX HOURS EARLIER.
+    xpile-spec.md section 14''s own CLI block is 1-of-8 true: --repair, --repair=cached,
+    --repair=force, --hybrid (shipped spelling is the `xpile hybrid` SUBCOMMAND, not a transpile
+    flag), lint, score and mcp all exit 2, as do all three published budget overrides. PMAT-1498
+    corrected sub/cli.md and left the parent restating the same falsehoods -- the duplicated-set
+    class of PMAT-1488 on a PARENT/CHILD axis rather than a same-basename one. Section 15 also
+    published "Six initial tools" against the sub-spec''s SEVEN rows: a parent and its own sub-spec
+    disagreeing on a cardinality inside the corpus every claim gate walks.
+    WHY EVERY GATE MISSED IT: claims_drift.rs walks all of docs/specifications/, so this page was in
+    the strictest corpus the whole time, but its assertions hunt DERIVED CARDINALITIES and these
+    falsehoods were present-indicative PROSE with no numeral to check. Third axis of PMAT-1495''s
+    "in scope != covered", after completeness and cadence. cli_docs_drift.rs executes the binary and
+    could have caught `xpile mcp`, but its corpus is one file.
+    NEW GATE crates/xpile/tests/mcp_surface_disclosure_witness.rs (XPILE-MCPDOC-001), 5 properties,
+    all keyed to the CRATE rather than to prose so they FLIP DIRECTION when the implementation
+    lands: the day `xpile mcp` registers, or a planned tool name appears in crates/xpile-mcp/, or a
+    pmcp dependency is declared, or path-handling identifiers appear, the gate reds and demands the
+    "does not run today" framing be retired. A DISCLOSURE THAT CANNOT EXPIRE BECOMES THE NEXT STALE
+    CLAIM. Property 5 is the generalizable screen (no deferral may point at a phase the rollout page
+    records as shipped) with the phase status RE-DERIVED from that page, not trusted from either
+    document''s prose. Property 4 is the parent/child cardinality cross-check -- an axis no gate here
+    covered.
+    BOTH RED HALVES EXECUTED: injecting "Six tools" into section 15 reds the cross-check; a
+    dishonest rewrite dropping the planned-surface markers reds the subcommand property. Every
+    needle carries a control that must fire, and the deferral screen carries a POSITIVE control (the
+    exact retired sentence) because the live page''s only mention is inline-code-exempt -- without it
+    the screen could match nothing and report green. That exemption IS PMAT-1495''s trap met head-on:
+    the first draft of this gate RED ON THE SENTENCE RECORDING THE FIX, so the retired deferral moved
+    into backticks and the screen learned to strip inline code.'
+  created: '2026-07-30'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
