@@ -7,6 +7,136 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The section whose whole job is to bound the tool publishes 2 of the flagship frontend's 348 refusals — and the two lanes beside it are exhaustive, so nothing marks the difference (PMAT-1492)
+
+`### What still REFUSES` is one of the three sections `docs/RELEASE.md` §4 step 2
+calls **mandatory**, and PMAT-1484 carved it out of the prefix cut so it survives
+into the release body — the only non-clone path to this file. It opens *"An
+honest release note has to say what the tool will not do."* It then gives three
+lanes three paragraphs, in identical formatting, with the same unqualified
+present-tense verb **refuses**:
+
+- **The WASM lane** — exhaustive and machine-derived: *"The 13 refusals as of
+  this release"*, read out of `emit_surface.refused` in
+  `contracts/compile-rust-to-wasm-v1.yaml`, enforced in both directions by
+  `crates/xpile/tests/wasm_contract_surface.rs`, with a published one-liner that
+  re-derives the count.
+- **The shell lane** — exhaustive, plus PMAT-1479's third-category disclosure.
+- **The Python lane** — *two rows*: an annotated comprehension whose element type
+  disagrees with its annotation (PMAT-1363) and a `range()` bound of type `bool`
+  under bigint mode (PMAT-1364).
+
+Those two rows are **this cycle's additions**. PMAT-1363 is one of the four
+slices the preamble itself names as existing *"only to move a construct from the
+first column to the second"*; PMAT-1364 is a second Python refusal from the same
+cycle, correctly absent from that list of four because its refusal is one arm of
+a coercion fix rather than its whole purpose. Either way the paragraph is
+**cycle-scoped, and nothing says so.** Measured against the shipped frontend:
+
+```
+python3 - <<'PY'
+import re
+src = open('crates/depyler-frontend/src/lib.rs').read()
+sites = src.count('FrontendError::Lower')
+msgs = set(m.group(1) for m in re.finditer(
+    r'FrontendError::Lower\(\s*(?:format!\()?\s*"((?:[^"\\]|\\.)+)"', src))
+print(sites, 'refusal sites,', len(msgs), 'distinct message texts')
+PY
+```
+
+→ `471 refusal sites, 348 distinct message texts` (measured at `244091cc`;
+`FrontendError::Lower` is the frontend's only refusal constructor — the file's
+other variant, `FrontendError::Parse`, is used once).
+
+★ **UNDER-REPORTING A REFUSAL IS OVER-CLAIMING A CAPABILITY.** This is the
+mirror of PMAT-1479, which found the shell lane publishing a refusal guarantee it
+did not have. Here the flagship lane publishes almost none of the guarantee it
+*does* have, and the reader's inference runs the other way: told the tool refuses
+two exotic type-mismatch shapes, a reader concludes ordinary Python transpiles.
+Python is the MVP path (`xpile transpile foo.py --target rust`), so this is the
+lane a first-time reader tests.
+
+**Re-derived by running the shipped CLI, not by reading the source** — the
+standard this section sets for itself. 35 shapes probed through
+`/mnt/nvme-raid0/targets/xpile/debug/xpile` at `244091cc`: **24 accepted at exit
+0, 11 refused, across 7 distinct refusal messages, and the section names none of
+the 7**:
+
+| probe | refusal message |
+|---|---|
+| `async def f(...)` | `unsupported top-level statement: Discriminant(1) — only \`def\` and \`NAME = <literal>\` constants are supported at v0.2.0` |
+| `@staticmethod` on a top-level `def` | ``function `f` has decorators — not supported at v0.1.0`` |
+| `global g` | `contains unsupported statement: Discriminant(22)` |
+| `def f(**kw: int)` | ``function `f` uses keyword-only args / **kwargs — not supported at v0.1.0`` |
+| `from math import sqrt` | ``` `from math import sqrt` is not supported — xpile has no module system … use the QUALIFIED form ``` (PMAT-1410) |
+| `os.getpid()`, `m.sqrt()`, `random.randint()` | ``method calls (`obj.method(...)`) are not supported at v0.1.0`` |
+| `with open(...) as fh:` with `fh` unused | ``the handle is unused; v0.2.0 needs exactly one op on it`` |
+
+⚠️ **MY OWN BUG, AND IT IS THE SAME ONE THIS SECTION'S PREAMBLE WARNS ABOUT.**
+The first draft of that table had two more rows — *keyword arguments in calls*
+and *`with` statements* — both lifted from refusal strings that really are in
+`lib.rs` (``keyword arguments in calls (`f(x=...)`) are not supported at
+v0.1.0``). **Both shapes transpile at exit 0.** `g(x=a)` lowers fine and
+`with open("x") as fh: s = fh.read()` lowers fine; the strings are live source
+guarding narrower shapes than their wording suggests. → **A refusal string in the
+source is not a refusal in the shipped binary**, and a roster built by grepping
+`src/` would have published two false refusals. That is why the count above is
+reported as *sites and message texts* — a lower-bound census of the refusal
+**mechanism** — and every row of the table was produced by running the CLI.
+
+★ **THE ACCEPT SIDE IS CLEAN, AND THAT IS A RESULT, NOT AN ABSENCE.** PMAT-1479's
+recipe was to ask what a frontend accepts that nobody claims it models; on the
+shell lane the answer was 20 of 20. On the Python lane it is **0 of 24**. Every
+accepted shape was genuinely modelled, most of them contract-cited: `try/except`
+→ `catch_unwind` with a downcast on the `xpile: ValueError: ` prefix
+(`C-PY-EXCEPT-ALLOWLIST`); `yield` → an eagerly materialised `Vec`
+(`C-PY-GENERATOR-EAGER`, named on the emit); a chained comparison `0 < a < 10` →
+bound temporaries, so the middle operand is evaluated once; `match` → `if/else`;
+`del xs[0]`, `y, *rest = xs`, the walrus, `raise`, f-strings, nested `def` and
+`lambda` → closures. `def f(*args: int)` lowers to `Vec<i64>` **and the intra-module
+call site packs to match** — `f(1, 2, 3)` → `f(vec![1i64, 2i64, 3i64])`, verified
+against CPython (`g()` = 3 both sides). So this is **a claim defect, not a
+capability complaint** — PMAT-1487's rule, applied before writing the finding up.
+
+★ **THE HEALTHY CONTROL IS IN THIS REPOSITORY AND IT IS GOOD.**
+`book/src/reference/frontends.md` publishes an exhaustive, gate-backed operator
+roster (XPILE-PYOPSURFACE-001): `ast.BinOp` 13 in Python / 12 lower / 1 REFUSE,
+`ast.Compare` 10 / 8 / 2, `ast.UnaryOp` 4 / 3 / 1, naming `@`, `is`, `is not`,
+unary `+`. So the repo already knows how to bound this frontend honestly — **for
+operators.** Nothing does it for statement- and feature-level refusals, and the
+release note inherited the gap.
+
+**FIXED, docs-only under the freeze:** the Python paragraph now states its own
+scope, publishes the re-derivation command and its dated output, and names the
+CLI-confirmed families instead of implying they do not exist. **NO GATE** — the
+freeze bars a new `tests/` file; `XPILE-PYREFUSAL-001` is filed in
+`next_lane`, and its spec must (a) derive the roster from the CLI, never from a
+grep over `src/`, per the two false rows above, and (b) assert *scope-marking*,
+not a count, since the roster grows every cycle.
+
+⛔ **TOMORROW: this defect ships, and the fix above is exactly why it cannot be
+checked against `main`.** The tag was cut at `6b5f6c02` on 2026-07-30; this entry
+lands after it. So the paragraph is **no longer byte-identical** — the tag carries
+the unqualified 2-row version, `main` carries the scope-marked one, and §5 step 3
+extracts the body from `git show <tag>:CHANGELOG.md` (PMAT-1481 constraint (d)),
+never from the working tree. Verify at the **TAG ONLY**:
+`git show v0.1.618:CHANGELOG.md | sed -n '7416p'` → `**The Python frontend**
+refuses an annotated comprehension whose element type`. `0.1.618` carries the
+**defect**; `0.1.619` carries the **fix** — PMAT-1489's merge-vs-publish gap.
+
+★ **AND THAT IS PMAT-1491 FIRING ON THIS VERY SLICE, CAUGHT BEFORE THE COMMIT.**
+The first draft of abort rule A15 said the paragraph *"is byte-identical at
+`v0.1.618` and on `main`"* — a premise **this same commit falsifies**, because the
+commit that writes the rule is the commit that fixes the paragraph. Tomorrow's
+operator checking that premise would have found it false and read A15 as stale:
+PMAT-1491's self-cancellation, reproduced one rule later, in a rule whose only
+action is disclosure. → **A DISCLOSURE RULE MUST BE VERIFIABLE FROM A TREE ITS OWN
+FIX CANNOT REACH.** A11 and A14 pass this test by accident (their subjects are
+`README.md` links and `crates/*/src` doc comments, both frozen); A15 is the first
+whose subject is the CHANGELOG itself, so the tag-vs-tree distinction had to
+become explicit. Recorded as abort rule **A15**: disclosure only, never a reason
+to touch the batch.
+
 ### The abort rule whose ONLY action is disclosure told tomorrow's operator the defect was not there — A11 stated the inverse of which release carries the README fix, and it self-cancelled at exit 0 (PMAT-1491)
 
 `docs/RELEASE.md` §6 is the canonical abort-rule set: the sprint plan names this
@@ -8503,10 +8633,52 @@ substantive source-language count is **four** — Python, C, shell, WASM — and
 `crates/xpile/tests/claims_drift.rs` now runs every registered frontend against
 a real program in its own language and reds if a README numeral disagrees.
 
-**The Python frontend** refuses an annotated comprehension whose element type
+**The Python frontend.** ⚠️ **Read the scope of this paragraph before the rows
+(PMAT-1492).** Unlike the WASM and shell paragraphs above, which are exhaustive
+for their lanes, the two rows below are **this cycle's additions only** —
+PMAT-1363 is one of the four slices the preamble names above, and PMAT-1364 is a
+second Python refusal from the same cycle. They are **not** the lane's refusal
+roster. The roster is large and this is the honest size of it:
+
+```
+python3 - <<'PY'
+import re
+src = open('crates/depyler-frontend/src/lib.rs').read()
+sites = src.count('FrontendError::Lower')
+msgs = set(m.group(1) for m in re.finditer(
+    r'FrontendError::Lower\(\s*(?:format!\()?\s*"((?:[^"\\]|\\.)+)"', src))
+print(sites, 'refusal sites,', len(msgs), 'distinct message texts')
+PY
+```
+
+→ `471 refusal sites, 348 distinct message texts` at `244091cc`. That is a census
+of the refusal **mechanism** (`FrontendError::Lower` is the frontend's only
+refusal constructor) and a **lower bound on breadth, not a roster** — a refusal
+string in the source is not a refusal in the shipped binary. Two strings that
+read as blanket refusals guard much narrower shapes: keyword arguments in calls
+(`g(x=a)`) and `with open(...) as fh: s = fh.read()` **both transpile at exit 0**.
+Re-derived by running the shipped CLI over 35 shapes at `244091cc` — 24 accepted,
+11 refused — these seven families refuse today and a reader should expect them:
+`async def`; decorators on a top-level `def`; `global`; keyword-only params and
+`**kwargs` in a *definition*; `from <module> import <name>` for any module
+outside the annotation-only set (`__future__`, `typing`, `dataclasses`, `enum`,
+`abc`, `collections.abc` — use the qualified `import math` + `math.sqrt(x)` form,
+PMAT-1410); module attribute calls such as `os.getpid()` or `random.randint()`;
+and a `with` whose handle is unused or used more than once. The operator-level
+surface is exhaustive and gated elsewhere — see
+`book/src/reference/frontends.md` (XPILE-PYOPSURFACE-001), which publishes
+`ast.BinOp` 13/12/1, `ast.Compare` 10/8/2 and `ast.UnaryOp` 4/3/1 with `@`, `is`,
+`is not` and unary `+` named as the four refusals.
+
+This cycle's two additions: an annotated comprehension whose element type
 disagrees with its annotation (PMAT-1363 — six shapes that previously emitted
 Rust that then failed `rustc` with `E0308`), and a `range()` bound of type
 `bool` under bigint mode (PMAT-1364 — the non-bigint path now coerces instead).
+
+What the Python lane does **not** have is shell's third category: 24 of 24
+accepted shapes in the PMAT-1492 sweep were genuinely modelled, none silently
+passed through. `def f(*args: int)` lowers to `Vec<i64>` and the intra-module
+call site packs to match, verified against CPython.
 
 ### What is NOT merge-blocking
 

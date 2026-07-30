@@ -176,45 +176,60 @@ updated_prev_1488: >-
   body, expect A9, and after the batch expect A11 and A12 in post-tag form. All predicted, all
   disclosed, NONE a reason to touch the batch. A7: NO FRIDAY CODE.
 updated: >-
-  ⛔ FRIDAY OPERATOR, READ THIS FIRST -- THIS IS THE LAST ENTRY BEFORE THE PUBLISH. PMAT-1490
-  read the THIRD non-clone publisher of this project's claims, the one nothing had ever read: the
-  docs.rs page. 30 of the 31 crates have a `lib` target, so crates.io auto-links docs.rs for every
-  one of them, and that page is rendered from the doc comments in crates/*/src. MEASURED:
-  .github/workflows/ contains ZERO occurrences of `cargo doc`, `rustdoc` and `RUSTDOCFLAGS` --
-  no CI job in this repository has ever built the documentation. The job NAMED `docs` builds
-  `pmat validate-docs` (markdown links) and `pmat demo-score` (a README grade): two real checks of
-  two real surfaces, neither of which is the documentation, and the name reads as though one were.
-  58 defects across 13 of the 30 published pages (38 private_intra_doc_links, 18
-  broken_intra_doc_links, 2 redundant_explicit_links), worst xpile-ptx-codegen 12 /
-  xpile-wasm-codegen 9 / xpile-wgsl-codegen 8. The dominant class is a PUBLIC doc comment citing a
-  PRIVATE item, so xpile-wasm-frontend's page reads verbatim "saw it. See [refuse_ieee_div]." --
-  thirty-three times. CONFIRMED LIVE, not inferred:
-  https://docs.rs/xpile-wasm-frontend/0.1.617/xpile_wasm_frontend/ has opened with "the image of
-  [xpile-wasm-codegen]", brackets and all, since 2026-07-26.
-  ** THE SHAPE: doc_status:true IS NOT AN ACQUITTAL. PMAT-1487 read that flag ONE DAY EARLIER --
-  false for the flagship, true for all 30 siblings -- and 13 of those 30 publish a defective page.
-  The flag answers one question: did rustdoc exit 0. PMAT-1486's "a 200 is not an acquittal", one
-  publisher along. A green BUILD is not a correct PAGE.
-  ** MY OWN BUG: the first run of this measurement reported ZERO defects at exit 0, because
-  `cargo doc` warns only when it re-documents and the target dir was warm. Section 5 step 7 mandates
-  a fresh CARGO_TARGET_DIR and says why.
-  ** REJECTED WITH NUMBERS: grepping the published HTML for `\[<code>` looks like a free network arm;
-  scored against rustdoc it gives 3 false positives (prose brackets: the `[ ... ]` test, an `[T]`
-  slice) and 2 false negatives (a defect in an ITEM doc is not on index.html). Written down as
-  rejected rather than omitted -- it is the arm a future slice reaches for first.
-  SHIPPED: section 5 step 7 and abort rule A14 (record it, never touch the batch; disposition does
-  NOT depend on when it fires, because doc comments are in the tagged tree and versions are
-  immutable). PMAT-1488's single-definition-site and needle-count properties re-verified: 15
-  markers, each exactly once.
-  ⛔ TOMORROW, ALL SIX PREDICTED AND ALL DISCLOSED, NONE A REASON TO TOUCH THE BATCH: A9 (body
-  469,246 chars vs a MEASURED 125,000 cap -- run the SIZE-CHECKED section 5 step 3 EXTRACTED from the
-  file, never retyped, and extract from the TAG not main), A10 (the three mandatory sections must
-  survive the cut), A11 (12 reinterpreted README links), A12 (dead documentation URL), A13 (7
-  registry descriptions stale -- publishing is the REPAIR, and it argues AGAINST deferring under
-  A4/A6), A14 (58 doc defects on 13 crates). Read the abort rules ONLY from docs/RELEASE.md section
-  6 via `grep -nE '^- \*\*A[0-9]+b? —' docs/RELEASE.md` -- never off the plan, never off a
-  remembered range. RECOUNT the post-tag CHANGELOG delta on the day; it grew again today.
-  NEXT FREE ID PMAT-1491. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+  ⛔ FRIDAY OPERATOR, READ THIS FIRST -- THIS IS THE LAST ENTRY BEFORE THE PUBLISH. PMAT-1492 ran
+  PMAT-1479's accept-side recipe on the frontend that slice named as unswept, and found the mirror
+  of its own finding. PMAT-1479: the SHELL lane published a refusal guarantee it did NOT have.
+  PMAT-1492: the PYTHON lane -- the MVP path, the one a first-time reader tests -- publishes almost
+  none of the guarantee it DOES have. The mandatory `### What still REFUSES` section gives the WASM
+  lane an exhaustive contract-derived roster ("The 13 refusals as of this release") and the shell
+  lane an exhaustive list plus its third-category disclosure, and gives Python TWO ROWS -- which are
+  that cycle's ADDITIONS, being exactly the Python entries in the section preamble's own list of
+  "four of this cycle's slices [that] exist only to move a construct from the first column to the
+  second". All three paragraphs are formatted identically, use the same unqualified present-tense
+  verb "refuses", and sit under a preamble quantifying over "Every row below". MEASURED: the
+  frontend carries 471 `FrontendError::Lower` refusal sites over 348 distinct message texts.
+  ** THE SHAPE: UNDER-REPORTING A REFUSAL IS OVER-CLAIMING A CAPABILITY. Told the tool refuses two
+  exotic type-mismatch shapes, a reader concludes ordinary Python transpiles. The defect is
+  STRUCTURAL -- no sentence in the section is false -- which is why twelve days of prose sweeps
+  walked past it.
+  ** THE ACCEPT SIDE IS CLEAN AND THAT IS A RESULT, NOT AN ABSENCE: 0 of 24 unmodelled, against
+  shell's 20 of 20. try/except -> catch_unwind with an allowlist downcast, yield -> eager Vec, a
+  chained comparison -> bound temporaries (middle operand evaluated ONCE), `def f(*args)` -> Vec
+  with the intra-module CALL SITE packed to match, verified against CPython. So it is a CLAIM
+  defect, not a capability complaint -- PMAT-1487's rule, applied BEFORE the write-up.
+  ** MY OWN BUG, THE MOST TRANSFERABLE PART, AND IT IS THE ONE THE SECTION'S OWN PREAMBLE WARNS
+  ABOUT: the first draft's confirmed-refusal table had TWO MORE ROWS, keyword arguments in calls and
+  `with`, both lifted from genuine blanket-sounding strings in lib.rs. BOTH TRANSPILE AT EXIT 0.
+  A ROSTER GREPPED FROM src/ WOULD HAVE PUBLISHED TWO FALSE REFUSALS, and a disclosure rule's false
+  positive is itself a published falsehood (PMAT-1489). Caught by re-probing, not re-reading. The
+  published figure is therefore a census of the MECHANISM -- an explicit LOWER BOUND ON BREADTH --
+  and never a roster.
+  ** THREE BOOK HYPOTHESES WERE REFUTED FIRST; DO NOT RE-HUNT THEM. The deployed mdBook is NOT
+  stale (book.yml deploys on every push to main, green at 244091cc 05:45Z); its 114 markdown links
+  contain ZERO that escape the book when rendered; all 20 `blob/main/<path>` URLs resolve; and its
+  contract counts are honestly scoped ("the founding twelve" + "grown well past twelve" + the live
+  `ls contracts/*.yaml`). The book's operator roster (XPILE-PYOPSURFACE-001) is the HEALTHY CONTROL
+  this finding is measured against -- the repo already bounds this frontend honestly, for OPERATORS.
+  ⛔ TOMORROW, ALL SEVEN PREDICTED AND ALL DISCLOSED, NONE A REASON TO TOUCH THE BATCH: A9 (body
+  469,246 chars vs a MEASURED 125,000 cap -- run the SIZE-CHECKED section 5 step 3 EXTRACTED from
+  the file, never retyped, and extract from the TAG not main), A10 (the three mandatory sections
+  must survive the cut), A11 (12 reinterpreted README links), A12 (dead documentation URL), A13
+  (7 stale registry descriptions -- publishing IS the repair, and it argues AGAINST deferring),
+  A14 (58 rustdoc defects on 13 of 30 docs.rs pages), and A15 (this one -- and ⛔ DO NOT VERIFY IT
+  AGAINST main: this slice's fix lands AFTER the tag, so tag and main now DIFFER and a main-side
+  check reports the defect ABSENT. Check the TAG ONLY:
+  `git show v0.1.618:CHANGELOG.md | sed -n '7416p'` prints the unqualified "**The Python frontend**
+  refuses an annotated comprehension whose element type", and section 5 step 3 extracts the body
+  from the TAG -- so THAT is what publishes. 0.1.618 carries the DEFECT, 0.1.619 the FIX; do not
+  invert that direction). ★ A15's own first draft asserted the paragraph was BYTE-IDENTICAL at tag
+  and main -- a premise THIS SAME COMMIT falsifies, which is PMAT-1491's self-cancellation
+  reproduced one rule later and caught pre-commit. A DISCLOSURE RULE MUST BE VERIFIABLE FROM A TREE
+  ITS OWN FIX CANNOT REACH; A11/A14 pass that test by accident (frozen subjects), A15 is the first
+  whose subject is the CHANGELOG itself. Read the abort rules ONLY
+  from docs/RELEASE.md section 6 via `grep -nE '^- \*\*A[0-9]+b? —' docs/RELEASE.md` -- never off
+  the plan, never off a remembered range; it returns SIXTEEN markers today, each exactly once.
+  RECOUNT the post-tag CHANGELOG delta on the day; it grew again today.
+  NEXT FREE ID PMAT-1493. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -270,6 +285,31 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1492
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the section whose whole job is to bound the tool publishes 2 of the flagship frontend''s
+    348 refusals -- the WASM and shell paragraphs beside it are exhaustive, in identical
+    formatting, and nothing marks the difference'
+  result: 'SHIPPED 2026-07-30. Docs-only under the freeze (CHANGELOG.md + docs/RELEASE.md +
+    both ledgers; zero crates/*/src, zero contracts/*.yaml, zero gate files). Ran PMAT-1479''s
+    accept-side recipe on the frontend it named as unswept. 35 shapes through the shipped CLI at
+    244091cc: 24 accepted, 11 refused, 7 distinct refusal messages, section names NONE of the 7.
+    Frontend carries 471 FrontendError::Lower sites / 348 distinct message texts; section names 2,
+    and those 2 are the cycle''s ADDITIONS (the preamble''s own four-slice list), not a roster.
+    ACCEPT SIDE CLEAN: 0 of 24 unmodelled, vs shell''s 20 of 20 -- so a CLAIM defect, not a
+    capability complaint. Own bug, kept: first draft''s table had 2 FALSE refusals grepped from
+    src/ (keyword call args, `with`) -- both transpile at exit 0; roster must come from the CLI.
+    SECOND own bug, caught pre-commit: A15''s draft premise "byte-identical at tag and main" is
+    falsified BY THIS COMMIT -- PMAT-1491''s self-cancellation one rule later. A DISCLOSURE RULE
+    MUST BE VERIFIABLE FROM A TREE ITS OWN FIX CANNOT REACH; all three copies now pin verification
+    to `git show v0.1.618:CHANGELOG.md | sed -n ''7416p''`.
+    Abort rule A15 added at the single definition site (16 markers, each exactly once).
+
+    NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). A15 joins A9-A14 as PREDICTED and
+    DISCLOSED; NONE is a reason to touch the batch. NEXT FREE ID PMAT-1493.'
 - id: PMAT-1491
   status: done
   ev_rank: R1
@@ -7332,6 +7372,32 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1492 GATE -- XPILE-PYREFUSAL-001, the Python refusal-DISCLOSURE property. Blocked by the
+  Wed 2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file. The defect is MEASURED and
+  reproducible: the mandatory `### What still REFUSES` section names 2 Python refusals while the
+  frontend carries 471 FrontendError::Lower sites over 348 distinct message texts, and 7 distinct
+  refusal messages confirmed by running the shipped CLI appear nowhere in the section.
+  FOUR design constraints, each a way this gate can be born useless -- auditing an unwritten spec
+  has paid every day of this sweep.
+  (a) ⛔ DERIVE THE ROSTER FROM THE CLI, NEVER FROM A GREP OVER src/. This is not a style
+  preference: PMAT-1492''s own first draft grepped lib.rs and produced TWO FALSE REFUSALS --
+  keyword arguments in calls (`g(x=a)`) and `with open(...) as fh: s = fh.read()` -- both of which
+  transpile at EXIT 0 today, because the blanket-sounding strings guard much narrower shapes. A
+  disclosure gate that publishes a false refusal has published a falsehood (PMAT-1489).
+  (b) ASSERT SCOPE-MARKING, NOT A COUNT. The roster grows every cycle, so any pinned number is
+  stale before the branch merges (PMAT-1482). The property is: each lane paragraph in the section
+  must declare whether it is EXHAUSTIVE or CYCLE-SCOPED. That is what was missing -- no sentence in
+  the section was false.
+  (c) THE SUBJECT IS THE SECTION, NOT THE FRONTEND. A gate over crates/depyler-frontend/ answers a
+  question nobody asked. The corpus is CHANGELOG.md''s mandatory sections, and it must read the
+  section that SHIPS -- `git show <tag>:CHANGELOG.md` -- for the same reason XPILE-RELBODY-001
+  constraint (d) does (PMAT-1481).
+  (d) MANDATORY ACQUITTAL CONTROL: mutate the WASM paragraph''s "The 13 refusals as of this
+  release" scope marker away and assert the gate REDS; assert the mutation APPLIED before believing
+  the acquittal (PMAT-1484). A green over an unmutated tree is indistinguishable from a real one.
+  ⭐ CHEAPEST USEFUL HALF, network-free and ~20 lines: assert every `**The <lane> lane` /
+  `**The <lane> frontend` paragraph in `### What still REFUSES` contains one of a small set of
+  scope markers. Ship THAT even if the CLI-derived half slips.'
 - 'PMAT-1490 GATE + FIX -- XPILE-RUSTDOC-001, the published-API-documentation property. Blocked by
   the Wed 2026-07-29 18:00 freeze TWICE OVER: it needs a new crates/xpile/tests/ file AND all 58
   fixes are in crates/*/src. The defect is MEASURED and reproducible in one command (see

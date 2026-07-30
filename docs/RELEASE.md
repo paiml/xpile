@@ -1240,6 +1240,50 @@ the rule you are about to rely on is still written down.
   `6b5f6c02` and the doc comments are inside it; the Wednesday 18:00 freeze bars
   `crates/*/src`, so the repair lands in `0.1.619`.
 
+- **A15 — THE RELEASE BODY UNDER-REPORTS THE PYTHON REFUSAL ROSTER (record it;
+  never touch the batch).** The mandatory `### What still REFUSES` section gives
+  the WASM lane an exhaustive contract-derived roster and the shell lane an
+  exhaustive list plus its third-category disclosure, and gives the **Python**
+  lane two rows — which are that cycle's additions, not the lane's roster. The
+  frontend has **471 `FrontendError::Lower` refusal sites carrying 348 distinct
+  message texts** (PMAT-1492, measured at `244091cc`; re-derive with the block
+  published in that CHANGELOG entry). Under-reporting a refusal **over-claims a
+  capability**: a reader told the tool refuses two exotic type-mismatch shapes
+  concludes ordinary Python transpiles, and Python is the MVP path a first-time
+  reader tests.
+
+  Like A11 and A14, A15's disposition does **not** depend on when it fires, and
+  the premise is stated in the ONE form that survives its own repair. ⚠️ **DO NOT
+  verify this rule by diffing the tag against `main`** — PMAT-1492's fix lands on
+  `main` AFTER the tag, so the two paragraphs DIFFER, and a `main`-side check
+  reports the defect absent. Check the **TAG ONLY**:
+
+  ```
+  git show v0.1.618:CHANGELOG.md | sed -n '7416p'
+  # → **The Python frontend** refuses an annotated comprehension whose element type
+  ```
+
+  An unqualified `refuses` with no scope marker is the defect. §5 step 3 extracts
+  the body from `git show <tag>:CHANGELOG.md` (PMAT-1481 constraint), so that is
+  the 2-row version the release page publishes no matter what has landed on
+  `main` first. `0.1.618` carries the **defect**; `0.1.619` carries the **fix**.
+  State that direction in the release body and nowhere invert it: a rule whose
+  only action is disclosure vanishes at exit 0 if its direction is wrong
+  (PMAT-1491) — and it vanishes just as completely if its verification step reads
+  a tree the fix has already touched.
+
+  ⚠️ **DO NOT REPAIR THIS BY GREPPING `src/` FOR REFUSAL STRINGS.** PMAT-1492's
+  first draft did, and produced **two false refusals** — keyword arguments in
+  calls (`g(x=a)`) and `with open(...) as fh: s = fh.read()` both transpile at
+  **exit 0**, though `lib.rs` carries blanket-sounding strings for each. A
+  disclosure rule's false positive is itself a published falsehood (PMAT-1489).
+  Every row must come from running the shipped CLI, which is the standard the
+  section already sets for itself.
+
+  ⛔ **`v0.1.618` FIRES A15. PREDICTED AND DISCLOSED. DO NOT STOP FRIDAY OVER
+  IT.** The freeze bars no part of the repair — it is CHANGELOG text — but the
+  tag is cut, so the fix reaches readers at `0.1.619`.
+
 ## 7. Slip and partial-batch ledger
 
 Every A4 stop and every A6 slip is recorded here, with the reason, on the day
