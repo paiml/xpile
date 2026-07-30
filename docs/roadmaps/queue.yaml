@@ -62,6 +62,38 @@ updated_prev_1481: >-
   create` MUST use the step-3 extractor, MUST extract from the TAG (not main), MUST `test -s`
   the body, and MUST append the post-tag CHANGELOG delta under its own heading.
 updated: >-
+  ⛔ READ THIS BEFORE TOUCHING THE RELEASE TOMORROW. PMAT-1483 measured the thing PMAT-1480 and
+  PMAT-1481 spent two slices building and neither sized: the release body. The `[0.1.618]` section
+  at its own tag is 469,246 CHARACTERS / 7,700 lines. A GitHub release body is capped at 125,000
+  characters -- MEASURED against the live API, which answers
+  `422 {"field":"body","message":"body is too long (maximum is 125000 characters)"}`. The runbook's
+  §5 step 3 as it stood would therefore have 422'd on Friday morning and created nothing, under
+  abort rule A7 (no Friday code) with no policy to fall back on. The trend is the finding, not the
+  number: v0.1.615 1.1% of cap, v0.1.616 19.8%, v0.1.617 63.4%, v0.1.618 375.4% -- the wall was ONE
+  RELEASE away and nothing watched for it, because `test -s` guards the EMPTY end of that dimension
+  and nothing guarded the full end. FIXED: step 3 now sizes the section and either publishes it
+  byte-for-byte or emits a line-aligned PREFIX with a disclosure of the true size, the cap, the
+  `git show <tag>:CHANGELOG.md` command and a `⟨cut here⟩` footer naming what was dropped; new abort
+  rule A9 (recoverable, do NOT abort) forbids hand-trimming and forbids shipping no body.
+  ⚠️ MY OWN BUG, found only by RUNNING the block: it budgeted in awk `length()` (characters) and
+  checked with `wc -c` (BYTES). 124,941 bytes == 124,025 characters here -- the guard came within 59
+  bytes of aborting a legal body. Both are `wc -m` now. Re-extracted from the file and run verbatim:
+  123,169 chars, 1,831 headroom, exit 0.
+  ** SECOND: next_lane[0]'s gate spec was caught BORN-WRONG for the SECOND TIME IN TWO DAYS.
+  PMAT-1481 fixed its tree selection (d); above the cap its equality rule is UNSATISFIABLE, so it
+  would have red-ed on the very first release it governs. Constraint (e) restates it as PREFIX +
+  DISCLOSURE, degenerating to equality when the section fits. Auditing an unwritten gate's spec has
+  now paid twice.
+  ** THIRD: docs/RELEASE.md §0 still said `workspace-test` was "silently dropped from the required
+  set" -- the PMAT-1475 falsehood, live, 100 lines above §2b's rule forbidding that exact reading,
+  in the section a Friday operator reads first. `enforcement_prose_witness.rs` is GREEN over it and
+  its CORPUS is right; the NEEDLE LIST is what missed, defeated by one inserted adverb ("silently")
+  and one preposition ("from" vs its "out of"). FOURTH time wording has hidden this same claim from
+  a gate written for it. Widening the needles is a gate edit -> next_lane (freeze).
+  NEXT FREE ID PMAT-1484. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- use the SIZE-CHECKED
+  step 3, expect A9, extract from the TAG, `test -s` it, and disclose the post-tag delta BY
+  REFERENCE (there is no room to append it).
+updated_prev_1482: >-
   PMAT-1482 ran the plan's own section 6 "Exit criteria" -- seventeen commands under the sentence
   "Each is a command a hostile reviewer can run" -- for the FIRST TIME, on the morning of the ship
   day. SIX were pinned by a literal to 0.1.617, the release that shipped 2026-07-26, four days INTO
@@ -157,6 +189,73 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1483
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'tomorrow''s `gh release create` cannot run: the release body the runbook mandates is 469,246
+    characters against a MEASURED 125,000-character API cap (375%), and the runbook''s own §0 still
+    taught the falsehood its §2b was written to forbid'
+  notes: 'SHIPPED 2026-07-30 from an honesty hunt (queue EMPTY for Thursday -- PMAT-1373 tag work
+    merged, PMAT-1374 is dated 07-31, PMAT-1375 is the DEFERRED 0.1.619 lane). Playbook NEXT PICK (c),
+    "apply PMAT-1482''s shape to the OTHER runbooks": do their CHECK sections carry derived or typed
+    literals? docs-only, freeze-compliant.
+
+    ⭐ FINDING 1, THE ONE THAT WOULD HAVE STOPPED THE RELEASE. docs/RELEASE.md §5 step 3 ends in
+    `gh release create "v$V" --notes-file /tmp/relbody.md`, and PMAT-1480/1481 spent two slices making
+    the body an EXTRACT from the tag. Nobody measured the extract. It is 469,246 characters / 7,700
+    lines. A GitHub release body is capped at 125,000 CHARACTERS -- MEASURED, not read off a doc page:
+    POST an oversized body and the API answers `422 {"resource":"Release","field":"body","message":"body
+    is too long (maximum is 125000 characters)"}`. So the mandated command is **375% over** and returns
+    422 tomorrow, creating nothing. The trend is the finding: v0.1.615 1.1% of cap, v0.1.616 19.8%,
+    v0.1.617 **63.4%**, v0.1.618 **375.4%**. The wall was ONE RELEASE AWAY and nothing was watching,
+    because `test -s` (PMAT-1480) guards the EMPTY end of that dimension and nothing guarded the other.
+    Under A7 (no Friday code) there would have been no time to invent a policy at 09:00. FIXED: step 3
+    now measures the section, publishes it byte-for-byte when it fits, and otherwise emits a
+    line-aligned PREFIX carrying a disclosure of the section''s true size, the cap, and the
+    `git show <tag>:CHANGELOG.md` command -- plus a `⟨cut here⟩` footer naming exactly how many lines and
+    characters were dropped. New abort rule **A9 -- BODY OVER CAP (recoverable, do NOT abort)**, which
+    also forbids the two tempting wrong answers: hand-trimming until it fits (undisclosed truncation --
+    v0.1.616''s 5.5%-of-the-story defect with a new cause) and shipping no body.
+
+    ⚠️ SELF-INFLICTED, CAUGHT BY EXECUTING THE BLOCK: the first spelling budgeted with awk `length()`
+    (CHARACTERS in a UTF-8 locale) and then checked the result with `wc -c` (BYTES). This CHANGELOG is
+    dense with em-dashes, ★ and ⚠️: 124,941 bytes == 124,025 characters, a 916-unit gap, and the guard
+    came within **59 bytes** of aborting a body 975 characters clear of the cap. Both are now `wc -m`,
+    the API''s own unit. A budget that mixes units is a bug even when it happens to pass. The block was
+    then re-extracted FROM THE FILE and run verbatim: 123,169 chars, 1,831 of headroom, exit 0.
+    Acceptance of a >123k body was verified against the real API (the probe created a draft, which was
+    deleted immediately; no release, no draft, and v0.1.617 intact).
+
+    ⭐ FINDING 2, the spec audit -- SECOND CATCH IN TWO DAYS ON THE SAME UNWRITTEN GATE. next_lane[0]
+    (XPILE-RELBODY-001) says the published body must EQUAL the section at the tag. PMAT-1481 corrected
+    that spelling one commit ago (constraint (d), tree selection). It is STILL wrong: above the cap
+    equality is not merely unmet, it is UNSATISFIABLE, so the gate would have RED-ED ON THE FIRST
+    RELEASE IT GOVERNS. Constraint (e) restates the invariant as PREFIX + DISCLOSURE, which degenerates
+    to equality when the section fits and holds in both regimes. ★ Auditing the spec of a gate that does
+    not exist yet is the cheapest audit in the playbook, and it has now paid twice.
+
+    ⭐ FINDING 3, the falsehood at the top of the runbook. §0 read "The org ruleset drifted on 2026-07-27
+    (`workspace-test` silently dropped from the required set)" -- the exact misreading PMAT-1475 proved
+    false and PMAT-1476 swept for, live, 100 lines ABOVE §2b''s rule 2, which forbids that reading and
+    records that it cost two days and three wrongly-edited documents. One document, two sections,
+    opposite claims about one event, each locally consistent -- PMAT-1482''s shape, in the file a Friday
+    operator reads FIRST. ⚠️ `enforcement_prose_witness.rs` is GREEN over it and its corpus is CORRECT
+    (every tracked .md via `git ls-files`): the miss is in the NEEDLE LIST. It carries "workspace-test
+    was dropped" and "dropped out of the required set"; the live text says "workspace-test silently
+    dropped FROM the required set" -- defeated by ONE INSERTED ADVERB and ONE PREPOSITION. This is the
+    FOURTH time punctuation or wording has hidden this same claim from a gate written for it (PMAT-1449
+    brackets, PMAT-1476 backticks, PMAT-1476 again on the [Unreleased] spelling). Broadening the needle
+    set is a GATE EDIT and the freeze forbids it -> filed in next_lane. Controls cited so the finding is
+    not generic rot: docs/status/enforcement-handoff.md and fable-architectural-review.md:28 both state
+    the union CORRECTLY, and the five CHANGELOG hits are all disclosed quotations.
+
+    NO GATE in this slice (freeze: new tests/ file + a gate edit both forbidden). Both are filed:
+    XPILE-RELEASE-CAP-001 (new, cheap -- no network, and its second assertion would have caught this a
+    release earlier by red-ing at 60% of cap; v0.1.617 sat at 63.4%) and the needle-set widening.
+    NEXT FREE ID PMAT-1484. NEXT PICK 2026-07-31: PMAT-1374 (PUBLISH v0.1.618) -- its `gh release
+    create` MUST use the SIZE-CHECKED step 3, not the pre-1483 form, and A9 is the expected path.'
 - id: PMAT-1482
   status: done
   ev_rank: R1
@@ -6792,9 +6891,39 @@ next_lane:
   it as a red. ALSO: PMAT-1480''s own round-trip `diff` is TREE-BLIND and cannot catch a wrong-tree
   extraction, since it compares the body against the same file the body came from; this gate is the
   only thing that can, which is a second reason it is worth writing.
+  (e) ⚠️⚠️ ADDED BY PMAT-1483 — **EQUALITY IS NOT SATISFIABLE AND THE SPEC IS STILL WRONG AFTER (d).**
+  A GitHub release body is capped at **125,000 characters** (MEASURED, not read off a doc page: POST an
+  oversized body and the API returns `422 {"field":"body","message":"body is too long (maximum is 125000
+  characters)"}`). The `[0.1.618]` section at its own tag is **469,246 characters / 7,700 lines — 375%
+  of the cap** (`git show v0.1.618:CHANGELOG.md | awk -v h=... | wc -m`; note `-m`, the cap counts
+  CHARACTERS and `wc -c` counts BYTES, a 916-unit gap on this one section). So the rule "published body
+  == the section at the tag" CANNOT hold for v0.1.618 and this gate, written to that spelling, would
+  have RED-ED ON THE FIRST RELEASE IT GOVERNS — the SECOND time in two days (d was the first) that this
+  unwritten gate''s spec was caught mandating a false red on a correct release. THE CORRECT RULE, which
+  degenerates to equality when the section fits: the body must be a **PREFIX** of the section at the tag
+  (line-aligned), PLUS, when it is a strict prefix, a disclosure naming the section''s true character and
+  line count, the cap, and the `git show <tag>:CHANGELOG.md` command. Assert the prefix relation and the
+  presence of the disclosure; do NOT assert a length. Corollaries: the (d) corollary about an APPENDED
+  post-tag delta only applies BELOW the cap (there is no room above it — docs/RELEASE.md step 3 now
+  discloses the delta by reference instead); and the acquittal control (c) must cover BOTH regimes —
+  mutate one character of a fitting body AND truncate a prefix body one line short of its disclosed
+  count, and confirm both RED.
   ★ WHY IT IS WORTH A GATE AT ALL: this is the only publisher of repo facts that is structurally
   invisible to `git ls-files`, and it is the copy read WITHOUT a clone. The broader sweep the shape
   opens (crates.io rendered READMEs, doc sites, issue templates) is a SEPARATE, larger lead.'
+- 'PMAT-1483 GATE — XPILE-RELEASE-CAP-001, the cheapest of the release-doc gates: NO network, NO API,
+  pure arithmetic over two files. Blocked ONLY by the Wed 2026-07-29 18:00 freeze (new tests/ file).
+  THE RULE: for the version in `[workspace.package]`, if the `## [<version>]` section of CHANGELOG.md
+  exceeds the 125,000-character GitHub release-body cap, then docs/RELEASE.md MUST carry a size-checked
+  body construction (a `wc -m` comparison against a 125000 literal AND a truncation-disclosure branch)
+  and abort rule A9. Non-vacuity: assert the section measurement is non-zero and that the extractor the
+  gate uses returns the same span docs/RELEASE.md step 3 publishes — a gate that measures a
+  DIFFERENT span than the runbook extracts is PMAT-1482''s wrong-subject shape. SECOND assertion, the
+  one that would have caught THIS defect a release earlier: red when the section exceeds a WARNING
+  fraction of the cap (say 60%) and no A-rule mentions the cap — v0.1.617 sat at 63.4% and nothing
+  noticed, which is why v0.1.618 met the wall on release eve. ⚠️ The gate must count with the same unit
+  as the API (characters, `str::chars().count()`, NOT `len()` which is BYTES) — the first spelling of
+  the runbook step mixed the two and came within 59 bytes of aborting a legal body.'
 - 'PMAT-1482 GATE — XPILE-RELPLAN-001 CORPUS WIDENING, the cheapest gate on this list: a grep over one
   section, NO network, NO git, and the defect is already measured. Blocked ONLY by the Wed 2026-07-29
   18:00 freeze (it edits a gate file). THE RULE: no exit criterion in a release-planning document may
