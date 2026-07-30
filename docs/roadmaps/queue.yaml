@@ -189,6 +189,76 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1487
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the ONE crate of 31 with no library target is the ONE crate that points the registry''s
+    "Documentation" link at docs.rs — an address that has NEVER rendered a page and structurally
+    CANNOT, while the README on that same page cites the live documentation site three times'
+  notes: 'PICKED on Day 5 (Thu 2026-07-30) with the ranked queue empty of actionable items —
+    PMAT-1373 merged, PMAT-1374 dated 07-31, PMAT-1375 the DEFERRED 0.1.619 lane — from PMAT-1484''s
+    next-pick lead (b), the registry surface, continuing PMAT-1486 one FIELD over. POST-FREEZE LANE
+    RESPECTED: docs/RELEASE.md + CHANGELOG.md + roadmap.yaml + queue.yaml + one registry-metadata
+    string in crates/xpile/Cargo.toml (the lane PMAT-1466 used). ZERO crates/*/src, ZERO
+    contracts/*.yaml, ZERO gates.
+    ** TWO FACTS IN ONE MANIFEST, both derived OFFLINE from `cargo metadata --no-deps` rather than
+    asserted: `crates/xpile` is the ONLY member of 31 with no `lib` target (kinds bin/custom-build/
+    example/test) and the ONLY member that sets `documentation`. It set it to https://docs.rs/xpile.
+    docs.rs documents a `lib` target — its builder runs `cargo rustdoc --lib` — so that address has
+    never served a document and never can.
+    ** MEASURED: docs.rs status.json over all 31 crates at 0.1.617 → 30 true, `xpile` FALSE, the sole
+    failure and it is the flagship; false at 0.1.615 and 0.1.616 too. Build 3959695 gives the reason
+    verbatim: `error: no library targets found in package "xpile"`, ExecutionFailed, exit 101.
+    ** ⭐ THE FAILURE IS NORMAL — WHICH IS EXACTLY WHY IT SURVIVED 617 RELEASES. ripgrep, fd-find,
+    hyperfine and sd are ALL doc_status:false for the same reason (measured 2026-07-30). Anyone who
+    checked found a red indistinguishable from everyone else''s. THE DEFECT WAS NEVER THE BUILD, IT
+    WAS THE ASSERTION POINTING AT IT: of those four, hyperfine and sd set NO `documentation` key and
+    ripgrep points its at GitHub; only fd-find makes the same claim. AN ACQUITTAL FOR THE ARTEFACT
+    CLASS IS NOT AN ACQUITTAL FOR THE ARTEFACT — when a check reds and the population also reds, the
+    question is not "is this normal" but "does this artefact CLAIM otherwise".
+    ** THE SAME PAGE ALREADY CARRIED THE RIGHT ANSWER. README.md — the body crates.io renders on the
+    flagship''s page since PMAT-1466 — cites https://paiml.github.io/xpile/ THREE times (badge :9,
+    installation :276, "Full CLI reference and tutorials" :338). That site is live (200, real mdBook
+    content), deployed from `main` on every push by .github/workflows/book.yml, Pages confirmed via
+    `gh api repos/paiml/xpile/pages`. Two documentation pointers on one page, disagreeing, and the
+    one the REGISTRY LABELS "Documentation" was the dead one. Fourth recurrence of PMAT-1465''s
+    "one crate, two contradictory front pages".
+    ** PROVENANCE, and why two slices walked past it: `git log -S` puts the key in ac709bf5, the
+    2026-05-15 name-reservation commit — the SAME commit that wrote the stub README PMAT-1466
+    deleted. PMAT-1466 rewrote `readme` on the line DIRECTLY BELOW it; PMAT-1486 measured every link
+    INSIDE the README and stopped at the file boundary. A SURFACE IS NOT AUDITED BECAUSE THE FILE
+    CONTAINING IT WAS EDITED — proximity to a fix is not coverage.
+    ** FIXED: documentation = "https://paiml.github.io/xpile/", with the measurement and the control
+    population recorded in the manifest comment.
+    ** PRE-FLIGHT, NOT POST-MORTEM, and deliberately NOT a sibling of A11. New §4 step 6 sits BEFORE
+    the tag step (renumbered to 7; no cross-reference pointed at the old numbering, checked) because
+    this is the ONE metadata check still REPAIRABLE — §5 step 6 runs after an immutable upload and
+    can only disclose. Abort rule A12 is therefore TIME-DEPENDENT: BLOCKS the tag pre-tag (A3 if one
+    was already cut — a burned patch number is free), DISCLOSURE ONLY post-tag.
+    ** THE STEP HAS TWO ARMS AND THE SECOND IS THE POINT: A 200 FROM A DOCUMENTATION HOST IS NOT A
+    RENDERED DOCUMENT. https://docs.rs/xpile answers 200 at every version (redirects to
+    /crate/xpile/latest, serves a metadata shell), so a plain status-code sweep ACQUITS IT. Only
+    status.json separates the two. Same shape as §5 step 6''s 200-to-the-wrong-object pair, one
+    publisher over: CHECK WHAT A URL SERVES, NOT WHAT IT ANSWERS. Arm 1 was written first and passed;
+    arm 2 exists because arm 1 was disbelieved and executed against the real host.
+    ** MY OWN BUG, AND THE MOST TRANSFERABLE PART: the first read of this was "the flagship''s
+    docs.rs build is broken" — TRUE, and NOT the defect. Shipped that way it would have implied a
+    repair (add a lib target) that is both freeze-barred and wrong for a CLI. Running the four
+    bin-only controls turned a capability complaint into a CLAIM defect and shrank the fix from src
+    to one metadata string. BEFORE WRITING UP A RED, MEASURE WHAT THE COMPARABLE ARTEFACTS DO —
+    PMAT-1486''s "run it against a control you know is fine", inverted: run it against controls you
+    know are BROKEN.
+    ** NO GATE (freeze: new tests/ file; docs.rs half also needs network). XPILE-CRATEURL-001 filed
+    as next_lane[0] — and its network-free half is THREE LINES of `cargo metadata` (no lib target ⇒
+    must not name docs.rs), which would have caught this on the day the key was written.
+    NEXT FREE ID PMAT-1488. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 — and AFTER the batch
+    expect BOTH A11 (12 reinterpreted README links) and A12 (the dead documentation URL) to fire.
+    Both predicted, both already disclosed, NEITHER a reason to touch the batch. STANDING LEAD:
+    `keywords` and `categories` are the last unmeasured published-metadata fields; only the flagship
+    sets either, so 30 of 31 crates are absent from every crates.io category browse and keyword
+    search — discoverability, not a falsehood.'
 - id: PMAT-1486
   status: done
   ev_rank: R1
@@ -7021,6 +7091,51 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1487 GATE — XPILE-CRATEURL-001, the published-metadata-URL property. Blocked ONLY by the
+  Wed 2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file), XS-sized, and the defect is
+  already MEASURED: the ONE member of 31 with no `lib` target is the ONE member that sets
+  `documentation`, and it set it to https://docs.rs/xpile — doc_status:false at 0.1.615/616/617
+  while all 30 siblings are true, build log `error: no library targets found in package "xpile"`.
+  ⭐ THE NETWORK-FREE HALF IS THE WHOLE VALUE AND IT IS THREE LINES OF `cargo metadata`: a package
+  with no `lib` target MUST NOT name docs.rs in `documentation`. No HTTP, no crates.io account, no
+  tripwire — a pure manifest-plus-target-graph invariant that would have caught this on 2026-05-15,
+  the day ac709bf5 wrote the key. Write THAT arm first and ship it even if the rest slips.
+  FIVE design constraints, each a way this gate can be born useless.
+  (a) THE PREDICATE IS THE TARGET GRAPH, NOT THE CRATE NAME. Derive "has a lib target" from
+  `cargo metadata` targets[].kind, never from a hard-coded list of which members are binaries —
+  a member that GAINS or LOSES a lib target must move the gate by itself. Treat `proc-macro` as
+  satisfying it (docs.rs documents proc-macro crates).
+  (b) IT MUST NOT SIMPLY BAN docs.rs. The rule is conditional. 30 members here leave
+  `documentation` unset and crates.io auto-links docs.rs for them, which is CORRECT because they
+  all build there — the gate must stay green on every one of those, and the corpus supplies its own
+  passing controls exactly as XPILE-CRATEMETA-001 does.
+  (c) A 200 IS NOT AN ACQUITTAL — this is the finding, so a gate that only status-codes the URL
+  reproduces the bug. https://docs.rs/xpile answers 200 at EVERY version (it redirects to
+  /crate/xpile/latest and serves a metadata shell). If a network arm is written at all it must read
+  `https://docs.rs/crate/<name>/<version>/status.json` and assert `doc_status`, and it must SKIP
+  LOUDLY behind XPILE_REQUIRE_* with the tripwire registered in docs/RELEASE.md §2, or
+  release_preflight_witness.rs reds for an unarmed tripwire.
+  (d) THE ACQUITTAL CONTROL: flip `documentation` back to https://docs.rs/xpile in a COPY of the
+  manifest and confirm the gate REDS, and independently confirm the arm is not walking an empty
+  set (assert the population it scored is non-empty — exactly one crate sets `documentation`
+  today, so an off-by-one in the filter is silent).
+  (e) EXTEND, DO NOT DUPLICATE. `crate_metadata_honesty.rs` (XPILE-CRATEMETA-001) already parses
+  all 31 manifests for `description`; the URL arms belong beside it unless the target-graph read
+  makes that awkward. Its module header must record that the OTHER published metadata fields —
+  `keywords` and `categories` — are still ungated and that only the flagship sets either, so 30 of
+  31 crates are absent from every crates.io category browse and keyword search. Discoverability,
+  not a falsehood, which is why it is a lead and not a gate arm.
+  ⚠️ ALSO EXTEND (f) OF THE PMAT-1486 ENTRY BELOW TO COVER A12. A12 was added 2026-07-30 and, like
+  A9/A10/A11 before it, is invisible to
+  release_preflight_witness.rs::the_release_doc_documents_the_procedure_and_the_abort_rules, which
+  still enumerates A1..A8. FOUR rules now sit outside a list that reads like a checklist. Derive the
+  set (every `**A<n> —` reachable from a named step, CONTIGUOUS from A1) instead of adding a fifth
+  literal — the enumeration has now failed four times in four additions, which is the evidence that
+  the shape is wrong, not the count.
+  ⚠️ WHAT THE GATE CANNOT DO: repair a published claim. The v0.1.618 tag was cut at 6b5f6c02 before
+  the measurement, so all 31 crates publish the dead URL on Friday and it is immutable forever. The
+  gate is FORWARD-LOOKING from 0.1.619 and its module header must say so, or a future reader reads
+  green as "every published documentation URL has always resolved".'
 - 'PMAT-1486 GATE — XPILE-RELREADME-001, the prefix-free packaged-front-page property. Blocked ONLY
   by the Wed 2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file AND network), S-sized, and
   the defect is already MEASURED: 12 relative refs across 11 targets on the v0.1.618 flagship page,

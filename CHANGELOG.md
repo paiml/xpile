@@ -7,6 +7,63 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The flagship's `documentation` URL has never rendered a page and structurally cannot — the one crate of 31 with no library target is the one crate that points the registry's "Documentation" link at docs.rs (PMAT-1487)
+
+**Two facts live in the same manifest and nobody had put them side by side.**
+`crates/xpile` is the **only** member of the 31 with no `lib` target
+(`cargo metadata` reports `bin` / `custom-build` / `example` / `test`), and it is
+the **only** member that sets `documentation`. It sets it to
+`https://docs.rs/xpile`. docs.rs builds documentation by running
+`cargo rustdoc --lib`, so that address has never served a document and never can:
+the build log at every version reads `error: no library targets found in package
+"xpile"`, and docs.rs reports **`doc_status:false` at `0.1.615`, `0.1.616` and
+`0.1.617` while all 30 siblings report `true`.**
+
+★ **THE FAILURE IS NORMAL, WHICH IS EXACTLY WHY IT SURVIVED 617 RELEASES.**
+Bin-only crates go red on docs.rs across the whole ecosystem — `ripgrep`,
+`fd-find`, `hyperfine` and `sd` are all `doc_status:false` (measured
+2026-07-30). Anyone who looked would have found a red that looks like everyone
+else's red and moved on. **The defect was never the build; it was the assertion
+pointing at it.** Of those four controls, `hyperfine` and `sd` set no
+`documentation` key at all and `ripgrep` deliberately points its at GitHub. Only
+`fd-find` makes the same claim xpile did. **An acquittal for the artefact class
+is not an acquittal for the artefact.**
+
+★ **THE SAME PAGE ALREADY CARRIED THE RIGHT ANSWER.** `README.md` — the body
+crates.io renders on the flagship's page since PMAT-1466 — cites
+`https://paiml.github.io/xpile/` **three times**: the `docs-book` badge, the
+installation chapter, and *"Full CLI reference and tutorials"*. That site is
+live (200, real content), deployed from `main` on every push by
+`.github/workflows/book.yml`. So the front page has offered two documentation
+pointers all along, they disagree, and **the one the registry labels
+"Documentation" is the dead one.** Fourth recurrence of PMAT-1465's *one crate,
+two contradictory front pages*.
+
+**Provenance.** `git log -S` puts the key in `ac709bf5`, *"chore: crates.io name
+reservation (xpile 0.0.1)"*, 2026-05-15 — the same commit that wrote the stub
+README PMAT-1466 deleted. PMAT-1466 opened this file, rewrote `readme` on the
+line below it, and never asked whether the neighbouring URL resolved. PMAT-1486
+then measured the links *inside* the README and stopped at the file boundary.
+**A surface is not audited because the file containing it was edited.**
+
+**Fixed:** `documentation = "https://paiml.github.io/xpile/"`.
+
+**Pre-flight, not post-mortem.** `docs/RELEASE.md` gains **§4 step 6** — measure
+every published `documentation`/`homepage` URL **before** the tag, since that is
+the last moment the claim is still repairable — and abort rule **A12**. The step
+has two arms because **a `200` from a documentation host is not a rendered
+document**: `https://docs.rs/xpile` answers `200` at every version with a
+metadata shell, so a plain status-code check *acquits it*. Only
+`status.json` — the signal docs.rs computes for its own badge — separates the
+two. Same shape as §5 step 6's `200`-to-the-wrong-object pair, one publisher
+over: **check what a URL serves, not what it answers.**
+
+⛔ **`v0.1.618` fires A12 in its post-tag form and that is the expected
+outcome.** The tag was cut at `6b5f6c02` hours before this measurement, so the
+tagged tree still carries the dead URL and all 31 crates publish it Friday. Like
+A11, A12 post-tag is **disclosure only** and must never delay or revert a batch;
+the repair reaches `0.1.619`.
+
 ### The flagship's registry front page publishes 12 links and every one is wrong — packaging a root document into a subdirectory crate silently reinterprets every relative path in it, and 2 of the 11 targets resolve at 200 to the wrong object (PMAT-1486)
 
 **PMAT-1466 fixed *which* document `crates.io/crates/xpile` publishes. Nobody

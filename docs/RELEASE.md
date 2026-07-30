@@ -245,7 +245,81 @@ conclusion; a green `gh pr checks` does not include it.**
    Unpiped. `/mnt/nvme-raid0/targets/xpile` is this host's target dir (repo
    `.cargo/config`); on another host, derive it rather than copying the path.
 
-6. **Tag a PINNED SHA and push.**
+6. **Measure every published metadata URL — BEFORE the tag, because after it
+   they are immutable (PMAT-1487).**
+
+   `description`, `homepage` and `documentation` are uploaded verbatim with
+   every crate and rendered in the crates.io sidebar. `crate_metadata_honesty.rs`
+   (XPILE-CRATEMETA-001) reads the `description`s. **Nothing reads the URLs.**
+   This is the one metadata check that can still be *repaired* — §5 step 6 runs
+   after the upload and can only disclose — so it belongs here, ahead of the
+   point of no return.
+
+   ```bash
+   command cargo metadata --no-deps --format-version 1 \
+     | jq -r '.packages[] | [.name, (.documentation // "-"), (.homepage // "-")] | @tsv' \
+     | while IFS=$'\t' read -r name doc home; do
+         for u in "$doc" "$home"; do
+           [ "$u" = "-" ] && continue
+           c=$(curl -s -o /dev/null -w '%{http_code}' -L \
+                 -H 'User-Agent: xpile-release-verify' "$u")
+           case "$c" in 200) ;; *) echo "DEAD $c $name $u — A12" ;; esac
+         done
+       done
+
+   # THE SECOND ARM IS NOT OPTIONAL: a docs.rs URL answers 200 with a metadata
+   # shell even when the build FAILED, so the status code above acquits it.
+   # docs.rs only documents a `lib` target, and a bin-only package can never
+   # have one. Ask docs.rs directly, and only for crates that name it.
+   command cargo metadata --no-deps --format-version 1 \
+     | jq -r '.packages[] | select((.documentation // "") | test("docs\\.rs"))
+              | [.name, ((.targets | map(.kind[]) | index("lib")) != null)] | @tsv' \
+     | while IFS=$'\t' read -r name haslib; do
+         s=$(curl -s -H 'User-Agent: xpile-release-verify' \
+               "https://docs.rs/crate/$name/<previous-version>/status.json")
+         echo "$name has_lib=$haslib $s"
+         case "$s" in *'"doc_status":false'*)
+           echo "DEAD-DOCS $name claims docs.rs and does not build there — A12" ;;
+         esac
+       done
+   ```
+
+   ⚠️ **A `200` from a documentation host is not a rendered document**, and that
+   is the whole reason this step has two arms. `https://docs.rs/xpile` returns
+   `200` at every version; the page it returns is the dependency/version sidebar
+   with no documentation in it, because `cargo rustdoc --lib` failed with
+   `error: no library targets found in package "xpile"`. Only `status.json` —
+   the signal docs.rs computes for its own badge — distinguishes the two. Same
+   shape as §5 step 6's `200`-to-the-wrong-object pair: **check what the URL
+   serves, not what it answers.**
+
+   Three controls, executed 2026-07-30 against the live hosts, each mutation
+   `diff`-ed against the original before its result was believed:
+
+   | control | mutation | result |
+   |---|---|---|
+   | red half | `documentation` restored to `https://docs.rs/xpile` | arm 2 fires `DEAD-DOCS`; **arm 1 stays silent** |
+   | over-refusal | `xpile-core` (*has* a lib) given `documentation = https://docs.rs/xpile-core` | `has_lib=true`, `doc_status:true`, no finding |
+   | arm 1 live | `homepage` pointed at a nonexistent repo path | `DEAD 404 … — A12` |
+
+   The first row is the reason there are two arms and not one: **arm 1 acquits
+   the exact defect this step was written to catch.** That is measured, not
+   argued. The second row is why the rule is conditional rather than a ban on
+   docs.rs, and the third is the anti-vacuity control for arm 1 — on a clean
+   tree both arms print nothing, and nothing is also what a broken checker
+   prints.
+
+   ⚠️ **Do not read a red here as an xpile-specific defect before checking the
+   population.** Bin-only crates failing on docs.rs is the ecosystem norm —
+   `ripgrep`, `fd-find`, `hyperfine` and `sd` are all `doc_status:false`
+   (measured 2026-07-30). What separates them is the *claim*: `hyperfine` and
+   `sd` set no `documentation` key at all and `ripgrep` points its at GitHub.
+   Only `fd-find` makes the same broken claim xpile did. **An acquittal for the
+   artefact class is not an acquittal for the artefact** — the failure was
+   normal, the assertion pointing at it was not, and "everyone's is red" is
+   exactly the reasoning that kept this unexamined for 617 releases.
+
+7. **Tag a PINNED SHA and push.**
 
    ```bash
    git tag "v<version>" "<PINNED_SHA>"
@@ -839,6 +913,37 @@ conclusion; a green `gh pr checks` does not include it.**
   README's own cited evidence for its own quickstart.** The fix (absolute
   `blob/main` / `tree/main` URLs, each form HTTP-measured) landed *after* the
   tag, so `0.1.618`'s pages carry it and `0.1.619`'s will not.
+
+- **A12 — PUBLISHED METADATA URL DEAD.** Its disposition depends entirely on
+  *when* it fires, and this is the only rule in this list where that is true:
+
+  - **Before the tag (§4 step 6) it BLOCKS the tag.** A `documentation` or
+    `homepage` URL that does not serve what it claims is a one-line manifest
+    fix. Fix it on `main`, re-pin, and if a tag was already cut, A3 applies —
+    a burned patch number is free.
+  - **After the tag it is DISCLOSURE ONLY, exactly like A11.** The manifest is
+    inside the tagged tree and crates.io versions are immutable, so the claim
+    cannot be repaired for the release that carries it. **A12 must never delay,
+    retry or partially revert a batch.**
+
+  ⛔ **`v0.1.618` FIRES A12 IN ITS POST-TAG FORM, AND THAT IS THE EXPECTED
+  OUTCOME — DO NOT STOP FRIDAY OVER IT.** The tag was cut 2026-07-30 at
+  `6b5f6c02`; PMAT-1487 measured and fixed the key hours later, so the tagged
+  tree still carries `documentation = "https://docs.rs/xpile"` and all 31 crates
+  will publish it. The repaired value (`https://paiml.github.io/xpile/`) reaches
+  `0.1.619`. Nothing about this touches an uploaded crate's validity.
+
+  First run, `0.1.618` (PMAT-1487, the measurement that created this rule): the
+  flagship — the **only** member of the 31 with no `lib` target and the **only**
+  one that sets `documentation` — pointed that key at `https://docs.rs/xpile`,
+  which has never rendered a page and structurally cannot, because docs.rs
+  documents `lib` targets. `doc_status:false` at `0.1.615`, `0.1.616` and
+  `0.1.617`; `true` for all 30 siblings. The live documentation site
+  (`https://paiml.github.io/xpile/`, deployed from `main` by
+  `.github/workflows/book.yml`) was already cited three times in the README that
+  crates.io renders as the body of *the same page* — so the front page carried
+  two documentation pointers that disagreed, and the one the registry labels
+  "Documentation" was the dead one.
 
 ## 7. Slip and partial-batch ledger
 
