@@ -328,6 +328,25 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1496
+  status: done
+  ev_rank: R1
+  date: 2026-07-30
+  title: Released CHANGELOG section credited v0.1.618 with 15 slices not in the tag; no replacement
+    `[Unreleased]` was opened after the roll
+  notes: 'MEASURED: main''s `[0.1.618]` was 8,702 lines vs the tagged 7,701; 15 of 96 arc headings
+    (PMAT-1480..1494) unreachable from `v0.1.618^{commit}`. Re-filed under a new `[Unreleased]`, derived
+    by REACHABILITY not a typed list. Gate XPILE-RELMEMBER-001 adds the poka-yoke: an `[Unreleased]`
+    heading is MANDATORY once anything has merged since the newest tag, so this reds on the next merge
+    instead of after fifteen. Invariant is clean over ~30 historical sections back to [0.1.587].
+    NOT caused by `changelog_freshness` -- its assertion 3 is scoped to shipped source and zero of the
+    fifteen touch it; I measured that before asserting it.
+
+
+    FOR THE FRIDAY PUBLISH (PMAT-1374): unaffected -- the release worktree sits AT THE TAG, so crates.io
+    receives the tagged CHANGELOG, which was always correct. Verified this morning on the tagged commit
+    `6b5f6c02`: ALL 12 check-runs SUCCESS including `cleanroom-publish`, and `release.yml` green on the
+    tag push. Tag is annotated and local SHA == remote SHA.'
 - id: PMAT-1495
   status: done
   ev_rank: R1

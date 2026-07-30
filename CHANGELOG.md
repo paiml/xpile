@@ -5,8 +5,68 @@ All notable changes to xpile are recorded here. The project follows
 pre-1.0 development each minor version may include breaking changes to
 meta-HIR and the trait surfaces.
 
-## [0.1.618] - 2026-07-31
+## [Unreleased]
 
+Work merged after the `v0.1.618` tag was cut. These entries were written into the
+`[0.1.618]` section because the release commit rolled `[Unreleased]` into it and did
+not open a replacement, leaving no correct heading to write under; `v0.1.618` does not
+contain them. Re-filed and gated by
+`crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
+
+### The released CHANGELOG section credited v0.1.618 with fifteen slices that are not in the v0.1.618 tag (PMAT-1496)
+
+The release commit rolled `## [Unreleased]` into `## [0.1.618] - 2026-07-31` and
+**did not open a replacement**. The tag was cut at `00:32`; work kept merging all
+morning, and the per-slice CHANGELOG convention kept writing an entry per arc.
+With no `[Unreleased]` heading, each one landed under the only heading available —
+the section describing a tag that does not contain it.
+
+Measured before the fix: `[0.1.618]` on `main` was **8,702 lines** against the
+tagged section's **7,701**, and **15 of its 96 arc headings** (PMAT-1480 through
+PMAT-1494) cite ids unreachable from `v0.1.618^{commit}`.
+
+**What was not the cause.** `changelog_freshness` assertion 3 requires an entry
+for every id whose commit touched *shipped source* (`crates/*/src/**`,
+`contracts/**.yaml`). **Zero** of the fifteen touched shipped source — they are
+docs/tests slices under the release freeze — so that gate neither required these
+entries nor was violated by them. The first draft of this fix blamed it;
+measuring the fifteen commits' touched paths refuted that. A plausible mechanism
+is not a cause until the mechanism is measured.
+
+**Why it matters although the published artifact is safe.** The publish runs from
+a worktree checked out *at the tag*, so what reaches crates.io is the tagged
+CHANGELOG and is correct. The damage is on `main` and it is permanent: the notes a
+reader sees on the default branch credit 0.1.618 with work it never contained, and
+fifteen slices would be filed under the wrong release forever after the next roll.
+A release section is the one part of a CHANGELOG that must never move again.
+
+The fifteen entries are re-filed under a new `[Unreleased]`, derived by
+reachability rather than by a typed list, so re-running the move after another
+merge is mechanical.
+
+**Gate** — `crates/xpile/tests/changelog_release_membership_witness.rs`
+(XPILE-RELMEMBER-001), 4 tests:
+
+1. every arc heading in a **released** section cites an id reachable from that
+   section's own tag — no version, id or count is written down, and every future
+   release adds a section to the corpus;
+2. **if anything has merged since the newest tag, an `[Unreleased]` heading
+   exists** — the poka-yoke for the root cause, so forgetting the replacement
+   section reds on the *next* merge instead of after fifteen;
+3. `[Unreleased]` leads and holds only post-tag work, so the fix cannot be run
+   backwards by filing released work there.
+
+**The invariant is historically clean, which is why it is the right one.** Run
+over every `## [x.y.z]` section back to `[0.1.587]` — about thirty sections, 44+
+arc headings — it finds **zero** violations anywhere except `[0.1.618]`. This is
+not a new convention being imposed; it is a property the project has always held
+and only just broke.
+
+Red half: restoring one post-tag arc under `[0.1.618]` reds the membership rule;
+renaming the `[Unreleased]` heading away while work exists since the tag reds the
+presence rule; moving a *tagged* arc into `[Unreleased]` reds the leading-section
+rule. Each perturbation was verified **by parsing the result**, not by printing a
+message — the PMAT-1477 lesson.
 ### The file that maps this project's status registers is inside the strictest claim corpus in the repo, and two of the four registers it publishes have had no writer for seventy-three days — one frozen table still headed "historical record", one empty section whose deferral was authored six weeks before the quarter close it silently skipped (PMAT-1495)
 
 `docs/status/INDEX.md` opens *"This directory tracks where xpile is and what's
@@ -1515,6 +1575,8 @@ and says plainly that **Friday's operator creates no tag.**
 falsify a claim that leaves the repository.* Package registries, release pages,
 rendered documentation sites and issue templates all republish facts this
 enforcement regime believes it owns.
+
+## [0.1.618] - 2026-07-31
 
 ### Release commit: 35 version literals, the witness-floor re-derive, and a deliberate one-day skew between the tag object and this heading (PMAT-1373)
 

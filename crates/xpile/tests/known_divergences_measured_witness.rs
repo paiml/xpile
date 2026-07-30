@@ -346,15 +346,52 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {rel}: {e}"))
 }
 
-/// `[Unreleased]` only — shipped sections describe what they shipped.
-fn unreleased_section() -> String {
+/// The DISCLOSURE REGION — the leading CHANGELOG section that carries the
+/// mandatory disclosure blocks (`### Known divergences`, `### What still
+/// REFUSES`, `### What is NOT merge-blocking`).
+///
+/// These blocks describe a RELEASE, so after the release commit rolls
+/// `[Unreleased]` into `[x.y.z]` they correctly live in the release section, not
+/// in the new `[Unreleased]` that subsequent work goes into. Resolving them as
+/// "the `[Unreleased]` section" is therefore wrong in both directions, and
+/// resolving them by an UNANCHORED `find("## [Unreleased]")` was worse: once the
+/// roll removed the real heading, the search matched a **prose mention** of the
+/// literal, in backticks, 8,700 lines down in a `[0.1.617]` entry, and every
+/// assertion below ran green against the wrong release (PMAT-1496).
+///
+/// So: scan `## [...]` headings ANCHORED AT A LINE START, in file order, and take
+/// the first section that actually contains the disclosure block. That is correct
+/// mid-cycle (it is in `[Unreleased]`) and after a roll (it is in the release).
+fn disclosure_region() -> String {
+    // ANCHORED AT A LINE START — and the first draft of THIS resolver was not,
+    // which reproduced the very bug it fixes one level up: `[Unreleased]` holds
+    // seventeen arc entries that DISCUSS `### Known divergences` in prose
+    // (PMAT-1473/1474/1496 are about it), so an unanchored `contains` selected
+    // `[Unreleased]` on a MENTION. A heading is a line, not a substring.
+    const MARKER: &str = "\n### Known divergences";
     let body = read("CHANGELOG.md");
-    let a = body
-        .find("## [Unreleased]")
-        .expect("CHANGELOG.md has an [Unreleased] section");
-    let rest = &body[a + "## [Unreleased]".len()..];
-    let b = rest.find("\n## [").map(|i| i + 1).unwrap_or(rest.len());
-    rest[..b].to_string()
+    let starts: Vec<usize> = body.match_indices("\n## [").map(|(i, _)| i + 1).collect();
+    assert!(
+        starts.len() > 5,
+        "only {} line-anchored `## [...]` heading(s) found in CHANGELOG.md; the disclosure region \
+         cannot be resolved",
+        starts.len()
+    );
+    for (n, &s) in starts.iter().enumerate() {
+        let e = starts.get(n + 1).copied().unwrap_or(body.len());
+        if body[s..e].contains(MARKER) {
+            return body[s..e].to_string();
+        }
+    }
+    panic!(
+        "no CHANGELOG section contains `{MARKER}`; the mandatory disclosure block has been \
+         removed or renamed, and every assertion over it would range over nothing"
+    )
+}
+
+/// Retained name; delegates to the anchored disclosure resolver above.
+fn unreleased_section() -> String {
+    disclosure_region()
 }
 
 /// The `### Known divergences` block inside `[Unreleased]`.
