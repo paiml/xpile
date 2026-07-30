@@ -24049,6 +24049,20 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     Needs no network; reds by construction on the next release.
 
 
+
+
+    ** SECOND SELF-CORRECTION, sharper than the first and found the same way -- BY RUNNING IT. The
+    replacement crit 4 pinned the citation count at "expect 4", and THIS SLICE''S OWN COMMIT moved it
+    from 4 to 9, because the CHANGELOG entry explaining the ban cites the banned figures five more
+    times. A machine-derived count typed into prose about a GROWING section is stale before the
+    branch merges -- the PMAT-1445 shape, committed INSIDE the slice written to remove it. Crit 4 now
+    carries NO expected count: it prints the hits and the reader decides citation-or-claim. Same
+    correction applied to section 6''s verification receipts, now pinned to the SHA they were measured
+    at (57504e1d) instead of standing as expectations: the [0.1.618] line/heading counts moved
+    7,882/90 -> 7,986/91 within one commit. ★ THE COROLLARY TO PMAT-1459: executing a published
+    command is how you find out your OWN receipt is already wrong.
+
+
     NEXT FREE ID PMAT-1483. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE.'
 - id: PMAT-1481
   status: done

@@ -200,6 +200,17 @@ queue:
     The gate is filed as its own `next_lane` entry (XPILE-RELPLAN-001 corpus widening).
 
 
+
+
+
+    ** SECOND SELF-CORRECTION: the replacement crit 4 pinned the citation count at "expect 4" and
+    THIS SLICE''S OWN COMMIT moved it 4 -> 9 (the CHANGELOG entry explaining the ban cites the figures
+    five more times). A derived count typed into prose about a GROWING section is stale before the
+    branch merges -- PMAT-1445''s shape, committed inside the slice written to remove it. Crit 4 now
+    carries NO expected count; section 6''s receipts are pinned to 57504e1d (the [0.1.618]
+    line/heading counts moved 7,882/90 -> 7,986/91 in one commit).
+
+
     NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE. Its `gh release create`
     MUST use docs/RELEASE.md step 3, extract from the TAG, `test -s` the body, and append the
     post-tag CHANGELOG delta (now THREE commits: 01998032, 57504e1d, and this one) under its own

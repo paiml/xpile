@@ -94,14 +94,29 @@ and now says what ships, and §2's banned-figures bullet no longer names the
 replacement figure by value — *a banned-figures list that prints its own
 replacement becomes a source of banned figures.*
 
-⚠️ **Self-correction, kept because it is the most useful line in this entry.** The
-first rewrite of criterion 4 asserted the banned figures appear **nowhere** in the
-section. That fails on the spot — the section quotes all three while documenting
-the ban. **The fix for a can-never-pass criterion was itself a can-never-pass
-criterion, and only executing it caught that.** Every replacement command was then
-run against the live tree before being written down. A grep cannot separate a
-citation from a claim; the shape that can is `is_mention()` in the gate, which is
-why the exact rule is filed for the gate rather than published here.
+⚠️ **Two self-corrections, kept because they are the most useful lines in this
+entry: this slice committed its own defect twice, and running things caught it both
+times.**
+
+**First** — the initial rewrite of criterion 4 asserted the banned figures appear
+**nowhere** in the section. That fails on the spot: the section quotes all three
+while documenting the ban. *The fix for a can-never-pass criterion was itself a
+can-never-pass criterion.*
+
+**Second, and sharper** — the rewrite after that pinned the citation count at
+*"expect 4"*, and **this commit moved it from 4 to 9**, because the entry you are
+reading cites the banned figures five more times while explaining the ban. A
+machine-derived count typed into prose about a **growing** section is stale before
+the branch merges — the PMAT-1445 shape, committed *inside* the slice written to
+remove it. Criterion 4 therefore carries **no expected count**: it prints the hits
+and the reader decides citation-or-claim. The same correction applies to the
+verification receipts in §6, which are now pinned to the SHA they were measured at
+(`57504e1d`) rather than standing as expectations — the `[0.1.618]` line and
+heading counts moved from 7,882/90 to 7,986/91 within one commit.
+
+A grep cannot separate a citation from a claim; the shape that can is
+`is_mention()` in the gate, which is why the exact rule is filed for the gate
+rather than published here.
 
 **NO GATE.** The Wed 2026-07-29 18:00 freeze permits no new
 `crates/xpile/tests/` file and no gate edit, so the above is a **measurement, not
