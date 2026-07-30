@@ -24330,3 +24330,121 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     mandatory tail, and self-asserts all three headings plus a byte-identical tail before uploading.
     Expect abort rule A9 (the body IS over cap; that is the expected path, not an edge case) and
     disclose the post-tag delta BY REFERENCE -- there is no room to append it.'
+- id: PMAT-1485
+  status: done
+  priority: P1
+  category: honesty
+  title: The release body points at a file it knows is 526 lines out of date and says nothing --
+    TWO rules for the tag/main gap were written into the runbook across two slices and NEITHER was
+    ever code, and the prefix cut can swallow the three disclosures PMAT-1484 rescued into an
+    unclosed code fence that grep cannot see
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG + release-mechanics lane only --
+    ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gate files). Tag v0.1.618 is already cut at
+    6b5f6c02, so this does NOT touch the release SHA.
+
+
+    METHOD IS THE FINDING. Three slices (1481, 1483, 1484) have now edited docs/RELEASE.md section 5
+    step 3. This one EXTRACTED THE FENCED BLOCK FROM THE FILE, substituted the real tag, neutralised
+    only the three network lines, and RAN it. It exits 0 and reproduces its documented figures
+    exactly -- 123,236 characters, 1,764 to spare, three headings present, tail byte-identical. The
+    procedure is correct on every dimension it looks at. The defect is in what it does NOT emit, and
+    no amount of re-reading the block surfaces an absence.
+
+
+    FINDING 1 -- BOTH TAG/MAIN RULES WERE PROSE ONLY, NEITHER WAS EVER IMPLEMENTED. PMAT-1481
+    established that the body is extracted at the TAG and the omission repaired by APPENDING the
+    post-tag delta under its own dated heading; PMAT-1483 amended that to DISCLOSURE BY REFERENCE
+    once the body went 3.8x over cap and there was no room to append. Measured by running the block:
+    `grep -ci post-tag /tmp/relbody.md` returns 0. The delta''s only appearance anywhere was a
+    `git diff --stat` printed to the operator''s terminal on the line immediately above
+    `gh release create` -- AND A TERMINAL IS NOT A PUBLISHER. The figure scrolls past one person and
+    reaches no reader. So Friday''s body would have gone out asserting "The authoritative text is
+    the file: `git show v0.1.618:CHANGELOG.md`" while that exact command returns a tree missing 526
+    lines across 5 commits -- and those five are PMAT-1480, 1481, 1482, 1483, 1484: the entire arc
+    that BUILT this procedure, INCLUDING the entry that announces the truncation rule the reader is
+    holding in their hands. THE GAP IS ACCELERATING AND THAT IS THE PART THAT MATTERS: PMAT-1481
+    measured it at 97 lines on 2026-07-29 and it is 526 the next morning, because the hard freeze
+    permits exactly one lane -- the docs lane -- and that lane edits CHANGELOG.md. A pointer whose
+    target is knowably incomplete, with the incompleteness unstated, is v0.1.616''s 5.5%-of-the-story
+    defect relocated one level up: not a truncated body, a truncated DESTINATION.
+
+
+    FINDING 2 -- A PREFIX CUT CAN LAND INSIDE A CODE FENCE AND PMAT-1484''S ACQUITTAL CONTROL CANNOT
+    SEE IT. The cut is at an arbitrary line boundary; nothing made it respect fenced blocks. An odd
+    count of ^``` lines in the prefix leaves a fence open, and everything after it -- the cut marker
+    AND all three mandatory sections -- renders as a single code span. `grep -q ''^### What still
+    REFUSES$''` still matches every heading, so the control PMAT-1484 wrote passes at exit 0 while
+    the reader sees 400 lines of monospace. That is precisely the failure 1484 described in prose --
+    "a spot-check for the strings finds them and a reader has no way to tell a citation from the
+    section" -- reappearing ONE LAYER BENEATH ITS OWN FIX, because the fix asserted PRESENCE and
+    presence is not legibility. On v0.1.618 the prefix happens to hold 8 fences: EVEN, and therefore
+    safe BY LUCK, NOT BY CONSTRUCTION. Demonstrated rather than argued: a synthetic prefix ending
+    inside a fence, with the auto-close disabled, aborts on the new parity assertion.
+
+
+    FINDING 3 -- THE RUNBOOK WAS ARGUING WITH ITSELF AND READING ORDER WAS DECIDING. The step''s
+    CLOSING sentence still read "the omission is repaired by APPENDING the post-tag delta under its
+    own dated heading" -- unconditional -- 21 lines below the paragraph that had already scoped that
+    same rule to "any release that fits". v0.1.618 does not fit, so the form left standing is
+    UNSATISFIABLE on the very release it governs. It was also the LAST line of the step, which is
+    the one an operator reads last and carries away. This is PMAT-1483''s own finding (section 0
+    still teaching what section 2b forbids) recurring ONE SLICE LATER INSIDE A SINGLE SECTION:
+    AMENDING A RULE DOES NOT AMEND ITS RESTATEMENTS.
+
+
+    FIXED. DELTA_N / DELTA_L are computed BEFORE the budget -- PMAT-1484''s carve-out lesson (decide
+    what MUST be published, then size the prefix around what is left) applied to the delta. The
+    notice is built into /tmp/reldelta.md, names every post-tag commit with subjects over 120
+    characters elided and the elision disclosed, and rides at the TOP of the body in BOTH regimes.
+    TOP IS LOAD-BEARING TWICE: appending it -- PMAT-1481''s literal wording -- would bury the
+    disclosure past 7,700 lines of slice narrative in the under-cap regime, which is not disclosure
+    at all, AND would break the byte-for-byte tail assertion, because the body''s last MAND_L lines
+    would become the notice instead of `Known divergences`. At the top, one spelling serves both
+    regimes and the tail invariant holds in each. When there is no delta the notice is an empty file
+    and the under-cap body is the section byte for byte, exactly as before. The cut marker now closes
+    an odd fence, and a parity assertion runs beside the headings loop.
+
+
+    RE-MEASURED FROM THE FILE AFTER THE CHANGE, not from the draft: notice 1,157 characters / 5
+    commits / 526 lines; the prefix shrinks from 1,570 to 1,550 lines to absorb it; body 123,266
+    characters with 1,734 to spare; lines 1-1,550 plus 7,319-7,700; three headings present; tail
+    byte-identical to the mandatory sections; fence parity even; exit 0.
+
+
+    BOTH NEW GUARDS DRIVEN RED, NOT JUST GREEN. Removing `cat /tmp/reldelta.md` from the header
+    reproduces the shipped pre-1485 behaviour exactly and aborts with "ABORT: 5 post-tag commits and
+    the body discloses none -- A10", which is the proof the guard would have caught today''s defect.
+    A synthetic prefix ending inside a fence aborts with "ABORT: body has an unclosed code fence --
+    A10" once the auto-close is disabled. The consequence the fence guard prevents was demonstrated
+    directly: a heading inside an unclosed fence is still matched by the 1484 heading loop.
+
+
+    ★ THE REUSABLE SHAPE: A RULE CAN BE WRITTEN, CITED, AMENDED AND RE-AMENDED ACROSS THREE SLICES
+    AND NEVER ONCE BE EXECUTABLE. PMAT-1481 wrote the append rule, PMAT-1483 amended it to
+    by-reference and reasoned carefully about which form applies above the cap, PMAT-1484 rebuilt the
+    body construction around it -- and at no point did any of the three check whether the block
+    emitted either thing, because the prose next to a code block reads as a description of the block.
+    IT IS NOT A DESCRIPTION. It is an untested claim about the block, and the block is right there to
+    run. This generalises past release mechanics: every "the tool does X" sentence adjacent to the
+    tool is a falsifiable assertion, and adjacency is what makes it feel checked. Fourth consecutive
+    slice (1482 -> 1483 -> 1484 -> 1485) in which the PROCEDURE was fine and its PRODUCT had never
+    been measured -- and the first in which the procedure''s own PROSE was the thing that was false.
+
+
+    NO GATE, STATED PLAINLY: everything above is a MEASUREMENT plus a runbook change, not an
+    invariant. The freeze forbids a new crates/xpile/tests/ file and a gate edit. XPILE-RELBODY-001
+    (next_lane[0]) gains constraint (g): when post-tag commits touch CHANGELOG.md the body must
+    disclose the delta, asserted by PRESENCE not position; and the body must carry even fence parity,
+    because (f)''s heading assertion passes on a body rendered entirely as code. Its spec has now
+    been corrected FOUR TIMES BEFORE THE GATE WAS EVER WRITTEN -- d tree, e cap, f membership,
+    g disclosure-and-legibility -- on four consecutive days, and every one of the four would have
+    produced a gate that red-ed on a correct release or passed on a defective body.
+
+
+    NEXT FREE ID PMAT-1486. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
+    MERGES -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07), never a
+    same-day hotfix onto the release SHA. Friday''s `gh release create` MUST run the section-5-step-3
+    block AS IT READS IN THE FILE (extract it, do not retype it). It is now execution-verified end to
+    end against the real v0.1.618 tag. Expect abort rule A9 (the body IS over cap; that is the
+    expected path, not an edge case), expect the post-tag delta notice, and RECOUNT the delta on the
+    day -- it was 97 lines on 07-29 and 526 on 07-30, so it will be larger again.'
