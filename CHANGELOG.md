@@ -7,6 +7,116 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### Tomorrow's `gh release create` cannot run: the body this runbook mandates is 469,246 characters against a measured 125,000-character cap, and the trend crossed the wall in one release with nothing watching (PMAT-1483)
+
+**Two slices built the release body and neither measured it.** PMAT-1480 made
+`docs/RELEASE.md` §5 step 3 *extract* the body from `CHANGELOG.md` instead of
+hand-assembling it; PMAT-1481 pinned *which tree* to extract from. Both ended in
+the same line — `gh release create "v$V" --notes-file /tmp/relbody.md` — and
+neither asked how big the file was.
+
+It is **469,246 characters / 7,700 lines** (`git show v0.1.618:CHANGELOG.md |
+awk -v h='## [0.1.618]' 'index($0,"## [")==1 { f = (index($0,h)==1) } f' | wc -m`,
+measured 2026-07-30 at the tag). A GitHub release body is capped at **125,000
+characters**. That is not read off a documentation page — it is what the API says
+when you hand it more:
+
+```text
+422 {"resource":"Release","field":"body",
+     "message":"body is too long (maximum is 125000 characters)"}
+```
+
+So the command the runbook mandates was **375% over the limit** and would have
+returned `422` on Friday morning, creating nothing — with abort rule **A7 (no
+Friday code)** in force and no policy to fall back on.
+
+**The trend is the finding, not the number.** Measured in characters at each tag:
+
+| version | section at its tag | published body | % of cap |
+|---|---|---|---|
+| `v0.1.615` | 1,325 | (no release) | 1.1% |
+| `v0.1.616` | 24,727 | 1,364 | 19.8% |
+| `v0.1.617` | 79,256 | 80,982 | **63.4%** |
+| `v0.1.618` | **469,246** | — | **375.4%** |
+
+The wall was **one release away** and nothing in the repo was watching for it.
+The reason is precise: PMAT-1480 added `test -s` after its extractor wrote a
+**zero-byte body at exit 0**, which guards the *empty* end of the size dimension.
+Nothing guarded the *full* end. Same dimension, same command, opposite direction,
+one guard.
+
+**Fixed, and truncation is disclosed rather than silent.** §5 step 3 now sizes the
+section: at or under the cap the body **is** the section, byte for byte; over it,
+the body is a line-aligned **prefix** carrying, at the top, the section's true
+character and line count, the cap, and the `git show <tag>:CHANGELOG.md` command
+that yields the whole text — and at the bottom a `⟨cut here⟩` footer naming exactly
+how many lines and characters were dropped. A reader who never clones learns they
+are holding a prefix and how to get the rest. New abort rule **A9 — BODY OVER CAP
+(recoverable, do NOT abort)** forbids the two tempting wrong answers: trimming by
+hand until it fits (undisclosed truncation — `v0.1.616`'s 5.5%-of-the-story defect
+with a new cause) and shipping no body at all.
+
+⚠️ **A bug in the fix, found only by running it.** The first spelling budgeted with
+`awk length()` — characters, in a UTF-8 locale — and then checked the result with
+`wc -c`, which counts **bytes**. This CHANGELOG is dense with `—`, `★` and `⚠️`:
+**124,941 bytes is 124,025 characters**, a 916-unit gap on one release note, and
+the guard came within **59 bytes** of aborting a body that was 975 characters clear
+of the cap. Both ends are `wc -m` now, the API's own unit. A budget that mixes
+units is a defect even on the runs where it passes. The corrected block was then
+re-extracted **from the file** and executed verbatim — 123,169 characters, 1,831 of
+headroom, exit 0 — which is the only way to know that what is published works.
+
+**The gate that does not exist yet was born wrong for the second time in two days.**
+`next_lane[0]`'s `XPILE-RELBODY-001` spec says the published body must **equal** the
+section at the tag. PMAT-1481 corrected its *tree selection* one commit ago.
+Above the cap that equality is not merely unmet, it is **unsatisfiable** — so the
+gate would have red-ed on the very first release it governs. Constraint **(e)**
+restates the invariant as **prefix + disclosure**, which degenerates to equality
+when the section fits and holds in both regimes. Auditing the spec of an unwritten
+gate has now paid twice, for the price of reading it.
+
+**And §0 of this same runbook still taught the falsehood §2b exists to forbid.**
+Its second paragraph read *"The org ruleset drifted on 2026-07-27 (`workspace-test`
+silently dropped from the required set)"*. Nothing was dropped — `workspace-test`
+was **moved** into a second org ruleset and `main` was blocked by both contexts
+throughout (PMAT-1475). §2b rule 2, one hundred lines below, says exactly that, and
+records that the misreading cost two days and three documents edited to claim *less*
+enforcement than the repo has. One document, two sections, opposite claims about one
+event, each locally consistent — PMAT-1482's shape, in the section a Friday operator
+reads **first**.
+
+⚠️ `crates/xpile/tests/enforcement_prose_witness.rs` — written for exactly this
+falsehood, over a **correct** corpus (every tracked `.md` via `git ls-files`) — is
+**green** over it. The miss is in the needle list. It carries
+*"workspace-test was dropped"* and *"dropped out of the required set"*; the live
+sentence said *"workspace-test silently dropped from the required set"*.
+**One inserted adverb and one preposition.** That is the fourth time wording has
+hidden this same claim from a gate written to catch it — brackets (PMAT-1449),
+backticks (PMAT-1476), the `[Unreleased]` spelling (PMAT-1476 again), and now this.
+Broadening the needle set is a gate edit, which the freeze forbids, so it is filed
+in `next_lane`. Controls, so this reads as a specific defect and not generic rot:
+`docs/status/enforcement-handoff.md` and `fable-architectural-review.md:28` both
+state the union correctly, and all five prior CHANGELOG hits are disclosed
+quotations.
+
+⚠️ **And that gate red-ed on this very entry, which is worth recording.** The
+quotation exemption is **line-scoped** — `strip_quoted` resets its in-quote flag at
+each newline — so a `"…"` span that wraps across a line break loses the exemption
+*and* flips the parity for the remainder of the following line, putting a needle
+that was meant as a citation straight into the haystack. The paragraph above
+originally broke a quote across two lines and the screen fired, correctly, on
+`CHANGELOG.md`. **Rule for anyone citing one of these sentences: keep the whole
+quoted span on one physical line.** The gate was right and the prose was wrong,
+which is the outcome a screen like this is for.
+
+**No gate in this slice** — the freeze permits neither a new `crates/xpile/tests/`
+file nor an edit to an existing one. Both are filed: `XPILE-RELEASE-CAP-001` (no
+network, pure arithmetic over two files; its second assertion reds when a section
+passes 60% of the cap with no A-rule mentioning it, which would have caught this a
+release earlier at `v0.1.617`'s 63.4%) and the needle-set widening. Docs, CHANGELOG
+and ledgers only: zero `crates/*/src`, zero `contracts/*.yaml`, zero gate files, and
+the `v0.1.618` tag SHA `6b5f6c02` is untouched.
+
 ### The plan's own exit criteria certify the release that already shipped — 6 of 17 pinned to `0.1.617`, and the two that matter most PASS today, thirty hours early (PMAT-1482)
 
 `docs/specifications/sub/sprint-6day-2026-07-26.md` §6 is titled **"Exit

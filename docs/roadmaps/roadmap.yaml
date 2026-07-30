@@ -23941,6 +23941,56 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID PMAT-1481. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
     MERGES -- a Friday defect means A6, never a same-day hotfix onto the release SHA. Friday''s
     `gh release create` MUST use the extractor above and MUST run the diff.'
+- id: PMAT-1483
+  status: done
+  priority: P1
+  category: honesty
+  title: Tomorrow's `gh release create` cannot run -- the release body the runbook mandates is
+    469,246 characters against a MEASURED 125,000-character API cap (375% over), the trend crossed
+    the wall in one release with nothing watching, and the runbook's own section 0 still taught the
+    falsehood its section 2b was written to forbid
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG + release-mechanics lane only --
+    ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gate files). Tag v0.1.618 is already cut at
+    6b5f6c02, so this does NOT touch the release SHA. Honesty hunt: the Thursday queue was EMPTY
+    (PMAT-1373 merged, PMAT-1374 is dated 07-31, PMAT-1375 is the DEFERRED 0.1.619 lane), and the
+    playbook''s NEXT PICK (c) was "apply PMAT-1482''s shape to the OTHER runbooks -- do their CHECK
+    sections carry derived or typed literals?".
+
+    FINDING 1 (would have stopped the release). PMAT-1480 and PMAT-1481 spent two slices making the
+    release body an EXTRACT from the tag and neither MEASURED it. The `[0.1.618]` section at
+    v0.1.618 is 469,246 characters / 7,700 lines; a GitHub release body is capped at 125,000
+    CHARACTERS, measured against the live API (`422 {"resource":"Release","field":"body","message":"body
+    is too long (maximum is 125000 characters)"}`), so docs/RELEASE.md section 5 step 3 was 375% over
+    and would have created nothing on Friday morning -- under A7, with no fallback policy. THE TREND
+    IS THE FINDING: v0.1.615 1.1% of cap, v0.1.616 19.8%, v0.1.617 63.4%, v0.1.618 375.4%. `test -s`
+    (PMAT-1480) guarded the EMPTY end of that dimension; nothing guarded the full end. FIXED: step 3
+    sizes the section and either publishes it byte-for-byte or emits a line-aligned PREFIX carrying
+    the section''s true size, the cap, the `git show <tag>:CHANGELOG.md` command and a footer naming
+    exactly what was dropped. New abort rule A9 (BODY OVER CAP, recoverable) forbids hand-trimming
+    (undisclosed truncation) and forbids shipping no body.
+
+    SELF-INFLICTED, caught by RUNNING the block rather than reading it: the first spelling budgeted
+    in awk `length()` (characters) and checked with `wc -c` (bytes) -- 124,941 bytes == 124,025
+    characters here, and the guard came within 59 bytes of aborting a body 975 characters clear of
+    the cap. Both are `wc -m` now, the API''s own unit. Re-extracted FROM the file and run verbatim:
+    123,169 chars, 1,831 headroom, exit 0.
+
+    FINDING 2. next_lane[0] (XPILE-RELBODY-001) was caught BORN-WRONG for the second time in two
+    days: PMAT-1481 fixed its tree selection, and above the cap its equality rule is UNSATISFIABLE,
+    so it would have red-ed on the first release it governs. Constraint (e) restates the invariant as
+    PREFIX + DISCLOSURE, degenerating to equality when the section fits.
+
+    FINDING 3. docs/RELEASE.md section 0 still said `workspace-test` was "silently dropped from the
+    required set" -- the PMAT-1475 falsehood, live, 100 lines above section 2b''s rule forbidding
+    that reading, in the section a Friday operator reads first. enforcement_prose_witness.rs is GREEN
+    over it and its CORPUS is right (every tracked .md); the NEEDLE LIST missed, defeated by one
+    inserted adverb and one preposition ("dropped FROM" vs its "dropped OUT OF"). Fourth time wording
+    has hidden this claim from a gate written for it. Controls: enforcement-handoff.md and
+    fable-architectural-review.md:28 both state the union correctly.
+
+    NO GATE (freeze forbids a new tests/ file and a gate edit). Filed: XPILE-RELEASE-CAP-001 (cheap,
+    no network; its second assertion reds at 60% of cap and would have caught this a release earlier)
+    and the needle-set widening. Refs XPILE-RELBODY-001, XPILE-RELPLAN-001.'
 - id: PMAT-1482
   status: done
   priority: P1

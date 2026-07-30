@@ -13,6 +13,14 @@ every number below is given as the command that derives it. The crate count,
 the version and the required-context set all move; a number typed here would
 rot exactly like the one that rule exists to prevent.
 
+The one permitted form, because PMAT-1483 added some: a **dated measurement**
+carrying the command that reproduces it, framed in the past tense about a named
+subject (*"measured 2026-07-30 on `v0.1.617`"*). Those are honest by framing —
+they say what was true of one thing at one time. What is banned is the same digit
+written as a **standing expectation** (*"the section is 80,000 characters"*,
+*"expect 4 hits"*), which reads as checked and rots invisibly. §5 step 3's size
+table is the first kind; if you find yourself unable to date one, it is the second.
+
 **⚠️ READ THIS FILE FROM `origin/main`, NOT FROM THE RELEASE WORKTREE.**
 §2a, §5 step 4 and abort rule A1 all put the operator in a worktree pinned to
 the **tag**. This document is version-controlled *inside* that tree, so it
@@ -51,11 +59,23 @@ its skip branch says the release pre-flight is what refuses the skip.
 
 For the whole life of that comment there was no release pre-flight and no such
 file, so nothing ever set `XPILE_REQUIRE_RULESET_CHECK` and the enforcement
-claim had never once been checked outside an ad-hoc local run. The org ruleset
-drifted on 2026-07-27 (`workspace-test` silently dropped from the required
-set) and it was a cron fire that happened to hold an org-scoped token, not the
-named mechanism, that noticed. PMAT-1416 closed that: the mechanism now
-exists, and the gate above keeps it and the code in agreement.
+claim had never once been checked outside an ad-hoc local run. On 2026-07-27 an
+org ruleset changed underneath the repo, and it was a cron fire that happened to
+hold an org-scoped token, not the named mechanism, that noticed. PMAT-1416
+closed that: the mechanism now exists, and the gate above keeps it and the code
+in agreement.
+
+**What that 2026-07-27 change actually was — stated here because this section
+had it wrong until PMAT-1483.** The sentence above used to end *"(`workspace-test`
+silently dropped from the required set)"*. Nothing was dropped. `workspace-test`
+was **moved** into a second org ruleset, and `main` was blocked by both contexts
+before, during and after; §2b rule 2 carries the full account. That misreading is
+the one that cost two days and three documents edited to claim *less* enforcement
+than the repo has (PMAT-1475) — and it sat here, in the section a Friday operator
+reads first, for a day after §2b was written to forbid it. **The detected event
+was real; the consequence written beside it was not.** A per-ruleset read can
+report a change; only `gh api repos/paiml/xpile/rules/branches/main` can say
+whether anything stopped blocking a merge.
 
 The generalisation the same slice measured: of the `XPILE_REQUIRE_*` tripwires
 the corpus reads, only `WASM_RUNTIME`, `KANI` and `DENY` were armed anywhere.
@@ -252,22 +272,117 @@ conclusion; a green `gh pr checks` does not include it.**
    licenses` exits 4 by design and the LGPL-in-the-shipped-binary owner
    decision is open. A release note saying otherwise would be the exact class
    of claim this procedure exists to prevent.
-3. **Create the release from an EXTRACTED body, never a hand-assembled one.**
+3. **Create the release from an EXTRACTED body, never a hand-assembled one —
+   and check its SIZE, because from `v0.1.618` on it does not fit.**
 
    ```bash
    V=<version>
+   CAP=125000   # MEASURED, not read off a doc page — see the derivation below.
    # THE TREE IS PART OF THE RULE — extract from the TAG, never from the
    # working tree. `git show "v$V":CHANGELOG.md` is what shipped.
    git show "v$V":CHANGELOG.md \
-     | awk -v h="## [$V]" 'index($0,"## [")==1 { f = (index($0,h)==1) } f' > /tmp/relbody.md
+     | awk -v h="## [$V]" 'index($0,"## [")==1 { f = (index($0,h)==1) } f' > /tmp/relsection.md
+   test -s /tmp/relsection.md || { echo "ABORT: empty section"; exit 1; }
+   # `wc -m` and NOT `wc -c`: the cap counts CHARACTERS, `-c` counts bytes.
+   FULL_C=$(wc -m < /tmp/relsection.md); FULL_L=$(wc -l < /tmp/relsection.md)
+
+   if [ "$FULL_C" -le "$CAP" ]; then
+     cp /tmp/relsection.md /tmp/relbody.md          # body IS the section, byte for byte
+   else
+     RESERVE=2000; BUDGET=$(( CAP - RESERVE ))
+     {
+       head -1 /tmp/relsection.md; echo
+       echo "> **⚠️ THIS BODY IS TRUNCATED, AND BY HOW MUCH IS STATED HERE.** The"
+       echo "> \`[$V]\` section of \`CHANGELOG.md\` at tag \`v$V\` is **${FULL_C}"
+       echo "> characters / ${FULL_L} lines**. A GitHub release body is capped at"
+       echo "> **${CAP} characters** (the API returns \`422 body is too long\`), so the"
+       echo "> full section cannot be published here. What follows is its leading"
+       echo "> prefix, cut at a line boundary. The authoritative text is the file:"
+       echo "> \`git show v$V:CHANGELOG.md\`."; echo
+     } > /tmp/relbody.md
+     HDR_L=$(wc -l < /tmp/relbody.md); HDR_C=$(wc -m < /tmp/relbody.md)
+     # awk's `length()` counts characters in a UTF-8 locale, the same unit as
+     # the cap — so the budget arithmetic is consistent end to end.
+     tail -n +2 /tmp/relsection.md \
+       | awk -v b="$(( BUDGET - HDR_C ))" \
+           '{ n = length($0) + 1; if (used + n > b) exit; used += n; print }' \
+       >> /tmp/relbody.md
+     KEPT_L=$(( $(wc -l < /tmp/relbody.md) - HDR_L + 1 ))
+     {
+       echo
+       echo "> **⟨cut here⟩** — ${KEPT_L} of ${FULL_L} lines published;"
+       echo "> $(( FULL_L - KEPT_L )) lines / ~$(( FULL_C - $(wc -m < /tmp/relbody.md) )) characters omitted."
+       echo "> Read the whole section with"
+       echo "> \`git show v$V:CHANGELOG.md | awk -v h='## [$V]' 'index(\$0,\"## [\")==1 { f = (index(\$0,h)==1) } f'\`"
+     } >> /tmp/relbody.md
+   fi
+
    test -s /tmp/relbody.md || { echo "ABORT: empty body"; exit 1; }
+   B=$(wc -m < /tmp/relbody.md)
+   [ "$B" -le "$CAP" ] || { echo "ABORT: body ${B} chars over cap ${CAP}"; exit 1; }
    # Entries the working tree has added since the tag are NOT in the released
-   # source. Read the delta; if non-empty, append it under its own heading.
+   # source. Read the delta; disclose it (see the over-cap rule below).
    git diff --stat "v$V"..origin/main -- CHANGELOG.md
    gh release create "v$V" --title "v$V" --notes-file /tmp/relbody.md   # non-draft
    gh release view "v$V" --json body -q .body > /tmp/relbody.published.md
    diff /tmp/relbody.md /tmp/relbody.published.md
    ```
+
+   **The cap is real, it is 125,000 characters, and `v0.1.618` is the first
+   release that cannot fit under it.** Measured 2026-07-30 by POSTing an
+   oversized body to the API:
+
+   ```text
+   422 {"resource":"Release","field":"body",
+        "message":"body is too long (maximum is 125000 characters)"}
+   ```
+
+   Measured 2026-07-30 at each tag, in **characters** (`wc -m`), against
+   `jq`-counted published body lengths:
+
+   | version | `[x.y.z]` section at its tag | published body | % of the 125,000 cap |
+   |---|---|---|---|
+   | `v0.1.615` | 1,325 | (no release) | 1.1% |
+   | `v0.1.616` | 24,727 | 1,364 | 19.8% |
+   | `v0.1.617` | 79,256 | 80,982 | **63.4%** |
+   | `v0.1.618` | **469,246** (7,700 lines) | — | **375.4%** |
+
+   Re-derive rather than trust the table:
+   `git show "v$V":CHANGELOG.md | awk … | wc -m`. The trend is the point — the
+   wall was one release away and nothing in this procedure was watching for it,
+   because `test -s` guards the **empty** end only. PMAT-1480 found a zero-byte
+   body at exit 0; this is the same failure at the other end of the same
+   dimension, and it does **not** fail silently: `gh release create` returns
+   `422` and creates nothing, so the release simply does not happen. Under **A7
+   — no Friday code** there is no time to invent a policy at that moment, which
+   is why the policy is here.
+
+   **Truncation is permitted; SILENT truncation is not.** The body carries, at
+   the top, the section's true character and line count, the cap, and the
+   `git show <tag>:CHANGELOG.md` command that yields the whole text — and at the
+   bottom, exactly how many lines and characters were dropped. A reader who never
+   clones learns that they are holding a prefix and how to get the rest. Cutting
+   silently would publish a body that reads complete and is 26% of the story,
+   which is `v0.1.616`'s 5.5% defect (PMAT-1480) reintroduced by a size limit
+   instead of by hand-assembly.
+
+   **`wc -m`, not `wc -c` — and this was a real bug in the first version of this
+   step.** The cap counts characters; `wc -c` counts bytes, and this CHANGELOG is
+   dense with `—`, `★` and `⚠️`. Measured here: a body of **124,941 bytes** is
+   **124,025 characters** — a 916-unit gap on one release note. The first
+   spelling budgeted with `awk length()` (characters, in a UTF-8 locale) and then
+   *checked* with `wc -c` (bytes), so the guard came within **59 bytes** of
+   aborting a body that was 975 characters clear of the cap. Mixing the two units
+   inside one budget is the defect; both are now `-m`, the same unit the API
+   enforces. Caught by running the block, not by reading it.
+
+   **Over the cap, the post-tag delta is disclosed by REFERENCE, not appended.**
+   PMAT-1481's rule — repair the tag/`main` gap by *appending* the delta under
+   its own dated heading — assumes there is room. There is not: the body is
+   already 3.8× over. So when `FULL_C > CAP`, name the post-tag commits (`git log
+   --oneline "v$V"..origin/main -- CHANGELOG.md`) in the truncation notice and
+   leave the text in the file, which is where the notice already points. The
+   append rule stands for any release that fits.
 
    **Which tree, stated because the two already disagree.** Through PMAT-1480
    this step read `CHANGELOG.md` as a bare relative path, which resolves against
@@ -293,6 +408,19 @@ conclusion; a green `gh pr checks` does not include it.**
    the right tree. A wrong-tree extraction passes it cleanly. `test -s` is the
    other half: PMAT-1480's first extractor spelling wrote a **zero-byte body at
    exit 0**, and the `diff` was green on it, because empty matched empty.
+
+   It is also, above the cap, **equality-blind by construction**: the file it
+   diffs against is `/tmp/relbody.md`, the *assembled* body, so a green `diff`
+   certifies transport and says nothing about whether the body equals the
+   section — and above the cap it provably does not. *"Published body == the
+   `[x.y.z]` section at the tag"* is therefore **not a satisfiable invariant**
+   for a release this size, only for one that fits; the honest generalisation is
+   *the body is a **prefix** of the section, plus a disclosure naming exactly what
+   was cut*, which holds in both regimes and degenerates to equality when
+   `FULL_C <= CAP`. That is the form `next_lane[0]`'s `XPILE-RELBODY-001` spec
+   now carries (constraint **(e)**); the equality spelling it had would have
+   red-ed on `v0.1.618` itself — the second time in two days that gate's
+   unwritten spec has been caught mandating a false red on a correct release.
 
    It is `index()` and not a regex on purpose: a *dynamic* awk regex cannot
    carry `\[`, and the escaped form
@@ -417,6 +545,16 @@ conclusion; a green `gh pr checks` does not include it.**
   re-check `git rev-parse origin/main` against the recorded high-water mark
   before every push; the release SHA is **pinned** and never re-resolved as
   "whatever `HEAD` is."
+- **A9 — BODY OVER CAP (recoverable, do NOT abort).** `gh release create`
+  returning `422 body is too long (maximum is 125000 characters)` is not a defect
+  in the artifact and not a reason to slip the day. It creates nothing, so it is
+  safe to retry. Build the body with the size-checked form in §5 step 3, which
+  truncates at a line boundary *and discloses the cut*, then re-run. Two things
+  this rule exists to forbid: trimming the body by hand until it fits
+  (undisclosed truncation — the `v0.1.616` 5.5%-of-the-story defect with a new
+  cause), and skipping the release body altogether. `v0.1.618`'s section is 3.8×
+  the cap, so this is the **expected** path now, not an edge case — which is why
+  it is an abort *rule* and not a footnote.
 
 ---
 
