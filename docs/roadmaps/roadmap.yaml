@@ -24906,6 +24906,84 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1493
+  status: done
+  priority: P1
+  category: honesty
+  title: Six paragraphs mandate content for the release body, one step builds it, and that step's
+    closing assertion aborts if you put any of them in
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; docs/RELEASE.md + CHANGELOG + ledgers ONLY --
+    zero crates/*/src, zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag v0.1.618 is
+    cut at 6b5f6c02, so this does not touch the release SHA.
+    PICKED on Day 5 with the ranked queue empty (PMAT-1374 is dated 07-31) by applying PMAT-1484''s
+    shape one level up: that slice found the body dropping the three mandatory CHANGELOG sections
+    because a size budget answers HOW MANY and never WHICH. This asks the next question -- what
+    ELSE does this file mandate for the body, and can the step that builds it carry that?
+    MEASURED: SIX paragraphs mandate release-body content -- 2b (the XPILE_REQUIRE_RULESET_CHECK
+    result, "goes in the release body verbatim"), 5 step 2 ("name every non-success in the release
+    body"), A11, A13, A14, A15; A12 inherits A11''s destination by reference. 5 step 3 is the ONLY
+    step that creates a body, and it builds it from `git show "v$V":CHANGELOG.md` (PMAT-1481''s tree
+    constraint). Every one of the six is a fact measured ON RELEASE DAY or a fact about a tree the
+    tag predates, so NO version of CHANGELOG.md at the tag contains any of them. Zero slots.
+    ** AND THE FIFTH IS BARRED BY AN ASSERTION ADDED TO PROTECT THE OTHER FOUR: PMAT-1484''s closing
+    control asserts the body''s last MAND_L lines are the mandatory tail BYTE FOR BYTE, so appending
+    a disclosure at the end aborts under A10.
+    PROVEN by extracting the block from the file and running it three ways against v0.1.618 (never
+    retyped -- PMAT-1459; and PMAT-1484''s rule that a control which cannot fail is not a control,
+    so each mutation asserts it applied before the verdict is believed): ARM 1 as written, exit 0,
+    body 123,218 chars, 0 of 6 carried. ARM 2, the 4-line advisory note the v0.1.617 page ACTUALLY
+    PUBLISHED appended at the end where that page put it, exit 1, "ABORT: body tail is not the
+    mandatory sections verbatim - A10". ARM 3, the same 4 lines carried at the TOP before the budget
+    is computed, exit 0, body 123,225 chars, lands at body line 38.
+    PRIOR ART IS THE PROOF IT IS NOT HYPOTHETICAL: the published v0.1.617 body carries 20 non-blank
+    lines that appear in NO CHANGELOG.md, at page lines 1229-1246 (the tail) -- 4 disclosing that
+    the `wasi` job was FAILING on ccb95a04, the SHA that tag points at, 8 giving the root cause, 4
+    recording a hand re-verification of the universal-binary claim. That is 5 step 2''s mandate
+    being discharged, in the hand-assembled regime PMAT-1480 replaced.
+    ** THE SHAPE, REUSABLE: A NARROWING FIX INHERITS EVERYTHING THE LOOSE FORM WAS LOAD-BEARING FOR,
+    AND NOBODY ENUMERATES THAT LIST. PMAT-1480 measured a real defect (0 of 613 published bodies
+    matched their CHANGELOG section) and fixed it by making the body an EXTRACT -- correct, and it
+    deleted the only place the body could say the things only the body can say. PMAT-1484 then
+    locked the door from the inside. Neither slice was wrong; the loss lived in the delta between
+    "hand-assembled" and "extracted" that nobody wrote down. When a fix replaces a permissive
+    mechanism with a constrained one, LIST WHAT THE PERMISSIVE FORM WAS CARRYING before narrowing.
+    ** A GATE OVER A MANDATE''S WORDING IS GREEN OVER A MANDATE THAT CANNOT BE DISCHARGED:
+    crates/xpile/tests/release_mandate_enforcement_witness.rs (XPILE-RELMANDATE-001) is named for
+    exactly this subject and is 4/4 GREEN, anti-vacuity test included. It asks whether a mandate
+    hard-codes the enforcement set and whether it points somewhere real -- never whether the
+    procedure that must discharge it CAN. Its corpus is also queue.yaml + roadmap.yaml, i.e. the
+    mandates in the two WORK-ITEM LEDGERS; the six that govern the body live in the runbook, which
+    it opens only to check a destination. PMAT-1490''s rule one document along -- a gate''s NAME is
+    not its CORPUS. Ask of every mandate gate: wording, or satisfiability?
+    ** A11 CONDITIONED ITS ACTION ON SOMETHING THAT COULD NOT BE EVALUATED: "if the release body is
+    still editable, mirror it per 5 step 3''s ordering". Step 3 finishes BEFORE step 6 measures the
+    front page, and this procedure contained `gh release create` and `gh release view` and NO edit
+    command anywhere -- so "still editable" had nothing to be true or false about. A11 and A14 are
+    the two rules whose subject is a RENDERED page, which by construction does not exist until the
+    upload. A rule cannot be discharged by a step that runs before its subject exists.
+    SHIPPED (all docs/RELEASE.md): 5 step 3 gains a /tmp/reldisc.md slot carved out BEFORE the
+    budget, in the same top-of-body position the post-tag delta notice already occupies for the same
+    two reasons, plus the acquittal control that was missing entirely -- LINE-BY-LINE and not by
+    marker, because a marker proves a heading arrived and says nothing about the findings under it.
+    New 5 step 8 appends what steps 6+7 measured to the published body, asserting via cmp that the
+    published prefix is UNALTERED rather than intending it, per the retro-edit-published-release-
+    bodies owner decision (append, never rewrite). A10 WIDENED to govern every mandated body content
+    rather than minting a 16th rule -- a second rule with the same subject and disposition is
+    precisely PMAT-1488''s duplicated normative set. A11''s untestable clause and A14''s destination
+    now name step 8. Rule set unchanged at 16 (A1, A1b, A2..A15).
+    RED HALVES both run: absent /tmp/reldisc.md -> "ABORT: no day-of disclosures", exit 1; file
+    present but silently dropped by the assembler -> "ABORT: 26 day-of disclosure line(s) never
+    reached the body", exit 1, so the control catches a drop the emptiness check cannot see. GREEN:
+    five pre-publish mandates carried, exit 0, 123,278 chars (1,722 under cap), disclosure at body
+    line 15, tail byte-identical, fence parity even. Both blocks sh -n clean.
+    NO GATE -- the Wednesday 18:00 freeze bars a new tests/ file. Filed XPILE-RELDISC-001 in
+    next_lane: derive the mandate set from the runbook (never a literal roster) and assert each is
+    reachable by the step that must carry it.
+    NEXT PICK (PMAT-1494+): (a) apply this slice''s shape to the OTHER narrowing fixes in the repo
+    -- every place a permissive mechanism was replaced by a constrained one, ask what the loose form
+    was load-bearing for; (b) the remaining mandate-vs-mechanism pairs: 2a''s tripwire block and 7''s
+    ledger both mandate content and neither has a step that writes it; (c) still open from 1488 --
+    sweep for other duplicated normative sets.'
 - id: PMAT-1492
   status: done
   priority: P1

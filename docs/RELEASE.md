@@ -418,6 +418,17 @@ conclusion; a green `gh pr checks` does not include it.**
      { echo "ABORT: mandatory sections are not all at the tail — A10"; exit 1; }
    MAND_C=$(wc -m < /tmp/relmand.md); MAND_L=$(wc -l < /tmp/relmand.md)
 
+   # THE DAY-OF DISCLOSURES. Six places in this file mandate content for the
+   # release body (§2b, §5 step 2, A11, A13, A14, A15; A12 inherits A11's
+   # destination by reference). NONE of them can be satisfied by the extract
+   # above: every one is a fact measured ON RELEASE DAY, or a fact about a tree
+   # the tag predates, so no version of `CHANGELOG.md` at `v$V` contains any of
+   # them. Write them to this file BEFORE running the block — it is the only
+   # slot in the body that can hold them, and appending them after assembly
+   # trips the tail assertion below (A10). See the note under this block.
+   test -s /tmp/reldisc.md || { echo "ABORT: no day-of disclosures — see the six mandates; A10"; exit 1; }
+   DISC_C=$(wc -m < /tmp/reldisc.md)
+
    # THE POST-TAG DELTA IS A FACT ABOUT THIS BODY, so it is built HERE — before
    # the budget — and rides INSIDE the body. Printing it to a terminal is not
    # disclosing it. PMAT-1484's lesson applied to the delta: carve out what MUST
@@ -452,12 +463,15 @@ conclusion; a green `gh pr checks` does not include it.**
    fi
    DELTA_C=$(wc -m < /tmp/reldelta.md)
 
-   if [ "$FULL_C" -le "$CAP" ] && [ "$(( FULL_C + DELTA_C ))" -le "$CAP" ]; then
+   if [ "$FULL_C" -le "$CAP" ] && [ "$(( FULL_C + DELTA_C + DISC_C ))" -le "$CAP" ]; then
      # PMAT-1481's append rule, relocated to the TOP of the body: a disclosure
      # buried past 7,700 lines is not one, and appending it at the END would
-     # break the byte-for-byte tail assertion below. An empty delta degenerates
-     # this to `cp` — body IS the section, byte for byte.
-     { head -1 /tmp/relsection.md; cat /tmp/reldelta.md; tail -n +2 /tmp/relsection.md; } > /tmp/relbody.md
+     # break the byte-for-byte tail assertion below. The day-of disclosures ride
+     # in the same slot for the same two reasons. An empty delta AND an empty
+     # disclosure file degenerate this to `cp` — but the disclosure file is
+     # asserted non-empty above, so that degenerate case no longer occurs.
+     { head -1 /tmp/relsection.md; cat /tmp/reldisc.md /tmp/reldelta.md
+       tail -n +2 /tmp/relsection.md; } > /tmp/relbody.md
    else
      RESERVE=2000; BUDGET=$(( CAP - RESERVE - MAND_C ))
      [ "$BUDGET" -gt 0 ] || { echo "ABORT: mandatory sections alone are ${MAND_C} chars — A10"; exit 1; }
@@ -474,7 +488,7 @@ conclusion; a green `gh pr checks` does not include it.**
        echo "> *Known divergences* (${MAND_L} lines), which are the tail of the"
        echo "> section and which a leading-prefix cut would otherwise drop in full."
        echo "> The authoritative text is the file: \`git show v$V:CHANGELOG.md\`."
-       cat /tmp/reldelta.md
+       cat /tmp/reldisc.md /tmp/reldelta.md
        echo
      } > /tmp/relbody.md
      HDR_L=$(wc -l < /tmp/relbody.md); HDR_C=$(wc -m < /tmp/relbody.md)
@@ -521,6 +535,14 @@ conclusion; a green `gh pr checks` does not include it.**
    # not a disclosure: nobody records a terminal. Assert it reached the BODY.
    [ "${DELTA_N:-0}" -eq 0 ] || grep -q 'HAS MOVED SINCE THIS TAG' /tmp/relbody.md ||
      { echo "ABORT: ${DELTA_N} post-tag commits and the body discloses none — A10"; exit 1; }
+   # …and the SAME control for the day-of disclosures, which is the half that was
+   # missing entirely: six mandates, one assembler, and nothing checking that the
+   # assembler carried them. Line-by-line and not by marker, because a marker
+   # proves a heading arrived and says nothing about the six findings under it.
+   MISSING=$(grep -v '^[[:space:]]*$' /tmp/reldisc.md \
+     | while IFS= read -r l; do grep -qF -- "$l" /tmp/relbody.md || echo x; done | wc -l)
+   [ "$MISSING" -eq 0 ] ||
+     { echo "ABORT: ${MISSING} day-of disclosure line(s) never reached the body — A10"; exit 1; }
    # …and the OTHER end of the headings guard: three headings present does not
    # mean three sections intact. Assert the body's last MAND_L lines are the tail
    # BYTE FOR BYTE — this holds in both regimes, because the delta notice goes to
@@ -532,6 +554,55 @@ conclusion; a green `gh pr checks` does not include it.**
    gh release view "v$V" --json body -q .body > /tmp/relbody.published.md
    diff /tmp/relbody.md /tmp/relbody.published.md
    ```
+
+   **⛔ BUILD `/tmp/reldisc.md` FIRST — the body has exactly one slot that can
+   hold a day-of fact, and it is not the end (PMAT-1493).** Six paragraphs in
+   this file mandate content for the release body, and until PMAT-1493 the step
+   that *creates* the body had no slot for any of them:
+
+   | mandate | what it requires in the body | knowable before this step? |
+   |---|---|---|
+   | §2b | the `XPILE_REQUIRE_RULESET_CHECK` result, verbatim | yes |
+   | §5 step 2 | every advisory job that is not `success` on the pinned SHA | yes — step 2 runs first |
+   | A12 | a dead published metadata URL, post-tag form | yes — measured §4 step 6 |
+   | A13 | every crate still serving retired prose, if A4/A6 fires | yes — measured §4 step 6 arm 3 |
+   | A15 | which release carries the defect and which the fix | yes |
+   | A11 | the rendered front page's defects | **no** — §5 step 6 runs after the upload |
+   | A14 | the rendered API docs' defects | **no** — §5 step 7 runs after the upload |
+
+   The first five go in `/tmp/reldisc.md` before the block runs. **Their text is
+   not drafted here on purpose:** every one of those rules already carries its own
+   measured figures for the release it fires on, and a second copy in this step
+   would be the duplicated normative set of PMAT-1488 — where each copy's gate
+   checks its own copy's presence and nothing ever compares the two. Read the
+   rules; §2b and step 2 are measured on the day regardless. The last two
+   cannot: their subject is the *rendered published page*, which does not exist
+   until step 4 has uploaded. They are disclosed by **step 8**, which edits the
+   release — and A11's *"if the release body is still editable"* was an untestable
+   condition until step 8 existed, because this procedure had no edit step at all.
+
+   ⚠️ **DO NOT APPEND A DISCLOSURE AFTER THE BODY IS ASSEMBLED. IT ABORTS.**
+   Measured 2026-07-30 by extracting this block and running it three ways against
+   `v0.1.618`. As written, exit 0 at **123,218 characters** — and a body carrying
+   **none** of the six. With the four-line advisory note the `v0.1.617` page
+   actually published appended at the end, where that page put it:
+   `ABORT: body tail is not the mandatory sections verbatim — A10`, exit 1. With
+   the same four lines carried in this slot instead, exit 0 at **123,225
+   characters** — the prefix absorbs them and the disclosure lands at body line
+   38. **The tail assertion PMAT-1484 added to protect the three mandatory
+   sections is what forbids the append**, so the two guards are not in tension;
+   the slot is simply at the other end of the body.
+
+   ★ **This is not hypothetical, and the `v0.1.617` page is the evidence.** That
+   body carries **20 non-blank lines that appear in no `CHANGELOG.md`**, at page
+   lines 1229–1246 — the tail. Four of them disclose that the `wasi` job was
+   failing on `ccb95a04`, the SHA the tag points at; eight give the root cause;
+   four record a hand re-verification of the universal-binary claim against the
+   tag. That is §5 step 2's mandate being discharged, in the hand-assembled
+   regime PMAT-1480 replaced. **The extract fixed a real defect — 0 of 613 bodies
+   matched their section — and removed the only place the body could say the
+   things only the body can say.** Ask it of any narrowing fix: what was the old,
+   looser form load-bearing for?
 
    **Measured on `v0.1.618` (2026-07-30, PMAT-1484), by running the block:**
    the section is 7,700 lines; the three mandatory sections start at line
@@ -927,6 +998,53 @@ conclusion; a green `gh pr checks` does not include it.**
    not on `index.html`, so a root-page scan misses it. **rustdoc's own lints are
    the oracle; the rendered page is only how you confirm what a reader sees.**
 
+8. **Append what steps 6 and 7 measured — the body is editable and nothing here
+   ever edited it (PMAT-1493).** A11 and A14 both say *record it in the release
+   body*, and both measure a page that does not exist until step 4 has uploaded.
+   Step 3 cannot carry them, so without this step their only mandated
+   destination was unreachable and A11's condition — *"if the release body is
+   still editable"* — could never be evaluated: this procedure contained
+   `gh release create` and `gh release view`, and no edit.
+
+   **APPEND; never rewrite.** The body step 3 built is asserted byte-for-byte
+   against the tag's mandatory tail, and the `owner_decisions` entry
+   `retro-edit-published-release-bodies` (PMAT-1481) settled the general question
+   the same way: add a dated block, never alter published text. That is why this
+   step is the one place an append is correct — it comes after the tail assertion
+   has already done its work, not around it.
+
+   ```bash
+   V=<version>
+   gh release view "v$V" --json body -q .body > /tmp/relbody.live.md
+   test -s /tmp/relbody.live.md || { echo "ABORT: no published body to amend"; exit 1; }
+   # /tmp/relpost.md — what steps 6 and 7 found, written by the operator.
+   test -s /tmp/relpost.md || { echo "ABORT: steps 6+7 ran and recorded nothing"; exit 1; }
+   { cat /tmp/relbody.live.md; echo; echo "---"; echo
+     echo "> **POST-PUBLISH ADDENDUM ($(date +%F)) — measured on the RENDERED pages"
+     echo "> after upload, so it could not be in the body above.** Appended, not"
+     echo "> edited: nothing above this line has been altered."; echo
+     cat /tmp/relpost.md; } > /tmp/relbody.amended.md
+   # The cap applies to an edit too — A9 is not a create-only rule.
+   B=$(wc -m < /tmp/relbody.amended.md)
+   [ "$B" -le 125000 ] || { echo "ABORT: amended body ${B} over cap — trim /tmp/relpost.md, A9"; exit 1; }
+   # The append must not have disturbed the published prefix. This is the
+   # PMAT-1481 rule as an assertion rather than an intention.
+   head -n "$(wc -l < /tmp/relbody.live.md)" /tmp/relbody.amended.md > /tmp/relbody.prefix.md
+   cmp -s /tmp/relbody.prefix.md /tmp/relbody.live.md ||
+     { echo "ABORT: the amendment altered published text"; exit 1; }
+   gh release edit "v$V" --notes-file /tmp/relbody.amended.md
+   gh release view "v$V" --json body -q .body | grep -q 'POST-PUBLISH ADDENDUM' ||
+     { echo "ABORT: the addendum did not reach the page"; exit 1; }
+   ```
+
+   ⚠️ **If step 8 cannot run, the findings still have a home and it is not a
+   terminal.** A11 and A14 both also send them to `CHANGELOG.md` under the *next*
+   version, which is where the repair lands anyway. Step 8 is the copy a
+   non-cloning reader of *this* release can reach; the CHANGELOG entry is the one
+   that survives. Do both, and never let a green `gh release edit` stand in for
+   the CHANGELOG entry — the addendum is on a page no gate in this repository
+   reads (PMAT-1480: every gate's corpus stops at `git ls-files`).
+
 ---
 
 ## 6. Abort rules
@@ -1049,14 +1167,31 @@ the rule you are about to rely on is still written down.
   alongside any useful prefix, publish them *first* and the prefix second —
   never drop them.
 
+  **A10 GOVERNS EVERY MANDATED BODY CONTENT, NOT ONLY THE THREE CHANGELOG
+  SECTIONS (PMAT-1493).** The other five pre-publish mandates — §2b's ruleset
+  result, §5 step 2's advisory statuses, A12, A13, A15 — are `/tmp/reldisc.md`,
+  and step 3 aborts under this rule if that file is empty or if any of its lines
+  fails to reach the assembled body. The disposition is identical because the
+  reasoning is: a body missing a disclosure is a *documentation* defect, and the
+  tag, the crates and the dry-run are untouched by it. **This rule was widened
+  rather than a new one minted, because the set of abort rules is a maintenance
+  liability at the rate it is growing** (PMAT-1488) — and a second rule with the
+  same subject, the same disposition and a different number is the duplicated
+  normative set that finding is about.
+
 ---
 
 - **A11 — FRONT PAGE DEFECTIVE (record it; never touch the batch).** §5 step 6
   measures the rendered crates.io front page. It runs **after** the upload and
   the version is immutable, so A11 can never be *repaired* for the release that
   triggers it — it is a **disclosure** rule: write the finding to
-  `CHANGELOG.md` under the *next* version and, if the release body is still
-  editable, mirror it per §5 step 3's ordering. **A11 must never delay, retry or
+  `CHANGELOG.md` under the *next* version **and** append it to the published body
+  via **§5 step 8**. ⚠️ This clause used to read *"if the release body is still
+  editable, mirror it per §5 step 3's ordering"* — an untestable condition
+  pointing at the wrong step. Step 3 builds the body from the tagged CHANGELOG
+  and finishes before step 6 measures anything, so it can never carry an A11
+  finding; and until PMAT-1493 added step 8 the procedure had no edit command at
+  all, so *"still editable"* had nothing to be true or false about. **A11 must never delay, retry or
   partially revert a batch** — an already-published crate is valid regardless of
   what its front page links to (contrast A4, which stops the batch). Like A10 it
   aborts an artefact, not the day.
@@ -1195,7 +1330,9 @@ the rule you are about to rely on is still written down.
   version is immutable, so **there is nothing a Friday action can repair and
   nothing a deferral can improve.** A14 must never delay, retry or partially
   revert a batch. Record the count and the affected crates in the release body
-  and fix the comments for the next version.
+  **via §5 step 8** — like A11 its subject is a rendered page that does not exist
+  until step 4 has uploaded, so step 3 cannot carry it — and fix the comments for
+  the next version.
 
   ⚠️ **A14 IS THE ONE RULE WHOSE SUBJECT NO GATE IN THIS REPOSITORY HAS EVER
   BUILT.** `.github/workflows/` contains zero occurrences of `cargo doc`,

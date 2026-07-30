@@ -229,7 +229,7 @@ updated: >-
   from docs/RELEASE.md section 6 via `grep -nE '^- \*\*A[0-9]+b? —' docs/RELEASE.md` -- never off
   the plan, never off a remembered range; it returns SIXTEEN markers today, each exactly once.
   RECOUNT the post-tag CHANGELOG delta on the day; it grew again today.
-  NEXT FREE ID PMAT-1493. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+  NEXT FREE ID PMAT-1494. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -285,6 +285,58 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1493
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'six paragraphs mandate content for the release body, one step builds it, and that
+    step''s closing assertion ABORTS if you put any of them in -- and the fifth mandate is barred
+    by the very assertion added to protect the other four'
+  result: 'SHIPPED 2026-07-30. Docs-only under the freeze (docs/RELEASE.md + CHANGELOG.md + both
+    ledgers; zero crates/*/src, zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag
+    v0.1.618 is cut at 6b5f6c02, so nothing here touches the release SHA.
+    PICKED with the ranked queue empty (PMAT-1374 dated 07-31) by applying PMAT-1484''s shape one
+    level up: it found the body dropping the three mandatory CHANGELOG sections; this asks what
+    ELSE this file mandates for the body and whether the step that builds it can carry that.
+    MEASURED: SIX mandates (2b verbatim ruleset result, 5 step 2 advisory non-successes, A11, A13,
+    A14, A15; A12 inherits A11''s by reference), ONE assembler (5 step 3), ZERO slots -- step 3
+    extracts from git show "v$V":CHANGELOG.md and all six are day-of facts or facts about a tree the
+    tag predates. AND appending them aborts, because PMAT-1484''s tail assertion requires the body''s
+    last MAND_L lines to be the mandatory tail BYTE FOR BYTE.
+    PROVEN by extracting the block and running it 3 ways (never retyped; every mutation asserts it
+    applied first): as written exit 0 / 123,218 chars / 0 of 6 carried; the 4-line advisory note the
+    v0.1.617 page ACTUALLY published, appended where that page put it, exit 1 "ABORT: body tail is
+    not the mandatory sections verbatim - A10"; the same 4 lines in the TOP slot, exit 0 / 123,225.
+    PRIOR ART: the v0.1.617 page carries 20 non-blank lines present in NO CHANGELOG.md at page lines
+    1229-1246 -- 4 disclosing the `wasi` job was FAILING on ccb95a04 (the tagged SHA), 8 root cause,
+    4 a hand re-verification. 5 step 2''s mandate, discharged in the regime PMAT-1480 replaced.
+    ** SHAPE: A NARROWING FIX INHERITS EVERYTHING THE LOOSE FORM WAS LOAD-BEARING FOR, AND NOBODY
+    ENUMERATES THAT LIST. PMAT-1480 fixed a real 0-of-613 defect by making the body an extract and
+    deleted the only place the body could say what only the body can say; PMAT-1484 then locked the
+    door from inside. Neither was wrong -- the loss was in the undocumented delta.
+    ** A GATE OVER A MANDATE''S WORDING IS GREEN OVER A MANDATE THAT CANNOT BE DISCHARGED:
+    release_mandate_enforcement_witness.rs (XPILE-RELMANDATE-001) is named for this subject, is 4/4
+    GREEN incl. anti-vacuity, and its corpus is queue.yaml + roadmap.yaml -- the mandates in the
+    WORK-ITEM LEDGERS, not the six in the runbook. PMAT-1490''s rule one document along.
+    ** A11 conditioned its only action on "if the release body is still editable" and the procedure
+    had NO edit command at all, so the condition could never be evaluated.
+    SHIPPED: 5 step 3 /tmp/reldisc.md slot carved BEFORE the budget (top-of-body, where the delta
+    notice already rides) + a LINE-BY-LINE acquittal control (a marker proves a heading arrived, not
+    that the findings came with it); NEW 5 step 8 appends steps 6+7 findings to the published body
+    with a cmp assertion that published text is unaltered (append, never rewrite -- the
+    retro-edit-published-release-bodies owner decision); A10 WIDENED rather than a 16th rule minted
+    (PMAT-1488: a second rule with the same subject + disposition IS the duplicated normative set);
+    A11 + A14 now name step 8. Rule set unchanged at 16.
+    RED HALVES: no reldisc.md -> exit 1; present but dropped by the assembler -> "ABORT: 26 day-of
+    disclosure line(s) never reached the body", exit 1. GREEN: exit 0, 123,278 chars, 1,722 under
+    cap, disclosure at body line 15, tail byte-identical, fence parity even. Both blocks sh -n clean.
+    NO GATE (freeze bars a new tests/ file) -> XPILE-RELDISC-001 filed in next_lane.
+    NEXT PICK (PMAT-1494+): (a) apply this shape to the repo''s OTHER narrowing fixes -- wherever a
+    permissive mechanism was replaced by a constrained one, ask what the loose form carried; (b) the
+    other mandate-vs-mechanism pairs -- 2a''s tripwire block and 7''s slip ledger both mandate
+    content and neither has a step that writes it; (c) still open from 1488, sweep for other
+    duplicated normative sets.'
 - id: PMAT-1492
   status: done
   ev_rank: R1
@@ -309,7 +361,7 @@ queue:
     Abort rule A15 added at the single definition site (16 markers, each exactly once).
 
     NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). A15 joins A9-A14 as PREDICTED and
-    DISCLOSED; NONE is a reason to touch the batch. NEXT FREE ID PMAT-1493.'
+    DISCLOSED; NONE is a reason to touch the batch. NEXT FREE ID PMAT-1494.'
 - id: PMAT-1491
   status: done
   ev_rank: R1
@@ -7372,6 +7424,33 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1493 GATE -- XPILE-RELDISC-001, the mandate-REACHABILITY property. Blocked by the Wed
+  2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file. The defect is MEASURED: SIX
+  paragraphs in docs/RELEASE.md mandate release-body content, section 5 step 3 is the only step
+  that builds a body, and before PMAT-1493 it carried NONE of them -- while its own closing
+  assertion aborted on any attempt to append one.
+  FIVE design constraints, each a way this gate can be born useless.
+  (a) ⛔ DERIVE THE MANDATE SET FROM THE RUNBOOK, NEVER TYPE A ROSTER. Six is today''s count and
+  the set has grown four times in four days (A9..A15 were all authored in the week before ship
+  day). A literal list of six is PMAT-1488''s defect committed inside the fix for it. The
+  derivation that found them: paragraphs in docs/RELEASE.md containing the phrase `release body`
+  in an imperative clause, minus the ones that are prose ABOUT the cap or self-references from
+  step 3. Publish the derivation, then COUNT THE NEEDLES so the scan cannot silently match zero.
+  (b) THE PROPERTY IS REACHABILITY, NOT PRESENCE. For each mandate, assert that some step of
+  section 5 can carry it, and that the step named is one that runs AFTER the mandate''s subject
+  exists. This is what distinguishes it from XPILE-RELMANDATE-001, which is 4/4 GREEN over the
+  same defect: that gate checks a mandate''s WORDING (does it hard-code the enforcement set, does
+  it point somewhere real) and its corpus is queue.yaml + roadmap.yaml, i.e. the mandates in the
+  WORK-ITEM LEDGERS. It never asks whether the procedure can discharge them.
+  (c) ⛔ DO NOT WRITE THE MANDATE PHRASES INTO THE GATE''S OWN DISCLOSURE. PMAT-1488''s landmine
+  exactly: this gate scans for the phrase `release body`, so a doc-comment quoting its own needles
+  writes into its corpus and the gate goes green off its own paragraph. Use a computed marker.
+  (d) BOTH ENDS. Assert step 3 aborts when /tmp/reldisc.md is absent AND when the assembler drops
+  it silently -- PMAT-1493 measured that the emptiness check alone cannot see the second (the
+  line-by-line control reported 26 missing lines where the file was non-empty the whole time).
+  (e) MANDATORY ACQUITTAL CONTROL: delete section 5 step 8 and assert the gate REDS on A11 and A14
+  becoming unreachable; assert the mutation APPLIED before believing the verdict (PMAT-1484 --
+  an unapplied mutation''s green is indistinguishable from an acquittal).'
 - 'PMAT-1492 GATE -- XPILE-PYREFUSAL-001, the Python refusal-DISCLOSURE property. Blocked by the
   Wed 2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file. The defect is MEASURED and
   reproducible: the mandatory `### What still REFUSES` section names 2 Python refusals while the
