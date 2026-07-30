@@ -269,7 +269,10 @@ updated: >-
   range. Rule set is SIXTEEN and unchanged by 1493/1494 (A10 was widened, A6 gained a pointer).
   RECOUNT the post-tag CHANGELOG delta on the day; step 3 computes it dynamically and it grew again
   today.
-  NEXT FREE ID PMAT-1495. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+  PMAT-1495 landed after this block was written and is NOT release-relevant -- it is
+  docs/status/INDEX.md only, zero bearing on the tag, the body, the batch or any abort rule. Do not
+  go looking for it in the runbook.
+  NEXT FREE ID PMAT-1496. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -325,6 +328,103 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1495
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'docs/status/INDEX.md is one of three files named by hand in the strictest claim corpus in
+    the repo, and two of the four registers it publishes have had NO WRITER for 73 days -- a frozen
+    table still headed "historical record", and an empty section whose deferral was authored six
+    weeks BEFORE the quarter close it silently skipped'
+  result: 'SHIPPED 2026-07-30. Docs-only under the freeze (docs/status/INDEX.md + CHANGELOG.md +
+    both ledgers; zero crates/*/src, zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag
+    v0.1.618 is cut at 6b5f6c02, so nothing here touches the release SHA.
+    PICKED as PMAT-1494''s own next-pick (a): sweep every other "none/zero recorded" surface for the
+    empty-register shape. The sweep''s first hit is not in docs/RELEASE.md at all.
+    MEASURED: INDEX.md opens "This directory tracks where xpile is and what''s next" and publishes
+    FOUR registers -- a conventions table declaring a cadence per status file, a "Session log
+    (historical record)" table, a "Quarterly rollups" section, and a 7-step "How to pick this up in
+    a future session" checklist whose step 7 is the session log''s only writer.
+    ** THE SESSION LOG: two rows, dated 2026-05-15 and 2026-05-18, and `git ls-files
+    docs/status/20*.md` returns exactly those two files -- so the table is COMPLETE with respect to
+    the logs that EXIST, and both were written in the project''s first four days. Since the last:
+    73 days, 1,786 commits, 617 tags, zero rows, under a heading saying "historical record" and a
+    conventions cell saying this index is updated "when a new session log lands". The trigger never
+    fired, so the register never got written, and the heading asserted completeness throughout.
+    ** THE QUARTERLY ROLLUP: `docs/status/quarterly/` has NEVER EXISTED in this repo''s history
+    (`git log --all --diff-filter=A -- docs/status/quarterly*` = 0 commits). Its text read "(none
+    yet -- first quarterly rollup expected at 2026-Q3 close...)" and was authored 2026-05-18 06:29
+    CEST (be2c4620) -- SIX WEEKS BEFORE the 2026-Q2 close on 2026-06-30, the ONE quarter boundary
+    elapsed inside this project''s life and 30 days before today, against a conventions cell
+    committing the directory to "at quarter close". Q2 was not deferred and not slipped: it was
+    UNREPRESENTABLE, because the deferral already promised the FIRST rollup at the NEXT close. This
+    is PMAT-1494''s "date the birth of a register before reading its contents as history", confirmed
+    a second time in two slices.
+    ** THE ASYMMETRY IS THE PROOF THIS IS GATE-SHAPED AND NOT A DISCIPLINE FAILURE: CURRENT.md sits
+    in the SAME directory, declares the MOST demanding cadence of the four ("every session that
+    changes the state"), and was written YESTERDAY -- because PMAT-1348 put three assertions on it
+    in claims_drift.rs after finding five false claims that had stood two months. Same directory,
+    same authors, same 73 days: the gated register lived, both ungated ones died. The repo had
+    already written the rule -- "a doc rule with no gate is a suggestion", claims_drift.rs:1459.
+    ** AND THE PAGE IS ALREADY IN THE CORPUS, WHICH IS THE SHARP PART. INDEX.md is one of exactly
+    THREE files claim_pages() names by hand (with README.md and CLAUDE.md) under "every prose page
+    whose subject is the system AS IT IS NOW". Every assertion over that corpus hunts a FALSE OR
+    STALE NUMERAL. The two dead registers offer none: one is empty, and the other''s figures (14
+    crates, 12/12 contracts, 260 Lean theorems -- all since moved) are correct ABOUT THEIR OWN DATE,
+    which is exactly why the gate''s own rationale exempts dated logs. A DRIFT GATE KEYED ON COUNTS
+    IS STRUCTURALLY BLIND TO DRIFT IN COMPLETENESS, and the page it is blind on is the one whose
+    whole subject IS completeness. -> Ask of every register: does anything red when it stops being
+    written? Not when it is WRONG -- when it STOPS.
+    ** MECHANISM HALF, and it is not sloth: the session log''s only writer is step 7 of a checklist
+    that lives INSIDE THE FILE IT MAINTAINS, and nothing outside points at it. `grep -c docs/status
+    CLAUDE.md` = 0 (its Persistence pointers name memory, docs/specifications/, audit-design.md,
+    contracts/); README.md references the directory exactly once and to a DIFFERENT file
+    (enforcement-handoff.md). A REGISTER WHOSE ONLY WRITER IS AN INSTRUCTION INSIDE ITSELF HAS NO
+    WRITER -- the reader who would run step 7 has by construction already opened the page, and the
+    entry points that route real sessions (CLAUDE.md -> queue.yaml -> CHANGELOG.md) never route
+    anyone here. PMAT-1494''s "where is the operator standing when the record must be written?", in
+    the form "is the operator ever in the room at all?".
+    SHIPPED: conventions table gains a fourth column `When written (measured)` stating per row what
+    actually keeps it alive (LIVE-and-gated / NO WRITER / ABANDONED 2026-05-18 / NEVER WRITTEN),
+    with three derivation commands beside it; session-log heading becomes "FROZEN 2026-05-15 ..
+    2026-05-18, not a historical record" with both rows preserved byte for byte as the dated record
+    they are; the quarterly section states its own birth commit and timestamp, the Q2 arithmetic,
+    and that its emptiness is evidence about its AGE and MISSING WRITER and nothing else; step 7 is
+    STRUCK THROUGH rather than deleted so the abandonment stays visible in the file that declared
+    the cadence. NO COUNT IS HARD-CODED INTO INDEX.md -- the figures live in this dated log and the
+    page carries commands instead (PMAT-1348''s pointer-file rule). All six published commands were
+    EXTRACTED AND RUN before commit, exit 0, reproducing every figure (PMAT-1459).
+    ** FOUND WHILE FIXING IT, AND THE SHARPEST THING IN THE SLICE: THE PHRASE WHOSE MISLEADINGNESS
+    IS THE DEFECT IS ALSO THE TOKEN THAT KEEPS THE SECTION''S CONTENTS LEGAL. The first cut retitled
+    the section "Session log -- FROZEN ..., not a historical record" and
+    claims_drift::docs_claim_no_universal_depth_the_substrate_does_not_hold went RED: the 2026-05-18
+    row claims UNIVERSAL Diamond depth-2 AND depth-3, the shallowest contract now carries one
+    Diamond category, and the ONLY thing that ever made that row legal is HISTORICAL_MARKER -- the
+    literal string "(historical record)" matched in the ENCLOSING HEADING, claims_drift.rs:331. That
+    parenthetical does TWO INCOMPATIBLE JOBS: a machine-readable record exemption for the gate, and
+    a reader-facing completeness claim in prose. CORRECTING THE PROSE SILENTLY REVOKED THE EXEMPTION
+    -- honest re-wording was PENALISED, and the penalty arrived as an unrelated-looking failure
+    about Diamond depth. Fixed by keeping the marker verbatim with the disambiguation appended after
+    it, plus an in-section note saying it may never be dropped. -> A TOKEN THAT IS SIMULTANEOUSLY AN
+    EXEMPTION MARKER AND READER-FACING PROSE CANNOT BE CORRECTED WITHOUT BREAKING THE EXEMPTION, AND
+    THE GATE WILL READ THE FIX AS THE REGRESSION. The red was OBSERVED (it is what sent this slice
+    to claims_drift.rs:331) and the green after re-adding the marker is the paired half.
+    NO GATE (freeze bars a new tests/ file) -> XPILE-STATUSREG-001 in next_lane; it must DERIVE each
+    register''s cadence from the tree and must NOT assert a table is non-empty, since an honestly
+    quiet register has no row either -- the born-wrong trap PMAT-1481 and PMAT-1483 each caught one
+    day apart. Until it lands, "no writer in 73 days" is a MEASUREMENT, NOT AN INVARIANT.
+    OWNER DECISION FILED: `quarterly-rollup-cadence` -- is the quarterly rollup a real commitment or
+    should it be struck from the conventions table? Not blocking the publish.
+    ** SHAPE: A REGISTER''S CADENCE IS A CLAIM, AND NO GATE IN THIS REPO CHECKS ONE. Every honesty
+    gate here asks "is this statement true"; none asks "is this statement still being written". The
+    two are independent, and the second failure mode is the one that gets more persuasive with age.
+    NEXT PICK (PMAT-1496+): (a) the cadence sweep this slice opens -- every OTHER declared update
+    cadence in the repo ("updated at ...", "refreshed each ...", "regenerated by ..."), checked
+    against `git log -1` on its subject; docs/specifications/**, book/src/, and the contracts
+    inventory pages are unswept. (b) still open from 1494, the rest of the "none recorded" sweep
+    (owner_decisions never drained, next_lane entries never drained). (c) still open from 1493, the
+    OTHER narrowing fixes. (d) still open from 1488, other duplicated normative sets.'
 - id: PMAT-1494
   status: done
   ev_rank: R1
@@ -7520,6 +7620,32 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1495 GATE -- XPILE-STATUSREG-001, the register-cadence property. Blocked by the Wed
+  2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file. The defect is MEASURED:
+  docs/status/INDEX.md declares an update cadence for four registers and TWO of them have had no
+  writer since 2026-05-18 (73 days, 1,786 commits, 617 tags) -- the session-log table under a
+  heading saying "historical record", and a quarterly-rollup directory that has never existed.
+  FOUR design constraints, each a way this gate can be born useless.
+  (a) ⛔ DERIVE THE CADENCE, NEVER ASSERT A TABLE IS NON-EMPTY. An honestly quiet register has no
+  row either, so "it has rows" is not the property -- the same backwards-property trap spelled out
+  at next_lane XPILE-SLIPLEDGER-001 (a). The property is: for every register this page declares a
+  cadence FOR, the last write to its subject (`git log -1 -- <path>`) is consistent with the
+  declared cadence, or the page carries an explicit measured disclosure that it is not. A page that
+  SAYS "NO WRITER" is compliant; a page that says nothing while its subject is cold is not.
+  (b) ⛔ THE SUBJECT IS THE CADENCE CELL, NOT THE PROSE. Parse the conventions table and resolve
+  each row to a path or glob, so that ADDING a register to the table automatically puts it in the
+  corpus -- the walk-the-corpus rule from PMAT-1417. A hard-coded list of four rots the day a fifth
+  row lands, which is this very defect one level up.
+  (c) ⛔ IT MUST NOT BE SATISFIABLE BY TOUCHING THE FILE. INDEX.md''s own mtime is not evidence that
+  the SESSION LOGS are being written; the gate reads `git log -1` on each row''s SUBJECT, never on
+  INDEX.md. This is the trap PMAT-1490 named as "a job''s name is not its subject".
+  (d) MANDATORY ACQUITTAL CONTROL: delete one measured disclosure cell and assert the gate NAMES
+  that register and that row; then restore. A red half that is never RUN is the class this repo has
+  been bitten by repeatedly (PMAT-1383, PMAT-1417).
+  WIDER TARGET, and the reason this is worth a gate rather than a one-off disclosure: NO GATE IN
+  THIS REPO CHECKS A CADENCE. Every honesty gate asks "is this statement true"; none asks "is this
+  statement still being written". Other declared cadences to fold in once (a)-(d) hold:
+  docs/specifications/** "Status:" lines, book/src/ pages, the contracts inventory headers.'
 - 'PMAT-1494 GATE -- XPILE-SLIPLEDGER-001, the cadence-ledger property. Blocked by the Wed
   2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file AND the network. The defect is
   MEASURED: docs/RELEASE.md section 7 quantifies over "every A4 stop and every A6 slip", carried
@@ -7982,6 +8108,30 @@ next_lane:
 - PMAT-952 bidirectional-WASM lift and PMAT-956 provable-model-as-code — the only two genuinely open capability
   frontiers
 owner_decisions:
+- id: quarterly-rollup-cadence
+  status: OPEN — surfaced 2026-07-30 by PMAT-1495. Not blocking the v0.1.618 publish.
+  summary: 'Is the quarterly rollup a real commitment, or should it be struck from the
+    docs/status/INDEX.md conventions table? MEASURED: the table commits `quarterly/YYYY-Q?.md`
+    (from `pv kaizen`) to be written "at quarter close"; `docs/status/quarterly/` has NEVER existed
+    in this repository''s history (`git log --all --diff-filter=A -- docs/status/quarterly*` = 0),
+    and the one quarter boundary elapsed inside this project''s life (2026-Q2, closed 2026-06-30)
+    passed with nothing written. The section''s "(none yet — first rollup expected at 2026-Q3
+    close)" text was authored 2026-05-18 06:29 CEST (be2c4620), six weeks BEFORE that close, so the
+    miss was not merely unrecorded — it was unrepresentable.
+
+    WHY IT IS AN OWNER CALL AND NOT A SLICE: both options are defensible and the choice is about
+    what this project wants to promise, not about what is true. THREE options: (1) STRIKE the row —
+    the per-session and per-quarter cadences were both superseded in practice by CHANGELOG.md plus
+    the two roadmaps ledgers, which every session does write, and a cadence nobody intends to keep
+    is exactly the claim surface PMAT-1495 just spent a slice disclosing; (2) KEEP it and write the
+    2026-Q3 rollup at the 2026-09-30 close, in which case XPILE-STATUSREG-001 (next_lane) should
+    red on 2026-10-01 if it is absent — this is the option that makes the gate load-bearing;
+    (3) RETRO-write a 2026-Q2 rollup (NOT recommended — a rollup reconstructed 30 days late is a
+    dated record of the reconstruction, not of the quarter, and PMAT-1494 had to mark four ledger
+    rows *retro* for exactly this reason). RECOMMENDATION: (1) or (2), decided BEFORE 2026-09-30 so
+    the answer is not once again supplied by the deadline passing. The same question applies to the
+    `YYYY-MM-DD-<topic>.md` per-session row, which PMAT-1495 marked ABANDONED 2026-05-18 rather
+    than removing, on the grounds that deleting it would erase the evidence that it was dropped.'
 - id: retro-edit-published-release-bodies
   status: OPEN — surfaced 2026-07-30 by PMAT-1481. Not blocking the v0.1.618 publish.
   summary: 'Should already-published GitHub release bodies be retro-edited when the CHANGELOG section
