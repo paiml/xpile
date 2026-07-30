@@ -1,4 +1,4 @@
-updated: "PMAT-1480 asked the question the previous ten honesty slices structurally could not:\
+updated_prev_1480: "PMAT-1480 asked the question the previous ten honesty slices structurally could not:\
   \ not 'is this claim in the repo true' but 'what does the repo say WHERE IT IS NOT THE REPO'.\
   \ Every gate in crates/xpile/tests/ derives its corpus from the working tree or from `git\
   \ ls-files`. A GitHub release body is in NEITHER -- it is the one publisher of this project's\
@@ -24,9 +24,43 @@ updated: "PMAT-1480 asked the question the previous ten honesty slices structura
   \ rendered doc sites, issue templates. ** SECOND LESSON, cheap and repeatable: the extractor's\
   \ first spelling used an ESCAPED DYNAMIC awk regex and wrote a ZERO-BYTE body AT EXIT 0 (awk\
   \ degrades `\\[$V\\]` into a character class). Caught by RUNNING it, not reading it. A published\
-  \ command that has never been executed is decoration -- PMAT-1459's lesson, live again.\
-  \ NEXT FREE ID PMAT-1481. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- and its `gh\
-  \ release create` MUST use the step-3 extractor and MUST run the diff."
+  \ command that has never been executed is decoration -- PMAT-1459's lesson, live again."
+updated: >-
+  PMAT-1481 asked where PMAT-1480's fix actually LANDS. It landed on main as 01998032 -- one
+  commit AFTER 6b5f6c02, the SHA v0.1.618 points at, and FORTY MINUTES later by the clock (tag
+  object 2026-07-30 00:42:18 +0200, the fix 01:22:16) -- and abort rule A1, section 2a and
+  section 5 step 4 all put the release operator in a worktree pinned to the TAG. So the
+  operator following the procedure sits in a tree carrying the OLD procedure:
+  `git show v0.1.618:docs/RELEASE.md | sed -n '229,230p'` is the superseded two-line step 3,
+  body-matching-the-CHANGELOG-section and all, and wt-1373-tag was already sitting there.
+  SHAPE: a runbook that tells you to work from a pinned historical tree cannot assume it will
+  be read from that tree -- and the freeze table makes this the NORMAL case, because Thu/Fri
+  permit only the docs lane, which is where the runbook lives. FIXED with a top-of-file
+  directive to materialise origin/main:docs/RELEASE.md first.
+  SECOND: step 3 named a FILE and not a TREE (bare relative `CHANGELOG.md`), and the two
+  already disagree -- the [0.1.618] section is 7,699 lines at the tag and 7,796 on main, a gap
+  opened one commit after the tag and widened by every further docs slice. Tag wins (a release
+  page documents what SHIPPED); post-tag delta is APPENDED under its own dated heading.
+  THIRD: PMAT-1480's round-trip diff is TREE-BLIND -- it compares the body against the same
+  file the body came from, so a wrong-tree extraction passes clean; same blindness that made
+  the zero-byte body diff-green. A `test -s` guard now precedes it.
+  FOURTH, a self-correction kept in the entry: the draft claimed the post-tag edit could never
+  reach the PACKAGED CHANGELOG.md on crates.io. There IS no packaged CHANGELOG.md -- it sits at
+  the workspace root, outside every package dir, so it ships in NONE of the 31 crates
+  (xpile-0.1.617.crate = 916 files, exactly two .md, neither a CHANGELOG). What ships is the
+  root README.md via `readme = ../../README.md`. The true consequence is TIGHTER: outside a
+  clone this file reaches a reader through the release body and NOTHING ELSE.
+  FIFTH: the v0.1.617 page was NOT retro-edited (still carries the pre-PMAT-1479 `;&` text,
+  untouched since 2026-07-26T19:17:19Z) and nothing said so -- now owner_decisions
+  `retro-edit-published-release-bodies` instead of an inference.
+  ** THE ONE THAT MATTERS FOR TOMORROW: next_lane[0]'s gate spec would have been BORN WRONG.
+  It said the published body must equal the section extracted from `CHANGELOG.md` -- the
+  WORKING TREE's copy -- which reds on a CORRECT release as soon as any post-tag docs slice
+  lands, already true today at +97 lines. Constraint (d) now pins it to
+  `git show <tag>:CHANGELOG.md`.
+  NEXT FREE ID PMAT-1482. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- its `gh release
+  create` MUST use the step-3 extractor, MUST extract from the TAG (not main), MUST `test -s`
+  the body, and MUST append the post-tag CHANGELOG delta under its own heading.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -82,6 +116,52 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1481
+  status: done
+  ev_rank: R1
+  date: 2026-07-30
+  title: PMAT-1480's fix to the release runbook cannot reach the operator it was written for --
+    A1 pins them to the TAG and the fix landed one commit after it; and step 3 named a file, not
+    a tree, while the two already differ by 97 lines
+  notes: 'DONE 2026-07-30 (Day 5, post-freeze docs/CHANGELOG/release-mechanics lane only; no
+    crates/*/src, no contracts, no gate file touched). Full lessons in docs/roadmaps/roadmap.yaml
+    under `- id: PMAT-1481`.
+
+    PMAT-1480 rewrote docs/RELEASE.md step 3 and landed it as 01998032 -- ONE COMMIT AFTER
+    6b5f6c02, the SHA v0.1.618 points at. A1 / section 2a / section 5 step 4 all require the
+    operator to work from a worktree pinned to the TAG, and docs/RELEASE.md is version-controlled
+    inside that tree, so `git show v0.1.618:docs/RELEASE.md | sed -n ''229,230p''` is still the
+    superseded two-line step 3 whose body rule is the exact sentence that measured 0-of-613.
+    wt-1373-tag was already sitting at that SHA. SHAPE: a runbook that instructs you to work from
+    a pinned historical tree cannot assume it will be read from that tree -- and the freeze table
+    makes it the NORMAL case, since Thu/Fri permit only the docs lane, which is the runbook''s own
+    lane. FIXED by a top-of-file directive to materialise origin/main:docs/RELEASE.md first.
+
+    SECOND: step 3''s `awk ... CHANGELOG.md` was a bare relative path -- a FILE, not a TREE. The
+    [0.1.618] section is 7,699 lines at the tag and 7,796 on main. Extract at the tag and the page
+    omits PMAT-1480''s own entry, the one announcing the match rule; extract on main and the page
+    describes commits not in the released source. TAG WINS; the delta is APPENDED under its own
+    dated heading. THIRD: the round-trip diff PMAT-1480 added is TREE-BLIND -- it compares the body
+    against the same file it came from, so a wrong-tree extraction passes clean, the same blindness
+    that made the zero-byte body diff-green. `test -s` guard added.
+
+    FOURTH, self-correction kept in the published entry: the draft claimed the post-tag edit could
+    never reach the PACKAGED CHANGELOG.md on crates.io. There IS no packaged CHANGELOG.md -- it is
+    at the workspace root, outside every package dir, so it ships in NONE of the 31 crates
+    (xpile-0.1.617.crate = 916 files, exactly two .md, neither a CHANGELOG; the packaged doc is the
+    root README.md via `readme = ../../README.md`). The real consequence is TIGHTER: outside a clone
+    this file reaches a reader through the release body and nothing else. FIFTH: the v0.1.617 page
+    was NOT retro-edited and nothing said so -> owner_decisions
+    `retro-edit-published-release-bodies`.
+
+    ** LOAD-BEARING FOR TOMORROW: next_lane[0]''s gate spec would have been BORN WRONG -- it
+    compared the published body to the WORKING TREE''s CHANGELOG, which reds on a CORRECT release
+    as soon as any post-tag docs merge lands (already true at +97 lines). New constraint (d) pins
+    the subject to `git show <tag>:CHANGELOG.md` and flags the appended-delta comparison rule.
+
+    NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). Its `gh release create` MUST use the
+    step-3 extractor, MUST extract from the TAG, MUST `test -s` the body, and MUST append the
+    post-tag CHANGELOG delta under its own heading. NEXT FREE ID PMAT-1482.'
 - id: PMAT-1480
   status: done
   ev_rank: R1
@@ -6584,7 +6664,8 @@ next_lane:
   section, 1 of 613 even begins with its heading, and all 613 carry lines found nowhere in the
   CHANGELOG (3,044 of them). THE RULE: for every tag with a published
   release, `gh release view <tag> --json body -q .body` must equal the section extracted by
-  `awk -v h="## [$V]" ''index($0,"## [")==1 { f = (index($0,h)==1) } f'' CHANGELOG.md`. THREE design
+  `awk -v h="## [$V]" ''index($0,"## [")==1 { f = (index($0,h)==1) } f''` over
+  `git show <tag>:CHANGELOG.md` — SEE (d), THIS SPELLING IS THE CORRECTION. FOUR design
   constraints, each one a way this gate can be born useless. (a) IT MUST SKIP LOUDLY, NOT PASS, when
   `gh auth status` fails or the network is absent — an offline CI runner silently green is the
   PMAT-1456 vacuity shape, so gate the skip behind XPILE_REQUIRE_RELEASE_BODIES=1 exactly as
@@ -6598,6 +6679,20 @@ next_lane:
   bodies match". (c) THE ACQUITTAL CONTROL: mutate the extracted text by one character and confirm the
   comparison REDS, so the diff is not silently comparing two empty strings — the zero-byte-at-exit-0
   failure mode is REAL and was hit while writing the extractor.
+  (d) ⚠️ ADDED BY PMAT-1481 — THE SPEC ABOVE WAS WRITTEN WRONG AND WOULD HAVE BORNE A GATE THAT REDS
+  ON A CORRECT RELEASE. It said the body must equal the section extracted from `CHANGELOG.md`, i.e.
+  the WORKING TREE copy. The working tree keeps growing after the tag: `## [0.1.618]` measures 7,699
+  lines at `v0.1.618` and 7,796 on main ALREADY, one commit later, and every post-tag docs slice
+  widens it. Comparing a published body against the working tree therefore reds the moment any
+  Thu/Fri docs merge lands — a false red on a release that did everything right, which is worse than
+  no gate because it trains the operator to ignore it. THE COMPARISON SUBJECT IS
+  `git show <tag>:CHANGELOG.md`, the tree the tag names, for EVERY tag including the newest. Two
+  corollaries: the gate needs no network for its CHANGELOG half (only for the body), and a body that
+  legitimately carries an APPENDED post-tag delta (docs/RELEASE.md step 3) must be compared on its
+  LEADING region, not for whole-string equality — decide that rule explicitly rather than discovering
+  it as a red. ALSO: PMAT-1480''s own round-trip `diff` is TREE-BLIND and cannot catch a wrong-tree
+  extraction, since it compares the body against the same file the body came from; this gate is the
+  only thing that can, which is a second reason it is worth writing.
   ★ WHY IT IS WORTH A GATE AT ALL: this is the only publisher of repo facts that is structurally
   invisible to `git ls-files`, and it is the copy read WITHOUT a clone. The broader sweep the shape
   opens (crates.io rendered READMEs, doc sites, issue templates) is a SEPARATE, larger lead.'
@@ -6673,6 +6768,30 @@ next_lane:
 - PMAT-952 bidirectional-WASM lift and PMAT-956 provable-model-as-code — the only two genuinely open capability
   frontiers
 owner_decisions:
+- id: retro-edit-published-release-bodies
+  status: OPEN — surfaced 2026-07-30 by PMAT-1481. Not blocking the v0.1.618 publish.
+  summary: 'Should already-published GitHub release bodies be retro-edited when the CHANGELOG section
+    they were meant to match is later corrected? Concretely: the `v0.1.617` page still carries the
+    pre-PMAT-1479 `;&` / `;;&` text — the false universal that fix exists to kill — and has been
+    untouched since 2026-07-26T19:17:19Z (derive: `gh release view v0.1.617 --json publishedAt,body`;
+    15 matches for `REFUSES|;&`). PMAT-1480 ported the page-only `wasi`-was-RED disclosure INTO the
+    CHANGELOG but left this reverse direction unstated, so a reader could reasonably infer the page had
+    been brought into line. It has not been.
+
+    WHY IT IS AN OWNER CALL AND NOT A SLICE: a release body is outward-facing, archival, and carries no
+    edit history a reader can see, so silently rewriting it destroys the record of what was actually
+    published at the time — the same reason the gate in next_lane[0] is FORWARD-LOOKING from v0.1.618
+    rather than retrofitting v0.1.612..v0.1.616. THREE options: (1) leave every published body frozen
+    and rely on the CHANGELOG as the correcting record (cheapest, and consistent with the
+    forward-looking gate); (2) APPEND a dated `Post-release correction (<date>, PMAT-NNNN)` block to
+    affected pages, never editing existing text — preserves the record, matches the mirror rule
+    docs/RELEASE.md step 3 already states, and is what the `v0.1.617` page did organically for
+    PMAT-1370; (3) full retro-edit for accuracy (rejected here — it is the option that loses
+    information). RECOMMENDATION: option (2), and if taken it applies to `v0.1.617` first.
+
+    NOTE the asymmetry that makes this NOT purely cosmetic: crates.io versions are immutable, so the
+    rendered per-version README can never be corrected at all, whereas a release body CAN be. Doing
+    nothing on the page leaves the ONE correctable non-clone publisher uncorrected.'
 - id: ruleset-workspace-test-dropped
   status: RESOLVED 2026-07-29 by PMAT-1475 — NO DECISION WAS EVER NEEDED. Nothing was dropped.
   summary: '✅ VOID. `workspace-test` was never dropped as a merge-blocking context — it was MOVED. On
