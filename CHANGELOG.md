@@ -7,6 +7,90 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The body that now fits publishes none of the three sections it exists to publish — a size budget picked *how many* lines survive and nobody ever chose *which* (PMAT-1484)
+
+**PMAT-1483 made the release body fit. This slice asks what is in it.** Yesterday's
+fix cut the 469,246-character `[0.1.618]` section down to a 125,000-character
+leading prefix and disclosed the cut — correct on the dimension it was looking at,
+and it left the release page carrying **none of the release's mandatory
+disclosures**.
+
+`docs/RELEASE.md` §4 step 2 requires every release section to carry three
+sections, and calls them mandatory: *What still REFUSES*, *What is NOT
+merge-blocking*, *Known divergences*. They are the honest-disclosure surface —
+what the transpiler will not do, what CI does not block, and where the emitters
+knowingly diverge from CPython. This CHANGELOG is written newest-arc-first, so all
+three sit at the **end** of the section. Measured at the tag on 2026-07-30:
+
+| | line range in the `[0.1.618]` section |
+|---|---|
+| section total | 1–7,700 (469,246 characters) |
+| `### What still REFUSES` | 7,319 |
+| `### What is NOT merge-blocking` | 7,414 |
+| `### Known divergences` | 7,501–7,700 |
+| **body the pre-1484 block published** | **1–1,972** |
+
+Zero of the three. The body published 1,972 lines of internal slice narrative and
+dropped the 382 lines / 24,324 characters written for the reader who is actually
+holding it — **19.5% of the cap, so they were never competing for room.** They
+were dropped because "the leading lines" is what a prefix cut does, not because
+anything weighed them.
+
+**Why this is worse than a normal doc gap.** §5 step 3 of the same file argues, at
+length and correctly, that the release page is the **only non-clone path** to
+`CHANGELOG.md`: the file sits at the workspace root, outside every package
+directory, so Cargo packages it into none of the 31 crates (`xpile-0.1.617.crate`
+holds 916 files and exactly two `.md`, neither a CHANGELOG). A reader who does not
+clone reaches this file through the release body and through nothing else. The
+procedure dropped, from that one copy, precisely the three sections written for
+that reader — and would have done it at exit 0 on Friday morning.
+
+**And it would have passed a spot-check.** The truncated body names all three
+sections ten times in prose, because the PMAT-1473 / PMAT-1474 / PMAT-1478
+narratives are *about* them. Grepping the published body for
+`What still REFUSES` finds hits. Nothing distinguishes a citation from the
+section. That is why the block now asserts the three **headings** (`^### …$`) and
+then asserts the body's tail is the mandatory sections **byte for byte** — a
+heading is not a section, and three headings present does not mean three sections
+intact.
+
+**The fix, and it is a carve-out and not a bigger budget.** §5 step 3 locates the
+mandatory tail first, subtracts its size from the prefix budget, publishes
+`lines 1–N` and `lines 7,319–7,700`, and discloses the cut as a **middle**
+omission naming both surviving ranges. Measured by executing the block as it now
+reads in the file: **1,974 lines / 123,236 characters, 1,764 under the cap, all
+three sections present in full.** New abort rule **A10** covers the ways the
+carve-out can fail — headings absent, sections not contiguous at the tail,
+mandatory text alone over the cap, or the assembled body missing them — and it
+aborts the **body**, not the day: the tag, the crates and the dry-run are
+untouched by a CHANGELOG-shape defect, so it must never slip the crates.io batch.
+
+**Five acquittal controls, all executed, all red for the stated reason:** drop the
+tail append (`ABORT: body lost ^### What still REFUSES$`), rename the anchor
+heading, set `CAP=20000` so the tail alone overruns, move `Known divergences` out
+of the tail, and append the tail one line short (`ABORT: body tail is not the
+mandatory sections verbatim`). Green run re-verified after the last edit: exit 0.
+
+⚠️ **One of those controls passed vacuously the first time and that is the most
+transferable part.** Control 1 was a `sed` anchored at `^cat /tmp/relmand.md` —
+but the line is inside the `else` branch and carries two leading spaces, so the
+substitution silently matched nothing and the "control" ran the **unmutated**
+block. It exited 0, which is exactly what a control that cannot fail looks like.
+Caught by `diff`-ing the mutant against the original before trusting its verdict.
+→ **Assert that your mutation applied before you believe your acquittal**; the
+same discipline PMAT-1459 established for published commands applies to the
+controls that check them. Three further controls had been generated from a stale
+copy of the block and were regenerated from the final text for the same reason.
+
+★ **The reusable shape: a budget decides a quantity, and quantities do not choose
+their own members.** PMAT-1483 asked "does it fit"; the question it did not reach
+is "what is *in* the part that fits", and the default answer — document order —
+was set by nothing more deliberate than how `head` works. Wherever a limit forces
+a selection, the selection is a separate decision that has to be made explicitly:
+which tests a time box keeps, which findings a top-N report keeps, which lines a
+truncated log keeps. This is the third consecutive slice (PMAT-1482 → 1483 →
+1484) in which the *procedure* was fine and its *product* had never been measured.
+
 ### Tomorrow's `gh release create` cannot run: the body this runbook mandates is 469,246 characters against a measured 125,000-character cap, and the trend crossed the wall in one release with nothing watching (PMAT-1483)
 
 **Two slices built the release body and neither measured it.** PMAT-1480 made

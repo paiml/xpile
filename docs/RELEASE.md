@@ -215,7 +215,10 @@ conclusion; a green `gh pr checks` does not include it.**
 2. **Promote the CHANGELOG heading** from `## [Unreleased]` to
    `## [<version>] - <FRIDAY's date>` (see the skew note in §1). The section
    must carry all three of *What still REFUSES*, *What is NOT merge-blocking*
-   and *Known divergences*. The merge-blocking section states the live
+   and *Known divergences* — **and, because the release page is the only
+   non-clone path to this file, so must the published body: §5 step 3 carves
+   them out of the tail and budgets around them rather than letting a size cut
+   decide (PMAT-1484).** The merge-blocking section states the live
    required set and the advisory set — read them from the
    `XPILE-ENFORCEMENT REQUIRED-CONTEXTS:` and
    `XPILE-ENFORCEMENT ADVISORY-CONTEXTS:` markers in
@@ -273,7 +276,8 @@ conclusion; a green `gh pr checks` does not include it.**
    decision is open. A release note saying otherwise would be the exact class
    of claim this procedure exists to prevent.
 3. **Create the release from an EXTRACTED body, never a hand-assembled one —
-   and check its SIZE, because from `v0.1.618` on it does not fit.**
+   check its SIZE, because from `v0.1.618` on it does not fit, and cut it in
+   the MIDDLE, because the three mandatory disclosure sections are its TAIL.**
 
    ```bash
    V=<version>
@@ -286,19 +290,36 @@ conclusion; a green `gh pr checks` does not include it.**
    # `wc -m` and NOT `wc -c`: the cap counts CHARACTERS, `-c` counts bytes.
    FULL_C=$(wc -m < /tmp/relsection.md); FULL_L=$(wc -l < /tmp/relsection.md)
 
+   # WHICH LINES SURVIVE IS A SEPARATE DECISION FROM HOW MANY. The three
+   # mandatory sections (§4 step 2) are the TAIL of every release section, so a
+   # leading-prefix cut drops exactly the disclosure a non-cloning reader came
+   # for. Carve them out FIRST and budget the prefix around them.
+   MAND_L0=$(grep -n '^### What still REFUSES$' /tmp/relsection.md | tail -1 | cut -d: -f1)
+   [ -n "${MAND_L0:-}" ] || { echo "ABORT: no 'What still REFUSES' heading — A10"; exit 1; }
+   tail -n +"$MAND_L0" /tmp/relsection.md > /tmp/relmand.md
+   grep -q '^### What is NOT merge-blocking$' /tmp/relmand.md &&
+   grep -q '^### Known divergences$' /tmp/relmand.md ||
+     { echo "ABORT: mandatory sections are not all at the tail — A10"; exit 1; }
+   MAND_C=$(wc -m < /tmp/relmand.md); MAND_L=$(wc -l < /tmp/relmand.md)
+
    if [ "$FULL_C" -le "$CAP" ]; then
      cp /tmp/relsection.md /tmp/relbody.md          # body IS the section, byte for byte
    else
-     RESERVE=2000; BUDGET=$(( CAP - RESERVE ))
+     RESERVE=2000; BUDGET=$(( CAP - RESERVE - MAND_C ))
+     [ "$BUDGET" -gt 0 ] || { echo "ABORT: mandatory sections alone are ${MAND_C} chars — A10"; exit 1; }
      {
        head -1 /tmp/relsection.md; echo
-       echo "> **⚠️ THIS BODY IS TRUNCATED, AND BY HOW MUCH IS STATED HERE.** The"
-       echo "> \`[$V]\` section of \`CHANGELOG.md\` at tag \`v$V\` is **${FULL_C}"
-       echo "> characters / ${FULL_L} lines**. A GitHub release body is capped at"
-       echo "> **${CAP} characters** (the API returns \`422 body is too long\`), so the"
-       echo "> full section cannot be published here. What follows is its leading"
-       echo "> prefix, cut at a line boundary. The authoritative text is the file:"
-       echo "> \`git show v$V:CHANGELOG.md\`."; echo
+       echo "> **⚠️ THIS BODY IS TRUNCATED IN THE MIDDLE, AND BY HOW MUCH IS STATED"
+       echo "> HERE.** The \`[$V]\` section of \`CHANGELOG.md\` at tag \`v$V\` is"
+       echo "> **${FULL_C} characters / ${FULL_L} lines**. A GitHub release body is"
+       echo "> capped at **${CAP} characters** (the API returns \`422 body is too"
+       echo "> long\`), so the full section cannot be published here. What follows is"
+       echo "> its leading prefix, cut at a line boundary, and then — VERBATIM, past"
+       echo "> the cut marker — the three mandatory disclosure sections"
+       echo "> *What still REFUSES* / *What is NOT merge-blocking* /"
+       echo "> *Known divergences* (${MAND_L} lines), which are the tail of the"
+       echo "> section and which a leading-prefix cut would otherwise drop in full."
+       echo "> The authoritative text is the file: \`git show v$V:CHANGELOG.md\`."; echo
      } > /tmp/relbody.md
      HDR_L=$(wc -l < /tmp/relbody.md); HDR_C=$(wc -m < /tmp/relbody.md)
      # awk's `length()` counts characters in a UTF-8 locale, the same unit as
@@ -310,16 +331,32 @@ conclusion; a green `gh pr checks` does not include it.**
      KEPT_L=$(( $(wc -l < /tmp/relbody.md) - HDR_L + 1 ))
      {
        echo
-       echo "> **⟨cut here⟩** — ${KEPT_L} of ${FULL_L} lines published;"
-       echo "> $(( FULL_L - KEPT_L )) lines / ~$(( FULL_C - $(wc -m < /tmp/relbody.md) )) characters omitted."
+       echo "> **⟨cut here⟩** — lines 1-${KEPT_L} and ${MAND_L0}-${FULL_L} of ${FULL_L}"
+       echo "> are published; the **$(( FULL_L - KEPT_L - MAND_L )) lines in between are omitted**"
+       echo "> (~$(( FULL_C - $(wc -m < /tmp/relbody.md) - MAND_C )) characters)."
        echo "> Read the whole section with"
        echo "> \`git show v$V:CHANGELOG.md | awk -v h='## [$V]' 'index(\$0,\"## [\")==1 { f = (index(\$0,h)==1) } f'\`"
+       echo; echo "---"; echo
      } >> /tmp/relbody.md
+     cat /tmp/relmand.md >> /tmp/relbody.md
    fi
 
    test -s /tmp/relbody.md || { echo "ABORT: empty body"; exit 1; }
    B=$(wc -m < /tmp/relbody.md)
    [ "$B" -le "$CAP" ] || { echo "ABORT: body ${B} chars over cap ${CAP}"; exit 1; }
+   # THE ACQUITTAL CONTROL, and it is not optional — the whole point of the
+   # carve-out is that these three sections reach the page. Assert it, do not
+   # eyeball it. Zero hits here is the defect PMAT-1484 found, at exit 0.
+   for h in '^### What still REFUSES$' '^### What is NOT merge-blocking$' '^### Known divergences$'; do
+     grep -q "$h" /tmp/relbody.md || { echo "ABORT: body lost $h — A10"; exit 1; }
+   done
+   # …and the OTHER end of that same guard: three headings present does not mean
+   # three sections intact. Assert the body's last MAND_L lines are the tail
+   # BYTE FOR BYTE — this holds in both regimes, since an under-cap body is the
+   # whole section and its tail is the tail.
+   tail -n "$MAND_L" /tmp/relbody.md > /tmp/relbody.tail.md
+   cmp -s /tmp/relbody.tail.md /tmp/relmand.md ||
+     { echo "ABORT: body tail is not the mandatory sections verbatim — A10"; exit 1; }
    # Entries the working tree has added since the tag are NOT in the released
    # source. Read the delta; disclose it (see the over-cap rule below).
    git diff --stat "v$V"..origin/main -- CHANGELOG.md
@@ -327,6 +364,13 @@ conclusion; a green `gh pr checks` does not include it.**
    gh release view "v$V" --json body -q .body > /tmp/relbody.published.md
    diff /tmp/relbody.md /tmp/relbody.published.md
    ```
+
+   **Measured on `v0.1.618` (2026-07-30, PMAT-1484), by running the block:**
+   the section is 7,700 lines; the three mandatory sections start at line
+   **7,319** and run to the end — **382 lines / 24,324 characters, 19.5% of the
+   cap**. The pre-1484 leading-prefix form published lines 1–1,972 and
+   therefore **contained none of the three headings**. This one publishes
+   lines 1–1,570 plus 7,319–7,700, at 123,236 characters with 1,764 to spare.
 
    **The cap is real, it is 125,000 characters, and `v0.1.618` is the first
    release that cannot fit under it.** Measured 2026-07-30 by POSTing an
@@ -360,11 +404,33 @@ conclusion; a green `gh pr checks` does not include it.**
    **Truncation is permitted; SILENT truncation is not.** The body carries, at
    the top, the section's true character and line count, the cap, and the
    `git show <tag>:CHANGELOG.md` command that yields the whole text — and at the
-   bottom, exactly how many lines and characters were dropped. A reader who never
-   clones learns that they are holding a prefix and how to get the rest. Cutting
-   silently would publish a body that reads complete and is 26% of the story,
-   which is `v0.1.616`'s 5.5% defect (PMAT-1480) reintroduced by a size limit
-   instead of by hand-assembly.
+   cut marker, exactly which line ranges survived and how many lines and
+   characters were dropped. A reader who never clones learns that they are
+   holding an excerpt and how to get the rest. Cutting silently would publish a
+   body that reads complete and is 26% of the story, which is `v0.1.616`'s 5.5%
+   defect (PMAT-1480) reintroduced by a size limit instead of by hand-assembly.
+
+   **HOW MUCH TO CUT AND WHAT TO CUT ARE TWO DECISIONS, AND PMAT-1483 ONLY MADE
+   THE FIRST (PMAT-1484).** A size budget answers *how many* lines survive; it
+   says nothing about *which*, and "the leading ones" is a default, not a
+   choice. Made explicit, that default is indefensible here. §4 step 2 calls
+   *What still REFUSES* / *What is NOT merge-blocking* / *Known divergences*
+   **mandatory** — they are the release's honest-disclosure surface — and this
+   CHANGELOG is written newest-arc-first, so all three sit at the **end** of the
+   section. On `v0.1.618` they begin at line 7,319 of 7,700. **The leading-prefix
+   body published lines 1–1,972 and contained none of them**, while publishing
+   1,972 lines of internal slice narrative — and this file argues 60 lines below
+   that the release page is the **only non-clone path** to `CHANGELOG.md`, since
+   Cargo packages it into none of the 31 crates. So the pre-1484 procedure
+   dropped, from the one copy an outside reader can reach, precisely the three
+   sections written for that reader.
+
+   **It would have looked fine.** The truncated body mentions all three section
+   names ten times in prose (the PMAT-1473/1474/1478 slice narratives are *about*
+   them), so a spot-check for the strings finds them and a reader has no way to
+   tell a citation from the section. That is why the block asserts the three
+   **headings** (`^### …$`) and not the phrases, and why the acquittal control is
+   inside the runbook rather than in a reviewer's head.
 
    **`wc -m`, not `wc -c` — and this was a real bug in the first version of this
    step.** The cap counts characters; `wc -c` counts bytes, and this CHANGELOG is
@@ -555,6 +621,20 @@ conclusion; a green `gh pr checks` does not include it.**
   cause), and skipping the release body altogether. `v0.1.618`'s section is 3.8×
   the cap, so this is the **expected** path now, not an edge case — which is why
   it is an abort *rule* and not a footnote.
+- **A10 — MANDATORY SECTIONS UNREACHABLE (abort the body, not the day).** §5
+  step 3 refuses to build a body if the three mandatory sections cannot be
+  located as a contiguous tail (`^### What still REFUSES$` missing, or the other
+  two not below it), or if they alone exceed the cap, or if the assembled body
+  does not contain all three headings. Every one of those is a *documentation*
+  defect, not an artifact defect: the tag, the crates and the dry-run are
+  unaffected, so **do not slip the crates.io batch over it.** Fix the CHANGELOG
+  section on `main` and rebuild the body — the release can be created after the
+  publish. What this rule forbids is publishing a body that silently lacks them,
+  which is what happened by default until PMAT-1484 measured it: on `v0.1.618`
+  the leading-prefix body carried **zero of the three headings** at exit 0, and
+  nothing in the procedure looked. If the sections legitimately do not fit
+  alongside any useful prefix, publish them *first* and the prefix second —
+  never drop them.
 
 ---
 
