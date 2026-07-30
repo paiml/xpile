@@ -24702,3 +24702,78 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1488
+  status: done
+  priority: P1
+  category: honesty
+  title: The canonical plan tells the release operator the abort-rule set is A1-A8, and the four
+    rules that actually fire on ship day are A9, A10, A11 and A12 -- the rules were written down
+    twice and nothing ever compared the two copies
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG lane ONLY -- zero crates/*/src,
+    zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag v0.1.618 is cut at 6b5f6c02, so
+    this does not touch the release SHA.
+    MEASURED on this tree: docs/RELEASE.md section 6 DEFINES thirteen rules (A1, A1b, A2..A12); the
+    sprint plan section 5 defined NINE (A1, A1b, A2..A8) under the same heading. The four the plan
+    never had are the four authored in the four days before ship day and EVERY ONE fires or is
+    disclosed on 2026-07-31 -- A9 (body 469,246 chars vs a 125,000 cap, the expected path), A10
+    (mandatory sections must survive the cut), A11 (12 reinterpreted README links), A12 (dead
+    documentation URL). The plan is the document the operator is instructed to read every run; the
+    runbook is where the rules kept landing.
+    Membership was not the only drift: of the nine both copies carried, EIGHT had diverged in
+    wording (only A2 byte-identical) and two of the plan versions had reverted to a falsehood
+    section 6 already retired -- plan A1 demanded `gate` + `workspace-test` as a HARD-CODED PAIR,
+    the literal PMAT-1475/1476 removed because the required set is org-controlled state that has
+    already moved once; and plan A3 told a tag-day operator to recover a failed tag by "bump to
+    v0.1.618", correct when the plan was written for a v0.1.617 Friday and CIRCULAR after the
+    retarget, since v0.1.618 IS the version being tagged.
+    ** THE SHAPE: a duplicated rule set is TWO claim surfaces, and each copy''s gate was written to
+    check its own copy''s PRESENCE and never the two copies'' AGREEMENT. release_preflight_witness.rs
+    reads the runbook, release_plan_freshness_witness.rs reads the plan, neither reads the other''s
+    file. A duplicate does not merely lag on additions -- it keeps re-serving corrections made
+    somewhere else.
+    ** SECOND FINDING, demonstrated both ways: the gate over the SURVIVING copy stops at A8. The
+    test named `the_release_doc_documents_the_procedure_and_the_abort_rules` checks a hard-coded
+    literal ending at A8. Deleting A8''s definition bullet REDS it; deleting all four of A9/A10/A11/
+    A12''s leaves it GREEN AT EXIT 0. Alive and blind exactly at the A8/A9 boundary -- four
+    additions in four days escaped, which is evidence about the SHAPE (extend a literal vs derive
+    the set), not about anyone''s memory.
+    ** THIRD: that gate''s own module header argues the principle it breaks -- the tripwire set "is
+    re-derived from git ls-files on every run, so a witness that adds a ninth tripwire is covered
+    the day it lands rather than the day someone remembers to update a list" -- and test 4, in the
+    same file, IS that list. A file can hold a correct general principle and a violation of it, and
+    the principle reads as coverage for both.
+    FIXED: the plan''s nine transcribed rules DELETED, replaced by a single-definition-site
+    directive plus the enumeration command (a command, not a range -- the set only grows). The
+    ratified scope sentence and exit criterion 16 both said "abort rules A1-A8" and are now derived:
+    three runnable commands (the plan defines no rule; every rule cited in either document is
+    defined in section 6; NON-VACUITY ANCHORED ON THE NAME A1, never on a count). All three executed
+    against the tree before being written down. Section 6 gains the single-site directive plus the
+    gate-coverage disclosure with a falsification recipe. THREE further A1-A8 sites (CHANGELOG,
+    roadmap.yaml, queue.yaml) were found and deliberately LEFT: all are dated PMAT-1416 records of
+    what that slice shipped, when eight WAS the set -- a dated ledger entry is a record of a past
+    state, not a claim about today.
+    NO GATE (freeze bars a tests/ edit); XPILE-ABORTRULE-001 is queue.yaml next_lane and its spec
+    must DERIVE section 6''s rules, not add four.
+    ** MY OWN BUG, most transferable: the first draft of the section-6 disclosure quoted the rules''
+    bullet markers in prose -- and those markers ARE the gate''s needles. Shipped that way the gate
+    would have found A8''s needle in my paragraph and gone green over a genuinely deleted A8: a
+    disclosure that disarms the check it describes. The same file''s header states the rule I broke
+    ("a gate that scans source for call sites must not print call sites") one screen above where I
+    broke it. Rewritten with a computed marker, then AUDITED -- each of the thirteen needles now
+    appears exactly once, at its definition. Documenting what a text-scanning gate looks for WRITES
+    INTO ITS CORPUS; count the needles afterwards.
+    ** SECOND OWN BUG, and it produced a false green: the published falsification recipe was wrong
+    on first spelling -- its computed marker consumed the `A` its regex expected, so it matched
+    nothing, wrote the file back unchanged, and the gate ran over an UNMUTATED tree and passed. That
+    green is indistinguishable from the green that demonstrates the defect. What made it visible was
+    the `assert len(kept) == len(lines) - 4` inside the recipe, printing "mutation did not apply:
+    998 -> 998". The block was then EXTRACTED FROM THE FILE and executed rather than retyped.
+    NEXT FREE ID PMAT-1489. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- run section 5 step
+    3 AS IT READS IN THE FILE (extract, never retype), extract from the TAG, `test -s` it, expect
+    A9, and after the batch expect A11 and A12 in post-tag form: all predicted, all disclosed,
+    NONE a reason to touch the batch.'
+  created: '2026-07-30T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

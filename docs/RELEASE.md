@@ -831,6 +831,58 @@ conclusion; a green `gh pr checks` does not include it.**
 
 ## 6. Abort rules
 
+⛔ **THIS SECTION IS THE ONLY DEFINITION SITE. Every other document cites it and
+transcribes none of it** (PMAT-1488). The sprint plan carried a second copy until
+2026-07-30; it was short four rules and eight of its nine had drifted, two of
+them back into falsehoods this section had already retired. If you are adding a
+rule, add it *here* and add it *only* here.
+
+⚠️ **THE GATE OVER THIS SECTION STOPS AT A8, and that is a MEASUREMENT, not an
+invariant.** `crates/xpile/tests/release_preflight_witness.rs` — whose test is
+named `the_release_doc_documents_the_procedure_and_the_abort_rules` — checks a
+**hard-coded literal** running A1, A1b, A2 through A8, written when eight was the
+whole set. Demonstrated 2026-07-30 with both halves run: deleting A8's definition
+bullet **reds** it, and deleting all four of A9's, A10's, A11's and A12's leaves
+it **green at exit 0**. So the four rules that fire or are disclosed on ship day
+are protected by nothing. Falsify it yourself — this is deliberately spelled with
+a computed pattern, because *printing* a rule's bullet marker in prose would
+itself feed the gate its needle and mask a genuinely deleted rule:
+
+```bash
+cp docs/RELEASE.md /tmp/rel.bak            # not `git checkout` — that would also
+                                           # discard any uncommitted edit here
+python3 - <<'EOF'
+import re
+p = 'docs/RELEASE.md'
+lines = open(p).read().split('\n')
+marker = '- ' + '*' * 2                   # computed, never written out literally
+# DERIVED, not enumerated: every rule whose ordinal is past where the gate's
+# literal stops. Writing "A9|A10|A11|A12" here would rot the day A13 lands —
+# which is the whole defect this recipe demonstrates.
+LITERAL_STOPS_AT = 8
+def past_the_literal(line):
+    if not line.startswith(marker):
+        return False
+    m = re.match(r'^A(\d+)b? — ', line[len(marker):])
+    return bool(m) and int(m.group(1)) > LITERAL_STOPS_AT
+kept = [l for l in lines if not past_the_literal(l)]
+dropped = len(lines) - len(kept)
+assert dropped > 0, f'mutation did not apply: nothing matched ({len(lines)} lines)'
+print(f'removed {dropped} rule definition(s) past A{LITERAL_STOPS_AT}')
+open(p, 'w').write('\n'.join(kept))
+EOF
+cargo test -p xpile --test release_preflight_witness    # still GREEN — the defect
+cp /tmp/rel.bak docs/RELEASE.md
+```
+
+Fixing that is a gate edit, barred by the 2026-07-29 18:00 freeze; the spec is
+`XPILE-ABORTRULE-001` in `docs/roadmaps/queue.yaml` `next_lane`, and it must
+**derive** the rule set from this section rather than extend the literal by four
+— four additions escaped in four days, which is evidence about the shape and not
+about anyone's memory. **Until it lands, a rule is kept by this file and by
+review, not by CI** — so do not read a green `workspace-test` as evidence that
+the rule you are about to rely on is still written down.
+
 - **A1 — PRECONDITIONS.** Publish only if ALL hold: the tag exists on origin;
   its SHA shows every REQUIRED context SUCCESS; the on-tag clean-room run is
   SUCCESS; the local dry-run exited 0 unpiped; the §2a tripwire run exited 0 on
