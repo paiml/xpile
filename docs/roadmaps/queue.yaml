@@ -189,6 +189,38 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1484
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the release body that now FITS publishes NONE of the three sections it exists to publish —
+    PMAT-1483''s size budget decided HOW MANY lines survive and nobody ever decided WHICH, so the
+    leading-prefix cut dropped all three mandatory disclosure sections at exit 0'
+  notes: 'PICKED on Day 5 (Thu 2026-07-30) with the queue EMPTY of actionable items — PMAT-1373
+    merged, PMAT-1374 is dated 07-31, PMAT-1375 is the DEFERRED 0.1.619 lane — so the pick came from
+    the playbook''s NEXT PICK (c): apply PMAT-1482''s shape to the OTHER runbooks. POST-FREEZE LANE
+    RESPECTED: docs/RELEASE.md + CHANGELOG.md + roadmap.yaml + queue.yaml only. ZERO crates/*/src,
+    ZERO contracts/*.yaml, ZERO gate files, and the v0.1.618 tag (6b5f6c02) is untouched.
+
+
+    DEFECT: docs/RELEASE.md §4 step 2 calls three sections MANDATORY; they are the TAIL of the
+    section (7,319-7,700 of 7,700 = 382 lines / 24,324 chars = 19.5% of the cap) and PMAT-1483''s
+    leading-prefix body published lines 1-1,972, i.e. ZERO of the three, while §5 step 3 of the same
+    file argues the release page is the ONLY non-clone path to CHANGELOG.md. FIX: a carve-out — locate
+    the tail, subtract it from the prefix budget, publish lines 1-N plus the tail, disclose the cut as
+    a MIDDLE omission naming both ranges, and self-assert the three headings plus a byte-identical
+    tail. New abort rule A10 (aborts the BODY, never the day). Measured on the block AS PUBLISHED:
+    1,974 lines / 123,236 chars / 1,764 under cap / 3 of 3 sections. Five acquittal controls all RED.
+
+
+    ⚠️ ONE CONTROL PASSED VACUOUSLY FIRST TIME — a `sed` anchored `^cat …` against a line indented two
+    spaces inside the `else` branch, so it mutated nothing and the control exited 0. ASSERT THE
+    MUTATION APPLIED (`cmp`/`diff` the mutant) BEFORE BELIEVING AN ACQUITTAL.
+
+
+    NEXT PICK: 2026-07-31 → PMAT-1374 (PUBLISH v0.1.618). Friday runs §5 step 3 AS IT READS IN THE
+    FILE — extract the block, do not retype it. Expect A9.'
 - id: PMAT-1483
   status: done
   ev_rank: R1
@@ -6908,6 +6940,23 @@ next_lane:
   discloses the delta by reference instead); and the acquittal control (c) must cover BOTH regimes —
   mutate one character of a fitting body AND truncate a prefix body one line short of its disclosed
   count, and confirm both RED.
+  (f) ⚠️⚠️ ADDED BY PMAT-1484 — **SIZE IS NOT THE ONLY THING THE RULE HAS TO PIN, AND (e) STILL
+  MISSED THE ONE THAT MATTERS.** (e) settled HOW MUCH of the section a body may omit. It said
+  nothing about WHICH part, so it is satisfied by a body that omits the three sections
+  docs/RELEASE.md §4 step 2 calls MANDATORY — `What still REFUSES` / `What is NOT merge-blocking` /
+  `Known divergences` — which are the TAIL of every release section (this CHANGELOG is written
+  newest-arc-first) and therefore exactly what a leading-prefix cut drops. MEASURED at the tag
+  2026-07-30: they begin at section line 7,319 of 7,700 and the (e)-conforming body published lines
+  1-1,972, i.e. ZERO of the three, at exit 0. THE RULE IS THEREFORE TWO-PART: the body is a prefix
+  OR a disclosed line-range excerpt of the section at the tag, AND — in BOTH regimes, including the
+  under-cap one where it is trivially true — it CONTAINS ALL THREE MANDATORY SECTIONS IN FULL. Assert
+  the three HEADINGS (`^### …$`, never the phrases: the body cites all three names ten times in prose
+  because the PMAT-1473/1474/1478 narratives are about them, so a phrase grep passes on a body that
+  has none of the sections) and assert the excerpt''s tail is byte-identical to the section''s tail.
+  The acquittal control (c) grows a fourth arm: append the tail ONE LINE SHORT and confirm it REDS.
+  ★ Note this spec has now been corrected THREE TIMES BEFORE THE GATE WAS EVER WRITTEN — (d) which
+  tree, (e) is the invariant satisfiable at this scale, (f) does the invariant pin membership or only
+  quantity. Auditing an unwritten gate''s spec has paid on three consecutive days.
   ★ WHY IT IS WORTH A GATE AT ALL: this is the only publisher of repo facts that is structurally
   invisible to `git ls-files`, and it is the copy read WITHOUT a clone. The broader sweep the shape
   opens (crates.io rendered READMEs, doc sites, issue templates) is a SEPARATE, larger lead.'
