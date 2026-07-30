@@ -1067,9 +1067,37 @@ the rule you are about to rely on is still written down.
   both `LICENSE-MIT` and `LICENSE-APACHE` on a dual-licensed crate, both design
   specs, `ci.yml`, the enforcement handoff, and — at the doubled path
   `crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs` — **the
-  README's own cited evidence for its own quickstart.** The fix (absolute
-  `blob/main` / `tree/main` URLs, each form HTTP-measured) landed *after* the
-  tag, so `0.1.618`'s pages carry it and `0.1.619`'s will not.
+  README's own cited evidence for its own quickstart.**
+
+  ⛔ **`v0.1.618` FIRES A11, AND THAT IS THE EXPECTED OUTCOME — DO NOT STOP
+  FRIDAY OVER IT.** The tag was cut 2026-07-30 at `6b5f6c02`; PMAT-1486's fix
+  (absolute `blob/main` / `tree/main` URLs, each form HTTP-measured) landed
+  hours later, so **the tagged tree still carries all 12 relative refs and the
+  flagship's `0.1.618` front page will publish every one of them broken.** The
+  repaired README reaches `0.1.619`. Re-derive rather than trust this sentence:
+  `git show v0.1.618:README.md | grep -oE '\]\([^)]*\)' | grep -vcE '\]\((https?:|#)'`
+  → **12** at the tag, **0** on `main`. Nothing about this touches an uploaded
+  crate's validity.
+
+  ⚠️ **THIS SENTENCE SAID THE OPPOSITE FOR EIGHT HOURS, AND IT IS THE ONLY
+  SENTENCE IN A11 THAT TELLS THE OPERATOR WHAT TO DO (PMAT-1491).** It read
+  *"the fix … landed after the tag, so `0.1.618`'s pages carry it and
+  `0.1.619`'s will not"* — false in both halves. A11's only action is
+  disclosure, so an operator who believes `0.1.618` carries the fix has nothing
+  to disclose and the rule **self-cancels at exit 0**: PMAT-1486's measurement
+  would never reach `0.1.619`'s CHANGELOG, which is the one place A11 sends it.
+  **Root cause — the disposition was PARAPHRASED from PMAT-1486's CHANGELOG
+  entry instead of derived from the tree.** That entry states it correctly
+  (*"`0.1.618`'s own pages carry all 12 broken links"*); the paraphrase dropped
+  the noun, `it` bound to *the fix* — the new sentence's grammatical subject —
+  and the trailing clause was kept although it only parses against the noun that
+  was removed. This is PMAT-1488's finding one level down: **a rule written down
+  twice, with nothing comparing the two copies.** PMAT-1488 could fix its copy
+  by deleting it; A11 cannot be deleted, because §6 must stand alone for the
+  operator — so it carries the falsification command above instead. The other
+  five `0.1.618` records were cross-checked against their CHANGELOG entries the
+  same way and all five agree (A9 `469,246`/`7,700`; A10 `7,319`/`382`/`24,324`;
+  A12; A13's seven crates, each re-verified `tag == main`; A14 `38+18+2 = 58`).
 
 - **A12 — PUBLISHED METADATA URL DEAD.** Its disposition depends entirely on
   *when* it fires. (Until PMAT-1489 this rule claimed to be the *only* one for

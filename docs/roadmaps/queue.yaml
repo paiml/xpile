@@ -270,6 +270,53 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1491
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the abort rule whose ONLY action is disclosure told tomorrow''s operator the defect was
+    not there -- A11 stated the inverse of which release carries the README fix, and it
+    self-cancelled at exit 0'
+  notes: 'SHIPPED 2026-07-30, post-freeze docs+CHANGELOG lane only (zero crates/*/src, zero
+    contracts, zero gate files, zero Cargo.toml); tag v0.1.618 at 6b5f6c02 untouched.
+    PICKED on Day 5 with the ranked queue empty (PMAT-1374 dated 07-31, PMAT-1375 the DEFERRED
+    0.1.619 lane) by cross-checking each 0.1.618 abort-rule record in RELEASE.md section 6 against
+    the CHANGELOG entry that created it -- PMAT-1488''s "written down twice, nothing compared the
+    two copies" one level DOWN: plan-vs-runbook became runbook-vs-CHANGELOG.
+    MEASURED: A11 ended on "the fix ... landed *after* the tag, so `0.1.618`''s pages carry it and
+    `0.1.619`''s will not" -- false in BOTH halves. Tag written 00:32 at 6b5f6c02; PMAT-1486''s fix
+    merged 04:57 as ff092faf, AFTER it. Re-derived: 12 relative refs in the TAGGED README, 0 on
+    main. So 0.1.618 publishes all 12 broken and 0.1.619 carries the fix -- the exact reverse.
+    ** WHY ONE SENTENCE IS A SLICE: A11 is a DISCLOSURE rule, so an inversion does not make it wrong,
+    it makes it VANISH. Every operative clause survives untouched; the REASON TO ACT does not. An
+    operator told 0.1.618 carries the fix has nothing to disclose, closes A11 satisfied, and
+    PMAT-1486''s measurement never reaches 0.1.619''s CHANGELOG -- the one place A11 routes it to.
+    Self-cancels at exit 0, and no lane can see it, because the only artefact is a disclosure that
+    was never written.
+    ** ROOT CAUSE: PARAPHRASED from PMAT-1486''s CHANGELOG entry instead of derived from the tree,
+    and the paraphrase dropped the NOUN -- `all 12 broken links` became `it`, which bound to `the
+    fix` (the new sentence''s subject), while the trailing clause that only parses against the
+    removed noun was carried over intact. PMAT-1488 fixed its second copy by DELETING it; A11 cannot
+    be deleted (section 6 must stand alone for the operator), so it now carries the falsification
+    command INLINE and gains the "EXPECTED OUTCOME -- DO NOT STOP FRIDAY OVER IT" header A12/A13 had.
+    ** THE SWEEP: all SIX 0.1.618 records cross-checked, every figure re-derived. A9 469,246/7,700
+    agrees; A10 7,319/382/24,324 agrees; A11 count agrees but DISPOSITION INVERTED; A12 agrees; A13
+    all 7 manifests tag == main, agrees; A14 38+18+2=58 agrees. ONE of six. A11''s COUNT was never
+    wrong, which is why a figure-checking gate would not have caught it.
+    THURSDAY PRE-FLIGHT (the day''s release duty, not a finding): section 5 step 3 EXTRACTED and RUN
+    against the tag -- exit 0, body 123,257 chars (1,743 under cap), 3 headings at 1579/1674/1761,
+    tail byte-identical, fence parity even. Delta notice grew 5 commits/526 lines -> 11 commits/1,998
+    chars, absorbed by the PREFIX as designed; names ff092faf + bf7e5d26, the two post-tag commits
+    that changed a PUBLISHED surface. All 12 check-runs on 6b5f6c02 SUCCESS incl. cleanroom-publish.
+    NO GATE -- the freeze bars a new crates/xpile/tests/ file. Filed as the SECOND ARM of
+    XPILE-RELREADME-001 in next_lane: DERIVE each "First run, <version>" disposition, do not trust
+    prose. NEXT FREE ID PMAT-1492.
+    NEXT PICK 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). Expect A9, A10, A11 (now stated
+    correctly), A12, A13 (7 crates; publishing is the REPAIR, and it argues AGAINST deferring) and
+    A14 (58 defects / 13 crates). ALL PREDICTED, NONE a reason to touch the batch. A7: NO FRIDAY
+    CODE -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07), never a hotfix
+    onto the release SHA. Sparse-index verification MUST send a User-Agent header.'
 - id: PMAT-1490
   status: done
   ev_rank: R1
@@ -7449,6 +7496,22 @@ next_lane:
   same 0.1.619 slice and derive the rule instead of enumerating it: every `**A<n> —` in the file must
   be reachable from a named step, and the set must be CONTIGUOUS from A1, so the NEXT rule someone
   adds is covered without anyone remembering to widen a literal.
+  (g) ⚠️ SECOND ARM, ADDED BY PMAT-1491 (2026-07-30): DERIVE EACH `First run, <version>` RECORD''S
+  DISPOSITION; DO NOT TRUST THE PROSE. A11''s closing sentence said the INVERSE of which release
+  carries this very fix -- "so `0.1.618`''s pages carry it and `0.1.619`''s will not", false in both
+  halves -- for eight hours, because the disposition was PARAPHRASED from PMAT-1486''s CHANGELOG entry
+  (which is correct) instead of derived from the tree, and `it` bound to `the fix`. The COUNT was
+  right, so constraint (e)''s acquittal control and any figure-checking arm would BOTH have stayed
+  green: this is not a numbers defect. THE RULE: for every `First run, ` block in docs/RELEASE.md §6
+  that names a fix landing relative to a tag, assert the DIRECTION against git -- if the fixing commit
+  is not an ancestor of `v<version>`, the block must state that `<version>` carries the DEFECT, and it
+  must not assert that the successor lacks the fix. Cheapest honest spelling: require each such block
+  to contain a re-derivable falsification command over `git show v<version>:<file>` (A11 now does),
+  and assert that command''s claimed output. WHY IT MATTERS MORE THAN A FIGURE: A11''s only action is
+  DISCLOSURE, so an inverted disposition does not make the rule wrong -- it makes it self-cancel at
+  exit 0, with the missing artefact being a disclosure that was never written, which nothing can see.
+  Cross-check the OTHER five records in the same slice; on 2026-07-30 exactly one of six diverged
+  (A9/A10/A12/A13/A14 all agreed, each figure re-derived), so the class is real but sparse.
   ⚠️ WHAT THE GATE CANNOT DO: it cannot repair a published page. crates.io versions are immutable, so
   0.1.618 carries all 12 forever. The gate is FORWARD-LOOKING from 0.1.619 and its module header must
   say so with the 12-of-12 measurement, or a future reader reads green as "every published front page
