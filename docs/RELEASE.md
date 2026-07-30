@@ -868,6 +868,64 @@ conclusion; a green `gh pr checks` does not include it.**
    is a real but *different* directory — 7 Rust API examples, none of the four
    Python programs the words "more runnable programs" refer to. Neither shows an
    error to the reader. **Check the prefix, never just the status code.**
+7. **Verify the RENDERED API DOCS — the THIRD non-clone publisher (PMAT-1490).**
+
+   Step 5 proves the crate arrived. Step 6 measures the front page crates.io
+   renders. Neither reads the page the registry's own sidebar sends a library
+   consumer to: **30 of the 31 crates have a `lib` target, so crates.io
+   auto-links `docs.rs` for every one of them**, and that page is rendered from
+   the doc comments in `crates/*/src`. Like the front page it is **immutable per
+   version**, so this is a measurement of what shipped, not a check that can be
+   fixed in place; the finding belongs in the CHANGELOG for the *next* release
+   (A14).
+
+   ⚠️ **`doc_status: true` IS NOT AN ACQUITTAL.** §4 step 6 and A12 read that
+   flag, and it answers exactly one question — *did rustdoc exit 0*. All 30
+   siblings answer `true` and 13 of them publish a defective page. This is the
+   step-6 lesson (`a 200 is not an acquittal`) one publisher along: **a green
+   build is not a correct page.**
+
+   ```bash
+   # ⚠️ RUN IT IN A FRESH TARGET DIR. `cargo doc` emits a rustdoc warning only
+   #    when it actually re-documents a crate; against a warm target dir the
+   #    whole command prints NOTHING and exits 0 — an acquittal indistinguishable
+   #    from a clean page, and how the first run of this measurement reported
+   #    zero defects over 58 real ones.
+   DOCDIR=$(mktemp -d)
+   RUSTDOCFLAGS='-W rustdoc::all' CARGO_TARGET_DIR="$DOCDIR" \
+     cargo doc --workspace --no-deps > "$DOCDIR/rustdoc.log" 2>&1
+   echo "cargo doc exit: $?   (0 is EXPECTED — rustdoc lints are warnings)"
+
+   # NON-VACUITY: the run must have documented the whole published population.
+   DOCUMENTED=$(grep -c '^ Documenting ' "$DOCDIR/rustdoc.log")
+   LIBS=$(cargo metadata --no-deps --format-version 1 \
+          | jq '[.packages[] | select(any(.targets[]; .kind[]|.=="lib" or .=="proc-macro"))] | length')
+   echo "documented=$DOCUMENTED  crates-with-a-lib-target=$LIBS"
+   test "$DOCUMENTED" -ge "$LIBS" \
+     || echo "ABORT: doc run covered $DOCUMENTED < $LIBS crates — the measurement is vacuous"
+
+   # THE SPLIT. The flagship has no `lib` target (A12), so a warning under
+   # `crates/xpile/src/` reaches NO published page. Report it; never count it.
+   awk '/^warning: /{h=substr($0,10)}
+        /^ *--> /{p=$2; sub(/:[0-9]+:[0-9]+$/,"",p);
+                  print (p ~ /^crates\/xpile\/src\//?"UNPUBLISHED":"PUBLISHED"), p, h}' \
+     "$DOCDIR/rustdoc.log" > "$DOCDIR/sites.txt"
+   echo "PUBLISHED page defects: $(grep -c '^PUBLISHED' "$DOCDIR/sites.txt") \
+   across $(grep '^PUBLISHED' "$DOCDIR/sites.txt" | cut -d' ' -f2 | cut -d/ -f2 | sort -u | wc -l) crates"
+   echo "UNPUBLISHED (no docs.rs page — A12): $(grep -c '^UNPUBLISHED' "$DOCDIR/sites.txt")"
+   grep '^PUBLISHED' "$DOCDIR/sites.txt" | cut -d' ' -f2 | cut -d/ -f2 | sort | uniq -c | sort -rn
+   ```
+
+   ⚠️ **DO NOT REPLACE THIS WITH AN HTML GREP OF THE LIVE PAGE, and that is a
+   measurement, not a preference.** A failed intra-doc link renders as the
+   literal `[<code>X</code>]` where a resolved one renders as an `<a href=…>`, so
+   grepping the published HTML for `\[<code>` *looks* like a free network arm
+   that needs no toolchain. Scored against rustdoc's own verdict over the 30
+   crates it gets **3 false positives and 2 false negatives**: prose that
+   legitimately brackets a code span (the `` `[ … ]` `` shell test, an `` `[T]` ``
+   slice) fires it, and a defect in an *item* doc renders on that item's page and
+   not on `index.html`, so a root-page scan misses it. **rustdoc's own lints are
+   the oracle; the rendered page is only how you confirm what a reader sees.**
 
 ---
 
@@ -1101,6 +1159,58 @@ the rule you are about to rely on is still written down.
   kept by this file and by review only — and no gate anywhere reads the
   registry, which is the finding, not an oversight to be fixed by re-running
   `workspace-test`.
+
+- **A14 — PUBLISHED API DOCS DEFECTIVE (record it; never touch the batch).**
+  §5 step 7 found a defect on the `docs.rs` page of one or more crates. Like
+  A11, and unlike A12, its disposition does **not** depend on when it fires:
+  the page is rendered from the tagged tree's doc comments and every crates.io
+  version is immutable, so **there is nothing a Friday action can repair and
+  nothing a deferral can improve.** A14 must never delay, retry or partially
+  revert a batch. Record the count and the affected crates in the release body
+  and fix the comments for the next version.
+
+  ⚠️ **A14 IS THE ONE RULE WHOSE SUBJECT NO GATE IN THIS REPOSITORY HAS EVER
+  BUILT.** `.github/workflows/` contains zero occurrences of `cargo doc`,
+  `rustdoc` and `RUSTDOCFLAGS` — verified by grep, not by memory — so no CI job
+  has ever rendered the page this rule is about. The job **named `docs` builds
+  something else**: `pmat validate-docs` (markdown link integrity across tracked
+  `.md` files) and `pmat demo-score` (a README presentation grade). Both are
+  real checks of real surfaces. Neither is the API documentation, and the name
+  reads as though one of them were — which is why 58 defects accumulated with
+  every lane green.
+
+  First run, `0.1.618` (PMAT-1490, the measurement that created this rule):
+  **58 defects across 13 of the 30 crates that have a published page** — 38
+  `private_intra_doc_links`, 18 `broken_intra_doc_links`, 2
+  `redundant_explicit_links`. Worst five: `xpile-ptx-codegen` 12,
+  `xpile-wasm-codegen` 9, `xpile-wgsl-codegen` 8, `xpile-wasm-frontend` 7,
+  `xpile-spirv-codegen` 7. The dominant class is a **public** doc comment
+  pointing at a **private** item: rustdoc drops the anchor and leaves the
+  markdown, so `xpile-wasm-frontend`'s page reads, verbatim, `saw it. See
+  [refuse_ieee_div].` — an instruction to consult something the page does not
+  contain, thirty-three times over.
+
+  Confirmed on a **live published page**, not inferred from a local build:
+  `https://docs.rs/xpile-wasm-frontend/0.1.617/xpile_wasm_frontend/` renders its
+  own opening paragraph as *"specifically the image of `[xpile-wasm-codegen]` —
+  back to canonical meta-HIR"*, brackets included, because a crate name with
+  hyphens is not a Rust path. That has been the first thing a reader of that
+  crate sees since 2026-07-26, and the batch republishes it.
+
+  ⚠️ The remaining **12** warnings are all in `crates/xpile/src/main.rs`, and
+  they are **not** in the 58: the flagship has no `lib` target, so docs.rs
+  cannot build it (A12) and none of them reaches a reader. That set is also the
+  only one containing `invalid_html_tags` — the CLI usage block writes
+  `[--out <path>]`, which rustdoc emits as an unclosed HTML element, so a
+  browser renders `<input>` as an actual **text field** and swallows `<t>` and
+  `<path>` entirely, while markdown smart-punctuation turns every `--flag` into
+  an en dash. **The only page whose text is genuinely mangled is the one page
+  that does not exist** — so it is disclosed here and excluded from the count.
+
+  ⛔ **`v0.1.618` FIRES A14 WITH 58 DEFECTS ON 13 CRATES, ALL PREDICTED AND ALL
+  DISCLOSED. DO NOT STOP FRIDAY OVER IT.** The tag was cut 2026-07-30 at
+  `6b5f6c02` and the doc comments are inside it; the Wednesday 18:00 freeze bars
+  `crates/*/src`, so the repair lands in `0.1.619`.
 
 ## 7. Slip and partial-batch ledger
 

@@ -7,6 +7,95 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The job named `docs` has never built the documentation — 58 defects on 13 of the 30 published `docs.rs` pages, every lane green, and `doc_status: true` for all thirty (PMAT-1490)
+
+**`.github/workflows/` contains zero occurrences of `cargo doc`, `rustdoc` and
+`RUSTDOCFLAGS`.** Verified by grep over the directory, not from memory. No CI job
+in this repository has ever rendered the API documentation. The job **named
+`docs`** runs `pmat validate-docs` (markdown link integrity over tracked `.md`
+files) and `pmat demo-score` (a README presentation grade) — two real checks of
+two real surfaces, neither of which is the documentation, and the name reads as
+though one of them were.
+
+30 of the 31 crates have a `lib` target, so crates.io auto-links `docs.rs` for
+every one of them. That page is rendered from the doc comments in `crates/*/src`
+and it is **immutable per version**. Measured with `RUSTDOCFLAGS='-W
+rustdoc::all' cargo doc --workspace --no-deps`:
+
+| class | n | what a reader sees |
+|---|---|---|
+| `private_intra_doc_links` | 38 | rustdoc drops the anchor and leaves the markdown |
+| `broken_intra_doc_links` | 18 | same, for an item that exists nowhere |
+| `redundant_explicit_links` | 2 | cosmetic |
+| **published total** | **58** | across **13 of 30** crates |
+
+`xpile-ptx-codegen` 12, `xpile-wasm-codegen` 9, `xpile-wgsl-codegen` 8,
+`xpile-wasm-frontend` 7, `xpile-spirv-codegen` 7, `xpile-meta-hir` 3,
+`xpile-agent` 3, `xpile-ffi-manifest` 2, `depyler-frontend` 2, `bashrs-backend`
+2, `xpile-forjar-codegen` 1, `xpile-contract-frontend` 1,
+`xpile-contract-backend` 1. The dominant class is a **public** doc comment citing
+a **private** item, so `xpile-wasm-frontend`'s rendered page reads, verbatim,
+`saw it. See [refuse_ieee_div].` — an instruction to consult something the page
+does not contain, thirty-three times over.
+
+**Confirmed on a live published page, not inferred from a local build.**
+`https://docs.rs/xpile-wasm-frontend/0.1.617/xpile_wasm_frontend/` renders its
+own opening paragraph as *"specifically the image of `[xpile-wasm-codegen]` —
+back to canonical meta-HIR"*, brackets included, because a crate name with
+hyphens is not a Rust path. That is the first thing a reader of that crate has
+seen since 2026-07-26.
+
+**`doc_status: true` is not an acquittal.** PMAT-1487 measured that flag
+yesterday — `false` for the flagship, `true` for all 30 siblings — and 13 of
+those 30 publish a defective page. The flag answers one question, *did rustdoc
+exit 0*. This is PMAT-1486's `a 200 is not an acquittal` one publisher along:
+**a green build is not a correct page**, and the third non-clone publisher of
+this project's claims had never been read.
+
+**⚠️ The count excludes 12 warnings, and the exclusion is the sharpest detail
+here.** All 12 are in `crates/xpile/src/main.rs` — the flagship, the one member
+with no `lib` target, the one page docs.rs structurally cannot build (A12). They
+are also the only `invalid_html_tags` in the workspace: the CLI usage block
+writes `[--out <path>]`, which rustdoc emits as an unclosed HTML element, so a
+browser renders `<input>` as an actual **text field**, swallows `<t>` and
+`<path>`, and markdown smart-punctuation turns every `--flag` into an en dash
+(`–target`, which no shell will accept). **The only page whose text is genuinely
+mangled is the one page that does not exist** — disclosed, and not counted.
+
+**⚠️ MY OWN BUG, and it is the reason the step is written the way it is.** The
+first run of this measurement reported **zero** defects and exited 0. `cargo doc`
+emits a rustdoc warning only when it actually re-documents a crate, and the
+target dir was warm — a silent acquittal indistinguishable from a clean page.
+Every figure above comes from a run in a fresh `CARGO_TARGET_DIR`, and §5 step 7
+mandates one and says why.
+
+**⚠️ A CHEAPER NETWORK ARM WAS DESIGNED, SCORED, AND REJECTED — with numbers.** A
+failed intra-doc link renders as the literal `[<code>X</code>]` where a resolved
+one renders as an `<a href=…>`, so grepping the published HTML for `\[<code>`
+looks like a free arm needing no toolchain. Scored against rustdoc's own verdict
+over the same 30 crates it returns **3 false positives** (prose that legitimately
+brackets a code span — the `` `[ … ]` `` shell test, an `` `[T]` `` slice) and **2
+false negatives** (`xpile-agent`, `xpile-meta-hir`: a defect in an *item* doc
+renders on that item's page, not on `index.html`). It is written down as rejected
+rather than omitted, because it is the arm a future slice would reach for first.
+
+Shipped, docs-lane only: `docs/RELEASE.md` gains §5 **step 7** (the third
+non-clone publisher, with the fresh-target-dir mandate, a non-vacuity assertion
+that the run covered ≥ 30 crates, and the published/unpublished split) and new
+abort rule **A14** — record it, never touch the batch, disposition independent of
+when it fires, because doc comments live in the tagged tree and crates.io
+versions are immutable. Controls: the block was executed verbatim before being
+written down; injecting one broken link into `xpile-core` (0 defects today) moved
+the count 58 → 59 and 13 → 14 crates with correct attribution, and the tree was
+restored with `cp`; 17 of the 30 crates score 0 and are the corpus's own passing
+controls.
+
+**NO GATE.** The Wednesday 2026-07-29 18:00 freeze bars a new `crates/xpile/tests/`
+file *and* every one of the 58 fixes, all of which are in `crates/*/src`. Both
+roll to `0.1.619` as `XPILE-RUSTDOC-001` in `queue.yaml` `next_lane`. Until then
+**58-across-13 is a MEASUREMENT, NOT AN INVARIANT**, and it will be republished
+verbatim tomorrow.
+
 ### Six published falsehoods were fixed in the tree yesterday, the gate that found them is green, and all six are still live on crates.io — a gate over the SOURCE of a published artefact goes green at merge, but the artefact only changes at publish (PMAT-1489)
 
 **`crate_metadata_honesty.rs` (XPILE-CRATEMETA-001, PMAT-1465) read the 31

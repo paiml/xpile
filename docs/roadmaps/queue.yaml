@@ -134,7 +134,7 @@ updated_prev_1482: >-
   passes, crit 16 passes. The section was maintained ONE CRITERION AT A TIME; nobody read it whole.
   NO GATE -- freeze permits no new tests/ file; filed as its own next_lane entry (XPILE-RELPLAN-001 corpus widening) in
   next_lane as its own entry (XPILE-RELPLAN-001 corpus widening): no exit criterion may contain a version literal.
-updated: >-
+updated_prev_1488: >-
   ⛔ FRIDAY OPERATOR, READ THIS FIRST. PMAT-1488 measured the release runbook's abort rules against
   the CANONICAL PLAN's copy of them and found the plan telling you the set is A1-A8. docs/RELEASE.md
   section 6 defines THIRTEEN (A1, A1b, A2..A12); the plan section 5 defined NINE. The four it never
@@ -175,6 +175,46 @@ updated: >-
   AS IT READS IN THE FILE (extract, never retype), extract from the TAG not main, `test -s` the
   body, expect A9, and after the batch expect A11 and A12 in post-tag form. All predicted, all
   disclosed, NONE a reason to touch the batch. A7: NO FRIDAY CODE.
+updated: >-
+  ⛔ FRIDAY OPERATOR, READ THIS FIRST -- THIS IS THE LAST ENTRY BEFORE THE PUBLISH. PMAT-1490
+  read the THIRD non-clone publisher of this project's claims, the one nothing had ever read: the
+  docs.rs page. 30 of the 31 crates have a `lib` target, so crates.io auto-links docs.rs for every
+  one of them, and that page is rendered from the doc comments in crates/*/src. MEASURED:
+  .github/workflows/ contains ZERO occurrences of `cargo doc`, `rustdoc` and `RUSTDOCFLAGS` --
+  no CI job in this repository has ever built the documentation. The job NAMED `docs` builds
+  `pmat validate-docs` (markdown links) and `pmat demo-score` (a README grade): two real checks of
+  two real surfaces, neither of which is the documentation, and the name reads as though one were.
+  58 defects across 13 of the 30 published pages (38 private_intra_doc_links, 18
+  broken_intra_doc_links, 2 redundant_explicit_links), worst xpile-ptx-codegen 12 /
+  xpile-wasm-codegen 9 / xpile-wgsl-codegen 8. The dominant class is a PUBLIC doc comment citing a
+  PRIVATE item, so xpile-wasm-frontend's page reads verbatim "saw it. See [refuse_ieee_div]." --
+  thirty-three times. CONFIRMED LIVE, not inferred:
+  https://docs.rs/xpile-wasm-frontend/0.1.617/xpile_wasm_frontend/ has opened with "the image of
+  [xpile-wasm-codegen]", brackets and all, since 2026-07-26.
+  ** THE SHAPE: doc_status:true IS NOT AN ACQUITTAL. PMAT-1487 read that flag ONE DAY EARLIER --
+  false for the flagship, true for all 30 siblings -- and 13 of those 30 publish a defective page.
+  The flag answers one question: did rustdoc exit 0. PMAT-1486's "a 200 is not an acquittal", one
+  publisher along. A green BUILD is not a correct PAGE.
+  ** MY OWN BUG: the first run of this measurement reported ZERO defects at exit 0, because
+  `cargo doc` warns only when it re-documents and the target dir was warm. Section 5 step 7 mandates
+  a fresh CARGO_TARGET_DIR and says why.
+  ** REJECTED WITH NUMBERS: grepping the published HTML for `\[<code>` looks like a free network arm;
+  scored against rustdoc it gives 3 false positives (prose brackets: the `[ ... ]` test, an `[T]`
+  slice) and 2 false negatives (a defect in an ITEM doc is not on index.html). Written down as
+  rejected rather than omitted -- it is the arm a future slice reaches for first.
+  SHIPPED: section 5 step 7 and abort rule A14 (record it, never touch the batch; disposition does
+  NOT depend on when it fires, because doc comments are in the tagged tree and versions are
+  immutable). PMAT-1488's single-definition-site and needle-count properties re-verified: 15
+  markers, each exactly once.
+  ⛔ TOMORROW, ALL SIX PREDICTED AND ALL DISCLOSED, NONE A REASON TO TOUCH THE BATCH: A9 (body
+  469,246 chars vs a MEASURED 125,000 cap -- run the SIZE-CHECKED section 5 step 3 EXTRACTED from the
+  file, never retyped, and extract from the TAG not main), A10 (the three mandatory sections must
+  survive the cut), A11 (12 reinterpreted README links), A12 (dead documentation URL), A13 (7
+  registry descriptions stale -- publishing is the REPAIR, and it argues AGAINST deferring under
+  A4/A6), A14 (58 doc defects on 13 crates). Read the abort rules ONLY from docs/RELEASE.md section
+  6 via `grep -nE '^- \*\*A[0-9]+b? —' docs/RELEASE.md` -- never off the plan, never off a
+  remembered range. RECOUNT the post-tag CHANGELOG delta on the day; it grew again today.
+  NEXT FREE ID PMAT-1491. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -230,6 +270,36 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1490
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the job named `docs` has never built the documentation -- 58 defects on 13 of the 30
+    published docs.rs pages, every lane green, and doc_status true for all thirty'
+  notes: 'SHIPPED 2026-07-30, post-freeze docs+CHANGELOG lane only (zero crates/*/src, zero
+    contracts, zero gate files, zero Cargo.toml); tag v0.1.618 at 6b5f6c02 untouched.
+    PICKED on Day 5 with the ranked queue empty (PMAT-1373 merged, PMAT-1374 dated 07-31,
+    PMAT-1375 the DEFERRED 0.1.619 lane) by asking which publisher of this repository''s claims
+    still had no reader. crates.io metadata: PMAT-1465/1487/1489. Packaged front page: PMAT-1486.
+    Release body: PMAT-1480..1485. The API documentation: NOTHING, ever.
+    MEASURED: .github/workflows/ has ZERO occurrences of `cargo doc`, `rustdoc`, `RUSTDOCFLAGS`.
+    The job NAMED `docs` runs pmat validate-docs (markdown links) + pmat demo-score (README grade)
+    -- both real, neither the documentation. 58 defects / 13 of 30 published pages; live-confirmed
+    on docs.rs/xpile-wasm-frontend/0.1.617, which has opened with a literal "[xpile-wasm-codegen]"
+    since 2026-07-26. 12 further warnings EXCLUDED because they are in crates/xpile/src/main.rs --
+    the one crate docs.rs cannot build (A12) -- and they are also the only invalid_html_tags in the
+    workspace, so the only page whose text is genuinely mangled is the one page that does not exist.
+    ** SHAPE: doc_status:true is NOT an acquittal -- PMAT-1486''s "a 200 is not an acquittal" one
+    publisher along. A green BUILD is not a correct PAGE.
+    ** MY OWN BUG: first run reported ZERO at exit 0 (warm target dir; cargo doc warns only when it
+    re-documents). ** REJECTED WITH NUMBERS: the `\[<code>` HTML tell scores 3 FP / 2 FN vs rustdoc.
+    SHIPPED: RELEASE.md section 5 step 7 + abort rule A14. Controls: block executed verbatim;
+    xpile-core injection moved 58->59 / 13->14 with correct attribution, restored with `cp`; 17 of 30
+    crates score 0 as the corpus''s own passing controls.
+    NO GATE -- the freeze bars a new tests/ file AND all 58 fixes (crates/*/src). Both roll to
+    0.1.619 as XPILE-RUSTDOC-001 in next_lane. 58-across-13 is a MEASUREMENT, NOT AN INVARIANT.
+    NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH). NEXT FREE ID PMAT-1491. NO FRIDAY CODE MERGES.'
 - id: PMAT-1489
   status: done
   ev_rank: R1
@@ -7215,6 +7285,54 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1490 GATE + FIX -- XPILE-RUSTDOC-001, the published-API-documentation property. Blocked by
+  the Wed 2026-07-29 18:00 freeze TWICE OVER: it needs a new crates/xpile/tests/ file AND all 58
+  fixes are in crates/*/src. The defect is MEASURED and reproducible in one command (see
+  docs/RELEASE.md section 5 step 7, executed verbatim before it was written down): 58 defects on 13
+  of the 30 crates that have a published docs.rs page -- 38 private_intra_doc_links, 18
+  broken_intra_doc_links, 2 redundant_explicit_links -- with ZERO occurrences of `cargo doc`,
+  `rustdoc` or `RUSTDOCFLAGS` anywhere in .github/workflows/.
+  ⭐ THE WHOLE VALUE IS ONE LINE IN ci.yml AND IT IS NETWORK-FREE: run rustdoc over the workspace
+  with the lints DENIED, in the `gate` or `workspace-test` job. Ship THAT even if the rest slips --
+  it is the only arm that makes the class unrepeatable, and it would have caught every one of the 58
+  on the day it was written.
+  SIX design constraints, each a way this gate can be born useless.
+  (a) A FRESH TARGET DIR IS MANDATORY, NOT HYGIENE. `cargo doc` emits a rustdoc warning only when it
+  actually re-documents a crate. Against a warm target dir the command prints nothing and exits 0,
+  which is why the FIRST run of this measurement reported zero defects over 58 real ones. In CI a
+  cache restore is exactly that warm dir. Either disable the doc cache for this step or key it so a
+  doc-comment edit always invalidates it, and assert non-vacuity (below) so a warm hit cannot pass.
+  (b) NON-VACUITY ANCHORED ON THE POPULATION, NOT A COUNT OF DEFECTS. Assert that the run DOCUMENTED
+  at least as many crates as `cargo metadata` reports with a lib/proc-macro target (30 today).
+  Derive that number from the target graph exactly as PMAT-1487''s spec requires -- never a literal,
+  or a crate that gains a lib target is covered on the day someone remembers.
+  (c) THE SUBJECT IS THE PUBLISHED PAGE, SO THE BIN MUST BE SPLIT OUT, NOT DROPPED. The flagship has
+  no lib target and docs.rs cannot build it (A12), so its 12 warnings reach no reader. A gate that
+  counts them reds on an unpublishable page; a gate that filters `crates/xpile/` silently loses the
+  only invalid_html_tags in the workspace. Report both, gate on the published set. Derive the split
+  from the target graph, not from the path.
+  (d) DENY, DO NOT WARN, AND NAME THE LINTS. `-W rustdoc::all` exits 0 -- that is why 58 accumulated
+  under a green `docs` job. The gate must fail. Prefer explicit
+  `-D rustdoc::broken_intra_doc_links -D rustdoc::private_intra_doc_links -D rustdoc::invalid_html_tags`
+  over `-D rustdoc::all`, whose membership changes with the toolchain and would make a rustc bump red
+  an untouched tree.
+  (e) DO NOT USE THE RENDERED-HTML TELL. Scored against rustdoc''s own verdict over the same 30
+  crates, grepping published HTML for `\[<code>` gives 3 FALSE POSITIVES (prose that legitimately
+  brackets a code span: the `[ ... ]` shell test, an `[T]` slice) and 2 FALSE NEGATIVES (xpile-agent,
+  xpile-meta-hir -- a defect in an ITEM doc renders on that item''s page, not index.html). It is
+  recorded as rejected in section 5 step 7 because it is the arm a future slice reaches for first.
+  (f) THE ACQUITTAL CONTROL, ALREADY RUN ONCE: inject one broken link into a crate that scores 0
+  today (xpile-core) and confirm the count moves 58 -> 59 and 13 -> 14 crates WITH CORRECT
+  ATTRIBUTION, then restore with `cp` and assert `git status --porcelain` is empty. 17 of the 30
+  crates score 0 and are the corpus''s own passing controls, so the passing half needs no fixture.
+  ⚠️ WHAT THE GATE CANNOT DO: repair a published page. The v0.1.618 tag was cut at 6b5f6c02
+  before the measurement, so all 13 crates republish all 58 defects on Friday and every crates.io
+  version is immutable. The gate is FORWARD-LOOKING from 0.1.619 and its module header must say so,
+  or a future reader reads green as "every published doc page has always rendered correctly".
+  ⚠️ THE FIX IS THE LARGER HALF AND IT IS MECHANICAL: 38 of the 58 are a public doc comment
+  citing a private item. Each is either an item that should be `pub`, or a citation that should stop
+  pretending to be a link. Do NOT blanket-`#[allow]` them -- that converts a visible defect into an
+  invisible one and leaves the rendered page exactly as wrong.'
 - 'PMAT-1488 GATE — XPILE-ABORTRULE-001, the abort-rule single-definition-site property. Blocked
   ONLY by the Wed 2026-07-29 18:00 freeze (it edits crates/xpile/tests/), S-sized, network-free, and
   the defect is MEASURED both ways: deleting A8''s definition bullet from docs/RELEASE.md REDS
