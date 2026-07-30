@@ -24984,6 +24984,52 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1496
+  status: done
+  priority: P1
+  category: honesty
+  title: The released CHANGELOG section credited v0.1.618 with fifteen slices that are not in the
+    v0.1.618 tag -- the release commit rolled `[Unreleased]` away and opened no replacement
+  notes: 'The release commit rolled `## [Unreleased]` into `## [0.1.618] - 2026-07-31` and did NOT open
+    a replacement. Tag cut at 00:32; work kept merging all morning and the per-slice CHANGELOG convention
+    kept writing an entry per arc, so each landed under the only heading available -- the section naming
+    a tag that does not contain it. MEASURED: `[0.1.618]` on main was 8,702 lines vs the tagged section''s
+    7,701, and 15 of its 96 arc headings (PMAT-1480..1494) cite ids unreachable from `v0.1.618^{commit}`.
+
+
+    NOT THE CAUSE, refuted before it was asserted: `changelog_freshness` assertion 3 is scoped to commits
+    touching SHIPPED SOURCE (`crates/*/src/**`, `contracts/**.yaml`). ZERO of the fifteen touch it -- they
+    are docs/tests slices under the freeze -- so that gate neither required these entries nor was violated
+    by them; it passes either way. My first draft blamed it and measuring the touched paths refuted it.
+    A PLAUSIBLE MECHANISM IS NOT A CAUSE UNTIL THE MECHANISM IS MEASURED.
+
+
+    IMPACT: the PUBLISHED artifact is safe -- PMAT-1374 puts the release worktree AT THE TAG, so crates.io
+    receives the tagged CHANGELOG. The damage is on main and permanent: the default-branch notes credit
+    0.1.618 with work it never contained, and fifteen slices would be misfiled forever after the next roll.
+    A release section is the one part of a CHANGELOG that must never move again.
+
+
+    GATE `crates/xpile/tests/changelog_release_membership_witness.rs` (XPILE-RELMEMBER-001, 4 tests):
+    (1) every arc heading in a RELEASED section cites an id reachable from that section''s own tag, fully
+    derived -- no version/id/count typed, and every release adds a section to the corpus; (2) if anything
+    has merged since the newest tag an `[Unreleased]` heading MUST exist -- the poka-yoke for the root
+    cause, so forgetting the replacement reds on the NEXT merge rather than after fifteen; (3) `[Unreleased]`
+    leads and holds only post-tag work, so the fix cannot be run backwards; (4) an in-gate red half over a
+    synthetic section, plus a false-positive check that bare `### Fixed`/`### Added` are not membership claims.
+
+
+    THE INVARIANT IS HISTORICALLY CLEAN, which is why it is the right rule: run over every `## [x.y.z]`
+    section back to [0.1.587] -- ~30 sections, 44+ arc headings -- it finds ZERO violations anywhere except
+    [0.1.618]. Not a new convention; a property the project always held and only just broke.
+
+
+    Red half: restoring one post-tag arc under [0.1.618] reds membership; renaming the [Unreleased] heading
+    away while work exists since the tag reds presence; moving a TAGGED arc into [Unreleased] reds the
+    leading-section rule. Every perturbation VERIFIED BY PARSING the result, not by printing (PMAT-1477).
+
+
+    ZERO `crates/*/src`, ZERO `contracts/*.yaml`.'
 - id: PMAT-1495
   status: done
   priority: P1
