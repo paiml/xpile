@@ -270,3 +270,240 @@ fn declared_version_ignores_hyphenated_lookalike_keys() {
         Some("0.1.617")
     );
 }
+
+// ── XPILE-CLEANROOM-PATCH-001 (PMAT-1500) ───────────────────────────────────
+//
+// THE CLAIM THAT WAS FALSE. Through v0.1.618 three documents published the
+// clean room's patch-isolation property as a CONSEQUENCE of the fresh
+// CARGO_HOME: `.github/workflows/release.yml` ("ISOLATED, EMPTY CARGO_HOME so
+// no sibling `[patch.crates-io]` path-override … can satisfy a dependency the
+// real crates.io registry could not"), `docs/RELEASE.md` §3, and the
+// `XPILE-CLEANROOM-001` row in `docs/status/enforcement-handoff.md`. It is the
+// isolation guarantee under which an irreversible 31-crate publish is
+// pre-flighted, and NO gate in this repository had ever read it.
+//
+// MEASURED, three arms, fresh empty `CARGO_HOME` + `--offline` throughout:
+//   1. `[patch.crates-io]` in `./.cargo/config.toml` → cargo exit 0, the dep
+//      resolves to the LOCAL path (`source: None`).
+//   2. control, identical tree with the patch file removed → exit 101,
+//      "no matching package … location searched: crates.io index".
+//   3. `[patch.crates-io]` in the workspace ROOT `Cargo.toml` → exit 0, again
+//      resolved to the local path.
+// `CARGO_HOME` governs the registry cache, credentials and
+// `$CARGO_HOME/config.toml`. Cargo ALSO discovers config by walking the CWD
+// HIERARCHY, and `[patch]` is legal in the root manifest. Neither is reachable
+// from `CARGO_HOME`, so the named mechanism cannot produce the named property.
+//
+// AND THE STEP THAT ACTUALLY PRODUCED IT COULD NOT FIRE. The workflow's
+// tripwire was `grep -REn 'patch\.' .cargo | grep -q 'path *='`, which needs
+// `patch.` and `path =` on the SAME LINE. The spelling this repository's own
+// `Cargo.toml:95-96` instructs developers to write spans two lines, so against
+// exactly that committed file the guard returned GREEN and printed "clean room
+// preserved". It fired only on the dotted-key one-liner, documented nowhere
+// here, and scanned only `.cargo/` — arm 3 had no coverage at all.
+//
+// This module is the authoritative copy of the corrected check: it runs in the
+// fast per-PR `cargo test --workspace` lane, where the heavy dispatch/tag-only
+// `cleanroom-publish` job cannot be verified by a reader at all. That
+// unverifiability is the point — cf. PMAT-1499, where a sandbox property of a
+// server you cannot start went unfalsified for the same reason.
+
+/// Files cargo would actually read for a `[patch]` in this checkout, relative
+/// to the workspace root. `actions/checkout@v4` materialises only tracked
+/// files, so on CI "present" == "committed".
+const PATCH_BEARING_FILES: [&str; 3] = [".cargo/config.toml", ".cargo/config", "Cargo.toml"];
+
+/// The exact sibling-checkout recipe `Cargo.toml` documents, uncommented. Used
+/// as the positive control: this is the input the superseded guard read as
+/// clean.
+const DOCUMENTED_SPELLING: &str = "[patch.crates-io]\n\
+    aprender-contracts = { path = \"../aprender/crates/aprender-contracts\" }\n";
+
+/// Section-aware scan for a path-based `[patch]` override. Returns one
+/// `line:text` per offending line.
+///
+/// A line whose first non-space byte is `#` is skipped outright — that is how
+/// the `#`-commented recipe in `Cargo.toml` stays green, and keying on the
+/// leading `#` (rather than stripping from any `#`) means a `#` inside a
+/// quoted path cannot blind the scan.
+fn path_based_patch_hits(contents: &str) -> Vec<String> {
+    let mut hits = Vec::new();
+    let mut in_patch = false;
+    for (idx, line) in contents.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            in_patch = trimmed.starts_with("[patch.") || trimmed.starts_with("[patch]");
+        }
+        let has_path = declares_path(line);
+        // Section form: `[patch.crates-io]` … `foo = { path = "…" }`.
+        // Dotted form: `patch.crates-io.foo = { path = "…" }`.
+        if has_path && (in_patch || trimmed.starts_with("patch.")) {
+            hits.push(format!("{}: {}", idx + 1, line.trim()));
+        }
+    }
+    hits
+}
+
+/// `path` as a standalone key, not the tail of `rust-path` / `search-path`.
+fn declares_path(line: &str) -> bool {
+    line.match_indices("path")
+        .filter(|(i, _)| is_key_boundary(line, *i))
+        .any(|(i, _)| line[i + "path".len()..].trim_start().starts_with('='))
+}
+
+/// No committed `[patch]` may carry a path override: it would let the release
+/// dry-run resolve a dependency from a local sibling and mask a missing
+/// `version =`, which is the one thing the clean room exists to catch.
+#[test]
+fn no_committed_patch_carries_a_path_override() {
+    let root = root_cargo_toml()
+        .parent()
+        .expect("workspace root")
+        .to_owned();
+
+    let mut offenders: Vec<String> = Vec::new();
+    for rel in PATCH_BEARING_FILES {
+        let path = root.join(rel);
+        let Ok(contents) = fs::read_to_string(&path) else {
+            continue; // absent is the normal case for .cargo/*
+        };
+        for hit in path_based_patch_hits(&contents) {
+            offenders.push(format!("  {rel}:{hit}"));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "XPILE-CLEANROOM-PATCH-001: {} committed `[patch]` path override(s) — the \
+         release dry-run would resolve a dependency from a local sibling instead \
+         of from crates.io as-published, masking exactly the defect the clean \
+         room exists to catch. A fresh CARGO_HOME does NOT suppress these \
+         (measured; see this file's header):\n{}",
+        offenders.len(),
+        offenders.join("\n"),
+    );
+}
+
+/// RED HALF — the spelling this repository documents. The superseded workflow
+/// grep returned GREEN on this exact input; if this assertion ever passes with
+/// an empty result, the scan has regressed to same-line matching.
+#[test]
+fn the_patch_detector_reds_on_the_spelling_this_repo_documents() {
+    let hits = path_based_patch_hits(DOCUMENTED_SPELLING);
+    assert_eq!(
+        hits.len(),
+        1,
+        "the two-line `[patch.crates-io]` spelling from Cargo.toml:95-96 must be \
+         detected — this is the input the superseded same-line grep read as a \
+         clean room. got: {hits:?}"
+    );
+    assert!(hits[0].contains("aprender-contracts"), "{hits:?}");
+}
+
+/// RED HALF — the dotted-key one-liner (the only form the old grep caught) and
+/// the root-manifest route (arm 3, which it never scanned) must both red.
+#[test]
+fn the_patch_detector_reds_on_the_dotted_key_and_root_manifest_routes() {
+    let dotted = "patch.crates-io.aprender-contracts = { path = \"../aprender\" }\n";
+    assert_eq!(path_based_patch_hits(dotted).len(), 1, "dotted-key form");
+
+    // Arm 3: the same section spelling, but living in the root manifest after
+    // an unrelated table — the route with zero coverage before PMAT-1500.
+    let in_manifest = format!(
+        "[workspace.dependencies]\nserde = \"1\"\n\n{}",
+        DOCUMENTED_SPELLING
+    );
+    assert_eq!(
+        path_based_patch_hits(&in_manifest).len(),
+        1,
+        "root-manifest `[patch]` route"
+    );
+
+    // A `[patch]` section that ENDS must not leak into the next table.
+    let closed = format!("{DOCUMENTED_SPELLING}\n[dependencies]\nx = {{ path = \"crates/x\" }}\n");
+    assert_eq!(
+        path_based_patch_hits(&closed).len(),
+        1,
+        "section state must reset at the next table header, so an ordinary \
+         intra-workspace path-dep is not reported as a patch override"
+    );
+}
+
+/// GREEN HALF, and the PMAT-1495 exemption trap: the recipe is exempt only
+/// because it is commented, so the control is vacuous unless the commented
+/// block is genuinely PRESENT in the manifest. Assert both halves.
+#[test]
+fn the_commented_recipe_in_the_root_manifest_is_present_and_exempt() {
+    let contents = fs::read_to_string(root_cargo_toml()).expect("read root manifest");
+
+    assert!(
+        contents.contains("#   [patch.crates-io]"),
+        "the commented sibling-checkout recipe has moved or been deleted from \
+         Cargo.toml — this test's exemption control is now vacuous and the \
+         `#`-skipping branch of path_based_patch_hits is unexercised by real data"
+    );
+    assert!(
+        path_based_patch_hits(&contents).is_empty(),
+        "the `#`-commented recipe must not be read as a live override"
+    );
+}
+
+/// EXPIRY PROPERTY, keyed to the workflow rather than to prose: if the
+/// superseded same-line grep is reinstated, or the guard stops scanning the
+/// root manifest, this reds in the fast lane instead of silently restoring a
+/// tripwire that cannot fire. A disclosure that cannot expire becomes the next
+/// stale claim (PMAT-1499).
+#[test]
+fn the_release_workflow_guard_scans_the_root_manifest_and_not_only_dot_cargo() {
+    let workflow = root_cargo_toml()
+        .parent()
+        .expect("workspace root")
+        .join(".github/workflows/release.yml");
+    let contents = fs::read_to_string(&workflow)
+        .unwrap_or_else(|e| panic!("read {}: {e}", workflow.display()));
+
+    const RETIRED: &str = "grep -REn 'patch\\.' .cargo";
+
+    // PMAT-1495's exemption trap, live again on this very fix: the comment
+    // block above the guard QUOTES the retired implementation verbatim to
+    // record what was wrong with it, so a naive `contains` screen reds on the
+    // sentence documenting the repair. Screen the EXECUTABLE lines only — a
+    // reinstated grep would be a real command, never `#`-prefixed.
+    let executable: String = contents
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // …and because the only remaining mention is now exempt, the screen could
+    // match nothing and report green forever. Positive control: the retired
+    // spelling must still be present SOMEWHERE, i.e. in the comments.
+    assert!(
+        contents.contains(RETIRED),
+        "the record of the superseded same-line grep has been deleted from \
+         release.yml's comments, so the screen below can no longer distinguish \
+         'never reinstated' from 'nothing to match'"
+    );
+    assert!(
+        !executable.contains(RETIRED),
+        "the superseded same-line `grep -REn 'patch.' .cargo | grep 'path *='` \
+         tripwire is back in release.yml as EXECUTABLE shell. It returns GREEN \
+         on the two-line spelling documented at Cargo.toml:95-96 and never scans \
+         the root manifest — see this file's header for the executed measurement."
+    );
+    assert!(
+        contents.contains("for f in .cargo/config.toml .cargo/config Cargo.toml"),
+        "release.yml's clean-room tripwire must scan the root `Cargo.toml` as \
+         well as `.cargo/config*` — `[patch]` in the root manifest is honoured \
+         under a fresh CARGO_HOME (measured arm 3) and had no coverage at all \
+         before PMAT-1500."
+    );
+    assert!(
+        contents.contains("XPILE-CLEANROOM-PATCH-001"),
+        "the CARGO_HOME comment block must keep the disclosure that a fresh \
+         CARGO_HOME does not exclude a PATCHED sibling copy, only a CACHED one"
+    );
+}

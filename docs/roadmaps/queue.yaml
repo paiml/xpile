@@ -377,6 +377,64 @@ queue:
     in xpile-spec.md and property 4 covers exactly one of them; (e) still open from 1494,
     owner_decisions and next_lane never drained; (f) still open from 1488, other duplicated
     normative sets.'
+- id: PMAT-1500
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the isolation guarantee under which tomorrow''s irreversible 31-crate publish is
+    pre-flighted names a mechanism that does not produce it, and the tripwire that does could not
+    detect the override this repository''s own Cargo.toml tells developers to write'
+  notes: 'DONE 2026-07-30. PMAT-1499''s next-pick (a): safety/security/isolation properties across
+    docs/, the new top of the falsifiability ranking. HIT IN THE RELEASE LANE.
+    Scope: .github/workflows/release.yml + docs/RELEASE.md section 3 +
+    docs/status/enforcement-handoff.md + docs/specifications/fable-architectural-review.md +
+    CHANGELOG + both ledgers + ADDITIVE properties on the EXISTING gate
+    crates/xpile/tests/publish_manifest_integrity.rs. Zero crates/*/src, zero contracts/*.yaml, zero
+    Cargo.toml, no floor bumped. DEVIATION FROM 1495..1499 STATED PLAINLY: this slice modifies an
+    existing workflow and an existing gate. release.yml IS release mechanics (permitted post-freeze),
+    is dispatch/tag-triggered so it runs on neither PRs nor main, and the tag''s own cleanroom-publish
+    already came back SUCCESS at 6b5f6c02 and cannot be re-fired by this change. Friday''s publish is
+    a MANUAL cargo publish --workspace, not this workflow.
+    THE CAUSAL CLAIM WAS FALSE, MEASURED IN THREE ARMS under a fresh empty CARGO_HOME with --offline:
+    (1) [patch.crates-io] in ./.cargo/config.toml -> exit 0, dep resolved to the LOCAL path;
+    (2) CONTROL, patch removed -> exit 101 "location searched: crates.io index"; (3) [patch] in the
+    ROOT Cargo.toml -> exit 0, local path. CARGO_HOME governs the registry cache, credentials and
+    $CARGO_HOME/config.toml; cargo ALSO walks the CWD HIERARCHY for config and [patch] is legal in the
+    root manifest. Three docs credited CARGO_HOME with the property; the origin is the
+    fable-review definition_of_done itself.
+    ** SHARPER HALF: THE TRIPWIRE THAT ACTUALLY PRODUCED THE PROPERTY COULD NOT FIRE. It was
+    `grep -REn ''patch\.'' .cargo | grep -q ''path *=''` -- SAME-LINE matching. The canonical spelling
+    at this repo''s OWN Cargo.toml:95-96, the recipe it tells developers to add, spans two lines.
+    Executed against exactly that committed file: GREEN, printing "clean room preserved". It fired
+    only on the dotted-key one-liner (documented nowhere here) and scanned only .cargo/, so arm 3 had
+    zero coverage. NOT a live hole (nothing committed today) -- the defect is the GUARANTEE, as in
+    1499, but here the tripwire IS what would have caught it.
+    ** FOURTH AXIS OF "IN SCOPE != COVERED": enforcement_prose_witness.rs and
+    release_mandate_enforcement_witness.rs walk RELEASE.md, claims_drift.rs walks all of
+    docs/specifications/, and NOT ONE asserted anything about the isolation property -- grep for
+    CARGO_HOME|cleanroom|isolated|patch across all four returns ZERO. After completeness (1498),
+    cadence (1495), numeral-free prose (1499).
+    ** RANKING LESSON HELD ONE CORPUS OVER: a clean-room property of a job you CANNOT RUN LOCALLY is
+    as unfalsifiable as a sandbox property of a server you cannot start. cleanroom-publish is
+    dispatch/tag-only, so no reader and no RELEASE.md operator can check it; it took a three-arm local
+    differential to measure.
+    NEW GATE XPILE-CLEANROOM-PATCH-001, 5 properties on the EXISTING per-PR falsifier (deliberately
+    not a new file -- that test is the per-PR half release.yml itself names, and the fast required lane
+    is the only place a reader can verify this). Includes an EXPIRY property keyed to the WORKFLOW:
+    reinstating the same-line grep or dropping the root-manifest scan reds in the fast lane. All four
+    guard arms executed against the step extracted from the YAML; three expiry red halves executed by
+    mutating release.yml in place (cp backup, never git checkout). Arm 4 also caught a bug in the NEW
+    guard: git ls-files can name a staged-then-deleted path and awk fatals -> filtered on tracked AND
+    present.
+    ** PMAT-1495''S EXEMPTION TRAP FIRED AGAIN, on this fix: the first draft red on the comment block
+    quoting the retired grep to record what was wrong with it. Screens executable lines only now --
+    which then REQUIRES a positive control that the retired spelling is still in the comments, or it
+    matches nothing and reports green forever.
+    NEXT PICK: (b) deferrals as a class -- every "lands in Phase N" / "in a future release" / dated
+    promise in docs/, checked against whether the target already passed (template exists as
+    mcp_surface_disclosure_witness.rs property 5, quantified over ONE page); then (c) parent/child
+    pairs, every sub/*.md against its xpile-spec.md section; (d) config-file filenames as a class.'
 - id: PMAT-1498
   status: done
   ev_rank: R1

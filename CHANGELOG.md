@@ -13,6 +13,74 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The isolation guarantee under which an irreversible 31-crate publish is pre-flighted named a mechanism that does not produce it — and the tripwire that does could not detect the override this repository's own `Cargo.toml` tells developers to write (PMAT-1500)
+
+Ran PMAT-1499's next pick: sweep safety/security/isolation properties across `docs/`,
+the new top of the falsifiability ranking. The hit is in the **release lane**.
+
+Three documents published the clean room's patch-isolation property as a *consequence*
+of the fresh `CARGO_HOME` — `.github/workflows/release.yml`, `docs/RELEASE.md` §3, and
+the `XPILE-CLEANROOM-001` row in `docs/status/enforcement-handoff.md` — originating in
+`fable-architectural-review.md`'s own `definition_of_done` (*"under an isolated
+CARGO_HOME (no sibling paths)"*). **The causal claim is false, and it was measured
+rather than reasoned.** Three arms, each under a fresh empty `CARGO_HOME` with
+`--offline`:
+
+| arm | tree | result |
+|-----|------|--------|
+| 1 | `[patch.crates-io]` in `./.cargo/config.toml` | exit 0 — dep resolved to the **local path** |
+| 2 | control: identical tree, patch removed | exit 101 — *"location searched: crates.io index"* |
+| 3 | `[patch.crates-io]` in the **root** `Cargo.toml` | exit 0 — resolved to the **local path** |
+
+`CARGO_HOME` governs the registry cache, credentials and `$CARGO_HOME/config.toml`.
+Cargo *also* discovers config by walking the **cwd hierarchy**, and `[patch]` is legal
+in the root manifest — neither reachable from `CARGO_HOME`. The named mechanism cannot
+produce the named property.
+
+**And the step that actually produced it could not fire**, which is the sharper half.
+The workflow did carry a dedicated tripwire. It was
+`grep -REn 'patch\.' .cargo | grep -q 'path *='`, requiring `patch.` and `path =` on the
+**same line**. The canonical spelling — verbatim from this repo's own
+`Cargo.toml:95-96`, the recipe it *instructs developers to add* — spans two. Executed
+against exactly that committed file, the guard returned green and printed *"no committed
+sibling-path patch override — clean room preserved"*. It fired only on the dotted-key
+one-liner, documented nowhere here, and scanned only `.cargo/`, leaving arm 3 uncovered.
+
+Not a live hole: nothing is committed today, so as in PMAT-1499 the defect is the
+**guarantee**, not an exposure. The cost differs — here the tripwire *is* the thing that
+would have caught it.
+
+Why every gate missed it — a fourth axis of *in scope ≠ covered*, after completeness
+(PMAT-1498), cadence (PMAT-1495) and numeral-free prose (PMAT-1499):
+`enforcement_prose_witness.rs` and `release_mandate_enforcement_witness.rs` both walk
+`docs/RELEASE.md`, and `claims_drift.rs` walks all of `docs/specifications/` — but not
+one asserted anything about the isolation property. Grepping all four for
+`CARGO_HOME|cleanroom|isolated|patch` returns **zero** hits.
+
+The ranking lesson held one corpus over from where PMAT-1499 found it: **a clean-room
+property of a job you cannot run locally is as unfalsifiable as a sandbox property of a
+server you cannot start.** `cleanroom-publish` is dispatch/tag-triggered only, so
+neither a reader nor an operator following the `RELEASE.md` checklist can check it.
+
+Both halves fixed. The guard is now section-aware, comment-skipping, and scans every
+file cargo would actually read; all four arms were **executed** against the step
+extracted from the YAML (green on the repo today, red on all three routes). Arm 4 also
+exposed a bug in the new guard — `git ls-files` can name a staged-then-deleted path and
+`awk` fatals — so the file list is filtered on tracked **and** present.
+
+New gate `XPILE-CLEANROOM-PATCH-001`: five properties added to the **existing** per-PR
+falsifier `crates/xpile/tests/publish_manifest_integrity.rs`, deliberately there because
+that test is the per-PR half `release.yml` itself names, and the fast required lane is
+the only place a reader can verify any of this. One is an **expiry** property keyed to
+the workflow, so reinstating the same-line grep or dropping the root-manifest scan reds
+in the fast lane. Its three red halves were executed by mutating `release.yml` in place.
+
+PMAT-1495's exemption trap fired on this fix too: the first draft of the expiry screen
+red on the comment block that quotes the retired grep to record what was wrong with it.
+It now screens executable lines only — which in turn needs a **positive control** that
+the retired spelling is still present in the comments, or the screen could match nothing
+and report green forever.
+
 ### A 19-line stub published seven tools, a transport, a telemetry guarantee and a **security** guarantee — and its one true sentence was the last line of the file (PMAT-1499)
 
 `docs/specifications/sub/mcp.md` is §15 of the canonical spec. Probed 2026-07-30 against

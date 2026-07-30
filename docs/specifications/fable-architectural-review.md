@@ -166,6 +166,19 @@ Reachable frontends (by extension): Python `.py/.pyi`, C `.c/.h`, Ruchy `.ruchy`
   ev_rank: 8
   ev_rationale: Doctrine §4.5 names clean-room a HARD release gate; xpile publishes 31 crates via a manual Friday process with no publish workflow and no dry-run/clean-room gate anywhere in CI (spec prose only — xpile-spec.md:803). Healthy today (lag 31 commits) — gate it before it fires.
   definition_of_done: "A release workflow (tag- or dispatch-triggered) runs cargo publish --workspace --dry-run plus a clean-room build of the published crate set under an isolated CARGO_HOME (no sibling paths). Mutations that must turn it RED: (a) strip version= from one workspace path-dep → dry-run red; (b) introduce a path-only dependency on an unpublished crate → clean-room red."
+  dod_correction_2026_07_30: 'PMAT-1500 — the DoD above names the WRONG MECHANISM for
+    the "(no sibling paths)" clause, and the workflow built to satisfy it inherited the
+    error. An isolated CARGO_HOME does NOT exclude a path-based `[patch.crates-io]`:
+    cargo also reads config from the cwd hierarchy, and `[patch]` is legal in the root
+    manifest. Measured under a fresh empty CARGO_HOME with --offline — patch in
+    ./.cargo/config.toml resolves to the local path at exit 0, the patch-free control
+    exits 101 "location searched: crates.io index", and the root-manifest route
+    resolves at exit 0 too. The clause needs a dedicated tripwire, which the workflow
+    did add, but that tripwire required `patch.` and `path =` on the SAME LINE and so
+    returned green on the two-line spelling Cargo.toml:95-96 documents. Both halves are
+    fixed under XPILE-CLEANROOM-PATCH-001; the authoritative check now runs per-PR in
+    crates/xpile/tests/publish_manifest_integrity.rs. Mutation (b) of the DoD was
+    always satisfied by the dry-run itself and is unaffected.'
   blocked_by: none
   artifact_on_completion: falsifier + PR
   workflow_note: ends in a publish → this item IS the clean-room gate named first (§4.5); ticket → branch → PR → `ci / gate`
