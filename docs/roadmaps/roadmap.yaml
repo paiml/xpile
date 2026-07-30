@@ -24702,6 +24702,59 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1489
+  status: done
+  priority: P1
+  category: honesty
+  title: Six published falsehoods were fixed in the tree yesterday, the gate that found them is
+    green, and all six are still live on crates.io -- a gate over the SOURCE of a published
+    artefact goes green at merge, but the artefact only changes at publish
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG lane ONLY -- zero crates/*/src,
+    zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag v0.1.618 is cut at 6b5f6c02, so
+    this does not touch the release SHA.
+    MEASURED live against crates.io 2026-07-30, one day before ship: 7 of 31 registry descriptions
+    diverge from the tagged tree (xpile, xpile-backend, xpile-contract-backend,
+    xpile-contract-frontend, bashrs-backend, bashrs-frontend, ruchy-frontend). SIX of them are the
+    falsehoods crate_metadata_honesty.rs (XPILE-CRATEMETA-001, PMAT-1465) found and fixed on
+    2026-07-29 -- that gate reads the TREE, so it went green the instant the tree was corrected
+    while the registry kept serving the false text. Still published today: ruchy-frontend "Parses
+    .ruchy and lowers to meta-HIR" (input REFUSES, no parser exists, PMAT-1346); bashrs-frontend
+    "sh/bash/zsh + Makefile/Dockerfile" (both in its own refused_claims(), PMAT-1420); the mdBook
+    pair on xpile-contract-{backend,frontend}; xpile-backend universally quantifying "every target
+    language" over 6 of 9 Target variants; and the flagship xpile claiming C++/Ruchy/Lean as INPUTS.
+    THE GENERAL SHAPE: a slice that corrects a published claim is HALF-DONE at merge and completes
+    at the next publish. PMAT-1465 own header records that these strings "are re-uploaded, verbatim,
+    on every Friday publish" -- the mechanism was written down and the slice was still closed at
+    merge. Nothing in the repo represented that gap.
+    OPERATIVE CONSEQUENCE FOR SHIP DAY: abort rules A4 (partial batch) and A6 (time-box, ship
+    tag-only) are both written as costless and for CRATE VALIDITY that is true, but a deferral also
+    keeps every one of these falsehoods published another week, and a PARTIAL batch keeps them on
+    exactly the 31-k crates that did not upload -- a partition nobody can name afterwards without
+    re-measuring. Both rules now carry the cost explicitly.
+    SHIPPED: docs/RELEASE.md section 4 step 6 gains ARM 3, the only check anywhere that reads what
+    the registry is CURRENTLY SERVING rather than what the tree says; new abort rule A13, which
+    INVERTS A12 (A12 post-tag: the falsehood ships and you may only disclose it; A13: the falsehood
+    is already shipped and uploading REMOVES it) making it the first rule whose finding argues FOR
+    proceeding; A4 and A6 amended; A12 "only rule whose disposition depends on when it fires"
+    corrected since A13 is the second. v0.1.618 fires A13 with seven crates and the batch clears
+    all seven.
+    ESCAPE LANDMINE (bit TWICE, two different tools, both times inflating the count by the SAME
+    crate): a regex over the TOML reported 8; jq @tsv then re-escaped the backslash in
+    \xpileContract and also reported 8, because @tsv emits a doubled backslash, read -r does not
+    interpret it, and the live side came through a plain jq -r that did -- byte-identical strings
+    compared unequal. Both sides now go through one jq -r. The direction matters: this OVER-reports,
+    and an over-report would put a crate name in a release body asserting its published description
+    is false when it is not. A DISCLOSURE RULE FALSE POSITIVE IS ITSELF A PUBLISHED FALSEHOOD.
+    CONTROLS: red half (xpile-core description mutated -> count 7 to 8, that crate named);
+    over-refusal (xpile-latex-contract-backend, the escape-bearing crate -> correctly silent);
+    cross-check (independent Python implementation decoding TOML via cargo metadata -> same 7, same
+    names). Tree restored and git diff --stat checked after each.
+    NO GATE COVERS A13 (freeze bars gate edits): the section 6 falsification recipe, EXTRACTED from
+    the file and RUN, removed 5 rule definitions past A8 -- it DERIVED A13 on its own, its first
+    real exercise since PMAT-1488 built it -- and release_preflight_witness stayed GREEN over the
+    mutated file. XPILE-ABORTRULE-001 in queue.yaml next_lane remains the structural fix.
+    The sprint plan was deliberately NOT touched: adding "A13 also fires" there would re-create the
+    duplicated membership claim PMAT-1488 deleted.'
 - id: PMAT-1488
   status: done
   priority: P1

@@ -230,6 +230,38 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1489
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'six published falsehoods were fixed IN THE TREE yesterday, the gate that found them is
+    GREEN, and all six are STILL LIVE on crates.io — a gate over the SOURCE of a published artefact
+    goes green at MERGE, but the artefact only changes at PUBLISH'
+  notes: 'SHIPPED 2026-07-30, post-freeze docs+CHANGELOG lane only (zero crates/*/src, zero
+    contracts, zero gate files, zero Cargo.toml); tag v0.1.618 at 6b5f6c02 untouched.
+
+    MEASURED live: 7 of 31 registry descriptions diverge from the tagged tree. Six are
+    PMAT-1465''s named falsehoods — that gate reads the TREE, so it went green the instant the tree
+    was corrected while crates.io kept serving the false text (ruchy-frontend still advertises
+    "Parses .ruchy" when input REFUSES; bashrs-frontend still advertises Makefile/Dockerfile when
+    both are in its own refused_claims()). GENERAL SHAPE: a slice that corrects a published claim
+    is HALF-DONE at merge and completes at the next publish.
+
+    SHIPPED: RELEASE.md §4 step 6 ARM 3 (the only check that reads what the registry is CURRENTLY
+    SERVING); abort rule A13, which INVERTS A12 and is the first rule whose finding argues FOR
+    proceeding; A4/A6 amended to name the deferral cost they previously priced at zero; A12''s
+    "only rule whose disposition depends on when it fires" corrected. Controls: red half,
+    over-refusal, and an independent Python cross-check, tree restored after each. NO GATE (freeze)
+    — the §6 falsification recipe, extracted and RUN, DERIVED A13 on its own (removed 5 past A8)
+    and the witness stayed green, confirming the disclosure. The sprint plan was deliberately NOT
+    touched: "A13 also fires" there would re-create the duplicate PMAT-1488 deleted.
+
+    ⛔ FRIDAY: v0.1.618 fires A13 with SEVEN crates and the batch CLEARS all seven — publishing is
+    the repair. Re-run arm 3 on the day; the set is a measurement, not a constant. It is NOT a
+    reason to stop, and it is an argument AGAINST deferring under A4/A6.
+
+    NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH). NEXT FREE ID PMAT-1490. NO FRIDAY CODE MERGES.'
 - id: PMAT-1488
   status: done
   ev_rank: R1

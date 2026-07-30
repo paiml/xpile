@@ -7,6 +7,72 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### Six published falsehoods were fixed in the tree yesterday, the gate that found them is green, and all six are still live on crates.io — a gate over the SOURCE of a published artefact goes green at merge, but the artefact only changes at publish (PMAT-1489)
+
+**`crate_metadata_honesty.rs` (XPILE-CRATEMETA-001, PMAT-1465) read the 31
+crates' `description` fields for the first time on 2026-07-29, found six that
+published a falsehood, and fixed the manifests. It reads the tree.** So it went
+green the instant the tree was corrected — and the registry, which is the claim
+surface it was written to police, kept serving the false text. Measured live
+2026-07-30, one day before ship: **7 of 31 registry descriptions diverge from
+the tagged tree.**
+
+| still published today | what crates.io serves | what is true |
+|---|---|---|
+| `ruchy-frontend` | "Parses `.ruchy` and lowers to meta-HIR" | `.ruchy` **input refuses**; there is no Ruchy parser (PMAT-1346) |
+| `bashrs-frontend` | "sh/bash/zsh **+ Makefile/Dockerfile**" | both are in that frontend's own `refused_claims()` (PMAT-1420) |
+| `xpile-contract-backend` | renders "LaTeX / Lean theorems / **mdBook**" | no ContractBackend claims `ContractFormat::MdBook` |
+| `xpile-contract-frontend` | parses "LaTeX / Lean theorem text / **mdBook**" | no ContractFrontend claims it either |
+| `xpile-backend` | "**every** target language (Rust, Ruchy, PTX, WGSL, SPIR-V, Lean)" | `Target` has **nine** variants |
+| `xpile` | "Python/C/**C++**/Rust/**Ruchy**/**Lean** ↔ …" | the flagship's own registry headline |
+| `bashrs-backend` | a `Stmt` list omitting the control-flow lane | understated scope, not a falsehood |
+
+All seven are corrections the tree already carries, so **tomorrow's batch clears
+all seven and publishing is the repair.** PMAT-1465's own header records that
+these strings "are re-uploaded, verbatim, on every Friday publish" — the
+mechanism was written down, and the slice was still closed at merge. **A slice
+that corrects a published claim is half-done at merge and completes at the next
+publish**, and nothing in the repo represented that gap.
+
+**Why this changes tomorrow's decisions.** Abort rules A4 (partial batch) and A6
+(time-box → tag-only) are both written as costless — "the *k−1* already
+published are valid", "a tagged, unpublished release is an acceptable outcome" —
+and for *crate validity* that is true. But deferring also keeps every one of
+those falsehoods published for another week, and a **partial** batch keeps them
+on exactly the `31 − k` crates that did not upload: a partition nobody can name
+afterwards without re-measuring. Both rules now carry that cost explicitly.
+
+Shipped: `docs/RELEASE.md` §4 step 6 gains **arm 3**, the only check anywhere
+that reads what the registry is *currently serving* rather than what the tree
+says; new abort rule **A13**, which inverts A12 — where A12 post-tag says *the
+falsehood ships and you may only disclose it*, A13 says *the falsehood is
+already shipped and uploading removes it*, making it the first rule whose
+finding argues **for** proceeding; A4 and A6 amended to name the deferral cost;
+A12's "only rule whose disposition depends on when it fires" corrected, since
+A13 is the second.
+
+⚠️ **The escape landmine bit twice, in two different tools, and both times it
+inflated the count by the same crate.** A regex over the TOML reported **8**;
+`jq … | @tsv` then re-escaped the backslash in `\xpileContract` and also
+reported **8**, because `@tsv` emits `\\`, `read -r` does not interpret it, and
+the live side came through a plain `jq -r` that did. Byte-identical strings
+compared unequal. The published command puts both sides through one `jq -r`. The
+direction matters: this **over**-reports, and an over-report here would put a
+crate's name in a release body asserting its published description is false when
+it is not — **a disclosure rule's false positive is itself a published
+falsehood.**
+
+Arm 3's red half (`xpile-core`'s description mutated → count 7 → 8, that crate
+named), its over-refusal control (`xpile-latex-contract-backend`, the
+escape-bearing crate → correctly silent) and an independent Python
+implementation (same 7, same names) all ran against the live registry, tree
+restored and `git diff --stat` checked after each. No gate covers A13: the §6
+falsification recipe, extracted from the file and run, removed **5** rule
+definitions past A8 — it derived A13 on its own, its first real exercise since
+PMAT-1488 built it — and `release_preflight_witness` stayed **green** over the
+mutated file. Docs and release mechanics only; nothing under `crates/*/src`,
+`contracts/` or any gate, per the 2026-07-29 18:00 freeze.
+
 ### The canonical plan tells tomorrow's operator the abort-rule set is A1–A8, and the four rules that actually fire tomorrow are A9, A10, A11 and A12 (PMAT-1488)
 
 **The abort rules were written down twice, and nothing ever compared the two

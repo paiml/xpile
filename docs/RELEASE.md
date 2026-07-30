@@ -250,7 +250,10 @@ conclusion; a green `gh pr checks` does not include it.**
 
    `description`, `homepage` and `documentation` are uploaded verbatim with
    every crate and rendered in the crates.io sidebar. `crate_metadata_honesty.rs`
-   (XPILE-CRATEMETA-001) reads the `description`s. **Nothing reads the URLs.**
+   (XPILE-CRATEMETA-001) reads the `description`s **in the working tree**.
+   **Nothing reads the URLs, and nothing reads what the registry is currently
+   serving for any of the three** (PMAT-1489) — those are different questions,
+   and arm 3 below is the only one that asks the second.
    This is the one metadata check that can still be *repaired* — §5 step 6 runs
    after the upload and can only disclose — so it belongs here, ahead of the
    point of no return.
@@ -282,6 +285,24 @@ conclusion; a green `gh pr checks` does not include it.**
            echo "DEAD-DOCS $name claims docs.rs and does not build there — A12" ;;
          esac
        done
+
+   # ARM 3 — THE OTHER DIRECTION (PMAT-1489). Arms 1-2 ask whether the TREE's
+   # claims are dead. This asks whether the REGISTRY is still serving prose the
+   # tree already retired. `crate_metadata_honesty.rs` structurally cannot see
+   # this: it reads the tree, so it went green the instant the tree was
+   # corrected, while the falsehoods it was written to catch stayed published.
+   # BOTH SIDES MUST DECODE THE SAME WAY — see the escape note below. Never
+   # `@tsv` the description and never regex it out of the TOML; take each side
+   # through a single `jq -r`.
+   md=$(command cargo metadata --no-deps --format-version 1)
+   echo "$md" | jq -r '.packages[].name' | while read -r name; do
+     tree=$(echo "$md" | jq -r --arg n "$name" \
+              '.packages[] | select(.name == $n) | .description // ""')
+     live=$(curl -s -H 'User-Agent: xpile-release-verify' \
+              "https://crates.io/api/v1/crates/$name" \
+            | jq -r '.crate.description // ""')
+     [ "$live" = "$tree" ] || echo "STALE $name — A13"
+   done
    ```
 
    ⚠️ **A `200` from a documentation host is not a rendered document**, and that
@@ -318,6 +339,27 @@ conclusion; a green `gh pr checks` does not include it.**
    artefact class is not an acquittal for the artefact** — the failure was
    normal, the assertion pointing at it was not, and "everyone's is red" is
    exactly the reasoning that kept this unexamined for 617 releases.
+
+   **Arm 3's controls** (PMAT-1489), executed 2026-07-30, tree restored and
+   `git diff --stat` checked after each:
+
+   | control | mutation | result |
+   |---|---|---|
+   | red half | `xpile-core` (registry matches tree) description prefixed `MUTATED — ` | count 7 → 8, `STALE xpile-core` named |
+   | over-refusal | none — `xpile-latex-contract-backend`, whose description contains a `\` escape | **silent**, correctly (its two sides are byte-equal) |
+   | cross-check | independent Python implementation decoding TOML via `cargo metadata` | same 7, same names |
+
+   ⚠️ **THE ESCAPE LANDMINE BIT TWICE, IN TWO DIFFERENT TOOLS, AND BOTH TIMES IT
+   INFLATED THE COUNT BY THE SAME CRATE.** A first pass regexed `description`
+   straight out of the TOML and reported **8**; `jq … | @tsv` then re-escaped the
+   backslash in `\xpileContract` and also reported **8**. `@tsv` emits `\\`,
+   `read -r` does not interpret it, and the live side came through a plain
+   `jq -r` that did — so the two sides were decoded by different rules and a
+   byte-identical pair compared unequal. **Both sides must go through one
+   `jq -r`.** The direction of the error is what matters: this over-reports, and
+   an over-report here puts a crate's name in a release body asserting its
+   published description is false when it is not. A disclosure rule's false
+   positive is itself a published falsehood.
 
 7. **Tag a PINNED SHA and push.**
 
@@ -902,7 +944,9 @@ the rule you are about to rely on is still written down.
   published (they are valid). Do **not** retry at the same version (409). Do
   **not** bump a single crate to route around it. Record exactly which crates
   landed in §7, then fix forward with a **whole-workspace** patch bump the
-  following Friday.
+  following Friday. The *k−1* being valid is not the same as this being free:
+  re-run §4 step 6 arm 3 and record which of the `31 − k` are left serving
+  retired prose (A13).
 - **A5 — OVERLAY (recoverable, do NOT abort).** `no hash listed for <crate> vX`
   is the stale local package overlay, not a real failure: purge per §4 step 5
   and restart from the dry-run. Without this rule A4 would fire on a fully
@@ -912,6 +956,9 @@ the rule you are about to rely on is still written down.
   GitHub-tag-and-release only (a tagged, unpublished release is an acceptable
   outcome) and roll the batch to the following Friday. Never begin an
   irreversible whole-workspace batch into an evening with no recovery window.
+  "Acceptable" is about *risk*, not about *cost*: a rolled batch keeps every A13
+  crate's retired prose published for another week, so name them in the release
+  body rather than shipping a tag-only release that reads as a no-op.
 - **A7 — NO FRIDAY CODE.** If a defect surfaces Friday morning the answer is
   A6 (ship the tag, defer the batch), never a same-day hotfix onto the release
   SHA.
@@ -967,7 +1014,8 @@ the rule you are about to rely on is still written down.
   tag, so `0.1.618`'s pages carry it and `0.1.619`'s will not.
 
 - **A12 — PUBLISHED METADATA URL DEAD.** Its disposition depends entirely on
-  *when* it fires, and this is the only rule in this list where that is true:
+  *when* it fires. (Until PMAT-1489 this rule claimed to be the *only* one for
+  which that holds; A13 is the second, and inverts it.)
 
   - **Before the tag (§4 step 6) it BLOCKS the tag.** A `documentation` or
     `homepage` URL that does not serve what it claims is a one-line manifest
@@ -996,6 +1044,63 @@ the rule you are about to rely on is still written down.
   crates.io renders as the body of *the same page* — so the front page carried
   two documentation pointers that disagreed, and the one the registry labels
   "Documentation" was the dead one.
+
+- **A13 — PUBLISHED PROSE STALE (never a reason to abort; a reason NOT to
+  defer).** The registry is serving a `description` the tree has already
+  retired. Every other rule in this list fires because something in the release
+  is *wrong*; this one fires because something already published is wrong **and
+  the batch is the repair**. It therefore inverts A12: where A12 post-tag says
+  *the falsehood ships and you may only disclose it*, A13 says *the falsehood is
+  already shipped and uploading removes it.*
+
+  - **Before the tag (§4 step 6, arm 3) it is INFORMATIONAL.** A tree/registry
+    divergence pre-tag is the normal, healthy state of any crate corrected since
+    the last publish. It blocks nothing.
+  - **After the tag, and on Friday, it BINDS A4 and A6 — the two rules that
+    defer.** It never delays, retries or reverts a batch. It attaches a *cost*
+    to not running one.
+
+  ⚠️ **A4 and A6 are written as costless, and they are not.** Both read as safe
+  outcomes — "the *k−1* already published are valid", "a tagged, unpublished
+  release is an acceptable outcome" — and for *crate validity* that is true. But
+  a deferral also leaves every A13 crate's falsehood live for another week, and
+  a **partial** batch leaves it live on exactly the `31 − k` crates that did not
+  upload: a partition nobody can name afterwards without re-measuring. If A4 or
+  A6 fires, arm 3 must be re-run and **every crate still serving retired prose
+  named in the release body and in §7.** Deferring is a decision with a
+  published cost; take it with the cost visible.
+
+  ⚠️ **A GATE OVER THE SOURCE OF A PUBLISHED ARTEFACT GOES GREEN AT MERGE; THE
+  ARTEFACT CHANGES AT PUBLISH.** `crate_metadata_honesty.rs` (XPILE-CRATEMETA-001,
+  PMAT-1465) found six published falsehoods, fixed the manifests, and went green
+  — it reads the tree. It is green right now, and **all six are still live on
+  crates.io.** Its own header records that the strings "are re-uploaded,
+  verbatim, on every Friday publish": the mechanism was written down, and the
+  slice was still closed at merge. **A slice that corrects a published claim is
+  half-done at merge and completes at the next publish.**
+
+  First run, `0.1.618` (PMAT-1489, the measurement that created this rule):
+  **7 of 31** registry descriptions diverge from the tagged tree — `xpile`,
+  `xpile-backend`, `xpile-contract-backend`, `xpile-contract-frontend`,
+  `bashrs-backend`, `bashrs-frontend`, `ruchy-frontend`. All seven are
+  corrections the tree already carries, so the batch clears all seven; six are
+  PMAT-1465's named falsehoods and one (`bashrs-backend`) is an understated
+  scope list. The two sharpest, quoted from what the registry serves **today**:
+  `ruchy-frontend` — "Parses `.ruchy` and lowers to meta-HIR", when `.ruchy`
+  input refuses and no Ruchy parser exists (PMAT-1346) — and `bashrs-frontend` —
+  "sh/bash/zsh + Makefile/Dockerfile", when both are in that frontend's own
+  `refused_claims()` (PMAT-1420).
+
+  ⛔ **`v0.1.618` FIRES A13 WITH SEVEN CRATES, AND PUBLISHING IS WHAT RESOLVES
+  IT — DO NOT STOP FRIDAY OVER IT, AND DO NOT LET IT ARGUE FOR A DEFERRAL.**
+  Re-run arm 3 on the day: the set is a *measurement*, not a constant, and any
+  crate corrected between the tag and Friday joins it.
+
+  ⚠️ Nothing in CI covers this rule. The gate over this section checks a frozen
+  literal that stops short of it (see the falsification recipe above), so A13 is
+  kept by this file and by review only — and no gate anywhere reads the
+  registry, which is the finding, not an oversight to be fixed by re-running
+  `workspace-test`.
 
 ## 7. Slip and partial-batch ledger
 
