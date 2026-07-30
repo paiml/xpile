@@ -24952,6 +24952,96 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 
 
     ZERO `crates/*/src`, ZERO `contracts/*.yaml`.'
+- id: PMAT-1495
+  status: done
+  priority: P1
+  category: honesty
+  title: docs/status/INDEX.md is one of three files named by hand in the strictest claim corpus in
+    the repo, and two of the four registers it publishes have had no writer for seventy-three days
+    -- a frozen table still headed "historical record", and an empty section whose deferral was
+    authored six weeks before the quarter close it silently skipped
+  notes: 'SHIPPED 2026-07-30 (post-freeze; docs/status/INDEX.md + CHANGELOG + both ledgers ONLY --
+    zero crates/*/src, zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag v0.1.618 is
+    cut at 6b5f6c02, so this does not touch the release SHA.
+    PICKED as PMAT-1494''s own next-pick (a): sweep every other "none/zero recorded" surface for the
+    empty-register shape. The sweep''s first hit is not in docs/RELEASE.md at all.
+    MEASURED: INDEX.md opens "This directory tracks where xpile is and what''s next" and publishes
+    FOUR registers -- a conventions table declaring a cadence per status file, a "Session log
+    (historical record)" table, a "Quarterly rollups" section, and a 7-step "How to pick this up in
+    a future session" checklist whose step 7 is the session log''s ONLY writer.
+    SESSION LOG: two rows dated 2026-05-15 and 2026-05-18, and `git ls-files docs/status/20*.md`
+    returns exactly those two files -- COMPLETE with respect to the logs that exist, both written in
+    the project''s first four days. Since the last: 73 days, 1,786 commits, 617 tags, zero rows,
+    under a heading saying "historical record" and a conventions cell saying this index is updated
+    "when a new session log lands". The trigger never fired, so the register was never written, and
+    the heading asserted completeness throughout.
+    QUARTERLY ROLLUP: `docs/status/quarterly/` has NEVER EXISTED in this repo''s history
+    (`git log --all --diff-filter=A -- docs/status/quarterly*` = 0 commits). Its text read "(none
+    yet -- first quarterly rollup expected at 2026-Q3 close...)", authored 2026-05-18 06:29 CEST
+    (be2c4620) -- SIX WEEKS BEFORE the 2026-Q2 close on 2026-06-30, the ONE quarter boundary elapsed
+    inside this project''s life and 30 days before today, against a conventions cell committing the
+    directory to "at quarter close". Q2 was not deferred and not slipped: it was UNREPRESENTABLE,
+    because the deferral already promised the FIRST rollup at the NEXT close. PMAT-1494''s "date the
+    birth of a register before reading its contents as history", confirmed twice in two slices.
+    ** THE ASYMMETRY IS THE PROOF THIS IS GATE-SHAPED, NOT A DISCIPLINE FAILURE: CURRENT.md sits in
+    the SAME directory, declares the MOST demanding cadence of the four, and was written YESTERDAY
+    -- because PMAT-1348 put three assertions on it in claims_drift.rs after finding five false
+    claims that had stood two months. Same directory, same authors, same 73 days: the gated register
+    lived, both ungated ones died. The repo had already written the rule down -- "a doc rule with no
+    gate is a suggestion", claims_drift.rs:1459.
+    ** AND THE PAGE IS ALREADY IN THE CORPUS, WHICH IS THE SHARP PART. INDEX.md is one of exactly
+    THREE files claim_pages() names by hand (with README.md and CLAUDE.md) under "every prose page
+    whose subject is the system AS IT IS NOW". Every assertion over that corpus hunts a FALSE OR
+    STALE NUMERAL. The two dead registers offer none: one is empty, and the other''s figures (14
+    crates, 12/12 contracts, 260 Lean theorems -- all since moved) are correct ABOUT THEIR OWN DATE,
+    which is precisely why the gate''s own rationale exempts dated logs. A DRIFT GATE KEYED ON
+    COUNTS IS STRUCTURALLY BLIND TO DRIFT IN COMPLETENESS, and the page it is blind on is the one
+    whose whole subject IS completeness.
+    ** MECHANISM HALF, and it is not sloth: the session log''s only writer is step 7 of a checklist
+    that lives INSIDE THE FILE IT MAINTAINS, and nothing outside points at it. `grep -c docs/status
+    CLAUDE.md` = 0; README.md references the directory exactly once and to a DIFFERENT file
+    (enforcement-handoff.md). A REGISTER WHOSE ONLY WRITER IS AN INSTRUCTION INSIDE ITSELF HAS NO
+    WRITER. PMAT-1494 asked "where is the operator standing when the record must be written?"; here
+    the answer is that the operator is never in the room.
+    SHIPPED: conventions table gains a fourth column `When written (measured)` stating per row what
+    actually keeps it alive (LIVE-and-gated / NO WRITER / ABANDONED 2026-05-18 / NEVER WRITTEN) with
+    three derivation commands beside it; session-log heading becomes "FROZEN 2026-05-15 ..
+    2026-05-18, not a historical record" with both rows preserved byte for byte as the dated record
+    they are; the quarterly section states its own birth commit and timestamp, the Q2 arithmetic,
+    and that its emptiness is evidence about its AGE and MISSING WRITER and nothing else; step 7 is
+    STRUCK THROUGH rather than deleted so the abandonment stays visible in the file that declared
+    the cadence. NO COUNT IS HARD-CODED INTO INDEX.md -- figures live in the dated CHANGELOG entry
+    and the page carries commands instead (PMAT-1348''s pointer-file rule). All six published
+    commands were EXTRACTED AND RUN before commit, exit 0, reproducing every figure (PMAT-1459).
+    ** FOUND WHILE FIXING IT, AND THE SHARPEST THING IN THE SLICE: THE PHRASE WHOSE MISLEADINGNESS
+    IS THE DEFECT IS ALSO THE TOKEN THAT KEEPS THE SECTION''S CONTENTS LEGAL. The first cut retitled
+    the section "Session log -- FROZEN ..., not a historical record" and
+    claims_drift::docs_claim_no_universal_depth_the_substrate_does_not_hold went RED: the 2026-05-18
+    row claims UNIVERSAL Diamond depth-2 AND depth-3, the shallowest contract now carries one
+    Diamond category, and the ONLY thing that ever made that row legal is HISTORICAL_MARKER -- the
+    literal string "(historical record)" matched in the ENCLOSING HEADING, claims_drift.rs:331. The
+    parenthetical does TWO INCOMPATIBLE JOBS: a machine-readable record exemption for the gate, and
+    a reader-facing completeness claim in prose -- so CORRECTING THE PROSE SILENTLY REVOKED THE
+    EXEMPTION, honest re-wording was PENALISED, and the penalty arrived as an unrelated-looking
+    failure about Diamond depth. Fixed by keeping the marker verbatim with the disambiguation
+    appended after it, plus an in-section note saying it may never be dropped. -> A TOKEN THAT IS
+    SIMULTANEOUSLY AN EXEMPTION MARKER AND READER-FACING PROSE CANNOT BE CORRECTED WITHOUT BREAKING
+    THE EXEMPTION, AND THE GATE WILL READ THE FIX AS THE REGRESSION. Red OBSERVED, green paired.
+    NO GATE (freeze bars a new tests/ file) -> XPILE-STATUSREG-001 in queue.yaml next_lane, with
+    four born-wrong constraints: derive the cadence rather than assert a table is non-empty; resolve
+    the corpus FROM the conventions table so a fifth row is covered on landing; read `git log -1` on
+    each row''s SUBJECT and never on INDEX.md itself; and run the acquittal control.
+    OWNER DECISION FILED: `quarterly-rollup-cadence` (strike the row, keep it and let the gate red
+    on 2026-10-01, or retro-write Q2 -- the third is not recommended). Not blocking the publish.
+    ** SHAPE: A REGISTER''S CADENCE IS A CLAIM, AND NO GATE IN THIS REPO CHECKS ONE. Every honesty
+    gate here asks "is this statement true"; none asks "is this statement still being written". The
+    two failure modes are independent, and the second gets more persuasive with age.
+    NEXT FREE ID PMAT-1496. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.'
+  created: '2026-07-30T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
 - id: PMAT-1494
   status: done
   priority: P1
