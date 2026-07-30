@@ -65,23 +65,66 @@ jobs:
   # separate job so the failure mode is visible at a glance
   # (gate vs tests).
   #
-  # ENFORCEMENT NOTE (PMAT-1347 — re-derived against the LIVE API, and now
-  # GATED so it cannot rot again). The paiml org branch-protection ruleset
-  # 13878864 requires EXACTLY two contexts. Every OTHER job in this file is
-  # ADVISORY: it runs on every PR and goes red on a real regression, but a red
-  # advisory job does NOT block a merge. Do not describe them as merge-blocking.
+  # ENFORCEMENT NOTE (PMAT-1347, CORRECTED 2026-07-30 by PMAT-1501 — measured
+  # against the LIVE API on the day of writing, not carried forward).
+  #
+  # ⛔ TWO rulesets protect `main`, and NEITHER ALONE requires the blocking set.
+  # The authoritative question is "what blocks a merge on `main`", and its
+  # authoritative answer is the UNION endpoint
+  #   gh api repos/paiml/xpile/rules/branches/main
+  # which on 2026-07-30 returns, per ruleset:
+  #   13878864 "Green Main — unified gate enforcement"      -> gate
+  #   19814559 "workspace-test — repos that emit it (…)"    -> workspace-test
+  # So the merge-blocking set is {gate, workspace-test} as the UNION over both.
+  # Every OTHER job in this file is ADVISORY: it runs on every PR and goes red
+  # on a real regression, but a red advisory job does NOT block a merge. Do not
+  # describe them as merge-blocking.
+  #
+  # ⛔ NEVER CITE ONE RULESET ID AS THE SOURCE OF THAT SET. Until PMAT-1501 this
+  # note read
+  #     "The paiml org branch-protection ruleset 13878864 requires EXACTLY two
+  #      contexts."
+  # which was true when PMAT-1347 measured it and false from 2026-07-27, when
+  # the org MOVED `workspace-test` out of 13878864 into the new 19814559 in an
+  # 18-second refactor. Effective protection on `main` never changed. But a
+  # reader who ran that citation got a one-context answer and re-derived
+  # "`workspace-test` was dropped" — which is not hypothetical: it cost two
+  # days, six documents edited to agree with a weakening that never happened,
+  # an owner decision that did not exist, and a falsehood published to
+  # crates.io in the packaged `contracts/README.md` (PMAT-1475, PMAT-1476).
   #
   # The two marker lines below are MACHINE-READ by
-  # `crates/xpile/tests/ruleset_drift.rs` (XPILE-RULESET-DRIFT-001), which
-  # cross-checks them against the committed snapshot
-  # `docs/status/ruleset-13878864.json` and — when a token is available —
-  # against the live `gh api orgs/paiml/rulesets/13878864`. Editing one
-  # without the others REDS the gate. Keep both lists sorted.
+  # `crates/xpile/tests/ruleset_drift.rs` (XPILE-RULESET-DRIFT-001). It reads
+  # the UNION endpoint above — deliberately not a ruleset id, see its
+  # `BRANCH_RULES_ENDPOINT` — and cross-checks the markers against EVERY
+  # committed receipt DISCOVERED by glob from `docs/status/ruleset-*.json`
+  # (two today: 13878864 and 19814559), refusing to run on fewer than one.
+  # A third ruleset is covered the day its receipt lands, with no call site to
+  # update. Editing a marker without the receipts REDS the gate. Keep both
+  # lists sorted.
   #
   # XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test
   # XPILE-ENFORCEMENT ADVISORY-CONTEXTS: docs, kani, lake-build, lean-models, license-scan, shader-validate, wasi
   #
-  # HISTORY, because the failure mode is the point: this note previously read
+  # ⚠️ THIS PROSE IS NOT GATED, AND THAT IS WHY IT ROTTED (PMAT-1501, measured).
+  # `enforcement_prose_witness.rs` (XPILE-ENFORCE-PROSE-001) exists for exactly
+  # the defect above and could not see it, for TWO independent reasons:
+  #   1. CORPUS — it is quantified over `git ls-files "*.md"`. No gate in this
+  #      repo discovers a `*.yml` PROSE corpus, so all ~180 comment lines in
+  #      `.github/workflows/` are unswept, including this block, which HOSTS the
+  #      markers that gate machine-reads eleven lines above.
+  #   2. SPELLING — and this one bites INSIDE its corpus. Its screen matches a
+  #      CONTEXT NAME in the citing paragraph; the retired sentence stated the
+  #      set as a CARDINALITY ("EXACTLY two contexts"), which names nothing, so
+  #      the paragraph is skipped. Executed as a tracked `.md` file: the
+  #      verbatim sentence PASSES, and rewriting only the spelling to name the
+  #      context reds instantly. A count-shaped attribution evades the gate in
+  #      any Markdown file today.
+  # Both holes are gate work, frozen out of the v0.1.618 window; specified as
+  # XPILE-WORKFLOW-PROSE-001 in `docs/roadmaps/queue.yaml` `next_lane`. Until
+  # it lands this correction is a MEASUREMENT, not an invariant.
+  #
+  # HISTORY, because the failure mode is the point: this note ALSO once read
   # "`workspace-test` is NOT yet GitHub-enforced" — the exact INVERSE of the
   # live state — while `docs/status/ruleset-13878864.json` simultaneously
   # claimed a four-context set `[gate, kani, lake-build, workspace-test]`.

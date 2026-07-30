@@ -13,6 +13,75 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The last live carrier of the falsehood two whole slices were spent killing is the file that HOSTS the markers the enforcement gate machine-reads — and the gate cannot see it for two independent reasons, one of which is live in Markdown too (PMAT-1501)
+
+Ran PMAT-1500's next pick (a): **`.github/workflows/` prose as a corpus** — the
+falsifiability ranking's new top, properties of jobs a reader cannot run. 705 lines,
+~180 comment lines, across `ci.yml`, `release.yml` and `book.yml`.
+
+Four claims measured and **TRUE**, recorded so the sweep is not confused with a
+finding-free skim: `shader-validate`'s *"there is NO skip path"* (no adapter probe in
+`offline_validate.rs`); `lake-build`'s *"NOT ONE `contracts/lean` module imports
+Mathlib"* (all 11 hits are docstrings saying they do not); the 31-crate count in
+`release.yml`; and the `ADVISORY-CONTEXTS` marker equalling job-names-minus-required.
+
+**One file carries the defect, and it is the worst possible file.** The
+`workspace-test` ENFORCEMENT NOTE in `.github/workflows/ci.yml` stated:
+
+> The paiml org branch-protection ruleset 13878864 requires EXACTLY two contexts.
+
+Measured live on 2026-07-30 via `gh api repos/paiml/xpile/rules/branches/main`:
+`13878864` → `[gate]`, and `19814559` → `[workspace-test]`. The set is right; the
+attribution is off by a whole ruleset. This is the **PMAT-1475/PMAT-1476 defect
+verbatim** — the one whose false inference cost two days, six documents edited to agree
+with a weakening that never happened, an owner decision that did not exist, and a
+falsehood shipped to crates.io in the packaged `contracts/README.md`. Neither of those
+slices touched this file: `git log -L` puts the block's last substantive edit at
+PMAT-1347 (`0a6ca974`), which **predates the 2026-07-27 split entirely**. The note's
+description of its own gate was stale in two further ways — it named the single
+snapshot `docs/status/ruleset-13878864.json` where `ruleset_drift.rs` glob-DISCOVERS
+every receipt (two today), and named `orgs/paiml/rulesets/13878864` as the live
+cross-check where that gate's `BRANCH_RULES_ENDPOINT` is the union endpoint, carrying
+the comment *"Not a ruleset id — the 2026-07-27 split is exactly what happens when a
+gate lets a ruleset id stand in for the branch it protects."*
+
+**★★★ THE FINDING IS THE SECOND HALF: A CARDINALITY IS NOT A NAME, AND THE GATE BUILT
+FOR THIS EXACT DEFECT MATCHES ONLY NAMES.** `enforcement_prose_witness.rs`
+(XPILE-ENFORCE-PROSE-001) missed this for **two independent** reasons, and the second
+one is live inside its own corpus. Three arms, executed against the real gate with the
+probe staged so `git ls-files "*.md"` reached it:
+
+| arm | text | result |
+|-----|------|--------|
+| A | the retired sentence **verbatim**, count-shaped | **PASSES** |
+| B | same claim, one word changed to name the context | **REDS**: `names ONLY ruleset 13878864 while claiming ["workspace-test"]` |
+| C | control, no probe file | passes (baseline) |
+
+`attribution_offences()` requires `para.contains(<context name>)`. *"EXACTLY two
+contexts"* names nothing, so `absent` is empty and the paragraph is skipped before any
+verb or endpoint check runs. **Arm A means a count-shaped attribution evades this gate
+in any tracked Markdown file today** — the corpus gap merely explains why *this*
+instance was in a `.yml`. Reason 1 is the corpus: no gate in this repo discovers a
+`*.yml` prose corpus at all (`grep` for one over `crates/xpile/tests/*.rs` → zero), so
+the block that HOSTS the two `XPILE-ENFORCEMENT` markers `ruleset_drift.rs` reads is
+itself eleven lines outside every prose gate's reach.
+
+This is a fifth axis of *in scope ≠ covered*, and the sharpest yet: after completeness
+(PMAT-1498), cadence (PMAT-1495), numeral-free prose (PMAT-1499) and
+vocabulary (PMAT-1500) — **shape**. The gate reads the claim's subject, holds the right
+rule, and the claim is spelled in a form the rule cannot represent. PMAT-1499's lesson
+was that a numeral-free sentence dodges a numeral gate; this is its dual — a
+numeral-**only** sentence dodges a name gate.
+
+FIXED, docs-only under the Wed 18:00 freeze: the note now leads with the union
+endpoint and the per-ruleset attribution, quotes its own retired sentence, corrects
+both stale self-descriptions, and states in the file that this prose is **not** gated.
+**NO GATE** — both holes need `crates/xpile/tests/` edits, frozen out of this window;
+specified as `XPILE-WORKFLOW-PROSE-001` in `docs/roadmaps/queue.yaml` `next_lane` with
+the cardinality needle, the `*.yml` corpus, and a mandatory arm-A positive control so
+the needle cannot be born matching nothing. **Until that lands this correction is a
+MEASUREMENT, not an invariant**, and the note says so in those words.
+
 ### The isolation guarantee under which an irreversible 31-crate publish is pre-flighted named a mechanism that does not produce it — and the tripwire that does could not detect the override this repository's own `Cargo.toml` tells developers to write (PMAT-1500)
 
 Ran PMAT-1499's next pick: sweep safety/security/isolation properties across `docs/`,
