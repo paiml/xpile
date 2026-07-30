@@ -328,6 +328,96 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1497
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the sub-spec that defines this project''s fleet membership publishes eight executable
+    claims and SIX are false against the installed tool -- including BOTH commands that constitute
+    the membership procedure, and one requirement that is discharged inside this repo by a green
+    `cargo test` that runs ZERO tests'
+  result: 'SHIPPED 2026-07-30. Docs-only under the freeze (docs/specifications/sub/kaizen-fleet.md +
+    docs/specifications/xpile-spec.md 20 + docs/status/INDEX.md + CHANGELOG.md + both ledgers; zero
+    crates/*/src, zero contracts/*.yaml, zero gate files, zero Cargo.toml, zero tests/). Tag
+    v0.1.618 is cut at 6b5f6c02, so nothing here touches the release SHA.
+    PICKED as PMAT-1495''s own next-pick (a), the declared-cadence sweep. The sweep''s FIRST result
+    is a HEALTHY CONTROL and it is why this is a finding rather than a complaint: the quarterly SOTA
+    dossier (audit-design.md 0, XPILE-SOTA-001) has a real gate, was published on time (7, 2026-06-12,
+    commit 6f5c50f0), and its next deadline 2026-11-15 is live and green. Same repo, same quarter
+    cadence: the GATED one ran, the UNGATED one never could.
+    MEASURED, every row through the pinned `pv 0.49.0`, each command RUN and its stderr transcribed:
+    (1) `pv kaizen --register xpile` -> `error: unexpected argument ''--register'' found`; this is
+    requirement 5 AND the whole "Registration" block AND the second half of xpile-spec.md 20''s
+    "xpile becomes repo #41 once ... is run". (2) `pv kaizen rollup --quarter 2026Q3` ->
+    `error: unexpected argument ''rollup'' found`; the "Quarterly review" cadence. (3)
+    `pv fleet release --bump minor` -> `error: unrecognized subcommand ''fleet''`. (4) "`pv kaizen`
+    aggregates xpile alongside aprender, depyler, decy, trueno" -> `pv kaizen --dry-run` in this
+    repo root exits `error: no repos found with binding.yaml and sibling directory`; it does not run
+    here at all. (5) "`pv audit` resolves cross-repo deps against the fleet manifest ... xpile''s CI
+    fails before the breakage reaches main" -> `pv audit` takes ONE `<CONTRACT>` path, flags
+    `--binding/--coq/--flux`, no fleet and no cross-repo resolution; `pv audit` is invoked NOWHERE in
+    this repo (CI runs `pv lint contracts/` and nothing else); the example''s subject file
+    `contracts/xlate-py-int-to-i64-v1.yaml` does not exist; and the sole real `cross_repo:` in the
+    tree is `cross_repo: aprender`, not the `repo:CONTRACT-ID` shape the example teaches. (6)
+    "`pv diff` catches when xpile''s API changes break dependents in the fleet" -> `pv diff <OLD>
+    <NEW>` diffs two contract YAML FILES and suggests a semver bump; no repo/dependent/fleet notion.
+    (7) "Pass `pv lint` 8/8 on every PR" -> 8 gates exist, SEVEN run: Gate 7 `reverse-coverage` is
+    SKIPPED (`no --binding or --crate-dir provided`) because the CI step is exactly `pv lint
+    contracts/`. 7/8, never measured. (8) "Fleet-level quarterly rollups via `pv score`"
+    (xpile-spec.md 20) -> `pv score [PATH]` scores contracts in a LOCAL directory; no fleet, no
+    quarter. ONE rollup, TWO published mechanisms, NEITHER exists.
+    ** THE SHARPEST ITEM IS THE ONE INSIDE THIS REPOSITORY, and it needed no external tool.
+    Requirement 2 asks for `cargo test -p <repo>-contracts --lib` "exercising the contract
+    framework". `cargo test -p xpile-contracts --lib` EXITS 0 RUNNING `0 tests`;
+    crates/xpile-contracts/src/lib.rs is 118 lines with ZERO `#[test]` (all targets, not just
+    --lib: 0 tests). It is the ONLY requirement on the list a gate here could ever have checked, and
+    it has read as met for 76 days -- because the requirement is spelled as A COMMAND THAT PASSES
+    rather than A PROPERTY THAT HOLDS, and an empty crate satisfies the first. Same family as
+    PMAT-1384 (exit 0 counted as execution).
+    ** THE SHAPE: A CLAIM ABOUT A THIRD-PARTY BINARY''S CLI SURFACE HAS NO GATE HERE AND CANNOT GET
+    ONE FROM `git ls-files`. PMAT-1480 established that a corpus derived from the tree cannot
+    falsify a claim that LEAVES the repository (release pages, registries). This is the INBOUND
+    mirror: a claim about a tool that ARRIVES from outside. `pv` is a pinned crates.io binary at
+    0.49.0; this page was written 2026-05-15 against whatever surface `pv` had then, or against one
+    it never had. Every honesty gate in crates/xpile/tests/ READS FILES; none RUNS `pv <cmd>
+    --help`. -> Ask of every published command whether anything ever executes it. PMAT-1459''s rule
+    ("a published command that has never been executed is decoration"), now at the CROSS-TOOL
+    boundary, where the decoration rots without anyone touching this repo.
+    ** SECOND: THE FILE WAS IN THE STRICTEST CORPUS AND THE SWEEP WALKED PAST IT. `claim_pages()` in
+    crates/xpile/tests/claims_drift.rs walks ALL of docs/specifications/**, so kaizen-fleet.md has
+    been in scope since the corpus existed -- and PMAT-1455 EDITED THIS VERY FILE on 2026-07-28
+    (86299aa0), correcting its proof-volume paragraph. That gate hunts NUMERALS. Lines 17-47 and
+    89-100 contain COMMANDS, not numbers, so a count-derived gate is structurally blind to them.
+    PMAT-1495 named this blindness for COMPLETENESS; here it is for EXECUTABILITY. BEING EDITED IS
+    NOT BEING AUDITED, and being IN SCOPE is not being COVERED.
+    ** THIRD: TWO SIBLING PAGES OF THE SAME SPEC TREE, EACH LOCALLY CONSISTENT, DISAGREE. Membership
+    requirement 4 (`pvscore` baseline that CI maintains) and the cross-repo `pv audit` enforcement
+    sentence are BOTH listed by sub/ci-gates.md under "Gates planned but not yet wired (post-v0.1.0)"
+    -- XPILE-CI-SCORE-001 and XPILE-CI-PV-AUDIT-001. The contradiction is in-tree and needs no
+    external probe; the only tell is reading them in one pass (PMAT-1482''s shape, third instance).
+    ** FOURTH, THE PROCESS LESSON AND THE MOST TRANSFERABLE PART: PMAT-1495 filed
+    `quarterly-rollup-cadence` as an OWNER DECISION one day earlier, and the mechanism was ONE
+    `--help` AWAY. Escalating was right; STOPPING at the escalation was not. The premise is now
+    narrowed in owner_decisions (`update_1497`): option (2) "keep the row and write the rollup at
+    the 2026-09-30 close" is NOT AVAILABLE, because there is no rollup command to run. An
+    owner-gated question is a reason to escalate and NEVER a reason to stop investigating.
+    ** MY OWN BUG, KEPT: the first draft of requirement 2''s correction asserted "xpile has no
+    xpile-contracts crate" -- inferred from the fleet doc''s `<repo>-contracts` template rather than
+    checked. `ls crates/` has it. Running the command instead of reasoning about it turned a WRONG
+    correction into the strongest finding in the slice (0 tests at exit 0). A correction is a claim
+    and gets the same probe as the thing it corrects.
+    NO GATE -- the 2026-07-29 freeze bars a new tests/ file, and the natural gate must SHELL OUT to
+    `pv --help` (network-free but tool-version-dependent), which is a new capability for this
+    corpus. Filed as XPILE-EXTTOOL-001 in next_lane. Until then the probe table is a MEASUREMENT
+    DATED 2026-07-30, NOT AN INVARIANT, and kaizen-fleet.md says so in those words.
+    NEXT FREE ID PMAT-1498. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+    NEXT PICKS AFTER THE RELEASE: (a) the rest of the cadence sweep -- book/src/ and the contracts
+    inventory headers are still unswept, and the SOTA-dossier control above is the template for what
+    a live one looks like; (b) EVERY OTHER published command in docs/ probed the way this slice
+    probed pv (pmat, gh, lake, wasm-interp, cargo subcommands) -- PMAT-1459 swept the substrate''s
+    falsification commands, nobody has swept the PROSE ones; (c) still open from 1494, owner_decisions
+    and next_lane never drained; (d) still open from 1488, other duplicated normative sets.'
 - id: PMAT-1495
   status: done
   ev_rank: R1
@@ -7620,6 +7710,35 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1497 GATE -- XPILE-EXTTOOL-001, the published-external-command property. Blocked by the Wed
+  2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file). The defect is MEASURED: of the
+  eight executable claims in docs/specifications/sub/kaizen-fleet.md, SIX were false against the
+  pinned `pv 0.49.0` on 2026-07-30, including both commands that constitute this project''s fleet
+  membership procedure, and NOTHING in this repo had ever run any of them.
+  FIVE design constraints, each a way this gate can be born useless -- and note that
+  next_lane specs in this repo have now been caught BORN WRONG three times (PMAT-1481, PMAT-1483,
+  PMAT-1488), so audit this one before writing it.
+  (a) ⛔ THE PROPERTY IS "SOMETHING EXECUTES IT", NOT "THE TOOL HAS THIS SUBCOMMAND". Pinning the
+  literal subcommand set of `pv 0.49.0` makes the gate red on every routine `pv` upgrade and teaches
+  the next operator to silence it. Derive instead: for every fenced `pv ...` / `pmat ...` invocation
+  in docs/**, EITHER it parses against the installed binary (`--help`-shaped dry probe, exit 0)
+  OR the surrounding prose carries a dated measured disclosure that it does not. A page that SAYS
+  "this does not run, measured <date>" is COMPLIANT -- same shape as XPILE-STATUSREG-001 (a) and
+  XPILE-SLIPLEDGER-001 (a).
+  (b) ⛔ NEVER EXECUTE THE COMMAND ITSELF. `pv kaizen --fix`, `pv generate`, `gh release create` and
+  `cargo publish` all appear in docs/ and all MUTATE. The probe must be argument-parse-only, and the
+  gate must PROVE it is (a `--fix` invocation reaching a real run is the gate becoming the incident).
+  (c) ⛔ SKIP LOUDLY, NEVER SILENTLY, WHEN THE BINARY IS ABSENT. `pv` is installed by a CI step;
+  `pmat`/`lake`/`wasm-interp` are not always present. A silent skip reproduces exactly the failure
+  this gate exists to catch. Follow the RUNTIME_PROBES posture and the
+  XPILE_REQUIRE_WASM_RUNTIME=1 hard-panic switch.
+  (d) ⛔ THE TOOL VERSION IS PART OF THE FINDING. Record the probed binary''s `--version` in the
+  failure message; "the docs are wrong" and "the tool moved under us" are different repairs and the
+  message must not conflate them.
+  (e) ⭐ THE IN-TREE HALF IS SEPARABLE, CHEAPER, AND SHOULD SHIP FIRST: a published requirement of
+  the form "`cargo test -p X` passes" must additionally assert the run is NON-VACUOUS. `cargo test
+  -p xpile-contracts --lib` exits 0 on `0 tests` and satisfied membership requirement 2 for 76 days.
+  That needs no external binary, no network, and cannot skip -- same family as PMAT-1384.'
 - 'PMAT-1495 GATE -- XPILE-STATUSREG-001, the register-cadence property. Blocked by the Wed
   2026-07-29 18:00 freeze: it needs a new crates/xpile/tests/ file. The defect is MEASURED:
   docs/status/INDEX.md declares an update cadence for four registers and TWO of them have had no
@@ -8109,7 +8228,26 @@ next_lane:
   frontiers
 owner_decisions:
 - id: quarterly-rollup-cadence
-  status: OPEN — surfaced 2026-07-30 by PMAT-1495. Not blocking the v0.1.618 publish.
+  status: OPEN — surfaced 2026-07-30 by PMAT-1495, PREMISE NARROWED same day by PMAT-1497.
+    Not blocking the v0.1.618 publish.
+  update_1497: 'MEASURED 2026-07-30 (PMAT-1497), and it strikes option (2) below. The writer this
+    register names DOES NOT EXIST. docs/specifications/sub/kaizen-fleet.md "Quarterly review"
+    publishes the exact invocation `pv kaizen rollup --quarter 2026Q3 > docs/status/quarterly/2026Q3.md`;
+    at the pinned `pv 0.49.0` that is `error: unexpected argument ''rollup'' found` -- no `rollup`
+    subcommand, no `--quarter` flag -- and `pv kaizen --dry-run` in this repo root exits on
+    `error: no repos found with binding.yaml and sibling directory`, so it does not run here at all.
+    xpile-spec.md 20 named a DIFFERENT command for the same rollup (`pv score`), which scores
+    contracts in a LOCAL directory and has no fleet/quarter argument. ONE rollup, TWO published
+    mechanisms, NEITHER of which exists. CONSEQUENCE FOR THE DECISION: option (2) ("keep the row and
+    write the 2026-Q3 rollup at the 2026-09-30 close") is NOT AVAILABLE with the tooling as it
+    stands -- choosing it means first finding or building a real rollup command in `pv`, which is a
+    provable-contracts change, not an xpile one. Options (1) STRIKE and (3) RETRO-write are
+    unaffected; the RECOMMENDATION stands at (1), now on stronger ground, since the register was
+    never merely unwritten -- it was never WRITABLE. THE PROCESS LESSON, and it is the reason this
+    field exists: the answer was ONE `--help` AWAY on the day the decision was filed. Escalating was
+    right; STOPPING at the escalation was not. An owner-gated question is a reason to escalate and
+    never a reason to stop measuring -- see the feedback-verify-owner-controlled-state rule, live
+    again one slice later, on the register the previous slice created the decision for.'
   summary: 'Is the quarterly rollup a real commitment, or should it be struck from the
     docs/status/INDEX.md conventions table? MEASURED: the table commits `quarterly/YYYY-Q?.md`
     (from `pv kaizen`) to be written "at quarter close"; `docs/status/quarterly/` has NEVER existed

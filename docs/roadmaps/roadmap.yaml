@@ -24906,6 +24906,84 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1497
+  status: done
+  priority: P1
+  category: honesty
+  title: the sub-spec that defines this project's fleet membership publishes eight executable claims
+    and six are false against the installed tool -- including both commands that constitute the
+    membership procedure -- while the one requirement living inside this repository is discharged by
+    a green `cargo test` that runs zero tests
+  notes: 'SHIPPED 2026-07-30 (post-freeze; docs/specifications/sub/kaizen-fleet.md +
+    docs/specifications/xpile-spec.md 20 + docs/status/INDEX.md + CHANGELOG + both ledgers ONLY --
+    zero crates/*/src, zero contracts/*.yaml, zero gate files, zero tests/, zero Cargo.toml). Tag
+    v0.1.618 is cut at 6b5f6c02, so nothing here touches the release SHA.
+    PICKED as PMAT-1495''s next-pick (a), the declared-cadence sweep. The sweep''s first result is a
+    HEALTHY CONTROL and it is what makes this a finding rather than a complaint about rot: the
+    quarterly SOTA-gap dossier (audit-design.md 0 / XPILE-SOTA-001) has a real gate
+    (sota_dossier_deadline.rs), was published ON TIME (7, dated 2026-06-12, commit 6f5c50f0), and
+    its next deadline 2026-11-15 is live and green. Same repository, same quarterly cadence, two
+    registers: the GATED one ran, the UNGATED one was never even runnable.
+    MEASURED against the pinned `pv 0.49.0`, every command RUN and its stderr transcribed into the
+    page. Six of eight executable claims in sub/kaizen-fleet.md are false: `pv kaizen --register
+    xpile` -> `error: unexpected argument ''--register'' found` (requirement 5, the Registration
+    block, and half of xpile-spec.md 20''s "becomes repo #41 once ... is run"); `pv kaizen rollup
+    --quarter 2026Q3` -> `error: unexpected argument ''rollup'' found` (the Quarterly review
+    cadence); `pv fleet release --bump minor` -> `error: unrecognized subcommand ''fleet''`; `pv
+    kaizen --dry-run` here -> `error: no repos found with binding.yaml and sibling directory`, so it
+    does not run in this repo at all, let alone aggregate a fleet; `pv audit` takes ONE <CONTRACT>
+    path with flags --binding/--coq/--flux and has no fleet manifest or cross-repo resolution, is
+    invoked NOWHERE in this repo, and its example''s subject file
+    contracts/xlate-py-int-to-i64-v1.yaml does not exist; `pv diff <OLD> <NEW>` diffs two contract
+    YAML FILES and suggests a semver bump, with no repo/dependent/fleet notion. Plus two
+    quantitative corrections: `pv lint contracts/` is 7/8 not 8/8 (Gate 7 reverse-coverage SKIPPED,
+    "no --binding or --crate-dir provided", because the CI step is exactly `pv lint contracts/`),
+    and xpile-spec.md 20''s "fleet-level quarterly rollups via `pv score`" names a LOCAL directory
+    scorer -- one rollup, two published mechanisms, neither of which exists.
+    ** THE SHARPEST ITEM NEEDED NO EXTERNAL TOOL. Membership requirement 2 asks for `cargo test -p
+    <repo>-contracts --lib` "exercising the contract framework". `cargo test -p xpile-contracts
+    --lib` EXITS 0 RUNNING 0 TESTS; crates/xpile-contracts/src/lib.rs is 118 lines with ZERO
+    #[test] (all targets: 0 tests). It is the ONLY requirement on the list entirely inside this
+    repository and therefore the only one any gate here could have checked, and it read as met for
+    76 days -- because it is spelled as A COMMAND THAT PASSES rather than A PROPERTY THAT HOLDS, and
+    an empty crate satisfies the first. Same family as PMAT-1384 (exit 0 counted as execution).
+    ** THE SHAPE: A CLAIM ABOUT A THIRD-PARTY BINARY''S CLI SURFACE HAS NO GATE HERE AND CANNOT GET
+    ONE FROM `git ls-files`. PMAT-1480 showed a tree-derived corpus cannot falsify a claim that
+    LEAVES the repository; this is the INBOUND mirror -- a claim about a tool that ARRIVES from
+    outside and can move without anyone touching this repo. Every honesty gate in crates/xpile/tests/
+    READS FILES; none RUNS `<tool> --help`. PMAT-1459''s rule ("a published command that has never
+    been executed is decoration") at the CROSS-TOOL boundary.
+    ** SECOND: IN THE CORPUS, EDITED TWO DAYS AGO, AND STILL UNAUDITED. claim_pages() walks ALL of
+    docs/specifications/**, and PMAT-1455 edited THIS FILE on 2026-07-28 (86299aa0) to fix its
+    proof-volume paragraph. That gate hunts NUMERALS; the broken lines hold COMMANDS. Being in scope
+    is not being covered, and being edited is not being audited.
+    ** THIRD: sub/ci-gates.md ALREADY lists both `pv score --no-regression-vs main`
+    (XPILE-CI-SCORE-001) and `pv audit` (XPILE-CI-PV-AUDIT-001) under "Gates planned but not yet
+    wired". Two locally-consistent sibling pages of one spec tree, disagreeing about whether a
+    membership prerequisite is met -- in-tree, no external probe needed, tell is reading them in one
+    pass (PMAT-1482''s shape, third instance).
+    ** FOURTH, THE PROCESS LESSON: PMAT-1495 filed `quarterly-rollup-cadence` as an OWNER DECISION
+    one day earlier and the mechanism was ONE --help AWAY. Escalating was right; STOPPING at the
+    escalation was not. owner_decisions now carries update_1497: option (2), "keep the row and write
+    the rollup at the 2026-09-30 close", is NOT AVAILABLE because there is no rollup command.
+    ** MY OWN BUG, KEPT IN THE ENTRY: the first draft of the requirement-2 correction asserted
+    "xpile has no xpile-contracts crate", inferred from the doc''s <repo>-contracts template instead
+    of checked; `ls crates/` has it. Running the command rather than reasoning about it turned a
+    WRONG correction into the strongest finding in the slice. A correction is a claim and earns the
+    same probe as the thing it corrects.
+    NO GATE -- the 2026-07-29 freeze bars a new tests/ file, and the natural gate must shell out to
+    `pv --help`, a new capability for this corpus. Filed as XPILE-EXTTOOL-001 in queue.yaml
+    next_lane with five design constraints (parse-only never execute; skip LOUDLY when the binary is
+    absent; record the probed --version; property is "something executes it" not "the tool has this
+    subcommand"; and the in-tree non-vacuous-`cargo test` arm ships first). Until it exists the
+    probe table is a MEASUREMENT DATED 2026-07-30, NOT AN INVARIANT, and the page says so in those
+    words.
+    NEXT FREE ID PMAT-1498. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.'
+  created: '2026-07-30T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
 - id: PMAT-1495
   status: done
   priority: P1
