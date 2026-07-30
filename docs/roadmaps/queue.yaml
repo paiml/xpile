@@ -61,7 +61,7 @@ updated_prev_1481: >-
   NEXT FREE ID PMAT-1482. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- its `gh release
   create` MUST use the step-3 extractor, MUST extract from the TAG (not main), MUST `test -s`
   the body, and MUST append the post-tag CHANGELOG delta under its own heading.
-updated: >-
+updated_prev_1483: >-
   ⛔ READ THIS BEFORE TOUCHING THE RELEASE TOMORROW. PMAT-1483 measured the thing PMAT-1480 and
   PMAT-1481 spent two slices building and neither sized: the release body. The `[0.1.618]` section
   at its own tag is 469,246 CHARACTERS / 7,700 lines. A GitHub release body is capped at 125,000
@@ -134,6 +134,47 @@ updated_prev_1482: >-
   passes, crit 16 passes. The section was maintained ONE CRITERION AT A TIME; nobody read it whole.
   NO GATE -- freeze permits no new tests/ file; filed as its own next_lane entry (XPILE-RELPLAN-001 corpus widening) in
   next_lane as its own entry (XPILE-RELPLAN-001 corpus widening): no exit criterion may contain a version literal.
+updated: >-
+  ⛔ FRIDAY OPERATOR, READ THIS FIRST. PMAT-1488 measured the release runbook's abort rules against
+  the CANONICAL PLAN's copy of them and found the plan telling you the set is A1-A8. docs/RELEASE.md
+  section 6 defines THIRTEEN (A1, A1b, A2..A12); the plan section 5 defined NINE. The four it never
+  had are the four authored in the four days before ship day and EVERY ONE fires or is disclosed
+  tomorrow: A9 (body 469,246 chars vs a 125,000 cap -- the EXPECTED path), A10 (the mandatory
+  sections must survive the cut), A11 (12 reinterpreted README links), A12 (dead documentation URL).
+  Membership was not the only drift -- of the nine both copies carried, EIGHT diverged in wording,
+  and two of the plan's had reverted to falsehoods section 6 already retired: plan A1 demanded
+  `gate` + `workspace-test` as a HARD-CODED PAIR (the literal PMAT-1475/1476 removed, because the
+  required set is org-controlled state that has already moved once) and plan A3 told a tag-day
+  operator to recover a failed tag by "bump to v0.1.618" -- circular, since v0.1.618 IS the version
+  being tagged. FIXED: the plan's nine transcribed rules are DELETED; one definition site, and every
+  other document cites it with `grep -nE '^- \*\*A[0-9]+b? —' docs/RELEASE.md` -- a command, not a
+  range, because the set only grows and a range is a ceiling that rots.
+  ** THE SHAPE: a duplicated rule set is TWO claim surfaces, and each copy's gate checks its own
+  copy's PRESENCE and never the two copies' AGREEMENT. A duplicate does not merely lag on additions;
+  it keeps re-serving corrections made somewhere else.
+  ** SECOND, demonstrated both ways: the gate over the surviving copy STOPS AT A8. Deleting A8's
+  definition bullet REDS `the_release_doc_documents_the_procedure_and_the_abort_rules`; deleting all
+  four of A9/A10/A11/A12's leaves it GREEN AT EXIT 0. Alive and blind exactly at the A8/A9 boundary.
+  Ungated by choice (freeze bars a tests/ edit) -- XPILE-ABORTRULE-001 in next_lane, and its spec
+  must DERIVE section 6's rules, not add four.
+  ** THIRD: that gate's module header argues the very principle it breaks ("re-derived from
+  git ls-files ... rather than the day someone remembers to update a list") and test 4 IS the list.
+  A file can hold a correct principle and a violation of it, and the principle reads as coverage for
+  both.
+  ** MY OWN BUGS, both kept: (1) the first draft of the section-6 disclosure QUOTED the rules'
+  bullet markers, which ARE the gate's needles -- shipped, it would have satisfied the A8 check from
+  my own paragraph and gone green over a genuinely deleted rule. Rewritten with a computed marker,
+  then audited: each of the thirteen needles appears EXACTLY ONCE, at its definition. Documenting
+  what a text-scanning gate looks for WRITES INTO ITS CORPUS. (2) the falsification recipe published
+  in section 6 was wrong on first spelling -- its computed marker consumed the `A` its regex
+  expected, so it matched nothing, wrote the file back unchanged, and the gate passed over an
+  UNMUTATED tree. That green is indistinguishable from the green that demonstrates the defect; only
+  the recipe's own `assert ... == len(lines) - 4` exposed it. The block was then EXTRACTED FROM THE
+  FILE and run, never retyped.
+  NEXT FREE ID PMAT-1489. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- run section 5 step 3
+  AS IT READS IN THE FILE (extract, never retype), extract from the TAG not main, `test -s` the
+  body, expect A9, and after the batch expect A11 and A12 in post-tag form. All predicted, all
+  disclosed, NONE a reason to touch the batch. A7: NO FRIDAY CODE.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -189,6 +230,57 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1488
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the CANONICAL PLAN tells the release operator the abort-rule set is A1-A8, and the four
+    rules that actually fire on ship day are A9, A10, A11 and A12 — the rules were written down
+    TWICE and nothing ever compared the two copies'
+  notes: 'PICKED on Day 5 (Thu 2026-07-30) with the ranked queue empty of actionable items —
+    PMAT-1373 merged, PMAT-1374 dated 07-31, PMAT-1375 the DEFERRED 0.1.619 lane — from PMAT-1487''s
+    next-pick lead (b), which read "release_preflight_witness.rs enumerates A1..A8; A9/A10/A11/A12
+    are all invisible to it". CONFIRMED and WIDENED: the lead named the gate, and the larger defect
+    was the SECOND COPY of the rules in the document the operator is told to read every run.
+    POST-FREEZE LANE RESPECTED: docs/RELEASE.md + the sprint plan + CHANGELOG.md + roadmap.yaml +
+    queue.yaml. ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gates, ZERO Cargo.toml.
+    ** MEASURED on this tree: docs/RELEASE.md section 6 DEFINES A1, A1b, A2..A12 (thirteen); the
+    plan section 5 defined A1, A1b, A2..A8 (nine) under the same heading. The four absent ones are
+    the four authored in the four days before ship day and EVERY ONE fires or is disclosed tomorrow.
+    ** Of the nine both copies carried, EIGHT had diverged in wording (only A2 byte-identical) and
+    two had reverted to falsehoods section 6 already retired: plan A1''s HARD-CODED `gate` +
+    `workspace-test` pair (the PMAT-1475/1476 literal) and plan A3''s "bump to v0.1.618" (correct for
+    a v0.1.617 Friday, CIRCULAR after the retarget). A stale version literal in a RECOVERY
+    instruction does not read as stale — it reads as a step.
+    ** ⭐ THE SHAPE: a duplicated rule set is TWO claim surfaces, and each copy''s gate was written
+    to check its own copy''s PRESENCE and never the two copies'' AGREEMENT.
+    release_preflight_witness.rs reads the runbook, release_plan_freshness_witness.rs reads the
+    plan, NEITHER reads the other''s file.
+    ** SECOND FINDING, both halves RUN: the gate over the surviving copy stops at A8. Deleting A8''s
+    definition bullet REDS it; deleting all four of A9/A10/A11/A12''s leaves it GREEN AT EXIT 0.
+    Four additions in four days escaped — evidence about the SHAPE (extend a literal vs derive the
+    set), not about anyone''s memory.
+    ** THIRD: the gate''s own module header argues the principle it breaks — "re-derived from
+    git ls-files on every run, so a witness that adds a ninth tripwire is covered the day it lands
+    rather than the day someone remembers to update a list" — and test 4, same file, IS that list.
+    FIXED: plan''s nine transcribed rules DELETED, replaced by a single-definition-site directive
+    plus the enumeration command; the ratified scope sentence and exit criterion 16 both said
+    "abort rules A1-A8" and are now DERIVED (three runnable commands, all executed before being
+    written down, NON-VACUITY ANCHORED ON THE NAME A1 rather than a count). Section 6 gains the
+    single-site directive and the gate-coverage disclosure with a falsification recipe. THREE further
+    A1-A8 sites (CHANGELOG, roadmap.yaml, queue.yaml) deliberately LEFT — all dated PMAT-1416 records
+    of what that slice shipped, when eight WAS the set.
+    ** MY OWN BUGS, both kept in the published entry: (1) the first disclosure draft QUOTED the
+    rules'' bullet markers — which ARE the gate''s needles — so it would have satisfied the A8 check
+    from my own prose and gone green over a genuinely deleted rule. The same file''s header states
+    the rule I broke ("a gate that scans source for call sites must not print call sites") one screen
+    above where I broke it. Needle-count audit: all thirteen appear EXACTLY ONCE. (2) the published
+    falsification recipe matched nothing on first spelling (its computed marker ate the `A` the regex
+    expected), wrote the file back unchanged and the gate passed over an UNMUTATED tree — a green
+    indistinguishable from the demonstrating green, exposed only by the recipe''s own assert
+    ("mutation did not apply: 998 -> 998"). Then EXTRACTED FROM THE FILE and run.
+    NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. NO FRIDAY CODE (A7).'
 - id: PMAT-1487
   status: done
   ev_rank: R1
@@ -3698,7 +3790,7 @@ queue:
     lead (b).'
 
 - id: PMAT-1375
-  status: open
+  status: deferred
   ev_rank: DEFERRED
   gate_touch: null
   title: '[0.1.619 LANE — DO NOT START THIS WINDOW] `backend-exec` ADVISORY CI job: elan + pinned ruchy/forjar
@@ -7091,6 +7183,37 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1488 GATE — XPILE-ABORTRULE-001, the abort-rule single-definition-site property. Blocked
+  ONLY by the Wed 2026-07-29 18:00 freeze (it edits crates/xpile/tests/), S-sized, network-free, and
+  the defect is MEASURED both ways: deleting A8''s definition bullet from docs/RELEASE.md REDS
+  `the_release_doc_documents_the_procedure_and_the_abort_rules`, deleting all four of
+  A9/A10/A11/A12''s leaves it GREEN AT EXIT 0.
+  ⭐ THE ONE THING THAT MAKES THIS GATE WORTH WRITING: DO NOT ADD FOUR NAMES TO THE LITERAL. Four
+  additions escaped in four days; a fifth will escape a list of twelve exactly as easily. The rule
+  set must be DERIVED from docs/RELEASE.md section 6 itself, which makes "a rule was deleted"
+  unstateable-by-omission and turns the gate into a CROSS-DOCUMENT AGREEMENT check.
+  FIVE design constraints, each a way this gate can be born useless — the fourth day running that
+  auditing an unwritten spec has paid.
+  (a) DERIVE, DO NOT ENUMERATE. Parse section 6 for its definition bullets and take THAT as the set.
+  The existing test 4 keeps its structural role (the section exists, the procedure/purge/skew/
+  User-Agent content is present) but must stop naming individual rules.
+  (b) THE ASSERTION IS AGREEMENT, NOT PRESENCE. Every A-rule CITED anywhere in docs/RELEASE.md or
+  docs/specifications/sub/sprint-6day-2026-07-26.md must be DEFINED in section 6, and the plan must
+  DEFINE none. That is the defect stated as a universal; presence-only is what missed it.
+  (c) NON-VACUITY ANCHORED ON A NAME, NEVER A COUNT. A section 6 that defines nothing makes (b) pass
+  for free. Anchor on A1 being in the derived set — monotone, and unlike a count it cannot become a
+  ceiling. This is the ANCHOR_TRIPWIRE pattern already in the same file.
+  (d) THE GATE MUST NOT PRINT ITS OWN NEEDLES, and this is not hypothetical — it bit while writing
+  the PMAT-1488 disclosure, and the module header already states the rule ("a gate that scans source
+  for call sites must not print call sites"). If the new arm greps for a bullet marker, the marker
+  must be COMPUTED, and the acceptance control is a needle-count over docs/RELEASE.md asserting each
+  rule''s marker appears exactly once. A gate whose own documentation satisfies it is worse than no
+  gate: it reads as mitigated.
+  (e) RUN THE RED HALF, AND ASSERT THE MUTATION APPLIED. Delete one rule from a COPY of section 6
+  and confirm the red; delete a rule the OLD literal did not cover and confirm the red (the old
+  literal''s blind spot is the regression this exists to prevent). Both mutants must assert their own
+  line-count delta first — an unapplied mutation produces a green that looks exactly like an
+  acquittal, which is how the PMAT-1488 recipe failed on its first spelling.'
 - 'PMAT-1487 GATE — XPILE-CRATEURL-001, the published-metadata-URL property. Blocked ONLY by the
   Wed 2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file), XS-sized, and the defect is
   already MEASURED: the ONE member of 31 with no `lib` target is the ONE member that sets

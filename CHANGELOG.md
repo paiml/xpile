@@ -7,6 +7,103 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The canonical plan tells tomorrow's operator the abort-rule set is A1–A8, and the four rules that actually fire tomorrow are A9, A10, A11 and A12 (PMAT-1488)
+
+**The abort rules were written down twice, and nothing ever compared the two
+copies.** `docs/RELEASE.md` §6 is the runbook's set; the sprint plan
+`docs/specifications/sub/sprint-6day-2026-07-26.md` §5 carried its own
+transcription under the same heading. Measured on this tree, 2026-07-30:
+
+| | rules **defined** |
+|---|---|
+| `docs/RELEASE.md` §6 | A1, A1b, A2, A3, A4, A5, A6, A7, A8, **A9, A10, A11, A12** |
+| plan §5 | A1, A1b, A2, A3, A4, A5, A6, A7, A8 |
+
+The four the plan never had are the four written in the four days before ship day,
+and **every one of them fires or is disclosed on 2026-07-31**: A9 (the release
+body is 469,246 chars against a 125,000 cap — the expected path), A10 (the
+mandatory sections must survive the cut), A11 (12 reinterpreted README links) and
+A12 (a dead `documentation` URL). The plan is the document the release operator
+is instructed to read every run; the runbook is where the rules kept landing.
+
+**And the drift is not only membership.** Of the nine rules both copies carried,
+**eight had diverged in wording** — only A2 was byte-identical — and two of the
+plan's versions had reverted to a falsehood §6 already retired:
+
+- **plan A1** demanded `gate` + `workspace-test` SUCCESS as a **hard-coded pair**.
+  That literal is what PMAT-1475/PMAT-1476 removed: the required set is
+  org-controlled state outside this repo and it has already moved once, so §6 says
+  *every REQUIRED context*.
+- **plan A3** told a tag-day operator to recover a failed tag by "bump to
+  **v0.1.618**". Correct when the plan was authored for a v0.1.617 Friday;
+  **circular** after the retarget, because v0.1.618 *is* the version being tagged.
+  §6 says *bump the patch number*. A stale version literal in a recovery
+  instruction does not read as stale — it reads as a step.
+
+★ **THE SHAPE: a duplicated rule set is two claim surfaces, and each copy's gate
+was written to check its own copy's PRESENCE, never the two copies' AGREEMENT.**
+`release_preflight_witness.rs` checks the runbook; `release_plan_freshness_witness.rs`
+checks the plan; neither reads the other's file. A duplicate does not merely lag
+on additions — it keeps re-serving corrections that were made somewhere else.
+
+★ **AND THE GATE OVER THE SURVIVING COPY STOPS AT A8.** The test is named
+`the_release_doc_documents_the_procedure_and_the_abort_rules` and its rule set is
+a hard-coded literal ending at A8, written when eight was the whole set.
+Demonstrated, both halves run: deleting A8's definition bullet **reds** it;
+deleting all four of A9's, A10's, A11's and A12's leaves it **green at exit 0**.
+So the gate is alive and blind exactly at the A8/A9 boundary, and four additions
+in four days escaped it — which is evidence about the *shape* (extend a literal
+vs. derive the set), not about anyone's memory. Ungated by choice: a gate edit is
+barred by the 2026-07-29 18:00 freeze. `XPILE-ABORTRULE-001` in `queue.yaml`
+`next_lane` carries the spec, and it must **derive** §6's rules, not add four.
+
+★ **The gate's own module header argues the principle it then breaks.** It says
+the tripwire set "is re-derived from `git ls-files` on every run, so a witness
+that adds a ninth tripwire is covered the day it lands rather than the day someone
+remembers to update a list" — and test 4, in the same file, is that list. The
+header does disclose test 4 is a *structural presence check*; what it does not say
+is that its rule set is **frozen**. **A file can hold a correct general principle
+and a violation of it, and the principle reads as coverage for both.**
+
+**FIXED (docs-only under the freeze).** The plan's nine transcribed rules are
+**deleted**, replaced by a single-definition-site directive plus the enumeration
+command `grep -nE '^- \*\*A[0-9]+b? —' docs/RELEASE.md` — a command instead of a
+range, because the set only grows and any range is a ceiling that rots. The
+plan's ratified scope sentence and exit criterion 16 both said "abort rules
+A1–A8" and are now derived: three runnable commands (the plan defines no rule;
+every rule cited in either document is defined in §6; **non-vacuity anchored on
+the name A1, never on a count**, since a §6 that defines nothing makes the second
+check pass for free). All three were executed against this tree before being
+written down. §6 gains the single-site directive and the gate-coverage
+disclosure with a falsification recipe.
+
+**Three further `A1–A8` sites were found and deliberately LEFT** — `CHANGELOG.md`
+line ~5530, `docs/roadmaps/roadmap.yaml`, `docs/roadmaps/queue.yaml`, all inside
+dated PMAT-1416 records of what that slice shipped, when eight *was* the set.
+A dated ledger entry is a record of a past state, not a claim about today; the
+two sites that were fixed are the two that tell a *future* operator what to do.
+
+⚠️ **MY OWN BUG, THE ONE MOST WORTH KEEPING: the first draft of the §6
+disclosure quoted the rules' bullet markers in prose — and those markers are the
+gate's needles.** Shipped that way, the gate would have found `A8`'s needle in my
+paragraph and gone green over a genuinely deleted A8: a disclosure that disarms
+the check it describes. The same file's header states the rule I broke — "a gate
+that scans source for call sites must not print call sites" — one screen above
+where I broke it. Rewritten with a computed marker, then audited: each of the
+thirteen needles now appears in `docs/RELEASE.md` **exactly once**, at its
+definition. → **When you document what a text-scanning gate looks for, you are
+writing into its corpus. Count the needles afterwards.**
+
+⚠️ **SECOND, AND IT PRODUCED A FALSE GREEN I ALMOST BELIEVED:** the falsification
+recipe published in §6 was wrong on first spelling — its computed marker consumed
+the `A` its regex then expected, so it matched nothing, wrote the file back
+unchanged, and the gate ran over an **unmutated** tree and passed. That green
+looks identical to the green that demonstrates the defect. What made it visible
+was the `assert len(kept) == len(lines) - 4` inside the recipe, which printed
+`mutation did not apply: 998 -> 998`. The block was then **extracted from the
+file and executed**, not retyped — PMAT-1459's rule and PMAT-1484's "assert your
+mutation applied before you believe your acquittal", both live again in one run.
+
 ### The flagship's `documentation` URL has never rendered a page and structurally cannot — the one crate of 31 with no library target is the one crate that points the registry's "Documentation" link at docs.rs (PMAT-1487)
 
 **Two facts live in the same manifest and nobody had put them side by side.**
