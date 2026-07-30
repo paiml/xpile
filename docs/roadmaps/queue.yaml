@@ -189,6 +189,61 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1485
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the release body points at a file it knows is 526 lines out of date and says nothing —
+    TWO rules for the tag/`main` gap were written into the runbook and NEITHER was ever code, and
+    the prefix cut can swallow the three disclosures PMAT-1484 rescued into an unclosed code fence'
+  notes: 'PICKED on Day 5 (Thu 2026-07-30) with the ranked queue empty of actionable items —
+    PMAT-1373 merged, PMAT-1374 is dated 07-31, PMAT-1375 is the DEFERRED 0.1.619 lane. POST-FREEZE
+    LANE RESPECTED: docs/RELEASE.md + CHANGELOG.md + roadmap.yaml + queue.yaml only. ZERO
+    crates/*/src, ZERO contracts/*.yaml, ZERO gates.
+    ** METHOD, and it is the whole finding: THREE slices have now edited §5 step 3 and this one RAN
+    it — extracted the fenced block FROM THE FILE, substituted the real tag, neutralised only the
+    three network lines, executed. It exits 0 and reproduces its documented figures EXACTLY (123,236
+    chars / 1,764 spare). The defect is in what it does NOT emit, which no amount of reading finds.
+    ** FINDING 1 (fired, measured): `grep -ci post-tag /tmp/relbody.md` → 0. PMAT-1481''s APPEND rule
+    and PMAT-1483''s BY-REFERENCE rule were both written into the prose and NEITHER was implemented.
+    The delta''s only trace was `git diff --stat` to a TERMINAL one line above `gh release create` —
+    A TERMINAL IS NOT A PUBLISHER. Friday''s body would have asserted "The authoritative text is the
+    file: `git show v0.1.618:CHANGELOG.md`" while that command returns a tree missing 526 lines
+    across 5 commits, and those five are PMAT-1480..1484 — the entire arc that BUILT this procedure,
+    INCLUDING the entry announcing the truncation rule the reader is holding. ACCELERATING: 97 lines
+    on 07-29, 526 on 07-30, because the freeze permits precisely the docs lane that edits this file.
+    ** FINDING 2 (latent, armed, demonstrated): the cut lands at an arbitrary line boundary and
+    nothing made it respect fenced blocks. Odd `^```` parity leaves a fence open and the cut marker
+    PLUS all three mandatory sections render as one code span — while `grep -q ''^### What still
+    REFUSES$''` still matches, so PMAT-1484''s acquittal control PASSES at exit 0 on a body no reader
+    can read as sections. That is 1484''s own "a spot-check finds the string and the reader cannot
+    tell a citation from a section" failure, one layer beneath its own fix. v0.1.618''s prefix holds
+    8 fences — EVEN BY LUCK, NOT BY CONSTRUCTION.
+    ** FINDING 3 (self-contradiction): the step''s CLOSING sentence still read "the omission is
+    repaired by APPENDING the post-tag delta under its own dated heading", unconditional, 21 lines
+    below the paragraph that had already scoped that rule to "any release that fits" — and v0.1.618
+    does not fit, so the surviving form is UNSATISFIABLE on the release it governs. It was the LAST
+    line of the step, the one an operator reads last. This is PMAT-1483''s own §0-vs-§2b finding
+    recurring ONE SLICE LATER INSIDE A SINGLE SECTION.
+    ** FIXED: DELTA_N/DELTA_L computed BEFORE the budget (1484''s carve-out lesson applied to the
+    delta), notice built into /tmp/reldelta.md naming every post-tag commit, riding at the TOP in
+    BOTH regimes. TOP is load-bearing twice — appending would bury it past 7,700 lines AND break the
+    byte-for-byte tail assertion. Empty delta ⇒ under-cap body is the section byte for byte,
+    unchanged. Cut marker auto-closes an odd fence; parity assertion beside the headings loop.
+    ** RE-MEASURED from the file after the change: notice 1,157 chars, body 123,266 / 1,734 spare,
+    lines 1-1,550 + 7,319-7,700, 3 headings, tail byte-identical, parity even, exit 0.
+    ** BOTH GUARDS DRIVEN RED: stripping the notice reproduces the shipped behaviour and aborts
+    "ABORT: 5 post-tag commits and the body discloses none — A10"; a synthetic in-fence prefix aborts
+    "ABORT: body has an unclosed code fence — A10" with the auto-close disabled.
+    ** NO GATE (freeze: new tests/ file + network). next_lane[0] gains constraint (g) — the FOURTH
+    correction to that unwritten gate''s spec on four consecutive days.
+    ** NEW SHAPE FOR THE PLAYBOOK: a rule can be written, cited, amended, and re-amended across three
+    slices and never once be EXECUTABLE. Prose that describes what a code block does is not a
+    description — it is an untested claim about the block, and the block is right there to run.
+    NEXT FREE ID PMAT-1486. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 — the step-3 block is
+    now execution-verified end to end against the real tag; run it FROM THE FILE, expect A9
+    truncation, and expect the post-tag delta notice (recount it on the day, it will exceed 526).'
 - id: PMAT-1484
   status: done
   ev_rank: R1
@@ -6954,9 +7009,30 @@ next_lane:
   because the PMAT-1473/1474/1478 narratives are about them, so a phrase grep passes on a body that
   has none of the sections) and assert the excerpt''s tail is byte-identical to the section''s tail.
   The acquittal control (c) grows a fourth arm: append the tail ONE LINE SHORT and confirm it REDS.
-  ★ Note this spec has now been corrected THREE TIMES BEFORE THE GATE WAS EVER WRITTEN — (d) which
+  (g) ⚠️⚠️ ADDED BY PMAT-1485 — **THE BODY MUST DISCLOSE THE POST-TAG DELTA, AND (d)''s COROLLARY
+  ASSUMED CODE THAT DID NOT EXIST.** (d) said a body "legitimately carrying an APPENDED post-tag
+  delta" must be compared on its leading region; (e) said above the cap it is disclosed by
+  reference instead. MEASURED 2026-07-30 by running docs/RELEASE.md step 3 from the file:
+  `grep -ci post-tag /tmp/relbody.md` → **0**. NEITHER rule was ever implemented — the delta''s only
+  appearance was a `git diff --stat` printed to a TERMINAL, so every body this procedure would have
+  produced points at `git show <tag>:CHANGELOG.md` while that tree is knowably stale (**526 lines /
+  5 commits** on 2026-07-30, up from 97 the previous day, because the freeze permits exactly the
+  docs lane that edits CHANGELOG.md). THE RULE: when `git rev-list --count <tag>..origin/main --
+  CHANGELOG.md` is non-zero, the body MUST contain a delta disclosure naming the commit count and
+  the line count; assert its PRESENCE, never its position-in-file, and note the notice now rides at
+  the TOP in BOTH regimes so (f)''s byte-identical-tail assertion still holds. SECOND HALF, and it
+  weakens (f) if unstated: a prefix cut can end INSIDE a fenced block, and an unclosed fence renders
+  the cut marker and all three mandatory sections as ONE CODE SPAN while `grep -q ''^### …$''` still
+  matches — (f)''s heading assertion passes on a body no reader can read as sections. Assert
+  `grep -c ''^```'' % 2 == 0` on the body. On v0.1.618 the prefix holds 8 fences: even BY LUCK.
+  The acquittal control (c) grows a fifth and sixth arm: strip the delta notice from a body with a
+  non-empty delta and confirm it REDS; leave a fence open and confirm it REDS.
+  ★ Note this spec has now been corrected FOUR TIMES BEFORE THE GATE WAS EVER WRITTEN — (d) which
   tree, (e) is the invariant satisfiable at this scale, (f) does the invariant pin membership or only
-  quantity. Auditing an unwritten gate''s spec has paid on three consecutive days.
+  quantity, (g) does the body disclose what its own pointer omits, and does the reader SEE the
+  sections (f) proved present. Auditing an unwritten gate''s spec has paid on FOUR consecutive days,
+  and every one of the four would have shipped a gate that red-ed on a correct release or passed on
+  a defective body.
   ★ WHY IT IS WORTH A GATE AT ALL: this is the only publisher of repo facts that is structurally
   invisible to `git ls-files`, and it is the copy read WITHOUT a clone. The broader sweep the shape
   opens (crates.io rendered READMEs, doc sites, issue templates) is a SEPARATE, larger lead.'

@@ -7,6 +7,81 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The release body points at a file it knows is 526 lines out of date and says nothing — two rules for the tag/`main` gap were written and neither was ever code, and the prefix cut can swallow the disclosures it protects into a code fence (PMAT-1485)
+
+**Three slices have now edited `docs/RELEASE.md` §5 step 3, and this one ran it.**
+The block was extracted *from the file* and executed against the real `v0.1.618`
+tag — the control PMAT-1483 introduced after a published-but-never-run command
+wrote a zero-byte body at exit 0. It exits 0 and reproduces its documented
+figures exactly (123,236 characters, 1,764 to spare). The defect is in what it
+does **not** emit.
+
+**Both rules for the tag/`main` gap were prose only.** PMAT-1481 established that
+the body is extracted at the **tag** and the omission repaired by *appending* the
+post-tag delta; PMAT-1483 amended that to *disclosure by reference* once the body
+went 3.8× over cap. Neither was ever implemented. Measured by running the block
+and grepping its output: `grep -ci post-tag /tmp/relbody.md` → **0**. The delta's
+only trace was a `git diff --stat` printed to the operator's terminal one line
+above `gh release create`, and **a terminal is not a publisher**. So Friday's body
+would have gone out asserting *"The authoritative text is the file: `git show
+v0.1.618:CHANGELOG.md`"* while that command returns a file missing **526 lines
+across 5 commits** — `PMAT-1480` … `PMAT-1484`, which is the whole arc that built
+this procedure, **including the entry announcing the truncation rule the reader is
+holding**. The gap is also accelerating, and that is the part that matters: it was
+**97 lines** when PMAT-1481 measured it on 2026-07-29 and **526** the next
+morning, because the hard freeze permits precisely the docs lane that edits this
+file. A pointer whose target is knowably incomplete, with the incompleteness
+unstated, is `v0.1.616`'s 5.5%-of-the-story defect relocated one level up.
+
+**Fixed, and the placement is load-bearing twice.** `DELTA_N` / `DELTA_L` are
+computed **before** the budget — PMAT-1484's lesson (carve out what must be
+published, then size the prefix around it) applied to the delta — the notice is
+built into `/tmp/reldelta.md` naming every post-tag commit, and it rides at the
+**top** of the body in both regimes. Appending it, PMAT-1481's literal wording,
+would bury the disclosure past 7,700 lines *and* break the byte-for-byte tail
+assertion, because the body's last `MAND_L` lines would become the notice instead
+of *Known divergences*. At the top, one spelling serves both regimes; with no
+delta the notice is an empty file and the under-cap body is the section byte for
+byte, unchanged. Re-measured after the change: notice **1,157 characters**, prefix
+shrinks to absorb it, body **123,266 characters / 1,734 to spare**, lines 1–1,550
+plus 7,319–7,700.
+
+**A prefix cut can land inside a code fence, and the 1484 acquittal control cannot
+see it.** The cut is at an arbitrary line boundary and nothing made it respect
+fenced blocks. An odd count of `^```` lines leaves a fence open and everything
+after it — the cut marker **and all three mandatory sections** — renders as one
+code span, while `grep -q '^### What still REFUSES$'` still matches and the
+control passes at exit 0. That is the exact *"a spot-check finds the string and the
+reader cannot tell a citation from a section"* failure PMAT-1484 wrote about,
+reappearing one layer beneath its own fix. On `v0.1.618` the prefix holds **8**
+fences — even, so safe **by luck**. The cut marker now closes an odd fence and a
+parity assertion runs beside the headings loop.
+
+**Both new guards were driven red, not just green.** Removing the notice from the
+header reproduces the shipped behaviour and aborts with `ABORT: 5 post-tag commits
+and the body discloses none — A10`; a synthetic prefix ending inside a fence
+aborts with `ABORT: body has an unclosed code fence — A10` once the auto-close is
+disabled.
+
+**And the runbook was arguing with itself.** The step's **closing** sentence still
+read *"the omission is repaired by appending the post-tag delta under its own
+dated heading"* — unconditional, 21 lines below the paragraph that had already
+scoped that rule to *"any release that fits"*, and `v0.1.618` does not fit, so the
+form left standing is unsatisfiable on the release it governs. It was also the last
+line of the step, which is the one an operator reads last. This is PMAT-1483's own
+finding — §0 teaching what §2b forbids — recurring one slice later **inside a
+single section**: amending a rule does not amend its restatements, and a document
+that contradicts itself is decided by reading order, not by which sentence is
+right.
+
+**Still not a gate.** This is measurement plus a runbook control, exactly like
+PMAT-1480 and PMAT-1484: `XPILE-RELBODY-001` needs a new file under
+`crates/xpile/tests/` and network access, both frozen. Its spec in `next_lane[0]`
+now carries constraint **(g)** — the body must disclose the post-tag delta
+whenever one exists, and must not leave a fence open — the **fourth** correction
+that auditing has made to an unwritten gate's spec, on four consecutive days,
+before that gate could be born wrong.
+
 ### The body that now fits publishes none of the three sections it exists to publish — a size budget picked *how many* lines survive and nobody ever chose *which* (PMAT-1484)
 
 **PMAT-1483 made the release body fit. This slice asks what is in it.** Yesterday's

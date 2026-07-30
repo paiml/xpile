@@ -302,8 +302,36 @@ conclusion; a green `gh pr checks` does not include it.**
      { echo "ABORT: mandatory sections are not all at the tail — A10"; exit 1; }
    MAND_C=$(wc -m < /tmp/relmand.md); MAND_L=$(wc -l < /tmp/relmand.md)
 
-   if [ "$FULL_C" -le "$CAP" ]; then
-     cp /tmp/relsection.md /tmp/relbody.md          # body IS the section, byte for byte
+   # THE POST-TAG DELTA IS A FACT ABOUT THIS BODY, so it is built HERE — before
+   # the budget — and rides INSIDE the body. Printing it to a terminal is not
+   # disclosing it. PMAT-1484's lesson applied to the delta: carve out what MUST
+   # be published first, then budget the prefix around what is left.
+   DELTA_N=$(git rev-list --count "v$V"..origin/main -- CHANGELOG.md)
+   DELTA_L=$(git diff --numstat "v$V"..origin/main -- CHANGELOG.md | awk '{ s += $1 } END { print s+0 }')
+   : > /tmp/reldelta.md
+   if [ "${DELTA_N:-0}" -gt 0 ]; then
+     {
+       echo
+       echo "> **⚠️ \`CHANGELOG.md\` HAS MOVED SINCE THIS TAG, AND THIS BODY DOES NOT"
+       echo "> CONTAIN THE DIFFERENCE.** The text below was extracted from tag"
+       echo "> \`v$V\`, which is what shipped. Since the tag object was written,"
+       echo "> **${DELTA_N} further commit(s) added ${DELTA_L} line(s)** to"
+       echo "> \`CHANGELOG.md\` on \`main\`. That text is in neither this body nor"
+       echo "> \`git show v$V:CHANGELOG.md\`; read it with"
+       echo "> \`git log -p v$V..origin/main -- CHANGELOG.md\`. Subjects over 120"
+       echo "> characters are elided with \`…\`:"
+       git log --format='%h%x09%s' "v$V"..origin/main -- CHANGELOG.md \
+         | awk -F'\t' '{ s=$2; if (length(s) > 120) s = substr(s,1,119) "…"; printf "> - `%s` %s\n", $1, s }'
+     } > /tmp/reldelta.md
+   fi
+   DELTA_C=$(wc -m < /tmp/reldelta.md)
+
+   if [ "$FULL_C" -le "$CAP" ] && [ "$(( FULL_C + DELTA_C ))" -le "$CAP" ]; then
+     # PMAT-1481's append rule, relocated to the TOP of the body: a disclosure
+     # buried past 7,700 lines is not one, and appending it at the END would
+     # break the byte-for-byte tail assertion below. An empty delta degenerates
+     # this to `cp` — body IS the section, byte for byte.
+     { head -1 /tmp/relsection.md; cat /tmp/reldelta.md; tail -n +2 /tmp/relsection.md; } > /tmp/relbody.md
    else
      RESERVE=2000; BUDGET=$(( CAP - RESERVE - MAND_C ))
      [ "$BUDGET" -gt 0 ] || { echo "ABORT: mandatory sections alone are ${MAND_C} chars — A10"; exit 1; }
@@ -319,9 +347,12 @@ conclusion; a green `gh pr checks` does not include it.**
        echo "> *What still REFUSES* / *What is NOT merge-blocking* /"
        echo "> *Known divergences* (${MAND_L} lines), which are the tail of the"
        echo "> section and which a leading-prefix cut would otherwise drop in full."
-       echo "> The authoritative text is the file: \`git show v$V:CHANGELOG.md\`."; echo
+       echo "> The authoritative text is the file: \`git show v$V:CHANGELOG.md\`."
+       cat /tmp/reldelta.md
+       echo
      } > /tmp/relbody.md
      HDR_L=$(wc -l < /tmp/relbody.md); HDR_C=$(wc -m < /tmp/relbody.md)
+     [ "$(( BUDGET - HDR_C ))" -gt 0 ] || { echo "ABORT: header+delta ${HDR_C} exhausts the budget — A10"; exit 1; }
      # awk's `length()` counts characters in a UTF-8 locale, the same unit as
      # the cap — so the budget arithmetic is consistent end to end.
      tail -n +2 /tmp/relsection.md \
@@ -331,6 +362,12 @@ conclusion; a green `gh pr checks` does not include it.**
      KEPT_L=$(( $(wc -l < /tmp/relbody.md) - HDR_L + 1 ))
      {
        echo
+       # A cut at an arbitrary line boundary can land INSIDE a fenced block. The
+       # unclosed fence then swallows the cut marker AND all three mandatory
+       # sections into one code span: `grep -q '^### …'` still finds every
+       # heading, so the acquittal control below passes while the reader sees
+       # 400 lines of monospace. Close it, and assert parity after.
+       [ "$(( $(grep -c '^```' /tmp/relbody.md) % 2 ))" -eq 0 ] || { echo '```'; echo; }
        echo "> **⟨cut here⟩** — lines 1-${KEPT_L} and ${MAND_L0}-${FULL_L} of ${FULL_L}"
        echo "> are published; the **$(( FULL_L - KEPT_L - MAND_L )) lines in between are omitted**"
        echo "> (~$(( FULL_C - $(wc -m < /tmp/relbody.md) - MAND_C )) characters)."
@@ -350,16 +387,21 @@ conclusion; a green `gh pr checks` does not include it.**
    for h in '^### What still REFUSES$' '^### What is NOT merge-blocking$' '^### Known divergences$'; do
      grep -q "$h" /tmp/relbody.md || { echo "ABORT: body lost $h — A10"; exit 1; }
    done
-   # …and the OTHER end of that same guard: three headings present does not mean
-   # three sections intact. Assert the body's last MAND_L lines are the tail
-   # BYTE FOR BYTE — this holds in both regimes, since an under-cap body is the
-   # whole section and its tail is the tail.
+   # A heading inside an unclosed fence satisfies the loop above and renders as
+   # code. Parity is the half of that control that reads what the reader sees.
+   [ "$(( $(grep -c '^```' /tmp/relbody.md) % 2 ))" -eq 0 ] ||
+     { echo "ABORT: body has an unclosed code fence — A10"; exit 1; }
+   # …and the delta's own acquittal control. `git diff --stat` to a terminal is
+   # not a disclosure: nobody records a terminal. Assert it reached the BODY.
+   [ "${DELTA_N:-0}" -eq 0 ] || grep -q 'HAS MOVED SINCE THIS TAG' /tmp/relbody.md ||
+     { echo "ABORT: ${DELTA_N} post-tag commits and the body discloses none — A10"; exit 1; }
+   # …and the OTHER end of the headings guard: three headings present does not
+   # mean three sections intact. Assert the body's last MAND_L lines are the tail
+   # BYTE FOR BYTE — this holds in both regimes, because the delta notice goes to
+   # the TOP in both, so the tail is the tail either way.
    tail -n "$MAND_L" /tmp/relbody.md > /tmp/relbody.tail.md
    cmp -s /tmp/relbody.tail.md /tmp/relmand.md ||
      { echo "ABORT: body tail is not the mandatory sections verbatim — A10"; exit 1; }
-   # Entries the working tree has added since the tag are NOT in the released
-   # source. Read the delta; disclose it (see the over-cap rule below).
-   git diff --stat "v$V"..origin/main -- CHANGELOG.md
    gh release create "v$V" --title "v$V" --notes-file /tmp/relbody.md   # non-draft
    gh release view "v$V" --json body -q .body > /tmp/relbody.published.md
    diff /tmp/relbody.md /tmp/relbody.published.md
@@ -369,8 +411,14 @@ conclusion; a green `gh pr checks` does not include it.**
    the section is 7,700 lines; the three mandatory sections start at line
    **7,319** and run to the end — **382 lines / 24,324 characters, 19.5% of the
    cap**. The pre-1484 leading-prefix form published lines 1–1,972 and
-   therefore **contained none of the three headings**. This one publishes
+   therefore **contained none of the three headings**. The 1484 form published
    lines 1–1,570 plus 7,319–7,700, at 123,236 characters with 1,764 to spare.
+
+   **Re-measured 2026-07-30 after PMAT-1485 added the post-tag notice**, by
+   extracting this block from this file and running it: the notice is **1,157
+   characters / 5 commits / 526 lines**, the prefix shrinks to absorb it, and
+   the body is lines 1–**1,550** plus 7,319–7,700 — **123,266 characters, 1,734
+   to spare**, three headings present, tail byte-identical, fence parity even.
 
    **The cap is real, it is 125,000 characters, and `v0.1.618` is the first
    release that cannot fit under it.** Measured 2026-07-30 by POSTing an
@@ -450,6 +498,54 @@ conclusion; a green `gh pr checks` does not include it.**
    leave the text in the file, which is where the notice already points. The
    append rule stands for any release that fits.
 
+   **AND THAT RULE WAS PROSE ONLY — THE BLOCK EMITTED NO SUCH NOTICE
+   (PMAT-1485).** Both spellings of the tag/`main` repair — PMAT-1481's *append*
+   and PMAT-1483's *by reference* — were written into this section and **neither
+   was ever implemented**. Measured 2026-07-30 by running the block and grepping
+   its output: `grep -ci post-tag /tmp/relbody.md` → **0**. The delta's only
+   appearance was a `git diff --stat` printed to the operator's terminal on the
+   line before `gh release create`, and **a terminal is not a publisher** — the
+   figure scrolls past one person and reaches no reader. So the body would have
+   gone out saying *"The authoritative text is the file: `git show
+   v0.1.618:CHANGELOG.md`"* while that command returns a file missing **526
+   lines across 5 commits** — and those five are `PMAT-1480` … `PMAT-1484`, the
+   entire arc that built this procedure, **including the entry that announces
+   the truncation rule the reader is holding**. The gap is not static and that is
+   the part worth watching: PMAT-1481 measured it at **97 lines** on 2026-07-29
+   and it is **526** a day later, because the freeze permits exactly the docs
+   lane that edits `CHANGELOG.md`. A pointer whose target is knowably incomplete,
+   with the incompleteness unstated, is the `v0.1.616` defect in one more place.
+   Fixed: `DELTA_N`/`DELTA_L` are computed **before** the budget, the notice is
+   built into `/tmp/reldelta.md`, it rides at the **top** of the body in both
+   regimes, and a `grep -q 'HAS MOVED SINCE THIS TAG'` acquittal control refuses
+   to publish when `DELTA_N > 0` and the notice is absent. Driven both ways: the
+   guard aborts with `ABORT: 5 post-tag commits and the body discloses none` on
+   the pre-1485 body.
+
+   **The delta notice goes at the TOP, and that placement is load-bearing
+   twice.** Appending it — PMAT-1481's literal wording — would put the
+   disclosure past 7,700 lines of slice narrative in the under-cap regime, which
+   is not disclosure; and it would break the byte-for-byte tail assertion, since
+   the body's last `MAND_L` lines would then be the notice rather than *Known
+   divergences*. At the top, one spelling serves both regimes and the tail
+   invariant holds in each. When there is no delta the notice is an empty file
+   and the under-cap body is the section byte for byte, exactly as before.
+
+   **A prefix cut can land inside a code fence, and the acquittal control cannot
+   see it (PMAT-1485).** The cut is at an arbitrary line boundary; nothing made
+   it respect fenced blocks. An odd number of `^```` lines in the prefix leaves
+   a fence open, and everything after it — the cut marker **and all three
+   mandatory sections** — renders as one code span. `grep -q '^### What still
+   REFUSES$'` still matches, so the 1484 control passes at exit 0 while the
+   reader sees 400 lines of monospace: the same *"a spot-check finds the string
+   and the reader cannot tell a citation from the section"* failure that
+   paragraph was written about, one layer down. On `v0.1.618` the prefix happens
+   to hold **8** fences — even, and safe **by luck, not by construction**. Fixed
+   at both ends: the cut marker closes an odd fence, and a parity assertion runs
+   beside the headings loop. Demonstrated, not assumed — a synthetic prefix
+   ending inside a fence aborts with `ABORT: body has an unclosed code fence`
+   when the auto-close is disabled.
+
    **Which tree, stated because the two already disagree.** Through PMAT-1480
    this step read `CHANGELOG.md` as a bare relative path, which resolves against
    whatever checkout the operator happens to be in — and A1 puts them in the tag
@@ -464,9 +560,20 @@ conclusion; a green `gh pr checks` does not include it.**
      **not in the released source**, which is the stronger falsehood, since the
      page's job is to document what shipped.
 
-   The tag wins, and the omission is repaired by *appending* the post-tag delta
-   under its own dated heading — never by folding it into the section silently,
-   which would reproduce the page-vs-file drift in a third place.
+   The tag wins, and the omission is repaired by the **post-tag notice** the
+   block builds into `/tmp/reldelta.md` — never by folding the delta into the
+   section silently, which would reproduce the page-vs-file drift in a third
+   place.
+
+   ⚠️ **This sentence read *"repaired by appending the post-tag delta under its
+   own dated heading"* until PMAT-1485, 21 lines below the paragraph that had
+   already scoped that rule to *"any release that fits"* — and `v0.1.618` does
+   not fit, so the unconditional form is unsatisfiable on the very release it
+   governs.** It was also the **last** word in the step, which is the one an
+   operator reads last. This is PMAT-1483's own finding — §0 still teaching what
+   §2b forbids — repeating one slice later inside a single section: **amending a
+   rule in one place does not amend its restatements**, and a document that
+   argues with itself is decided by reading order.
 
    **The round-trip `diff` is TREE-BLIND — it cannot catch this.** It compares
    the published body against the same file the body was extracted from, so it
