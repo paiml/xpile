@@ -23941,6 +23941,129 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID PMAT-1481. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
     MERGES -- a Friday defect means A6, never a same-day hotfix onto the release SHA. Friday''s
     `gh release create` MUST use the extractor above and MUST run the diff.'
+- id: PMAT-1482
+  status: done
+  priority: P1
+  category: honesty
+  title: The sprint plan's own EXIT CRITERIA certify the release that already shipped -- 6 of 17
+    pinned to 0.1.617, the two that matter most PASS thirty hours early, one can never pass, and
+    one REDS on a correct release
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG + release-mechanics lane only
+    -- ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gate files). Tag v0.1.618 is already cut at
+    6b5f6c02, so this does NOT touch the release SHA. Verified: crit 13 (freeze held) returns
+    EMPTY.
+
+
+    THE FINDING: A VERIFICATION HARNESS IS A CLAIM SURFACE, AND IT IS THE ONE NOBODY RE-READS.
+    sub/sprint-6day-2026-07-26.md section 6 is titled "Exit criteria" and opens "Each is a command
+    a hostile reviewer can run." On the ship-day morning someone ran them for the FIRST TIME.
+    Seventeen commands; SIX carried a literal pinned to 0.1.617 -- the release that shipped
+    2026-07-26, four days INTO the window this plan governs. Three distinct failure modes, all
+    measured at 57504e1d:
+
+
+    (1) THEY PASS. Crit 1 "Published" -- the plan''s TOP exit criterion -- returns 0.1.617 for 31
+    of 31 crates with a User-Agent, because that batch is live from last Sunday. Crit 2 "Tagged
+    Thursday, released Friday": v0.1.617 resolves (f764e433), gate + workspace-test SUCCESS on its
+    SHA, gh release view non-draft since 2026-07-26T19:10:35Z. ALL THREE CLAUSES GREEN. A hostile
+    reviewer running the release checklist ~30h before the 0.1.618 batch would find the release
+    already certified, with nothing in the output naming WHICH release.
+
+
+    (2) THEY MEASURE THE WRONG SPAN. Crit 3 used awk ''/## \[0.1.617\]/,/## \[0.1.616\]/''.
+    THIS CHANGELOG QUOTES ITS OWN HEADINGS IN PROSE, so the end pattern matches a SENTENCE: the
+    first line containing "## [0.1.617]" is line 793, inside [0.1.618]; the real heading is 7,892.
+    Returned 8,361 lines against a true section of 1,261 (6.6x over, starting mid-[0.1.618]).
+    Retargeted to the shipping version the same spelling yields 786 of 7,884 -- 90.0% TRUNCATED AT
+    EXIT 0. That is the release body. docs/RELEASE.md:262 has used the anchored index() extractor
+    since PMAT-1480; section 6 never received it. Same shape as the sed ''/roots/,/\]/'' lakefile
+    landmine in this plan''s own section 8.
+
+
+    (3) THEY CANNOT PASS. Crit 4 required grep -nE ''453|788'' over CHANGELOG.md AND
+    docs/release-notes-0.1.617.draft.md to return nothing: that file DOES NOT EXIST (grep exits 2),
+    and unanchored 453|788 matches 27 lines, 3 even word-anchored and all legitimate (PMAT-788, the
+    "## [0.1.453]" heading, PMAT-453/454). Its second clause required grep -n ''795'' TO RETURN A
+    HIT -- mandating the presence of the figure section 5 forbids 34 lines earlier in as many words
+    ("do not type it here (it read 795 on 2026-07-26 and is 857 today)"). witness_floor.rs:145
+    derives 857. One document, two sections, opposite instructions on one number.
+
+
+    (4) A STALE LITERAL CAN RED A CORRECT RELEASE. Crit 11 counts witness-floor touches over
+    v0.1.616..v0.1.617 demanding 2; it returns 4, so the criterion FAILS for a reason unrelated to
+    0.1.618, while the correct v0.1.617..v0.1.618 range returns exactly 2 and PASSES. That is the
+    worse mode -- it trains the operator to skip the criterion (PMAT-1481''s lesson about false
+    reds, arriving from the other direction). Crit 12 audits the ledger over the same stale range:
+    109 commits that shipped last week vs the 120 under audit. BOTH ranges return empty, so the
+    VERDICT was right by luck while the SUBJECT was the wrong release -- a criterion checking the
+    wrong commits is a DIFFERENT check, not a weaker one. Also broken independently of any version:
+    crit 17 probes `head -3 queue.yaml` for `updated: <date>`; line 1 is `updated_prev_1480:`, an
+    eleven-line prose block, and the real `updated:` key at line 28 has NEVER held a date.
+
+
+    HEALTHY CONTROLS, which is what makes this a finding and not a general complaint about rot:
+    crit 6 carries a dated PMAT-1476 correction and crit 11''s sub-bullet a dated PMAT-1344 one;
+    crit 13 (freeze held) returns EMPTY and passes; crit 16 passes. The section WAS being
+    maintained -- one criterion at a time, whichever one a slice happened to touch. Nobody re-read
+    it whole, and not one version literal in it was ever derived.
+
+
+    ** THE SHAPE, NEW AND REUSABLE: release_plan_freshness_witness.rs (XPILE-RELPLAN-001,
+    PMAT-1467) GATES THIS EXACT FILE. It derives from git tag --list, discovers its corpus rather
+    than listing it, and is GREEN. It saw none of the above because IT PINS THE SECTION THAT SAYS
+    WHAT WILL BE DONE (section 5''s `**VERSION:` line, the "TAG: `v...`" literal) AND NOT THE
+    SECTION THAT SAYS HOW TO CHECK IT WAS DONE. Ask of every gate: does its corpus include the
+    CHECKS, or only the WORK?
+
+
+    ** SECOND SHAPE: a document can hold opposite instructions about the same fact in two sections
+    and no gate notices, because each section is locally consistent. Section 5 forbids typing 795;
+    section 6 required its presence. The tell was reading them in one pass.
+
+
+    FIXED, docs-only: section 6 derives $V/$TAG/$PREV_TAG (queue.yaml sprint.version + git tag
+    --sort=-v:refname) and NO criterion contains a version literal; crit 1 gained the MANDATORY
+    User-Agent (measured: without it 31 of 31 report MISSING on a fully successful publish -- the
+    v0.1.617-night trap) plus a header-free sparse-index cross-check; crit 3 uses the anchored
+    extractor; crit 4 is rewritten as the POSITIVE check a command can decide (derived LIVE count
+    must appear; measured LIVE=857, present) with the banned-figure grep demoted to a pinned
+    ratchet at 4 known citations; 11/12/17 re-pointed. Section 1''s commitment line said v0.1.617
+    and now says what ships. Section 2''s banned-figures bullet no longer names the replacement
+    figure BY VALUE -- a banned-figures list that prints its own replacement becomes a source of
+    banned figures.
+
+
+    ** SELF-CORRECTION, kept in the published entry: the FIRST rewrite of crit 4 asserted the
+    banned figures appear NOWHERE in the section. That fails on the spot -- the section quotes all
+    three while documenting the ban. THE FIX FOR A CAN-NEVER-PASS CRITERION WAS ITSELF A
+    CAN-NEVER-PASS CRITERION, and only EXECUTING it caught that. Every replacement command was then
+    run against the live tree before being written down ($V/$TAG/$PREV_TAG resolve;
+    anchored extractor = 7,882 lines / 90 "###"; LIVE=857 present; 11 -> 2; 12 -> empty; sparse
+    index returns 0.1.617 as control and empty for 0.1.618, correct today). PMAT-1459''s rule:
+    a published command that has never been executed is decoration.
+
+
+    NO GATE -- the freeze permits no new crates/xpile/tests/ file and no gate edit, so this is a
+    MEASUREMENT, NOT AN INVARIANT, and it can rot again when 0.1.619 opens. Filed as its own queue.yaml next_lane
+    entry -- the XPILE-RELPLAN-001 corpus widening: NO EXIT CRITERION MAY CONTAIN A VERSION LITERAL.
+    Needs no network; reds by construction on the next release.
+
+
+
+
+    ** SECOND SELF-CORRECTION, sharper than the first and found the same way -- BY RUNNING IT. The
+    replacement crit 4 pinned the citation count at "expect 4", and THIS SLICE''S OWN COMMIT moved it
+    from 4 to 9, because the CHANGELOG entry explaining the ban cites the banned figures five more
+    times. A machine-derived count typed into prose about a GROWING section is stale before the
+    branch merges -- the PMAT-1445 shape, committed INSIDE the slice written to remove it. Crit 4 now
+    carries NO expected count: it prints the hits and the reader decides citation-or-claim. Same
+    correction applied to section 6''s verification receipts, now pinned to the SHA they were measured
+    at (57504e1d) instead of standing as expectations: the [0.1.618] line/heading counts moved
+    7,882/90 -> 7,986/91 within one commit. ★ THE COROLLARY TO PMAT-1459: executing a published
+    command is how you find out your OWN receipt is already wrong.
+
+
+    NEXT FREE ID PMAT-1483. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE.'
 - id: PMAT-1481
   status: done
   priority: P1

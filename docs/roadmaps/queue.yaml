@@ -25,7 +25,7 @@ updated_prev_1480: "PMAT-1480 asked the question the previous ten honesty slices
   \ first spelling used an ESCAPED DYNAMIC awk regex and wrote a ZERO-BYTE body AT EXIT 0 (awk\
   \ degrades `\\[$V\\]` into a character class). Caught by RUNNING it, not reading it. A published\
   \ command that has never been executed is decoration -- PMAT-1459's lesson, live again."
-updated: >-
+updated_prev_1481: >-
   PMAT-1481 asked where PMAT-1480's fix actually LANDS. It landed on main as 01998032 -- one
   commit AFTER 6b5f6c02, the SHA v0.1.618 points at, and FORTY MINUTES later by the clock (tag
   object 2026-07-30 00:42:18 +0200, the fix 01:22:16) -- and abort rule A1, section 2a and
@@ -61,6 +61,47 @@ updated: >-
   NEXT FREE ID PMAT-1482. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 -- its `gh release
   create` MUST use the step-3 extractor, MUST extract from the TAG (not main), MUST `test -s`
   the body, and MUST append the post-tag CHANGELOG delta under its own heading.
+updated: >-
+  PMAT-1482 ran the plan's own section 6 "Exit criteria" -- seventeen commands under the sentence
+  "Each is a command a hostile reviewer can run" -- for the FIRST TIME, on the morning of the ship
+  day. SIX were pinned by a literal to 0.1.617, the release that shipped 2026-07-26, four days INTO
+  the window this plan governs. Three failure modes, all measured. (1) THEY PASS: crit 1
+  "Published", the TOP criterion, returns 0.1.617 for 31 of 31 crates (with a User-Agent) because
+  that batch is live from last Sunday; crit 2's three clauses are all green -- tag f764e433 resolves,
+  gate + workspace-test SUCCESS, release non-draft since 2026-07-26T19:10:35Z. A reviewer running
+  the release checklist ~30h before the 0.1.618 batch finds the release ALREADY CERTIFIED, with
+  nothing in the output naming which release. (2) THEY MEASURE THE WRONG SPAN: crit 3's
+  `awk '/## \[a\]/,/## \[b\]/'` range ends on a SENTENCE, because this CHANGELOG quotes its own
+  headings in prose -- the first line containing "## [0.1.617]" is 793, inside [0.1.618], not the
+  heading at 7,892. It returned 8,361 lines against a true section of 1,261; retargeted to the
+  shipping version, 786 of 7,884 -- 90.0% TRUNCATED AT EXIT 0, and that is the release body.
+  docs/RELEASE.md:262 has used the anchored index() extractor since PMAT-1480; section 6 never got
+  it. Same shape as the sed '/roots/,/\]/' lakefile landmine in this plan's OWN section 8.
+  (3) THEY CANNOT PASS: crit 4 named docs/release-notes-0.1.617.draft.md, which DOES NOT EXIST, and
+  required grep -n '795' TO RETURN A HIT -- mandating the presence of the figure section 5 forbids
+  34 lines earlier ("do not type it here ... is 857 today"). Plus (4) A STALE LITERAL CAN RED A
+  CORRECT RELEASE: crit 11 returns 4 against a demanded 2 over the stale range and PASSES at 2 over
+  the right one; crit 12 audits 109 last-week commits instead of this release's 120, returning the
+  right verdict over the wrong subject. Crit 17 is broken version-independently (`head -3` on an
+  eleven-line prose block, for an `updated:` key that has never held a date).
+  ** THE SHAPE: release_plan_freshness_witness.rs (XPILE-RELPLAN-001) GATES THIS FILE, derives from
+  git tag --list, discovers its corpus, and is GREEN -- because it pins the section that says what
+  will be DONE and NOT the section that says how to CHECK it was done. A verification harness is a
+  claim surface too, and it is the one nobody re-reads. Ask of every gate whether its corpus
+  includes the CHECKS or only the WORK.
+  ** SECOND SHAPE: one document held OPPOSITE instructions about one number in two sections
+  (section 5 forbids typing 795, section 6 required its presence) and no gate noticed, because each
+  section is locally consistent. Reading them in one pass is the only tell.
+  ** SELF-CORRECTION kept in the published entry: the FIRST rewrite of crit 4 asserted the banned
+  figures appear NOWHERE in the section -- which fails on the spot, since the section quotes all
+  three while documenting the ban. The fix for a can-never-pass criterion was itself a
+  can-never-pass criterion, and only RUNNING it caught that. Every replacement command was then
+  executed against the live tree before being written down. PMAT-1459's rule again.
+  HEALTHY CONTROLS (why this is a finding, not a complaint about rot): crit 6 and crit 11's
+  sub-bullet carry dated corrections (PMAT-1476, PMAT-1344), crit 13 "freeze held" returns EMPTY and
+  passes, crit 16 passes. The section was maintained ONE CRITERION AT A TIME; nobody read it whole.
+  NO GATE -- freeze permits no new tests/ file; filed as its own next_lane entry (XPILE-RELPLAN-001 corpus widening) in
+  next_lane as its own entry (XPILE-RELPLAN-001 corpus widening): no exit criterion may contain a version literal.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -116,6 +157,64 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1482
+  status: done
+  ev_rank: R1
+  date: 2026-07-30
+  title: The sprint plan's own EXIT CRITERIA certify the release that already shipped -- 6 of 17
+    pinned to 0.1.617, the two that matter most PASS thirty hours early, one can never pass, and
+    one REDS on a correct release
+  notes: 'DONE 2026-07-30 (Day 5, post-freeze docs/CHANGELOG/release-mechanics lane only; no
+    crates/*/src, no contracts, no gate file touched -- crit 13 "freeze held" verified EMPTY). Full
+    lessons in docs/roadmaps/roadmap.yaml under `- id: PMAT-1482`.
+
+
+    Section 6 of sub/sprint-6day-2026-07-26.md is titled "Exit criteria" and opens "Each is a
+    command a hostile reviewer can run." Seventeen commands, run for the FIRST TIME on ship-day
+    morning; SIX pinned by a literal to 0.1.617, which shipped 2026-07-26 -- four days INTO the
+    window this plan governs. THEY PASS (crit 1, the TOP criterion: 31 of 31 crates at 0.1.617 with
+    a User-Agent; crit 2: all three clauses green on f764e433 / non-draft since 2026-07-26T19:10:35Z
+    -- the release checklist reads CERTIFIED ~30h before the 0.1.618 batch). THEY MEASURE THE WRONG
+    SPAN (crit 3''s awk range ends on a SENTENCE because this CHANGELOG quotes its own headings:
+    8,361 lines vs a true 1,261, and 786 of 7,884 -- 90.0% TRUNCATED AT EXIT 0 -- when retargeted to
+    the shipping version; that is the release body). THEY CANNOT PASS (crit 4 names a file that does
+    not exist AND requires the presence of 795, the figure section 5 forbids 34 lines earlier).
+    A STALE LITERAL CAN RED A CORRECT RELEASE (crit 11: 4 vs a demanded 2 over the stale range,
+    exactly 2 and passing over the right one). And crit 17 is broken version-independently.
+
+
+    ** SHAPE: release_plan_freshness_witness.rs GATES THIS FILE and is GREEN, because it pins the
+    section that says what will be DONE and not the section that says how to CHECK it was done.
+    A verification harness is a claim surface too -- the one nobody re-reads. ** SECOND SHAPE: one
+    document, two sections, OPPOSITE instructions about one number, each section locally consistent.
+    ** SELF-CORRECTION in the published entry: the first rewrite of crit 4 was ITSELF a
+    can-never-pass criterion, caught only by RUNNING it.
+
+
+    FIXED docs-only: section 6 derives $V/$TAG/$PREV_TAG and contains NO version literal; crit 1
+    gained the mandatory User-Agent (without it 31 of 31 report MISSING on a successful publish) plus
+    a header-free sparse-index cross-check; crit 3 uses the anchored index() extractor; crit 4 is
+    the positive derived-count check (LIVE=857, present) with the banned grep demoted to a ratchet
+    pinned at 4 known citations; 11/12/17 re-pointed; section 1''s commitment line no longer names
+    v0.1.617; section 2''s banned-figures bullet no longer prints its own replacement figure.
+    The gate is filed as its own `next_lane` entry (XPILE-RELPLAN-001 corpus widening).
+
+
+
+
+
+    ** SECOND SELF-CORRECTION: the replacement crit 4 pinned the citation count at "expect 4" and
+    THIS SLICE''S OWN COMMIT moved it 4 -> 9 (the CHANGELOG entry explaining the ban cites the figures
+    five more times). A derived count typed into prose about a GROWING section is stale before the
+    branch merges -- PMAT-1445''s shape, committed inside the slice written to remove it. Crit 4 now
+    carries NO expected count; section 6''s receipts are pinned to 57504e1d (the [0.1.618]
+    line/heading counts moved 7,882/90 -> 7,986/91 in one commit).
+
+
+    NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE. Its `gh release create`
+    MUST use docs/RELEASE.md step 3, extract from the TAG, `test -s` the body, and append the
+    post-tag CHANGELOG delta (now THREE commits: 01998032, 57504e1d, and this one) under its own
+    dated heading. NEXT FREE ID PMAT-1483.'
 - id: PMAT-1481
   status: done
   ev_rank: R1
@@ -6696,6 +6795,27 @@ next_lane:
   ★ WHY IT IS WORTH A GATE AT ALL: this is the only publisher of repo facts that is structurally
   invisible to `git ls-files`, and it is the copy read WITHOUT a clone. The broader sweep the shape
   opens (crates.io rendered READMEs, doc sites, issue templates) is a SEPARATE, larger lead.'
+- 'PMAT-1482 GATE — XPILE-RELPLAN-001 CORPUS WIDENING, the cheapest gate on this list: a grep over one
+  section, NO network, NO git, and the defect is already measured. Blocked ONLY by the Wed 2026-07-29
+  18:00 freeze (it edits a gate file). THE RULE: no exit criterion in a release-planning document may
+  contain a version literal at all — neither `0.1.6xx` nor `v0.1.6xx` — because every one of them must
+  be DERIVED from `queue.yaml` sprint.version. WHY: `release_plan_freshness_witness.rs` already gates
+  `sub/sprint-6day-2026-07-26.md`, derives from `git tag --list`, discovers its corpus rather than
+  listing it, and is GREEN — yet SIX of section 6''s seventeen exit criteria were pinned to the
+  PREVIOUS release, because the gate pins the section that says what will be DONE (the `**VERSION:`
+  line, the "TAG: `v…`" literal) and NOT the section that says how to CHECK it was done. Measured
+  2026-07-30: crit 1 (the TOP criterion, "Published") and crit 2 PASSED ENTIRELY on the already-shipped
+  0.1.617 ~30h before the 0.1.618 batch; crit 3''s unanchored `awk` range truncated the release body
+  by 90.0% AT EXIT 0; crit 4 could never pass three independent ways; crit 11 RED on a correct release
+  at 4-vs-2. TWO DESIGN CONSTRAINTS, each a way this gate is born useless. (i) IT MUST EXEMPT
+  ATTRIBUTED CITATIONS or it reds on its own disclosure table, which cites `0.1.617` a dozen times
+  while documenting the defect — reuse `is_mention()` (a reporting verb plus an opening quote), the
+  shape THIS SAME FILE settled on after two wrong attempts; do not invent a third. (ii) THE ACQUITTAL
+  CONTROL is mandatory, not optional: temporarily re-pin one criterion to a shipped version and confirm
+  it REDS. PMAT-1482 wrote a can-never-pass replacement FOR a can-never-pass criterion and caught it
+  only by executing it. ★ STANDING LESSON THIS GATE ENCODES: ask of every gate whether its corpus
+  includes the CHECKS or only the WORK — and note that a stale literal which REDS a correct release is
+  the worse failure, because it trains the operator to skip the criterion.'
 - 'PMAT-1479 — TWO GATE-CORPUS WIDENINGS, both blocked ONLY by the Wed 2026-07-29 18:00 release freeze,
   both S-sized, both with the defect already measured by PMAT-1478. (1) `release_runbook_facts_witness.rs::the_runbook_does_not_type_an_advisory_roster`
   encodes the RIGHT rule over a corpus of exactly ONE file, `docs/RELEASE.md` — so when the identical
