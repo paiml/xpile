@@ -24906,6 +24906,82 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1498
+  status: done
+  priority: P1
+  category: honesty
+  title: the sweep of every external command this repo publishes came back 30-of-31 clean and the
+    CLI reference for the binary this repo BUILDS is 7-of-34 true -- and a gate written for exactly
+    this defect has been green for 68 days on the other file named `cli.md`
+  notes: 'SHIPPED 2026-07-30 (post-freeze; docs/specifications/sub/cli.md + CHANGELOG + both
+    ledgers ONLY -- zero crates/*/src, zero contracts/*.yaml, zero gate files, zero tests/, zero
+    Cargo.toml). Tag v0.1.618 is cut at 6b5f6c02, so nothing here touches the release SHA.
+    PICKED as PMAT-1497''s next-pick (a): sweep EVERY published command in docs/ the way that slice
+    swept `pv`. The corpus was DERIVED, not typed -- 102 distinct tool+subcommand pairs extracted
+    from fenced blocks and inline backticks across docs/**/*.md.
+    THE EXTERNAL HALF IS THE CALIBRATION AND IT CAME BACK CLEAN: 30 of 31 published pmat / gh /
+    lake / lean / cargo / wat2wasm / wasm-interp / rustc / pv invocations resolve parse-only. The
+    sole absentee is `wasmtime` (docs/status/CURRENT.md:51), not installed here but named in five
+    tracked .rs files -- the claim is wired to code, only the local toolchain is short. Nothing to
+    fix; recorded so the contrast is MEASURED rather than asserted.
+    THE SELF HALF IS THE FINDING. docs/specifications/sub/cli.md is section 14 of the canonical
+    spec. Probed against the shipped `xpile 0.1.618`: 27 of 34 executable claims fail at argument
+    parsing. Top-level table 8 published / 1 runs; the inspect + manifest + cache sections 11
+    published / 0 (all `unrecognized subcommand`); transpile flags + budget overrides 9 published /
+    0 (all `unexpected argument`). The five flags that DO exist -- --target, --out, --emit-crate,
+    --contracts, --hardware -- appeared NOWHERE on the page, including --target, which selects
+    among the nine backends, and --emit-crate, the universal-.wasm path the proven-model demo
+    ships on.
+    THE CORRECTION SECTION WAS STALE IN THE OPPOSITE DIRECTION FROM THE DEFECT IT EXISTS TO
+    CORRECT: "Status at v0.1.0" claims FIVE implemented subcommands against a binary that ships
+    SEVEN -- `diamond` (PMAT-249) and `hybrid` missing, while audit-design.md publishes them 26
+    times between them -- and it points at the very command that falsifies it ("Run `xpile --help`
+    to see the live list"). Its not-shipped list covers 2 of the 7 false rows; lint, score,
+    inspect, manifest and version carried no qualification anywhere in the file.
+    SHARPEST ITEM, because it is the one a reader CANNOT DETECT: `xpile.toml` HAS NO READER. The
+    page publishes a config schema and a precedence rule stated as fact. Measured: the string
+    occurs in exactly two tracked files, both docs, in ZERO lines of Rust; no tracked file is named
+    xpile.toml; `default_model` / `max_wall_clock_seconds` appear in no .rs file. An unrecognized
+    subcommand announces itself on stderr; an ignored config file is silent.
+    EXIT CODES: 4 of 6 unreachable as documented. Code 5 keyed to `xpile lint` (never existed); 3
+    and 4 keyed to --repair / xpile manifest; and 2 was defined as "static-pass failure + repair
+    budget exhausted" when 2 is what clap returns for ANY malformed invocation -- the code every
+    one of the 27 false invocations returns. A reader hitting a real 2 read a parse error as a
+    budget exhaustion.
+    ** THE SHAPE -- THE GATE WAS ALREADY WRITTEN AND POINTED AT THE OTHER FILE OF THE SAME NAME.
+    cli_docs_drift.rs (XPILE-CLIDOCS-001, PMAT-1429) exists for this exact defect class; its header
+    records the previous instance in the same words ("`xpile hybrid` -- a registered subcommand --
+    had no section at all") and diagnoses the meta-shape one line later ("the same claim CLASS on a
+    surface no rule covered -- PMAT-1417''s own lesson, one file over"). It then happened ONE FILE
+    OVER, onto a file with the SAME NAME. There are two cli.md; all THIRTEEN gate references in
+    crates/ resolve to book/src/reference/cli.md and NONE to the normative spec copy the book page
+    is derived from. Its property `every_registered_subcommand_has_a_cli_md_section` reds on 7 of 8
+    registered subcommands against the old spec page -- simulated against the live binary, never
+    run against that path in 68 days.
+    ** AND THE PAGE WAS IN THE STRICTEST CORPUS THE WHOLE TIME. claims_drift::claim_pages() walks
+    all of docs/specifications/. Every assertion there hunts a false or stale NUMERAL; a phantom
+    subcommand and an unread config file offer none. Third confirmation of PMAT-1495''s rule that
+    being IN SCOPE is not being COVERED, and the second axis it has failed on after completeness.
+    FIXED: sub/cli.md is now two explicitly separated surfaces -- a shipped half with a
+    `## `xpile <cmd>`` section for each of the EIGHT registered subcommands, the real flag table
+    and measured exit codes; and a "Planned surface -- does not run today" half that keeps every
+    design intent with the verbatim 2026-07-30 stderr transcribed beside each line. The shipped
+    half was written so the ALREADY-EXISTING property passes on it: simulated 8 of 8, up from 1 of
+    8. Top-of-file banner says MEASUREMENT DATED 2026-07-30, NOT AN INVARIANT, and names
+    `xpile --help` as the one-command re-derivation.
+    GATE-LITERAL CHECK RUN BEFORE THE REWRITE (PMAT-1495''s HISTORICAL_MARKER lesson): every
+    heading and phrase removed -- "Status at v0.1.0", "5 implemented subcommands", "Full CLI lands",
+    "Repair-mode", "xpile lint/cache/inspect/manifest", "xpile.toml" -- was grepped against
+    crates/**/*.rs first. Zero gates match any of them, so no exemption token was silently revoked.
+    NO GATE. The Wed 2026-07-29 18:00 freeze bars editing cli_docs_drift.rs. The fix is unusually
+    cheap -- the property is written and green, and widening its corpus from one path to two is the
+    whole change -- filed as XPILE-SELFCLI-001 in queue.yaml next_lane.
+    NEXT FREE ID PMAT-1499. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.'
+  created: '2026-07-30T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
 - id: PMAT-1497
   status: done
   priority: P1
