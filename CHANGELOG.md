@@ -7,6 +7,101 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### Six paragraphs mandate content for the release body, one step builds it, and that step's closing assertion ABORTS if you put any of them in (PMAT-1493)
+
+`docs/RELEASE.md` mandates release-body content in six separate places. §2b: the
+`XPILE_REQUIRE_RULESET_CHECK` result *"goes in the release body verbatim"*. §5
+step 2: *"name every non-success in the release body"*. A11, A13, A14 and A15
+each name it as the destination for their finding, and A12 inherits A11's by
+reference. §5 step 3 is the only step that creates a body.
+
+**Not one of the six can reach it, and the fifth of them is barred by an
+assertion added to protect the other four.** Step 3 builds the body from
+`git show "v$V":CHANGELOG.md` (PMAT-1481's tree constraint), and every one of the
+six mandates is a fact measured on release day or a fact about a tree the tag
+predates — so no version of `CHANGELOG.md` at the tag contains any of them. Then
+PMAT-1484's closing control asserts the body's last `MAND_L` lines are the
+mandatory tail **byte for byte**, so appending a disclosure at the end fails.
+
+Measured 2026-07-30 by extracting the block from the file and running it three
+ways against `v0.1.618` — never by retyping it (PMAT-1459, and PMAT-1484's rule
+that a control which cannot fail is not a control):
+
+```
+ARM 1  as written .................. exit 0, body 123,218 chars, 0 of 6 carried
+ARM 2  4-line advisory note appended at the end, where the
+       v0.1.617 page actually put its own ..... exit 1
+       ABORT: body tail is not the mandatory sections verbatim - A10
+ARM 3  same 4 lines carried at the TOP, before the budget
+       is computed ...... exit 0, body 123,225 chars, lands at body line 38
+```
+
+★ **The prior art is the proof this is not hypothetical.** The published
+`v0.1.617` body carries **20 non-blank lines that appear in no `CHANGELOG.md`**,
+at page lines 1229-1246 — the tail. Four disclose that the `wasi` job was failing
+on `ccb95a04`, the SHA that tag points at; eight give the root cause (a wasmtime
+installer that scraped an unauthenticated API, got rate-limited, and exited 0 with
+nothing installed); four record a hand re-verification of the universal-binary
+claim against the tag. That is §5 step 2's mandate being discharged — in the
+hand-assembled regime PMAT-1480 replaced.
+
+★★ **THE SHAPE: A NARROWING FIX INHERITS EVERYTHING THE LOOSE FORM WAS
+LOAD-BEARING FOR, AND NOBODY ENUMERATES THAT LIST.** PMAT-1480 measured a real
+defect — *0 of 613* published bodies matched their CHANGELOG section — and fixed
+it by making the body an **extract**. Correct, and it deleted the only place the
+body could say the things only the body can say. PMAT-1484 then locked the door
+from the inside. **Neither slice was wrong; the loss was in the delta between
+"hand-assembled" and "extracted" that no one wrote down.** → When a fix replaces
+a permissive mechanism with a constrained one, list what the permissive form was
+carrying before you narrow it.
+
+★ **A GATE OVER A MANDATE'S WORDING IS GREEN OVER A MANDATE THAT CANNOT BE
+DISCHARGED.** `crates/xpile/tests/release_mandate_enforcement_witness.rs`
+(XPILE-RELMANDATE-001) is named for exactly this subject and is **4/4 green**,
+including its own anti-vacuity test. It asks whether a mandate hard-codes the
+enforcement set and whether it points somewhere real — never whether the
+procedure that must discharge it *can*. Its corpus is also
+`docs/roadmaps/queue.yaml` and `docs/roadmaps/roadmap.yaml`: it reads the mandates
+in the two work-item ledgers, and the six that actually govern the body live in
+the runbook, which it opens only to check a destination. **PMAT-1490's rule one
+document along — a gate's name is not its corpus.** → Ask of every mandate gate:
+does it check the wording, or the satisfiability?
+
+★ **A11 conditioned its action on something that could not be evaluated.** It
+read *"if the release body is still editable, mirror it per §5 step 3's
+ordering"*. Step 3 finishes before step 6 measures the front page, so it can
+never carry an A11 finding — and this procedure contained `gh release create` and
+`gh release view` and **no edit command anywhere**, so *"still editable"* had
+nothing to be true or false about. A11 and A14 are the two rules whose subject is
+a *rendered* page, which by construction does not exist until the upload has
+happened. **A rule cannot be discharged by a step that runs before its subject
+exists**; four disclosure rules were authored in four days and this is the second
+consecutive slice (PMAT-1491, PMAT-1492) where the defect was in the disclosure
+machinery rather than in anything it discloses.
+
+Shipped, all in `docs/RELEASE.md`: §5 step 3 gains a `/tmp/reldisc.md` slot
+carved out **before** the budget, in the same top-of-body position the post-tag
+delta notice already occupies for the same two reasons (a disclosure buried past
+7,700 lines is not one; an appended one breaks the tail assertion), plus the
+acquittal control that was missing entirely — line-by-line and not by marker,
+because a marker proves a heading arrived and says nothing about the findings
+under it. A new **§5 step 8** appends what steps 6 and 7 measured to the
+published body, asserting the published prefix is unaltered (`cmp`) rather than
+intending it, per the `retro-edit-published-release-bodies` owner decision:
+append, never rewrite. **A10 was widened** to govern every mandated body content
+rather than a 16th rule being minted — a second rule with the same subject and
+the same disposition is precisely PMAT-1488's duplicated normative set. A11's
+untestable clause and A14's destination now name step 8.
+
+Red halves, both run: absent `/tmp/reldisc.md` → `ABORT: no day-of disclosures`,
+exit 1; file present but silently dropped by the assembler → `ABORT: 26 day-of
+disclosure line(s) never reached the body`, exit 1 — so the control catches a
+drop the emptiness check cannot see. Green half: the five pre-publish mandates
+carried, exit 0, **123,278 characters** (1,722 under cap), disclosure at body
+line 15, tail still byte-identical, fence parity even. Both blocks `sh -n` clean.
+**NO GATE** — the Wednesday 18:00 freeze bars a new `tests/` file; filed as
+`XPILE-RELDISC-001` in `next_lane`.
+
 ### The section whose whole job is to bound the tool publishes 2 of the flagship frontend's 348 refusals — and the two lanes beside it are exhaustive, so nothing marks the difference (PMAT-1492)
 
 `### What still REFUSES` is one of the three sections `docs/RELEASE.md` §4 step 2
