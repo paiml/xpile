@@ -13,6 +13,106 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The sweep of every external command this repo publishes came back 30-of-31 clean, and the CLI reference for the binary this repo *builds* is 7-of-34 true — a gate written for exactly this defect has been green for 68 days on the other file named `cli.md` (PMAT-1498)
+
+`docs/specifications/sub/cli.md` is §14 of the canonical spec: the reference a reader
+consults to learn what `xpile` can be told to do. Probed 2026-07-30 against the shipped
+**`xpile 0.1.618`**, **27 of its 34 executable claims fail at argument parsing**, and
+the seven that work are one `transpile` invocation plus the six rows of a correction
+section that is itself wrong.
+
+PMAT-1497 asked whether anything in this repo ever executes the commands it publishes
+about *other* tools, and found six of eight false. The obvious next question is the
+same one aimed at our own binary. It should have been the safe half — and it is by far
+the worse one.
+
+**The external half, for calibration.** Every `pmat`, `gh`, `lake`, `lean`, `cargo`,
+`wat2wasm`, `wasm-interp`, `rustc` and `pv` invocation published anywhere in `docs/`
+was probed parse-only: **30 of 31 resolve**. The sole absentee is `wasmtime`
+(`docs/status/CURRENT.md:51`), not installed on this machine; it is named in five
+tracked `.rs` files, so the claim is wired to code and only the local toolchain is
+short. Nothing to fix there — recorded so that the contrast is measured rather than
+asserted.
+
+**The self half.**
+
+| Section of `sub/cli.md` | Published | Runs |
+|---|---|---|
+| "Top-level commands" table | 8 | **1** (`transpile`) |
+| `## xpile inspect` / `manifest` / `cache` sections | 11 | **0** — all `error: unrecognized subcommand` |
+| `transpile` flags + "Budget overrides" | 9 | **0** — all `error: unexpected argument` |
+| "Status at v0.1.0" shipped table | 5 | 5 |
+| **Total** | **34** | **7** |
+
+The nine flags that do not parse are `--repair`, `--repair=cached`, `--repair=force`,
+`--hybrid`, `--output`, `--dry-run`, `--repair-max-iterations`, `--repair-max-tokens`
+and `--repair-max-seconds`. The five that *do* exist — `--target`, `--out`,
+`--emit-crate`, `--contracts`, `--hardware` — **appeared nowhere on the page.** The CLI
+reference documented nine flags that do not parse and zero of the five that do,
+including `--target`, which is the flag that selects among the nine backends, and
+`--emit-crate`, which is the universal-`.wasm` path the proven-model demo ships on.
+
+**The correction section was stale in the opposite direction from the defect it exists
+to correct.** "Status at v0.1.0" opens *"The `xpile` binary ships with **5** implemented
+subcommands"* and tables exactly five. It ships **seven**: `diamond` (PMAT-249) and
+`hybrid` are absent from the list, while `audit-design.md` publishes them twenty-six
+times between them. The section added to stop the page over-promising was itself
+under-reporting, and it points at the very command that falsifies it — *"Run
+`xpile --help` to see the live list."* Its disclosure also covers only **two** of the
+seven false table rows (`mcp`, `cache`); `lint`, `score`, `inspect`, `manifest` and
+`version` were published as executable with no qualification anywhere in the file.
+
+**`xpile.toml` has no reader.** The page publishes a configuration-file schema —
+`[repair]`, `[cache]`, `[hybrid]` — and a precedence rule stated as fact: *"Command-line
+flags override `xpile.toml`; `xpile.toml` overrides defaults."* Measured: the string
+`xpile.toml` occurs in exactly two tracked files, both docs (this page and `mcp.md`),
+in **zero** lines of Rust; no tracked file is named `xpile.toml`; the keys
+`default_model` and `max_wall_clock_seconds` appear in no `.rs` file in the workspace. A
+reader who creates the file and sets a value gets silence — no error, no warning, no
+effect. This is the sharpest item because it is the one a reader cannot detect: an
+unrecognized subcommand announces itself on stderr, an ignored config file does not.
+
+**Four of six exit codes were unreachable as documented.** Code `5` was *"contract lint
+failure (`xpile lint`)"* — keyed to a subcommand that has never existed. Codes `3` and
+`4` are keyed to `--repair` and `xpile manifest`. Worst, `2` was defined as *"static-pass
+failure + repair budget exhausted"*, and `2` is what clap returns for **any** malformed
+invocation — the code every one of the 27 false invocations above actually returns. A
+reader hitting a real `2` would have read a parse error as a budget exhaustion. The
+table is now the three measured codes with their provenance.
+
+⭐ **THE SHAPE — THE GATE WAS ALREADY WRITTEN, AND POINTED AT THE OTHER FILE OF THE SAME
+NAME.** `crates/xpile/tests/cli_docs_drift.rs` (`XPILE-CLIDOCS-001`, PMAT-1429) exists
+for precisely this defect class; its header records the previous instance in the same
+words — *"`xpile hybrid` — a registered subcommand — had no section at all"* — and
+diagnoses the meta-shape one line later: *"the same claim CLASS on a surface no rule
+covered — PMAT-1417's own lesson, one file over."* It then happened **one file over,
+onto a file with the same name.** There are two `cli.md`s; all **thirteen** gate
+references in `crates/` resolve to `book/src/reference/cli.md`, and **none** to the
+normative `docs/specifications/sub/cli.md` the book page is derived from. Measured: the
+existing property `every_registered_subcommand_has_a_cli_md_section` reds on **7 of 8**
+registered subcommands against the old spec page. It was never run against it.
+
+★ **AND THE PAGE WAS IN THE STRICTEST CORPUS THE WHOLE TIME.** `claims_drift::claim_pages()`
+walks all of `docs/specifications/`. Every assertion over that corpus hunts a false or
+stale **numeral**; a phantom subcommand and an unread config file offer none. Third
+confirmation of PMAT-1495's rule that being *in scope* is not being *covered* — and the
+second axis it has failed on, after completeness.
+
+**FIXED, docs-only under the freeze.** `sub/cli.md` is now two explicitly separated
+surfaces: a shipped half with a `## \`xpile <cmd>\`` section for each of the eight
+registered subcommands, the real flag table, and measured exit codes; and a "Planned
+surface — does not run today" half that keeps every design intent but transcribes the
+verbatim 2026-07-30 stderr beside each line. The shipped half was written so that the
+already-existing property passes on it — simulated against the binary: **8 of 8**, up
+from 1 of 8. A top-of-file banner states that the probe is **a MEASUREMENT DATED
+2026-07-30, NOT AN INVARIANT**, and names `xpile --help` as the one-command
+re-derivation.
+
+**NO GATE.** The Wed 2026-07-29 18:00 freeze bars editing `cli_docs_drift.rs`. The fix
+is unusually cheap — the property is written and green, and widening its corpus from one
+path to two is the whole change — and is filed as `XPILE-SELFCLI-001` in `queue.yaml`
+`next_lane`.
+
 ### The sub-spec that defines this project's fleet membership publishes eight executable claims and six are false against the installed tool — including both commands that constitute the membership procedure — while the one requirement living inside this repository is discharged by a green `cargo test` that runs zero tests (PMAT-1497)
 
 `docs/specifications/sub/kaizen-fleet.md` is the sub-spec that §20 of the

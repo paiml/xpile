@@ -328,6 +328,49 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1498
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the sweep of every EXTERNAL command this repo publishes came back 30-of-31 clean, and the
+    CLI reference for the binary this repo BUILDS is 7-of-34 true -- while a gate written for
+    exactly this defect has been green for 68 days on the OTHER file named cli.md'
+  notes: 'DONE 2026-07-30, docs-only under the freeze (docs/specifications/sub/cli.md + CHANGELOG +
+    both ledgers; zero src, zero contracts, zero gates, zero tests/). Tag v0.1.618 at 6b5f6c02 is
+    untouched.
+    PMAT-1497''s next-pick (a). Corpus DERIVED not typed: 102 distinct tool+subcommand pairs pulled
+    from fenced blocks and inline backticks across docs/**/*.md.
+    EXTERNAL HALF = THE CALIBRATION, AND IT IS CLEAN: 30/31 published pmat / gh / lake / lean /
+    cargo / wat2wasm / wasm-interp / rustc / pv invocations resolve parse-only. Only `wasmtime`
+    (docs/status/CURRENT.md:51) is absent here, and it is named in five tracked .rs files -- wired
+    to code, local toolchain short. Nothing to fix.
+    SELF HALF = THE FINDING: 27 of 34 executable claims in section 14 (sub/cli.md) fail argument
+    parsing against `xpile 0.1.618`. 8 top-level rows / 1 runs; 11 inspect+manifest+cache
+    invocations / 0; 9 transpile flags / 0. The FIVE real flags (--target --out --emit-crate
+    --contracts --hardware) appeared NOWHERE. "Status at v0.1.0" claimed 5 shipped subcommands
+    against 7 -- stale in the OPPOSITE direction from the defect it exists to correct, missing
+    `diamond` and `hybrid` which audit-design.md publishes 26 times. `xpile.toml` HAS NO READER
+    (zero lines of Rust; a reader who sets a key gets SILENCE -- the one item that cannot announce
+    itself). 4 of 6 exit codes unreachable as documented, and code 2 was mislabelled as a repair
+    budget exhaustion when it is clap''s parse error.
+    ** THE GATE WAS ALREADY WRITTEN AND AIMED AT THE OTHER FILE OF THE SAME NAME. cli_docs_drift.rs
+    (XPILE-CLIDOCS-001, PMAT-1429) was written for this defect class and its header predicts this
+    recurrence in so many words. Thirteen gate references to a `cli.md` in crates/, ALL to
+    book/src/reference/cli.md, NONE to the normative spec copy. Its property
+    `every_registered_subcommand_has_a_cli_md_section` reds 7-of-8 on the old spec page; the fix
+    makes it pass 8-of-8 IN ADVANCE of the corpus widening.
+    ** claim_pages() walked this page the whole time -- every assertion there hunts a NUMERAL and a
+    phantom subcommand offers none. Third confirmation of PMAT-1495: in scope is not covered.
+    NO GATE (freeze bars the cli_docs_drift.rs edit) -> XPILE-SELFCLI-001 filed in next_lane; it is
+    the cheapest gate in the backlog, a one-path-to-two corpus widening of a green property.
+    NEXT FREE ID PMAT-1499. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+    NEXT PICKS AFTER THE RELEASE: (a) the rest of the cadence sweep -- book/src/ and the contracts
+    inventory headers still unswept; (b) sub/mcp.md is the SECOND page publishing xpile.toml and was
+    NOT audited here -- the whole `xpile mcp` surface is unprobed; (c) still open from 1494,
+    owner_decisions and next_lane never drained; (d) still open from 1488, other duplicated
+    normative sets -- and cli.md is now the confirmed second instance of that class, so the sweep
+    should be "which normative pages have a book twin, and which twin does the gate read".'
 - id: PMAT-1497
   status: done
   ev_rank: R1
@@ -7729,6 +7772,37 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1498 GATE -- XPILE-SELFCLI-001, and it is the CHEAPEST GATE IN THIS BACKLOG: the property
+  already exists, is already green, and the entire change is widening its corpus from ONE path to
+  TWO. crates/xpile/tests/cli_docs_drift.rs (XPILE-CLIDOCS-001, PMAT-1429) reads
+  book/src/reference/cli.md and nothing reads docs/specifications/sub/cli.md, the normative section
+  14 the book page is derived from. MEASURED 2026-07-30: its
+  `every_registered_subcommand_has_a_cli_md_section` reds on 7 of the 8 registered subcommands
+  against the pre-fix spec page. Blocked only by the Wed 2026-07-29 18:00 freeze.
+  FOUR design constraints -- and note that next_lane specs in this repo have been caught BORN WRONG
+  three times (PMAT-1481, PMAT-1483, PMAT-1488), so audit this one before writing it.
+  (a) DERIVE THE FILE SET, DO NOT TYPE IT. A hard-coded two-element list is the same defect one
+  file later, which is precisely how this one happened. Discover every tracked path matching
+  `cli.md` via `git ls-files`, and assert the discovered count is > 1 so the gate cannot pass
+  vacuously if a page is renamed.
+  (b) THE THREE EXISTING PROPERTIES DO NOT ALL TRANSFER, AND ASSUMING THEY DO WILL RED A CORRECT
+  PAGE. `the_published_xpile_info_transcript_matches_the_binary` pins a `$ xpile info` transcript
+  that ONLY the book page carries; the spec page deliberately does not duplicate it (PMAT-1488,
+  duplicated normative sets). Only the per-subcommand-section property and the `--target` row
+  property are corpus-general. Apply each property to the pages that HAVE its subject, and assert
+  per property that at least one page did.
+  (c) ⛔ THE PLANNED HALF MUST STAY LEGAL. sub/cli.md documents post-v0.1.0 design (`--repair`,
+  `xpile cache`, `xpile.toml`) under an explicit "Planned surface -- does not run today" heading
+  with the verbatim stderr beside each line. A naive "no page may name an unregistered subcommand"
+  rule reds that page for being HONEST. The property is the shipped direction only -- every
+  REGISTERED subcommand has a section -- plus: any `## `xpile <cmd>`` H2 whose command is NOT
+  registered is a violation, which is what keeps the planned half at H3 under its banner.
+  (d) THE SECOND ARM IS THE ONE THAT CATCHES THE SHARPEST ITEM AND IT IS NETWORK-FREE AND THREE
+  LINES: a documented configuration file with NO READER. Assert that every filename published as
+  a config file in docs/** (`xpile.toml` today, in sub/cli.md and sub/mcp.md) either appears in at
+  least one tracked .rs file or sits under a dated measured "has no reader" disclosure. An
+  unrecognized subcommand announces itself on stderr; an ignored config file is silent, so this is
+  the arm a reader can never run for themselves.'
 - 'PMAT-1497 GATE -- XPILE-EXTTOOL-001, the published-external-command property. Blocked by the Wed
   2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file). The defect is MEASURED: of the
   eight executable claims in docs/specifications/sub/kaizen-fleet.md, SIX were false against the
