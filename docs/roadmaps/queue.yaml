@@ -251,6 +251,18 @@ queue:
     document changes what its relative references MEAN, and a build tool can perform the move and
     report success. Generalises past READMEs to anything copied into a package, vendored, or served
     from a path other than the one it was authored at.
+    ** ALSO FIXED, FOUND THE SAME WAY -- by RUNNING the neighbouring block rather than reading it.
+    PMAT-1485''s post-tag delta notice lists every commit that moved CHANGELOG.md since the tag and
+    elided subjects at 120 characters FROM THE FRONT. Every subject in this repository ends in
+    (Refs PMAT-nnnn) -- the only handle a reader has for locating the entry the line points at -- so
+    the cut removed it from 7 OF 7 LINES, including the one announcing the notice itself. A notice
+    whose whole purpose is "read the difference" named nothing readable. It now elides the MIDDLE and
+    always keeps the trailing id; re-measured 7 of 7 carry it, output still valid UTF-8 (gawk''s
+    length and substr are character-aware, which the cut''s byte-safety depends on). Body after both
+    changes: 123,275 characters, 1,725 to spare, exit 0, three mandatory headings present, fence
+    parity even. A TRUNCATION RULE HAS TO KNOW WHICH END OF THE STRING CARRIES THE IDENTIFIER -- the
+    same "a limit decides how many, never which" shape as PMAT-1484, one level down, inside the very
+    block that fixed it.
     ** NO GATE (freeze: network + new tests/ file). XPILE-RELREADME-001 filed in next_lane.
     NEXT FREE ID PMAT-1487. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 — and AFTER the batch
     run the new §5 step 6 and EXPECT A11 to fire with 12 reinterpreted links. That is the predicted,

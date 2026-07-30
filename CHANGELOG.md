@@ -96,6 +96,21 @@ published. That endpoint returns `404` to every non-browser client — `serde` a
 artefact, run it against a control you know is fine**; step 6 excludes the
 endpoint and says why.
 
+⚠️ **Also fixed, and found the same way — by running the neighbouring block
+rather than reading it.** PMAT-1485's post-tag delta notice lists every commit
+that moved `CHANGELOG.md` since the tag, and elided subjects **at 120 characters
+from the front**. Every subject in this repository ends in `(Refs PMAT-nnnn)` —
+the only handle a reader has for locating the entry the line is pointing them at
+— so the cut removed it from **7 of 7 lines**, including the one announcing the
+notice itself. The notice existed to say *"read the difference"* and named
+nothing readable. It now elides the **middle** and always keeps the trailing id;
+re-measured, **7 of 7** carry it, output still valid UTF-8 (`gawk`'s `length` and
+`substr` are character-aware, which the byte-safety of the cut depends on). Body
+after both changes: **123,275 chars, 1,725 to spare, exit 0.** ★ **A truncation
+rule has to know which END of the string carries the identifier** — the same
+"a limit decides how many, never which" shape as PMAT-1484, one level down, in
+the very block that fixed it.
+
 ⚠️ **Secondary finding, from checking that adding A11 did not red an existing
 gate — and the greenness proved nothing.**
 `release_preflight_witness.rs::the_release_doc_documents_the_procedure_and_the_abort_rules`

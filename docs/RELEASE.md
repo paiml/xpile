@@ -318,10 +318,20 @@ conclusion; a green `gh pr checks` does not include it.**
        echo "> **${DELTA_N} further commit(s) added ${DELTA_L} line(s)** to"
        echo "> \`CHANGELOG.md\` on \`main\`. That text is in neither this body nor"
        echo "> \`git show v$V:CHANGELOG.md\`; read it with"
-       echo "> \`git log -p v$V..origin/main -- CHANGELOG.md\`. Subjects over 120"
-       echo "> characters are elided with \`…\`:"
+       echo "> \`git log -p v$V..origin/main -- CHANGELOG.md\`. Long subjects are"
+       echo "> elided in the MIDDLE so the trailing \`(Refs PMAT-nnnn)\` survives:"
        git log --format='%h%x09%s' "v$V"..origin/main -- CHANGELOG.md \
-         | awk -F'\t' '{ s=$2; if (length(s) > 120) s = substr(s,1,119) "…"; printf "> - `%s` %s\n", $1, s }'
+         | awk -F'\t' '{ s = $2; id = ""
+             # ELIDE THE MIDDLE, NOT THE TAIL. Every subject in this repo ends
+             # in `(Refs PMAT-nnnn)` — the only handle a reader has for finding
+             # the CHANGELOG entry this line is pointing them at. A trailing
+             # cut removed it from 7 of 7 lines (PMAT-1486).
+             if (match(s, /\(Refs PMAT-[0-9]+\)/)) id = substr(s, RSTART, RLENGTH)
+             if (length(s) > 120) {
+               keep = 117 - length(id); if (keep < 24) keep = 24
+               s = substr(s, 1, keep) "… " id
+             }
+             printf "> - `%s` %s\n", $1, s }'
      } > /tmp/reldelta.md
    fi
    DELTA_C=$(wc -m < /tmp/reldelta.md)
