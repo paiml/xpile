@@ -646,6 +646,10 @@ conclusion; a green `gh pr checks` does not include it.**
      through nothing else, and reaches the README frozen per version forever —
      crates.io versions are immutable, so a post-tag README correction can never
      reach an already-published page (PMAT-1471's finding, generalised).
+     ⚠️ **This paragraph named the README as the second non-clone publisher for
+     four days and no step ever fetched the rendered page** (PMAT-1486). Step 6
+     now does. Naming a publisher is not measuring it — see A11 for what the
+     first measurement found.
 
    **Therefore: a post-release correction is written to `CHANGELOG.md` first and
    mirrored to the page second, never the other way round**, and the mirror is
@@ -677,6 +681,67 @@ conclusion; a green `gh pr checks` does not include it.**
    green exit code on an irreversible operation, **debug the verifier first**:
    uniform failure across N independent items means the harness is broken, not
    the operation.
+6. **Verify the RENDERED FRONT PAGE — the second non-clone publisher (PMAT-1486).**
+
+   Step 5 proves the crate *arrived*. It says nothing about the document
+   crates.io puts on its front page, which is the only part of this repository a
+   reader reaches without `git clone` other than the release body — and which is
+   **immutable per version**, so this is a measurement of what shipped, not a
+   check that can be fixed in place. Run it anyway: the finding belongs in the
+   CHANGELOG for the *next* release (A11).
+
+   ```bash
+   C=xpile V=0.1.618                       # crate whose front page to measure
+   FP=$(mktemp -d)/frontpage.html
+   curl -sL -o "$FP" -H 'User-Agent: xpile-release-verify' \
+     "https://crates.io/api/v1/crates/$C/$V/readme"
+   test -s "$FP" || echo "ABORT: $C $V renders no front page — A11"
+
+   # (a) THE TELL. `readme = "../../README.md"` cannot be packaged by reference:
+   #     cargo COPIES the file to the tarball root and rewrites the key to
+   #     `readme = "README.md"` (probe-verified). crates.io then resolves every
+   #     relative path inside it against the package's REPO SUBDIRECTORY —
+   #     `crates/$C/` — not the repo root the file was written for. So any such
+   #     prefix in the rendered HTML is a relative link that has been silently
+   #     reinterpreted, and it is wrong whether it 404s or not.
+   #     `raw` is NOT optional: crates.io rewrites link hrefs under `blob`/`tree`
+   #     but IMAGE srcs under `raw`. The first spelling of this arm omitted it
+   #     and undercounted `xpile-bigint@0.1.617` 10-of-11, missing a dead
+   #     `hero.svg`; that one surfaced only in (b), and a rewritten image that
+   #     resolved 200 to the wrong picture would have escaped BOTH arms.
+   grep -oE "https://github\.com/paiml/xpile/(blob|tree|raw)/HEAD/crates/$C/[^\"?]*" "$FP" \
+     | sort -u > /tmp/fp_rewritten.txt
+   test ! -s /tmp/fp_rewritten.txt \
+     || { echo "ABORT: $(wc -l < /tmp/fp_rewritten.txt) relative link(s) reinterpreted against crates/$C/ — A11"; cat /tmp/fp_rewritten.txt; }
+
+   # (b) Every URL the page actually offers must resolve — hrefs AND img srcs,
+   #     because a broken badge is also a broken claim.
+   { grep -oE 'href="https://[^"]+"' "$FP" | cut -d'"' -f2
+     grep -oE '<img[^>]*src="https://[^"]+"' "$FP" | sed 's/.*src="//;s/"$//'; } \
+     | sed 's/?sanitize=true$//' | sort -u \
+     | grep -v '^https://crates\.io/crates/' | while read -r u; do
+         c=$(curl -s -o /dev/null -w '%{http_code}' -H 'User-Agent: xpile-release-verify' "$u")
+         case "$c" in 200|301|302) ;; *) echo "DEAD $c $u — A11" ;; esac
+       done
+   ```
+
+   ⚠️ **`https://crates.io/crates/<name>` is EXCLUDED from (b) on purpose, and
+   the exclusion is a measurement, not a convenience.** That endpoint returns
+   `404` to every non-browser client — `serde` and `tokio` return `404` too
+   (measured 2026-07-30) — so a link checker that includes it reports the
+   README's own registry link dead on a perfectly good page. Registry presence
+   is step 5's job, via the API. This is the §5-step-5 lesson one layer out:
+   **before believing a checker that contradicts a known-good artefact, run it
+   against a control you know is fine.**
+
+   ⚠️ **(a) is the arm that matters, and a 404 is the FRIENDLY failure.** Two of
+   the eleven targets measured on `0.1.618` resolve at `200` **to the wrong
+   thing**: `crates/xpile/contracts` is a **symlink** (git mode `120000`), so
+   GitHub serves a page whose entire content is the text `../../contracts`
+   instead of the 35 contracts the sentence promises; and `crates/xpile/examples/`
+   is a real but *different* directory — 7 Rust API examples, none of the four
+   Python programs the words "more runnable programs" refer to. Neither shows an
+   error to the reader. **Check the prefix, never just the status code.**
 
 ---
 
@@ -744,6 +809,26 @@ conclusion; a green `gh pr checks` does not include it.**
   never drop them.
 
 ---
+
+- **A11 — FRONT PAGE DEFECTIVE (record it; never touch the batch).** §5 step 6
+  measures the rendered crates.io front page. It runs **after** the upload and
+  the version is immutable, so A11 can never be *repaired* for the release that
+  triggers it — it is a **disclosure** rule: write the finding to
+  `CHANGELOG.md` under the *next* version and, if the release body is still
+  editable, mirror it per §5 step 3's ordering. **A11 must never delay, retry or
+  partially revert a batch** — an already-published crate is valid regardless of
+  what its front page links to (contrast A4, which stops the batch). Like A10 it
+  aborts an artefact, not the day.
+
+  First run, `0.1.618` (PMAT-1486, the measurement that created this rule): the
+  flagship publishes **12 relative link refs across 11 targets, and every one is
+  wrong** — 9 hard `404`, 2 resolving `200` to the wrong object. Among the dead:
+  both `LICENSE-MIT` and `LICENSE-APACHE` on a dual-licensed crate, both design
+  specs, `ci.yml`, the enforcement handoff, and — at the doubled path
+  `crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs` — **the
+  README's own cited evidence for its own quickstart.** The fix (absolute
+  `blob/main` / `tree/main` URLs, each form HTTP-measured) landed *after* the
+  tag, so `0.1.618`'s pages carry it and `0.1.619`'s will not.
 
 ## 7. Slip and partial-batch ledger
 

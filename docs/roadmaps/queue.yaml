@@ -189,6 +189,72 @@ sprint:
     by PMAT-1370). Before tagging run `gh api repos/paiml/xpile/commits/<SHA>/check-runs --jq ''.check_runs[]|"\(.name):
     \(.conclusion)"''` and NAME every non-success in the release body.'
 queue:
+- id: PMAT-1486
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the flagship''s crates.io front page publishes 12 relative links and EVERY ONE IS WRONG —
+    packaging a root document into a subdirectory crate silently reinterprets every relative path in
+    it; 9 targets 404 and 2 resolve at 200 TO THE WRONG OBJECT, including the README''s own cited
+    evidence for its own quickstart'
+  notes: 'PICKED on Day 5 (Thu 2026-07-30) with the ranked queue empty of actionable items —
+    PMAT-1373 merged, PMAT-1374 dated 07-31, PMAT-1375 the DEFERRED 0.1.619 lane — from PMAT-1484''s
+    next-pick lead (b): "cheapest untouched — crates.io rendered READMEs (31)". POST-FREEZE LANE
+    RESPECTED: README.md + docs/RELEASE.md + CHANGELOG.md + roadmap.yaml + queue.yaml only. ZERO
+    crates/*/src, ZERO contracts/*.yaml, ZERO gates.
+    ** THE FIRST THING MEASURED WAS THE ACQUITTAL, not the accusation: does `readme =
+    "../../README.md"` — a path OUTSIDE the package root — survive packaging at all? A synthetic
+    two-crate workspace in mktemp says YES: cargo COPIES the file to the tarball root and REWRITES the
+    key to `readme = "README.md"`. So the page renders and PMAT-1466''s repair holds. A blank flagship
+    page would have been the worse finding and it is not the finding.
+    ** THE DEFECT IS THE SAME REWRITE. crates.io resolves every relative path in the packaged README
+    against the package''s REPOSITORY SUBDIRECTORY (`crates/xpile/`), because that is where the
+    manifest lives. The rewrite that makes the front page RESOLVE is the rewrite that makes every path
+    inside it WRONG. Measured at the v0.1.618 tag: 12 refs / 11 targets / 0 correct — 9 hard 404
+    (both LICENSE files on a dual-licensed crate, both design specs, the enforcement handoff, ci.yml,
+    the xpile-backend source citation, examples/proven-model/, and the quickstart witness at the
+    doubled path crates/xpile/crates/xpile/tests/...), and 2 at 200.
+    ** A 404 IS THE FRIENDLY FAILURE — the transferable half. `crates/xpile/contracts` is a SYMLINK
+    (git mode 120000), so GitHub serves a page whose whole content is the text `../../contracts`,
+    under a sentence promising 35 contracts. `crates/xpile/examples/` is a real but DIFFERENT
+    directory: 7 Rust API examples, none of the four Python programs the words refer to. Neither shows
+    an error. CHECK THE PREFIX, NOT THE STATUS CODE.
+    ** ALREADY SHIPPING, NOTHING WATCHING: same file was xpile-bigint''s front page for 0.1.616 and
+    0.1.617 with 11 of 11 refs dead. And RELEASE.md §5 step 3 has argued FOR FOUR DAYS that this
+    README is the second non-clone path and is IMMUTABLE PER VERSION, while §5''s verify step read
+    only `version.num`. Naming a publisher is not measuring it — PMAT-1480''s finding, one publisher
+    over.
+    ** FIXED: 12 refs → absolute, blob/main for the 8 files and tree/main for the 3 directories, EACH
+    FORM HTTP-MEASURED (blob/ on a directory answers 301 and tree/ on a file answers 301, so they are
+    not interchangeable). All 27 URLs in the README resolve. RELEASE.md gains §5 step 6 (fetch the
+    rendered page, grep the (blob|tree|raw)/HEAD/crates/<crate>/ tell) + abort rule A11.
+    ** A11 IS A DISCLOSURE RULE AND THIS RELEASE IS ITS FIRST CASUALTY: step 6 runs AFTER the upload
+    and versions are immutable, so the post-tag fix means 0.1.618''s pages carry all 12 and 0.1.619''s
+    will not. A11 must NEVER delay, retry or partially revert a batch (contrast A4) — an uploaded
+    crate is valid regardless of what its front page links to.
+    ** MY OWN BUG, MOST TRANSFERABLE PART: I wrote "check the prefix, not the status code" and then
+    wrote a prefix check that COULD NOT SEE IMAGES — crates.io rewrites hrefs under blob/tree but
+    image srcs under `raw`. It undercounted xpile-bigint@0.1.617 10-of-11, missing a dead hero.svg
+    that surfaced only in arm (b) because it happened to 404; a rewritten image resolving 200 to the
+    WRONG PICTURE would have escaped BOTH arms. Found by EXECUTING the block against a real published
+    artefact — PMAT-1485''s lesson, next slice, on a block written the same hour.
+    ** BOTH HALVES DRIVEN on real published artefacts: RED (xpile-bigint 0.1.617) aborts "11 relative
+    link(s) reinterpreted"; GREEN (the xpile 0.1.617 stub) exits SILENT because it has no relative refs
+    at all — so the arm measures the PREFIX, not the fetch. Every mutation diff-ed before its result
+    was believed (PMAT-1484''s control rule).
+    ** THIRD SELF-CHECK: the first sweep called https://crates.io/crates/xpile DEAD at 404 on a
+    published crate. serde and tokio 404 there too — the endpoint refuses non-browser clients. Before
+    believing a checker that contradicts a known-good artefact, run it against a control you know is
+    fine. Step 6 excludes it and says why.
+    ** NEW SHAPE FOR THE PLAYBOOK: A DOCUMENT IS NOT PORTABLE JUST BECAUSE ITS BYTES ARE. Moving a
+    document changes what its relative references MEAN, and a build tool can perform the move and
+    report success. Generalises past READMEs to anything copied into a package, vendored, or served
+    from a path other than the one it was authored at.
+    ** NO GATE (freeze: network + new tests/ file). XPILE-RELREADME-001 filed in next_lane.
+    NEXT FREE ID PMAT-1487. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618 — and AFTER the batch
+    run the new §5 step 6 and EXPECT A11 to fire with 12 reinterpreted links. That is the predicted,
+    already-disclosed outcome, not a new finding and not a reason to touch the batch.'
 - id: PMAT-1485
   status: done
   ev_rank: R1
@@ -6943,6 +7009,50 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1486 GATE — XPILE-RELREADME-001, the prefix-free packaged-front-page property. Blocked ONLY
+  by the Wed 2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file AND network), S-sized, and
+  the defect is already MEASURED: 12 relative refs across 11 targets on the v0.1.618 flagship page,
+  9 hard 404 and 2 resolving 200 to the WRONG OBJECT. THE RULE, and it is a REPO-LOCAL rule with an
+  OPTIONAL network half, which is what makes it cheap: for every packaged front page resolved by
+  published_readme_honesty.rs''s existing resolver, NO markdown link or image target may be RELATIVE
+  when the front-page file lives outside its own package directory. That half needs no network and no
+  crates.io account — it is a property of the FILE plus the manifest, and it is the half that would
+  have caught this on the day PMAT-1466 landed. FIVE design constraints, each one a way this gate can
+  be born useless.
+  (a) THE SUBJECT IS THE RESOLVED FRONT PAGE, NOT README.md. Reuse
+  published_readme_honesty.rs''s resolver (all four manifest spellings) rather than hard-coding the
+  workspace root README, or a crate that gains a front page is gated by being remembered — the exact
+  failure PMAT-1466 wrote its arm 1 to prevent.
+  (b) THE TRIGGER IS "OUTSIDE ITS OWN PACKAGE DIRECTORY", NOT "IS THE ROOT README". A relative link
+  in crates/foo/README.md consumed by crates/foo IS correct and must stay legal, or the gate bans a
+  working pattern. The predicate is: does the front page''s path resolve outside the member dir? If
+  yes, relative refs are the defect.
+  (c) THE `raw` SPELLING IS MANDATORY IN THE NETWORK HALF. crates.io rewrites link hrefs under
+  blob/tree and IMAGE srcs under raw. The first spelling of §5 step 6''s tell omitted raw and
+  undercounted 10-of-11, missing a dead hero.svg. A gate written from the pre-correction text is
+  BORN WRONG — the FIFTH consecutive day an unwritten gate''s spec needed correcting before it
+  existed.
+  (d) IT MUST SKIP LOUDLY, NOT PASS, for the network half — gate it behind
+  XPILE_REQUIRE_RELEASE_BODIES=1 (or a sibling var) exactly as changelog_freshness.rs gates its
+  history half, and register the tripwire in docs/RELEASE.md or release_preflight_witness.rs reds for
+  an unarmed tripwire. The repo-local half must run ALWAYS and unconditionally: it is the whole value.
+  (e) THE ACQUITTAL CONTROL: re-insert one relative ref into a COPY of the front page and confirm the
+  gate REDS. Without it the assertion could be walking an empty ref list — the anti-vacuity shape, and
+  the walk is over a regex whose failure mode is silence.
+  (f) ⚠️ FOUND WHILE CHECKING THIS SLICE DID NOT RED AN EXISTING GATE, AND IT IS THE SAME SHAPE ONE
+  LEVEL UP: release_preflight_witness.rs::the_release_doc_documents_the_procedure_and_the_abort_rules
+  asserts the presence of A1, A1b and A2..A8 — and STOPS THERE. A9 (body over cap), A10 (mandatory
+  sections unreachable) and A11 (front page defective) were added on 2026-07-29/30 and NONE was ever
+  added to that list, so all three could be deleted from docs/RELEASE.md and the gate would stay
+  green. It is a LOWER BOUND masquerading as a checklist — which is why adding A11 did not red it,
+  and why that greenness proved nothing. Extending the list is a GATE EDIT (frozen); do it in the
+  same 0.1.619 slice and derive the rule instead of enumerating it: every `**A<n> —` in the file must
+  be reachable from a named step, and the set must be CONTIGUOUS from A1, so the NEXT rule someone
+  adds is covered without anyone remembering to widen a literal.
+  ⚠️ WHAT THE GATE CANNOT DO: it cannot repair a published page. crates.io versions are immutable, so
+  0.1.618 carries all 12 forever. The gate is FORWARD-LOOKING from 0.1.619 and its module header must
+  say so with the 12-of-12 measurement, or a future reader reads green as "every published front page
+  is clean".'
 - 'PMAT-1480 GATE — XPILE-RELBODY-001, the FIRST gate whose corpus leaves the repository. Blocked
   ONLY by the Wed 2026-07-29 18:00 freeze (needs a new crates/xpile/tests/ file), S/M-sized, and the
   defect is already MEASURED: 0 of 613 published release bodies match their CHANGELOG `## [x.y.z]`

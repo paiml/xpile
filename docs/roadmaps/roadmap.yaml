@@ -24448,3 +24448,125 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     end against the real v0.1.618 tag. Expect abort rule A9 (the body IS over cap; that is the
     expected path, not an edge case), expect the post-tag delta notice, and RECOUNT the delta on the
     day -- it was 97 lines on 07-29 and 526 on 07-30, so it will be larger again.'
+- id: PMAT-1486
+  status: done
+  priority: P1
+  category: honesty
+  title: The flagship's crates.io front page publishes 12 relative links and every one is wrong --
+    packaging a root document into a subdirectory crate silently reinterprets every relative path in
+    it, 9 targets 404 and 2 resolve at 200 to the WRONG OBJECT, including the README's own cited
+    evidence for its own quickstart
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG + release-mechanics lane only --
+    ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gate files). Tag v0.1.618 is already cut at
+    6b5f6c02, so this does NOT touch the release SHA -- and that is load-bearing, see A11 below.
+
+
+    PICKED with the ranked queue empty of actionable items (PMAT-1373 merged, PMAT-1374 dated 07-31,
+    PMAT-1375 the DEFERRED 0.1.619 lane), from PMAT-1484''s next-pick lead (b): "cheapest untouched --
+    crates.io rendered READMEs (31)". 31 crates publish irreversibly tomorrow.
+
+
+    WHAT PMAT-1466 DID AND WHERE IT STOPPED. It fixed WHICH document the flagship publishes:
+    readme = "../../README.md", so crates.io/crates/xpile serves the gated 647-commit workspace
+    README.md instead of a v0.0.1 name-reservation stub with one commit ever. Correct. It was also the
+    last measurement anyone took -- the arc gated the front page''s IDENTITY and never its BEHAVIOUR.
+
+
+    THE MECHANISM, PROBE-VERIFIED RATHER THAN ASSUMED. A readme outside the package root cannot be
+    packaged by reference. Cargo COPIES it to the tarball root and REWRITES the key to
+    readme = "README.md" -- confirmed with a synthetic two-crate workspace in mktemp whose member
+    declared readme = "../../README.md": the emitted .crate carries README.md at its root and
+    readme = "README.md" in its manifest. So the page DOES render and PMAT-1466''s repair holds (this
+    was the first thing checked, because a blank flagship page would have been the worse finding).
+    But crates.io then resolves every relative path inside that file against the package''s
+    REPOSITORY SUBDIRECTORY -- crates/xpile/ -- because that is where the manifest lives. THE REWRITE
+    THAT MAKES THE FRONT PAGE RESOLVE IS THE SAME REWRITE THAT MAKES EVERY PATH INSIDE IT WRONG.
+
+
+    MEASURED AT THE v0.1.618 TAG: 12 relative refs across 11 targets, 0 correct. 9 hard 404 --
+    LICENSE-MIT, LICENSE-APACHE, docs/specifications/xpile-spec.md, docs/specifications/audit-design.md,
+    docs/status/enforcement-handoff.md, .github/workflows/ci.yml, crates/xpile-backend/src/lib.rs,
+    examples/proven-model/, and crates/xpile/tests/readme_quickstart_witness.rs. 2 resolve at 200 TO
+    THE WRONG OBJECT.
+
+
+    A 404 IS THE FRIENDLY FAILURE -- this is the transferable half. crates/xpile/contracts is a
+    SYMLINK (git mode 120000) to ../../contracts, so GitHub serves a page whose entire content is the
+    text "../../contracts", directly under the sentence "Every emittable construct is anchored to a
+    contract in contracts/" which promises 35 of them. And crates/xpile/examples/ is a real but
+    DIFFERENT directory: 7 Rust API examples, none of the four Python programs that "more runnable
+    programs are in examples/" refers to. Neither shows the reader an error. CHECK THE PREFIX, NOT
+    THE STATUS CODE.
+
+
+    SHARPEST SINGLE CASUALTY: the README cites crates/xpile/tests/readme_quickstart_witness.rs as the
+    executable evidence for its own quickstart. On the front page that becomes the doubled path
+    crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs -- the evidence pointer for the
+    page''s central claim, dead, aimed at the one reader who cannot clone and check it. Both LICENSE-*
+    links dying on a dual-licensed crate is the same shape applied to licensing.
+
+
+    ALREADY SHIPPING, NOTHING WATCHING. The same file was xpile-bigint''s front page for 0.1.616 and
+    0.1.617, where 11 of 11 refs were dead (10 links + a hero.svg). And docs/RELEASE.md section 5
+    step 3 has argued FOR FOUR DAYS that this README is the second non-clone path into the repository
+    and that crates.io versions are IMMUTABLE PER VERSION -- while section 5''s verify step read only
+    version.num. NAMING A PUBLISHER IS NOT MEASURING IT: PMAT-1480''s finding, one publisher over.
+
+
+    FIXED, docs-only under the freeze. All 12 refs are absolute -- blob/main for the 8 files,
+    tree/main for the 3 directories, EACH FORM HTTP-MEASURED, NOT GUESSED (blob/ on a directory
+    answers 301, tree/ on a file answers 301, so the two cannot be used interchangeably). All 27 URLs
+    in the README resolve. docs/RELEASE.md gains section 5 step 6, which fetches the rendered page and
+    greps for the (blob|tree|raw)/HEAD/crates/<crate>/ prefix -- the tell -- plus abort rule A11.
+
+
+    A11 IS A DISCLOSURE RULE AND THIS RELEASE IS ITS OWN FIRST CASUALTY. Step 6 runs AFTER the upload
+    and a published version is immutable, so A11 can never be REPAIRED for the release that triggers
+    it. The fix landed post-tag: 0.1.618''s own pages carry all 12 broken links and 0.1.619''s will
+    not. A11 must NEVER delay, retry or partially revert a batch -- an uploaded crate is valid
+    regardless of what its front page links to (contrast A4, which stops the batch). Like A10 it
+    aborts an artefact, not the day.
+
+
+    MY OWN BUG, AND THE MOST TRANSFERABLE PART: I WROTE "check the prefix, not the status code" AND
+    THEN WROTE A PREFIX CHECK THAT COULD NOT SEE IMAGES. Arm (a) matched (blob|tree), but crates.io
+    rewrites link hrefs under blob/tree and IMAGE SRCS UNDER raw. Against xpile-bigint@0.1.617 it
+    reported 10 rewritten refs where the truth is 11 -- the missing one a dead hero.svg, which
+    surfaced only in arm (b) because it happened to 404. A REWRITTEN IMAGE RESOLVING 200 TO THE WRONG
+    PICTURE WOULD HAVE ESCAPED BOTH ARMS. Found by EXECUTING the block against a real published
+    artefact, not by reading it -- PMAT-1485''s lesson, next slice, on a block written the same hour.
+
+
+    BOTH HALVES DRIVEN, on real published artefacts rather than synthetic input. RED:
+    C=xpile-bigint V=0.1.617 aborts "11 relative link(s) reinterpreted against crates/xpile-bigint/ --
+    A11" with every one confirmed dead. GREEN: C=xpile V=0.1.617, the stub, exits SILENT -- it has no
+    relative refs at all, so the arm is measuring the prefix and not the fetch. Each mutation was
+    diff-ed against the original before its result was believed (PMAT-1484''s rule for controls).
+
+
+    THIRD SELF-CHECK WORTH KEEPING. The first link sweep reported https://crates.io/crates/xpile DEAD
+    at 404 on a crate that is demonstrably published (the API returns max_version 0.1.617). That
+    endpoint returns 404 to every non-browser client -- serde and tokio do too, measured. BEFORE
+    BELIEVING A CHECKER THAT CONTRADICTS A KNOWN-GOOD ARTEFACT, RUN IT AGAINST A CONTROL YOU KNOW IS
+    FINE. Step 6 excludes the endpoint and says why, so tomorrow''s operator does not chase it.
+
+
+    SHAPE FOR THE PLAYBOOK: A DOCUMENT IS NOT PORTABLE JUST BECAUSE ITS BYTES ARE. Moving a document
+    changes what its relative references MEAN, and the move can be performed by a build tool that
+    reports success. Generalise beyond READMEs: any file copied into a package, vendored, or served
+    from a path other than the one it was authored at carries relative paths that are now claims
+    about a directory that no longer exists.
+
+
+    NO GATE (freeze: needs network + a new crates/xpile/tests/ file). XPILE-RELREADME-001 is specified
+    in queue.yaml next_lane for 0.1.619.
+
+
+    NEXT FREE ID PMAT-1487. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
+    MERGES -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07), never a same-day
+    hotfix onto the release SHA. Friday runs the section-5-step-3 block AS IT READS IN THE FILE
+    (extract it, do not retype it; execution-verified end to end against the real tag), expects abort
+    rule A9, expects the post-tag delta notice and RECOUNTS the delta on the day (97 lines on 07-29,
+    526 on 07-30, larger again now). AFTER the batch, run the NEW section 5 step 6 and expect A11 to
+    FIRE with 12 reinterpreted links -- that is the predicted, disclosed outcome, NOT a new finding
+    and NOT a reason to touch the batch.'

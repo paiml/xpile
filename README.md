@@ -50,7 +50,7 @@ contract it satisfies (`// xpile-contract: C-PY-INT-ARITH`). An `i64` overflow
 silently — CPython's `int` is unbounded, so wrapping would be a wrong answer.
 
 That transcript is not pasted, it is gated.
-[`crates/xpile/tests/readme_quickstart_witness.rs`](crates/xpile/tests/readme_quickstart_witness.rs)
+[`crates/xpile/tests/readme_quickstart_witness.rs`](https://github.com/paiml/xpile/blob/main/crates/xpile/tests/readme_quickstart_witness.rs)
 parses the two blocks above out of *this file*, runs the real binary on that
 source, checks the emit matches what is printed here, compiles it with
 `rustc -O`, asserts `factorial(10) == 3628800`, and asserts `factorial(21)`
@@ -60,7 +60,7 @@ test that asserted `3628800` read a *different* `factorial.py` — the `-> BigIn
 fixture, whose emit contains no `checked_` call at all — so the overflow
 property being sold here was the one property that test could not observe.
 
-More runnable programs are in [`examples/`](examples/).
+More runnable programs are in [`examples/`](https://github.com/paiml/xpile/tree/main/examples/).
 
 ## Same source, four targets
 
@@ -182,11 +182,11 @@ from the registry and pinned by
 `crates/xpile/tests/proof_lane_scaffold_witness.rs`. There is no mdBook
 contract frontend or backend. Making these real is v0.2.0 work — the proof
 lane that IS load-bearing today is the Lean *theorem* substrate under
-[`contracts/`](contracts/), not this rendering path.
+[`contracts/`](https://github.com/paiml/xpile/tree/main/contracts/), not this rendering path.
 
 ## Contracts
 
-Every emittable construct is anchored to a contract in [`contracts/`](contracts/),
+Every emittable construct is anchored to a contract in [`contracts/`](https://github.com/paiml/xpile/tree/main/contracts/),
 validated on every commit by `pv lint contracts/`. Each contract carries a Lean
 4 refinement theorem; most also carry a Kani bounded-model-checking harness. Each
 is scored against the N-of-M *oracle quorum* bar — ≥1 vote across ≥3 of the four
@@ -205,8 +205,8 @@ $ ls contracts/*.yaml   # the substrate those totals are computed over
 Full detail — the contract taxonomy, quorum strata, and the "Diamond" theorem
 depth program — lives in the specification, not this README:
 
-> **Spec:** [`docs/specifications/xpile-spec.md`](docs/specifications/xpile-spec.md) ·
-> **Adversarial audit:** [`docs/specifications/audit-design.md`](docs/specifications/audit-design.md)
+> **Spec:** [`docs/specifications/xpile-spec.md`](https://github.com/paiml/xpile/blob/main/docs/specifications/xpile-spec.md) ·
+> **Adversarial audit:** [`docs/specifications/audit-design.md`](https://github.com/paiml/xpile/blob/main/docs/specifications/audit-design.md)
 
 ## Workspace
 
@@ -262,8 +262,8 @@ other six — `kani`, `lake-build`, `docs`, `wasi`, `lean-models`,
 `shader-validate` — run on every PR and go red on a real regression, but are
 **advisory**: they do not block a merge. Notably that includes the proof lane,
 so a failing Kani harness or Lean build is visible without being blocking; see
-[`docs/status/enforcement-handoff.md`](docs/status/enforcement-handoff.md) §2.
-Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+[`docs/status/enforcement-handoff.md`](https://github.com/paiml/xpile/blob/main/docs/status/enforcement-handoff.md) §2.
+Workflow: [`.github/workflows/ci.yml`](https://github.com/paiml/xpile/blob/main/.github/workflows/ci.yml).
 
 ## Install
 
@@ -304,7 +304,7 @@ By default, every emitted construct is annotated with its `// xpile-contract:`
 citations across the applicable taxonomy layers (L1 semantics, L2 translation,
 L4 hybrid, L5 compile) — on every backend. Pass `--contracts off` for
 annotation-free output; the library equivalent is
-[`xpile_backend::strip_contract_citations`](crates/xpile-backend/src/lib.rs).
+[`xpile_backend::strip_contract_citations`](https://github.com/paiml/xpile/blob/main/crates/xpile-backend/src/lib.rs).
 
 ### Universal binary
 
@@ -327,7 +327,7 @@ $ wasmtime run target/wasm32-wasip1/release/model.wasm    # output matches CPyth
 
 The emitted function carries its `// xpile-contract:` citation, so the proof
 travels with the code — the delivery vehicle for
-[proven-model-as-code](examples/proven-model/). Drop the `--target` for a native
+[proven-model-as-code](https://github.com/paiml/xpile/tree/main/examples/proven-model/). Drop the `--target` for a native
 binary from the same crate.
 
 The generated Rust is `std`-only **except** for Python `dict`, which lowers to
@@ -350,4 +350,4 @@ Full CLI reference and tutorials: **<https://paiml.github.io/xpile/>**.
 
 ## License
 
-MIT OR Apache-2.0. See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
+MIT OR Apache-2.0. See [`LICENSE-MIT`](https://github.com/paiml/xpile/blob/main/LICENSE-MIT) and [`LICENSE-APACHE`](https://github.com/paiml/xpile/blob/main/LICENSE-APACHE).
