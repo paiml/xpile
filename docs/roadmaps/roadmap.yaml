@@ -24906,6 +24906,85 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1492
+  status: done
+  priority: P1
+  category: honesty
+  title: The section whose whole job is to bound the tool publishes 2 of the flagship frontend's
+    348 refusals -- and the two lanes beside it are exhaustive, so nothing marks the difference
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG lane ONLY -- zero crates/*/src,
+    zero contracts/*.yaml, zero gate files, zero Cargo.toml). Tag v0.1.618 is cut at 6b5f6c02, so
+    this does not touch the release SHA.
+    PICKED on Day 5 with the ranked queue empty (PMAT-1374 dated 07-31) by running PMAT-1479''s
+    accept-side recipe on the frontend it explicitly named as unswept: "the accept-side complement
+    is unswept for EVERY OTHER frontend. Python/C/WASM all publish refusal rosters and none has
+    ever been asked what it accepts without modelling."
+    MEASURED, by running the shipped CLI over 35 shapes at 244091cc (NOT by reading source): 24
+    accepted at exit 0, 11 refused across 7 distinct refusal messages, and the mandatory
+    `### What still REFUSES` section names NONE of the 7. It names TWO Python refusals total
+    (PMAT-1363, PMAT-1364) -- which are that cycle''s ADDITIONS: PMAT-1363 is one of the four
+    slices the section preamble itself names as existing "only to move a construct from the first
+    column to the second", and PMAT-1364 is a second same-cycle Python refusal, correctly absent
+    from that list of four because its refusal is one arm of a coercion fix. The frontend carries 471
+    `FrontendError::Lower` refusal sites over 348 distinct message texts.
+    ** THE SHAPE: UNDER-REPORTING A REFUSAL IS OVER-CLAIMING A CAPABILITY -- the exact mirror of
+    PMAT-1479, which found the shell lane publishing a refusal guarantee it did NOT have. Here the
+    flagship lane publishes almost none of the guarantee it DOES have. The defect is STRUCTURAL,
+    not a false sentence: the WASM paragraph is exhaustive and contract-derived ("The 13 refusals
+    as of this release"), the shell paragraph is exhaustive plus its third-category disclosure,
+    and the Python paragraph is cycle-scoped -- in IDENTICAL formatting, under the same unqualified
+    present-tense verb "refuses", under a preamble that quantifies over "Every row below". A reader
+    applies the exhaustive reading to all three.
+    ** MY OWN BUG, AND IT IS THE ONE THE SECTION''S OWN PREAMBLE WARNS ABOUT: the first draft of
+    the confirmed-refusal table had TWO MORE ROWS -- keyword arguments in calls and `with`
+    statements -- both lifted from real refusal strings in lib.rs ("keyword arguments in calls
+    (`f(x=...)`) are not supported at v0.1.0"). BOTH SHAPES TRANSPILE AT EXIT 0: `g(x=a)` lowers
+    fine and `with open("x") as fh: s = fh.read()` lowers fine. The strings guard NARROWER shapes
+    than their wording suggests. A ROSTER BUILT BY GREPPING src/ WOULD HAVE PUBLISHED TWO FALSE
+    REFUSALS, and a disclosure rule''s false positive is itself a published falsehood (PMAT-1489).
+    Caught by re-probing, not by re-reading. This is why the published figure is a census of the
+    MECHANISM (sites + distinct message texts, an explicit LOWER BOUND ON BREADTH) and never a
+    roster.
+    ** THE ACCEPT SIDE IS CLEAN, AND THAT IS A RESULT: 0 of 24, against shell''s 20 of 20. Every
+    accepted shape was genuinely modelled and most are contract-cited -- try/except ->
+    catch_unwind + `xpile: ValueError: ` prefix downcast (C-PY-EXCEPT-ALLOWLIST); yield -> eager
+    Vec (C-PY-GENERATOR-EAGER); `0 < a < 10` -> bound temporaries so the middle operand is
+    evaluated ONCE; match -> if/else; del/star-unpack/walrus/raise/f-string/nested def/lambda all
+    modelled. `def f(*args: int)` -> Vec<i64> AND the intra-module call site packs to match
+    (`f(1,2,3)` -> `f(vec![1i64,2i64,3i64])`), verified against CPython (g() = 3 both sides). So
+    this is a CLAIM defect, not a capability complaint -- PMAT-1487''s rule applied BEFORE writing
+    it up.
+    ** HEALTHY CONTROLS, cited so this does not read as generic rot: book/src/reference/frontends.md
+    publishes an exhaustive GATE-BACKED operator roster (XPILE-PYOPSURFACE-001) -- ast.BinOp
+    13/12/1, ast.Compare 10/8/2, ast.UnaryOp 4/3/1, naming @, is, is not, unary + -- so the repo
+    already knows how to bound this frontend honestly, FOR OPERATORS. The import lane is also
+    healthy: `from math import sqrt` refuses with a precise remedy (PMAT-1410), `import math` +
+    `math.sqrt(x)` is modelled WITH a domain check, unknown modules refuse.
+    ** THREE BOOK HYPOTHESES WERE REFUTED FIRST and are recorded so nobody re-hunts them: the
+    deployed mdBook is NOT stale (book.yml deploys on every push to main; green at 244091cc
+    05:45Z), its 114 markdown links contain ZERO that escape the book when rendered (86
+    book-internal, 26 external, 2 anchor), and all 20 `blob/main/<path>` URLs resolve in the tree.
+    The book''s contract COUNTS are honestly scoped ("the founding twelve" + "grown well past
+    twelve" + `ls contracts/*.yaml` as the live set) -- PMAT-1458/1461/1462 reached it.
+    SHIPPED: the Python paragraph now states its own SCOPE, publishes the re-derivation block with
+    its dated output, and names the 7 CLI-confirmed families; abort rule A15 (disclosure only,
+    direction stated explicitly: 0.1.618 carries the DEFECT, 0.1.619 the FIX).
+    ** SECOND OWN BUG, CAUGHT PRE-COMMIT AND THE MORE TRANSFERABLE OF THE TWO: A15''s first draft
+    justified itself with "the paragraph is BYTE-IDENTICAL at tag line 7416 and main line 8506" --
+    a premise THIS SAME COMMIT falsifies, since the commit that writes the rule is the commit that
+    scope-marks the paragraph. Tomorrow''s operator checking that premise against main would have
+    found it false and read A15 as stale: PMAT-1491''s self-cancellation reproduced ONE RULE LATER,
+    in a rule whose only action is disclosure. → A DISCLOSURE RULE MUST BE VERIFIABLE FROM A TREE
+    ITS OWN FIX CANNOT REACH. A11 (README links) and A14 (crates/*/src doc comments) pass that test
+    by ACCIDENT -- their subjects are frozen -- and A15 is the first whose subject is CHANGELOG.md
+    itself, so the tag-vs-working-tree distinction had to become explicit in the rule text. All
+    three copies (RELEASE.md A15, the CHANGELOG entry, queue.yaml `updated`) now pin verification to
+    `git show v0.1.618:CHANGELOG.md | sed -n ''7416p''` and say in words that a main-side check
+    reports the defect ABSENT. Abort-rule single-definition-site property
+    re-verified: 16 markers, each exactly ONCE, docs/RELEASE.md the only definition file.
+    NO GATE -- freeze bars a new tests/ file. XPILE-PYREFUSAL-001 filed in next_lane; its spec must
+    (a) derive from the CLI and NEVER from a grep over src/, per the two false rows above, and
+    (b) assert SCOPE-MARKING rather than a count, since the roster grows every cycle.'
 - id: PMAT-1491
   status: done
   priority: P1
