@@ -49,7 +49,7 @@ runbook + record for that tail.
 | XPILE-CLAIMS-001 | 5 | #1880 | derives README/inventory/roadmap counts from code; fixed the live "25 vs 35" + PMAT-952-planned drift (red-then-green) |
 | XPILE-CONTRACT-001 | 6 | #1874 region | 4 bare contracts each cite ≥1 existing executing falsifier; `pv lint` green |
 | PMAT-482 | 7 | #1877 | offline naga + spirv-val gate — WGSL/SPIR-V validated on GPU-less CI, no skip path |
-| XPILE-CLEANROOM-001 | 8 | #1878 | release workflow: `cargo publish --workspace --dry-run` under isolated CARGO_HOME + per-PR manifest falsifier |
+| XPILE-CLEANROOM-001 | 8 | #1878 | release workflow: `cargo publish --workspace --dry-run` under isolated CARGO_HOME (excludes a **cached** crate, *not* a `[patch]` path override — measured, PMAT-1500) + per-PR manifest falsifier, which since PMAT-1500 also carries the patch-override tripwire (`XPILE-CLEANROOM-PATCH-001`) |
 | XPILE-PTX-001 | 12 | #1876 | `--hardware ptx` makes `--target ptx` CLI-reachable; refuses loudly without it |
 
 All seven run under the `workspace-test` (or `gate`) job. Until 2026-07-05 the

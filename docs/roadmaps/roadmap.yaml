@@ -25572,3 +25572,88 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1500
+  status: done
+  priority: P1
+  category: honesty
+  title: the isolation guarantee under which tomorrow's irreversible 31-crate publish is
+    pre-flighted names a mechanism that does not produce it, and the tripwire that does could
+    not detect the override this repository's own Cargo.toml tells developers to write
+  notes: 'SHIPPED 2026-07-30. Ran PMAT-1499''s next-pick (a): sweep safety/security/isolation
+    properties across docs/, the new top of the falsifiability ranking. FOUND IN THE RELEASE LANE.
+    Three documents published the clean room''s patch-isolation property as a CONSEQUENCE of the
+    fresh CARGO_HOME -- .github/workflows/release.yml:34-37 ("ISOLATED, EMPTY CARGO_HOME so no
+    sibling [patch.crates-io] path-override ... can satisfy a dependency the real crates.io registry
+    could not"), docs/RELEASE.md section 3, and the XPILE-CLEANROOM-001 row in
+    docs/status/enforcement-handoff.md -- with the origin in
+    fable-architectural-review.md''s definition_of_done itself ("under an isolated CARGO_HOME (no
+    sibling paths)"). THE CAUSAL CLAIM IS FALSE, MEASURED NOT REASONED. Three arms, each under a
+    fresh empty CARGO_HOME with --offline: (1) [patch.crates-io] in ./.cargo/config.toml -> cargo
+    exit 0, dep resolved to the LOCAL path (source: None); (2) CONTROL, identical tree with the patch
+    removed -> exit 101 "no matching package ... location searched: crates.io index"; (3) [patch] in
+    the workspace ROOT Cargo.toml -> exit 0, resolved to the local path. CARGO_HOME governs the
+    registry cache, credentials and $CARGO_HOME/config.toml; cargo ALSO discovers config by walking
+    the CWD HIERARCHY, and [patch] is legal in the root manifest -- neither reachable from
+    CARGO_HOME. So the named mechanism cannot produce the named property.
+    AND THE STEP THAT ACTUALLY PRODUCED IT COULD NOT FIRE, which is the sharper half. The workflow
+    did carry a dedicated tripwire, self-described as such. It was
+    `grep -REn ''patch\.'' .cargo | grep -q ''path *=''`, requiring `patch.` and `path =` on the SAME
+    LINE. The canonical TOML spelling -- verbatim from this repo''s own Cargo.toml:95-96, the recipe
+    it instructs developers to add -- spans two lines. Executed against exactly that committed file
+    the guard returned GREEN and printed "no committed sibling-path patch override -- clean room
+    preserved". It fired ONLY on the dotted-key one-liner (patch.crates-io.foo = { path = ... }),
+    a spelling documented nowhere here, and scanned only .cargo/, so arm 3 had no coverage at all.
+    NOT A LIVE HOLE: nothing is committed today (zero tracked .cargo/*, and the root manifest carries
+    the recipe only as # comments), so like PMAT-1499 the defect is the GUARANTEE, not an exposure.
+    The cost is different though -- here the tripwire is the thing that would have caught it.
+    WHY EVERY GATE MISSED IT, fourth axis of "in scope != covered": enforcement_prose_witness.rs and
+    release_mandate_enforcement_witness.rs both walk docs/RELEASE.md and claims_drift.rs walks all of
+    docs/specifications/, but NOT ONE asserted anything about the clean-room isolation property --
+    grep for CARGO_HOME/cleanroom/isolated/patch across all four gates that read these files returns
+    zero hits. After completeness (1498), cadence (1495) and numeral-free prose (1499).
+    THE RANKING LESSON HELD, one corpus over from where 1499 found it: a clean-room property of a
+    job you CANNOT RUN LOCALLY is as unfalsifiable as a sandbox property of a server you cannot
+    start. cleanroom-publish is dispatch/tag-triggered only, so no reader and no operator following
+    the RELEASE.md checklist can check it. It took a three-arm local differential to measure.
+    FIXED, both halves. release.yml''s guard is now section-aware, comment-skipping, and scans every
+    file cargo would actually read (.cargo/config.toml, .cargo/config, Cargo.toml). All four arms
+    EXECUTED against the real workflow step extracted from the YAML: green on the repo today (the
+    #-commented recipe correctly ignored), red on the two-line spelling, red on the dotted-key
+    one-liner, red on the root-manifest route. Arm 4 also caught a robustness bug in the new guard
+    itself -- git ls-files can name a staged-then-deleted path and awk fatals -- so the file list is
+    now filtered on tracked AND present.
+    NEW GATE XPILE-CLEANROOM-PATCH-001: 5 properties added to the EXISTING per-PR falsifier
+    crates/xpile/tests/publish_manifest_integrity.rs, deliberately there rather than in a new file
+    because that test is the per-PR half release.yml itself names, and the fast required lane is the
+    only place a reader can verify this at all. Properties: the live scan over all three
+    patch-bearing files; a RED HALF on the documented two-line spelling (the exact input the old grep
+    read as clean); a RED HALF covering the dotted-key form, the root-manifest route, and
+    section-state reset so an ordinary intra-workspace path-dep is not misreported; the exemption
+    control; and an EXPIRY property keyed to the WORKFLOW, so reinstating the same-line grep or
+    dropping the root-manifest scan reds in the fast lane. THREE RED HALVES OF THE EXPIRY SCREEN
+    EXECUTED by mutating release.yml in place (cp backup, never git checkout -- that deletes an
+    uncommitted slice), each failing with its own distinct message, then green restored.
+    PMAT-1495''S EXEMPTION TRAP FIRED ON THIS FIX TOO, exactly as the playbook predicts: the first
+    draft of the expiry screen RED ON THE COMMENT BLOCK that quotes the retired grep verbatim to
+    record what was wrong with it. Fix: screen the EXECUTABLE lines only (a reinstated grep is never
+    #-prefixed) -- which then needs a POSITIVE CONTROL that the retired spelling is still present in
+    the comments, because otherwise the screen can match nothing and report green forever. That
+    control is mutation 3 above and it fires.
+    POST-FREEZE SCOPE, and it deviates from PMAT-1495..1499 so it is stated plainly: this slice
+    MODIFIES two existing files that those slices did not touch -- .github/workflows/release.yml and
+    the existing gate crates/xpile/tests/publish_manifest_integrity.rs (additive test functions
+    only). Justification: release.yml IS release mechanics, explicitly permitted post-freeze; it is
+    dispatch/tag-triggered so it runs on neither PRs nor main, and the v0.1.618 tag''s own
+    cleanroom-publish run already completed SUCCESS at 6b5f6c02 and cannot be re-fired by this
+    change. Zero crates/*/src, zero contracts/*.yaml, zero Cargo.toml, no floor bumped. Tag
+    v0.1.618 is cut at 6b5f6c02, so main is post-tag and nothing here reaches the release artifact.
+    Friday''s publish is a MANUAL cargo publish --workspace, not this workflow.
+    NEXT: (b) deferrals as a class -- every "lands in Phase N" / "in a future release" / dated
+    promise in docs/, checked against whether the target already passed (template exists in
+    mcp_surface_disclosure_witness.rs property 5, quantified over ONE page); then (c) parent/child
+    pairs, every sub/*.md against its xpile-spec.md section.'
+  created: '2026-07-30'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

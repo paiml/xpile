@@ -194,10 +194,42 @@ gh run list --workflow release.yml --limit 1 --json conclusion,headSha
 ```
 
 `cleanroom-publish` runs `cargo publish --workspace --dry-run --locked` under
-an isolated, empty `CARGO_HOME`, so no sibling `[patch.crates-io]` path
-override and no cached crate can satisfy a dependency the real registry could
-not. Advisory tier — it is not a required status check, so **read its
-conclusion; a green `gh pr checks` does not include it.**
+an isolated, empty `CARGO_HOME`, so no **cached** crate can satisfy a
+dependency the real registry could not. Advisory tier — it is not a required
+status check, so **read its conclusion; a green `gh pr checks` does not include
+it.**
+
+### What `CARGO_HOME` does not isolate (XPILE-CLEANROOM-PATCH-001)
+
+Until PMAT-1500 this section also credited the fresh `CARGO_HOME` with
+excluding a sibling `[patch.crates-io]` path override. **It does not, and the
+difference was measured rather than reasoned.** `CARGO_HOME` governs the
+registry cache, credentials and `$CARGO_HOME/config.toml`; cargo *also*
+discovers config by walking the **cwd hierarchy**, and `[patch]` is legal in
+the workspace **root manifest** — neither is reachable from `CARGO_HOME`. Three
+arms, each under a fresh empty `CARGO_HOME` with `--offline`:
+
+| arm | tree | result |
+|-----|------|--------|
+| 1 | `[patch.crates-io]` in `./.cargo/config.toml` | exit 0 — dep resolved to the **local path** |
+| 2 | control: same tree, patch removed | exit 101 — *"location searched: crates.io index"* |
+| 3 | `[patch.crates-io]` in the root `Cargo.toml` | exit 0 — resolved to the **local path** |
+
+The property is real, but it is produced by the workflow's **tripwire step**,
+not by the `CARGO_HOME` line — and through v0.1.618 that tripwire could not
+fire. It was `grep -REn 'patch\.' .cargo | grep -q 'path *='`, which needs
+`patch.` and `path =` on the **same line**; the spelling `Cargo.toml:95-96`
+tells developers to write spans two, so against exactly that committed file the
+step returned green and printed *"clean room preserved"*. It also scanned only
+`.cargo/`, leaving arm 3 uncovered. Both are fixed, and the authoritative copy
+now runs **per-PR** in `crates/xpile/tests/publish_manifest_integrity.rs` with
+executed red halves for every route — the heavy `cleanroom-publish` job is
+dispatch/tag-only, so no reader can run it to check.
+
+**Operator consequence for this checklist:** a green `cleanroom-publish` is
+evidence about *caching and packaging*, not about patch overrides. The
+patch-override guarantee is discharged by `cargo test --workspace` (required
+tier), which is where you should read it.
 
 ---
 

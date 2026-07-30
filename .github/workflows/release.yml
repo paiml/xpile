@@ -32,17 +32,32 @@ env:
 jobs:
   # ── Optional check: cleanroom-publish (XPILE-CLEANROOM-001) ───
   # Runs `cargo publish --workspace --dry-run --locked` under an
-  # ISOLATED, EMPTY CARGO_HOME so no sibling `[patch.crates-io]`
-  # path-override and no previously-cached crate can satisfy a
-  # dependency the real crates.io registry could not. cargo's
-  # workspace dry-run packages every crate, resolves intra-workspace
-  # deps from the just-packaged tarballs (its
+  # ISOLATED, EMPTY CARGO_HOME so no previously-cached or vendored crate
+  # can satisfy a dependency the real crates.io registry could not.
+  # cargo's workspace dry-run packages every crate, resolves
+  # intra-workspace deps from the just-packaged tarballs (its
   # `target/package/tmp-registry` overlay), and verify-BUILDS each one
   # from its packaged form — catching BOTH a path-dep missing
   # `version =` (dry-run red) and a path-only dep on an unpublished
   # crate (clean-room red). This is the strongest FREE proxy for a true
   # clean-room build without actually uploading.
   # NOT a required status check at the branch-protection layer.
+  #
+  # ⚠️ WHAT `CARGO_HOME` DOES **NOT** ISOLATE (XPILE-CLEANROOM-PATCH-001,
+  # PMAT-1500 — MEASURED, not reasoned). Through v0.1.618 this comment,
+  # docs/RELEASE.md §3 and docs/status/enforcement-handoff.md all stated
+  # the fresh CARGO_HOME as the reason "no sibling `[patch.crates-io]`
+  # path override" can resolve. That causal claim is FALSE. `CARGO_HOME`
+  # governs the registry cache, credentials and `$CARGO_HOME/config.toml`;
+  # cargo ALSO discovers config by walking the CWD HIERARCHY, and `[patch]`
+  # is legal in the workspace root manifest — neither of which CARGO_HOME
+  # touches. Three-arm differential under a fresh empty CARGO_HOME with
+  # `--offline`: (1) `[patch.crates-io]` in `./.cargo/config.toml` → exit 0,
+  # dep resolved to the local path; (2) control, same tree with the patch
+  # removed → exit 101 "location searched: crates.io index"; (3) `[patch]`
+  # in the root `Cargo.toml` → exit 0, resolved to the local path. The
+  # property is real but it is produced by the TRIPWIRE STEP BELOW, not by
+  # the CARGO_HOME line — and that tripwire could not fire either (see it).
   cleanroom-publish:
     name: cleanroom-publish
     runs-on: ubuntu-latest
@@ -69,18 +84,60 @@ jobs:
       - name: Purge stale cargo package overlay
         run: rm -rf target/package/tmp-registry target/package/tmp-crate
 
-      # Clean-room guard: a committed `.cargo/config.toml` carrying a
-      # `[patch.crates-io]` path override (the personal sibling-checkout
-      # trick documented at Cargo.toml:85) would let a dry-run resolve a dep
-      # from a local path and mask a missing version=. Fail loudly if such a
-      # file is ever committed. None is committed today — this is a tripwire.
+      # Clean-room guard: a committed `[patch.crates-io]` path override (the
+      # personal sibling-checkout trick documented at Cargo.toml:94-96) would
+      # let the dry-run resolve a dep from a local path and mask a missing
+      # `version =`. This step — NOT the CARGO_HOME line below — is what
+      # actually produces the "no sibling path override" property. Nothing is
+      # committed today; this is a tripwire.
+      #
+      # ⚠️ PMAT-1500 — THE TRIPWIRE COULD NOT DETECT THE OVERRIDE THIS
+      # REPOSITORY'S OWN `Cargo.toml` TELLS DEVELOPERS TO WRITE. The previous
+      # implementation was
+      #     grep -REn 'patch\.' .cargo | grep -q 'path *='
+      # which requires `patch.` and `path =` on the SAME LINE. The canonical
+      # TOML spelling, verbatim from Cargo.toml:95-96, spans two:
+      #     [patch.crates-io]
+      #     aprender-contracts = { path = "../aprender/crates/aprender-contracts" }
+      # Executed against exactly that committed file, the old guard came back
+      # GREEN and printed "clean room preserved". It fired only on the
+      # dotted-key one-liner (`patch.crates-io.foo = { path = … }`), a spelling
+      # documented nowhere here. It also scanned only `.cargo/`, so `[patch]`
+      # in the root `Cargo.toml` — arm 3 of the differential, equally honoured
+      # by cargo — had no coverage at all.
+      #
+      # Now section-aware, comment-skipping, and scans every file cargo would
+      # actually read for a patch in this checkout. `actions/checkout@v4`
+      # materialises only tracked files, so "present" == "committed" here.
+      # The authoritative copy of this check is the per-PR falsifier
+      # `crates/xpile/tests/publish_manifest_integrity.rs`, which carries the
+      # executed red halves for BOTH spellings plus the positive control that
+      # the `#`-commented recipe in Cargo.toml must NOT red.
       - name: Guard against committed sibling-path patch overrides
         run: |
-          if git ls-files '.cargo/config.toml' '.cargo/config' | grep -q .; then
-            if grep -REn 'patch\.' .cargo 2>/dev/null | grep -q 'path *='; then
-              echo "::error::a committed .cargo/config has a path-based [patch] — not a clean room"
-              exit 1
+          set -euo pipefail
+          # Tracked AND present on disk. `git ls-files` alone can name a
+          # staged-then-deleted path, which makes awk fatal (found while
+          # executing red half 3 of this very guard).
+          FILES=""
+          for f in .cargo/config.toml .cargo/config Cargo.toml; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1 && [ -f "$f" ]; then
+              FILES="$FILES $f"
             fi
+          done
+          # shellcheck disable=SC2086
+          HITS=$(printf '%s\n' $FILES \
+            | xargs -r awk '
+                FNR == 1 { in_patch = 0 }
+                /^[[:space:]]*#/ { next }
+                /^[[:space:]]*\[/ { in_patch = (/^[[:space:]]*\[patch[.\]]/) ? 1 : 0 }
+                in_patch && /path[[:space:]]*=/ { print FILENAME ":" FNR ": " $0 }
+                /^[[:space:]]*patch\./ && /path[[:space:]]*=/ { print FILENAME ":" FNR ": " $0 }
+              ')
+          if [ -n "$HITS" ]; then
+            echo "$HITS"
+            echo "::error::a committed [patch] carries a path override — not a clean room"
+            exit 1
           fi
           echo "no committed sibling-path patch override — clean room preserved"
 
@@ -92,7 +149,9 @@ jobs:
 
       # THE gate. A fresh empty CARGO_HOME = the clean room: cargo must
       # resolve every non-workspace dependency from crates.io as-published
-      # (no cached/patched sibling copy), and every intra-workspace dep from
+      # (no CACHED copy — but see XPILE-CLEANROOM-PATCH-001 above: a PATCHED
+      # sibling copy is NOT excluded by this line, it is excluded by the
+      # tripwire step above), and every intra-workspace dep from
       # the packaged overlay under target/. `--locked` pins the graph to
       # Cargo.lock; `--dry-run` uploads nothing; `--workspace` auto-orders the
       # 31 crates and waits between levels. Run UNPIPED so a non-zero exit is
