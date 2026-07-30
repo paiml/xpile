@@ -7,6 +7,86 @@ meta-HIR and the trait surfaces.
 
 ## [0.1.618] - 2026-07-31
 
+### The ledger whose stated purpose is telling a deliberate deviation from a forgotten one is empty, has no writer, and was born after every deviation it ranges over (PMAT-1494)
+
+`docs/RELEASE.md` §7 — *"Slip and partial-batch ledger"* — opens *"Every A4 stop
+and every A6 slip is recorded here, with the reason, on the day it happens. An
+unrecorded slip is indistinguishable from a forgotten release."* Under that
+sentence sat exactly one row: *"no slip or partial batch recorded to date"*.
+
+**That row is true as written and it is not the claim a reader takes from it.**
+It is a statement about the table's contents; the preamble quantifies over
+*every* stop and *every* slip, which licenses running it backwards into *no slip
+has occurred*. Nobody had measured the second one. This is PMAT-1492's shape at
+the other end — that slice found a roster whose two rows were read as exhaustive;
+this is a roster whose **zero** rows are read the same way, and an empty table is
+the strongest version of it, because there is no row to inspect and doubt.
+
+**MEASURED 2026-07-30, from three publishers, none of which is this file** — git
+tags with local weekdays, the **full paged** GitHub release corpus (613; a
+`gh release list --limit N` is a page, not a corpus — PMAT-1480's sample trap,
+and it is why `v0.1.615` is confirmed absent by a per-tag `gh release view`
+rather than by scanning a list), and the crates.io versions API with a
+`User-Agent`. All three agree:
+
+| when (local) | what §1's cadence says | what happened |
+|---|---|---|
+| 2026-07-03 | `gh release create`, **then** the batch | `0.1.615` tag Fri 01:00, batch Fri 01:05, **no GitHub release, ever** |
+| 2026-07-04 | Friday | Friday passed with no batch; tag + release + batch all ran **Sat 17:50-17:55** |
+| 2026-07-10 / -17 / -24 | *"Releases are cut on a Friday"* | **three consecutive Fridays with no tag, no release, no version** — zero releases exist in the whole corpus between 2026-07-05 and 2026-07-25 |
+| 2026-07-26 | Fri 2026-07-31 (ratified) | `0.1.617` shipped **Sun 21:10 / 21:18**, pulled *forward*; recorded in `queue.yaml` and nowhere in §7 |
+
+★ **AND THE SAME FILE ALREADY CARRIED THE EVIDENCE, 640 LINES EARLIER.** §5 step
+3's body-size table has a `v0.1.615` row reading `(no release)` — the repo knew,
+in writing, in the document whose §7 says nothing happened. One document, two
+sections, each locally consistent: PMAT-1482's shape, and the only tell is
+reading them in one pass.
+
+★ **NOBODY VIOLATED ANYTHING, AND THAT IS THE FINDING RATHER THAN A MITIGATION.**
+`docs/RELEASE.md` was created **2026-07-27 21:53 CEST (`a0959aa9`)** — after every
+release above. A4, A6 and §7 were all born in that commit, so none of the four
+deviations was a rule violation; the ledger was simply born empty covering a
+history it had never read, and then read as having read it. **The ledger has
+governed zero releases**: none has shipped since it was written, and `v0.1.618`
+is the first. Its emptiness is evidence of its age, not of a quiet history.
+
+★ **THE MECHANISM HALF — PMAT-1493 ONE DOCUMENT ALONG.** Yesterday's slice found
+six mandates whose single assembler had no slot for them. §7 is the mirror: the
+**only** mandated record whose destination is a file in this repository, cited
+from three places (A4's *"record exactly which crates landed in §7"*, A13's
+*"named in the release body and in §7"*, and §7's own preamble) — and **no step
+in §4 or §5 wrote it.** A6 is the sharpest instance: §7 quantifies over *"every
+A6 slip"* and A6 never named §7 at all, so the one rule whose entire outcome is a
+deferral carried no instruction to record the deferral.
+
+★ **TWO REASONS IT WOULD NOT HAVE BEEN WRITTEN EVEN BY AN OPERATOR WHO WANTED
+TO, AND BOTH ARE CREATED BY THIS PROCEDURE.** A1 and A8 pin release work to a
+worktree at the **tag**; §7 lives on `main`, so a row committed where the
+operator is standing reaches no reader (PMAT-1481's pinned tree, in the write
+direction). And §5 opens *"No code merges. None."* with A7 saying *"no Friday
+code"* — both about the shipped artefact, neither about documentation, but the
+ambiguity lands entirely on the one day the row is worth writing, right after a
+batch has failed. **A mandate discharged only by improvisation, at the worst
+moment, is not discharged.**
+
+FIXED, docs-only under the freeze: **new §5 step 9**, the single writer — branch
+off `origin/main`, row dated the day it *happened* and never the merge date, run
+it for any cadence deviation including a pull-forward; A4 and A6 now both cite it
+(a pointer each, never a second copy of the mechanism — PMAT-1488); §7 gains the
+scope statement, the three-publisher re-derivation command, and the four rows
+above marked ***retro***, because they were reconstructed and not entered on the
+day. **NO GATE** — the freeze bars a new `tests/` file; filed as `XPILE-SLIPLEDGER-001`
+in `next_lane`, and its first constraint is that it must **derive** the cadence
+from tags/releases/registry rather than assert the table is non-empty, since an
+honest quiet week has no row either.
+
+★ **THE SHAPE, and it generalises past this table:** *an empty record with a
+universally quantified preamble is a claim surface, and it is the one that grows
+stronger the longer nobody maintains it.* A stale roster at least shows its age;
+an empty one reads as a clean bill of health, and reads that way more confidently
+every release. → **For every "none recorded to date" in this repository, ask
+which step writes the record, and when it last ran.**
+
 ### Six paragraphs mandate content for the release body, one step builds it, and that step's closing assertion ABORTS if you put any of them in (PMAT-1493)
 
 `docs/RELEASE.md` mandates release-body content in six separate places. §2b: the
