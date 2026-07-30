@@ -377,6 +377,57 @@ queue:
     in xpile-spec.md and property 4 covers exactly one of them; (e) still open from 1494,
     owner_decisions and next_lane never drained; (f) still open from 1488, other duplicated
     normative sets.'
+- id: PMAT-1501
+  status: done
+  ev_rank: R1
+  gate_touch: null
+  date: '2026-07-30'
+  title: 'the last live carrier of the PMAT-1475/1476 ruleset-attribution falsehood is the file
+    that HOSTS the markers the enforcement gate machine-reads, and that gate misses it for two
+    independent reasons -- one of which, a CARDINALITY standing in for a NAME, is live in Markdown
+    too'
+  notes: 'DONE 2026-07-30. PMAT-1500''s next-pick (a): .github/workflows/ prose as a corpus -- the
+    falsifiability ranking''s new top, properties of jobs a reader cannot RUN. 705 lines / ~180
+    comment lines across ci.yml, release.yml, book.yml.
+    Scope: .github/workflows/ci.yml COMMENTS ONLY + CHANGELOG + both ledgers. Zero YAML keys, zero
+    steps, zero job behaviour, zero crates/*/src, zero contracts/*.yaml, zero Cargo.toml, no floor
+    bumped, NO gate touched -- strictly inside the Wed 2026-07-29 18:00 docs lane, and narrower than
+    PMAT-1500, which did modify a workflow step and a gate.
+    FOUR CLAIMS MEASURED TRUE, recorded so the sweep is not mistaken for a finding-free skim:
+    shader-validate''s "there is NO skip path" (no adapter probe in offline_validate.rs);
+    lake-build''s "NOT ONE contracts/lean module imports Mathlib" (all 11 grep hits are docstrings
+    saying they do not); release.yml''s 31-crate count; the ADVISORY-CONTEXTS marker equalling
+    job-names-minus-required.
+    THE DEFECT, in the worst possible file: ci.yml''s workspace-test ENFORCEMENT NOTE said org
+    ruleset 13878864 "requires EXACTLY two contexts". MEASURED LIVE via
+    `gh api repos/paiml/xpile/rules/branches/main`: 13878864 -> [gate], 19814559 ->
+    [workspace-test]. Set right, attribution off by a whole ruleset -- the PMAT-1475/1476 defect
+    VERBATIM, whose false inference cost two days, six documents, a non-existent owner decision and
+    a falsehood published to crates.io. NEITHER slice touched this file; `git log -L 68,94:` dates
+    the block to PMAT-1347 (0a6ca974), BEFORE the 2026-07-27 split. Two further stale
+    self-descriptions: one snapshot named where ruleset_drift.rs glob-DISCOVERS every receipt, and
+    orgs/paiml/rulesets/13878864 named as the live cross-check where its BRANCH_RULES_ENDPOINT is
+    the union endpoint.
+    ** THE FINDING: A CARDINALITY IS NOT A NAME, AND THE GATE BUILT FOR THIS EXACT DEFECT MATCHES
+    ONLY NAMES. Three arms, executed against the real enforcement_prose_witness.rs with the probe
+    staged so `git ls-files "*.md"` reached it: (A) retired sentence VERBATIM, count-shaped ->
+    PASSES; (B) same claim, one word changed to name the context -> REDS `names ONLY ruleset
+    13878864 while claiming ["workspace-test"]`; (C) no probe -> baseline green.
+    attribution_offences() requires para.contains(<context name>); "EXACTLY two contexts" names
+    nothing, so `absent` is empty and the paragraph is skipped before any verb or endpoint check.
+    ARM A MEANS A COUNT-SHAPED ATTRIBUTION EVADES THAT GATE IN ANY TRACKED MARKDOWN FILE TODAY; the
+    corpus gap merely explains why THIS one sat in a .yml. Reason 1, the corpus: NO gate here
+    discovers a *.yml PROSE corpus (grep over crates/xpile/tests/*.rs -> zero), so the block hosting
+    the two XPILE-ENFORCEMENT markers is eleven lines outside every prose gate.
+    ** FIFTH AXIS OF *in scope != covered*: SHAPE, after completeness (1498), cadence (1495),
+    numeral-free prose (1499) and vocabulary (1500). The gate reads the subject, holds the RIGHT
+    rule, and the claim is spelled in a form the rule cannot represent -- PMAT-1499''s DUAL (a
+    numeral-FREE sentence dodges a numeral gate; a numeral-ONLY sentence dodges a name gate).
+    NO GATE -- both holes need crates/xpile/tests/ edits, frozen. Specified as
+    XPILE-WORKFLOW-PROSE-001 in next_lane[0]. Until it lands this is a MEASUREMENT, NOT AN
+    INVARIANT, and ci.yml says so in those words.
+    NEXT FREE ID PMAT-1502. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. NO FRIDAY CODE
+    MERGES -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07).'
 - id: PMAT-1500
   status: done
   ev_rank: R1
@@ -7879,6 +7930,48 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1501 GATE -- XPILE-WORKFLOW-PROSE-001, and it closes TWO holes that are independent, so it
+  must have two independent red halves. Blocked only by the Wed 2026-07-29 18:00 freeze (both arms
+  edit crates/xpile/tests/). Note that next_lane specs in this repo have been caught BORN WRONG
+  three times (PMAT-1481, PMAT-1483, PMAT-1488), so audit this one before writing it.
+  (a) THE CARDINALITY NEEDLE IS THE ARM THAT MATTERS AND IT IS LIVE IN MARKDOWN TODAY -- ship it
+  FIRST and separately, because it is a defect in an EXISTING green gate, not a new corpus.
+  enforcement_prose_witness.rs::attribution_offences() gates on para.contains(<context name>).
+  Extend it so a paragraph that names exactly one ruleset id, carries an ENFORCEMENT_VERB, and
+  states the required set as a COUNT rather than a name is an offence unless it also names the
+  union endpoint or a second ruleset id. Derive the count vocabulary from the receipts -- with two
+  receipts the union has cardinality 2, so the screened spellings are the numeral and the word for
+  |union| ("2", "two"), COMPUTED from receipts().len()/union.len(), never typed. A hard-coded "two"
+  is the same defect the day a third ruleset lands.
+  (b) MANDATORY POSITIVE CONTROL, arm A verbatim. The exemption/needle trap has now fired on FOUR
+  consecutive slices (1495, 1497, 1499, 1500), so design it into the FIRST draft: a #[test] that
+  feeds the retired sentence -- "The paiml org branch-protection ruleset 13878864 requires EXACTLY
+  two contexts." -- through offences_in() and asserts it FIRES, plus the two-way control that
+  "the merge-blocking set is the union over 13878864 and 19814559" does NOT. Without the positive
+  control the needle can be born matching nothing and read green forever, which is how the
+  cardinality hole survived PMAT-1476 in the first place.
+  (c) ⛔ AND THE ACQUITTAL MUST NOT SWALLOW THE CLAIM. A count-shaped sentence in a paragraph that
+  also names both ids is honest; one that names a count and one id is not. Check the acquittal by
+  running the CORRECTED ci.yml prose through the new needle and asserting it passes -- run the gate
+  against the exact input this repo now documents (PMAT-1500''s rule).
+  (d) THE *.yml PROSE CORPUS IS THE SECOND ARM, CHEAPER AND BROADER. No gate here discovers a
+  *.yml prose corpus. Widen tracked_markdown() into a tracked_prose() that unions
+  `git ls-files "*.md"` with `git ls-files ".github/workflows/*.yml"`, extracting COMMENT LINES
+  ONLY from the YAML half (a `#`-prefixed line, with `#` inside a quoted scalar excluded) so a job
+  name or a `run:` body can never be read as prose. Assert per-source that at least one file was
+  discovered from EACH half, so the union cannot silently collapse to Markdown -- that vacuity is
+  exactly what this slice found.
+  (e) ⛔ DO NOT SCREEN THE MARKER LINES. `XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test`
+  is a `#`-prefixed comment line in ci.yml that names one context set and no ruleset id; it is
+  ruleset_drift.rs''s machine-readable input and must stay byte-stable. Exempt both marker lines by
+  their marker prefix (the constants already exist in ruleset_drift.rs) and carry a control that
+  the exemption matches exactly two lines -- an exemption nobody has seen fire may match nothing,
+  or everything.
+  (f) THE HONESTY DISCLOSURE IS PART OF THE ARM: ci.yml now states in-file that this prose is not
+  gated and that the correction is a MEASUREMENT, not an invariant. When (a)+(d) land, that
+  paragraph must be updated in the SAME PR, or the repo will publish a stale
+  not-gated disclaimer over a gated property -- the PMAT-1489 shape (a defect fixed in the tree
+  while the finding text stayed).'
 - 'PMAT-1498 GATE -- XPILE-SELFCLI-001, and it is the CHEAPEST GATE IN THIS BACKLOG: the property
   already exists, is already green, and the entire change is widening its corpus from ONE path to
   TWO. crates/xpile/tests/cli_docs_drift.rs (XPILE-CLIDOCS-001, PMAT-1429) reads
