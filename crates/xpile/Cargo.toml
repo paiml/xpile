@@ -7,7 +7,23 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/paiml/xpile"
-documentation = "https://docs.rs/xpile"
+# PMAT-1487: NOT `https://docs.rs/xpile`. This crate is the ONE member of the 31
+# with no `lib` target (`cargo metadata`: kinds `bin`/`custom-build`/`example`/
+# `test`), and docs.rs builds documentation by running `cargo rustdoc --lib`. So
+# that URL has never rendered a page and structurally cannot: the build log for
+# every version says `error: no library targets found in package "xpile"`, and
+# docs.rs reports `doc_status:false` for 0.1.615/616/617 while all 30 siblings
+# report `true`. THE FAILURE IS NORMAL — ripgrep, fd-find, hyperfine and sd are
+# all red on docs.rs for the same reason — WHICH IS WHY NOBODY LOOKED. The defect
+# was the CLAIM pointing at it: this key is a hand-written assertion that
+# documentation lives at that address, it was written by the 2026-05-15 name-
+# reservation commit `ac709bf5` alongside the stub README PMAT-1466 deleted, and
+# it is the only `documentation` key in the workspace. Meanwhile the README three
+# lines below — the body crates.io renders on this same page — points readers at
+# the live mdBook three separate times. The sidebar link and the body disagreed
+# and the labelled one was the dead one. The book is deployed from `main` on
+# every push by `.github/workflows/book.yml` and measured 200 with real content.
+documentation = "https://paiml.github.io/xpile/"
 # PMAT-1466: the ROOT README, not a sibling copy. This used to read
 # "README.md", resolving to `crates/xpile/README.md` — a bootstrap stub written
 # 2026-05-15 for the v0.0.1 name reservation, never touched again (one commit,

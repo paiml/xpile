@@ -24583,3 +24583,122 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     526 on 07-30, larger again now). AFTER the batch, run the NEW section 5 step 6 and expect A11 to
     FIRE with 12 reinterpreted links -- that is the predicted, disclosed outcome, NOT a new finding
     and NOT a reason to touch the batch.'
+- id: PMAT-1487
+  status: done
+  priority: P1
+  category: honesty
+  title: The one crate of 31 with no library target is the one crate that points the registry's
+    "Documentation" link at docs.rs -- an address that has never rendered a page and structurally
+    cannot, while the README on that same page cites the live documentation site three times
+  notes: 'SHIPPED 2026-07-30 (Day 5, post-freeze; DOCS + CHANGELOG + release-mechanics lane only --
+    ZERO crates/*/src, ZERO contracts/*.yaml, ZERO gate files; the one Cargo.toml edit is a
+    registry-metadata string, the same lane PMAT-1466 used). Tag v0.1.618 is already cut at
+    6b5f6c02, so this does NOT touch the release SHA -- and that is load-bearing, see A12 below.
+
+
+    PICKED with the ranked queue empty of actionable items (PMAT-1373 merged, PMAT-1374 dated 07-31,
+    PMAT-1375 the DEFERRED 0.1.619 lane), from PMAT-1484''s next-pick lead (b) -- the registry
+    surface -- continuing PMAT-1486 one field over. 31 crates publish irreversibly tomorrow.
+
+
+    TWO FACTS IN ONE MANIFEST THAT NOBODY HAD PUT SIDE BY SIDE, both derived offline from
+    `cargo metadata --no-deps`, not asserted: `crates/xpile` is the ONLY member of the 31 with no
+    `lib` target (kinds: bin, custom-build, example, test) and the ONLY member that sets
+    `documentation`. It sets it to https://docs.rs/xpile. docs.rs documents a `lib` target -- its
+    builder runs `cargo rustdoc --lib` -- so that address has never served a document and never can.
+
+
+    MEASURED, NOT INFERRED. docs.rs `status.json` over all 31 crates at 0.1.617: 30 report
+    doc_status:true, `xpile` reports false -- the sole failure, and it is the flagship. Same false at
+    0.1.615 and 0.1.616. The build log for 0.1.617 (build 3959695, rustc 1.99.0-nightly, "took 4s")
+    gives the reason verbatim: `error: no library targets found in package `xpile``, error kind
+    ExecutionFailed, exit status 101.
+
+
+    THE FAILURE IS NORMAL -- WHICH IS EXACTLY WHY IT SURVIVED 617 RELEASES, and this is the
+    transferable half. Bin-only crates go red on docs.rs across the ecosystem: ripgrep, fd-find,
+    hyperfine and sd are ALL doc_status:false (measured 2026-07-30 at their current versions).
+    Anyone who checked would have found a red indistinguishable from everyone else''s and moved on.
+    THE DEFECT WAS NEVER THE BUILD; IT WAS THE ASSERTION POINTING AT IT. Of those four controls
+    hyperfine and sd set NO `documentation` key at all and ripgrep deliberately points its at GitHub;
+    only fd-find makes the same claim xpile did. AN ACQUITTAL FOR THE ARTEFACT CLASS IS NOT AN
+    ACQUITTAL FOR THE ARTEFACT -- generalise it: whenever a check goes red and the population is also
+    red, the question to ask is not "is this normal" but "does this artefact CLAIM otherwise".
+
+
+    THE SAME PAGE ALREADY CARRIED THE RIGHT ANSWER. README.md -- the body crates.io renders on the
+    flagship''s page since PMAT-1466 -- cites https://paiml.github.io/xpile/ THREE times (the
+    docs-book badge at line 9, the installation chapter at 276, "Full CLI reference and tutorials"
+    at 338). That site is live: 200, real mdBook content, title "Introduction - xpile", deployed from
+    `main` on every push by .github/workflows/book.yml and confirmed enabled via
+    `gh api repos/paiml/xpile/pages`. So the front page has offered two documentation pointers all
+    along, they disagree, and THE ONE THE REGISTRY LABELS "Documentation" IS THE DEAD ONE. Fourth
+    recurrence of PMAT-1465''s "one crate, two contradictory front pages".
+
+
+    PROVENANCE, and why two prior slices walked past it. `git log -S` puts the key in ac709bf5,
+    "chore: crates.io name reservation (xpile 0.0.1)", 2026-05-15 -- the SAME commit that wrote the
+    v0.0.1 stub README PMAT-1466 deleted. PMAT-1466 opened this file and rewrote `readme` on the line
+    directly BELOW it without asking whether the neighbouring URL resolved; PMAT-1486 then measured
+    every link INSIDE the README and stopped at the file boundary. A SURFACE IS NOT AUDITED BECAUSE
+    THE FILE CONTAINING IT WAS EDITED -- proximity to a fix is not coverage.
+
+
+    FIXED, docs/metadata-only under the freeze: documentation = "https://paiml.github.io/xpile/",
+    with the measurement and the control population recorded in the manifest comment so the next
+    reader does not re-derive them.
+
+
+    PRE-FLIGHT, NOT POST-MORTEM -- and deliberately NOT a sibling of A11. docs/RELEASE.md gains
+    section 4 step 6, placed BEFORE the tag step (which renumbers to 7; no cross-reference pointed at
+    the old numbering, checked) because this is the ONE metadata check that can still be REPAIRED:
+    section 5 step 6 runs after an immutable upload and can only disclose. Abort rule A12 is
+    therefore time-dependent -- BLOCKS the tag pre-tag (fix the manifest, re-pin, A3 if a tag was
+    already cut: a burned patch number is free), DISCLOSURE ONLY post-tag, never delaying or
+    reverting a batch.
+
+
+    THE STEP HAS TWO ARMS AND THE SECOND IS THE POINT. A 200 FROM A DOCUMENTATION HOST IS NOT A
+    RENDERED DOCUMENT: https://docs.rs/xpile answers 200 at every version, redirecting to
+    /crate/xpile/latest and serving the dependency/version sidebar with no documentation in it, so a
+    plain status-code sweep ACQUITS IT. Only status.json -- the signal docs.rs computes for its own
+    badge -- separates the two. Same shape as section 5 step 6''s 200-to-the-wrong-object pair, one
+    publisher over: CHECK WHAT A URL SERVES, NOT WHAT IT ANSWERS. The first arm was written first and
+    passed; the second exists because the first was disbelieved and executed against the real host.
+
+
+    THIRD SELF-CHECK WORTH KEEPING, and it is why the control population is in the shipped text.
+    The initial read of this finding was "the flagship''s docs.rs build is broken" -- which is TRUE
+    and is NOT the defect, and shipping it that way would have implied a repair (add a lib target)
+    that is both freeze-barred and wrong for a CLI. Running the four bin-only controls turned a
+    capability complaint into a claim defect and changed the fix from src to one metadata string.
+    BEFORE WRITING UP A RED, MEASURE WHAT THE COMPARABLE ARTEFACTS DO -- PMAT-1486''s "run it against
+    a control you know is fine", inverted: run it against controls you know are BROKEN.
+
+
+    v0.1.618 FIRES A12 IN ITS POST-TAG FORM AND THAT IS THE PREDICTED OUTCOME. The tagged tree at
+    6b5f6c02 still carries the dead URL and all 31 crates publish it Friday; the repair reaches
+    0.1.619. Do NOT touch the batch over it.
+
+
+    NO GATE (freeze: a new crates/xpile/tests/ file, and the docs.rs half needs network).
+    XPILE-CRATEURL-001 is specified in queue.yaml next_lane for 0.1.619 -- the network-free half is
+    strong on its own and should not wait: a package with no `lib` target must not name docs.rs in
+    `documentation`, which is a pure `cargo metadata` invariant with zero network.
+
+
+    NEXT FREE ID PMAT-1488. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE
+    MERGES -- a Friday defect means A6 (ship tag-only, roll the batch to 2026-08-07), never a same-day
+    hotfix onto the release SHA. Friday runs the section-5-step-3 block AS IT READS IN THE FILE
+    (extract it, do not retype it), expects A9, RECOUNTS the post-tag delta on the day, and AFTER the
+    batch expects BOTH A11 (12 reinterpreted README links) and A12 (the dead documentation URL) to
+    fire -- both predicted, both disclosed, NEITHER a reason to touch the batch. STANDING LEAD: the
+    remaining unmeasured published-metadata fields are `keywords` and `categories` -- only the
+    flagship sets either, so 30 of 31 crates are absent from every crates.io category browse and
+    keyword search. That is a discoverability gap rather than a falsehood, which is why it is a lead
+    and not this slice.'
+  created: '2026-07-30T00:00:00Z'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
