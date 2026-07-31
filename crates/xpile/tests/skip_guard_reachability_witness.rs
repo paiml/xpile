@@ -52,6 +52,15 @@
 //!   would have caught the live defect on the day it landed, and it needs no
 //!   allowlist to do it.
 //!
+//! **The dynamic half declines one case, out loud.** A probe that runs a
+//! SUBCOMMAND — `cargo kani --version` — exits non-zero when the subcommand is
+//! not installed, which is exactly what a malformed spelling looks like, and
+//! nothing at runtime separates them. It is carved out and reported rather
+//! than judged; `the_subcommand_carve_out_is_narrow_and_live` keeps the
+//! carve-out from widening or going stale. That case was found by **CI**, not
+//! here: this box has cargo-kani, the runner does not, and a host-dependent
+//! property needs a second host before its clean run means anything.
+//!
 //! Both halves are derived from `git ls-files`; no probe inventory is typed
 //! into this file. `no_derivation_is_vacuous` pins that the extractor still
 //! finds probes it is known to be able to find, so a broken regex reds instead
@@ -223,6 +232,15 @@ fn args_in_segment(segment: &str) -> Vec<String> {
         scan = &scan[1.min(scan.len())..];
     }
     chain
+}
+
+/// A probe whose first operand is not a flag runs a SUBCOMMAND, e.g.
+/// `cargo kani --version`. Its non-zero exit means "that subcommand is not
+/// installed" just as often as it means "this spelling is wrong", and nothing
+/// at runtime distinguishes the two — so the dynamic property below declines to
+/// judge these and says so out loud.
+fn probes_a_subcommand(args: &[String]) -> bool {
+    args.first().is_some_and(|a| !a.starts_with('-'))
 }
 
 /// A tool name a `Command::new` could plausibly carry. Guards against
@@ -487,6 +505,7 @@ fn every_presence_probe_in_the_corpus_uses_an_audited_shape() {
 fn every_resolvable_probe_actually_exits_zero() {
     let mut executed = 0usize;
     let mut absent: BTreeSet<String> = BTreeSet::new();
+    let mut undecidable: BTreeSet<String> = BTreeSet::new();
     let mut failures = Vec::new();
 
     for p in all_probes() {
@@ -496,6 +515,15 @@ fn every_resolvable_probe_actually_exits_zero() {
         match Command::new(tool).args(&p.args).output() {
             Err(_) => {
                 absent.insert(tool.to_string());
+            }
+            Ok(o) if probes_a_subcommand(&p.args) => {
+                // The binary resolved but the SUBCOMMAND may not exist, and a
+                // missing subcommand exits non-zero exactly like a malformed
+                // probe does. Nothing here can tell them apart, so this
+                // property says nothing about these — the static half does.
+                if !o.status.success() {
+                    undecidable.insert(format!("{} {}", tool, p.args.join(" ")));
+                }
             }
             Ok(o) => {
                 executed += 1;
@@ -516,6 +544,12 @@ fn every_resolvable_probe_actually_exits_zero() {
     if !absent.is_empty() {
         eprintln!("SKIPPED (binary not on this host): {absent:?}");
     }
+    if !undecidable.is_empty() {
+        eprintln!(
+            "NOT DECIDABLE HERE (subcommand probe, non-zero exit is indistinguishable \
+             from an uninstalled subcommand): {undecidable:?}"
+        );
+    }
     assert!(
         executed > 0,
         "no probe resolved on this host, so this property asserted nothing — a \
@@ -523,6 +557,40 @@ fn every_resolvable_probe_actually_exits_zero() {
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     eprintln!("executed {executed} presence probes");
+}
+
+/// PROPERTY 2b — the subcommand carve-out must be narrow and must be doing
+/// work. It exists because `cargo kani --version` exits 101 where cargo-kani is
+/// not installed (this is how CI reds where a developer box is green), and a
+/// carve-out nobody has seen apply is a carve-out that might apply to
+/// everything.
+#[test]
+fn the_subcommand_carve_out_is_narrow_and_live() {
+    assert!(
+        probes_a_subcommand(&["kani".to_string(), "--version".to_string()]),
+        "a leading non-flag operand is a subcommand probe"
+    );
+    for flagged in [
+        vec!["--version".to_string()],
+        vec!["-V".to_string()],
+        vec!["-c".to_string(), "true".to_string()],
+    ] {
+        assert!(
+            !probes_a_subcommand(&flagged),
+            "{flagged:?} probes the binary itself and stays under the dynamic half"
+        );
+    }
+    let carved: Vec<String> = all_probes()
+        .iter()
+        .filter(|p| p.tool.is_some() && probes_a_subcommand(&p.args))
+        .map(|p| format!("{} ({})", p.args.join(" "), p.at()))
+        .collect();
+    assert!(
+        !carved.is_empty(),
+        "no probe is carved out, so this exemption is stale — delete it rather \
+         than leaving a class of probes silently unchecked"
+    );
+    eprintln!("subcommand probes outside the dynamic half: {carved:?}");
 }
 
 /// PROPERTY 3 — POSITIVE CONTROL. The classifier must reject the exact retired

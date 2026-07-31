@@ -26122,6 +26122,25 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     guards spelled as PRESENCE PROBES. A test that returns early for some other reason, or whose
     loop is empty, is outside its subject -- see next_lane for the vacuous-loop arm.
 
+    ★★★ CI RED-ON-GREEN, AND IT IS THE BEST PROCESS LESSON OF THE SLICE: THE DYNAMIC HALF''S OWN
+    FALSE-POSITIVE FAMILY WAS FOUND BY THE SECOND HOST, NOT BY THIS ONE. PR #2105''s first push
+    passed the full local suite (336 suites, 3100 tests, exit 0) and RED on workspace-test:
+    `cargo kani --version` exits 101 where cargo-kani is not installed, and the BINARY `cargo` does
+    resolve, so the first draft classified it as "a present tool whose probe fails" = a defect.
+    It is not. A probe that runs a SUBCOMMAND exits non-zero when the SUBCOMMAND is absent, which is
+    indistinguishable at runtime from a malformed spelling; only the static half can speak about
+    those. The dynamic half now DECLINES that case and prints it, with
+    `the_subcommand_carve_out_is_narrow_and_live` keeping the carve-out narrow (exactly one probe
+    today, named in the output) and non-stale. VERIFIED UNDER THE CI CONDITION rather than assumed:
+    a `cargo` shim rejecting `kani` on PATH → witness passes, prints
+    NOT DECIDABLE HERE ... {"cargo kani --version"}. → A HOST-DEPENDENT PROPERTY NEEDS A SECOND HOST
+    BEFORE ITS CLEAN RUN MEANS ANYTHING. This box has cargo-kani, lean, ruchy, forjar, nvcc; the
+    runner has almost none of them. Whenever a new gate EXECUTES something, ask which host it was
+    green on and get it onto a poorer one before believing it. ⚠️ TRAP while verifying this: the
+    first shim did `exec "$(command -v cargo)"`, and `cargo` resolves to a rustup wrapper that
+    re-resolves via PATH -- straight back into the shim, infinite recursion, 5-minute hang. Point a
+    shim at the ABSOLUTE real binary (/home/noah/.cargo/bin/cargo), never at a PATH lookup.
+
     ★★ TWO MORE ASSERTIONS THAT CANNOT FAIL, found by a 6-way fan-out over all 276 tracked test
     files and each CONFIRMED by two independent adversarial verifiers. Neither is a presence guard,
     so XPILE-SKIPGUARD-001 does not cover them; both are repaired in this slice rather than

@@ -83,6 +83,21 @@ which still matches `tool_present`, so the extractor never broke and the arm
 came back green. **A perturbation must be validated by its effect, not by the
 fact that the text changed.**
 
+★★ **CI RED-ON-GREEN: the dynamic half's own false-positive family was found by
+the second host, not by this one.** `cargo kani --version` exits **101** where
+cargo-kani is not installed — and the binary `cargo` *does* resolve, so the
+first draft read that as "a present tool whose probe fails", i.e. a defect. It
+is not: a probe that runs a **subcommand** exits non-zero when the subcommand is
+absent, which is indistinguishable at runtime from a malformed spelling. The
+dynamic half now **declines that case and says so out loud**, with
+`the_subcommand_carve_out_is_narrow_and_live` keeping the carve-out from
+widening or going stale (it applies to exactly one probe today, and names it).
+Verified under the CI condition rather than assumed: with a `cargo` shim that
+rejects `kani`, the witness passes and prints
+`NOT DECIDABLE HERE … {"cargo kani --version"}`. → **A host-dependent property
+needs a second host before its clean run means anything.** This box has
+cargo-kani; the runner does not; one green run proved nothing.
+
 **TWO MORE ASSERTIONS THAT CANNOT FAIL**, found by a six-way fan-out over the
 276 tracked test files and each confirmed by two independent adversarial
 verifiers. Neither is a presence guard, so `XPILE-SKIPGUARD-001` does not cover
