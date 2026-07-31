@@ -748,9 +748,39 @@ fn subject_sites(rel: &str, src: &str, derivs: &[Deriv]) -> Vec<Finding> {
 
         for (k, line) in body.iter().enumerate() {
             let t = line.trim_start();
-            if !t.starts_with("for ") || !t.trim_end().ends_with('{') {
+            if !t.starts_with("for ") {
                 continue;
             }
+            // PMAT-1510: requiring the SAME line to end in `{` made every
+            // rustfmt-wrapped loop header invisible — not reported as anchored,
+            // not reported at all. A long header breaks as
+            //     for entry in some::long::call(&a, &b)
+            //         .filter(..)
+            //     {
+            // and neither line satisfies both halves. Rejoin the header up to
+            // its opening brace before parsing it.
+            let mut header = t.trim_end().to_string();
+            let mut k_end = k;
+            while !header.ends_with('{') && k_end + 1 < body.len() && k_end - k < 6 {
+                k_end += 1;
+                let next = body[k_end].trim();
+                // No separator before a method-chain continuation: rustfmt
+                // breaks `files.iter()` as `files` / `.iter()`, and joining
+                // those with a space yields `files .iter()`, which the
+                // collection matcher below does not recognise. The first draft
+                // of this fix did exactly that — the three-arm probe (same
+                // violation, single-line header REDS, wrapped header PASSES)
+                // is what caught it.
+                if !next.starts_with('.') && !header.ends_with('.') {
+                    header.push(' ');
+                }
+                header.push_str(next);
+                header = header.trim_end().to_string();
+            }
+            if !header.ends_with('{') {
+                continue;
+            }
+            let t: &str = &header;
             let Some(iter_expr) = t.split_once(" in ").map(|(_, r)| r) else {
                 continue;
             };
@@ -788,7 +818,12 @@ fn subject_sites(rel: &str, src: &str, derivs: &[Deriv]) -> Vec<Finding> {
                 continue;
             }
 
-            let end = block_end(&body, k);
+            // Brace matching must start at the line carrying the `{`, which is
+            // `k_end` for a wrapped header and `k` for a single-line one. Using
+            // `k` unconditionally meant a wrapped loop's extent was computed
+            // from a line with no brace on it, so its body — and the assertion
+            // inside — was never found (PMAT-1510).
+            let end = block_end(&body, k_end);
             let inner = body[k..=end].join("\n");
             if !has_assert(&inner) {
                 continue;
@@ -1559,15 +1594,23 @@ fn this_gate_is_inside_its_own_corpus() {
         );
     };
 
-    for lit in deriv_literals() {
-        let lit = lit.literal().to_string();
-        assert!(
-            !src.contains(&lit) || src.contains("concat!"),
-            "this file must not spell `{lit}` contiguously — its fixtures would then \
-             read as live derivations, which is precisely how PMAT-1506's gate flagged \
-             its own test data on CI"
-        );
-    }
+    // PMAT-1510 — an assertion stood here that could not fail, stating a
+    // property that was already false.
+    //
+    // It read `!src.contains(&lit) || src.contains("concat!")`. This file uses
+    // `concat!` to split its fixture literals, so the right disjunct is
+    // UNCONDITIONALLY TRUE and the assertion had no failing input. Its message
+    // claimed the file "must not spell `ls-files` contiguously" — measured, the
+    // file spells `ls-files` 16 times and `read_dir` 11 times contiguously, in
+    // its own doc comment and code. So a check that could never fire was also
+    // asserting something untrue about the file it was reading.
+    //
+    // Nothing replaces it, deliberately. The property that actually matters —
+    // that this gate's own source contains no unanchored derived loop — is the
+    // assertion immediately below, which is quantified over `subject_sites` of
+    // this very file and CAN fail. Splitting fixture literals remains a real
+    // convention; it is enforced by that check finding no live site here, not
+    // by a substring ban that never fired.
 
     let self_findings: Vec<Finding> = subject_sites(rel, src, &deriv_literals())
         .into_iter()

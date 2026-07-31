@@ -8060,6 +8060,20 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1510 PROCESS -- ADVERSARIAL AUDIT AS A STANDING STEP, not a one-off. MEASURED 2026-07-31:
+  five consecutive self-merged gate slices (PMAT-1505..1509) were audited by 5 independent agents
+  and ALL FIVE carried at least one overclaim -- 10 confirmed findings, 1 refuted. The base rate is
+  not low enough to skip. (a) THE CHEAPEST HIGH-YIELD ATTACK IS *turn the gate''s own rule on the
+  gate*: three of the ten were found that way (an unfailable assertion, a floorless quantified
+  rule, a decorative screen). (b) THE SECOND IS *plant the violation the gate exists for, somewhere
+  the author did not think of* -- that is how the naming-convention subject fell, and it is a
+  30-second test. (c) ⛔ REQUIRE THE THREE-ARM PROBE whenever a red arm fails to red: same
+  violation, canonical spelling REDS / variant spelling PASSES / baseline clean separates *my fix
+  is broken* from *my probe is not a subject-class instance*. PMAT-1510 needed it twice and would
+  have shipped a non-working fix without it. (d) A FOURTH ARM -- the variant spelling WITH the
+  floor, which must stay GREEN -- is what proves the repair does not red correct code. (e) RECORD
+  THE REFUTATIONS: 1 of 11 findings was wrong (a message stating a NECESSARY condition read as a
+  guarantee), and a sweep that reports only confirmations is not a measurement.'
 - 'PMAT-1509 SHIPPED the DOC-PARSE arm -- XPILE-SKIPGUARD-003 IS COMPLETE, all three arms
   (git ls-files, read_dir, selected doc-parse) gated in one detector, 20 assertions, NO exemption
   list. Subject 29 -> 44 distinct sites. Measured by EFFECT: all six candidates instrumented and

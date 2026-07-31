@@ -154,6 +154,99 @@ fn has_assertion(l: &str) -> bool {
         .any(|m| l.contains(m))
 }
 
+/// The CONDITION of an assertion on this line, if any — the text between the
+/// macro's `(` and the comma that begins its message, or the whole call when it
+/// carries no message (PMAT-1510).
+///
+/// The message is deliberately excluded: `assert!(ok, "saw {hits} rows")` does
+/// not test `hits`, it merely prints it, and treating the two alike is how rule
+/// (B) came to accept an `eprintln!` as a read.
+/// Every assertion CONDITION in a region, scanned over the JOINED text.
+///
+/// ⚠️ This must not be done per line. rustfmt puts `assert!(` alone on one line
+/// and its condition on the next, so a line-wise scan sees a macro with no
+/// condition followed by a condition with no macro — and reports both of this
+/// repository's real counter floors (`matched > 0`,`named >= 3`) as absent.
+/// The first draft of PMAT-1510 did exactly that and flagged five correct
+/// sites, reproducing the very defect it was written to fix.
+fn assertion_conditions(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while from < text.len() {
+        let Some(rel) = ["assert!(", "assert_eq!(", "assert_ne!(", "assert_matches!("]
+            .iter()
+            .filter_map(|m| text[from..].find(m).map(|i| (i, m.len())))
+            .min()
+        else {
+            break;
+        };
+        let start = from + rel.0 + rel.1;
+        if let Some(c) = assertion_condition_at(&text[start..]) {
+            out.push(c);
+        }
+        from = start;
+    }
+    out
+}
+
+/// The condition of ONE assertion, given the text just past its macro `(`.
+fn assertion_condition_at(rest: &str) -> Option<&str> {
+    // Scan to the comma that separates condition from message, respecting
+    // nesting and string literals so `assert_eq!(a.len(), 3, "…")` keeps both
+    // operands and `assert!(v.contains(","))` is not cut inside its literal.
+    let (mut depth, mut in_str, mut last) = (0i32, false, rest.len());
+    let mut commas: Vec<usize> = Vec::new();
+    for (i, c) in rest.char_indices() {
+        match c {
+            '"' => in_str = !in_str,
+            _ if in_str => {}
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                if depth == 0 {
+                    last = i;
+                    break;
+                }
+                depth -= 1;
+            }
+            ',' if depth == 0 => commas.push(i),
+            _ => {}
+        }
+    }
+    // The message, when present, follows the LAST top-level comma before a
+    // string literal; anything earlier is still part of the condition
+    // (`assert_eq!(lhs, rhs, "msg")`).
+    let end = commas
+        .iter()
+        .copied()
+        .find(|&i| rest[i..].trim_start_matches([',', ' ']).starts_with('"'))
+        .unwrap_or(last);
+    Some(&rest[..end.min(last)])
+}
+
+/// Does this fragment mention `id` as an IDENTIFIER rather than as a substring
+/// of a longer name? `hits` must not match `hits_total`.
+fn mentions_ident(hay: &str, id: &str) -> bool {
+    let bytes = hay.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = hay[from..].find(id) {
+        let at = from + rel;
+        let before_ok = at == 0 || {
+            let c = bytes[at - 1] as char;
+            !(c.is_ascii_alphanumeric() || c == '_')
+        };
+        let after = at + id.len();
+        let after_ok = after >= bytes.len() || {
+            let c = bytes[after] as char;
+            !(c.is_ascii_alphanumeric() || c == '_')
+        };
+        if before_ok && after_ok {
+            return true;
+        }
+        from = at + id.len();
+    }
+    false
+}
+
 fn indent_of(l: &str) -> usize {
     l.len() - l.trim_start().len()
 }
@@ -271,15 +364,24 @@ fn sites_in(file: &str, src: &str) -> Vec<Site> {
             for b in body {
                 if let Some((lhs, _)) = b.trim().split_once(" += 1") {
                     let id = lhs.trim();
+                    // PMAT-1510 — rule (B) says "a later assertion READS the
+                    // counter", and the implementation used to check something
+                    // strictly weaker: `skip_while(!has_assertion).any(contains(id))`
+                    // advances to the first assertion line and then accepts the
+                    // identifier appearing ANYWHERE at or after it — inside an
+                    // assertion's message string, or in a bare `eprintln!`, with
+                    // no assertion involved at all. An audit flipped a fixture
+                    // from `None` to `Counter` by adding one unrelated
+                    // `assert!(!body.is_empty())` after the loop.
+                    //
+                    // The counter must appear in an ASSERTION'S CONDITION: the
+                    // text between `assert…(` and the first `,` that ends it, or
+                    // the whole call when it carries no message.
                     if !id.is_empty()
                         && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                        && lines[close..fn_end]
+                        && assertion_conditions(&lines[close..fn_end].join("\n"))
                             .iter()
-                            .any(|a| has_assertion(a) || a.contains(id))
-                        && lines[close..fn_end]
-                            .iter()
-                            .skip_while(|a| !has_assertion(a))
-                            .any(|a| a.contains(id))
+                            .any(|c| mentions_ident(c, id))
                     {
                         anchor = Anchor::Counter(id.to_string());
                         break;
@@ -336,8 +438,16 @@ fn the_scan_reaches_the_shapes_it_claims_to_cover() {
     let sites = all_sites();
     assert!(
         sites.len() >= 5,
-        "the needle scan found {} site(s) across {} tracked test files. It found 8 when this rule \
-         was written; a parser that has stopped matching reports zero offences forever.",
+        // PMAT-1510: this sentence used to read "It found 8 when this rule was
+        // written", juxtaposed against `sites.len()` — but 8 was the count
+        // BEFORE the slice's own repairs, and the quantity printed beside it has
+        // been 6 since the commit that wrote the message. It advertised headroom
+        // of 3 above the floor where the measured headroom was 1. A remembered
+        // number beside a live one is a claim, and it drifts the moment the
+        // thing it describes is fixed; say what the floor means instead.
+        "the needle scan found {} site(s) across {} tracked test files, below the floor of 5. \
+         A parser that has stopped matching reports zero offences forever, so this floor is \
+         what stands between a clean sweep and a broken one.",
         sites.len(),
         test_sources().len()
     );
@@ -511,5 +621,71 @@ fn a_counter_nobody_asserts_on_is_not_an_anchor() {
         sites_in("probe.rs", src)[0].anchor,
         Anchor::None,
         "an unread counter is not a floor"
+    );
+
+    // PMAT-1510 — the fixture above passed for a WEAKER reason than its name.
+    // It carries no assertion after the loop at all, so the old rule bailed on
+    // an earlier clause and never exercised the read check; an audit flipped it
+    // to `Counter` by adding one unrelated assertion. Both shapes below now
+    // stay `None`, and each is a live spelling this file must reject.
+    let unrelated_assert = fixture(&[
+        "fn probe() {",
+        "    let mut seen = 0usize;",
+        "    for pat in [\"absent needle\"] {",
+        "        if let Some(at) = n.find(pat) {",
+        "            seen += 1;",
+        "            assert!(ok(at), \"never runs\");",
+        "        }",
+        "    }",
+        "    assert!(!body.is_empty(), \"unrelated to seen\");",
+        "    eprintln!(\"{seen} seen\");",
+        "}",
+    ]);
+    assert_eq!(
+        sites_in("probe.rs", unrelated_assert.as_str())[0].anchor,
+        Anchor::None,
+        "an assertion that does not READ the counter must not anchor it — an \
+         unrelated `assert!` followed by a print of the counter is exactly the \
+         shape that defeated this rule"
+    );
+
+    let counter_only_in_message = fixture(&[
+        "fn probe() {",
+        "    let mut seen = 0usize;",
+        "    for pat in [\"absent needle\"] {",
+        "        if let Some(at) = n.find(pat) {",
+        "            seen += 1;",
+        "            assert!(ok(at), \"never runs\");",
+        "        }",
+        "    }",
+        "    assert!(done, \"finished after {seen} rows\");",
+        "}",
+    ]);
+    assert_eq!(
+        sites_in("probe.rs", counter_only_in_message.as_str())[0].anchor,
+        Anchor::None,
+        "a counter that appears only in an assertion's MESSAGE is printed, not \
+         tested — the condition is what has to read it"
+    );
+
+    // POSITIVE half, so the rule is not simply rejecting everything: a counter
+    // the condition really does read MUST anchor.
+    let genuinely_read = fixture(&[
+        "fn probe() {",
+        "    let mut seen = 0usize;",
+        "    for pat in [\"absent needle\"] {",
+        "        if let Some(at) = n.find(pat) {",
+        "            seen += 1;",
+        "            assert!(ok(at), \"never runs\");",
+        "        }",
+        "    }",
+        "    assert!(seen >= 1, \"the scan must find something\");",
+        "}",
+    ]);
+    assert_eq!(
+        sites_in("probe.rs", genuinely_read.as_str())[0].anchor,
+        Anchor::Counter("seen".to_string()),
+        "a counter READ by an assertion's condition is a real floor and must \
+         still anchor — otherwise this rule rejects correct code"
     );
 }

@@ -47,6 +47,32 @@
 //!   the ARGUMENTS, not on the tool, so adding a new `--version`-probed tool
 //!   needs no edit here — only a new *spelling* does.
 //!
+//! ## What counts as a presence probe (PMAT-1510)
+//!
+//! Originally: a `Command` inside a function whose NAME matched one of five
+//! patterns. An independent audit defeated that in one edit — it planted the
+//! retired `sh -c` spelling in `shell_crossdomain_witness::toolchain_ready()`,
+//! which probes inline and is named nothing like `tool_present`, and this gate
+//! did not move: 101 probes before, 101 after. Renaming that function to
+//! `toolchain_present` — same defect, same line — made the gate red. The name
+//! was the whole difference. **A gate whose subject is a naming convention only
+//! checks the code that already followed it.**
+//!
+//! A probe is now recognised by what it DOES: a `Command` chain method-chained
+//! into a boolean, either written inline or inside a function whose body has
+//! that shape, whatever it is called. Two filters separate a probe from an
+//! EXECUTION, and both were needed:
+//!
+//! * **No variable operand.** `python3 -c <script>` converts its status to a
+//!   bool too; only its `-c` is literal, so the collected vector reads as the
+//!   bare-`-c` defect itself.
+//! * **Probe-shaped operands.** A literal can still be a program —
+//!   `python3 -c "print(repr(round(2.675, 2)))"` spells its whole command line.
+//!   An operand must be a flag, a trivial no-op (`true`, `:`), or a bare
+//!   subcommand word; never one carrying spaces, parentheses or quotes.
+//!
+//! 101 probes over 55 files → **159 over 61**, 88 executed → **143**.
+//!
 //! * **Dynamically, wherever the tool exists** — every derived `(tool, args)`
 //!   pair whose binary resolves on this host must exit 0. This is the half that
 //!   would have caught the live defect on the day it landed, and it needs no
@@ -105,24 +131,30 @@ const AUDITED_SHAPES: &[(&[&str], &str)] = &[
         &["kani", "--version"],
         "cargo subcommand probe: `cargo kani --version` exits 0 iff the subcommand is installed",
     ),
+    (
+        &["--query-gpu=compute_cap", "--format=csv,noheader"],
+        "nvidia-smi has no --version; this query exits 0 with a driver present and \
+         non-zero without one. Audited 2026-07-31 when PMAT-1510's shape-based \
+         subject first reached it — probed here: exit 0, prints the compute cap",
+    ),
 ];
 
 /// The shape whose absence of an operand is the defect this file exists for.
 /// A shell invoked with `-c` and nothing to run is a usage error, not a probe.
 const SHELLS: &[&str] = &["sh", "/bin/sh", "bash", "/bin/bash", "dash", "zsh", "ksh"];
 
-/// Probes that ask about a REMOTE resource, excluded from both properties.
-///
-/// A non-zero exit from one of these means the host, the credential or the
-/// network is absent — which is an honest skip, exactly what a presence guard
-/// is for. Only a LOCAL binary's probe carries the "malformed spelling" signal
-/// this gate hunts. `no_exclusion_is_stale` keeps the list from outliving its
-/// reason.
-const REMOTE_PROBES: &[(&str, &str)] = &[(
-    "ssh",
-    "gx10_available() reaches the GB10 box; exit 255 is an unreachable remote, \
-     not a bad spelling",
-)];
+// PMAT-1510 — a `REMOTE_PROBES` exemption stood here, excluding `ssh` because
+// `gx10_available()` reaches the GB10 box and its exit 255 is an unreachable
+// remote rather than a bad spelling. It is gone, because it stopped filtering
+// anything: once operands had to be probe-shaped, both `ssh` probes were
+// already out — one carries `nvcc --version >/dev/null 2>&1 && …` as a single
+// operand, which is a command string, not a probe argument. The gate's own
+// PROPERTY 5 said so, twice, and an exemption that removes nothing is
+// decoration that still has to be maintained.
+//
+// A hypothetical `ssh host true` would now reach the dynamic half — but its
+// vector `["host", "true"]` is not an audited shape, so PROPERTY 1 rejects it
+// first and asks for an audit. The backstop is the shape table, not a tool list.
 
 /// A presence probe recovered from the corpus.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -138,6 +170,35 @@ impl Probe {
     fn at(&self) -> String {
         format!("{}:{}", self.file, self.line)
     }
+}
+
+/// Is this function body SHAPED like a presence guard — a `Command` chain
+/// method-chained into a boolean — regardless of what it is called?
+///
+/// PMAT-1510: `ruchy_conformance_witness::tool_on_path` takes its tool as a
+/// PARAMETER (so the literal-tool shape rule cannot see it) and is named
+/// nothing like `tool_present` (so the name rule cannot either). It was the
+/// second of the two genuinely status-sensitive guards the audit found outside
+/// the subject, and it stayed outside until the body rule stopped asking for a
+/// name.
+fn body_is_guard_shaped(body: &str) -> bool {
+    const BOOL_MARKERS: &[&str] = &[
+        "is_ok()",
+        "is_ok_and",
+        "unwrap_or(false)",
+        "status.success()",
+    ];
+    let Some(cmd) = body.find("Command::new(") else {
+        return false;
+    };
+    let rest = &body[cmd..];
+    let Some(stop) = BOOL_MARKERS.iter().filter_map(|b| rest.find(b)).min() else {
+        return false;
+    };
+    // No statement boundary between the command and its conversion to a bool:
+    // `let out = …expect(…); assert!(out.status.success())` is a required
+    // command, not a guard.
+    !rest[..stop].contains(';')
 }
 
 /// How this repository spells "is this tool here?".
@@ -234,6 +295,32 @@ fn args_in_segment(segment: &str) -> Vec<String> {
     chain
 }
 
+/// The no-op operands a shell probe may legitimately carry. `sh -c true` asks
+/// whether a shell exists; `sh -c <program>` runs one.
+const TRIVIAL_OPERANDS: &[&str] = &["true", ":"];
+
+/// Is this operand part of asking "are you installed?" rather than part of a
+/// program? A flag, a trivial no-op, or a bare subcommand word — never anything
+/// carrying spaces, parentheses or quotes, which is the signature of a script.
+fn operand_is_probe_shaped(arg: &str) -> bool {
+    if arg.starts_with('-') {
+        return true;
+    }
+    if TRIVIAL_OPERANDS.contains(&arg) {
+        return true;
+    }
+    // `=` is allowed so an option VALUE stays probe-shaped: `ssh -o
+    // BatchMode=yes -o ConnectTimeout=10 true`. Excluding it made the remote
+    // probes vanish from the corpus, which in turn made the `ssh` exemption
+    // stale — and `no_exclusion_is_stale` said so, which is the control doing
+    // its job. A filter that silently empties the very set an exemption
+    // watches leaves the exemption guarding nothing.
+    !arg.is_empty()
+        && arg
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '=')
+}
+
 /// A probe whose first operand is not a flag runs a SUBCOMMAND, e.g.
 /// `cargo kani --version`. Its non-zero exit means "that subcommand is not
 /// installed" just as often as it means "this spelling is wrong", and nothing
@@ -241,6 +328,40 @@ fn args_in_segment(segment: &str) -> Vec<String> {
 /// judge these and says so out loud.
 fn probes_a_subcommand(args: &[String]) -> bool {
     args.first().is_some_and(|a| !a.starts_with('-'))
+}
+
+/// Does any `.arg`/`.args` operand in this segment come from a variable?
+/// `\u{2e}arg(script)` makes the command an execution whose full command line is not
+/// visible here, so its literal fragments must not be read as a whole probe.
+fn segment_has_variable_operand(seg: &str) -> bool {
+    let mut scan = seg;
+    while let Some(p) = scan.find(".arg") {
+        let rest = &scan[p..];
+        let open = rest.find('(').unwrap_or(0);
+        let close = rest.find(')').unwrap_or(rest.len());
+        let inner = &rest[open..close];
+        let mut outside = String::new();
+        let mut in_q = false;
+        for c in inner.chars() {
+            match c {
+                '"' => in_q = !in_q,
+                _ if !in_q => outside.push(c),
+                _ => {}
+            }
+        }
+        if outside
+            .chars()
+            .any(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return true;
+        }
+        scan = &rest[close.min(rest.len())..];
+        if scan.is_empty() {
+            break;
+        }
+        scan = &scan[1.min(scan.len())..];
+    }
+    false
 }
 
 /// A tool name a `Command::new` could plausibly carry. Guards against
@@ -273,10 +394,6 @@ fn probes_from_guard_bodies(file: &str, src: &str) -> (Vec<Probe>, Vec<(String, 
             i += 1;
             continue;
         };
-        if !is_guard_name(name) {
-            i += 1;
-            continue;
-        }
         let indent = lines[i].len() - lines[i].trim_start().len();
         let close = format!("{}}}", " ".repeat(indent));
         let mut j = i + 1;
@@ -285,6 +402,14 @@ fn probes_from_guard_bodies(file: &str, src: &str) -> (Vec<Probe>, Vec<(String, 
         }
         let body_start = i;
         let body: String = lines[i..j.min(lines.len())].join("\n");
+
+        // A guard is recognised by NAME or by SHAPE. The name half is kept so
+        // nothing previously covered is lost; the shape half is what reaches
+        // the guards named something else (PMAT-1510).
+        if !is_guard_name(name) && !body_is_guard_shaped(&body) {
+            i = j.max(i + 1);
+            continue;
+        }
 
         let marker = "Command::new(";
         let mut segments: Vec<&str> = Vec::new();
@@ -310,6 +435,17 @@ fn probes_from_guard_bodies(file: &str, src: &str) -> (Vec<Probe>, Vec<(String, 
             if args.is_empty() {
                 continue;
             }
+            // PMAT-1510: once functions are admitted by SHAPE as well as by
+            // name, this extraction reaches the `python_oracle()` helpers,
+            // whose bodies are `Command::new("python3").arg("-c").arg(script)`
+            // — a Command chained into a bool, but an EXECUTION. Only the `-c`
+            // is literal, so the collected vector reads as the bare-`-c` defect
+            // itself. A segment with a non-literal operand, or an operand
+            // shaped like a program, is not a presence probe.
+            if segment_has_variable_operand(seg) || !args.iter().all(|a| operand_is_probe_shaped(a))
+            {
+                continue;
+            }
             any_literal_args = true;
             if let Some(t) = &tool {
                 helper_args.push((name.to_string(), args.clone()));
@@ -328,7 +464,16 @@ fn probes_from_guard_bodies(file: &str, src: &str) -> (Vec<Probe>, Vec<(String, 
         // `default_flag_witness` picks its vector in a `match` BEFORE the
         // `Command::new(cmd).args(probe)`, so no literal reaches the chain.
         // Those arrays are still probe SHAPES and must be audited.
-        if !any_literal_args && !segments.is_empty() {
+        // ⛔ NAME-ADMITTED GUARDS ONLY. This fallback exists for
+        // `default_flag_witness`, which picks its vector in a `match` BEFORE
+        // `Command::new(cmd).args(probe)`, so no literal reaches the chain. Once
+        // PMAT-1510 began admitting functions by SHAPE, running it everywhere
+        // swept up arrays that are not probes at all: a test's Python source
+        // fixtures, and `for (bin, args) in [("cargo-deny", ["--version"]), …]`,
+        // whose TOOL names it flattened into the argument vector. A heuristic
+        // written for one function should stay scoped to the class that
+        // function belongs to.
+        if !any_literal_args && !segments.is_empty() && is_guard_name(name) {
             let prelude = &body[..prelude_end];
             let mut scan = prelude;
             while let Some(p) = scan.find('[') {
@@ -373,7 +518,12 @@ fn probes_from_call_sites(
             let rest = &scan[p + 1..];
             let stop = rest.find(')').unwrap_or(rest.len());
             let inner = &rest[..stop];
-            if is_guard_name(name) && !name.is_empty() {
+            // A call site counts if the callee is named like a guard OR was
+            // discovered as one by shape in this file (PMAT-1510) — otherwise
+            // `tool_on_path("ruchy")` resolves to nothing.
+            let is_guard_call = !name.is_empty()
+                && (is_guard_name(name) || helper_args.iter().any(|(h, _)| h == name));
+            if is_guard_call {
                 let lits = literals(inner);
                 // A literal first operand is the tool; the rest are its args.
                 if !lits.is_empty()
@@ -416,6 +566,121 @@ fn probes_from_call_sites(
 }
 
 /// Every presence probe in the tracked corpus, minus the remote ones.
+/// EXTRACTION C — presence probes recognised by SHAPE, wherever they are
+/// written (PMAT-1510).
+///
+/// Extractions A and B key on the guard's NAME, and that was this gate's own
+/// defect: an independent audit planted the retired `sh -c` spelling in
+/// `shell_crossdomain_witness::toolchain_ready()` — a function that probes
+/// inline and is named nothing like `tool_present` — and the gate did not
+/// move. **A gate whose subject is a naming convention only checks the code
+/// that already followed it.**
+///
+/// A presence probe is defined here by what it DOES: a `Command` chain
+/// method-chained straight into a boolean (`is_ok()`, `is_ok_and`,
+/// `unwrap_or(false)`, `status.success()`) with no intervening `;`.
+///
+/// The discriminator against an EXECUTION is that every operand is a LITERAL.
+/// `python3 -c <script>` converts its exit status to a bool too, and 17 such
+/// sites exist; they run an oracle rather than ask whether one is installed,
+/// and their script is a variable. Requiring the whole command line to be
+/// spelled out separates the two exactly: 50 probes over 7 shapes, versus 93
+/// sites when the literal requirement is dropped.
+fn probes_by_shape(file: &str, src: &str) -> Vec<Probe> {
+    const BOOL_MARKERS: &[&str] = &[
+        "is_ok()",
+        "is_ok_and",
+        "unwrap_or(false)",
+        "status.success()",
+    ];
+    let marker = "Command::new(";
+    let mut out = Vec::new();
+    let mut base = 0usize;
+    while let Some(rel) = src[base..].find(marker) {
+        let at = base + rel;
+        base = at + marker.len();
+        let rest = &src[base..];
+        // The chain runs to the next `Command::new` or 400 bytes, whichever is
+        // sooner — long enough for a rustfmt-wrapped builder, short enough not
+        // to swallow the next statement.
+        // Clamp to a char boundary — these files carry em dashes and arrows in
+        // their doc comments, and a raw byte cut panics mid-character.
+        let mut span = rest.find(marker).unwrap_or(rest.len()).min(400);
+        while span < rest.len() && !rest.is_char_boundary(span) {
+            span += 1;
+        }
+        let seg = &rest[..span];
+
+        let Some(stop) = BOOL_MARKERS.iter().filter_map(|b| seg.find(b)).min() else {
+            continue;
+        };
+        // `;` before the boolean means the conversion is a separate statement:
+        // `let out = …output().expect(…); assert!(out.status.success())` is a
+        // REQUIRED command, not a probe, and must not be reported as one.
+        let head = &seg[..stop];
+        if head.contains(';') {
+            continue;
+        }
+        if !head.trim_start().starts_with('"') {
+            continue; // tool is a parameter — extraction A covers those
+        }
+        let tool = literals(head).first().cloned();
+        let mut args = Vec::new();
+        let mut every_operand_literal = true;
+        let mut scan = head;
+        while let Some(p) = scan.find(".arg") {
+            let rest = &scan[p..];
+            let open = rest.find('(').unwrap_or(0);
+            let close = rest.find(')').unwrap_or(rest.len());
+            let inner = &rest[open..close];
+            args.extend(literals(inner));
+            // Anything outside the quotes that looks like an identifier is a
+            // variable operand, which makes this an execution.
+            let bare: String = {
+                let mut s = String::new();
+                let mut in_q = false;
+                for c in inner.chars() {
+                    match c {
+                        '"' => in_q = !in_q,
+                        _ if !in_q => s.push(c),
+                        _ => {}
+                    }
+                }
+                s
+            };
+            if bare.chars().any(|c| c.is_ascii_alphanumeric() || c == '_') {
+                every_operand_literal = false;
+            }
+            scan = &rest[close.min(rest.len())..];
+            if scan.is_empty() {
+                break;
+            }
+            scan = &scan[1.min(scan.len())..];
+        }
+        if !every_operand_literal || args.is_empty() {
+            continue;
+        }
+        // A literal operand can still be a PROGRAM: `python3 -c "print(repr(…))"`
+        // spells its whole command line and converts the exit status to a bool,
+        // but it runs an oracle rather than asking whether one is installed.
+        // Literalness alone does not separate the two — operand SHAPE does.
+        // Probe-shaped means: a flag, a trivial no-op, or a bare subcommand word.
+        if !args.iter().all(|a| operand_is_probe_shaped(a)) {
+            continue;
+        }
+        if !tool.as_deref().is_some_and(plausible_tool) {
+            continue;
+        }
+        out.push(Probe {
+            file: file.to_string(),
+            line: src[..at].matches('\n').count() + 1,
+            tool,
+            args,
+        });
+    }
+    out
+}
+
 fn all_probes() -> Vec<Probe> {
     let root = repo_root();
     let mut out = Vec::new();
@@ -423,27 +688,7 @@ fn all_probes() -> Vec<Probe> {
         let (body_probes, helper_args) = probes_from_guard_bodies(&file, &src);
         out.extend(body_probes);
         out.extend(probes_from_call_sites(&file, &src, &helper_args));
-    }
-    out.retain(|p| {
-        !p.args.is_empty()
-            && !p
-                .tool
-                .as_deref()
-                .is_some_and(|t| REMOTE_PROBES.iter().any(|(r, _)| *r == t))
-    });
-    out.sort();
-    out.dedup();
-    out
-}
-
-/// Every probe including the remote ones — the exclusion's own control.
-fn all_probes_unfiltered() -> Vec<Probe> {
-    let root = repo_root();
-    let mut out = Vec::new();
-    for (file, src) in corpus(&root) {
-        let (body_probes, helper_args) = probes_from_guard_bodies(&file, &src);
-        out.extend(body_probes);
-        out.extend(probes_from_call_sites(&file, &src, &helper_args));
+        out.extend(probes_by_shape(&file, &src));
     }
     out.retain(|p| !p.args.is_empty());
     out.sort();
@@ -481,7 +726,22 @@ fn classify(tool: Option<&str>, args: &[String]) -> Result<(), String> {
 /// test corpus is spelled in a way that can succeed.
 #[test]
 fn every_presence_probe_in_the_corpus_uses_an_audited_shape() {
-    let offences: Vec<String> = all_probes()
+    let probes = all_probes();
+    // PMAT-1510: this property used to be structurally floorless — its whole
+    // body is a filter over a derived set, so an empty derivation yields zero
+    // offences and a green pass. An audit broke `is_guard_name` and watched
+    // this test stay green while only its sibling noticed. A rule quantified
+    // over a set it also computes must floor that set itself; borrowing a
+    // neighbour's floor means the two can be separated by any future edit.
+    assert!(
+        probes.len() >= 10,
+        "the derivation produced only {} presence probe(s). This property is a \
+         filter over that set, so an empty derivation would pass it silently — \
+         the extractor has broken",
+        probes.len()
+    );
+
+    let offences: Vec<String> = probes
         .iter()
         .filter_map(|p| {
             classify(p.tool.as_deref(), &p.args)
@@ -606,6 +866,20 @@ fn positive_control_the_retired_spelling_is_rejected() {
             "`{shell} -c` with no operand must be rejected; it is the live defect \
              PMAT-1505 repaired"
         );
+        // PMAT-1510 — this control used to assert only `is_err()`, and an audit
+        // deleted the entire shell screen without reddening a single test: the
+        // unaudited-shape fallback rejects `["-c"]` too, so the screen changed
+        // the MESSAGE and never a verdict. A control that cannot tell which of
+        // two rules answered is not a control for either of them. Pinning the
+        // DIAGNOSTIC makes the screen load-bearing, because the fallback's
+        // message cannot name a shell operand.
+        let why = verdict.expect_err("rejected above");
+        assert!(
+            why.contains("no operand"),
+            "the rejection of `{shell} -c` must come from the dedicated shell \
+             screen and say WHY a shell needs an operand — an operator who is \
+             told only \"unaudited shape\" has to rediscover the defect. Got: {why}"
+        );
     }
     // And through a guard whose tool is a parameter, which is how the defect
     // was actually spelled at the call site.
@@ -641,29 +915,6 @@ fn negative_control_well_formed_probes_pass() {
         classify(Some("no-such-tool-xpile-probe"), &["--version".to_string()]).is_ok(),
         "a well-formed probe for an ABSENT tool is not a defect — absence is an \
          honest skip, malformedness is a silent one"
-    );
-}
-
-/// PROPERTY 5 — the remote-probe exclusion may not outlive its reason. An
-/// exemption for something no longer in the corpus is a hole nobody is
-/// watching, and this repository has shipped one before (PMAT-1495).
-#[test]
-fn no_exclusion_is_stale() {
-    let tools: BTreeSet<String> = all_probes_unfiltered()
-        .iter()
-        .filter_map(|p| p.tool.clone())
-        .collect();
-    for (excluded, reason) in REMOTE_PROBES {
-        assert!(
-            tools.contains(*excluded),
-            "`{excluded}` is excluded from this gate ({reason}) but no longer appears \
-             as a presence probe in the tracked corpus — drop the exemption rather \
-             than leaving an unwatched hole"
-        );
-    }
-    assert!(
-        all_probes_unfiltered().len() > all_probes().len(),
-        "the exclusion removed nothing, so it is either stale or misspelled"
     );
 }
 

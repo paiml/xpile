@@ -26468,3 +26468,111 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     LITERAL GO STALE.
     Gate: 20 assertions in derived_corpus_vacuity_witness.rs, no exemption list. Reach printed per
     arm (2 / 27 / 34 memberships over 44 distinct sites) rather than implied by a 278-file corpus.'
+- id: PMAT-1510
+  status: done
+  priority: P1
+  category: honesty
+  title: an independent adversarial audit of the five slices that hunt hollow checks found eight
+    overclaims inside them, three in the gate that started the series -- including a subject so
+    narrow it missed the exact defect the gate was written for
+  notes: 'SHIPPED 2026-07-31. PMAT-1505..1509 were written, reviewed and merged by ONE process with
+    nothing independent reading them. Not a hypothetical risk: PMAT-1508 exists only because
+    PMAT-1507''s gate accepted a `println!` as evidence a loop body does work, caught by the next
+    slice happening to look. Nothing was scheduled to look at 1508 or 1509. A 5-agent adversarial
+    audit (one skeptic per gate + 2 cross-cutting, every finding independently refuted by a second
+    agent) returned 11 candidates, 10 CONFIRMED, 1 REFUTED, plus 34 VERIFIED-TRUE claims. Two
+    verifiers reported the defect was WORSE than the finding claimed.
+
+    ★★★ THE THROUGH-LINE: EVERY FINDING IS AN OVERCLAIM INSIDE A FILE WHOSE ENTIRE PURPOSE IS TO
+    PREVENT OVERCLAIMING. A gate is not exempt from the class it polices, and the files most
+    concerned with hollow checks turned out to be the ones nobody had checked.
+
+    ★★★ A GATE KEYED ON A NAMING CONVENTION ONLY CHECKS THE CODE THAT ALREADY FOLLOWED IT.
+    skip_guard_reachability_witness''s `is_guard_name` matched five name patterns. An auditor
+    planted the retired `sh -c` spelling in shell_crossdomain_witness::toolchain_ready() -- which
+    probes INLINE and matches none of them -- and the gate did not move: 101 probes before, 101
+    after. Subject is now the probe''s SHAPE (a Command chain method-chained into a boolean):
+    101 probes/55 files -> 159/61, 88 executed -> 143, and the planted violation reds BOTH halves
+    by name. → When a gate''s subject is a name, ask what the same defect looks like spelled
+    differently, and prefer a subject defined by BEHAVIOUR.
+
+    ★★ LITERALNESS DOES NOT SEPARATE A PROBE FROM AN EXECUTION -- OPERAND SHAPE DOES. Requiring
+    every operand literal cut 93 candidates to 50, but `python3 -c "print(repr(round(2.675, 2)))"`
+    is all-literal too: a script IS a literal. Probe-shaped = a flag, a trivial no-op (`true`/`:`),
+    or a bare subcommand word; never anything carrying spaces, parens or quotes.
+
+    ★★ A RULE QUANTIFIED OVER A SET IT ALSO COMPUTES MUST FLOOR THAT SET ITSELF.
+    `every_presence_probe_in_the_corpus_uses_an_audited_shape` is a filter over a derived set, so an
+    empty derivation gave zero offences and a green pass; it borrowed a sibling''s floor and the two
+    could be separated by any future edit. Now floors its own set.
+
+    ★★ A SCREEN THAT CHANGES THE MESSAGE BUT NEVER A VERDICT IS DECORATION. Deleting the dedicated
+    shell `-c` screen entirely reddened NOTHING -- the unaudited-shape fallback rejects `["-c"]`
+    too -- so the positive control written to prove the screen fires passed without it. The control
+    now pins the DIAGNOSTIC. → A control that cannot tell WHICH of two rules answered is a control
+    for neither.
+
+    ★★ RULE (B) OF skip_guard_vacuity_witness DID NOT IMPLEMENT ITS OWN DOCUMENTATION. Doc: "a
+    counter a later assertion READS". Code: `skip_while(!has_assertion).any(|a| a.contains(id))` --
+    the identifier appearing anywhere at or after the first assertion line, including inside a
+    MESSAGE STRING or a bare eprintln!. Now the counter must appear in an assertion''s CONDITION,
+    message excluded: `assert!(ok, "saw {hits} rows")` PRINTS hits, it does not TEST it. Its
+    negative control passed for a WEAKER reason (its fixture had no assertion after the loop at
+    all, so the rule bailed earlier and never exercised the read check); three fixtures now cover
+    it plus a POSITIVE half so the rule cannot simply reject everything.
+
+    ★ A REMEMBERED NUMBER BESIDE A LIVE ONE DRIFTS THE MOMENT THE THING IT DESCRIBES IS REPAIRED.
+    A floor message read "It found 8 when this rule was written" beside a live sites.len() that has
+    been 6 since the commit that wrote it -- 8 was the PRE-fix count, advertising headroom of 3
+    where the measured headroom was 1. Say what the floor MEANS, not what you remember counting.
+
+    ★ AN ASSERTION THAT COULD NOT FAIL, STATING SOMETHING ALREADY FALSE.
+    `!src.contains(&lit) || src.contains("concat!")` in this_gate_is_inside_its_own_corpus: the file
+    USES concat!, so the right disjunct is unconditionally true, and the message claimed the file
+    "must not spell `ls-files` contiguously" while spelling it 16 times. REMOVED rather than
+    repaired -- the property that matters is the self_findings.is_empty() assertion below it, which
+    is quantified over this file''s own sites and CAN fail. → Deleting an unfailable check is a fix;
+    replacing it with another unfailable check is not.
+
+    ★★★ TWO OF MY OWN FIXES WERE WRONG FIRST, AND THE RED HALF IS THE ONLY REASON I KNOW. The
+    multi-line-`for`-header repair took THREE attempts: (1) joined continuations with a space, so
+    `files` + `.iter()` became `files .iter()` which the collection matcher does not recognise;
+    (2) left block_end() starting from a line carrying no brace, so the loop BODY -- and the
+    assertion in it -- was never found. Both times all 20 tests passed and the planted violation
+    went uncaught. ★ THE THREE-ARM PROBE IS WHAT SEPARATED "MY FIX IS BROKEN" FROM "MY PROBE IS NOT
+    A SUBJECT-CLASS INSTANCE": identical violation, single-line header REDS / wrapped header PASSES
+    / baseline clean. A FOURTH arm (wrapped header WITH a floor -> green) confirms the repair does
+    not red correct code. Reuse this shape whenever a red arm fails to red.
+
+    ★★ I REPRODUCED THE DEFECT I WAS FIXING, TWICE IN ONE SLICE. The tightened counter rule was
+    LINE-BASED, and rustfmt puts `assert!(` alone on one line with its condition on the next -- so
+    it flagged FIVE correct sites, including this repo''s two real counter floors (`matched > 0` in
+    release_runbook_facts_witness, `named >= 3` in lean_models_lane_witness, the file the gate''s own
+    message cites as THE TEMPLATE). That is finding #10''s shape exactly, committed while repairing
+    finding #10. → A line-wise scan of rustfmt''d Rust is wrong by default; join the region first.
+
+    ★ THE ONE REFUTATION IS WORTH RECORDING. The floor message in skip_guard_reachability_witness
+    was read as GUARANTEEING that `git` is among the derived probes. It states a NECESSARY condition
+    -- corpus() shells out to git and expects it -- which is TRUE. → A verifier that kills a finding
+    is doing the same job as one that confirms it; record both.
+
+    ★ A MEASUREMENT I NEARLY PUBLISHED WAS DOUBLE-COUNTED. Two background `cargo test --workspace`
+    runs were redirected to the SAME log with `>`, interleaving; the merged file read 393 suites /
+    3297 tests. Both runs executed the same 306 UNIQUE binaries -- the first log simply contained
+    every Doc-tests section twice. True result: 338 suites, 3128 tests, 0 failed. → ONE WRITER PER
+    FILE, and when a number MOVES between runs, reconcile it before reporting either. Same family
+    as the pipe-masks-exit-code landmine: the harness, not the code, produced the wrong figure.
+
+    ⚠️ HONEST HALF. The doc-parse gate''s subject class is UNCHANGED at 44 sites: no rustfmt-wrapped
+    header over a derived collection exists today. Hole closed BEFORE it was load-bearing, not a
+    save. The counter tightening likewise moved no live site once the multi-line bug in it was
+    fixed -- the five sites it first flagged were all correct.
+
+    NEXT FREE ID PMAT-1511. NEXT PICK: audit is now a STANDING step -- every gate slice should be
+    adversarially read by something that did not write it, because 5 of 5 self-merged slices carried
+    an overclaim. Then XPILE-PHANTOMPATH-001 (1502) and XPILE-WORKFLOW-PROSE-001 (1501).'
+  created: '2026-07-31'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
