@@ -13,6 +13,118 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### An independent audit of the five slices that hunt hollow checks found eight overclaims inside them, three in the gate that started the series — including a subject so narrow it missed the exact defect it was written for (PMAT-1510)
+
+Slices PMAT-1505 through 1509 were written, reviewed and merged by the same
+process, and nothing independent had read them. That is not a hypothetical
+risk here: PMAT-1508 exists only because PMAT-1507's gate accepted a `println!`
+as evidence that a loop body does work, and it was caught by the next slice
+happening to look. Nothing was scheduled to look at 1508 or 1509.
+
+A five-agent adversarial audit — one skeptic per gate plus two cross-cutting,
+each finding independently refuted by a second agent — produced **11 candidates,
+10 confirmed, 1 refuted**, alongside **34 verified-true claims**. Two verifiers
+reported the defect was *worse* than the finding claimed. The refuted one is
+worth naming: the floor message in `skip_guard_reachability_witness` was read as
+guaranteeing that `git` is among the derived probes; it states a **necessary**
+condition (`corpus()` shells out to `git` and `expect`s it), which is true.
+
+**The through-line: every finding is an overclaim inside a file whose entire
+purpose is to prevent overclaiming.**
+
+#### `skip_guard_reachability_witness.rs` — the gate that started the series
+
+* **Its subject was a naming convention.** `is_guard_name` matched five name
+  patterns, so a guard called anything else was invisible. An auditor planted the
+  retired `sh -c` spelling in `shell_crossdomain_witness::toolchain_ready()` —
+  which probes inline and matches none of the patterns — and the gate did not
+  move: 101 probes before, 101 after. Renaming that function to
+  `toolchain_present` — same defect, same line — made it red, so the name was the
+  whole difference. **A gate keyed on a convention only checks the code that
+  already followed it.** The subject is now the probe's SHAPE: a `Command` chain
+  method-chained into a boolean, inline or in a body of that shape whatever it is
+  called. 101 probes over 55 files → **159 over 61**, 88 executed → **143**, and
+  the planted violation reds both halves by name. The second unswept guard the
+  audit named, `ruchy_conformance_witness::tool_on_path`, takes its tool as a
+  *parameter* — invisible to the literal-tool rule too — and needed the body
+  rule to stop asking for a name.
+* Separating a probe from an execution needed two passes. Requiring literal
+  operands cut 93 candidates to 50, but `python3 -c "print(repr(round(2.675, 2)))"`
+  is *also* all-literal — a script is a literal. The discriminator is operand
+  **shape**: a flag, a trivial no-op (`true`, `:`), or a bare subcommand word.
+* **The headline property was structurally floorless** — a filter over a derived
+  set, so an empty derivation yielded zero offences and a green pass. It borrowed
+  a sibling's floor, and the two could be separated by any future edit. It now
+  floors its own set.
+* **The dedicated shell `-c` screen was decorative.** Deleting it entirely changed
+  no verdict — the unaudited-shape fallback rejects `["-c"]` too — so the positive
+  control written to prove the screen fires passed without it. The control now
+  pins the **diagnostic**, so deleting the screen reds.
+
+#### `skip_guard_vacuity_witness.rs`
+
+* **Rule (B) did not implement its own documentation.** It reads *"a counter that
+  a later assertion READS"*; the code was
+  `skip_while(!has_assertion).any(|a| a.contains(id))` — the identifier appearing
+  anywhere at or after the first assertion line, including inside a message
+  string or a bare `eprintln!`. A counter is now required to appear in an
+  assertion's **condition**, with the message deliberately excluded: `assert!(ok,
+  "saw {hits} rows")` prints `hits`, it does not test it.
+* **The negative control pinning that rule passed for a weaker reason** — its
+  fixture carried no assertion after the loop at all, so the rule bailed earlier
+  and never exercised the read check. Adding one unrelated `assert!` flipped it
+  from `None` to `Counter`. Three fixtures now cover it, plus a positive half so
+  the rule cannot simply reject everything.
+* A failure message advertised *"It found 8 when this rule was written"* beside a
+  live `sites.len()` that has been **6** since the commit that wrote it — 8 was
+  the pre-fix count. A remembered number beside a live one drifts the moment the
+  thing it describes is repaired.
+
+#### `derived_corpus_vacuity_witness.rs`
+
+* **An assertion that could not fail, stating something already false.**
+  `!src.contains(&lit) || src.contains("concat!")` — this file uses `concat!`, so
+  the right disjunct is unconditionally true, and its message claimed the file
+  "must not spell `ls-files` contiguously" while spelling it 16 times. Removed
+  rather than repaired: the property that matters is the `self_findings.is_empty()`
+  assertion below it, which is quantified over this file's own sites and *can*
+  fail.
+* **The loop detector saw only single-line `for` headers.** A rustfmt-wrapped
+  header vanished from the subject class entirely — not reported as anchored, not
+  reported at all.
+
+★ **Two of my own fixes were wrong first, and the red half is the only reason I
+know.** The multi-line header fix took three attempts: the first joined
+continuations with a space (`files .iter()`, which the collection matcher does
+not recognise), the second left `block_end` starting from a line with no brace on
+it. Both times the file's 20 tests passed and the planted violation went
+uncaught. **The three-arm probe is what separated "my fix is broken" from "my
+probe isn't a subject-class instance"**: identical violation, single-line header
+REDS, wrapped header PASSES, baseline clean. A fourth arm — wrapped header *with*
+a floor — confirms the repair does not red correct code.
+
+★ **I reproduced the defect I was fixing, twice.** The tightened counter rule was
+line-based, and rustfmt puts `assert!(` alone on one line with its condition on
+the next — so it flagged five correct sites, including this repository's two real
+counter floors (`matched > 0`, `named >= 3`). That is finding #10's shape exactly,
+committed while repairing finding #10.
+
+★ **A measurement I nearly published was double-counted.** Two background suite
+runs were redirected to the same log with `>`, interleaving their output, and the
+merged file reported 393 suites / 3297 tests. Both runs executed the same **306
+unique binaries**; the first log simply contained every doc-test section twice.
+The real result is **338 suites, 3128 tests, 0 failed**. One writer per file, and
+reconcile a number that moves before reporting it.
+
+⚠️ **Honest half.** The subject class of the doc-parse gate is unchanged at **44**
+sites: no rustfmt-wrapped header over a derived collection exists today. That
+hole is closed before it was load-bearing, not a save. The counter tightening
+likewise moved no live site once the multi-line bug in it was fixed. And the
+`REMOTE_PROBES` exemption for `ssh` was **deleted rather than repaired**: once
+operands had to be probe-shaped it filtered nothing, and the gate's own staleness
+property said so twice. An exemption that removes nothing is decoration that
+still has to be maintained.
+
 ### A floor above a filter is not a floor below it — the doc-parse arm closes the vacuous-loop class, and both defects it found were in the anchor rules the previous slice had just written (PMAT-1509)
 
 Ran PMAT-1508's next-pick (a), the **doc-parse arm** of `XPILE-SKIPGUARD-003` —
