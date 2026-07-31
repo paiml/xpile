@@ -6189,7 +6189,7 @@ queue:
     release SHA. Sparse-index verification MUST send a User-Agent header or it reports every crate
     MISSING on a successful publish.'
 - id: PMAT-1374
-  status: open
+  status: done
   ev_rank: R1
   gate_touch: null
   title: 'PUBLISH v0.1.618: morning re-verify -> `gh release create` -> `cargo publish --workspace` UNPIPED
@@ -6219,6 +6219,22 @@ queue:
     2026-08-07.
 
     A7: NO Friday code. A Friday defect means A6, never a same-day hotfix onto the release SHA.'
+  done_note: 'SHIPPED 2026-07-31. Tag v0.1.618 -> pinned SHA 6b5f6c02; non-draft GitHub release;
+    31/31 crates live on crates.io, each verified against the API with a User-Agent. RELEASE.md
+    S5 steps 1-9 all executed. A13 CLOSED BY THE BATCH: 7 stale registry descriptions -> 0.
+    A11 (12 broken front-page links) and A14 (58 rustdoc defects across 13 crates) fired as
+    predicted, disclosed via step 8 addendum + CHANGELOG [Unreleased]; both immutable, both
+    repaired in 0.1.619. DEVIATIONS, all three now in RELEASE.md S7 (its first same-day rows):
+    (1) pre-flight 1 (Wed workflow_dispatch) never ran -- release.yml has only 2 runs ever, both
+    push events; (2) the S2a tripwire suite exited 101 with 2 failures, BOTH in this repo''s own
+    witnesses -- makefile_dialect_refusal_witness probes `sh -c` with no operand (a usage error
+    everywhere, so its body has NEVER executed on any host) and release_plan_freshness_witness
+    reds BECAUSE the tag exists, which A1 also requires, so A1''s two preconditions cannot both
+    hold for any release; (3) the batch went partial at 30/31 on a crates.io 429 and was
+    completed 90s later at the SAME version after confirming the registry did NOT have it --
+    a rejected upload is not A4''s 409 case. NEXT PICK for 0.1.619: fix the two pre-flight
+    witnesses (XPILE-PREFLIGHT-001), the README relative links (already fixed on main), and
+    the 58 rustdoc defects (XPILE-RUSTDOC-001).'
   date: '2026-07-31'
 - id: PMAT-1416
   status: done
