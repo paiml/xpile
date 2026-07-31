@@ -186,6 +186,19 @@ fn no_unqualified_path_confinement_guarantee() {
         .into_iter()
         .map(|(n, l)| (n, l.to_lowercase()))
         .collect();
+    // XPILE-SKIPGUARD-003 (PMAT-1509): `unquoted_lines` SELECTS — it drops
+    // fenced blocks and `>` quotes. An inverted fence toggle or a page that
+    // opens a fence and never closes it takes it to zero, and then the
+    // confinement screen below iterates nothing and reports `ok`. The control
+    // further down checks the NEEDLES against the raw body, so it would not
+    // notice: it reads `body`, not this. Measured 165 on 2026-07-31.
+    assert!(
+        lowered_lines.len() >= 20,
+        "{MCP_PAGE} yielded {} unquoted line(s); the page is far longer than that. \
+         An unbalanced ``` fence empties this set and the security-claim screen \
+         below then scans nothing while still passing.",
+        lowered_lines.len()
+    );
     for needle in CONFINEMENT_CLAIMS {
         for (n, line) in &lowered_lines {
             assert!(

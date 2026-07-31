@@ -374,6 +374,21 @@ fn every_compiled_region_is_published_by_the_page_it_names() {
     let regions = marked_regions(&root);
     let pages: BTreeMap<String, String> = book_pages(&root).into_iter().collect();
 
+    // XPILE-SKIPGUARD-003 (PMAT-1509): `marked_regions` SELECTS — it keeps only
+    // the lines between `BOOK-EXAMPLE-BEGIN`/`-END` markers. Rename either
+    // marker and it returns an empty map, this loop iterates nothing, and the
+    // test below reports `ok` having checked no region at all. The sibling
+    // `matched >= 4` above floors the same set from the fence side; this floors
+    // it from the region side, where the loop actually is. Measured 4 on
+    // 2026-07-31.
+    assert!(
+        regions.len() >= 4,
+        "{EXAMPLES} yielded {} marked region(s); the four anchor pages each publish \
+         one. A renamed BEGIN/END marker empties this map and the bijection below \
+         then checks nothing while still printing `ok`.",
+        regions.len()
+    );
+
     for key in regions.keys() {
         let body = pages.get(key).unwrap_or_else(|| {
             panic!("{EXAMPLES}: region names {key}, which is not a page under book/src/")

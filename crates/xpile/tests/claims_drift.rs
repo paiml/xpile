@@ -1575,6 +1575,18 @@ fn roadmap_complete_claims_do_not_cite_planned_items() {
     let roadmap = read("docs/roadmaps/roadmap.yaml");
     let statuses = ledger_statuses(&roadmap);
     let block = strategic_goals_block(&roadmap);
+    // XPILE-SKIPGUARD-003 (PMAT-1509): `strategic_goals_block` SELECTS — it
+    // accumulates only the lines between the `strategic_goals:` key and the
+    // next `roadmap:` key. Rename or reorder either and it returns `""`, whose
+    // `.split(';')` yields one empty clause, `shouts_complete("")` is false, and
+    // this test passes having examined no claim. Measured 2026-07-31: 80 clauses.
+    assert!(
+        !block.is_empty(),
+        "docs/roadmaps/roadmap.yaml yielded an EMPTY strategic_goals block. The \
+         extractor keys on a literal `strategic_goals:` line terminated by a \
+         `roadmap:` line; if either key moved, every COMPLETE-claim check below \
+         silently stops running while this test still prints `ok`."
+    );
     // Clause = semicolon / sentence segment. Split on ';' then ". " — NOT on
     // a bare '.' (that would sever version literals like `v4.15.0`).
     for clause in block.split(';').flat_map(|s| s.split(". ")) {

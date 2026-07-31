@@ -8060,47 +8060,32 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
-- 'PMAT-1508 GATE -- the DOC-PARSE arm of XPILE-SKIPGUARD-003, and it is the LAST arm of the
-  class. PMAT-1508 shipped the READ_DIR half by widening deriv_literal() into a SET and MEASURED
-  the arm CLEAN BY EFFECT: 27 subject sites, all instrumented and executed, 16 test binaries at
-  exit 0, iteration counts 2..103, ZERO empty. Subject class 2 -> 29.
-  ⛔ THE NAIVE DOC-PARSE WIDENING IS ALREADY MEASURED AND IT FAILS. Adding `read_to_string` to
-  the literal set takes the subject class 29 -> 54 and leaves NINE UNANCHORED against 0 today,
-  so it reds correct files on day one (PMAT-1500). Do NOT ship it that way; the shipped gate
-  ASSERTS the exclusion (reading_a_file_is_not_a_derivation_this_gate_governs) and that test has
-  to be rewritten, not deleted, by whoever widens it.
-  (a) THE PREDICATE THAT MIGHT WORK, and it is the whole design problem: scope to a collection
-  built by an EXTRACTION step -- .filter(/.find(/.strip_prefix(/.split(/.match_indices( COLLECTED
-  into a binding -- and NOT to raw `for line in text.lines()`. Emptiness of an extraction means
-  the parser matched nothing (a silent miss); emptiness of `.lines()` over a file that was just
-  read means an EMPTY FILE, and the read already panics when the file is absent.
-  (b) THE 9-SITE RESIDUE IS THE STARTING CORPUS, measured 2026-07-31, so the next slice does not
-  re-derive it: book_rust_example_witness.rs:265 (marked_regions) and :377; claims_drift.rs:1580;
-  cli_spirv_input_fidelity_witness.rs:255 and :256; mcp_surface_disclosure_witness.rs:190;
-  packaged_contracts.rs:179; release_runbook_facts_witness.rs:277; shell_passthrough_disclosure_
-  witness.rs:371. ⛔ release_runbook_facts_witness.rs:277 is PRE-REGISTERED AS CORRECT -- PMAT-1507
-  measured it at ZERO iterations and it is the controlled negative scan (the_citation_detector_can
-  _still_fire is its control). A rule that reds it is wrong. Classify the other eight BY EFFECT
-  before writing any rule; several look like raw-text loops that the predicate in (a) excludes.
-  (c) REUSE, do not rewrite: subject_sites() already resolves derivations transitively through
-  helper CALLS, and the anchor set is now (A) assertion on is_empty/len incl. one `let` hop,
-  (A-prime) an existence probe find(..).expect(..), (B) counter, (B-prime) builder collection
-  floored after the loop, (C) a floor anywhere in the derivation chain. All five were needed to
-  get the read_dir arm from 6 false positives to 0.
-  (d) ⛔ FLOOR THE SUBJECT PER ARM, with NAMED anchor files, on day one -- constraint carried
-  forward and re-proven by PMAT-1508. R7 with `read_dir` misspelled left the live rule GREEN
-  (fourth consecutive confirmation) and red ONLY the per-arm subject floor. A union floor is
-  useless: the git ls-files arm alone keeps the union non-empty. ★ AND THE CONSTRUCTED RED HALVES
-  CANNOT CATCH IT EITHER -- they build their fixtures FROM the literal and stay self-consistently
-  green. Only a live subject floor sees a literal go stale.
-  (e) MANDATORY: measure by EFFECT. ⚠️ `cargo llvm-cov` 0.8.5 STILL has no `--include-tests`
-  (third slice confirming), so a whole-suite coverage sweep reports only crates/*/src and cannot
-  see one test-file line. Per-site instrumentation -- insert a marker inside the block, run the
-  owning test binary, count hits -- did 27 sites in one scripted pass.
-  (f) DONE, recorded so the next slice does not re-derive it: the anchor predicate USED to accept
-  a non-assertion `.len()` (an eprintln! of the corpus size read as a floor); it now requires the
-  read inside an assertion, with a_printed_length_does_not_anchor_a_derived_loop as the control.
-  Nothing live relied on the loose form.'
+- 'PMAT-1509 SHIPPED the DOC-PARSE arm -- XPILE-SKIPGUARD-003 IS COMPLETE, all three arms
+  (git ls-files, read_dir, selected doc-parse) gated in one detector, 20 assertions, NO exemption
+  list. Subject 29 -> 44 distinct sites. Measured by EFFECT: all six candidates instrumented and
+  executed (4, 5, 80, 165, 3, 0); the single 0 is the pre-registered correct-by-design negative
+  scan. THE PREDICATE THAT WORKED, recorded because next_lane[0] guessed part of it wrong:
+  reading a document is NOT a derivation, SELECTING out of one is; `.split(` and `.lines()` are
+  RESHAPES (>= 1 element for any non-empty input) and were DECLINED despite being listed here as
+  extraction steps; the scan must be DEPTH-AWARE (paragraphs() has a .filter( inside a .map(
+  closure and is correct code); and four of the five live subjects are hand-rolled conditional
+  accumulation, not combinator pipelines. BOTH defects found were in the ANCHOR RULES, not the
+  corpus: (C) handed out amnesty ACROSS a selection (a floor above a filter is not a floor below
+  it) and (B) still carried the print-is-not-a-floor hole PMAT-1508 closed in (A). Neither was
+  live -- holes closed before they were load-bearing. New anchors (D) skip-guard+counter and
+  (E) constructed-input control, the latter being why no exemption list was needed.
+  ⛔ NEXT PICKS (PMAT-1510+), in EV order: (a) ⭐⭐⭐ XPILE-BOOKTRANSCRIPT-001 arm (a) from
+  PMAT-1504 -- the PUBLISHED-COMMAND arm, the one with a live 0-for-1; nothing in this repo
+  executes a `$ <cmd>` line in a doc, and PMAT-1504 measured one that had exited 1 for 72 days.
+  (b) ⭐⭐ XPILE-PHANTOMPATH-001 (PMAT-1502). (c) ⭐⭐ DEFERRALS AS A CLASS -- still unswept after
+  being named in five consecutive next-pick lists; every "lands in Phase N" / "in a future
+  release" / dated promise in docs/, checked against whether the target already passed. Template
+  = mcp_surface_disclosure_witness.rs property 5, quantified over ONE page.
+  (d) ⭐ XPILE-WORKFLOW-PROSE-001 (PMAT-1501). (e) the residue this arm deliberately does not
+  cover, now written down rather than implied: a selection performed by a helper whose
+  accumulation is neither a depth-0 combinator nor a guarded push/insert, and any corpus derived
+  from OUTSIDE the repository (a network fetch, an environment variable) -- measure before
+  gating, as PMAT-1508 and PMAT-1509 both had to.'
 - 'PMAT-1507 GATE -- the READ_DIR / DOC-PARSE arm of XPILE-SKIPGUARD-003. ✅ READ_DIR HALF SHIPPED
   BY PMAT-1508; the doc-parse half is respecified in next_lane[0] above with its measurement.
   Retained for the constraints it records. PMAT-1507 shipped the

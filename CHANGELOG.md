@@ -13,6 +13,109 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### A floor above a filter is not a floor below it — the doc-parse arm closes the vacuous-loop class, and both defects it found were in the anchor rules the previous slice had just written (PMAT-1509)
+
+Ran PMAT-1508's next-pick (a), the **doc-parse arm** of `XPILE-SKIPGUARD-003` —
+the last arm of the class, which is now **closed**. As the spec required this
+widens `crates/xpile/tests/derived_corpus_vacuity_witness.rs` again rather than
+adding a second detector, but the third arm **cannot be spelled as a literal**,
+so the derivation set became an enum: `Deriv::Bare` (the read *is* the
+derivation) and `Deriv::Selected` (a document read that only counts once
+something was selected out of it). Subject class **29 → 44 distinct sites**.
+
+**The predicate is the whole design, and the spec that requested it guessed part
+of it wrong.** Reading a document is not a derivation; *selecting* out of one
+is. `let text = read(p)` then `for line in text.lines()` is out of scope
+forever — the read already panics when the file is absent, so an empty iteration
+means an empty **file**, not a missed **scan**. The naive widening (the read as
+a bare literal) was measured twice, by PMAT-1508 and again here: it takes the
+subject class 29 → 54 and leaves **9 unanchored against 0 today**, six of them
+raw `.lines()` walks. It reds correct files on day one, which is how a gate gets
+disabled (PMAT-1500).
+
+Three parts of the predicate had to be discovered rather than assumed:
+
+* **`.split(` is a reshape, not a selection.** PMAT-1507's `next_lane` entry
+  listed it as an extraction step. It is not one: `text.split(sep)` yields at
+  least one element for any non-empty input, so it cannot come back empty
+  because a scan missed. The case that proves the distinction pays is
+  `claims_drift::roadmap_complete_claims_do_not_cite_planned_items`, which loops
+  `block.split(';')` and **is** in scope — not for the `.split(`, but because
+  `block` came out of a helper that accumulates conditionally.
+* **The scan has to be depth-aware.**
+  `shell_passthrough_disclosure_witness::paragraphs` contains a `.filter(`, but
+  it sits inside a `.map(` closure and filters the *content* of each paragraph,
+  never the number of them. A `contains(".filter(")` predicate flags correct
+  code.
+* **Four of the five live subjects are hand-rolled conditional accumulation**,
+  not combinator pipelines, so a combinator-only predicate would have missed
+  every one of them.
+
+**Both defects found were in the anchor rules, not in the corpus — and one was
+written by the slice immediately before.**
+
+* **A floor above a filter is not a floor below it.** Anchor (C) resolves a
+  floor anywhere in the derivation chain, which is what killed four of
+  PMAT-1508's six false positives. Unrestricted, it also hands out amnesty
+  *across* a selection.
+  `ci_tool_install::every_path_install_curl_fails_on_http_error` iterates
+  `path_install_steps()`, and the only floor in its chain is
+  `workflow_files()`'s `assert!(!files.is_empty())` — which floors the workflow
+  **files**, upstream of the `.filter(|s| s.body.contains("GITHUB_PATH"))` that
+  produces the loop's actual collection. Every workflow file can be present and
+  the filter still match nothing. (C) now stops at a selection.
+* **Anchor (B) still carried the hole PMAT-1508 closed in (A).** The counter
+  anchor was `after.contains(&counter) && has_assert(&after)` — two independent
+  tests ANDed, satisfied by an `eprintln!` of the counter plus any unrelated
+  assertion below it. The identical *a print is not a floor* shape, one anchor
+  over, found by looking where the previous slice had just looked.
+
+⚠️ **Honest half for both: nothing live was vacuous.** `path_install_steps()`
+returns 5 today, and tightening (B) moved no site at all. These are holes closed
+**before** they were load-bearing, not saves.
+
+**The arm ships with no exemption list, because the one correct zero is anchored
+by derivation.** `release_runbook_facts_witness.rs:277` iterates
+`cited_manifest_lines(&runbook())`, measured at **0** by PMAT-1507 and again
+here, and it is correct — the runbook carries no live `Cargo.toml:<N>` citation
+and should not. New anchor **(E)** recognises the thing that keeps that from
+being a silent pass: `the_citation_detector_can_still_fire` drives the same
+extractor on *constructed* input and asserts it returns `[43]`. The anchor
+evaporates the moment that control stops flooring the extractor, which is
+strictly better than naming the file in a list — PMAT-1495's exemption trap has
+now fired on eight consecutive slices. Its dual is pinned too: a "control" that
+only asserts **emptiness** is satisfied by a detector that has died. New anchor
+**(D)** is a skip-guard on the collection's own length *paired* with a counter a
+later assertion floors; neither half suffices alone, since the guard by itself
+is PMAT-1505's defect verbatim.
+
+**Measured by effect**, as PMAT-1505 mandates: all six candidate sites were
+instrumented with an iteration counter and executed — **4, 5, 80, 165, 3 and
+0**. (`cargo llvm-cov` 0.8.5 still has no `--include-tests`; fourth slice
+confirming.) Turning the rule on demanded a floor from three live sites, each a
+check that would have gone silently vacuous if its parser stopped matching:
+rename a `BOOK-EXAMPLE-BEGIN`/`-END` marker and the region map empties; move the
+`strategic_goals:` or `roadmap:` key and the block becomes `""`, whose
+`.split(';')` yields one empty clause matching nothing; leave a ``` fence
+unbalanced and the MCP **security**-claim screen scans nothing — and that test's
+existing control reads the raw body, so it would not have noticed.
+
+⚠️ **My own bug, kept in the record:** three of the new controls asserted
+`found.iter().all(|f| f.anchored)`, which is **vacuously true on an empty
+`found`** — this file's own defect class inside this file's own new controls.
+Each is now `!found.is_empty() && …`. Writing a vacuity gate is writing new
+assertions, and they earn the same rule.
+
+**R7 re-run, fifth consecutive confirmation.** With the `read_to_string` literal
+misspelled, the live rule stayed **green** — and so did all eleven constructed
+red halves, because they build their fixtures *from* the literal and stay
+self-consistently green. Only the per-arm subject floor and the new cardinality
+disclosure red. Only a live per-arm subject floor sees a literal go stale.
+
+The gate now carries 20 assertions and prints its reach per arm — 2 / 27 / 34
+memberships over 44 distinct sites — rather than letting a 278-file corpus imply
+it.
+
 ### The gate written to catch checks that cannot fail accepted a `print` as a floor, and resolving a floor through a call was six false positives away (PMAT-1508)
 
 Ran PMAT-1507's next-pick (a), the **`read_dir` arm** of `XPILE-SKIPGUARD-003`.
