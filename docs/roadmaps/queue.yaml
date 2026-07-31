@@ -266,6 +266,34 @@ updated_prev_1507: >-
   a per-file scan. A COUNT DERIVED BY GREPPING FILES CANNOT SEE A PROPERTY LIVING IN A HELPER THEY
   CALL. Caught before it reached prose.
   NEXT FREE ID PMAT-1508.
+updated_prev_1508: >-
+  PMAT-1508 ran PMAT-1507's next-pick (a), the READ_DIR arm of XPILE-SKIPGUARD-003, by widening
+  derived_corpus_vacuity_witness.rs's deriv_literal() into a SET rather than writing a second
+  detector. Subject class 2 -> 29. MEASURED BY EFFECT: all 27 read_dir sites instrumented and
+  executed, 16 test binaries at exit 0, 2..103 iterations, ZERO empty -- clean, so the arm is a
+  RATCHET, like 1507's.
+  ★★★ THE SLICE IS THE SIX FALSE POSITIVES THAT CAME FIRST. The first draft flagged 6 unanchored
+  read_dir sites and ALL SIX WERE WRONG. A gate that cries wolf gets disabled (PMAT-1505), so
+  killing them was the work: a floor one or two CALLS below the collection was invisible (binding
+  `let modules = lane_modules()` hid that helper's own assert!(!out.is_empty()); snapshot_required
+  needs THREE hops); a read_dir loop usually BUILDS the corpus rather than checking it, floor
+  underneath; the floor is often counted into a local first; and find(..).expect(..) IS a floor.
+  A PER-SITE LOOK CANNOT SEE A PROPERTY THAT LIVES IN A HELPER THE SITE NEVER NAMES -- 1507's
+  shared-helper lesson, one layer in.
+  ★★★ AND THE ANCHOR PREDICATE ITSELF WAS HOLLOW: body.contains("files.len()") is satisfied by an
+  eprintln! of the corpus size. A PRINT IS NOT A FLOOR -- empty corpus, prints 0, every assertion
+  skipped, exit 0. The gate written against hollow checks was admitting one through its own anchor
+  rule. Now the length must be read inside an ASSERTION. Honest reading: nothing live relied on the
+  loose form, so this is a hole closed BEFORE it was load-bearing, and the file says so.
+  ★★ read_to_string MEASURED AND DECLINED (29 -> 54 subject, 9 UNANCHORED against 0 today) and the
+  decline is an ASSERTION, not a comment. The doc-parse arm needs an EXTRACTION-step predicate, not
+  the literal; respecified as next_lane[0] with the 9-site residue listed and
+  release_runbook_facts_witness.rs:277 pre-registered as CORRECT.
+  ★★ PER-ARM SUBJECT FLOORS, not a union floor: R7 with read_dir misspelled left the live rule
+  GREEN (4th consecutive confirmation) and red only the per-arm floor. ★ NEW: the constructed red
+  halves cannot catch a stale literal either -- they build their fixtures FROM it and stay
+  self-consistently green. ONLY A LIVE SUBJECT FLOOR SEES A LITERAL GO STALE.
+  NEXT FREE ID PMAT-1509.
 updated: >-
   ⛔⛔ FRIDAY OPERATOR, READ THIS FIRST. TWO THINGS BEFORE ANYTHING ELSE, both from slices that
   landed after the tag was cut.
@@ -8032,7 +8060,50 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
-- 'PMAT-1507 GATE -- the READ_DIR / DOC-PARSE arm of XPILE-SKIPGUARD-003. PMAT-1507 shipped the
+- 'PMAT-1508 GATE -- the DOC-PARSE arm of XPILE-SKIPGUARD-003, and it is the LAST arm of the
+  class. PMAT-1508 shipped the READ_DIR half by widening deriv_literal() into a SET and MEASURED
+  the arm CLEAN BY EFFECT: 27 subject sites, all instrumented and executed, 16 test binaries at
+  exit 0, iteration counts 2..103, ZERO empty. Subject class 2 -> 29.
+  ⛔ THE NAIVE DOC-PARSE WIDENING IS ALREADY MEASURED AND IT FAILS. Adding `read_to_string` to
+  the literal set takes the subject class 29 -> 54 and leaves NINE UNANCHORED against 0 today,
+  so it reds correct files on day one (PMAT-1500). Do NOT ship it that way; the shipped gate
+  ASSERTS the exclusion (reading_a_file_is_not_a_derivation_this_gate_governs) and that test has
+  to be rewritten, not deleted, by whoever widens it.
+  (a) THE PREDICATE THAT MIGHT WORK, and it is the whole design problem: scope to a collection
+  built by an EXTRACTION step -- .filter(/.find(/.strip_prefix(/.split(/.match_indices( COLLECTED
+  into a binding -- and NOT to raw `for line in text.lines()`. Emptiness of an extraction means
+  the parser matched nothing (a silent miss); emptiness of `.lines()` over a file that was just
+  read means an EMPTY FILE, and the read already panics when the file is absent.
+  (b) THE 9-SITE RESIDUE IS THE STARTING CORPUS, measured 2026-07-31, so the next slice does not
+  re-derive it: book_rust_example_witness.rs:265 (marked_regions) and :377; claims_drift.rs:1580;
+  cli_spirv_input_fidelity_witness.rs:255 and :256; mcp_surface_disclosure_witness.rs:190;
+  packaged_contracts.rs:179; release_runbook_facts_witness.rs:277; shell_passthrough_disclosure_
+  witness.rs:371. ⛔ release_runbook_facts_witness.rs:277 is PRE-REGISTERED AS CORRECT -- PMAT-1507
+  measured it at ZERO iterations and it is the controlled negative scan (the_citation_detector_can
+  _still_fire is its control). A rule that reds it is wrong. Classify the other eight BY EFFECT
+  before writing any rule; several look like raw-text loops that the predicate in (a) excludes.
+  (c) REUSE, do not rewrite: subject_sites() already resolves derivations transitively through
+  helper CALLS, and the anchor set is now (A) assertion on is_empty/len incl. one `let` hop,
+  (A-prime) an existence probe find(..).expect(..), (B) counter, (B-prime) builder collection
+  floored after the loop, (C) a floor anywhere in the derivation chain. All five were needed to
+  get the read_dir arm from 6 false positives to 0.
+  (d) ⛔ FLOOR THE SUBJECT PER ARM, with NAMED anchor files, on day one -- constraint carried
+  forward and re-proven by PMAT-1508. R7 with `read_dir` misspelled left the live rule GREEN
+  (fourth consecutive confirmation) and red ONLY the per-arm subject floor. A union floor is
+  useless: the git ls-files arm alone keeps the union non-empty. ★ AND THE CONSTRUCTED RED HALVES
+  CANNOT CATCH IT EITHER -- they build their fixtures FROM the literal and stay self-consistently
+  green. Only a live subject floor sees a literal go stale.
+  (e) MANDATORY: measure by EFFECT. ⚠️ `cargo llvm-cov` 0.8.5 STILL has no `--include-tests`
+  (third slice confirming), so a whole-suite coverage sweep reports only crates/*/src and cannot
+  see one test-file line. Per-site instrumentation -- insert a marker inside the block, run the
+  owning test binary, count hits -- did 27 sites in one scripted pass.
+  (f) DONE, recorded so the next slice does not re-derive it: the anchor predicate USED to accept
+  a non-assertion `.len()` (an eprintln! of the corpus size read as a floor); it now requires the
+  read inside an assertion, with a_printed_length_does_not_anchor_a_derived_loop as the control.
+  Nothing live relied on the loose form.'
+- 'PMAT-1507 GATE -- the READ_DIR / DOC-PARSE arm of XPILE-SKIPGUARD-003. ✅ READ_DIR HALF SHIPPED
+  BY PMAT-1508; the doc-parse half is respecified in next_lane[0] above with its measurement.
+  Retained for the constraints it records. PMAT-1507 shipped the
   `git ls-files` arm and MEASURED the rest of the class CLEAN (63 derived assertion-loops, 28
   unfloored, all 28 executed, 26 non-empty and the 2 zeros both correct-by-design). What is NOT
   gated is the same shape over a collection derived from a `read_dir` walk or from PARSING a

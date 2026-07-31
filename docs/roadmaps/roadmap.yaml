@@ -26323,3 +26323,71 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1508
+  status: done
+  priority: P1
+  category: honesty
+  title: the gate written to catch checks that cannot fail accepted a print as a floor, and
+    resolving a floor through a call was six false positives away -- the read_dir arm lands
+    clean only after the extractor stopped crying wolf
+  notes: 'SHIPPED 2026-07-31. Ran PMAT-1507''s next-pick (a), the READ_DIR arm of
+    XPILE-SKIPGUARD-003 (next_lane[0]). Widened crates/xpile/tests/derived_corpus_vacuity_witness.rs
+    rather than writing a second detector, exactly as the spec required: deriv_literal() became a
+    SET {`git ls-files`, `read_dir`} and subject_sites() takes &[String].
+    ★★★ THE RESULT IS AGAIN CLEAN, AND AGAIN THAT IS THE FINDING. MEASURED BY EFFECT, not by
+    reading: all 27 read_dir subject sites instrumented with an iteration marker and EXECUTED --
+    16 test binaries, ALL exit 0, iteration counts 2..103, ZERO sites ran empty. Subject class
+    2 -> 29. The arm is a RATCHET over a corpus that was already correct by convention.
+    ★★★ BUT THE EXTRACTOR WAS WRONG SIX TIMES FIRST, AND THAT IS THE SLICE. The first draft
+    reported 6 unanchored read_dir sites and ALL SIX WERE FALSE POSITIVES. A gate that cries wolf
+    gets disabled (PMAT-1505), so killing them WAS the work, and each is now a control:
+    (i) anchor (C) resolved a floor only when the loop iterated `helper()` DIRECTLY, so binding it
+    first -- `let modules = lane_modules(); for m in &modules` -- hid lane_modules()''s own
+    assert!(!out.is_empty()), and snapshot_required() needs THREE hops to reach
+    snapshot_rulesets()''s floor. A PER-SITE LOOK CANNOT SEE A PROPERTY THAT LIVES IN A HELPER THE
+    SITE NEVER NAMES -- PMAT-1507''s own instrument lesson (the shared-helper tripwire), one layer
+    in, and pre-registered as constraint (e) of the spec.
+    (ii) a read_dir loop usually BUILDS the corpus rather than checking it, floor underneath on
+    what it filled -- anchor (B''), which the git-ls-files arm had never needed.
+    (iii) the floor is often counted into a local first (`let n = xs.len(); assert!(n >= 30)`,
+    claims_drift''s spelling), and (iv) an existence probe `find(..).expect(..)` IS a floor: it
+    cannot survive an empty collection. Anchor (A'').
+    ★★★ AND THE ANCHOR PREDICATE ITSELF WAS HOLLOW -- THE BEST FINDING HERE. As shipped by
+    PMAT-1507 it was body.contains("files.len()"), which an eprintln!("scanned {} files",
+    files.len()) SATISFIES. A PRINT IS NOT A FLOOR: the corpus comes back empty, the line prints
+    0, every assertion in the loop is skipped, the test exits 0. The gate written against hollow
+    checks was admitting one through its own anchor rule. Tightened to require the length be read
+    inside an ASSERTION (assertion_windows(), paren-balanced), with
+    a_printed_length_does_not_anchor_a_derived_loop as the control and
+    a_length_bound_to_a_local_and_asserted_still_anchors as its pair. ⚠️ HONEST READING: nothing
+    live relied on the loose form -- tightening moved the git ls-files arm not at all -- so this is
+    a hole closed BEFORE it was load-bearing, and the file says so rather than claiming a save.
+    ★★ read_to_string MEASURED AND DECLINED, and the decline is an ASSERTION not a comment
+    (reading_a_file_is_not_a_derivation_this_gate_governs). Adding it takes the subject class
+    29 -> 54 with 9 UNANCHORED against 0 today; the residue is dominated by `for line in
+    text.lines()` over a file just read, where empty means an empty FILE not a missed SCAN (the
+    read already panics if absent), and one member is release_runbook_facts_witness.rs:277 which
+    PMAT-1507 measured at zero and recorded as CORRECT. The naive widening reds correct files on
+    day one -- PMAT-1500''s disabled-gate lesson. The exclusion was pre-registered by PMAT-1507''s
+    spec; this slice CHECKED it rather than inheriting it.
+    ★★ THE SUBJECT IS FLOORED PER ARM, NOT OVER THE UNION -- constraint (b) of the spec, and it is
+    load-bearing. R7 re-run with `read_dir` misspelled: every_derived_assertion_loop_is_anchored
+    stayed GREEN (FOURTH consecutive confirmation that a negative detector cannot notice its own
+    death) while the_subject_class_is_not_empty RED at 0 sites against a floor of 20. A union
+    floor would have inherited the hole -- the git ls-files arm alone keeps the union non-empty,
+    so the NEW arm could die unnoticed exactly where it is new. ★ NEW COROLLARY: the constructed
+    red halves cannot catch it either, because they build their fixtures FROM the literal and stay
+    self-consistently green. ONLY A LIVE SUBJECT FLOOR SEES A LITERAL GO STALE.
+    ★ cargo llvm-cov 0.8.5 still has no --include-tests (third slice running); per-site
+    instrumentation over 27 sites in one scripted pass took minutes.
+    Gate: 14 assertions (was 7), NO exemption list, both arms green on the live corpus.
+    NEXT FREE ID PMAT-1509. NEXT PICK: the DOC-PARSE arm proper -- it needs a narrower predicate
+    (a collection built by an EXTRACTION step: filter/find/strip_prefix collected into a binding;
+    NOT raw .lines()) plus the 9-site measurement above as its starting corpus -- then
+    XPILE-BOOKTRANSCRIPT-001 arm (a), XPILE-PHANTOMPATH-001 (PMAT-1502) and
+    XPILE-WORKFLOW-PROSE-001 (PMAT-1501).'
+  created: '2026-07-31'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
