@@ -112,6 +112,85 @@ not a finding.
 
 Every deviation above is recorded in `docs/RELEASE.md` §7 — the **first rows that
 section has ever received on the day**, by the step (§5 step 9) that had never run.
+### A whole subsystem — §8 of the spec, its sub-spec, the glossary term and the three contracts that make it "non-negotiable" — is published in the present indicative against 42 lines that hash a key for a cache that does not exist; and the deferral that hid it is spelled in the PAST tense, which is why a deferral sweep could not see it (PMAT-1502)
+
+Ran the hunt playbook's next pick (b): **deferrals as a class**. The `in Phase N`
+corpus is 8 sites outside the roadmaps. One is a future-tense deferral to an expired
+target — `sub/cache-determinism-provenance.md`'s *"These commands are introduced in
+Phase 2 when the cache lands in production"*, PMAT-1499's shape exactly, since
+`sub/phased-rollout.md` records Phase 2 as *partially shipped (py-int-arith only)* and
+v0.1.0 as released. Pulling that thread found the page it sits on is **1-of-6 true**.
+
+**Measured against the shipped `xpile 0.1.618` and `git ls-files`:**
+
+| claim | measured |
+|---|---|
+| `CacheKey::compute(source, xpile_version, model_id, skills_hash)` + `\0`-separated `sha256` | **TRUE** — `crates/xpile-llm/src/lib.rs`, signature and hash order verbatim |
+| the cache (store, lookup, eviction) | **absent** — that crate is 42 lines with **zero** filesystem calls |
+| `xpile transpile --repair=cached` | **absent** — no `--repair` flag is registered; exit **2** |
+| `xpile cache prune` / `xpile cache verify` | **absent** — `unrecognized subcommand 'cache'`, exit **2** |
+| the `// xpile-repaired:` provenance marker | **no emitter** — 0 tracked `.rs` files, 0 marker lines in transpiled output |
+| `tests/cache_byte_identical.rs`, named as the CI verification | **no such file** under any prefix |
+
+**★★★ SIXTH AXIS OF *in scope ≠ covered*: TENSE — and it is the dual of PMAT-1499.**
+That slice found a deferral whose target had already passed. The four sharpest sites
+here assert the deferral **was already discharged**: *"ported to xpile in Phase 1"*
+(`sub/agent-loop.md`), *"ported to xpile in Phase 1"* (`sub/budget.md`), *"ported from
+depyler to xpile in Phase 1"* (`sub/skills.md`), *"(ported from depyler)"*
+(`xpile-spec.md` §10). **Not one was ported.** `contracts/` holds 35 files and none is
+a repair or skills contract; `sub/phased-rollout.md` **enumerates** Phase 1's actual
+output as the four *trait* contracts, so the claim is falsified by a page in the same
+corpus that lists what shipped. A sweep grepping for *"lands in"* / *"will be"* /
+*"in a future release"* structurally cannot see a past-perfect deferral — it does not
+read as a promise, it reads as history. After completeness (1498), cadence (1495),
+numeral-free prose (1499), vocabulary (1500), shape (1501).
+
+**★★ THE HEALTHY CONTROL IS IN THE SAME LANE, ONE DOCUMENT OVER — which is what makes
+this a claim defect and not a rot complaint.** `sub/ci-gates.md` carries a dated
+*"Status (2026-05-18 / PMAT-101 sweep)"* block naming `scripts/check_provenance.sh` as
+a gate that did **not** ship, with the reason (*"Repair-mode output isn't generated at
+v0.1.0"*) and the tracking id `XPILE-CI-PROVENANCE-001`; `sub/pmat-integration.md`
+does the same. So the repo already knows how to disclose this exact lane honestly — it
+did it for the CI gate and not for the subsystem. `check_provenance.sh` is therefore a
+**refuted** hypothesis, recorded so nobody re-hunts it. The fix reuses that block's
+shape verbatim.
+
+**★★ ZERO GATES COVER ANY OF IT** (PMAT-1500's fourth axis, re-confirmed):
+`grep -E 'cache-determinism|cache_byte_identical|xpile-repaired|CacheKey|xpile cache'`
+over `crates/**/*.rs` returns exactly one hit — the implementation itself. The page is
+inside `claims_drift.rs`'s corpus (all of `docs/specifications/`) the whole time; that
+gate hunts derived **cardinalities**, and a phantom subcommand, an unwritten test file
+and an unemitted comment marker offer none.
+
+**★ THE CLASS MEASUREMENT, and it needed a defensible denominator.** 410 backticked
+in-repo-looking paths across 74 tracked markdown files; naive existence-testing gives
+53 "missing", which is **not** the finding — 10 are correct files cited by a wrong
+prefix, 5 are cross-repo, 3 are `foo`/`MyLang` placeholders, 3 are `/tmp` scratch files
+the release runbook creates itself, and the leading `/` in `/CHANGELOG.md` is
+root-anchored notation. The honest residue is **8** in-repo paths published as real and
+absent under every convention this repo uses, and **6 of the 8 are in this one lane**
+(3 phantom contracts, the cache test, the skills directory, and the marker's
+`static_files/`). ⚠️ One entry in the raw bucket is
+`crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs` in `docs/RELEASE.md` —
+a **deliberate quotation** of the doubled path A11 exists to disclose. A
+path-existence gate would red on the document correctly reporting a broken path;
+PMAT-1495's exemption trap, pre-registered as a design constraint rather than
+discovered on the third slice.
+
+**★ THE STUB'S DOC COMMENT WAS *LESS* HONEST THAN THE SPEC HERE — the inverse of
+PMAT-1499.** `xpile-llm/src/lib.rs`'s module doc calls itself *"LLM invocation +
+content-addressed cache"* and *"On cache hit, returns the exact bytes stored"*, and
+implements neither; it also cites `contracts/xpile-determinism-v1.yaml`, marked
+`(TODO)` and absent. So *"read the component's doc comment first"* is a lead, not an
+oracle — it can over-claim in exactly the same direction as the spec.
+
+Fixed docs-only (hard freeze): the sub-spec gains a measured status table and every
+unimplemented section is re-scoped to REQUIREMENT with the expired Phase-2 deferrals
+retired; `xpile-spec.md` §7/§8/§10 corrected in the same slice (PMAT-1499's
+parent/child rule); `sub/agent-loop.md`, `sub/budget.md`, `sub/skills.md` and
+`sub/glossary.md` corrected. **NO GATE** — the freeze bars a new
+`crates/xpile/tests/` file; filed as `XPILE-PHANTOMPATH-001` in `queue.yaml`
+`next_lane` with the quotation-exemption and its positive control as constraints.
 
 ### The last live carrier of the falsehood two whole slices were spent killing is the file that HOSTS the markers the enforcement gate machine-reads — and the gate cannot see it for two independent reasons, one of which is live in Markdown too (PMAT-1501)
 

@@ -44,7 +44,7 @@
 
 **Provable contract** — Synonym for a `pv`-validated contract that ships with `kani_harnesses` and/or `lean_theorem` references.
 
-**Provenance marker** — The first-line comment on every repair-pass `.rs`: `// xpile-repaired: <hex> via <model> at <utc>`. The receipt back into the cache.
+**Provenance marker** — The first-line comment specified for every repair-pass `.rs`: `// xpile-repaired: <hex> via <model> at <utc>`. The receipt back into the cache. ⚠️ Nothing emits it at 0.1.618 and no cache exists to be a receipt into — see `sub/cache-determinism-provenance.md`'s status block (PMAT-1502).
 
 **`pv`** — Provable Contracts CLI (v0.32.0). Installed at `~/.cargo/bin/pv`. The design controller across the fleet.
 
