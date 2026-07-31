@@ -13,6 +13,120 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The test whose name ends in EXECUTED had never executed — on this host or any other — because its guard asked `sh` a question no shell can answer (PMAT-1505)
+
+Ran PMAT-1503's `XPILE-PREFLIGHT-001` lead. Arming the full pre-flight tripwire
+set for the v0.1.618 publish had surfaced, without time to repair it, that
+`makefile_dialect_refusal_witness::make_and_the_shredded_shell_disagree_when_executed`
+guards on `tool_present("sh", "-c")`. **`sh -c` with no operand is a usage
+error** — dash, bash and busybox ash all exit 2 — so the guard reported `sh`
+ABSENT on every host that has ever run this suite. The test returned at its
+first statement and reported **PASS**.
+
+That test is the warrant for PMAT-1420's `Makefile` refusal: the evidence that
+`make` and the shell the emitter used to produce disagree on the filesystem
+while both exit 0. Its doc comment is headed *"ASSERTION 3 — THE JUSTIFICATION,
+EXECUTED"*. Repaired, it runs for the first time and **passes**, leaving the
+evidence on disk: `make` builds `out.txt`, the shredded shell deletes it. The
+claim was true the whole time. Nothing had ever checked it.
+
+**A hollow witness is the worst shape a check can take, because it is immune to
+reading.** A false sentence in prose is caught by a careful reader; here the
+file is present, the assertion is written, the name says EXECUTED, the suite is
+green, and the passing-test count includes it. Every signal a reviewer has says
+the property is measured. The skip is one line of stderr inside captured output
+nobody reads, because the run passed. Demonstrated rather than argued: with the
+guard restored to its broken spelling the test prints `ok`, `1 passed`, and
+creates **zero** files; repaired, the same `ok` and `1 passed` comes with three
+scratch directories and the diverging artifact.
+
+**A SECOND, LATENT instance, found by the new gate and not by inspection.**
+`tool_available("sh")` in `hybrid_verify.rs` (×2) and
+`hybrid_verify_vacuity_witness.rs` also probes `sh --version`, which exits 2.
+Those three guards work *today* only because that helper tests whether the
+process SPAWNED (`.output().is_ok()`), not whether it succeeded. A helper of the
+**same name** in `wasm_source_lang_refusal_witness.rs` tests
+`status.success()` — so unifying the two spellings, an obviously correct-looking
+cleanup, would have converted three live tests into permanent silent skips. All
+three now probe `sh -c true`, which is right under either criterion.
+
+**The gate — `crates/xpile/tests/skip_guard_reachability_witness.rs`
+(`XPILE-SKIPGUARD-001`), 6 properties.** "Can this argument vector succeed?" is
+not decidable from source, so the gate does not pretend to decide it; it closes
+the hole from two sides, both derived from `git ls-files` with no probe
+inventory typed into the file:
+
+* **Statically, over the whole tracked test corpus** — every argument vector
+  used as a presence probe must be an audited shape. The table is keyed on the
+  ARGUMENTS, not the tool, so a new `--version`-probed tool needs no edit; only
+  a new *spelling* does. It is an audit record, not a decision procedure, and
+  says so.
+* **Dynamically, wherever the binary resolves** — every derived `(tool, args)`
+  pair must exit 0. No allowlist involved. This is the half that would have
+  caught the live defect on the day it landed, and the half that found the
+  latent one. 101 probes derived across 55 files, 88 executed here.
+
+`no_derivation_is_vacuous` pins that the extractor still finds anchors known to
+be in the corpus, so a broken regex reds instead of reporting a clean sweep;
+`no_exclusion_is_stale` pins that the one exemption (`ssh`, which probes a
+remote and whose exit 255 is an honest absence) still corresponds to something
+real. Red half run 5/5, each perturbation asserted by re-parsing the file rather
+than by printing it: the retired spelling reinstated at the real call site reds
+the static half; `make -V` — an audited shape this tool does not accept —
+isolates and reds the dynamic half; a neutered `is_guard_name` reds the
+anti-vacuity property; a bogus exemption reds the staleness property; and the
+behaviour arm above separates PASS-with-nothing-run from PASS-with-the-work-done.
+
+★ The first arm drafted for the anti-vacuity property was itself broken —
+deleting two clauses from `is_guard_name` left `name.ends_with("_present")`,
+which still matches `tool_present`, so the extractor never broke and the arm
+came back green. **A perturbation must be validated by its effect, not by the
+fact that the text changed.**
+
+★★ **CI RED-ON-GREEN: the dynamic half's own false-positive family was found by
+the second host, not by this one.** `cargo kani --version` exits **101** where
+cargo-kani is not installed — and the binary `cargo` *does* resolve, so the
+first draft read that as "a present tool whose probe fails", i.e. a defect. It
+is not: a probe that runs a **subcommand** exits non-zero when the subcommand is
+absent, which is indistinguishable at runtime from a malformed spelling. The
+dynamic half now **declines that case and says so out loud**, with
+`the_subcommand_carve_out_is_narrow_and_live` keeping the carve-out from
+widening or going stale (it applies to exactly one probe today, and names it).
+Verified under the CI condition rather than assumed: with a `cargo` shim that
+rejects `kani`, the witness passes and prints
+`NOT DECIDABLE HERE … {"cargo kani --version"}`. → **A host-dependent property
+needs a second host before its clean run means anything.** This box has
+cargo-kani; the runner does not; one green run proved nothing.
+
+**TWO MORE ASSERTIONS THAT CANNOT FAIL**, found by a six-way fan-out over the
+276 tracked test files and each confirmed by two independent adversarial
+verifiers. Neither is a presence guard, so `XPILE-SKIPGUARD-001` does not cover
+them; both are repaired here rather than deferred, because shipping a gate
+about assertions that never execute while knowingly leaving two on the floor is
+the same failure in a different costume.
+
+* **A tautology inside a test named `pins_are_not_vacuous`**
+  (`comp_hash_source_fuzz_witness.rs:609`). One line below
+  `assert_eq!(cpython_v, *hand)` stood `assert_ne!(*hand, cpython_v + 1)` —
+  which reduces to `h != h + 1` and can never fail for any `i64`. The comment
+  beside it already named the right property (*"no pin is 0/1 — an always-empty
+  miscompile collapses the len-scaled observables toward those"*); only the code
+  did not implement it. It does now, plus a distinctness check that a
+  collapse-to-one-constant miscompile would fail.
+
+* **A loop over an empty set** (`release_runbook_facts_witness.rs:211`). The
+  test's only assertion sits inside `for line_no in cited`, and `cited` is empty
+  on the live corpus: both `Cargo.toml:43` occurrences are quoted mentions
+  inside PMAT-1453's own correction. Proven without any replica — the only value
+  that could enter the set is `43`, `43` is not among the 35 version sites, so a
+  non-empty set would panic; the test passes, therefore the set is empty. That
+  is *correct* for a negative detector and it is also how a detector dies
+  unnoticed. The scan is now a function with a **control**: an un-quoted
+  citation must be collected, a quoted one must not. Neutering `is_mention` to
+  exempt everything reds the control — **and leaves
+  `a_cargo_toml_line_citation_points_at_what_it_claims` green**, which is the
+  whole point.
+
 ### The book's flagship page told every reader to run a command that exits 1, and offered as evidence for "the same governing contract" the two transcripts with the contract deleted (PMAT-1504)
 
 Ran the hunt playbook's next-pick (f), `book/src/` as a corpus. The corpus is

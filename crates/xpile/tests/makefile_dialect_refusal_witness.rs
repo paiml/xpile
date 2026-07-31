@@ -113,9 +113,9 @@ fn xpile_bin() -> &'static str {
     env!("CARGO_BIN_EXE_xpile")
 }
 
-fn tool_present(cmd: &str, arg: &str) -> bool {
+fn tool_present(cmd: &str, args: &[&str]) -> bool {
     Command::new(cmd)
-        .arg(arg)
+        .args(args)
         .output()
         .is_ok_and(|o| o.status.success())
 }
@@ -208,7 +208,7 @@ fn anti_vacuity_the_same_bytes_at_a_shell_path_still_emit_on_both_backends() {
 /// the evidence the refusal is warranted, not a test of the refusal.
 #[test]
 fn make_and_the_shredded_shell_disagree_when_executed() {
-    if !tool_present("make", "--version") || !tool_present("sh", "-c") {
+    if !tool_present("make", &["--version"]) || !tool_present("sh", &["-c", "true"]) {
         // Skip LOUDLY. `XPILE_REQUIRE_SH` is the standing tripwire that turns
         // this into a hard failure where the toolchain is guaranteed.
         let msg = "SKIP make_and_the_shredded_shell_disagree_when_executed: `make` or `sh` \

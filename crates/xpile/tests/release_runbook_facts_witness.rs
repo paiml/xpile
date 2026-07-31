@@ -181,6 +181,68 @@ fn the_runbook_does_not_describe_the_version_bump_as_one_line() {
     }
 }
 
+/// Every `Cargo.toml:<N>` this note CITES — mentions excluded.
+///
+/// The offset handed to `is_mention` must be ABSOLUTE. The first draft advanced
+/// a `rest` slice and passed the RELATIVE index, so from the second match
+/// onward the exemption window was read from the wrong part of the string — and
+/// the test failed on this file's own disclosure sentence.
+///
+/// Factored out of the test by PMAT-1505 so it can be driven by a control. On
+/// the live runbook it returns EMPTY — both occurrences are quoted mentions
+/// inside PMAT-1453's correction — which means the loop below asserts nothing
+/// today. That is correct for a negative detector, and it is also exactly how a
+/// detector dies unnoticed: widen `is_mention` by accident and the set stays
+/// empty for the wrong reason, with nothing to say so.
+fn cited_manifest_lines(note: &str) -> BTreeSet<usize> {
+    let mut cited: BTreeSet<usize> = BTreeSet::new();
+    let mut base = 0usize;
+    while let Some(rel) = note[base..].find("Cargo.toml:") {
+        let at = base + rel;
+        let tail = &note[at + "Cargo.toml:".len()..];
+        let num: String = tail.chars().take_while(char::is_ascii_digit).collect();
+        if let Ok(v) = num.parse::<usize>() {
+            if !is_mention(note, at) {
+                cited.insert(v);
+            }
+        }
+        base = at + "Cargo.toml:".len();
+    }
+    cited
+}
+
+/// PMAT-1505 — the CONTROL the loop below has never had. The detector's
+/// emptiness on the live corpus is only good news if the detector can still
+/// detect; without this, `is_mention` widening to exempt everything is
+/// indistinguishable from a clean runbook.
+#[test]
+fn the_citation_detector_can_still_fire() {
+    let live_use = "The bump touches Cargo.toml:43 — go edit it.";
+    assert_eq!(
+        cited_manifest_lines(live_use),
+        BTreeSet::from([43]),
+        "an un-quoted line citation must be COLLECTED, or this detector is dead \
+         and the test it feeds is permanently vacuous"
+    );
+
+    let reported = "PMAT-1453: this line used to say \"Version is single-sourced at \
+                    Cargo.toml:43 — one line\", and it was wrong.";
+    assert!(
+        cited_manifest_lines(reported).is_empty(),
+        "a citation quoted inside a `used to say \"…\"` correction is a MENTION and \
+         must stay exempt — this is the shape the live runbook uses"
+    );
+
+    // And the emptiness asserted below is the LIVE reading, recorded here so a
+    // future change that starts citing shows up as a change to this file too.
+    assert!(
+        cited_manifest_lines(&runbook()).is_empty(),
+        "the runbook now carries a live `Cargo.toml:<N>` citation. That is not a \
+         failure — it means the loop in the next test finally has a subject. \
+         Check the citation, then update this expectation."
+    );
+}
+
 #[test]
 fn a_cargo_toml_line_citation_points_at_what_it_claims() {
     // The original defect in one assertion: the runbook cited `Cargo.toml:43`
@@ -190,23 +252,9 @@ fn a_cargo_toml_line_citation_points_at_what_it_claims() {
     let lines: Vec<&str> = body.lines().collect();
     let n = runbook();
 
-    // The offset handed to `is_mention` must be ABSOLUTE. The first draft
-    // advanced a `rest` slice and passed the RELATIVE index, so from the second
-    // match onward the exemption window was read from the wrong part of the
-    // string — and the test failed on this file's own disclosure sentence.
-    let mut cited: BTreeSet<usize> = BTreeSet::new();
-    let mut base = 0usize;
-    while let Some(rel) = n[base..].find("Cargo.toml:") {
-        let at = base + rel;
-        let tail = &n[at + "Cargo.toml:".len()..];
-        let num: String = tail.chars().take_while(char::is_ascii_digit).collect();
-        if let Ok(v) = num.parse::<usize>() {
-            if !is_mention(&n, at) {
-                cited.insert(v);
-            }
-        }
-        base = at + "Cargo.toml:".len();
-    }
+    // EMPTY on the live corpus — `the_citation_detector_can_still_fire` is what
+    // keeps that from being a silent pass (PMAT-1505).
+    let cited = cited_manifest_lines(&n);
 
     for line_no in cited {
         let text = lines.get(line_no - 1).copied().unwrap_or("");

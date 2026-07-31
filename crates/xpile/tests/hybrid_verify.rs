@@ -22,6 +22,20 @@ fn tool_available(tool: &str) -> bool {
     Command::new(tool).arg("--version").output().is_ok()
 }
 
+/// A POSIX shell does not answer `--version` — `/bin/sh` is dash here and exits
+/// **2**. That is survivable only because `tool_available` above tests whether
+/// the process SPAWNED, not whether it succeeded; the identically-named helper
+/// in `wasm_source_lang_refusal_witness.rs` tests `status.success()`, and
+/// unifying the two — an obviously correct-looking cleanup — would have turned
+/// every `sh` guard here into a permanent silent skip. `sh -c true` is the
+/// spelling that is right under both (XPILE-SKIPGUARD-001, PMAT-1505).
+fn shell_available() -> bool {
+    Command::new("sh")
+        .args(["-c", "true"])
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
 #[test]
 fn hybrid_verify_matches_cpython_on_real_fixture() {
     if !tool_available("cc") || !tool_available("python3") || !tool_available("cargo") {
@@ -162,7 +176,7 @@ fn hybrid_verify_reports_divergence_and_exits_nonzero() {
 /// byte-exactly, the way `hybrid_golden_lock.rs` does for the C lane.
 #[test]
 fn hybrid_verify_executes_the_flat_shell_boundary() {
-    if !tool_available("sh") || !tool_available("cargo") {
+    if !shell_available() || !tool_available("cargo") {
         eprintln!("sh/cargo unavailable — skipping shell hybrid --verify test");
         return;
     }
@@ -202,7 +216,7 @@ fn hybrid_verify_executes_the_flat_shell_boundary() {
 /// EXECUTION-faithful, not just parse-faithful, for the 8 lines to match.
 #[test]
 fn hybrid_verify_executes_the_control_flow_shell_boundary() {
-    if !tool_available("sh") || !tool_available("cargo") {
+    if !shell_available() || !tool_available("cargo") {
         eprintln!("sh/cargo unavailable — skipping control-flow shell hybrid --verify test");
         return;
     }
