@@ -13,6 +13,108 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The book told every reader to run a command that had exited 1 for 72 days, and nothing in this repository had ever executed a published command — the gate for that found a *different* defect, in a command that works (PMAT-1511)
+
+`XPILE-BOOKTRANSCRIPT-001` arm (a). A `$ <cmd>` line in `README.md` or
+`book/src/` is an **executable claim**, and until now the only instrument
+pointed at one was reading. PMAT-1504 found `rustc -O factorial.rs --crate-type
+lib --emit=metadata -o /dev/null` on `quickstart.md:49` by *running* it — it
+exits 1 on any host whose user cannot write to `/dev`, i.e. essentially every
+reader's — repaired the text, and could not ship the gate under the
+Wed 2026-07-29 freeze. This is that gate.
+
+**Measured over `README.md` + `book/src/**` (corpus derived from
+`git ls-files`): 76 published command lines — 38 EXECUTED in a per-fence
+scratch directory, 38 SCREENED** under a closed taxonomy the test prints with a
+reason per line. Property A — every executed command exits the way its own page
+publishes, with the expected status *derived* (a transcript beginning `Error:`
+is a refusal and must exit non-zero) — came back **clean, 0 offences**. That is
+precisely why the slice did not stop there.
+
+#### The finding is that a command which *works* was documented as needing a checkout
+
+`xpile diamond` **exits 0 in an empty directory**: the contract corpus is
+compiled into the binary. `README.md` says so twice ("works anywhere", "from any
+directory") and `xpile quorum`'s own error text says so a third time. But
+`book/src/installation.md` said a source checkout "is **also** required" to run
+`xpile diamond`, and `book/src/quickstart.md:133` annotated the same command
+`# if you're in a repo with contracts/`. Both false; both **under**-claims, the
+shape PMAT-1473 named, where a what's-still-broken note outlives the thing it
+describes. The repository contradicted itself across three pages and the binary
+sided with the README.
+
+The named *cause* was wrong for the other three commands too. None of `quorum`,
+`attestations` or `audit` is blocked on `contracts/` — when it is absent all four
+fall back to the embedded contract set and say so on stderr. `quorum` and
+`attestations` need `docs/roadmaps/roadmap.yaml`; `audit` needs source files to
+scan. `installation.md` now carries a measured four-row table, and
+`quickstart.md` the corrected comments.
+
+**An exit-status gate cannot see this class at all** — the command exits 0,
+which is what such a gate checks. So property B **measures instead of pinning**:
+the roster is parsed out of `xpile --help`, each verdict is re-derived by running
+the subcommand bare in an empty scratch directory, and pages are checked against
+that measurement in **both** directions. A binary regression reds as loudly as
+prose rot. Subcommands that exit 2 bare (`transpile`, `hybrid`) are excluded and
+logged — clap's usage exit is a different claim.
+
+#### What the red halves taught
+
+* **Detect the property, not the literal.** The first vocabulary was a phrase
+  list containing `"is required"`. The live sentence said `"is **also**
+  required"` — three characters away — and the canonical red arm came back
+  **green**. It is now a checkout *noun* and a requirement *verb* in one
+  sentence, plus conditional spellings that carry the requirement without a verb.
+* **A red half lied twice, for two different reasons, and a red for the wrong
+  reason reads exactly like a red for the right one.** First the perturbation
+  deleted the per-command table along with the sentence, so what reddened was a
+  different arm's floor — three arms "red", all invalid. Then the replacement
+  passed backticks through a single-quoted shell string, delivered
+  `` \`xpile diamond\` ``, and no claim parsed at all. Only the third spelling
+  was a valid instance of the subject class. Assert *which* assertion fired, not
+  merely that the test failed. The fourth arm — the same variant wording applied
+  to `xpile quorum`, where the claim is **true** — stays green, and that is what
+  proves the rule does not red correct pages.
+* **A markdown table row is one unit and must not be joined; wrapped prose must
+  be.** Both halves are load-bearing and they point opposite ways. Joining the
+  table welded the header cell "outside a checkout | what it needs" onto the
+  first data row, which names `xpile diamond` — a false positive on the correct
+  table this slice had just written, found by running the gate against its own
+  fix.
+* **Arm B3 exists so the fix is not prose the gate cannot see:** a row of the
+  shape ``| `xpile <sub>` | … exits <N> … |`` is read as a direct claim, so the
+  new table gates itself.
+* **The exemption is held to a stricter standard than the detector.** Detection
+  vocabularies may carry anticipatory literals (each *group* must match live
+  prose); every disclosure-exemption literal must be **live** — `"used to say"`
+  and `"previously said"` matched nothing and were deleted rather than kept. The
+  exemption itself is mandatory: without it the gate would forbid the project
+  from narrating its own repairs.
+
+#### Traps closed structurally rather than by discipline
+
+The binary under test is `env!("CARGO_BIN_EXE_xpile")`, which cargo rebuilds as a
+dependency of the test — so the stale-artefact trap that made PMAT-1504's first
+run report five of six `cargo run --example` lines as failing (all six exit 0)
+cannot recur here. Commands in one fence share one scratch directory **in
+order**, because `quickstart.md:48` writes `factorial.rs` and line 49 compiles
+it; a fresh directory per command reports line 49 as broken, which is the same
+harness-error-as-defect shape the file exists to close.
+
+#### Honest scope
+
+`CHANGELOG.md` (73 more `$` lines) and `docs/specifications/` are **out**: the
+first is append-only narration of past releases, the second describes v0.2.0
+commands that deliberately do not exist. **Half the corpus is screened, and the
+screened set is printed** — a silent filter reads as "covered everything" when it
+covered half. The checkout lane, the one escape hatch in property A, is derived
+rather than listed and is bounded in both directions. Arms (b) transcript,
+(c) duplication, (d) exemption classification and (e) acquittal of
+`XPILE-BOOKTRANSCRIPT-001` remain **unshipped**.
+
+`crates/xpile/tests/book_published_command_witness.rs`, 16 tests, seven red
+halves each asserted to have applied by re-reading the file.
+
 ### An independent audit of the five slices that hunt hollow checks found eight overclaims inside them, three in the gate that started the series — including a subject so narrow it missed the exact defect it was written for (PMAT-1510)
 
 Slices PMAT-1505 through 1509 were written, reviewed and merged by the same

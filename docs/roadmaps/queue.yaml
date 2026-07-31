@@ -8060,6 +8060,47 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1511 SHIPPED XPILE-BOOKTRANSCRIPT-001 arm (a) — the PUBLISHED-COMMAND arm, which was
+  next_lane[1]''s ⭐⭐⭐ pick. MEASURED over README.md + book/src (76 published command lines):
+  38 EXECUTED per-fence in a scratch dir, 38 SCREENED under a printed taxonomy. Property A
+  (exit status matches the page) came back CLEAN — 0 offences — and the slice''s actual finding
+  is PROPERTY B, which arm (a) as specified would not have had: `xpile diamond` EXITS 0 in an
+  empty directory (contracts are compiled into the binary; README says so twice and the binary''s
+  own quorum error a third time), while installation.md said a checkout "is ALSO required" for it
+  and quickstart.md:133 annotated it `# if you''re in a repo with contracts/`. Both FALSE,
+  both UNDER-claims. ⭐⭐⭐ A COMMAND THAT WORKS CAN STILL BE DOCUMENTED AS NEEDING A PRECONDITION
+  IT DOES NOT NEED, and an exit-status gate is structurally blind to that class.
+  ⛔ NEXT PICKS (PMAT-1512+), in EV order, REVISED by what this slice measured:
+  (a) ⭐⭐⭐ XPILE-BOOKTRANSCRIPT-001 arm (c), the DUPLICATION arm. Now the highest-EV arm left:
+  the same Rust transcript is published BYTE-IDENTICALLY in README.md, book/src/quickstart.md and
+  book/src/tutorials/python-to-rust.md (sha256 862f7c418d17 stripped of the `$ …` line, measured
+  2026-07-31 by PMAT-1504) and EXACTLY ONE of the three is gated (readme_quickstart_witness.rs),
+  so a correction applied to README silently leaves two stale copies. Assert set-equality across
+  the three AND against the live emit. It is the concrete instance of the standing
+  "duplicated normative sets" lead (h). NOTE: quickstart.md now says in prose that the three are
+  byte-identical "as measured, but nothing enforces it" — shipping (c) means DELETING that
+  disclosure, which is the PMAT-1472 shape (give the rule an escape hatch that is the real fix).
+  (b) ⭐⭐ arm (b), the TRANSCRIPT arm, and (e), the ACQUITTAL arm — specs unchanged below.
+  (c) ⭐⭐ XPILE-PHANTOMPATH-001 (PMAT-1502). (d) ⭐⭐ DEFERRALS AS A CLASS.
+  (e) ⭐ XPILE-WORKFLOW-PROSE-001 (PMAT-1501).
+  ⛔ CONSTRAINTS THIS SLICE PAID FOR, do not re-derive:
+  (i) DETECT THE PROPERTY, NOT THE LITERAL. A phrase list containing "is required" missed the live
+  "is ALSO required" by three characters and the canonical red arm came back GREEN. Use a
+  noun+verb co-occurrence over a sentence, never a restatement list.
+  (ii) ⛔ A RED FOR THE WRONG REASON READS EXACTLY LIKE A RED FOR THE RIGHT ONE. Two invalid red
+  halves here: one deleted a table and tripped a DIFFERENT arm''s floor; one passed backticks
+  through a single-quoted shell string and delivered \`xpile diamond\`, so no claim parsed.
+  ASSERT WHICH ASSERTION FIRED — grep the panic text, not just the exit code — and always run the
+  FOURTH arm (same wording, correct subject → must stay GREEN).
+  (iii) A MARKDOWN TABLE ROW IS ONE UNIT AND MUST NOT BE JOINED, while wrapped prose MUST be.
+  Joining the table welded a header cell onto the first data row and false-positived the correct
+  table this slice had just written. Both halves of the joining rule are load-bearing.
+  (iv) EXEMPTIONS ARE HELD TO A STRICTER STANDARD THAN DETECTORS: every exemption literal must be
+  LIVE in the corpus; detection groups need only be live as a GROUP.
+  (v) A NEW DOC FIX MUST BE GATEABLE BY THE GATE THAT MOTIVATED IT. installation.md''s repair is a
+  TABLE, which the prose scanner could not read — hence arm B3. A fix the gate cannot see is prose.
+  (vi) OUT OF SCOPE BY MEASUREMENT, not by omission: CHANGELOG.md (73 more `$` lines, append-only
+  narration) and docs/specifications/ (v0.2.0 commands that deliberately do not exist).'
 - 'PMAT-1510 PROCESS -- ADVERSARIAL AUDIT AS A STANDING STEP, not a one-off. MEASURED 2026-07-31:
   five consecutive self-merged gate slices (PMAT-1505..1509) were audited by 5 independent agents
   and ALL FIVE carried at least one overclaim -- 10 confirmed findings, 1 refuted. The base rate is

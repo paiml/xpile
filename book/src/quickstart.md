@@ -130,11 +130,18 @@ binary writes.
 
 ```bash
 $ xpile info
-$ xpile diamond     # if you're in a repo with contracts/
-$ xpile quorum      # if you're in a repo with contracts/
+$ xpile diamond     # works anywhere — the contracts are compiled in
+$ xpile quorum      # needs a checkout (reads docs/roadmaps/roadmap.yaml)
 ```
 
-See the [CLI reference](reference/cli.md) for everything xpile can do.
+See the [CLI reference](reference/cli.md) for everything xpile can do,
+and [Installation](installation.md#from-source) for the measured
+per-command table. Through v0.1.618 both lines above read
+`# if you're in a repo with contracts/`, which was false for
+`xpile diamond` — it exits 0 in an empty directory, `README.md` had
+always said so, and `xpile quorum`'s own error text said so too — and
+named the wrong cause for `xpile quorum`, whose blocker is the
+development ledger rather than `contracts/`.
 
 ## 5. Runnable examples (library API)
 
