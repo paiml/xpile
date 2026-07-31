@@ -13,6 +13,103 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The book's flagship page told every reader to run a command that exits 1, and offered as evidence for "the same governing contract" the two transcripts with the contract deleted (PMAT-1504)
+
+Ran the hunt playbook's next-pick (f), `book/src/` as a corpus. The corpus is
+**well covered by volume and thin by kind**: seven gates walk `book/src/`, and
+`book/src/quickstart.md` — the page a reader reaches from the landing page —
+carried three separate defects that none of the seven can represent.
+
+**A PUBLISHED COMMAND IS AN EXECUTABLE CLAIM, AND THIS ONE HAD BEEN EXITING 1
+FOR 72 DAYS.** `quickstart.md:49` published
+
+```
+$ rustc -O factorial.rs --crate-type lib --emit=metadata -o /dev/null
+```
+
+as the way to check the emit compiles. Measured, `rustc 1.95.0`, as an ordinary
+user: **exit 1**, `error: couldn't create a temp dir: Permission denied (os
+error 13) at path "/dev/rmeta…"`. `rustc` puts its temp dir beside the `-o`
+path, and `/dev` is `root`-owned on every normal host — so the command fails
+for essentially every reader, and fails with an **environment** error wearing a
+**compile** error's clothes. Three controls at exit 0 (`-o` into the cwd,
+`--out-dir .`, `-o /tmp/…`) localise it to the `-o /dev/null` idiom alone. The
+sentence above it was wrong in a second, independent way: it said "compile and
+**run**", and `--emit=metadata` type-checks and stops — it produces no runnable
+artifact at all.
+
+★ **This repository had already diagnosed this exact failure and written the
+correction down.** PMAT-1446's entry in `[0.1.618]` records a sweep that
+reported `rustc compiles: 0 of 39`, traces it to `rustc -o /dev/null`, and
+states *"correct invocation is `--out-dir`"* — while `quickstart.md` had been
+telling readers to run the broken spelling since 2026-05-20. **A defect
+diagnosed in the harness was never swept for in the docs**, which is
+PMAT-1501's "a defect-class fix does not sweep the file it lives beside",
+now demonstrated across two *different kinds* of file rather than two files.
+
+**THE TWO TRANSCRIPTS OFFERED AS EVIDENCE FOR THE CONTRACT WERE THE TWO WITH THE
+CONTRACT DELETED.** §3's `--target ruchy` and `--target lean` blocks were both
+published without their `// xpile-generated` header **and** without their
+citation line, and the Ruchy block shortened its two panic messages to `"..."`.
+The next sentence read *"Three different targets, the **same governing
+contract**."* The Lean block's missing line is `/-- xpile-contract:
+C-PY-INT-ARITH -/` — the exact docstring form PMAT-1405 introduced and PMAT-1445
+built `citation_id_matrix_witness.rs` around. **Born wrong**, not rotted: `git
+log -L` dates both blocks to `55eded01` (2026-05-20, PMAT-446, the commit that
+created the book), whose Rust block *on the same page* does show the citation.
+The emitter never moved under them. Both are now the live emit — Lean
+byte-for-byte, Ruchy reflowed exactly as the Rust block above it is, which is
+the only difference between what the page prints and what the binary writes.
+
+★★ **A RECORDED ACQUITTAL IS A CLAIM, AND NOTHING GATES IT.**
+`citation_id_matrix_witness.rs`'s header says, under *"WHAT IS ALREADY HONEST,
+measured and recorded so the next hunt does not re-derive it"*, that the
+concrete `C-PY-INT-ARITH` in `quickstart.md`, `python-to-rust.md`,
+`python-to-lean.md` and `README.md` *"appears in transcripts of `int` functions,
+where it is the right answer"*. It is false for `quickstart.md`. The acquittal
+was derived from the **presence of the right string on the page**; the defect
+was an **absence inside one block of that page** — PMAT-1501's SHAPE axis,
+turned on an acquittal instead of a claim. This repo's standing rule is *do not
+re-derive a receipt to silence it*; the dual, learned here, is that **an
+acquittal written down to stop the next hunt must itself be re-derivable, and
+this one lives in a `//!` comment that no test evaluates.**
+
+**THE SAME TRANSCRIPT IS PUBLISHED THREE TIMES AND ONE COPY IS GATED.** The Rust
+transcript appears in `README.md`, `quickstart.md` and
+`tutorials/python-to-rust.md`; measured 2026-07-31 all three bodies are
+byte-identical, and only the `README.md` copy is read by
+`readme_quickstart_witness.rs`. `quickstart.md` claimed CI ran "literally on the
+block" *above it*, which names the wrong tree. Corrected to say what is true and
+to label it **a measurement, not an invariant**.
+
+★ **THE HARNESS LIED FIRST, AND THE TELL WAS THE SHAPE OF THE RESULT.** Screening
+the book's other published commands reported the six `cargo run --example NN -p
+xpile` lines as **5 of 6 failing** with `Error: No such file or directory (os
+error 2)`. All six exit 0. The cached example binaries in the shared target dir
+had been built inside a git worktree since removed, and every example resolves
+its input through `env!("CARGO_MANIFEST_DIR")` — baked at **compile** time.
+That is PMAT-1503's stale-artefact trap firing again within 24 hours on a
+different artefact kind, and PMAT-1446's *"suspect the harness before the
+subject"* again. The tell was the sixth example passing: `06_inspect_session`
+reads no input file, so it was the one that could not be affected — **an
+all-but-one result is not the shape a real defect class has.**
+
+Class measurement, so the denominator is defensible: **24** `$ `-prefixed
+commands across `book/src/`. Fourteen are `xpile` invocations (the transcript
+arm); of the other ten, one `git clone` needs the network and two `cargo new`
+lines are scaffolding templates in the contributing chapters, and the six
+`cargo run --example` lines pass. That leaves **exactly one** locally screenable
+non-`xpile` command, and it was the broken one. **After this slice all seven `$ xpile transpile` emit transcripts in the
+book reproduce against the shipped binary** (whitespace-normalised, the
+convention `readme_quickstart_witness.rs` already uses); before it, five did.
+
+Docs-only under the Wed 2026-07-29 18:00 freeze and Friday's no-code rule. **NO
+GATE** — all three arms need a new `crates/xpile/tests/` file; specified as
+`XPILE-BOOKTRANSCRIPT-001` in `docs/roadmaps/queue.yaml` `next_lane`, with the
+published-command arm ranked first, the stale-artefact rebuild requirement
+pre-registered, and the exemption set (a refusal transcript, an already-gated
+`xpile info`) declared up front rather than discovered on the third draft.
+
 ### v0.1.618 SHIPPED — and the release-day measurements that only a published artefact can produce: A11 (12 broken front-page links), A14 (58 rustdoc defects), a rate-limited partial batch, and TWO pre-flight witnesses that cannot pass (PMAT-1503)
 
 **`v0.1.618` is fully released**: tag `v0.1.618` → pinned SHA `6b5f6c02`, a non-draft

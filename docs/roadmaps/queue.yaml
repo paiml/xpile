@@ -7988,6 +7988,62 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1504 GATE -- XPILE-BOOKTRANSCRIPT-001, and it has THREE independent arms because the slice
+  found three independent defect kinds on ONE page. Blocked only by the Fri 2026-07-31 no-code rule
+  and the Wed 2026-07-29 18:00 freeze (all three arms edit crates/xpile/tests/).
+  Note that next_lane specs here have been caught BORN WRONG three times (PMAT-1481, PMAT-1483,
+  PMAT-1488), so audit this one before writing it.
+  (a) ⭐⭐⭐ THE PUBLISHED-COMMAND ARM IS THE HIGHEST-YIELD ONE AND IT IS NOT ABOUT TRANSCRIPTS.
+  A `$ <cmd>` line inside a book ```bash block is an EXECUTABLE claim, and
+  `rustc -O factorial.rs --crate-type lib --emit=metadata -o /dev/null` (quickstart.md:49) exited
+  1 for 72 days on every host whose user cannot write to /dev. Screen by EXECUTION in a scratch
+  dir, not by reading. MANDATORY allowlist, declared in the header and LOGGED, for commands that
+  mutate global state or need the network -- `cargo install`, `git clone`, `cargo run --example`,
+  anything writing outside the scratch dir; a silent filter reads as "covered everything"
+  (PMAT-1502 (d)). NON-VACUITY: a control command known to exit non-zero must be reported, or an
+  executor that swallows status reads green forever.
+  ⚠️ AND IT MUST FORCE A REBUILD, because the first run of this arm reported the book''s six
+  `cargo run --example NN -p xpile` lines as 5-of-6 FAILING with `Error: No such file or directory
+  (os error 2)` -- and all six exit 0. The cached example binaries in the shared target dir had
+  been built inside a git worktree since removed, and every example resolves its input through
+  `env!("CARGO_MANIFEST_DIR")`, which is baked at COMPILE time. That is PMAT-1503''s stale-artefact
+  trap firing again inside 24 hours, on a DIFFERENT artefact kind, and it is exactly the harness
+  error PMAT-1446 named -- an environment failure read as a subject failure. The tell was the
+  6th example passing: an all-but-one result is not the shape a real defect class has.
+  (b) THE TRANSCRIPT ARM. Compare the emit block under each `$ xpile transpile …` line to the LIVE
+  emit. Whitespace-normalised, because REFLOW IS THIS REPO''S DISCLOSED CONVENTION and
+  readme_quickstart_witness.rs already compares that way -- a byte-equality rule would red the
+  three correct Rust blocks on day one. Honour an explicit `…` (U+2026) elision marker, and reuse
+  readme_quickstart_witness''s elision_match rather than writing a second one. NON-VACUITY twice:
+  extractor must find at least the 7 EMIT transcripts that exist today (quickstart.md 3,
+  python-to-rust.md 2, python-to-lean.md 1, shell-roundtrip.md 1 -- the eighth `$ xpile transpile`
+  block, shell-roundtrip.md:60, is a REFUSAL, see (d)) and each must be non-empty, or a parser
+  that matches nothing passes for free (PMAT-1396); and the matcher must REJECT a perturbed block.
+  (c) THE DUPLICATION ARM, which is the one that makes (b) durable. The SAME Rust transcript is
+  published in THREE places -- README.md, book/src/quickstart.md, book/src/tutorials/python-to-rust.md
+  -- and measured 2026-07-31 all three bodies are BYTE-IDENTICAL (sha256 862f7c418d17, stripped of
+  the `$ …` command line). Exactly one of the three is gated. Assert set-equality across the three
+  AND against the emit, so a correction applied to README alone reds rather than silently leaving
+  two stale copies. This is lead (h) "duplicated normative sets" with a concrete instance.
+  (d) ⛔ THE EXEMPTION TRAP, PRE-REGISTERED (PMAT-1495''s trap has now fired on SIX consecutive
+  slices). Transcripts that are deliberately NOT the current emit must be classified, not guessed:
+  shell-roundtrip.md publishes a REFUSAL message from `--target rust` (a stderr transcript, not an
+  emit); cli.md''s `xpile info` is already gated by cli_docs_drift.rs and must not be double-gated
+  into a conflict; concepts/diamond-substrate.md pastes `xpile diamond` output. Screen by an
+  explicit allowlist keyed on the command, and LOG the screened set.
+  (e) ⭐⭐ THE ACQUITTAL ARM -- the meta one, and the reason this slice exists at all.
+  citation_id_matrix_witness.rs''s `//!` header records, verbatim, "WHAT IS ALREADY HONEST,
+  measured and recorded so the next hunt does not re-derive it: ... the concrete `C-PY-INT-ARITH`
+  in `quickstart.md`, `python-to-rust.md`, `python-to-lean.md` and `README.md` appears in
+  transcripts of `int` functions, where it is the right answer." That acquittal is FALSE for
+  quickstart.md, whose Lean and Ruchy transcripts carried no citation at all -- including the exact
+  Lean docstring form PMAT-1445 built that gate around. A RECORDED ACQUITTAL IS A CLAIM AND NOTHING
+  GATES IT: the acquittal was derived from the PRESENCE of the right string on the PAGE, and the
+  defect was an ABSENCE inside one BLOCK of that page. Either re-derive each acquittal in the test
+  that records it, or delete the sentence. Do NOT simply reword it -- that reproduces the shape.
+  (f) SCOPE HONESTLY. This gate covers book/src only. README.md is covered by
+  readme_quickstart_witness.rs for ONE transcript; every other `$ …` line in README.md is
+  unswept, and (a) applies to it verbatim.'
 - 'PMAT-1502 GATE -- XPILE-PHANTOMPATH-001. A backticked in-repo path published in prose is an
   EXECUTABLE claim and nothing in this repo checks one: `pmat validate-docs` validates markdown
   LINK integrity, and every path found by PMAT-1502 was inline code, structurally invisible to it.

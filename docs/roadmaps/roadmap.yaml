@@ -25944,3 +25944,96 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1504
+  status: done
+  priority: P1
+  category: honesty
+  title: the book's flagship page told every reader to run a command that exits 1, and offered as
+    evidence for "the same governing contract" the two transcripts with the contract deleted --
+    and the acquittal that was written down to stop the next hunt from re-deriving it was false
+  notes: 'SHIPPED 2026-07-31, after PMAT-1374 published v0.1.618. Ran the hunt playbook''s
+    next-pick (f), book/src/ as a corpus. The corpus is WELL COVERED BY VOLUME AND THIN BY KIND:
+    seven gates walk book/src/ (claims_drift, citation_surface_witness, backend_docs_drift,
+    backend_refusal_disclosure_witness, book_rust_example_witness, lane_roster_witness,
+    refusal_claim_scope_witness), and book/src/quickstart.md -- the page a reader reaches from the
+    landing page -- carried three defects none of the seven can represent.
+
+    (1) A PUBLISHED COMMAND IS AN EXECUTABLE CLAIM. quickstart.md:49 published
+    `rustc -O factorial.rs --crate-type lib --emit=metadata -o /dev/null` as the way to check the
+    emit compiles. MEASURED, rustc 1.95.0, as an ordinary user: EXIT 1,
+    "error: couldn''t create a temp dir: Permission denied (os error 13) at path /dev/rmeta...".
+    rustc puts its temp dir beside the -o path and /dev is root-owned on every normal host, so the
+    command fails for essentially every reader -- and fails with an ENVIRONMENT error wearing a
+    COMPILE error''s clothes. Three controls at exit 0 (-o into the cwd, --out-dir ., -o /tmp/...)
+    localise it to the -o /dev/null idiom alone. The sentence above it was independently wrong: it
+    said "compile and RUN", and --emit=metadata type-checks and stops, producing no runnable
+    artifact.
+
+    ** THIS REPOSITORY HAD ALREADY DIAGNOSED THIS EXACT FAILURE AND WRITTEN THE CORRECTION DOWN.
+    PMAT-1446''s CHANGELOG entry records a sweep that reported `rustc compiles: 0 of 39`, traces it
+    to `rustc -o /dev/null`, and states "correct invocation is --out-dir" -- while quickstart.md had
+    been telling readers to run the broken spelling since 2026-05-20. A defect diagnosed in the
+    HARNESS was never swept for in the DOCS: PMAT-1501''s "a defect-class fix does not sweep the
+    file it lives beside", now across two different KINDS of file rather than two files.
+
+    (2) THE TWO TRANSCRIPTS OFFERED AS EVIDENCE FOR THE CONTRACT WERE THE TWO WITH THE CONTRACT
+    DELETED. Section 3''s --target ruchy and --target lean blocks were both published without their
+    `xpile-generated` header AND without their citation line, with the Ruchy block shortening its
+    two panic messages to "...". The next sentence read "Three different targets, the SAME
+    GOVERNING CONTRACT." The Lean block''s missing line is `/-- xpile-contract: C-PY-INT-ARITH -/`
+    -- the exact docstring form PMAT-1405 introduced and PMAT-1445 built citation_id_matrix_witness
+    around. BORN WRONG, not rotted: git log -L dates both blocks to 55eded01 (2026-05-20, PMAT-446,
+    the commit that created the book), whose Rust block ON THE SAME PAGE does show the citation.
+    The emitter never moved under them.
+
+    (3) *** A RECORDED ACQUITTAL IS A CLAIM, AND NOTHING GATES IT.
+    citation_id_matrix_witness.rs''s header says, under "WHAT IS ALREADY HONEST, measured and
+    recorded so the next hunt does not re-derive it", that the concrete C-PY-INT-ARITH in
+    quickstart.md, python-to-rust.md, python-to-lean.md and README.md "appears in transcripts of
+    int functions, where it is the right answer". FALSE for quickstart.md. The acquittal was
+    derived from the PRESENCE of the right string on the PAGE; the defect was an ABSENCE inside one
+    BLOCK of that page -- PMAT-1501''s SHAPE axis, turned on an acquittal instead of a claim. The
+    repo''s standing rule is "do not re-derive a receipt to silence it"; the DUAL, learned here, is
+    that an acquittal written down to STOP the next hunt must itself be re-derivable, and this one
+    lives in a //! comment no test evaluates. Recorded as next_lane arm (e) rather than reworded,
+    because rewording reproduces the shape.
+
+    (4) THE SAME TRANSCRIPT IS PUBLISHED THREE TIMES AND ONE COPY IS GATED. The Rust transcript
+    appears in README.md, quickstart.md and tutorials/python-to-rust.md; measured 2026-07-31 all
+    three bodies are BYTE-IDENTICAL (sha256 862f7c418d17 over the block minus its `$ ...` line) and
+    only the README.md copy is read by readme_quickstart_witness.rs. quickstart.md claimed CI ran
+    "literally on the block" ABOVE IT, which names the wrong tree -- PMAT-1481''s file-vs-tree shape
+    inside the book. Corrected, and labelled A MEASUREMENT, NOT AN INVARIANT.
+
+    ** THE HARNESS LIED FIRST AND THE TELL WAS THE SHAPE OF THE RESULT. Screening the book''s other
+    published commands reported the six `cargo run --example NN -p xpile` lines as 5 OF 6 FAILING
+    with "Error: No such file or directory (os error 2)". ALL SIX EXIT 0. The cached example
+    binaries in the shared target dir had been built inside a git worktree since removed, and every
+    example resolves its input through env!("CARGO_MANIFEST_DIR"), baked at COMPILE time. That is
+    PMAT-1503''s stale-artefact trap firing again within 24 hours on a different artefact kind, and
+    PMAT-1446''s "suspect the harness before the subject" again. The tell was the sixth example
+    passing -- 06_inspect_session reads no input file, so it was the one that could not be affected.
+    AN ALL-BUT-ONE RESULT IS NOT THE SHAPE A REAL DEFECT CLASS HAS.
+
+    CLASS MEASUREMENT with a defensible denominator: 24 `$ `-prefixed commands across book/src/.
+    14 are xpile invocations (the transcript arm); of the other 10, one `git clone` needs the
+    network, two `cargo new` lines are scaffolding templates in the contributing chapters, and the
+    six `cargo run --example` lines pass. That leaves EXACTLY ONE locally screenable non-xpile
+    command and it was the broken one. Separately, all 7 `$ xpile transpile` EMIT transcripts in the
+    book now reproduce against the shipped binary (whitespace-normalised, the convention
+    readme_quickstart_witness.rs already uses); before this slice, 5 did.
+
+    FIXED docs-only under the Wed 2026-07-29 18:00 freeze and Friday''s no-code rule:
+    book/src/quickstart.md only. NO GATE -- all three arms need a new crates/xpile/tests/ file;
+    specified as XPILE-BOOKTRANSCRIPT-001 in queue.yaml next_lane with the published-command arm
+    ranked FIRST, the stale-artefact forced-rebuild requirement pre-registered, and the exemption
+    set (a refusal transcript, an already-gated `xpile info`) declared up front rather than
+    discovered on the third draft.
+
+    NEXT FREE ID PMAT-1505. NEXT PICK (0.1.619, once the freeze lifts): XPILE-BOOKTRANSCRIPT-001
+    arm (a), then XPILE-PREFLIGHT-001 (PMAT-1503) and XPILE-PHANTOMPATH-001 (PMAT-1502).'
+  created: '2026-07-31'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
