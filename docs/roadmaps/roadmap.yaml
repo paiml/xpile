@@ -26258,3 +26258,68 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1507
+  status: done
+  priority: P1
+  category: honesty
+  title: a loop over a git-ls-files-derived corpus that runs zero times skips every assertion
+    inside it and still prints ok -- measured across the whole test corpus, the live reading is
+    CLEAN and nothing was watching that it stayed that way
+  notes: 'SHIPPED 2026-07-31. Ran PMAT-1506''s next-pick (a), the LOOP arm of
+    XPILE-SKIPGUARD-002. PMAT-1505 closed "a presence probe that cannot succeed skips the whole
+    test"; PMAT-1506 closed "a needle the corpus does not contain skips one assertion". This is
+    the third shape: `for x in COLLECTION { assert!(..) }` where COLLECTION is EMPTY -- the whole
+    loop skipped, every assertion in it skipped, test prints ok, passing count unchanged.
+    ★★★ THE RESULT IS THAT THERE IS NO DEFECT, AND THAT IS THE FINDING WORTH RECORDING.
+    MEASURED BY EFFECT, not by reading (PMAT-1505''s mandate): 63 assertion-bearing loops over
+    transitively repo-derived collections, 28 of them carrying no floor, ALL 28 INSTRUMENTED with
+    an iteration counter and EXECUTED -- 19 test binaries, all exit 0. 26 ran non-empty (2..178).
+    TWO ran zero times and NEITHER is a defect: mcp_surface_disclosure_witness.rs:310 (negative
+    regression scan, PMAT-1499 fixed the claim it hunts, factored + controlled by PMAT-1506) and
+    release_runbook_facts_witness.rs:277 (the live runbook carries no `Cargo.toml:<N>` citation;
+    the_citation_detector_can_still_fire is its control). Both had been correctly disclosed
+    already -- the harness independently reproducing PMAT-1506''s own two known-empty sites is
+    what validates it. All ten files deriving a corpus from `git ls-files` already floor it.
+    ★ SO THE SLICE SHIPS A RATCHET, NOT A REPAIR: XPILE-SKIPGUARD-003,
+    crates/xpile/tests/derived_corpus_vacuity_witness.rs, 7 assertions, NO exemption list.
+    ⛔ SCOPE STATED HONESTLY IN THE FILE ITSELF, because this is the axis the sweep keeps finding:
+    the scan walks 278 tracked test files but the sites the rule GOVERNS are those that both
+    derive from `git ls-files` AND assert inside the loop, and there are EXACTLY TWO
+    (lean_source_lang_refusal_witness.rs, build_script_path_independence.rs). Most of the other
+    eight assert AFTER the loop over counters it fills -- anchor (B), a different shape. A
+    278-file corpus implying a 278-file reach is the overstatement this file refuses to make.
+    ★★ THE RULE IS QUANTIFIED OVER A SET THE FILE ALSO COMPUTES, so the_subject_class_is_not_empty
+    floors the SUBJECT, not just the corpus. Proven necessary: neutering the loop detector leaves
+    the live rule every_ls_files_derived_assertion_loop_is_anchored GREEN while the subject floor
+    and the constructed control RED. Third consecutive confirmation of PMAT-1505''s R7 -- a
+    negative detector cannot notice its own death.
+    ★★ MY FIRST RED ARM WAS INVALID AND SAYING SO IS THE TRANSFERABLE PART. Deleting the floor
+    from wasm_source_lang_refusal_witness.rs left the gate green and read as a hole; the site was
+    never in the subject class at all -- its loop body carries NO assertion, the counters are read
+    after it. A PERTURBATION MUST BE VALIDATED BY ITS EFFECT (PMAT-1505), and "the gate stayed
+    green" is not evidence until the perturbed site is known to be in scope. Re-run against a true
+    subject site (lean_source_lang_refusal_witness.rs:141) it REDS, naming file, line, function
+    and collection.
+    ★ PMAT-1506''s CI TRAP PRE-EMPTED, and it fired here exactly as predicted: the first local run
+    of this_gate_is_inside_its_own_corpus FAILED because `git ls-files` cannot see an UNTRACKED
+    file -- the gate does not analyse itself until it is committed. Staging it fixed it. The
+    fixtures build the derivation literal with concat!("ls-","files") so no contiguous occurrence
+    exists in this file, which removes its own TEST DATA from the detector BY CONSTRUCTION rather
+    than by an exemption -- PMAT-1506''s prescribed remedy.
+    ARM (b), DEAD GUARDS, MEASURED AND NOT A DEFECT: 8 XPILE_REQUIRE_* tripwires exist; CI arms 3
+    (WASM_RUNTIME, KANI, DENY) and the other 5 (SH, CC, RUCHY, CHANGELOG_HISTORY, RULESET_CHECK)
+    are armed by docs/RELEASE.md, which release_preflight_witness.rs (PMAT-1503) already ENFORCES
+    -- every tripwire the corpus reads must be armed by a workflow or a runnable command. ⚠️ AND
+    MY OWN FIRST NUMBER HERE WAS WRONG: a per-file grep reported 85 of 90 skip-bearing test files
+    as having no tripwire, because the WASM tripwire lives in a SHARED HELPER
+    (xpile-wasm-codegen/src/wasm_diffexec.rs), invisible to a per-file scan. A COUNT DERIVED BY
+    GREPPING FILES CANNOT SEE A PROPERTY THAT LIVES IN A HELPER THEY CALL -- caught before it
+    reached prose.
+    NEXT FREE ID PMAT-1508. NEXT PICK: the read_dir / doc-parse arm of the same class (measured
+    clean today, ungated), then XPILE-BOOKTRANSCRIPT-001 arm (a), XPILE-PHANTOMPATH-001
+    (PMAT-1502) and XPILE-WORKFLOW-PROSE-001 (PMAT-1501).'
+  created: '2026-07-31'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
