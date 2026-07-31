@@ -230,6 +230,42 @@ updated_prev_1492: >-
   the plan, never off a remembered range; it returns SIXTEEN markers today, each exactly once.
   RECOUNT the post-tag CHANGELOG delta on the day; it grew again today.
   NEXT FREE ID PMAT-1494. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+updated_prev_1507: >-
+  PMAT-1507 ran PMAT-1506's next-pick (a), the LOOP arm of XPILE-SKIPGUARD-002, and the honest
+  result is that THE LIVE CORPUS IS CLEAN. Measured BY EFFECT, not by reading: 63 assertion-bearing
+  loops over transitively repo-derived collections, 28 unfloored, and ALL 28 INSTRUMENTED with an
+  iteration counter and EXECUTED (19 test binaries, all exit 0). 26 ran non-empty (2..178). TWO ran
+  zero times and NEITHER is a defect -- mcp_surface_disclosure_witness.rs:310 (negative regression
+  scan, correct reading empty, factored + controlled by PMAT-1506) and
+  release_runbook_facts_witness.rs:277 (no live `Cargo.toml:<N>` citation;
+  the_citation_detector_can_still_fire is its control). The harness independently reproducing
+  PMAT-1506's own two known-empty sites is what validates it. All ten `git ls-files`-deriving files
+  already floor their corpus. SHIPPED A RATCHET, NOT A REPAIR: XPILE-SKIPGUARD-003,
+  crates/xpile/tests/derived_corpus_vacuity_witness.rs, 7 assertions, NO exemption list.
+  ★★ THE REACH IS THE SUBJECT, NOT THE CORPUS, and the file says so: the scan walks 278 tracked
+  test files, but the sites the rule GOVERNS are those that both derive from `git ls-files` AND
+  assert INSIDE the loop -- EXACTLY TWO (lean_source_lang_refusal_witness.rs,
+  build_script_path_independence.rs). The other eight assert AFTER the loop over counters it fills.
+  Two is thin and the header states it rather than letting a 278-file corpus imply otherwise.
+  ★★ FLOOR THE SUBJECT, NOT JUST THE CORPUS. The rule is a universal over a set the file also
+  computes, so the_subject_class_is_not_empty pins the subject. Proven necessary: neutering the
+  loop detector leaves the LIVE RULE GREEN while the subject floor and the control RED -- third
+  consecutive confirmation of PMAT-1505's R7.
+  ★★ MY FIRST RED ARM WAS INVALID AND THAT IS THE TRANSFERABLE PART. Deleting the floor from
+  wasm_source_lang_refusal_witness.rs left the gate green and read as a hole; that site was never
+  IN THE SUBJECT CLASS -- its loop body carries no assertion, the counters are read AFTER it.
+  "The gate stayed green" is not evidence until the perturbed site is known to be IN SCOPE.
+  ★ PMAT-1506's CI TRAP FIRED EXACTLY AS PREDICTED, locally this time: the first run of
+  this_gate_is_inside_its_own_corpus FAILED because `git ls-files` cannot see an UNTRACKED file.
+  Staging fixed it. Fixtures build the literal with concat!("ls-","files"), removing this file's
+  own TEST DATA from the detector BY CONSTRUCTION rather than by an exemption.
+  ARM (b) DEAD GUARDS: measured, NOT a defect. 8 XPILE_REQUIRE_* tripwires; CI arms 3, and the
+  other 5 are armed by docs/RELEASE.md, which release_preflight_witness.rs (PMAT-1503) ALREADY
+  ENFORCES. ⚠️ MY FIRST NUMBER WAS WRONG -- a per-file grep called 85 of 90 skip-bearing files
+  tripwire-less because the WASM tripwire lives in a SHARED HELPER (wasm_diffexec.rs) invisible to
+  a per-file scan. A COUNT DERIVED BY GREPPING FILES CANNOT SEE A PROPERTY LIVING IN A HELPER THEY
+  CALL. Caught before it reached prose.
+  NEXT FREE ID PMAT-1508.
 updated: >-
   ⛔⛔ FRIDAY OPERATOR, READ THIS FIRST. TWO THINGS BEFORE ANYTHING ELSE, both from slices that
   landed after the tag was cut.
@@ -7996,7 +8032,39 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
-- 'PMAT-1506 GATE -- XPILE-SKIPGUARD-002, LOOP ARM + DEAD-GUARD ARM. PMAT-1506 shipped the
+- 'PMAT-1507 GATE -- the READ_DIR / DOC-PARSE arm of XPILE-SKIPGUARD-003. PMAT-1507 shipped the
+  `git ls-files` arm and MEASURED the rest of the class CLEAN (63 derived assertion-loops, 28
+  unfloored, all 28 executed, 26 non-empty and the 2 zeros both correct-by-design). What is NOT
+  gated is the same shape over a collection derived from a `read_dir` walk or from PARSING a
+  document -- 44 tracked test files call read_dir, 79 call read_to_string.
+  ⛔ THE CONSTRAINT THAT KILLED THE BLANKET RULE STILL HOLDS (PMAT-1500): 586 assertion-bearing
+  `for` loops exist corpus-wide and a floor demanded from all of them reds hundreds of correct
+  files and gets the gate disabled. Scope to collections whose EMPTINESS CAN ONLY MEAN THE SCAN
+  MISSED. A `for line in src.lines()` over a file that was just read is NOT that shape -- the read
+  already panics if the file is absent, and its emptiness is not a silent miss.
+  (a) REUSE derived_corpus_vacuity_witness.rs rather than writing a second detector: its
+  subject_sites() already resolves derivations transitively through helper fns and returns the
+  whole subject class tagged with anchoring. Widening is a change to deriv_literal() into a SET of
+  literals, plus new anchors -- not a new file.
+  (b) ⛔ FLOOR THE SUBJECT, NOT JUST THE CORPUS, on day one. PMAT-1507 proved by neutering that the
+  live rule stays GREEN when the detector dies; only the subject floor and the constructed control
+  red. Any widening needs its own subject floor with NAMED anchor files, or the widened arm is
+  unfalsifiable exactly where it is new.
+  (c) MANDATORY: measure by EFFECT. ⚠️ `cargo llvm-cov` 0.8.5 has NO `--include-tests`, so a
+  whole-suite coverage sweep reports only crates/*/src and cannot see one test-file line
+  (PMAT-1506 lost ~40 minutes to this). Per-site instrumentation -- insert a counter, run the test,
+  read the count -- is what worked twice; PMAT-1507 scripted it over 28 sites in one pass.
+  (d) DONE, recorded so the next slice does not re-derive it: the two ZERO sites are correct and
+  controlled (mcp_surface_disclosure_witness.rs:310, release_runbook_facts_witness.rs:277); all ten
+  `git ls-files`-deriving files floor their corpus; and the dead-guard/tripwire arm is CLOSED --
+  release_preflight_witness.rs (PMAT-1503) already enforces that every tripwire the corpus reads is
+  armed by a workflow or by docs/RELEASE.md.
+  (e) ⚠️ A PER-FILE GREP IS THE WRONG INSTRUMENT for anything that can live in a shared helper.
+  PMAT-1507''s first dead-guard number (85 of 90 files "tripwire-less") was an artefact of exactly
+  that -- the WASM tripwire lives in xpile-wasm-codegen/src/wasm_diffexec.rs, which the files that
+  depend on it never name. Resolve through the call, or do not publish the count.'
+- 'PMAT-1506 GATE -- XPILE-SKIPGUARD-002, LOOP ARM + DEAD-GUARD ARM. SUPERSEDED BY PMAT-1507 for
+  the loop and dead-guard arms; retained for the measurement it records. PMAT-1506 shipped the
   NEEDLE arm (skip_guard_vacuity_witness.rs): a conditional assertion whose antecedent tests a
   string-literal needle must be anchored by an `else` that also asserts or by a counter a later
   assertion reads. It closed 3 of the 9 needle sites and left TWO of the three shapes open, and
