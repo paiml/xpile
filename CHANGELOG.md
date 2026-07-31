@@ -13,6 +13,105 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### v0.1.618 SHIPPED — and the release-day measurements that only a published artefact can produce: A11 (12 broken front-page links), A14 (58 rustdoc defects), a rate-limited partial batch, and TWO pre-flight witnesses that cannot pass (PMAT-1503)
+
+**`v0.1.618` is fully released**: tag `v0.1.618` → pinned SHA `6b5f6c02`, a non-draft
+GitHub release, and **31/31 crates live on crates.io**, each verified individually
+against the API with a `User-Agent`. Executed per `docs/RELEASE.md` §5, steps 1–9.
+
+**A13 CLOSED BY THE BATCH — 7 → 0.** Seven registry `description`s were still serving
+prose the tree had already retired (`xpile`, `xpile-backend`,
+`xpile-contract-backend`, `xpile-contract-frontend`, `bashrs-backend`,
+`bashrs-frontend`, `ruchy-frontend`). Re-measured after the upload: **zero** remain.
+This is the rule that argues *for* shipping, and it is now demonstrated rather than
+predicted — `crate_metadata_honesty.rs` reads the tree, so it had been green since the
+manifests were fixed while all seven falsehoods stayed published. **A slice that
+corrects a published claim is half-done at merge and completes at the next publish.**
+
+**A11 — the flagship's rendered crates.io front page publishes 12 relative links and
+all 12 are wrong.** `readme = "../../README.md"` is packaged by COPY, so crates.io
+resolves every relative path against `crates/xpile/` rather than the repo root. Ten are
+hard `404` — both `LICENSE-MIT` and `LICENSE-APACHE` on a dual-licensed crate,
+`ci.yml`, both design specs, `enforcement-handoff.md`, `examples/proven-model/`,
+`docs/assets/hero.svg`, and — at the doubled path
+`crates/xpile/crates/xpile/tests/readme_quickstart_witness.rs` — the README's own cited
+evidence for its own quickstart. The other **two resolve `200` to the wrong object**,
+which is the less friendly failure because the reader sees no error:
+`crates/xpile/contracts` is a git symlink, so GitHub serves a page whose whole content
+is the text `../../contracts`; `crates/xpile/examples/` is a real but different
+directory. ★ **Check the prefix, never just the status code.** Measured 12 at the tag
+and **0** on `main`, so `0.1.618` publishes all twelve and **`0.1.619` carries the
+fix**. Immutable per version: disclosure only, never a reason to touch a batch.
+
+**A14 — 58 rustdoc defects publish across 13 of the 30 crates that have a docs.rs
+page.** `xpile-ptx-codegen` 12, `xpile-wasm-codegen` 9, `xpile-wgsl-codegen` 8,
+`xpile-wasm-frontend` 7, `xpile-spirv-codegen` 7, `xpile-meta-hir` 3, `xpile-agent` 3,
+2 each in `xpile-ffi-manifest` / `depyler-frontend` / `bashrs-backend`, 1 each in
+`xpile-forjar-codegen` / `xpile-contract-frontend` / `xpile-contract-backend`. A
+further **12** warnings sit under `crates/xpile/src/` and reach no published page at
+all — the flagship has no `lib` target (A12). Measured in a **fresh** target dir with
+non-vacuity asserted (31 documented ≥ 30 lib targets), because `cargo doc` warns only
+when it re-documents: against a warm dir the whole measurement prints nothing and exits
+0. ★ **`doc_status: true` is not an acquittal** — all 30 siblings report it and 13
+publish a defective page; the flag answers only *did rustdoc exit 0*.
+
+**THE BATCH WENT PARTIAL AT 30 OF 31 AND THAT WAS NOT AN A4 STOP.**
+`cargo publish --workspace` exited 101 on the flagship `xpile` with
+`429 Too Many Requests` — crates.io rate-limits publishes to already-existing crates —
+carrying a retry-after that had already elapsed. **The registry was queried before
+anything was retried**: `xpile 0.1.618` was absent and the sparse index still served
+`0.1.617`, so the upload had been *rejected*, not accepted. A4's "do not retry at the
+same version" exists because a *succeeded* upload returns `409`; a rejected one does
+not, and republishing that single crate at the same version **completed** the intended
+batch rather than compounding a partial state. Nothing was yanked, no version was
+bumped, no crate was routed around. ★ **A4 and A5 partition on whether the failure left
+state behind — ask the registry, do not infer it from the exit code.**
+
+**TWO PRE-FLIGHT WITNESSES CANNOT PASS, AND ARMING THE FULL TRIPWIRE SET IS WHAT
+REVEALED IT.** `docs/RELEASE.md` §2a defines five blocking anti-vacuity tripwires;
+every pre-flight for this release had armed only `XPILE_REQUIRE_WASM_RUNTIME`. Armed
+all five on the tagged SHA: 333 suites, **3,071 passed, 2 failed**, exit 101.
+
+- `makefile_dialect_refusal_witness::make_and_the_shredded_shell_disagree_when_executed`
+  guards on `tool_present("sh", "-c")`, which runs `sh -c` with **no operand**. That is
+  a usage error on every POSIX host (`sh: -c requires an argument`, exit 2), so the
+  probe returns false **because `sh` is present and correct**. The test has therefore
+  always taken its skip branch and **its body has never executed on any host** — and it
+  is labelled *"ASSERTION 3 — THE JUSTIFICATION, EXECUTED"*, the executed evidence that
+  refusing `Makefile` input is warranted. Both `make` and `sh` are present here, so this
+  is not the missing-tool host defect the tripwire was written to catch. The three
+  assertions covering the refusal itself pass.
+- `release_plan_freshness_witness::no_plan_says_it_will_create_a_tag_that_already_exists`
+  fires on `docs/specifications/sub/sprint-6day-2026-07-26.md:158`, which declares
+  `TAG: v0.1.618` — true when written, an offence the moment Thursday's tag cut
+  succeeded. ★★ **Note what that implies about the procedure and not just this release:
+  abort rule A1 requires both that the tag exists on origin and that the §2a suite
+  exited 0 on that SHA, and the first condition is what falsifies the second.** And the
+  obvious repair does not reach it: §2a mandates running *from a checkout at the tag*,
+  and `origin/main` **has already been corrected** — the declaration survives only in
+  the tagged tree, which is frozen. A tag necessarily freezes a planning document
+  written while the tag did not yet exist, so **this witness reds on every tag-pinned
+  pre-flight run, for every release, and no edit to `main` can ever change that.** Same
+  shape as A15: a rule must be verifiable from a tree its own fix cannot reach. The
+  measurement is only visible at all because §2a was run where the procedure says to run
+  it — a `main`-side run reports the defect absent.
+
+Neither was repaired on the day: **A7 bars Friday code**, and neither defect is in the
+artefact — `gate`, `workspace-test`, all ten advisory contexts and the on-tag
+clean-room publish are `success` on `6b5f6c02`, and the dry-run exited 0 over 31
+crates. Both repairs are `0.1.619` work: a probe that cannot succeed needs a gate of
+its own, and **A1 needs a form that a correctly-cut tag does not falsify.**
+
+★ **Also caught and NOT believed:** the first `XPILE_REQUIRE_RULESET_CHECK` run
+reported 5 failures (`docs/status/ exists: No such file or directory`). That was a
+**stale test binary** — `workspace_root()` bakes `env!("CARGO_MANIFEST_DIR")` at compile
+time and the cached artefact in the shared target dir had been built inside a git
+worktree since removed. Recompiling gave exit 0 against the same live API and the same
+receipts. A red from a check whose subject is outside the repository is a hypothesis,
+not a finding.
+
+Every deviation above is recorded in `docs/RELEASE.md` §7 — the **first rows that
+section has ever received on the day**, by the step (§5 step 9) that had never run.
 ### A whole subsystem — §8 of the spec, its sub-spec, the glossary term and the three contracts that make it "non-negotiable" — is published in the present indicative against 42 lines that hash a key for a cache that does not exist; and the deferral that hid it is spelled in the PAST tense, which is why a deferral sweep could not see it (PMAT-1502)
 
 Ran the hunt playbook's next pick (b): **deferrals as a class**. The `in Phase N`

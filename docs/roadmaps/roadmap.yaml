@@ -25726,6 +25726,135 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1374
+  status: done
+  priority: P0
+  category: release
+  title: v0.1.618 published -- 31/31 crates, GitHub release, and the release-day findings only a
+    published artefact can produce, including two pre-flight witnesses that cannot pass and an
+    A1 whose own two preconditions are mutually exclusive
+  notes: 'SHIPPED 2026-07-31. Tag v0.1.618 -> pinned SHA 6b5f6c02bfdb639da7e5b7ada23134fd28d77dc9;
+    non-draft GitHub release; 31/31 crates live on crates.io, verified individually against the
+    API with a User-Agent (the header is load-bearing: without it the API returns an error body
+    and the loop reports every crate MISSING on a successful publish). docs/RELEASE.md S5 steps
+    1-9 all executed, step 3 EXTRACTED from the file rather than retyped.
+
+    BODY: 123,237 chars against the 125,000 cap, assembled by S5 step 3 -- prefix lines 1-1330
+    plus the three mandatory disclosure sections at 7319-7700, day-of disclosures at body line
+    15, post-tag delta notice (22 commits / 2,050 lines). Step 8 appended the post-publish
+    addendum; A9 fired on the EDIT as well as the create (the cap is not a create-only rule) and
+    the addendum was trimmed to 1,534 chars for a final 124,973 with 27 to spare.
+
+    A13 CLOSED BY THE BATCH, 7 -> 0. The seven crates still serving retired prose were
+    re-measured after the upload and all seven now match the tree. The rule that argues FOR
+    shipping is now demonstrated rather than predicted.
+
+    A11 and A14 fired as predicted, both disclosure-only, both immutable per version, neither a
+    reason to touch the batch. A11: 12 relative refs on the flagship front page, 10 hard 404 and
+    2 resolving 200 to the WRONG object (contracts is a symlink serving the text ../../contracts;
+    examples/ is a different directory) -- check the PREFIX, not the status code. A14: 58 rustdoc
+    defects across 13 of the 30 crates with a docs.rs page, measured in a FRESH target dir with
+    non-vacuity asserted, because cargo doc warns only when it re-documents.
+
+    THREE DEVIATIONS, all recorded in RELEASE.md S7 -- the first rows that section has ever
+    received on the day, written by the step (S5 step 9) that had never run.
+    (1) Pre-flight 1 never ran: release.yml has two runs in its whole history and both are push
+    events, so no Wednesday workflow_dispatch exists for this or any release.
+    (2) The S2a tripwire suite exited 101. Arming all five blocking tripwires for the first time
+    (every prior pre-flight armed only XPILE_REQUIRE_WASM_RUNTIME) gave 333 suites / 3,071 passed
+    / 2 failed, and BOTH failures are in this repository''s own witnesses rather than the
+    artefact. makefile_dialect_refusal_witness::make_and_the_shredded_shell_disagree_when_executed
+    guards on tool_present("sh", "-c") -- sh -c with NO OPERAND is a usage error on every POSIX
+    host, so the probe returns false BECAUSE sh is present and correct, and the body of a test
+    labelled "ASSERTION 3 -- THE JUSTIFICATION, EXECUTED" has never executed anywhere.
+    release_plan_freshness_witness::no_plan_says_it_will_create_a_tag_that_already_exists reds
+    because the sprint plan declares TAG: v0.1.618 and the tag now exists -- which A1 also
+    requires, so A1''s two preconditions (tag exists on origin; S2a exited 0 on that SHA) cannot
+    both hold for any release under the current witness. The obvious repair does not reach it:
+    S2a mandates running from a checkout AT THE TAG, and origin/main is ALREADY corrected -- the
+    declaration survives only in the frozen tagged tree, so this reds on every tag-pinned
+    pre-flight for every release and no edit to main can change it. Same shape as A15: a rule
+    must be verifiable from a tree its own fix cannot reach; a main-side run reports it absent.
+    A7 barred repairing either on the day.
+    (3) The batch went partial at 30/31: cargo publish --workspace exited 101 on the flagship
+    with 429 Too Many Requests, retry-after already elapsed. NOT an A4 stop -- the registry was
+    queried first and xpile 0.1.618 was ABSENT (sparse index still at 0.1.617), so the upload had
+    been rejected rather than accepted, which is not the 409 case A4''s no-retry clause guards.
+    Republishing that one crate at the SAME version completed the batch; nothing yanked, no
+    version bumped, no crate routed around.
+
+    ALSO CAUGHT AND NOT BELIEVED: the first XPILE_REQUIRE_RULESET_CHECK run reported 5 failures
+    (docs/status/ exists: No such file or directory). Stale test binary -- workspace_root() bakes
+    env!("CARGO_MANIFEST_DIR") at COMPILE time and the cached artefact in the shared target dir
+    had been built inside a git worktree since removed. Recompiling gave exit 0 against the same
+    live API and the same committed receipts. A red from a check whose subject lives outside the
+    repository is a hypothesis, not a finding.
+
+    NEXT (0.1.619): XPILE-PREFLIGHT-001 (both witnesses, plus an A1 form a correctly-cut tag does
+    not falsify), XPILE-RUSTDOC-001 (the 58 defects), and the README relative links -- already
+    fixed on main, so 0.1.619 carries the repair for A11 and A12 both.'
+  date: '2026-07-31'
+- id: PMAT-1503
+  status: done
+  priority: P1
+  category: honesty
+  title: the release-day measurements only a published artefact can produce -- and TWO pre-flight
+    witnesses that cannot pass, one of which makes abort rule A1's own two preconditions mutually
+    exclusive
+  notes: 'SHIPPED 2026-07-31, immediately after PMAT-1374 published v0.1.618. Separate id because
+    PMAT-1374''s planning work is reachable INSIDE the v0.1.618 tag, and
+    changelog_release_membership_witness.rs (PMAT-1496) correctly refuses to let a [Unreleased]
+    arc claim an id the tag already contains. The findings below were all measured AFTER the
+    upload, so they are genuinely post-tag work.
+
+    ARMING THE FULL S2a TRIPWIRE SET FOR THE FIRST TIME IS WHAT FOUND THEM. docs/RELEASE.md S2a
+    defines five blocking anti-vacuity tripwires; every pre-flight for every prior release armed
+    only XPILE_REQUIRE_WASM_RUNTIME. Armed all five on the tagged SHA: 333 suites, 3,071 passed,
+    2 failed, exit 101 -- and BOTH failures are in this repository''s own witnesses, neither in
+    the artefact.
+
+    (1) makefile_dialect_refusal_witness::make_and_the_shredded_shell_disagree_when_executed
+    guards on tool_present("sh", "-c"). `sh -c` with NO OPERAND is a usage error on every POSIX
+    host (sh: -c requires an argument, exit 2), so the probe returns false BECAUSE sh is present
+    and correct. The test has therefore always taken its skip branch and ITS BODY HAS NEVER
+    EXECUTED ON ANY HOST -- while being labelled "ASSERTION 3 -- THE JUSTIFICATION, EXECUTED",
+    the executed evidence that refusing Makefile input is warranted. Generalisable: a capability
+    probe can fail CLOSED on a working tool, so assert that a probe''s positive branch is
+    reachable, not merely that the guard exists.
+
+    (2) release_plan_freshness_witness::no_plan_says_it_will_create_a_tag_that_already_exists reds
+    BECAUSE the tag exists -- and abort rule A1 also REQUIRES the tag to exist. S2a mandates
+    running from a checkout AT THE TAG, and a tag necessarily freezes a planning document written
+    while the tag did not yet exist. origin/main is ALREADY corrected; the declaration survives
+    only in the frozen tagged tree. So this witness reds on every tag-pinned pre-flight, for
+    every release, and NO EDIT TO MAIN CAN EVER REACH IT. A1''s two preconditions (the tag exists
+    on origin; the S2a suite exited 0 on that SHA) are therefore mutually exclusive. Same shape
+    as A15: a rule must be verifiable from a tree its own fix cannot reach -- and a main-side run
+    reports this defect ABSENT, so it is visible only because S2a was run where the procedure
+    says to run it.
+
+    POST-PUBLISH MEASUREMENTS. A11: 12 relative refs on the flagship crates.io front page, 10
+    hard 404 and 2 resolving 200 to the WRONG object (crates/xpile/contracts is a git symlink, so
+    GitHub serves a page whose whole content is the text ../../contracts; crates/xpile/examples/
+    is a real but different directory) -- check the PREFIX, never just the status code. A14: 58
+    rustdoc defects across 13 of the 30 crates that have a docs.rs page, measured in a FRESH
+    target dir with non-vacuity asserted (31 documented >= 30 lib targets), because cargo doc
+    warns only when it re-documents and a warm dir prints nothing at exit 0. doc_status:true is
+    not an acquittal -- all 30 siblings report it and 13 publish a defective page.
+
+    A13 CLOSED BY THE BATCH, 7 -> 0, re-measured after upload. A slice that corrects a published
+    claim is half-done at merge and completes at the next publish.
+
+    ALSO: the first XPILE_REQUIRE_RULESET_CHECK run reported 5 failures (docs/status/ exists: No
+    such file or directory) and was NOT believed. Stale test binary -- workspace_root() bakes
+    env!("CARGO_MANIFEST_DIR") at COMPILE time and the cached artefact in the shared target dir
+    had been built inside a git worktree since removed. Recompiling gave exit 0 against the same
+    live API and the same committed receipts.
+
+    Three deviations recorded in docs/RELEASE.md S7 -- the first rows that section has ever
+    received ON THE DAY, written by S5 step 9, which had never run. NEXT: XPILE-PREFLIGHT-001
+    (both witnesses, plus an A1 form a correctly-cut tag does not falsify).'
+  date: '2026-07-31'
 - id: PMAT-1502
   status: done
   priority: P1
