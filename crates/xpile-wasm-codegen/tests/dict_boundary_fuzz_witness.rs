@@ -1483,8 +1483,16 @@ fn dict_boundary_fuzz_matches_cpython() {
 
     // Model honesty, part 2: the replay model that SPELLED eqm/eqn must
     // agree with CPython — every eqm is 1, every eqn is 0, ON THE ORACLE SIDE.
+    // PMAT-1506 — the counters are the FLOOR. Both arms fire on the live
+    // oracle (measured by instrumenting them: 12 each), but nothing said so:
+    // stop generating `_eqm`/`_eqn` names and both `assert_eq!`s go quiet while
+    // this test keeps passing, which is the shape XPILE-SKIPGUARD-002 exists
+    // to forbid.
+    let mut eqm = 0usize;
+    let mut eqn = 0usize;
     for (name, want) in &oracle {
         if name.ends_with("_eqm") {
+            eqm += 1;
             assert_eq!(
                 *want, 1,
                 "{name}: the replay model diverged from CPython (oracle says \
@@ -1493,6 +1501,7 @@ fn dict_boundary_fuzz_matches_cpython() {
             );
         }
         if name.ends_with("_eqn") {
+            eqn += 1;
             assert_eq!(
                 *want, 0,
                 "{name}: the flipped model literal must NOT equal the \
@@ -1500,6 +1509,11 @@ fn dict_boundary_fuzz_matches_cpython() {
             );
         }
     }
+    assert!(
+        eqm > 0 && eqn > 0,
+        "the oracle carries {eqm} `_eqm` and {eqn} `_eqn` names, so this model-honesty \
+         check asserted nothing about at least one of them"
+    );
 
     let mut names: Vec<(String, Vec<String>)> = seqs
         .iter()

@@ -273,6 +273,14 @@ updated: >-
   docs/status/INDEX.md only, zero bearing on the tag, the body, the batch or any abort rule. Do not
   go looking for it in the runbook.
   NEXT FREE ID PMAT-1496. NEXT PICK 2026-07-31: PMAT-1374, PUBLISH v0.1.618. A7: NO FRIDAY CODE.
+  ✅ ADDENDUM 2026-07-31 18:xx (PMAT-1506) -- EVERYTHING ABOVE THIS LINE IS PRE-PUBLISH AND HAS
+  BEEN DISCHARGED. v0.1.618 is tagged, its GitHub release was published 13:10Z, and all 31 crates
+  are live; section 5 steps 1-9 all ran (PMAT-1503). The `NEXT FREE ID` and `NEXT PICK` in the
+  sentence above are therefore STALE -- kept, not corrected, because the block is the record of
+  what the operator was told before the batch. DERIVE the next id from merged history, the remote
+  branch list, `gh pr list` and `git worktree list` (all four), never from this line: it read 1496
+  while 1506 was being written. Post-release the lane is honesty slices off `next_lane`; A7 and
+  the Wed 18:00 freeze governed the SHIPPED artefact and no longer bind.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
   window: 2026-07-26 .. 2026-07-31
@@ -7988,48 +7996,45 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
-- 'PMAT-1505 GATE -- XPILE-SKIPGUARD-002, the VACUOUS-LOOP and DEAD-GUARD arms. PMAT-1505 shipped
-  XPILE-SKIPGUARD-001, which closes exactly one shape: a test that does not run because its
-  PRESENCE PROBE cannot succeed. Two sibling shapes of "an assertion that never executes" are
-  still unswept, and the honest reading of 1505 is that its subject is narrower than its class.
-  (a) VACUOUS LOOP -- `for x in COLLECTION { assert!(..) }` where COLLECTION is empty, so the
-  test passes having asserted nothing. MEASURED PARTIALLY 2026-07-31 by the 1505 fan-out, which
-  traced the non-vacuity floors of ci_tool_install.rs:215, roadmap_registration.rs:119,
-  diamond_depth_label_witness.rs:342, falsification_command_integrity.rs,
-  build_script_path_independence.rs, cli_spirv_input_fidelity_witness.rs,
-  spirv_binary_recoverable_witness.rs, frontend_dispatch_message_witness.rs,
-  dict_boundary_fuzz_witness.rs and list_family_composition_witness.rs to LIVE values -- all
-  non-vacuous. ⛔ THE EXEMPTION IS PRE-REGISTERED, because this is the one that will red a correct
-  file: diamond_depth_label_witness.rs:232 and :262 iterate DIGITED `depth-N` tokens in the live
-  legend/help text, and both collections are EMPTY TODAY BY DESIGN -- the file is a negative
-  regression scan for a v0.1.617 defect and each test carries a companion assertion that DOES run.
-  "Currently empty by design" is NOT "can never execute", and a gate that cannot tell them apart
-  gets disabled. Distinguish them by requiring an explicit non-vacuity floor OR a companion
-  executing assertion in the same test, and carry a POSITIVE CONTROL that a genuinely empty,
-  floor-free loop FIRES -- PMAT-1495''s exemption trap has now fired on SIX consecutive slices.
-  (b) DEAD GUARD -- an early `return` whose condition is true on every host for a reason other
-  than a probe (a `cfg!` that never holds, an env var nothing sets where the guard SKIPS rather
-  than FAILS). Note `XPILE_REQUIRE_SH` / `XPILE_REQUIRE_CC` / `XPILE_REQUIRE_RUCHY` /
-  `XPILE_REQUIRE_DENY` / `XPILE_REQUIRE_CHANGELOG_HISTORY` / `XPILE_REQUIRE_WASM_RUNTIME` are the
-  standing tripwires; check `.github/workflows/` for which are actually EXPORTED in CI before
-  claiming any of them is dead, and remember that a tripwire nobody sets is decoration
-  (PMAT-1500''s clean-room grep). (c) MANDATORY, and it is the reason to do this at all: the
-  measurement must be the RUNTIME/EFFECT of a test, not its source. PMAT-1505''s decisive evidence
-  was FILESYSTEM ARTEFACTS, not a reading of the guard -- a test that prints `ok` having created
-  nothing is the signature, and it is visible with no source analysis at all.
-  (d) CONDITIONAL ASSERTION WITH A FALSE ANTECEDENT -- `if let Some(at) = n.find(NEEDLE) {
-  assert!(..) }` where NEEDLE is absent, so the assert never runs. Distinct from (a): the test
-  usually survives on a sibling assertion that DOES execute, which is why it reads as covered.
-  MEASURED 2026-07-31 by the 1505 fan-out, two live instances in ONE file, both benign today but
-  both unanchored: release_runbook_facts_witness.rs:228 (`"are ADVISORY"` is absent -- the
-  corrected runbook spells it "state the ADVISORY set AS DERIVED") and :171 (of the two looped
-  patterns, `"single-sourced at Cargo.toml"` is present and asserts, `"one line +"` is absent and
-  never does). Note PMAT-1505 repaired the THIRD instance in that same file by giving the scan a
-  control; these two want the same treatment, and the file is the natural first subject.
-  (e) NOT IN SCOPE, recorded so the next slice does not re-derive it:
-  cross_hardware_witness.rs:424 `gx10_availability_probe_is_well_behaved` contains no assertion at
-  all (`let _ = gx10_available();`) -- but it is DOCUMENTED as a no-panic/no-hang smoke test, so it
-  is disclosed rather than hidden, and a gate that reds on it would be wrong.'
+- 'PMAT-1506 GATE -- XPILE-SKIPGUARD-002, LOOP ARM + DEAD-GUARD ARM. PMAT-1506 shipped the
+  NEEDLE arm (skip_guard_vacuity_witness.rs): a conditional assertion whose antecedent tests a
+  string-literal needle must be anchored by an `else` that also asserts or by a counter a later
+  assertion reads. It closed 3 of the 9 needle sites and left TWO of the three shapes open, and
+  the honest reading is again that the subject is narrower than the class.
+  (a) VACUOUS LOOP -- `for x in COLLECTION { assert!(..) }` where COLLECTION is empty. MEASURED
+  2026-07-31 by PMAT-1506: 586 assertion-bearing `for` loops across 275 tracked test files. That
+  size IS the design constraint -- a rule demanding a floor from all of them reds hundreds of
+  correct files and gets disabled (PMAT-1500). Do NOT ship it as a blanket rule; scope it to
+  collections DERIVED from the repo (git ls-files, a directory walk, a parse of a doc) where
+  emptiness means the scan missed, and leave literal-array loops to the shipped needle arm.
+  ⛔ THE EXEMPTION IS STILL PRE-REGISTERED: diamond_depth_label_witness.rs:232 and :262 iterate
+  DIGITED `depth-N` tokens in the live legend/help text and both collections are EMPTY TODAY BY
+  DESIGN -- a negative regression scan for a v0.1.617 defect, each with a companion assertion that
+  DOES run. "Currently empty by design" is NOT "can never execute".
+  ★★ AND PMAT-1506 SHARPENED WHY: it hit exactly that distinction on
+  mcp_surface_disclosure_witness.rs''s spelled/digit tool-count scan, which also matches NOTHING
+  and is CORRECT (PMAT-1499 fixed the "Six initial tools" claim it hunts). The remedy that worked
+  is the repo''s own: FACTOR the scan into a helper + a CONTROL that drives it on constructed
+  input, which also removes the site from the gate''s corpus by construction. Prefer that to an
+  exemption list every time -- PMAT-1506 ships with NO exemption list for exactly this reason.
+  (b) DEAD GUARD -- an early `return`/skip whose condition holds on every host for a reason other
+  than a probe. The standing tripwires are XPILE_REQUIRE_SH / _CC / _RUCHY / _DENY /
+  _CHANGELOG_HISTORY / _WASM_RUNTIME; check .github/workflows/ for which are actually EXPORTED in
+  CI before calling any of them dead, and remember a tripwire nobody sets is decoration
+  (PMAT-1500). Note dict_boundary_fuzz_witness.rs skips its whole value-diff when python3 is
+  absent -- disclosed on stderr, unenforced -- which is the shape.
+  (c) MANDATORY: measure a test''s RUNTIME/EFFECT, not its source. ⚠️ AND THE OBVIOUS TOOL DOES
+  NOT WORK: `cargo llvm-cov` 0.8.5 has NO `--include-tests`, so a whole-suite coverage sweep
+  reports only crates/*/src and cannot see a single test-file line. PMAT-1506 lost ~40 minutes to
+  a full instrumented run before finding that. Per-site instrumentation (add an eprintln inside
+  the block, run the test, count hits) is what worked and it is cheap.
+  (d) DONE, recorded so the next slice does not re-derive it: the two false-antecedent instances
+  in release_runbook_facts_witness.rs (`"one line +"` and `"are ADVISORY"`, both measured at 0
+  hits) are repaired, and the advisory rule is now keyed on names DERIVED from ci.yml''s marker
+  rather than on a phrase that could never have matched the roster it forbids.
+  (e) NOT IN SCOPE, unchanged from PMAT-1505: cross_hardware_witness.rs:424
+  gx10_availability_probe_is_well_behaved contains no assertion at all but is DOCUMENTED as a
+  no-panic smoke test, so it is disclosed rather than hidden.'
 - 'PMAT-1504 GATE -- XPILE-BOOKTRANSCRIPT-001, and it has THREE independent arms because the slice
   found three independent defect kinds on ONE page. Blocked only by the Fri 2026-07-31 no-code rule
   and the Wed 2026-07-29 18:00 freeze (all three arms edit crates/xpile/tests/).

@@ -26179,3 +26179,71 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1506
+  status: done
+  priority: P1
+  category: honesty
+  title: an assertion whose antecedent is a string-literal needle the corpus does not contain --
+    the test goes on passing, the passing-test count does not move, and the needle could never
+    have matched the defect it was written for
+  notes: 'SHIPPED 2026-07-31. Ran PMAT-1505''s next-pick (a), XPILE-SKIPGUARD-002. PMAT-1505
+    closed the case where a PRESENCE PROBE cannot succeed and the whole test skips; this is the
+    sibling shape one layer down -- the test RUNS, its other assertions pass, and one assertion
+    inside a conditional never executes because its string-literal NEEDLE is absent.
+    THE DEFECTS, both in release_runbook_facts_witness.rs.
+    (1) the_runbook_does_not_type_an_advisory_roster opened `if let Some(at) = n.find("are
+    ADVISORY")`. Measured: find -> -1, because the corrected runbook spells it "state the ADVISORY
+    set AS DERIVED". The assertion inside -- THE ENTIRE SUBJECT OF THE TEST -- had never run, and
+    the test passed on a sibling assert!(n.contains("AS DERIVED")). ★ THAT IS WHY THE SHAPE READS
+    AS COVERED: there IS a passing assertion in the function, just not the one the function is
+    NAMED for.
+    (2) the_runbook_does_not_describe_the_version_bump_as_one_line loops over
+    ["single-sourced at Cargo.toml", "one line +"]; the first is at offset 505, the second is
+    ABSENT and its arm had never run.
+    ★★ AND THE NEEDLE COULD NEVER HAVE CAUGHT THE DEFECT IT WAS WRITTEN FOR -- the roster
+    PMAT-1453 removed was spelled "kani, lake-build, docs, wasi, lean-models, shader-validate",
+    which does not contain "are ADVISORY". PMAT-1501''s shape INSIDE A GATE. Re-keyed onto the
+    NAMES, derived from ci.yml''s `XPILE-ENFORCEMENT ADVISORY-CONTEXTS:` marker, with a path
+    screen (`docs/` prefixes three live occurrences of the context name `docs`) and the existing
+    use/mention exemption. The file''s rule 3 also promised "the derivation must exist" and
+    nothing checked it; checked now.
+    ★★★ THE MEASUREMENT WAS BY EFFECT, NOT BY READING (PMAT-1505''s mandate). All NINE needle
+    sites in the tracked test corpus were instrumented and RUN: dict_boundary_fuzz_witness
+    _eqm/_eqn 12 hits each, range_bool_bound loop-header fingerprint 7, and THREE fired ZERO.
+    ★★★ THE THIRD ZERO IS NOT THE SAME FINDING, and this is the load-bearing distinction for
+    anyone extending the gate: mcp_surface_disclosure_witness''s spelled/digit tool-count scan
+    also matches nothing, but it is a NEGATIVE REGRESSION SCAN over four..nine and 0..9 and
+    EMPTINESS IS ITS CORRECT READING -- what it hunts (PMAT-1499''s "Six initial tools" against
+    seven rows) was fixed. A rule demanding a floor there reds a correct file and gets disabled
+    (PMAT-1500). Remedies therefore differ: runbook rules re-keyed + floored, the two
+    live-but-unfloored fingerprints got counters, the cardinality scan was FACTORED into a helper
+    with a control on constructed input -- this repo''s own established fix
+    (the_citation_detector_can_still_fire). ★ Factoring it out also REMOVES it from the gate''s
+    corpus by construction, which is why the gate ships with NO exemption list: there is nothing
+    on the tree one would hold.
+    NEW GATE crates/xpile/tests/skip_guard_vacuity_witness.rs (XPILE-SKIPGUARD-002): over every
+    tracked crates/*/tests/*.rs, a conditional block containing an assertion whose antecedent
+    tests a string-literal needle -- INCLUDING one arriving through a `for … in ["…","…"]` array
+    -- must be anchored by an `else` arm that also asserts or by a counter a later assertion
+    reads. Four controls pin the classifier, including that an UNREAD counter is not a floor.
+    ⛔ SCOPE, IN THE FILE: needle arm only. The general vacuous-loop class is NOT covered --
+    measured 586 assertion-bearing `for` loops across 275 tracked test files -- nor are dead
+    guards. Both stay in next_lane with diamond_depth_label_witness.rs''s empty-by-design
+    exemption pre-registered.
+    RED HALVES (5/5, all executed): typing a roster into the note reds only the roster rule;
+    neutering typed_advisory_names reds only its control; removing both one-line spellings reds
+    the version rule; deleting the new range_bool_bound floor makes the gate name that exact site.
+    ★★ AND THE ONE THAT REPEATS PMAT-1505''s R7: neutering the classifier to anchor EVERYTHING
+    leaves every_needle_guarded_assertion_can_be_shown_to_run GREEN while five controls RED. A
+    negative detector still cannot notice its own death -- second confirmation in two slices.
+    ⚠️ HARNESS NOTE: `cargo llvm-cov` 0.8.5 has no `--include-tests`, so whole-suite line coverage
+    CANNOT see test-file lines; the effect measurement was per-site instrumentation instead. Do
+    not plan the loop arm around a coverage sweep without checking that flag first.
+    NEXT FREE ID PMAT-1507. NEXT PICK: XPILE-SKIPGUARD-002 LOOP arm (586 sites, exemption
+    pre-registered), then XPILE-BOOKTRANSCRIPT-001 arm (a), XPILE-PHANTOMPATH-001 (PMAT-1502)
+    and XPILE-WORKFLOW-PROSE-001 (PMAT-1501).'
+  created: '2026-07-31'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

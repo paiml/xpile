@@ -60,6 +60,10 @@ use std::path::{Path, PathBuf};
 
 const QUEUE: &str = "docs/roadmaps/queue.yaml";
 const MANIFEST: &str = "Cargo.toml";
+const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
+/// The same marker `ruleset_drift.rs` reads. Kept as one literal rather than a
+/// second roster: PMAT-1488's duplicated-normative-set rule applies to gates too.
+const ADVISORY_MARKER: &str = "XPILE-ENFORCEMENT ADVISORY-CONTEXTS:";
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -167,8 +171,17 @@ fn the_runbook_does_not_describe_the_version_bump_as_one_line() {
     );
 
     let n = runbook();
+    // PMAT-1506 — this loop used to run `if let Some(at) = n.find(pat)` with no
+    // floor. `"one line +"` is ABSENT from the corrected note (measured: -1),
+    // so that half of the loop had never executed its assertion, and nothing
+    // said so; the test survived on the sibling pattern, which is exactly why
+    // the shape reads as covered. The floor below makes the survivor explicit:
+    // if the phrasing drifts so that NEITHER pattern is found, this reds
+    // instead of passing over an empty scan (PMAT-1396).
+    let mut matched = 0usize;
     for pat in ["single-sourced at Cargo.toml", "one line +"] {
         if let Some(at) = n.find(pat) {
+            matched += 1;
             assert!(
                 is_mention(&n, at),
                 "PMAT-1373 states {pat:?} as an instruction. {MANIFEST} assigns {version:?} on {} \
@@ -179,6 +192,11 @@ fn the_runbook_does_not_describe_the_version_bump_as_one_line() {
             );
         }
     }
+    assert!(
+        matched > 0,
+        "neither one-line spelling occurs in PMAT-1373's notes any more, so this rule scanned \
+         nothing and passed. Re-key it on the wording the runbook actually uses, or retire it."
+    );
 }
 
 /// Every `Cargo.toml:<N>` this note CITES — mentions excluded.
@@ -267,26 +285,127 @@ fn a_cargo_toml_line_citation_points_at_what_it_claims() {
     }
 }
 
+/// The ADVISORY context set, DERIVED from the marker `ruleset_drift.rs` already
+/// holds equal to *every CI job minus the required contexts*. No roster is
+/// typed here either — the marker is the single source, and if it moves, this
+/// moves with it.
+fn advisory_contexts() -> Vec<String> {
+    let ci = read(CI_WORKFLOW);
+    let line = ci
+        .lines()
+        .find_map(|l| l.split_once(ADVISORY_MARKER).map(|(_, r)| r))
+        .unwrap_or_else(|| {
+            panic!(
+                "no `{ADVISORY_MARKER}` marker in {CI_WORKFLOW} — rule 3's derivation does not \
+                 exist, so nothing the runbook defers TO is checked"
+            )
+        });
+    line.split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Advisory job names TYPED into the note as instruction, i.e. occurring where
+/// `is_mention` does not exempt them.
+///
+/// PMAT-1506 — factored out of the test so a CONTROL can drive it. Two
+/// screens, both measured against the live note rather than guessed: a name
+/// followed by `/` is a PATH SEGMENT (`docs/RELEASE.md`, `docs/status/…` — three
+/// live occurrences, none of them a roster entry), and a name that is part of a
+/// longer identifier is not that name.
+fn typed_advisory_names(note: &str, advisory: &[String]) -> BTreeSet<String> {
+    let bytes = note.as_bytes();
+    let boundary = |c: u8| !(c.is_ascii_alphanumeric() || c == b'-' || c == b'_');
+    let mut typed = BTreeSet::new();
+    for name in advisory {
+        let mut base = 0usize;
+        while let Some(rel) = note[base..].find(name.as_str()) {
+            let at = base + rel;
+            let end = at + name.len();
+            let before_ok = at == 0 || boundary(bytes[at - 1]);
+            let after = bytes.get(end).copied();
+            let after_ok = after.is_none_or(boundary);
+            let path_segment = after == Some(b'/');
+            if before_ok && after_ok && !path_segment && !is_mention(note, at) {
+                typed.insert(name.clone());
+            }
+            base = end;
+        }
+    }
+    typed
+}
+
 #[test]
 fn the_runbook_does_not_type_an_advisory_roster() {
-    // Derived: every CI job across the workflows, minus the required contexts.
-    // The runbook must defer to that rather than carrying a list — it carried
-    // one, and the list omitted three jobs.
+    // PMAT-1506 — this rule used to key on the literal `"are ADVISORY"`, which
+    // is ABSENT from the note (measured: -1). The corrected runbook spells it
+    // "state the ADVISORY set AS DERIVED", so the antecedent was FALSE and the
+    // assertion inside it had never executed; the test passed on the
+    // `AS DERIVED` sibling below, which is why it read as covered. Worse, the
+    // needle could only ever have caught ONE phrasing of a roster — the defect
+    // it was written for was spelled `"kani, lake-build, docs, wasi,
+    // lean-models, shader-validate"`, which does not contain it. The rule is
+    // now keyed on the NAMES, derived from the marker (PMAT-1501's shape: a
+    // gate whose needle cannot represent the claim it forbids).
+    let advisory = advisory_contexts();
+    assert!(
+        advisory.len() > 1,
+        "the derived advisory set is {advisory:?}. Rule 3 says the runbook must defer to a \
+         derivation AND that the derivation must exist; with fewer than two contexts there is \
+         nothing to defer to and the deferral is decoration."
+    );
+
     let n = runbook();
-    if let Some(at) = n.find("are ADVISORY") {
-        assert!(
-            is_mention(&n, at),
-            "PMAT-1373 enumerates an ADVISORY roster inline. The unrequired set is derived from \
-             .github/workflows minus the required contexts, and the typed list omitted \
-             `license-scan`, `build` and `deploy` — understating what is unenforced in the \
-             section whose job is to disclose it. Defer to the XPILE-ADVISORY markers, which \
-             `ruleset_drift` already holds equal to the derived set."
-        );
-    }
+    let typed = typed_advisory_names(&n, &advisory);
+    assert!(
+        typed.is_empty(),
+        "PMAT-1373 types the advisory job name(s) {typed:?} as instruction. The unrequired set is \
+         derived from .github/workflows minus the required contexts, and the last typed list \
+         omitted `license-scan`, `build` and `deploy` — understating what is unenforced in the \
+         section whose job is to disclose it. Defer to the `{ADVISORY_MARKER}` marker, which \
+         `ruleset_drift` already holds equal to the derived set."
+    );
     assert!(
         n.contains("AS DERIVED"),
         "PMAT-1373 no longer tells the operator to derive the advisory set, so nothing sends them \
          to the markers that carry it"
+    );
+}
+
+/// PMAT-1506 — the CONTROL this rule has never had. Its live reading is EMPTY,
+/// and an empty negative detector is indistinguishable from a dead one without
+/// a constructed positive (PMAT-1505's lesson, one rule along in the same file).
+#[test]
+fn the_advisory_roster_detector_can_still_fire() {
+    let advisory = advisory_contexts();
+
+    // POSITIVE: a typed roster is collected.
+    let typed = "The release body must state that kani and lake-build are advisory.";
+    assert_eq!(
+        typed_advisory_names(typed, &advisory),
+        BTreeSet::from(["kani".to_string(), "lake-build".to_string()]),
+        "a roster typed as instruction must be COLLECTED, or this detector is dead and the rule \
+         it feeds is permanently vacuous"
+    );
+
+    // NEGATIVE 1: the shape the live runbook uses — a quoted retired wording.
+    let quoted = "Then state the ADVISORY set AS DERIVED rather than typed. PMAT-1453: this line \
+                  used to enumerate \"kani, lake-build, docs, wasi, lean-models, shader-validate\" \
+                  and OMITTED three jobs.";
+    assert!(
+        typed_advisory_names(quoted, &advisory).is_empty(),
+        "a roster quoted inside a `used to enumerate \"…\"` correction is a MENTION and must stay \
+         exempt — forbidding it would forbid the disclosure"
+    );
+
+    // NEGATIVE 2: the path screen. `docs` is both an advisory context and the
+    // first segment of every doc path in the note; without this screen the rule
+    // reports three offences on a clean runbook and gets disabled.
+    let paths = "read it from docs/status/ruleset-13878864.json and the drift in docs/RELEASE.md";
+    assert!(
+        typed_advisory_names(paths, &advisory).is_empty(),
+        "a context name followed by `/` is a path segment, not a roster entry"
     );
 }
 
