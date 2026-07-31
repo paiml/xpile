@@ -51,8 +51,18 @@ fn c_lane_ready() -> bool {
     tool_available("cc") && tool_available("python3") && tool_available("cargo")
 }
 
+/// `sh --version` exits **2** under dash. Correct here only because
+/// `tool_available` tests SPAWN rather than exit status — see
+/// `hybrid_verify.rs::shell_available` and XPILE-SKIPGUARD-001 (PMAT-1505).
+fn shell_available() -> bool {
+    Command::new("sh")
+        .args(["-c", "true"])
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
 fn shell_lane_ready() -> bool {
-    cfg!(unix) && tool_available("sh") && tool_available("cargo")
+    cfg!(unix) && shell_available() && tool_available("cargo")
 }
 
 fn verify(name: &str) -> (bool, String, String) {

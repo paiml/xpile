@@ -66,7 +66,7 @@
 //! without either it skips cleanly after asserting the EMIT path + every
 //! refusal pin (which run everywhere, no WABT needed).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -600,16 +600,35 @@ fn pins_are_not_vacuous() {
     }
     let names: Vec<&str> = INT_PINS.iter().map(|(n, _)| *n).collect();
     let oracle = python_oracle(admitted_int_module(), &names).expect("python3 oracle");
-    // Each pin equals live CPython (already asserted in the executed test) —
-    // here assert a corrupted pin would NOT: no pin is 0/1 (an always-empty
-    // miscompile would collapse the len-scaled observables toward those).
+
+    // PMAT-1505: the assertion that used to stand here was
+    // `assert_ne!(*hand, cpython_v + 1)`, one line below
+    // `assert_eq!(cpython_v, *hand)` — which reduces to `h != h + 1` and can
+    // never fail for any `i64`. A test named `pins_are_not_vacuous` whose
+    // distinguishing assertion is a TAUTOLOGY is the same defect as a test
+    // whose guard can never say yes: it executes, it passes, and it discharges
+    // nothing. The comment beside it already described the RIGHT property; only
+    // the code did not implement it.
+    let mut distinct: BTreeSet<i64> = BTreeSet::new();
     for (name, hand) in INT_PINS {
         let cpython_v = *oracle.get(*name).expect("oracle has observable");
         assert_eq!(cpython_v, *hand, "{name}: pin drifted from CPython");
-        assert_ne!(
-            *hand,
-            cpython_v + 1,
-            "{name}: a corrupted (+1) pin must differ from CPython"
+        // The property the comment always named: an always-empty destination
+        // collapses these len-scaled observables toward 0/1, so a pin sitting
+        // on one of those would not distinguish a miscompile from a match.
+        assert!(
+            *hand != 0 && *hand != 1,
+            "{name}: pin is {hand}, one of the degenerate values an always-empty \
+             miscompile collapses toward — this pin cannot tell the two apart"
         );
+        distinct.insert(*hand);
     }
+    // And a miscompile that collapsed every observable to one constant would
+    // still satisfy the per-pin check above. This one can fail; the tautology
+    // could not.
+    assert!(
+        distinct.len() > 1,
+        "every pin holds the same value ({distinct:?}); the pin set cannot \
+         distinguish a per-case result from a constant"
+    );
 }
