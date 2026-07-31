@@ -175,9 +175,16 @@ fn non_bool_bounds_are_emitted_unchanged() {
         // legitimately emits `= (xs.len() as i64)` (a pre-existing usize→i64
         // cast, single-parenthesised), and a blanket wrap of it would read
         // `= (((xs.len() as i64)) as i64)`, which this still catches.
+        // PMAT-1506 — `headers` is the FLOOR. The fingerprint fires on the live
+        // emit (measured by instrumenting the block: 7 hits across these
+        // programs), but nothing showed that: rename the loop temps and this
+        // scan matches no line, asserts nothing, and passes — the shape
+        // XPILE-SKIPGUARD-002 forbids.
+        let mut headers = 0usize;
         for line in rust.lines() {
             let l = line.trim();
             if l.starts_with("let __forstop") || l.starts_with("let mut __forc") {
+                headers += 1;
                 assert!(
                     !(l.contains("= ((") && l.contains(") as i64)")),
                     "{label}: a non-bool bound must NOT be wrapped in a bool→i64 \
@@ -185,6 +192,11 @@ fn non_bool_bounds_are_emitted_unchanged() {
                 );
             }
         }
+        assert!(
+            headers > 0,
+            "{label}: no `let __forstop`/`let mut __forc` line in the emit, so the NumCast \
+             fingerprint scanned nothing. The loop-header spelling has moved; re-key the scan."
+        );
     }
 }
 

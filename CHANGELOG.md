@@ -13,6 +13,87 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### An assertion whose antecedent is a needle the corpus does not contain — the test goes on passing, and the passing-test count does not move (PMAT-1506)
+
+Ran PMAT-1505's `XPILE-SKIPGUARD-002` lead — the sibling shapes of *an assertion
+that never executes*. PMAT-1505 closed the case where a **presence probe** cannot
+succeed and the whole test skips. This one is narrower and harder to see: the
+test runs, other assertions in it pass, and one assertion inside a conditional
+never executes because its **string-literal needle is not in the corpus**.
+
+`release_runbook_facts_witness.rs` carried two.
+`the_runbook_does_not_type_an_advisory_roster` opened
+`if let Some(at) = n.find("are ADVISORY")`. The corrected runbook spells it
+*"state the ADVISORY set AS DERIVED"* — measured, `find` returns `-1` — so the
+assertion inside, **the entire subject of the test**, had never run. The test
+passed on a sibling `assert!(n.contains("AS DERIVED"))`, which is exactly why
+the shape reads as covered: there is a passing assertion in the function, just
+not the one the function is named for. The second, in
+`the_runbook_does_not_describe_the_version_bump_as_one_line`, loops
+`for pat in ["single-sourced at Cargo.toml", "one line +"]`; the first is present
+at offset 505, the second is absent and its arm had never run.
+
+**And the needle could never have caught the defect it was written for.** The
+roster PMAT-1453 removed was spelled `"kani, lake-build, docs, wasi,
+lean-models, shader-validate"` — which does not contain `are ADVISORY`. This is
+PMAT-1501's shape inside a gate: a needle that cannot represent the claim it
+forbids. The rule is now keyed on the **names**, derived from `ci.yml`'s
+`XPILE-ENFORCEMENT ADVISORY-CONTEXTS:` marker (the one `ruleset_drift` already
+holds equal to every CI job minus the required contexts), with a path screen
+(`docs/RELEASE.md` is not a roster entry — three live occurrences) and the
+existing use/mention exemption. That file's rule 3 also promised *"the
+derivation must exist"* and nothing checked it; it is checked now.
+
+**The measurement was by EFFECT, not by reading** — PMAT-1505's mandate. All
+nine needle sites in the tracked test corpus were instrumented and run:
+`dict_boundary_fuzz_witness`'s `_eqm`/`_eqn` fire 12× each, `range_bool_bound`'s
+loop-header fingerprint 7×, and the three above **zero**.
+
+**The third zero is not the same finding, and a rule that cannot tell them apart
+gets disabled.** `mcp_surface_disclosure_witness`'s spelled/digit tool-count scan
+also matches nothing — but it is a NEGATIVE REGRESSION SCAN over `four`…`nine`
+and `0`…`9`, and emptiness is its *correct* reading, because PMAT-1499 fixed the
+*"Six initial tools"* claim it hunts. Demanding a floor there would red a correct
+file. So the remedies differ: the runbook rules were re-keyed and floored, the
+two live-but-unfloored fingerprints got counters, and the cardinality scan was
+factored into a helper with a control that drives it on constructed input —
+this repo's own established fix (`the_citation_detector_can_still_fire`).
+
+New gate `crates/xpile/tests/skip_guard_vacuity_witness.rs`
+(`XPILE-SKIPGUARD-002`): over every tracked `crates/*/tests/*.rs`, a conditional
+block containing an assertion whose antecedent tests a string-literal needle —
+including a needle arriving through a `for … in ["…", "…"]` array — must be
+anchored by an `else` arm that also asserts, or by a counter a later assertion
+reads. Four controls pin the classifier itself, including that an *unread*
+counter is not a floor.
+
+⛔ **Scope, stated in the file:** this is the needle arm only. The general
+vacuous-loop class is **not** covered — measured, **586** `for` loops containing
+assertions across **275** tracked test files — and neither are dead guards. Both
+remain in `queue.yaml` `next_lane` with `diamond_depth_label_witness.rs`'s
+empty-by-design exemption still pre-registered.
+
+**The gate's first run against itself was on CI, not locally, and it red.** The
+corpus is `git ls-files`, which cannot see an **untracked** file — so while this
+slice was being written the scan covered every tracked test file except the one
+being added. Two false positives of its own making: `line.contains("assert")`
+matched the identifier `Anchor::ElseAsserts` in the classifier's own body, and
+the controls' fixture sources, written as multi-line string literals, began
+exactly the way live code does, so the gate reported its own test data. Fixed by
+matching assert MACROS and assembling fixtures line by line; a new assertion
+requires the file to be present in its own corpus, so the blindness cannot
+return silently. **A new gate does not analyse itself until it is committed** —
+PMAT-1501's blind-spot class with a new cause: not *nobody pointed it at that
+file* but *the file had not arrived yet*.
+
+**Red halves, all executed.** Perturbing the runbook to type a roster reds only
+the roster rule; neutering `typed_advisory_names` reds only its control;
+removing both one-line spellings reds the version rule; deleting the new floor in
+`range_bool_bound.rs` makes the gate name that exact site. And the one that
+repeats PMAT-1505's R7: neutering the classifier to anchor everything leaves
+`every_needle_guarded_assertion_can_be_shown_to_run` **GREEN** while five
+controls red — a negative detector still cannot notice its own death.
+
 ### The test whose name ends in EXECUTED had never executed — on this host or any other — because its guard asked `sh` a question no shell can answer (PMAT-1505)
 
 Ran PMAT-1503's `XPILE-PREFLIGHT-001` lead. Arming the full pre-flight tripwire

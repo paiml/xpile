@@ -298,14 +298,6 @@ fn parent_section_does_not_contradict_the_sub_spec_tool_count() {
         PLANNED_TOOLS.len()
     );
 
-    const WORDS: &[(&str, usize)] = &[
-        ("four", 4),
-        ("five", 5),
-        ("six", 6),
-        ("seven", 7),
-        ("eight", 8),
-        ("nine", 9),
-    ];
     let parent = read(PARENT_SPEC);
     let section = parent
         .split("## 15. MCP Server")
@@ -315,29 +307,72 @@ fn parent_section_does_not_contradict_the_sub_spec_tool_count() {
         .next()
         .expect("section body");
     let lowered = strip_inline_code(section).to_lowercase();
+    for (pat, n) in published_tool_cardinalities(&lowered) {
+        assert_eq!(
+            n, rows,
+            "xpile-spec.md §15 publishes {pat:?} while {MCP_PAGE} lists {rows} planned tools. A \
+             parent section and its own sub-spec disagree on a cardinality, in the corpus every \
+             claim gate walks."
+        );
+    }
+}
+
+/// Every tool cardinality §15 publishes, spelled or in digits, with the phrase
+/// that carries it.
+///
+/// PMAT-1506 — factored out of the test above so a CONTROL can drive it. Its
+/// live reading is EMPTY: PMAT-1499 corrected the section, so no spelling
+/// matches and the `assert_eq!` this feeds had stopped executing. That is the
+/// CORRECT state for a negative regression scan and it is also exactly how such
+/// a scan dies unnoticed — widen `strip_inline_code`, mis-case the corpus, or
+/// point `section` at the wrong split, and the emptiness means something else
+/// entirely with nothing to say so.
+fn published_tool_cardinalities(lowered: &str) -> Vec<(String, usize)> {
+    const WORDS: &[(&str, usize)] = &[
+        ("four", 4),
+        ("five", 5),
+        ("six", 6),
+        ("seven", 7),
+        ("eight", 8),
+        ("nine", 9),
+    ];
+    let mut found = Vec::new();
     for (w, n) in WORDS {
         for pat in [format!("{w} initial tools"), format!("{w} tools")] {
             if lowered.contains(&pat) {
-                assert_eq!(
-                    *n, rows,
-                    "xpile-spec.md §15 publishes \"{pat}\" while {MCP_PAGE} lists \
-                     {rows} planned tools. A parent section and its own sub-spec \
-                     disagree on a cardinality, in the corpus every claim gate \
-                     walks."
-                );
+                found.push((pat, *n));
             }
         }
     }
     for d in 0..=9usize {
         let pat = format!("{d} tools");
         if lowered.contains(&pat) {
-            assert_eq!(
-                d, rows,
-                "xpile-spec.md §15 publishes \"{pat}\" against {rows} planned tools \
-                 in {MCP_PAGE}."
-            );
+            found.push((pat, d));
         }
     }
+    found
+}
+
+/// PMAT-1506 — the CONTROL this scan has never had.
+#[test]
+fn the_published_cardinality_scan_can_still_fire() {
+    assert_eq!(
+        published_tool_cardinalities("§15 exposes six initial tools over stdio."),
+        vec![("six initial tools".to_string(), 6)],
+        "a spelled cardinality must be COLLECTED — `Six initial tools` against seven rows is the \
+         exact defect PMAT-1499 found, and it is what this scan exists to catch coming back"
+    );
+    assert_eq!(
+        published_tool_cardinalities("the server registers 7 tools"),
+        vec![("7 tools".to_string(), 7)],
+        "a digit cardinality must be collected too"
+    );
+    assert!(
+        published_tool_cardinalities("the planned surface is derived from the table below")
+            .is_empty(),
+        "prose that publishes no cardinality must yield nothing — this is the LIVE reading, and \
+         it is only good news while the two assertions above still pass"
+    );
 }
 
 /// PROPERTY 5 — the generalizable shape: a deferral to a NAMED phase must not
