@@ -79,6 +79,17 @@
 //! a floor there is worth having: if the oracle stops emitting `_eqm` names or
 //! the emitter stops spelling `let __forstop`, those assertions go quiet
 //! exactly the way the runbook's did.
+//!
+//! ⚠️ **AND THIS GATE'S FIRST RUN AGAINST ITSELF WAS ON CI, NOT LOCALLY.** The
+//! corpus is `git ls-files`, which cannot see an **untracked** file — so while
+//! the slice was being written the scan covered every test file except the one
+//! being added. It went green locally and red on the first CI run, on two false
+//! positives of its own making: `line.contains("assert")` matched the identifier
+//! `Anchor::ElseAsserts` in the classifier's own body, and the controls' fixture
+//! sources, written as multi-line string literals, began exactly the way live
+//! code does. Both are fixed (`has_assertion`, `fixture`) and
+//! `the_scan_reaches_the_shapes_it_claims_to_cover` now asserts this file is in
+//! its own corpus. **A new gate does not analyse itself until it is committed.**
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -129,6 +140,18 @@ struct Site {
     line: usize,
     needles: Vec<String>,
     anchor: Anchor,
+}
+
+/// An assert MACRO call — not any identifier that merely contains `assert`.
+///
+/// PMAT-1506: the first draft tested `line.contains("assert")` and reported THIS
+/// FILE at the `} else` classifier, because the body it was scanning assigns
+/// `Anchor::ElseAsserts`. A detector that matches its own vocabulary cries wolf
+/// on the file it lives in, which is how a gate gets disabled (PMAT-1500).
+fn has_assertion(l: &str) -> bool {
+    ["assert!(", "assert_eq!(", "assert_ne!(", "assert_matches!("]
+        .iter()
+        .any(|m| l.contains(m))
 }
 
 fn indent_of(l: &str) -> usize {
@@ -228,7 +251,7 @@ fn sites_in(file: &str, src: &str) -> Vec<Site> {
             .find(|&j| indent_of(lines[j]) == ind && lines[j].trim().starts_with('}'))
             .unwrap_or(fn_end);
         let body = &lines[i + 1..close];
-        if !body.iter().any(|b| b.contains("assert")) {
+        if !body.iter().any(|b| has_assertion(b)) {
             continue;
         }
 
@@ -239,7 +262,7 @@ fn sites_in(file: &str, src: &str) -> Vec<Site> {
                 .unwrap_or(fn_end);
             if lines[close + 1..else_close]
                 .iter()
-                .any(|b| b.contains("assert"))
+                .any(|b| has_assertion(b))
             {
                 anchor = Anchor::ElseAsserts;
             }
@@ -252,10 +275,10 @@ fn sites_in(file: &str, src: &str) -> Vec<Site> {
                         && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                         && lines[close..fn_end]
                             .iter()
-                            .any(|a| a.contains("assert") || a.contains(id))
+                            .any(|a| has_assertion(a) || a.contains(id))
                         && lines[close..fn_end]
                             .iter()
-                            .skip_while(|a| !a.contains("assert"))
+                            .skip_while(|a| !has_assertion(a))
                             .any(|a| a.contains(id))
                     {
                         anchor = Anchor::Counter(id.to_string());
@@ -333,6 +356,37 @@ fn the_scan_reaches_the_shapes_it_claims_to_cover() {
         files.len() >= 3,
         "every needle site now lives in {files:?}; the scan was measured across 4 files"
     );
+
+    // THE GATE MUST BE INSIDE ITS OWN CORPUS, and this assertion exists because
+    // it was not. `git ls-files` cannot see an UNTRACKED file, so while this
+    // slice was being written the scan ran over every test file EXCEPT the one
+    // being added — green locally, red on CI the moment the commit made it
+    // visible, on two false positives of its own making. A defect-class gate
+    // that skips the file it lives in is PMAT-1501's blind spot with a new
+    // cause: not "nobody pointed it at that file" but "the file had not arrived
+    // yet".
+    const SELF: &str = "crates/xpile/tests/skip_guard_vacuity_witness.rs";
+    assert!(
+        test_sources().iter().any(|f| f == SELF),
+        "{SELF} is not in its own corpus — either it is untracked (so this gate has never \
+         analysed itself and cannot until it is committed) or the `git ls-files` pathspec has \
+         stopped matching"
+    );
+}
+
+/// A constructed Rust source, assembled LINE BY LINE.
+///
+/// PMAT-1506, and this one only showed up in CI: the controls below embed Rust
+/// source as fixtures, and the first draft wrote each as one multi-line string
+/// literal — so every fixture line began, in THIS file, exactly the way live code
+/// does, and the scan reported its own test data as four defects. One literal per
+/// line means each of those lines starts with `"`, which no live conditional does.
+///
+/// ⚠️ It went green locally and red on CI for a reason worth remembering: the
+/// corpus is `git ls-files`, so an UNTRACKED new file is invisible to it. **A new
+/// gate does not analyse itself until it is committed.**
+fn fixture(lines: &[&str]) -> String {
+    lines.join("\n") + "\n"
 }
 
 /// POSITIVE CONTROL — the detector fires on a constructed unanchored site.
@@ -341,14 +395,15 @@ fn the_scan_reaches_the_shapes_it_claims_to_cover() {
 /// arm R7: a negative detector cannot notice its own death).
 #[test]
 fn the_detector_fires_on_a_constructed_unanchored_needle() {
-    let src = "\
-fn probe() {
-    let n = corpus();
-    if let Some(at) = n.find(\"a needle nothing contains\") {
-        assert!(is_fine(at), \"never runs\");
-    }
-}
-";
+    let src = fixture(&[
+        "fn probe() {",
+        "    let n = corpus();",
+        "    if let Some(at) = n.find(\"a needle nothing contains\") {",
+        "        assert!(is_fine(at), \"never runs\");",
+        "    }",
+        "}",
+    ]);
+    let src = src.as_str();
     let sites = sites_in("probe.rs", src);
     assert_eq!(
         sites.len(),
@@ -368,16 +423,17 @@ fn probe() {
 /// reaches the predicate through a literal array.
 #[test]
 fn the_detector_resolves_a_needle_through_a_literal_array_loop() {
-    let src = "\
-fn probe() {
-    let n = corpus();
-    for pat in [\"present spelling\", \"retired spelling\"] {
-        if let Some(at) = n.find(pat) {
-            assert!(is_mention(&n, at), \"never runs for the retired one\");
-        }
-    }
-}
-";
+    let src = fixture(&[
+        "fn probe() {",
+        "    let n = corpus();",
+        "    for pat in [\"present spelling\", \"retired spelling\"] {",
+        "        if let Some(at) = n.find(pat) {",
+        "            assert!(is_mention(&n, at), \"never runs for the retired one\");",
+        "        }",
+        "    }",
+        "}",
+    ]);
+    let src = src.as_str();
     let sites = sites_in("probe.rs", src);
     assert_eq!(
         sites.len(),
@@ -397,33 +453,35 @@ fn probe() {
 /// reds correct files and gets disabled (PMAT-1500's cried-wolf lesson).
 #[test]
 fn the_detector_accepts_both_anchored_forms() {
-    let with_else = "\
-fn probe() {
-    if registered.contains(\"mcp\") {
-        assert!(present.is_empty(), \"shipped\");
-    } else {
-        assert!(!present.is_empty(), \"not shipped\");
-    }
-}
-";
+    let with_else = fixture(&[
+        "fn probe() {",
+        "    if registered.contains(\"mcp\") {",
+        "        assert!(present.is_empty(), \"shipped\");",
+        "    } else {",
+        "        assert!(!present.is_empty(), \"not shipped\");",
+        "    }",
+        "}",
+    ]);
+    let with_else = with_else.as_str();
     assert_eq!(
         sites_in("probe.rs", with_else)[0].anchor,
         Anchor::ElseAsserts,
         "an if/else where BOTH arms assert always executes one of them"
     );
 
-    let with_counter = "\
-fn probe() {
-    let mut named = 0usize;
-    for span in body.split('`') {
-        if span.ends_with(\".lean\") {
-            named += 1;
-            assert!(modules.contains(span), \"named but absent\");
-        }
-    }
-    assert!(named >= 3, \"the scan found nothing\");
-}
-";
+    let with_counter = fixture(&[
+        "fn probe() {",
+        "    let mut named = 0usize;",
+        "    for span in body.split('`') {",
+        "        if span.ends_with(\".lean\") {",
+        "            named += 1;",
+        "            assert!(modules.contains(span), \"named but absent\");",
+        "        }",
+        "    }",
+        "    assert!(named >= 3, \"the scan found nothing\");",
+        "}",
+    ]);
+    let with_counter = with_counter.as_str();
     assert_eq!(
         sites_in("probe.rs", with_counter)[0].anchor,
         Anchor::Counter("named".to_string()),
@@ -436,18 +494,19 @@ fn probe() {
 /// silently exempted the real defects.
 #[test]
 fn a_counter_nobody_asserts_on_is_not_an_anchor() {
-    let src = "\
-fn probe() {
-    let mut seen = 0usize;
-    for pat in [\"absent needle\"] {
-        if let Some(at) = n.find(pat) {
-            seen += 1;
-            assert!(ok(at), \"never runs\");
-        }
-    }
-    eprintln!(\"{seen} seen\");
-}
-";
+    let src = fixture(&[
+        "fn probe() {",
+        "    let mut seen = 0usize;",
+        "    for pat in [\"absent needle\"] {",
+        "        if let Some(at) = n.find(pat) {",
+        "            seen += 1;",
+        "            assert!(ok(at), \"never runs\");",
+        "        }",
+        "    }",
+        "    eprintln!(\"{seen} seen\");",
+        "}",
+    ]);
+    let src = src.as_str();
     assert_eq!(
         sites_in("probe.rs", src)[0].anchor,
         Anchor::None,

@@ -73,6 +73,19 @@ assertions across **275** tracked test files — and neither are dead guards. Bo
 remain in `queue.yaml` `next_lane` with `diamond_depth_label_witness.rs`'s
 empty-by-design exemption still pre-registered.
 
+**The gate's first run against itself was on CI, not locally, and it red.** The
+corpus is `git ls-files`, which cannot see an **untracked** file — so while this
+slice was being written the scan covered every tracked test file except the one
+being added. Two false positives of its own making: `line.contains("assert")`
+matched the identifier `Anchor::ElseAsserts` in the classifier's own body, and
+the controls' fixture sources, written as multi-line string literals, began
+exactly the way live code does, so the gate reported its own test data. Fixed by
+matching assert MACROS and assembling fixtures line by line; a new assertion
+requires the file to be present in its own corpus, so the blindness cannot
+return silently. **A new gate does not analyse itself until it is committed** —
+PMAT-1501's blind-spot class with a new cause: not *nobody pointed it at that
+file* but *the file had not arrived yet*.
+
 **Red halves, all executed.** Perturbing the runbook to type a roster reds only
 the roster rule; neutering `typed_advisory_names` reds only its control;
 removing both one-line spellings reds the version rule; deleting the new floor in

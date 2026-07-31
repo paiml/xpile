@@ -26236,6 +26236,17 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     ★★ AND THE ONE THAT REPEATS PMAT-1505''s R7: neutering the classifier to anchor EVERYTHING
     leaves every_needle_guarded_assertion_can_be_shown_to_run GREEN while five controls RED. A
     negative detector still cannot notice its own death -- second confirmation in two slices.
+    ⚠️⚠️ THE GATE''S FIRST RUN AGAINST ITSELF WAS ON CI, NOT LOCALLY, AND IT RED. The corpus is
+    `git ls-files`, which CANNOT SEE AN UNTRACKED FILE -- so while the slice was being written the
+    scan covered every tracked test file EXCEPT the one being added. It red on two false positives
+    of its own making: line.contains("assert") matched the IDENTIFIER `Anchor::ElseAsserts` in the
+    classifier''s own body, and the controls'' fixture sources -- Rust written as multi-line string
+    literals -- began exactly the way live code does, so the gate reported its own TEST DATA as
+    four defects. Fixed by matching assert MACROS (has_assertion) and assembling fixtures LINE BY
+    LINE (fixture), plus a new assertion that this file is present in its own corpus. ★ A NEW GATE
+    DOES NOT ANALYSE ITSELF UNTIL IT IS COMMITTED -- PMAT-1501''s blind-spot class with a new
+    cause: not "nobody pointed it at that file" but "the file had not arrived yet". Commit the
+    gate, then re-run it, before believing a local green.
     ⚠️ HARNESS NOTE: `cargo llvm-cov` 0.8.5 has no `--include-tests`, so whole-suite line coverage
     CANNOT see test-file lines; the effect measurement was per-site instrumentation instead. Do
     not plan the loop arm around a coverage sweep without checking that flag first.
