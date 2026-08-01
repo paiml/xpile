@@ -520,7 +520,14 @@ fn classify(cmd: &str) -> Disposition {
 /// not a transpile input, and materialising it would change how `cargo`
 /// behaves in the scratch dir.
 fn declared_fixtures() -> BTreeMap<String, String> {
+    declared_fixtures_with_conventions().0
+}
+
+/// The fixtures plus WHICH conventions actually resolved one, so a convention
+/// that has silently stopped working is visible (PMAT-1515).
+fn declared_fixtures_with_conventions() -> (BTreeMap<String, String>, BTreeSet<FixtureConvention>) {
     let mut out = BTreeMap::new();
+    let mut conventions: BTreeSet<FixtureConvention> = BTreeSet::new();
     for page in corpus() {
         let text = std::fs::read_to_string(&page).expect("read corpus page");
         let lines: Vec<&str> = text.lines().collect();
@@ -539,7 +546,8 @@ fn declared_fixtures() -> BTreeMap<String, String> {
             }
             if matches!(lang.as_str(), "python" | "py" | "sh" | "shell") {
                 let body: Vec<&str> = lines[start + 1..end.min(lines.len())].to_vec();
-                if let Some(name) = fixture_name(&lines, start, end, &body) {
+                if let Some((name, how)) = fixture_name(&lines, start, end, &body) {
+                    conventions.insert(how);
                     out.entry(name).or_insert_with(|| {
                         let mut b = body.join("\n");
                         b.push('\n');
@@ -550,34 +558,69 @@ fn declared_fixtures() -> BTreeMap<String, String> {
             i = end + 1;
         }
     }
-    out
+    (out, conventions)
 }
 
 /// The filename a fenced block declares itself to be, under the three
 /// conventions the corpus uses.
-fn fixture_name(lines: &[&str], start: usize, end: usize, body: &[&str]) -> Option<String> {
+/// Which of the three declaration conventions resolved a fixture (PMAT-1515).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum FixtureConvention {
+    /// (c) a first-line `# name.py` comment inside the fence.
+    FirstLineComment,
+    /// (a) prose in the lines BEFORE the fence.
+    ProseBefore,
+    /// (b) prose in the lines AFTER the fence.
+    ProseAfter,
+}
+
+/// The prose spellings that declare the following (or preceding) block a
+/// fixture.
+///
+/// ⚠️ PMAT-1515 HOISTED THESE OUT OF `fixture_name`. They were three string
+/// literals inline in the function body, and this file holds every OTHER
+/// vocabulary to a liveness standard — `every_disclosure_exemption_literal_is_live`
+/// reds on a stale `DISCLOSURE_MARKERS` entry, `detection_vocabularies_are_live_as_groups`
+/// floors the checkout vocabularies. Being inline is precisely how a dead
+/// literal escaped both: `"Save as"` matched **nothing** in the corpus — 0
+/// occurrences across the pages, present in exactly one tracked file in the
+/// whole repository, this test itself — and no gate could see it.
+///
+/// **A literal that is not in a named const is invisible to the liveness gate
+/// standing next to it.**
+const FIXTURE_DECLARATION_MARKERS: &[&str] = &["Save the following as", "Save this as"];
+
+fn fixture_name(
+    lines: &[&str],
+    start: usize,
+    end: usize,
+    body: &[&str],
+) -> Option<(String, FixtureConvention)> {
     // (c) first-line comment inside the block.
     if let Some(first) = body.first() {
         let t = first.trim();
         if let Some(rest) = t.strip_prefix('#') {
             if let Some(n) = as_fixture_filename(rest.trim()) {
-                return Some(n);
+                return Some((n, FixtureConvention::FirstLineComment));
             }
         }
     }
     // (a) prose in the three lines BEFORE the fence, (b) the three AFTER.
     let before = lines[start.saturating_sub(3)..start].join(" ");
     let after = lines[(end + 1).min(lines.len())..(end + 4).min(lines.len())].join(" ");
-    for window in [before, after] {
-        if !(window.contains("Save the following as")
-            || window.contains("Save this as")
-            || window.contains("Save as"))
+    for (window, how) in [
+        (before, FixtureConvention::ProseBefore),
+        (after, FixtureConvention::ProseAfter),
+    ] {
+        if !FIXTURE_DECLARATION_MARKERS
+            .iter()
+            .any(|m| window.contains(m))
         {
             continue;
         }
         for tok in window.split('`') {
             if let Some(n) = as_fixture_filename(tok) {
-                return Some(n);
+                return Some((n, how));
             }
         }
     }
@@ -1376,7 +1419,33 @@ fn checkout_lane_is_logged_and_bounded() {
 
 #[test]
 fn fixture_resolver_is_non_vacuous() {
-    let fx = declared_fixtures();
+    let (fx, conventions) = declared_fixtures_with_conventions();
+
+    // PMAT-1515 — THIS IS THE ASSERTION THE COMMENT ALWAYS PROMISED.
+    //
+    // The comment below has always read "All three declaration conventions must
+    // be live", and the assertions under it could only ever detect the death of
+    // ONE. `factorial.py` is declared by convention (a) AND convention (c), so
+    // either alone satisfies `contains_key("factorial.py")`; an audit killed (a)
+    // and then (c) and the file stayed 16/16 green both times, while the number
+    // of resolved declarations silently fell from 5 to 2 and `factorial.py`'s
+    // CONTENT changed which page it came from.
+    //
+    // Detecting that needs the resolver to report WHICH convention answered,
+    // which is why `fixture_name` now returns one.
+    for how in [
+        FixtureConvention::FirstLineComment,
+        FixtureConvention::ProseBefore,
+        FixtureConvention::ProseAfter,
+    ] {
+        assert!(
+            conventions.contains(&how),
+            "no fixture in the corpus is declared by {how:?} — that convention has \
+             gone dead and the resolver has degraded to the ones that still work. \
+             Live conventions: {conventions:?}"
+        );
+    }
+
     // All three declaration conventions must be live, or the resolver has
     // silently degraded to whichever one still works.
     assert!(
@@ -1551,6 +1620,38 @@ fn every_disclosure_exemption_literal_is_live() {
         "{dead:?} exempt sentences from property B but match nothing in the \
          corpus. An exemption nobody has seen fire may match everything — \
          delete it rather than carrying it as anticipatory"
+    );
+}
+
+/// PMAT-1515 — the fixture-declaration spellings are held to the same standard,
+/// which they escaped for as long as they were inline literals.
+///
+/// `"Save as"` was one of them and matched **nothing**: zero occurrences across
+/// the corpus, and present in exactly one tracked file in the repository — this
+/// test. It is deleted rather than carried, because a matcher nobody has seen
+/// fire is indistinguishable from one that fires on everything.
+#[test]
+fn every_fixture_declaration_marker_is_live() {
+    // `corpus_blob` lower-cases, and these markers are capitalised because
+    // `fixture_name` matches the RAW page text. Comparing them without
+    // lower-casing reports every marker dead — which is what the first draft of
+    // this test did, and it would have "proved" a defect that is not there.
+    let blob = corpus_blob();
+    let dead: Vec<&&str> = FIXTURE_DECLARATION_MARKERS
+        .iter()
+        .filter(|m| !blob.contains(&m.to_lowercase()))
+        .collect();
+    assert!(
+        dead.is_empty(),
+        "{dead:?} declare a fenced block to be a fixture but match nothing in the \
+         corpus — delete them rather than carrying them as anticipatory. This is \
+         the gate the inline spelling escaped: `\"Save as\"` was dead on arrival \
+         and nothing could see it (PMAT-1515)"
+    );
+    assert!(
+        !FIXTURE_DECLARATION_MARKERS.is_empty(),
+        "the marker table is empty, so the prose conventions resolve nothing and \
+         this property asserts nothing"
     );
 }
 

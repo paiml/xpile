@@ -26901,3 +26901,56 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1515
+  status: done
+  priority: P1
+  category: honesty
+  title: a matcher that is not in a named const is invisible to the liveness gate standing next to
+    it -- one of the three fixture-declaration conventions was dead on arrival, and the test whose
+    comment promised all three were live could only detect the death of one
+  notes: 'SHIPPED 2026-08-01. Second slice against the PMAT-1511 audit findings (23 confirmed of
+    28).
+
+    ★★★ THE COMMENT PROMISED WHAT THE CODE COULD NOT DELIVER. fixture_resolver_is_non_vacuous read
+    "All three declaration conventions must be live, or the resolver has silently degraded to
+    whichever one still works" and could detect the death of exactly ONE. factorial.py is declared
+    by convention (a) "Save the following as" AND convention (c) first-line `# name.py`, so either
+    alone satisfies contains_key("factorial.py"). The audit killed (a) -> 16/16 GREEN; killed (c) ->
+    16/16 GREEN, while resolved declarations silently fell 5 -> 2 and factorial.py''s CONTENT
+    changed source page. Only (b) was detectable because script.sh is declared by (b) alone.
+    → WHEN TWO PATHS CAN SATISFY ONE ASSERTION, THAT ASSERTION TESTS NEITHER. Make the resolver
+    report WHICH path answered and assert over the paths, not the result.
+
+    ★★★ ROOT CAUSE, AND IT GENERALISES PAST THIS FILE: the three convention spellings were string
+    literals INLINE IN THE FUNCTION BODY. This same file holds every OTHER vocabulary to a liveness
+    standard -- every_disclosure_exemption_literal_is_live reds on a stale DISCLOSURE_MARKERS entry,
+    detection_vocabularies_are_live_as_groups floors the checkout vocabularies. Being inline is
+    exactly how a dead literal escaped both: "Save as" matched NOTHING -- 0 occurrences across the
+    corpus, present in exactly ONE tracked file in the repository, the test itself. Hoisted into
+    FIXTURE_DECLARATION_MARKERS it reds immediately and is deleted.
+    → ★ A MATCHER NOT IN A NAMED CONST IS INVISIBLE TO THE LIVENESS GATE STANDING NEXT TO IT.
+    SWEEP FOR THIS: every inline string literal used as a matcher in a file that also maintains a
+    vocabulary table. The table creates the illusion the file is covered.
+
+    RED HALF 4/4 + control, each arm compile-checked before being believed: kill convention (a) ->
+    RED (OLD GATE: GREEN); kill (c) -> RED (OLD GATE: GREEN); kill (b) -> RED; re-add the dead
+    "Save as" -> RED; unperturbed -> 17/17. The two arms that flipped from green to red are the
+    whole deliverable.
+
+    ★★ MY OWN LIVENESS TEST WAS WRONG FIRST AND WOULD HAVE "PROVED" A DEFECT THAT IS NOT THERE.
+    corpus_blob() LOWER-CASES the corpus, and these markers are capitalised because fixture_name
+    matches the RAW page text -- so the first draft reported BOTH live markers dead. A grep over the
+    corpus said otherwise, and the TEST was at fault, not the code. → A RED THAT AGREES WITH YOUR
+    HYPOTHESIS STILL HAS TO BE RED FOR THE STATED REASON; cross-check a "finding" against the corpus
+    by an independent instrument before believing your own gate.
+
+    NEXT FREE ID PMAT-1516. NEXT PICK: remaining audit findings -- the unasserted SCREENS families
+    (WRITES_OUTSIDE_SCRATCH / CHAINED_DIRCHANGE / PLACEHOLDER_OPERAND are declared but not floored
+    by the "rots silently" loop, which asserts 5 of 8), and the module-doc headline overclaim; then
+    grow the proof seam (PMAT-1512); then sweep inline matcher literals repo-wide (the
+    generalisation above).'
+  created: '2026-08-01'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
