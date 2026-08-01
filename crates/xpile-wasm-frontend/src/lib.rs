@@ -3,7 +3,7 @@
 //! `Target::Wasm` emit half PMAT-951).
 //!
 //! Lifts the **WAT scalar/control subset** — specifically the image of
-//! [`xpile-wasm-codegen`] — back to canonical meta-HIR via a
+//! `xpile-wasm-codegen` — back to canonical meta-HIR via a
 //! stack→expression-tree reconstruction with **structured control-flow
 //! recovery** (PMAT-959, the control half of PMAT-952). This is a **lossy
 //! decompilation**, the honest other side of the asymmetry recorded in
@@ -120,7 +120,7 @@
 //!   at exit 0: `1.0 f64.div 0.0` ran to **inf** at the source and
 //!   **trapped** after the round trip; `0.0 f64.div 0.0` ran to **nan** and
 //!   trapped. A non-zero divisor agrees exactly, which is why no fixture
-//!   saw it. See [`refuse_ieee_div`].
+//!   saw it. See `refuse_ieee_div`.
 //! - **Names** survive only because the emit kept them (`$x`); a stripped
 //!   WAT would lose them.
 //! - **Non-canonical control flow** — any block/loop/branch nesting OUTSIDE
@@ -162,7 +162,7 @@
 //!   * `abs()` on an int, `min`/`max` on ints, and `math.sqrt` — the emit
 //!     routes these through `$__wasm_abs_i64` / `$__wasm_min_i64` /
 //!     `$__wasm_max_i64` / `$__wasm_sqrt_f64`, prelude helpers the lift has
-//!     no inverse arm for. See [`refuse_uninvertible_helper`].
+//!     no inverse arm for. See `refuse_uninvertible_helper`.
 //!
 //! All refuse honestly (hard [`FrontendError::Lower`], exit 1) — but the last
 //! four did **not** until PMAT-1423. The lift reconstructed them as an
@@ -174,7 +174,7 @@
 //! Closing the hole needs meta-HIR representatives the language does not
 //! have: a unary `not`, a trap statement, a unary float negation, `f32`
 //! literals, and float builtins carrying the emit's Python semantics
-//! (0.1.619). See [`IN_IMAGE_UNINVERTED`], whose entries are checked both
+//! (0.1.619). See `IN_IMAGE_UNINVERTED`, whose entries are checked both
 //! ways — every one reachable from an emitted construct, and every refusal
 //! the corpus produces named by one.
 //!
@@ -187,7 +187,7 @@
 //! false of the EXTERNAL name — and the internal symbol is the one thing a
 //! WASM host never sees. The emit's export image is exactly one flat
 //! `(export "n" (func $n))` per user function with no `$__wasm_*` helper
-//! exported ([`check_export_image`], measured from the emitter by the
+//! exported (`check_export_image`, measured from the emitter by the
 //! witness, not restated here), so every other shape re-emitted a
 //! `wat2wasm`-clean module under a DIFFERENT ABI at exit 0:
 //!
@@ -201,7 +201,7 @@
 //!   * the folded header spelling `(func $g (export "n") …)` did refuse, but
 //!     as a "non-canonical control shape `export` … any other block/loop/branch
 //!     nesting is refused" — the PMAT-1422/1423 misdescription one level up.
-//!     See [`refuse_inline_export`].
+//!     See `refuse_inline_export`.
 //!
 //! Unlike PMAT-1423's dangling call, no backend caught any of this; the
 //! refusal has to be here. Carrying an external name distinct from the
@@ -213,7 +213,7 @@
 //! it. That is a WIDENING, not a rewrite — every name the source published
 //! keeps pointing at the same function, so no working host call changes
 //! meaning. Refusing it was this fix's first cut and it deleted a capability
-//! `claims_drift.rs` witnesses (see [`check_export_image`]).
+//! `claims_drift.rs` witnesses (see `check_export_image`).
 
 use std::collections::HashMap;
 use std::path::Path;

@@ -142,7 +142,7 @@ const SUMMARY_WGSL_LINE_PREFIX: &str = ";   ";
 /// [`SpirvDiffExecEngine::execute_and_compare`]).
 ///
 /// [`crate::spirv_text_summary`] inlines the exact WGSL it compiled to
-/// SPIR-V after a [`SUMMARY_WGSL_MARKER`] line, one WGSL line per
+/// SPIR-V after a `SUMMARY_WGSL_MARKER` line, one WGSL line per
 /// `;   `-prefixed comment. This walks that block back out so the witness
 /// can compile + run the **attested** WGSL — i.e. the artifact that
 /// EXECUTES is byte-derived from the artifact that is ATTESTED, closing the
@@ -280,7 +280,7 @@ fn dispatch_entry(module: &Module) -> Option<(&str, &'static str)> {
 ///
 /// Calls [`emit_wgsl_module`] on the given module — the REAL PMAT-970
 /// meta-HIR → WGSL lowering — then, when the module has a
-/// [`dispatch_entry`], wraps the emitted scalar function (the load-bearing,
+/// `dispatch_entry`, wraps the emitted scalar function (the load-bearing,
 /// real-compiler-emitted arithmetic) in a thin `@compute @workgroup_size(64)`
 /// dispatch harness exposing the binding-0-in / binding-1-out storage-buffer
 /// contract the GPU witness drives. The returned WGSL is then compiled to

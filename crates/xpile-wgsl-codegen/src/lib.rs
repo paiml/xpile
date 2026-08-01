@@ -5,9 +5,9 @@
 //! `contracts/compile-rust-to-wgsl-*.yaml` (to author).
 //!
 //! **Architecture (PMAT-265 / Section 29):** [`WgslBackend`] wraps a
-//! [`MultiEmitterBackend`] (same pattern as [`xpile_ptx_codegen::PtxBackend`])
+//! [`MultiEmitterBackend`] (same pattern as `xpile_ptx_codegen::PtxBackend`)
 //! so emission routes through the general/specialist quorum framework.
-//! The general slot holds [`RealWgslEmitter`] — the production emitter that
+//! The general slot holds `RealWgslEmitter` — the production emitter that
 //! drives xpile's REAL meta-HIR → WGSL lowering ([`emit_wgsl_module`],
 //! PMAT-970) so `xpile transpile --target wgsl` produces actual WGSL, with
 //! an honest [`BackendError::Lower`] refusal for any construct outside the
@@ -38,7 +38,7 @@ mod wgsl_emit;
 pub use wgsl_emit::{emit_wgsl_module, naga_validate_wgsl, NagaValidationError};
 
 /// WGSL backend — `Backend` impl wrapping a [`MultiEmitterBackend`] whose
-/// general slot is the production [`RealWgslEmitter`] (drives the real
+/// general slot is the production `RealWgslEmitter` (drives the real
 /// [`emit_wgsl_module`] lowering); routes through the same quorum framework
 /// a future specialist would slot into.
 pub struct WgslBackend {
@@ -60,10 +60,10 @@ impl WgslBackend {
 
     /// PMAT-950 — the executed cross-vendor GPU-witness constructor (§29).
     ///
-    /// Sibling of [`xpile_ptx_codegen::PtxBackend::new_cuda_diffexec_witness`].
+    /// Sibling of `xpile_ptx_codegen::PtxBackend::new_cuda_diffexec_witness`.
     /// Builds a `WgslBackend` whose `MultiEmitterBackend` carries two REAL
-    /// WGSL compute-shader emitters — [`WgslRealEmitGeneralEmitter`]
-    /// (general) and [`WgslSaxpySpecialistEmitter`] (specialist) — under
+    /// WGSL compute-shader emitters — `WgslRealEmitGeneralEmitter`
+    /// (general) and `WgslSaxpySpecialistEmitter` (specialist) — under
     /// `QuorumPolicy::DiffExec`, with a [`WgpuWgslDiffExecEngine`]
     /// installed. Both emitters compute the same semantics
     /// (`out[i] = 2*in[i] + 1`); the GENERAL side is produced by lowering a

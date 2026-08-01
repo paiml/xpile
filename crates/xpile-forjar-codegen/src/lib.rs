@@ -14,7 +14,7 @@
 //!
 //! The input must be a **SHELL-origin** [`Module`] (`SourceLang::Shell`) —
 //! the `bashrs-frontend` lowers a `.sh` file to a synthetic `main`
-//! [`Function`](xpile_meta_hir::Function) whose body is a sequence of
+//! [`Function`] whose body is a sequence of
 //! [`Stmt::Cmd`] / [`Stmt::Pipeline`] / [`Stmt::ShellAssign`]. From that
 //! command sequence the backend emits:
 //!

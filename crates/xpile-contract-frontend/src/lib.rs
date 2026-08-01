@@ -2,7 +2,7 @@
 //!
 //! Parses notation into contract equation YAML. `latex` (math spans +
 //! theorem-class environments) is the one registered
-//! [`ContractFrontend`]. Sibling of [`xpile_frontend::Frontend`]; the
+//! [`ContractFrontend`]. Sibling of `xpile_frontend::Frontend`; the
 //! proof lane is disjoint from the code lane and does NOT produce
 //! meta-HIR.
 //!

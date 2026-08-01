@@ -8060,6 +8060,22 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1513 SWEEP -- RENDERED ARTEFACTS, the axis XPILE-RUSTDOC-001 opened. A claim can be
+  CORRECT IN THE SOURCE AND FALSE IN THE ARTEFACT the source produces: a public doc comment writing
+  [`private_item`] is valid Rust, compiles, and renders on docs.rs as literal brackets telling the
+  reader to follow a link that does not exist. 58 such defects sat on 13 of 30 published pages
+  because nothing ever RENDERED them. ⛔ XPILE-RUSTDOC-001 is now DONE (gate:
+  crates/xpile/tests/rustdoc_published_page_witness.rs, in the merge-blocking workspace-test job,
+  red half 3/3) -- this entry is the GENERALISATION, not a repeat. Other artefacts nothing renders
+  or re-reads: (a) the GitHub RELEASE PAGE body (PMAT-1480 ported one disclosure INTO the CHANGELOG
+  but the reverse direction is unchecked, and `retro-edit-published-release-bodies` is an OPEN owner
+  decision -- do NOT retro-edit, gate FORWARD); (b) the PACKAGED crate: `cargo package --list`
+  contents vs what the README/front page promises is shipped; (c) the rendered BOOK (mdbook output,
+  not book/src/*.md -- a broken include or a mis-nested list is invisible in source);
+  (d) crates.io crate DESCRIPTION/metadata rendering. (e) MANDATORY SHAPE, learned here: assert on
+  the OUTPUT of the renderer, never on the presence of a CI flag that invokes it -- PMAT-1500''s
+  tripwire matched a spelling nobody wrote and passed for a year. (f) MANDATORY ANTI-VACUITY: assert
+  the renderer PRODUCED something, or "no warnings" and "no output" are the same observation.'
 - 'PMAT-1513 FIX -- THE 16 CONFIRMED FINDINGS IN book_published_command_witness.rs (PMAT-1511).
   An independent 5-agent audit with per-finding refutation returned 16 CONFIRMED / 5 refuted against
   that gate on 2026-08-01. THE BASE RATE IS NOW 6 SELF-MERGED GATE SLICES OUT OF 6 CARRYING AN

@@ -26769,3 +26769,62 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1513
+  status: done
+  priority: P1
+  category: honesty
+  title: nothing in this repository ever ran `cargo doc`, so 58 rustdoc defects accumulated on the
+    pages we publish -- the dominant kind renders as literal brackets, telling a docs.rs reader to
+    "See [refuse_ieee_div]" with nothing to follow
+  notes: 'SHIPPED 2026-08-01. Ran XPILE-RUSTDOC-001 from next_lane. NO CI JOB AND NO TEST EVER
+    INVOKED `cargo doc`, so warnings on the PUBLISHED artifact were never observed by anyone.
+
+    ★★ THE PUBLISHED CLAIM WAS EXACTLY RIGHT, AND THAT IS WORTH RECORDING. I re-derived it
+    independently before acting: 58 defects across 13 of the 30 crates with a docs.rs page, kind
+    split 38 private-item links / 18 unresolved / 2 redundant -- digit for digit against the
+    queue.yaml figure, with the 12 remaining warnings all in crates/xpile/src/main.rs, a BINARY with
+    no docs.rs page. → After a fortnight of finding inflated numbers, a sweep that only reports the
+    inflated ones is not a measurement. Say so when a claim checks out.
+
+    ★★★ THE DEFECT IS INVISIBLE FROM THE SOURCE AND ONLY VISIBLE ON THE RENDERED PAGE. A public doc
+    comment writing [`refuse_ieee_div`] does NOT become a link when the target is private -- rustdoc
+    warns and docs.rs renders the brackets LITERALLY. xpile-wasm-frontend''s page told readers "See
+    [refuse_ieee_div]" with nothing to follow, repeatedly. → NEW AXIS FOR THE HUNT: a claim can be
+    correct in the source and false in the ARTIFACT the source produces. Sweep RENDERED outputs, not
+    just inputs -- docs.rs pages, the GitHub release page (PMAT-1480), the packaged crate.
+
+    THE FIX WAS DERIVED, NOT HAND-SEARCHED: a script parsed rustdoc''s own file:line diagnostics and
+    rewrote 61 sites ([`X`] -> `X`, and [`X`](X) -> [`X`] for the redundant kind), so the EDIT SET
+    IS DERIVED FROM THE DEFECT SET and cannot drift from it. Re-measured after: 0 warnings in
+    published crates. The 9 `unclosed HTML tag` warnings in main.rs came from a CLI synopsis writing
+    `<path>` outside a code fence (rustdoc parses metavariables as HTML); fenced as ```text. That
+    file has no page, but fixing it is what lets `-D warnings` apply to the WHOLE workspace rather
+    than a subset nobody can remember -- a split standard is one nobody applies.
+
+    ★★ THE GATE RUNS THE BUILD, IT DOES NOT READ THE WORKFLOW.
+    crates/xpile/tests/rustdoc_published_page_witness.rs (XPILE-RUSTDOC-001) invokes
+    `cargo doc --workspace --no-deps` and asserts on the OUTPUT. Pinning "the CI job contains a
+    flag" would check the MECHANISM, and PMAT-1500 is the precedent: a clean-room tripwire passed
+    for a year while matching a spelling nobody wrote. Asserting on the artifact is true-or-false
+    about the thing itself regardless of CI config. NOTE THE PLACEMENT ARGUMENT: next_lane proposed
+    a one-line step in the ADVISORY `docs` job; this witness lands in `workspace-test`, which BLOCKS
+    MERGES. The audit had already flagged that next_lane sentence ("the only arm that makes the
+    class unrepeatable") as an overclaim, and it was.
+
+    ⚠️ IT BUILDS INTO ITS OWN TARGET DIR, and that detail is what makes it runnable at all: `cargo
+    doc` on the same workspace from inside `cargo test` contends on the target-dir lock and
+    DEADLOCKS. Measured cost, cold: 14.3s wall, 63s CPU, 584 MB.
+
+    RED HALF 3/3 + control: planted private-item link -> RED; planted `<path>` outside a fence ->
+    RED; broke the `cargo doc` invocation -> the ANTI-VACUITY property reds, because it asserts a
+    rendered index.html EXISTS. Without that arm, "no warnings" and "no documentation" are the same
+    observation and the gate passes forever -- the exact vacuity shape of XPILE-SKIPGUARD-001.
+
+    NEXT FREE ID PMAT-1514. NEXT PICK: (a) the 16 CONFIRMED findings in book_published_command_
+    witness.rs (next_lane, PMAT-1511 audit); (b) grow the proof seam (PMAT-1512); (c) SWEEP OTHER
+    RENDERED ARTEFACTS for the source-clean/artifact-broken axis this slice opened.'
+  created: '2026-08-01'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

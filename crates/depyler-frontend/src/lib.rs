@@ -5,7 +5,7 @@
 //! `FrontendError::Lower` with a message naming the unsupported
 //! construct.
 //!
-//! **The canonical subset description lives in [`/CHANGELOG.md`].** Keep
+//! **The canonical subset description lives in `/CHANGELOG.md`.** Keep
 //! it in sync there; this docstring intentionally does not duplicate the
 //! list to avoid the staleness it accumulated through PRs #7 … #21
 //! (each subset extension updated lowering but not this comment).
@@ -3187,7 +3187,7 @@ impl Frontend for PythonFrontend {
 
     /// PMAT-1024: target-aware lowering. `AliasSemantics::Reference`
     /// (WASM) skips the value-semantics alias dispositions for
-    /// pointer-stable types (see [`reference_native`]) — Python object
+    /// pointer-stable types (see `reference_native`) — Python object
     /// sharing is native to linear memory, so the shapes the Rust lane
     /// must clone/move/refuse execute exactly there.
     fn parse_and_lower_for(

@@ -13,6 +13,59 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### Nothing in this repository ever ran `cargo doc`, so 58 rustdoc defects accumulated on the pages we publish — the visible one told readers to "See [refuse_ieee_div]" with nothing to follow (PMAT-1513)
+
+No CI job and no test invoked `cargo doc`, so warnings on the **published**
+artifact were never observed by anyone. Re-derived independently at `04960561`
+before acting on the number:
+
+| kind | count |
+|---|---|
+| public documentation links to a private item | 38 |
+| unresolved link | 18 |
+| redundant explicit link target | 2 |
+| **published-crate total** | **58, across 13 of 30 crates with a docs.rs page** |
+
+★ **The published claim was exactly right** — 58/13-of-30 and the 38/18/2 split
+reproduced digit for digit, and the 12 further warnings are in
+`crates/xpile/src/main.rs`, which is a binary and has no docs.rs page. Recording
+that a number checked out matters as much as catching one that does not; this
+sweep has spent a fortnight finding inflated claims and this one was honest.
+
+**The dominant kind is the one a reader sees.** `` [`refuse_ieee_div`] `` in a
+public doc comment does not become a link when the target is private — docs.rs
+renders the brackets literally. `xpile-wasm-frontend`'s page said *"See
+[refuse_ieee_div]"* with nothing to follow, repeatedly. You cannot see that in
+the source; only in the rendered page, and nobody was rendering the page.
+
+Repaired by dropping the brackets and keeping the code formatting: the sentence
+still names the item and no longer promises a link that cannot exist. Applied by
+a script driven by rustdoc's own diagnostics — 61 sites rewritten from the
+compiler's file:line output rather than by hand-searching, so the edit set is
+derived from the defect set. Separately, nine `unclosed HTML tag` warnings in
+`main.rs` came from a CLI synopsis writing `<path>` outside a code fence; that
+file has no page, but fixing it is what allows `-D warnings` across the whole
+workspace instead of a subset nobody can remember.
+
+**The gate runs the build, it does not read the workflow.**
+`rustdoc_published_page_witness.rs` (`XPILE-RUSTDOC-001`) invokes `cargo doc
+--workspace --no-deps` and asserts on the output. Pinning "the CI job contains a
+flag" would check the MECHANISM — PMAT-1500's clean-room tripwire passed for a
+year while matching a spelling nobody wrote. Asserting on the artifact is true
+or false regardless of how CI is configured, and it lands in `workspace-test`,
+which **blocks merges**, rather than in the advisory `docs` job the queue spec
+proposed.
+
+⚠️ It builds into its **own** target directory. `cargo doc` on the same
+workspace from inside `cargo test` contends on the target-dir lock and
+deadlocks — that detail is what makes the gate runnable at all. Measured cost,
+cold: **14.3 s wall, 584 MB**.
+
+Red half 3/3 plus control: a planted private-item link reds; a planted
+`<path>` outside a fence reds; and breaking the doc invocation itself reds the
+anti-vacuity property, which asserts a rendered `index.html` exists — otherwise
+"no warnings" would mean "no documentation" and pass forever.
+
 ### 489 Lean theorems and 108 Kani proofs could not be turned red by a wrong lowering, because not one of them was ever built against xpile — now one is, and breaking the emitter fails it in 27 ms (PMAT-1512)
 
 The proof lane is this project's headline claim, and it was **unfalsifiable**.

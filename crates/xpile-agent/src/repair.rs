@@ -19,7 +19,7 @@
 //! ## The repair domain (this slice)
 //!
 //! The real failure class is an emitted C-FFI shim that is **missing its ABI
-//! casts**. The correct [`xpile_ffi_manifest`]-emitted wrapper marshals across
+//! casts**. The correct `xpile_ffi_manifest`-emitted wrapper marshals across
 //! the C ABI with `x as ::std::os::raw::c_int` on the argument and `__r as i64`
 //! on the return; a shim that drops those casts fails to compile with `E0308`
 //! mismatched-types. Two narrow rules — [`FfiArgCastRepair`] and
@@ -159,7 +159,7 @@ impl RepairLoop {
     /// The default repair loop for a single-scalar C-FFI `int(int)` boundary:
     /// the two ABI-cast rules over `symbol`, using `c_int` as the C ABI type and
     /// `i64` as the native wrapper type (the decy / `hybrid_sum` shape). This
-    /// mirrors [`xpile_ffi_manifest`]'s `c_abi_type`/`wrapper_native` mapping.
+    /// mirrors `xpile_ffi_manifest`'s `c_abi_type`/`wrapper_native` mapping.
     pub fn ffi_int_boundary(budget: Budget, symbol: impl Into<String>) -> Self {
         let symbol = symbol.into();
         Self::new(
@@ -305,7 +305,7 @@ impl RepairRule for FfiReturnCastRepair {
 }
 
 /// PMAT-933: repair the whole-number-float repr divergence. Fires ONLY on a
-/// [`Symptom::is_whole_float_repr`] divergence; rewrites the artifact's plain
+/// `Symptom::is_whole_float_repr` divergence; rewrites the artifact's plain
 /// `println!("{}", <print_expr>)` into the CPython-faithful repr block (`.0` for
 /// whole values), the same transform `Expr::ToStr { of_float: true }` performs.
 /// Idempotent — once the repr block is present the plain print is gone — so the
