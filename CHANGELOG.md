@@ -13,6 +13,49 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### A matcher that is not in a named const is invisible to the liveness gate standing next to it — one of the three fixture conventions was dead on arrival and nothing could see it (PMAT-1515)
+
+Second slice against the PMAT-1511 audit findings.
+`fixture_resolver_is_non_vacuous` carried the comment *"All three declaration
+conventions must be live, or the resolver has silently degraded to whichever one
+still works."* **It could only ever detect the death of one of them.**
+
+`factorial.py` is declared by convention (a) *"Save the following as"* **and**
+convention (c) *first-line `# name.py` comment*, so either alone satisfies the
+test's `contains_key("factorial.py")`. The audit killed (a): 16/16 green. Killed
+(c): 16/16 green — while resolved declarations silently fell from 5 to 2 and
+`factorial.py`'s content changed which page it came from. Only (b) was
+detectable, because `script.sh` is declared by (b) alone.
+
+Detecting the other two needs the resolver to say **which** convention answered,
+so `fixture_name` now returns a `FixtureConvention`, and the test asserts each of
+the three resolves something in the live corpus.
+
+**The root cause generalises past this file.** The three convention spellings
+were string literals **inline in the function body**. This same file holds every
+other vocabulary to a liveness standard —
+`every_disclosure_exemption_literal_is_live` reds on a stale `DISCLOSURE_MARKERS`
+entry, and `detection_vocabularies_are_live_as_groups` floors the checkout
+vocabularies. Being inline is exactly how a dead literal escaped both:
+`"Save as"` matched **nothing** — zero occurrences across the corpus, and present
+in exactly one tracked file in the whole repository, the test itself. Hoisted
+into `FIXTURE_DECLARATION_MARKERS`, it reds immediately and is deleted.
+
+★ **A matcher not in a named const is invisible to the liveness gate standing
+next to it.** Worth sweeping for: every inline string literal used as a matcher
+in a file that also maintains a vocabulary table.
+
+Red half 4/4 + control, each arm compile-checked: killing convention (a) → red
+(**old gate: green**); killing (c) → red (**old gate: green**); killing (b) →
+red; re-adding the dead `"Save as"` → red; unperturbed → 17/17.
+
+★ **My own liveness test was wrong first, and it would have "proved" a defect
+that is not there.** `corpus_blob()` lower-cases the corpus, and these markers
+are capitalised because `fixture_name` matches the raw page text — so the first
+draft reported *both* live markers dead. `grep` over the corpus said otherwise
+and the test was the thing at fault, not the code. A red that agrees with your
+hypothesis still has to be red for the stated reason.
+
 ### The gate that executes published commands could not see four packaged READMEs, and mis-executed the multi-line blocks it did see — three false accusations against correct documents (PMAT-1514)
 
 Ran the PMAT-1511 audit findings. That audit returned **23 confirmed of 28
