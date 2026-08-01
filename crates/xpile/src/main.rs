@@ -1,12 +1,20 @@
 //! xpile binary entry point.
 //!
 //! v0.1.0 CLI surface:
-//!   xpile transpile    <input> [--target <t>] [--out <path>]
-//!   xpile audit        <path>  [--target <t>]
-//!   xpile attestations [--roadmap <path>] [--contracts-dir <path>]  (XPILE-QUORUM-005)
-//!   xpile quorum       [--contracts-dir <path>] [--fixtures-dir <path>]  (PMAT-033)
-//!   xpile diamond      [--contracts-dir <path>]  (PMAT-249 — Diamond-tier coverage)
-//!   xpile info         (default if no subcommand)
+//!
+//! ```text
+//! xpile transpile    <input> [--target <t>] [--out <path>]
+//! xpile audit        <path>  [--target <t>]
+//! xpile attestations [--roadmap <path>] [--contracts-dir <path>]  (XPILE-QUORUM-005)
+//! xpile quorum       [--contracts-dir <path>] [--fixtures-dir <path>]  (PMAT-033)
+//! xpile diamond      [--contracts-dir <path>]  (PMAT-249 — Diamond-tier coverage)
+//! xpile info         (default if no subcommand)
+//! ```
+//!
+//! The fence is `text`, not bare indentation (PMAT-1513): a synopsis
+//! metavariable like `<path>` is parsed as an HTML tag by rustdoc, which
+//! emitted nine `unclosed HTML tag` warnings here and swallowed the
+//! placeholders in the rendered page.
 //!
 //! Dispatch goes through [`xpile_core::default_session`]: file extension
 //! selects the frontend; `--target` selects the backend.
@@ -1554,7 +1562,7 @@ fn print_info(session: &TranspileSession) -> Result<()> {
 /// `(spellings that lower, spellings that are routed and then refused)`.
 ///
 /// PMAT-1434. The two halves are the registry's own declarations —
-/// [`Frontend::extensions`] plus [`Frontend::refused_claims`] — rendered in the
+/// `Frontend::extensions` plus `Frontend::refused_claims` — rendered in the
 /// one vocabulary `refused_claims()` and `book/src/reference/frontends.md` both
 /// use: a `*.<ext>` glob for an extension, an exact filename for the
 /// extensionless spellings `matches_path` claims. Registration order is
@@ -1567,7 +1575,7 @@ fn print_info(session: &TranspileSession) -> Result<()> {
 /// behaviour-checked fact and not a self-report.
 ///
 /// PMAT-1443: the per-frontend derivation moved to
-/// [`Frontend::spellings_by_disposition`] so that the OTHER surfaces
+/// `Frontend::spellings_by_disposition` so that the OTHER surfaces
 /// rendering the registry — `xpile audit`'s no-source bail and
 /// `examples/06_inspect_session.rs`, both of which were still publishing the
 /// flat `extensions()` union — share one implementation instead of each

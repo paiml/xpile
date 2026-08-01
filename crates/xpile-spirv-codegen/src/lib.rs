@@ -10,9 +10,9 @@
 //! **Architecture (mirrors `xpile_wgsl_codegen::WgslBackend`, PMAT-950).**
 //! [`SpirvBackend`] wraps a [`MultiEmitterBackend`] so emission routes
 //! through the §29 general/specialist quorum framework. The single-emitter
-//! constructor holds one real [`SpirvGeneralEmitter`] in the general
+//! constructor holds one real `SpirvGeneralEmitter` in the general
 //! slot; the witness constructor holds two REAL emitters
-//! ([`SpirvGeneralEmitter`] + [`SpirvSaxpySpecialistEmitter`]) that
+//! (`SpirvGeneralEmitter` + `SpirvSaxpySpecialistEmitter`) that
 //! reuse the WGSL `2.0*x + 1.0` / `fma` shaders, compile each to SPIR-V,
 //! and (with a Vulkan adapter present) run BOTH on the GPU under the
 //! [`SpirvDiffExecEngine`].
@@ -269,8 +269,8 @@ impl SpirvBackend {
     ///
     /// Sibling of [`xpile_wgsl_codegen::WgslBackend::new_wgpu_diffexec_witness`].
     /// Builds a `SpirvBackend` whose `MultiEmitterBackend` carries two REAL
-    /// SPIR-V emitters — [`SpirvGeneralEmitter`] (reused WGSL
-    /// `2.0*x + 1.0` → SPIR-V) and [`SpirvSaxpySpecialistEmitter`] (reused
+    /// SPIR-V emitters — `SpirvGeneralEmitter` (reused WGSL
+    /// `2.0*x + 1.0` → SPIR-V) and `SpirvSaxpySpecialistEmitter` (reused
     /// WGSL `fma` → SPIR-V) — under `QuorumPolicy::DiffExec`, with a
     /// [`SpirvDiffExecEngine`] installed when a Vulkan adapter is present.
     /// Both compute `out[i] = 2*in[i] + 1` via *categorically different*

@@ -4,13 +4,13 @@
 //! Implements the [`Backend`] trait so `Target::Shell` has a
 //! registered emitter, and renders **real POSIX shell** for the
 //! supported meta-HIR `Stmt` set. [`BashrsBackend::lower`] walks each
-//! function body and emits, via the shared [`render_stmt_lines`]
+//! function body and emits, via the shared `render_stmt_lines`
 //! walker: `Stmt::Cmd` → `program arg…`; `Stmt::Pipeline` →
 //! `stage1 | stage2 | …`; `Stmt::ShellAssign` → `NAME=value`; and
 //! `Stmt::ShellLoop` → a multi-line `header; do … done` block whose
 //! body is rendered recursively through the same walker.
 //!
-//! Args render via [`render_arg`] (`Expr::LitStr` / `QuotedString`
+//! Args render via `render_arg` (`Expr::LitStr` / `QuotedString`
 //! honouring its `QuotingStrategy` / `ShellVar` / `ShellSpecial` /
 //! `CommandSubstitution`). Every emit carries a `#!/bin/sh` shebang
 //! and a `# xpile-contract: C-BASHRS-POSIX-IDEMPOTENCE` citation line

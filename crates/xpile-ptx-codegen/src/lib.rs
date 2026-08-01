@@ -4,7 +4,7 @@
 //! text targeting `sm_80`+. Layer 5 compile contract:
 //! `contracts/compile-rust-to-ptx-mma-v1.yaml`.
 //!
-//! **Real emitter (PMAT-961):** [`XpilePtxEmitter`] is a genuine
+//! **Real emitter (PMAT-961):** `XpilePtxEmitter` is a genuine
 //! meta-HIR → PTX text lowering ([`emit::emit_kernel`]) — the NVIDIA sibling of
 //! `xpile-wasm-codegen`'s hand-emitted WAT. It emits a complete
 //! `ptxas`-assemblable `.visible .entry xpile_kernel` module (`.version` /
@@ -15,7 +15,7 @@
 //!
 //! **Architecture (PMAT-264 / Section 29):** [`PtxBackend`] wraps a
 //! [`MultiEmitterBackend`] so emission routes through the same
-//! general/specialist quorum framework. The real [`XpilePtxEmitter`] is the
+//! general/specialist quorum framework. The real `XpilePtxEmitter` is the
 //! `general` slot; `aprender-gpu` would slot into the `specialist` position;
 //! no changes to [`PtxBackend`]'s public API.
 //!
@@ -74,8 +74,8 @@ impl PtxBackend {
     /// multi-emitter routing.
     ///
     /// Builds a `PtxBackend` whose `MultiEmitterBackend` carries the real
-    /// [`XpilePtxEmitter`] in the `general` slot AND a
-    /// [`MatmulSpecialistEmitter`] in the `specialist` slot under
+    /// `XpilePtxEmitter` in the `general` slot AND a
+    /// `MatmulSpecialistEmitter` in the `specialist` slot under
     /// `QuorumPolicy::PreferSpecialist`. The specialist matches only
     /// modules whose name starts with `matmul_` — the shape filter
     /// real specialists like `aprender-gpu` would use to claim
@@ -104,8 +104,8 @@ impl PtxBackend {
     ///
     /// Builds a `PtxBackend` whose `MultiEmitterBackend` carries TWO
     /// categorically-independent emitters for the same `out[i] = 2*in[i] + 1`
-    /// kernel — [`XpileSaxpyPtxEmitter`] (general: xpile's OWN hand-emitted
-    /// PTX) and [`CudaSaxpyGeneralEmitter`] (specialist: nvcc-compilable
+    /// kernel — `XpileSaxpyPtxEmitter` (general: xpile's OWN hand-emitted
+    /// PTX) and `CudaSaxpyGeneralEmitter` (specialist: nvcc-compilable
     /// CUDA-C) — under `QuorumPolicy::DiffExec`, with a [`PtxDiffExecEngine`]
     /// installed. The engine runs the xpile PTX via the CUDA Driver API and the
     /// nvcc CUDA-C via the Runtime API, both on the GPU, and asserts the
@@ -168,10 +168,10 @@ impl PtxBackend {
     /// The same categorical-independence design as
     /// [`PtxBackend::new_ptx_diffexec_witness`] but over the relu kernel
     /// `out[i] = (in[i] > 0) ? in[i] : 0`:
-    ///   - general: [`XpileReluPtxEmitter`] — xpile's OWN hand-emitted PTX, with
+    ///   - general: `XpileReluPtxEmitter` — xpile's OWN hand-emitted PTX, with
     ///     a real `setp.gt.f64` + `@!%p bra` branch + a shared result register
     ///     (the phi-via-register idiom).
-    ///   - specialist: [`CudaReluGeneralEmitter`] — nvcc-compiled CUDA-C using a
+    ///   - specialist: `CudaReluGeneralEmitter` — nvcc-compiled CUDA-C using a
     ///     C `?:` ternary.
     ///
     /// Two codegen toolchains with NO shared frontend that must agree on the
@@ -195,8 +195,8 @@ impl PtxBackend {
     /// PMAT-949 — the executed GPU-witness constructor (§29).
     ///
     /// Builds a `PtxBackend` whose `MultiEmitterBackend` carries two
-    /// REAL CUDA-C kernel emitters — [`CudaSaxpyGeneralEmitter`]
-    /// (general) and [`CudaSaxpySpecialistEmitter`] (specialist) — under
+    /// REAL CUDA-C kernel emitters — `CudaSaxpyGeneralEmitter`
+    /// (general) and `CudaSaxpySpecialistEmitter` (specialist) — under
     /// `QuorumPolicy::DiffExec`, with a [`NvccCudaDiffExecEngine`]
     /// installed. Both emitters compute the same semantics
     /// (`out[i] = 2*in[i] + 1`) via *categorically different* CUDA-C

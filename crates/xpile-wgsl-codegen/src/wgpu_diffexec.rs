@@ -53,7 +53,7 @@ use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Module, Param, Source
 use crate::wgsl_emit::emit_wgsl_module;
 
 /// The deterministic fixture input vector both shaders run over. Kept
-/// **bit-identical** to [`xpile_ptx_codegen::FIXTURE_INPUT`] so the WGSL
+/// **bit-identical** to `xpile_ptx_codegen::FIXTURE_INPUT` so the WGSL
 /// and CUDA executed witnesses attest the same values; exercises
 /// negatives, zero, a fraction, and a larger magnitude.
 pub const FIXTURE_INPUT: &[f32] = &[0.0, 1.0, 2.0, -3.0, 4.5, 10.0, -0.5, 100.0];
@@ -150,7 +150,7 @@ pub fn vulkan_loader_guard() -> std::sync::MutexGuard<'static, ()> {
 
 /// `true` when a real wgpu adapter can be acquired — the gate that
 /// decides whether [`WgpuWgslDiffExecEngine`] should be installed.
-/// Mirrors [`xpile_ptx_codegen::cuda_toolchain_available`] /
+/// Mirrors `xpile_ptx_codegen::cuda_toolchain_available` /
 /// the cc-availability graceful-skip pattern: absence is a clean skip
 /// (free CI has no GPU), presence runs the witness (local GPU box).
 /// Guarded by [`gpu_probe_env_usable`] (PMAT-1088): a fully headless

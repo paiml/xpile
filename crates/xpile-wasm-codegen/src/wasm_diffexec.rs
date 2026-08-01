@@ -94,8 +94,8 @@ use xpile_meta_hir::{Block, Expr, FloatOp, Function, Item, Module, SourceLang, T
 use crate::emit_module;
 
 /// The deterministic fixture input vector both WAT modules run over. Kept
-/// **bit-identical** to [`xpile_ptx_codegen::FIXTURE_INPUT`] /
-/// [`xpile_wgsl_codegen::FIXTURE_INPUT`] so the WASM, CUDA, and WGSL
+/// **bit-identical** to `xpile_ptx_codegen::FIXTURE_INPUT` /
+/// `xpile_wgsl_codegen::FIXTURE_INPUT` so the WASM, CUDA, and WGSL
 /// executed witnesses attest the same values on different stacks;
 /// exercises negatives, zero, a fraction, and a larger magnitude.
 pub const FIXTURE_INPUT: &[f64] = &[0.0, 1.0, 2.0, -3.0, 4.5, 10.0, -0.5, 100.0];
@@ -161,7 +161,7 @@ fn general_module() -> Module {
 ///
 /// Drives xpile's actual meta-HIR → WAT lowering (the SAME emitter the
 /// `WasmBackend` single-emitter `lower` path and the PMAT-951/966/968 emit
-/// tests use) over [`general_module`]. The returned WAT is what the witness
+/// tests use) over `general_module`. The returned WAT is what the witness
 /// assembles + runs for the general side — so a regression in the real
 /// emitter now fails the executed witness, which the old hand-written WAT
 /// could never catch.
@@ -172,8 +172,8 @@ pub fn general_module_wat() -> String {
 /// `true` when both `wat2wasm` and `wasm-interp` (WABT) are invocable —
 /// the gate that decides whether [`WasmDiffExecEngine`] and the ~424 WASM
 /// execution witnesses should run. Mirrors
-/// [`xpile_ptx_codegen::cuda_toolchain_available`] /
-/// [`xpile_wgsl_codegen::wgpu_adapter_available`]: on a normal host absence
+/// `xpile_ptx_codegen::cuda_toolchain_available` /
+/// `xpile_wgsl_codegen::wgpu_adapter_available`: on a normal host absence
 /// is a clean skip, presence runs the witnesses.
 ///
 /// XPILE-WITNESS-001 anti-silent-skip tripwire: when the caller *declares*

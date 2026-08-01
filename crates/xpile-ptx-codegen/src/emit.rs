@@ -891,7 +891,7 @@ fn walk_stmt_exprs(
 /// **derived from [`xpile_backend::HwProfile::Ptx`], never hard-coded**.
 ///
 /// PMAT-980: a kernel whose parameters are `list[scalar]` arrays routes to the
-/// array element-wise path ([`emit_array_kernel`]), where each list rides a
+/// array element-wise path (`emit_array_kernel`), where each list rides a
 /// `.u64` global base pointer and `xs[i]` (at the per-thread index) lowers to
 /// an `ld.global`. A kernel of bare scalar params keeps the original implicit
 /// element-wise lowering below.

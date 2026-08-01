@@ -132,7 +132,7 @@ pub fn rustc_nvptx_available() -> bool {
     probe().is_ok()
 }
 
-/// The rustc-nvptx PTX (from the cached [`probe`]). `Err(reason)` if the
+/// The rustc-nvptx PTX (from the cached `probe`). `Err(reason)` if the
 /// toolchain / target `rust-std` is missing or the compile failed (the witness
 /// turns that into a clean skip).
 pub fn emit_rustc_nvptx_ptx() -> Result<String, String> {

@@ -1267,7 +1267,7 @@ pub enum Stmt {
     },
     /// `let [mut] name: ty = value;` — first binding of `name` in this
     /// scope. `mutable` is set by the frontend when the same name is
-    /// reassigned later in the function (including inside a [`While`]
+    /// reassigned later in the function (including inside a `While`
     /// loop body). Rust/Ruchy emission honors it (`let mut` vs `let`)
     /// to keep `clippy -D unused_mut` happy. PMAT-006.
     Let {
@@ -2326,7 +2326,7 @@ pub enum Expr {
     /// PMAT-502ey: 1-arg `d.get(k)` (no default) — Python returns the value or
     /// `None`. Rust/Ruchy emit `(<dict>).get(&(<key>)).cloned()` → `Option<V>`;
     /// types as [`Type::Optional`] of the value type. Lean refuses (Optional
-    /// deferred). The 2-arg `d.get(k, default)` form stays [`DictGetOr`].
+    /// deferred). The 2-arg `d.get(k, default)` form stays `DictGetOr`.
     DictGetOpt { dict: Box<Expr>, key: Box<Expr> },
     /// Dictionary key membership — Python `k in d`. PMAT-466,
     /// v0.2.0 Track 1.C operations. Result types as `Type::Bool`.
@@ -3425,7 +3425,7 @@ pub enum StrMethodOp {
     SplitN,
     /// `.rsplit(sep, maxsplit)` → `.rsplitn((maxsplit) as usize + 1, &(sep)[..])
     /// .map(|s| s.to_string()).collect::<Vec<String>>()` THEN reversed
-    /// (List(Str), 2 args). PMAT-644. Like [`SplitN`] but splits from the RIGHT,
+    /// (List(Str), 2 args). PMAT-644. Like `SplitN` but splits from the RIGHT,
     /// capping at `maxsplit` splits; Rust's `rsplitn` yields parts right-to-left,
     /// so the collected Vec is reversed to restore Python's left-to-right order.
     RSplitN,

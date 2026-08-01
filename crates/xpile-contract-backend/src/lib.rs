@@ -3,7 +3,7 @@
 //! Renders parsed [`xpile_contracts::Contract`] into LaTeX (math +
 //! theorem environments) or Lean 4 theorem text (with the
 //! `@[xpile_contract]` attribute carrying the verbatim contract ID).
-//! Those are the two [`ContractFormat`](xpile_contracts::ContractFormat)s
+//! Those are the two [`ContractFormat`]s
 //! a registered [`ContractBackend`] claims. Through v0.1.617 this line
 //! named a third one that no impl has ever rendered — see PMAT-1465 and
 //! `crate_metadata_honesty.rs`, which derives the renderable set from

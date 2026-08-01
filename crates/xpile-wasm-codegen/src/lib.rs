@@ -10552,11 +10552,11 @@ impl WasmBackend {
     /// PMAT-952 (runtime-witness half) — the executed WASM-runtime
     /// DiffExec-witness constructor (§29).
     ///
-    /// Sibling of [`xpile_ptx_codegen::PtxBackend::new_cuda_diffexec_witness`]
-    /// and [`xpile_wgsl_codegen::WgslBackend::new_wgpu_diffexec_witness`].
+    /// Sibling of `xpile_ptx_codegen::PtxBackend::new_cuda_diffexec_witness`
+    /// and `xpile_wgsl_codegen::WgslBackend::new_wgpu_diffexec_witness`.
     /// Builds a `WasmBackend` whose `MultiEmitterBackend` carries two REAL
-    /// WAT emitters — [`WasmSaxpyGeneralEmitter`] (general) and
-    /// [`WasmSaxpySpecialistEmitter`] (specialist) — under
+    /// WAT emitters — `WasmSaxpyGeneralEmitter` (general) and
+    /// `WasmSaxpySpecialistEmitter` (specialist) — under
     /// `QuorumPolicy::DiffExec`, with a [`WasmDiffExecEngine`] installed.
     /// Both emitters compute the same semantics (`out[i] = 2*in[i] + 1`
     /// over [`FIXTURE_INPUT`]) via *categorically different* WAT (one an

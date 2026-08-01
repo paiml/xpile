@@ -272,7 +272,7 @@ impl FfiManifest {
     /// of real param/return types (an [`FfiEntry`] carries placeholder
     /// signatures).
     ///
-    /// Per-paradigm strategy (see [`shim_part_for`]):
+    /// Per-paradigm strategy (see `shim_part_for`):
     ///   - **C** → a real `extern "C"` foreign declaration + a safe `*_shim`
     ///     wrapper confining `unsafe`, citing `C-FFI-CPYTHON-EXT`.
     ///   - **Shell** → a real `std::process::Command`-based wrapper (shell speaks
@@ -392,7 +392,7 @@ impl FfiManifest {
 
     /// PMAT-901 — Phase 5a of the hybrid flow (`hybrid-transpile-flow.md` §16):
     /// emit a self-contained, BUILDABLE Cargo workspace for the hybrid module.
-    /// Files: `Cargo.toml` (a bin crate); `build.rs` ([`HYBRID_BUILD_RS`] —
+    /// Files: `Cargo.toml` (a bin crate); `build.rs` (`HYBRID_BUILD_RS` —
     /// cc-compiles every `csrc/*.c` and links it); `csrc/<name>.c` (each C source
     /// verbatim, from `c_sources`); `src/ffi_shims.rs` (the reconciled shims from
     /// [`emit_rust_shims`](Self::emit_rust_shims)); and `src/main.rs` (`rust_src`,
