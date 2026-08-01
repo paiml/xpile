@@ -13,6 +13,48 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The rule that says "each declared screen family must still match something" named five of the eight, because the list was typed instead of derived (PMAT-1516)
+
+Third slice against the PMAT-1511 audit findings.
+`screened_set_is_logged_not_silent` carries the comment *"Each declared screen
+family must still match something. A screen that matches nothing is a rule nobody
+has seen fire, and it rots silently."* The list under it was **typed by hand**,
+and it had drifted from the `SCREENS` table it describes: five families named,
+seven declared. `WRITES_OUTSIDE_SCRATCH`, `CHAINED_DIRCHANGE` and
+`PLACEHOLDER_OPERAND` were exempt from the very rule whose comment says *each*.
+
+All three are live (×3, ×3, ×3), so nothing was broken. **What was broken is
+that nothing would have noticed if they died** — the same shape as PMAT-1515 one
+level up: there the matcher literals were invisible to the liveness gate beside
+them, here whole families were.
+
+The list is now derived from `SCREENS`, so a family cannot join the taxonomy
+without joining this floor, with a parse floor of its own so a broken
+reason-string split cannot quietly shrink it to nothing.
+
+Red half, and the last arm is the one that matters: killing each of the three
+previously-exempt families reds the rule — and under the **old typed list**,
+killing `WRITES_OUTSIDE_SCRATCH` leaves it **green**. Green → red is the whole
+deliverable.
+
+★ **The inline-matcher sweep this slice was supposed to run came back
+essentially clean, and that is the result.** PMAT-1515 generalised its finding to
+"hunt every inline string literal used as a matcher in a file that also maintains
+a vocabulary table". Swept: 16 such files, 160 inline literals, **56 in
+filter/screen position** (the rest sit inside `assert!`, which is self-verifying —
+a dead literal there fails the assertion). Of the 56, exactly **one** matches
+nothing anywhere in the repository: `"path alpha"` in `claims_drift.rs`, an ASCII
+fallback whose partner `"path α"` is live. Left in place deliberately — deleting
+a fallback spelling is a plausible future regression, and one benign literal does
+not justify churning a working classifier.
+
+★ **I made PMAT-1515's own mistake again while measuring it.** The first sweep
+reported **four** dead literals. Three were live: the code compares against
+`to_ascii_lowercase()` or a squashed form, and I compared the literals against
+**raw** file text. That is precisely the error PMAT-1515 recorded one slice
+earlier, repeated by the person who recorded it. **Match the normalisation the
+code applies, or your sweep invents defects.**
+
 ### A matcher that is not in a named const is invisible to the liveness gate standing next to it — one of the three fixture conventions was dead on arrival and nothing could see it (PMAT-1515)
 
 Second slice against the PMAT-1511 audit findings.
