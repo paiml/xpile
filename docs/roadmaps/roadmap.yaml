@@ -26680,3 +26680,92 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1512
+  status: done
+  priority: P0
+  category: honesty
+  title: 489 Lean theorems and 108 Kani proofs could not be turned red by a wrong lowering because
+    not one was ever built against xpile -- now one is, and breaking the shipped emitter fails it
+    in 27 ms
+  notes: 'SHIPPED 2026-08-01. Ran the `proof-lane-load-bearing-or-decorative` owner_decision, which
+    the register itself flags as "★ BIGGEST SINGLE THING". VERIFIED BOTH HALVES INDEPENDENTLY at
+    aba0546a: all 36 contracts/lean/*.lean import exactly `Lake`; kani_verify.rs materialised every
+    harness into a temp crate whose Cargo.toml had NO [dependencies] SECTION AT ALL. So a harness
+    could not reference an xpile crate even in principle, and every Lean theorem / Kani proof
+    verified a hand-written RE-IMPLEMENTATION. contracts/kani/bashrs.rs discloses this in its own
+    header ("Standalone Rust module reproducing the property under test") -- disclosed at the
+    harness level, contradicted at the project level.
+
+    ★★★ AN UNFALSIFIABLE GUARANTEE IS WORSE THAN A FALSE ONE. A false claim can be disproved; this
+    one could not be disturbed by any evidence in either direction, so no amount of green
+    accumulated any actual assurance. This is PMAT-1505''s hollow-witness class at the scale of the
+    product claim -- and the pattern generalises: the LARGEST hollow check in a repo is usually the
+    one nearest the headline claim, because that is where nobody looks for one.
+
+    ★★★ AN OWNER-GATED QUESTION IS A REASON TO ESCALATE AND NEVER A REASON TO STOP MEASURING
+    (feedback-verify-owner-controlled-state, live again). The register asked owner to choose (a)
+    wire one harness to the real emitter and make the lane blocking, or (b) write down that it is
+    advisory. Choosing is owner work; MEASURING WHETHER (a) IS EVEN POSSIBLE IS NOT. That
+    measurement is now done and the decision has evidence under it instead of a hypothesis.
+
+    ★★★ THE SEAM MUST BE SCALAR -- three attempts, and the two failures are the result:
+    (1) Function::uses_int_arithmetic on a depth-2 body: NO RESULT IN 10 MIN, expr_has_int_arith ⇄
+    stmt_has_int_arith unwound past iteration 100 (Expr is a recursive enum with String/Vec/Box
+    payloads); #[kani::unwind(4)] removes the unwinding failure and still does not finish.
+    (2) xpile_backend::strip_contract_citations: LINKED, 1913 checks placed INSIDE the real
+    function, then stalled in str::pattern::TwoWaySearcher -- `str::find` is equally hostile.
+    (3) binop_is_int_arith over all 19 operators: SUCCESSFUL in 27 ms.
+    → Kani is strong on fixed-width scalars and fieldless enums, weak on recursive heap types.
+    Grow this lane by EXPOSING SCALAR PREDICATES AS SEAMS, not by pointing Kani at the tree walk.
+    Note (2) is the load-bearing feasibility fact on its own: a harness CAN compile and link against
+    a real xpile crate, which is what the [dependencies] hole made impossible.
+
+    THE MECHANISM: a harness declares `//! kani-deps: xpile-meta-hir` in its own header and the
+    runner emits a real path dependency. The declaration lives in the HARNESS, not in a table in the
+    runner, so the two cannot drift. `binop_is_int_arith` is now pub -- it decides whether emitted
+    code carries its C-PY-INT-ARITH citation, so an operator dropped from its governed set silently
+    removes a contract citation from generated code.
+
+    FALSIFICATION, EXECUTED THROUGH THE REAL RUNNER (not a hand-built probe): shipped emitter
+    unmodified -> `cargo test --test kani_verify` exit 0. BinOp::Shl dropped from the governed set
+    -> exit 101, "Failed Checks: assertion failed: binop_is_int_arith(op_of(i)) ==
+    spec_is_int_arith(i)", naming contracts/kani/real_binop_governed_set.rs. FIRST TIME A PROOF IN
+    THIS REPOSITORY HAS GONE RED BECAUSE XPILE''S OWN CODE WAS WRONG.
+
+    THE GATE: crates/xpile/tests/proof_seam_witness.rs (XPILE-PROOFSEAM-001, 5 properties). Pins
+    that >=1 proof is wired; that every declared dep resolves; that a wired harness ACTUALLY CALLS
+    into the crate it declares (a declaration alone is decoration and would produce a proof that
+    still verifies a model while advertising that it does not); anti-vacuity on the corpus AND on
+    the kani-deps parser in both directions; and THE HONESTY CLAUSE -- README/xpile-spec/book may
+    not say "machine-checked" without naming WHAT, since 1 of 25 harnesses verifies xpile and 24
+    verify models.
+
+    ★★ A CONTROL THAT DID NOT MATCH ITS SUBJECT NEARLY COST THE DIAGNOSIS. The first full runner
+    pass failed on py_int_arith.rs and I ran a control on harness #1 while the failure was at #7 --
+    concluding "my change broke it". Corrected: #7 passes standalone in 30 s, and the runner''s
+    EXACT invocation (no --harness, -Z unstable-options --harness-timeout 180s) passes 10/10 under
+    BOTH the old and the new Cargo.toml. The failing run''s output ended MID-HARNESS WITH NO ERROR
+    MESSAGE -- the signature of a killed process, not a failing one -- under load from concurrent
+    CBMC runs and a 32-agent workflow. Quiet re-run: exit 0. → WHEN A CONTROL AND A FAILURE DISAGREE,
+    CHECK THEY ARE THE SAME SUBJECT BEFORE BELIEVING EITHER; and truncated-output-with-no-error means
+    KILLED, which is an environment question, not a code question.
+
+    ★ The repo''s own claims_drift gate caught this slice and named every stale sentence: adding a
+    harness moved published tallies 95 -> 96 and 584 -> 585 across audit-design.md, kaizen-fleet.md
+    and sprint-6day-2026-07-26.md. A derived-count gate paying for itself.
+
+    ⚠️ HONEST SCOPE, and it must not be rounded up. This proves ONE predicate over 19 operators.
+    24 of 25 harnesses remain models, all 489 Lean theorems remain models, and the `kani` CI context
+    remains ADVISORY. What changed is that the claim is FALSIFIABLE AT ALL. Making the lane blocking
+    is still an owner call -- but option (a) is now demonstrated rather than hypothesised, and the
+    cost is 27 ms.
+
+    NEXT FREE ID PMAT-1513. NEXT PICK: (a) the 16 CONFIRMED findings from the PMAT-1511 audit
+    (see next_lane[0]); (b) XPILE-RUSTDOC-001, whose 58/13-of-30 claim an independent agent
+    re-derived digit for digit WITH an acquittal control -- accurate, not inflated; (c) grow the
+    proof seam with more scalar predicates.'
+  created: '2026-08-01'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

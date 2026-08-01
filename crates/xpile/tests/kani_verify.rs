@@ -79,12 +79,53 @@ fn collect_kani_harness_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Workspace crates a harness asks to be built against, declared in its own
+/// header as `//! kani-deps: xpile-meta-hir, xpile-backend` (PMAT-1512).
+///
+/// Before this, every temp crate was emitted with NO `[dependencies]` section,
+/// so a harness could not reference xpile even in principle and no proof in the
+/// repository could be turned red by a wrong lowering. The declaration lives in
+/// the harness rather than in a table here so the two cannot drift.
+fn declared_deps(harness_src: &str) -> Vec<String> {
+    harness_src
+        .lines()
+        .take_while(|l| l.starts_with("//!") || l.trim().is_empty())
+        .filter_map(|l| {
+            l.trim_start_matches("//!")
+                .trim()
+                .strip_prefix("kani-deps:")
+        })
+        .flat_map(|list| {
+            list.split(',')
+                .map(|d| d.trim().to_string())
+                .filter(|d| !d.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 fn materialise_temp_crate(harness_src: &Path, temp_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(temp_dir).map_err(|e| format!("create temp dir: {e}"))?;
     let crate_name = harness_src
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or("non-utf8 harness filename")?;
+    let harness_text = fs::read_to_string(harness_src).map_err(|e| format!("read harness: {e}"))?;
+    let root = workspace_root();
+    let mut deps = String::new();
+    for d in declared_deps(&harness_text) {
+        let crate_dir = root.join("crates").join(&d);
+        if !crate_dir.join("Cargo.toml").is_file() {
+            return Err(format!(
+                "harness {} declares `kani-deps: {d}` but {} has no Cargo.toml. A proof \
+                 that cannot build against the crate it names would silently fall back \
+                 to verifying nothing.",
+                harness_src.display(),
+                crate_dir.display()
+            ));
+        }
+        deps.push_str(&format!("{d} = {{ path = {:?} }}\n", crate_dir.display()));
+    }
     let cargo_toml = format!(
         r#"[package]
 name = "kani_verify_{crate_name}"
@@ -94,12 +135,14 @@ publish = false
 
 [lib]
 path = "lib.rs"
+
+[dependencies]
+{deps}
+[workspace]
 "#
     );
     fs::write(temp_dir.join("Cargo.toml"), cargo_toml).map_err(|e| format!("write toml: {e}"))?;
-    let harness_contents =
-        fs::read_to_string(harness_src).map_err(|e| format!("read harness: {e}"))?;
-    fs::write(temp_dir.join("lib.rs"), harness_contents).map_err(|e| format!("write lib: {e}"))?;
+    fs::write(temp_dir.join("lib.rs"), harness_text).map_err(|e| format!("write lib: {e}"))?;
     Ok(())
 }
 

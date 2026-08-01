@@ -8060,6 +8060,42 @@ queue:
     take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
 
 next_lane:
+- 'PMAT-1513 FIX -- THE 16 CONFIRMED FINDINGS IN book_published_command_witness.rs (PMAT-1511).
+  An independent 5-agent audit with per-finding refutation returned 16 CONFIRMED / 5 refuted against
+  that gate on 2026-08-01. THE BASE RATE IS NOW 6 SELF-MERGED GATE SLICES OUT OF 6 CARRYING AN
+  OVERCLAIM (1505..1511), so the audit step in PMAT-1510''s spec is not optional. Two worked
+  examples, both reproduced with a three-arm probe by the refuting agent:
+  (a) fixture_resolver_is_non_vacuous (:1233) says "All three declaration conventions must be live,
+  or the resolver has silently degraded" and CAN ONLY DETECT THE DEATH OF ONE. Conventions (a)
+  `Save the following as` and (c) first-line `# name.py` BOTH resolve factorial.py, so either alone
+  satisfies the test''s two contains_key assertions; killing (a) -> 16/16 still pass, killing (c) ->
+  16/16 still pass while resolved declarations silently drop 5 -> 2 and factorial.py''s CONTENT
+  flips source page. Only killing (b) reds. A third literal, `"Save as"`, matches NOTHING in the
+  corpus -- 0 occurrences in 18 pages, present in exactly one tracked file: the test itself.
+  ⛔ ROOT CAUSE WORTH GENERALISING: the three convention literals are hardcoded INLINE in
+  fixture_name rather than in a named const, so they escape this same file''s
+  every_disclosure_exemption_literal_is_live and detection_vocabularies_are_live_as_groups, which
+  DO enforce per-literal liveness for every other vocabulary. → HOIST EVERY MATCHING LITERAL INTO A
+  NAMED CONST AND FLOOR IT; an inline literal is invisible to the liveness gate beside it.
+  (b) The "rots silently" loop at :1177 asserts 5 of 8 declared SCREENS reason families;
+  WRITES_OUTSIDE_SCRATCH, CHAINED_DIRCHANGE and PLACEHOLDER_OPERAND are unasserted and no other file
+  in the repo mentions them, so that assert is their only detector.
+  The remaining 14 are in the workflow result at
+  subagents/workflows/wf_4f664ac6-31c/journal.jsonl -- READ IT, the findings are attached to the
+  verdicts there, not to the journal''s agent records.'
+- 'PMAT-1512 GROW THE PROOF SEAM -- more scalar predicates wired to real crates. PMAT-1512 shipped
+  the MECHANISM (`//! kani-deps:` + runner support + XPILE-PROOFSEAM-001) and exactly ONE proof:
+  binop_is_int_arith over 19 operators, 27 ms, red when BinOp::Shl is dropped. 24 of 25 harnesses
+  and all 489 Lean theorems still verify MODELS. (a) THE SELECTION RULE IS MEASURED, NOT GUESSED:
+  Kani decides fixed-width scalars and fieldless enums fast and does not finish on recursive heap
+  types -- Function::uses_int_arithmetic (Expr = recursive enum w/ String/Vec/Box) got no result in
+  10 min; strip_contract_citations LINKED and placed 1913 checks inside the real fn, then stalled in
+  str::pattern::TwoWaySearcher. So look for pub fns over enums/ints, and where the interesting
+  predicate is buried in a tree walk, EXTRACT the scalar core and verify that. (b) CANDIDATES to
+  triage the same way: the other citation-driving predicates beside binop_is_int_arith. (c) ⛔ DO
+  NOT make the `kani` context blocking as part of this -- that is the owner call in
+  `proof-lane-load-bearing-or-decorative`, and making a 1-of-25 lane blocking buys nothing. What
+  this backlog buys is raising 1-of-25 until blocking is worth proposing.'
 - 'PMAT-1511 SHIPPED XPILE-BOOKTRANSCRIPT-001 arm (a) — the PUBLISHED-COMMAND arm, which was
   next_lane[1]''s ⭐⭐⭐ pick. MEASURED over README.md + book/src (76 published command lines):
   38 EXECUTED per-fence in a scratch dir, 38 SCREENED under a printed taxonomy. Property A

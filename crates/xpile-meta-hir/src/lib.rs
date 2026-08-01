@@ -1161,7 +1161,27 @@ fn expr_has_int_arith(e: &Expr) -> bool {
     }
 }
 
-fn binop_is_int_arith(op: BinOp) -> bool {
+/// Is this operator governed by `C-PY-INT-ARITH`?
+///
+/// The overflow-prone and bitwise operators are; comparisons and the boolean
+/// connectives are not. `Function::uses_int_arithmetic` is this predicate lifted
+/// over a whole body, and the emitted code's `C-PY-INT-ARITH` citation is driven
+/// by the answer — so an operator dropped from this set silently removes a
+/// contract citation from generated code.
+///
+/// **Public because it is this repository's first PROOF SEAM** (PMAT-1512).
+/// Every Kani harness in `contracts/kani/` before now ran in a temp crate with
+/// no dependencies, verifying a hand-written re-implementation, so no proof
+/// could be turned red by a wrong lowering. `real_binop_governed_set.rs`
+/// verifies THIS function, and goes red when it changes — demonstrated by
+/// removing `BinOp::Shl` and watching the proof fail.
+///
+/// A seam has to be scalar. Kani decides this exhaustively over all 19 operators
+/// in **27 ms**; the same property stated over `Function::uses_int_arithmetic`
+/// does not terminate in ten minutes, because `Expr` is a recursive enum with
+/// `String`/`Vec`/`Box` payloads and Kani unwinds the `expr_has_int_arith` ⇄
+/// `stmt_has_int_arith` mutual recursion without bound.
+pub fn binop_is_int_arith(op: BinOp) -> bool {
     matches!(
         op,
         BinOp::Add
