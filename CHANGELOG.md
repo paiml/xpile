@@ -13,6 +13,89 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### 489 Lean theorems and 108 Kani proofs could not be turned red by a wrong lowering, because not one of them was ever built against xpile — now one is, and breaking the emitter fails it in 27 ms (PMAT-1512)
+
+The proof lane is this project's headline claim, and it was **unfalsifiable**.
+Measured at `aba0546a`, both halves independently:
+
+* all **36** modules in `contracts/lean/` import exactly `Lake`;
+* `kani_verify.rs` materialised every harness into a temp crate whose
+  `Cargo.toml` had **no `[dependencies]` section at all** — so a harness could
+  not reference an xpile crate *even in principle*.
+
+So every Lean theorem and every Kani proof verified a hand-written
+**re-implementation** of xpile's behaviour. `contracts/kani/bashrs.rs` says so
+in its own header — *"Standalone Rust module reproducing the property under
+test"* — meaning this was disclosed at the harness level and contradicted at the
+project level, where the lane is described as machine-checking xpile.
+
+**An unfalsifiable guarantee is worse than a false one.** A false claim can be
+disproved; this one could not be disturbed by any evidence in either direction.
+It is the hollow-witness class of PMAT-1505 at the scale of the product claim.
+
+#### The seam, and why it has to be scalar
+
+Three properties over real code were attempted, and the two failures are
+recorded because "we tried and it did not work" is a result:
+
+| attempt | outcome |
+|---|---|
+| `Function::uses_int_arithmetic`, depth-2 body | no result in **10 min** — `expr_has_int_arith` ⇄ `stmt_has_int_arith` unwound past iteration 100 |
+| `xpile_backend::strip_contract_citations` | linked, **1913 checks inside the real function**, then stalled in `str::pattern::TwoWaySearcher` |
+| `binop_is_int_arith` over all 19 operators | **SUCCESSFUL, 27 ms** |
+
+Kani is strong on fixed-width scalars and fieldless enums and weak on recursive
+heap types — which is exactly what `Expr` is. So the recipe for growing this
+lane is to **expose a scalar predicate as a seam**, not to point Kani at the
+tree walk and hope.
+
+`binop_is_int_arith` is now `pub`. It decides whether emitted code carries its
+`C-PY-INT-ARITH` citation, so an operator dropped from its governed set silently
+removes a contract citation from generated code.
+
+#### Falsification, executed through the real runner
+
+A harness declares `//! kani-deps: xpile-meta-hir` in its own header and the
+runner emits a real path dependency for it — the declaration lives in the
+harness so the two cannot drift.
+
+| state of the shipped `binop_is_int_arith` | `cargo test --test kani_verify` |
+|---|---|
+| unmodified | **exit 0** |
+| `BinOp::Shl` dropped from the governed set | **exit 101** — `Failed Checks: assertion failed: binop_is_int_arith(op_of(i)) == spec_is_int_arith(i)` |
+
+That is the first time a proof in this repository has gone red because xpile's
+own code was wrong.
+
+#### What deliberately did not change
+
+**One harness out of 25.** The other 24 still verify models, and
+`proof_seam_witness.rs` (`XPILE-PROOFSEAM-001`, 5 properties) exists so that
+stays written down: it pins that at least one proof is wired, that a declared
+dependency resolves and is actually *called* (a declaration alone is
+decoration), and — the honesty clause — it reds if `README.md`, `xpile-spec.md`
+or the book says "machine-checked" without naming *what*. The honest sentence is
+*"the contracts are machine-checked as models; one property is machine-checked
+against the emitter"*.
+
+★ **A control that did not match its subject nearly cost the diagnosis.** The
+first full runner pass failed on `py_int_arith.rs`, and my control ran harness
+**#1** while the failure was at **#7**. Correcting it: #7 passes standalone in
+30 s, and the runner's *exact* invocation passes **10/10 under both the old and
+the new `Cargo.toml`**. The failing run's output ended mid-harness with no error
+message — the signature of a killed process, under load from concurrent CBMC
+runs and a 32-agent workflow. A quiet re-run: **exit 0**. Environmental, not
+causal — established by measurement rather than by assumption.
+
+★ The repo's own `claims_drift` gate caught this slice: adding a harness moved
+the published tallies **95 → 96** and **584 → 585** across three specs, and it
+named every stale sentence.
+
+⚠️ **Honest scope.** This proves one predicate over 19 operators. It does not
+make the lane load-bearing, and nothing here should be read as "the emitter is
+verified" — the `kani` CI context remains advisory, and 24 of 25 harnesses
+remain models. What changed is that the claim is now **falsifiable at all**.
+
 ### The book told every reader to run a command that had exited 1 for 72 days, and nothing in this repository had ever executed a published command — the gate for that found a *different* defect, in a command that works (PMAT-1511)
 
 `XPILE-BOOKTRANSCRIPT-001` arm (a). A `$ <cmd>` line in `README.md` or
