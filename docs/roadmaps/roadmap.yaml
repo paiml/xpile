@@ -26954,3 +26954,55 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1516
+  status: done
+  priority: P1
+  category: honesty
+  title: the rule that says "each declared screen family must still match something" named five of
+    the eight, because the list was typed instead of derived -- and the inline-matcher sweep it was
+    meant to run came back essentially clean, which is the result
+  notes: 'SHIPPED 2026-08-01. Third slice against the PMAT-1511 audit findings.
+
+    ★★★ A TYPED LIST DRIFTS FROM THE TABLE IT DESCRIBES. screened_set_is_logged_not_silent carries
+    the comment "Each declared screen family must still match something. A screen that matches
+    nothing is a rule nobody has seen fire, and it rots silently" -- and the list under it was TYPED:
+    five families named, seven declared in SCREENS. WRITES_OUTSIDE_SCRATCH, CHAINED_DIRCHANGE and
+    PLACEHOLDER_OPERAND were exempt from the very rule whose comment says EACH. All three are LIVE
+    (x3, x3, x3), so nothing was broken; WHAT WAS BROKEN IS THAT NOTHING WOULD HAVE NOTICED IF THEY
+    DIED. Now DERIVED from SCREENS, with a parse floor so a broken reason-string split cannot
+    quietly shrink the set to nothing. → SAME SHAPE AS PMAT-1515 ONE LEVEL UP: there the matcher
+    LITERALS were invisible to the liveness gate beside them; here whole FAMILIES were.
+
+    RED HALF, and the last arm is the deliverable: killing each of the three previously-exempt
+    families reds the rule; and under the OLD TYPED LIST, killing WRITES_OUTSIDE_SCRATCH leaves it
+    GREEN. Green -> red is the proof, not the three reds on their own.
+
+    ★★★ THE INLINE-MATCHER SWEEP CAME BACK ESSENTIALLY CLEAN -- RECORD THE NEGATIVE RESULT SO NOBODY
+    RE-DERIVES IT. PMAT-1515 generalised to "hunt every inline string literal used as a matcher in a
+    file that also maintains a vocabulary table". MEASURED: 16 such files, 160 inline
+    `.contains("lit")` literals, of which 56 are in FILTER/SCREEN position -- the other ~104 sit
+    inside `assert!`, which is SELF-VERIFYING (a dead literal there fails the assertion, so it
+    cannot rot silently). ★ THAT DISTINCTION IS THE REUSABLE PART: an inline literal in an
+    ASSERTION needs no liveness gate; one in a FILTER does. Of the 56, exactly ONE matches nothing
+    anywhere in the repository: "path alpha" (claims_drift.rs:4351), an ASCII fallback whose partner
+    "path α" is live. LEFT IN PLACE deliberately -- deleting a fallback spelling is a plausible
+    future regression and one benign literal does not justify churning a working classifier.
+
+    ★★ I MADE PMAT-1515''S OWN MISTAKE AGAIN WHILE MEASURING IT. The first sweep reported FOUR dead
+    literals; THREE were live. The code compares against `to_ascii_lowercase()` or a squashed
+    (alphanumeric-only) form, and I compared the literals against RAW file text. That is exactly the
+    error PMAT-1515 recorded ONE SLICE EARLIER, repeated by the agent that recorded it. → MATCH THE
+    NORMALISATION THE CODE APPLIES, OR YOUR SWEEP INVENTS DEFECTS. A "dead literal" finding must be
+    re-checked under lowercase/squash/strip before it is believed. Writing a lesson down does not
+    install it; the next measurement has to be built to obey it.
+
+    NEXT FREE ID PMAT-1517. NEXT PICK: (a) the module-doc headline overclaim in
+    book_published_command_witness.rs ("nothing in this repo had ever executed a command it
+    publishes" -- audit finding 15, NOT yet verified by me; cli_docs_drift.rs executes the binary
+    and needs checking before the sentence is changed); (b) grow the proof seam (PMAT-1512);
+    (c) remaining audit findings.'
+  created: '2026-08-01'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

@@ -1364,13 +1364,28 @@ fn screened_set_is_logged_not_silent() {
     );
     // Each declared screen family must still match something. A screen that
     // matches nothing is a rule nobody has seen fire, and it rots silently.
-    for family in [
-        "MUTATES_GLOBAL",
-        "NETWORK",
-        "NEEDS_CHECKOUT_SLOW",
-        "NEEDS_EXTERNAL_TOOL",
-        "SYNOPSIS",
-    ] {
+    //
+    // ⚠️ PMAT-1516: this list was TYPED, and it drifted from the table it
+    // describes — five families named against seven declared in `SCREENS`, so
+    // `WRITES_OUTSIDE_SCRATCH`, `CHAINED_DIRCHANGE` and `PLACEHOLDER_OPERAND`
+    // were exempt from the very rule whose comment says "each declared screen
+    // family". All three are live, so nothing was broken; what was broken is
+    // that nothing would have noticed if they died. It is now DERIVED from
+    // `SCREENS`, so a family cannot be added to the taxonomy without joining
+    // this floor. `SYNOPSIS` is appended because it comes from `is_synopsis`
+    // rather than the table.
+    let declared: BTreeSet<&str> = SCREENS
+        .iter()
+        .map(|(_, reason)| reason.split(' ').next().unwrap_or(reason))
+        .chain(std::iter::once("SYNOPSIS"))
+        .collect();
+    assert!(
+        declared.len() >= 6,
+        "only {} screen family/families derived from SCREENS — the reason-string \
+         parse has broken and this floor is asserting almost nothing: {declared:?}",
+        declared.len()
+    );
+    for family in declared {
         assert!(
             by_reason.keys().any(|r| r.contains(family)),
             "screen family {family} matched no published command — either the \
