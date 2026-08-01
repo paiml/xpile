@@ -26828,3 +26828,76 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-1514
+  status: done
+  priority: P1
+  category: honesty
+  title: the gate that executes published commands could not see four packaged READMEs, and
+    mis-executed the multi-line blocks it did see -- three false accusations against correct
+    documents, and the widening that exposed them was itself unpinned
+  notes: 'SHIPPED 2026-08-01. Ran the PMAT-1511 audit findings (23 CONFIRMED of 28 candidates, each
+    independently refuted by a second agent). This slice takes the CORPUS and EXECUTION defects --
+    the ones that make the gate assert things that are not true.
+
+    ★★★ THE CORPUS DID NOT IMPLEMENT ITS OWN STATED PRINCIPLE. CORPUS_PATHSPECS was
+    ["README.md", "book/src"] and the git pathspec `README.md` matches ONLY THE ROOT README, while
+    the constant''s own doc comment defines the corpus as "the page a crates.io reader gets without
+    cloning". Four other tracked READMEs publish ten command lines; contracts/README.md and
+    examples/README.md SHIP INSIDE THE PACKAGED CRATE. → When a constant carries a prose definition,
+    check the constant IMPLEMENTS it; a pathspec is code and the comment beside it is not.
+
+    ★★★ THE WIDENING PRODUCED THREE FALSE ACCUSATIONS AGAINST CORRECT DOCUMENTS, each a distinct
+    gate defect -- and a false accusation is as bad as a missed defect, because it is what gets a
+    gate disabled:
+    (1) A `cd` SCREENED ONLY ITS OWN LINE. The reason string has always read "CHAINED_DIRCHANGE --
+    depends on a screened predecessor" and NOTHING IMPLEMENTED the *depends on* half; later lines in
+    the fence ran from the wrong directory. contracts/lean-models/README.md publishes
+    `cd contracts/lean-models` then `lake exe cache get`; alone the second exits 1. Now a `cd`
+    screens the rest of its block: 1 screened line -> 3.
+    (2) A MULTI-LINE COMMAND WAS EXECUTED IN PIECES. crates/xpile/examples/README.md publishes a
+    `for … do … done` loop with `\` continuations; split per line the fragments are
+    `sh: 1: Syntax error`. Continuations now join -- SPACE for a `\` continuation, NEWLINE between
+    statements. ⚠️ Joining everything with a space was my first attempt and produced
+    `echo "…" cargo run …`, a DIFFERENT command and a syntax error of its own: the separator is part
+    of the semantics.
+    (3) A SCREEN PATTERN A REAL INVOCATION DOES NOT CONTAIN. SCREENS matches CONTIGUOUS substrings;
+    the published spelling is `cargo run --quiet --example`, which does not contain
+    `cargo run --example`. The screen''s intent is about the two TOKENS, not their ADJACENCY.
+    Screened example builds 6 -> 7. → SAME SHAPE AS PMAT-1500''s two-stage grep: a pattern that
+    assumes adjacency fails on the spelling people actually write.
+
+    ★★★ MY OWN WIDENING WAS NOT PINNED, AND ONLY THE RED HALF SAID SO. Arm R1 reverted
+    CORPUS_PATHSPECS to its old value and ALL 16 TESTS STAYED GREEN -- the four pages simply left
+    the corpus, silently, which is exactly how they came to be missing. corpus_is_derived_and_floored
+    now RE-DERIVES the tracked README set INDEPENDENTLY of the constant (`git ls-files *README.md`,
+    depth <= 2) and names every page the corpus fails to reach; re-run, R1 reds with all five names.
+    → A RULE AND THE CONSTANT IT DEPENDS ON NEED SOMETHING THAT FAILS WHEN THEY PART COMPANY.
+    Generalise: every corpus-defining constant in this repo wants an independent re-derivation
+    beside it, or a narrowing is invisible.
+
+    RED HALF 3/3 + control: narrow the corpus -> RED (after the floor); drop the chained-cd pass ->
+    RED; drop the interleaved-flag screen -> RED; unperturbed -> 16/16. Each arm compile-checked
+    before being believed.
+
+    ALSO CORRECTED, MEASURED PER COMMAND: PMAT-1511''s CHANGELOG said that with contracts/ absent
+    "all four fall back to the embedded contract set and say so on stderr". Probed: quorum,
+    attestations and diamond print the notice; `audit` does NOT, because that path never consults
+    contracts/. THREE of four, not four.
+
+    ⚠️ PROCESS FAILURE WORTH RECORDING: I ran a published command (`lake exe cache get`) BY HAND IN
+    THE LIVE WORKING TREE to check a finding, and it downloaded 5.3 GB of Mathlib into
+    contracts/lean-models/.lake. Removed; it was gitignored so nothing tracked was touched. THE GATE
+    SCREENS THAT EXACT COMMAND and executes everything else in a scratch dir -- the discipline the
+    gate encodes is the discipline the operator has to follow too.
+
+    NEXT FREE ID PMAT-1515. NEXT PICK: the REMAINING ~19 audit findings (next_lane) -- notably the
+    fixture-resolver conventions hardcoded INLINE (so they escape this file''s own liveness gates),
+    the unasserted SCREENS families, and the headline overclaim; then grow the proof seam
+    (PMAT-1512); then the rendered-artefact sweep, whose measured yield so far is: book CLEAN
+    (20 pages, 0 orphans, 0 broken links), docs.rs FIXED (PMAT-1513), packaged crate 3 minor bare
+    path citations, release body OWNER-GATED.'
+  created: '2026-08-01'
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null

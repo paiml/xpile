@@ -136,7 +136,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// (PMAT-1477's lesson — measure the false-positive rate of a corpus widening
 /// before doing it). `docs/specifications/**` is out for the same reason plus
 /// the v0.2.0 pages, which describe commands that deliberately do not exist yet.
-const CORPUS_PATHSPECS: &[&str] = &["README.md", "book/src"];
+///
+/// ⚠️ PMAT-1514 WIDENED THIS. The list was `["README.md", "book/src"]`, and the
+/// git pathspec `README.md` matches **only the root README** — so four other
+/// tracked, reader-facing READMEs publishing ten command lines sat outside a
+/// corpus whose own comment defines itself as "the page a crates.io reader gets
+/// without cloning". Two of them (`contracts/README.md`, `examples/README.md`)
+/// are **packaged into the crate**, so a crates.io reader receives them exactly
+/// as they receive the root README. The stated principle was right; the
+/// pathspec did not implement it.
+const CORPUS_PATHSPECS: &[&str] = &["README.md", "*/README.md", "*/*/README.md", "book/src"];
 
 /// Fence languages whose contents are shell.
 const SHELL_FENCES: &[&str] = &["bash", "sh", "console", "shell"];
@@ -191,6 +200,10 @@ struct PublishedCmd {
     /// Lines the page prints under this command, up to the next `$ ` or the
     /// closing fence.
     transcript: Vec<String>,
+    /// Set when an earlier line in the SAME fence is a `cd` — this command
+    /// cannot be run standalone, because its working directory was established
+    /// by a predecessor the taxonomy screens (PMAT-1514).
+    chained: bool,
     /// Which fence this came from, so sequential commands share a scratch dir.
     fence: usize,
     /// Was the line `$ `-prefixed? Bare lines in a fence that HAS `$` lines are
@@ -212,6 +225,8 @@ fn published_commands(path: &Path) -> Vec<PublishedCmd> {
     let mut in_fence = false;
     let mut lang = String::new();
     let mut fence_id = 0usize;
+    // Lines already absorbed into a multi-line command above (PMAT-1514).
+    let mut skip_until = 0usize;
 
     for (idx, raw) in lines.iter().enumerate() {
         let s = raw.trim();
@@ -229,14 +244,56 @@ fn published_commands(path: &Path) -> Vec<PublishedCmd> {
         if !in_fence || !SHELL_FENCES.contains(&lang.as_str()) {
             continue;
         }
+        if idx <= skip_until && skip_until > 0 {
+            continue;
+        }
         let dollar = s.starts_with("$ ");
-        let cmd = if dollar {
+        let mut cmd = if dollar {
             s[2..].trim().to_string()
         } else if s.is_empty() || s.starts_with('#') {
             continue;
         } else {
             s.to_string()
         };
+
+        // PMAT-1514: a published command may span lines, and executing the
+        // pieces separately is not a measurement of it.
+        //
+        // `crates/xpile/examples/README.md:20-23` publishes a `for … do …
+        // done` loop with `\` continuations. Line-split, the fragments are
+        // `sh: 1: Syntax error: end of file unexpected` — three offences
+        // reported against a page that is CORRECT. The command is the whole
+        // construct, so join it before judging it. Once joined, this one
+        // contains `cargo run --example` and the existing screen claims it,
+        // which is the right outcome by the taxonomy that was already there.
+        let mut consumed = 0usize;
+        while cmd.trim_end().ends_with('\\') || (starts_shell_block(&cmd) && !cmd.contains("done"))
+        {
+            let Some(next) = lines.get(idx + consumed + 1) else {
+                break;
+            };
+            let t = next.trim();
+            if t.starts_with("```") || t.starts_with("$ ") {
+                break;
+            }
+            // A `\` continuation is one logical line and joins with a SPACE.
+            // A new line inside a `for … do … done` body is a separate
+            // statement and joins with a NEWLINE — joining it with a space
+            // yields `echo "…" cargo run …`, which is a different command
+            // and a syntax error, i.e. another false accusation.
+            let was_continuation = cmd.trim_end().ends_with('\\');
+            let joined = cmd.trim_end().trim_end_matches('\\').trim_end().to_string();
+            cmd = if was_continuation {
+                format!("{joined} {t}")
+            } else {
+                format!("{joined}\n{t}")
+            };
+            consumed += 1;
+            if consumed > 20 {
+                break;
+            }
+        }
+        skip_until = idx + consumed;
 
         let mut transcript = Vec::new();
         for follow in &lines[idx + 1..] {
@@ -254,6 +311,7 @@ fn published_commands(path: &Path) -> Vec<PublishedCmd> {
             comment: trailing_comment(&cmd),
             transcript,
             fence: fence_id,
+            chained: false,
             dollar,
         });
     }
@@ -263,7 +321,50 @@ fn published_commands(path: &Path) -> Vec<PublishedCmd> {
     // emitted Rust as if it were shell.
     let dollar_fences: BTreeSet<usize> = out.iter().filter(|c| c.dollar).map(|c| c.fence).collect();
     out.retain(|c| c.dollar || !dollar_fences.contains(&c.fence));
+
+    // Third pass (PMAT-1514): a `cd` screens the REST OF ITS BLOCK, not just
+    // its own line.
+    //
+    // The `cd ` screen's reason has always read "CHAINED_DIRCHANGE — depends on
+    // a screened predecessor", and nothing implemented the *depends on* half:
+    // only the `cd` line itself was screened, and every later line in the same
+    // fence was executed from the wrong directory. A stated scope the code does
+    // not implement is the defect class this file exists to catch, sitting
+    // inside this file.
+    //
+    // It was live, and the corpus widening above exposed it.
+    // `contracts/lean-models/README.md` publishes
+    //     cd contracts/lean-models
+    //     lake exe cache get
+    // and the second line, run without the first, was reported as a page
+    // publishing a succeeding command that exits 1 — a false accusation against
+    // a correct document. Run WITH the `cd`, as a reader would, it exits 0 and
+    // downloads 5.3 GB of Mathlib, which is its own reason a test must never
+    // execute this block.
+    let mut first_cd: BTreeMap<usize, usize> = BTreeMap::new();
+    for c in &out {
+        if bare_command(c).trim_start().starts_with("cd ") {
+            let e = first_cd.entry(c.fence).or_insert(c.line);
+            if c.line < *e {
+                *e = c.line;
+            }
+        }
+    }
+    for c in &mut out {
+        if first_cd.get(&c.fence).is_some_and(|at| c.line > *at) {
+            c.chained = true;
+        }
+    }
     out
+}
+
+/// Does this line open a multi-line shell construct whose body follows?
+///
+/// Only the block openers that actually appear in this corpus — a broader
+/// grammar would be guessing. Anything else is judged as the single line it is.
+fn starts_shell_block(cmd: &str) -> bool {
+    let t = cmd.trim_start();
+    t.starts_with("for ") || t.starts_with("while ") || t.starts_with("until ")
 }
 
 /// The trailing `# …` of a command line, if the `#` is not inside quotes.
@@ -385,6 +486,17 @@ fn classify(cmd: &str) -> Disposition {
         if cmd.contains(pat) {
             return Disposition::Screened(reason);
         }
+    }
+    // PMAT-1514: `SCREENS` matches CONTIGUOUS substrings, and a real invocation
+    // interleaves flags. `crates/xpile/examples/README.md` publishes
+    // `cargo run --quiet --example "$ex" -p xpile`, which the
+    // `"cargo run --example"` pattern does not contain — so the command was
+    // executed, failed for want of a `Cargo.toml`, and was reported as a page
+    // publishing a broken command. The screen's INTENT is "building an example
+    // needs a checkout and minutes"; that intent is about the two tokens, not
+    // about their adjacency.
+    if cmd.contains("cargo run") && cmd.contains("--example") {
+        return Disposition::Screened("NEEDS_CHECKOUT_SLOW — builds an example binary");
     }
     Disposition::Execute
 }
@@ -585,7 +697,7 @@ fn all_commands() -> Vec<PublishedCmd> {
 fn executed_commands() -> Vec<PublishedCmd> {
     all_commands()
         .into_iter()
-        .filter(|c| classify(&bare_command(c)) == Disposition::Execute)
+        .filter(|c| !c.chained && classify(&bare_command(c)) == Disposition::Execute)
         .collect()
 }
 
@@ -693,6 +805,7 @@ fn a_command_known_to_fail_is_reported_as_failing() {
         comment: None,
         transcript: vec!["// xpile-generated".into()],
         fence: 0,
+        chained: false,
         dollar: true,
     };
     let out = run_published(&bare_command(&failing), &dir);
@@ -1110,6 +1223,39 @@ fn corpus_is_derived_and_floored() {
             "{anchor} is not in the derived corpus — the pathspecs are wrong"
         );
     }
+
+    // PMAT-1514: the corpus must contain EVERY tracked README, re-derived here
+    // independently of `CORPUS_PATHSPECS`.
+    //
+    // Without this the widening is unpinned: reverting the pathspec list to
+    // `["README.md", "book/src"]` drops four reader-facing pages and every
+    // property in this file still passes, which is how they were missing in the
+    // first place. A rule and the constant it depends on must be tied together
+    // by something that fails when they part company.
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo_root())
+        .args(["ls-files", "*README.md"])
+        .output()
+        .expect("git ls-files");
+    let tracked: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .filter(|p| p.matches('/').count() <= 2)
+        .collect();
+    assert!(
+        tracked.len() >= 4,
+        "only {} tracked README(s) found; the independent re-derivation broke and \
+         this floor is asserting nothing",
+        tracked.len()
+    );
+    let missing: Vec<&String> = tracked.iter().filter(|p| !names.contains(*p)).collect();
+    assert!(
+        missing.is_empty(),
+        "these tracked READMEs are reader-facing — two of them ship INSIDE the \
+         packaged crate — but the corpus does not reach them, so nothing executes \
+         the commands they publish: {missing:?}"
+    );
 }
 
 #[test]

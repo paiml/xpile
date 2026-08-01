@@ -13,6 +13,64 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The gate that executes published commands could not see four packaged READMEs, and mis-executed the multi-line blocks it did see — three false accusations against correct documents (PMAT-1514)
+
+Ran the PMAT-1511 audit findings. That audit returned **23 confirmed of 28
+candidates**, each independently refuted by a second agent; this slice takes the
+corpus and execution defects, which are the ones that make the gate report
+things that are not true.
+
+**The corpus did not implement its own stated principle.** `CORPUS_PATHSPECS`
+was `["README.md", "book/src"]`, and the git pathspec `README.md` matches **only
+the root README** — while the constant's own comment defines the corpus as *"the
+page a crates.io reader gets without cloning"*. Four other tracked READMEs
+publish ten command lines, and `contracts/README.md` and `examples/README.md`
+**ship inside the packaged crate**, so a crates.io reader receives them exactly
+as they receive the root one.
+
+Widening the corpus immediately produced three FALSE accusations against correct
+documents, and each was a distinct defect in the gate:
+
+* **A `cd` screened only its own line.** The reason string has always read
+  `CHAINED_DIRCHANGE — depends on a screened predecessor`, and nothing
+  implemented the *depends on* half: every later line in the fence ran from the
+  wrong directory. `contracts/lean-models/README.md` publishes `cd
+  contracts/lean-models` then `lake exe cache get`, and the second line alone
+  exits 1. A `cd` now screens the rest of its block — 1 screened line became 3.
+* **A multi-line command was executed in pieces.**
+  `crates/xpile/examples/README.md` publishes a `for … do … done` loop with `\`
+  continuations; split per line the fragments are `sh: 1: Syntax error`.
+  Continuations now join — with a **space** for `\`, and a **newline** between
+  statements, because joining `echo "…"` to `cargo run …` with a space is a
+  different command and a syntax error of its own.
+* **A screen pattern that a real invocation does not contain.** `SCREENS`
+  matches contiguous substrings, and the published spelling is `cargo run
+  --quiet --example` — which does not contain `cargo run --example`. The screen's
+  intent is about the two tokens, not their adjacency. Screened example builds
+  went 6 → 7.
+
+★ **My own widening was not pinned, and the red half is what said so.** Arm R1
+reverted `CORPUS_PATHSPECS` to its old value and all 16 tests stayed **green** —
+the four pages simply left the corpus, silently, which is how they came to be
+missing in the first place. `corpus_is_derived_and_floored` now re-derives the
+tracked README set **independently of the constant** and names every page the
+corpus fails to reach. Re-run, R1 reds. **A rule and the constant it depends on
+need something that fails when they part company.**
+
+Red half 3/3 + control: narrow the corpus → red; drop the chained-`cd` pass →
+red; drop the interleaved-flag screen → red; unperturbed → 16/16.
+
+Also corrected, measured rather than argued: PMAT-1511's CHANGELOG said that
+with `contracts/` absent "all four fall back to the embedded contract set and
+say so on stderr". Probed per command, it is **three of four** — `audit` prints
+no such notice, because that path never consults `contracts/`.
+
+⚠️ **I ran a published command in the live working tree and it downloaded 5.3 GB
+of Mathlib.** `lake exe cache get` is exactly what the gate screens and I
+executed it by hand to check a finding. Removed (it was gitignored, so nothing
+tracked was touched) — but the gate's scratch-dir discipline exists for this
+reason and I stepped outside it.
+
 ### Nothing in this repository ever ran `cargo doc`, so 58 rustdoc defects accumulated on the pages we publish — the visible one told readers to "See [refuse_ieee_div]" with nothing to follow (PMAT-1513)
 
 No CI job and no test invoked `cargo doc`, so warnings on the **published**
@@ -180,8 +238,11 @@ describes. The repository contradicted itself across three pages and the binary
 sided with the README.
 
 The named *cause* was wrong for the other three commands too. None of `quorum`,
-`attestations` or `audit` is blocked on `contracts/` — when it is absent all four
-fall back to the embedded contract set and say so on stderr. `quorum` and
+`attestations` or `audit` is blocked on `contracts/`. When it is absent,
+**three** of the four — `quorum`, `attestations`, `diamond` — fall back to the
+embedded contract set and say so on stderr; `audit` prints no such notice,
+because that path never consults `contracts/` at all. (Measured again by
+PMAT-1514: the original sentence said "all four … and say so", which is 3 of 4.) `quorum` and
 `attestations` need `docs/roadmaps/roadmap.yaml`; `audit` needs source files to
 scan. `installation.md` now carries a measured four-row table, and
 `quickstart.md` the corrected comments.
