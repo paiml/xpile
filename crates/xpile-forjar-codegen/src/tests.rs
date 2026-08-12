@@ -387,3 +387,83 @@ fn structural_golden_full_round_trip_shape() {
         );
     }
 }
+
+// ─── executed forjar witness (GH-2117) ──────────────────────────────
+//
+// Everything above validates the emitted YAML by SHAPE: parse it back and
+// assert the resource keys. That proves it is well-formed YAML with the
+// expected structure. It cannot prove forjar will ACCEPT it.
+//
+// forjar enforces semantic rules that shape-checking cannot see — field
+// co-occurrence, required sub-keys — and it tightens them over time. One was
+// learned the hard way and frozen into machine_block_carries_forjar_required_
+// hostname above ("machines.<name>: missing hostname"); every future rule would
+// be learned the same way, after it breaks someone.
+//
+// lib.rs delegates the executed witness to "forjar itself at the YAML
+// boundary". Nothing on either side actually ran it — an ownership assignment
+// with no owner executing it, which is the same silent-green shape as a
+// scheduled workflow that quietly stopped firing.
+//
+// So run the real binary here. It SKIPS LOUDLY when forjar is absent rather
+// than passing green having tested nothing; CI installs forjar so it genuinely
+// executes there.
+
+/// Run `forjar validate` against a manifest this backend actually emitted.
+#[test]
+fn emitted_manifest_is_accepted_by_the_real_forjar() {
+    if std::process::Command::new("forjar")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        // Same tripwire convention as XPILE_REQUIRE_WASM_RUNTIME: a host that
+        // DECLARES it must execute this witness fails red when the tool is
+        // missing, instead of skipping green. Otherwise dropping the CI install
+        // step would silently retire the check — which is precisely the
+        // ownership-with-no-owner failure GH-2117 is about.
+        assert!(
+            std::env::var("XPILE_REQUIRE_FORJAR").is_err(),
+            "XPILE_REQUIRE_FORJAR is set but `forjar` is not on PATH — this host \
+             declared it would execute the forjar witness and cannot. Restore the \
+             install step (`cargo install forjar --locked`)."
+        );
+        eprintln!(
+            "SKIP emitted_manifest_is_accepted_by_the_real_forjar: \
+             `forjar` not on PATH (install with `cargo install forjar`)"
+        );
+        return;
+    }
+
+    let m = shell_module(
+        "witness",
+        vec![
+            cmd("mkdir", vec![lit("-p"), lit("/opt/witness")]),
+            cmd("echo", vec![lit("hello")]),
+        ],
+    );
+    let yaml = emit_manifest(&m).expect("backend must emit a manifest for a shell module");
+
+    let dir = std::env::temp_dir().join(format!("xpile-forjar-witness-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("forjar.yaml");
+    std::fs::write(&path, &yaml).expect("write manifest");
+
+    let out = std::process::Command::new("forjar")
+        .args(["validate", "-f"])
+        .arg(&path)
+        .output()
+        .expect("forjar is on PATH; spawning it must succeed");
+
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        out.status.success(),
+        "forjar REJECTED a manifest this backend emitted — the emitter has drifted \
+         from forjar's schema (GH-2117).\n\
+         --- emitted ---\n{yaml}\n\
+         --- forjar stdout ---\n{}\n--- forjar stderr ---\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}

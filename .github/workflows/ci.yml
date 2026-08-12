@@ -143,6 +143,14 @@ jobs:
       # the WABT install step, this turns `wasm_runtime_available()` into a
       # tripwire: drop the install and the witnesses panic red, never skip green.
       XPILE_REQUIRE_WASM_RUNTIME: "1"
+      # Same contract for the forjar witness (GH-2117): xpile-forjar-codegen
+      # emits forjar.yaml TEXT with no runtime forjar dependency, so nothing
+      # here proves forjar will accept it. Shape-checking the YAML cannot see
+      # forjar's semantic rules (field co-occurrence, required sub-keys), and
+      # those tighten over time. Declaring this makes a missing forjar fail RED
+      # rather than skip green, so deleting the install step cannot silently
+      # retire the check.
+      XPILE_REQUIRE_FORJAR: "1"
     steps:
       # fetch-depth: 0 (full history AND tags) is load-bearing, not cosmetic:
       # `crates/xpile/tests/roadmap_registration.rs` (XPILE-LEDGER-001, PMAT-1345)
@@ -159,6 +167,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install forjar for the emitted-manifest witness (GH-2117)
+        # Pinned deliberately. An unpinned install would make this job flap the
+        # day forjar tightens a rule, instead of reporting the actual news:
+        # "forjar <version> added a rule our emitter violates". Bump on purpose.
+        run: cargo install forjar --locked --version 1.12.5
 
       - name: Install WABT (wat2wasm + wasm-interp) for the WASM execution witnesses
         run: |
