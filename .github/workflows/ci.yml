@@ -151,6 +151,12 @@ jobs:
       # rather than skip green, so deleting the install step cannot silently
       # retire the check.
       XPILE_REQUIRE_FORJAR: "1"
+      # PMAT-2120: same contract for the advisory-expiry gate. Its liveness half
+      # answers "is this exemption still suppressing anything" by removing each
+      # ignore and re-running cargo-deny — which needs cargo-deny on PATH. Declaring
+      # this turns a missing binary into a RED rather than a skip, so dropping the
+      # install cannot silently retire the half of the gate that does the measuring.
+      XPILE_REQUIRE_CARGO_DENY: "1"
     steps:
       # fetch-depth: 0 (full history AND tags) is load-bearing, not cosmetic:
       # `crates/xpile/tests/roadmap_registration.rs` (XPILE-LEDGER-001, PMAT-1345)
@@ -167,6 +173,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      # PMAT-2120: crates/xpile/tests/advisory_expiry.rs runs the removal test per
+
+      # exemption, so this job needs cargo-deny. Paired with XPILE_REQUIRE_CARGO_DENY
+
+      # above, which makes its absence RED instead of a skip.
+
+      - name: Install cargo-deny
+
+        run: cargo install cargo-deny --locked
+
 
       - name: Install forjar for the emitted-manifest witness (GH-2117)
         # Pinned deliberately. An unpinned install would make this job flap the
