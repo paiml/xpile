@@ -29,8 +29,10 @@
 # `removed_by`; there is no second date field.
 #
 # All seven arrive via rustpython-parser (depyler-frontend's Python parser) and
-# are unmaintained-ecosystem advisories rather than vulnerabilities. Three of
-# them previously read only "# unmaintained ecosystem dep" and named no crate;
+# are unmaintained-ecosystem advisories rather than vulnerabilities. Five of
+# them previously read only "# unmaintained ecosystem dep" and named no crate
+# (0075, 0080, 0090, 0098, 0100 — a first draft of this file said three, and a
+# review lane counted);
 # an exemption nobody can identify is one nobody can retire, so the names below
 # were recovered from cargo-deny's own output.
 

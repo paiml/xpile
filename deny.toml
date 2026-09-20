@@ -17,8 +17,9 @@ yanked = "deny"
 # with a crate, a named owner, an owner ticket and a removed_by date, enforced by
 # crates/xpile/tests/advisory_expiry.rs under the required workspace-test context.
 # That gate also refuses a DEAD exemption — one whose removal leaves cargo-deny at
-# exit 0 — by running the removal test PER EXEMPTION. Three of these lines used to
-# read only "unmaintained ecosystem dep"; the crate names came from cargo-deny.
+# exit 0 — by running the removal test PER EXEMPTION. Five of these lines used to
+# read only "unmaintained ecosystem dep" (a first draft said three; the diff says
+# five — 0075, 0080, 0090, 0098, 0100); the crate names came from cargo-deny.
 ignore = [
     "RUSTSEC-2024-0436",  # paste (via malachite-bigint)
     "RUSTSEC-2025-0075",  # unic-char-range

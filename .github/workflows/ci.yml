@@ -175,15 +175,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # PMAT-2120: crates/xpile/tests/advisory_expiry.rs runs the removal test per
-
       # exemption, so this job needs cargo-deny. Paired with XPILE_REQUIRE_CARGO_DENY
-
-      # above, which makes its absence RED instead of a skip.
-
+      # above, which makes its absence RED instead of a skip. Pinned, as forjar is
+      # below: an unpinned install measures whatever cargo-deny shipped that
+      # morning, and the removal test was measured with 0.19.0. Bump on purpose.
       - name: Install cargo-deny
-
-        run: cargo install cargo-deny --locked
-
+        run: cargo install cargo-deny --locked --version 0.19.0
 
       - name: Install forjar for the emitted-manifest witness (GH-2117)
         # Pinned deliberately. An unpinned install would make this job flap the
@@ -526,8 +523,9 @@ jobs:
       # dependency_license_policy.rs into a hard failure. Without this the
       # tripwire would skip-green on a runner where the install step was
       # deleted — the skip-as-green shape XPILE-WITNESS-002 exists to kill.
-      # Scoped to THIS job: workspace-test has no cargo-deny and must keep
-      # skipping the live half by design.
+      # Scoped to THIS job. (workspace-test now installs cargo-deny too, for
+      # PMAT-2120's advisory removal test, under its own XPILE_REQUIRE_CARGO_DENY;
+      # the license tripwire here stays scoped to this job.)
       XPILE_REQUIRE_DENY: "1"
     steps:
       - uses: actions/checkout@v4

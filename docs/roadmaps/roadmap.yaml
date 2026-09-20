@@ -27009,7 +27009,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 - id: PMAT-2120
   github_issue: 2120
   item_type: task
-  title: Seven advisory exemptions with no owner and no expiry, three naming no crate
+  title: Seven advisory exemptions with no owner and no expiry, five naming no crate
   status: planned
   priority: medium
   assigned_to: null
