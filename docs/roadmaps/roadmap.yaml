@@ -27006,3 +27006,20 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-2120
+  github_issue: 2120
+  item_type: task
+  title: Seven advisory exemptions with no owner and no expiry, five naming no crate
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T17:45:13Z
+  updated: 2026-09-20T17:45:13Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
