@@ -1,0 +1,88 @@
+{
+ "ticket": "PMAT-2120",
+ "pr": 2121,
+ "base": "main",
+ "head": "03212c690e10de6a2cf2921ca09178b1e1617d61",
+ "diff_sha256": "e7464c8e7ebd6d47090e7a6ac651ac9b7680dbbb9221a725751a4210fab4f6c1",
+ "agreed": true,
+ "verdict": "implement-with-changes, changes applied; confirmatory round 2/2 implement-as-written",
+ "author": {
+  "session": "ruchy-9d",
+  "model": "claude-opus-5[1m]"
+ },
+ "families_required": [
+  "gemini",
+  "claude"
+ ],
+ "families_run": [
+  "gemini"
+ ],
+ "families_note": "Both rounds gemini (3.1-pro-high, 3.8-flash-high), every lane measured (command+output pairs, tree witness verified, 0 BLIND). The claude-family executor for THIS diff is CI: workspace-test run 35532502389 executed advisory_expiry.rs at this head with XPILE_REQUIRE_CARGO_DENY=1 \u2014 15 tests including the per-exemption removal test, seven cargo-deny invocations, all seven exemptions live. The author (claude) re-ran the same locally: 15/15, clippy -D warnings clean, fmt clean.",
+ "rounds": [
+  {
+   "round": 1,
+   "judged": "58e9fa22",
+   "width": 2,
+   "lanes": [
+    {
+     "lane": 1,
+     "model_measured": "gemini-3.1-pro-high",
+     "conversation": "eab15dbc-c646-4312-88b1-5355e8628c9c",
+     "verdict": "do-not-implement-as-written"
+    },
+    {
+     "lane": 2,
+     "model_measured": "gemini-3.8-flash-high",
+     "conversation": "4d81114b-8015-48e0-b169-5a50b0b3ca48",
+     "verdict": "do-not-implement-as-written"
+    }
+   ],
+   "findings": [
+    "ignored_in_deny() used text.find(\"ignore\") then the next [ \u2014 a `# ignore` comment above [advisories] returns nothing and the unlisted check cannot fail (lane 1 reproduced in python); GHSA ids dropped (lane 2)",
+    "max_window_days read from the ledger: raising it is a one-line edit in the diff that needs it",
+    "no rule had ever been seen to fire \u2014 no negative-control arm",
+    "'three naming no crate' is five (lane 2 counted main:deny.toml)",
+    "cargo install cargo-deny --locked floats; license job comment 'workspace-test has no cargo-deny' now false",
+    "the brief's own claim of a discharged_by field was not in the PR \u2014 author's conflation with ruchy's SEC-1 gate, recorded here as such"
+   ],
+   "applied_in": "03212c69"
+  },
+  {
+   "round": 2,
+   "judged": "03212c690e10de6a2cf2921ca09178b1e1617d61",
+   "width": 2,
+   "lanes": [
+    {
+     "lane": 1,
+     "model_measured": "gemini-3.1-pro-high",
+     "conversation": "db2e790d-6f68-4a6c-ba61-d7d115fa8e44",
+     "verdict": "implement-as-written",
+     "kept_clone": "scratch reproductions of old/new scan in its writes=false clone; shared checkout byte-identical; removed by the author"
+    },
+    {
+     "lane": 2,
+     "model_measured": "gemini-3.8-flash-high",
+     "conversation": "c07fbe27-d804-448e-95d1-ecf1c7fc385b",
+     "verdict": "implement-as-written"
+    }
+   ],
+   "measured": [
+    "old algorithm reproduced in python on the new fixture returns []: the defect is encoded",
+    "scan handles ignore=[ unspaced, inline tables, ] in a reason string, same-line arrays, a later [licenses] ignore table",
+    "beyond_window bounded by MAX_WINDOW_DAYS only; ledger value used solely for the equality assertion",
+    "seven negative controls assert the RED direction with today fixed at 2026-09-20; +90 = 2026-12-19, +91 = 2026-12-20; 2028 leap arithmetic right",
+    "main:deny.toml has exactly five `# unmaintained ecosystem dep` lines; 'five' consistent across deny.toml, ledger, test, roadmap title, PR",
+    "cargo-deny 0.19.0 exists; XPILE_REQUIRE_CARGO_DENY on workspace-test with the install and the test",
+    "PMAT-2120 is one top-level roadmap row; the only roadmap hunk vs main",
+    "pmat analyze complexity: max cyclomatic 8"
+   ]
+  }
+ ],
+ "residuals": [
+  "the commit message of 03212c69 says 'five functions'; there are six (in_string is the sixth), none above cyclomatic 8 \u2014 a message inaccuracy, left in history and corrected here",
+  "the line-based scanner would take an [advisories] header inside a multi-line TOML string as the table \u2014 accepted by both lanes for a non-AST scanner over a file this repo owns",
+  "parse_iso accepts 2026-02-30 and days_from_civil maps it to 2026-03-02 \u2014 allowed by the brief; an impossible removed_by is not this gate's subject",
+  "two other floating cargo-deny installs (gate, license-scan jobs) are not this PR's steps and are left as found",
+  "pmat work add inserted the roadmap row inside PMAT-1414's multi-line description (workspace-test caught it, fixed in 58e9fa22, filed as paiml-mcp-agent-toolkit#1416)"
+ ]
+}
