@@ -18281,23 +18281,6 @@ roadmap:
   item_type: bug
   title: 'PMAT-1414: [build/honesty] `cargo build` FAILED on an UNMODIFIED `main` with 35 `couldn''t read` errors naming a git worktree that had already been deleted. PMAT-1407''s build script baked ABSOLUTE source paths into `$OUT_DIR/embedded_contracts.rs`, and cargo gives one OUT_DIR per (package, profile) per TARGET DIR — not per source tree. Every worktree of this repo shares one target dir, so the generated file one tree writes is the one another tree compiles. The loud half is the lesser half: before the tree is deleted, the second tree silently embeds the FIRST tree''s contract bytes at exit 0.'
   description: 'MEASURED, not inferred. At 118b90d9, `cargo build -p xpile --bin xpile` from /home/noah/src/xpile exited non-zero with 35 errors of the form `couldn''t read /tmp/claude-1000/-home-noah-src-xpile/wt-1411/crates/xpile/contracts/<name>.yaml: No such file or directory`. wt-1411 was a worktree from an earlier slice, merged and pruned. The working tree was clean and at origin/main; nothing in git explained it.
-- id: PMAT-2120
-  github_issue: 2120
-  item_type: task
-  title: Seven advisory exemptions with no owner and no expiry, three naming no crate
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-20T17:45:13Z
-  updated: 2026-09-20T17:45:13Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
 
 ROOT CAUSE, in two parts, both required. (a) PMAT-1407''s `crates/xpile/build.rs` emitted `include_str!("<CARGO_MANIFEST_DIR>/contracts/<name>.yaml")` — an absolute path into whichever tree ran the script. (b) The local `cargo` is a shell function that pins `CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/$(basename $(git remote get-url origin) .git)`, so it resolves to `.../targets/xpile` for the main checkout AND for every `git worktree` of it — the isolation the sprint instructions mandate is isolation of the SOURCE, not of the build. One OUT_DIR, N trees.
 
@@ -27023,3 +27006,20 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   phases: []
   subtasks: []
   estimated_effort: null
+- id: PMAT-2120
+  github_issue: 2120
+  item_type: task
+  title: Seven advisory exemptions with no owner and no expiry, three naming no crate
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T17:45:13Z
+  updated: 2026-09-20T17:45:13Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
