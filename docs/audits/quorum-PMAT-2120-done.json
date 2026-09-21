@@ -1,0 +1,43 @@
+{
+ "ticket": "PMAT-2120",
+ "pr": 2122,
+ "base": "main",
+ "base_resolved": "origin/main",
+ "head": "74e71356697a5c64a5e0a711127b08fa6d0eb1b0",
+ "diff_sha256": "c3ecd5b8e246c3edefc30f8aa05942bf5e68f7eb2c0e5c8d4b79ed87a9f51a78",
+ "agreed": true,
+ "width": 2,
+ "executor": "agy",
+ "author": {
+  "model": "claude-opus-5[1m]",
+  "family": "claude",
+  "session": "ruchy-9d"
+ },
+ "verdict": "implement-as-written (2/2)",
+ "lanes": [
+  {
+   "lane": 1,
+   "model_measured": "gemini-3.1-pro-high",
+   "conversation": "d467d271-b90e-496d-b4c8-e9d63c37c807",
+   "verdict": "PASS"
+  },
+  {
+   "lane": 2,
+   "model_measured": "gemini-3.7-flash-high",
+   "conversation": "24dec02d-ff93-4050-9e09-a9403090e6e1",
+   "verdict": "PASS"
+  }
+ ],
+ "measured_by_both": [
+  "d1acd96f is on origin/main and is the #2121 merge",
+  "PMAT-1513..1516 are done",
+  "only PMAT-2120 differs from origin/main, only status and notes",
+  "notes' round verdicts match quorum-PMAT-2120.json",
+  "the red pre-commit-guard test reads the INSTALLED hook (roadmap_registration.rs:240): host state, not this diff"
+ ],
+ "why_not_quorum_review_sh": "quorum-review.sh reads the ticket through `pmat work status`, which cannot parse this roadmap (67 rows carry priority P0/P1 \u2014 filed #2123). The review ran through paiml-agy-delegate instead, with lane models named because gemini-3.8-flash-high backgrounds test runs and is terminated (paiml-implement#309).",
+ "residuals": [
+  "lane 2 cited roadmap_registration.rs:122 (actual 222/240) and paraphrased one output; lane 1 measured the same points exactly",
+  "quorum-PMAT-2120.json's headline verdict wording ('implement-with-changes, changes applied') differs from its round-1 lane verdicts (do-not-implement-as-written); the notes quote the lane verdicts"
+ ]
+}
