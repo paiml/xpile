@@ -27010,7 +27010,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   github_issue: 2120
   item_type: task
   title: Seven advisory exemptions with no owner and no expiry, five naming no crate
-  status: planned
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-09-20T17:45:13Z
@@ -27022,4 +27022,4 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'Landed: d1acd96f (#2121), 2026-09-20. Two review rounds (2/2 do-not-implement, then 2/2 implement-as-written); docs/audits/quorum-PMAT-2120.json.'
