@@ -62,8 +62,8 @@ bat 1
 /// answer with a wrong one.
 const FLIP: (&str, &str) = ("2432902008176640000\n", "2432902008176640001\n");
 
-/// Appended to the concatenated examples. Kept tiny: every construct in it
-/// is one xpile has transpiled since v0.1.0.
+/// Appended to the concatenated examples: a `main()` that calls each example
+/// once and prints the result, so the emitted crate is a runnable binary.
 const DRIVER: &str = r#"
 
 def main() -> None:
